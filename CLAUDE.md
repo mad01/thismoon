@@ -33,6 +33,42 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
 
+## Importing a service from another repo
+
+The migration playbook, applied to every service brought in so far (see
+`docs/MIGRATED-FROM.md` for provenance). Follow it in order; each step earned
+its place:
+
+1. **Import clean.** `git archive HEAD:<svc>` from the source repo, extract
+   into `services/<svc>` (or `tools/<name>`). No git history comes along.
+2. **Fold into the module.** Delete the imported `go.mod`/`go.sum`, rewrite
+   module paths to `github.com/mad01/thismoon/...`, switch webkit imports to
+   the in-module package.
+3. **Drop webkit versioning.** Delete `webkit_version.go`, remove the `webkit`
+   field from `/version`, delete the `update-webkit` Makefile target — there is
+   no pin here, the service compiles against the webkit committed beside it.
+4. **Rewrite docs.** `service-info.yaml` gets `spec.system: thismoon`; strip
+   pin/bump language from the service CLAUDE.md; scan for names and hosts that
+   must not appear in a public repo (help text and code comments too, not just
+   docs).
+5. **Gates.** Root `go mod tidy`, then per-service build/vet/test/lint, root
+   `make test`, and a clean-checkout gate: `git archive HEAD | tar -x` into a
+   temp dir, build and test there.
+6. **Record provenance.** Add the service's row to `docs/MIGRATED-FROM.md`
+   (source repo + SHA).
+7. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
+   sources-cache `working_dir` (see Conventions), then the scratch-config
+   `ralph up --dry-run` gate: commit first, move the real sources cache aside,
+   remove the test cache between runs, and put a `config.local.toml` with the
+   right profiles beside the scratch config.
+8. **Two commits per service:** one for the import, one for the recipe.
+
+Cutover happens in the consuming repo (dotfiles): delete the old source dir +
+recipe in one PR, keep item keys identical so ralph state carries over, then a
+single `ralph up` swaps the fleet. After it, pull the sources cache manually if
+the recipes are newly merged, and verify each service's `/version` — ralph can
+report ok while leaving the old binary in place.
+
 ## Domain language
 
 See `CONTEXT.md` for the glossary. Check `docs/adr/` before changing anything structural — the founding decisions are recorded there and are deliberate.
