@@ -109,5 +109,4 @@ make build   # ./present
 make tidy    # go mod tidy
 ```
 
-See [docs/recipes/present.md](../docs/recipes/present.md) for architecture
-and debugging details.
+See [CLAUDE.md](CLAUDE.md) for architecture and debugging details.
