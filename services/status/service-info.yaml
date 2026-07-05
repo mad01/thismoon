@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: status
+  description: Status page for t-man-managed local services with 30-day uptime history
+  tags: [go, cli, dashboard]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon
