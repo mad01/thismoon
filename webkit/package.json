@@ -1,0 +1,18 @@
+{
+  "name": "@mad01/webkit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared web chrome (header, theme, controls) for mad01 local tools",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/prismjs": "^1.26.6",
+    "esbuild": "^0.25.0",
+    "prismjs": "^1.30.0",
+    "typescript": "^6.0.3"
+  }
+}

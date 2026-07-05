@@ -1,0 +1,8 @@
+node_modules
+dist
+.git
+examples
+test
+*.go
+*.md
+service-info.yaml
