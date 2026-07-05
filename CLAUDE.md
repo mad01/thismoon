@@ -31,6 +31,7 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity.
 - Code imported from another repo comes in clean (no git history) and gets a row in `docs/MIGRATED-FROM.md` with the source repo and SHA it came from.
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
+- Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
 
 ## Importing a service from another repo
