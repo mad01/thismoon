@@ -1,0 +1,39 @@
+[recipe]
+name = "status"
+description = "status — status page for t-man-managed services with 30-day uptime history"
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the paths below name that cache directly.
+[packages.status]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/services/status"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/status"]
+
+# Restart the serve agent when the freshly installed binary actually changed.
+# ralph hashes install_paths and runs this only when the bytes differ. The
+# `t-man status` guard skips the restart on first install, where this fires
+# before [hooks.builds.status_service] has registered the agent.
+[packages.status.service]
+restart = "if command -v t-man >/dev/null && t-man status status >/dev/null 2>&1; then t-man restart status; fi"
+
+[hooks]
+# Stop and remove the t-man-managed serve agent during cleanup, before the
+# binary it runs is removed (ralph disable thismoon/status && ralph up --enable-cleanup).
+pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove status 2>/dev/null; fi || true"]
+
+# Register `status serve` as a long-running launchd user agent via t-man.
+# Registration only — restart-on-rebuild lives in [packages.status.service]
+# above. `t-man add` is idempotent (same definition -> same hash -> no-op), so
+# run = "always" keeps the agent registered and self-heals if it was removed.
+[hooks.builds.status_service]
+commands = [
+  "if command -v t-man >/dev/null; then t-man add --name status -- $HOME/code/bin/status serve --port 7426; else echo 'status: skip service (t-man not on PATH; install t-man then run: t-man add --name status -- status serve --port 7426)'; fi",
+]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/status"
+run = "always"
+depends_on = ["packages.status", "packages.t_man"]

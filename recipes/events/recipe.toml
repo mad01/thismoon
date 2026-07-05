@@ -1,0 +1,39 @@
+[recipe]
+name = "events"
+description = "events — CLI + MCP + web service for a local event/audit log (events.this) that the tool fleet feeds into"
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the paths below name that cache directly.
+[packages.events]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/services/events"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/events"]
+
+# Restart the serve agent when the freshly installed binary actually changed.
+# ralph hashes install_paths and runs this only when the bytes differ. The
+# `t-man status` guard skips the restart on first install, where this fires
+# before [hooks.builds.events_service] has registered the agent.
+[packages.events.service]
+restart = "if command -v t-man >/dev/null && t-man status events >/dev/null 2>&1; then t-man restart events; fi"
+
+[hooks]
+# Stop and remove the t-man-managed serve agent during cleanup, before the
+# binary it runs is removed (ralph disable thismoon/events && ralph up --enable-cleanup).
+pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove events 2>/dev/null; fi || true"]
+
+# Register `events serve` as a long-running launchd user agent via t-man. This
+# process owns the per-source JSONL store; the MCP server (registered in the
+# dotfiles recipes/claude-mcp/servers.json) and the CLI are thin HTTP clients
+# to it. Idempotent; run = "always" keeps it registered and self-heals if removed.
+[hooks.builds.events_service]
+commands = [
+  "if command -v t-man >/dev/null; then t-man add --name events -- $HOME/code/bin/events serve --port 7430 --workdir $HOME/.local/share/events; else echo 'events: skip service (t-man not on PATH; install t-man then run: t-man add --name events -- events serve --port 7430)'; fi",
+]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/events"
+run = "always"
+depends_on = ["packages.events", "packages.t_man"]

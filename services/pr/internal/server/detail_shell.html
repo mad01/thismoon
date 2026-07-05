@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pr</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette and chrome come from /webkit/webkit.css; only pr-specific styles live
+   here. The detail body is rendered client-side by /detail.js into
+   <div id="detail-app">. */
+:root {
+  --pr-open: #3ba55d;
+  --pr-draft: #8b949e;
+  --pr-additions: #3ba55d;
+  --pr-deletions: #d65745;
+}
+
+.pr-detail { max-width: var(--page-width, 1200px); margin: 0 auto; padding: 1.5rem 1.5rem 6rem; }
+
+.pr-detail-header { margin-bottom: 1.5rem; }
+.pr-detail-title { font-size: 1.25rem; font-weight: 600; color: var(--text-1); margin: 0 0 0.5rem; }
+.pr-detail-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; font-size: 0.8125rem; color: var(--text-3); }
+
+.pr-action-bar {
+  display: flex; gap: 0.5rem; align-items: center;
+  padding: 0.75rem 0; margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.375rem 0.75rem; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-2); font-size: 0.8125rem;
+  cursor: pointer; text-decoration: none; transition: background 0.15s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn-approve { background: var(--pr-open); color: #fff; border-color: var(--pr-open); }
+.btn-approve:hover { background: var(--pr-open); color: #fff; opacity: 0.85; }
+.btn-danger { background: var(--pr-deletions); color: #fff; border-color: var(--pr-deletions); }
+.btn-danger:hover { background: var(--pr-deletions); color: #fff; opacity: 0.85; }
+.btn-merge { background: #8250df; color: #fff; border-color: #8250df; }
+.btn-merge:hover { background: #8250df; color: #fff; opacity: 0.85; }
+
+.pr-body {
+  padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+  font-size: 0.875rem; color: var(--text-2); line-height: 1.6;
+  word-wrap: break-word;
+}
+.pr-body h1, .pr-body h2, .pr-body h3 { margin: 1rem 0 0.5rem; color: var(--text-1); }
+.pr-body h1 { font-size: 1.125rem; }
+.pr-body h2 { font-size: 1rem; }
+.pr-body h3 { font-size: 0.9375rem; }
+.pr-body p { margin: 0 0 0.75rem; }
+.pr-body ul, .pr-body ol { margin: 0 0 0.75rem; padding-left: 1.5rem; }
+.pr-body li { margin-bottom: 0.25rem; }
+.pr-body code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8125rem; background: var(--surface-1); padding: 0.125rem 0.375rem; border-radius: 3px; }
+.pr-body pre { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; overflow-x: auto; margin: 0 0 0.75rem; }
+.pr-body pre code { background: none; padding: 0; }
+.pr-body blockquote { border-left: 3px solid var(--border); padding-left: 0.75rem; margin: 0 0 0.75rem; color: var(--text-3); }
+.pr-body a { color: var(--primary); text-decoration: none; }
+.pr-body a:hover { text-decoration: underline; }
+.pr-body img { max-width: 100%; border-radius: 6px; }
+.pr-body table { border-collapse: collapse; margin: 0 0 0.75rem; width: 100%; }
+.pr-body th, .pr-body td { border: 1px solid var(--border); padding: 0.375rem 0.75rem; text-align: left; font-size: 0.8125rem; }
+.pr-body th { background: var(--surface-1); font-weight: 600; }
+.pr-body input[type="checkbox"] { margin-right: 0.375rem; }
+
+.pr-reviews { margin-bottom: 1.5rem; }
+.pr-review-item {
+  display: flex; gap: 0.75rem; align-items: baseline;
+  padding: 0.5rem 0; font-size: 0.8125rem;
+  border-bottom: 1px solid var(--border);
+}
+.review-state { font-weight: 600; font-size: 0.75rem; padding: 0.125rem 0.5rem; border-radius: 10px; }
+.review-state.APPROVED { background: #3ba55d20; color: var(--pr-open); }
+.review-state.CHANGES_REQUESTED { background: #e2a33c20; color: #e2a33c; }
+.review-state.COMMENTED { background: var(--surface-2); color: var(--text-3); }
+.review-state.DISMISSED { background: var(--surface-2); color: var(--text-3); }
+
+.pr-files-summary {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem;
+  font-size: 0.8125rem;
+}
+.pr-file-chip {
+  display: inline-flex; gap: 0.375rem; padding: 0.25rem 0.5rem;
+  border-radius: 4px; background: var(--surface-1); border: 1px solid var(--border);
+  font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem;
+  cursor: pointer; color: var(--text-2);
+}
+.pr-file-chip:hover { border-color: var(--primary); }
+.pr-file-stat { font-size: 0.6875rem; }
+
+.checks-bar {
+  display: flex; gap: 0.75rem; align-items: center;
+  padding: 0.5rem 0.75rem; margin-bottom: 1.5rem;
+  border-radius: 6px; background: var(--surface-1); font-size: 0.8125rem;
+}
+
+/* Diff styles */
+.diff-file { margin-bottom: 1.5rem; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.diff-file.collapsed .diff-file-body { display: none; }
+.diff-file-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.5rem 1rem; background: var(--surface-1); border-bottom: 1px solid var(--border);
+  cursor: pointer; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8125rem;
+  color: var(--text-2); user-select: none;
+}
+.diff-file-header:hover { background: var(--surface-2); }
+.diff-file-toggle { transition: transform 0.2s; }
+.diff-file.collapsed .diff-file-toggle { transform: rotate(-90deg); }
+
+.diff-hunk { border-bottom: 1px solid var(--border); }
+.diff-hunk:last-child { border-bottom: none; }
+
+.diff-line {
+  display: flex; font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75rem; line-height: 1.5;
+}
+.diff-ln {
+  display: inline-block; width: 3.5rem; text-align: right; padding: 0 0.5rem;
+  color: var(--text-3); user-select: none; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+.diff-code { flex: 1; padding: 0 0.75rem; white-space: pre-wrap; word-break: break-all; tab-size: 4; }
+
+.diff-add { background: #3ba55d12; }
+.diff-add .diff-code { color: var(--pr-additions); }
+.diff-del { background: #d6574512; }
+.diff-del .diff-code { color: var(--pr-deletions); }
+.diff-ctx { background: transparent; }
+.diff-hunk-header { background: var(--surface-1); color: var(--text-3); }
+.diff-hunk-header .diff-code { font-style: italic; }
+
+[data-theme="dark"] .diff-add { background: #3ba55d18; }
+[data-theme="dark"] .diff-del { background: #d6574518; }
+
+wk-modal-actions {
+  display: flex; gap: 0.5rem; justify-content: flex-end;
+  padding: 1rem 1.5rem 1.25rem;
+}
+wk-modal-actions .btn { min-width: 5rem; justify-content: center; }
+wk-modal-actions .btn-selected { outline: 2px solid var(--primary); outline-offset: 2px; }
+.kbd { font-size: 0.75rem; color: var(--text-2); padding: 0.125rem 0.4rem; border: 1px solid var(--border); border-radius: 3px; font-family: 'SF Mono', 'Fira Code', monospace; background: var(--surface-1); min-width: 1.25rem; text-align: center; display: inline-block; }
+.shortcut-hint { font-size: 0.75rem; color: var(--text-3); margin-left: auto; }
+.shortcuts-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.375rem 1rem; align-items: baseline; }
+.shortcuts-grid .kbd { justify-self: end; }
+.shortcuts-grid span { font-size: 0.8125rem; color: var(--text-2); }
+
+.empty { text-align: center; padding: 3rem; color: var(--text-3); }
+</style>
+</head>
+<body>
+<wk-header brand="pr" back="/"></wk-header>
+<main class="pr-detail">
+  <div id="detail-app"><div class="empty">Loading…</div></div>
+
+  <wk-modal id="confirm-modal" hidden>
+    <wk-modal-panel>
+      <wk-modal-head><h3 id="modal-title"></h3></wk-modal-head>
+      <wk-modal-body><p id="modal-body"></p></wk-modal-body>
+      <wk-modal-actions>
+        <button class="btn" id="modal-cancel">Cancel <span class="kbd">esc</span></button>
+        <button class="btn" id="modal-confirm">Confirm <span class="kbd">↵</span></button>
+      </wk-modal-actions>
+    </wk-modal-panel>
+  </wk-modal>
+
+  <wk-modal id="shortcuts-modal" hidden>
+    <wk-modal-panel>
+      <wk-modal-head><h3>Keyboard Shortcuts</h3></wk-modal-head>
+      <wk-modal-body>
+        <div class="shortcuts-grid">
+          <span><span class="kbd">⌘</span> <span class="kbd">↵</span></span><span>Approve this PR</span>
+          <span><span class="kbd">g</span> <span class="kbd">i</span></span><span>Go home (PR list)</span>
+          <span><span class="kbd">esc</span></span><span>Back to list / close modal</span>
+          <span><span class="kbd">⌘</span> <span class="kbd">/</span></span><span>Toggle this help</span>
+        </div>
+      </wk-modal-body>
+      <wk-modal-actions>
+        <button class="btn" onclick="toggleShortcuts()">Close <span class="kbd">esc</span></button>
+      </wk-modal-actions>
+    </wk-modal-panel>
+  </wk-modal>
+</main>
+<script src="/webkit/webkit.js"></script>
+<script src="/detail.js"></script>
+</body>
+</html>

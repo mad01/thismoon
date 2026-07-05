@@ -1,0 +1,366 @@
+// Package server exposes stored presentations over HTTP as single-page views.
+// It reads the store and core template fresh on every request, so both content
+// updates and template edits are reflected immediately without a restart.
+package server
+
+import (
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/mad01/thismoon/services/present/internal/notify"
+	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/mad01/thismoon/webkit"
+)
+
+// shellHTML is the static page shell (chrome only). The page body is rendered
+// client-side by appJS from the JSON at GET /api/p/{id} — the backend serves
+// data, the frontend renders. appJS is served at GET /app.js.
+//
+//go:embed shell.html
+var shellHTML []byte
+
+//go:embed app.js
+var appJS []byte
+
+// indexShellHTML is the static index shell (chrome only). The page list is
+// rendered client-side by indexJS from the JSON at GET /api/pages. indexJS is
+// served at GET /index.js.
+//
+//go:embed index_shell.html
+var indexShellHTML []byte
+
+//go:embed index.js
+var indexJS []byte
+
+// Server serves the index and individual presentation pages.
+type Server struct {
+	store   *store.Store
+	workdir string
+	version string
+}
+
+// New returns a Server backed by the given store and template working directory.
+// version is present's own build version, reported on GET /version.
+func New(st *store.Store, workdir, version string) *Server {
+	return &Server{store: st, workdir: workdir, version: version}
+}
+
+// Handler builds the HTTP routes, wrapped in request logging.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /api/pages", s.handleAPIPages)
+	mux.HandleFunc("GET /index.js", handleIndexJS)
+	mux.HandleFunc("GET /p/{id}", s.handlePage)
+	mux.HandleFunc("GET /api/p/{id}", s.handleAPIPage)
+	mux.HandleFunc("GET /app.js", handleAppJS)
+	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
+	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
+	mux.HandleFunc("GET /version", s.handleServiceVersion)
+	mux.Handle("GET /assets/", s.assetsHandler())
+	webkit.Mount(mux)
+	return logRequests(mux)
+}
+
+// statusRecorder captures the response status code and byte count for access
+// logging. status defaults to 200 because a handler that writes a body without
+// calling WriteHeader implicitly sends 200. Unwrap lets http.ResponseController
+// reach the underlying writer, preserving Flusher/Hijacker through the wrapper.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	n, err := r.ResponseWriter.Write(b)
+	r.bytes += n
+	return n, err
+}
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// logRequests logs one line per request: method, path, status, bytes, duration.
+// Without this the serve daemon emits only its startup line, leaving update
+// problems (404s, wrong workdir, version mismatches) invisible in t-man logs.
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		log.Printf("present: %s %s -> %d %dB (%s)",
+			r.Method, r.URL.Path, rec.status, rec.bytes, time.Since(start).Round(time.Millisecond))
+	})
+}
+
+// Index pagination defaults and bounds.
+const (
+	defaultPageSize = 50
+	minPageSize     = 1
+	maxPageSize     = 200
+)
+
+// handleIndex serves the static index shell. The browser fetches the page list
+// from GET /api/pages and renders it client-side via /index.js.
+func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// no-cache (vs the brief pages' no-store): allow the browser to keep a copy
+	// but force revalidation, so a new page added to the index shows on reload.
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(indexShellHTML)
+}
+
+// apiPageMeta is the JSON shape of a single index entry.
+type apiPageMeta struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Version   int    `json:"version"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// apiPages is the paginated index payload the client renders.
+type apiPages struct {
+	Pages      []apiPageMeta `json:"pages"`
+	Page       int           `json:"page"`
+	Size       int           `json:"size"`
+	Total      int           `json:"total"`
+	TotalPages int           `json:"total_pages"`
+	HasPrev    bool          `json:"has_prev"`
+	HasNext    bool          `json:"has_next"`
+	PrevPage   int           `json:"prev_page"`
+	NextPage   int           `json:"next_page"`
+}
+
+// handleAPIPages returns one window of the page listing as JSON, newest first.
+// It carries the pagination state the client needs to render the prev/next
+// controls and the total count.
+func (s *Server) handleAPIPages(w http.ResponseWriter, r *http.Request) {
+	pages, err := s.store.ListMeta()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	size := clampSize(queryInt(r, "size", defaultPageSize))
+	total := len(pages)
+	totalPages := 1
+	if total > 0 {
+		totalPages = (total + size - 1) / size
+	}
+	page := clampPage(queryInt(r, "page", 1), totalPages)
+
+	offset := (page - 1) * size
+	end := offset + size
+	if end > total {
+		end = total
+	}
+	window := pages[offset:end]
+
+	out := apiPages{
+		Pages:      make([]apiPageMeta, 0, len(window)),
+		Page:       page,
+		Size:       size,
+		Total:      total,
+		TotalPages: totalPages,
+		HasPrev:    page > 1,
+		HasNext:    page < totalPages,
+		PrevPage:   page - 1,
+		NextPage:   page + 1,
+	}
+	for _, p := range window {
+		out.Pages = append(out.Pages, apiPageMeta{
+			ID:        p.ID,
+			Title:     p.Title,
+			Version:   p.Version,
+			UpdatedAt: p.UpdatedAt.Format("2006-01-02 15:04 MST"),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		log.Printf("present: encode api pages: %v", err)
+	}
+}
+
+// handleIndexJS serves the embedded index client renderer.
+func handleIndexJS(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// no-cache so a present rebuild's index.js is picked up on the next load.
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(indexJS)
+}
+
+// queryInt reads a 1-based integer query parameter, returning def when the
+// parameter is absent or unparseable.
+func queryInt(r *http.Request, key string, def int) int {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func clampSize(size int) int {
+	if size < minPageSize {
+		return minPageSize
+	}
+	if size > maxPageSize {
+		return maxPageSize
+	}
+	return size
+}
+
+func clampPage(page, totalPages int) int {
+	if page < 1 {
+		return 1
+	}
+	if page > totalPages {
+		return totalPages
+	}
+	return page
+}
+
+// handlePage serves the static shell for an existing page. The browser fetches
+// the page data from GET /api/p/{id} and renders the body client-side. We still
+// resolve the id here so an unknown page is a 404 rather than an empty shell.
+func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.store.Get(r.PathValue("id")); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// no-store: the version poll triggers location.reload() on a bump; a cached
+	// document would keep the stale embedded version and reload forever.
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(shellHTML)
+}
+
+// apiReference is the JSON shape of a reference in the page API.
+type apiReference struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+// apiPage is the page data the frontend renders. Content is the stored,
+// authoring-time-compiled HTML body fragment; Graph is the stored Cytoscape
+// init script. The frontend mounts Content and executes Graph.
+type apiPage struct {
+	ID         string         `json:"id"`
+	Title      string         `json:"title"`
+	Version    int            `json:"version"`
+	HasGraph   bool           `json:"has_graph"`
+	Content    string         `json:"content"`
+	Graph      string         `json:"graph"`
+	References []apiReference `json:"references"`
+}
+
+// handleAPIPage returns a page as JSON for client-side rendering.
+func (s *Server) handleAPIPage(w http.ResponseWriter, r *http.Request) {
+	p, err := s.store.Get(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := apiPage{
+		ID:         p.ID,
+		Title:      p.Title,
+		Version:    p.Version,
+		HasGraph:   p.HasGraph,
+		Content:    p.Content,
+		Graph:      p.Graph,
+		References: make([]apiReference, 0, len(p.References)),
+	}
+	for _, ref := range p.References {
+		out.References = append(out.References, apiReference{Title: ref.Title, URL: ref.URL})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		log.Printf("present: encode api page: %v", err)
+	}
+}
+
+// handleAppJS serves the embedded client renderer.
+func handleAppJS(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// no-cache so a present rebuild's app.js is picked up on the next load.
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(appJS)
+}
+
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	// Look up the title before deleting so the event carries it; best-effort.
+	title := ""
+	if p, err := s.store.Get(id); err == nil {
+		title = p.Title
+	}
+	err := s.store.Delete(id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+	notify.EmitEvent("present", "info", "page deleted: "+title, "",
+		map[string]string{"id": id, "title": title})
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	p, err := s.store.Get(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintf(w, "%d", p.Version)
+}
+
+// handleServiceVersion reports present's own build version and the webkit
+// module version it ships, matching the cross-tool /version JSON contract.
+func (s *Server) handleServiceVersion(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
+}
+
+func (s *Server) assetsHandler() http.Handler {
+	root := filepath.Join(s.workdir, "assets")
+	fs := http.StripPrefix("/assets/", http.FileServer(http.Dir(root)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		fs.ServeHTTP(w, r)
+	})
+}

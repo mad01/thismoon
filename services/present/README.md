@@ -1,0 +1,112 @@
+# present
+
+A small CLI + MCP server for serving single-page HTML briefing pages over localhost.
+
+Presentations are managed as **create / read / update / list** — there is no delete, so pages stick around. Each page stores only its HTML body; a shared **core template** supplies the chrome (styling, controls, scripts) and is injected when the page is served. Editing the template re-renders every page, old and new. An injected live-reload script refreshes any open browser tab after an update, so you open the page once and edits stream in.
+
+## Install
+
+```bash
+make install   # builds and installs ~/code/bin/present (adhoc codesigned on macOS)
+```
+
+## Run
+
+Two cooperating processes share a working directory (`~/.config/present` by default) and a port (`7423`):
+
+```bash
+present serve              # HTTP server: GET / lists pages, /p/<id> renders one
+present mcp                # MCP stdio server exposing present_* tools to Claude Code
+```
+
+Typically `present serve` runs as a background launchd agent (via t-man); `present mcp` is launched by Claude Code.
+
+```bash
+present version           # git sha the binary was built from
+present version -o json   # {"version":"<sha>"} — probed by `ralph outdated`
+```
+
+| Flag | Env | Default |
+|------|-----|---------|
+| `--workdir` | `PRESENT_WORKDIR` | `~/.config/present` |
+| `--port` | `PRESENT_PORT` | `7423` |
+
+## MCP tools
+
+| Tool | Purpose |
+|------|---------|
+| `present_create(title, content, graph?)` | Create a page; returns `{id, url, version, server_running}` |
+| `present_read(id)` | Read a page's rendered title/content/graph/version/url |
+| `present_source(id)` | Get the editable source (Doc JSON + graph JSON) in the format `present_update` accepts — use to mutate a page from a new session |
+| `present_update(id, title?, content?, graph?)` | Patch a page (omitted fields unchanged); bumps version → open tabs auto-reload |
+| `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source |
+| `present_open(id)` | Open a page in the browser (call once per page) |
+
+## Storage
+
+```
+~/.config/present/
+  template.html          # core template — edit to restyle every page
+  pages/<id>/
+    meta.json            # id, title, version, timestamps
+    content.html         # rendered body fragment
+    doc.json             # canonical Doc source (when created from Doc JSON)
+    graph.js             # optional cytoscape init script
+    graph.json           # canonical graph source (when created from graph JSON)
+```
+
+`present rerender [id...]` re-renders pages from their stored sources to pick
+up renderer/template changes (e.g. after a webkit bump); pages without sources
+get a deterministic legacy-HTML upgrade instead.
+
+## Working on it
+
+**Template and chrome.** `~/.config/present/template.html` is the single
+source of truth for page chrome. The server reads it fresh per request, so
+editing it re-renders every page without a restart. When you change the
+template in a way you want to persist across deploys, bump the
+`present-template:vN` marker so `EnsureTemplate` reseeds the on-disk copy on
+the next `present serve` start.
+
+Chrome (header, theme toggle, font/size/bionic controls) comes from the
+in-module `webkit` package (served at `GET /webkit/`). Do not re-add those
+controls locally. A webkit change ships at the next build; run
+`present rerender` afterwards to re-render all pages through the updated
+renderer.
+
+**MCP + sandbox.** The MCP server runs inside a seatbelt profile
+(`recipes/present/present.sb`): no network at all, `$HOME` reads
+default-denied except `~/code/bin` and `~/.config/present`. Writes are
+confined to `~/.config/present` and temp. The sandbox should not affect
+normal page operations — if an MCP tool fails, check sandbox denials:
+
+```bash
+t-man logs sandbox
+```
+
+See `recipes/speak/CLAUDE.md` → "Triaging a denial" for the triage steps.
+
+**Codesign.** macOS kills adhoc-signed binaries with stale provenance xattrs.
+After a manual copy: `make resign BIN=~/code/bin/present`. After `make
+install` this is handled automatically.
+
+**Debugging.** Both processes log their resolved `workdir=… port=…` at
+startup. If updates don't appear, compare those values first:
+
+```bash
+t-man logs present             # stdout
+t-man logs present --stderr    # one line per request: method path -> status bytes (dur)
+```
+
+If the MCP writes succeed but pages don't render, the HTTP server is likely
+not running: `t-man status present`.
+
+## Develop
+
+```bash
+make test    # go test ./...
+make build   # ./present
+make tidy    # go mod tidy
+```
+
+See [CLAUDE.md](CLAUDE.md) for architecture and debugging details.

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Events</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette, header chrome, page-header, card, badge, search, seg visuals all come
+   from /webkit/webkit.css. Only events-specific timeline layout lives here. */
+.wrap{padding-top:1.5rem}
+.controls{display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center;margin:0 0 1.25rem}
+.controls wk-search{flex:1;min-width:14rem}
+#source-chips{display:flex;flex-wrap:wrap;gap:0.4rem}
+/* Compact, evenly-spaced rows: one card per event, slim padding, a clear gap
+   between events. Time · source · level · title sit on a single baseline row;
+   message + tags wrap underneath, aligned under the title. */
+#timeline{display:flex;flex-direction:column;gap:0.5rem}
+wk-card.ev{display:block;padding:0.5rem 0.75rem}
+.ev-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:0.5rem}
+.ev-time{font-size:0.75rem;color:var(--text-3);font-variant-numeric:tabular-nums;flex:none}
+.ev-title{font-size:0.875rem;font-weight:600;color:var(--text-1);flex:1 1 auto;min-width:8rem}
+.ev-msg{font-size:0.8125rem;color:var(--text-3);margin-top:0.2rem;white-space:pre-wrap;word-break:break-word}
+.ev-tags{display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.3rem}
+.ev-tag{font-size:0.72rem;color:var(--text-3);background:var(--chip-bg);padding:0.05rem 0.4rem;border-radius:3px;font-variant-numeric:tabular-nums;cursor:pointer}
+.ev-tag:hover{color:var(--text-1)}
+/* Coalesced burst: one clickable card standing in for a run of same-source
+   events; members render as slim indented rows when expanded. */
+wk-card.ev-group{cursor:pointer}
+.ev-count{font-size:0.875rem;font-weight:600;color:var(--text-1)}
+.ev-preview{font-size:0.8125rem;color:var(--text-3);flex:1 1 auto;min-width:8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-members{margin-top:0.45rem;display:flex;flex-direction:column;gap:0.3rem;border-left:2px solid var(--chip-bg);padding-left:0.6rem}
+.ev-member{display:flex;flex-wrap:wrap;align-items:baseline;gap:0.5rem;font-size:0.8125rem;color:var(--text-1)}
+.day-sep{font-size:0.75rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;margin:0.75rem 0 0.1rem}
+.day-sep:first-child{margin-top:0}
+.empty{color:var(--text-3);font-size:0.9375rem;padding:2rem 0}
+</style>
+</head>
+<body>
+<wk-header brand="events" title="Events"></wk-header>
+<main class="wrap">
+  <wk-page-header>
+    <wk-title>Events</wk-title>
+    <wk-subtitle id="subtitle">Loading…</wk-subtitle>
+  </wk-page-header>
+
+  <div class="controls">
+    <wk-search>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input id="q" type="search" placeholder="Filter events…">
+    </wk-search>
+    <wk-seg id="level-seg">
+      <button class="active" data-level="">All</button>
+      <button data-level="info">info</button>
+      <button data-level="warn">warn</button>
+      <button data-level="error">error</button>
+    </wk-seg>
+  </div>
+  <div id="source-chips"></div>
+
+  <div id="timeline"></div>
+</main>
+
+<script src="/webkit/webkit.js"></script>
+<script>
+(function(){
+  var TAIL_MS = 7000, MAX = 1500;
+  // A run of >= GROUP_MIN consecutive same-source events, each within
+  // GROUP_WINDOW_MS of the previous, collapses into one expandable card.
+  var GROUP_MIN = 3, GROUP_WINDOW_MS = 60000;
+  var all = [], newestId = "", activeSources = {}, level = "", q = "";
+  var expanded = {}; // group key (newest member id) -> true
+  var timeline = document.getElementById('timeline');
+  var subtitle = document.getElementById('subtitle');
+  var chips = document.getElementById('source-chips');
+  var qInput = document.getElementById('q');
+  var levelSeg = document.getElementById('level-seg');
+
+  // Semantic webkit variants: error -> red, warn -> amber, info -> stat (calm gray).
+  function levelVariant(l){ return l === 'error' ? 'error' : l === 'warn' ? 'warn' : 'stat'; }
+  function worstLevel(evs){
+    var worst = 'info';
+    evs.forEach(function(ev){
+      if (ev.level === 'error') worst = 'error';
+      else if (ev.level === 'warn' && worst !== 'error') worst = 'warn';
+    });
+    return worst;
+  }
+
+  function relTime(iso){
+    var d = new Date(iso), s = Math.max(0, (Date.now() - d.getTime()) / 1000);
+    if (s < 60) return Math.floor(s) + 's ago';
+    if (s < 3600) return Math.floor(s/60) + 'm ago';
+    if (s < 86400) return Math.floor(s/3600) + 'h ago';
+    return Math.floor(s/86400) + 'd ago';
+  }
+
+  function dayLabel(iso){
+    var d = new Date(iso), now = new Date();
+    var start = function(x){ return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+    var days = Math.round((start(now) - start(d)) / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    var label = d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
+    if (d.getFullYear() !== now.getFullYear()) label += ' ' + d.getFullYear();
+    return label;
+  }
+
+  // badge builds a <wk-badge> with text set via textContent (never innerHTML).
+  function badge(variant, text){
+    var b = document.createElement('wk-badge');
+    if (variant) b.setAttribute('variant', variant);
+    b.textContent = text;
+    return b;
+  }
+
+  // timeEl renders a relative timestamp carrying its ISO time in data-iso so
+  // refreshTimes() can re-derive "Xs ago" on every tail tick.
+  function timeEl(iso){
+    var t = document.createElement('span');
+    t.className = 'ev-time';
+    t.dataset.iso = iso;
+    t.textContent = relTime(iso);
+    t.title = iso;
+    return t;
+  }
+
+  function tagChips(tags){
+    var keys = Object.keys(tags).sort();
+    if (!keys.length) return null;
+    var wrap = document.createElement('div');
+    wrap.className = 'ev-tags';
+    keys.forEach(function(k){
+      var chip = document.createElement('span');
+      chip.className = 'ev-tag';
+      chip.textContent = k + '=' + tags[k];
+      chip.title = 'Filter by ' + k + '=' + tags[k];
+      wrap.appendChild(chip);
+    });
+    return wrap;
+  }
+
+  function card(ev){
+    var c = document.createElement('wk-card');
+    c.className = 'ev';
+
+    // Single baseline row: time · source · level · title.
+    var head = document.createElement('div');
+    head.className = 'ev-head';
+    head.appendChild(timeEl(ev.time));
+    head.appendChild(badge('', ev.source + (ev.component ? '/' + ev.component : '')));
+    head.appendChild(badge(levelVariant(ev.level), ev.level));
+    var title = document.createElement('span');
+    title.className = 'ev-title';
+    title.textContent = ev.title;
+    head.appendChild(title);
+    c.appendChild(head);
+
+    if (ev.message){
+      var msg = document.createElement('div');
+      msg.className = 'ev-msg';
+      msg.textContent = ev.message;
+      c.appendChild(msg);
+    }
+    if (ev.tags){
+      var tw = tagChips(ev.tags);
+      if (tw) c.appendChild(tw);
+    }
+    return c;
+  }
+
+  function groupCard(evs){
+    var key = evs[0].id;
+    var c = document.createElement('wk-card');
+    c.className = 'ev ev-group';
+    c.dataset.groupKey = key;
+
+    var head = document.createElement('div');
+    head.className = 'ev-head';
+    head.appendChild(timeEl(evs[0].time));
+    head.appendChild(badge('', evs[0].source));
+    head.appendChild(badge(levelVariant(worstLevel(evs)), worstLevel(evs)));
+    var count = document.createElement('span');
+    count.className = 'ev-count';
+    count.textContent = (expanded[key] ? '▾ ' : '▸ ') + evs.length + ' events';
+    head.appendChild(count);
+    if (!expanded[key]){
+      var preview = document.createElement('span');
+      preview.className = 'ev-preview';
+      preview.textContent = evs.map(function(ev){ return ev.title; }).join(' · ');
+      head.appendChild(preview);
+    }
+    c.appendChild(head);
+
+    if (expanded[key]){
+      var members = document.createElement('div');
+      members.className = 'ev-members';
+      evs.forEach(function(ev){
+        var row = document.createElement('div');
+        row.className = 'ev-member';
+        row.appendChild(timeEl(ev.time));
+        if (ev.level !== 'info') row.appendChild(badge(levelVariant(ev.level), ev.level));
+        var title = document.createElement('span');
+        title.textContent = ev.title + (ev.message ? ' — ' + ev.message : '');
+        row.appendChild(title);
+        members.appendChild(row);
+      });
+      c.appendChild(members);
+    }
+    return c;
+  }
+
+  function matchesText(ev){
+    if (!q) return true;
+    var hay = (ev.title + ' ' + (ev.message||'') + ' ' + ev.source + ' ' + (ev.component||''));
+    if (ev.tags) for (var k in ev.tags) hay += ' ' + k + '=' + ev.tags[k] + ' ' + k + ' ' + ev.tags[k];
+    return hay.toLowerCase().indexOf(q) !== -1;
+  }
+
+  function activeSourceList(){ return Object.keys(activeSources).filter(function(k){ return activeSources[k]; }); }
+
+  // buildItems collapses bursts: walk the newest-first list, and whenever a run
+  // of same-source events (each within the window of the one before it) reaches
+  // GROUP_MIN, replace the run with a single group item.
+  function buildItems(evs){
+    var items = [];
+    var i = 0;
+    while (i < evs.length){
+      var j = i + 1;
+      while (j < evs.length && evs[j].source === evs[i].source &&
+             (new Date(evs[j-1].time) - new Date(evs[j].time)) <= GROUP_WINDOW_MS){
+        j++;
+      }
+      if (j - i >= GROUP_MIN){
+        items.push({group: evs.slice(i, j)});
+      } else {
+        for (var k = i; k < j; k++) items.push({ev: evs[k]});
+      }
+      i = j;
+    }
+    return items;
+  }
+
+  function render(){
+    var picked = activeSourceList();
+    var shown = all.filter(function(ev){
+      if (level && ev.level !== level) return false;
+      if (picked.length && picked.indexOf(ev.source) === -1) return false;
+      return matchesText(ev);
+    });
+    timeline.replaceChildren();
+    if (!shown.length){
+      var e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = all.length ? 'No events match these filters.' : 'No events recorded yet.';
+      timeline.appendChild(e);
+    } else {
+      var lastDay = '';
+      buildItems(shown).forEach(function(item){
+        var newest = item.group ? item.group[0] : item.ev;
+        var day = dayLabel(newest.time);
+        if (day !== lastDay){
+          var sep = document.createElement('div');
+          sep.className = 'day-sep';
+          sep.textContent = day;
+          timeline.appendChild(sep);
+          lastDay = day;
+        }
+        timeline.appendChild(item.group ? groupCard(item.group) : card(item.ev));
+      });
+    }
+    subtitle.textContent = shown.length + (shown.length === all.length ? '' : ' of ' + all.length) + ' event' + (all.length === 1 ? '' : 's');
+  }
+
+  function renderChips(sources){
+    chips.replaceChildren();
+    sources.forEach(function(sc){
+      var pill = badge('filter', sc.source + ' (' + sc.count + ')');
+      pill.dataset.source = sc.source;
+      if (activeSources[sc.source]) pill.setAttribute('active', '');
+      chips.appendChild(pill);
+    });
+  }
+
+  // Filters live in the URL (?q=&level=&sources=a,b) so a view can be reloaded
+  // or bookmarked. replaceState keeps history clean while filtering.
+  function initFromURL(){
+    var p = new URLSearchParams(location.search);
+    var rawQ = p.get('q') || '';
+    qInput.value = rawQ;
+    q = rawQ.trim().toLowerCase();
+    var l = p.get('level') || '';
+    if (l === 'info' || l === 'warn' || l === 'error') level = l;
+    levelSeg.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('active', b.dataset.level === level);
+    });
+    (p.get('sources') || '').split(',').forEach(function(s){
+      if (s) activeSources[s] = true;
+    });
+  }
+
+  function syncURL(){
+    var p = new URLSearchParams();
+    if (qInput.value.trim()) p.set('q', qInput.value.trim());
+    if (level) p.set('level', level);
+    var picked = activeSourceList();
+    if (picked.length) p.set('sources', picked.join(','));
+    var qs = p.toString();
+    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  }
+
+  function refreshTimes(){
+    timeline.querySelectorAll('[data-iso]').forEach(function(el){
+      el.textContent = relTime(el.dataset.iso);
+    });
+  }
+
+  chips.addEventListener('click', function(e){
+    var pill = e.target.closest('wk-badge[data-source]');
+    if (!pill) return;
+    var src = pill.dataset.source;
+    activeSources[src] = !activeSources[src];
+    if (activeSources[src]) pill.setAttribute('active', ''); else pill.removeAttribute('active');
+    syncURL();
+    render();
+  });
+
+  levelSeg.addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-level]');
+    if (!btn) return;
+    level = btn.dataset.level;
+    this.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', b === btn); });
+    syncURL();
+    render();
+  });
+
+  qInput.addEventListener('input', function(){
+    q = this.value.trim().toLowerCase();
+    syncURL();
+    render();
+  });
+
+  timeline.addEventListener('click', function(e){
+    var tag = e.target.closest('.ev-tag');
+    if (tag){
+      qInput.value = tag.textContent;
+      q = tag.textContent.toLowerCase();
+      syncURL();
+      render();
+      return;
+    }
+    var group = e.target.closest('wk-card[data-group-key]');
+    if (group){
+      var key = group.dataset.groupKey;
+      expanded[key] = !expanded[key];
+      render();
+    }
+  });
+
+  function ingest(list, prepend){
+    if (!list || !list.length) return;
+    if (prepend) all = list.concat(all); else all = list;
+    if (all.length > MAX) all = all.slice(0, MAX);
+    if (all.length) newestId = all[0].id; // API returns newest-first
+  }
+
+  function load(){
+    fetch('/api/events?limit=' + MAX).then(function(r){ return r.json(); }).then(function(list){
+      ingest(list, false);
+      render();
+    }).catch(function(){});
+    fetch('/api/sources').then(function(r){ return r.json(); }).then(renderChips).catch(function(){});
+  }
+
+  function tail(){
+    refreshTimes();
+    if (!newestId) return;
+    fetch('/api/events?limit=200&since=' + encodeURIComponent(newestId)).then(function(r){ return r.json(); }).then(function(list){
+      if (list && list.length){
+        ingest(list, true);
+        fetch('/api/sources').then(function(r){ return r.json(); }).then(renderChips).catch(function(){});
+        render();
+      }
+    }).catch(function(){});
+  }
+
+  initFromURL();
+  load();
+  setInterval(tail, TAIL_MS);
+})();
+</script>
+</body>
+</html>

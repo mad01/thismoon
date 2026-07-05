@@ -1,0 +1,56 @@
+;; present MCP seatbelt profile (sandbox-exec)
+;;
+;; Confines the present MCP server so a poisoned dependency can't exfiltrate
+;; data or read secrets. `present mcp` never serves or dials HTTP — it shares
+;; the page store on disk with the separate (unsandboxed) `present serve`
+;; daemon, so the posture is egress-zero:
+;;   - NO network at all
+;;   - $HOME reads default-DENIED; allow-list is the binaries dir and the
+;;     page store (a secrets blocklist can never be complete — deny the lot,
+;;     allow what the server needs)
+;;   - writes confined to the page store + temp (the MCP writes pages/<id>/
+;;     and seeds template.html via EnsureTemplate at startup)
+;;
+;; present_open execs /usr/bin/open, which inherits this sandbox. `open` only
+;; sends a LaunchServices mach message (allowed by the default baseline); the
+;; browser itself is launched by launchd OUTSIDE the sandbox.
+;;
+;; Baseline is (allow default) so dyld/system frameworks just work — same
+;; shape as recipes/humanizer/humanizer.sb. Spawned via
+;; present-mcp-sandbox.sh, which supplies -D HOME=<home>, scrubs env, and
+;; cd-s to / first (getcwd in a read-denied cwd is an EPERM).
+;;
+;; Tuning: denials show up via the speak recipe's sandbox-watch agent — add
+;; allows only when a denial actually breaks a tool, never preemptively.
+;; Triage guide: recipes/speak/CLAUDE.md → "Triaging a denial".
+
+(version 1)
+(allow default)
+
+;; ── Network: none. The server speaks stdio; pages are served by the
+;; separate `present serve` process, not this one. ──
+(deny network*)
+
+;; ── Filesystem writes: page store + temp only ──
+(deny file-write*)
+(allow file-write* (literal "/dev/null"))   ;; shell/library redirects
+(allow file-write*
+  (subpath (string-append (param "HOME") "/.config/present"))
+  (subpath "/private/tmp")
+  (subpath "/private/var/folders"))
+
+;; ── $HOME reads: default-DENY with allow-list ──
+;; System paths (/System, /usr/lib, dyld, frameworks) stay readable via the
+;; default-allow baseline — they hold no user secrets.
+(deny file-read*
+  (subpath (param "HOME")))
+(allow file-read*
+  (subpath (string-append (param "HOME") "/code/bin"))            ;; present binary
+  (subpath (string-append (param "HOME") "/.config/present")))    ;; page store + template
+
+;; realpath()/LookPath lstat() parent components of allowed paths; subpath
+;; allows don't cover parents. Metadata-only (no content reads) on the spine:
+(allow file-read-metadata
+  (literal (param "HOME"))
+  (literal (string-append (param "HOME") "/code"))
+  (literal (string-append (param "HOME") "/.config")))

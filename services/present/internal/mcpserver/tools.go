@@ -1,0 +1,458 @@
+package mcpserver
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mad01/thismoon/services/present/internal/notify"
+	"github.com/mad01/thismoon/services/present/internal/render"
+	"github.com/mad01/thismoon/services/present/internal/store"
+)
+
+// openURL launches the system browser for url. Factored as a package var so
+// tests can substitute it without spawning a real process.
+var openURL = func(url string) error {
+	return exec.Command("/usr/bin/open", url).Start()
+}
+
+// handlers carries the dependencies shared by all present tools.
+type handlers struct {
+	store   *store.Store
+	baseURL string
+	open    func(url string) error
+}
+
+func registerTools(s *mcp.Server, h *handlers) {
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "present_create",
+		Description: "Create a new presentation page and return its id and URL. " +
+			"Provide a Doc JSON object as `content` — the server renders it to HTML with the correct CSS classes and structure. " +
+			"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
+			"Keep the returned id; it is the handle for present_update/present_read/present_open.",
+	}, h.handleCreate)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "present_read",
+		Description: "Read a presentation's current title, rendered HTML content, graph JS, version, and URL by id. For editing, prefer present_source — it returns the structured source in the format present_update accepts.",
+	}, h.handleRead)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "present_source",
+		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc) and the structured graph JSON (graph_format=json), plus references. " +
+			"Both come back in exactly the format present_update accepts, so you can modify them and pass them straight back — use this to mutate a page from a new or restored session. " +
+			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form.",
+	}, h.handleSource)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "present_update",
+		Description: "Update an existing presentation. The `id` parameter is REQUIRED — it is the page id returned by present_create. " +
+			"Provide a Doc JSON object as `content` and/or a Graph JSON object as `graph`. " +
+			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph. " +
+			"Bumps the page version so any open browser tab auto-reloads — you do NOT need to call present_open again after an update.",
+	}, h.handleUpdate)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "present_list",
+		Description: "List all presentations (id, title, URL, version, last updated), newest first.",
+	}, h.handleList)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "present_open",
+		Description: "Open a presentation in the default browser (macOS `open`). " +
+			"Call this AT MOST ONCE per presentation — after the tab is open, present_update triggers an automatic reload, " +
+			"so do not call present_open again for subsequent edits. " +
+			"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
+	}, h.handleOpen)
+}
+
+func (h *handlers) url(id string) string {
+	return h.baseURL + "/p/" + id
+}
+
+// resolveContent detects whether s is a Doc JSON object or a legacy HTML
+// string and returns rendered HTML either way. When the input is a Doc, it also
+// returns the canonical Doc JSON (re-marshaled from the parsed struct) so the
+// caller can persist it for future re-renders; docJSON is nil for HTML input.
+func resolveContent(s string, title string) (htmlOut string, docJSON []byte, err error) {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return "", nil, nil
+	}
+	if s[0] == '{' {
+		return parseDocAndRender([]byte(s), title)
+	}
+	return s, nil, nil
+}
+
+func parseDocAndRender(data []byte, title string) (htmlOut string, docJSON []byte, err error) {
+	var doc render.Doc
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", nil, fmt.Errorf("parse doc: %w", err)
+	}
+	out, err := render.RenderDoc(doc, title)
+	if err != nil {
+		return "", nil, err
+	}
+	canonical, err := json.Marshal(doc)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal doc: %w", err)
+	}
+	return out, canonical, nil
+}
+
+// resolveGraph detects whether s is a GraphInput JSON object or a legacy JS
+// string and returns a JS script string either way. When the input is a
+// structured graph, it also returns the canonical GraphInput JSON (re-marshaled
+// from the parsed struct) so the caller can persist it for future re-renders;
+// srcJSON is nil for legacy JS input.
+func resolveGraph(s string) (js string, srcJSON []byte, err error) {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return "", nil, nil
+	}
+	if s[0] == '{' {
+		return parseGraphAndRender([]byte(s))
+	}
+	return s, nil, nil
+}
+
+func parseGraphAndRender(data []byte) (js string, srcJSON []byte, err error) {
+	var g render.GraphInput
+	if err := json.Unmarshal(data, &g); err != nil {
+		return "", nil, fmt.Errorf("parse graph: %w", err)
+	}
+	out, err := render.RenderGraph(g)
+	if err != nil {
+		return "", nil, err
+	}
+	canonical, err := json.Marshal(g)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal graph: %w", err)
+	}
+	return out, canonical, nil
+}
+
+// ── create ──
+
+type refInput struct {
+	Title string `json:"title" jsonschema_description:"display label for the link"`
+	URL   string `json:"url"   jsonschema_description:"full URL (https://...) — repos, docs, PRs, or any external material cited in the brief"`
+}
+
+type createInput struct {
+	Title      string     `json:"title"                jsonschema_description:"presentation title (shown in the browser tab and page header)"`
+	Content    string     `json:"content"              jsonschema_description:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string. Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|area|sparkline, title?, unit?, series:[{name?, color?, points:[{x,y}]}] — inline metric chart, many per page), code (text + lang?, verbatim code block with copy button — no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
+	Graph      string     `json:"graph,omitempty"      jsonschema_description:"optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?}], edges:[{from,to,type?,label?}], layout?, direction?} or a legacy JS string. Node types: center, module, leaf, registry. Edge types: consumes (solid), publishes (dashed). Layouts: dagre (default, layered DAG), cose (no hierarchy). Direction (dagre): TB or LR; omit for auto (LR when the graph has few nodes)."`
+	References []refInput `json:"references,omitempty" jsonschema_description:"source links shown in a References section at the bottom of the page — repos, docs, PRs consulted while writing the brief"`
+}
+
+type pageOutput struct {
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+	Version int    `json:"version"`
+}
+
+func (h *handlers) handleCreate(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in createInput,
+) (*mcp.CallToolResult, pageOutput, error) {
+	content, docJSON, err := resolveContent(in.Content, in.Title)
+	if err != nil {
+		return nil, pageOutput{}, fmt.Errorf("content: %w", err)
+	}
+	graph, graphJSON, err := resolveGraph(in.Graph)
+	if err != nil {
+		return nil, pageOutput{}, fmt.Errorf("graph: %w", err)
+	}
+	p, err := h.store.Create(in.Title, content, graph, toStoreRefs(in.References))
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	// Persist the structured sources (only when the input was structured, not
+	// legacy HTML/JS) so future renderer/template changes can re-render the
+	// page from source and present_source can hand the source back for edits.
+	if docJSON != nil {
+		if err := h.store.SaveDoc(p.ID, docJSON); err != nil {
+			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
+		}
+	}
+	if graphJSON != nil {
+		if err := h.store.SaveGraphSource(p.ID, graphJSON); err != nil {
+			return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
+		}
+	}
+	notify.EmitEvent("present", "info", "page created: "+p.Title, "",
+		map[string]string{"id": p.ID, "title": p.Title})
+	return nil, pageOutput{ID: p.ID, URL: h.url(p.ID), Version: p.Version}, nil
+}
+
+func toStoreRefs(in []refInput) []store.Reference {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]store.Reference, len(in))
+	for i, r := range in {
+		out[i] = store.Reference{Title: r.Title, URL: r.URL}
+	}
+	return out
+}
+
+func fromStoreRefs(in []store.Reference) []refInput {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]refInput, len(in))
+	for i, r := range in {
+		out[i] = refInput{Title: r.Title, URL: r.URL}
+	}
+	return out
+}
+
+// ── read ──
+
+type readInput struct {
+	ID string `json:"id" jsonschema_description:"page id returned by present_create"`
+}
+
+type readOutput struct {
+	ID         string     `json:"id"`
+	Title      string     `json:"title"`
+	Content    string     `json:"content"`
+	Graph      string     `json:"graph"`
+	References []refInput `json:"references,omitempty"`
+	Version    int        `json:"version"`
+	URL        string     `json:"url"`
+	UpdatedAt  string     `json:"updated_at"`
+}
+
+func (h *handlers) handleRead(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in readInput,
+) (*mcp.CallToolResult, readOutput, error) {
+	p, err := h.store.Get(in.ID)
+	if err != nil {
+		return nil, readOutput{}, err
+	}
+	return nil, readOutput{
+		ID: p.ID, Title: p.Title, Content: p.Content, Graph: p.Graph,
+		References: fromStoreRefs(p.References),
+		Version:    p.Version, URL: h.url(p.ID), UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}, nil
+}
+
+// ── source ──
+
+type sourceInput struct {
+	ID string `json:"id" jsonschema_description:"page id returned by present_create"`
+}
+
+type sourceOutput struct {
+	ID            string     `json:"id"`
+	Title         string     `json:"title"`
+	ContentFormat string     `json:"content_format"         jsonschema_description:"doc = structured Doc JSON (editable, pass back to present_update); html = legacy raw HTML (no Doc source persisted)"`
+	Content       string     `json:"content"`
+	GraphFormat   string     `json:"graph_format,omitempty" jsonschema_description:"json = structured GraphInput JSON (editable); js = legacy raw JS; empty = page has no graph"`
+	Graph         string     `json:"graph,omitempty"`
+	References    []refInput `json:"references,omitempty"`
+	Version       int        `json:"version"`
+	URL           string     `json:"url"`
+}
+
+func (h *handlers) handleSource(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in sourceInput,
+) (*mcp.CallToolResult, sourceOutput, error) {
+	p, err := h.store.Get(in.ID)
+	if err != nil {
+		return nil, sourceOutput{}, err
+	}
+	out := sourceOutput{
+		ID: p.ID, Title: p.Title,
+		References: fromStoreRefs(p.References),
+		Version:    p.Version, URL: h.url(p.ID),
+	}
+	doc, err := h.store.LoadDoc(in.ID)
+	switch {
+	case err == nil:
+		out.ContentFormat, out.Content = "doc", string(doc)
+	case errors.Is(err, store.ErrNotFound):
+		out.ContentFormat, out.Content = "html", p.Content
+	default:
+		return nil, sourceOutput{}, err
+	}
+	if p.HasGraph {
+		src, err := h.store.LoadGraphSource(in.ID)
+		switch {
+		case err == nil:
+			out.GraphFormat, out.Graph = "json", string(src)
+		case errors.Is(err, store.ErrNotFound):
+			out.GraphFormat, out.Graph = "js", p.Graph
+		default:
+			return nil, sourceOutput{}, err
+		}
+	}
+	return nil, out, nil
+}
+
+// ── update ──
+
+type updateInput struct {
+	ID         string      `json:"id"                   jsonschema_description:"page id to update"`
+	Title      *string     `json:"title,omitempty"      jsonschema_description:"new title; omit to leave unchanged"`
+	Content    *string     `json:"content,omitempty"    jsonschema_description:"new page content as a Doc JSON string or legacy HTML string; omit to leave unchanged"`
+	Graph      *string     `json:"graph,omitempty"      jsonschema_description:"new graph as structured JSON string or legacy JS string; omit to leave unchanged, empty string to remove"`
+	References *[]refInput `json:"references,omitempty" jsonschema_description:"replace the references list; omit to leave unchanged, empty array to clear"`
+}
+
+func (h *handlers) handleUpdate(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in updateInput,
+) (*mcp.CallToolResult, pageOutput, error) {
+	title := ""
+	if in.Title != nil {
+		title = *in.Title
+	}
+
+	var patch store.Patch
+	patch.Title = in.Title
+
+	var (
+		newDocJSON   []byte
+		contentIsDoc bool
+		clearDoc     bool
+	)
+	if in.Content != nil {
+		content, docJSON, err := resolveContent(*in.Content, title)
+		if err != nil {
+			return nil, pageOutput{}, fmt.Errorf("content: %w", err)
+		}
+		patch.Content = &content
+		if docJSON != nil {
+			newDocJSON, contentIsDoc = docJSON, true
+		} else if strings.TrimSpace(*in.Content) != "" {
+			// Content replaced with legacy HTML: any prior doc.json is now stale.
+			clearDoc = true
+		}
+	}
+	var (
+		newGraphJSON []byte
+		graphIsJSON  bool
+	)
+	if in.Graph != nil {
+		graph, graphJSON, err := resolveGraph(*in.Graph)
+		if err != nil {
+			return nil, pageOutput{}, fmt.Errorf("graph: %w", err)
+		}
+		patch.Graph = &graph
+		if graphJSON != nil {
+			newGraphJSON, graphIsJSON = graphJSON, true
+		}
+	}
+	if in.References != nil {
+		refs := toStoreRefs(*in.References)
+		patch.References = &refs
+	}
+
+	p, err := h.store.Update(in.ID, patch)
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	switch {
+	case contentIsDoc:
+		if err := h.store.SaveDoc(p.ID, newDocJSON); err != nil {
+			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
+		}
+	case clearDoc:
+		if err := h.store.DeleteDoc(p.ID); err != nil {
+			return nil, pageOutput{}, fmt.Errorf("clear doc: %w", err)
+		}
+	}
+	if in.Graph != nil {
+		if graphIsJSON {
+			if err := h.store.SaveGraphSource(p.ID, newGraphJSON); err != nil {
+				return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
+			}
+		} else {
+			// Graph cleared or replaced with legacy JS: any prior graph.json is
+			// now stale and would mislead a later re-render.
+			if err := h.store.DeleteGraphSource(p.ID); err != nil {
+				return nil, pageOutput{}, fmt.Errorf("clear graph source: %w", err)
+			}
+		}
+	}
+	notify.EmitEvent("present", "info", "page updated: "+p.Title, "",
+		map[string]string{"id": p.ID, "title": p.Title})
+	return nil, pageOutput{ID: p.ID, URL: h.url(p.ID), Version: p.Version}, nil
+}
+
+// ── list ──
+
+type listItem struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	Version   int    `json:"version"`
+	UpdatedAt string `json:"updated_at"`
+	HasDoc    bool   `json:"has_doc"    jsonschema_description:"true when the page has a persisted Doc source — present_source returns it ready for editing"`
+}
+
+type listOutput struct {
+	Pages []listItem `json:"pages"`
+}
+
+func (h *handlers) handleList(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	_ struct{},
+) (*mcp.CallToolResult, listOutput, error) {
+	pages, err := h.store.ListMeta()
+	if err != nil {
+		return nil, listOutput{}, err
+	}
+	out := listOutput{Pages: make([]listItem, 0, len(pages))}
+	for _, p := range pages {
+		out.Pages = append(out.Pages, listItem{
+			ID: p.ID, Title: p.Title, URL: h.url(p.ID),
+			Version: p.Version, UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			HasDoc: p.HasDoc,
+		})
+	}
+	return nil, out, nil
+}
+
+// ── open ──
+
+type openInput struct {
+	ID string `json:"id" jsonschema_description:"page id to open in the browser"`
+}
+
+type openOutput struct {
+	URL    string `json:"url"`
+	Opened bool   `json:"opened"`
+}
+
+func (h *handlers) handleOpen(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in openInput,
+) (*mcp.CallToolResult, openOutput, error) {
+	// Confirm the page exists before launching a browser at a dead URL.
+	if _, err := h.store.Get(in.ID); err != nil {
+		return nil, openOutput{}, err
+	}
+	url := h.url(in.ID)
+	if err := h.open(url); err != nil {
+		return nil, openOutput{URL: url, Opened: false}, fmt.Errorf("open %s: %w", url, err)
+	}
+	return nil, openOutput{URL: url, Opened: true}, nil
+}

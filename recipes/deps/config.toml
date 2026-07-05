@@ -1,0 +1,16 @@
+# deps discovery config — symlinked to ~/.config/deps/config.toml by the recipe.
+#
+# Controls which repos and sub-paths the scanner walks. The repo *set* comes from
+# the catalog registry (~/.config/catalog/registry.yaml); this file trims it.
+# Editing takes effect on the next scan — no restart. Git worktrees and nested
+# checkouts are skipped automatically, regardless of this file.
+#
+# Both lists are glob patterns (filepath.Match). Each is matched against the full
+# path AND the basename, so "some-repo" and "*/archive/*" both work.
+
+# Skip whole repos (matched against the repo's absolute path or its basename).
+exclude_repos = []
+
+# Skip sub-directories while walking a repo (matched against the repo-relative
+# path or a directory's basename), e.g. generated trees or vendored examples.
+exclude_paths = []

@@ -1,0 +1,97 @@
+package cli
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+// Version is injected at build time via -ldflags.
+var Version = "dev"
+
+const defaultPort = 7423
+
+var (
+	flagWorkdir string
+	flagPort    int
+	flagBaseURL string
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "present",
+	Short: "Serve and manage scrollable briefing pages over localhost",
+	Long: `present manages single-page HTML presentations (create / read / update /
+list — no delete). Pages store only their body content; a shared core template
+supplies the chrome and is injected at request time, so editing the template
+re-renders every page.
+
+Subcommands:
+  serve   Run the local HTTP server that serves pages.
+  mcp     Run the MCP stdio server exposing present_* tools to Claude Code.`,
+	// Let main print the error once; cobra stays quiet on both usage and errors.
+	SilenceUsage:  true,
+	SilenceErrors: true,
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&flagWorkdir, "workdir", defaultWorkdir(),
+		"directory holding template.html and pages/ (env PRESENT_WORKDIR)")
+	rootCmd.PersistentFlags().IntVar(&flagPort, "port", resolvedDefaultPort(),
+		"port the HTTP server listens on / URLs point at (env PRESENT_PORT)")
+	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", os.Getenv("PRESENT_BASE_URL"),
+		"base URL for page links (env PRESENT_BASE_URL); defaults to http://localhost:<port>")
+	// Expand a leading ~ in the workdir before any subcommand runs. A literal
+	// "~/..." reaches Go from PRESENT_WORKDIR or --workdir without shell
+	// expansion; left unexpanded the MCP and serve processes resolve different
+	// directories and updates land where nothing serves them.
+	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
+		flagWorkdir = expandTilde(flagWorkdir)
+		return nil
+	}
+}
+
+// Execute runs the root command and returns any error for main to print.
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+// defaultWorkdir resolves the pages directory, honoring PRESENT_WORKDIR and
+// falling back to ~/.config/present.
+func defaultWorkdir() string {
+	if v := os.Getenv("PRESENT_WORKDIR"); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".present"
+	}
+	return filepath.Join(home, ".config", "present")
+}
+
+// expandTilde rewrites a leading ~ or ~/ to the user's home directory. Other
+// paths (absolute or already-expanded) are returned unchanged.
+func expandTilde(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	return filepath.Join(home, path[2:])
+}
+
+func resolvedDefaultPort() int {
+	if v := os.Getenv("PRESENT_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return defaultPort
+}
