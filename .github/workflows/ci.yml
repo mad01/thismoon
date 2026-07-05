@@ -30,6 +30,7 @@ jobs:
             echo "  - 'webkit/**'"
             echo "  - 'go.mod'"
             echo "  - 'go.sum'"
+            echo "  - '.golangci.yml'"
             echo "  - '.github/workflows/**'"
             for dir in services/*/ tools/*/; do
               [ -f "${dir}Makefile" ] || continue
@@ -84,10 +85,14 @@ jobs:
           args: ./${{ matrix.component }}/...
 
       - name: Test
-        run: go test ./${{ matrix.component }}/...
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: go test "./${COMPONENT}/..."
 
       - name: Build
-        run: go build ./${{ matrix.component }}/...
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: go build "./${COMPONENT}/..."
 
   repo-safety-net:
     name: Repo-wide vet and build
