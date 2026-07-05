@@ -1,0 +1,11 @@
+# build output
+/bin/
+dist/
+
+# editor / OS noise
+.DS_Store
+*.swp
+
+# local env
+.envrc
+.env
