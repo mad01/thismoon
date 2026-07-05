@@ -9,3 +9,6 @@ dist/
 # local env
 .envrc
 .env
+
+# generated in CI by the changes job, never committed
+.github/filters.generated.yml
