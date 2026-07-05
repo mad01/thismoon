@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presentations</title>
+<script src="/webkit/boot.js"></script>
+<link href="/assets/css/fonts.css" rel="stylesheet">
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette, header chrome, page-header + card visuals come from /webkit/webkit.css.
+   Only genuinely index-specific bits live here. The page list is rendered
+   client-side by /index.js into <div id="app">. */
+@keyframes pageEnter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.wrap{padding-top:1.5rem;animation:pageEnter 0.35s ease-out}
+.empty{color:var(--text-2);font-size:0.9375rem;padding:2rem 0}
+.page-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.25rem}
+@media (max-width:720px){.page-grid{grid-template-columns:1fr}}
+.wk-card{display:flex;align-items:center;gap:0.75rem}
+.row-main{min-width:0;flex:1}
+.row-title{font-size:0.9375rem;font-weight:600;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-sub{font-size:0.75rem;color:var(--text-3);margin-top:0.25rem;font-variant-numeric:tabular-nums}
+.row-id{font-family:'SF Mono','Fira Code',monospace;background:var(--chip-bg);padding:0.0625rem 0.375rem;border-radius:3px}
+.row-delete{flex:none;border:1px solid transparent;background:none;color:var(--text-3);font-size:0.875rem;line-height:1;padding:0.375rem 0.5rem;border-radius:6px;cursor:pointer;opacity:0;transition:opacity 0.15s ease,color 0.15s ease,border-color 0.15s ease}
+.wk-card:hover .row-delete,.row-delete:focus-visible{opacity:1}
+.row-delete:hover{color:var(--red);border-color:var(--red)}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1.5rem}
+.pager-status{font-size:0.8125rem;color:var(--text-3);font-variant-numeric:tabular-nums}
+.pager-spacer{visibility:hidden}
+</style>
+</head>
+<body>
+<wk-header brand="present" title="Presentations"></wk-header>
+<div class="wrap"><div id="app"></div></div>
+<wk-modal hidden id="delete-modal">
+  <wk-modal-panel role="dialog" aria-modal="true" aria-labelledby="delete-heading">
+    <wk-modal-head>
+      <h2 id="delete-heading">Delete presentation?</h2>
+      <button class="btn btn-ghost" id="delete-x" aria-label="Close">✕</button>
+    </wk-modal-head>
+    <wk-modal-body>
+      <p><strong id="delete-title"></strong> will be permanently removed. This cannot be undone.</p>
+    </wk-modal-body>
+    <wk-modal-actions>
+      <wk-button variant="ghost" id="delete-cancel">Cancel</wk-button>
+      <wk-button variant="danger" id="delete-confirm">Delete</wk-button>
+    </wk-modal-actions>
+  </wk-modal-panel>
+</wk-modal>
+<script src="/webkit/webkit.js"></script>
+<script src="/index.js"></script>
+</body>
+</html>
