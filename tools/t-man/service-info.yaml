@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: t-man-cli
+  description: Declaratively manages launchd user agents and daemons with SHA256 idempotency
+  tags: [go, cli, macos]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

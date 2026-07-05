@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Managed by t-man - DO NOT EDIT MANUALLY -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.tman.fullapp</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/full-app</string>
+		<string>--port</string>
+		<string>3000</string>
+		<string>--debug</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/var/lib/app</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>APP_ENV</key>
+		<string>production</string>
+		<key>LOG_FILE</key>
+		<string>/var/log/app.log</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/var/log/app/stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/app/stderr.log</string>
+	<key>TManMetadata</key>
+	<dict>
+		<key>Hash</key>
+		<string>f1e2d3c4b5a6978685746352413029182736455463728190abcdefabcdefabcd</string>
+		<key>ManagedBy</key>
+		<string>t-man</string>
+		<key>Version</key>
+		<string>0.1.0</string>
+	</dict>
+</dict>
+</plist>

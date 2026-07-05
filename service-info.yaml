@@ -1,0 +1,8 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: System
+metadata:
+  name: thismoon
+  description: Monorepo for the *.this platform — local web services, CLI tools, webkit, and their ralph recipes
+  tags: [monorepo, go, tooling]
+spec:
+  owner: mad01

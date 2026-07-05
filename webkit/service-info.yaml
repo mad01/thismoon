@@ -1,13 +1,4 @@
 apiVersion: catalog.mad01/v1alpha1
-kind: System
-metadata:
-  name: webkit
-  description: Shared web-component UI kit for mad01 local tools
-  tags: [go, typescript, ui]
-spec:
-  owner: mad01
----
-apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: webkit-ui
@@ -17,4 +8,4 @@ spec:
   type: library
   lifecycle: production
   owner: mad01
-  system: webkit
+  system: thismoon

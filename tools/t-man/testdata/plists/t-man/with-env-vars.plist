@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Managed by t-man - DO NOT EDIT MANUALLY -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.tman.webapp</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/webapp</string>
+		<string>serve</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>DATABASE_URL</key>
+		<string>postgresql://localhost/webapp</string>
+		<key>REDIS_URL</key>
+		<string>redis://localhost:6379</string>
+		<key>SECRET_KEY</key>
+		<string>super-secret-key</string>
+		<key>DEBUG</key>
+		<string>false</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>TManMetadata</key>
+	<dict>
+		<key>Hash</key>
+		<string>9876543210abcdef9876543210abcdef9876543210abcdef9876543210abcdef</string>
+		<key>ManagedBy</key>
+		<string>t-man</string>
+		<key>Version</key>
+		<string>0.1.0</string>
+	</dict>
+</dict>
+</plist>
