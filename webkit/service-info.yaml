@@ -1,0 +1,20 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: System
+metadata:
+  name: webkit
+  description: Shared web-component UI kit for mad01 local tools
+  tags: [go, typescript, ui]
+spec:
+  owner: mad01
+---
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: webkit-ui
+  description: Shared chrome + component library (wk-header, wk-card, wk-badge, wk-search, wk-seg, wk-kv, wk-section, wk-callout, wk-progress, wk-toc, wk-modal, wk-form, wk-toast, wk-read-aloud, .wk-prose); embedded via go:embed at /webkit/
+  tags: [go, typescript, ui]
+spec:
+  type: library
+  lifecycle: production
+  owner: mad01
+  system: webkit

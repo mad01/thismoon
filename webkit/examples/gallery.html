@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>webkit·kit — component gallery</title>
+<!-- FOUC guard: canonical pre-paint snippet (mirrors Webkit.bootSnippet).
+     Applies persisted theme + font-size before paint so they don't flash. -->
+<script>(function(){try{var t=localStorage.getItem('webkit-theme')||'light';document.documentElement.setAttribute('data-theme',t);var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}}catch(e){}})();</script>
+<link rel="stylesheet" href="../dist/webkit.css">
+</head>
+<body>
+
+<wk-header brand="webkit·kit" page-width="1080">
+  <a data-nav class="active" href="gallery.html">Gallery</a>
+  <a data-nav href="#components">Components</a>
+  <button data-extra class="btn btn-primary" id="demo-btn" title="Demo action">+ New</button>
+</wk-header>
+
+<main class="wrap">
+
+  <!-- ── Page header ── -->
+  <wk-page-header>
+    <wk-title>webkit·kit component gallery</wk-title>
+    <wk-subtitle>Every component in one page — from search bars to data tables. Load webkit.css + webkit.js and compose.</wk-subtitle>
+  </wk-page-header>
+
+  <!-- ── Table of contents ── -->
+  <section style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-toc</h2>
+    <wk-toc>
+      <wk-toc-title>Contents</wk-toc-title>
+      <ul>
+        <li><a href="#section-search"><wk-section-id>01</wk-section-id> wk-search</a></li>
+        <li><a href="#section-cards"><wk-section-id>02</wk-section-id> wk-card</a></li>
+        <li><a href="#section-panels"><wk-section-id>03</wk-section-id> wk-panel</a></li>
+        <li><a href="#section-badges"><wk-section-id>04</wk-section-id> wk-badge</a></li>
+        <li><a href="#section-filter">05 wk-badge filter</a></li>
+        <li><a href="#section-buttons"><wk-section-id>06</wk-section-id> wk-button</a></li>
+        <li><a href="#section-seg">07 wk-seg</a></li>
+        <li><a href="#section-table"><wk-section-id>08</wk-section-id> wk-table</a></li>
+        <li><a href="#section-kv">09 wk-kv</a></li>
+        <li><a href="#section-section">10 wk-section</a></li>
+        <li><a href="#section-callout">11 wk-callout</a></li>
+        <li><a href="#section-progress">12 wk-progress</a></li>
+        <li><a href="#section-prose">13 .wk-prose</a></li>
+        <li><a href="#section-modal">14 wk-modal + wk-form</a></li>
+        <li><a href="#section-toast">14 wk-toast</a></li>
+        <li><a href="#section-theme">15 wk-themechange</a></li>
+      </ul>
+    </wk-toc>
+  </section>
+
+  <!-- ── Search (no icon) ── -->
+  <section id="section-search" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-search</h2>
+    <wk-search>
+      <input type="search" placeholder="Search repositories, files, symbols…">
+      <button type="submit">Search</button>
+    </wk-search>
+
+    <!-- Search with leading icon -->
+    <wk-search>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="search" placeholder="Search…">
+      <button>Search</button>
+    </wk-search>
+  </section>
+
+  <!-- ── Cards ── -->
+  <section id="section-cards" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-card</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0.9rem;margin-top:0.5rem;">
+
+      <wk-card>
+        <wk-title>Static card</wk-title>
+        <p style="font-size:0.82rem;color:var(--text-2);margin-top:0.5rem;">A plain content card — no href, no hover lift. Use for non-navigable information blocks.</p>
+        <div style="margin-top:0.75rem;display:flex;gap:0.35rem;flex-wrap:wrap;">
+          <wk-badge variant="b">stable</wk-badge>
+          <wk-badge variant="stat">v1.2.0</wk-badge>
+        </div>
+      </wk-card>
+
+      <wk-card href="#" style="--accent: var(--terracotta);">
+        <wk-title>Linked card</wk-title>
+        <p style="font-size:0.82rem;color:var(--text-2);margin-top:0.5rem;">Has <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">href</code> → gets the hover lift + pointer cursor. Accent bar via <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">--accent</code>.</p>
+        <div style="margin-top:0.75rem;display:flex;gap:0.35rem;flex-wrap:wrap;">
+          <wk-badge variant="a">component</wk-badge>
+          <wk-badge variant="accent">System</wk-badge>
+        </div>
+      </wk-card>
+
+      <wk-card href="#" style="--accent: var(--blue);">
+        <wk-title>csl·search</wk-title>
+        <p style="font-size:0.82rem;color:var(--text-2);margin-top:0.5rem;">Code search local — zoekt across every indexed repo on your machine.</p>
+        <div style="margin-top:0.75rem;display:flex;gap:0.35rem;flex-wrap:wrap;">
+          <wk-badge variant="c">tool</wk-badge>
+          <wk-badge variant="outline">go</wk-badge>
+        </div>
+      </wk-card>
+
+      <a class="wk-card" href="#" style="--accent: var(--green);">
+        <wk-title>a.wk-card</wk-title>
+        <p style="font-size:0.82rem;color:var(--text-2);margin-top:0.5rem;">Native <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">&lt;a class="wk-card"&gt;</code> — same hover lift, works as a real anchor.</p>
+        <div style="margin-top:0.75rem;">
+          <wk-badge variant="b">green accent</wk-badge>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- ── Panels ── -->
+  <section id="section-panels" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-panel</h2>
+
+    <wk-panel>
+      <wk-panel-title>Panel title</wk-panel-title>
+      <wk-panel-subtitle>Supporting subtitle text — one or two lines of muted context below the title.</wk-panel-subtitle>
+    </wk-panel>
+
+    <wk-panel>
+      <wk-panel-title>present·mcp</wk-panel-title>
+      <wk-panel-subtitle>Serves single-page HTML briefings at localhost:7423. Managed by t-man as a launchd agent. Live-reload on update.</wk-panel-subtitle>
+      <div style="margin-top:0.75rem;display:flex;flex-wrap:wrap;gap:0.375rem;">
+        <wk-badge variant="a">wave 0</wk-badge>
+        <wk-badge variant="stat">port 7423</wk-badge>
+        <wk-badge variant="outline">go</wk-badge>
+      </div>
+    </wk-panel>
+
+    <wk-panel>
+      <wk-panel-title>Bionic target panel</wk-panel-title>
+      <wk-panel-subtitle>This panel's title and subtitle are in the default bionic-targets selector. Toggle Bionic in the header controls to see bold halves.</wk-panel-subtitle>
+    </wk-panel>
+  </section>
+
+  <!-- ── Badges ── -->
+  <section id="section-badges" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-badge variants</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem;">
+      <wk-badge variant="a">variant a</wk-badge>
+      <wk-badge variant="b">variant b</wk-badge>
+      <wk-badge variant="c">variant c</wk-badge>
+      <wk-badge variant="outline">outline</wk-badge>
+      <wk-badge variant="stat">42 results</wk-badge>
+      <wk-badge variant="accent">System</wk-badge>
+    </div>
+  </section>
+
+  <!-- ── Filter chips ── -->
+  <section id="section-filter" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-badge variant="filter"</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem;">
+      <wk-badge variant="filter" active>All</wk-badge>
+      <wk-badge variant="filter">Systems</wk-badge>
+      <wk-badge variant="filter">Components</wk-badge>
+      <wk-badge variant="filter" active>Tools</wk-badge>
+      <wk-badge variant="filter">Services</wk-badge>
+      <wk-badge variant="filter">Libraries</wk-badge>
+    </div>
+  </section>
+
+  <!-- ── Buttons ── -->
+  <section id="section-buttons" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-button variants</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.5rem;">
+      <wk-button variant="primary">Primary action</wk-button>
+      <wk-button variant="ghost">Ghost action</wk-button>
+      <!-- .btn classes also work for backward-compat -->
+      <button class="btn btn-primary">btn-primary</button>
+      <button class="btn btn-ghost">btn-ghost</button>
+    </div>
+  </section>
+
+  <!-- ── Segmented control ── -->
+  <section id="section-seg" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-seg</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;margin-top:0.5rem;">
+      <wk-seg>
+        <button class="active">Files</button>
+        <button>Matches</button>
+        <button>Repos</button>
+      </wk-seg>
+      <wk-seg>
+        <button>Day</button>
+        <button class="active">Week</button>
+        <button>Month</button>
+      </wk-seg>
+    </div>
+  </section>
+
+  <!-- ── Table ── -->
+  <section id="section-table" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-table</h2>
+    <wk-table>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Tag</th>
+            <th>JS?</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-header</code></td>
+            <td><wk-badge variant="a">custom element</wk-badge></td>
+            <td><wk-badge variant="b">yes</wk-badge></td>
+            <td>Sticky topbar with brand, nav, controls, theme toggle.</td>
+          </tr>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-card</code></td>
+            <td><wk-badge variant="c">css-only</wk-badge></td>
+            <td><wk-badge variant="outline">no</wk-badge></td>
+            <td>Content card. Add href for hover-lift linked variant.</td>
+          </tr>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-panel</code></td>
+            <td><wk-badge variant="c">css-only</wk-badge></td>
+            <td><wk-badge variant="outline">no</wk-badge></td>
+            <td>Info panel. Contains wk-panel-title and wk-panel-subtitle.</td>
+          </tr>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-badge</code></td>
+            <td><wk-badge variant="c">css-only</wk-badge></td>
+            <td><wk-badge variant="outline">no</wk-badge></td>
+            <td>Chip/badge. Variants: a, b, c, outline, stat, accent, filter.</td>
+          </tr>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-button</code></td>
+            <td><wk-badge variant="c">css-only</wk-badge></td>
+            <td><wk-badge variant="outline">no</wk-badge></td>
+            <td>Button. Two variants: primary, ghost. Shares .btn rules.</td>
+          </tr>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-search</code></td>
+            <td><wk-badge variant="c">css-only</wk-badge></td>
+            <td><wk-badge variant="outline">no</wk-badge></td>
+            <td>Search bar. Optional leading svg icon; styles child input + button.</td>
+          </tr>
+          <tr>
+            <td><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-table</code></td>
+            <td><wk-badge variant="c">css-only</wk-badge></td>
+            <td><wk-badge variant="outline">no</wk-badge></td>
+            <td>Data table wrapper. Styles descendant table element.</td>
+          </tr>
+        </tbody>
+      </table>
+    </wk-table>
+  </section>
+
+  <!-- ── Key/value ── -->
+  <section id="section-kv" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-kv</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;margin-top:0.5rem;">
+
+      <!-- Plain wk-kv -->
+      <div>
+        <p style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-3);margin-bottom:0.5rem;">default</p>
+        <wk-kv>
+          <wk-kv-row>
+            <wk-kv-label>Status</wk-kv-label>
+            <wk-kv-value>active</wk-kv-value>
+          </wk-kv-row>
+          <wk-kv-row>
+            <wk-kv-label>Port</wk-kv-label>
+            <wk-kv-value><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">7423</code></wk-kv-value>
+          </wk-kv-row>
+          <wk-kv-row>
+            <wk-kv-label>Language</wk-kv-label>
+            <wk-kv-value>Go</wk-kv-value>
+          </wk-kv-row>
+        </wk-kv>
+      </div>
+
+      <!-- Card variant -->
+      <div>
+        <p style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-3);margin-bottom:0.5rem;">variant="card"</p>
+        <wk-kv variant="card">
+          <wk-kv-row>
+            <wk-kv-label>Status</wk-kv-label>
+            <wk-kv-value>active</wk-kv-value>
+          </wk-kv-row>
+          <wk-kv-row>
+            <wk-kv-label>Port</wk-kv-label>
+            <wk-kv-value><code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">7423</code></wk-kv-value>
+          </wk-kv-row>
+          <wk-kv-row>
+            <wk-kv-label>Language</wk-kv-label>
+            <wk-kv-value>Go</wk-kv-value>
+          </wk-kv-row>
+        </wk-kv>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── wk-section ── -->
+  <section id="section-section" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-section</h2>
+    <wk-section>
+      <wk-section-heading><wk-section-id>01</wk-section-id>Overview</wk-section-heading>
+      <p>Body paragraph one. This is a content section — a heading with an optional numbered ID, followed by any number of body paragraphs and optional subheadings.</p>
+      <p>Body paragraph two. The primary accent underline on the heading and the monospaced ID badge are both driven by CSS variables, so they adapt to light and dark themes automatically.</p>
+      <wk-section-subheading>Details</wk-section-subheading>
+      <p>More text under the subheading. Use <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-section-subheading</code> for secondary headings within a section without the underline treatment.</p>
+    </wk-section>
+  </section>
+
+  <!-- ── wk-callout ── -->
+  <section id="section-callout" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-callout</h2>
+    <wk-callout>Default callout — left border in primary color. Bionic-aware.</wk-callout>
+    <wk-callout variant="info">Info callout — blue left border. Use for tips and supplementary context.</wk-callout>
+    <wk-callout variant="warn">Warn callout — amber left border. Use for caveats and breaking changes.</wk-callout>
+  </section>
+
+  <!-- ── wk-progress ── -->
+  <section id="section-progress" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-progress</h2>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;margin-top:0.5rem;max-width:480px;">
+      <wk-progress>
+        <wk-progress-bar><wk-progress-fill style="width:63%"></wk-progress-fill></wk-progress-bar>
+        <wk-progress-label>63%</wk-progress-label>
+      </wk-progress>
+      <wk-progress>
+        <wk-progress-bar><wk-progress-fill style="width:28%"></wk-progress-fill></wk-progress-bar>
+        <wk-progress-label>28%</wk-progress-label>
+      </wk-progress>
+      <wk-progress>
+        <wk-progress-bar><wk-progress-fill style="width:100%"></wk-progress-fill></wk-progress-bar>
+        <wk-progress-label>100%</wk-progress-label>
+      </wk-progress>
+    </div>
+  </section>
+
+  <!-- ── .wk-prose (rich markdown + highlighted code) ── -->
+  <section id="section-prose" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">.wk-prose</h2>
+    <article class="wk-prose" style="max-width:640px;">
+      <h2>Quick start</h2>
+      <p>
+        <code>csl search</code> queries every indexed repo. See the
+        <a href="#section-prose">reference</a> for flags, or read the
+        <strong>config</strong> example below.
+      </p>
+      <ul>
+        <li>Index a repo with <code>csl index ./repo</code>.</li>
+        <li>Query across all of them at once.</li>
+      </ul>
+      <blockquote>Highlighting and the copy button are added in the browser.</blockquote>
+      <pre><code class="language-go">package main
+
+import "fmt"
+
+func main() {
+	// highlighted client-side by Prism
+	fmt.Println("hello, webkit")
+}</code></pre>
+      <pre><code class="language-bash">csl index ./repo
+csl search 'func main'</code></pre>
+      <pre><code class="language-yaml">name: webkit
+languages:
+  - go
+  - typescript</code></pre>
+      <table>
+        <thead><tr><th>Flag</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td><code>--limit</code></td><td>50</td></tr>
+          <tr><td><code>--json</code></td><td>false</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin:1.5rem 0 0.75rem;">pre.wk-code-block (standalone, outside .wk-prose)</h2>
+    <pre class="wk-code-block" style="max-width:640px;"><code class="language-json">{
+  "t": "code",
+  "lang": "json",
+  "text": "standalone code block — same badge, copy button, and highlighting"
+}</code></pre>
+  </section>
+
+  <!-- ── wk-modal + wk-form ── -->
+  <section id="section-modal" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-modal + wk-form</h2>
+    <wk-button variant="primary" id="demo-modal-open">Open form modal</wk-button>
+    <wk-button variant="danger" id="demo-confirm-open">Open confirm modal</wk-button>
+
+    <wk-modal hidden id="demo-modal">
+      <wk-modal-panel>
+        <wk-modal-head>
+          <h2>Add entry</h2>
+          <button class="btn btn-ghost" id="demo-modal-x">✕</button>
+        </wk-modal-head>
+        <wk-form>
+          <label>Name<input placeholder="my-service"></label>
+          <wk-form-row>
+            <label>Kind<input placeholder="system"></label>
+            <label>Owner<input placeholder="team"></label>
+          </wk-form-row>
+          <wk-form-hint>Path is relative to <code>~/code</code>.</wk-form-hint>
+          <wk-modal-actions>
+            <wk-button variant="ghost" id="demo-modal-cancel">Cancel</wk-button>
+            <wk-button variant="primary">Save</wk-button>
+          </wk-modal-actions>
+        </wk-form>
+      </wk-modal-panel>
+    </wk-modal>
+
+    <wk-modal hidden id="demo-confirm">
+      <wk-modal-panel>
+        <wk-modal-head>
+          <h2>Delete entry?</h2>
+          <button class="btn btn-ghost" id="demo-confirm-x">✕</button>
+        </wk-modal-head>
+        <wk-modal-body>
+          <p><strong>my-service</strong> will be permanently removed. This cannot be undone.</p>
+        </wk-modal-body>
+        <wk-modal-actions>
+          <wk-button variant="ghost" id="demo-confirm-cancel">Cancel</wk-button>
+          <wk-button variant="danger" id="demo-confirm-delete">Delete</wk-button>
+        </wk-modal-actions>
+      </wk-modal-panel>
+    </wk-modal>
+  </section>
+
+  <!-- ── wk-read-aloud ── -->
+  <section id="section-read-aloud" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-read-aloud</h2>
+
+    <div class="ra-demo" style="border:1px solid var(--border);border-radius:8px;padding:1rem;">
+      <h3 style="margin-bottom:0.5rem;">A readable section</h3>
+      <p>This paragraph is a read-aloud target. When the speak service is reachable,
+        a play button appears in the top-right corner of each target section. The
+        active sentence is highlighted while it plays.</p>
+    </div>
+    <!-- Inert from file:// — the element probes the endpoint and injects nothing
+         when the speak service (mlx-audio behind http://speak.this) is down. -->
+    <wk-read-aloud targets=".ra-demo"></wk-read-aloud>
+    <p style="font-size:0.78rem;color:var(--text-3);margin-top:0.5rem;">One element per page; <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">targets</code> selects the sections that get a play/pause button.</p>
+  </section>
+
+  <!-- ── wk-toast ── -->
+  <section id="section-toast" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-toast</h2>
+
+    <!-- Static inline demo: two toasts visible without clicking, in a positioned container -->
+    <div style="position:relative;height:6rem;margin-bottom:1rem;">
+      <div style="position:absolute;bottom:0;right:0;display:flex;flex-direction:column;gap:0.5rem;">
+        <wk-toast variant="ok">Saved ✓</wk-toast>
+        <wk-toast variant="err">Failed to connect ✕</wk-toast>
+      </div>
+    </div>
+
+    <wk-button variant="ghost" id="demo-toast-btn">Fire toast</wk-button>
+    <p style="font-size:0.78rem;color:var(--text-3);margin-top:0.5rem;">Appends a live <code style="background:var(--chip-bg);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.9em;">wk-toast</code> to the fixed host and removes it after 2.5 s.</p>
+  </section>
+
+  <!-- ── wk-themechange event demo ── -->
+  <section id="section-theme" style="margin: 2rem 0 4rem;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-themechange event</h2>
+    <wk-panel>
+      <wk-panel-title>Theme event listener</wk-panel-title>
+      <wk-panel-subtitle id="theme-display">Current theme: <strong id="theme-name">—</strong>. Toggle with the sun/moon button above.</wk-panel-subtitle>
+    </wk-panel>
+  </section>
+
+</main>
+
+<!-- Fixed toast host for live demos -->
+<wk-toast-host id="toast-host"></wk-toast-host>
+
+<script src="../dist/webkit.js"></script>
+<script>
+  // Demo: listen for theme changes (replaces the onThemeChange callback)
+  document.addEventListener('wk-themechange', function(e) {
+    var nameEl = document.getElementById('theme-name');
+    if (nameEl) nameEl.textContent = e.detail.theme;
+  });
+
+  // Set initial display
+  var nameEl = document.getElementById('theme-name');
+  if (nameEl) {
+    nameEl.textContent = document.documentElement.getAttribute('data-theme') || 'light';
+  }
+
+  // Demo extra button
+  document.getElementById('demo-btn')?.addEventListener('click', function() {
+    alert('Extra button clicked — wire your own handler here.');
+  });
+
+  // Modal demo
+  var modal = document.getElementById('demo-modal');
+  document.getElementById('demo-modal-open')?.addEventListener('click', function() {
+    modal.removeAttribute('hidden');
+  });
+  function closeModal() { modal.setAttribute('hidden', ''); }
+  document.getElementById('demo-modal-x')?.addEventListener('click', closeModal);
+  document.getElementById('demo-modal-cancel')?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', function(e) {
+    if (e.target === modal) closeModal();
+  });
+
+  // Confirm-modal demo
+  var confirmModal = document.getElementById('demo-confirm');
+  document.getElementById('demo-confirm-open')?.addEventListener('click', function() {
+    confirmModal.removeAttribute('hidden');
+  });
+  function closeConfirm() { confirmModal.setAttribute('hidden', ''); }
+  document.getElementById('demo-confirm-x')?.addEventListener('click', closeConfirm);
+  document.getElementById('demo-confirm-cancel')?.addEventListener('click', closeConfirm);
+  document.getElementById('demo-confirm-delete')?.addEventListener('click', closeConfirm);
+  confirmModal?.addEventListener('click', function(e) {
+    if (e.target === confirmModal) closeConfirm();
+  });
+
+  // Toast demo
+  document.getElementById('demo-toast-btn')?.addEventListener('click', function() {
+    var host = document.getElementById('toast-host');
+    var toast = document.createElement('wk-toast');
+    toast.setAttribute('variant', 'ok');
+    toast.textContent = 'Saved ✓';
+    host.appendChild(toast);
+    setTimeout(function() { toast.remove(); }, 2500);
+  });
+</script>
+</body>
+</html>

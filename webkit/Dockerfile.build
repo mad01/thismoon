@@ -1,0 +1,25 @@
+# Sandboxed build for the webkit bundle (see Makefile `build`).
+#
+# npm install/build runs arbitrary code (postinstall scripts, esbuild, tsc) —
+# running it in a throwaway Apple-container VM keeps a poisoned npm package
+# off the host. Artifacts come out via the BuildKit local exporter
+# (--output type=local), never by mounting the host filesystem in.
+#
+# Explicit COPYs (no `COPY . .`) keep the context tight regardless of
+# .dockerignore handling (apple/container#425).
+
+FROM node:26-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM deps AS build
+COPY tsconfig.json build.mjs ./
+COPY src ./src
+RUN npm run build
+
+# Export stage: only the build artifacts (webkit.js, webkit.css, boot.js),
+# extracted with
+#   container build --target export --output type=local,dest=./dist
+FROM scratch AS export
+COPY --from=build /app/dist /

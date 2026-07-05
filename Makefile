@@ -7,9 +7,12 @@ COMPONENTS := $(patsubst %/Makefile,%,$(wildcard services/*/Makefile tools/*/Mak
 build:
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" build || exit 1; done
 
-# go test exits non-zero when the module has no packages, so skip it until Go code lands
+# go list exits non-zero when the module has no packages AND when a package is
+# broken — only the first may skip go test; the second must fail loud.
 test:
-	@if [ -n "$$(go list ./... 2>/dev/null)" ]; then go test ./...; else echo "no Go packages yet, skipping go test"; fi
+	@if out=$$(go list ./... 2>&1); then go test ./...; \
+	elif echo "$$out" | grep -q "matched no packages"; then echo "no Go packages yet, skipping go test"; \
+	else echo "$$out"; exit 1; fi
 	@for c in $(COMPONENTS); do $(MAKE) -C "$$c" test || exit 1; done
 
 install-all:

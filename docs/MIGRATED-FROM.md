@@ -4,4 +4,4 @@ Every directory imported from another repo gets a row here at import time. Impor
 
 | Directory | Source repo | SHA at import | Imported | Notes |
 |-----------|-------------|---------------|----------|-------|
-| _(none yet)_ | | | | |
+| `webkit/` | github.com/mad01/webkit | `5a18e5d02f129f828733dbc2214151827dccc85c` | 2026-07-05 | Dropped `go.mod` and `.golangci.yml`; module path rewritten to `github.com/mad01/thismoon/webkit`; consumption docs updated for in-module use. |
