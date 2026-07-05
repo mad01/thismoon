@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dependencies</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette, header chrome, page-header, card, badge visuals all come from
+   /webkit/webkit.css. Only deps-specific layout lives here. The page body is
+   rendered client-side by /app.js into <div id="app">. */
+.wrap{padding-top:1.5rem}
+.hint{color:var(--text-3);font-size:0.85rem;margin:0 0 1rem}
+.hint code{background:var(--chip-bg);padding:0.05rem 0.35rem;border-radius:3px}
+.empty{color:var(--text-3);font-size:0.9375rem;padding:2rem 0}
+.toolbar{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin:0 0 1.25rem}
+.scanmeta{font-size:0.82rem;color:var(--text-3)}
+.scanmeta.stale{color:var(--accent)}
+.counts{display:flex;flex-wrap:wrap;gap:0.5rem;margin:0 0 1.25rem}
+.repos{display:flex;flex-wrap:wrap;gap:0.5rem;margin:0 0 1.75rem}
+.repo-chip{display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;background:var(--chip-bg);border-radius:6px;padding:0.2rem 0.3rem 0.2rem 0.6rem;box-shadow:inset 0 0 0 1px transparent}
+.repo-chip.sel{box-shadow:inset 0 0 0 1px var(--accent)}
+.repo-chip .n{color:var(--accent);font-weight:600}
+.repo-name{background:none;border:none;color:var(--text-2);font:inherit;font-size:0.8rem;cursor:pointer;padding:0}
+.repo-name:hover{color:var(--text-1)}
+.repo-name.active{color:var(--accent);font-weight:600}
+.filterbar{display:flex;align-items:center;gap:0.75rem;font-size:0.82rem;color:var(--text-3);margin:0 0 1.25rem}
+.counts wk-badge[data-action]{cursor:pointer}
+.inv-search-row{margin:0 0 1.25rem}
+.inv-search{width:100%;max-width:26rem;appearance:none;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:0.45rem 0.75rem;font-family:inherit;font-size:0.85rem;color:var(--text-1)}
+.inv-search:focus{outline:none;border-color:var(--accent)}
+.inv-search::placeholder{color:var(--text-3)}
+.inv-title{margin-top:1.25rem}
+.inv-list{display:flex;flex-direction:column;gap:0.4rem;margin-bottom:1.75rem}
+.inv-row{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;font-size:0.85rem;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:0.45rem 0.75rem}
+.sev-high{color:var(--st-down,#d65745);font-weight:600}
+.sev-moderate{color:var(--amber,#b8860b);font-weight:600}
+.note{color:var(--text-3);font-size:0.9rem;padding:0.5rem 0 1.5rem}
+.sec-title{font-size:0.95rem;font-weight:600;color:var(--text-1);margin:0 0 0.75rem}
+.flag-list{display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1.75rem}
+.flag-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.flag-name{font-size:0.9375rem;font-weight:600;color:var(--text-1);font-variant-numeric:tabular-nums}
+.flag-repo{font-size:0.78rem;color:var(--text-3)}
+.adv{font-size:0.82rem;color:var(--text-2);margin-top:0.5rem;padding-left:0.75rem;border-left:2px solid var(--border);display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start}
+.adv.resolved{opacity:0.55}
+.adv-id{font-weight:600}
+.adv-fix{color:var(--text-3)}
+.adv-actions{flex:none}
+.ok{color:var(--text-2);font-size:0.95rem;padding:1.25rem 0}
+.ack{margin-bottom:1.75rem}
+.ack-summary{cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:0.4rem;margin:0}
+.ack-summary::-webkit-details-marker{display:none}
+.ack-summary::before{content:'▸';color:var(--text-3);font-size:0.8rem;transition:transform 0.15s}
+.ack[open] .ack-summary::before{transform:rotate(90deg)}
+.ack-list{margin-top:0.75rem;margin-bottom:0}
+.notcompiled .ack-list{opacity:0.65}
+.notcompiled .note{padding:0.5rem 0 0.25rem}
+button[disabled]{opacity:0.5;cursor:default}
+</style>
+</head>
+<body>
+<wk-header brand="deps" title="Dependencies"></wk-header>
+<main class="wrap"><div id="app"></div></main>
+<wk-toast-host id="toast-host"></wk-toast-host>
+<script src="/webkit/webkit.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
