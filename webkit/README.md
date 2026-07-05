@@ -48,7 +48,7 @@ text-walk work normally.
 ## Consume it (Go)
 
 ```go
-import "github.com/mad01/webkit"
+import "github.com/mad01/thismoon/webkit"
 
 webkit.Mount(mux) // serves /webkit/webkit.css + .js + boot.js at "GET /webkit/"
 ```
@@ -100,7 +100,7 @@ theme) automatically — do not add those manually.
 `GET /webkit/version` → JSON metadata for the embedded assets:
 
 ```json
-{"module":"github.com/mad01/webkit","version":"3f8a1c0e9b2d4a76"}
+{"module":"github.com/mad01/thismoon/webkit","version":"3f8a1c0e9b2d4a76"}
 ```
 
 The version is a short SHA-256 over the embedded `dist/` bytes — it changes
@@ -116,46 +116,16 @@ so a webkit bump shows up on the next navigation.
 
 ### Service version
 
-Each consumer reports its own build plus the webkit it embeds at `GET /version`:
+Each consumer reports its own build at `GET /version`. webkit is an in-module
+package: a binary always embeds the webkit committed alongside it, so there is
+no separate webkit pin to report. Use the `/webkit/version` asset hash (above)
+when checking whether a running tool serves the expected assets.
 
-```json
-{"version": "<service git sha>", "webkit": "v0.1.1-0.20260628210256-c07bb1916dcd"}
-```
+### Shipping to consumers
 
-The `webkit` field comes from `runtime/debug.ReadBuildInfo()`: the
-`github.com/mad01/webkit` version pinned in that binary's `go.mod`. It reflects
-exactly what the repo built against. Add it with a small helper:
-
-```go
-func webkitVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, d := range info.Deps {
-			if d.Path == "github.com/mad01/webkit" {
-				return d.Version
-			}
-		}
-	}
-	return "unknown"
-}
-```
-
-That is a separate value from `/webkit/version` above: the service `/version`
-gives the module pin (handy for spotting which consumer lags behind), while
-`/webkit/version` gives the embedded-asset hash that drives cache busting.
-
-### Bumping consumers
-
-```bash
-# run inside each consumer repo
-make update-webkit   # go get github.com/mad01/webkit@main && go mod tidy && go build ./...
-```
-
-To bump every consumer at once, run `make update-webkit-all` from the dotfiles
-repo root. It walks each in-repo consumer plus `code-search-local` and `catalog`,
-rebuilds, and reinstalls.
-
-This is a **private** module — set `GOPRIVATE=github.com/mad01/*` and the SSH
-`insteadOf` rewrite once per machine.
+There is no bump step: consumers are packages of the same module and compile
+against the committed webkit source. Rebuild and reinstall the consumer binary
+and the new assets ship with it.
 
 ## State
 
@@ -195,8 +165,8 @@ the output is byte-identical to a host build. One-time setup: install
 in the dotfiles repo; this repo is its reference implementation.
 
 Edit `src/webkit.ts` and `src/webkit.css`, rebuild, review `git diff dist/`,
-**commit `dist/`** (it's intentionally tracked), then bump consumers with
-`make update-webkit`.
+**commit `dist/`** (it's intentionally tracked). Consumers pick the change up
+at their next build.
 
 ### Adding a component
 

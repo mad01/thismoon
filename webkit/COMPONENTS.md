@@ -256,7 +256,7 @@ It reads `webkit-theme` → `data-theme` and `webkit-size` (clamped 12–24) →
 `Webkit.bootSnippet` (single source of truth — server templates can inject it).
 
 ## Version check + cache busting
-`GET /webkit/version` → JSON `{"module":"github.com/mad01/webkit","version":"<hash>"}`,
+`GET /webkit/version` → JSON `{"module":"github.com/mad01/thismoon/webkit","version":"<hash>"}`,
 used to confirm which embedded assets a running tool serves. `<hash>` is a short
 SHA-256 digest over the embedded `dist/` bytes, computed once at package init. It
 changes whenever the compiled assets change. The old pinned pseudo-version

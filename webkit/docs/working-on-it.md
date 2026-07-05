@@ -7,7 +7,6 @@ Build pipeline, dev loop, adding components, and shipping changes to consumers.
 - [apple/container](https://github.com/apple/container/releases) — the default build runs inside a throwaway Linux VM; `container system start` before `make build`
 - Node.js (any recent LTS) — needed for `make build-local` and `npm test`
 - Go — for `go test ./...`
-- `GOPRIVATE=github.com/mad01/*` and an SSH `insteadOf` rewrite so `go get` fetches over SSH (one-time per machine, needed by consumers)
 
 ## Build
 
@@ -58,7 +57,7 @@ make check      # tsc --noEmit typecheck only (host, no build)
 - `webkit.Handler() http.Handler` — mount at `GET /webkit/` in any consumer
 - `webkit.FS() fs.FS` — for direct file access
 - `GET /webkit/webkit.css` and `GET /webkit/webkit.js` — the compiled assets
-- `GET /webkit/version` — JSON `{"module":"github.com/mad01/webkit","version":"<hash>"}` where `<hash>` is a short SHA-256 over the embedded `dist/` bytes, served `no-store`; the same hash is the asset `ETag`
+- `GET /webkit/version` — JSON `{"module":"github.com/mad01/thismoon/webkit","version":"<hash>"}` where `<hash>` is a short SHA-256 over the embedded `dist/` bytes, served `no-store`; the same hash is the asset `ETag`
 
 `webkit.NoCacheHTML(w http.ResponseWriter)` sets `Cache-Control: no-cache` on consumer HTML responses so a webkit bump shows up on the next page navigation rather than after a force-refresh.
 
@@ -66,10 +65,9 @@ make check      # tsc --noEmit typecheck only (host, no build)
 
 ## Shipping changes to all consumers
 
-A webkit change does nothing to consumers until they pin the new commit. After merging to `main`, run this in each consumer repo:
+Consumers compile against the committed webkit source — merging to `main` is the bump. To roll a running service onto the new assets:
 
 ```bash
-make update-webkit   # go get github.com/mad01/webkit@main && go mod tidy && go build ./...
 make install         # rebuild and install the consumer binary
 t-man restart <service>   # restart the running service
 ```

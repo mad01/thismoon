@@ -75,7 +75,7 @@ and `Webkit.bootSnippet` resolve to that same string — they can't drift. Do no
 hand-paste the IIFE into a consumer; that was the old pattern and it drifted.
 
 ## Version check + cache busting
-`GET /webkit/version` → `{"module":"github.com/mad01/webkit","version":"<hash>"}` —
+`GET /webkit/version` → `{"module":"github.com/mad01/thismoon/webkit","version":"<hash>"}` —
 served `no-store`. `<hash>` is a short SHA-256 over the embedded `dist/` bytes
 (computed at package init), which is also the asset `ETag`. It changes whenever
 the assets change, so `Cache-Control: no-cache` + content-hash ETag busts stale
@@ -84,28 +84,10 @@ CSS/JS. `webkit.js` polls `/webkit/version` every ~5s and reloads on change.
 
 ## Consumer `/version` contract
 Each consumer's own HTTP service exposes `GET /version` →
-`{"version":"<service git sha>","webkit":"<webkit module pin>"}`. The `webkit`
-field is read at runtime from `runtime/debug.ReadBuildInfo()` — the
-`github.com/mad01/webkit` pseudo-version in that binary's `go.mod`, so it matches
-exactly what the repo pins. Helper each consumer carries (in its server package):
-
-```go
-func webkitVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, d := range info.Deps {
-			if d.Path == "github.com/mad01/webkit" {
-				return d.Version
-			}
-		}
-	}
-	return "unknown"
-}
-```
-
-This is a different surface from `GET /webkit/version` (a SHA over the embedded
-`dist/` bytes): module pin vs asset hash. Each is uniform across consumers on the
-same webkit. `status.this` polls `/webkit/version`; the service `/version` adds
-the human-readable module pin a drift check can compare.
+`{"version":"<service git sha>"}`. webkit is an in-module package: a binary
+always embeds the webkit committed alongside it, so there is no module pin to
+report or compare. Drift checks use `GET /webkit/version` — the embedded-asset
+hash, uniform across consumers built from the same commit.
 
 ## Build / test
 
@@ -144,35 +126,13 @@ and the extraction-pattern rules live in the dotfiles repo:
   fallback) before committing source changes so `dist/` stays in sync with
   `src/`, and review the `dist/` diff.
 - **esbuild does not typecheck** — the build runs `tsc --noEmit` first. Keep TS strict.
-- **`go` directive matches the lowest consumer** (currently csl). Don't raise it
-  above any consumer's Go version or they can't require this module.
-- **Private module.** Consumers need `GOPRIVATE=github.com/mad01/*` + the SSH
-  `insteadOf` rewrite. Bump consumers with `make update-webkit`
-  (`go get github.com/mad01/webkit@main && go mod tidy && go build ./...`).
-- **A webkit change ships to ALL consumers in the same session.** Each consumer
-  pins webkit in its `go.mod`, so nothing updates until that repo bumps. After
-  merging here, in every consumer: `make update-webkit`, test, `make install`,
-  restart the t-man service, commit the bump (dotfiles consumers can share one
-  commit). From the dotfiles root, `make update-webkit-all` fans this out across
-  every in-repo consumer plus `code-search-local` and `catalog` in one command.
-  Current consumers:
-
-  | Consumer | Repo | t-man service |
-  |----------|------|---------------|
-  | present  | dotfiles `present/` | `present` |
-  | pr       | dotfiles `pr/`      | `pr` |
-  | status   | dotfiles `status/`  | `status` |
-  | reminder | dotfiles `reminder/` | `reminder` |
-  | deps     | dotfiles `deps/`    | `deps` |
-  | events   | dotfiles `events/`  | `events` |
-  | speak    | dotfiles `speak/`   | `speak-web` |
-  | csl      | code-search-local   | `csl-web` |
-  | catalog  | catalog             | `catalog-web` |
-
-  Verify two ways: `curl http://<tool>.this/webkit/version` (asset hash, same
-  across all) and `curl http://<tool>.this/version` (service `{version,webkit}` —
-  the `webkit` module pin should match everywhere). Keep this table in sync when
-  consumers come and go.
+- **The `go` directive lives in the repo root `go.mod`.** webkit carries no
+  module files of its own; it compiles with whatever the repo pins.
+- **A webkit change reaches every in-repo consumer at its next build.** No
+  pins, no bump step: consumers compile against the committed webkit source,
+  and CI's fanout runs every component job when `webkit/**` changes. Verify a
+  running tool with `curl http://<tool>.this/webkit/version` — the asset hash
+  is identical across consumers built from the same commit.
 - **State keys are global per origin** (`webkit-theme`, `webkit-font`,
   `webkit-size`, `webkit-bionic`, `webkit-ra-speed`). They persist across a tool's own pages.
 - **`data-extra` buttons are not wired by webkit.** The consuming app keeps its
@@ -183,6 +143,6 @@ and the extraction-pattern rules live in the dotfiles repo:
 ## See also
 
 - Catalog entry: `service-info.yaml` (System `webkit`, Component `webkit-ui`).
-- Consumers: `present/CLAUDE.md`, `speak/CLAUDE.md`, `status/CLAUDE.md` (dotfiles),
-  `code-search-local/CLAUDE.md`, `catalog/CLAUDE.md`.
+- Consumers live under `services/` as they migrate into this repo (import
+  provenance: `docs/MIGRATED-FROM.md` at the repo root).
 - Full component spec: `COMPONENTS.md`.
