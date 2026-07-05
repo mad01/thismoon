@@ -104,13 +104,18 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # go vet/build exit non-zero on a package-less module, so guard until
-      # Go code lands (same guard as the root Makefile's test target).
-      - name: Vet and build
+      # go list exits non-zero both when the module has no packages AND when a
+      # package is broken — only the first may skip; the second must fail loud
+      # (a broken go:embed once turned this job into a silent false green).
+      - name: Vet, build, test
         run: |
-          if [ -n "$(go list ./... 2>/dev/null)" ]; then
+          if out=$(go list ./... 2>&1); then
             go vet ./...
             go build ./...
-          else
+            go test ./...
+          elif echo "$out" | grep -q "matched no packages"; then
             echo "no Go packages yet, skipping"
+          else
+            echo "$out"
+            exit 1
           fi

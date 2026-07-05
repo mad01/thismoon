@@ -170,8 +170,8 @@ func TestHandlerServesVersion(t *testing.T) {
 	if got["module"] != "github.com/mad01/thismoon/webkit" {
 		t.Errorf("module = %q, want %q", got["module"], "github.com/mad01/thismoon/webkit")
 	}
-	// In the test binary ReadBuildInfo may yield "(devel)" or empty deps; we
-	// only assert the version is present and non-empty, not a specific value.
+	// The version is a content hash over the embedded dist/ bytes; assert it
+	// is present and non-empty rather than pinning a specific digest.
 	if got["version"] == "" {
 		t.Errorf("version is empty, want a non-empty string")
 	}

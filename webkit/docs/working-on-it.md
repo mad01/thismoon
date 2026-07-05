@@ -78,19 +78,8 @@ Verify the new assets are live:
 curl http://<tool>.this/webkit/version
 ```
 
-All consumers should report the same hash. The current consumer table:
-
-| Consumer | Repo | t-man service |
-|----------|------|---------------|
-| present  | dotfiles `present/` | `present` |
-| speak    | dotfiles `speak/` | `speak-web` |
-| status   | dotfiles `status/` | `status` |
-| csl      | code-search-local | `csl-web` |
-| catalog  | catalog | `catalog-web` |
-
-Dotfiles consumers (present, speak, status) can share a single commit for their `go.mod` bumps. Each standalone repo (csl, catalog) gets its own commit.
-
-Keep the consumer table above in sync when consumers are added or removed — the authoritative copy is in `CLAUDE.md`.
+All consumers built from the same commit report the same hash. Consumers live
+under `services/` in this repo as they migrate in.
 
 ## FOUC guard
 

@@ -1,6 +1,6 @@
-# build output
+# build output (root-anchored: webkit/dist/ is intentionally committed)
 /bin/
-dist/
+/dist/
 
 # editor / OS noise
 .DS_Store
