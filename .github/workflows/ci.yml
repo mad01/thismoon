@@ -1,0 +1,116 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.matrix.outputs.components }}
+      has_components: ${{ steps.matrix.outputs.has_components }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Filters are generated, not hand-maintained: one filter per component
+      # (a directory under services/ or tools/ with a Makefile) plus a fanout
+      # filter for changes that affect every component.
+      - name: Generate path filters
+        run: |
+          {
+            echo "fanout:"
+            echo "  - 'webkit/**'"
+            echo "  - 'go.mod'"
+            echo "  - 'go.sum'"
+            echo "  - '.golangci.yml'"
+            echo "  - '.github/workflows/**'"
+            for dir in services/*/ tools/*/; do
+              [ -f "${dir}Makefile" ] || continue
+              c="${dir%/}"
+              echo "${c}:"
+              echo "  - '${c}/**'"
+            done
+          } > .github/filters.generated.yml
+          cat .github/filters.generated.yml
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: .github/filters.generated.yml
+
+      - name: Build component matrix
+        id: matrix
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+        run: |
+          all=$(for dir in services/*/ tools/*/; do
+            [ -f "${dir}Makefile" ] && echo "${dir%/}"
+          done | jq -R . | jq -sc .)
+          if echo "$CHANGES" | jq -e 'index("fanout")' > /dev/null; then
+            components="$all"
+          else
+            components=$(echo "$CHANGES" | jq -c .)
+          fi
+          echo "components=$components" >> "$GITHUB_OUTPUT"
+          echo "has_components=$(echo "$components" | jq 'length > 0')" >> "$GITHUB_OUTPUT"
+          echo "matrix: $components"
+
+  component:
+    name: ${{ matrix.component }}
+    needs: changes
+    if: needs.changes.outputs.has_components == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.components) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: ./${{ matrix.component }}/...
+
+      - name: Test
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: go test "./${COMPONENT}/..."
+
+      - name: Build
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: go build "./${COMPONENT}/..."
+
+  repo-safety-net:
+    name: Repo-wide vet and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # go vet/build exit non-zero on a package-less module, so guard until
+      # Go code lands (same guard as the root Makefile's test target).
+      - name: Vet and build
+        run: |
+          if [ -n "$(go list ./... 2>/dev/null)" ]; then
+            go vet ./...
+            go build ./...
+          else
+            echo "no Go packages yet, skipping"
+          fi
