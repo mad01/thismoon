@@ -1,0 +1,4 @@
+# Machine-local ralph overrides. NOT committed — this file sits beside the
+# ralph config on each machine (e.g. ~/.config/ralph/config.local.toml).
+# Recipes labelled with an intersecting profile apply on this machine.
+profiles = ["personal"]

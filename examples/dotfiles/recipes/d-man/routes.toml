@@ -1,0 +1,16 @@
+# Machine-personal route set for the d-man front door.
+# Each route is either port-backed (port) or a CNAME alias (cname) that
+# resolves to another route's backend. The daemon re-applies edits live.
+suffix = "this"
+
+[[route]]
+name = "present"   # http://present.this/ -> 127.0.0.1:7423
+port = 7423
+
+[[route]]
+name = "reminder"  # http://reminder.this/ -> 127.0.0.1:7428
+port = 7428
+
+[[route]]
+name = "p"         # http://p.this/ -> alias of present.this
+cname = "present"

@@ -1,0 +1,21 @@
+# Example ralph config for a dotfiles repo that consumes thismoon.
+# Path to the dotfiles repo this config lives in (supports ~ expansion).
+dotfiles_repo_path = "~/code/src/github.com/you/dotfiles"
+
+# Auto-discover local recipes (the machine-private overlays) from recipes/.
+[recipes_config]
+auto_discover = true
+
+# Remote recipe source: the thismoon monorepo. ralph caches the checkout under
+# ~/.config/ralph/sources/thismoon and merges each recipe with the identity
+# thismoon/<recipe>. A branch ref with update = true follows the branch on
+# every `ralph up`; a tag or commit ref stays pinned until you change it.
+[[recipe_sources]]
+name = "thismoon"
+url = "git@github.com:mad01/thismoon.git"
+ref = "main"
+update = true
+
+# Disable or host-scope a remote recipe with the namespaced override key:
+# [recipes_config.overrides."thismoon/reminder"]
+# enable = false

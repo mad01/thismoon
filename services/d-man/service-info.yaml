@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: d-man
+  description: Local domain front door — maps <name>.this to localhost via managed /etc/hosts and a reverse proxy
+  tags: [go, cli, daemon]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

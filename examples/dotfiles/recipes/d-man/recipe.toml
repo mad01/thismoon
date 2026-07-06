@@ -1,0 +1,17 @@
+# Overlay recipe: machine-personal routes for the d-man front door.
+# The d-man binary + its build recipe ship from the thismoon source
+# (thismoon/d-man); this overlay only symlinks the route set into place.
+# Which `.this` names exist on a machine is private wiring, so it belongs
+# in the consuming repo (docs/adr/0006 in thismoon).
+[recipe]
+name = "d-man"
+description = "d-man routes overlay — machine-personal routes.toml"
+wave = 0
+
+# Editing routes.toml (in your repo, tracked in git) is the whole workflow:
+# the running daemon detects the change via fsnotify and re-syncs /etc/hosts
+# + proxy routes — no sudo, no restart.
+[dotfiles.d_man_routes]
+source = "routes.toml"
+target = "~/.config/d-man/routes.toml"
+action = "symlink"
