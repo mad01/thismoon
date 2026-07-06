@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "go",
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "tag-separator": "/",
+  "initial-version": "0.1.0",
+  "packages": {
+    "services/d-man": { "component": "d-man" },
+    "services/deps": { "component": "deps" },
+    "services/events": { "component": "events" },
+    "services/pr": { "component": "pr" },
+    "services/present": { "component": "present" },
+    "services/reminder": { "component": "reminder" },
+    "services/speak": { "component": "speak" },
+    "services/status": { "component": "status" },
+    "tools/t-man": { "component": "t-man" }
+  }
+}

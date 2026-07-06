@@ -20,6 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A component missing from release-please-config.json would silently
+      # never release — fail the PR instead.
+      - name: Release config covers all components
+        run: |
+          diff \
+            <(jq -r '.packages | keys[]' release-please-config.json | sort) \
+            <(for dir in services/*/ tools/*/; do [ -f "${dir}Makefile" ] && echo "${dir%/}"; done | sort) \
+            || { echo "::error::release-please-config.json packages out of sync with services/*, tools/*"; exit 1; }
+
       # Filters are generated, not hand-maintained: one filter per component
       # (a directory under services/ or tools/ with a Makefile) plus a fanout
       # filter for changes that affect every component.

@@ -55,14 +55,17 @@ its place:
 5. **Gates.** Root `go mod tidy`, then per-service build/vet/test/lint, root
    `make test`, and a clean-checkout gate: `git archive HEAD | tar -x` into a
    temp dir, build and test there.
-6. **Record provenance.** Add the service's row to `docs/MIGRATED-FROM.md`
+6. **Register for release.** Add the component to the `packages` map in
+   `release-please-config.json` — CI fails the PR if a Makefile-bearing
+   component is missing from it.
+7. **Record provenance.** Add the service's row to `docs/MIGRATED-FROM.md`
    (source repo + SHA).
-7. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
+8. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
    sources-cache `working_dir` (see Conventions), then the scratch-config
    `ralph up --dry-run` gate: commit first, move the real sources cache aside,
    remove the test cache between runs, and put a `config.local.toml` with the
    right profiles beside the scratch config.
-8. **Two commits per service:** one for the import, one for the recipe.
+9. **Two commits per service:** one for the import, one for the recipe.
 
 Cutover happens in the consuming repo (dotfiles): delete the old source dir +
 recipe in one PR, keep item keys identical so ralph state carries over, then a
