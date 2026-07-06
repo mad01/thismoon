@@ -24,8 +24,14 @@ jobs:
       # dynamic output names, so the whole set is forwarded as one JSON blob.
       outputs_json: ${{ toJSON(steps.release.outputs) }}
     steps:
+      # Fine-grained PAT (Contents + Pull requests write on this repo only)
+      # instead of GITHUB_TOKEN: the default token may not create PRs unless
+      # a repo-wide Actions toggle is flipped — too broad a grant for a repo
+      # heading public — and PRs it opens never trigger ci.yml checks.
       - uses: googleapis/release-please-action@v4
         id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
   artifacts:
     name: ${{ matrix.path }}
