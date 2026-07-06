@@ -48,12 +48,22 @@ jobs:
     env:
       TAG: ${{ fromJSON(needs.release-please.outputs.outputs_json)[format('{0}--tag_name', matrix.path)] }}
       COMPONENT_PATH: ${{ matrix.path }}
+    # csl ships no artifacts: it needs cgo (tree-sitter) plus ONNX runtime
+    # libs on the target machine, so a CGO_ENABLED=0 cross-compile cannot
+    # build it and a tarball would not run anyway — the fleet installs it
+    # from source via ralph. Guarding every step (not the job: the matrix
+    # context is unavailable in a job-level `if`, and a matrix `exclude`
+    # fails the workflow when csl releases alone) turns its matrix entry
+    # into a no-op success while the tag, changelog, and GitHub Release
+    # from release-please still stand.
     steps:
       - uses: actions/checkout@v4
+        if: matrix.path != 'services/csl'
         with:
           ref: ${{ env.TAG }}
 
       - uses: actions/setup-go@v5
+        if: matrix.path != 'services/csl'
         with:
           go-version-file: go.mod
 
@@ -61,6 +71,7 @@ jobs:
       # (docs/adr/0004). One checksums.txt covers all three tarballs so a
       # single cosign verify-blob vouches for every artifact of the release.
       - name: Build platform tarballs
+        if: matrix.path != 'services/csl'
         run: |
           name=$(basename "$COMPONENT_PATH")
           version="${TAG##*/}"
@@ -79,6 +90,7 @@ jobs:
           cd dist && sha256sum ./*.tar.gz > checksums.txt
 
       - uses: sigstore/cosign-installer@v3
+        if: matrix.path != 'services/csl'
 
       # Verify with:
       #   cosign verify-blob \
@@ -87,9 +99,11 @@ jobs:
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
       #     checksums.txt
       - name: Sign checksums (keyless)
+        if: matrix.path != 'services/csl'
         run: cosign sign-blob --yes --bundle dist/checksums.txt.bundle dist/checksums.txt
 
       - name: Upload release assets
+        if: matrix.path != 'services/csl'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" dist/*.tar.gz dist/checksums.txt dist/checksums.txt.bundle --clobber

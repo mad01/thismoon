@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: csl
+  description: Local code search + MCP stdio server and localhost web UI (zoekt)
+  tags: [go, cli, mcp, daemon]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

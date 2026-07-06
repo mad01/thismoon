@@ -6,6 +6,8 @@
   "tag-separator": "/",
   "initial-version": "0.1.0",
   "packages": {
+    "services/catalog": { "component": "catalog" },
+    "services/csl": { "component": "csl" },
     "services/d-man": { "component": "d-man" },
     "services/deps": { "component": "deps" },
     "services/events": { "component": "events" },

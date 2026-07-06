@@ -1,0 +1,50 @@
+[recipe]
+name = "catalog"
+description = "catalog — systems & components catalog UI for the mad01 fleet (services/catalog)"
+wave = 0
+# Personal machines only: the catalog renders the personal repo registry, a
+# service property — the registry rows are personal checkouts that only exist
+# there (gate kept from the dotfiles-era recipe).
+profiles = ["personal"]
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the paths below name that cache directly.
+#
+# Item keys keep the names the dotfiles-era wiring used (packages.catalog,
+# hooks.builds.catalog_web_service) so ralph state carries over at cutover.
+# Machine wiring stays in the consuming repo: the ~/.config/catalog
+# registry.yaml symlink (which repos a machine catalogs is per-machine).
+
+[packages.catalog]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/services/catalog"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/catalog"]
+
+# Restart the web agent when the freshly installed binary actually changed.
+# ralph hashes install_paths and runs this only when the bytes differ. The
+# `t-man status` guard skips the restart on first install, where this fires
+# before [hooks.builds.catalog_web_service] has registered the agent.
+[packages.catalog.service]
+restart = "if command -v t-man >/dev/null && t-man status catalog-web >/dev/null 2>&1; then t-man restart catalog-web; fi"
+
+[hooks]
+# Stop the t-man web agent before the binary is removed by artifact cleanup.
+pre_uninstall = [
+  "if command -v t-man >/dev/null; then t-man remove catalog-web 2>/dev/null; fi || true",
+]
+
+# Register `catalog web` as a long-running t-man user agent so the catalog UI
+# is always reachable on http://localhost:7575 (http://catalog.this/ via
+# d-man). run = "always" keeps the agent registered and self-heals if it was
+# removed; t-man add is idempotent.
+[hooks.builds.catalog_web_service]
+commands = [
+  "if command -v t-man >/dev/null; then t-man add --name catalog-web -- $HOME/code/bin/catalog web --port 7575; else echo 'catalog: skip service (t-man not on PATH; install t-man then run: t-man add --name catalog-web -- catalog web --port 7575)'; fi",
+]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/catalog"
+run = "always"
+depends_on = ["packages.catalog", "packages.t_man"]

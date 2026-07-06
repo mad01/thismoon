@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: catalog
+  description: Reads service-info.yaml across repos and serves a localhost catalog UI (CLI + web)
+  tags: [go, cli, web]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

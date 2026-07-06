@@ -1,0 +1,54 @@
+[recipe]
+name = "csl"
+description = "csl — local code search daemon, web UI, and MCP stdio server (services/csl)"
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the paths below name that cache directly.
+#
+# Item keys keep the names the dotfiles-era wiring used
+# (packages.code_search_local, hooks.builds.csl_web_service) so ralph state
+# carries over at cutover — item keys are global, not namespaced per recipe.
+#
+# `make build` prefetches the ONNX runtime libs into ~/.local/share/csl/ortlib
+# (idempotent) and builds with -tags ORT — semantic search works out of the
+# box. Machine wiring stays in the consuming repo: the ~/.config/csl
+# config.yaml symlink and the MCP registration (claude-mcp servers.json).
+
+[packages.code_search_local]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/services/csl"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/csl"]
+
+# Restart the web agent when the freshly installed binary actually changed.
+# ralph hashes install_paths and runs this only when the bytes differ. The
+# `t-man status` guard skips the restart on first install, where this fires
+# before [hooks.builds.csl_web_service] has registered the agent.
+[packages.code_search_local.service]
+restart = "if command -v t-man >/dev/null && t-man status csl-web >/dev/null 2>&1; then t-man restart csl-web; fi"
+
+[hooks]
+# Uninstall csl-managed post-merge hooks from every repo, and stop the t-man
+# web agent, before the binary and config are removed by artifact cleanup.
+pre_uninstall = [
+  "csl hooks uninstall 2>/dev/null || true",
+  "if command -v t-man >/dev/null; then t-man remove csl-web 2>/dev/null; fi || true",
+]
+# Remove the indexes and daemon state that csl creates at runtime.
+post_uninstall = ["rm -rf ~/.config/csl/search-index ~/.config/csl/semantic-index ~/.config/csl/search-daemon.log ~/.config/csl/search-daemon.pid ~/.config/csl/search-daemon.sock ~/.config/csl/reindex.queue 2>/dev/null || true"]
+
+# Register `csl web` as a long-running t-man user agent so the search UI is
+# always reachable on http://localhost:7424 (http://csl.this/ via d-man).
+# run = "always" keeps the agent registered and self-heals if it was removed;
+# t-man add is idempotent.
+[hooks.builds.csl_web_service]
+commands = [
+  "if command -v t-man >/dev/null; then t-man add --name csl-web -- $HOME/code/bin/csl web --port 7424; else echo 'csl: skip service (t-man not on PATH; install t-man then run: t-man add --name csl-web -- csl web --port 7424)'; fi",
+]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/csl"
+run = "always"
+depends_on = ["packages.code_search_local", "packages.t_man"]

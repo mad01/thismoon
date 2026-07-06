@@ -1,0 +1,133 @@
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+/* Catalog-only vars. The palette (warm-grays, terracotta, --bg/--paper/--text-*,
+   --border, --primary, --card-bg, --chip-bg, shadows, --page-width, etc.) lives
+   in webkit.css; these are the entity-accent + typography tokens webkit doesn't
+   define. --sys/--comp are theme-dependent, so they re-declare under dark. */
+:root {
+  --sys: var(--terracotta);
+  --comp: var(--blue);
+
+  --display: 'Fraunces', Georgia, 'Times New Roman', serif;
+}
+
+[data-theme="dark"] {
+  --sys: #E8956A;
+  --comp: #7FAEDC;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--text-1);
+  min-height: 100vh;
+  line-height: 1.6;
+  transition: background 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Faint paper grain for atmosphere. */
+.grain {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+}
+[data-theme="dark"] .grain { mix-blend-mode: screen; opacity: 0.4; }
+
+.wrap { max-width: var(--page-width); margin: 0 auto; padding: 0 1.5rem; position: relative; z-index: 1; }
+
+/* The base .btn / .btn-ghost / .btn-primary and topbar chrome come from
+   webkit.css; only the refresh-spin animation is catalog-specific. */
+.btn-ghost svg.spin { animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Hero / search ── */
+.hero { padding: 2.5rem 0 0.5rem; }
+.hero-sub { color: var(--text-2); font-size: 0.95rem; max-width: 46ch; }
+
+.controls { display: flex; flex-direction: column; gap: 0.85rem; margin: 1.25rem 0 2rem; }
+/* Search input is <wk-search> (with leading <svg>) and filter chips are
+   <wk-badge variant="filter">; both styled by webkit.css. */
+
+.filters { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.filters-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-right: 0.25rem; }
+
+/* ── Section + grid ── */
+.section { margin-bottom: 2.5rem; }
+.section-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+.section-head h2 { font-family: var(--display); font-weight: 500; font-size: 1.25rem; letter-spacing: -0.01em; }
+.section-head .count { font-size: 0.8rem; color: var(--text-3); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.9rem; }
+
+/* Cards are <wk-card> (bg/border/radius/hover/accent-bar from webkit); kind
+   classes only feed the entity-accent var into the card's left bar. The rise
+   entrance animation stays catalog-specific. */
+.grid .wk-card { animation: rise 0.5s cubic-bezier(0.2,0.7,0.2,1) backwards; }
+.k-system { --accent: var(--sys); }
+.k-component { --accent: var(--comp); }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.55rem; }
+.card-name { font-size: 1.02rem; font-weight: 600; letter-spacing: -0.01em; word-break: break-word; }
+.card-desc { font-size: 0.82rem; color: var(--text-2); line-height: 1.5; min-height: 1.2em; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.8rem; }
+
+.tag { font-size: 0.72rem; color: var(--text-3); background: var(--chip-bg); padding: 0.15rem 0.5rem; border-radius: 6px; }
+.owner-pill { font-size: 0.72rem; color: var(--text-2); }
+.owner-pill b { color: var(--text-1); font-weight: 600; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ── Detail pages ── */
+.back { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--text-2); text-decoration: none; margin: 1.75rem 0 1.25rem; transition: color 0.15s; }
+.back:hover { color: var(--primary); }
+.detail-head { margin-bottom: 1.75rem; }
+.detail-kind { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; color: var(--accent, var(--primary)); }
+.detail-title { font-family: var(--mono); font-weight: 600; font-size: clamp(1.6rem, 4vw, 2.3rem); letter-spacing: -0.01em; margin: 0.35rem 0 0.7rem; word-break: break-word; }
+.detail-desc { font-size: 1rem; color: var(--text-2); max-width: 60ch; }
+.detail-metarow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+
+/* Outbound link to the entity's source on its git remote. */
+.repo-link {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-family: var(--mono); font-size: 0.73rem; color: var(--text-2);
+  background: var(--chip-bg); border: 1px solid var(--border);
+  padding: 0.2rem 0.55rem; border-radius: 7px; text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
+}
+.repo-link:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.repo-link svg { opacity: 0.65; }
+
+/* ── Dependency graph (Cytoscape) ── */
+.cy-wrapper { position: relative; margin-top: 0.25rem; }
+.cy-container {
+  width: 100%; height: 460px;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+  overflow: hidden;
+}
+.cy-hint { font-size: 0.73rem; color: var(--text-3); margin-top: 0.55rem; }
+
+/* Detail-page metadata is <wk-kv variant="card"> (framed key/value rows),
+   styled by webkit.css. */
+
+.empty { text-align: center; padding: 4rem 1rem; color: var(--text-3); }
+.empty .big { font-family: var(--display); font-size: 1.4rem; color: var(--text-2); margin-bottom: 0.4rem; }
+
+/* ── Modal ── */
+/* The Add-entity modal and its form are the wk-modal / wk-form / wk-seg /
+   wk-toast families from webkit.css (backdrop, panel, head, form rows, hint,
+   actions, segmented kind picker, toasts — incl. wkFade/wkPop/slide-in anims).
+   Only the ✕ close button stays bespoke: webkit has no icon-button equivalent. */
+.icon-btn { background: none; border: none; font-size: 1.6rem; line-height: 1; color: var(--text-3); cursor: pointer; padding: 0 0.3rem; border-radius: 6px; }
+.icon-btn:hover { color: var(--text-1); }
+/* Modal title keeps catalog's Fraunces display face (webkit uses body font). */
+wk-modal-head h2 { font-family: var(--display); font-weight: 500; font-size: 1.3rem; }
+
+@media (max-width: 560px) {
+  .topbar-controls .btn span { display: none; }
+  /* webkit's wk-form-row stays two-column at all widths; collapse it on mobile
+     to match catalog's prior single-column modal layout. */
+  wk-form-row { grid-template-columns: 1fr; }
+}
+
+/* prefers-reduced-motion is handled globally by webkit.css. */

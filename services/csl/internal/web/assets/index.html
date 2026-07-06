@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>csl · code search</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<link href="/assets/app.css" rel="stylesheet">
+</head>
+<body>
+<wk-header brand="csl·search">
+  <a data-nav class="active" href="/">Search</a>
+</wk-header>
+<main class="wrap">
+  <wk-page-header>
+    <wk-title>Search your local code</wk-title>
+    <wk-subtitle>zoekt queries across every indexed repo — grouped by repo and file, with links to the source on its git host.</wk-subtitle>
+  </wk-page-header>
+
+  <div class="kind-row">
+    <wk-seg id="searchKindToggle">
+      <button type="button" data-kind="lexical" class="active">Lexical</button>
+      <button type="button" data-kind="semantic">Semantic</button>
+      <button type="button" data-kind="hybrid">Hybrid</button>
+    </wk-seg>
+    <span class="scope-selects">
+      <select id="repoSelect" class="scope-select" title="Restrict search to one repo">
+        <option value="">all repos</option>
+      </select>
+      <select id="langSelect" class="scope-select" title="Restrict search to one language">
+        <option value="">any language</option>
+      </select>
+    </span>
+  </div>
+
+  <form id="searchForm">
+    <wk-search>
+      <span class="search-box">
+        <input id="searchInput" class="search-input" type="text" autocomplete="off" spellcheck="false" list="searchHistory">
+        <datalist id="searchHistory"></datalist>
+        <span class="search-hl" aria-hidden="true"><span id="searchHl"></span></span>
+      </span>
+      <button type="submit" class="search-btn">Search</button>
+    </wk-search>
+  </form>
+
+  <div class="result-facets" id="facets"></div>
+  <div class="status-row">
+    <div class="status" id="status"></div>
+    <span class="expand-ctl" id="expandCtl" hidden title="Lines of context the expand button fetches">
+      <span class="label-min">context</span>
+      <button type="button" class="mini-btn" data-step="-">−</button>
+      <span id="expandVal">±15</span>
+      <button type="button" class="mini-btn" data-step="+">+</button>
+    </span>
+    <wk-seg id="modeToggle" hidden>
+      <button type="button" data-mode="files_with_matches" class="active">Files</button>
+      <button type="button" data-mode="content">Matches</button>
+    </wk-seg>
+  </div>
+  <div id="results"></div>
+  <div id="examples"></div>
+</main>
+<script src="/webkit/webkit.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

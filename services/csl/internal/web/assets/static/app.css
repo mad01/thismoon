@@ -1,0 +1,150 @@
+/* csl content styles. Palette, reset, html/body/.wrap base, header chrome, and
+   the wk-page-header / wk-title / wk-subtitle / wk-search components now come
+   from /webkit/webkit.css. Only csl-specific content styles live here. */
+
+.label-min { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-right: 0.1rem; }
+
+/* ── Result quick filters ── */
+.result-facets { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.75rem 0 0.25rem; }
+.result-facets:empty { display: none; }
+.facet-count { opacity: 0.65; margin-left: 0.35em; font-size: 0.85em; }
+
+/* ── Query syntax highlighting ──
+   .search-hl is a pointer-transparent overlay painted on top of the search
+   input; the input's own text goes transparent (.hl-on, added by JS so text
+   stays visible without JS) and the overlay draws the colored copy. The inset
+   mirrors the wk-search input metrics: 1px border, 1rem horizontal padding.
+   Alignment relies on the shared monospace body font. */
+.search-box { position: relative; display: flex; flex: 1; min-width: 0; }
+.search-box input.hl-on { color: transparent; caret-color: var(--text-1); }
+.search-hl {
+  position: absolute; inset: 1px 1rem;
+  display: flex; align-items: center;
+  overflow: hidden; pointer-events: none;
+  font-size: 1rem; color: var(--text-1); white-space: pre;
+}
+/* Token colors are shared by the live search overlay (.search-hl) and the
+   highlighted example queries on the landing view (.qhl). */
+.search-hl .t-field, .qhl .t-field { color: var(--blue); font-weight: 600; }
+.search-hl .t-neg,   .qhl .t-neg   { color: var(--red); font-weight: 600; }
+.search-hl .t-str,   .qhl .t-str   { color: var(--green); }
+.search-hl .t-paren, .qhl .t-paren { color: var(--amber); font-weight: 600; }
+.search-hl .t-op,    .qhl .t-op    { color: var(--purple); font-weight: 600; }
+[data-theme="dark"] .search-hl .t-field, [data-theme="dark"] .qhl .t-field { color: #7AAAE8; }
+[data-theme="dark"] .search-hl .t-str,   [data-theme="dark"] .qhl .t-str   { color: var(--green-light); }
+[data-theme="dark"] .search-hl .t-paren, [data-theme="dark"] .qhl .t-paren { color: #E8B86A; }
+[data-theme="dark"] .search-hl .t-op,    [data-theme="dark"] .qhl .t-op    { color: #B294D8; }
+
+/* ── Lexical ⇄ semantic mode toggle ── */
+.kind-row { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; }
+
+/* ── Repo / language scope dropdowns ── */
+.scope-selects { margin-left: auto; display: flex; gap: 0.4rem; }
+.scope-select {
+  background: var(--chip-bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.2rem 0.4rem; font-family: inherit;
+  font-size: 0.75rem; color: var(--text-2); cursor: pointer; max-width: 15rem;
+}
+.scope-select:hover { border-color: var(--border-hover); color: var(--text-1); }
+@media (max-width: 640px) {
+  .kind-row { flex-wrap: wrap; }
+  .scope-selects { margin-left: 0; width: 100%; }
+  .scope-select { flex: 1; min-width: 0; }
+}
+
+/* ── Semantic results ── */
+.sem-hit .file-head { align-items: baseline; }
+.sem-score {
+  font-size: 0.6875rem; font-weight: 600; color: var(--primary);
+  background: var(--chip-bg); border: 1px solid var(--border); border-radius: 5px;
+  padding: 0.05rem 0.4rem; font-variant-numeric: tabular-nums;
+}
+.sem-snippet {
+  margin: 0; padding: 0.5rem 0.9rem; white-space: pre-wrap; overflow-x: auto;
+  font-family: inherit; font-size: 0.8125rem; color: var(--text-1);
+}
+
+/* ── Landing-page examples ── */
+#examples[hidden] { display: none; }
+.ex-lead { font-size: 0.875rem; color: var(--text-2); margin: 1.25rem 0 0.25rem; }
+
+/* ── Status line (with the Files/Matches view toggle, shown once there are results) ── */
+.status-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 1.25rem 0 0.75rem; }
+.status { font-size: 0.8125rem; color: var(--text-3); min-height: 1.2em; margin-right: auto; }
+#modeToggle[hidden] { display: none !important; }
+.status .err { color: var(--red); }
+
+/* Expand-context stepper (lexical results only): ± lines fetched by expand. */
+.expand-ctl { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--text-2); }
+.expand-ctl[hidden] { display: none !important; }
+#expandVal { font-variant-numeric: tabular-nums; min-width: 2.6ch; text-align: center; }
+
+/* ── Results ── */
+.repo-group { margin-bottom: 1.5rem; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card-bg); box-shadow: var(--shadow-xs); }
+.repo-head {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.9rem;
+  background: var(--chip-bg); border-bottom: 1px solid var(--border);
+  font-size: 0.875rem; font-weight: 600;
+}
+.repo-head .count { margin-left: auto; font-weight: 400; font-size: 0.75rem; color: var(--text-3); }
+.host-badge { font-size: 0.6875rem; font-weight: 500; color: var(--text-3); background: var(--paper); border: 1px solid var(--border); border-radius: 5px; padding: 0.05rem 0.4rem; }
+
+.file-group { border-top: 1px solid var(--border); }
+.file-group:first-child { border-top: none; }
+.file-head {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.9rem;
+  font-size: 0.8125rem; color: var(--text-2);
+}
+.file-path { color: var(--blue); text-decoration: none; word-break: break-all; }
+[data-theme="dark"] .file-path { color: #7AAAE8; }
+.file-path:hover { text-decoration: underline; }
+.file-actions { margin-left: auto; display: flex; gap: 0.4rem; }
+.mini-btn {
+  appearance: none; background: var(--chip-bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.15rem 0.5rem; font-family: inherit; font-size: 0.6875rem;
+  color: var(--text-2); cursor: pointer; transition: all 0.15s; text-decoration: none;
+}
+.mini-btn:hover { border-color: var(--border-hover); color: var(--text-1); }
+
+.lines { font-size: 0.8125rem; }
+.line { display: flex; gap: 0.75rem; padding: 0.05rem 0.9rem; white-space: pre; overflow-x: auto; }
+.line:hover { background: var(--chip-bg); }
+.line .ln { color: var(--text-3); text-align: right; min-width: 3.5ch; user-select: none; flex-shrink: 0; }
+.line.hit .ln { color: var(--primary); font-weight: 600; }
+.line .code { color: var(--text-1); }
+.line.ctx .code { color: var(--text-2); }
+.line mark { background: rgba(217,119,6,0.28); color: inherit; border-radius: 2px; padding: 0 1px; }
+[data-theme="dark"] .line mark { background: rgba(232,149,106,0.3); }
+
+.empty { text-align: center; color: var(--text-3); padding: 3rem 1rem; font-size: 0.9375rem; }
+
+.load-more {
+  appearance: none; display: block; width: 100%; margin: 0.25rem 0 1.5rem;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.7rem 1rem; font-family: inherit; font-size: 0.8125rem; font-weight: 500;
+  color: var(--text-2); cursor: pointer; transition: all 0.15s; box-shadow: var(--shadow-xs);
+}
+.load-more:hover { border-color: var(--primary); color: var(--text-1); }
+.more-note { margin: 0.25rem 0 1.5rem; padding: 0.75rem 1rem; font-size: 0.8125rem; color: var(--text-2);
+  background: var(--chip-bg); border: 1px solid var(--border); border-radius: 10px; }
+
+/* ── Examples page ── */
+.ex-section { margin: 2rem 0; }
+.ex-section h2 { font-size: 1.0625rem; font-weight: 600; margin-bottom: 0.4rem; }
+.ex-section p { font-size: 0.875rem; color: var(--text-2); margin-bottom: 0.9rem; max-width: 640px; }
+.ex-q { width: 40%; }
+.ex-q a { text-decoration: none; }
+.ex-q .qhl {
+  display: inline-block; color: var(--text-1);
+  background: var(--chip-bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.1rem 0.45rem; white-space: pre-wrap; word-break: break-word;
+  transition: border-color 0.15s;
+}
+.ex-q a:hover .qhl { border-color: var(--primary); }
+.ex-desc { color: var(--text-2); }
+code, .mono { font-family: inherit; background: var(--chip-bg); border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.9em; }
+
+@media (max-width: 640px) {
+  .filter-input { width: 100%; }
+  .ex-q { width: auto; }
+}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>catalog</title>
+  <script src="/webkit/boot.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/webkit/webkit.css" />
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <wk-header brand="catalog.">
+    <button data-extra class="btn btn-ghost" id="refreshBtn" title="Re-scan source repos">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      <span>Refresh</span>
+    </button>
+    <button data-extra class="btn btn-primary" id="addBtn">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span>Add</span>
+    </button>
+  </wk-header>
+
+  <main class="wrap" id="view"><!-- rendered by app.js --></main>
+
+  <!-- Add-entity modal -->
+  <wk-modal id="modal" hidden>
+    <wk-modal-panel role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <wk-modal-head>
+        <h2 id="modalTitle">New entity</h2>
+        <button class="icon-btn" id="modalClose" aria-label="Close">&times;</button>
+      </wk-modal-head>
+      <wk-form id="addForm">
+        <wk-seg role="tablist" id="kindSeg">
+          <button type="button" class="active" data-kind="Component">Component</button>
+          <button type="button" data-kind="System">System</button>
+        </wk-seg>
+        <label>Name<input name="name" required placeholder="my-tool" pattern="[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?" /></label>
+        <label>Owner<input name="owner" required placeholder="mad01" /></label>
+        <label class="field-component">System<input name="system" placeholder="dotfiles" /></label>
+        <wk-form-row>
+          <label class="field-component">Type<input name="type" placeholder="cli" /></label>
+          <label class="field-component">Lifecycle<input name="lifecycle" placeholder="production" /></label>
+        </wk-form-row>
+        <label>Description<input name="description" placeholder="one line about it" /></label>
+        <label>Tags<input name="tags" placeholder="go, cli, mcp" /></label>
+        <label>Directory<input name="dir" required placeholder="~/code/src/github.com/mad01/dotfiles/my-tool" /></label>
+        <wk-form-hint>Writes <code>service-info.yaml</code> into the directory. Must be inside a registered repo.</wk-form-hint>
+        <wk-modal-actions>
+          <button type="button" class="btn btn-ghost" id="modalCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </wk-modal-actions>
+      </wk-form>
+    </wk-modal-panel>
+  </wk-modal>
+
+  <wk-toast-host id="toasts" aria-live="polite"></wk-toast-host>
+
+  <script src="/assets/cytoscape-3.31.0.min.js"></script>
+  <script src="/webkit/webkit.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
