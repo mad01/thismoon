@@ -87,6 +87,17 @@ summarize() {
     -e 's#^Sandbox: ([^ ]+) deny\([0-9]+\) ([a-z*-]+) ?(.*)$#\1 · \2 · \3#'
 }
 
+# escape a value for embedding inside a JSON string literal (backslash, quote,
+# tab; newlines become \n so a multi-line batch fits in one field)
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\t'/\\t}
+  s=${s//$'\n'/\\n}
+  printf '%s' "$s"
+}
+
 batch_count=0
 batch_first=""
 batch_unique=""        # newline-separated unique ALERT summaries this window
@@ -100,23 +111,23 @@ flush() {
   if [ "$batch_count" -gt 0 ] && [ $((now - last_flush)) -ge "$WINDOW" ]; then
     /usr/bin/osascript -e "display notification \"${batch_first:0:160}\" with title \"sandbox: ${batch_count} new denial(s)\" subtitle \"tail ${LOGFILE/#$HOME/~}\" sound name \"Funk\"" >/dev/null 2>&1 || true
     # Also archive the banner as an event (events.this). Best-effort and
-    # fire-and-forget — never block or fail the watcher if events is down/absent.
-    # Pull the process and operation out of the first summary
-    # ("proc(pid) · operation · target") so the event is filterable by process
-    # and denial type; these are ALERT batches (IGNORED denials never notify).
+    # fire-and-forget — never block or fail the watcher if events is down.
+    # POST via /usr/bin/curl, NOT the `events` CLI: launchd agents get the bare
+    # default PATH, which lacks the local bin dir, so a `command -v events`
+    # guard silently skips the emit on every flush (the original CLI version
+    # archived nothing, ever). Pull the process and operation out of the first
+    # summary ("proc(pid) · operation · target") so the event is filterable by
+    # process and denial type; message carries the batch's unique denials, not
+    # just the first. These are ALERT batches (IGNORED denials never notify).
     local ev_proc ev_rest ev_op
     ev_proc="${batch_first%% · *}"   # "python3.14(123)"
     ev_proc="${ev_proc%%(*}"          # "python3.14"
     ev_rest="${batch_first#* · }"     # "file-read-data · /path"
     ev_op="${ev_rest%% · *}"          # "file-read-data"
-    command -v events >/dev/null 2>&1 && \
-      events emit --source sandbox-watch --level warn \
-        --title "${batch_count} sandbox denial(s)" \
-        --message "${batch_first:0:240}" \
-        --tag unique="$batch_unique_n" \
-        --tag process="$ev_proc" \
-        --tag op="$ev_op" \
-        --tag status=alert >/dev/null 2>&1 &
+    /usr/bin/curl -m 2 -s -o /dev/null -X POST \
+      -H 'Content-Type: application/json' \
+      --data "{\"source\":\"sandbox-watch\",\"level\":\"warn\",\"title\":\"${batch_count} sandbox denial(s)\",\"message\":\"$(json_escape "${batch_unique:0:2000}")\",\"tags\":{\"unique\":\"${batch_unique_n}\",\"process\":\"$(json_escape "$ev_proc")\",\"op\":\"$(json_escape "$ev_op")\",\"status\":\"alert\"}}" \
+      "${EVENTS_BASE_URL:-http://127.0.0.1:7430}/api/events" >/dev/null 2>&1 &
     # Mirror what the banner covered to NOTIFYLOG — banners can't be copied,
     # this record can. One header line + the batch's unique denials, indented.
     ts=$(/bin/date '+%Y-%m-%d %H:%M:%S')
