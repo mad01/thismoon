@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: belt
+  description: Claude Code PreToolUse guard hooks (git-push-to-main block, internal-name write firewall)
+  tags: [go, cli, hooks]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

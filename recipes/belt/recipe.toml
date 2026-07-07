@@ -1,0 +1,20 @@
+# belt — public layer only: build + install. The guard-toggle config overlay
+# (~/.config/belt/config.toml) stays in the consuming repo's companion recipe —
+# it deliberately carries internal-name exclude_paths (see docs/adr/0006).
+[recipe]
+name = "belt"
+description = "belt — Claude Code PreToolUse guard hooks (git-push-to-main block on work profile, internal-name write firewall)"
+# wave 0: builds the binary before the consuming repo's claude recipe (wave 1)
+# merges the settings template that registers the hooks pointing at it.
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the path below names that cache directly.
+[packages.belt]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/tools/belt"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/belt"]

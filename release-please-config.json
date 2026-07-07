@@ -16,6 +16,7 @@
     "services/reminder": { "component": "reminder" },
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },
+    "tools/belt": { "component": "belt" },
     "tools/t-man": { "component": "t-man" }
   }
 }
