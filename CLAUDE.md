@@ -1,6 +1,6 @@
 # CLAUDE.md - thismoon
 
-Monorepo for the `*.this` platform: local web services, CLI tools, the shared webkit package, and their ralph recipes. Private for now, planned to go public — every commit sits on top of the Apache-2.0 LICENSE (the root commit).
+Monorepo for the `*.this` platform: local web services, CLI tools, the shared webkit package, and their ralph recipes. A macOS-first local development toolbox — every service is a web UI + CLI for the human and (where it makes sense) an MCP server for agents, all on local data. Private for now, planned to go public — every commit sits on top of the Apache-2.0 LICENSE (the root commit).
 
 ## Quick reference
 
@@ -19,6 +19,7 @@ tools/       CLI tools installed to the local bin
 webkit/      shared Go web UI package (in-module, no separate versioning)
 recipes/     ralph recipes, consumed remotely via [[recipe_sources]]
 docs/adr/    architecture decision records
+docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
 docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 ```
 
@@ -27,12 +28,30 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Single Go module: `github.com/mad01/thismoon`, go 1.26.2. No nested go.mod files.
 - A component is a directory under `services/` or `tools/` with its own Makefile exposing `build`, `test`, and `install` targets. The root Makefile discovers and delegates to them.
 - Releases are per-component semver with `svc/vX.Y.Z` tags, cut by release-please manifest mode on merge to main. Artifact builds are a plain CI matrix job.
-- Build targets: darwin/arm64, linux/amd64, linux/arm64. No Windows, by design (see docs/adr/0004).
+- Build targets: darwin/arm64 only — the platform is macOS-focused (see docs/adr/0007; supersedes the target list in 0004).
 - Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity.
 - Code imported from another repo comes in clean (no git history) and gets a row in `docs/MIGRATED-FROM.md` with the source repo and SHA it came from.
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
+
+## Release process
+
+Full reference: `docs/RELEASING.md`. The short version for working here:
+
+- release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps; merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release, and the artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle. csl's matrix entry is a deliberate no-op (cgo).
+- Release PRs can sit unmerged; merge = release. Never hand-edit `.release-please-manifest.json`.
+- The workflow authenticates with the `RELEASE_PLEASE_TOKEN` fine-grained PAT (Contents + Pull requests read-write). "Error adding to tree" or a missing release PR usually means the PAT expired or lost write — it needs renewal at most yearly.
+- New component → must be added to `release-please-config.json`; CI fails the PR otherwise.
+
+## Shipping a change to machines
+
+Two delivery paths, independent of each other:
+
+- **Fleet (ralph):** consuming machines point a `[[recipe_sources]]` stanza at this repo (`ref = "main"`, `update = true`), so recipes merge as `thismoon/<recipe>` and every `ralph up` pulls main, rebuilds from source, and restarts services via t-man. Merging to main IS the deploy; no release tag needed. After merging recipe changes, verify with the service's `/version` — ralph can report ok while an old binary keeps running.
+- **Artifacts (releases):** the per-component tags/tarballs above serve `go install` and manual downloads; the fleet does not consume them.
+
+Machine-private wiring (which `.this` hosts exist, MCP registration, env/secrets, config overlays) lives in the consuming repo as companion recipes layered over these — never add it here (docs/adr/0006).
 
 ## Importing a service from another repo
 

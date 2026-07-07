@@ -1,48 +1,146 @@
 # thismoon
 
-Monorepo for the `*.this` platform: a fleet of local web services and CLI
-tools that run on your own machine behind `http://<name>.this/` hostnames,
-plus the shared web UI kit and the [ralph](https://github.com/mad01/ralph)
-recipes that install them.
+A local-first development toolbox for macOS: a fleet of web services and CLI
+tools that run on your own machine behind `http://<name>.this/` hostnames.
+Services are launchd agents, notifications are native, binaries are
+codesigned. No cloud, no accounts: your code, notes, reminders, and
+dashboards stay on your disk.
 
-## Layout
+Every component works for two kinds of user. For you, it is a web page and a
+CLI. For your coding agents, most components are also [MCP](https://modelcontextprotocol.io)
+servers: the code search you run in a browser is the same index Claude
+queries, the briefing page an agent writes is the one you read at
+`present.this`. One fleet, driven from either side.
 
-| Path | Contents |
-|------|----------|
-| `services/` | Local web services, one directory per service (catalog, csl, d-man, deps, events, pr, present, reminder, speak, status) |
-| `tools/` | CLI tools (t-man) |
-| `webkit/` | Shared Go web UI package, compiled in — no separate versioning |
-| `recipes/` | ralph recipes, consumed remotely via `[[recipe_sources]]` |
-| `docs/adr/` | Architecture decision records |
+The repo also carries the shared web UI package (`webkit/`) and the
+[ralph](https://github.com/mad01/ralph) recipes that install the fleet.
 
-Everything is one Go module: `github.com/mad01/thismoon`. Each component
-under `services/` or `tools/` has its own Makefile with `build`, `test`, and
-`install` targets; the root Makefile discovers and delegates to them
-(`make components` lists them).
+## Services
+
+Long-running local web services under `services/`, each on its own `*.this`
+address, managed as launchd agents by t-man.
+
+| Service | What it does | Interfaces |
+|---------|--------------|------------|
+| catalog | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI |
+| csl | Code search over local checkouts (zoekt index) | web · CLI · MCP |
+| d-man | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI |
+| deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP |
+| events | Local event and audit log, archive-only JSONL store | web · CLI · MCP |
+| pr | PR review dashboard aggregating open PRs from multiple GitHub hosts | web · CLI |
+| present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP |
+| reminder | Reminders that fire macOS notifications | web · CLI · MCP |
+| speak | Reads markdown aloud through a local TTS model | web · CLI |
+| status | Status page with 30-day uptime history for the fleet | web · CLI |
+
+## Tools
+
+CLI tools under `tools/`, installed to your local bin.
+
+| Tool | What it does | Interfaces |
+|------|--------------|------------|
+| belt | Claude Code guard hooks (blocks push-to-main, internal-name writes) | CLI |
+| bionic | Bionic-reading text transform | CLI · MCP |
+| humanizer | AI-writing detection and voice profiling | CLI · MCP |
+| suspenders | Git secret scanner and pre-commit hook orchestrator | CLI |
+| t-man | Declarative launchd agent/daemon manager | CLI |
+| worklog | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP |
+
+The MCP column is the AI half of the toolbox: register those components as
+stdio MCP servers and an agent gets code search, dependency checks, reminders,
+briefing pages, an audit log, and work-state checkpoints on the same local
+data you see in the web UIs.
+
+## How it fits together
+
+Three layers, two of them public:
+
+```
+thismoon (public)      components + recipes/: the code and how to install it
+   ↑ consumed by
+ralph (public)         the installer: reconciles machines against TOML recipes
+   ↑ configured by
+your config repo       machine-private wiring: secrets, host config, overlays
+(private)
+```
+
+Each component ships with a recipe under `recipes/` that builds it, installs
+it, and (for services) registers it as a launchd agent. ralph consumes those
+recipes remotely through a `[[recipe_sources]]` stanza in its config:
+
+```toml
+[[recipe_sources]]
+name = "thismoon"
+url = "git@github.com:mad01/thismoon.git"
+ref = "main"
+update = true
+```
+
+Recipes merge under the identity `thismoon/<recipe>`. With `ref = "main"` and
+`update = true`, every `ralph up` pulls main and converges the machine on the
+latest recipes; pin `ref` to a tag or commit to stay put.
+
+The recipes here are deliberately the public layer only: portable build and
+install steps. Anything machine-private (which `.this` names exist, MCP
+registration, env and secrets, config overlays) lives in your own private
+config repo as small companion recipes that layer on top (see
+`docs/adr/0006`). A change to a service ships by merging to main; the next
+`ralph up` on each machine rebuilds and restarts it.
 
 ## Install
 
-Build from a checkout:
+Single components, from a checkout:
 
 ```sh
 make -C services/present install    # one component
 make install-all                    # everything
 ```
 
-Or install a single tool straight from the module path:
+Or straight from the module path:
 
 ```sh
 go install github.com/mad01/thismoon/services/present/cmd/present@latest
 ```
 
-Releases are per-component semver tags (`present/v1.2.3`) with checksums and
-cosign keyless signatures on the artifacts. csl ships no prebuilt artifacts —
-it needs cgo (tree-sitter) and local ONNX libraries, so build it from a
-checkout.
+Prebuilt tarballs (darwin/arm64) hang off each component's GitHub Release.
+csl is the exception: it needs cgo (tree-sitter) and local ONNX libraries, so
+build it from a checkout.
 
-The full fleet (services registered as launchd agents, config symlinks,
-`.this` routing) installs through ralph's `[[recipe_sources]]` pointing at
-this repo. See `recipes/` and ralph's configuration reference.
+For the full fleet (services as launchd agents, `.this` routing, config
+symlinks) on a fresh machine:
+
+1. Install ralph: `go install github.com/mad01/ralph/cmd/ralph@latest`
+2. Run `ralph init`, then add the `[[recipe_sources]]` stanza shown above to
+   `~/.config/ralph/config.toml` (or to your private config repo)
+3. Run `ralph up`
+
+See `recipes/` and
+[ralph's configuration reference](https://github.com/mad01/ralph/blob/main/docs/configuration.md)
+for profiles, host pinning, and overlays.
+
+## Releases
+
+Components release independently: per-component semver tags in the form
+`present/v1.2.3`, cut by release-please from conventional commits on merge to
+main. Artifacts ship with a `checksums.txt` and a cosign keyless signature.
+The full flow, including how to verify a download and how to register a new
+component, is in [docs/RELEASING.md](docs/RELEASING.md).
+
+## Layout
+
+| Path | Contents |
+|------|----------|
+| `services/` | Local web services, one directory per service |
+| `tools/` | CLI tools |
+| `webkit/` | Shared Go web UI package, compiled in, no separate versioning |
+| `recipes/` | ralph recipes, consumed remotely via `[[recipe_sources]]` |
+| `docs/adr/` | Architecture decision records |
+| `docs/RELEASING.md` | Release process |
+
+Everything is one Go module: `github.com/mad01/thismoon`. Each component
+under `services/` or `tools/` has its own Makefile with `build`, `test`, and
+`install` targets; the root Makefile discovers and delegates to them
+(`make components` lists them).
 
 ### While this repo is private
 
@@ -53,12 +151,12 @@ export GOPRIVATE=github.com/mad01/*
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-Once the repo is public, neither is needed for this module — drop the
+Once the repo is public, neither is needed for this module: drop the
 `insteadOf` rewrite and trim `GOPRIVATE` to whatever private repos remain.
 The ralph source stanza works unchanged in both worlds; it always clones over
 SSH.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE). No per-file headers; the root license
+Apache-2.0, see [LICENSE](LICENSE). No per-file headers; the root license
 covers the repo.

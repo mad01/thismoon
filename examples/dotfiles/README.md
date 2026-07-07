@@ -67,6 +67,38 @@ enable = false
    `recipes/secrets-env/recipe.toml`, which only applies on a `personal` host);
    the override above gates a recipe that ships from a source.
 
+## Updates and releases
+
+How a thismoon change reaches a machine wired up like this:
+
+1. A fix merges to thismoon's main.
+2. On the next `ralph up`, the source checkout pulls main (the example
+   `config.toml` sets `ref = "main"`, `update = true`), the changed component
+   rebuilds from source, and its service restarts through t-man.
+3. Verify with the service's `/version` endpoint (or `<tool> version` for
+   CLIs). ralph can report ok while an old binary keeps running, so check the
+   version, not the run report.
+
+Merging to main is the deploy; there is nothing to bump in the consuming
+repo. To move slower than main, pin `ref` to a tag or commit:
+
+```toml
+[[recipe_sources]]
+name = "thismoon"
+url = "git@github.com:mad01/thismoon.git"
+ref = "present/v1.2.3"   # any git ref pins the whole checkout at that commit
+update = true
+```
+
+The pin stays put until you edit the config; changing it moves the checkout
+on the next run. Note the ref pins the entire monorepo checkout, not just the
+named component.
+
+thismoon's per-component GitHub Releases (`present/v1.2.3` tags, tarballs,
+cosign signatures — see `docs/RELEASING.md` in the repo root) serve
+`go install` and manual downloads. A fleet wired through ralph builds from
+source and never touches those artifacts.
+
 ## Trying it
 
 Copy `config.toml` and `recipes/` into a fresh repo, adjust

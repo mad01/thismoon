@@ -67,9 +67,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # darwin/arm64, linux/amd64, linux/arm64 — no Windows, by design
-      # (docs/adr/0004). One checksums.txt covers all three tarballs so a
-      # single cosign verify-blob vouches for every artifact of the release.
+      # darwin/arm64 only — the platform targets macOS (docs/adr/0007).
+      # checksums.txt covers every tarball so a single cosign verify-blob
+      # vouches for all artifacts of the release.
       - name: Build platform tarballs
         if: matrix.path != 'services/csl'
         run: |
@@ -78,7 +78,7 @@ jobs:
           short_sha=$(git rev-parse --short HEAD)
           ldflags="-X github.com/mad01/thismoon/${COMPONENT_PATH}/internal/cli.Version=${version}-${short_sha}"
           mkdir -p dist
-          for platform in darwin/arm64 linux/amd64 linux/arm64; do
+          for platform in darwin/arm64; do
             goos="${platform%/*}"
             goarch="${platform#*/}"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
