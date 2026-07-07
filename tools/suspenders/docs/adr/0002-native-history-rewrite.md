@@ -1,0 +1,3 @@
+# Native history rewrite, not git-filter-repo
+
+`suspenders history clean` rewrites history with its own `git fast-export | transform | git fast-import` pipeline instead of shelling out to git-filter-repo. Wrapping git-filter-repo would have meant less code and a battle-tested engine, but it drags in a Python dependency the user has to install — and a standalone offline binary is the whole point of this tool. Three things contain the correctness risk of the in-house transform: a mandatory backup bundle before every rewrite, a byte-identical round-trip test on streams with no matches, and end-to-end tests that verify the secret is unreachable from any ref afterward.

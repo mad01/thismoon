@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: suspenders
+  description: Git secret scanner and pre-commit/post-merge hook orchestrator with built-in rules and internal-reference guard
+  tags: [go, cli, security]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

@@ -1,0 +1,136 @@
+# CLAUDE.md - Suspenders
+
+A Go CLI tool for offline git secret scanning and hook orchestration. Detects checked-in secrets using 84 built-in content rules plus 7 filename rules, manages pre-commit and post-merge hooks across repositories, and guards against leaking internal repository names into public repos. `suspenders history scan` runs the same checks over every commit on the public branch (attributed to the introducing commit); `suspenders history clean` rewrites history to remove flagged strings via a native fast-export/fast-import pipeline (see docs/adr/0002). Strings can be blanket-replaced with `***REDACTED***` or mapped to specific replacements via a replace table (`--replace-map` / config `history.replace_table`); table entries are processed longest-key-first to avoid partial matches. Files that are secrets wholesale (key/token files) are redacted in place via `--redact-file` globs / config `history.redact_files`: the blob content becomes `***REDACTED***` in every commit while the path stays in the tree; auto-collected file-name findings feed this list.
+
+Hand-work guide for changing the tool (build loop, add/tune a rule, test it, debug a false positive/negative): [docs/working-on-it.md](docs/working-on-it.md). Domain vocabulary: [CONTEXT.md](CONTEXT.md). How the history rewrite works end to end: [docs/history-clean.md](docs/history-clean.md).
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Build | `make build` |
+| Install | `make install` |
+| Test | `make test` |
+| Integration tests | `make test-integration` |
+| Lint | `make lint` |
+| Format | `make fmt` |
+
+## Architecture
+
+```
+cmd/suspenders/
+  main.go                    Thin entry point, calls commands.Execute()
+  commands/
+    root.go                  Cobra root command, version var
+    scan.go                  suspenders scan — standalone secret scanning + blocked-name
+                             check (guard.CheckDir, or guard.Check for --staged)
+    hook.go                  suspenders hook — install/update/status/uninstall/run
+    history.go               suspenders history — scan/clean across full git history
+                             clean flags: --replace, --replace-file, --replace-map,
+                             --redact-file, --dry-run, --yes
+    version.go               suspenders version
+
+internal/
+  config/
+    config.go                Config struct (YAML), Load from XDG path, ExpandPath
+                             Types: ScanConfig, GuardConfig, HistoryConfig, ExternalHook, HooksConfig
+  guard/
+    guard.go                 Internal-reference guard — CollectNames, Check (staged diff),
+                             CheckDir (tracked working-tree files), StagedFiles
+                             Walks workspace dirs via repo.Find, regex match on content
+  scanner/
+    rules.go                 84 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
+                             Rule fields: MinEntropy, ExcludeFiles, SkipOverlapping, Filter
+    scanner.go               New, ScanDir, ScanStaged (reads index via git show :<path>),
+                             AddAllowance; inline `suspenders:ignore` marker; fail-closed errors
+    entropy.go               shannonEntropy — entropy gating for generic rules
+    ignore.go                Per-repo .suspenders.yaml suppression
+    result.go                Finding type, Redact function, ErrFindingsFound
+  history/
+    walk.go                  Commit walker — streams one `git log -p` over the whole
+                             history, attributes added lines/new files to their commit
+    rewrite.go               Rewriter — pure fast-export stream transform: string
+                             replacement in blobs+messages (blanket or per-string via
+                             ReplaceTable), whole-file redaction (RedactPaths globs),
+                             sig strip
+    clean.go                 Clean/DryRun — preconditions, backup bundle,
+                             fast-export | Transform | fast-import, reset
+  hook/
+    hook.go                  Manager type — HookScript, Checksum, Install, Uninstall,
+                             Update, IsInstalled, NeedsUpdate, Status
+                             Event type: PreCommit, PostMerge
+  repo/
+    finder.go                Find (concurrent, 32 workers), IsRepo, ParseRemote
+```
+
+## Conventions
+
+- Config: YAML via `gopkg.in/yaml.v3`, lives at `~/.config/suspenders/config.yaml`
+- CLI: `github.com/spf13/cobra`, each command in its own file, registered via `init()`
+- Enable pattern: `*bool` field — nil = enabled (backwards compat for ScanConfig, ExternalHook)
+- Hook scripts use PATH-based binary resolution (`suspenders` not absolute path)
+- Hook scripts call `suspenders hook run <event>`, not `suspenders scan` directly
+- Hook scripts chain to `<event>.backup` (foreign hook preserved at install) before running suspenders
+- This repo's own `.suspenders.yaml` suppresses scan findings from fixture-bearing paths (tests, rules.go, README) — keep fixtures real, do not replace them with dummy values
+- Version embedded via `-ldflags` from the thismoon short HEAD commit
+- Per-repo overrides via `.suspenders.yaml` (ignore rules, paths, patterns, allowlist)
+- Repository discovery via `repo.Find` — walks dirs concurrently, extracts org/repo from remotes
+- Glob matching for excludes and repo filters via `github.com/gobwas/glob`
+
+## Hook Execution Order
+
+**pre-commit** (`suspenders hook run pre-commit`):
+
+1. External `hooks.pre_commit` entries (in config order, stop on first failure)
+2. Built-in guard (if `guard.enabled` is true)
+3. Built-in scan (if `scan.enabled` is true, which is the default)
+
+**post-merge** (`suspenders hook run post-merge`):
+
+1. External `hooks.post_merge` entries (in config order)
+
+## Configuration Schema
+
+```yaml
+dirs: []string                 # repo discovery directories
+exclude: []string              # glob patterns to exclude repos
+
+scan:
+  enabled: *bool               # nil/true = enabled (default)
+
+guard:
+  enabled: bool                # false by default
+  workspace_dirs: []string     # directories to scan for internal repo names
+  blocked_words: []string      # always-blocked terms; literal match, * = any non-space run
+  allowlist: []string          # org/repo names safe to reference
+  file_patterns: []string      # file globs to check in staged diff
+
+watch: []WatchRule             # custom detection rules
+allowlist: []AllowEntry        # global known-safe exact matches
+
+history:
+  replace_table:               # old -> new string mappings for history clean
+    old.internal.net: new.example.com
+    oldBrand: newBrand
+  redact_files:                # path globs whose blob content is fully redacted
+    - id_rsa                   # bare names match in any directory
+    - "certs/*.p12"
+
+hooks:
+  pre_commit:                  # external pre-commit hook scripts
+    - name: string
+      command: string          # shell command via sh -c
+      file_patterns: []string  # only run if staged files match
+      repos: []string          # only run in matching repos (glob)
+      enabled: *bool           # nil/true = enabled
+  post_merge:                  # external post-merge hook scripts
+    - (same fields as pre_commit entries)
+```
+
+## Key Files
+
+- `~/.config/suspenders/config.yaml` — user configuration
+- `.suspenders.yaml` — per-repo ignore/allowlist overrides
+- `.git/hooks/pre-commit` — generated hook script (calls `suspenders hook run pre-commit`)
+- `.git/hooks/post-merge` — generated hook script (calls `suspenders hook run post-merge`)
+- `.git/hooks/<event>.backup` — backup of pre-existing foreign hooks

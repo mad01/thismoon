@@ -1,5 +1,15 @@
 # The humanizer vale style pack is full of long rule regexes whose
 # `tokens: '...'` lines pattern-match as secret assignments. Suppress scan
 # findings from the style pack instead of mangling the rules.
+#
+# tools/suspenders is full of secret-shaped fixtures by design: detection
+# rules, test inputs, and README examples. Suppress scan findings from those
+# paths instead of obfuscating the fixtures into dummy values that no longer
+# exercise the rules (carried over from the standalone repo's own
+# .suspenders.yaml, scoped to the component).
 paths:
   - "**/tools/humanizer/internal/rules/vale/**"
+  - "**/tools/suspenders/**/*_test.go"
+  - "**/tools/suspenders/**/rules.go"
+  - "**/tools/suspenders/tests/integration/**"
+  - "**/tools/suspenders/README.md"

@@ -19,6 +19,7 @@
     "tools/belt": { "component": "belt" },
     "tools/bionic": { "component": "bionic" },
     "tools/humanizer": { "component": "humanizer" },
+    "tools/suspenders": { "component": "suspenders" },
     "tools/t-man": { "component": "t-man" },
     "tools/worklog": { "component": "worklog" }
   }
