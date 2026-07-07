@@ -1,0 +1,34 @@
+# Example overlay: register MCP servers for thismoon-shipped binaries.
+#
+# The binaries build + install from the thismoon source (thismoon/<recipe>,
+# wave 0). This consuming-repo recipe owns the machine-private wiring: which
+# MCP servers Claude Code sees, and — for third-party or untrusted servers —
+# the seatbelt sandbox they run under (docs/adr/0006 in thismoon).
+#
+# Two registration styles are shown in servers.json:
+#   - a first-party binary registered directly (stdio, no wrapper)
+#   - a sandboxed server launched through mytool-mcp-sandbox.sh, which execs
+#     the binary under the mytool.sb seatbelt profile
+[recipe]
+name = "mcp-registration"
+description = "MCP server registration overlay for thismoon-shipped binaries (+ sandbox-wrapper variant)"
+wave = 1
+
+# The MCP client spawns the sandbox wrapper by path, so it must be executable.
+[hooks.builds.mcp_chmod_wrapper]
+commands = ["chmod +x mytool-mcp-sandbox.sh"]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/mcp-registration"
+run = "always"
+idempotent = true
+
+# Reconcile the declarative servers.json into Claude Code's user scope. Reads
+# each entry and runs `claude mcp add --scope user`; skips cleanly when the
+# claude CLI is absent (e.g. CI). A real fleet factors this into one shared
+# sync tool across recipes — inlined here so the example stands alone.
+[hooks.builds.mcp_register]
+commands = [
+  "if command -v claude >/dev/null; then python3 register.py; else echo 'mcp-registration: skip (claude not on PATH)'; fi",
+]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/mcp-registration"
+run = "always"
+depends_on = ["builds.mcp_chmod_wrapper"]

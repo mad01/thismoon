@@ -1,0 +1,22 @@
+# Example overlay: lay down per-machine config for a thismoon-shipped service.
+#
+# The service binary ships from the thismoon source (thismoon/myservice); this
+# consuming-repo recipe owns only the machine-private config — watch lists,
+# host gates, per-machine paths — symlinked into place. Editing config.yaml in
+# your repo (tracked in git) is the whole workflow: a watching service re-reads
+# it live, a one-shot picks it up on its next run. No sudo, no restart.
+[recipe]
+name = "config-overlay"
+description = "Per-machine config overlay for a thismoon-shipped service (binary ships from the thismoon source)"
+wave = 1
+
+[directories.myservice_config]
+target = "~/.config/myservice"
+
+# Managed here in the recipe and symlinked into place, same pattern the real
+# fleet uses for a service's watch list. Omitted fields in config.yaml fall
+# back to the service's built-in defaults.
+[dotfiles.myservice_config_yaml]
+source = "config.yaml"
+target = "~/.config/myservice/config.yaml"
+action = "symlink"

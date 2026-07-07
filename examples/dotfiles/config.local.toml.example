@@ -1,0 +1,6 @@
+# Template for config.local.toml — copy to config.local.toml beside your ralph
+# config on each machine (e.g. ~/.config/ralph/config.local.toml) and set this
+# machine's profiles. The real config.local.toml is machine-local and gitignored
+# (see .gitignore); only this template is committed. Recipes whose profile
+# intersects this list apply on the machine.
+profiles = ["personal"]

@@ -1,0 +1,39 @@
+;; Example seatbelt profile (sandbox-exec) for a thismoon-shipped MCP server.
+;;
+;; Confines the server so a poisoned dependency can't exfiltrate data or read
+;; secrets. Tune it to what the server actually does — this example assumes a
+;; pure in-process transform (no file I/O, no network, no subprocesses), which
+;; is the tightest useful shape:
+;;   - NO network at all
+;;   - $HOME reads default-DENIED; the only allow is the binaries dir
+;;     (a secrets blocklist can never be complete — deny the lot)
+;;   - NO writes except /dev/null
+;;
+;; Baseline is (allow default) so dyld/system frameworks just work. Spawned via
+;; mytool-mcp-sandbox.sh, which supplies -D HOME=<home> and cd-s to / first
+;; (getcwd in a read-denied cwd is an EPERM). Add allows only when a real
+;; denial breaks the server, never preemptively.
+
+(version 1)
+(allow default)
+
+;; ── Network: none. The server speaks stdio; the transform is in-process. ──
+(deny network*)
+
+;; ── Filesystem writes: none ──
+(deny file-write*)
+(allow file-write* (literal "/dev/null"))   ;; shell/library redirects
+
+;; ── $HOME reads: default-DENY with allow-list ──
+;; System paths (/System, /usr/lib, dyld, frameworks) stay readable via the
+;; default-allow baseline — they hold no user secrets.
+(deny file-read*
+  (subpath (param "HOME")))
+(allow file-read*
+  (subpath (string-append (param "HOME") "/code/bin")))  ;; the binary
+
+;; realpath()/LookPath lstat() parent components of allowed paths; subpath
+;; allows don't cover parents. Metadata-only (no content reads) on the spine:
+(allow file-read-metadata
+  (literal (param "HOME"))
+  (literal (string-append (param "HOME") "/code")))

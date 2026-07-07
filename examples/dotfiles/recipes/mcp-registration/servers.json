@@ -1,0 +1,15 @@
+{
+  "_comment": "Declarative MCP server set for Claude Code user scope. Applied by register.py (or the recipe's mcp_register build hook), which does remove-then-add per entry so re-running is safe. Each stdio entry mirrors `claude mcp add --scope user <name> -- <command> [args...]`. Only stdio (command) entries are handled by the example. Keys starting with _ are ignored.",
+  "servers": {
+    "mytool": {
+      "_comment": "First-party binary from the thismoon source: pure stdio, no secrets, no file writes — registered directly, no wrapper.",
+      "command": "mytool",
+      "args": ["mcp"]
+    },
+    "mysandboxed": {
+      "_comment": "Sandboxed: launched through the wrapper, which cd-s to /, scrubs env, and execs the binary under mytool.sb (no network, no writes, $HOME reads default-denied). Use for anything you want confined.",
+      "command": "~/code/src/github.com/you/dotfiles/recipes/mcp-registration/mytool-mcp-sandbox.sh",
+      "args": []
+    }
+  }
+}

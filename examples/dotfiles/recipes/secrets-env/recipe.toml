@@ -1,0 +1,37 @@
+# Example overlay: wire a secret/env into a thismoon-shipped service WITHOUT
+# committing the value.
+#
+# Two patterns, both shown here — pick per secret:
+#   1. Runtime resolution (preferred). A wrapper resolves the secret from an
+#      external store (keychain, `gh auth token`, `pass`, `op read`) at launch
+#      and injects it via `env -i KEY="$val"`. Nothing secret ever lands in a
+#      tracked file. See service-with-secret.sh.
+#   2. Uncommitted env file. Values live in ~/.config/myservice/secrets.env,
+#      which is gitignored; only secrets.env.example (placeholder keys, no
+#      values) is committed. A wrapper sources it before exec.
+#
+# The recipe stays portable and gates to the machines that actually hold the
+# secret via `profiles` — this example only applies on a "personal" host.
+[recipe]
+name = "secrets-env"
+description = "Secret/env wiring for a thismoon-shipped service without committing values (runtime-resolve + gitignored env-file)"
+wave = 1
+profiles = ["personal"]
+
+# Make the launch wrapper executable.
+[hooks.builds.secrets_chmod_wrapper]
+commands = ["chmod +x service-with-secret.sh"]
+working_dir = "~/code/src/github.com/you/dotfiles/recipes/secrets-env"
+run = "always"
+idempotent = true
+
+# Ship the template (committed) so the required keys are discoverable. The real
+# secrets.env is created by hand on each machine from the .example and is never
+# tracked (see .gitignore).
+[directories.myservice_secrets]
+target = "~/.config/myservice"
+
+[dotfiles.myservice_secrets_example]
+source = "secrets.env.example"
+target = "~/.config/myservice/secrets.env.example"
+action = "symlink"

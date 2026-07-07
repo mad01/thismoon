@@ -16,6 +16,22 @@ url = "git@github.com:mad01/thismoon.git"
 ref = "main"
 update = true
 
-# Disable or host-scope a remote recipe with the namespaced override key:
-# [recipes_config.overrides."thismoon/reminder"]
+# --- Host-scoping remote recipes -----------------------------------------
+# Remote recipes are enabled on every machine by default. Override one by its
+# namespaced key (source/recipe, quoted). Two axes:
+#
+#   enable = false      turn the recipe off everywhere
+#   hosts = [...]       run it ONLY on the listed hostnames (others skip it)
+#
+# Uncomment and set your hostnames (`hostname -s`) to scope. Example: run the
+# deps service only on your two personal machines, and turn present off on a
+# host that shouldn't serve it.
+#
+# [recipes_config.overrides."thismoon/deps"]
+# hosts = ["your-laptop", "your-desktop"]
+#
+# [recipes_config.overrides."thismoon/present"]
 # enable = false
+#
+# Recipe-level `hosts`/`profiles` (see recipes/secrets-env/recipe.toml) gate a
+# recipe you own; the overrides here gate a recipe that ships from a source.

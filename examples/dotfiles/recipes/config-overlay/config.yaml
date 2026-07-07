@@ -1,0 +1,20 @@
+# Per-machine config for myservice (machine-private overlay — stays in your
+# dotfiles repo, never the shared thismoon repo). Symlinked to
+# ~/.config/myservice/config.yaml by the config-overlay recipe. Omitted fields
+# fall back to myservice's built-in defaults.
+
+# Directories this machine should watch. Prefer a rule over a machine roster:
+# list a path prefix, not one entry per host, so a new machine needs no config
+# change — derive membership, don't enumerate it.
+watch:
+  roots:
+    - "~/code"
+  ignore:
+    - "node_modules"
+    - ".git"
+
+# Host gate: empty means run everywhere. When you do need to scope by machine,
+# prefer ralph profiles/hosts (see ../secrets-env/recipe.toml and the override
+# block in ../../config.toml) so one source of truth drives gating instead of a
+# hostname baked into this file.
+hosts: []

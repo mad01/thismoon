@@ -1,0 +1,4 @@
+# Machine-local ralph overlay — created from config.local.toml.example on each
+# machine, never committed. Only the template is tracked. (`ralph init` adds
+# this same ignore to a real dotfiles repo.)
+config.local.toml
