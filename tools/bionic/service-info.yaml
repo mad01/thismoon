@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: bionic
+  description: Bionic-reading text transform — CLI pipe tool plus MCP server
+  tags: [go, cli, mcp]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon
