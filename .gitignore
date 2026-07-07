@@ -12,3 +12,21 @@
 
 # generated in CI by the changes job, never committed
 .github/filters.generated.yml
+
+# per-component build artifacts (binary name matches directory name)
+services/catalog/catalog
+services/csl/csl
+services/d-man/d-man
+services/deps/deps
+services/events/events
+services/pr/pr
+services/present/present
+services/reminder/reminder
+services/speak/speak
+services/status/status
+tools/belt/belt
+tools/bionic/bionic
+tools/humanizer/humanizer
+tools/suspenders/suspenders
+tools/t-man/t-man
+tools/worklog/worklog
