@@ -1,0 +1,22 @@
+# humanizer-id: Humanizer.CopulaAvoidance
+# humanizer-name: Copula avoidance
+# humanizer-category: language
+# humanizer-summary: Elaborate constructions ("serves as", "boasts", "features") substituting for is/are/has.
+# humanizer-rationale: LLMs replace simple copulas with decorative verbs.
+# humanizer-before: Gallery 825 serves as LAAA's exhibition space and boasts over 3,000 square feet.
+# humanizer-after: Gallery 825 is LAAA's exhibition space. The gallery has 3,000 square feet.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Copula_avoidance
+extends: existence
+message: "Copula avoidance: '%s' — replace with is/are/has."
+level: warning
+ignorecase: true
+tokens:
+  - serves as a[n]?
+  - serves as the
+  - stands as a[n]?
+  - stands as the
+  - functions as a[n]?
+  - acts as a[n]?
+  - boasts (?:a|an|over)
+  - features a[n]?
+  - offers a[n]?

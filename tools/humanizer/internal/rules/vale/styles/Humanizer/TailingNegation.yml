@@ -1,0 +1,16 @@
+# humanizer-id: Humanizer.TailingNegation
+# humanizer-name: Tailing negation
+# humanizer-category: language
+# humanizer-summary: Clipped ", no guessing." / ", no wasted motion." fragments.
+# humanizer-rationale: Sales-copy rhythm; usually better as a full clause.
+# humanizer-before: The options come from the selected item, no guessing.
+# humanizer-after: The options come from the selected item without forcing the user to guess.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Tailing_negations
+extends: existence
+message: "Tailing negation: '%s' — rewrite as a full clause."
+level: warning
+# nonword: the pattern begins with ',' and ends with '.', so Vale's default
+# \b boundary wrapping never matches. Disable it so the regex applies as written.
+nonword: true
+tokens:
+  - ',\s+no\s+(?:[a-z]+\s+){0,3}[a-z]+\s*\.'

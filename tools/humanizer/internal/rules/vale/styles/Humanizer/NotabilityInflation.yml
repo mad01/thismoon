@@ -1,0 +1,16 @@
+# humanizer-id: Humanizer.NotabilityInflation
+# humanizer-name: Notability inflation
+# humanizer-category: content
+# humanizer-summary: Listed media credits or "active social media presence" claims without a specific quote.
+# humanizer-rationale: LLMs reach for coverage-count arguments rather than reporting what the source said.
+# humanizer-before: Her views have been cited in The New York Times, BBC, Financial Times, and The Hindu.
+# humanizer-after: In a 2024 New York Times interview, she argued that AI regulation should focus on outcomes.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Undue_emphasis_on_notability
+extends: existence
+message: "Notability inflation: '%s' — quote or cite specifically."
+level: warning
+ignorecase: true
+tokens:
+  - active social media presence
+  - written by a leading expert
+  - has been (?:featured|cited) in [A-Z][^.]*,\s+[A-Z][^.]*,\s+[A-Z][^.]*

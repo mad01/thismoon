@@ -1,0 +1,19 @@
+# humanizer-id: Humanizer.KnowledgeCutoff
+# humanizer-name: Knowledge-cutoff disclaimer
+# humanizer-category: communication
+# humanizer-summary: Dated hedges like "as of my last training" or "based on available information".
+# humanizer-rationale: AI disclaimers about incomplete information should not appear in finished text.
+# humanizer-before: While specific details are limited, it appears to have been established in the 1990s.
+# humanizer-after: The company was founded in 1994, according to its registration documents.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Knowledge-cutoff_disclaimers
+extends: existence
+message: "Knowledge-cutoff disclaimer: '%s' — replace with a concrete source or cut."
+level: error
+ignorecase: true
+tokens:
+  - as of my (?:last training|knowledge cutoff)
+  - up to my (?:last training|last update|knowledge cutoff)
+  - based on (?:available information|the information available)
+  - while specific details are (?:limited|scarce|not)
+  - as of the current date
+  - as of now,?

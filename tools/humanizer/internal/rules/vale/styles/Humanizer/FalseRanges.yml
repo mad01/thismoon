@@ -1,0 +1,14 @@
+# humanizer-id: Humanizer.FalseRanges
+# humanizer-name: False ranges
+# humanizer-category: language
+# humanizer-summary: Stacked "from X to Y" constructions where X and Y aren't on a real scale.
+# humanizer-rationale: LLMs use range syntax decoratively, not informatively.
+# humanizer-before: ...from the singularity of the Big Bang to the grand cosmic web, from the birth of stars to dark matter.
+# humanizer-after: The book covers the Big Bang, star formation, and current dark matter theories.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#False_ranges
+extends: existence
+message: "False range: stacked 'from X to Y, from A to B' — list concrete topics instead."
+level: warning
+ignorecase: true
+tokens:
+  - 'from [^,.\n]{3,80} to [^,.\n]{3,80}, from [^,.\n]{3,80} to [^,.\n]{3,80}'

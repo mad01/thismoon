@@ -1,0 +1,22 @@
+# humanizer-id: Humanizer.VagueAttribution
+# humanizer-name: Vague attribution
+# humanizer-category: content
+# humanizer-summary: Weasel attributions (Experts believe, Industry reports) without a concrete source.
+# humanizer-rationale: AI chatbots invent authorities instead of citing specific sources.
+# humanizer-before: Experts believe it plays a crucial role in the regional ecosystem.
+# humanizer-after: The river supports several endemic fish species, according to a 2019 survey by the Chinese Academy of Sciences.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Vague_attributions_and_weasel_words
+extends: existence
+message: "Vague attribution: '%s' — name the source (who, where, when)."
+level: error
+ignorecase: true
+tokens:
+  - experts (?:believe|argue|say|contend)
+  - observers have (?:noted|cited|argued)
+  - industry (?:reports|observers)
+  - some critics (?:argue|say|note)
+  - several sources
+  - several publications
+  - studies have shown
+  - many believe
+  - it is widely believed

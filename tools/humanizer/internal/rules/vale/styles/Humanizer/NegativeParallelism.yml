@@ -1,0 +1,19 @@
+# humanizer-id: Humanizer.NegativeParallelism
+# humanizer-name: Negative parallelism
+# humanizer-category: language
+# humanizer-summary: "Not only ... but also" and "It's not just X; it's Y" framings.
+# humanizer-rationale: Overused rhetorical device; usually flattens to a single clause.
+# humanizer-before: It's not just about the beat; it's part of the aggression and atmosphere.
+# humanizer-after: The heavy beat adds to the aggressive tone.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Negative_parallelisms
+extends: existence
+message: "Negative parallelism: '%s' — collapse to a single positive clause."
+level: warning
+ignorecase: true
+tokens:
+  - 'not only\b.{0,60}?\bbut also\b'
+  - 'not only\b.{0,60}?\bbut\b'
+  - 'it''?s not just\b.{0,60}?\bit''?s\b'
+  - 'it is not just\b.{0,60}?\bit is\b'
+  - 'it''?s not merely\b.{0,60}?\bit''?s\b'
+  - 'it is not merely\b.{0,60}?\bit is\b'

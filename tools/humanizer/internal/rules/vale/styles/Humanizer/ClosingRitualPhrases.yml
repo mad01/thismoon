@@ -1,0 +1,20 @@
+# humanizer-id: Humanizer.ClosingRitualPhrases
+# humanizer-name: Closing ritual phrases
+# humanizer-category: communication
+# humanizer-summary: Ritual wind-down openers ("In conclusion", "In summary", "To summarize", "Ultimately").
+# humanizer-rationale: LLMs cap text with a recap clause; usually the recap adds nothing the reader did not just read.
+# humanizer-before: In conclusion, the project met its goals and delivered value to the team.
+# humanizer-after: The project shipped on time and cut onboarding from a week to a day.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Generic_positive_conclusions
+extends: existence
+message: "Closing ritual phrase '%s' — cut the recap and end on a concrete point."
+level: warning
+ignorecase: true
+tokens:
+  - in conclusion
+  - in summary
+  - to summarize
+  - to sum up
+  - all in all
+  - in closing
+  - to wrap (?:things )?up

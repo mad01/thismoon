@@ -1,0 +1,16 @@
+# humanizer-id: Humanizer.UnfilledPlaceholders
+# humanizer-name: Unfilled placeholders
+# humanizer-category: communication
+# humanizer-summary: Template slots left unfilled ("[Your Name]", "{company}", "<INSERT DATE>").
+# humanizer-rationale: A dead giveaway that text was pasted from an LLM template without editing.
+# humanizer-before: Hi [Recipient Name], thanks for reaching out about {topic}.
+# humanizer-after: Hi Dana, thanks for reaching out about the migration.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: existence
+message: "Unfilled placeholder '%s' — fill it in or remove it before sending."
+level: error
+nonword: true
+tokens:
+  - '\[[A-Z][^\]]{2,40}\]'
+  - '\{[a-z_]{2,30}\}'
+  - '<[A-Z][A-Z _]{1,30}>'

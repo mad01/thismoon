@@ -1,0 +1,21 @@
+# humanizer-id: Humanizer.AphoristicClosure
+# humanizer-name: Aphoristic closure
+# humanizer-category: content
+# humanizer-summary: Pull-quote "wisdom" at a paragraph end ("Because in the end...", "the journey matters").
+# humanizer-rationale: LLMs close on a greeting-card aphorism that sounds profound but states nothing checkable.
+# humanizer-before: Because in the end, the journey matters more than the destination.
+# humanizer-after: The rewrite took three weeks and cut the bug rate in half.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Generic_positive_conclusions
+extends: existence
+message: "Aphoristic closure '%s' — replace the greeting-card line with a concrete point."
+level: warning
+ignorecase: true
+tokens:
+  - because in the end
+  - at the end of the day
+  - the journey matters
+  - the journey is the destination
+  - in the grand scheme of things
+  - when all is said and done
+  - makes all the difference
+  - that'?s what (?:it'?s|its) all about

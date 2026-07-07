@@ -1,0 +1,22 @@
+# humanizer-id: Humanizer.Signposting
+# humanizer-name: Signposting and announcements
+# humanizer-category: communication
+# humanizer-summary: Meta-announcements like "Let's dive in" or "Here's what you need to know".
+# humanizer-rationale: Announces what is about to happen instead of just saying it.
+# humanizer-before: Let's dive into how caching works in Next.js. Here's what you need to know.
+# humanizer-after: Next.js caches data at multiple layers, including request memoization and the data cache.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Signposting_and_announcements
+extends: existence
+message: "Signposting phrase: '%s' — just say the thing."
+level: warning
+ignorecase: true
+tokens:
+  - let'?s dive in
+  - let'?s dive into
+  - let us dive into
+  - let'?s explore
+  - let'?s break (?:this|it) down
+  - here'?s what you need to know
+  - now let'?s look at
+  - without further ado
+  - buckle up

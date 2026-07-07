@@ -1,0 +1,20 @@
+# humanizer-id: Humanizer.FalseBothSidesHedge
+# humanizer-name: False both-sides hedge
+# humanizer-category: content
+# humanizer-summary: Reflexive centrism ("the truth lies somewhere in between", "valid points on both sides").
+# humanizer-rationale: An LLM safety reflex that fakes balance instead of committing to a position.
+# humanizer-before: There are valid points on both sides, and the truth lies somewhere in between.
+# humanizer-after: The benchmark favors approach B for write-heavy workloads.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: existence
+message: "False both-sides hedge '%s' — commit to a position the evidence supports."
+level: warning
+ignorecase: true
+tokens:
+  - the truth lies somewhere in between
+  - the answer lies somewhere in between
+  - somewhere in (?:the )?middle
+  - valid points on both sides
+  - merits to both
+  - both sides have a point
+  - it depends on who you ask

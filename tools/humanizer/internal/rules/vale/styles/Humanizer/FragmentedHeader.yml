@@ -1,0 +1,21 @@
+# humanizer-id: Humanizer.FragmentedHeader
+# humanizer-name: Fragmented header
+# humanizer-category: communication
+# humanizer-summary: Heading followed by a one-line paragraph that restates the heading.
+# humanizer-rationale: A rhetorical warm-up that adds nothing before the real content.
+# humanizer-before: |
+#   ## Performance
+#
+#   Speed matters.
+#
+#   When users hit a slow page, they leave.
+# humanizer-after: |
+#   ## Performance
+#
+#   When users hit a slow page, they leave.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Fragmented_headers
+extends: existence
+message: "Fragmented header: drop the one-line warm-up between the heading and the real content."
+level: suggestion
+tokens:
+  - '(?m)^#{1,6}\s+.+\n\n[^\n]{1,80}\n\n'

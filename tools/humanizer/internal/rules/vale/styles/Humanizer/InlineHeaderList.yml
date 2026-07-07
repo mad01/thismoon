@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.InlineHeaderList
+# humanizer-name: Inline-header vertical list
+# humanizer-category: style
+# humanizer-summary: Bullets that start with a bolded header and colon.
+# humanizer-rationale: Formatting tic of AI chatbots; usually better as prose.
+# humanizer-before: - **Performance:** Enhanced through optimized algorithms.
+# humanizer-after: The update speeds up load times through optimized algorithms.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Inline-header_lists
+extends: existence
+message: "Inline-header list item: '%s' — rewrite as prose or a plain bullet."
+level: error
+tokens:
+  - '(?m)^\s*[-*]\s+\*\*[^*\n]+?:\*\*'

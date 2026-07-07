@@ -1,0 +1,22 @@
+# humanizer-id: Humanizer.LetsConstructions
+# humanizer-name: Performative "let's" constructions
+# humanizer-category: communication
+# humanizer-summary: Topic-invitation openers ("let's take a look", "let's unpack", "let's consider").
+# humanizer-rationale: Announces the move instead of making it; a softer cousin of signposting. See Humanizer.Signposting.
+# humanizer-before: Let's take a look at the data. Let's unpack what this means.
+# humanizer-after: The data shows a 3x drop in retries after the cache change.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Signposting_and_announcements
+extends: existence
+message: "Performative invitation '%s' — just present the thing."
+level: warning
+ignorecase: true
+tokens:
+  - let'?s take a look
+  - let'?s consider
+  - let'?s unpack
+  - let'?s talk about
+  - let'?s walk through
+  - let'?s start (?:with|by)
+  - let'?s imagine
+  - let'?s look at
+  - let'?s examine

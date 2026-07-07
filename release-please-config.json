@@ -17,6 +17,7 @@
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },
     "tools/belt": { "component": "belt" },
+    "tools/humanizer": { "component": "humanizer" },
     "tools/t-man": { "component": "t-man" }
   }
 }

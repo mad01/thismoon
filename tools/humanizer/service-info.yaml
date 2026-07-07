@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: humanizer
+  description: AI-writing detection via embedded vale style pack and a voice profiler (CLI + MCP)
+  tags: [go, cli, mcp]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon

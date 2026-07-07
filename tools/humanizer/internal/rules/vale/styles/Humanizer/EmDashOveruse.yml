@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.EmDashOveruse
+# humanizer-name: Em-dash overuse
+# humanizer-category: style
+# humanizer-summary: Em-dashes at LLM-typical density; most can be commas, periods, or parentheses.
+# humanizer-rationale: LLMs use em-dashes (—) far more than humans, mimicking punchy sales writing.
+# humanizer-before: The term is primarily promoted by Dutch institutions—not by the people themselves.
+# humanizer-after: The term is primarily promoted by Dutch institutions, not by the people themselves.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Em_dash_overuse
+extends: occurrence
+message: "Em-dash appears %s times in this block — prefer commas, periods, or parentheses."
+level: warning
+max: 1
+token: '—'

@@ -1,0 +1,23 @@
+# humanizer-id: Humanizer.Sycophancy
+# humanizer-name: Sycophantic tone
+# humanizer-category: communication
+# humanizer-summary: Ingratiating openers like "Great question!" or "You're absolutely right".
+# humanizer-rationale: Chatbot opener pleasantries; break the frame of the document.
+# humanizer-before: Great question! You're absolutely right that this is a complex topic.
+# humanizer-after: The economic factors you mentioned are relevant here.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Sycophantic_tone
+extends: existence
+message: "Sycophantic phrase: '%s' — cut the compliment; get to the point."
+level: error
+ignorecase: true
+tokens:
+  - great question
+  - excellent question
+  - you'?re absolutely right
+  - you are absolutely right
+  - that'?s an excellent point
+  - that is an excellent point
+  - what a great point
+  - certainly!
+  - of course!
+  - absolutely!

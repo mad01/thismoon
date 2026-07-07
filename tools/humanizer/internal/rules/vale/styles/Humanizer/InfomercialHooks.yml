@@ -1,0 +1,15 @@
+# humanizer-id: Humanizer.InfomercialHooks
+# humanizer-name: Infomercial hooks
+# humanizer-category: style
+# humanizer-summary: Short one-line question hooks ("The catch?", "The result?", "The best part?").
+# humanizer-rationale: Sales-copy rhythm that fakes suspense; reads like an infomercial, not analysis.
+# humanizer-before: The result? A 40% speedup. The catch? It only works on Linux.
+# humanizer-after: It runs 40% faster, but only on Linux.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: existence
+message: "Infomercial hook '%s' — fold the answer into a normal sentence."
+level: warning
+ignorecase: true
+nonword: true
+tokens:
+  - '\bThe (?:catch|result|problem|kicker|twist|best part|bottom line|takeaway|reason|upshot|difference|secret|verdict|payoff)\?'

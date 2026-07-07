@@ -1,0 +1,14 @@
+# humanizer-id: Humanizer.FiveParagraphStructure
+# humanizer-name: Five-paragraph signposting
+# humanizer-category: communication
+# humanizer-summary: Ordinal essay scaffolding ("First,", "Second,", "Third,", "Finally,").
+# humanizer-rationale: The five-paragraph-essay skeleton LLMs fall back on; reads schoolroom-formulaic.
+# humanizer-before: First, we set up the repo. Second, we add tests. Third, we deploy. Finally, we monitor.
+# humanizer-after: Set up the repo, add tests, deploy, then watch the dashboards.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: existence
+message: "Ordinal signpost '%s' — formulaic essay scaffolding; prefer prose or a list."
+level: suggestion
+nonword: true
+tokens:
+  - '\b(?i)(?:First|Second|Third|Fourth|Finally|Firstly|Secondly|Thirdly|Lastly),'

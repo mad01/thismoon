@@ -1,0 +1,30 @@
+# humanizer-id: Humanizer.SignificanceInflation
+# humanizer-name: Significance inflation
+# humanizer-category: content
+# humanizer-summary: Puffery phrases that claim pivotal importance, evolving landscapes, lasting legacies.
+# humanizer-rationale: LLMs pad articles with claims of broad significance instead of reporting specifics.
+# humanizer-before: The Institute was officially established in 1989, marking a pivotal moment in the evolution of regional statistics.
+# humanizer-after: The Institute was established in 1989 to collect regional statistics independently.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Undue_emphasis_on_significance
+extends: existence
+message: "Significance-inflation phrase: '%s' — describe what it does, not why it matters."
+level: error
+ignorecase: true
+tokens:
+  - marks? a pivotal moment
+  - pivotal moment
+  - marking a pivotal
+  - (?:is|stands as|serves as) a testament
+  - a testament to
+  - vital role
+  - crucial role
+  - key role
+  - plays a (?:crucial|vital|pivotal) role
+  - reflects broader
+  - evolving landscape
+  - key turning point
+  - indelible mark
+  - deeply rooted
+  - setting the stage for
+  - represents a shift
+  - marks a shift

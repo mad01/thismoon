@@ -1,0 +1,100 @@
+# humanizer-id: Humanizer.AIVocabulary
+# humanizer-name: AI vocabulary
+# humanizer-category: language
+# humanizer-summary: Words that spike in post-2023 LLM output (delve, tapestry, testament, pivotal, underscore, landscape...).
+# humanizer-rationale: Individual words are fine; their co-occurrence is a strong LLM tell.
+# humanizer-before: An enduring testament to Italian colonial influence, showcasing the culinary landscape.
+# humanizer-after: Pasta dishes, introduced during Italian colonization, remain common in the south.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Overused_AI_vocabulary
+extends: existence
+message: "AI vocabulary word: '%s' — prefer a concrete alternative."
+level: warning
+ignorecase: true
+tokens:
+  - additionally
+  - align with
+  - crucial
+  - delve
+  - delves
+  - delved
+  - emphasizing
+  - enduring
+  - enhance
+  - enhances
+  - enhanced
+  - fostering
+  - garner
+  - garners
+  - interplay
+  - intricate
+  - intricacies
+  - pivotal
+  - showcase
+  - showcases
+  - tapestry
+  - testament
+  - underscore
+  - underscores
+  - vibrant
+  # Inflated verbs
+  - leverage
+  - leverages
+  - utilize
+  - utilizes
+  - utilizing
+  - harness
+  - streamline
+  - streamlines
+  - streamlining
+  - facilitate
+  - facilitates
+  - optimize
+  - optimizes
+  - empower
+  - empowers
+  - empowering
+  - navigate
+  - navigating
+  - illuminate
+  - illuminates
+  - elevate
+  - elevates
+  - elevating
+  - unlock
+  - unlocks
+  - unlocking
+  - revolutionize
+  - revolutionizes
+  - catalyze
+  - catalyzes
+  - exemplify
+  - exemplifies
+  - reimagine
+  - reimagines
+  # Prestige nouns
+  - landscape
+  - realm
+  - mosaic
+  - ecosystem
+  - beacon
+  - cornerstone
+  - bedrock
+  - nexus
+  - paradigm
+  - frontier
+  - odyssey
+  # Corporate adjectives
+  - robust
+  - seamless
+  - seamlessly
+  - comprehensive
+  - multifaceted
+  - nuanced
+  - holistic
+  - transformative
+  - unparalleled
+  - innovative
+  - meticulous
+  - meticulously
+  - invaluable
+  - dynamic

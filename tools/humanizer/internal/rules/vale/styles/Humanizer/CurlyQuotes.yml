@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.CurlyQuotes
+# humanizer-name: Curly (smart) quotes
+# humanizer-category: style
+# humanizer-summary: Uses curly/smart quotes instead of straight quotes.
+# humanizer-rationale: ChatGPT and other LLMs emit "smart" quotes by default; plain editors emit straight.
+# humanizer-before: He said “the project is on track.”
+# humanizer-after: He said "the project is on track."
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Curly_quotation_marks
+extends: existence
+message: "Curly quote — replace with a straight quote."
+level: error
+tokens:
+  - '[\x{2018}\x{2019}\x{201C}\x{201D}]'

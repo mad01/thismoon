@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.HyphenatedPairOveruse
+# humanizer-name: Hyphenated compound overuse
+# humanizer-category: communication
+# humanizer-summary: Dense use of uniform hyphenated pairs (data-driven, cross-functional, real-time...).
+# humanizer-rationale: AI hyphenates common compound modifiers with robotic consistency.
+# humanizer-before: The cross-functional team delivered a high-quality, data-driven report on our client-facing tools.
+# humanizer-after: The cross functional team delivered a high quality, data driven report on our client facing tools.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Hyphenated_word_pair_overuse
+extends: occurrence
+message: "Hyphenated-pair density is high (%s hits in this block) — vary spacing, consistent hyphenation reads as AI."
+level: suggestion
+max: 3
+token: '\b(?:third-party|cross-functional|client-facing|data-driven|decision-making|well-known|high-quality|real-time|long-term|end-to-end|detail-oriented|results-driven|forward-thinking|cutting-edge|best-in-class|mission-critical|action-oriented|solution-focused)\b'

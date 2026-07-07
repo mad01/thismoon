@@ -1,0 +1,20 @@
+# humanizer-id: Humanizer.GenericConclusion
+# humanizer-name: Generic positive conclusion
+# humanizer-category: communication
+# humanizer-summary: Vague upbeat endings like "the future looks bright".
+# humanizer-rationale: Reads like a press release; says nothing.
+# humanizer-before: The future looks bright. Exciting times lie ahead as we continue our journey toward excellence.
+# humanizer-after: The company plans to open two more locations next year.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Generic_positive_conclusions
+extends: existence
+message: "Generic positive conclusion: '%s' — replace with concrete plans or cut."
+level: error
+ignorecase: true
+tokens:
+  - the future looks bright
+  - exciting times lie ahead
+  - exciting times ahead
+  - journey toward excellence
+  - step in the right direction
+  - a bright future
+  - bright future ahead

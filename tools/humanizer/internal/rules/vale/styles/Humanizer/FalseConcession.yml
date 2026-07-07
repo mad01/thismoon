@@ -1,0 +1,18 @@
+# humanizer-id: Humanizer.FalseConcession
+# humanizer-name: False concession
+# humanizer-category: content
+# humanizer-summary: Concede-then-praise scaffolding ("While it has limits, it's still remarkable", "that said,").
+# humanizer-rationale: A formulaic LLM hedge that raises a caveat only to wave it away; rarely earns the praise.
+# humanizer-before: While it has some limitations, it's still remarkably effective.
+# humanizer-after: It handles the common cases but fails on nested inputs.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: existence
+message: "False concession '%s' — keep the caveat and drop the reflexive praise."
+level: warning
+ignorecase: true
+tokens:
+  - 'while\b.{0,40}?\blimit\w*\b.{0,40}?\bstill\b'
+  - 'despite\b.{0,40}?\bstill\b.{0,30}?\b(?:remarkable|impressive|effective|powerful)\b'
+  - that said
+  - with that said
+  - having said that

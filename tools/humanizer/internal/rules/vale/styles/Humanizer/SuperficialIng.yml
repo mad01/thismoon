@@ -1,0 +1,14 @@
+# humanizer-id: Humanizer.SuperficialIng
+# humanizer-name: Superficial -ing analysis
+# humanizer-category: content
+# humanizer-summary: Present-participle clauses tacked on for fake depth (", symbolizing X").
+# humanizer-rationale: AI chatbots add -ing clauses that sound analytical but add nothing concrete.
+# humanizer-before: ...resonates with natural beauty, symbolizing Texas bluebonnets, reflecting the community's deep connection to the land.
+# humanizer-after: The architect said the colors reference local bluebonnets and the Gulf coast.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Superficial_analyses_with_-ing_endings
+extends: existence
+message: "Tacked-on -ing clause: '%s' — either cut it or promote to its own sentence."
+level: warning
+ignorecase: true
+tokens:
+  - ',\s+(?:symbolizing|reflecting|underscoring|highlighting|emphasizing|ensuring|cultivating|fostering|encompassing|showcasing|contributing to|enabling|marking|demonstrating|providing|illustrating|capturing|signaling|paving)\b'

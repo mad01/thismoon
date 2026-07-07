@@ -1,0 +1,14 @@
+# humanizer-id: Humanizer.RuleOfThree
+# humanizer-name: Rule-of-three overuse
+# humanizer-category: language
+# humanizer-summary: Forced three-item lists ("talks, panels, and networking").
+# humanizer-rationale: LLMs group items in threes to appear comprehensive. Heuristic — may false-positive on legitimate lists.
+# humanizer-before: The event features keynote sessions, panel discussions, and networking opportunities.
+# humanizer-after: The event includes talks and panels. There's also time for informal networking.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Rule_of_three
+extends: existence
+message: "Three-item list: '%s' — consider whether two or one item would serve."
+level: suggestion
+ignorecase: true
+tokens:
+  - '(?:\b\w+(?:\s+\w+){0,2},\s+){2}\b\w+(?:\s+\w+){0,2},?\s+and\s+\w+(?:\s+\w+){0,2}'

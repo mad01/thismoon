@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.HashtagStuffing
+# humanizer-name: Hashtag stuffing
+# humanizer-category: style
+# humanizer-summary: Four or more hashtags clustered at the end of a post.
+# humanizer-rationale: LLM social copy tails off into a wall of hashtags; humans rarely stack this many.
+# humanizer-before: Shipped the new feature today! #productivity #innovation #growth #startup #buildinpublic
+# humanizer-after: Shipped the new feature today.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: occurrence
+message: "Hashtag stuffing (%s hashtags in this block) — keep one or two at most."
+level: suggestion
+max: 3
+token: '#[A-Za-z][A-Za-z0-9_]+'

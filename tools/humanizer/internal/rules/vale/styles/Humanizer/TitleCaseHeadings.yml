@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.TitleCaseHeadings
+# humanizer-name: Title-case headings
+# humanizer-category: style
+# humanizer-summary: Markdown headings that capitalize every content word.
+# humanizer-rationale: AI chatbots title-case headings; most modern style guides use sentence case.
+# humanizer-before: ## Strategic Negotiations And Global Partnerships
+# humanizer-after: ## Strategic negotiations and global partnerships
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Title_case_in_headings
+extends: capitalization
+message: "Use sentence case, not title case, in headings."
+level: warning
+scope: heading
+match: $sentence

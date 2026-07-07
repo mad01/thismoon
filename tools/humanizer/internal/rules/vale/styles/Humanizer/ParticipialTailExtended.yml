@@ -1,0 +1,14 @@
+# humanizer-id: Humanizer.ParticipialTailExtended
+# humanizer-name: Participial tail (extended)
+# humanizer-category: content
+# humanizer-summary: Trailing participial clauses beyond the common -ing set (", spanning", ", ushering", ", cementing").
+# humanizer-rationale: A second pass of tacked-on participles that inflate a sentence with motion words but no facts.
+# humanizer-before: They shipped the API, ushering in a new era and cementing their lead.
+# humanizer-after: They shipped the API. It now handles 10k requests per second.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Superficial_analyses_with_-ing_endings
+extends: existence
+message: "Tacked-on participial clause '%s' — cut it or make it a fact-bearing sentence."
+level: warning
+ignorecase: true
+tokens:
+  - ',\s+(?:spanning|blending|weaving|bridging|anchoring|cementing|heralding|ushering|embodying|epitomizing|reinforcing|solidifying|propelling|driving|shaping|redefining|transforming)\b'

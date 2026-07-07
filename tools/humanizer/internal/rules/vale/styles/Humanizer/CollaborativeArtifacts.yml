@@ -1,0 +1,23 @@
+# humanizer-id: Humanizer.CollaborativeArtifacts
+# humanizer-name: Chatbot collaborative artifacts
+# humanizer-category: communication
+# humanizer-summary: Chatbot meta-phrases like "I hope this helps" or "Let me know if".
+# humanizer-rationale: Text copied from a chatbot reply often includes its closing pleasantries.
+# humanizer-before: Here is an overview of the French Revolution. I hope this helps!
+# humanizer-after: The French Revolution began in 1789 when financial crisis and food shortages led to widespread unrest.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Collaborative_communication_artifacts
+extends: existence
+message: "Chatbot meta-commentary: '%s' — drop."
+level: error
+ignorecase: true
+tokens:
+  - i hope this helps
+  - hope this helps
+  - let me know if
+  - would you like me to
+  - here is an overview
+  - here'?s an overview
+  - here is a summary
+  - here'?s a summary
+  - feel free to ask
+  - happy to help

@@ -1,0 +1,5 @@
+# The humanizer vale style pack is full of long rule regexes whose
+# `tokens: '...'` lines pattern-match as secret assignments. Suppress scan
+# findings from the style pack instead of mangling the rules.
+paths:
+  - "**/tools/humanizer/internal/rules/vale/**"

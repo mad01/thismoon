@@ -1,0 +1,23 @@
+# humanizer-id: Humanizer.FillerPhrases
+# humanizer-name: Filler phrases
+# humanizer-category: communication
+# humanizer-summary: Verbose phrases with concise equivalents.
+# humanizer-rationale: AI output uses filler that stretches sentences without adding meaning.
+# humanizer-before: In order to achieve this goal, due to the fact that it was raining, we adjusted the schedule.
+# humanizer-after: To achieve this, because it was raining, we adjusted the schedule.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Filler_phrases
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: suggestion
+ignorecase: true
+swap:
+  'in order to': to
+  'due to the fact that': because
+  'at this point in time': now
+  'at the present time': now
+  'in the event that': if
+  'in the process of': during
+  'has the ability to': can
+  'have the ability to': can
+  'is able to': can
+  'is capable of': can

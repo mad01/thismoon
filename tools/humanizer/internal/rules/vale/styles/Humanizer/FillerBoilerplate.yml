@@ -1,0 +1,18 @@
+# humanizer-id: Humanizer.FillerBoilerplate
+# humanizer-name: Filler boilerplate
+# humanizer-category: communication
+# humanizer-summary: Empty-calorie phrases that should just be cut ("it is important to note that", "needless to say").
+# humanizer-rationale: These phrases signal the writer is about to make a point without ever getting there.
+# humanizer-before: It is important to note that the data shows a clear trend.
+# humanizer-after: The data shows a clear trend.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Filler_phrases
+extends: existence
+message: "Filler boilerplate: '%s' — cut it."
+level: suggestion
+ignorecase: true
+tokens:
+  - it is important to note that
+  - it should be noted that
+  - it is worth noting that
+  - in today'?s rapidly evolving
+  - needless to say

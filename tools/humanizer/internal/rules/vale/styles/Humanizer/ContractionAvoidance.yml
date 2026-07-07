@@ -1,0 +1,30 @@
+# humanizer-id: Humanizer.ContractionAvoidance
+# humanizer-name: Contraction avoidance
+# humanizer-category: language
+# humanizer-summary: Stilted expanded forms ("do not", "it is", "cannot") where a contraction reads more natural.
+# humanizer-rationale: LLMs under-use contractions in conversational text; uniformly expanded forms read formal and robotic.
+# humanizer-before: It is important that you do not forget; we cannot proceed and they are not ready.
+# humanizer-after: It's important you don't forget; we can't proceed and they aren't ready.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Tone
+extends: existence
+message: "Expanded form '%s' — a contraction usually reads more natural in informal text."
+level: suggestion
+ignorecase: true
+tokens:
+  - do not
+  - does not
+  - did not
+  - cannot
+  - can not
+  - will not
+  - would not
+  - should not
+  - could not
+  - is not
+  - are not
+  - was not
+  - were not
+  - have not
+  - has not
+  - had not
+  - let us

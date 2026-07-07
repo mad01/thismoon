@@ -1,0 +1,25 @@
+# humanizer-id: Humanizer.PromotionalVocab
+# humanizer-name: Promotional vocabulary
+# humanizer-category: content
+# humanizer-summary: Travel-brochure adjectives: vibrant, nestled, breathtaking, stunning, groundbreaking.
+# humanizer-rationale: LLMs struggle to keep a neutral tone, especially on cultural-heritage topics.
+# humanizer-before: Nestled within the breathtaking region of Gonder, Alamata is a vibrant town with rich cultural heritage.
+# humanizer-after: Alamata is a town in the Gonder region of Ethiopia, known for its weekly market.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Promotional_language
+extends: existence
+message: "Promotional vocabulary: '%s' — replace with neutral, specific language."
+level: error
+ignorecase: true
+tokens:
+  - vibrant
+  - nestled
+  - breathtaking
+  - stunning
+  - groundbreaking
+  - renowned
+  - must-visit
+  - boasts
+  - boasting
+  - in the heart of
+  - rich cultural heritage
+  - commitment to excellence

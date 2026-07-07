@@ -1,0 +1,21 @@
+# humanizer-id: Humanizer.RhetoricalTransitions
+# humanizer-name: Rhetorical transitions
+# humanizer-category: communication
+# humanizer-summary: Fake-deep mid-text questions ("But what does that really mean?", "So where do we go from here?").
+# humanizer-rationale: LLMs stitch sections together with rhetorical questions that pad rather than advance the point.
+# humanizer-before: But what does that really mean? So where do we go from here?
+# humanizer-after: That means deploys drop from 20 minutes to 2. Next we cut the test suite.
+# humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
+extends: existence
+message: "Rhetorical transition '%s' — answer the question instead of posing it."
+level: warning
+ignorecase: true
+tokens:
+  - but what does (?:that|this) (?:really |actually )?mean
+  - so what does (?:that|this) mean
+  - so where do we go from here
+  - what does (?:that|this) mean for you
+  - where does (?:that|this) leave us
+  - so what'?s the takeaway
+  - but here'?s the thing
+  - so why does (?:that|this) matter

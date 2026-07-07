@@ -1,0 +1,13 @@
+# humanizer-id: Humanizer.BoldOveruse
+# humanizer-name: Boldface overuse
+# humanizer-category: style
+# humanizer-summary: Mechanical bolding of terms/acronyms beyond natural density.
+# humanizer-rationale: AI chatbots bold phrases reflexively; humans use bold sparingly.
+# humanizer-before: It blends **OKRs**, **KPIs**, and **Business Model Canvas**.
+# humanizer-after: It blends OKRs, KPIs, and visual strategy tools like the Business Model Canvas.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Overuse_of_boldface
+extends: occurrence
+message: "Bold span appears %s times in this block — reserve bold for genuine emphasis."
+level: warning
+max: 3
+token: '\*\*[^*\n]+?\*\*'

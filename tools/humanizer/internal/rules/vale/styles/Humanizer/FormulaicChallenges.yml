@@ -1,0 +1,18 @@
+# humanizer-id: Humanizer.FormulaicChallenges
+# humanizer-name: Formulaic "challenges and future outlook"
+# humanizer-category: content
+# humanizer-summary: Clichéd "Despite challenges, X continues to thrive" framing.
+# humanizer-rationale: Outline-like sections that list obstacles, then wave them away without specifics.
+# humanizer-before: Despite these challenges, with its strategic location, Korattur continues to thrive.
+# humanizer-after: Traffic congestion increased after 2015 when three new IT parks opened.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Outline-like_sections
+extends: existence
+message: "Formulaic challenges framing: '%s' — replace with specific, sourced obstacles and outcomes."
+level: warning
+ignorecase: true
+tokens:
+  - despite (?:these|its) challenges
+  - faces (?:several|typical) challenges
+  - challenges and (?:future|legacy)
+  - future outlook
+  - continues? to thrive

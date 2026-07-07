@@ -1,0 +1,19 @@
+# humanizer-id: Humanizer.ExcessiveHedging
+# humanizer-name: Excessive hedging
+# humanizer-category: communication
+# humanizer-summary: Stacked hedge words (might, could, potentially, possibly) in a single clause.
+# humanizer-rationale: Over-qualification neuters the statement; one hedge is enough when needed.
+# humanizer-before: It could potentially possibly be argued that the policy might have some effect.
+# humanizer-after: The policy may affect outcomes.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Excessive_hedging
+extends: existence
+message: "Stacked hedges: '%s' — cut to one qualifier or none."
+level: warning
+ignorecase: true
+tokens:
+  - could potentially (?:possibly )?
+  - potentially possibly
+  - may (?:potentially|possibly) be
+  - might (?:potentially|possibly)
+  - arguably (?:might|could|may)
+  - perhaps (?:might|could|may)

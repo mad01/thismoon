@@ -1,0 +1,22 @@
+# humanizer-id: Humanizer.PersuasiveAuthority
+# humanizer-name: Persuasive-authority framing
+# humanizer-category: communication
+# humanizer-summary: Phrases like "the real question is" or "at its core" that fake insight.
+# humanizer-rationale: Pretends to cut through noise, but the sentence that follows usually restates the ordinary point.
+# humanizer-before: The real question is whether teams can adapt. At its core, what matters is organizational readiness.
+# humanizer-after: The question is whether teams can adapt. That depends on whether the organization is ready to change its habits.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Persuasive_authority_tropes
+extends: existence
+message: "Persuasive-authority framing: '%s' — drop the throat-clearing; state the point plainly."
+level: warning
+ignorecase: true
+tokens:
+  - the real question is
+  - at its core,?
+  - in reality,?
+  - what really matters
+  - what truly matters
+  - fundamentally,
+  - the deeper issue
+  - the heart of the matter
+  - the bottom line is
