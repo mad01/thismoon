@@ -18,6 +18,7 @@
     "services/status": { "component": "status" },
     "tools/belt": { "component": "belt" },
     "tools/humanizer": { "component": "humanizer" },
-    "tools/t-man": { "component": "t-man" }
+    "tools/t-man": { "component": "t-man" },
+    "tools/worklog": { "component": "worklog" }
   }
 }
