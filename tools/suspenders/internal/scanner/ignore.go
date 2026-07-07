@@ -3,6 +3,7 @@ package scanner
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gobwas/glob"
@@ -61,7 +62,7 @@ func (ic *IgnoreConfig) ShouldIgnore(f Finding) bool {
 		if err != nil {
 			continue
 		}
-		if g.Match(f.File) {
+		if matchPath(g, f.File) {
 			return true
 		}
 	}
@@ -73,5 +74,21 @@ func (ic *IgnoreConfig) ShouldIgnore(f Finding) bool {
 		}
 	}
 
+	return false
+}
+
+// matchPath tests whether g matches path, compensating for a gobwas/glob
+// quirk: a leading "**/" requires at least one path component before the
+// next literal segment, so "**/tools/foo" fails against the relative path
+// "tools/foo". Prefixing "./" provides that component without changing the
+// path's meaning, making the glob behave like .gitignore's "**/" which
+// matches at any depth including the root.
+func matchPath(g glob.Glob, path string) bool {
+	if g.Match(path) {
+		return true
+	}
+	if !filepath.IsAbs(path) {
+		return g.Match("./" + path)
+	}
 	return false
 }

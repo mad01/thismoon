@@ -1687,6 +1687,32 @@ func TestIgnoreConfig_ShouldIgnore(t *testing.T) {
 			t.Error("expected ShouldIgnore=false for empty config")
 		}
 	})
+
+	t.Run("double-star glob matches relative paths from history scan", func(t *testing.T) {
+		ic := &IgnoreConfig{
+			Paths: []string{
+				"**/tools/suspenders/**/*_test.go",
+				"**/tools/suspenders/**/rules.go",
+				"**/tools/suspenders/README.md",
+			},
+		}
+		for _, tt := range []struct {
+			file string
+			want bool
+		}{
+			{"tools/suspenders/internal/scanner/scanner_test.go", true},
+			{"tools/suspenders/internal/scanner/rules.go", true},
+			{"tools/suspenders/README.md", true},
+			{"tools/suspenders/internal/scanner/scanner.go", false},
+			{"/abs/tools/suspenders/internal/scanner/scanner_test.go", true},
+		} {
+			f := makeFinding("aws-access-key-id", tt.file, "AKIA****", "")
+			got := ic.ShouldIgnore(f)
+			if got != tt.want {
+				t.Errorf("ShouldIgnore(file=%q) = %v, want %v", tt.file, got, tt.want)
+			}
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
