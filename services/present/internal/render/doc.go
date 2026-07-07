@@ -97,7 +97,6 @@ var textNorms = []struct {
 	repl string
 }{
 	// All-caps names pronounced as words.
-	{regexp.MustCompile(`\bALF\b`), "alf"},
 	{regexp.MustCompile(`\bJIRA\b`), "jira"},
 
 	// Unicode symbols to spoken words.
@@ -366,7 +365,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-bionic>{{inlineMd .Text}}
 {{define "block-html"}}{{rawHTML .Text}}{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
-// project names like ALF render as words, not spelled-out acronyms.
+// names like JIRA render as words, not spelled-out acronyms.
 func (d *Doc) normalize() {
 	d.Summary = normalizeNames(d.Summary)
 	d.Meta = normalizeNames(d.Meta)

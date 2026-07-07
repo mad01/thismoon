@@ -18,7 +18,7 @@ jobs:
       components: ${{ steps.matrix.outputs.components }}
       has_components: ${{ steps.matrix.outputs.has_components }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # A component missing from release-please-config.json would silently
       # never release — fail the PR instead.
@@ -50,7 +50,7 @@ jobs:
           } > .github/filters.generated.yml
           cat .github/filters.generated.yml
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
         id: filter
         with:
           filters: .github/filters.generated.yml
@@ -82,13 +82,13 @@ jobs:
       matrix:
         component: ${{ fromJSON(needs.changes.outputs.components) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
         with:
           version: v2.12.2
           args: ./${{ matrix.component }}/...
@@ -107,9 +107,9 @@ jobs:
     name: Repo-wide vet and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 

@@ -28,7 +28,7 @@ jobs:
       # instead of GITHUB_TOKEN: the default token may not create PRs unless
       # a repo-wide Actions toggle is flipped — too broad a grant for a repo
       # heading public — and PRs it opens never trigger ci.yml checks.
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         id: release
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
@@ -57,12 +57,12 @@ jobs:
     # into a no-op success while the tag, changelog, and GitHub Release
     # from release-please still stand.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         if: matrix.path != 'services/csl'
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: matrix.path != 'services/csl'
         with:
           go-version-file: go.mod
@@ -89,7 +89,7 @@ jobs:
           done
           cd dist && sha256sum ./*.tar.gz > checksums.txt
 
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
         if: matrix.path != 'services/csl'
 
       # Verify with:

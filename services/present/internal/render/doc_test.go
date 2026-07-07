@@ -87,12 +87,12 @@ func TestNormalizeNames(t *testing.T) {
 		want string
 	}{
 		// Acronym names.
-		{"ALF-1234 is the ticket", "alf-1234 is the ticket"},
-		{"the ALF project", "the alf project"},
-		{"ALFRED stays", "ALFRED stays"},
+		{"JIRA-1234 is the ticket", "jira-1234 is the ticket"},
+		{"the JIRA board", "the jira board"},
+		{"JIRAFFE stays", "JIRAFFE stays"},
 		{"no change here", "no change here"},
-		{"ALF", "alf"},
-		{"ALF-99 and ALF-100", "alf-99 and alf-100"},
+		{"JIRA", "jira"},
+		{"JIRA-99 and JIRA-100", "jira-99 and jira-100"},
 		{"JIRA ticket", "jira ticket"},
 		{"JIRA", "jira"},
 
@@ -135,33 +135,33 @@ func TestNormalizeNames(t *testing.T) {
 
 func TestRenderDocNormalizesNames(t *testing.T) {
 	doc := Doc{
-		Summary: "ALF-42 sprint summary",
-		Chips:   []Chip{{Text: "ALF"}},
+		Summary: "JIRA-42 sprint summary",
+		Chips:   []Chip{{Text: "JIRA"}},
 		Sections: []Section{
 			{
-				Heading: "ALF Sprint",
+				Heading: "JIRA Sprint",
 				Blocks: []Block{
-					{T: "p", Text: "Ticket ALF-123 is done"},
-					{T: "kv", KV: []KVPair{{K: "Project", V: "ALF"}}},
-					{T: "table", Cols: []string{"ALF Ticket"}, Rows: [][]string{{"ALF-5"}}},
+					{T: "p", Text: "Ticket JIRA-123 is done"},
+					{T: "kv", KV: []KVPair{{K: "Tracker", V: "JIRA"}}},
+					{T: "table", Cols: []string{"TCK Ticket"}, Rows: [][]string{{"TCK-5"}}},
 				},
 			},
 		},
 	}
-	out, err := RenderDoc(doc, "ALF Report")
+	out, err := RenderDoc(doc, "JIRA Report")
 	if err != nil {
 		t.Fatalf("RenderDoc: %v", err)
 	}
-	if strings.Contains(out, "ALF") {
-		t.Errorf("ALF should be normalized to alf in output:\n%s", out)
+	if strings.Contains(out, "JIRA") {
+		t.Errorf("JIRA should be normalized to jira in output:\n%s", out)
 	}
-	if !strings.Contains(out, "alf Report") {
+	if !strings.Contains(out, "jira Report") {
 		t.Error("title not normalized")
 	}
-	if !strings.Contains(out, "alf-42") {
+	if !strings.Contains(out, "jira-42") {
 		t.Error("summary ticket not normalized")
 	}
-	if !strings.Contains(out, "alf-123") {
+	if !strings.Contains(out, "jira-123") {
 		t.Error("paragraph ticket not normalized")
 	}
 }
