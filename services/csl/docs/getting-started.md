@@ -56,7 +56,7 @@ Output, one line per repo, tab-separated name and path:
 ```
 myorg/service-a	/Users/you/code/src/github.com/myorg/service-a
 myorg/service-b	/Users/you/code/src/github.com/myorg/service-b
-mad01/thismoon	/Users/you/code/src/github.com/mad01/thismoon/services/csl
+mad01/thismoon	/Users/you/code/src/github.com/mad01/thismoon
 ```
 
 Repo names come from the `origin` remote URL in `.git/config`. If a checkout has no remote, the name falls back to the parent directory plus the repo directory.
@@ -77,7 +77,7 @@ Indexing 17 repo(s)...
   [2/17] myorg/service-b
   ...
 myorg/service-a/internal/walker/walker.go
-mad01/thismoon/internal/repo/finder/walker.go
+mad01/thismoon/services/csl/internal/repo/finder/walker.go
 ```
 
 The default output mode, `files_with_matches`, prints one line per matched file as `<repo>/<path>`. To see the matching lines instead:
@@ -129,7 +129,7 @@ Expected output:
 csl: csl mcp - ✓ Connected
 ```
 
-From a Claude Code session, the agent can now call `csl_search`, `csl_repo_lookup`, `csl_read`, and the five other `csl_*` tools directly. See the [MCP reference](mcp.md) for per-tool contracts.
+From a Claude Code session, the agent can now call `csl_search`, `csl_repo_lookup`, `csl_read`, and the seven other `csl_*` tools directly. See the [MCP reference](mcp.md) for per-tool contracts.
 
 ## Next
 

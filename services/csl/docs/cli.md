@@ -144,7 +144,7 @@ csl count "func.*Error" --group-by repo
 Output:
 
 ```
-mad01/thismoon                  87
+mad01/thismoon                           87
 myorg/service-a                          55
 
 total: 142
@@ -319,7 +319,7 @@ Output:
 
 ```
 REPO                                     STATUS     DIRTY    INDEXED AT           BRANCH
-mad01/thismoon                  fresh      no       2m12s ago            main
+mad01/thismoon                           fresh      no       2m12s ago            main
 myorg/service-a                          stale      yes      1h4m ago             feat/auth
 ```
 
@@ -394,7 +394,7 @@ Issues (1):
   dirty    myorg/service-a                          3 modified, 1 untracked
 
 Healthy (16):
-  mad01/thismoon                  indexed 2m12s ago
+  mad01/thismoon                           indexed 2m12s ago
   ...
 ```
 
