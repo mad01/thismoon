@@ -1,0 +1,12 @@
+# Block list for the "work" profile only.
+# d-man-profile prepends this to routes.base.toml when switching to the work
+# profile, so these hosts are pinned to 127.0.0.1 and served the local
+# block-page minigame instead of being proxied. The personal profile omits it,
+# so nothing is blocked.
+#
+# blocklist must stay a top-level key (it is prepended ABOVE the [[route]]
+# tables). List both the apex and www form — there is no wildcard matching.
+blocklist = [
+  "distracting.example.com", "www.distracting.example.com",
+  "timesink.example.net", "www.timesink.example.net",
+]

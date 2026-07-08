@@ -1,4 +1,9 @@
-# Machine-personal route set for the d-man front door.
+# Machine-personal route set (base) for the d-man front door.
+# Shared by every profile. The ACTIVE config the daemon reads
+# (~/.config/d-man/routes.toml) is GENERATED from this file by d-man-profile,
+# which prepends blocklist.work.toml for the "work" profile. Edit this file to
+# change routes, not the generated one.
+#
 # Each route is either port-backed (port) or a CNAME alias (cname) that
 # resolves to another route's backend. The daemon re-applies edits live.
 suffix = "this"

@@ -35,7 +35,7 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
 
 | Pattern | Example | What it owns |
 |---------|---------|--------------|
-| Routes | [`recipes/d-man/`](recipes/d-man/) | which `.this` names resolve on this machine |
+| Routes + block list | [`recipes/d-man/`](recipes/d-man/) | which `.this` names resolve on this machine, and which hosts the work profile blocks |
 | MCP registration | [`recipes/mcp-registration/`](recipes/mcp-registration/) | which MCP servers Claude Code sees, and the seatbelt sandbox untrusted ones run under |
 | Config overlay | [`recipes/config-overlay/`](recipes/config-overlay/) | per-machine service config — watch lists, host gates, local paths |
 | Secrets / env | [`recipes/secrets-env/`](recipes/secrets-env/) | a service's secret, resolved at runtime or from a gitignored env-file — never committed |
@@ -66,6 +66,25 @@ enable = false
    Recipe-level `hosts`/`profiles` gate a recipe you own (see
    `recipes/secrets-env/recipe.toml`, which only applies on a `personal` host);
    the override above gates a recipe that ships from a source.
+
+## Runtime profiles: block-list switching (d-man)
+
+`recipes/d-man/` also shows a runtime toggle, distinct from the build-time
+`hosts`/`profiles` gates above. The d-man block list lives in the work profile
+only, driven by macOS Focus:
+
+- `routes.base.toml` holds the shared routes; `blocklist.work.toml` holds the
+  blocked hosts. The active `~/.config/d-man/routes.toml` is **generated** (not
+  symlinked) by the `d-man-profile` script, which prepends the block list for
+  the work profile and omits it for personal.
+- `d-man-profile work` / `personal` rewrites the active file atomically; the
+  running daemon reloads it via fsnotify, so no sudo or restart is needed. State
+  lives in `~/.config/d-man/profile`, and a build hook re-applies the current
+  profile on every `ralph up`.
+- Wire it to macOS **Work Focus** with a Shortcuts automation (run
+  `d-man-profile work` when Work turns on, `personal` when it turns off) so
+  blocking follows work mode. Blocking HTTPS hosts also needs the local CA
+  trusted once: `sudo d-man ca install`.
 
 ## Updates and releases
 
@@ -107,6 +126,8 @@ next to your ralph config and set your machine's profiles, then run
 `ralph up --dry-run`.
 
 One-time steps stay manual by design: the d-man daemon registration needs sudo
-once per machine (`recipes/d-man/SETUP.md` in this repo), and the `secrets-env`
-pattern needs a `~/.config/myservice/secrets.env` created by hand from the
-committed `.example` (the recipe never writes the value).
+once per machine (`recipes/d-man/SETUP.md` in this repo), trusting the d-man
+block-page CA needs `sudo d-man ca install` once (only if you use a block
+list), and the `secrets-env` pattern needs a `~/.config/myservice/secrets.env`
+created by hand from the committed `.example` (the recipe never writes the
+value).

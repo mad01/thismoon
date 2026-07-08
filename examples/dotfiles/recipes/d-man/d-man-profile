@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# d-man-profile — switch the active d-man block-list profile.
+#
+#   d-man-profile work        # block the work-profile hosts (blocklist.work.toml)
+#   d-man-profile personal    # block nothing
+#   d-man-profile             # print the current profile
+#
+# It assembles ~/.config/d-man/routes.toml from routes.base.toml (prepending
+# blocklist.work.toml for the work profile) and writes it atomically. The
+# running daemon watches that file and reloads via fsnotify — no sudo, no
+# restart. Drive it from a macOS "Work" Focus automation, or run it by hand.
+set -euo pipefail
+
+config_dir="${DMAN_CONFIG_DIR:-$HOME/.config/d-man}"
+base="$config_dir/routes.base.toml"
+block="$config_dir/blocklist.work.toml"
+active="$config_dir/routes.toml"
+state="$config_dir/profile"
+
+current() { cat "$state" 2>/dev/null || echo personal; }
+
+profile="${1:-}"
+case "$profile" in
+  work | personal) ;;
+  "" | status)
+    echo "$(current)"
+    exit 0
+    ;;
+  *)
+    echo "usage: d-man-profile <work|personal>" >&2
+    exit 2
+    ;;
+esac
+
+if [ ! -f "$base" ]; then
+  echo "d-man-profile: missing $base (run 'ralph up' to install it)" >&2
+  exit 1
+fi
+
+mkdir -p "$config_dir"
+tmp="$(mktemp "$config_dir/.routes.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+# blocklist first: it is a top-level key and must precede the [[route]] tables.
+if [ "$profile" = work ]; then
+  cat "$block" "$base" > "$tmp"
+else
+  cat "$base" > "$tmp"
+fi
+
+mv -f "$tmp" "$active"
+echo "$profile" > "$state"
+echo "d-man profile: $profile"

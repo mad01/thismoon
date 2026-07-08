@@ -1,17 +1,40 @@
-# Overlay recipe: machine-personal routes for the d-man front door.
-# The d-man binary + its build recipe ship from the thismoon source
-# (thismoon/d-man); this overlay only symlinks the route set into place.
-# Which `.this` names exist on a machine is private wiring, so it belongs
-# in the consuming repo (docs/adr/0006 in thismoon).
+# Overlay recipe: machine-personal routes + work-profile block list for the
+# d-man front door. The d-man binary + its build recipe ship from the thismoon
+# source (thismoon/d-man); this overlay owns the route set and the block list.
+# Which `.this` names resolve, and which hosts the work profile blocks, is
+# private wiring, so it belongs in the consuming repo (docs/adr/0006 in thismoon).
 [recipe]
 name = "d-man"
-description = "d-man routes overlay — machine-personal routes.toml"
+description = "d-man routes overlay — machine-personal routes + work-profile block list"
 wave = 0
 
-# Editing routes.toml (in your repo, tracked in git) is the whole workflow:
-# the running daemon detects the change via fsnotify and re-syncs /etc/hosts
-# + proxy routes — no sudo, no restart.
-[dotfiles.d_man_routes]
-source = "routes.toml"
-target = "~/.config/d-man/routes.toml"
+# Base routes + the work block list are the source of truth, symlinked into the
+# config dir. The ACTIVE ~/.config/d-man/routes.toml is NOT symlinked — it is
+# generated from these by d-man-profile (see the build hook), so the profile
+# toggle can rewrite it without dirtying this repo.
+[dotfiles.d_man_routes_base]
+source = "routes.base.toml"
+target = "~/.config/d-man/routes.base.toml"
 action = "symlink"
+
+[dotfiles.d_man_blocklist_work]
+source = "blocklist.work.toml"
+target = "~/.config/d-man/blocklist.work.toml"
+action = "symlink"
+
+# The profile switcher: `d-man-profile work|personal`. Committed executable, so
+# the symlink is runnable as-is.
+[dotfiles.d_man_profile_bin]
+source = "d-man-profile"
+target = "~/code/bin/d-man-profile"
+action = "symlink"
+
+# Generate the active routes.toml, re-applying whatever profile is current
+# (default personal). Runs every `ralph up`, so edits to routes.base.toml land
+# and any leftover routes.toml symlink is replaced by a generated file. The
+# daemon's --config points here; rewriting it triggers an fsnotify reload.
+[hooks.builds.d_man_profile_apply]
+commands = ["$HOME/code/bin/d-man-profile \"$($HOME/code/bin/d-man-profile status)\""]
+working_dir = "~/.config/d-man"
+run = "always"
+idempotent = true
