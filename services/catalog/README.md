@@ -1,60 +1,19 @@
 # catalog
 
-A minimal systems catalog for your tools — a small, self-hosted take on the
-Backstage software catalog. It reads `service-info.yaml` files from your repos,
+A minimal, self-hosted take on the Backstage software catalog for the repos and
+tools in this fleet. catalog reads `service-info.yaml` files from your repos,
 builds an in-memory index of **Systems** and **Components**, and serves a
-localhost web UI to browse and search them by name or owner.
+localhost web UI (plus a CLI) to browse and search them by name or owner. It
+borrows Backstage's entity shape (`kind`, `metadata`, `spec`) so the files read
+familiarly. It's not Backstage.
 
-Not Backstage — but it borrows Backstage's entity shape (`kind`, `metadata`,
-`spec`) so the files read familiarly.
+## How it works
 
-## Model
-
-- **System** — a logical grouping, declared at a repo root. A monorepo is one
-  System with many Components; a single-tool repo is a System with one.
-- **Component** — a buildable/deployable unit (a CLI, MCP server, library, app)
-  that links to its System via `spec.system`.
-- **Global namespace** — every name must be unique across *all* Systems and
-  Components combined. A System and a Component may not share a name.
-- **Recipes are not entities** — install descriptors stay out of the catalog.
-
-## service-info.yaml
-
-A file may hold multiple entities separated by `---` (e.g. a single-tool repo
-declaring its System and Component together).
-
-```yaml
-apiVersion: catalog.mad01/v1alpha1
-kind: System
-metadata:
-  name: dotfiles
-  description: Personal dev-tooling monorepo
-  tags: [monorepo, tooling]
-spec:
-  owner: mad01
----
-apiVersion: catalog.mad01/v1alpha1
-kind: Component
-metadata:
-  name: present
-  tags: [go, cli, mcp]
-spec:
-  type: cli            # cli | mcp-server | library | app | service
-  lifecycle: production
-  owner: mad01
-  system: dotfiles
-```
-
-## Registry
-
-`catalog` discovers entities by walking the repos listed in a registry file
-(default `~/.config/catalog/registry.yaml`):
-
-```yaml
-sources:
-  - path: ~/code/src/github.com/mad01/dotfiles
-  - path: ~/code/src/github.com/mad01/thismoon
-```
+catalog walks the repos listed in your registry, reads each
+`service-info.yaml`, and rebuilds an in-memory index of Systems and Components
+on every `list`/`validate`/`web` run (or **Refresh** in the UI /
+`POST /api/refresh`). Nothing is cached to disk between runs. See
+[`CLAUDE.md`](CLAUDE.md) for the entity model and the full sync workflow.
 
 ## Install
 
@@ -79,15 +38,40 @@ pages showing full metadata. **Refresh** re-scans the source repos; **Add**
 writes a new `service-info.yaml` into a registered repo (writes are restricted
 to directories inside a registered source). Light/dark toggle, light by default.
 
-## PR check
+## Endpoints
 
-`.github/workflows/ci.yml` runs `go test -race`, `go vet`, and
-`catalog validate` on every pull request. Validation enforces the schema and
-the global-uniqueness rule, so a PR that introduces a duplicate name fails.
-Cross-repo uniqueness checking is enabled by adding a read-only
-`CATALOG_RO_TOKEN` secret; without it, only this repo's entities are checked.
+- `GET /`, `/systems/{name}`, `/components/{name}`: web UI (one SPA shell for
+  all three views)
+- `GET /api/entities` / `/api/systems` / `/api/components`: list entities
+- `GET /api/systems/{name}` / `/api/components/{name}`: one entity's detail
+- `GET /api/search?q=&owner=&kind=`: filtered search
+- `GET /api/owners`: distinct owners
+- `POST /api/refresh`: re-scan the registry
+- `POST /api/entities`: write a new `service-info.yaml` (the Add form)
+- `GET /healthz` / `GET /version`
 
-## Development
+## Configuration
+
+`catalog` discovers entities by walking the repos listed in a registry file
+(default `~/.config/catalog/registry.yaml`):
+
+```yaml
+sources:
+  - path: ~/code/src/github.com/mad01/dotfiles
+  - path: ~/code/src/github.com/mad01/thismoon
+```
+
+Paths may use `~`; catalog expands them at load time. Point any command at a
+different registry with `catalog --registry <path> ...`.
+
+## Where things live
+
+- Registry (config): `~/.config/catalog/registry.yaml`
+- Binary: `~/code/bin/catalog`
+- Entities: `service-info.yaml` files inside each registered repo. catalog
+  reads and writes them in place; it never copies or owns them.
+
+## Develop
 
 ```sh
 make test    # go test ./...
@@ -99,14 +83,19 @@ make fmt     # gofmt -w .
 The functional core (`internal/catalog`) is pure and fully unit-tested:
 parsing, scanning, indexing, querying, rendering and the uniqueness rule. All
 I/O lives in `internal/cli` and `internal/web`. The web frontend is hand-written
-vanilla HTML/CSS/JS embedded with `//go:embed` — no build toolchain.
+vanilla HTML/CSS/JS embedded with `//go:embed`; it needs no build toolchain.
 
 The only third-party JavaScript is **Cytoscape.js**, used for the dependency
 graph on System pages. It is vendored at a pinned version,
 `internal/web/assets/static/cytoscape-3.31.0.min.js` (same version as `present`),
-and embedded into the binary — no CDN, no floating version. To bump it, replace
+and embedded into the binary instead of loaded from a CDN. To bump it, replace
 that file and update the `<script>` tag in `assets/index.html`.
 
-## Docs
+`.github/workflows/ci.yml` runs `go test` and `go vet` on every pull request
+(per changed component, plus a repo-wide pass). Schema and global-uniqueness
+checks are not wired into CI: run `catalog validate` locally before merging to
+catch a duplicate name or a malformed entity.
 
-[`docs/deep-dive.md`](docs/deep-dive.md) — entity model detail, service-info.yaml spec, registry layout, validate output, adding/removing entities, debugging failures, and architecture overview.
+See [`CLAUDE.md`](CLAUDE.md) for the domain model (System vs Component, global
+namespace, adding/removing entities) and [`docs/deep-dive.md`](docs/deep-dive.md)
+for a longer walkthrough (validate output, debugging failures).

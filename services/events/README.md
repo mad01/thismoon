@@ -1,12 +1,23 @@
 # events
 
 A Go CLI, web service, and MCP server keeping a local event/audit log at
-`http://events.this/` (port 7430).
+`http://events.this/` (port 7430). Tools emit tagged events (scan summaries,
+blocked commits, sandbox denials); events records them in an append-only
+per-source log and serves a filterable timeline. Archive-only by design: it
+records and displays, it never fires notifications.
 
-Tools emit tagged events (scan summaries, blocked commits, sandbox denials);
-events records them in an append-only per-source log and serves a filterable
-timeline. Archive-only by design: it records and displays, it never fires
-notifications.
+## How it works
+
+One background process, `events serve`, owns the per-source JSONL store and
+runs the web page and JSON API. The `events` CLI and the MCP tools are thin
+HTTP clients to it; nothing else touches the files, so serve must be running
+for anything else to work, and there's no lock contention.
+
+Producers reach it three ways: `events emit` on the CLI, the `events_emit` MCP
+tool, or a direct `POST /api/events` (what other tools in this repo use, since
+they can't import this module's internal packages). The timeline itself
+renders client-side: the page fetches `/api/events` and `/api/sources` and
+live-tails every 7s for new activity.
 
 ## Install
 
@@ -14,17 +25,15 @@ notifications.
 make install   # builds and installs ~/code/bin/events (adhoc codesigned on macOS)
 ```
 
-Or via ralph — it ships from the thismoon monorepo:
+Or via ralph; it ships from the thismoon monorepo:
 
 ```bash
 ralph up   # builds events and registers the t-man agent
 ```
 
-## Run
+## Usage
 
-`events serve` is the single writer: it owns the store and runs the HTTP API.
-The CLI and MCP server are thin HTTP clients to it, so serve must be running
-for anything else to work. It runs as a launchd user agent via t-man:
+`events serve` runs as a launchd user agent via t-man:
 
 ```bash
 events serve --port 7430
@@ -44,7 +53,7 @@ t-man logs events        # stdout logs
 | `--per-source-cap` | `500` | Newest events kept per source (serve only) |
 | `--global-cap` | `1500` | Max events one query returns (serve only) |
 
-## Emit and query
+Emit and query events:
 
 ```bash
 events emit --source deps --title "3 advisories" --level warn \
@@ -57,7 +66,7 @@ events purge --source deps --before <id>   # or only events at/before a cursor
 
 Levels are `info` (default), `warn`, and `error`. Other processes emit by
 POSTing JSON to `http://events.this/api/events`. Purge is deliberately CLI +
-API only — deletion stays human-triggered.
+API only; deletion stays human-triggered.
 
 ## Endpoints
 
@@ -72,18 +81,29 @@ API only — deletion stays human-triggered.
 | `GET /version` | `{"version":"<sha>"}` build sha |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
-## MCP tools
+## MCP
 
-`events mcp` exposes `events_query`, `events_sources`, and `events_emit` —
-thin clients over the same API, aimed at agent-driven debugging.
+Ask in plain language: "what's happened with deps today", "any errors in the
+last hour", "log that the release finished". Claude calls the `events_*` MCP
+tools, registered in `recipes/claude-mcp/servers.json`:
 
-## Store
+- `events_query`: query the log, newest-first; filter by source, level, text, or since; the primary tool for debugging what happened
+- `events_sources`: list sources with their event counts
+- `events_emit`: record a single event (`source` and `title` required)
 
-One append-only JSONL file per source under
-`~/.local/share/events/sources/<source>.jsonl`, oldest first. Each source keeps
-its newest 500 events in memory; when a file grows past 1.5× that cap it is
-compacted in place (temp file + rename). Event IDs are time-sortable, so
-lexical order is time order — the ID doubles as the `since` cursor for polling.
+Purge has no MCP tool; deletion stays CLI + API only, human-triggered.
+
+## Where things live
+
+- Events: one JSONL file per source under `~/.local/share/events/sources/<source>.jsonl`, oldest first
+- Binary: `~/code/bin/events`
+- Web + API: `http://events.this/` (or `http://localhost:7430/`)
+
+Each source keeps its newest 500 events in memory (`--per-source-cap`); once a
+source file grows past 1.5× that cap in lines, it's compacted in place (temp
+file + rename). Event IDs are time-sortable, so lexical order is time order;
+the ID doubles as the `since` cursor for polling. Removing the service doesn't
+delete the JSONL files.
 
 ## Develop
 
@@ -91,3 +111,6 @@ lexical order is time order — the ID doubles as the `since` cursor for polling
 make test           # go test ./...  (hermetic: t.TempDir + injected clock)
 make build          # ./events
 ```
+
+See [`CLAUDE.md`](CLAUDE.md) for the architecture: the store, the HTTP API, and
+the MCP tools.

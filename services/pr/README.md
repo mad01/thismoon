@@ -1,11 +1,10 @@
 # pr
 
 A Go CLI that serves a pull request review dashboard for repos you watch at
-`http://pr.this/` (port 7427).
-
-It polls open PRs from configured GitHub repos (github.com and GitHub
-Enterprise hosts), renders diffs with syntax-aware line coloring, and supports
-approve, request-changes, and squash-merge straight from the page.
+`http://pr.this/` (port 7427). It polls open PRs from configured GitHub
+repos (github.com and GitHub Enterprise hosts), renders diffs with
+syntax-aware line coloring, and supports approve, request-changes, and
+squash-merge straight from the page.
 
 ## Install
 
@@ -19,26 +18,10 @@ Or via ralph — it ships from the thismoon monorepo:
 ralph up   # builds pr and registers the t-man agent
 ```
 
-## Configure
+## Usage
 
-All GitHub access goes through the `gh` CLI (`gh api` with `GH_HOST` set per
-source), so `gh` must be installed and authenticated against each host you
-watch.
-
-Watch lists live in `~/.config/pr/config.toml`:
-
-```toml
-poll_interval = "5m"
-
-[[source]]
-host = "github.com"      # default when omitted
-owner = "someorg"
-repos = ["repo-one", "repo-two"]
-```
-
-## Run
-
-`pr serve` runs as a launchd user agent via t-man:
+Open `http://pr.this/` for the dashboard. `pr serve` runs as a launchd user
+agent via t-man:
 
 ```bash
 pr serve --port 7427
@@ -75,6 +58,23 @@ automatically.
 | `GET /healthz` | 204 |
 | `GET /version` | `{"version":"<sha>"}` build sha |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
+
+## Configuration
+
+All GitHub access goes through the `gh` CLI (`gh api` with `GH_HOST` set per
+source), so `gh` must be installed and authenticated against each host you
+watch.
+
+Watch lists live in `~/.config/pr/config.toml`:
+
+```toml
+poll_interval = "5m"
+
+[[source]]
+host = "github.com"      # default when omitted
+owner = "someorg"
+repos = ["repo-one", "repo-two"]
+```
 
 ## Develop
 

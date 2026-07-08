@@ -1,4 +1,4 @@
-# speak — read markdown aloud over localhost
+# speak, read markdown aloud over localhost
 
 Go CLI serving a local page where you upload a markdown file, see it rendered
 inline, and play it section by section with the shared `<wk-read-aloud>` webkit
@@ -10,48 +10,56 @@ origins (present.this) can fetch speech from `http://speak.this` too.
 
 ```
 services/speak/
-  cmd/speak/           — entrypoint (delegates to internal/cli)
+  cmd/speak/           # entrypoint (delegates to internal/cli)
   internal/
-    cli/               — cobra: serve, version (Version via ldflags)
-    web/               — server.go (mux, CORS, TTS proxy), markdown.go
-                         (goldmark render + section split), assets/shell.html
-                         (chrome-only shell) + assets/app.js (client render)
+    cli/               # cobra: serve, version (Version via ldflags)
+    web/               # server.go (mux, CORS, TTS proxy, HTTP API), markdown.go
+                        # (goldmark render + section split), assets/shell.html
+                        # (chrome-only shell) + assets/app.js (client render)
+    notify/            # events.go (best-effort EmitEvent to events.this on
+                        # TTS proxy failures)
   Makefile
 ```
 
-Part of the `github.com/mad01/thismoon` module — no nested go.mod.
+Part of the `github.com/mad01/thismoon` module. No nested go.mod.
 
 ## How it works
 
 - `speak serve --port 7425 --tts-url http://127.0.0.1:8765` (envs `SPEAK_PORT`,
   `SPEAK_TTS_URL`).
-- `GET /` — upload form. `POST /read` (multipart field `doc`, max 5MB) renders
-  markdown via goldmark (GFM) and splits it into
-  `<section class="doc-section">` blocks at every h1/h2 — those are the
-  per-button play units of `<wk-read-aloud targets=".doc-section" endpoint="">`
-  (empty endpoint = same origin). No storage; render per request.
-- `POST /v1/audio/speech` — reverse proxy to the mlx-audio engine, adding
+- `POST /read` (multipart field `doc`, max 5MB) renders markdown via goldmark
+  (GFM) and splits it into `<section class="doc-section">` blocks at every
+  h1/h2; those blocks are the per-button play units of
+  `<wk-read-aloud targets=".doc-section" endpoint="">` (empty endpoint = same
+  origin). No storage; render per request.
+- `POST /v1/audio/speech` reverse-proxies to the mlx-audio engine, adding
   `Access-Control-Allow-Origin: *` and answering `OPTIONS` preflight locally
   (the engine doesn't do CORS). Every response carries the CORS header so the
   component's cross-origin `GET /` reachability probe works.
-- Chrome comes from the in-module webkit package (`GET /webkit/`) — the
-  service compiles against the webkit committed beside it, no pin to bump.
+- When the proxied request fails or the engine answers with a 4xx/5xx, the
+  server emits an `error` event to events.this via `internal/notify`: a
+  fire-and-forget POST that never blocks the response. Successful synthesis is
+  intentionally not logged, since read-aloud fans out one request per sentence
+  and would flood the event log.
+- Chrome comes from the in-module webkit package (`GET /webkit/`). The
+  service compiles against the webkit committed beside it; there is no version
+  to pin or bump.
 
-## TTS engine (the other half)
+### TTS engine (the other half)
 
 mlx-audio runs as the separate t-man agent `speak-tts` from the venv at
 `~/.local/share/speak/venv`, created by the consuming repo's `speak-tts`
-recipe (machine wiring — it stays out of this repo, see `docs/adr/0006`).
+recipe (machine wiring that stays out of this repo; see `docs/adr/0006`).
 Gotchas that cost time once:
 
 - **Pin `mlx-audio==0.4.3` + `mlx==0.31.1`.** 0.4.4's Kokoro vocoder is broken
   (`[broadcast_shapes]` ValueError in istftnet on every input).
-- **`mlx-audio[server]` + `misaki[en]` are both required** — the bare package
+- **`mlx-audio[server]` + `misaki[en]` are both required**: the bare package
   is missing uvicorn/fastapi, and Kokoro imports misaki at request time.
 - **Request `response_format: "wav"`.** The default mp3 path shells out to
   ffmpeg, which may not be installed; failures surface as a 200 with an empty
   streamed body, not an error status.
-- **misaki pulls `en_core_web_sm` via `uv pip install` on first G2P** — that
+- **misaki pulls `en_core_web_sm` via `uv pip install` on first G2P**: that
   subprocess needs `VIRTUAL_ENV` set or it dies with "No virtual environment
   found" and the request hangs. The recipe warms G2P at install time and the
   t-man agent sets `--env VIRTUAL_ENV=...` as a belt-and-suspenders.
@@ -74,10 +82,78 @@ make install  # build + cp to ~/code/bin/speak + adhoc codesign
 make test     # go test ./...
 ```
 
+## HTTP API
+
+| Path | Description |
+|------|-------------|
+| `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
+| `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
+| `POST /read` | Render and split a markdown file for playback; returns `{name, content}` JSON |
+| `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (adds CORS, strips the upstream's own CORS headers) |
+| `GET /healthz` | CORS'd 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets the same header from the wrapper handler, which sets CORS on every response |
+| `GET /enginez` | Pings the TTS engine's `GET /` with a 1.5s timeout; 204 if reachable, 502 otherwise. `app.js` polls this to warn when play buttons won't work; distinct from `/healthz`, which only proves this page is up |
+| `GET /version` | `{"version":"<sha>"}`, the HTTP twin of `speak version -o json`, which ralph uses for update detection |
+| `GET /webkit/` | Shared chrome from the in-module `webkit` package |
+
+## Shared UI: webkit
+
+The chrome (`<wk-header>` + theme/font/size/bionic controls) comes from the
+in-module package **`github.com/mad01/thismoon/webkit`**, mounted at
+`GET /webkit/` via `webkit.Mount(mux)` and loaded by `internal/web/assets/shell.html`
+(which pulls the FOUC guard from `/webkit/boot.js`). Don't re-add
+palette/topbar/theme CSS locally; it lives in webkit only.
+
+### Header markup
+
+`shell.html` uses:
+
+```html
+<wk-header brand="speak·aloud" controls="cmdk,font,bionic,size,speed,reload,theme"
+  bionic-targets="[data-bionic], .doc-section p, .doc-section li"></wk-header>
+```
+
+### Per-repo changes
+
+- Page chrome lives in `internal/web/assets/shell.html`; only speak-specific
+  styles (upload form, drop overlay, `.doc-section` rendering) live in its
+  inline `<style>` block.
+- webkit components speak uses: `<wk-page-header>` + `<wk-title>` +
+  `<wk-subtitle>` for the hero block, `<wk-callout variant="warn">` for the
+  engine-down banner, and `<wk-read-aloud targets=".doc-section" endpoint="">`
+  (see `webkit/COMPONENTS.md`) mounted fresh after every upload since it reads
+  its targets once on connect.
+- Recent-docs chips and drag/drop/paste handling are speak-local logic in
+  `app.js`, not webkit components.
+
+### Version check
+
+`GET /webkit/version` confirms which embedded webkit assets the running
+`speak` server serves.
+
+## Gotchas
+
+- **Two processes, one release artifact.** The release artifact is the Go
+  binary only. It serves the page and proxies speech requests, but synthesis
+  needs the recipe-managed Kokoro sidecar running on `:8765`; without it the
+  page loads and the speech endpoints return errors. CI builds and releases
+  never ship the engine.
+- **The venv lives at `~/.local/share/speak/venv`,** created by the
+  `speak-tts` recipe's install script (see TTS engine gotchas above for the
+  pinned versions). Rebuild it with:
+
+  ```bash
+  rm -rf ~/.local/share/speak/venv
+  ralph up   # recreates the venv, pre-fetches the model, registers both agents
+  ```
+
+  Model files (~165 MB Kokoro weights plus ~30 MB voice packs) cache in
+  `~/.cache/huggingface` at install time; if that cache is missing or
+  incomplete, synthesis fails mid-request with `LocalEntryNotFoundError`.
+
 ## See also
 
-- Recipe: `recipes/speak/recipe.toml` (+ `recipes/speak/CLAUDE.md`) — builds
-  the binary, registers the `speak-web` and `sandbox-watch` agents
-- Component: `webkit/src/read-aloud.ts` (`<wk-read-aloud>`, COMPONENTS.md)
+- Recipe: `recipes/speak/recipe.toml` (+ `recipes/speak/CLAUDE.md`), which
+  builds the binary and registers the `speak-web` and `sandbox-watch` agents
+- Component: `webkit/src/read-aloud.ts` (`<wk-read-aloud>`, `webkit/COMPONENTS.md`)
 - Route: `speak` → 7425 in the consuming repo's d-man routes overlay
 - Import provenance: `docs/MIGRATED-FROM.md`

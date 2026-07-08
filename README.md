@@ -1,10 +1,11 @@
 # thismoon
 
-A local-first development toolbox for macOS: a fleet of web services and CLI
-tools that run on your own machine behind `http://<name>.this/` hostnames.
-Services are launchd agents, notifications are native, binaries are
-codesigned. No cloud, no accounts: your code, notes, reminders, and
-dashboards stay on your disk.
+A local-first development toolbox for macOS. Code search, dependency
+scanning, briefings, reminders, and a service catalog run as a fleet of web
+services and CLI tools on your own machine, each behind its own
+`http://<name>.this/` hostname. Services are launchd agents, notifications
+are native, binaries are codesigned. No cloud, no accounts: your code,
+notes, and dashboards stay on your disk.
 
 Every component works for two kinds of user. For you, it is a web page and a
 CLI. For your coding agents, most components are also [MCP](https://modelcontextprotocol.io)

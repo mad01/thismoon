@@ -1,64 +1,126 @@
-# d-man
+# d-man, local domain front door: `<name>.this` hostnames to localhost services
 
-Local domain front door for macOS: friendly hostnames (`csl.this`,
-`present.this`) resolve to localhost services, reachable on port 80 with no port
-in the URL. CLI + long-running daemon (Go, cobra). Installs to `~/code/bin/d-man`.
+d-man maps friendly hostnames (`csl.this`, `present.this`) to localhost
+services, reachable on port 80 with no port in the URL. It's a CLI plus a
+long-running daemon (Go, cobra) that installs to `~/code/bin/d-man`. d-man is
+a platform foundation of the `.this` stack: other recipes may take a hard
+`depends_on` on it (`docs/adr/0006`).
 
-## Why this shape (read before changing the resolution mechanism)
-macOS 26 (Tahoe) `mDNSResponder` hijacks DNS for non-IANA TLDs (`.this`, `.test`,
-`.lan`) and answers them as multicast DNS — a local DNS server + `/etc/resolver`
-**silently fails**. `*.localhost` only resolves in Chrome/Firefox, not
-Safari/`curl`. So d-man uses **`/etc/hosts`** (read by `getaddrinfo` before
-`mDNSResponder`): works in every client, keeps the `.this` suffix, no wildcards.
+## Module layout
 
-## Two jobs (functional core, imperative shell)
-1. **hosts sync** — write a marker-delimited managed block into `/etc/hosts`
+```
+d-man/
+  cmd/d-man/
+    main.go              entrypoint, delegates to internal/cli.Execute
+  internal/
+    cli/                 cobra command tree: root, serve, sync, list, version
+      root.go              flags (--config/DMAN_CONFIG, --hosts-file); Version via ldflags
+      serve.go             the daemon: reload loop, fsnotify watch, binary self-watch
+      sync.go              one-shot managed-block write
+      list.go              print resolved host -> backend routes
+      version.go           build sha; -o json convention shared with sibling tools
+    config/               pure: parse + validate routes.toml (+ config_test.go);
+                           Hosts(), RouteMap(), Sites()
+    hosts/                pure Validate/Render/Splice + the Sync shell (+ hosts_test.go);
+                           the fail-safe hosts-file writer
+    proxy/                one httputil.ReverseProxy; Host-header routing + the
+                           sites.json endpoint (+ proxy_test.go)
+    notify/               events.this emit, best-effort (per-tool copy, see Gotchas)
+  Makefile               part of module github.com/mad01/thismoon (no own go.mod)
+```
+
+## How it works
+
+d-man does two jobs, both driven by one routes file (`routes.toml`).
+
+### Why this shape (read before changing the resolution mechanism)
+macOS 26 (Tahoe) `mDNSResponder` hijacks DNS for non-IANA TLDs (`.this`,
+`.test`, `.lan`) and answers them as multicast DNS, so a local DNS server
+plus `/etc/resolver` silently fails. `.localhost` names only resolve in
+Chrome/Firefox, not Safari/`curl`. So d-man uses `/etc/hosts` (read by
+`getaddrinfo` before `mDNSResponder`): it works in every client and keeps the
+`.this` suffix, at the cost of listing every name explicitly instead of
+using a wildcard.
+
+### Two jobs (functional core, imperative shell)
+1. hosts sync: write a marker-delimited managed block into `/etc/hosts`
    mapping each `<name>.<suffix>` → `127.0.0.1`.
-2. **reverse proxy** — `127.0.0.1:80`, route by `Host` header to the backend port.
+2. reverse proxy: `127.0.0.1:80`, route by `Host` header to the backend port.
 
-## Layout
-- `cmd/d-man/main.go` — entry → `cli.Execute()`.
-- `internal/cli/` — `root` (flags: `--config`/`DMAN_CONFIG`, `--hosts-file`),
-  `serve` (daemon), `sync` (one-shot hosts write), `list`, `version`.
-- `internal/config/` — pure: parse + validate `routes.toml`, `Hosts()`,
-  `RouteMap()`. Fails fast on illegal hostnames before any I/O. A route is
-  either port-backed (`port`) or a CNAME alias (`cname` → another route's name);
-  `resolve`/`BackendFor` follow the chain and reject cycles + missing targets.
-- `internal/hosts/` — pure `Validate`/`Render`/`Splice` + the `Sync` shell.
-  **Fail-safe:** only ever replaces text between the two markers; backs up to
-  `/etc/hosts.d-man.bak`; atomic temp+rename; never produces a file worse than
-  it read (pre-existing foreign breakage is preserved + warned, not aborted).
-- `internal/proxy/` — one `httputil.ReverseProxy` whose `Rewrite` picks the
-  backend by `Host` (502 on miss). `normalizeHost` strips case / trailing dot /
-  port so `present.this`, `present.this.`, `PRESENT.this:80` all match.
-  `ModifyResponse` rewrites a backend self-redirect `Location` back to the
-  client's hostname so redirects don't leak `127.0.0.1:<port>`. The proxy also
-  answers `GET /__this/sites.json` itself (any host) for the webkit ⌘K site
-  picker. The list is **live-filtered**: each fetch probes every port-backed
-  route's backend (`GET /`, anything `<500` = up) and lists only the ones
-  responding, so a service gated off or not running on a host never shows up.
-  The probe result is cached `sitesTTL` (30s) and a mutex makes a burst of
-  fetches share one probe round — `routes.toml` stays the full catalog of
-  *possible* sites; the picker sees only *present* ones.
+`internal/config` is the pure route model: a route is either port-backed
+(`port`) or a CNAME alias (`cname` → another route's name); `resolve`/
+`BackendFor` follow the chain and reject cycles + missing targets. `Validate`
+fails fast on illegal hostnames before any I/O.
 
-## Sudo model (the whole point)
-Only **one** sudo ever: the one-time `t-man --daemon add` (root daemon for `:80`
-+ `/etc/hosts`). After that:
-- **Route edits** — `serve` watches `routes.toml` (fsnotify) → re-sync + reload.
-- **Binary upgrades** — `serve` watches `os.Executable()` → `exit(0)`; launchd
-  KeepAlive relaunches the new build. So `ralph up` needs no sudo.
+`internal/hosts` is pure `Validate`/`Render`/`Splice` plus the `Sync` shell.
+It is fail-safe: it only ever replaces text between the two markers, backs up
+to `/etc/hosts.d-man.bak`, and writes via atomic temp+rename, so it never
+produces a file worse than it read (pre-existing foreign breakage is
+preserved and warned, not aborted).
+
+`internal/proxy` is one `httputil.ReverseProxy` whose `Rewrite` picks the
+backend by `Host` (502 on miss). `normalizeHost` strips case / trailing dot /
+port so `present.this`, `present.this.`, `PRESENT.this:80` all match.
+`ModifyResponse` rewrites a backend self-redirect `Location` back to the
+client's hostname so redirects don't leak `127.0.0.1:<port>`. The proxy also
+answers `GET /__this/sites.json` itself (any host) for the webkit ⌘K site
+picker. The list is live-filtered: each fetch probes every port-backed
+route's backend (`GET /`, anything `<500` = up) and lists only the ones
+responding, so a service gated off or not running on a host never shows up.
+The probe result is cached `sitesTTL` (30s) and a mutex makes a burst of
+fetches share one probe round; `routes.toml` stays the full catalog of
+possible sites, and the picker shows only the ones actually present.
+
+### Sudo model (the whole point)
+Only one sudo ever: the one-time `t-man --daemon add` (root daemon for `:80`
++ `/etc/hosts`). After that, `serve` handles both routine changes on its own:
+- route edits: it watches `routes.toml` (fsnotify) and re-syncs + reloads;
+- binary upgrades: it watches `os.Executable()` and `exit(0)`s on a change;
+  launchd KeepAlive relaunches the new build, so `ralph up` needs no sudo.
 
 A bad `routes.toml` edit is logged and ignored; the previous good routes +
 `/etc/hosts` stay in place.
 
-## Build / test
+## Build / install / test
+
 ```bash
 make build && make install     # ~/code/bin/d-man, codesigned ("mad01 Local Signing" when present)
 go test ./...
 ```
 
+## HTTP API
+
+- `GET /__this/sites.json`: navigable site list as JSON for the webkit ⌘K
+  picker, live-filtered to backends currently responding (30s cache, any
+  host). Answered by d-man itself, not proxied.
+- Everything else: proxied to the matching route's backend by `Host` header
+  (502 if no route matches).
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `d-man serve [--port 80]` | The long-running daemon: sync `/etc/hosts`, serve the reverse proxy, watch `routes.toml` + own binary. |
+| `sudo d-man sync` | Write the managed `/etc/hosts` block once and exit (manual fallback). |
+| `d-man list` | Print resolved host -> backend routes. |
+| `d-man version [-o json]` | Print the build sha. |
+
 ## Gotchas
-- `serve` needs root in production (binds `:80`, writes `/etc/hosts`). For local
-  testing use `--port <high>` and `--hosts-file <temp>` to avoid root.
-- `httputil.ReverseProxy` handles WebSocket upgrades natively.
-- Setup + daemon registration: see `recipes/d-man/SETUP.md`.
+
+- **`serve` needs root in production** (binds `:80`, writes `/etc/hosts`). For
+  local testing use `--port <high>` and `--hosts-file <temp>` to avoid root.
+- **`httputil.ReverseProxy` handles WebSocket upgrades natively**, so no
+  custom Upgrade handling is needed.
+- **`internal/notify` is a deliberate per-tool copy** of the same ~25-line
+  events.this emit helper carried by reminder, deps, t-man, status, present,
+  and speak. The tools are separate Go modules (and t-man is a separate repo),
+  so a shared package would need require+replace coupling across module
+  boundaries; the copy is cheaper.
+
+## See also
+
+- Recipe: `recipes/d-man/recipe.toml` (+ `recipes/d-man/CLAUDE.md`): wave 0,
+  platform foundation (`docs/adr/0006`)
+- Setup: `recipes/d-man/SETUP.md`: one-time daemon registration on a new machine
+- Docs: `docs/getting-started.md` (install to first request), `docs/commands.md`
+  (every subcommand and flag)

@@ -1,19 +1,21 @@
 # t-man
 
-**t-man** (task-manager) is an idempotent service manager for macOS that provides declarative, hash-based service management through launchd.
+**t-man** (task-manager) is an idempotent service manager for macOS that
+provides declarative, hash-based service management through launchd.
 
-## Why t-man?
+## How it works
 
-t-man improves upon existing service managers like [serviceman](https://github.com/therootcompany/serviceman) by providing:
+t-man improves upon existing service managers like [serviceman](https://github.com/therootcompany/serviceman)
+by providing:
 
-- **True Idempotency**: Hash-based change detection ensures services are only updated when configuration actually changes
-- **Read-Compare-Apply Pattern**: Consistent reconciliation logic that reads current state, compares with desired state, and only applies necessary changes
-- **Type Safety**: Written in Go with proper error handling and validation
-- **Drop-in Compatibility**: Compatible with serviceman CLI for easy migration
-- **Transparent Management**: Auto-detects managed services with embedded metadata
-- **Comprehensive Testing**: Full test coverage with unit and integration tests
+- **True idempotency**: hash-based change detection ensures services are only updated when configuration actually changes
+- **Read-compare-apply pattern**: consistent reconciliation logic that reads current state, compares with desired state, and only applies necessary changes
+- **Type safety**: written in Go with proper error handling and validation
+- **Drop-in compatibility**: compatible with serviceman CLI for easy migration
+- **Transparent management**: auto-detects managed services with embedded metadata
+- **Full test coverage**: unit and integration tests
 
-## Features
+Feature summary:
 
 - Declarative service definitions with automatic reconciliation
 - SHA256 hash-based change detection
@@ -25,14 +27,59 @@ t-man improves upon existing service managers like [serviceman](https://github.c
 - Dry-run mode for safe testing
 - serviceman CLI compatibility for migration
 
-## Installation
+### Hash-based change detection
+
+t-man uses SHA256 hashing to detect configuration changes:
+
+1. When you add a service, t-man calculates a hash of the complete service definition
+2. This hash is stored in the launchd plist file as metadata
+3. When you run `add` again, t-man:
+   - Reads the current service definition and hash
+   - Calculates hash of the desired configuration
+   - Compares hashes
+   - Only updates if hashes differ
+
+This ensures true idempotency — no unnecessary service restarts.
+
+### Service metadata
+
+Each t-man managed service includes metadata in its plist file:
+
+```xml
+<key>TManMetadata</key>
+<dict>
+    <key>Hash</key>
+    <string>a3f5b8c...</string>
+    <key>ManagedBy</key>
+    <string>t-man</string>
+    <key>Version</key>
+    <string>1.0.0</string>
+</dict>
+```
+
+This allows t-man to:
+- Auto-detect which services it manages
+- Track configuration changes
+- Version service definitions
+
+### Log management
+
+t-man creates logs automatically in:
+- User mode: `~/Library/Logs/<service-name>/`
+- System mode: `/var/log/<service-name>/`
+
+Each service has two log files:
+- `stdout.log` - Standard output
+- `stderr.log` - Standard error
+
+## Install
 
 ### Requirements
 
 - macOS 10.15 or later
 - Go 1.21+ (for building from source)
 
-### Build from Source
+### Build from source
 
 ```bash
 # Clone the monorepo
@@ -50,14 +97,14 @@ make install
 copies it to `~/code/bin` and re-signs it on macOS, which recent macOS
 releases require for a copied Go binary to launch.
 
-### Manual Build
+### Manual build
 
 ```bash
 go build -o t-man ./cmd/t-man
 sudo mv t-man /usr/local/bin/
 ```
 
-## Quick Start
+## Usage
 
 Add a simple service that runs at startup:
 
@@ -78,15 +125,13 @@ t-man logs myapp
 t-man remove myapp
 ```
 
-## Usage
-
-### Global Flags
+### Global flags
 
 - `--agent`: Run as user agent (LaunchAgent) - default
 - `--daemon`: Run as system daemon (LaunchDaemon) - requires sudo
 - `--dryrun`: Show what would be done without applying changes
 
-### Add or Update a Service
+### Add or update a service
 
 The `add` command creates or updates a service. It's idempotent - running it twice with the same configuration shows "No changes needed".
 
@@ -180,7 +225,7 @@ $ t-man add --name myapp --env PORT=8080 -- /usr/local/bin/myapp
 ✓ Service 'myapp' updated
 ```
 
-### List Services
+### List services
 
 List all managed services:
 
@@ -198,7 +243,7 @@ myapp                          running         /usr/local/bin/myapp
 webapp                         stopped         /usr/local/bin/node /var/www/app.js
 ```
 
-### Remove a Service
+### Remove a service
 
 ```bash
 t-man remove myapp
@@ -208,7 +253,7 @@ t-man rm myapp
 t-man delete myapp
 ```
 
-### Control Services
+### Control services
 
 Start, stop, or restart services:
 
@@ -223,7 +268,7 @@ t-man stop myapp
 t-man restart myapp
 ```
 
-### Check Service Status
+### Check service status
 
 Get detailed information about a service:
 
@@ -246,7 +291,7 @@ Run at load: true
 Keep alive: true
 ```
 
-### View Logs
+### View logs
 
 By default `logs` shows the last lines of stdout and stderr combined, with a
 tail-style `==> source <==` header marking which file each block came from:
@@ -275,7 +320,7 @@ t-man logs myapp --stderr --follow
 also accepts `stdout` and `stderr`, so scripts can treat every log uniformly.
 Extra log paths show up under `Extra logs:` in `t-man status <name>`.
 
-### Sandbox Logs
+### Sandbox logs
 
 `t-man logs sandbox` collects extra log sources named `sandbox` or
 `sandbox-*` — by convention the seatbelt denial ledger and notification
@@ -297,7 +342,7 @@ Register the files at add time: `--extra-log sandbox=/path/to/denials.log`.
 Note: the subcommand shadows `t-man logs <svc>` for a service literally
 named "sandbox"; use `t-man logs sandbox sandbox` in that case.
 
-### Dry Run Mode
+### Dry run mode
 
 Test changes without applying them:
 
@@ -313,11 +358,11 @@ Command: /usr/local/bin/myapp
 Logs: /Users/you/Library/Logs/myapp/stdout.log, /Users/you/Library/Logs/myapp/stderr.log
 ```
 
-## Migration from serviceman
+### Migrating from serviceman
 
 t-man provides CLI compatibility with serviceman for easy migration.
 
-### Drop-in Replacement
+#### Drop-in replacement
 
 The `add` command syntax is compatible with serviceman:
 
@@ -329,27 +374,28 @@ serviceman add --name myapp -- /usr/local/bin/myapp
 t-man add --name myapp -- /usr/local/bin/myapp
 ```
 
-### Update Your Dotfiles
+#### Update your dotfiles
 
-Simply replace `serviceman` with `t-man` in your installation scripts:
+Replace `serviceman` with `t-man` in your installation scripts:
 
-**Before:**
+Before:
 ```bash
 serviceman add --name myapp \
   --workdir /var/myapp \
   -- /usr/local/bin/myapp
 ```
 
-**After:**
+After:
 ```bash
 t-man add --name myapp \
   --workdir /var/myapp \
   -- /usr/local/bin/myapp
 ```
 
-### Managing Existing serviceman Services
+#### Managing existing serviceman services
 
-t-man auto-detects its own services using embedded metadata. To migrate existing serviceman services:
+t-man auto-detects its own services using embedded metadata. To migrate
+existing serviceman services:
 
 1. Remove the old serviceman service:
    ```bash
@@ -363,56 +409,9 @@ t-man auto-detects its own services using embedded metadata. To migrate existing
 
 Alternatively, t-man will simply manage alongside serviceman services - they won't conflict as long as service names are different.
 
-## How It Works
+### Verification steps
 
-### Hash-Based Change Detection
-
-t-man uses SHA256 hashing to detect configuration changes:
-
-1. When you add a service, t-man calculates a hash of the complete service definition
-2. This hash is stored in the launchd plist file as metadata
-3. When you run `add` again, t-man:
-   - Reads the current service definition and hash
-   - Calculates hash of the desired configuration
-   - Compares hashes
-   - Only updates if hashes differ
-
-This ensures true idempotency - no unnecessary service restarts.
-
-### Service Metadata
-
-Each t-man managed service includes metadata in its plist file:
-
-```xml
-<key>TManMetadata</key>
-<dict>
-    <key>Hash</key>
-    <string>a3f5b8c...</string>
-    <key>ManagedBy</key>
-    <string>t-man</string>
-    <key>Version</key>
-    <string>1.0.0</string>
-</dict>
-```
-
-This allows t-man to:
-- Auto-detect which services it manages
-- Track configuration changes
-- Version service definitions
-
-### Log Management
-
-Logs are automatically created in:
-- User mode: `~/Library/Logs/<service-name>/`
-- System mode: `/var/log/<service-name>/`
-
-Each service has two log files:
-- `stdout.log` - Standard output
-- `stderr.log` - Standard error
-
-## Verification Steps
-
-### Test Basic Operations
+#### Test basic operations
 
 ```bash
 # 1. Create a test service
@@ -431,7 +430,7 @@ t-man logs test-echo
 t-man remove test-echo
 ```
 
-### Verify Idempotency
+#### Verify idempotency
 
 ```bash
 # 1. Add a service
@@ -451,7 +450,7 @@ t-man add --name myapp --env PORT=8080 -- /usr/local/bin/myapp
 # Output: ✓ Service 'myapp' already up to date
 ```
 
-### Test with Dry Run
+#### Test with dry run
 
 ```bash
 # Preview changes without applying
@@ -462,9 +461,9 @@ t-man list | grep test
 # (should not be found)
 ```
 
-## Troubleshooting
+### Troubleshooting
 
-### Service won't start
+#### Service won't start
 
 1. Check the service exists:
    ```bash
@@ -486,7 +485,7 @@ t-man list | grep test
    ls -l /path/to/command
    ```
 
-### Permission denied (system services)
+#### Permission denied (system services)
 
 System daemons require sudo:
 
@@ -494,14 +493,14 @@ System daemons require sudo:
 sudo t-man add --daemon --name myservice -- /usr/sbin/myservice
 ```
 
-### Service not found
+#### Service not found
 
 If t-man can't find a service you created with serviceman, it's because t-man only manages services with its own metadata. Either:
 
 1. Remove and re-add with t-man, or
 2. Continue using serviceman for that service
 
-### Logs are empty
+#### Logs are empty
 
 Services may take a moment to start and generate logs. Also check:
 
@@ -509,7 +508,7 @@ Services may take a moment to start and generate logs. Also check:
 2. The log directory exists: `ls ~/Library/Logs/myapp/`
 3. The command actually produces output
 
-## Architecture
+## Where things live
 
 t-man follows a clean architecture pattern:
 
@@ -523,7 +522,7 @@ internal/
 pkg/version/            # Version information
 ```
 
-### Key Components
+Key components:
 
 - **Service Definition**: Type-safe service configuration with validation
 - **Manager Interface**: Platform-agnostic service management
@@ -531,20 +530,20 @@ pkg/version/            # Version information
 - **Reconciler**: Read-compare-apply reconciliation logic
 - **CLI**: User-facing command-line interface
 
-### Deeper docs
+Deeper docs:
 
-- [`docs/architecture.md`](docs/architecture.md) — the layers, the reconcile
+- [`docs/architecture.md`](docs/architecture.md): the layers, the reconcile
   loop, and how t-man wraps launchd
-- [`docs/agents-and-daemons.md`](docs/agents-and-daemons.md) — agent vs daemon,
+- [`docs/agents-and-daemons.md`](docs/agents-and-daemons.md): agent vs daemon,
   the one-time daemon setup, and the `--port` health-check convention
-- [`docs/troubleshooting.md`](docs/troubleshooting.md) — a service that will not
+- [`docs/troubleshooting.md`](docs/troubleshooting.md): a service that won't
   stay up, and debugging with `launchctl` directly
-- [`docs/working-on-t-man.md`](docs/working-on-t-man.md) — build, run, test, and
+- [`docs/working-on-t-man.md`](docs/working-on-t-man.md): build, run, test, and
   debug from source
 
-## Development
+## Develop
 
-### Running Tests
+### Running tests
 
 ```bash
 # Run all tests
@@ -570,7 +569,7 @@ make test
 make install
 ```
 
-## Contributing
+### Contributing
 
 Contributions are welcome! Please:
 

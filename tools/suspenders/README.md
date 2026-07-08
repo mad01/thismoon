@@ -1,6 +1,6 @@
 # suspenders
 
-A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, and runs user-defined hook scripts.
+A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, runs user-defined hook scripts, and can rewrite git history to remove a secret that already made it into a commit.
 
 ## Features
 
@@ -10,7 +10,7 @@ A fast, offline git secret scanner and hook orchestrator. Suspenders detects che
 - Staged scans read content from the git index, so the scan sees exactly what would be committed
 - Inline `suspenders:ignore` comments to suppress findings on a single line
 - Deep history scan: walks every commit on the public branch and flags the commit that introduced each finding, even when a later commit removed it
-- History clean: rewrites git history in place to remove flagged strings and redact whole secret files, with a mandatory backup bundle — no git-filter-repo needed
+- History clean: rewrites git history in place to remove flagged strings and redact whole secret files, with a mandatory backup bundle, no git-filter-repo needed
 - Multi-event hook orchestrator: manages pre-commit and post-merge hooks from a single config
 - Internal-reference guard: blocks commits that mention internal org/repo names in public repositories
 - External hook scripts: run your own commands (linters, formatters) as part of the hook pipeline
@@ -24,6 +24,57 @@ A fast, offline git secret scanner and hook orchestrator. Suspenders detects che
 - Redacted output in all findings
 - Backs up foreign hooks during install, chains to them from the generated hook, and restores them on uninstall
 - Docker-based integration test suite
+
+## How it works
+
+### Scanning
+
+1. Enumerates git-tracked files via `git ls-files` (untracked and `.gitignore`d files are excluded)
+2. Applies filename rules: sensitive file names are flagged regardless of content
+3. Skips binary files (detected by null byte in the first 512 bytes) and files larger than 1 MB
+4. Matches each line against all rules (built-in + custom watch rules); every match on a line is reported, not just the first
+5. Applies per-rule entropy gates and filters, then checks the global allowlist and per-repo `.suspenders.yaml`
+6. Skips lines that carry a `suspenders:ignore` comment
+7. Redacts every match on a line before printing, so one finding's context never exposes another finding's secret
+
+In `--staged` mode, the file list comes from `git diff --cached --name-only --diff-filter=ACMR` and the content is read from the index (`git show :<path>`), not the working tree. The scan sees exactly what would be committed: staging a secret and then scrubbing the working copy without re-staging still gets caught. A file that can't be read fails the scan instead of being silently skipped.
+
+### Hook orchestration
+
+Generated hook scripts are thin dispatchers:
+
+```sh
+#!/bin/sh
+# managed by suspenders - do not edit
+# version: <checksum>
+hook_dir=$(dirname -- "$0")
+if [ -x "$hook_dir/pre-commit.backup" ]; then
+  "$hook_dir/pre-commit.backup" "$@" || exit $?
+fi
+exec suspenders hook run pre-commit
+```
+
+A foreign hook found at install time is moved to `<event>.backup` and the generated script chains to it first, so existing hooks keep running. Hook scripts use the bare binary name (`suspenders`) rather than an absolute path, so they keep working after rebuilds or relocations as long as the binary is in `$PATH`.
+
+The `hook run` subcommand loads config, identifies the current repo, then runs each configured check in order:
+
+**pre-commit:**
+
+1. External `pre_commit` hooks (in config order, stop on first failure)
+2. Built-in guard (if `guard.enabled` is true)
+3. Built-in scan (if `scan.enabled` is true, which is the default)
+
+**post-merge:**
+
+1. External `post_merge` hooks (in config order)
+
+Any non-zero exit from a step blocks the git operation (for pre-commit) or logs a warning (for post-merge).
+
+Each hook file includes a SHA-256 checksum of its body (excluding the version line). `suspenders hook update` compares this checksum to detect stale hooks without re-reading the binary.
+
+### Repository discovery
+
+The `--all` flag walks every directory in `config.yaml`'s `dirs` array, discovers git repositories with 32 concurrent workers, extracts the `org/repo` name from each remote origin URL, and filters out repos matching `exclude` globs.
 
 ## Install
 
@@ -134,7 +185,7 @@ Without `--branch`, the walked ref is `origin/HEAD`, falling back to `main`, `ma
 
 ### Clean git history
 
-`history clean` rewrites all local branches and tags in place, replacing flagged strings in file contents and commit messages with `***REDACTED***`. Files that are secrets wholesale — a committed private key, a token file — can be redacted in place: the file stays in every commit's tree, but its content becomes `***REDACTED***` everywhere.
+`history clean` rewrites all local branches and tags in place, replacing flagged strings in file contents and commit messages with `***REDACTED***`. Files that are secrets wholesale (a committed private key, a token file) can be redacted in place: the file stays in every commit's tree, but its content becomes `***REDACTED***` everywhere.
 
 ```sh
 # Collect replacements automatically from a history scan, then rewrite.
@@ -151,16 +202,16 @@ suspenders history clean --redact-file id_rsa --redact-file 'certs/*.p12'
 suspenders history clean --dry-run --replace 'AKIAIOSFODNN7EXAMPLE'
 ```
 
-The rewrite runs `git fast-export` through a stream transform into `git fast-import` — no external tools needed. Safety rails:
+The rewrite runs `git fast-export` through a stream transform into `git fast-import`, so it needs no external tools. Safety rails:
 
 - Refuses to run on a bare repo, a detached HEAD, or a dirty working tree.
 - Always writes a backup bundle to `.git/suspenders-backup-<timestamp>.bundle` first; `git clone <bundle>` restores the original history.
 - Asks for confirmation with the full blast radius (refs, replacements, redacted files) unless you pass `--yes`.
-- Binary blobs are never string-replaced; if one contains a flagged string you get a warning instead. A `--redact-file` glob does apply to binaries — the whole blob is redacted.
+- Binary blobs are never string-replaced; if one contains a flagged string you get a warning instead. A `--redact-file` glob does apply to binaries: the whole blob is redacted.
 
-Every commit hash changes from the first affected commit onward. Afterwards you must force-push rewritten branches, and collaborators must re-clone — their old clones still hold the removed strings. Stale commit signatures are dropped, since they signed the old content.
+Every commit hash changes from the first affected commit onward. Afterwards you must force-push rewritten branches, and collaborators must re-clone; their old clones still hold the removed strings. Stale commit signatures are dropped, since they signed the old content.
 
-For a step-by-step walkthrough of the rewrite — what runs, what gets edited, how to undo it — see [docs/history-clean.md](docs/history-clean.md).
+For a step-by-step walkthrough of the rewrite (what runs, what gets edited, how to undo it), see [docs/history-clean.md](docs/history-clean.md).
 
 ### Run hooks manually
 
@@ -176,209 +227,6 @@ suspenders hook run post-merge
 ```sh
 suspenders version
 ```
-
-## Configuration
-
-Suspenders reads its config from `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`). A default config is created on first run.
-
-```yaml
-# Directories to scan for git repositories (used by --all)
-dirs:
-  - ~/code/src
-  - ~/workspace
-
-# Repo name patterns to exclude from discovery (glob syntax)
-exclude:
-  - "*/vendor/*"
-
-# Built-in scanner toggle (enabled by default)
-scan:
-  enabled: true
-
-# Internal-reference guard
-guard:
-  enabled: true
-  workspace_dirs:
-    - ~/workspace
-  blocked_words:
-    - acmecorp
-    - "*.acmecorp.net"
-    - docs.acmecorp.net/runbooks
-  allowlist:
-    - grpc/grpc-go
-  file_patterns:
-    - "*.go"
-    - "*.md"
-    - "*.yaml"
-
-# Custom detection rules
-watch:
-  - id: "internal-api-token"
-    description: "Internal API token"
-    pattern: "INTERNAL_TOKEN\\s*=\\s*(.+)"
-    severity: "high"
-
-# Known-safe values to suppress globally
-allowlist:
-  - match: "AKIAIOSFODNN7EXAMPLE"
-    description: "AWS example key from documentation"
-  - match: "sk_test_1234567890"
-    paths: ["**/Makefile"]
-
-# History clean settings
-history:
-  replace_table:
-    old.internal.net: new.example.com
-  redact_files:
-    - id_rsa
-    - "certs/*.p12"
-
-# External hook scripts grouped by event
-hooks:
-  pre_commit:
-    - name: go-vet
-      command: go vet ./...
-      file_patterns: ["*.go"]
-      repos: ["mad01/ralph"]
-
-  post_merge:
-    - name: csl-reindex
-      command: |
-        mkdir -p "${HOME}/.config/csl" &&
-        printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
-```
-
-### Built-in scan
-
-The secret scanner runs by default on every pre-commit. To disable it (while keeping the guard and external hooks), set `scan.enabled` to `false`. When the field is omitted, scanning is enabled.
-
-### Internal-reference guard
-
-The guard prevents internal repository names, and any other string you list (a brand name, an internal domain, a docs link), from leaking into public repos. When `guard.enabled` is `true`, it:
-
-1. Walks `workspace_dirs` to discover repos and derive their names (see below)
-2. Adds each entry from `blocked_words` (matched regardless of workspace scan)
-3. Removes entries in `allowlist`
-4. Checks the staged diff (added/modified lines only) in files matching `file_patterns` for case-insensitive matches
-
-If any match is found, the commit is blocked with a message listing the matched terms.
-
-#### How blocked names are collected
-
-The block list is derived from your filesystem, not maintained by hand. Enumerating internal repo names in a config file is itself a leak waiting to happen — the config would be the one file that lists everything it is supposed to protect. So the guard recomputes the list on every run from what is actually checked out:
-
-1. Each directory in `workspace_dirs` is walked (`~` expands to your home; repo inspection fans out to 32 workers). Hidden directories are skipped, discovery does not recurse into nested repos, and unreadable entries are silently passed over.
-2. A directory counts as a repo when it contains `.git`. For each repo found, the guard derives **two** names:
-   - the `org/repo` name parsed from the `origin` remote URL, handling both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms
-   - the repo's directory basename, so a repo checked out under a local name that differs from its remote name is blocked under both
-3. When a repo has no `origin` remote or the URL cannot be parsed, discovery falls back to `parentdir/repodir` from the filesystem path.
-4. Safe references (`guard.allowlist`) are dropped, `blocked_words` entries are appended, and the result is deduplicated.
-
-Because the list is recomputed per run and never persisted, a freshly cloned internal repo is guarded from the very next commit with zero configuration. The trade-off is coverage-by-checkout: a repo that only exists on a colleague's machine contributes nothing to your block list — internal *hostnames* in particular never appear as repo checkouts, which is what `blocked_words` wildcard entries (`*.acmecorp.net`) are for.
-
-Two details worth knowing:
-
-- The top-level `exclude` globs do **not** apply to guard discovery — they only filter which repos `hook install --all` touches. Excluding a repo from hook management does not stop its name from being blocked.
-- Names whose edges are word characters are matched with word-boundary guards, so a short repo name like `hig` cannot match inside "higher". Entries with wildcard or punctuation edges keep their full reach.
-
-Blocked words are matched case-insensitively as literal strings, so an entry can be a single word (`acmecorp`), an internal domain (`internal.acmecorp.net`), or a docs link (`docs.acmecorp.net/runbooks`). A `*` in an entry matches any run of non-whitespace characters: `*.acmecorp.net` blocks every subdomain, and the match extends over the URL scheme so history cleanup replaces the whole reference. Overlapping entries match longest-first, so a docs link wins over its bare domain.
-
-The same block list runs in three other places: `suspenders scan` checks every tracked file in the working tree (reported with file and line), `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` are skipped everywhere — internal repos may reference internal names.
-
-### External hooks
-
-External hooks run shell commands as part of the hook pipeline. Each entry supports these fields:
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `name` | string | required | Identifier shown in logs and error messages |
-| `command` | string | required | Shell command executed via `sh -c` |
-| `file_patterns` | string[] | `[]` (all files) | Only run if staged/changed files match these globs (acts as a gate; the matching files are not passed to the command) |
-| `repos` | string[] | `[]` (all repos) | Only run in repos whose `org/repo` name matches these globs |
-| `enabled` | bool | `true` | Toggle without removing config |
-
-Hooks are grouped under `hooks.pre_commit` and `hooks.post_merge`.
-
-### Keeping a code index fresh (csl)
-
-If you run code-search-local (csl), keep its index current by reindexing each repo after a merge. The recommended way is a `csl-reindex` external hook under `hooks.post_merge`:
-
-```yaml
-hooks:
-  post_merge:
-    - name: csl-reindex
-      command: |
-        mkdir -p "${HOME}/.config/csl" &&
-        printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
-```
-
-On every merge this appends the repo's path to `~/.config/csl/reindex.queue`. The queue is drained later by `csl sync`, which reindexes each queued repo and clears the file. Queuing keeps the post-merge hook fast — the actual reindex happens out of band.
-
-### Suspenders owns git hooks
-
-csl can install its own `post-merge` hook to reindex on merge. Once suspenders manages the `post-merge` event with the `csl-reindex` entry above, that reindex is owned by suspenders — running csl's hook as well would queue the same repo twice per merge. Disable csl's own post-merge hook so suspenders is the single owner:
-
-```sh
-csl hooks uninstall
-```
-
-and set `hooks.post_merge.enabled: false` in csl's config.
-
-When `suspenders hook install` finds an existing csl-managed `post-merge` hook (it carries a `# csl-managed-hook:` marker), it does not chain to it. The csl hook is set aside under `<event>.csl-replaced` (a name the generated hook never runs) and a warning is printed, so the reindex runs only via the `csl-reindex` entry — never twice. Generic (non-csl) foreign hooks are still backed up to `<event>.backup` and chained as usual.
-
-### Migrating existing checkouts
-
-If a repo already has csl's post-merge hook installed, migrate it to suspenders ownership:
-
-1. Install the new suspenders and csl binaries.
-2. Add the `csl-reindex` entry to `~/.config/suspenders/config.yaml` under `hooks.post_merge` (see above).
-3. Disable csl's own hook: run `csl hooks uninstall` and set `hooks.post_merge.enabled: false` in csl's config.
-4. Run `suspenders hook install --all` to take over the hooks (csl-managed post-merge hooks are set aside, not chained).
-5. Run `suspenders hook status --all` to verify the hooks are `installed`.
-
-### Per-repo ignore file
-
-Place a `.suspenders.yaml` at the root of any repository to suppress findings locally:
-
-```yaml
-rules:
-  - jwt-token
-
-paths:
-  - "**/*_test.go"
-
-patterns:
-  - EXAMPLE
-
-allowlist:
-  - match: "test-dummy-key"
-```
-
-### Inline ignore
-
-For a single false positive, add a `suspenders:ignore` comment on the line instead of editing config:
-
-```go
-testKey := "AKIAEXAMPLEEXAMPLE00" // suspenders:ignore
-```
-
-All findings on that line are suppressed.
-
-## Hook execution order
-
-When git triggers a hook, the generated script calls `suspenders hook run <event>`. The execution order for each event:
-
-**pre-commit:**
-
-1. External `pre_commit` hooks (in config order, stop on first failure)
-2. Built-in guard (if `guard.enabled` is true)
-3. Built-in scan (if `scan.enabled` is true, which is the default)
-
-**post-merge:**
-
-1. External `post_merge` hooks (in config order)
-
-Any non-zero exit from a step blocks the git operation (for pre-commit) or logs a warning (for post-merge).
 
 ## Detection rules
 
@@ -522,46 +370,205 @@ These fire on the file's name alone, so binary key material (PKCS#12 keystores, 
 | `terraform-state-file` | `*.tfstate`, `*.tfstate.backup` | high |
 | `kubeconfig-file` | `kubeconfig` | high |
 
-## How it works
+## Configuration
 
-### Scanning
+Suspenders reads its config from `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`), creating a default config on first run.
 
-1. Enumerates git-tracked files via `git ls-files` (untracked and `.gitignore`d files are excluded)
-2. Applies filename rules: sensitive file names are flagged regardless of content
-3. Skips binary files (detected by null byte in the first 512 bytes) and files larger than 1 MB
-4. Matches each line against all rules (built-in + custom watch rules); every match on a line is reported, not just the first
-5. Applies per-rule entropy gates and filters, then checks the global allowlist and per-repo `.suspenders.yaml`
-6. Skips lines that carry a `suspenders:ignore` comment
-7. Redacts every match on a line before printing, so one finding's context never exposes another finding's secret
+```yaml
+# Directories to scan for git repositories (used by --all)
+dirs:
+  - ~/code/src
+  - ~/workspace
 
-In `--staged` mode, the file list comes from `git diff --cached --name-only --diff-filter=ACMR` and the content is read from the index (`git show :<path>`), not the working tree. The scan sees exactly what would be committed — staging a secret and then scrubbing the working copy without re-staging still gets caught. Files that cannot be read fail the scan instead of being silently skipped.
+# Repo name patterns to exclude from discovery (glob syntax)
+exclude:
+  - "*/vendor/*"
 
-### Hook orchestration
+# Built-in scanner toggle (enabled by default)
+scan:
+  enabled: true
 
-Generated hook scripts are thin dispatchers:
+# Internal-reference guard
+guard:
+  enabled: true
+  workspace_dirs:
+    - ~/workspace
+  blocked_words:
+    - acmecorp
+    - "*.acmecorp.net"
+    - docs.acmecorp.net/runbooks
+  allowlist:
+    - grpc/grpc-go
+  file_patterns:
+    - "*.go"
+    - "*.md"
+    - "*.yaml"
 
-```sh
-#!/bin/sh
-# managed by suspenders - do not edit
-# version: <checksum>
-hook_dir=$(dirname -- "$0")
-if [ -x "$hook_dir/pre-commit.backup" ]; then
-  "$hook_dir/pre-commit.backup" "$@" || exit $?
-fi
-exec suspenders hook run pre-commit
+# Custom detection rules
+watch:
+  - id: "internal-api-token"
+    description: "Internal API token"
+    pattern: "INTERNAL_TOKEN\\s*=\\s*(.+)"
+    severity: "high"
+
+# Known-safe values to suppress globally
+allowlist:
+  - match: "AKIAIOSFODNN7EXAMPLE"
+    description: "AWS example key from documentation"
+  - match: "sk_test_1234567890"
+    paths: ["**/Makefile"]
+
+# History clean settings
+history:
+  replace_table:
+    old.internal.net: new.example.com
+  redact_files:
+    - id_rsa
+    - "certs/*.p12"
+
+# External hook scripts grouped by event
+hooks:
+  pre_commit:
+    - name: go-vet
+      command: go vet ./...
+      file_patterns: ["*.go"]
+      repos: ["mad01/ralph"]
+
+  post_merge:
+    - name: csl-reindex
+      command: |
+        mkdir -p "${HOME}/.config/csl" &&
+        printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
 ```
 
-A foreign hook found at install time is moved to `<event>.backup` and the generated script chains to it first, so existing hooks keep running. The `hook run` subcommand loads config, identifies the current repo, then runs each configured check in order. Hook scripts use the bare binary name (`suspenders`) rather than an absolute path, so they keep working after rebuilds or relocations as long as the binary is in `$PATH`.
+### Built-in scan
 
-Each hook file includes a SHA-256 checksum of its body (excluding the version line). `suspenders hook update` compares this checksum to detect stale hooks without re-reading the binary.
+The secret scanner runs by default on every pre-commit. To disable it (while keeping the guard and external hooks), set `scan.enabled` to `false`. When the field is omitted, scanning is enabled.
 
-### Repository discovery
+### Internal-reference guard
 
-The `--all` flag walks every directory in `config.yaml`'s `dirs` array, discovers git repositories with 32 concurrent workers, extracts the `org/repo` name from each remote origin URL, and filters out repos matching `exclude` globs.
+The guard prevents internal repository names, and any other string you list (a brand name, an internal domain, a docs link), from leaking into public repos. When `guard.enabled` is `true`, it:
 
-## Development
+1. Walks `workspace_dirs` to discover repos and derive their names (see below)
+2. Adds each entry from `blocked_words` (matched regardless of workspace scan)
+3. Removes entries in `allowlist`
+4. Checks the staged diff (added/modified lines only) in files matching `file_patterns` for case-insensitive matches
 
-To work on suspenders by hand — add or tune a detection rule, test it against a real secret, debug a false positive or negative — see [docs/working-on-it.md](docs/working-on-it.md). The rest of this section is the quick reference.
+Any match blocks the commit with a message listing the matched terms.
+
+#### How blocked names are collected
+
+The block list is derived from your filesystem, not maintained by hand. Enumerating internal repo names in a config file is itself a leak waiting to happen: the config would be the one file that lists everything it is supposed to protect. So the guard recomputes the list on every run from what is actually checked out:
+
+1. Each directory in `workspace_dirs` is walked (`~` expands to your home; repo inspection fans out to 32 workers). Hidden directories are skipped, discovery doesn't recurse into nested repos, and unreadable entries are silently passed over.
+2. A directory counts as a repo when it contains `.git`. For each repo found, the guard derives **two** names:
+   - the `org/repo` name parsed from the `origin` remote URL, handling both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms
+   - the repo's directory basename, so a repo checked out under a local name that differs from its remote name is blocked under both
+3. When a repo has no `origin` remote or the URL can't be parsed, discovery falls back to `parentdir/repodir` from the filesystem path.
+4. Safe references (`guard.allowlist`) are dropped, `blocked_words` entries are appended, and the result is deduplicated.
+
+Because the list is recomputed per run and never persisted, a freshly cloned internal repo is guarded from the very next commit with zero configuration. The trade-off is coverage-by-checkout: a repo that only exists on a colleague's machine contributes nothing to your block list. Internal *hostnames* in particular never appear as repo checkouts, which is what `blocked_words` wildcard entries (`*.acmecorp.net`) are for.
+
+Two details worth knowing:
+
+- The top-level `exclude` globs do **not** apply to guard discovery; they only filter which repos `hook install --all` touches. Excluding a repo from hook management doesn't stop its name from being blocked.
+- Names whose edges are word characters are matched with word-boundary guards, so a short repo name like `hig` can't match inside "higher". Entries with wildcard or punctuation edges keep their full reach.
+
+Blocked words are matched case-insensitively as literal strings, so an entry can be a single word (`acmecorp`), an internal domain (`internal.acmecorp.net`), or a docs link (`docs.acmecorp.net/runbooks`). A `*` in an entry matches any run of non-whitespace characters: `*.acmecorp.net` blocks every subdomain, and the match extends over the URL scheme so history cleanup replaces the whole reference. Overlapping entries match longest-first, so a docs link wins over its bare domain.
+
+The same block list runs in three other places: `suspenders scan` checks every tracked file in the working tree (reported with file and line), `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` are skipped everywhere; internal repos may reference internal names.
+
+### External hooks
+
+External hooks run shell commands as part of the hook pipeline. Each entry supports these fields:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | required | Identifier shown in logs and error messages |
+| `command` | string | required | Shell command executed via `sh -c` |
+| `file_patterns` | string[] | `[]` (all files) | Only run if staged/changed files match these globs (a gate; the matching files are not passed to the command) |
+| `repos` | string[] | `[]` (all repos) | Only run in repos whose `org/repo` name matches these globs |
+| `enabled` | bool | `true` | Toggle without removing config |
+
+Hooks are grouped under `hooks.pre_commit` and `hooks.post_merge`.
+
+### Keeping a code index fresh (csl)
+
+If you run code-search-local (csl), keep its index current by reindexing each repo after a merge. The recommended way is a `csl-reindex` external hook under `hooks.post_merge`:
+
+```yaml
+hooks:
+  post_merge:
+    - name: csl-reindex
+      command: |
+        mkdir -p "${HOME}/.config/csl" &&
+        printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
+```
+
+On every merge this appends the repo's path to `~/.config/csl/reindex.queue`. The queue is drained later by `csl sync`, which reindexes each queued repo and clears the file. Queuing keeps the post-merge hook fast; the actual reindex happens out of band.
+
+### Suspenders owns git hooks
+
+csl can install its own `post-merge` hook to reindex on merge. Once suspenders manages the `post-merge` event with the `csl-reindex` entry above, it owns that reindex; running csl's hook as well would queue the same repo twice per merge. Disable csl's own post-merge hook so suspenders is the single owner:
+
+```sh
+csl hooks uninstall
+```
+
+and set `hooks.post_merge.enabled: false` in csl's config.
+
+When `suspenders hook install` finds an existing csl-managed `post-merge` hook (it carries a `# csl-managed-hook:` marker), it doesn't chain to it. The csl hook is set aside under `<event>.csl-replaced` (a name the generated hook never runs) and a warning is printed, so the reindex runs only via the `csl-reindex` entry, never twice. Generic (non-csl) foreign hooks are still backed up to `<event>.backup` and chained as usual.
+
+### Migrating existing checkouts
+
+If a repo already has csl's post-merge hook installed, migrate it to suspenders ownership:
+
+1. Install the new suspenders and csl binaries.
+2. Add the `csl-reindex` entry to `~/.config/suspenders/config.yaml` under `hooks.post_merge` (see above).
+3. Disable csl's own hook: run `csl hooks uninstall` and set `hooks.post_merge.enabled: false` in csl's config.
+4. Run `suspenders hook install --all` to take over the hooks (csl-managed post-merge hooks are set aside, not chained).
+5. Run `suspenders hook status --all` to verify the hooks are `installed`.
+
+### Per-repo ignore file
+
+Place a `.suspenders.yaml` at the root of any repository to suppress findings locally:
+
+```yaml
+rules:
+  - jwt-token
+
+paths:
+  - "**/*_test.go"
+
+patterns:
+  - EXAMPLE
+
+allowlist:
+  - match: "test-dummy-key"
+```
+
+### Inline ignore
+
+For a single false positive, add a `suspenders:ignore` comment on the line instead of editing config:
+
+```go
+testKey := "AKIAEXAMPLEEXAMPLE00" // suspenders:ignore
+```
+
+All findings on that line are suppressed.
+
+## Where things live
+
+- Config: `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`), created with defaults on first run
+- Per-repo overrides: `.suspenders.yaml` at a repo's root, holding ignore rules, paths, patterns, and allowlist
+- Binary: `~/code/bin/suspenders` (via `make install`)
+- Generated hooks: `.git/hooks/pre-commit`, `.git/hooks/post-merge`, both calling `suspenders hook run <event>`
+- Foreign hook backups: `.git/hooks/<event>.backup`, restored on `hook uninstall`
+- History clean backup bundle: `.git/suspenders-backup-<timestamp>.bundle`, written before every rewrite
+
+## Develop
+
+To work on suspenders by hand (add or tune a detection rule, test it against a real secret, debug a false positive or negative), see [docs/working-on-it.md](docs/working-on-it.md). The rest of this section is the quick reference.
 
 ### Prerequisites
 
@@ -577,7 +584,7 @@ make install            # install to ~/code/bin
 make test               # run unit tests
 make test-integration   # run Docker-based integration tests
 make lint               # run golangci-lint
-make fmt                # format source with golines + gofumpt
+make fmt                # format source with golines and gofumpt
 make clean              # remove the built binary
 ```
 
@@ -614,15 +621,17 @@ make test-integration
 
 | Test | Scenario |
 |------|----------|
-| `test_hook_install` | Hook file is created with marker and is executable |
+| `test_hook_install` | `hook install` writes the hook file with the marker and makes it executable |
 | `test_hook_allows_clean` | Clean commits pass through the hook |
 | `test_hook_blocks_secret` | Commits containing secrets are blocked |
 | `test_hook_chain` | Foreign hooks are backed up and chained |
-| `test_hook_csl_takeover` | A csl-managed post-merge hook is taken over without chaining, queuing exactly one reindex per merge |
+| `test_hook_csl_takeover` | `hook install` takes over a csl-managed post-merge hook without chaining, queuing exactly one reindex per merge |
 | `test_hook_update` | Outdated hooks are refreshed |
 | `test_hook_uninstall` | Hook is removed and backup is restored |
 | `test_hook_install_all` | Hooks are installed across multiple repos |
 | `test_scan_staged` | Only staged files are scanned in `--staged` mode |
+
+See [`CLAUDE.md`](CLAUDE.md) for the module layout and domain vocabulary in [`CONTEXT.md`](CONTEXT.md).
 
 ## License
 

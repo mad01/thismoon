@@ -2,7 +2,22 @@
 
 `humanizer` shells out to [vale](https://vale.sh) against a bundled Humanizer style pack to flag AI-writing patterns in text. It also computes quantitative voice profiles (sentence length distribution, punctuation densities, contraction rate, Flesch reading ease) and can diff two samples metric by metric. Both the CLI and the MCP server are in this binary.
 
-Detection is purely deterministic. The tool flags patterns; rewriting is left to the calling agent.
+## How it works
+
+Detection is purely deterministic. The tool flags patterns; rewriting is left to the calling agent. Two independent paths cover different tells:
+
+- Vale span rules: the embedded style pack matches specific phrasing and reports a line/column span.
+- Statistical detector: whole-sample checks (sentence-length uniformity, contraction rate, type-token ratio, short-text em-dash, semicolon absence, heading density, anaphora) catch structural tells that no single sentence exhibits, each gated on a minimum sample size.
+
+Run both for full coverage.
+
+### Style pack
+
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 43 rules covering patterns from Wikipedia's "Signs of AI writing":
+
+AIVocabulary, AphoristicClosure, BoldOveruse, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, VagueAttribution
+
+Rule metadata (ID, category, severity, rationale, before/after examples) comes from `# humanizer-*` comment headers in each YAML file, served by both the CLI (`rules explain`) and the MCP tools.
 
 ## Install
 
@@ -28,7 +43,7 @@ brew install vale
 
 The Humanizer style pack is embedded in the binary and extracted on first use to `~/.cache/humanizer/vale`. No separate `vale` config or style download is needed.
 
-## Commands
+## Usage
 
 ### detect
 
@@ -94,9 +109,7 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 `rules explain` prints the rule ID, name, category, severity, summary, rationale, before/after examples, and reference link.
 
-### mcp
-
-Start the MCP stdio server.
+## MCP
 
 ```sh
 humanizer mcp
@@ -108,9 +121,7 @@ An MCP host such as Claude Code launches this; don't run it by hand in normal us
 claude mcp add --scope user humanizer -- humanizer mcp
 ```
 
-## MCP server
-
-The `mcp` subcommand starts a stdio server that exposes eight tools:
+The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes eight tools:
 
 | Tool | Description |
 |---|---|
@@ -123,37 +134,27 @@ The `mcp` subcommand starts a stdio server that exposes eight tools:
 | `humanizer_voice_profile` | Quantitative voice profile of a text sample |
 | `humanizer_voice_diff` | Metric-by-metric delta between two samples |
 
-The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio.
+The consuming repo registers the server with the MCP host; in that setup it runs under a seatbelt sandbox (see Sandbox below).
 
-The consuming repo registers the server with the MCP host; in that setup it runs under a seatbelt sandbox — see "Sandbox" below.
+### Sandbox
 
-## Sandbox
-
-The consuming repo's registration wrapper runs the MCP server under macOS `sandbox-exec` with a seatbelt profile. The sandbox applies only when the server is launched by the MCP host; the CLI commands (`detect`, `profile`, `rules`) run without any sandbox.
+The consuming repo's registration wrapper runs the MCP server under macOS `sandbox-exec` with a seatbelt profile. The sandbox applies only when the MCP host launches the server; the CLI commands (`detect`, `profile`, `rules`) run without any sandbox.
 
 What the sandbox denies:
 
-- **All network** — vale runs fully offline; no traffic is needed.
-- **All `$HOME` reads by default** — specific paths are allowed: `~/code/bin` (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt` files under `~/code/src` and `~/workspace` (for `humanizer_detect_file`).
-- **All `$HOME` writes** — writes go only to `~/.cache/humanizer` and system temp.
+- All network: vale runs fully offline, so no traffic is needed.
+- All `$HOME` reads, denied by default except specific paths: `~/code/bin` (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt` files under `~/code/src` and `~/workspace` (for `humanizer_detect_file`).
+- All `$HOME` writes, restricted to `~/.cache/humanizer` and system temp.
 
 This means `humanizer_detect_file` works only on prose files under those two code roots. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead.
 
-If you add a runtime file or network need, update the consuming repo's seatbelt profile — a code change alone won't be enough.
+If you add a runtime file or network need, update the consuming repo's seatbelt profile; a code change alone isn't enough.
 
-## Style pack
+## Configuration
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 43 rules covering patterns from Wikipedia's "Signs of AI writing":
+The style pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`.
 
-AIVocabulary, AphoristicClosure, BoldOveruse, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, VagueAttribution
-
-Rule metadata (ID, category, severity, rationale, before/after examples) is parsed from `# humanizer-*` comment headers in each YAML file and served by both the CLI and the MCP tools.
-
-The pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`.
-
-## Working on it
-
-**Key files:**
+## Where things live
 
 | File | What it does |
 |---|---|
@@ -166,11 +167,15 @@ The pack extracts to `~/.cache/humanizer/vale` on first use. To override the cac
 | `internal/voice/diff.go` | Metric-by-metric diff between two profiles. |
 | consuming repo's seatbelt profile | Sandbox for the MCP server (machine-private wiring, kept beside the MCP registration). |
 
+Package path: `github.com/mad01/thismoon/tools/humanizer`, part of the monorepo module; it has no go.mod of its own.
+
+## Develop
+
 **Adding or editing a rule:**
 
 1. Copy an existing `.yml` from `internal/rules/vale/styles/Humanizer/` as a template.
 2. Edit the rule, keeping the `# humanizer-*` comment block intact (used by `rules explain`).
-3. Run the tests — the metadata tests parse every YAML and will catch malformed headers.
+3. Run the tests: the metadata tests parse every YAML and catch malformed headers.
 4. Check that `vale` picks it up: `humanizer detect --rule Humanizer.YourRule testdata/ai_sample.md`
 5. Build and install: `make build && make install`
 
@@ -196,5 +201,3 @@ make test
 ```
 
 The test suite includes metadata validation for every YAML header and concurrent-detection race checks.
-
-Package path: `github.com/mad01/thismoon/tools/humanizer` (monorepo module, no own go.mod).

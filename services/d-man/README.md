@@ -16,21 +16,17 @@ It does two things, both driven by one routes file:
 2. **reverse proxy**: listens on `127.0.0.1:80` and routes each request to the
    right backend port by its `Host` header.
 
-## Why /etc/hosts and not a DNS server?
+## How it works
 
 On macOS 26 (Tahoe), `mDNSResponder` hijacks DNS queries for any non-IANA TLD
 (`.this`, `.test`, `.lan`) and answers them itself. A local DNS server with
 `/etc/resolver/this` is registered but **never receives the query**.
-`*.localhost` only resolves in Chrome/Firefox, not Safari or `curl`. `/etc/hosts`
-is read by `getaddrinfo` *before* `mDNSResponder`, so it resolves in **every**
-client and keeps the short `.this` suffix. The cost is no wildcards: every name
-is listed explicitly, which is exactly what the routes file already is.
-
-## Documentation
-
-- [Getting started](docs/getting-started.md): install to first request, step by step.
-- [Command reference](docs/commands.md): every subcommand and flag.
-- [Setup](../../recipes/d-man/SETUP.md): one-time daemon registration on a new machine.
+`*.localhost` only resolves in Chrome/Firefox, not Safari or `curl`.
+`/etc/hosts` is read by `getaddrinfo` *before* `mDNSResponder`, so it resolves
+in **every** client and keeps the short `.this` suffix. The cost is no
+wildcards: every name is listed explicitly, which is exactly what the routes
+file already is. See [`CLAUDE.md`](CLAUDE.md) for the module layout and the
+fail-safe writer/proxy design.
 
 ## Install
 
@@ -38,11 +34,14 @@ is listed explicitly, which is exactly what the routes file already is.
 make install   # builds and installs ~/code/bin/d-man (codesigned on macOS)
 ```
 
-## Run
+See [`docs/getting-started.md`](docs/getting-started.md) for the full
+walkthrough, install to first request.
+
+## Usage
 
 `d-man serve` is the long-running daemon. Binding `:80` and writing `/etc/hosts`
 both need root, so it runs as a **root launchd daemon** via t-man. This is a
-one-time, explicit step (see `../../recipes/d-man/SETUP.md`):
+one-time, explicit step (see [`recipes/d-man/SETUP.md`](../../recipes/d-man/SETUP.md)):
 
 ```bash
 sudo t-man --daemon add --name d-man -- \
@@ -52,15 +51,22 @@ sudo t-man --daemon add --name d-man -- \
 That is the **only** time you need `sudo`. After it:
 
 - **Edit routes:** change `routes.toml`; the daemon watches it (fsnotify) and
-  re-syncs `/etc/hosts` plus reloads the proxy automatically. No sudo, no restart.
-- **Upgrade the binary:** run `make install` (or `ralph up`); the daemon notices
-  its binary changed, exits, and launchd's `KeepAlive` relaunches the new build.
+  re-syncs `/etc/hosts` plus reloads the proxy automatically. No sudo, no
+  restart. If an edit is invalid (bad hostname, unknown `cname` target, a
+  `cname` cycle), it's logged and ignored, and the previous good routes stay
+  live; check `t-man logs d-man` for the validation error, and confirm the
+  daemon is watching the file you edited (`t-man logs d-man` shows
+  `config=…` on start).
+- **Upgrade the binary:** run `make install` (or `ralph up`); the daemon
+  notices its binary changed, exits, and launchd's `KeepAlive` relaunches the
+  new build. If it doesn't take effect, check `t-man status d-man` and
+  launchd directly: `launchctl print system/d-man`.
 
 Other subcommands:
 
 ```bash
 d-man list                 # print resolved host -> backend routes
-sudo d-man sync            # write the /etc/hosts block once (manual fallback)
+sudo d-man sync             # write the /etc/hosts block once (manual fallback)
 d-man version [-o json]    # build sha
 ```
 
@@ -70,9 +76,27 @@ d-man version [-o json]    # build sha
 | `--hosts-file` | _(none)_ | `/etc/hosts` | Hosts file to sync into; point at a temp file to dry-run. |
 | `--port` (serve) | _(none)_ | `80` | Port the proxy listens on (loopback only). |
 
-See the [command reference](docs/commands.md) for every subcommand in detail.
+If a hostname isn't resolving, confirm the entry landed in `/etc/hosts`:
 
-## Routes file
+```bash
+grep 'present.this' /etc/hosts
+```
+
+See [`docs/commands.md`](docs/commands.md) for every subcommand in detail.
+
+## Endpoints
+
+- `GET /__this/sites.json`: navigable site list as JSON for the webkit ⌘K
+  picker, live-filtered to backends currently responding (any host; answered
+  by d-man itself, not proxied). If a running site is missing from the list,
+  confirm its backend is actually up on the declared port: a dead backend is
+  dropped, not shown as down.
+- Everything else: proxied to the matching route's backend by `Host` header.
+  A `502` means the backend isn't running, or the port in `routes.toml`
+  doesn't match the backend's listen port; check with
+  `curl -i http://127.0.0.1:<port>/`.
+
+## Configuration
 
 ```toml
 suffix = "this"            # default TLD; "csl" => csl.this
@@ -95,8 +119,6 @@ naming another route) that resolves to that route's backend. CNAME chains are
 followed and cycles are rejected. `target` (default `127.0.0.1`) lets a
 port-backed route point at a non-loopback host.
 
-## Safety
-
 `d-man` never corrupts `/etc/hosts`. It only ever replaces the text between its
 two markers; every other line is preserved byte-for-byte. Before writing it
 validates the result, backs up to `/etc/hosts.d-man.bak`, and replaces the file
@@ -109,38 +131,14 @@ The reverse proxy normalizes the `Host` header (case, trailing FQDN dot, port)
 and rewrites a backend's self-redirect `Location` back to the `.this` hostname,
 so a redirect never bounces you to `127.0.0.1:<port>`.
 
-## Debugging
+## Where things live
 
-**Host not resolving.** Confirm the entry is in `/etc/hosts`:
-
-```bash
-grep 'present.this' /etc/hosts
-```
-
-If the entry is missing, the daemon may have rejected the last `routes.toml`
-edit. Check `t-man logs d-man` for the validation error; the previous good
-routes stay live. Force a one-shot sync: `sudo d-man sync`.
-
-**Proxy returning 502.** The backend is not running, or the port in
-`routes.toml` doesn't match the backend's listen port. Check with:
-
-```bash
-curl -i http://127.0.0.1:<port>/
-```
-
-**Route change not applying.** Confirm the daemon is running (`t-man status
-d-man`) and that the routes file is the one the daemon is watching
-(`t-man logs d-man` shows `config=…` on start). A bad edit is silently
-ignored; check for the validation error in the logs.
-
-**`/__this/sites.json` missing a site.** The list is live-filtered: each
-fetch probes the backend and excludes services that are not responding.
-Confirm the backend is up on the declared port.
-
-**Binary upgrade not taking effect.** The daemon watches its own executable
-and exits on change; launchd `KeepAlive` relaunches the new build. If the
-daemon is not relaunching, check `t-man status d-man` and launchd directly:
-`launchctl print system/d-man`.
+- Binary: `~/code/bin/d-man`
+- Routes config: `~/.config/d-man/routes.toml` (or `--config`/`DMAN_CONFIG`)
+- Managed block: inside `/etc/hosts`, between the `# >>> d-man managed >>>` /
+  `# <<< d-man managed <<<` markers; every other line stays untouched
+- Backup: `/etc/hosts.d-man.bak`, written before each change
+- Daemon logs: `/var/log/d-man/` (the root launchd daemon registered by t-man)
 
 ## Develop
 
@@ -150,5 +148,6 @@ make build   # ./d-man
 make tidy    # go mod tidy
 ```
 
-See `CLAUDE.md` for the module layout and design rationale, and
-`../../recipes/d-man/SETUP.md` for first-time setup on a new machine.
+See [`CLAUDE.md`](CLAUDE.md) for the module layout and design rationale, and
+[`recipes/d-man/SETUP.md`](../../recipes/d-man/SETUP.md) for first-time setup
+on a new machine.

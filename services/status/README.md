@@ -3,9 +3,11 @@
 A Go CLI that serves a status dashboard for all t-man-managed local services
 at `http://status.this/` (port 7426).
 
+## How it works
+
 It discovers t-man services by scanning launchd plist directories, probes each
 one once a minute, and draws a 30-day uptime bar strip per service. No
-incident tracking — just running state and history.
+incident tracking, just running state and history.
 
 ## Install
 
@@ -13,13 +15,13 @@ incident tracking — just running state and history.
 make install   # builds and installs ~/code/bin/status (adhoc codesigned on macOS)
 ```
 
-Or via ralph — it ships from the thismoon monorepo:
+Or via ralph, since it ships from the thismoon monorepo:
 
 ```bash
 ralph up   # builds status and registers the t-man agent
 ```
 
-## Run
+## Usage
 
 `status serve` runs as a launchd user agent via t-man:
 
@@ -53,16 +55,16 @@ or `http://localhost:7426/` (on hosts without d-man).
 | `GET /version` | `{"version":"<sha>"}` build sha |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
-## History store
+## Where things live
 
 Day-bucketed uptime counts live in `~/.local/share/status/history.json`.
-The store is written atomically each probe cycle and pruned at 90 days; the
-dashboard shows the most recent 30 days.
+status writes the store atomically each probe cycle and prunes it at 90
+days; the dashboard shows the most recent 30 days.
 
-Bar colors: green (≥ 99.5%), amber (≥ 95%), red (below 95%), gray (no data
-recorded that day — not downtime, just no checks).
+Bar colors: green (>= 99.5%), amber (>= 95%), red (below 95%), gray (no data
+recorded that day; not downtime, just no checks).
 
-Removing the t-man agent does not delete history.
+Removing the t-man agent doesn't delete history.
 
 ## Develop
 
