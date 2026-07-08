@@ -123,8 +123,14 @@ go test ./...
 
 ## Gotchas
 
-- **`serve` needs root in production** (binds `:80`, writes `/etc/hosts`). For
-  local testing use `--port <high>` and `--hosts-file <temp>` to avoid root.
+- **`serve` needs root in production** (binds `:80`/`:443`, writes `/etc/hosts`).
+  For local testing use `--port`/`--tls-port <high>`, `--hosts-file <temp>`, and
+  a throwaway `--ca-dir <temp>` to avoid root.
+- **The CA files are root-owned** (`ca-key.pem` is `0600`). The root daemon (or
+  `sudo d-man ca install`) creates them, so even though they live under the
+  user's `~/.config/d-man/ca/`, a non-root process cannot read the key — that is
+  the point: the key mints system-trusted certs, so only root should hold it. A
+  non-root `serve` for testing must therefore use its own `--ca-dir`.
 - **`httputil.ReverseProxy` handles WebSocket upgrades natively**, so no
   custom Upgrade handling is needed.
 - **`internal/notify` is a deliberate per-tool copy** of the same ~25-line
