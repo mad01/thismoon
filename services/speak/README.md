@@ -95,6 +95,35 @@ The `<wk-read-aloud>` webkit component on the rendered page calls
 `POST /v1/audio/speech` locally; present briefings call it cross-origin via
 `http://speak.this`.
 
+## MCP server
+
+`speak serve` plays audio in the **browser** — the person at the page hears it.
+`speak mcp` plays audio on the **machine's speakers** with `afplay`, so an agent
+can make the machine talk. The two are independent: they share only the TTS
+engine, and the MCP server needs the `speak-tts` engine reachable but does **not**
+need `speak serve` running.
+
+```bash
+speak mcp --tts-url http://127.0.0.1:8765   # stdio MCP server for Claude Code
+```
+
+Only one server-side session plays at a time; playback is serialised across
+processes by an `flock` on `~/.local/share/speak/playback.lock`, so a second
+caller gets a `BUSY | …` reply instead of talking over the first.
+
+| Tool | What it does |
+|------|--------------|
+| `speak_text` | Speak given text aloud; returns a session id. |
+| `speak_file` | Read a markdown file aloud, section by section (`sections` = comma-separated 1-based indices, empty = all). |
+| `speak_pause` | Pause playback (`SIGSTOP` the `afplay` child) and release the lock. |
+| `speak_resume` | Resume after pause, or restart from the saved position after stop. |
+| `speak_stop` | Stop playback; the position is saved for `speak_resume`. |
+| `speak_voices` | List the Kokoro voices. |
+| `speak_status` | Report engine reachability and playback state (session, playing/paused/stopped/idle, position, lock holder). |
+
+Registering the server with a client is machine-private wiring — it lives in the
+consuming repo, not here (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+
 ## Configuration
 
 | Flag | Env | Default |

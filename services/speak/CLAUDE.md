@@ -12,10 +12,14 @@ origins (present.this) can fetch speech from `http://speak.this` too.
 services/speak/
   cmd/speak/           # entrypoint (delegates to internal/cli)
   internal/
-    cli/               # cobra: serve, version (Version via ldflags)
+    cli/               # cobra: serve, mcp, version (Version via ldflags)
     web/               # server.go (mux, CORS, TTS proxy, HTTP API), markdown.go
                         # (goldmark render + section split), assets/shell.html
                         # (chrome-only shell) + assets/app.js (client render)
+    ttsclient/         # HTTP client for the Kokoro engine (WAV over /v1/audio/speech)
+    playback/          # server-side afplay engine: sessions, pause/resume via
+                        # SIGSTOP/SIGCONT, flock, sentence split, md text extract
+    mcpserver/         # go-sdk MCP server: 7 speak_* tools over the playback engine
     notify/            # events.go (best-effort EmitEvent to events.this on
                         # TTS proxy failures)
   Makefile
@@ -73,6 +77,40 @@ Gotchas that cost time once:
 - The model must be in `~/.cache/huggingface` BEFORE the engine can serve (the
   sandbox blocks the lazy download path); the recipe's install script handles
   this. Warm latency is ~100–200ms per sentence on M-series.
+
+## MCP server
+
+`speak mcp` is a second, independent surface from `speak serve`. serve plays
+audio **in the browser** (the `<wk-read-aloud>` component fetches per-sentence
+WAV and plays it there); mcp plays audio **on the machine's speakers** via
+`afplay`, so an agent can make the host talk. They share only the TTS engine.
+
+- **Playback lives in the mcp process** (faithful port of the Python
+  `speak_mcp.py`), not in serve. `speak mcp` does not require `speak serve` to
+  be running — it only needs the `speak-tts` engine reachable on `--tts-url`.
+  This is deliberately unlike reminder's MCP (a thin client to its serve): the
+  shared resource here is the audio device, serialised by an `flock`, not a
+  JSON store, so there is no single-writer file to funnel through.
+- `internal/playback` runs a worker goroutine over the sentence list: fetch WAV
+  from `internal/ttsclient`, write it under `~/.local/share/speak/audio/`,
+  `afplay` it, `Wait`. Pause = `SIGSTOP` the afplay child + release the lock;
+  resume = re-acquire the lock + `SIGCONT`; stop saves the index so resume can
+  restart the worker from there.
+- **One session at a time, cross-process.** An `flock` on
+  `~/.local/share/speak/playback.lock` (with a `.owner` sidecar naming the
+  holder) means a second `speak mcp` gets a `BUSY | …` reply. Old WAVs are
+  reaped after 24h on start.
+- **Go `regexp` has no lookbehind** — the sentence splitter
+  (`playback.SplitSentences`) is hand-rolled, not a translation of the Python
+  `re.split(r'(?<=[.!?])\s+')`.
+- **stdout is the MCP protocol channel** — `runMCP` logs the resolved tts-url to
+  stderr only.
+- Tools: `speak_text`, `speak_file`, `speak_pause`, `speak_resume`,
+  `speak_stop`, `speak_voices`, `speak_status` (names/behaviour ported from the
+  Python server so agent muscle memory carries over).
+- **MCP registration stays host-gated in the consuming repo** (docs/adr/0006) —
+  the binary ships the `mcp` subcommand, but wiring it into a client is
+  machine-private and is NOT added to `recipes/speak/` here.
 
 ## Build / install / test
 
