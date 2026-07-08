@@ -1,18 +1,9 @@
 # Sources scanned by `catalog`. Each path is a repo root; the scanner walks it
 # for service-info.yaml files (a monorepo may hold many; a single-tool repo one).
-# Copy this to ~/.config/catalog/registry.yaml (the default) or pass --registry.
+# Copy this to ~/.config/catalog/registry.yaml (the default) or pass --registry,
+# then swap the myorg row for your own repo paths.
 sources:
   - path: ~/code/src/github.com/mad01/dotfiles
   - path: ~/code/src/github.com/mad01/thismoon
-  - path: ~/code/src/github.com/mad01/brain
-  - path: ~/code/src/github.com/mad01/brain-data
-  - path: ~/code/src/github.com/mad01/dropbrain-app
-  - path: ~/code/src/github.com/mad01/dropbrain-studio
-  - path: ~/code/src/github.com/mad01/home-record
-  - path: ~/code/src/github.com/mad01/kitty-session
-  - path: ~/code/src/github.com/mad01/leroy
-  - path: ~/code/src/github.com/mad01/migraine-me
-  - path: ~/code/src/github.com/mad01/mathpet
   - path: ~/code/src/github.com/mad01/ralph
-  - path: ~/code/src/github.com/mad01/rollroll
-  - path: ~/code/src/github.com/mad01/suspenders
+  - path: ~/code/src/github.com/myorg/my-service

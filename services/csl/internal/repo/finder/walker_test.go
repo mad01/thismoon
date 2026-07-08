@@ -127,10 +127,10 @@ func TestReadOriginURL(t *testing.T) {
 		{
 			name: "https remote",
 			content: `[remote "origin"]
-	url = https://github.com/mad01/dropper.git
+	url = https://github.com/mad01/gadget.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 `,
-			want: "https://github.com/mad01/dropper.git",
+			want: "https://github.com/mad01/gadget.git",
 		},
 		{
 			name: "no origin",

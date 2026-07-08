@@ -21,7 +21,7 @@ func NormalizeQuery(q string) string {
 // query. The query is normalized with NormalizeQuery first; an empty query
 // after normalization is rejected.
 //
-// Callers use the returned regex against Repo.Name (e.g. "mad01/brain").
+// Callers use the returned regex against Repo.Name (e.g. "mad01/octo").
 func CompileMatcher(q string) (*regexp.Regexp, error) {
 	q = NormalizeQuery(q)
 	if q == "" {

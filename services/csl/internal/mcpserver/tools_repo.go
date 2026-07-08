@@ -17,7 +17,7 @@ import (
 
 // repoLookupInput is the typed input for the csl_repo_lookup tool.
 type repoLookupInput struct {
-	Name string `json:"name" jsonschema:"case-insensitive regex or substring matched against the repo name (e.g. 'tboi', 'mad01/.*')"`
+	Name string `json:"name" jsonschema:"case-insensitive regex or substring matched against the repo name (e.g. 'myrepo', 'mad01/.*')"`
 }
 
 // repoMatch is one entry in the csl_repo_lookup result.

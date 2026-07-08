@@ -46,7 +46,7 @@ Resolve a repo name to its absolute local checkout path.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `name` | string | yes | Case-insensitive regex or substring matched against `org/repo` (e.g. `tboi`, `mad01/.*`) |
+| `name` | string | yes | Case-insensitive regex or substring matched against `org/repo` (e.g. `myrepo`, `mad01/.*`) |
 
 **Output:**
 
@@ -68,7 +68,7 @@ Resolve a repo name to its absolute local checkout path.
 {
   "matches": [{
     "name": "mad01/thismoon",
-    "path": "/Users/alex/code/src/github.com/mad01/thismoon/services/csl",
+    "path": "/Users/you/code/src/github.com/mad01/thismoon/services/csl",
     "remote": "git@github.com:mad01/thismoon.git",
     "host": "github.com"
   }]
@@ -119,7 +119,7 @@ The `action` field encodes the decision tree:
 {
   "matches": [{
     "name": "mad01/thismoon",
-    "path": "/Users/alex/code/src/github.com/mad01/thismoon/services/csl",
+    "path": "/Users/you/code/src/github.com/mad01/thismoon/services/csl",
     "branch": "main",
     "dirty": false,
     "modified_files": 0,
@@ -161,7 +161,7 @@ Run `git pull --ff-only` in a named repo, with safety checks for dirty trees and
 ```json
 {
   "name": "mad01/thismoon",
-  "path": "/Users/alex/code/src/github.com/mad01/thismoon/services/csl",
+  "path": "/Users/you/code/src/github.com/mad01/thismoon/services/csl",
   "branch": "main",
   "updated": true,
   "old_head": "a1b2c3d",
@@ -174,7 +174,7 @@ Run `git pull --ff-only` in a named repo, with safety checks for dirty trees and
 ```json
 {
   "name": "mad01/thismoon",
-  "path": "/Users/alex/code/src/github.com/mad01/thismoon/services/csl",
+  "path": "/Users/you/code/src/github.com/mad01/thismoon/services/csl",
   "branch": "main",
   "updated": false,
   "warning": "uncommitted changes (2 modified, 1 untracked) — use force=true to pull anyway"
@@ -209,7 +209,7 @@ Rebuild the zoekt index for a single repo.
 ```json
 {
   "name": "mad01/thismoon",
-  "path": "/Users/alex/code/src/github.com/mad01/thismoon/services/csl",
+  "path": "/Users/you/code/src/github.com/mad01/thismoon/services/csl",
   "reindexed": true,
   "duration": "1.234s"
 }

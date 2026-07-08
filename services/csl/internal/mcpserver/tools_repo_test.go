@@ -56,7 +56,7 @@ func setupRepoEnv(t *testing.T, repos []struct{ Org, Name string }) (string, fun
 // no-break space). Matching must tolerate all of these.
 func TestResolveRepoWhitespace(t *testing.T) {
 	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
-		{"mad01", "brain"},
+		{"mad01", "octo"},
 		{"mad01", "other-repo"},
 		{"someone", "unrelated"},
 	})
@@ -68,16 +68,16 @@ func TestResolveRepoWhitespace(t *testing.T) {
 		wantErr bool
 		wantHit string // expected repo.Name on success
 	}{
-		{name: "clean match", query: "brain", wantHit: "mad01/brain"},
-		{name: "trailing ascii space", query: "brain ", wantHit: "mad01/brain"},
-		{name: "leading ascii space", query: " brain", wantHit: "mad01/brain"},
-		{name: "leading and trailing space", query: "  brain  ", wantHit: "mad01/brain"},
-		{name: "trailing tab", query: "brain\t", wantHit: "mad01/brain"},
-		{name: "trailing newline", query: "brain\n", wantHit: "mad01/brain"},
-		{name: "non-breaking space (U+00A0)", query: "brain ", wantHit: "mad01/brain"},
-		{name: "narrow no-break space (U+202F)", query: "brain ", wantHit: "mad01/brain"},
-		{name: "ideographic space (U+3000)", query: "brain　", wantHit: "mad01/brain"},
-		{name: "mixed case still works", query: "BRAIN ", wantHit: "mad01/brain"},
+		{name: "clean match", query: "octo", wantHit: "mad01/octo"},
+		{name: "trailing ascii space", query: "octo ", wantHit: "mad01/octo"},
+		{name: "leading ascii space", query: " octo", wantHit: "mad01/octo"},
+		{name: "leading and trailing space", query: "  octo  ", wantHit: "mad01/octo"},
+		{name: "trailing tab", query: "octo\t", wantHit: "mad01/octo"},
+		{name: "trailing newline", query: "octo\n", wantHit: "mad01/octo"},
+		{name: "non-breaking space (U+00A0)", query: "octo ", wantHit: "mad01/octo"},
+		{name: "narrow no-break space (U+202F)", query: "octo ", wantHit: "mad01/octo"},
+		{name: "ideographic space (U+3000)", query: "octo　", wantHit: "mad01/octo"},
+		{name: "mixed case still works", query: "OCTO ", wantHit: "mad01/octo"},
 		{name: "whitespace-only is rejected", query: "   ", wantErr: true},
 		{name: "empty is rejected", query: "", wantErr: true},
 	}
@@ -105,18 +105,18 @@ func TestResolveRepoWhitespace(t *testing.T) {
 // defeat the exact-match tiebreaker when multiple repos fuzzy-match.
 func TestResolveRepoExactDisambiguation(t *testing.T) {
 	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
-		{"mad01", "brain"},
-		{"mad01", "brainstorm"},
+		{"mad01", "octo"},
+		{"mad01", "octopus"},
 	})
 	defer cleanup()
 
-	// Query "brain" fuzzy-matches both; the exact-match tiebreaker should
-	// still pick "mad01/brain" even when the query has trailing whitespace.
-	repo, err := resolveRepo("mad01/brain ")
+	// Query "octo" fuzzy-matches both; the exact-match tiebreaker should
+	// still pick "mad01/octo" even when the query has trailing whitespace.
+	repo, err := resolveRepo("mad01/octo ")
 	if err != nil {
 		t.Fatalf("resolveRepo: %v", err)
 	}
-	if repo.Name != "mad01/brain" {
+	if repo.Name != "mad01/octo" {
 		t.Errorf("expected exact match to win, got %q", repo.Name)
 	}
 }
@@ -125,12 +125,12 @@ func TestResolveRepoExactDisambiguation(t *testing.T) {
 // whitespace-padded names gracefully.
 func TestHandleRepoLookupWhitespace(t *testing.T) {
 	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
-		{"mad01", "brain"},
+		{"mad01", "octo"},
 		{"someone", "unrelated"},
 	})
 	defer cleanup()
 
-	queries := []string{"brain", "brain ", " brain", "brain ", "BRAIN\t"}
+	queries := []string{"octo", "octo ", " octo", "octo ", "OCTO\t"}
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
 			_, out, err := handleRepoLookup(context.Background(), nil, repoLookupInput{Name: q})
@@ -142,13 +142,13 @@ func TestHandleRepoLookupWhitespace(t *testing.T) {
 			}
 			found := false
 			for _, m := range out.Matches {
-				if m.Name == "mad01/brain" {
+				if m.Name == "mad01/octo" {
 					found = true
 					break
 				}
 			}
 			if !found {
-				t.Errorf("handleRepoLookup(%q) did not return mad01/brain; got %+v", q, out.Matches)
+				t.Errorf("handleRepoLookup(%q) did not return mad01/octo; got %+v", q, out.Matches)
 			}
 		})
 	}
@@ -158,7 +158,7 @@ func TestHandleRepoLookupWhitespace(t *testing.T) {
 // the same way empty names are.
 func TestHandleRepoLookupRejectsEmpty(t *testing.T) {
 	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
-		{"mad01", "brain"},
+		{"mad01", "octo"},
 	})
 	defer cleanup()
 
