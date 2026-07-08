@@ -163,6 +163,56 @@ cname = "p"
 	}
 }
 
+func TestBlocklistHostsAndNormalize(t *testing.T) {
+	// Top-level keys (blocklist, suffix) must precede the [[route]] tables in
+	// TOML, else they parse as route keys and are dropped.
+	path := writeConfig(t, `
+blocklist = ["Reddit.com", "www.reddit.com", "reddit.com.", " reddit.com "]
+[[route]]
+name = "csl"
+port = 7424
+`)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// normalized + de-duped: Reddit.com / reddit.com. / " reddit.com " all collapse.
+	blocked := c.BlockedHosts()
+	want := []string{"reddit.com", "www.reddit.com"}
+	if len(blocked) != len(want) || blocked[0] != want[0] || blocked[1] != want[1] {
+		t.Fatalf("BlockedHosts = %v, want %v", blocked, want)
+	}
+	// /etc/hosts sync must include the route host and both block hosts.
+	hosts := c.Hosts()
+	if len(hosts) != 3 {
+		t.Fatalf("Hosts = %v, want 3 (csl.this + 2 blocked)", hosts)
+	}
+	found := map[string]bool{}
+	for _, h := range hosts {
+		found[h] = true
+	}
+	for _, h := range []string{"csl.this", "reddit.com", "www.reddit.com"} {
+		if !found[h] {
+			t.Errorf("Hosts missing %q: %v", h, hosts)
+		}
+	}
+}
+
+func TestValidateRejectsBlocklist(t *testing.T) {
+	cases := map[string]string{
+		"bad block host":   "blocklist=[\"not a host\"]\n[[route]]\nname=\"x\"\nport=80\n",
+		"empty block host": "blocklist=[\"\"]\n[[route]]\nname=\"x\"\nport=80\n",
+		"block is a route": "blocklist=[\"csl.this\"]\n[[route]]\nname=\"csl\"\nport=80\n",
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writeConfig(t, body)); err == nil {
+				t.Errorf("expected error for %s", name)
+			}
+		})
+	}
+}
+
 func TestValidateAcceptsIPv6Target(t *testing.T) {
 	path := writeConfig(t, "[[route]]\nname = \"x\"\nport = 80\ntarget = \"::1\"\n")
 	if _, err := Load(path); err != nil {

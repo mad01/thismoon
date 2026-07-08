@@ -24,8 +24,12 @@ d-man serve --config ~/.config/d-man/routes.toml
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--port` | `80` | Port the proxy listens on (loopback only). |
+| `--tls-port` | `443` | Port the block-page TLS listener uses (loopback only). |
+| `--ca-dir` | `<config dir>/ca` | Directory holding the block-page CA cert and key. |
 
-On start it writes the managed `/etc/hosts` block and builds the proxy. While
+On start it writes the managed `/etc/hosts` block and builds the proxy. It also
+listens on `127.0.0.1:443` to serve the block page for blocked HTTPS hosts,
+minting a certificate per host from the local CA (see [`ca`](#ca)). While
 running it:
 
 - watches the routes file and re-syncs + reloads when it changes,
@@ -66,6 +70,26 @@ When already current:
 ```
 /etc/hosts already up to date
 ```
+
+## ca
+
+Manage the local certificate authority that lets blocked HTTPS hosts show the
+block page with a trusted certificate.
+
+```bash
+sudo d-man ca install     # generate the CA if absent, trust it in the system keychain
+sudo d-man ca uninstall   # remove it from the keychain
+d-man ca path             # print the CA directory
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ca-dir` | `<config dir>/ca` | Directory holding the CA cert (`ca.pem`) and key (`ca-key.pem`). |
+
+`install` and `uninstall` write the system keychain, which needs root; without
+it they report a permission error and suggest `sudo`. Run `install` once per
+machine — `serve` reuses the same CA to sign per-host leaf certificates on the
+fly. A host reaches the block page only when it is in the config `blocklist`.
 
 ## list
 

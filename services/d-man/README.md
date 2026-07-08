@@ -67,6 +67,7 @@ Other subcommands:
 ```bash
 d-man list                 # print resolved host -> backend routes
 sudo d-man sync             # write the /etc/hosts block once (manual fallback)
+sudo d-man ca install       # trust the local block-page CA (one-time, see below)
 d-man version [-o json]    # build sha
 ```
 
@@ -75,6 +76,8 @@ d-man version [-o json]    # build sha
 | `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml` | Path to the routes file. |
 | `--hosts-file` | _(none)_ | `/etc/hosts` | Hosts file to sync into; point at a temp file to dry-run. |
 | `--port` (serve) | _(none)_ | `80` | Port the proxy listens on (loopback only). |
+| `--tls-port` (serve) | _(none)_ | `443` | Port the block-page TLS listener uses (loopback only). |
+| `--ca-dir` (serve, ca) | _(none)_ | `<config dir>/ca` | Directory holding the block-page CA cert and key. |
 
 If a hostname isn't resolving, confirm the entry landed in `/etc/hosts`:
 
@@ -100,6 +103,11 @@ See [`docs/commands.md`](docs/commands.md) for every subcommand in detail.
 
 ```toml
 suffix = "this"            # default TLD; "csl" => csl.this
+
+blocklist = [              # hosts sent to the local block page instead
+  "reddit.com",
+  "www.reddit.com",
+]
 
 [[route]]
 name = "present"           # http://present.this/ -> 127.0.0.1:7423
@@ -131,6 +139,25 @@ The reverse proxy normalizes the `Host` header (case, trailing FQDN dot, port)
 and rewrites a backend's self-redirect `Location` back to the `.this` hostname,
 so a redirect never bounces you to `127.0.0.1:<port>`.
 
+## Blocking sites
+
+`blocklist` is a top-level array of hostnames (put it before the `[[route]]`
+tables, like `suffix`). Each listed host is pinned to `127.0.0.1` in
+`/etc/hosts` and served a local "you're blocked" page hosting a small
+dependency-free minigame, rather than being proxied. List `www.` and the bare
+domain separately — there is no wildcard matching.
+
+Distraction sites force HTTPS via HSTS, so the browser hits port 443 before you
+ever see plain HTTP. `d-man serve` listens on `127.0.0.1:443` too and mints a
+certificate per host from a local certificate authority. Trust that CA once so
+the block page loads without a warning (writing the system keychain needs root):
+
+```bash
+sudo d-man ca install      # generate the CA if needed and trust it
+```
+
+`d-man ca uninstall` removes it; `d-man ca path` prints the CA directory.
+
 ## Where things live
 
 - Binary: `~/code/bin/d-man`
@@ -138,6 +165,7 @@ so a redirect never bounces you to `127.0.0.1:<port>`.
 - Managed block: inside `/etc/hosts`, between the `# >>> d-man managed >>>` /
   `# <<< d-man managed <<<` markers; every other line stays untouched
 - Backup: `/etc/hosts.d-man.bak`, written before each change
+- Block-page CA: `~/.config/d-man/ca/` (`ca.pem` + `ca-key.pem`), or `--ca-dir`
 - Daemon logs: `/var/log/d-man/` (the root launchd daemon registered by t-man)
 
 ## Develop

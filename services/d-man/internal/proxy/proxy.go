@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mad01/thismoon/services/d-man/internal/blockpage"
 	"github.com/mad01/thismoon/services/d-man/internal/config"
 )
 
@@ -44,8 +45,10 @@ type Prober func(backend string) bool
 // Handler routes by Host header using a host -> backend map. It is safe to
 // build a fresh Handler and swap it in on config reload.
 type Handler struct {
-	routes map[string]*url.URL
-	rp     *httputil.ReverseProxy
+	routes  map[string]*url.URL
+	rp      *httputil.ReverseProxy
+	blocked map[string]bool // hosts served the block page instead of proxied
+	block   http.Handler    // renders the block-page minigame
 
 	sites []config.Site // all port-backed sites; filtered by liveness on serve
 	probe Prober        // injectable for tests; defaults to an HTTP loopback probe
@@ -59,7 +62,8 @@ type Handler struct {
 // New builds a Handler from a host -> "backendHost:port" map (config.RouteMap).
 // sites is the full set of navigable sites; the SitesPath body is filtered to
 // the ones whose backend currently responds, re-probed at most every sitesTTL.
-func New(routeMap map[string]string, sites []config.Site) (*Handler, error) {
+// blocked hosts are served the local block page instead of being proxied.
+func New(routeMap map[string]string, sites []config.Site, blocked []string) (*Handler, error) {
 	routes := make(map[string]*url.URL, len(routeMap))
 	for host, backend := range routeMap {
 		target, err := url.Parse("http://" + backend)
@@ -68,11 +72,17 @@ func New(routeMap map[string]string, sites []config.Site) (*Handler, error) {
 		}
 		routes[normalizeHost(host)] = target
 	}
+	blockSet := make(map[string]bool, len(blocked))
+	for _, host := range blocked {
+		blockSet[normalizeHost(host)] = true
+	}
 	h := &Handler{
-		routes: routes,
-		sites:  sites,
-		probe:  httpProbe(probeTimeout),
-		ttl:    sitesTTL,
+		routes:  routes,
+		blocked: blockSet,
+		block:   blockpage.Handler(),
+		sites:   sites,
+		probe:   httpProbe(probeTimeout),
+		ttl:     sitesTTL,
 	}
 	h.rp = &httputil.ReverseProxy{
 		// Rewrite picks the backend by the inbound Host and stashes the original
@@ -125,6 +135,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	host := normalizeHost(r.Host)
+	// Blocked hosts never reach a backend — d-man owns them and serves the
+	// block-page minigame on every path.
+	if h.blocked[host] {
+		h.block.ServeHTTP(w, r)
+		return
+	}
 	if _, ok := h.routes[host]; !ok {
 		http.Error(w,
 			fmt.Sprintf("d-man: no route for %q (add it to routes.toml)", host),

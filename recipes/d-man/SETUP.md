@@ -29,7 +29,19 @@ This writes `/Library/LaunchDaemons/d-man.plist` (`RunAtLoad` → starts on
 reboot, `KeepAlive` → restarts on kill), syncs the managed `/etc/hosts` block,
 and starts the `:80` reverse proxy. Logs land in `/var/log/d-man/`.
 
-## 3. Verify
+## 3. Trust the block-page CA (only if you use the block list)
+
+If `routes.toml` has a `blocklist`, trust the local CA once so blocked HTTPS
+sites open the block page without a certificate warning:
+
+```bash
+sudo d-man ca install
+```
+
+This generates `~/.config/d-man/ca/` (if absent) and trusts it in the system
+keychain. Skip this step if you do not block any hosts.
+
+## 4. Verify
 
 ```bash
 t-man status d-man

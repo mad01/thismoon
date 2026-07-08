@@ -22,8 +22,9 @@ const DefaultTarget = "127.0.0.1"
 
 // Config is the parsed routes file.
 type Config struct {
-	Suffix string  `toml:"suffix"`
-	Routes []Route `toml:"route"`
+	Suffix    string   `toml:"suffix"`
+	Routes    []Route  `toml:"route"`
+	Blocklist []string `toml:"blocklist"` // hostnames redirected to the local block page
 }
 
 // Route maps one name to one backend. A route is either port-backed (Port set)
@@ -120,6 +121,25 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("route %q: needs a port or a cname", r.Name)
 		}
 	}
+
+	// Block list: each entry must be a valid hostname and must not collide with
+	// a configured route host — a name can't be both proxied and blocked.
+	routeHosts := make(map[string]bool, len(seenHost))
+	for h := range seenHost {
+		routeHosts[strings.ToLower(h)] = true
+	}
+	for _, raw := range c.Blocklist {
+		h := normalizeBlockHost(raw)
+		if h == "" {
+			return fmt.Errorf("block list has an empty entry")
+		}
+		if !validHostname(h) {
+			return fmt.Errorf("invalid block list host %q", raw)
+		}
+		if routeHosts[h] {
+			return fmt.Errorf("block list host %q is also a route", h)
+		}
+	}
 	return nil
 }
 
@@ -159,13 +179,38 @@ func (r Route) Host(suffix string) string { return r.Name + "." + suffix }
 
 func (c *Config) hostFor(r Route) string { return r.Host(c.Suffix) }
 
-// Hosts returns every resolved hostname in the config (for /etc/hosts sync).
+// Hosts returns every resolved hostname in the config (for /etc/hosts sync):
+// the route hosts plus the block-list hosts, all pointed at 127.0.0.1.
 func (c *Config) Hosts() []string {
-	hosts := make([]string, 0, len(c.Routes))
+	hosts := make([]string, 0, len(c.Routes)+len(c.Blocklist))
 	for _, r := range c.Routes {
 		hosts = append(hosts, c.hostFor(r))
 	}
+	hosts = append(hosts, c.BlockedHosts()...)
 	return hosts
+}
+
+// BlockedHosts returns the normalized, de-duplicated block-list hostnames in
+// config order (lowercased, trimmed, trailing dot stripped). These resolve to
+// 127.0.0.1 in /etc/hosts and are served the block page instead of proxied.
+func (c *Config) BlockedHosts() []string {
+	seen := make(map[string]bool, len(c.Blocklist))
+	out := make([]string, 0, len(c.Blocklist))
+	for _, raw := range c.Blocklist {
+		h := normalizeBlockHost(raw)
+		if h == "" || seen[h] {
+			continue
+		}
+		seen[h] = true
+		out = append(out, h)
+	}
+	return out
+}
+
+// normalizeBlockHost canonicalizes a block-list entry for comparison and
+// /etc/hosts output: trimmed, trailing dot removed, lowercased.
+func normalizeBlockHost(h string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(h), "."))
 }
 
 // Backend returns the "host:port" dial target for a port-backed route.

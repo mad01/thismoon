@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blocked</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #0f1115; color: #e6e8eb;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; gap: 1.1rem; padding: 1.5rem; text-align: center;
+  }
+  h1 { margin: 0; font-size: clamp(1.4rem, 4vw, 2.1rem); font-weight: 700; }
+  .host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #ff7a90; }
+  .sub { margin: 0; color: #9aa2ad; }
+  #game {
+    background: #161a20; border: 1px solid #262b33; border-radius: 12px;
+    touch-action: manipulation; width: 100%; max-width: 640px; height: auto;
+  }
+  .hint { color: #6b7480; font-size: 0.85rem; margin: 0; }
+  kbd {
+    background: #20252d; border: 1px solid #333b45; border-radius: 4px;
+    padding: 0 .35em; font-family: ui-monospace, monospace; font-size: 0.85em;
+  }
+</style>
+</head>
+<body>
+  <h1>🚫 <span class="host" id="host">this site</span> is blocked</h1>
+  <p class="sub">d-man sent you here on purpose. Take a breath — or run.</p>
+  <canvas id="game" width="640" height="200" aria-label="Dino runner minigame"></canvas>
+  <p class="hint"><kbd>Space</kbd> / tap to jump · <kbd>&darr;</kbd> to duck</p>
+  <script>
+    document.getElementById("host").textContent = location.hostname || "this site";
+  </script>
+  <script src="/dino.js"></script>
+</body>
+</html>

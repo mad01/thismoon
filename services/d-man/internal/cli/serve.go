@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -21,9 +22,13 @@ import (
 	"github.com/mad01/thismoon/services/d-man/internal/hosts"
 	"github.com/mad01/thismoon/services/d-man/internal/notify"
 	"github.com/mad01/thismoon/services/d-man/internal/proxy"
+	"github.com/mad01/thismoon/services/d-man/internal/tlsca"
 )
 
-var flagServePort int
+var (
+	flagServePort int
+	flagTLSPort   int
+)
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -32,8 +37,12 @@ var serveCmd = &cobra.Command{
 change it (1) rewrites the managed /etc/hosts block and (2) rebuilds the
 127.0.0.1:80 reverse proxy that routes by Host header to each backend.
 
-Run as a root launchd daemon via t-man (writing /etc/hosts and binding :80 both
-need root):
+It also listens on 127.0.0.1:443 to serve the block page for blocked HTTPS
+hosts, minting a trusted certificate per host from the local CA. Run
+"sudo d-man ca install" once so those certs are trusted.
+
+Run as a root launchd daemon via t-man (writing /etc/hosts and binding :80/:443
+all need root):
   sudo t-man --daemon add --name d-man -- d-man serve --config ~/.config/d-man/routes.toml
 
 It also watches its own binary and exits cleanly when the file changes, so a
@@ -45,6 +54,10 @@ no sudo.`,
 func init() {
 	serveCmd.Flags().
 		IntVar(&flagServePort, "port", 80, "port the reverse proxy listens on (loopback only)")
+	serveCmd.Flags().
+		IntVar(&flagTLSPort, "tls-port", 443, "port the TLS block-page listener uses (loopback only)")
+	serveCmd.Flags().StringVar(&flagCADir, "ca-dir", "",
+		"directory holding the CA cert/key (default: <config dir>/ca)")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -56,8 +69,21 @@ func runServe(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", flagServePort)
-	srv := &http.Server{Addr: addr, Handler: rh}
+	// The TLS listener mints a leaf per SNI from this CA; auto-generate it if
+	// absent so serve works before "d-man ca install" trusts it.
+	ca, err := tlsca.EnsureCA(resolveCADir())
+	if err != nil {
+		return fmt.Errorf("prepare local CA: %w", err)
+	}
+
+	httpAddr := fmt.Sprintf("127.0.0.1:%d", flagServePort)
+	tlsAddr := fmt.Sprintf("127.0.0.1:%d", flagTLSPort)
+	httpSrv := &http.Server{Addr: httpAddr, Handler: rh}
+	tlsSrv := &http.Server{
+		Addr:      tlsAddr,
+		Handler:   rh,
+		TLSConfig: &tls.Config{GetCertificate: ca.GetCertificate},
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -69,14 +95,32 @@ func runServe(_ *cobra.Command, _ []string) error {
 		log.Printf("d-man: shutting down")
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutCtx)
+		_ = httpSrv.Shutdown(shutCtx)
+		_ = tlsSrv.Shutdown(shutCtx)
 	}()
 
-	log.Printf("d-man: reverse proxy on http://%s", addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	// Both listeners share the reloadable handler. A real bind error on either
+	// (e.g. :443 without root) should surface; a clean shutdown must not.
+	errCh := make(chan error, 2)
+	go func() {
+		log.Printf("d-man: reverse proxy on http://%s", httpAddr)
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+	go func() {
+		log.Printf("d-man: block-page TLS listener on https://%s", tlsAddr)
+		if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-errCh:
 		return err
 	}
-	return nil
 }
 
 // reloadableHandler lets the watch loop swap in a fresh proxy on config change
@@ -126,7 +170,7 @@ func reloadOnce(rh *reloadableHandler) error {
 			strings.Join(hostNames, ", "),
 			map[string]string{"hosts": fmt.Sprintf("%d", len(hostNames))})
 	}
-	h, err := proxy.New(cfg.RouteMap(), cfg.Sites())
+	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts())
 	if err != nil {
 		return err
 	}

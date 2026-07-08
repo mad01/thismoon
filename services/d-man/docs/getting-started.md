@@ -96,6 +96,24 @@ If an edit is invalid (bad hostname, unknown `cname` target, a `cname` cycle),
 the daemon logs the error and keeps the last good routes and `/etc/hosts`
 untouched. Check `t-man logs d-man` to see what it rejected.
 
+## 6. Block a site (optional)
+
+Add a top-level `blocklist` before the `[[route]]` tables and trust the local CA
+once so blocked HTTPS sites open without a certificate warning:
+
+```toml
+blocklist = ["reddit.com", "www.reddit.com"]
+```
+
+```bash
+sudo d-man ca install
+```
+
+The daemon pins each listed host to `127.0.0.1` and serves a local block page
+with a small minigame. Both `http://reddit.com` and `https://reddit.com` land on
+it — the daemon serves the page on `:80` and `:443` directly. List `www.` and
+the bare domain separately; there is no wildcard.
+
 ## Upgrading
 
 Run `make install` (or `ralph up`). The daemon notices its own binary changed,
