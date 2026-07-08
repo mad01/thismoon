@@ -16,10 +16,9 @@ is light DOM (no Shadow DOM).
   (controls + persistence + event). Others may be defined as no-op elements for
   semantics but require no JS.
 - **Palette unchanged.** Keep present's palette/vars already in `webkit.css`
-  (`--terracotta`, warm-grays, `--page-width`, light+dark). Port component visuals
-  verbatim from present's content CSS at
-  `present/internal/render/template.html` (the styles ~lines 175–341: `.panel`,
-  `.data-table`, `.chip*`, `.callout`, `.brief-title`, etc.) and from csl/catalog
+  (`--terracotta`, warm-grays, `--page-width`, light+dark). The component visuals
+  (`.panel`, `.data-table`, `.chip*`, `.callout`, etc.) were ported verbatim into
+  `webkit.css` from present's original page template and from csl/catalog
   `internal/web/assets/static/app.css` (`.card`, `.search-bar`, `.kind-badge`).
 
 ## Components

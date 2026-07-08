@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/services/present/internal/mcpserver"
-	"github.com/mad01/thismoon/services/present/internal/render"
 )
 
 var mcpCmd = &cobra.Command{
@@ -34,11 +33,6 @@ func init() {
 }
 
 func runMCP(_ *cobra.Command, _ []string) error {
-	// Seed the editable template so it exists for the serve daemon and for
-	// users who want to customize the chrome before the first request.
-	if err := render.EnsureTemplate(flagWorkdir); err != nil {
-		return err
-	}
 	// Log the resolved workdir/port to stderr (stdout is the MCP protocol
 	// channel). If this diverges from what `present serve` uses, updates land
 	// where nothing serves them — this line makes the divergence visible.

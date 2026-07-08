@@ -46,7 +46,6 @@ present version -o json   # {"version":"<sha>"} - probed by `ralph outdated`
 
 ```
 ~/.config/present/
-  template.html          # core template - edit to restyle every page
   pages/<id>/
     meta.json            # id, title, version, timestamps
     content.html         # rendered body fragment
@@ -67,12 +66,9 @@ make build   # ./present
 make tidy    # go mod tidy
 ```
 
-**Template and chrome.** `~/.config/present/template.html` is the single
-source of truth for page chrome. The server reads it fresh per request, so
-editing it re-renders every page without a restart. When you change the
-template in a way you want to persist across deploys, bump the
-`present-template:vN` marker so `EnsureTemplate` reseeds the on-disk copy on
-the next `present serve` start.
+**Chrome.** Pages render client-side: `present serve` serves an embedded
+chrome-only shell and the browser fetches each page as JSON and builds the DOM.
+There is no on-disk template to edit.
 
 Chrome (header, theme toggle, font/size/bionic controls) comes from the
 in-module `webkit` package (served at `GET /webkit/`). Do not re-add those

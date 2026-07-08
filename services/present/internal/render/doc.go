@@ -1,3 +1,8 @@
+// Package render compiles a page's structured JSON source into the HTML
+// fragment stored on disk: RenderDoc turns a Doc into a briefing-block fragment,
+// RenderGraph turns a GraphInput into the Cytoscape init script, and the upgrade
+// path deterministically rewrites legacy raw-HTML pages. The server serves the
+// rendered fragment; the browser assembles the full page client-side.
 package render
 
 import (
@@ -399,9 +404,8 @@ func (d *Doc) normalize() {
 	}
 }
 
-// chartSpec marshals a chart block to the JSON spec the client-side bootstrap
-// (the inlined chart script in template.html) reads to build the Chart.js
-// instance. It is embedded inside a <script type="application/json"> island,
+// chartSpec marshals a chart block to the JSON spec the client-side chart
+// bootstrap reads to build the Chart.js instance. It is embedded inside a <script type="application/json"> island,
 // which html/template treats as a script context — so we return template.JS to
 // emit the JSON verbatim instead of letting the escaper re-encode it as a JS
 // string literal. encoding/json already escapes <, >, & to \u-escapes, so an

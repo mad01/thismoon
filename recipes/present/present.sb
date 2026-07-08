@@ -8,8 +8,7 @@
 ;;   - $HOME reads default-DENIED; allow-list is the binaries dir and the
 ;;     page store (a secrets blocklist can never be complete — deny the lot,
 ;;     allow what the server needs)
-;;   - writes confined to the page store + temp (the MCP writes pages/<id>/
-;;     and seeds template.html via EnsureTemplate at startup)
+;;   - writes confined to the page store + temp (the MCP writes pages/<id>/)
 ;;
 ;; present_open execs /usr/bin/open, which inherits this sandbox. `open` only
 ;; sends a LaunchServices mach message (allowed by the default baseline); the
@@ -46,7 +45,7 @@
   (subpath (param "HOME")))
 (allow file-read*
   (subpath (string-append (param "HOME") "/code/bin"))            ;; present binary
-  (subpath (string-append (param "HOME") "/.config/present")))    ;; page store + template
+  (subpath (string-append (param "HOME") "/.config/present")))    ;; page store
 
 ;; realpath()/LookPath lstat() parent components of allowed paths; subpath
 ;; allows don't cover parents. Metadata-only (no content reads) on the spine:

@@ -23,10 +23,11 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "present",
 	Short: "Serve and manage scrollable briefing pages over localhost",
-	Long: `present manages single-page HTML presentations (create / read / update /
-list — no delete). Pages store only their body content; a shared core template
-supplies the chrome and is injected at request time, so editing the template
-re-renders every page.
+	Long: `present manages single-page HTML briefing pages (create / read / update /
+list; delete is available only in the web index). Pages are authored as
+structured JSON and compiled to an HTML fragment at authoring time; the server
+serves that fragment and the browser assembles the full page client-side. The
+chrome (header, theme, controls) comes from the shared webkit package.
 
 Subcommands:
   serve   Run the local HTTP server that serves pages.
@@ -38,7 +39,7 @@ Subcommands:
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagWorkdir, "workdir", defaultWorkdir(),
-		"directory holding template.html and pages/ (env PRESENT_WORKDIR)")
+		"directory holding pages/ (env PRESENT_WORKDIR)")
 	rootCmd.PersistentFlags().IntVar(&flagPort, "port", resolvedDefaultPort(),
 		"port the HTTP server listens on / URLs point at (env PRESENT_PORT)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", os.Getenv("PRESENT_BASE_URL"),

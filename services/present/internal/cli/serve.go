@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/server"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
@@ -16,9 +15,10 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Run the local HTTP server that serves presentation pages",
 	Long: `Serve presentation pages over HTTP on localhost. The index (/) lists all
-pages; /p/<id> renders a single page from the shared core template. The store
-and template are read fresh on every request, so content updates and template
-edits appear without a restart.
+pages and /p/<id> serves a single page; both are static chrome-only shells that
+render client-side, fetching the page list from /api/pages and each page from
+/api/p/<id> as JSON. Pages are read fresh on every request and open tabs poll
+for version changes, so content updates appear without a restart.
 
 Typically run as a background service:
   t-man add --name present -- present serve --port 7423`,
@@ -30,9 +30,6 @@ func init() {
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
-	if err := render.EnsureTemplate(flagWorkdir); err != nil {
-		return err
-	}
 	st, err := store.New(flagWorkdir)
 	if err != nil {
 		return err

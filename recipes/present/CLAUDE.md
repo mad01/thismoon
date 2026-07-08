@@ -60,7 +60,7 @@ beside the wrapper in this directory).
 - **No network at all** — `present mcp` never serves or dials; it shares the
   page store on disk with the separate (unsandboxed) `present serve` daemon.
 - **$HOME reads default-denied**; allow-list is `~/code/bin` (the binary) and
-  `~/.config/present` (page store + template).
+  `~/.config/present` (page store).
 - **Writes** confined to `~/.config/present` + temp.
 
 `present_open` execs `/usr/bin/open`, which inherits the sandbox — the browser
