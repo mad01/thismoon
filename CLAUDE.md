@@ -1,6 +1,6 @@
 # CLAUDE.md - thismoon
 
-Monorepo for the `*.this` platform: local web services, CLI tools, the shared webkit package, and their ralph recipes. A macOS-first local development toolbox — every service is a web UI + CLI for the human and (where it makes sense) an MCP server for agents, all on local data. Private for now, planned to go public — every commit sits on top of the Apache-2.0 LICENSE (the root commit).
+Monorepo for the `*.this` platform: local web services, CLI tools, the shared webkit package, and their ralph recipes. A macOS-first local development toolbox — every service is a web UI + CLI for the human and (where it makes sense) an MCP server for agents, all on local data. Private for now, planned to go public — every commit sits on top of the BSD-3-Clause LICENSE (the root commit).
 
 ## Quick reference
 

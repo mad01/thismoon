@@ -159,5 +159,5 @@ SSH.
 
 ## License
 
-Apache-2.0, see [LICENSE](LICENSE). No per-file headers; the root license
+BSD-3-Clause, see [LICENSE](LICENSE). No per-file headers; the root license
 covers the repo.

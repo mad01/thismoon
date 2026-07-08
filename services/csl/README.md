@@ -203,4 +203,4 @@ Further docs:
 
 ## License
 
-Apache License 2.0 - see the LICENSE file at the repository root.
+BSD 3-Clause License - see the LICENSE file at the repository root.
