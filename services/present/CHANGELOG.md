@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/mad01/thismoon/compare/present/v0.1.0...present/v0.1.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **present:** correct stale --help text, remove dead server-side render layer ([#29](https://github.com/mad01/thismoon/issues/29)) ([36ae778](https://github.com/mad01/thismoon/commit/36ae778289933ba4552c872ef8b3974a9f8d3dcf))
+
 ## 0.1.0 (2026-07-06)
 
 
