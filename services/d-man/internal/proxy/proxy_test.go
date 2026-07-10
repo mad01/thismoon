@@ -21,7 +21,7 @@ func TestRoutesByHost(t *testing.T) {
 	defer backend.Close()
 
 	addr := strings.TrimPrefix(backend.URL, "http://")
-	h, err := New(map[string]string{"csl.this": addr}, nil, nil)
+	h, err := New(map[string]string{"csl.this": addr}, nil, nil, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestServesSitesJSON(t *testing.T) {
 	sites := []config.Site{
 		{Name: "csl", Host: "csl.this", URL: "http://csl.this/", Backend: "127.0.0.1:9"},
 	}
-	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, sites, nil)
+	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, sites, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestServesSitesJSON(t *testing.T) {
 
 // A nil site list still yields valid JSON ("[]"), never an empty body.
 func TestServesEmptySitesJSON(t *testing.T) {
-	h, _ := New(map[string]string{"csl.this": "127.0.0.1:9"}, nil, nil)
+	h, _ := New(map[string]string{"csl.this": "127.0.0.1:9"}, nil, nil, "")
 	req := httptest.NewRequest("GET", "http://csl.this"+SitesPath, nil)
 	req.Host = "csl.this"
 	rec := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestServesEmptySitesJSON(t *testing.T) {
 // A blocked host is served the local block-page minigame on every path, never
 // proxied and never a 502 — even when normalization is needed (case, port).
 func TestServesBlockPageForBlockedHost(t *testing.T) {
-	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, nil, []string{"reddit.com"})
+	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, nil, []string{"reddit.com"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestServesBlockPageForBlockedHost(t *testing.T) {
 }
 
 func TestUnknownHostIs502(t *testing.T) {
-	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, nil, nil)
+	h, err := New(map[string]string{"csl.this": "127.0.0.1:9"}, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRewritesBackendSelfRedirect(t *testing.T) {
 	backendURL = backend.URL
 
 	addr := strings.TrimPrefix(backend.URL, "http://")
-	h, _ := New(map[string]string{"csl.this": addr}, nil, nil)
+	h, _ := New(map[string]string{"csl.this": addr}, nil, nil, "")
 
 	req := httptest.NewRequest("GET", "http://csl.this/app", nil)
 	req.Host = "csl.this"
@@ -165,7 +165,7 @@ func TestSitesFilteredByLiveness(t *testing.T) {
 		{Name: "up", Host: "up.this", URL: "http://up.this/", Backend: "127.0.0.1:1"},
 		{Name: "down", Host: "down.this", URL: "http://down.this/", Backend: "127.0.0.1:2"},
 	}
-	h, err := New(map[string]string{"up.this": "127.0.0.1:1", "down.this": "127.0.0.1:2"}, sites, nil)
+	h, err := New(map[string]string{"up.this": "127.0.0.1:1", "down.this": "127.0.0.1:2"}, sites, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestSitesProbeCached(t *testing.T) {
 	sites := []config.Site{
 		{Name: "csl", Host: "csl.this", URL: "http://csl.this/", Backend: "127.0.0.1:1"},
 	}
-	h, err := New(map[string]string{"csl.this": "127.0.0.1:1"}, sites, nil)
+	h, err := New(map[string]string{"csl.this": "127.0.0.1:1"}, sites, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

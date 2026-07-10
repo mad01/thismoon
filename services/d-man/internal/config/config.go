@@ -23,6 +23,7 @@ const DefaultTarget = "127.0.0.1"
 // Config is the parsed routes file.
 type Config struct {
 	Suffix    string   `toml:"suffix"`
+	GamesDir  string   `toml:"games_dir"` // optional dir of plugin block-page games (*.js); empty = embedded only
 	Routes    []Route  `toml:"route"`
 	Blocklist []string `toml:"blocklist"` // hostnames redirected to the local block page
 }

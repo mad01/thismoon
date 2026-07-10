@@ -28,8 +28,10 @@ d-man/
     proxy/                one httputil.ReverseProxy; Host-header routing + the
                            sites.json endpoint + block-page interception (+ proxy_test.go)
     tlsca/                local CA: persist + mint per-SNI leaf certs (+ tlsca_test.go)
-    blockpage/            embedded self-contained dino minigame served on blocked
-                           hosts (go:embed assets/ + blockpage_test.go)
+    blockpage/            embedded retro arcade served on blocked hosts, random
+                           pick per visit; more games load as plugins from the
+                           optional games_dir config key (go:embed assets/ +
+                           blockpage_test.go)
     notify/               events.this emit, best-effort (per-tool copy, see Gotchas)
   Makefile               part of module github.com/mad01/thismoon (no own go.mod)
 ```
@@ -70,8 +72,9 @@ preserved and warned, not aborted).
 
 `internal/proxy` is one `httputil.ReverseProxy` whose `Rewrite` picks the
 backend by `Host` (502 on miss). A host on the config `blocklist` is served the
-local block page (`internal/blockpage`, an embedded dependency-free dino
-minigame) on every path instead of being proxied — the check sits at the top of
+local block page (`internal/blockpage`, an embedded dependency-free retro
+arcade, one game picked at random per visit) on every path instead of being
+proxied — the check sits at the top of
 `ServeHTTP`, before the route lookup. `normalizeHost` strips case / trailing dot
 / port so `present.this`, `present.this.`, `PRESENT.this:80` all match.
 `ModifyResponse` rewrites a backend self-redirect `Location` back to the

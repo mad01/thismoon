@@ -17,9 +17,16 @@
   h1 { margin: 0; font-size: clamp(1.4rem, 4vw, 2.1rem); font-weight: 700; }
   .host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #ff7a90; }
   .sub { margin: 0; color: #9aa2ad; }
+  .crt { position: relative; width: 100%; max-width: 640px; }
+  .crt::after {
+    /* scanlines over the upscaled low-res canvas */
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 12px;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px);
+  }
   #game {
-    background: #161a20; border: 1px solid #262b33; border-radius: 12px;
-    touch-action: manipulation; width: 100%; max-width: 640px; height: auto;
+    display: block; width: 100%; image-rendering: pixelated;
+    background: #0d1017; border: 1px solid #262b33; border-radius: 12px;
+    touch-action: none;
   }
   .hint { color: #6b7480; font-size: 0.85rem; margin: 0; }
   kbd {
@@ -30,12 +37,17 @@
 </head>
 <body>
   <h1>🚫 <span class="host" id="host">this site</span> is blocked</h1>
-  <p class="sub">d-man sent you here on purpose. Take a breath — or run.</p>
-  <canvas id="game" width="640" height="200" aria-label="Dino runner minigame"></canvas>
-  <p class="hint"><kbd>Space</kbd> / tap to jump · <kbd>&darr;</kbd> to duck</p>
+  <p class="sub">d-man sent you here on purpose. Take a breath — or smash some bricks.</p>
+  <div class="crt">
+    <canvas id="game" width="320" height="240" aria-label="Retro arcade minigame, a random pick per visit"></canvas>
+  </div>
+  <p class="hint">arrows / mouse &middot; <kbd>space</kbd> to start &middot; <kbd>n</kbd> next game &middot; <kbd>m</kbd> to mute</p>
   <script>
     document.getElementById("host").textContent = location.hostname || "this site";
   </script>
-  <script src="/dino.js"></script>
+  <script src="/arcade.js"></script>
+  <script src="/smash.js"></script>
+  <script src="/gate.js"></script>
+  <!-- plugin-games -->
 </body>
 </html>

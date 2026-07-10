@@ -62,8 +62,9 @@ type Handler struct {
 // New builds a Handler from a host -> "backendHost:port" map (config.RouteMap).
 // sites is the full set of navigable sites; the SitesPath body is filtered to
 // the ones whose backend currently responds, re-probed at most every sitesTTL.
-// blocked hosts are served the local block page instead of being proxied.
-func New(routeMap map[string]string, sites []config.Site, blocked []string) (*Handler, error) {
+// blocked hosts are served the local block page instead of being proxied;
+// gamesDir optionally names a directory of plugin block-page games.
+func New(routeMap map[string]string, sites []config.Site, blocked []string, gamesDir string) (*Handler, error) {
 	routes := make(map[string]*url.URL, len(routeMap))
 	for host, backend := range routeMap {
 		target, err := url.Parse("http://" + backend)
@@ -79,7 +80,7 @@ func New(routeMap map[string]string, sites []config.Site, blocked []string) (*Ha
 	h := &Handler{
 		routes:  routes,
 		blocked: blockSet,
-		block:   blockpage.Handler(),
+		block:   blockpage.Handler(gamesDir),
 		sites:   sites,
 		probe:   httpProbe(probeTimeout),
 		ttl:     sitesTTL,

@@ -144,8 +144,22 @@ so a redirect never bounces you to `127.0.0.1:<port>`.
 `blocklist` is a top-level array of hostnames (put it before the `[[route]]`
 tables, like `suffix`). Each listed host is pinned to `127.0.0.1` in
 `/etc/hosts` and served a local "you're blocked" page hosting a small
-dependency-free minigame, rather than being proxied. List `www.` and the bare
-domain separately — there is no wildcard matching.
+dependency-free retro arcade, rather than being proxied. List `www.` and the
+bare domain separately — there is no wildcard matching.
+
+The arcade picks one game at random per visit (`n` switches). More games can be
+added as plugins with the optional top-level `games_dir` key:
+
+```toml
+games_dir = "~/.config/d-man/games"
+```
+
+Any flat `<name>.js` file in that directory (lowercase letters, digits, `-`,
+`_`) is loaded into the page after the built-in games and joins the rotation by
+calling `ARCADE.register(name, factory)` — the same one-file contract the
+bundled games use (see `internal/blockpage/assets/smash.js` for a complete
+example). The directory is read per request, so dropping a file in takes effect
+on the next page load; a missing directory simply means no extra games.
 
 Distraction sites force HTTPS via HSTS, so the browser hits port 443 before you
 ever see plain HTTP. `d-man serve` listens on `127.0.0.1:443` too and mints a

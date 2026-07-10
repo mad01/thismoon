@@ -170,7 +170,7 @@ func reloadOnce(rh *reloadableHandler) error {
 			strings.Join(hostNames, ", "),
 			map[string]string{"hosts": fmt.Sprintf("%d", len(hostNames))})
 	}
-	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts())
+	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts(), expandTilde(cfg.GamesDir))
 	if err != nil {
 		return err
 	}

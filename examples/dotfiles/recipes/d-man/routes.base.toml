@@ -8,6 +8,12 @@
 # resolves to another route's backend. The daemon re-applies edits live.
 suffix = "this"
 
+# Optional: extra block-page games, loaded as plugins. Point this at a local
+# checkout of a private games repo (kept fresh by its own companion recipe) or
+# any flat directory of <name>.js files that call ARCADE.register. Missing dir
+# = only the games bundled into the d-man binary.
+# games_dir = "~/.config/d-man/games"
+
 [[route]]
 name = "present"   # http://present.this/ -> 127.0.0.1:7423
 port = 7423
