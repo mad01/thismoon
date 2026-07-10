@@ -24,14 +24,23 @@ jobs:
       # dynamic output names, so the whole set is forwarded as one JSON blob.
       outputs_json: ${{ toJSON(steps.release.outputs) }}
     steps:
-      # Fine-grained PAT (Contents + Pull requests write on this repo only)
-      # instead of GITHUB_TOKEN: the default token may not create PRs unless
-      # a repo-wide Actions toggle is flipped — too broad a grant for a repo
-      # heading public — and PRs it opens never trigger ci.yml checks.
+      # A GitHub App token instead of GITHUB_TOKEN: the default token may not
+      # create PRs unless a repo-wide Actions toggle is flipped — too broad a
+      # grant for a repo heading public — and PRs it opens never trigger
+      # ci.yml checks. The App mints a fresh token per run that expires within
+      # the hour, so there is no long-lived PAT to rotate; its PRs still
+      # trigger ci.yml. The App grants Contents + Pull requests + Issues
+      # read-write on this repo only (Issues for release-please labels).
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         id: release
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
   artifacts:
     name: ${{ matrix.path }}

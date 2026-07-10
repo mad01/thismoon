@@ -86,14 +86,35 @@ you can't forget. The first release uses `initial-version` (0.1.0).
 
 Two pieces of repo configuration the workflow depends on:
 
-- **`RELEASE_PLEASE_TOKEN`**: a fine-grained personal access token (PAT)
-  scoped to this repo with Contents and Pull requests read-write. The
-  default `GITHUB_TOKEN` isn't used because it may not create PRs without a
-  repo-wide Actions toggle (too broad a grant for a public repo), and PRs it
-  opens never trigger `ci.yml` checks. Symptom of an expired or under-scoped
-  token: release-please fails with "Error adding to tree" or silently opens
-  no PR. Fine-grained PATs expire after at most a year; renew and update
-  the repo secret.
+- **GitHub App token**: release-please authenticates with a token minted
+  per run by a GitHub App (`actions/create-github-app-token`), not the
+  default `GITHUB_TOKEN` — the default may not create PRs without a repo-wide
+  Actions toggle (too broad a grant for a public repo), and PRs it opens
+  never trigger `ci.yml` checks. The App token expires within the hour, so
+  there is no long-lived secret to rotate. Symptom of a missing or misscoped
+  App: release-please fails with "Error adding to tree" or silently opens no
+  PR.
+
+  Setup (reproduce if the App is ever lost):
+
+  1. Create a GitHub App under the account that owns the repo
+     (`https://github.com/settings/apps/new`). Uncheck Webhook → Active;
+     set "Only on this account".
+  2. Repository permissions: Contents read-write, Pull requests read-write,
+     Issues read-write. Issues is required for release-please's labels; the
+     other two for the branch and the release PR.
+  3. Create the App, note its App ID, then Generate a private key
+     (downloads a `.pem`).
+  4. Install the App on this repo only (App → Install App).
+  5. Add two repo secrets under
+     `Settings → Secrets and variables → Actions`: `RELEASE_APP_ID` (the App
+     ID) and `RELEASE_APP_PRIVATE_KEY` (the full `.pem`, including the
+     `BEGIN`/`END` lines).
+
+  The `release.yml` `create-github-app-token` step exchanges these for a
+  short-lived installation token each run. The private key itself does not
+  expire, but it can be regenerated from the App's settings without touching
+  the workflow.
 - **Concurrency group `release`**: two merges to main racing release-please
   can double-process the release PR, so runs queue instead of overlapping
   (`cancel-in-progress: false`).
