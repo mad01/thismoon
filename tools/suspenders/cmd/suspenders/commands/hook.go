@@ -314,8 +314,9 @@ func runPreCommit(root string, cfg *config.Config) error {
 		}
 	}
 
-	// 2. Built-in guard — skip for repos inside workspace_dirs (they are internal).
-	if cfg != nil && cfg.Guard.Enabled && !isInsideWorkspaceDirs(root, cfg.Guard.WorkspaceDirs) {
+	// 2. Built-in guard — skip for exempt repos (inside workspace_dirs or
+	// matching a top-level exclude pattern).
+	if cfg != nil && cfg.Guard.Enabled && !guardExempt(root, cfg) {
 		g := guard.New(guardConfigFor(root, cfg))
 		g.OnSkip = skips.guardSkip
 		findings, err := g.Check(root)
@@ -336,6 +337,18 @@ func runPreCommit(root string, cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+// guardExempt reports whether the guard should not run in the repo at root:
+// repos inside guard.workspace_dirs are internal by definition, and repos
+// whose org/repo name matches a top-level exclude pattern are opted out
+// explicitly. Neither affects name collection — an exempt repo's own name
+// still contributes blocked names for other repos.
+func guardExempt(root string, cfg *config.Config) bool {
+	if isInsideWorkspaceDirs(root, cfg.Guard.WorkspaceDirs) {
+		return true
+	}
+	return len(cfg.Exclude) > 0 && matchesRepo(repoNameFromPath(root), cfg.Exclude)
 }
 
 func isInsideWorkspaceDirs(repoPath string, dirs []string) bool {

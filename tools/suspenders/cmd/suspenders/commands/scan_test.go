@@ -111,6 +111,58 @@ func TestGuardConfigFor(t *testing.T) {
 // TestApplyExcludeRules covers the rule-filter shared by `scan` and the
 // pre-commit hook: excluded IDs are dropped, others kept in order, and an
 // empty exclude list is a no-op. IDs are arbitrary labels, not secrets.
+func TestGuardExempt(t *testing.T) {
+	// A repo with no origin remote resolves its name as parentdir/repodir,
+	// so a repo at <tmp>/myorg/dotfiles is named "myorg/dotfiles".
+	parent := t.TempDir()
+	root := filepath.Join(parent, "myorg", "dotfiles")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initTestRepo(t, root)
+
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want bool
+	}{
+		{
+			name: "exclude matches repo name exactly",
+			cfg:  config.Config{Exclude: []string{"myorg/dotfiles"}},
+			want: true,
+		},
+		{
+			name: "exclude matches repo name by glob",
+			cfg:  config.Config{Exclude: []string{"*/dotfiles"}},
+			want: true,
+		},
+		{
+			name: "exclude for a different repo does not exempt",
+			cfg:  config.Config{Exclude: []string{"myorg/other"}},
+			want: false,
+		},
+		{
+			name: "no excludes and no workspace dirs",
+			cfg:  config.Config{},
+			want: false,
+		},
+		{
+			name: "repo inside a workspace dir",
+			cfg: config.Config{
+				Guard: config.GuardConfig{WorkspaceDirs: []string{parent}},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := guardExempt(root, &tt.cfg); got != tt.want {
+				t.Errorf("guardExempt = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestApplyExcludeRules(t *testing.T) {
 	rules := []scanner.Rule{
 		{ID: "alpha"},

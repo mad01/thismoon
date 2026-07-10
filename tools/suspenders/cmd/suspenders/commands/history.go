@@ -142,7 +142,7 @@ func scanHistory(root string, cfg *config.Config, ref string) (*historyFindings,
 	s := buildScanner(root, cfg)
 
 	var matcher *guard.Matcher
-	if cfg != nil && cfg.Guard.Enabled && !isInsideWorkspaceDirs(root, cfg.Guard.WorkspaceDirs) {
+	if cfg != nil && cfg.Guard.Enabled && !guardExempt(root, cfg) {
 		var err error
 		matcher, err = guard.New(cfg.Guard).NewMatcher()
 		if err != nil {
@@ -492,7 +492,10 @@ func printCleanStats(stats history.Stats) {
 		fmt.Printf("Stale commit signatures dropped: %d\n", stats.SignaturesDropped)
 	}
 	if stats.ProtectedSkips > 0 {
-		fmt.Printf("Protected file blobs skipped: %d (go.sum, lockfiles, etc.)\n", stats.ProtectedSkips)
+		fmt.Printf(
+			"Protected file blobs skipped: %d (go.sum, lockfiles, etc.)\n",
+			stats.ProtectedSkips,
+		)
 	}
 	if stats.BinaryHits > 0 {
 		color.Yellow(

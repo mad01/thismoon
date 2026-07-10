@@ -80,6 +80,7 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 - Hook scripts chain to `<event>.backup` (foreign hook preserved at install) before running suspenders
 - Per-repo overrides via `.suspenders.yaml` or `.suspenders.yml` (ignore rules, paths, patterns, allowlist, and a `guard` section whose allowlist/blocked_words append to the global guard config); resolved from the scan root or the enclosing git top-level (`repoConfigPath` in commands/scan.go)
 - Guard allowlist filtering and name dedup are case-insensitive, matching the case-insensitive matcher
+- Guard exemption: repos inside `guard.workspace_dirs` or whose org/repo name matches a top-level `exclude` glob are never guard-blocked (`guardExempt` in commands/hook.go, used by hook run, scan, and history); name collection is unaffected
 - Repository discovery via `repo.Find`, which walks dirs concurrently and extracts org/repo from remotes
 - Glob matching for excludes and repo filters via `github.com/gobwas/glob`
 
@@ -111,7 +112,7 @@ Version is embedded via `-ldflags` from the thismoon monorepo's short HEAD commi
 
 ```yaml
 dirs: []string                 # repo discovery directories
-exclude: []string              # glob patterns to exclude repos
+exclude: []string              # glob patterns to exclude repos (skipped by --all discovery, exempt from the guard)
 
 scan:
   enabled: *bool               # nil/true = enabled (default)

@@ -124,15 +124,16 @@ func runScan(cmd *cobra.Command, args []string) error {
 }
 
 // checkBlockedNames runs the guard over the scan target when the guard is
-// enabled and root is a public repo (outside workspace dirs). Staged scans
-// use the staged-diff check so `scan --staged` matches the pre-commit hook;
-// full scans check every tracked file in the working tree.
+// enabled and root is a public repo (not guard-exempt via workspace dirs or
+// the top-level exclude patterns). Staged scans use the staged-diff check so
+// `scan --staged` matches the pre-commit hook; full scans check every tracked
+// file in the working tree.
 func checkBlockedNames(
 	root string,
 	cfg *config.Config,
 	skips *skipCollector,
 ) ([]guard.Finding, error) {
-	if cfg == nil || !cfg.Guard.Enabled || isInsideWorkspaceDirs(root, cfg.Guard.WorkspaceDirs) {
+	if cfg == nil || !cfg.Guard.Enabled || guardExempt(root, cfg) {
 		return nil, nil
 	}
 	g := guard.New(guardConfigFor(root, cfg))

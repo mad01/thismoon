@@ -380,7 +380,9 @@ dirs:
   - ~/code/src
   - ~/workspace
 
-# Repo name patterns to exclude from discovery (glob syntax)
+# Repo name patterns to exclude (glob syntax): skipped by discovery (--all)
+# and exempt from the guard — commits in a matching repo are never
+# guard-blocked, though its name still contributes to the block list
 exclude:
   - "*/vendor/*"
 
@@ -471,12 +473,12 @@ Because the list is recomputed per run and never persisted, a freshly cloned int
 
 Two details worth knowing:
 
-- The top-level `exclude` globs do **not** apply to guard discovery; they only filter which repos `hook install --all` touches. Excluding a repo from hook management doesn't stop its name from being blocked.
+- The top-level `exclude` globs exempt a repo from the guard *running in it*: a repo whose `org/repo` name matches an exclude pattern can be committed to freely, like a repo inside `workspace_dirs`. They do **not** apply to name collection — an excluded repo checked out under a workspace dir still contributes its name to the block list for other repos.
 - Names whose edges are word characters are matched with word-boundary guards, so a short repo name like `hig` can't match inside "higher". Entries with wildcard or punctuation edges keep their full reach.
 
 Blocked words are matched case-insensitively as literal strings, so an entry can be a single word (`acmecorp`), an internal domain (`internal.acmecorp.net`), or a docs link (`docs.acmecorp.net/runbooks`). A `*` in an entry matches any run of non-whitespace characters: `*.acmecorp.net` blocks every subdomain, and the match extends over the URL scheme so history cleanup replaces the whole reference. Overlapping entries match longest-first, so a docs link wins over its bare domain.
 
-The same block list runs in three other places: `suspenders scan` checks every tracked file in the working tree (reported with file and line), `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` are skipped everywhere; internal repos may reference internal names.
+The same block list runs in three other places: `suspenders scan` checks every tracked file in the working tree (reported with file and line), `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` and repos matching the top-level `exclude` globs are skipped everywhere; internal and explicitly excluded repos may reference internal names.
 
 ### External hooks
 

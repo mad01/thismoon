@@ -17,7 +17,7 @@ A term the guard rejects in public repos — in staged diffs at pre-commit, in t
 _Avoid_: banned word, internal name (as the mechanism's name)
 
 **Repo exclude**:
-Glob patterns for repositories that hook management (`install/uninstall --all`) skips. Does NOT affect guard name collection — excluded repos in workspace dirs still contribute blocked names. Top-level `exclude` in config.
+Glob patterns for repositories that hook management (`install/uninstall --all`) skips and that the guard is exempt in — a matching repo is never guard-blocked at commit, scan, or history time. Does NOT affect guard name collection — excluded repos in workspace dirs still contribute blocked names. Top-level `exclude` in config.
 _Avoid_: allowlist, ignore
 
 **Ignore**:
