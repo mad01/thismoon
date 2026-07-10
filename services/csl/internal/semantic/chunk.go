@@ -8,6 +8,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
@@ -50,17 +51,21 @@ func LangForPath(path string) string {
 		return "typescript"
 	case ".py":
 		return "python"
+	case ".java":
+		return "java"
 	default:
 		return ""
 	}
 }
 
-// ChunkFile splits src into semantic chunks. For go/typescript/python it emits
-// one chunk per relevant top-level node via tree-sitter. For any other lang, or
-// when tree-sitter yields nothing, it falls back to overlapping line windows.
+// ChunkFile splits src into semantic chunks. For go/typescript/python/java it
+// emits one chunk per relevant declaration via tree-sitter; languages whose
+// symbols nest inside type bodies (java) are split per member. For any other
+// lang, or when tree-sitter yields nothing, it falls back to overlapping line
+// windows.
 func ChunkFile(repo, path, lang string, src []byte) ([]Chunk, error) {
-	if grammar, kinds, ok := grammarFor(lang); ok {
-		chunks, err := chunkWithTreeSitter(repo, path, lang, src, grammar, kinds)
+	if spec, ok := grammarFor(lang); ok {
+		chunks, err := chunkWithTreeSitter(repo, path, lang, src, spec)
 		if err != nil {
 			return nil, err
 		}
@@ -130,36 +135,72 @@ func truncateRunes(s string, max int) string {
 	return string(r)
 }
 
-// grammarFor returns the tree-sitter grammar and the set of relevant top-level
-// node types for a language tag.
-func grammarFor(lang string) (*sitter.Language, map[string]bool, bool) {
+// langSpec describes how one language is chunked: the grammar to parse with,
+// which node kinds become whole chunks, and — for languages whose symbols nest
+// inside type bodies — which container kinds to descend into and which member
+// kinds to emit from inside them.
+type langSpec struct {
+	grammar    *sitter.Language
+	kinds      map[string]bool // nodes emitted whole
+	containers map[string]bool // nodes split into a header chunk + per-member chunks
+	members    map[string]bool // nodes emitted whole from inside a container body
+}
+
+// grammarFor returns the chunking spec for a language tag.
+func grammarFor(lang string) (langSpec, bool) {
 	switch lang {
 	case "go":
-		return golang.GetLanguage(), map[string]bool{
-			"function_declaration": true,
-			"method_declaration":   true,
-			"type_declaration":     true,
+		return langSpec{
+			grammar: golang.GetLanguage(),
+			kinds: map[string]bool{
+				"function_declaration": true,
+				"method_declaration":   true,
+				"type_declaration":     true,
+			},
 		}, true
 	case "typescript":
-		return typescript.GetLanguage(), map[string]bool{
-			"function_declaration": true,
-			"class_declaration":    true,
-			"export_statement":     true,
+		return langSpec{
+			grammar: typescript.GetLanguage(),
+			kinds: map[string]bool{
+				"function_declaration": true,
+				"class_declaration":    true,
+				"export_statement":     true,
+			},
 		}, true
 	case "python":
-		return python.GetLanguage(), map[string]bool{
-			"function_definition": true,
-			"class_definition":    true,
+		return langSpec{
+			grammar: python.GetLanguage(),
+			kinds: map[string]bool{
+				"function_definition": true,
+				"class_definition":    true,
+			},
+		}, true
+	case "java":
+		return langSpec{
+			grammar: java.GetLanguage(),
+			kinds: map[string]bool{
+				"enum_declaration": true,
+			},
+			containers: map[string]bool{
+				"class_declaration":     true,
+				"interface_declaration": true,
+				"record_declaration":    true,
+			},
+			members: map[string]bool{
+				"method_declaration":              true,
+				"constructor_declaration":         true,
+				"compact_constructor_declaration": true,
+			},
 		}, true
 	default:
-		return nil, nil, false
+		return langSpec{}, false
 	}
 }
 
-// chunkWithTreeSitter parses src and emits one chunk per relevant top-level node.
-func chunkWithTreeSitter(repo, path, lang string, src []byte, grammar *sitter.Language, kinds map[string]bool) ([]Chunk, error) {
+// chunkWithTreeSitter parses src and emits chunks for each relevant top-level node.
+func chunkWithTreeSitter(repo, path, lang string, src []byte, spec langSpec) ([]Chunk, error) {
 	parser := sitter.NewParser()
-	parser.SetLanguage(grammar)
+	parser.SetLanguage(spec.grammar)
 
 	tree, err := parser.ParseCtx(context.Background(), nil, src)
 	if err != nil {
@@ -170,17 +211,73 @@ func chunkWithTreeSitter(repo, path, lang string, src []byte, grammar *sitter.La
 	root := tree.RootNode()
 	var chunks []Chunk
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		n := root.NamedChild(i)
-		kind := n.Type()
-		if !kinds[kind] {
-			continue
-		}
-		text := string(src[n.StartByte():n.EndByte()])
-		start := int(n.StartPoint().Row) + 1
-		end := int(n.EndPoint().Row) + 1
-		chunks = append(chunks, newChunk(repo, path, lang, kind, start, end, text))
+		chunks = append(chunks, chunkNode(repo, path, lang, src, root.NamedChild(i), spec)...)
 	}
 	return chunks, nil
+}
+
+// chunkNode emits the chunks for one declaration node: container kinds split
+// into a header plus per-member chunks, plain kinds are emitted whole, and any
+// other kind yields nothing.
+func chunkNode(repo, path, lang string, src []byte, n *sitter.Node, spec langSpec) []Chunk {
+	switch kind := n.Type(); {
+	case spec.containers[kind]:
+		return chunkContainer(repo, path, lang, src, n, spec)
+	case spec.kinds[kind]:
+		return []Chunk{nodeChunk(repo, path, lang, src, n)}
+	default:
+		return nil
+	}
+}
+
+// chunkContainer splits a type declaration (class, interface, record) into a
+// header chunk — the declaration from its start to the first extracted member,
+// covering the signature and any leading fields — plus one chunk per member,
+// recursing into nested containers. The header stops where the first member
+// starts so no source line is embedded twice.
+func chunkContainer(repo, path, lang string, src []byte, n *sitter.Node, spec langSpec) []Chunk {
+	body := n.ChildByFieldName("body")
+	if body == nil {
+		return []Chunk{nodeChunk(repo, path, lang, src, n)}
+	}
+
+	var inner []Chunk
+	var firstByte uint32
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		child := body.NamedChild(i)
+		var got []Chunk
+		switch kind := child.Type(); {
+		case spec.members[kind] || spec.kinds[kind]:
+			got = []Chunk{nodeChunk(repo, path, lang, src, child)}
+		case spec.containers[kind]:
+			got = chunkContainer(repo, path, lang, src, child, spec)
+		default:
+			continue
+		}
+		if len(inner) == 0 {
+			firstByte = child.StartByte()
+		}
+		inner = append(inner, got...)
+	}
+	if len(inner) == 0 {
+		return []Chunk{nodeChunk(repo, path, lang, src, n)}
+	}
+
+	chunks := make([]Chunk, 0, len(inner)+1)
+	if header := strings.TrimRight(string(src[n.StartByte():firstByte]), " \t\n"); header != "" {
+		start := int(n.StartPoint().Row) + 1
+		end := start + strings.Count(header, "\n")
+		chunks = append(chunks, newChunk(repo, path, lang, n.Type(), start, end, header))
+	}
+	return append(chunks, inner...)
+}
+
+// nodeChunk emits one node verbatim as a chunk.
+func nodeChunk(repo, path, lang string, src []byte, n *sitter.Node) Chunk {
+	text := string(src[n.StartByte():n.EndByte()])
+	start := int(n.StartPoint().Row) + 1
+	end := int(n.EndPoint().Row) + 1
+	return newChunk(repo, path, lang, n.Type(), start, end, text)
 }
 
 // chunkWindows splits src into overlapping fixed-size line windows.

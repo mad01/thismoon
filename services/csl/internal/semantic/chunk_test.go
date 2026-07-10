@@ -14,6 +14,7 @@ func TestLangForPath(t *testing.T) {
 		{"x.ts", "typescript"},
 		{"x.tsx", "typescript"},
 		{"y.py", "python"},
+		{"src/Main.java", "java"},
 		{"README.md", ""},
 		{"noext", ""},
 	}
@@ -52,6 +53,38 @@ class Widget {
   render() {
     return null;
   }
+}
+`
+
+const javaSrc = `package com.example;
+
+import java.util.List;
+
+public class Greeter {
+    private final String name;
+
+    public Greeter(String name) {
+        this.name = name;
+    }
+
+    public String greet(List<String> extras) {
+        return "Hello, " + name + extras;
+    }
+
+    public static class Inner {
+        int answer() {
+            return 42;
+        }
+    }
+}
+
+interface Shape {
+    double area();
+}
+
+enum Color {
+    RED,
+    GREEN
 }
 `
 
@@ -134,6 +167,69 @@ func TestChunkFileTypeScript(t *testing.T) {
 	}
 	if !haveClass {
 		t.Errorf("missing class chunk; kinds=%v", kindSummary(chunks))
+	}
+}
+
+func TestChunkFileJava(t *testing.T) {
+	chunks, err := ChunkFile("demo/repo", "Greeter.java", "java", []byte(javaSrc))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	byKind := chunkByKind(chunks)
+
+	wantKinds := map[string]int{
+		"class_declaration":       2, // Greeter header + Inner header
+		"interface_declaration":   1, // Shape header
+		"constructor_declaration": 1,
+		"method_declaration":      3, // greet, answer, area
+		"enum_declaration":        1, // Color, emitted whole
+	}
+	for kind, n := range wantKinds {
+		if len(byKind[kind]) != n {
+			t.Errorf("kind %q: got %d chunks, want %d (all: %v)", kind, len(byKind[kind]), n, kindSummary(chunks))
+		}
+	}
+
+	// The Greeter header covers the signature and fields, and stops before the
+	// first member so nothing is embedded twice.
+	header := byKind["class_declaration"][0]
+	if header.StartLine != 5 || header.EndLine != 6 {
+		t.Errorf("Greeter header: got lines %d-%d, want 5-6", header.StartLine, header.EndLine)
+	}
+	if !strings.Contains(header.Text, "class Greeter") || !strings.Contains(header.Text, "private final String name;") {
+		t.Errorf("Greeter header missing signature/fields: %q", header.Text)
+	}
+	if strings.Contains(header.Text, "this.name") {
+		t.Errorf("Greeter header must not contain member bodies: %q", header.Text)
+	}
+
+	// greet spans lines 12-14 (1-based inclusive).
+	var greet *Chunk
+	for i := range chunks {
+		if chunks[i].Kind == "method_declaration" && strings.Contains(chunks[i].Text, "greet") {
+			greet = &chunks[i]
+		}
+	}
+	if greet == nil {
+		t.Fatalf("missing greet method chunk; kinds=%v", kindSummary(chunks))
+	}
+	if greet.StartLine != 12 || greet.EndLine != 14 {
+		t.Errorf("greet: got lines %d-%d, want 12-14", greet.StartLine, greet.EndLine)
+	}
+
+	// The nested class Inner yields its own header and method chunks.
+	var haveInnerHeader, haveAnswer bool
+	for _, c := range chunks {
+		if c.Kind == "class_declaration" && strings.Contains(c.Text, "class Inner") {
+			haveInnerHeader = true
+		}
+		if c.Kind == "method_declaration" && strings.Contains(c.Text, "answer") {
+			haveAnswer = true
+		}
+	}
+	if !haveInnerHeader || !haveAnswer {
+		t.Errorf("missing nested class chunks (header=%v method=%v); kinds=%v",
+			haveInnerHeader, haveAnswer, kindSummary(chunks))
 	}
 }
 
