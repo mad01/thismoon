@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/d-man/v0.2.0...d-man/v0.3.0) (2026-07-10)
+
+
+### Features
+
+* **d-man:** plugin retro arcade on the block page ([#38](https://github.com/mad01/thismoon/issues/38)) ([15318c6](https://github.com/mad01/thismoon/commit/15318c604638f5b0340745b4cf5c76b3e28106fe))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/d-man/v0.1.0...d-man/v0.2.0) (2026-07-08)
 
 
