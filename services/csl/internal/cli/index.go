@@ -41,7 +41,8 @@ var indexCmd = &cobra.Command{
 By default, only stale repos (new commits, dirty working tree) are re-indexed.
 Use --all to force a full re-index of every repo (lexical + semantic).
 Use --lexical-all to force a full lexical re-index only.
-Use --semantic-all to force a full semantic re-index only.
+Use --semantic-all to re-embed all repos (incremental per file; a full
+re-embed happens automatically when the model or chunker version changes).
 Use --status to view the current index state.
 Use --repair to validate and fix corrupted shard files.
 Use --clean to delete the entire index directory.
@@ -64,7 +65,7 @@ func init() {
 	indexCmd.Flags().
 		BoolVar(&indexSemanticFlag, "semantic", false, "also build the semantic embedding index for discovered repos")
 	indexCmd.Flags().
-		BoolVar(&indexSemanticAllFlag, "semantic-all", false, "force full semantic re-index only (fetches the model on first run)")
+		BoolVar(&indexSemanticAllFlag, "semantic-all", false, "re-embed all repos, incremental per file (fetches the model on first run)")
 	rootCmd.AddCommand(indexCmd)
 }
 

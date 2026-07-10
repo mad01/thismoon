@@ -34,16 +34,18 @@ type fileEntry struct {
 // every chunk's normalized embedding in memory and scores queries by dot
 // product. Safe for concurrent use.
 type Store struct {
-	mu       sync.RWMutex
-	dim      int
-	repoName string
-	repoPath string               // absolute path to the repo on disk
-	files    map[string]fileEntry // key: repo-relative file path
+	mu         sync.RWMutex
+	dim        int
+	chunkerVer int // chunkerVersion the stored embeddings were chunked with
+	repoName   string
+	repoPath   string               // absolute path to the repo on disk
+	files      map[string]fileEntry // key: repo-relative file path
 }
 
-// NewStore returns an empty store of the given embedding dimensionality.
+// NewStore returns an empty store of the given embedding dimensionality,
+// stamped with the current chunker version.
 func NewStore(dim int) *Store {
-	return &Store{dim: dim, files: make(map[string]fileEntry)}
+	return &Store{dim: dim, chunkerVer: chunkerVersion, files: make(map[string]fileEntry)}
 }
 
 // Dim returns the embedding dimensionality.
@@ -51,6 +53,14 @@ func (s *Store) Dim() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.dim
+}
+
+// ChunkerVersion returns the chunker version the store's embeddings were
+// produced with. Stores persisted before versioning report 0.
+func (s *Store) ChunkerVersion() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.chunkerVer
 }
 
 // RepoName returns the repo name this store covers ("" until first PutFile).
@@ -221,16 +231,17 @@ func langMatcher(langs []string) func(string) bool {
 // persisted is the on-disk gob representation. encoding/gob keeps this simple
 // (KISS); a denser binary format is a future optimization.
 type persisted struct {
-	Dim      int
-	RepoName string
-	RepoPath string
-	Files    map[string]fileEntry
+	Dim            int
+	ChunkerVersion int // 0 in stores written before chunker versioning
+	RepoName       string
+	RepoPath       string
+	Files          map[string]fileEntry
 }
 
 // Save writes the store to path atomically (temp file then rename).
 func (s *Store) Save(path string) error {
 	s.mu.RLock()
-	snap := persisted{Dim: s.dim, RepoName: s.repoName, RepoPath: s.repoPath, Files: s.files}
+	snap := persisted{Dim: s.dim, ChunkerVersion: s.chunkerVer, RepoName: s.repoName, RepoPath: s.repoPath, Files: s.files}
 	s.mu.RUnlock()
 
 	dir := filepath.Dir(path)
@@ -277,7 +288,7 @@ func LoadStore(path string) (*Store, error) {
 	if snap.Files == nil {
 		snap.Files = make(map[string]fileEntry)
 	}
-	return &Store{dim: snap.Dim, repoName: snap.RepoName, repoPath: snap.RepoPath, files: snap.Files}, nil
+	return &Store{dim: snap.Dim, chunkerVer: snap.ChunkerVersion, repoName: snap.RepoName, repoPath: snap.RepoPath, files: snap.Files}, nil
 }
 
 // normalize returns an L2-normalized copy of v (unchanged if its norm is zero).

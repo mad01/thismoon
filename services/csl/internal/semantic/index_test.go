@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"encoding/gob"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,6 +120,68 @@ func TestIndexRepoSemanticIncremental(t *testing.T) {
 	}
 	if stats.FilesEmbedded != 1 || stats.FilesSkipped != 0 {
 		t.Fatalf("after change: embedded=%d skipped=%d, want embedded=1 skipped=0", stats.FilesEmbedded, stats.FilesSkipped)
+	}
+}
+
+func TestIndexRepoSemanticRebuildsOnChunkerBump(t *testing.T) {
+	root := fakeRepoTree(t)
+	repo := finder.Repo{Name: "x/y", Path: root}
+	emb := &countingEmbedder{inner: newFakeEmbedder(8)}
+	indexDir := t.TempDir()
+	ctx := context.Background()
+
+	if _, err := IndexRepoSemantic(ctx, indexDir, repo, emb); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+
+	// Rewrite the store as if an older chunker produced it. The file contents
+	// are unchanged, so only the version mismatch can trigger a re-embed.
+	storePath := StorePathForRepo(indexDir, repo)
+	downgradeStoreVersion(t, storePath, chunkerVersion-1)
+
+	stats, err := IndexRepoSemantic(ctx, indexDir, repo, emb)
+	if err != nil {
+		t.Fatalf("re-index after downgrade: %v", err)
+	}
+	if stats.FilesEmbedded != 1 || stats.FilesSkipped != 0 {
+		t.Fatalf("chunker bump: embedded=%d skipped=%d, want embedded=1 skipped=0", stats.FilesEmbedded, stats.FilesSkipped)
+	}
+
+	// The rewritten store carries the current version: the next run skips again.
+	stats, err = IndexRepoSemantic(ctx, indexDir, repo, emb)
+	if err != nil {
+		t.Fatalf("third index: %v", err)
+	}
+	if stats.FilesSkipped != 1 || stats.FilesEmbedded != 0 {
+		t.Fatalf("post-rebuild run: skipped=%d embedded=%d, want skipped=1 embedded=0", stats.FilesSkipped, stats.FilesEmbedded)
+	}
+}
+
+// downgradeStoreVersion rewrites a saved store's ChunkerVersion in place,
+// simulating a store persisted by an older binary.
+func downgradeStoreVersion(t *testing.T, path string, version int) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	var snap persisted
+	if err := gob.NewDecoder(f).Decode(&snap); err != nil {
+		t.Fatalf("decode store: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	snap.ChunkerVersion = version
+	out, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("rewrite store: %v", err)
+	}
+	if err := gob.NewEncoder(out).Encode(snap); err != nil {
+		t.Fatalf("encode store: %v", err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatalf("close rewritten store: %v", err)
 	}
 }
 

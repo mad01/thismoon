@@ -84,8 +84,11 @@ func IndexRepoSemantic(ctx context.Context, indexDir string, repo finder.Repo, e
 	if err != nil {
 		return IndexStats{}, err
 	}
-	if store.Dim() != emb.Dim() {
-		store = NewStore(emb.Dim()) // dim changed (model swap) => full re-embed
+	if store.Dim() != emb.Dim() || store.ChunkerVersion() != chunkerVersion {
+		// Model swap (dim change) or chunking behavior change: the per-file
+		// content hashes would wrongly skip every unchanged file, so drop the
+		// store and re-embed the repo from scratch.
+		store = NewStore(emb.Dim())
 	}
 	store.SetRepoPath(repo.Path)
 

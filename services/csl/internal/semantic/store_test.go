@@ -2,7 +2,9 @@ package semantic
 
 import (
 	"context"
+	"encoding/gob"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -144,6 +146,56 @@ func TestStoreSaveLoadRoundTrip(t *testing.T) {
 		if a[i] != b[i] {
 			t.Fatalf("hit %d differs: %+v vs %+v", i, a[i], b[i])
 		}
+	}
+}
+
+func TestStoreChunkerVersionRoundTrip(t *testing.T) {
+	s := NewStore(8)
+	if s.ChunkerVersion() != chunkerVersion {
+		t.Fatalf("NewStore ChunkerVersion = %d, want %d", s.ChunkerVersion(), chunkerVersion)
+	}
+
+	path := filepath.Join(t.TempDir(), "store.gob")
+	if err := s.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := LoadStore(path)
+	if err != nil {
+		t.Fatalf("LoadStore: %v", err)
+	}
+	if loaded.ChunkerVersion() != chunkerVersion {
+		t.Fatalf("loaded ChunkerVersion = %d, want %d", loaded.ChunkerVersion(), chunkerVersion)
+	}
+}
+
+func TestLoadStoreLegacyGobReportsVersionZero(t *testing.T) {
+	// Stores written before chunker versioning lack the field entirely; gob
+	// must decode them with ChunkerVersion 0 so the indexer rebuilds them.
+	type legacyPersisted struct {
+		Dim      int
+		RepoName string
+		RepoPath string
+		Files    map[string]fileEntry
+	}
+	path := filepath.Join(t.TempDir(), "legacy.gob")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	snap := legacyPersisted{Dim: 8, RepoName: "org/repo", Files: map[string]fileEntry{}}
+	if err := gob.NewEncoder(f).Encode(snap); err != nil {
+		t.Fatalf("encode legacy store: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	loaded, err := LoadStore(path)
+	if err != nil {
+		t.Fatalf("LoadStore legacy: %v", err)
+	}
+	if loaded.ChunkerVersion() != 0 {
+		t.Fatalf("legacy ChunkerVersion = %d, want 0", loaded.ChunkerVersion())
 	}
 }
 

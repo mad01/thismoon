@@ -26,6 +26,17 @@ const (
 	windowOverlap = 10
 )
 
+// chunkerVersion identifies the chunking behavior baked into stored
+// embeddings. Bump it on ANY change that alters what ChunkFile emits — new
+// languages, node-kind changes, traversal changes, window/budget tuning —
+// so existing vector stores rebuild on the next index run instead of serving
+// stale chunks forever (chunks are produced at index time; unchanged files
+// are otherwise skipped by content hash and would never re-embed).
+//
+// History: 1 = top-level go/typescript/python; 2 = per-member java (MAD-139)
+// + hcl/bash/dockerfile/markdown/protobuf/sql/yaml (MAD-229).
+const chunkerVersion = 2
+
 // maxChunkBodyChars bounds a chunk's body so its breadcrumb-prefixed EmbedText
 // stays under the embedding model's fixed sequence length (all-MiniLM-L6-v2
 // caps at 512 tokens, which the model cannot exceed). Oversized chunks — long
