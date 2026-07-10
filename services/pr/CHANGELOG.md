@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/mad01/thismoon/compare/pr/v0.1.0...pr/v0.1.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **pr:** surface gh API error body in failure messages ([#44](https://github.com/mad01/thismoon/issues/44)) ([482cda5](https://github.com/mad01/thismoon/commit/482cda53d44482efce69a2b68d6c9f9fb9e70271))
+
 ## 0.1.0 (2026-07-06)
 
 
