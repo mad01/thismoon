@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
 const configFileName = "config.yaml"
@@ -115,6 +117,23 @@ func (h *PostMergeHook) IsExcluded(repoPath, repoName string) bool {
 		}
 	}
 	return false
+}
+
+// FilterExcluded returns repos with the entries matching the exclude list
+// removed. Every path that indexes (lexical or semantic) must run discovered
+// repos through this so an excluded repo can never enter the index.
+func (h *PostMergeHook) FilterExcluded(repos []finder.Repo) []finder.Repo {
+	if h == nil || len(h.Exclude) == 0 {
+		return repos
+	}
+	out := make([]finder.Repo, 0, len(repos))
+	for _, r := range repos {
+		if h.IsExcluded(r.Path, r.Name) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // SemanticEnabled reports whether the daemon should load the semantic index and

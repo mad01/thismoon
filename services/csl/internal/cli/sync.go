@@ -107,13 +107,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Apply exclude list (reuse hooks.post_merge.exclude).
-	var targets []finder.Repo
-	for _, r := range repos {
-		if cfg.Hooks.PostMerge.IsExcluded(r.Path, r.Name) {
-			continue
-		}
-		targets = append(targets, r)
-	}
+	targets := cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	fmt.Fprintf(w, " %d found\n", len(targets))
 

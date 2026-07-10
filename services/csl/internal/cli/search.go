@@ -141,6 +141,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	repos = cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	if len(repos) == 0 {
 		return fmt.Errorf(

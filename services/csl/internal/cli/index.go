@@ -125,6 +125,7 @@ func runIndex(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	repos = cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	state, err := search.LoadState(indexDir)
 	if err != nil {
@@ -414,13 +415,7 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 	if err != nil {
 		return err
 	}
-	var repos []finder.Repo
-	for _, r := range allRepos {
-		if cfg.Hooks.PostMerge.IsExcluded(r.Path, r.Name) {
-			continue
-		}
-		repos = append(repos, r)
-	}
+	repos := cfg.Hooks.PostMerge.FilterExcluded(allRepos)
 	if repoFilter != "" {
 		repos = filterReposByName(repos, repoFilter)
 	}

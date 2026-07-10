@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
 func TestLoadFrom(t *testing.T) {
@@ -284,6 +286,29 @@ hooks:
 		if got := cfg.Hooks.PostMerge.IsExcluded(c.path, c.name); got != c.want {
 			t.Errorf("IsExcluded(%q, %q) = %v, want %v", c.path, c.name, got, c.want)
 		}
+	}
+}
+
+func TestFilterExcluded(t *testing.T) {
+	h := &PostMergeHook{Exclude: []string{"/repos/skip-by-path", "org/skip-by-name"}}
+	repos := []finder.Repo{
+		{Name: "org/keep", Path: "/repos/keep"},
+		{Name: "org/skipped", Path: "/repos/skip-by-path"},
+		{Name: "org/skip-by-name", Path: "/repos/elsewhere"},
+	}
+
+	got := h.FilterExcluded(repos)
+	if len(got) != 1 || got[0].Name != "org/keep" {
+		t.Fatalf("FilterExcluded = %+v, want only org/keep", got)
+	}
+
+	// Nil receiver and empty exclude list pass repos through untouched.
+	var nilHook *PostMergeHook
+	if out := nilHook.FilterExcluded(repos); len(out) != len(repos) {
+		t.Fatalf("nil hook filtered repos: %+v", out)
+	}
+	if out := (&PostMergeHook{}).FilterExcluded(repos); len(out) != len(repos) {
+		t.Fatalf("empty exclude filtered repos: %+v", out)
 	}
 }
 
