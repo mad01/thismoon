@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/mad01/thismoon/compare/suspenders/v0.3.0...suspenders/v0.3.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **suspenders:** exempt repos matching exclude globs from the guard ([#42](https://github.com/mad01/thismoon/issues/42)) ([98f7989](https://github.com/mad01/thismoon/commit/98f798930ea43ba1462d762e138fff4aa33ba749))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/suspenders/v0.2.1...suspenders/v0.3.0) (2026-07-10)
 
 
