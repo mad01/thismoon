@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/mad01/thismoon/compare/csl/v0.4.0...csl/v0.4.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **csl:** apply the exclude list to lexical index paths ([#52](https://github.com/mad01/thismoon/issues/52)) ([990501d](https://github.com/mad01/thismoon/commit/990501ddd363520fad92faca4ee45a9e8b09a8f4))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/csl/v0.3.0...csl/v0.4.0) (2026-07-10)
 
 
