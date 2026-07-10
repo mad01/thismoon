@@ -182,9 +182,61 @@ func (c *Client) ghAPISend(ctx context.Context, host, method, path, body string)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh api %s %s: %s: %w", method, path, stderr.String(), err)
+		return nil, fmt.Errorf("gh api %s %s: %s: %w", method, path, ghError(&stdout, &stderr), err)
 	}
 	return stdout.Bytes(), nil
+}
+
+// ghError builds a human-readable failure detail from a failed `gh` invocation.
+// gh writes the human-readable status ("gh: ... (HTTP 422)") to stderr but the
+// JSON response body — which carries the actual reason — to stdout, so both are
+// needed to explain a failure.
+func ghError(stdout, stderr *bytes.Buffer) string {
+	msg := strings.TrimSpace(stderr.String())
+	if reason := ghAPIErrorReason(stdout.Bytes()); reason != "" {
+		if msg != "" {
+			return msg + ": " + reason
+		}
+		return reason
+	}
+	return msg
+}
+
+// ghAPIErrorReason extracts the GitHub API error message from a response body,
+// preferring the specific `errors` entries over the generic top-level message.
+func ghAPIErrorReason(body []byte) string {
+	var resp struct {
+		Message string            `json:"message"`
+		Errors  []json.RawMessage `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return ""
+	}
+	var parts []string
+	for _, e := range resp.Errors {
+		var s string
+		if json.Unmarshal(e, &s) == nil && s != "" {
+			parts = append(parts, s)
+			continue
+		}
+		var obj struct {
+			Message string `json:"message"`
+			Field   string `json:"field"`
+			Code    string `json:"code"`
+		}
+		if json.Unmarshal(e, &obj) == nil {
+			switch {
+			case obj.Message != "":
+				parts = append(parts, obj.Message)
+			case obj.Field != "" && obj.Code != "":
+				parts = append(parts, obj.Field+": "+obj.Code)
+			}
+		}
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, "; ")
+	}
+	return resp.Message
 }
 
 func (c *Client) runGH(ctx context.Context, host string, args ...string) ([]byte, error) {
@@ -194,7 +246,7 @@ func (c *Client) runGH(ctx context.Context, host string, args ...string) ([]byte
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh %s: %s: %w", strings.Join(args, " "), stderr.String(), err)
+		return nil, fmt.Errorf("gh %s: %s: %w", strings.Join(args, " "), ghError(&stdout, &stderr), err)
 	}
 	return stdout.Bytes(), nil
 }
