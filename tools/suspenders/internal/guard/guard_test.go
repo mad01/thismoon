@@ -83,6 +83,50 @@ func TestCollectNames_allowlist(t *testing.T) {
 	}
 }
 
+func TestCollectNames_allowlistCaseInsensitive(t *testing.T) {
+	workspace := t.TempDir()
+	repoPath := filepath.Join(workspace, "myorg", "monitoring")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repoPath)
+
+	// Matching is case-insensitive, so an allowlist entry must suppress a
+	// collected name regardless of casing.
+	g := New(config.GuardConfig{
+		Enabled:       true,
+		WorkspaceDirs: []string{workspace},
+		BlockedWords:  []string{"AcmeCorp"},
+		Allowlist:     []string{"Monitoring", "acmecorp"},
+	})
+
+	names, err := g.CollectNames()
+	if err != nil {
+		t.Fatalf("CollectNames: %v", err)
+	}
+	for _, n := range names {
+		if strings.EqualFold(n, "monitoring") || strings.EqualFold(n, "acmecorp") {
+			t.Errorf("allowlisted name %q should be excluded, got %v", n, names)
+		}
+	}
+}
+
+func TestCollectNames_dedupsCasings(t *testing.T) {
+	g := New(config.GuardConfig{
+		Enabled:      true,
+		BlockedWords: []string{"acmecorp", "AcmeCorp", "ACMECORP"},
+	})
+
+	names, err := g.CollectNames()
+	if err != nil {
+		t.Fatalf("CollectNames: %v", err)
+	}
+	// The matcher is case-insensitive, so one casing covers all of them.
+	if len(names) != 1 {
+		t.Errorf("expected 1 deduplicated name, got %v", names)
+	}
+}
+
 func TestCollectNames_discoversRepos(t *testing.T) {
 	workspace := t.TempDir()
 	repoPath := filepath.Join(workspace, "myorg", "secret-repo")

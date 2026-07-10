@@ -78,7 +78,8 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 - Hook scripts use PATH-based binary resolution (`suspenders` not absolute path)
 - Hook scripts call `suspenders hook run <event>`, not `suspenders scan` directly
 - Hook scripts chain to `<event>.backup` (foreign hook preserved at install) before running suspenders
-- Per-repo overrides via `.suspenders.yaml` (ignore rules, paths, patterns, allowlist)
+- Per-repo overrides via `.suspenders.yaml` or `.suspenders.yml` (ignore rules, paths, patterns, allowlist, and a `guard` section whose allowlist/blocked_words append to the global guard config); resolved from the scan root or the enclosing git top-level (`repoConfigPath` in commands/scan.go)
+- Guard allowlist filtering and name dedup are case-insensitive, matching the case-insensitive matcher
 - Repository discovery via `repo.Find`, which walks dirs concurrently and extracts org/repo from remotes
 - Glob matching for excludes and repo filters via `github.com/gobwas/glob`
 
@@ -147,7 +148,7 @@ hooks:
 ### Key files
 
 - `~/.config/suspenders/config.yaml`: user configuration
-- `.suspenders.yaml`: per-repo ignore/allowlist overrides
+- `.suspenders.yaml` (or `.suspenders.yml`): per-repo ignore/allowlist/guard overrides, found at the repo root even when scanning a subdirectory
 - `.git/hooks/pre-commit`: generated hook script (calls `suspenders hook run pre-commit`)
 - `.git/hooks/post-merge`: generated hook script (calls `suspenders hook run post-merge`)
 - `.git/hooks/<event>.backup`: backup of pre-existing foreign hooks

@@ -73,18 +73,22 @@ func (g *Guard) CollectNames() ([]string, error) {
 		return nil, fmt.Errorf("discover repos: %w", err)
 	}
 
+	// Matching is case-insensitive, so allowlist filtering and dedup must be
+	// too: an allowlist entry "Monitoring" suppresses a discovered repo named
+	// "monitoring", and one casing of a name is enough for the (?i) pattern.
 	allowed := make(map[string]bool, len(g.cfg.Allowlist))
 	for _, a := range g.cfg.Allowlist {
-		allowed[a] = true
+		allowed[strings.ToLower(a)] = true
 	}
 
 	seen := make(map[string]bool)
 	var names []string
 	add := func(name string) {
-		if name == "" || allowed[name] || seen[name] {
+		key := strings.ToLower(name)
+		if name == "" || allowed[key] || seen[key] {
 			return
 		}
-		seen[name] = true
+		seen[key] = true
 		names = append(names, name)
 	}
 

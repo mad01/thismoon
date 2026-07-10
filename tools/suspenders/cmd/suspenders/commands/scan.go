@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -126,11 +127,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 // enabled and root is a public repo (outside workspace dirs). Staged scans
 // use the staged-diff check so `scan --staged` matches the pre-commit hook;
 // full scans check every tracked file in the working tree.
-func checkBlockedNames(root string, cfg *config.Config, skips *skipCollector) ([]guard.Finding, error) {
+func checkBlockedNames(
+	root string,
+	cfg *config.Config,
+	skips *skipCollector,
+) ([]guard.Finding, error) {
 	if cfg == nil || !cfg.Guard.Enabled || isInsideWorkspaceDirs(root, cfg.Guard.WorkspaceDirs) {
 		return nil, nil
 	}
-	g := guard.New(cfg.Guard)
+	g := guard.New(guardConfigFor(root, cfg))
 	if skips != nil {
 		g.OnSkip = skips.guardSkip
 	}
@@ -184,11 +189,59 @@ func buildScanner(root string, cfg *config.Config) *scanner.Scanner {
 		}
 	}
 
-	ignorePath := filepath.Join(root, ".suspenders.yaml")
-	if _, err := os.Stat(ignorePath); err == nil {
-		s.IgnoreFile = ignorePath
-	}
+	s.IgnoreFile = repoConfigPath(root)
 	return s
+}
+
+// repoConfigPath returns the per-repo .suspenders.yaml (or .yml) for root:
+// root itself is checked first, then the enclosing git top-level, so scanning
+// a subdirectory still honors the repo's config. Returns "" when none exists.
+func repoConfigPath(root string) string {
+	dirs := []string{root}
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "--show-toplevel").Output(); err == nil {
+		if top := strings.TrimSpace(string(out)); top != "" && top != root {
+			dirs = append(dirs, top)
+		}
+	}
+	for _, dir := range dirs {
+		for _, name := range []string{".suspenders.yaml", ".suspenders.yml"} {
+			p := filepath.Join(dir, name)
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+// guardConfigFor layers the per-repo guard overrides from .suspenders.yaml
+// over the global guard config: repo-local allowlist and blocked_words
+// entries are appended to the global ones.
+func guardConfigFor(root string, cfg *config.Config) config.GuardConfig {
+	gcfg := cfg.Guard
+	p := repoConfigPath(root)
+	if p == "" {
+		return gcfg
+	}
+	ic, err := scanner.LoadIgnoreConfig(p)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		return gcfg
+	}
+	gcfg.Allowlist = appendCopy(gcfg.Allowlist, ic.Guard.Allowlist)
+	gcfg.BlockedWords = appendCopy(gcfg.BlockedWords, ic.Guard.BlockedWords)
+	return gcfg
+}
+
+// appendCopy returns base with extra appended, copying when extra is
+// non-empty so the global config's slices are never mutated in place.
+func appendCopy(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	merged := make([]string, 0, len(base)+len(extra))
+	merged = append(merged, base...)
+	return append(merged, extra...)
 }
 
 // applyExcludeRules drops rules whose ID appears in excludeIDs.

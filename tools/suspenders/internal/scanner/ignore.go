@@ -19,6 +19,14 @@ type IgnoreConfig struct {
 	Patterns  []string          `yaml:"patterns"`  // literal match substrings to suppress (for false positives)
 	Allowlist []IgnoreAllowItem `yaml:"allowlist"` // exact-match values that are known-safe
 	Watch     []WatchEntry      `yaml:"watch"`     // repo-specific custom detection rules
+	Guard     GuardOverride     `yaml:"guard"`     // per-repo guard overrides
+}
+
+// GuardOverride holds per-repo guard settings layered over the global guard
+// config: allowlist and blocked_words entries are appended to the global ones.
+type GuardOverride struct {
+	Allowlist    []string `yaml:"allowlist"`     // names safe to reference in this repo
+	BlockedWords []string `yaml:"blocked_words"` // extra names blocked in this repo
 }
 
 // IgnoreAllowItem is an exact value that should be permitted in a per-repo config.

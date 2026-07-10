@@ -316,7 +316,7 @@ func runPreCommit(root string, cfg *config.Config) error {
 
 	// 2. Built-in guard — skip for repos inside workspace_dirs (they are internal).
 	if cfg != nil && cfg.Guard.Enabled && !isInsideWorkspaceDirs(root, cfg.Guard.WorkspaceDirs) {
-		g := guard.New(cfg.Guard)
+		g := guard.New(guardConfigFor(root, cfg))
 		g.OnSkip = skips.guardSkip
 		findings, err := g.Check(root)
 		if err != nil {

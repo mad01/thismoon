@@ -45,5 +45,5 @@ One execution of the full pipeline for a git event (`suspenders hook run <event>
 _Avoid_: hook execution, pipeline (as the term)
 
 **Ignore file**:
-The per-repo `.suspenders.yaml` holding rule/path/pattern ignores, a repo-scoped allowlist, and repo-scoped watch rules.
+The per-repo `.suspenders.yaml` (or `.suspenders.yml`) holding rule/path/pattern ignores, a repo-scoped allowlist, repo-scoped watch rules, and repo-scoped guard overrides. Resolved from the scan root or the enclosing git top-level.
 _Avoid_: override file, repo config

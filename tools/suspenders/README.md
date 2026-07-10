@@ -531,7 +531,7 @@ If a repo already has csl's post-merge hook installed, migrate it to suspenders 
 
 ### Per-repo ignore file
 
-Place a `.suspenders.yaml` at the root of any repository to suppress findings locally:
+Place a `.suspenders.yaml` (or `.suspenders.yml`) at the root of any repository to layer local settings over the global config. Both `scan` and the pre-commit hook honor it, and `scan <path>` on a subdirectory resolves it from the enclosing repo's root:
 
 ```yaml
 rules:
@@ -545,7 +545,15 @@ patterns:
 
 allowlist:
   - match: "test-dummy-key"
+
+guard:
+  allowlist:          # names safe to reference in this repo,
+    - monitoring      # appended to the global guard allowlist
+  blocked_words:      # extra names blocked only in this repo
+    - project-x
 ```
+
+Guard allowlist entries match case-insensitively, like the guard itself: `monitoring` also covers `Monitoring`.
 
 ### Inline ignore
 
@@ -560,7 +568,7 @@ All findings on that line are suppressed.
 ## Where things live
 
 - Config: `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`), created with defaults on first run
-- Per-repo overrides: `.suspenders.yaml` at a repo's root, holding ignore rules, paths, patterns, and allowlist
+- Per-repo overrides: `.suspenders.yaml` (or `.yml`) at a repo's root, holding ignore rules, paths, patterns, allowlist, and guard overrides
 - Binary: `~/code/bin/suspenders` (via `make install`)
 - Generated hooks: `.git/hooks/pre-commit`, `.git/hooks/post-merge`, both calling `suspenders hook run <event>`
 - Foreign hook backups: `.git/hooks/<event>.backup`, restored on `hook uninstall`

@@ -15,7 +15,7 @@ make test               # unit tests (fast; no Docker)
 make install            # install to ~/code/bin — the binary your hooks run
 ```
 
-Run the trial scan from the monorepo root, not from `tools/suspenders`: the fixture-path ignores live in the root `.suspenders.yaml`, and `scan` loads that file from the scan root. Scanning from inside the component reports this repo's own secret-shaped fixtures as findings.
+The fixture-path ignores live in the monorepo root `.suspenders.yaml`; `scan` resolves that file from the scan root or, when scanning a subdirectory, from the enclosing git top-level. Scanning from inside `tools/suspenders` therefore still honors the root ignores.
 
 Keep two binaries straight, because mixing them up is the usual reason a change "doesn't take":
 
@@ -42,7 +42,7 @@ Keep two binaries straight, because mixing them up is the usual reason a change 
 ### Config you will touch
 
 - Global: `~/.config/suspenders/config.yaml`. In the dotfiles setup this path is a symlink from `recipes/suspenders/config.yaml` — edit the file in the dotfiles repo, not the symlink target.
-- Per-repo: `<repo>/.suspenders.yaml`. Holds rule/path/pattern ignores plus a repo-scoped allowlist and watch rules.
+- Per-repo: `<repo>/.suspenders.yaml` (or `.suspenders.yml`). Holds rule/path/pattern ignores, a repo-scoped allowlist, watch rules, and a `guard` section (allowlist/blocked_words appended to the global guard config).
 
 The vocabulary for ignore vs. exclude vs. allowlist vs. safe reference is defined in [`CONTEXT.md`](../CONTEXT.md). Use those terms when you write code, tests, or commit messages.
 
