@@ -1459,6 +1459,60 @@ func TestScanDir(t *testing.T) {
 		}
 	})
 
+	t.Run("tracked symlink to a directory is skipped, not fatal", func(t *testing.T) {
+		dir := t.TempDir()
+		initGitRepo(t, dir, map[string]string{
+			"docs/real.txt": "nothing here\n",
+			"aws.env":       "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF\n",
+		})
+		if err := os.Symlink("docs", filepath.Join(dir, "docs-link")); err != nil {
+			t.Fatal(err)
+		}
+		run := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+			cmd.Env = append(
+				os.Environ(),
+				"GIT_AUTHOR_NAME=test",
+				"GIT_AUTHOR_EMAIL=t@t",
+				"GIT_COMMITTER_NAME=test",
+				"GIT_COMMITTER_EMAIL=t@t",
+			)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %s (%v)", args, out, err)
+			}
+		}
+		run("add", "-A")
+		run("commit", "-m", "add symlink")
+
+		var skipped []string
+		sc := New(DefaultRules)
+		sc.OnSkip = func(sk SkippedFile) {
+			skipped = append(skipped, sk.Path)
+		}
+		findings, err := sc.ScanDir(dir)
+		if err != nil {
+			t.Fatalf("ScanDir error: %v", err)
+		}
+		found := false
+		for _, f := range findings {
+			if f.Rule.ID == "aws-access-key-id" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("expected aws-access-key-id finding from regular file")
+		}
+		linkSkipped := false
+		for _, p := range skipped {
+			if strings.HasSuffix(p, "docs-link") {
+				linkSkipped = true
+			}
+		}
+		if !linkSkipped {
+			t.Errorf("expected docs-link to be reported as skipped, got skips: %v", skipped)
+		}
+	})
+
 	t.Run("binary file in dir returns no findings for that file", func(t *testing.T) {
 		dir := t.TempDir()
 		initGitRepo(t, dir, map[string]string{

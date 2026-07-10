@@ -393,9 +393,13 @@ func (s *Scanner) ScanDir(root string) ([]Finding, error) {
 		abs := filepath.Join(root, rel)
 		findings = append(findings, s.checkFileRules(rel, abs, ic)...)
 
-		info, err := os.Stat(abs)
+		info, err := os.Lstat(abs)
 		if err != nil {
 			s.reportSkip(abs, "unreadable: "+err.Error())
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			s.reportSkip(abs, "not a regular file")
 			continue
 		}
 		if info.Size() > maxFileBytes {
