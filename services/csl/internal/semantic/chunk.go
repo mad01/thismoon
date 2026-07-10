@@ -7,10 +7,17 @@ import (
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/bash"
+	"github.com/smacker/go-tree-sitter/dockerfile"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/hcl"
 	"github.com/smacker/go-tree-sitter/java"
+	"github.com/smacker/go-tree-sitter/markdown"
+	"github.com/smacker/go-tree-sitter/protobuf"
 	"github.com/smacker/go-tree-sitter/python"
+	"github.com/smacker/go-tree-sitter/sql"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
+	"github.com/smacker/go-tree-sitter/yaml"
 )
 
 // Line-window fallback parameters (1-based, inclusive ranges).
@@ -41,9 +48,14 @@ type Chunk struct {
 	EmbedText string
 }
 
-// LangForPath derives a language tag from a file extension. It returns an empty
-// string for extensions without a tree-sitter chunker.
+// LangForPath derives a language tag from a file extension (or, for
+// dockerfiles, the file name). It returns an empty string for files without a
+// tree-sitter chunker.
 func LangForPath(path string) string {
+	base := strings.ToLower(filepath.Base(path))
+	if base == "dockerfile" || strings.HasPrefix(base, "dockerfile.") || strings.HasSuffix(base, ".dockerfile") {
+		return "dockerfile"
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go":
 		return "go"
@@ -53,27 +65,50 @@ func LangForPath(path string) string {
 		return "python"
 	case ".java":
 		return "java"
+	case ".tf", ".hcl":
+		return "hcl"
+	case ".sh", ".bash":
+		return "bash"
+	case ".md", ".markdown":
+		return "markdown"
+	case ".proto":
+		return "protobuf"
+	case ".sql":
+		return "sql"
+	case ".yml", ".yaml":
+		return "yaml"
 	default:
 		return ""
 	}
 }
 
-// ChunkFile splits src into semantic chunks. For go/typescript/python/java it
-// emits one chunk per relevant declaration via tree-sitter; languages whose
-// symbols nest inside type bodies (java) are split per member. For any other
-// lang, or when tree-sitter yields nothing, it falls back to overlapping line
-// windows.
+// ChunkFile splits src into semantic chunks: one chunk per relevant declaration
+// via tree-sitter for languages with a grammarFor entry, per section for
+// markdown, per build stage for dockerfiles. Languages whose symbols nest
+// inside type bodies (java, protobuf services) are split per member. For any
+// other lang, or when tree-sitter yields nothing, it falls back to overlapping
+// line windows.
 func ChunkFile(repo, path, lang string, src []byte) ([]Chunk, error) {
-	if spec, ok := grammarFor(lang); ok {
-		chunks, err := chunkWithTreeSitter(repo, path, lang, src, spec)
-		if err != nil {
-			return nil, err
-		}
-		if len(chunks) > 0 {
-			return splitOversized(chunks), nil
-		}
+	chunks, err := parseChunks(repo, path, lang, src)
+	if err != nil {
+		return nil, err
+	}
+	if len(chunks) > 0 {
+		return splitOversized(chunks), nil
 	}
 	return splitOversized(chunkWindows(repo, path, lang, src)), nil
+}
+
+// parseChunks runs the tree-sitter chunker for lang, or nothing for languages
+// without one.
+func parseChunks(repo, path, lang string, src []byte) ([]Chunk, error) {
+	if lang == "markdown" {
+		return chunkMarkdownFile(repo, path, src)
+	}
+	if spec, ok := grammarFor(lang); ok {
+		return chunkWithTreeSitter(repo, path, lang, src, spec)
+	}
+	return nil, nil
 }
 
 // splitOversized replaces any chunk whose body exceeds maxChunkBodyChars with
@@ -144,6 +179,7 @@ type langSpec struct {
 	kinds      map[string]bool // nodes emitted whole
 	containers map[string]bool // nodes split into a header chunk + per-member chunks
 	members    map[string]bool // nodes emitted whole from inside a container body
+	stageKind  string          // dockerfile-style: chunk per group of root children starting at this kind
 }
 
 // grammarFor returns the chunking spec for a language tag.
@@ -192,12 +228,59 @@ func grammarFor(lang string) (langSpec, bool) {
 				"compact_constructor_declaration": true,
 			},
 		}, true
+	case "hcl":
+		return langSpec{
+			grammar: hcl.GetLanguage(),
+			kinds: map[string]bool{
+				"block": true,
+			},
+		}, true
+	case "bash":
+		return langSpec{
+			grammar: bash.GetLanguage(),
+			kinds: map[string]bool{
+				"function_definition": true,
+			},
+		}, true
+	case "dockerfile":
+		return langSpec{
+			grammar:   dockerfile.GetLanguage(),
+			stageKind: "from_instruction",
+		}, true
+	case "protobuf":
+		return langSpec{
+			grammar: protobuf.GetLanguage(),
+			kinds: map[string]bool{
+				"message": true,
+				"enum":    true,
+			},
+			containers: map[string]bool{
+				"service": true,
+			},
+			members: map[string]bool{
+				"rpc": true,
+			},
+		}, true
+	case "sql":
+		return langSpec{
+			grammar: sql.GetLanguage(),
+			kinds: map[string]bool{
+				"statement": true,
+			},
+		}, true
+	case "yaml":
+		return langSpec{
+			grammar: yaml.GetLanguage(),
+			kinds: map[string]bool{
+				"block_mapping_pair": true,
+			},
+		}, true
 	default:
 		return langSpec{}, false
 	}
 }
 
-// chunkWithTreeSitter parses src and emits chunks for each relevant top-level node.
+// chunkWithTreeSitter parses src and emits chunks for each relevant node.
 func chunkWithTreeSitter(repo, path, lang string, src []byte, spec langSpec) ([]Chunk, error) {
 	parser := sitter.NewParser()
 	parser.SetLanguage(spec.grammar)
@@ -208,37 +291,45 @@ func chunkWithTreeSitter(repo, path, lang string, src []byte, spec langSpec) ([]
 	}
 	defer tree.Close()
 
-	root := tree.RootNode()
-	var chunks []Chunk
-	for i := 0; i < int(root.NamedChildCount()); i++ {
-		chunks = append(chunks, chunkNode(repo, path, lang, src, root.NamedChild(i), spec)...)
+	if spec.stageKind != "" {
+		return chunkStages(repo, path, lang, src, tree.RootNode(), spec.stageKind), nil
 	}
-	return chunks, nil
+	return chunkDecls(repo, path, lang, src, tree.RootNode(), spec), nil
 }
 
-// chunkNode emits the chunks for one declaration node: container kinds split
-// into a header plus per-member chunks, plain kinds are emitted whole, and any
-// other kind yields nothing.
-func chunkNode(repo, path, lang string, src []byte, n *sitter.Node, spec langSpec) []Chunk {
-	switch kind := n.Type(); {
-	case spec.containers[kind]:
-		return chunkContainer(repo, path, lang, src, n, spec)
-	case spec.kinds[kind]:
-		return []Chunk{nodeChunk(repo, path, lang, src, n)}
-	default:
-		return nil
+// chunkDecls walks the tree below n and emits a chunk for each outermost node
+// matching the spec, descending through wrapper nodes that match nothing (hcl
+// wraps blocks in a body node, yaml wraps mappings in stream/document/block
+// nodes). Matched nodes are not descended into, so a declaration is never
+// emitted twice.
+func chunkDecls(repo, path, lang string, src []byte, n *sitter.Node, spec langSpec) []Chunk {
+	var out []Chunk
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		child := n.NamedChild(i)
+		switch kind := child.Type(); {
+		case spec.containers[kind]:
+			out = append(out, chunkContainer(repo, path, lang, src, child, spec)...)
+		case spec.kinds[kind]:
+			out = append(out, nodeChunk(repo, path, lang, src, child))
+		default:
+			out = append(out, chunkDecls(repo, path, lang, src, child, spec)...)
+		}
 	}
+	return out
 }
 
-// chunkContainer splits a type declaration (class, interface, record) into a
-// header chunk — the declaration from its start to the first extracted member,
-// covering the signature and any leading fields — plus one chunk per member,
-// recursing into nested containers. The header stops where the first member
-// starts so no source line is embedded twice.
+// chunkContainer splits a container (java class/interface/record, protobuf
+// service, markdown section) into a header chunk — the container from its start
+// to the first extracted member, covering the signature and any leading fields
+// — plus one chunk per member, recursing into nested containers. The header
+// stops where the first member starts so no source line is embedded twice.
+// Containers whose grammar has no body field (protobuf service, markdown
+// section) hold members as direct children; a container with no members at all
+// is emitted whole.
 func chunkContainer(repo, path, lang string, src []byte, n *sitter.Node, spec langSpec) []Chunk {
 	body := n.ChildByFieldName("body")
 	if body == nil {
-		return []Chunk{nodeChunk(repo, path, lang, src, n)}
+		body = n
 	}
 
 	var inner []Chunk
@@ -270,6 +361,48 @@ func chunkContainer(repo, path, lang string, src []byte, n *sitter.Node, spec la
 		chunks = append(chunks, newChunk(repo, path, lang, n.Type(), start, end, header))
 	}
 	return append(chunks, inner...)
+}
+
+// chunkStages splits a dockerfile-shaped tree into one chunk per build stage:
+// each group of root children from a stageKind node (FROM) to the next. Lines
+// before the first stage — ARGs, comments — belong to the first chunk. Files
+// with no stage at all yield nothing, deferring to the window fallback.
+func chunkStages(repo, path, lang string, src []byte, root *sitter.Node, stageKind string) []Chunk {
+	var starts []int
+	for i := 0; i < int(root.NamedChildCount()); i++ {
+		if child := root.NamedChild(i); child.Type() == stageKind {
+			starts = append(starts, int(child.StartPoint().Row)+1)
+		}
+	}
+	if len(starts) == 0 {
+		return nil
+	}
+	starts[0] = 1
+
+	lines := splitLines(src)
+	var chunks []Chunk
+	for i, start := range starts {
+		end := len(lines)
+		if i+1 < len(starts) {
+			end = starts[i+1] - 1
+		}
+		text := strings.Join(lines[start-1:end], "\n")
+		chunks = append(chunks, newChunk(repo, path, lang, "stage", start, end, text))
+	}
+	return chunks
+}
+
+// chunkMarkdownFile chunks markdown one section per chunk: a heading plus its
+// body, stopping at the first subsection (sections nest, so subsections become
+// their own chunks via the container traversal). The markdown grammar has a
+// bespoke two-phase parse API, so it cannot go through grammarFor.
+func chunkMarkdownFile(repo, path string, src []byte) ([]Chunk, error) {
+	tree, err := markdown.ParseCtx(context.Background(), nil, src)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	spec := langSpec{containers: map[string]bool{"section": true}}
+	return chunkDecls(repo, path, "markdown", src, tree.BlockTree().RootNode(), spec), nil
 }
 
 // nodeChunk emits one node verbatim as a chunk.

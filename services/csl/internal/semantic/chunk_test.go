@@ -15,7 +15,18 @@ func TestLangForPath(t *testing.T) {
 		{"x.tsx", "typescript"},
 		{"y.py", "python"},
 		{"src/Main.java", "java"},
-		{"README.md", ""},
+		{"main.tf", "hcl"},
+		{"vars.hcl", "hcl"},
+		{"run.sh", "bash"},
+		{"env.bash", "bash"},
+		{"Dockerfile", "dockerfile"},
+		{"docker/Dockerfile.dev", "dockerfile"},
+		{"build.dockerfile", "dockerfile"},
+		{"README.md", "markdown"},
+		{"api.proto", "protobuf"},
+		{"schema.sql", "sql"},
+		{"config.yaml", "yaml"},
+		{"ci.yml", "yaml"},
 		{"noext", ""},
 	}
 	for _, tt := range tests {
@@ -230,6 +241,219 @@ func TestChunkFileJava(t *testing.T) {
 	if !haveInnerHeader || !haveAnswer {
 		t.Errorf("missing nested class chunks (header=%v method=%v); kinds=%v",
 			haveInnerHeader, haveAnswer, kindSummary(chunks))
+	}
+}
+
+func TestChunkFileHCL(t *testing.T) {
+	src := `variable "region" {
+  type = string
+}
+
+resource "aws_instance" "web" {
+  ami = "abc"
+  tags = {
+    Name = "web"
+  }
+}
+`
+	chunks, err := ChunkFile("demo/repo", "main.tf", "hcl", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	// One chunk per top-level block; the nested tags block stays inside its
+	// resource chunk.
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2 (%v)", len(chunks), kindSummary(chunks))
+	}
+	if chunks[0].Kind != "block" || chunks[0].StartLine != 1 || chunks[0].EndLine != 3 {
+		t.Errorf("variable block: kind=%q lines %d-%d, want block 1-3", chunks[0].Kind, chunks[0].StartLine, chunks[0].EndLine)
+	}
+	if !strings.Contains(chunks[1].Text, `Name = "web"`) {
+		t.Errorf("resource chunk must contain nested block: %q", chunks[1].Text)
+	}
+}
+
+func TestChunkFileBash(t *testing.T) {
+	src := `#!/bin/bash
+set -euo pipefail
+
+greet() {
+  echo "hi $1"
+}
+
+greet world
+`
+	chunks, err := ChunkFile("demo/repo", "run.sh", "bash", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	if len(chunks) != 1 || chunks[0].Kind != "function_definition" {
+		t.Fatalf("got %v, want one function_definition", kindSummary(chunks))
+	}
+	if chunks[0].StartLine != 4 || chunks[0].EndLine != 6 {
+		t.Errorf("greet: got lines %d-%d, want 4-6", chunks[0].StartLine, chunks[0].EndLine)
+	}
+}
+
+func TestChunkFileDockerfile(t *testing.T) {
+	src := `# build image
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION} AS build
+RUN make build
+
+FROM debian:stable
+COPY --from=build /app /app
+ENTRYPOINT ["/app"]
+`
+	chunks, err := ChunkFile("demo/repo", "Dockerfile", "dockerfile", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2 stages (%v)", len(chunks), kindSummary(chunks))
+	}
+	// Leading comment and ARG belong to the first stage.
+	if chunks[0].Kind != "stage" || chunks[0].StartLine != 1 || chunks[0].EndLine != 5 {
+		t.Errorf("stage 1: kind=%q lines %d-%d, want stage 1-5", chunks[0].Kind, chunks[0].StartLine, chunks[0].EndLine)
+	}
+	if !strings.Contains(chunks[0].Text, "ARG GO_VERSION") {
+		t.Errorf("stage 1 must include leading ARG: %q", chunks[0].Text)
+	}
+	if chunks[1].StartLine != 6 || chunks[1].EndLine != 8 || !strings.Contains(chunks[1].Text, "ENTRYPOINT") {
+		t.Errorf("stage 2: lines %d-%d text %q", chunks[1].StartLine, chunks[1].EndLine, chunks[1].Text)
+	}
+}
+
+func TestChunkFileMarkdown(t *testing.T) {
+	src := `# Title
+
+Intro paragraph.
+
+## Section one
+
+Body text.
+
+` + "```go\ncode here\n```" + `
+
+## Section two
+
+More text.
+`
+	chunks, err := ChunkFile("demo/repo", "README.md", "markdown", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	// Top section header (title + intro, stops at the first subsection) plus
+	// one chunk per leaf section.
+	if len(chunks) != 3 {
+		t.Fatalf("got %d chunks, want 3 (%v)", len(chunks), kindSummary(chunks))
+	}
+	for i, c := range chunks {
+		if c.Kind != "section" {
+			t.Errorf("chunk %d kind = %q, want section", i, c.Kind)
+		}
+	}
+	if !strings.Contains(chunks[0].Text, "# Title") || !strings.Contains(chunks[0].Text, "Intro paragraph.") {
+		t.Errorf("top section missing title/intro: %q", chunks[0].Text)
+	}
+	if strings.Contains(chunks[0].Text, "Section one") {
+		t.Errorf("top section must stop before first subsection: %q", chunks[0].Text)
+	}
+	if !strings.Contains(chunks[1].Text, "code here") {
+		t.Errorf("section one missing code block: %q", chunks[1].Text)
+	}
+	if chunks[2].StartLine != 13 {
+		t.Errorf("section two StartLine = %d, want 13", chunks[2].StartLine)
+	}
+}
+
+func TestChunkFileProtobuf(t *testing.T) {
+	src := `syntax = "proto3";
+
+package demo;
+
+message Greeting {
+  string name = 1;
+}
+
+enum Color {
+  RED = 0;
+}
+
+service Greeter {
+  rpc Greet(Greeting) returns (Greeting);
+}
+`
+	chunks, err := ChunkFile("demo/repo", "api.proto", "protobuf", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	byKind := chunkByKind(chunks)
+	wantKinds := map[string]int{
+		"message": 1,
+		"enum":    1,
+		"service": 1, // header
+		"rpc":     1,
+	}
+	for kind, n := range wantKinds {
+		if len(byKind[kind]) != n {
+			t.Errorf("kind %q: got %d chunks, want %d (all: %v)", kind, len(byKind[kind]), n, kindSummary(chunks))
+		}
+	}
+	if rpcs := byKind["rpc"]; len(rpcs) == 1 && !strings.Contains(rpcs[0].Text, "rpc Greet") {
+		t.Errorf("rpc chunk text: %q", rpcs[0].Text)
+	}
+}
+
+func TestChunkFileSQL(t *testing.T) {
+	src := `CREATE TABLE users (
+  id INT PRIMARY KEY,
+  name TEXT
+);
+
+CREATE INDEX idx_users_name ON users (name);
+
+INSERT INTO users (id, name) VALUES (1, 'a');
+`
+	chunks, err := ChunkFile("demo/repo", "schema.sql", "sql", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("got %d chunks, want 3 statements (%v)", len(chunks), kindSummary(chunks))
+	}
+	if chunks[0].Kind != "statement" || chunks[0].StartLine != 1 || chunks[0].EndLine != 4 {
+		t.Errorf("create table: kind=%q lines %d-%d, want statement 1-4", chunks[0].Kind, chunks[0].StartLine, chunks[0].EndLine)
+	}
+}
+
+func TestChunkFileYAML(t *testing.T) {
+	src := `name: demo
+spec:
+  replicas: 3
+  ports:
+    - 80
+    - 443
+---
+kind: Other
+`
+	chunks, err := ChunkFile("demo/repo", "config.yaml", "yaml", []byte(src))
+	if err != nil {
+		t.Fatalf("ChunkFile: %v", err)
+	}
+	// One chunk per top-level mapping key, across both documents; nested keys
+	// stay inside their parent chunk.
+	if len(chunks) != 3 {
+		t.Fatalf("got %d chunks, want 3 (%v)", len(chunks), kindSummary(chunks))
+	}
+	if chunks[1].Kind != "block_mapping_pair" || chunks[1].StartLine != 2 || chunks[1].EndLine != 6 {
+		t.Errorf("spec: kind=%q lines %d-%d, want block_mapping_pair 2-6", chunks[1].Kind, chunks[1].StartLine, chunks[1].EndLine)
+	}
+	if !strings.Contains(chunks[1].Text, "replicas: 3") {
+		t.Errorf("spec chunk must contain nested keys: %q", chunks[1].Text)
+	}
+	if !strings.Contains(chunks[2].Text, "kind: Other") {
+		t.Errorf("second document chunk: %q", chunks[2].Text)
 	}
 }
 
