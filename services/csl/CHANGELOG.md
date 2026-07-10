@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/csl/v0.3.0...csl/v0.4.0) (2026-07-10)
+
+
+### Features
+
+* **csl:** tree-sitter chunking for hcl, bash, dockerfile, markdown, protobuf, sql, yaml ([#49](https://github.com/mad01/thismoon/issues/49)) ([3bf97a0](https://github.com/mad01/thismoon/commit/3bf97a057b5897027823b91726a8b373ccc019b0))
+
+
+### Bug Fixes
+
+* **csl:** rebuild semantic stores when the chunker version changes ([#51](https://github.com/mad01/thismoon/issues/51)) ([cf1f2aa](https://github.com/mad01/thismoon/commit/cf1f2aab742cbe68d661bdcf6d042b58103db865))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/csl/v0.2.0...csl/v0.3.0) (2026-07-10)
 
 
