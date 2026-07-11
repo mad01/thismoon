@@ -33,6 +33,33 @@ func setupTestRepo(t *testing.T) string {
 	return dir
 }
 
+// TestIndexRepoHonorsCslIgnore verifies .cslignore keeps matched files out of
+// the lexical index.
+func TestIndexRepoHonorsCslIgnore(t *testing.T) {
+	repoPath := setupTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repoPath, ".cslignore"), []byte("util/\n"), 0o644); err != nil {
+		t.Fatalf("write .cslignore: %v", err)
+	}
+	indexDir, _, repoNames := indexTestRepo(t, repoPath)
+	ctx := context.Background()
+
+	matches, err := Search(ctx, indexDir, SearchOptions{Pattern: "Hello", Limit: 50}, repoNames)
+	if err != nil {
+		t.Fatalf("Search kept file: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("main.go not indexed; expected a match for Hello")
+	}
+
+	matches, err = Search(ctx, indexDir, SearchOptions{Pattern: "Add", Limit: 50}, repoNames)
+	if err != nil {
+		t.Fatalf("Search ignored file: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("util/helper.go indexed despite .cslignore: %v matches", len(matches))
+	}
+}
+
 // indexTestRepo indexes the test repo into a temp index directory and returns
 // the index dir, the repo, and the repoNames map used by Search.
 func indexTestRepo(

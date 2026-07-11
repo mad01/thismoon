@@ -1,10 +1,13 @@
 package semantic
 
 import (
+	"bytes"
 	"context"
 	"encoding/gob"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
@@ -218,6 +221,199 @@ func TestIndexRepoSemanticDeletesRemovedFiles(t *testing.T) {
 	}
 	if _, ok := store.Files()["extra.go"]; ok {
 		t.Fatalf("extra.go not pruned from store: %v", store.Files())
+	}
+}
+
+func TestIsSkippedFile(t *testing.T) {
+	skipped := []string{
+		".build/arm64-apple-macosx/debug/ModuleCache/foo.pcm.timestamp",
+		"DerivedData/App/Build/Intermediates/x.d",
+		"Pods/Alamofire/Source/Session.swift",
+		"Carthage/Checkouts/Dep/file.swift",
+		"App/Assets.xcassets/AppIcon.appiconset/Contents.json",
+		"MyApp.xcodeproj/xcuserdata/me.xcuserdatad/xcschemes/x.plist",
+		"vendor/github.com/pkg/errors/errors.go",
+		"node_modules/dep/index.ts",
+		"target/debug/build/script-output.rs",
+		"app/build/generated/source/Gen.java",
+		"dist/bundle.js",
+		"__pycache__/mod.cpython-312.pyc",
+		"icons/logo.heic",
+		"modules/Accessibility.swiftmodule",
+		"App.xcodeproj/project.pbxproj",
+		"App.xcworkspace/contents.xcworkspacedata",
+		"Views/TimelineView.swift.backup",
+		"Resources/Models/Qwen3-4bit/merges.txt",
+		"Resources/Models/Qwen3-4bit/tokenizer_config.json",
+		"Resources/Models/Qwen3-4bit/model.safetensors",
+		"Resources/Detector.mlmodelc/coremldata.bin",
+		"Resources/Classifier.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+	}
+	for _, p := range skipped {
+		if !isSkippedFile(p) {
+			t.Errorf("isSkippedFile(%q) = false, want true", p)
+		}
+	}
+
+	kept := []string{
+		"main.go",
+		"internal/build.go",
+		"docs/build-notes.md",
+		"src/targets.ts",
+		"Sources/App/BuildInfo.swift",
+		"cmd/vendorctl/main.go",
+	}
+	for _, p := range kept {
+		if isSkippedFile(p) {
+			t.Errorf("isSkippedFile(%q) = true, want false", p)
+		}
+	}
+
+	lockfiles := []string{
+		"package-lock.json",
+		"web/yarn.lock",
+		"Cargo.lock",
+		"go.sum",
+		"App/Package.resolved",
+		"Podfile.lock",
+	}
+	for _, p := range lockfiles {
+		if !isSkippedFile(p) {
+			t.Errorf("isSkippedFile(%q) = false, want true (lockfile)", p)
+		}
+	}
+}
+
+func TestLooksLikeData(t *testing.T) {
+	vocab := []byte(`{"tokens":{` + strings.Repeat(`"tok":1,`, 500) + `"end":2}}`)
+	if !looksLikeData(vocab) {
+		t.Error("looksLikeData(single-line vocab json) = false, want true")
+	}
+
+	source := []byte(strings.Repeat("func short() int { return 1 }\n", 400))
+	if looksLikeData(source) {
+		t.Error("looksLikeData(normal source) = true, want false")
+	}
+
+	// A long line past the 8KB sniff window must not trigger the check.
+	tail := append([]byte(strings.Repeat("short line\n", 900)), bytes.Repeat([]byte{'x'}, 4000)...)
+	if looksLikeData(tail) {
+		t.Error("looksLikeData(long line beyond sniff window) = true, want false")
+	}
+}
+
+// TestGitTrackedFilesSkipsCommittedJunk verifies the path filter applies to
+// git-tracked files, not just the non-git fallback walk: committed build
+// output and vendored trees must never reach the chunker.
+func TestGitTrackedFilesSkipsCommittedJunk(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("main.swift", "print(\"hi\")\n")
+	write(".build/arm64-apple-macosx/debug/foo.pcm.timestamp", "ts\n")
+	write("vendor/dep/dep.go", "package dep\n")
+	write("Assets.xcassets/AppIcon.appiconset/Contents.json", "{}\n")
+
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "add", "."},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	files, err := gitTrackedFiles(root)
+	if err != nil {
+		t.Fatalf("gitTrackedFiles: %v", err)
+	}
+	if len(files) != 1 || files[0] != "main.swift" {
+		t.Fatalf("gitTrackedFiles = %v, want [main.swift]", files)
+	}
+}
+
+// TestAuditRepoFilesMatchesWalk pins the audit to the indexer: every file
+// AuditRepoFiles marks Index must be exactly the set walkSourceFiles visits.
+func TestAuditRepoFilesMatchesWalk(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("main.go", "package main\nfunc A() {}\n")
+	write("docs/notes.md", "# notes\n")
+	write("vendor/dep/dep.go", "package dep\n")
+	write("data/vocab.json", `{"a":`+strings.Repeat("1,", 2000)+`"z":0}`)
+	write("bin/blob.txt", "x\x00y")
+	write("go.sum", "mod v1.0.0 h1:abc=\n")
+	write("fixtures/huge.txt", "fixture\n")
+	write(".cslignore", "fixtures/\n")
+
+	decisions, err := AuditRepoFiles(root)
+	if err != nil {
+		t.Fatalf("AuditRepoFiles: %v", err)
+	}
+	audited := make(map[string]bool)
+	for _, d := range decisions {
+		if d.Index {
+			audited[d.Path] = true
+		}
+	}
+
+	walked := make(map[string]bool)
+	err = walkSourceFiles(root, func(rel string, _ []byte) error {
+		walked[rel] = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walkSourceFiles: %v", err)
+	}
+
+	if len(audited) != len(walked) {
+		t.Fatalf("audit indexed %v, walk visited %v", audited, walked)
+	}
+	for p := range walked {
+		if !audited[p] {
+			t.Errorf("walk visited %s but audit skipped it", p)
+		}
+	}
+	for _, want := range []string{"main.go", "docs/notes.md"} {
+		if !audited[want] {
+			t.Errorf("audit skipped %s, want indexed", want)
+		}
+	}
+
+	reasons := make(map[string]string)
+	for _, d := range decisions {
+		reasons[d.Path] = d.Reason
+	}
+	if reasons["data/vocab.json"] == "" {
+		t.Error("vocab.json indexed, want a skip reason")
+	}
+	if reasons["bin/blob.txt"] == "" {
+		t.Error("null-byte file indexed, want a skip reason")
+	}
+	if reasons["go.sum"] == "" {
+		t.Error("go.sum indexed, want a skip reason")
+	}
+	if reasons["fixtures/huge.txt"] != "matched .cslignore" {
+		t.Errorf("fixtures/huge.txt reason = %q, want matched .cslignore", reasons["fixtures/huge.txt"])
 	}
 }
 

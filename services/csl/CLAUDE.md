@@ -116,6 +116,8 @@ Config lives at `~/.config/csl/config.yaml`. Key sections:
 - **`semantic.ollama_url` / `semantic.embed_model` / `semantic.dim`**: the Ollama server and embedding model (defaults: `http://localhost:11434`, `qwen3-embedding:0.6b`, 1024). Per-machine — a smaller machine can point at a smaller model. Changing model or dim triggers a full re-embed on the next index run.
 - **`daemon.idle_timeout_minutes`**: how long the search daemon stays alive with no queries (default 10).
 
+A repo can also carry a `.cslignore` at its root — one glob per line, `#` comments, trailing `/` for whole trees, leading `/` to anchor at the repo root. It filters both indexes (lexical zoekt and semantic); check its effect with `csl semantic files --skipped <path>`.
+
 `csl sync` discovers repos via `FilteredWalk(cfg.Dirs, cfg.Index.Hosts)`, pulls them (ff-only), and reindexes any that changed. Newly discovered repos that have no entry in `state.json` are also indexed on first sync.
 
 ## HTTP API
@@ -148,6 +150,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl doctor`**: check index health (shards, staleness, dirty repos, daemon status). `--json`, `--repair` (fix a corrupt state file).
 - **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild; needs Ollama running with the model pulled), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
+- **`csl semantic files [path]`**: classify every tracked file under a path with the indexer's skip rules, without embedding. Default output lists the files that would be embedded; `--skipped` lists filtered files with reasons; `--json` dumps every decision.
 - **`csl hybrid <query>`**: lexical + semantic, RRF-fused. `--repo/-r`, `--lang/-l`, `--limit` (50), `--rrf-k` (60), `--expand`, `--json`.
 - **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue` and, when `semantic.sync: true`, re-embeds changed repos.
 - **`csl hooks`**: **deprecated.** csl no longer manages post-merge hooks; suspenders is the single git-hook manager, feeding `reindex.queue` via a `csl-reindex` post_merge entry that csl still drains (`csl sync` / `csl index --drain`). `csl hooks install` prints a deprecation notice and still writes the legacy hook when `hooks.post_merge.enabled` is set. `csl hooks uninstall` removes any csl-managed post-merge hook; `csl hooks status` (`--json`) reports per-repo hook state. Migration: run `csl hooks uninstall`, then add the `csl-reindex` entry to suspenders' `post_merge` config.

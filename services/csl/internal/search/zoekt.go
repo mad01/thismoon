@@ -12,6 +12,7 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
+	"github.com/mad01/thismoon/services/csl/internal/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
@@ -32,6 +33,8 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 	if err != nil {
 		return fmt.Errorf("create index builder for %s: %w", repo.Name, err)
 	}
+
+	ignore := cslignore.Load(repo.Path)
 
 	walkErr := filepath.Walk(repo.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -64,6 +67,10 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 
 		relPath, err := filepath.Rel(repo.Path, path)
 		if err != nil {
+			return nil
+		}
+
+		if ignore.Match(relPath) {
 			return nil
 		}
 

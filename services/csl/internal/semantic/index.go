@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/mad01/thismoon/services/csl/internal/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -180,6 +182,7 @@ var skipExts = map[string]bool{
 	// images
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".bmp": true,
 	".ico": true, ".svg": true, ".webp": true, ".tiff": true, ".tif": true,
+	".heic": true, ".icns": true,
 	// fonts
 	".woff": true, ".woff2": true, ".ttf": true, ".otf": true, ".eot": true,
 	// archives / compressed
@@ -188,24 +191,126 @@ var skipExts = map[string]bool{
 	// compiled / binary
 	".so": true, ".dylib": true, ".dll": true, ".exe": true, ".a": true,
 	".o": true, ".obj": true, ".pyc": true, ".pyo": true, ".class": true,
-	".jar": true, ".war": true, ".wasm": true,
+	".jar": true, ".war": true, ".wasm": true, ".pcm": true,
+	".swiftmodule": true, ".swiftdoc": true, ".swiftsourceinfo": true,
 	// media / office
 	".mp3": true, ".mp4": true, ".wav": true, ".avi": true, ".mov": true,
 	".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
 	".ppt": true, ".pptx": true,
 	// data / serialized
 	".bin": true, ".dat": true, ".db": true, ".sqlite": true, ".sqlite3": true,
+	// ML model weights
+	".safetensors": true, ".gguf": true, ".onnx": true, ".tflite": true,
+	".pt": true, ".pth": true, ".ckpt": true, ".npy": true, ".npz": true,
+	".mlmodel": true,
 	// source maps / minified bundles
 	".min.js": true, ".min.css": true, ".map": true,
+	// editor/backup litter
+	".backup": true, ".bak": true, ".orig": true, ".swp": true,
+}
+
+// skipDirSegments lists directory names whose contents are build output or
+// vendored dependencies, never source worth embedding. Matched (lowercased)
+// against every path segment, so committed trees like a Swift package's
+// .build/ or a Go vendor/ dir are filtered even though git tracks them.
+var skipDirSegments = map[string]bool{
+	// Xcode / Swift
+	".build": true, "deriveddata": true, "pods": true, "carthage": true,
+	".swiftpm": true, "xcuserdata": true,
+	// Java / Rust / general build output
+	"target": true, ".gradle": true, "build": true, "dist": true, "out": true,
+	// dependency trees
+	"node_modules": true, "vendor": true, "__pycache__": true,
+}
+
+// skipDirSuffixes lists directory-name suffixes (lowercased) that mark
+// machine-managed Xcode containers: asset catalogs (image sets plus
+// Contents.json boilerplate) and project/workspace bundles (pbxproj,
+// schemes, user state).
+// Core ML compiled models and packages are directories too.
+var skipDirSuffixes = []string{".xcassets", ".xcodeproj", ".xcworkspace", ".mlmodelc", ".mlpackage"}
+
+// isSkippedPath reports whether any directory segment of the repo-relative
+// path is build output, a vendored dependency tree, or a machine-managed
+// Xcode container.
+func isSkippedPath(rel string) bool {
+	dir := path.Dir(filepath.ToSlash(rel))
+	if dir == "." {
+		return false
+	}
+	for seg := range strings.SplitSeq(dir, "/") {
+		lower := strings.ToLower(seg)
+		if skipDirSegments[lower] {
+			return true
+		}
+		for _, suffix := range skipDirSuffixes {
+			if strings.HasSuffix(lower, suffix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// skipFileNames lists exact base names (lowercased) of machine-managed
+// metadata: lockfiles and dependency manifests whose content is generated,
+// not written.
+var skipFileNames = map[string]bool{
+	"package-lock.json": true, "yarn.lock": true, "pnpm-lock.yaml": true,
+	"cargo.lock": true, "go.sum": true, "package.resolved": true,
+	"podfile.lock": true, "gemfile.lock": true, "composer.lock": true,
+	"poetry.lock": true, "uv.lock": true, "gradle.lockfile": true,
+	// tokenizer/model metadata shipped beside local ML model weights
+	"tokenizer.json": true, "tokenizer_config.json": true, "vocab.json": true,
+	"merges.txt": true, "special_tokens_map.json": true,
+	"generation_config.json": true, "model.safetensors.index.json": true,
+	// csl's own ignore file
+	".cslignore": true,
+}
+
+// skipReasonForName classifies a repo-relative path against the name-based
+// skip rules, returning a human-readable reason or "" when the name passes.
+func skipReasonForName(path string) string {
+	if isSkippedPath(path) {
+		return "build output, vendored, or machine-managed tree"
+	}
+	lower := strings.ToLower(path)
+	if skipFileNames[filepath.Base(lower)] {
+		return "lockfile or model metadata"
+	}
+	if strings.HasSuffix(lower, ".min.js") || strings.HasSuffix(lower, ".min.css") {
+		return "minified bundle"
+	}
+	if skipExts[strings.ToLower(filepath.Ext(path))] {
+		return "binary or media extension"
+	}
+	return ""
 }
 
 // isSkippedFile reports whether a file should be excluded from semantic indexing.
 func isSkippedFile(path string) bool {
-	lower := strings.ToLower(path)
-	if strings.HasSuffix(lower, ".min.js") || strings.HasSuffix(lower, ".min.css") {
-		return true
+	return skipReasonForName(path) != ""
+}
+
+// maxDataLineLen is the longest line still plausible in handwritten source.
+// Machine-generated data files (tokenizer vocabularies, serialized model
+// indexes, minified bundles shipped without a .min name) pack kilobytes onto
+// one line; real code does not.
+const maxDataLineLen = 2000
+
+// looksLikeData sniffs the first 8KB for a single line longer than
+// maxDataLineLen, the signature of serialized data rather than source.
+func looksLikeData(content []byte) bool {
+	n := min(len(content), 8192)
+	lineStart := 0
+	for i, b := range content[:n] {
+		if b == '\n' {
+			lineStart = i + 1
+		} else if i-lineStart >= maxDataLineLen {
+			return true
+		}
 	}
-	return skipExts[strings.ToLower(filepath.Ext(path))]
+	return false
 }
 
 // looksLikeBinary sniffs the first 512 bytes for null bytes, a strong signal
@@ -223,23 +328,36 @@ func looksLikeBinary(content []byte) bool {
 	return false
 }
 
-// gitTrackedFiles returns the list of git-tracked files under root, filtered
-// to exclude binary extensions and oversized files. Falls back to a filesystem
-// walk for non-git directories.
-func gitTrackedFiles(root string) ([]string, error) {
+// rawGitFiles returns every git-tracked path under root, unfiltered, or an
+// error when root is not a git work tree.
+func rawGitFiles(root string) ([]string, error) {
 	cmd := exec.Command("git", "ls-files", "-z")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		return fallbackWalkFiles(root)
+		return nil, err
 	}
 	var files []string
 	for _, entry := range bytes.Split(out, []byte{0}) {
-		rel := string(entry)
-		if rel == "" {
-			continue
+		if rel := string(entry); rel != "" {
+			files = append(files, rel)
 		}
-		if isSkippedFile(rel) {
+	}
+	return files, nil
+}
+
+// gitTrackedFiles returns the list of git-tracked files under root, filtered
+// to exclude binary extensions and oversized files. Falls back to a filesystem
+// walk for non-git directories.
+func gitTrackedFiles(root string) ([]string, error) {
+	raw, err := rawGitFiles(root)
+	if err != nil {
+		return fallbackWalkFiles(root)
+	}
+	ignore := cslignore.Load(root)
+	var files []string
+	for _, rel := range raw {
+		if ignore.Match(rel) || isSkippedFile(rel) {
 			continue
 		}
 		abs := filepath.Join(root, rel)
@@ -252,35 +370,26 @@ func gitTrackedFiles(root string) ([]string, error) {
 	return files, nil
 }
 
-// fallbackWalkFiles walks the filesystem for non-git repos.
+// fallbackWalkFiles walks the filesystem for non-git repos, applying the same
+// name and size filters gitTrackedFiles does.
 func fallbackWalkFiles(root string) ([]string, error) {
+	raw, err := rawWalkFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	ignore := cslignore.Load(root)
 	var files []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
+	for _, rel := range raw {
+		if ignore.Match(rel) || isSkippedFile(rel) {
+			continue
 		}
-		if info.IsDir() {
-			base := filepath.Base(path)
-			if strings.HasPrefix(base, ".") && path != root {
-				return filepath.SkipDir
-			}
-			switch base {
-			case "node_modules", "vendor", "__pycache__", "build", "dist", "target":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !info.Mode().IsRegular() || info.Size() > maxFileSize || isSkippedFile(path) {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return nil
+		info, statErr := os.Stat(filepath.Join(root, rel))
+		if statErr != nil || info.Size() > maxFileSize {
+			continue
 		}
 		files = append(files, rel)
-		return nil
-	})
-	return files, err
+	}
+	return files, nil
 }
 
 // walkSourceFiles iterates over git-tracked source files under root, reading
@@ -296,7 +405,7 @@ func walkSourceFiles(root string, fn func(relPath string, content []byte) error)
 		if err != nil {
 			continue
 		}
-		if looksLikeBinary(content) {
+		if looksLikeBinary(content) || looksLikeData(content) {
 			continue
 		}
 		if err := fn(rel, content); err != nil {
@@ -304,6 +413,101 @@ func walkSourceFiles(root string, fn func(relPath string, content []byte) error)
 		}
 	}
 	return nil
+}
+
+// FileDecision records whether one file would be semantically indexed, and
+// the skip reason when it wouldn't.
+type FileDecision struct {
+	Path   string `json:"path"`
+	Index  bool   `json:"index"`
+	Reason string `json:"reason,omitempty"`
+	Size   int64  `json:"size"`
+}
+
+// AuditRepoFiles classifies every tracked file under root with the same rules
+// IndexRepoSemantic applies, without embedding anything. For non-git
+// directories it walks the filesystem instead; there the pruned trees
+// (node_modules, .build, ...) are not descended into, so their contents don't
+// appear as individual decisions.
+func AuditRepoFiles(root string) ([]FileDecision, error) {
+	rels, err := rawGitFiles(root)
+	if err != nil {
+		if rels, err = rawWalkFiles(root); err != nil {
+			return nil, fmt.Errorf("list files in %s: %w", root, err)
+		}
+	}
+	ignore := cslignore.Load(root)
+	out := make([]FileDecision, 0, len(rels))
+	for _, rel := range rels {
+		d := FileDecision{Path: rel}
+		if ignore.Match(rel) {
+			d.Reason = "matched .cslignore"
+			out = append(out, d)
+			continue
+		}
+		if reason := skipReasonForName(rel); reason != "" {
+			d.Reason = reason
+			out = append(out, d)
+			continue
+		}
+		abs := filepath.Join(root, rel)
+		info, statErr := os.Stat(abs)
+		if statErr != nil || !info.Mode().IsRegular() {
+			d.Reason = "not a regular file"
+			out = append(out, d)
+			continue
+		}
+		d.Size = info.Size()
+		if info.Size() > maxFileSize {
+			d.Reason = "over the 1MB size cap"
+			out = append(out, d)
+			continue
+		}
+		content, readErr := os.ReadFile(abs)
+		switch {
+		case readErr != nil:
+			d.Reason = "unreadable"
+		case looksLikeBinary(content):
+			d.Reason = "binary content"
+		case looksLikeData(content):
+			d.Reason = "serialized data (over-long lines)"
+		default:
+			d.Index = true
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// rawWalkFiles walks the filesystem for non-git directories, pruning hidden
+// and build/vendor trees but applying no per-file filters.
+func rawWalkFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			base := filepath.Base(path)
+			if strings.HasPrefix(base, ".") && path != root {
+				return filepath.SkipDir
+			}
+			if skipDirSegments[strings.ToLower(base)] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	})
+	return files, err
 }
 
 // countSourceFiles returns the number of indexable source files under root.

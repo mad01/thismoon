@@ -45,6 +45,34 @@ when you know the behavior, hybrid when you're not sure which you have.
 `csl index --semantic-all` (or the per-repo `--semantic --repo <name>`)
 builds the vector index in three steps per repo:
 
+Before any of them, csl decides which files are worth embedding at all
+(`internal/semantic/index.go`). The candidate list is `git ls-files` — only
+tracked files, so anything gitignored never reaches the chunker; non-git
+directories fall back to a filesystem walk. A tracked file is then dropped
+when it sits in a build or vendored tree (`.build`, `DerivedData`, `Pods`,
+`target`, `node_modules`, `vendor`, asset catalogs, Xcode project bundles),
+when it is a lockfile or ML-model metadata file (`package-lock.json`,
+`go.sum`, `tokenizer.json`, `vocab.json`), when its extension marks binary
+or media content, when it exceeds 1MB, or when a content sniff finds null
+bytes (compiled binary) or kilobyte-long lines (serialized data). The rules
+run on *tracked* files deliberately: a committed Swift `.build/` directory
+or a bundled tokenizer vocabulary is tracked, text, and under the size cap,
+yet embedding it would bury real source in retrieval noise.
+
+A repo can extend these rules with a `.cslignore` file at its root: one
+glob per line, `#` comments allowed. Patterns match repo-relative paths —
+`*` stops at path separators, `**` crosses them, a trailing `/` covers the
+whole tree under a directory, and a leading `/` anchors the pattern to the
+repo root (unanchored patterns match at any depth). So `models/` drops
+every file under any `models` directory, and `/docs/generated/` only the
+root-level one. Unlike the built-in rules above, `.cslignore` applies to
+both indexes — matched files are excluded from lexical (zoekt) search and
+from semantic embedding.
+
+`csl semantic files [path]` prints the decision for every tracked file
+under a path; `--skipped` shows what was filtered and why, including
+`.cslignore` matches.
+
 1. **Chunking.** Each source file is split into chunks
    (`internal/semantic/chunk.go`). For languages with a tree-sitter
    grammar, chunks follow declarations — a function, method, or type with
