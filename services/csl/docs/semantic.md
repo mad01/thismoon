@@ -1,0 +1,143 @@
+# Semantic search
+
+How csl's meaning-based search works: what lexical and semantic search each
+are, how the semantic index gets built, what happens on a query, and how to
+run a different embedding model per machine.
+
+## Lexical vs semantic, in general
+
+The two backends answer different questions.
+
+**Lexical search** matches the literal text you typed. An indexer (zoekt
+here) builds an inverted index, a map from trigrams to the files and
+positions where they occur, so a query like `Fingerprint` or `f:.*\.go$
+retry` becomes a handful of index lookups instead of a scan. Lexical search
+is exact, fast, and cheap; its results are easy to trust because a match
+*is* the string you asked for. Its weakness is vocabulary: it only finds
+what you can name. If the code calls it `RepoState` and you search for
+"checkout status", lexical search returns nothing.
+
+**Semantic search** matches meaning. An embedding model — a neural network
+trained so that texts with similar meaning land near each other — maps each
+piece of code to a vector (a list of a few hundred to a few thousand
+floats). At query time your question goes through the same model, and search
+becomes geometry: find the stored vectors closest to the query vector,
+usually by cosine similarity. This is why "compute a hash of a repo's git
+state" can find a function named `Fingerprint` that never contains the word
+"hash". The trade-offs are the mirror image of lexical: the model ranks
+results by a learned notion of similarity rather than an exact match,
+quality depends on what the model was trained on (a model that never saw
+code ranks code poorly), and building the index costs real compute because
+every chunk must pass through the model once.
+
+Neither wins outright, which is why csl also has **hybrid search**: run
+both backends, then fuse the two ranked lists with Reciprocal Rank Fusion
+(RRF), where each result scores `1/(k + rank)` summed across the lists it
+appears in. Exact-term queries ride the lexical list; paraphrased queries
+ride the semantic list; results both backends agree on rise to the top. See
+[architecture.md](architecture.md) for the fusion details.
+
+Rule of thumb: reach for lexical when you know the identifier, semantic
+when you know the behavior, hybrid when you're not sure which you have.
+
+## How indexing works
+
+`csl index --semantic-all` (or the per-repo `--semantic --repo <name>`)
+builds the vector index in three steps per repo:
+
+1. **Chunking.** Each source file is split into chunks
+   (`internal/semantic/chunk.go`). For languages with a tree-sitter
+   grammar, chunks follow declarations — a function, method, or type with
+   its body — so a vector corresponds to a unit a human would recognize.
+   Oversized declarations are split, and files without a grammar fall back
+   to fixed windows (120 lines, 20 overlap). Each chunk carries a
+   breadcrumb (repo, path, symbol) plus its body, capped at 6000
+   characters.
+2. **Embedding.** csl sends the chunks in batches to an Ollama server's
+   `/api/embed` endpoint (`internal/semantic/ollama.go`). csl bundles no
+   model; Ollama owns model loading, GPU use, and lifetime. Every request
+   pins `num_ctx` and `num_batch` to 8192 tokens so large chunks are
+   neither truncated nor crash the runner, and bulk runs unload the model
+   when they finish so it doesn't squat in memory.
+3. **Storing.** Vectors land in one gob file per repo under
+   `~/.config/csl/semantic-index/`, alongside each file's content hash, the
+   chunker version, and the vector dimensionality.
+
+Re-runs are incremental: a file whose content hash is unchanged is skipped
+entirely, so a rebuild after touching one file re-embeds one file. Two
+recorded invariants force a wider rebuild automatically — if the store's
+chunker version doesn't match the binary's, or its dimensionality doesn't
+match the configured model's, the store is dropped and the repo re-embedded
+from scratch. Stale vectors are never silently mixed with fresh ones.
+
+When `semantic.sync: true` is set, `csl sync` runs the same per-repo
+embedding pass over repos whose lexical index changed, best-effort, after
+the pull.
+
+## How a query works
+
+A semantic query (`csl semantic`, `csl_semantic_search`, the web UI, or the
+semantic half of hybrid) does the inverse of indexing, once:
+
+1. The query string is embedded through the same Ollama model. For
+   instruction-tuned models (the qwen3-embedding family) csl prepends a
+   retrieval instruction to the query — those models rank better when the
+   query states its task — while documents are always embedded bare.
+   Models without instruction tuning get the bare query; the prefix would
+   be embedded as literal text and hurt ranking.
+2. The query vector is compared against every stored chunk vector by
+   cosine similarity, in-process — the model sees only the query, never
+   your code, at search time.
+3. The top-k chunks are expanded back to source snippets with their
+   repo/path/line positions.
+
+The daemon serves this from stores it holds in memory when
+`semantic.enabled: true`; otherwise the caller loads the stores for that
+one query. Either way the expensive part is the single query embed —
+milliseconds once the model is warm. Ollama keeps the model resident for 20
+minutes after a request (`keep_alive`), so the first query after idle pays
+a model load of a second or two and the rest of the session doesn't.
+
+Lexical queries never touch the model or Ollama; with `semantic.enabled`
+off, csl has no Ollama dependency at all.
+
+## Choosing and changing the model
+
+The embedding model is per-machine configuration, not a build decision:
+
+```yaml
+semantic:
+  enabled: true
+  ollama_url: http://localhost:11434     # default
+  embed_model: qwen3-embedding:0.6b      # default
+  dim: 1024                              # must match the model's output
+```
+
+Change `embed_model` and `dim`, pull the model (`ollama pull <model>`), and
+run `csl index --semantic-all`. The dimensionality mismatch against the old
+stores triggers the automatic full re-embed described above — no manual
+cleanup. The only hard rule: query and index vectors must come from the
+same model, which the dim check enforces for you (except between models
+that share a dimensionality — after swapping between two 768-dim models,
+force a rebuild yourself).
+
+Models that work well here, all served by Ollama:
+
+| Model | Dim | Context | Character |
+|---|---|---|---|
+| `qwen3-embedding:0.6b` | 1024 | 32k | Default. Strongest code retrieval; heaviest to index with |
+| `unclemusclez/jina-embeddings-v2-base-code:f16` | 768 | 8k | Code-trained, ~4x faster to index than qwen3; the budget pick for large repo sets |
+| `nomic-embed-text` | 768 | 8k | General-purpose; fine on prose, weaker on code |
+
+Anything you point csl at needs a context window comfortably above the
+chunk budget (6000 characters is roughly 1500–2000 tokens); a 512-token
+model would silently truncate most chunks. Since `ollama_url` is also
+config, the same mechanism reaches a model served on another machine —
+useful for pushing a bulk index build off a laptop — as long as queries and
+index builds keep hitting the same model.
+
+## See also
+
+- [Architecture](architecture.md): daemon lifecycle and hybrid fusion.
+- [Configuration](configuration.md): every `semantic.*` key.
+- [CLI reference](cli.md): `csl index`, `csl semantic`, `csl hybrid` flags.

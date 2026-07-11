@@ -271,4 +271,4 @@ what `webkit.js` polls every ~5s to auto-reload on a CSS/JS change.
 - Recipe: `recipes/csl/recipe.toml` (this repo)
 - Shared UI package: `webkit/` at the repo root
 - Provenance: `docs/MIGRATED-FROM.md` (imported from `github.com/mad01/code-search-local`)
-- Deep-dive docs (not part of this pass): `docs/architecture.md`, `docs/mcp.md`, `docs/cli.md`, `docs/configuration.md`, `docs/getting-started.md`, `docs/web.md`, `docs/hooks.md`
+- Deep-dive docs (not part of this pass): `docs/architecture.md`, `docs/mcp.md`, `docs/cli.md`, `docs/configuration.md`, `docs/getting-started.md`, `docs/semantic.md`, `docs/web.md`, `docs/hooks.md`

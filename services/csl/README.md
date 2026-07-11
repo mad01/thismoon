@@ -199,6 +199,7 @@ Further docs:
 - [Configuration](docs/configuration.md): config file, paths, environment.
 - [CLI reference](docs/cli.md): every subcommand and flag.
 - [Web UI](docs/web.md): `csl web` browser UI and JSON API.
+- [Semantic search](docs/semantic.md): lexical vs semantic, the vector index, embedding models.
 - [Hooks](docs/hooks.md): the deprecated post-merge hook installer and the suspenders migration path.
 - [MCP server reference](docs/mcp.md): `csl mcp` tool reference for Claude Code.
 - [Architecture](docs/architecture.md): how the daemon, index, and MCP adapter fit together.

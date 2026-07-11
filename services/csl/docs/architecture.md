@@ -37,6 +37,8 @@ The CLI and the MCP server are both thin shells over the same internal packages.
 | `internal/repo/config` | Loads and parses `~/.config/csl/config.yaml` |
 | `internal/repo/finder` | Concurrent filesystem walk that discovers git repos and parses `[remote "origin"]` URLs |
 | `internal/search` | Indexing (`IndexRepo`, `IndexRepos`), searching (`Search`, `SearchWith`), counting, query validation, shard integrity |
+| `internal/semantic` | Vector search: tree-sitter chunking, embedding via Ollama (`OllamaEmbedder`), per-repo vector stores, cosine ranking |
+| `internal/hybrid` | Reciprocal Rank Fusion of the lexical and semantic result lists |
 | `internal/daemon` | gRPC server (`Serve`), client helpers (`SearchVia`, `CountVia`, `Ping`, `Shutdown`), lifecycle (`StartBackground`, `EnsureDaemon`, PID file management) |
 | `internal/daemon/proto` | Protobuf-generated gRPC types |
 | `internal/mcpserver` | MCP tool handlers. Shares the same daemon-first-then-fallback path as `internal/cli` |
@@ -56,7 +58,7 @@ Index freshness is checked once per CLI call via `search.CheckStaleness()`. Stal
 ### `csl mcp` → Claude Code tool call
 
 1. Claude Code spawns `csl mcp` as a subprocess and sends an `initialize` JSON-RPC message over stdin.
-2. `internal/mcpserver.New()` registers eight `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
+2. `internal/mcpserver.New()` registers twelve `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
 3. A `tools/call` for `csl_search` lands in `handleSearch`, which follows the same daemon-first-then-fallback pattern as the CLI (minus the stderr progress output).
 4. When Claude Code closes the session, stdin EOF causes the server loop to return. The process exits.
 
@@ -142,6 +144,60 @@ opts := SearchOptions{
 ```
 
 That string is parsed by `zoekt/query.Parse`, simplified, and passed to the searcher. Match results include the matching line, line/column, and context lines when requested.
+
+## Semantic index
+
+The vector index lives beside the lexical one:
+
+```
+~/.config/csl/semantic-index/
+└── <org>_<repo>.gob      # one store per repo: chunk vectors + metadata
+```
+
+Each store records, per file, a content hash and the chunk vectors, plus two
+store-wide invariants: the chunker version and the vector dimensionality.
+`IndexRepoSemantic` skips any file whose content hash is unchanged, so
+re-runs are incremental; a mismatch on either invariant drops the whole
+store and re-embeds the repo, so vectors produced under different rules are
+never mixed.
+
+### The Ollama boundary, and why
+
+Embedding runs out-of-process: `internal/semantic.OllamaEmbedder` POSTs
+chunk batches to an Ollama server's `/api/embed` and gets vectors back.
+csl bundles no model and links no inference runtime.
+
+An earlier design embedded in-process through ONNX Runtime with a
+compiled-in all-MiniLM-L6-v2 model. It worked, but every property that
+mattered was fixed at build time: the model (trained on prose, not code),
+its 512-token context (which forced ~900-character chunks that cut
+functions mid-body), and a native-library dependency that complicated every
+build. Moving the model behind an HTTP boundary inverts all three:
+
+- **The model is per-machine config** (`semantic.ollama_url`,
+  `semantic.embed_model`, `semantic.dim`), not a build decision. A laptop
+  can run a heavier code-trained model while a constrained machine points
+  at a lighter one — same binary.
+- **Long-context models fit whole declarations.** The chunk budget is 6000
+  characters, and requests pin `num_ctx`/`num_batch` at 8192 tokens so
+  nothing is silently truncated (and oversized batches don't crash the
+  runner, which Ollama's 2048-token default physical batch does).
+- **Ollama owns model lifetime and the GPU.** csl asks for a 20-minute
+  `keep_alive` so interactive queries hit a warm model, and explicitly
+  unloads after bulk index runs so a rebuild doesn't leave the model
+  resident. Other Ollama consumers (other tools, other models) coexist
+  under the same scheduler.
+
+The cost is a runtime dependency: semantic indexing and semantic/hybrid
+queries need Ollama up with the configured model pulled (`CheckModel`
+preflights this and says what to pull). Lexical search never touches
+Ollama, so the dependency is scoped to the features that need it.
+
+The daemon loads the vector stores at startup when `semantic.enabled:
+true` and serves semantic queries from memory over the same gRPC socket;
+without the daemon, callers load stores in-process for the one query. See
+[semantic.md](semantic.md) for the chunking/query pipeline and model
+selection.
 
 ## Hybrid search (RRF)
 

@@ -4,19 +4,14 @@ This walks from a blank machine to your first cross-repo search. Allow about fiv
 
 ## Prerequisites
 
-- Go 1.25 or newer. Check with `go version`.
+- Go 1.26 or newer. Check with `go version`.
+- Optional, for semantic search only: [Ollama](https://ollama.com) (step 8).
 - `git` on `PATH`. `csl` reads `.git/config` directly for repo names, but uses `git` for pull and fingerprinting.
 - At least one local git checkout.
 
 ## 1. Install
 
-```sh
-go install github.com/mad01/thismoon/services/csl/cmd/csl@latest
-```
-
-This puts `csl` in `$(go env GOBIN)` (or `$(go env GOPATH)/bin` if `GOBIN` is unset). Make sure that directory is on your `PATH`.
-
-From a checkout:
+csl builds from a checkout only: code chunking compiles tree-sitter grammars via cgo, so `go install .../csl@latest` isn't a supported install path.
 
 ```sh
 git clone https://github.com/mad01/thismoon.git
@@ -129,10 +124,35 @@ Expected output:
 csl: csl mcp - ✓ Connected
 ```
 
-From a Claude Code session, the agent can now call `csl_search`, `csl_repo_lookup`, `csl_read`, and the seven other `csl_*` tools directly. See the [MCP reference](mcp.md) for per-tool contracts.
+From a Claude Code session, the agent can now call `csl_search`, `csl_repo_lookup`, `csl_read`, and the nine other `csl_*` tools directly. See the [MCP reference](mcp.md) for per-tool contracts.
+
+## 8. Optional: semantic search
+
+Everything so far is lexical: exact text matching with no extra dependencies. Semantic search (match by meaning: "retry failed requests" finds the backoff loop whatever it's named) needs a local [Ollama](https://ollama.com) server with an embedding model pulled:
+
+```sh
+brew install ollama
+brew services start ollama
+ollama pull qwen3-embedding:0.6b
+```
+
+Enable it and build the vector index:
+
+```yaml
+semantic:
+  enabled: true
+```
+
+```sh
+csl index --semantic-all
+csl semantic "walk directories looking for git repos"
+```
+
+The first build embeds every repo and takes a while; later runs only re-embed changed files. `csl hybrid <query>` fuses both backends. See [semantic search](semantic.md) for how it works and how to pick a different model.
 
 ## Next
 
 - [CLI reference](cli.md) — every subcommand and flag.
 - [Configuration reference](configuration.md) — every file under `~/.config/csl/`.
+- [Semantic search](semantic.md) — lexical vs semantic, the vector index, embedding models.
 - [Architecture](architecture.md) — how the daemon, index, and MCP server fit together.

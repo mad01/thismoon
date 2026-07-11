@@ -21,29 +21,75 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `semantic.ollama_url` | string | no (default `http://localhost:11434`) | Base URL of the Ollama server that serves the embedding model. |
 | `semantic.embed_model` | string | no (default `qwen3-embedding:0.6b`) | Ollama embedding model. Must be pulled (`ollama pull`). Changing it triggers a full re-embed on the next index run. |
 | `semantic.dim` | int | no (default `1024`) | Vector dimensionality of `embed_model`. Must match the model. |
+| `sync.concurrency` | int | no (default `8`) | Parallel `git pull` workers for `csl sync`. `--concurrency` on the command line overrides it. |
+| `daemon.idle_timeout_minutes` | int | no (default `10`) | How long the search daemon stays alive with no queries. Higher values keep the zoekt shards and semantic stores warm at the cost of resident memory. |
 
-Example:
+Every key with its default, in one place:
 
 ```yaml
+# Required: roots to walk for git repos. Tildes expand; missing paths are
+# skipped silently.
 dirs:
   - ~/code/src/github.com
-  - ~/code/src/github.com/myorg
   - ~/workspace
 
-# Restrict indexing to specific hosts. Useful when another search backend
-# already covers a subset of your repos and you want to avoid duplicates.
+# Restrict indexing to specific git hosts. Useful when another search
+# backend already covers a subset of your repos. Empty/omitted = index
+# every discovered repo; non-empty also drops repos with no remote.
 index:
   hosts:
     - github.com
     - githost.example.com
 
+# Repos to keep out of the index entirely (lexical and semantic), matched
+# by absolute path or org/repo name. `enabled` only gates the deprecated
+# `csl hooks install`; the exclude list itself is always live.
 hooks:
   post_merge:
-    enabled: true
+    enabled: false
     exclude:
       - ~/workspace/large-monorepo
       - myorg/big-monorepo
+
+# Semantic (vector) search. All optional; see the section below.
+semantic:
+  enabled: false                          # daemon loads embedder + vector index
+  sync: false                             # `csl sync` also re-embeds changed repos
+  ollama_url: http://localhost:11434      # default
+  embed_model: qwen3-embedding:0.6b       # default; must be pulled in ollama
+  dim: 1024                               # must match embed_model
+
+# `csl sync` pull parallelism.
+sync:
+  concurrency: 8
+
+# Search daemon idle exit.
+daemon:
+  idle_timeout_minutes: 10
 ```
+
+### What you can and can't toggle
+
+- **Lexical search is always on.** It's the core of the tool and has no
+  disable switch or external dependency. The index builds automatically on
+  the first search and refreshes when repo fingerprints change. You control
+  its scope, not its existence: `index.hosts` allowlists by git host,
+  `hooks.post_merge.exclude` blocklists individual repos (both lexical and
+  semantic indexing respect it).
+- **Semantic search is opt-in at three separate levels.** The index only
+  exists after an explicit `csl index --semantic-all`; the daemon only loads
+  it when `semantic.enabled: true`; and it only auto-refreshes during
+  `csl sync` when `semantic.sync: true`. Leave everything off and csl never
+  talks to Ollama.
+- **Hybrid has no switch of its own.** `csl hybrid` fuses whatever is
+  available and degrades to lexical-only when the semantic index isn't
+  built.
+- **Chunking isn't configurable.** Chunk boundaries and the 6000-character
+  budget are compile-time decisions tied to the chunker version; changing
+  them means a new binary, which triggers the automatic re-embed. The
+  embedding model behind the chunks is config (`semantic.embed_model`).
+- **There is no semantic-only repo scoping yet.** The exclude list removes
+  a repo from both indexes; you can't currently keep a repo lexical-only.
 
 ### Semantic search
 
@@ -78,6 +124,9 @@ All paths below are relative to `~/.config/csl/`.
 | `config.yaml` | The config file above. |
 | `search-index/` | Zoekt index directory. Contains `*.zoekt` shard files and `state.json`. |
 | `search-index/state.json` | Per-repo fingerprints used to decide which repos need re-indexing. |
+| `search-index/.csl-sync.lock` | Lock file guarding against concurrent `csl sync` runs racing on `state.json`. |
+| `semantic-index/` | Per-repo vector stores (`<org>_<repo>.gob`), written by `csl index --semantic*`. No model files live here — embedding goes through Ollama. |
+| `reindex.queue` | Repo paths appended by the suspenders `csl-reindex` post-merge hook, drained by `csl sync` or `csl index --drain`. |
 | `search-daemon.sock` | Unix socket the in-memory gRPC search daemon listens on. |
 | `search-daemon.pid` | PID file for the running daemon process. |
 | `search-daemon.log` | Daemon stdout/stderr. Rotated by lumberjack at 5 MB with one backup. |
@@ -135,4 +184,4 @@ csl index --clean           # removes ~/.config/csl/search-index/
 csl search "anything"       # rebuilds the index on next search
 ```
 
-`--clean` removes both the shards and `state.json`, so the next search re-indexes every configured repo. The config file is not touched.
+`--clean` removes both the shards and `state.json`, so the next search re-indexes every configured repo. The config file is not touched, and neither is the semantic index — to reset that too, remove `~/.config/csl/semantic-index/` and rebuild with `csl index --semantic-all` (or just rebuild: a model/dim/chunker change re-embeds automatically without the manual delete).
