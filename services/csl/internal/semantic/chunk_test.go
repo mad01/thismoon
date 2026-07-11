@@ -458,32 +458,32 @@ kind: Other
 }
 
 func TestChunkFileFallbackWindows(t *testing.T) {
-	// 95 lines of unknown-extension content => windows of 40 with 10 overlap,
-	// i.e. stride 30: starts at 1, 31, 61, 91 => 4 windows.
+	// 295 lines of unknown-extension content => windows of 120 with 20 overlap,
+	// i.e. stride 100: starts at 1, 101, 201 => 3 windows.
 	var b strings.Builder
-	for i := 1; i <= 95; i++ {
+	for i := 1; i <= 295; i++ {
 		b.WriteString("line content here\n")
 	}
 	chunks, err := ChunkFile("demo/repo", "data.txt", "", []byte(b.String()))
 	if err != nil {
 		t.Fatalf("ChunkFile: %v", err)
 	}
-	if len(chunks) != 4 {
-		t.Fatalf("got %d windows, want 4 (%v)", len(chunks), kindSummary(chunks))
+	if len(chunks) != 3 {
+		t.Fatalf("got %d windows, want 3 (%v)", len(chunks), kindSummary(chunks))
 	}
 	first := chunks[0]
 	if first.Kind != "window" {
 		t.Errorf("fallback Kind = %q, want \"window\"", first.Kind)
 	}
-	if first.StartLine != 1 || first.EndLine != 40 {
-		t.Errorf("first window lines = %d-%d, want 1-40", first.StartLine, first.EndLine)
+	if first.StartLine != 1 || first.EndLine != 120 {
+		t.Errorf("first window lines = %d-%d, want 1-120", first.StartLine, first.EndLine)
 	}
-	if chunks[1].StartLine != 31 {
-		t.Errorf("second window StartLine = %d, want 31", chunks[1].StartLine)
+	if chunks[1].StartLine != 101 {
+		t.Errorf("second window StartLine = %d, want 101", chunks[1].StartLine)
 	}
 	last := chunks[len(chunks)-1]
-	if last.EndLine != 95 {
-		t.Errorf("last window EndLine = %d, want 95 (clamped)", last.EndLine)
+	if last.EndLine != 295 {
+		t.Errorf("last window EndLine = %d, want 295 (clamped)", last.EndLine)
 	}
 	if !strings.Contains(first.EmbedText, "// File: data.txt") {
 		t.Errorf("fallback EmbedText missing breadcrumb: %q", first.EmbedText)

@@ -12,10 +12,10 @@ wave = 0
 # (packages.code_search_local, hooks.builds.csl_web_service) so ralph state
 # carries over at cutover — item keys are global, not namespaced per recipe.
 #
-# `make build` prefetches the ONNX runtime libs into ~/.local/share/csl/ortlib
-# (idempotent) and builds with -tags ORT — semantic search works out of the
-# box. Machine wiring stays in the consuming repo: the ~/.config/csl
-# config.yaml symlink and the MCP registration (claude-mcp servers.json).
+# Semantic search embeds via a local Ollama server (qwen3-embedding:0.6b by
+# default); pulling the model and running Ollama are machine wiring, like the
+# ~/.config/csl config.yaml symlink and the MCP registration (claude-mcp
+# servers.json) — all of it stays in the consuming repo.
 
 [packages.code_search_local]
 source = "local"

@@ -396,13 +396,10 @@ func filterReposByName(repos []finder.Repo, name string) []finder.Repo {
 
 // runIndexSemantic builds the semantic embedding index for the discovered
 // repos (optionally filtered by repoFilter). It is additive to the lexical
-// index and lives under its own directory. On first run it downloads the model.
+// index and lives under its own directory. Embedding runs via Ollama; the
+// configured model must be pulled first.
 func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 	semDir, err := semantic.DefaultSemanticIndexDir()
-	if err != nil {
-		return err
-	}
-	modelDir, err := semantic.DefaultModelDir()
 	if err != nil {
 		return err
 	}
@@ -425,19 +422,14 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 	}
 
 	w := cmd.ErrOrStderr()
-	if _, statErr := os.Stat(modelDir); os.IsNotExist(statErr) {
-		fmt.Fprintln(w, "downloading embedding model (first run, this may take a moment)...")
-	}
 	ctx := context.Background()
-	if err := semantic.EnsureModel(ctx, modelDir); err != nil {
-		return fmt.Errorf("ensure embedding model: %w", err)
+	emb := semantic.NewOllamaEmbedder(cfg.Semantic.OllamaURL, cfg.Semantic.EmbedModel, cfg.Semantic.Dim)
+	if err := emb.CheckModel(ctx); err != nil {
+		return fmt.Errorf("embedding backend not ready: %w", err)
 	}
-
-	emb, err := semantic.NewHugotEmbedder(ctx, modelDir)
-	if err != nil {
-		return fmt.Errorf("load embedding model: %w", err)
-	}
-	defer func() { _ = emb.Close() }()
+	// Bulk indexing shouldn't leave the model resident for the keep-alive
+	// window once the run is over.
+	defer func() { _ = emb.Unload(context.Background()) }()
 
 	tty := false
 	if f, ok := w.(*os.File); ok {

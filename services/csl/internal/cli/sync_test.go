@@ -29,6 +29,12 @@ func (f fakeSyncEmbedder) Embed(_ context.Context, texts []string) ([][]float32,
 	return out, nil
 }
 
+func (f fakeSyncEmbedder) EmbedQuery(_ context.Context, _ string) ([]float32, error) {
+	v := make([]float32, f.dim)
+	v[0] = 1
+	return v, nil
+}
+
 func (f fakeSyncEmbedder) Dim() int { return f.dim }
 
 func resetSyncFlags() {

@@ -10,16 +10,15 @@ The CLI, `csl mcp`, `csl web`, and the search daemon share the same internal sea
 
 ## Install
 
-Builds from a checkout only. Semantic search links `libtokenizers.a` at build time and loads `libonnxruntime.dylib` at runtime via cgo, with no build-tag opt-out, so `go install .../csl@latest` can't fetch or link those and isn't a supported install path. This is also why csl's entry in the release artifact matrix is a no-op; the fleet installs it from source (see `docs/MIGRATED-FROM.md`).
+Builds from a checkout only. Code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out, so `go install .../csl@latest` isn't a supported install path. This is also why csl's entry in the release artifact matrix is a no-op; the fleet installs it from source (see `docs/MIGRATED-FROM.md`).
 
 ```sh
 git clone https://github.com/mad01/thismoon.git
 cd thismoon/services/csl
-make install   # fetches native libs (macOS arm64), builds with version embedded,
-                # copies to ~/code/bin/csl, codesigns
+make install   # builds with version embedded, copies to ~/code/bin/csl, codesigns
 ```
 
-Requires the Go toolchain pinned in the repo's `go.mod` (1.26.2) and `git` on `PATH`.
+Requires the Go toolchain pinned in the repo's `go.mod` (1.26.2) and `git` on `PATH`. Semantic search additionally needs a running [Ollama](https://ollama.com) with the embedding model pulled (`ollama pull qwen3-embedding:0.6b`); lexical search works without it.
 
 Verify:
 
@@ -55,8 +54,11 @@ sync:
   concurrency: 8       # parallel `csl sync` pull workers (default 8)
 
 semantic:
-  enabled: false   # load the semantic index + embedding model in the daemon
+  enabled: false   # load the semantic index + embedder in the daemon
   sync: false      # also re-embed changed repos on `csl sync` (best-effort)
+  # ollama_url: http://localhost:11434   # Ollama server for embeddings
+  # embed_model: qwen3-embedding:0.6b    # embedding model (must be pulled)
+  # dim: 1024                            # its vector dimensionality
 
 daemon:
   idle_timeout_minutes: 10   # how long the search daemon stays alive when idle
@@ -80,7 +82,7 @@ csl sync                                 # pull every repo (ff-only), reindex wh
 csl doctor                               # check index + daemon health
 ```
 
-First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first (downloads a ~90 MB embedding model on first use).
+First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull qwen3-embedding:0.6b`).
 
 `csl hooks install` (legacy per-repo post-merge hook installer) is deprecated: suspenders now owns git hooks; see Configuration.
 
@@ -177,7 +179,7 @@ Everything lives under `~/.config/csl/`:
 
 - `config.yaml`: see Configuration.
 - `search-index/`: lexical index (`state.json` per-repo fingerprint/branch/dirty/indexed-at, plus `<shard-hash>.zoekt` shard files).
-- `semantic-index/`: per-repo vector stores, plus `semantic-index/models/` for the downloaded embedding model.
+- `semantic-index/`: per-repo vector stores (embeddings come from Ollama; no model files live here).
 - `search-daemon.sock`, `search-daemon.pid`, `search-daemon.log`: the search daemon's socket, PID file, and rotated log.
 - `reindex.queue`: repo paths queued by the suspenders `csl-reindex` post-merge hook; drained by `csl sync` / `csl index --drain`.
 

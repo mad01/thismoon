@@ -10,9 +10,10 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
-// TestManualE2E exercises the full real stack (download model, chunk, embed,
-// store, search, expand) against the thismoon repo itself. Guarded so
-// `go test ./...` stays hermetic; run with CSL_MANUAL_E2E=1.
+// TestManualE2E exercises the full real stack (chunk, embed via Ollama, store,
+// search, expand) against the thismoon repo itself. Guarded so `go test ./...`
+// stays hermetic; run with CSL_MANUAL_E2E=1 and the default model pulled
+// (ollama pull qwen3-embedding:0.6b).
 func TestManualE2E(t *testing.T) {
 	if os.Getenv("CSL_MANUAL_E2E") == "" {
 		t.Skip("set CSL_MANUAL_E2E=1 to run the real-model e2e")
@@ -25,19 +26,13 @@ func TestManualE2E(t *testing.T) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
 
-	dir := t.TempDir()
-	modelDir := filepath.Join(dir, "models")
-	idxDir := filepath.Join(dir, "idx")
+	idxDir := filepath.Join(t.TempDir(), "idx")
 
-	t.Log("ensuring model...")
-	if err := EnsureModel(ctx, modelDir); err != nil {
-		t.Fatalf("EnsureModel: %v", err)
+	emb := NewOllamaEmbedder("", "", 0)
+	if err := emb.CheckModel(ctx); err != nil {
+		t.Fatalf("CheckModel: %v", err)
 	}
-	emb, err := NewHugotEmbedder(ctx, modelDir)
-	if err != nil {
-		t.Fatalf("NewHugotEmbedder: %v", err)
-	}
-	defer func() { _ = emb.Close() }()
+	defer func() { _ = emb.Unload(context.Background()) }()
 
 	repo := finder.Repo{Name: "mad01/thismoon", Path: repoRoot}
 	stats, err := IndexRepoSemantic(ctx, idxDir, repo, emb)

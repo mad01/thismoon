@@ -273,34 +273,16 @@ func runSemanticSync(ctx context.Context, w io.Writer, repos []finder.Repo, tty 
 		fmt.Fprintf(w, "semantic: skipped (%v)\n", err)
 		return
 	}
-	modelDir, err := semantic.DefaultModelDir()
-	if err != nil {
-		fmt.Fprintf(w, "semantic: skipped (%v)\n", err)
+	emb := semantic.NewDefaultEmbedder()
+	if err := emb.CheckModel(ctx); err != nil {
+		fmt.Fprintf(w, "semantic: skipped (embedding backend not ready: %v)\n", err)
 		return
 	}
-	needsDownload := semantic.NeedsModelDownload(modelDir)
-	if needsDownload {
-		fmt.Fprintf(w, "\nDownloading embedding model (first run, may take a moment)...")
-	}
-	if err := semantic.EnsureModel(ctx, modelDir); err != nil {
-		if needsDownload {
-			fmt.Fprintln(w)
-		}
-		fmt.Fprintf(w, "semantic: skipped (model unavailable: %v)\n", err)
-		return
-	}
-	if needsDownload {
-		fmt.Fprintln(w, " done")
-	}
-	fmt.Fprintf(w, "\nLoading embedding model...")
-	emb, err := semantic.NewHugotEmbedder(ctx, modelDir)
-	if err != nil {
-		fmt.Fprintf(w, " failed\nsemantic: skipped (embedder unavailable: %v)\n", err)
-		return
-	}
-	defer func() { _ = emb.Close() }()
+	// Bulk indexing shouldn't leave the model resident for the keep-alive
+	// window once the run is over.
+	defer func() { _ = emb.Unload(context.Background()) }()
 
-	fmt.Fprintf(w, " done\nSemantically indexing %d repo(s)...\n", len(repos))
+	fmt.Fprintf(w, "\nSemantically indexing %d repo(s)...\n", len(repos))
 	files, chunks, failed := semanticSyncRepos(ctx, w, semDir, emb, repos, tty)
 	fmt.Fprintf(w, "semantic: %d file(s) embedded, %d chunk(s)", files, chunks)
 	if failed > 0 {

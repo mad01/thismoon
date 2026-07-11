@@ -16,8 +16,11 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `index.hosts` | list of strings | no (default `[]`) | Allowlist of git hostnames. When non-empty, only repos whose remote origin hostname matches one of the listed values are indexed. An empty list means all discovered repos are included (no filtering). Repos with no remote are excluded whenever the list is non-empty. |
 | `hooks.post_merge.enabled` | bool | no (default `false`) | Master switch for the `csl hooks install` post-merge hook installer. See [hooks reference](hooks.md). |
 | `hooks.post_merge.exclude` | list of strings | no (default `[]`) | Repos to skip when installing hooks. Each entry matches against the repo's absolute path or its `org/repo` name. Tildes are expanded. |
-| `semantic.enabled` | bool | no (default `false`) | Whether the search daemon loads the embedding model and vector index at startup. When `false` the daemon serves lexical search only; the in-process `csl semantic` CLI, the `csl_semantic_search` MCP tool, and the web toggle still answer ad-hoc queries. See [semantic search](#semantic-search). |
+| `semantic.enabled` | bool | no (default `false`) | Whether the search daemon connects the embedder and loads the vector index at startup. When `false` the daemon serves lexical search only; the in-process `csl semantic` CLI, the `csl_semantic_search` MCP tool, and the web toggle still answer ad-hoc queries. See [semantic search](#semantic-search). |
 | `semantic.sync` | bool | no (default `false`) | Whether `csl sync` also re-embeds the changed files of changed repos after the lexical reindex. When `false`, embeddings refresh only via `csl index --semantic`. |
+| `semantic.ollama_url` | string | no (default `http://localhost:11434`) | Base URL of the Ollama server that serves the embedding model. |
+| `semantic.embed_model` | string | no (default `qwen3-embedding:0.6b`) | Ollama embedding model. Must be pulled (`ollama pull`). Changing it triggers a full re-embed on the next index run. |
+| `semantic.dim` | int | no (default `1024`) | Vector dimensionality of `embed_model`. Must match the model. |
 
 Example:
 
@@ -44,15 +47,19 @@ hooks:
 
 ### Semantic search
 
-Semantic (vector) search runs alongside the lexical zoekt index and is off by default. Build the index with `csl index --semantic-all`; the first run downloads the embedding model into `~/.config/csl/semantic-index/models`.
+Semantic (vector) search runs alongside the lexical zoekt index and is off by default. Embedding goes through a local [Ollama](https://ollama.com) server, so semantic features need Ollama running with the model pulled (`ollama pull qwen3-embedding:0.6b`); lexical search has no Ollama dependency. Build the index with `csl index --semantic-all`.
 
-- `semantic.enabled: true` lets the daemon load the model and vector index at startup, so the `csl_semantic_search` MCP tool and the web toggle answer from a warm daemon.
-- `semantic.sync: true` makes `csl sync` re-embed changed repos after the lexical reindex. The pass is incremental (only changed files) and best-effort: if the model or backend is unavailable, the lexical sync still succeeds. Leave it off to refresh embeddings manually with `csl index --semantic`.
+- `semantic.enabled: true` lets the daemon connect the embedder and load the vector index at startup, so the `csl_semantic_search` MCP tool and the web toggle answer from a warm daemon.
+- `semantic.sync: true` makes `csl sync` re-embed changed repos after the lexical reindex. The pass is incremental (only changed files) and best-effort: if Ollama or the model is unavailable, the lexical sync still succeeds. Leave it off to refresh embeddings manually with `csl index --semantic`.
+- `semantic.ollama_url`, `semantic.embed_model`, and `semantic.dim` override the embedding backend per machine. Changing the model or its dimensionality drops the existing vector stores and re-embeds everything on the next index run. Interactive queries keep the model warm in Ollama for 20 minutes; bulk index runs unload it when they finish.
 
 ```yaml
 semantic:
   enabled: true
   sync: false
+  # ollama_url: http://localhost:11434   # default
+  # embed_model: qwen3-embedding:0.6b    # default; must be pulled in ollama
+  # dim: 1024                            # must match embed_model
 ```
 
 ### Discovery rules

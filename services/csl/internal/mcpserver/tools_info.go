@@ -25,7 +25,7 @@ type semanticInfo struct {
 	Built        bool `json:"built"         jsonschema:"true when at least one per-repo vector store exists"`
 	Stores       int  `json:"stores"        jsonschema:"number of per-repo vector stores"`
 	Chunks       int  `json:"chunks"        jsonschema:"total embedded chunks across all stores"`
-	ModelPresent bool `json:"model_present" jsonschema:"true when the embedding model is downloaded; when false the first semantic query downloads ~90 MB"`
+	ModelPresent bool `json:"model_present" jsonschema:"true when Ollama is reachable and the configured embedding model is pulled; when false run: ollama pull qwen3-embedding:0.6b"`
 }
 
 // indexInfoOutput is the typed output of the csl_index_info tool.
@@ -86,7 +86,7 @@ func registerInfoTools(s *mcp.Server) {
 }
 
 func handleIndexInfo(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	_ indexInfoInput,
 ) (*mcp.CallToolResult, indexInfoOutput, error) {
@@ -138,11 +138,7 @@ func handleIndexInfo(
 			out.Semantic.Built = ix.Stores() > 0
 		}
 	}
-	if modelDir, err := semantic.DefaultModelDir(); err == nil {
-		if entries, err := os.ReadDir(modelDir); err == nil && len(entries) > 0 {
-			out.Semantic.ModelPresent = true
-		}
-	}
+	out.Semantic.ModelPresent = semantic.NewDefaultEmbedder().CheckModel(ctx) == nil
 
 	return nil, out, nil
 }

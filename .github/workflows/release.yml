@@ -57,9 +57,8 @@ jobs:
     env:
       TAG: ${{ fromJSON(needs.release-please.outputs.outputs_json)[format('{0}--tag_name', matrix.path)] }}
       COMPONENT_PATH: ${{ matrix.path }}
-    # csl ships no artifacts: it needs cgo (tree-sitter) plus ONNX runtime
-    # libs on the target machine, so a CGO_ENABLED=0 cross-compile cannot
-    # build it and a tarball would not run anyway — the fleet installs it
+    # csl ships no artifacts: it needs cgo (tree-sitter grammars), so a
+    # CGO_ENABLED=0 cross-compile cannot build it — the fleet installs it
     # from source via ralph. Guarding every step (not the job: the matrix
     # context is unavailable in a job-level `if`, and a matrix `exclude`
     # fails the workflow when csl releases alone) turns its matrix entry

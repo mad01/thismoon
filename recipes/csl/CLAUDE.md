@@ -11,11 +11,11 @@ not rename them.
 What stays in the consuming repo (machine wiring, per ADR-0006):
 
 - `~/.config/csl/config.yaml` symlink — which directories a machine indexes
-  is per-machine.
+  is per-machine, as is the semantic embedding model override
+  (`semantic.embed_model` / `semantic.dim`).
 - MCP registration — `csl mcp` in the claude-mcp recipe's `servers.json`.
+- Ollama and the embedding model pull (`ollama pull qwen3-embedding:0.6b`) —
+  semantic search needs a running Ollama; lexical search works without it.
 
-`make build` runs `scripts/fetch-ortlib.sh` first (idempotent) to prefetch the
-ONNX runtime libs into `~/.local/share/csl/ortlib`, then builds with
-`-tags ORT` so semantic search works. Release artifacts do not exist for csl
-(unconditional cgo — see the release.yml comment); this recipe is the only
-install path.
+Release artifacts do not exist for csl (tree-sitter is unconditional cgo — see
+the release.yml comment); this recipe is the only install path.

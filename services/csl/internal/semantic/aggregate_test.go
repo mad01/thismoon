@@ -122,13 +122,3 @@ func TestExpandHitMissingFile(t *testing.T) {
 		t.Fatalf("expected error for missing file")
 	}
 }
-
-func TestDefaultModelDir(t *testing.T) {
-	dir, err := DefaultModelDir()
-	if err != nil {
-		t.Fatalf("DefaultModelDir: %v", err)
-	}
-	if filepath.Base(dir) != "models" {
-		t.Fatalf("DefaultModelDir = %q, want .../models", dir)
-	}
-}

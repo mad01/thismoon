@@ -21,6 +21,11 @@ func (c *countingEmbedder) Embed(ctx context.Context, texts []string) ([][]float
 	return c.inner.Embed(ctx, texts)
 }
 
+func (c *countingEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+	c.calls++
+	return c.inner.EmbedQuery(ctx, query)
+}
+
 func (c *countingEmbedder) Dim() int { return c.inner.Dim() }
 
 // fakeRepoTree writes a tiny source tree: one .go file with two funcs plus a

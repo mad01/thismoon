@@ -76,10 +76,6 @@ func runSemantic(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	modelDir, err := semantic.DefaultModelDir()
-	if err != nil {
-		return err
-	}
 	filter := semantic.Filter{}
 	if semanticRepoFlag != "" {
 		filter.Repos = []string{semanticRepoFlag}
@@ -88,7 +84,7 @@ func runSemantic(cmd *cobra.Command, args []string) error {
 		filter.Langs = []string{semanticLangFlag}
 	}
 
-	results, available, err := semanticQuery(cmd, indexDir, modelDir, query, filter)
+	results, available, err := semanticQuery(cmd, indexDir, query, filter)
 	if err != nil {
 		return err
 	}
@@ -106,7 +102,7 @@ func runSemantic(cmd *cobra.Command, args []string) error {
 // to in-process. The bool reports whether the semantic index/model is ready.
 func semanticQuery(
 	cmd *cobra.Command,
-	indexDir, modelDir, query string,
+	indexDir, query string,
 	filter semantic.Filter,
 ) ([]semanticResult, bool, error) {
 	socketPath := daemon.DefaultSocketPath()
@@ -132,20 +128,14 @@ func semanticQuery(
 			)
 		}
 	}
-	return semanticInProcess(cmd, indexDir, modelDir, query, filter)
+	return semanticInProcess(indexDir, query, filter)
 }
 
 func semanticInProcess(
-	cmd *cobra.Command,
-	indexDir, modelDir, query string,
+	indexDir, query string,
 	filter semantic.Filter,
 ) ([]semanticResult, bool, error) {
-	emb, err := semantic.NewHugotEmbedder(context.Background(), modelDir)
-	if err != nil {
-		return nil, false, nil // model absent → unavailable, not an error
-	}
-	defer func() { _ = emb.Close() }()
-
+	emb := semantic.NewDefaultEmbedder()
 	results, err := semantic.SearchInProcess(
 		context.Background(), indexDir, emb, query, semanticKFlag, filter, semanticExpandFlag,
 	)

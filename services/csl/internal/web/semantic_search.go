@@ -61,10 +61,6 @@ func (s *Service) SemanticSearch(ctx context.Context, req SemanticRequest) (Sema
 	if err != nil {
 		return SemanticResult{}, fmt.Errorf("resolve semantic index dir: %w", err)
 	}
-	modelDir, err := semantic.DefaultModelDir()
-	if err != nil {
-		return SemanticResult{}, fmt.Errorf("resolve model dir: %w", err)
-	}
 	filter := semanticFilter(req.Repo, req.Lang)
 
 	// Daemon-first: the daemon serves both lexical and semantic from the warm
@@ -80,7 +76,7 @@ func (s *Service) SemanticSearch(ctx context.Context, req SemanticRequest) (Sema
 		// fallback == true signals ErrDaemonNotRunning → fall through.
 	}
 
-	return s.semanticInProcess(ctx, indexDir, modelDir, req.Query, k, filter, req.Expand)
+	return s.semanticInProcess(ctx, indexDir, req.Query, k, filter, req.Expand)
 }
 
 // semanticViaDaemon queries the daemon. The bool return is true when the caller
@@ -110,21 +106,16 @@ func (s *Service) semanticViaDaemon(
 	return SemanticResult{Available: true, Hits: hitsFromProto(resp.Hits)}, false, nil
 }
 
-// semanticInProcess runs the query without the daemon. A missing model or empty
-// index is reported as unavailable (with a build note), not an error.
+// semanticInProcess runs the query without the daemon. An empty index is
+// reported as unavailable (with a build note), not an error.
 func (s *Service) semanticInProcess(
 	ctx context.Context,
-	indexDir, modelDir, query string,
+	indexDir, query string,
 	k int,
 	filter semantic.Filter,
 	expand int,
 ) (SemanticResult, error) {
-	emb, err := semantic.NewHugotEmbedder(ctx, modelDir)
-	if err != nil {
-		return SemanticResult{Available: false, Note: semanticNotBuiltNote}, nil
-	}
-	defer func() { _ = emb.Close() }()
-
+	emb := semantic.NewDefaultEmbedder()
 	results, err := semantic.SearchInProcess(ctx, indexDir, emb, query, k, filter, expand)
 	if err != nil {
 		return SemanticResult{}, fmt.Errorf("semantic search: %w", err)

@@ -54,8 +54,8 @@ func registerSemanticTools(s *mcp.Server) {
 			"Complements csl_search (which does lexical/exact/regex matching): use csl_semantic_search when you don't know the exact symbol or wording — natural-language questions like 'where do we retry failed HTTP requests' or 'code that parses config files', and queries that should match synonyms and paraphrases rather than literal strings. " +
 			"Returns the top matching code chunks ranked by cosine similarity, each with its source snippet (widen it with expand). " +
 			"Filter by repo (substring) or lang (single language). " +
-			"Code is chunked by tree-sitter declarations (func/type/method) for Go, TypeScript, and Python, and by 40-line windows for everything else — so hits in those three languages align with whole declarations while other languages return coarser windows. " +
-			"Costs: the very first query ever downloads the embedding model (all-MiniLM-L6-v2, ~90 MB, 384-dim ONNX), and a cold query pays model load time; once the csl daemon is warm, queries are fast. " +
+			"Code is chunked by tree-sitter declarations for parseable languages and by 120-line windows for everything else — so hits in parseable languages align with whole declarations while other files return coarser windows. " +
+			"Costs: embedding runs via a local Ollama server (qwen3-embedding:0.6b by default, pulled with 'ollama pull'), so Ollama must be running; a cold query pays ~1-2s model load, then the model stays warm for 20 minutes. " +
 			"Requires a semantic index built with 'csl index --semantic-all'; if it is not built, the tool returns available=false with a note instead of an error.",
 	}, handleSemanticSearch)
 }
@@ -77,10 +77,6 @@ func handleSemanticSearch(
 	if err != nil {
 		return nil, semanticSearchOutput{}, fmt.Errorf("resolve semantic index dir: %w", err)
 	}
-	modelDir, err := semantic.DefaultModelDir()
-	if err != nil {
-		return nil, semanticSearchOutput{}, fmt.Errorf("resolve model dir: %w", err)
-	}
 	filter := semanticFilter(in.Repo, in.Lang)
 
 	// Daemon-first: the daemon loads both the lexical and semantic indexes, so
@@ -100,7 +96,7 @@ func handleSemanticSearch(
 		}
 	}
 
-	return semanticSearchInProcess(ctx, indexDir, modelDir, in.Query, k, filter, in.Expand)
+	return semanticSearchInProcess(ctx, indexDir, in.Query, k, filter, in.Expand)
 }
 
 // semanticSearchViaDaemon queries the daemon. The bool return is true when the
@@ -131,21 +127,16 @@ func semanticSearchViaDaemon(
 	return semanticSearchOutput{Available: true, Hits: hitsFromProto(resp.Hits)}, false, nil
 }
 
-// semanticSearchInProcess runs the query without the daemon. A missing model is
-// reported as unavailable (with a build note), not an error.
+// semanticSearchInProcess runs the query without the daemon. An unbuilt index
+// is reported as unavailable (with a build note), not an error.
 func semanticSearchInProcess(
 	ctx context.Context,
-	indexDir, modelDir, query string,
+	indexDir, query string,
 	k int,
 	filter semantic.Filter,
 	expand int,
 ) (*mcp.CallToolResult, semanticSearchOutput, error) {
-	emb, err := semantic.NewHugotEmbedder(ctx, modelDir)
-	if err != nil {
-		return nil, semanticSearchOutput{Available: false, Note: semanticNotBuiltNote}, nil
-	}
-	defer func() { _ = emb.Close() }()
-
+	emb := semantic.NewDefaultEmbedder()
 	results, err := semantic.SearchInProcess(ctx, indexDir, emb, query, k, filter, expand)
 	if err != nil {
 		return nil, semanticSearchOutput{}, fmt.Errorf("semantic search: %w", err)

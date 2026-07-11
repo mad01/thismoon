@@ -155,12 +155,9 @@ func (s *searchServer) SemanticSearch(
 	}
 
 	start := time.Now()
-	vecs, err := s.embedder.Embed(ctx, []string{req.GetQuery()})
+	vec, err := s.embedder.EmbedQuery(ctx, req.GetQuery())
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
-	}
-	if len(vecs) == 0 {
-		return nil, fmt.Errorf("embedder returned no vectors for query")
 	}
 	embedDur := time.Since(start)
 
@@ -169,7 +166,7 @@ func (s *searchServer) SemanticSearch(
 		k = 10
 	}
 
-	hits := s.semIndex.Search(vecs[0], k, semantic.Filter{
+	hits := s.semIndex.Search(vec, k, semantic.Filter{
 		Repos: req.GetRepos(),
 		Langs: req.GetLangs(),
 	})
@@ -303,16 +300,11 @@ func loadSemantic(ctx context.Context, srv *searchServer) {
 	}
 	srv.semIndex = idx
 
-	modelDir, err := semantic.DefaultModelDir()
-	if err != nil {
-		log.Printf("semantic: %d chunks across %d stores, model loaded=false (no model dir: %v)", idx.Len(), idx.Stores(), err)
-		return
-	}
-	emb, err := semantic.NewHugotEmbedder(ctx, modelDir)
-	if err != nil {
-		log.Printf("semantic: %d chunks across %d stores, model loaded=false (%v)", idx.Len(), idx.Stores(), err)
+	emb := semantic.NewDefaultEmbedder()
+	if err := emb.CheckModel(ctx); err != nil {
+		log.Printf("semantic: %d chunks across %d stores, embedder ready=false (%v)", idx.Len(), idx.Stores(), err)
 		return
 	}
 	srv.embedder = emb
-	log.Printf("semantic: %d chunks across %d stores, model loaded=true", idx.Len(), idx.Stores())
+	log.Printf("semantic: %d chunks across %d stores, embedder ready=true (ollama model %s)", idx.Len(), idx.Stores(), emb.Model)
 }

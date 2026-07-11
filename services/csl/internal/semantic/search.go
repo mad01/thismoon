@@ -3,11 +3,6 @@ package semantic
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/knights-analytics/hugot"
 )
 
 // Result is a semantic search Hit widened with the source snippet behind it.
@@ -37,15 +32,12 @@ func SearchInProcess(
 		return nil, nil
 	}
 
-	vecs, err := emb.Embed(ctx, []string{query})
+	vec, err := emb.EmbedQuery(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
-	if len(vecs) == 0 {
-		return nil, fmt.Errorf("embedder returned no vectors for query")
-	}
 
-	hits := idx.Search(vecs[0], k, f)
+	hits := idx.Search(vec, k, f)
 	results := make([]Result, len(hits))
 	for i, h := range hits {
 		snippet, expandErr := ExpandHit(h, expand) // best-effort
@@ -55,31 +47,4 @@ func SearchInProcess(
 		results[i] = Result{Hit: h, Snippet: snippet}
 	}
 	return results, nil
-}
-
-// NeedsModelDownload reports whether the embedding model is missing from modelDir.
-func NeedsModelDownload(modelDir string) bool {
-	subDir := strings.ReplaceAll(hugotModelName, "/", "_")
-	_, err := os.Stat(filepath.Join(modelDir, subDir))
-	return os.IsNotExist(err)
-}
-
-// EnsureModel makes sure the embedding model is present under modelDir,
-// downloading it from Hugging Face on first use. It is idempotent: if the model
-// subdirectory already exists it is a no-op (no network call).
-func EnsureModel(ctx context.Context, modelDir string) error {
-	subDir := strings.ReplaceAll(hugotModelName, "/", "_")
-	if _, err := os.Stat(filepath.Join(modelDir, subDir)); err == nil {
-		return nil // already downloaded
-	}
-	if err := os.MkdirAll(modelDir, 0o755); err != nil {
-		return fmt.Errorf("create model dir %s: %w", modelDir, err)
-	}
-
-	opts := hugot.NewDownloadOptions()
-	opts.OnnxFilePath = hugotOnnxFilename
-	if _, err := hugot.DownloadModel(ctx, hugotModelName, modelDir, opts); err != nil {
-		return fmt.Errorf("download embedding model %s: %w", hugotModelName, err)
-	}
-	return nil
 }

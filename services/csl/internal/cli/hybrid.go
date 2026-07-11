@@ -153,10 +153,6 @@ func hybridSemanticResults(cmd *cobra.Command, query string) ([]semantic.Result,
 	if err != nil {
 		return nil, false, err
 	}
-	modelDir, err := semantic.DefaultModelDir()
-	if err != nil {
-		return nil, false, err
-	}
 	filter := semantic.Filter{}
 	if hybridRepoFlag != "" {
 		filter.Repos = []string{hybridRepoFlag}
@@ -185,12 +181,7 @@ func hybridSemanticResults(cmd *cobra.Command, query string) ([]semantic.Result,
 		}
 	}
 
-	emb, err := semantic.NewHugotEmbedder(context.Background(), modelDir)
-	if err != nil {
-		return nil, false, nil // model absent → unavailable, not an error
-	}
-	defer func() { _ = emb.Close() }()
-
+	emb := semantic.NewDefaultEmbedder()
 	results, err := semantic.SearchInProcess(
 		context.Background(), indexDir, emb, query, hybridLimitFlag, filter, hybridExpandFlag,
 	)

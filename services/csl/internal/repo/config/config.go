@@ -57,6 +57,17 @@ type SemanticConfig struct {
 	// command. When true, the semantic pass runs after the lexical reindex and
 	// never fails the sync if the model or backend is unavailable.
 	Sync bool `yaml:"sync"`
+	// OllamaURL is the base URL of the Ollama server that serves the embedding
+	// model. Empty means http://localhost:11434.
+	OllamaURL string `yaml:"ollama_url"`
+	// EmbedModel is the Ollama embedding model. Empty means qwen3-embedding:0.6b.
+	// Changing the model (or its dimensionality) triggers a full re-embed of
+	// every store on the next index run.
+	EmbedModel string `yaml:"embed_model"`
+	// Dim is the embedding dimensionality of EmbedModel. Zero means 1024 (the
+	// qwen3-embedding:0.6b default). Must match the model — stores are compared
+	// against it to detect model swaps.
+	Dim int `yaml:"dim"`
 }
 
 // IndexConfig holds configuration that controls which repos are included in the search index.

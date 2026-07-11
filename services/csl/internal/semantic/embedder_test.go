@@ -28,6 +28,12 @@ func (f *fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float32, er
 	return out, nil
 }
 
+// EmbedQuery hashes the query like any document text — the fake has no
+// instruction tuning to exercise.
+func (f *fakeEmbedder) EmbedQuery(_ context.Context, query string) ([]float32, error) {
+	return hashVector(query, f.dim), nil
+}
+
 func (f *fakeEmbedder) Dim() int { return f.dim }
 
 // hashVector maps text deterministically into a dim-length vector in [0,1).

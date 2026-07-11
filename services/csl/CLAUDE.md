@@ -80,7 +80,7 @@ All state lives under `~/.config/csl/`:
 
 - **`config.yaml`**: see Configuration below.
 - **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` guards against concurrent `csl sync` runs racing on `state.json`.
-- **`semantic-index/`**: per-repo vector stores, plus `semantic-index/models/` holding the downloaded embedding model (all-MiniLM-L6-v2, ONNX, ~90 MB, fetched on first semantic use).
+- **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (`qwen3-embedding:0.6b` by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
 - **`search-daemon.sock`**, **`search-daemon.pid`**, **`search-daemon.log`**: the search daemon's Unix socket, PID file, and rotated log (`lumberjack`, 5 MB / 1 backup).
 - **`reindex.queue`**: repo paths appended by the suspenders `csl-reindex` post-merge hook after an ad-hoc `git pull`, drained by `csl sync` or `csl index --drain`.
 
@@ -88,20 +88,18 @@ All state lives under `~/.config/csl/`:
 
 ## Build / install / test
 
-**Builds from a checkout only.** Semantic search links `libtokenizers.a` at
-build time and loads `libonnxruntime.dylib` at runtime (via
-`knights-analytics/hugot` + `smacker/go-tree-sitter`); this is unconditional
-cgo with no build-tag opt-out. `make build` depends on the `ortlib` target,
-which runs `scripts/fetch-ortlib.sh` to prefetch both native libs (macOS
-arm64 only, idempotent) before compiling with `-tags ORT` and
-`CGO_LDFLAGS="-L$(ORTLIB)"`. That's why csl's entry in the release artifact
-matrix is a deliberate no-op: the fleet installs it from source, not from a
-downloaded tarball (see `docs/MIGRATED-FROM.md`).
+**Builds from a checkout only.** Code chunking compiles tree-sitter grammars
+(`smacker/go-tree-sitter`) via cgo with no build-tag opt-out, so
+`go install .../csl@latest` isn't a supported install path and csl's entry in
+the release artifact matrix is a deliberate no-op: the fleet installs it from
+source (see `docs/MIGRATED-FROM.md`). Embedding needs no native libs — it
+goes over HTTP to a local Ollama server (semantic/hybrid features only;
+lexical search has no Ollama dependency).
 
 ```bash
-make build    # ./csl binary (fetches ortlib first)
+make build    # ./csl binary
 make install  # build + cp to ~/code/bin/csl + codesign
-make test     # go test -timeout 120s ./... (unit tests use a fake embedder, no ortlib/tag needed)
+make test     # go test -timeout 120s ./... (unit tests use a fake embedder, no ollama needed)
 make lint     # golangci-lint run ./...
 ```
 
@@ -113,8 +111,9 @@ Config lives at `~/.config/csl/config.yaml`. Key sections:
 - **`index.hosts`**: allowlist of git remote hosts. Only repos whose origin remote matches a listed host are indexed. Omit to index all repos.
 - **`hooks.post_merge.exclude`**: repos to skip during `csl sync` / index (by absolute path or org/repo name). `hooks.post_merge.enabled` gates the deprecated `csl hooks install` (see Commands); the exclude list itself is still live and shared with `csl sync`.
 - **`sync.concurrency`**: parallel pull workers for `csl sync` (default 8).
-- **`semantic.enabled`**: whether the search daemon loads the semantic index and embedding model at startup. Off by default; lexical search works either way.
+- **`semantic.enabled`**: whether the search daemon loads the semantic index and embedder at startup. Off by default; lexical search works either way.
 - **`semantic.sync`**: whether `csl sync` also re-embeds changed repos after the lexical reindex (best-effort, never fails the sync). Off by default.
+- **`semantic.ollama_url` / `semantic.embed_model` / `semantic.dim`**: the Ollama server and embedding model (defaults: `http://localhost:11434`, `qwen3-embedding:0.6b`, 1024). Per-machine — a smaller machine can point at a smaller model. Changing model or dim triggers a full re-embed on the next index run.
 - **`daemon.idle_timeout_minutes`**: how long the search daemon stays alive with no queries (default 10).
 
 `csl sync` discovers repos via `FilteredWalk(cfg.Dirs, cfg.Index.Hosts)`, pulls them (ff-only), and reindexes any that changed. Newly discovered repos that have no entry in `state.json` are also indexed on first sync.
@@ -147,7 +146,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
 - **`csl repo`**: interactive fuzzy-finder over discovered repos. `--list` (non-interactive), `--json`/`--toon` (imply `--list`).
 - **`csl doctor`**: check index health (shards, staleness, dirty repos, daemon status). `--json`, `--repair` (fix a corrupt state file).
-- **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild, downloads the model on first run), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
+- **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild; needs Ollama running with the model pulled), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
 - **`csl hybrid <query>`**: lexical + semantic, RRF-fused. `--repo/-r`, `--lang/-l`, `--limit` (50), `--rrf-k` (60), `--expand`, `--json`.
 - **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue` and, when `semantic.sync: true`, re-embeds changed repos.
@@ -259,14 +258,13 @@ what `webkit.js` polls every ~5s to auto-reload on a CSS/JS change.
   `--serve` is a flag on `csl search` that runs the search daemon in the foreground.
 - **`csl hooks install` is deprecated.** suspenders now owns post-merge git
   hooks; don't reintroduce csl-managed hooks in a repo. See Commands.
-- **Semantic/hybrid features need an explicit build step.** `csl_semantic_search`
-  / `csl_hybrid_search` / `csl semantic` / `csl hybrid` return
-  `available=false` (or degrade to lexical-only) until `csl index --semantic-all`
-  has run once; the first run downloads the ~90 MB embedding model.
-- **Never `go build`/`go install` this package without `ortlib`.** The cgo
-  link against `libtokenizers.a`/`libonnxruntime.dylib` is unconditional, so use
-  `make build`/`make install`, which fetch the native libs first. `make test`
-  is fine standalone; it uses a fake embedder.
+- **Semantic/hybrid features need an explicit build step and Ollama.**
+  `csl_semantic_search` / `csl_hybrid_search` / `csl semantic` / `csl hybrid`
+  return `available=false` (or degrade to lexical-only) until
+  `csl index --semantic-all` has run once. Embedding goes through a local
+  Ollama server — it must be running with the model pulled
+  (`ollama pull qwen3-embedding:0.6b`). Bulk index runs unload the model when
+  they finish; interactive queries keep it warm for 20 minutes.
 
 ## See also
 

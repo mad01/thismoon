@@ -84,16 +84,6 @@ func (ix *Index) Stores() int {
 	return len(ix.stores)
 }
 
-// DefaultModelDir returns the default directory where the embedding model is
-// stored, under the semantic index directory.
-func DefaultModelDir() (string, error) {
-	dir, err := DefaultSemanticIndexDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "models"), nil
-}
-
 // ExpandHit reads the source file behind h and returns the text of lines
 // [StartLine-padLines .. EndLine+padLines] (1-based, inclusive, clamped to the
 // file's bounds). This is the parent-child retrieval step: a chunk hit is

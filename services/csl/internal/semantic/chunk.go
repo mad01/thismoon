@@ -22,8 +22,8 @@ import (
 
 // Line-window fallback parameters (1-based, inclusive ranges).
 const (
-	windowSize    = 40
-	windowOverlap = 10
+	windowSize    = 120
+	windowOverlap = 20
 )
 
 // chunkerVersion identifies the chunking behavior baked into stored
@@ -34,16 +34,18 @@ const (
 // are otherwise skipped by content hash and would never re-embed).
 //
 // History: 1 = top-level go/typescript/python; 2 = per-member java (MAD-139)
-// + hcl/bash/dockerfile/markdown/protobuf/sql/yaml (MAD-229).
-const chunkerVersion = 2
+// + hcl/bash/dockerfile/markdown/protobuf/sql/yaml (MAD-229); 3 = qwen3-sized
+// budgets (maxChunkBodyChars 900 → 6000, windows 40/10 → 120/20).
+const chunkerVersion = 3
 
 // maxChunkBodyChars bounds a chunk's body so its breadcrumb-prefixed EmbedText
-// stays under the embedding model's fixed sequence length (all-MiniLM-L6-v2
-// caps at 512 tokens, which the model cannot exceed). Oversized chunks — long
-// functions, big generated blocks — are split into line-aligned sub-chunks
-// rather than truncated, so no source content is dropped. The budget is
-// conservative because code tokenizes denser than prose.
-const maxChunkBodyChars = 900
+// stays under the num_ctx the embedder requests from Ollama (8192 tokens for
+// qwen3-embedding, past which input silently truncates). 6000 chars of code is
+// roughly 1.5-2k tokens, so whole declarations almost never split. Oversized
+// chunks — very long functions, big generated blocks — are still split into
+// line-aligned sub-chunks rather than truncated, so no source content is
+// dropped.
+const maxChunkBodyChars = 6000
 
 // Chunk is one indexable unit of source: a top-level declaration (when the
 // language is parseable) or a fixed line window (fallback). StartLine and

@@ -6,15 +6,16 @@ import (
 )
 
 func TestSplitOversizedPreservesContentAndLines(t *testing.T) {
-	// 60 lines of 28 chars (~1740 chars) exceeds the 900-char budget, so the
-	// chunk must split into contiguous, gap-free sub-chunks covering all lines.
-	rows := make([]string, 60)
+	// Enough 100-char lines to reach ~3x the budget, so the chunk must split
+	// into contiguous, gap-free sub-chunks covering all lines.
+	rows := make([]string, maxChunkBodyChars*3/100)
 	for i := range rows {
-		rows[i] = strings.Repeat("x", 28)
+		rows[i] = strings.Repeat("x", 100)
 	}
+	lastLine := 10 + len(rows) - 1
 	c := Chunk{
 		Repo: "r", Path: "p.go", Lang: "go", Kind: "function_declaration",
-		StartLine: 10, EndLine: 69, Text: strings.Join(rows, "\n"),
+		StartLine: 10, EndLine: lastLine, Text: strings.Join(rows, "\n"),
 	}
 
 	got := splitOversized([]Chunk{c})
@@ -35,8 +36,8 @@ func TestSplitOversizedPreservesContentAndLines(t *testing.T) {
 	if got[0].StartLine != 10 {
 		t.Errorf("first StartLine = %d, want 10", got[0].StartLine)
 	}
-	if last := got[len(got)-1]; last.EndLine != 69 {
-		t.Errorf("last EndLine = %d, want 69", last.EndLine)
+	if last := got[len(got)-1]; last.EndLine != lastLine {
+		t.Errorf("last EndLine = %d, want %d", last.EndLine, lastLine)
 	}
 	for i := 1; i < len(got); i++ {
 		if got[i].StartLine != got[i-1].EndLine+1 {
