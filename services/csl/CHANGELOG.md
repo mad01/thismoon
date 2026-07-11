@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/csl/v0.4.1...csl/v0.5.0) (2026-07-11)
+
+
+### Features
+
+* **csl:** embed via ollama, drop hugot ([#54](https://github.com/mad01/thismoon/issues/54)) ([cfd53eb](https://github.com/mad01/thismoon/commit/cfd53ebebe0b0b644d1ba73893031217e9be88b5))
+
 ## [0.4.1](https://github.com/mad01/thismoon/compare/csl/v0.4.0...csl/v0.4.1) (2026-07-10)
 
 
