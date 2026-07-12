@@ -54,8 +54,8 @@ type Ecosystem interface {
 	Discover(repoRoot string, opts Options) ([]Package, error)
 }
 
-// Default is the ecosystem set built today. Go is fully implemented; npm covers
-// the lone webkit lockfile; Python is a stub until a manifest appears.
+// Default is the ecosystem set built today: Go (resolved module graph +
+// reachability), npm (package-lock), and PyPI (requirements.txt exact pins).
 func Default() []Ecosystem {
 	return []Ecosystem{Go{}, NPM{}, Python{}}
 }

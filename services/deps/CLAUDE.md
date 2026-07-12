@@ -16,7 +16,7 @@ deps/
     cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, version
     config/            - discovery config (exclude_repos / exclude_paths), ~/.config/deps/config.toml
     registry/          - reads the catalog registry.yaml → repo roots to scan
-    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (stub); shared walker skips worktrees/nested checkouts
+    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins); shared walker skips worktrees/nested checkouts
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
     scanner/           - Engine: discover → check → persist; CheckRepo (per-repo merge); coalesced Notify
@@ -50,8 +50,10 @@ no file locks.
 - Repo set = the catalog registry (`~/.config/catalog/registry.yaml`), trimmed by
   `exclude_repos` in the deps config. New catalogued repos auto-enroll.
 - Each repo is walked for `go.mod` (→ `go list -m -json all`, resolved graph,
-  v-prefix stripped for OSV) and `package-lock.json` (lockfile v2/v3). The shared
-  walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
+  v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3), and
+  `requirements.txt` (exact `name==version` pins only — unpinned names and
+  ranges have no OSV-checkable version and are skipped; names are PEP 503
+  normalized). The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
   mark direct vs transitive.
