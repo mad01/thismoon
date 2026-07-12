@@ -15,7 +15,7 @@ import (
 // Package is one resolved dependency a discoverer found. It maps directly onto
 // store.Dependency once advisories are attached.
 type Package struct {
-	Ecosystem    string // OSV ecosystem string: Go | npm | PyPI
+	Ecosystem    string // OSV ecosystem string: Go | npm | PyPI | SwiftURL
 	Name         string
 	Version      string
 	ManifestPath string // the go.mod / package-lock.json that declared it
@@ -47,7 +47,7 @@ func (o Options) excluded(repoRoot, path string) bool {
 
 // Ecosystem discovers the dependencies of one package manager within a repo.
 type Ecosystem interface {
-	// Name is the OSV ecosystem string (Go, npm, PyPI) for reporting.
+	// Name is the OSV ecosystem string (Go, npm, PyPI, SwiftURL) for reporting.
 	Name() string
 	// Discover walks repoRoot for this ecosystem's manifests and returns every
 	// resolved dependency. A repo with no matching manifest yields nil, nil.
@@ -55,9 +55,10 @@ type Ecosystem interface {
 }
 
 // Default is the ecosystem set built today: Go (resolved module graph +
-// reachability), npm (package-lock), and PyPI (requirements.txt exact pins).
+// reachability), npm (package-lock), PyPI (requirements.txt exact pins), and
+// Swift (Package.resolved pins).
 func Default() []Ecosystem {
-	return []Ecosystem{Go{}, NPM{}, Python{}}
+	return []Ecosystem{Go{}, NPM{}, Python{}, Swift{}}
 }
 
 // Repos discovers dependencies across every repo using every ecosystem, tagging

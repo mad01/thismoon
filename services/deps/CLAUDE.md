@@ -16,7 +16,7 @@ deps/
     cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, version
     config/            - discovery config (exclude_repos / exclude_paths), ~/.config/deps/config.toml
     registry/          - reads the catalog registry.yaml → repo roots to scan
-    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins); shared walker skips worktrees/nested checkouts
+    discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved); shared walker skips worktrees/nested checkouts
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
     scanner/           - Engine: discover → check → persist; CheckRepo (per-repo merge); coalesced Notify
@@ -53,7 +53,8 @@ no file locks.
   v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3), and
   `requirements.txt` (exact `name==version` pins only — unpinned names and
   ranges have no OSV-checkable version and are skipped; names are PEP 503
-  normalized). The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
+  normalized), and `Package.resolved` (v2/v3, remote pins with an exact
+  version — branch pins are skipped). The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
   mark direct vs transitive.
@@ -67,14 +68,16 @@ no file locks.
   "Not compiled in" section. Reachability is module-level (not function-level
   like govulncheck) and resolves for the current GOOS/GOARCH only. It **fails
   open**: if `go list -deps` errors or finds nothing, every dep stays
-  `Imported=true` so a real advisory is never hidden. npm/PyPI don't compute
+  `Imported=true` so a real advisory is never hidden. npm/PyPI/Swift don't compute
   reachability at all, so they're always `Imported=true`.
 
 ### OSV check
 
 - `POST /v1/querybatch` (≤1000/batch) to find advisory ids, then `GET
   /v1/vulns/{id}` once per unique id for summary/severity/fixed-version.
-- One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`); no mapping.
+- One API; ecosystem strings are OSV's own (`Go`, `npm`, `PyPI`, `SwiftURL`); no
+  mapping. SwiftURL names are the repo URL without scheme or `.git`
+  (`github.com/vapor/vapor`), derived from each Package.resolved pin location.
 - First-party code calling a public API → **no seatbelt** (like reminder/status).
 
 ### Scan loop, notifications, offline
@@ -92,7 +95,7 @@ no file locks.
 ## Data model & storage
 
 ```go
-Dependency{ Ecosystem (Go|npm|PyPI), Name, Version, Repo, ManifestPath, Direct, Advisories[] }
+Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo, ManifestPath, Direct, Advisories[] }
 Advisory{ ID, Summary, Severity, FixedVersion }   // OSV advisory for that exact version
 ```
 
