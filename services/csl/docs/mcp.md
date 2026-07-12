@@ -331,7 +331,7 @@ Find code by meaning across locally checked-out repos using vector embeddings. T
 }
 ```
 
-The tool returns `available: false` with a `note` rather than an error, so a missing index degrades gracefully. Build it with `csl index --semantic-all` (needs Ollama running with the embedding model pulled — `ollama pull qwen3-embedding:0.6b`). See [configuration](configuration.md#semantic-search) for enabling semantic search in the daemon.
+The tool returns `available: false` with a `note` rather than an error, so a missing index degrades gracefully. Build it with `csl index --semantic-all` (needs Ollama running with the embedding model pulled — `ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`). See [configuration](configuration.md#semantic-search) for enabling semantic search in the daemon.
 
 ### `csl_hybrid_search`
 

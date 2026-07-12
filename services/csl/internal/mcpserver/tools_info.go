@@ -25,7 +25,7 @@ type semanticInfo struct {
 	Built        bool `json:"built"         jsonschema:"true when at least one per-repo vector store exists"`
 	Stores       int  `json:"stores"        jsonschema:"number of per-repo vector stores"`
 	Chunks       int  `json:"chunks"        jsonschema:"total embedded chunks across all stores"`
-	ModelPresent bool `json:"model_present" jsonschema:"true when Ollama is reachable and the configured embedding model is pulled; when false run: ollama pull qwen3-embedding:0.6b"`
+	ModelPresent bool `json:"model_present" jsonschema:"true when Ollama is reachable and the configured embedding model is pulled; when false run: ollama pull unclemusclez/jina-embeddings-v2-base-code:f16"`
 }
 
 // indexInfoOutput is the typed output of the csl_index_info tool.

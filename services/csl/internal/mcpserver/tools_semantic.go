@@ -55,7 +55,7 @@ func registerSemanticTools(s *mcp.Server) {
 			"Returns the top matching code chunks ranked by cosine similarity, each with its source snippet (widen it with expand). " +
 			"Filter by repo (substring) or lang (single language). " +
 			"Code is chunked by tree-sitter declarations for parseable languages and by 120-line windows for everything else — so hits in parseable languages align with whole declarations while other files return coarser windows. " +
-			"Costs: embedding runs via a local Ollama server (qwen3-embedding:0.6b by default, pulled with 'ollama pull'), so Ollama must be running; a cold query pays ~1-2s model load, then the model stays warm for 20 minutes. " +
+			"Costs: embedding runs via a local Ollama server (jina-code-v2 by default, pulled with 'ollama pull'), so Ollama must be running; a cold query pays ~1-2s model load, then the model stays warm for 20 minutes. " +
 			"Requires a semantic index built with 'csl index --semantic-all'; if it is not built, the tool returns available=false with a note instead of an error.",
 	}, handleSemanticSearch)
 }

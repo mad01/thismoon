@@ -19,7 +19,7 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `semantic.enabled` | bool | no (default `false`) | Whether the search daemon connects the embedder and loads the vector index at startup. When `false` the daemon serves lexical search only; the in-process `csl semantic` CLI, the `csl_semantic_search` MCP tool, and the web toggle still answer ad-hoc queries. See [semantic search](#semantic-search). |
 | `semantic.sync` | bool | no (default `false`) | Whether `csl sync` also re-embeds the changed files of changed repos after the lexical reindex. When `false`, embeddings refresh only via `csl index --semantic`. |
 | `semantic.ollama_url` | string | no (default `http://localhost:11434`) | Base URL of the Ollama server that serves the embedding model. |
-| `semantic.embed_model` | string | no (default `qwen3-embedding:0.6b`) | Ollama embedding model. Must be pulled (`ollama pull`). Changing it triggers a full re-embed on the next index run. |
+| `semantic.embed_model` | string | no (default `unclemusclez/jina-embeddings-v2-base-code:f16`) | Ollama embedding model. Must be pulled (`ollama pull`). Changing it triggers a full re-embed on the next index run. |
 | `semantic.dim` | int | no (default `1024`) | Vector dimensionality of `embed_model`. Must match the model. |
 | `sync.concurrency` | int | no (default `8`) | Parallel `git pull` workers for `csl sync`. `--concurrency` on the command line overrides it. |
 | `daemon.idle_timeout_minutes` | int | no (default `10`) | How long the search daemon stays alive with no queries. Higher values keep the zoekt shards and semantic stores warm at the cost of resident memory. |
@@ -56,7 +56,7 @@ semantic:
   enabled: false                          # daemon loads embedder + vector index
   sync: false                             # `csl sync` also re-embeds changed repos
   ollama_url: http://localhost:11434      # default
-  embed_model: qwen3-embedding:0.6b       # default; must be pulled in ollama
+  embed_model: unclemusclez/jina-embeddings-v2-base-code:f16  # default; must be pulled in ollama
   dim: 1024                               # must match embed_model
 
 # `csl sync` pull parallelism.
@@ -93,7 +93,7 @@ daemon:
 
 ### Semantic search
 
-Semantic (vector) search runs alongside the lexical zoekt index and is off by default. Embedding goes through a local [Ollama](https://ollama.com) server, so semantic features need Ollama running with the model pulled (`ollama pull qwen3-embedding:0.6b`); lexical search has no Ollama dependency. Build the index with `csl index --semantic-all`.
+Semantic (vector) search runs alongside the lexical zoekt index and is off by default. Embedding goes through a local [Ollama](https://ollama.com) server, so semantic features need Ollama running with the model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`); lexical search has no Ollama dependency. Build the index with `csl index --semantic-all`.
 
 - `semantic.enabled: true` lets the daemon connect the embedder and load the vector index at startup, so the `csl_semantic_search` MCP tool and the web toggle answer from a warm daemon.
 - `semantic.sync: true` makes `csl sync` re-embed changed repos after the lexical reindex. The pass is incremental (only changed files) and best-effort: if Ollama or the model is unavailable, the lexical sync still succeeds. Leave it off to refresh embeddings manually with `csl index --semantic`.
@@ -104,7 +104,7 @@ semantic:
   enabled: true
   sync: false
   # ollama_url: http://localhost:11434   # default
-  # embed_model: qwen3-embedding:0.6b    # default; must be pulled in ollama
+  # embed_model: unclemusclez/jina-embeddings-v2-base-code:f16    # default; must be pulled in ollama
   # dim: 1024                            # must match embed_model
 ```
 

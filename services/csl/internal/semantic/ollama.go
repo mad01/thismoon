@@ -15,10 +15,12 @@ import (
 const (
 	// defaultOllamaEndpoint is the local Ollama server address.
 	defaultOllamaEndpoint = "http://localhost:11434"
-	// defaultOllamaModel is the embedding model requested from Ollama.
-	defaultOllamaModel = "qwen3-embedding:0.6b"
+	// defaultOllamaModel is the embedding model requested from Ollama:
+	// jina-code-v2, code-trained, 8k ctx, light enough to bulk-index quickly
+	// (MAD-235 benchmarked qwen3-embedding:0.6b at less than half its speed).
+	defaultOllamaModel = "unclemusclez/jina-embeddings-v2-base-code:f16"
 	// defaultOllamaDim is the embedding dimensionality of the default model.
-	defaultOllamaDim = 1024
+	defaultOllamaDim = 768
 	// ollamaKeepAlive is how long Ollama keeps the model resident after a
 	// request. Interactive queries reuse the warm model; bulk indexing calls
 	// Unload when done instead of leaving it loaded for this window.
@@ -49,7 +51,8 @@ func queryPrefixFor(model string) string {
 
 // OllamaEmbedder embeds text via an Ollama server's /api/embed endpoint. It is
 // the only embedding backend: csl does not bundle a model, it expects the
-// configured model to be pulled into Ollama (`ollama pull qwen3-embedding:0.6b`).
+// configured model to be pulled into Ollama (`ollama pull` the configured
+// or default model).
 type OllamaEmbedder struct {
 	Endpoint   string
 	Model      string
@@ -61,8 +64,8 @@ type OllamaEmbedder struct {
 }
 
 // NewOllamaEmbedder returns an OllamaEmbedder with sane defaults. Empty endpoint
-// or model fall back to localhost:11434 and qwen3-embedding:0.6b; dim <= 0 falls
-// back to 1024.
+// or model fall back to localhost:11434 and the default model; dim <= 0 falls
+// back to the default model's dimensionality.
 func NewOllamaEmbedder(endpoint, model string, dim int) *OllamaEmbedder {
 	if endpoint == "" {
 		endpoint = defaultOllamaEndpoint

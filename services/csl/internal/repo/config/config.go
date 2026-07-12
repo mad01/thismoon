@@ -60,12 +60,13 @@ type SemanticConfig struct {
 	// OllamaURL is the base URL of the Ollama server that serves the embedding
 	// model. Empty means http://localhost:11434.
 	OllamaURL string `yaml:"ollama_url"`
-	// EmbedModel is the Ollama embedding model. Empty means qwen3-embedding:0.6b.
+	// EmbedModel is the Ollama embedding model. Empty means the compiled-in
+	// default (jina-code-v2, see semantic.defaultOllamaModel).
 	// Changing the model (or its dimensionality) triggers a full re-embed of
 	// every store on the next index run.
 	EmbedModel string `yaml:"embed_model"`
 	// Dim is the embedding dimensionality of EmbedModel. Zero means 1024 (the
-	// qwen3-embedding:0.6b default). Must match the model — stores are compared
+	// default model). Must match the model — stores are compared
 	// against it to detect model swaps.
 	Dim int `yaml:"dim"`
 }

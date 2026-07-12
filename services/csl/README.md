@@ -18,7 +18,7 @@ cd thismoon/services/csl
 make install   # builds with version embedded, copies to ~/code/bin/csl, codesigns
 ```
 
-Requires the Go toolchain pinned in the repo's `go.mod` (1.26.2) and `git` on `PATH`. Semantic search additionally needs a running [Ollama](https://ollama.com) with the embedding model pulled (`ollama pull qwen3-embedding:0.6b`); lexical search works without it.
+Requires the Go toolchain pinned in the repo's `go.mod` (1.26.2) and `git` on `PATH`. Semantic search additionally needs a running [Ollama](https://ollama.com) with the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`); lexical search works without it.
 
 Verify:
 
@@ -57,7 +57,7 @@ semantic:
   enabled: false   # load the semantic index + embedder in the daemon
   sync: false      # also re-embed changed repos on `csl sync` (best-effort)
   # ollama_url: http://localhost:11434   # Ollama server for embeddings
-  # embed_model: qwen3-embedding:0.6b    # embedding model (must be pulled)
+  # embed_model: unclemusclez/jina-embeddings-v2-base-code:f16    # embedding model (must be pulled)
   # dim: 1024                            # its vector dimensionality
 
 daemon:
@@ -82,7 +82,7 @@ csl sync                                 # pull every repo (ff-only), reindex wh
 csl doctor                               # check index + daemon health
 ```
 
-First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull qwen3-embedding:0.6b`).
+First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`).
 
 `csl hooks install` (legacy per-repo post-merge hook installer) is deprecated: suspenders now owns git hooks; see Configuration.
 

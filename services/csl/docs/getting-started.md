@@ -133,7 +133,7 @@ Everything so far is lexical: exact text matching with no extra dependencies. Se
 ```sh
 brew install ollama
 brew services start ollama
-ollama pull qwen3-embedding:0.6b
+ollama pull unclemusclez/jina-embeddings-v2-base-code:f16
 ```
 
 Enable it and build the vector index:

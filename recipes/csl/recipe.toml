@@ -12,7 +12,7 @@ wave = 0
 # (packages.code_search_local, hooks.builds.csl_web_service) so ralph state
 # carries over at cutover — item keys are global, not namespaced per recipe.
 #
-# Semantic search embeds via a local Ollama server (qwen3-embedding:0.6b by
+# Semantic search embeds via a local Ollama server (jina-code-v2 by
 # default); pulling the model and running Ollama are machine wiring, like the
 # ~/.config/csl config.yaml symlink and the MCP registration (claude-mcp
 # servers.json) — all of it stays in the consuming repo.

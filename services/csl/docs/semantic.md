@@ -137,7 +137,7 @@ The embedding model is per-machine configuration, not a build decision:
 semantic:
   enabled: true
   ollama_url: http://localhost:11434     # default
-  embed_model: qwen3-embedding:0.6b      # default
+  embed_model: unclemusclez/jina-embeddings-v2-base-code:f16  # default
   dim: 1024                              # must match the model's output
 ```
 
@@ -153,8 +153,8 @@ Models that work well here, all served by Ollama:
 
 | Model | Dim | Context | Character |
 |---|---|---|---|
-| `qwen3-embedding:0.6b` | 1024 | 32k | Default. Strongest code retrieval; heaviest to index with |
-| `unclemusclez/jina-embeddings-v2-base-code:f16` | 768 | 8k | Code-trained, ~4x faster to index than qwen3; the budget pick for large repo sets |
+| `qwen3-embedding:0.6b` | 1024 | 32k | Strongest code retrieval; too heavy for bulk indexing (MAD-235) |
+| `unclemusclez/jina-embeddings-v2-base-code:f16` | 768 | 8k | Default. Code-trained, ~4x faster to index than qwen3 |
 | `nomic-embed-text` | 768 | 8k | General-purpose; fine on prose, weaker on code |
 
 Anything you point csl at needs a context window comfortably above the

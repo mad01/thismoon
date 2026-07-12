@@ -80,7 +80,7 @@ All state lives under `~/.config/csl/`:
 
 - **`config.yaml`**: see Configuration below.
 - **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` guards against concurrent `csl sync` runs racing on `state.json`.
-- **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (`qwen3-embedding:0.6b` by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
+- **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (jina-code-v2 by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
 - **`search-daemon.sock`**, **`search-daemon.pid`**, **`search-daemon.log`**: the search daemon's Unix socket, PID file, and rotated log (`lumberjack`, 5 MB / 1 backup).
 - **`reindex.queue`**: repo paths appended by the suspenders `csl-reindex` post-merge hook after an ad-hoc `git pull`, drained by `csl sync` or `csl index --drain`.
 
@@ -113,7 +113,7 @@ Config lives at `~/.config/csl/config.yaml`. Key sections:
 - **`sync.concurrency`**: parallel pull workers for `csl sync` (default 8).
 - **`semantic.enabled`**: whether the search daemon loads the semantic index and embedder at startup. Off by default; lexical search works either way.
 - **`semantic.sync`**: whether `csl sync` also re-embeds changed repos after the lexical reindex (best-effort, never fails the sync). Off by default.
-- **`semantic.ollama_url` / `semantic.embed_model` / `semantic.dim`**: the Ollama server and embedding model (defaults: `http://localhost:11434`, `qwen3-embedding:0.6b`, 1024). Per-machine — a smaller machine can point at a smaller model. Changing model or dim triggers a full re-embed on the next index run.
+- **`semantic.ollama_url` / `semantic.embed_model` / `semantic.dim`**: the Ollama server and embedding model (defaults: `http://localhost:11434`, `unclemusclez/jina-embeddings-v2-base-code:f16`, 768). Per-machine — a smaller machine can point at a smaller model. Changing model or dim triggers a full re-embed on the next index run.
 - **`daemon.idle_timeout_minutes`**: how long the search daemon stays alive with no queries (default 10).
 
 A repo can also carry a `.cslignore` at its root — one glob per line, `#` comments, trailing `/` for whole trees, leading `/` to anchor at the repo root. It filters both indexes (lexical zoekt and semantic); check its effect with `csl semantic files --skipped <path>`.
@@ -266,7 +266,7 @@ what `webkit.js` polls every ~5s to auto-reload on a CSS/JS change.
   return `available=false` (or degrade to lexical-only) until
   `csl index --semantic-all` has run once. Embedding goes through a local
   Ollama server — it must be running with the model pulled
-  (`ollama pull qwen3-embedding:0.6b`). Bulk index runs unload the model when
+  (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`). Bulk index runs unload the model when
   they finish; interactive queries keep it warm for 20 minutes.
 
 ## See also
