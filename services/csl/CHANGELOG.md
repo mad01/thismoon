@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/csl/v0.6.0...csl/v0.7.0) (2026-07-12)
+
+
+### Features
+
+* **csl:** default embed model to jina-code-v2 ([#59](https://github.com/mad01/thismoon/issues/59)) ([36220da](https://github.com/mad01/thismoon/commit/36220dae39651d8db31b6a931a6dcac938c06011))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/csl/v0.5.0...csl/v0.6.0) (2026-07-11)
 
 
