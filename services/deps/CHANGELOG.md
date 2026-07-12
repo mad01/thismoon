@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/deps/v0.2.0...deps/v0.3.0) (2026-07-12)
+
+
+### Features
+
+* **deps:** discover Swift packages from Package.resolved ([#63](https://github.com/mad01/thismoon/issues/63)) ([7bd1db0](https://github.com/mad01/thismoon/commit/7bd1db0e1bb435d06fa86403e7c1262c51fef7d4))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/deps/v0.1.0...deps/v0.2.0) (2026-07-12)
 
 
