@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mad01/thismoon/compare/deps/v0.1.0...deps/v0.2.0) (2026-07-12)
+
+
+### Features
+
+* **deps:** discover PyPI deps from requirements.txt ([#61](https://github.com/mad01/thismoon/issues/61)) ([57ed27a](https://github.com/mad01/thismoon/commit/57ed27ac66b56a2852630627530406b377312823))
+
 ## 0.1.0 (2026-07-06)
 
 
