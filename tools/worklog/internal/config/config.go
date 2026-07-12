@@ -26,6 +26,12 @@ type Scan struct {
 	// InternalPathMarkers mark a session cwd as internal when contained in it.
 	// GOPATH-style checkouts of non-github.com hosts are internal regardless.
 	InternalPathMarkers []string `yaml:"internal_path_markers"`
+	// CheckoutRoots are the path fragments under which GOPATH-style checkouts
+	// live; the segment directly after a root is read as the git host.
+	CheckoutRoots []string `yaml:"checkout_roots"`
+	// RepoPathMarkers mark a session cwd as a repo checkout at all; a cwd
+	// matching none of them (e.g. a tmp dir) reports no repo.
+	RepoPathMarkers []string `yaml:"repo_path_markers"`
 }
 
 // Path returns the config file location: $WORKLOG_CONFIG if set, else

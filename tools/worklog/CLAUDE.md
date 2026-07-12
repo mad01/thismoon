@@ -60,12 +60,15 @@ scan:
   linear_prefixes: [MAD]                      # TEAM-NN prefixes routed to the personal (Linear) world
   personal_path_markers: ["github.com/mad01/"]
   internal_path_markers: ["/workspace/"]
+  checkout_roots: ["/code/src/"]              # GOPATH-style roots; the next segment is read as the git host
+  repo_path_markers: ["/code/", "/workspace/"] # a cwd matching none of these reports no repo
 ```
 
-GOPATH-style checkouts of non-github.com hosts count as internal regardless of
-config; that split is derived, never enumerated (same principle as belt's
-public/internal remote check). The machine-private values ship via the
-consuming repo's config overlay (docs/adr/0006).
+GOPATH-style checkouts of non-github.com hosts count as internal (host derived
+from the path segment after a checkout root); that split is derived, never
+enumerated (same principle as belt's public/internal remote check). The
+machine-private values ship via the consuming repo's config overlay
+(docs/adr/0006).
 
 ## Data model & storage
 

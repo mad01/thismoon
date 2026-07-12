@@ -16,7 +16,7 @@ func TestLoadMissingFileIsZero(t *testing.T) {
 
 func TestLoadReadsScanSection(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.yaml")
-	content := "scan:\n  linear_prefixes: [XYZ]\n  personal_path_markers: [\"github.com/someone/\"]\n  internal_path_markers: [\"/dayjob/\"]\n"
+	content := "scan:\n  linear_prefixes: [XYZ]\n  personal_path_markers: [\"github.com/someone/\"]\n  internal_path_markers: [\"/dayjob/\"]\n  checkout_roots: [\"/checkouts/\"]\n  repo_path_markers: [\"/repos/\"]\n"
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +30,12 @@ func TestLoadReadsScanSection(t *testing.T) {
 	}
 	if len(c.Scan.InternalPathMarkers) != 1 || c.Scan.InternalPathMarkers[0] != "/dayjob/" {
 		t.Errorf("internal_path_markers = %v", c.Scan.InternalPathMarkers)
+	}
+	if len(c.Scan.CheckoutRoots) != 1 || c.Scan.CheckoutRoots[0] != "/checkouts/" {
+		t.Errorf("checkout_roots = %v", c.Scan.CheckoutRoots)
+	}
+	if len(c.Scan.RepoPathMarkers) != 1 || c.Scan.RepoPathMarkers[0] != "/repos/" {
+		t.Errorf("repo_path_markers = %v", c.Scan.RepoPathMarkers)
 	}
 }
 

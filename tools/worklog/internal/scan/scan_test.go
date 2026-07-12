@@ -174,3 +174,37 @@ func TestConfigOverrides(t *testing.T) {
 		t.Error("default personal marker should be replaced by the configured one")
 	}
 }
+
+func TestCheckoutRootsOverride(t *testing.T) {
+	cfg := Config{CheckoutRoots: []string{"/checkouts/"}}.withDefaults()
+	if _, i := classifyCwd(cfg, "/Users/x/checkouts/git.internal.example/org/repo"); !i {
+		t.Error("configured checkout root not honored for internal-host detection")
+	}
+	if _, i := classifyCwd(cfg, "/Users/x/code/src/git.internal.example/org/repo"); i {
+		t.Error("default checkout root should be replaced by the configured one")
+	}
+}
+
+func TestRepoName(t *testing.T) {
+	def := Config{}.withDefaults()
+	cases := []struct {
+		name string
+		cfg  Config
+		cwd  string
+		want string
+	}{
+		{"code checkout", def, "/Users/x/code/src/github.com/mad01/dotfiles", "dotfiles"},
+		{"workspace checkout", def, "/Users/x/workspace/some-service", "some-service"},
+		{"tmp dir is not a repo", def, "/tmp/scratch", ""},
+		{"empty cwd", def, "", ""},
+		{"configured marker", Config{RepoPathMarkers: []string{"/repos/"}}.withDefaults(), "/Users/x/repos/thing", "thing"},
+		{"configured marker replaces default", Config{RepoPathMarkers: []string{"/repos/"}}.withDefaults(), "/Users/x/code/src/github.com/mad01/dotfiles", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := repoName(tc.cfg, tc.cwd); got != tc.want {
+				t.Errorf("repoName(%q) = %q, want %q", tc.cwd, got, tc.want)
+			}
+		})
+	}
+}

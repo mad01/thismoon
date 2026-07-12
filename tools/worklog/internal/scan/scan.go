@@ -54,12 +54,16 @@ type Config struct {
 	LinearPrefixes      []string
 	PersonalPathMarkers []string
 	InternalPathMarkers []string
+	CheckoutRoots       []string
+	RepoPathMarkers     []string
 }
 
 var defaultConfig = Config{
 	LinearPrefixes:      []string{"MAD"},
 	PersonalPathMarkers: []string{"github.com/mad01/"},
 	InternalPathMarkers: []string{"/workspace/"},
+	CheckoutRoots:       []string{"/code/src/"},
+	RepoPathMarkers:     []string{"/code/", "/workspace/"},
 }
 
 // withDefaults fills empty fields from defaultConfig.
@@ -72,6 +76,12 @@ func (c Config) withDefaults() Config {
 	}
 	if len(c.InternalPathMarkers) == 0 {
 		c.InternalPathMarkers = defaultConfig.InternalPathMarkers
+	}
+	if len(c.CheckoutRoots) == 0 {
+		c.CheckoutRoots = defaultConfig.CheckoutRoots
+	}
+	if len(c.RepoPathMarkers) == 0 {
+		c.RepoPathMarkers = defaultConfig.RepoPathMarkers
 	}
 	return c
 }
@@ -142,19 +152,24 @@ func classifyCwd(cfg Config, cwd string) (personal, internal bool) {
 			break
 		}
 	}
-	return personal, internal || internalHostCheckout(cwd)
+	return personal, internal || internalHostCheckout(cfg, cwd)
 }
 
 // internalHostCheckout reports whether cwd sits under a GOPATH-style checkout
 // of a non-github.com git host: a host-shaped segment (contains a dot)
-// directly under code/src that isn't github.com.
-func internalHostCheckout(cwd string) bool {
-	_, rest, ok := strings.Cut(cwd, "/code/src/")
-	if !ok {
-		return false
+// directly under a checkout root that isn't github.com.
+func internalHostCheckout(cfg Config, cwd string) bool {
+	for _, root := range cfg.CheckoutRoots {
+		_, rest, ok := strings.Cut(cwd, root)
+		if !ok {
+			continue
+		}
+		host, _, _ := strings.Cut(rest, "/")
+		if strings.Contains(host, ".") && host != "github.com" {
+			return true
+		}
 	}
-	host, _, _ := strings.Cut(rest, "/")
-	return strings.Contains(host, ".") && host != "github.com"
+	return false
 }
 
 // resolveTickets enforces the firewall: a personal task keys on Linear MAD-NN
@@ -279,7 +294,7 @@ func digestFile(cfg Config, path, project string) (Session, bool, error) {
 			hasPersonal = hasPersonal || p
 			hasInternal = hasInternal || i
 		}
-		if repo := repoName(r.Cwd); repo != "" {
+		if repo := repoName(cfg, r.Cwd); repo != "" {
 			repos.add(repo)
 		}
 		if r.GitBranch != "" {
@@ -308,15 +323,17 @@ func digestFile(cfg Config, path, project string) (Session, bool, error) {
 }
 
 // repoName returns the repo basename for a checkout path, or "" for tmp/other
-// paths that aren't repos.
-func repoName(cwd string) string {
+// paths that aren't repos (nothing in cfg.RepoPathMarkers matches).
+func repoName(cfg Config, cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	if !strings.Contains(cwd, "/code/") && !strings.Contains(cwd, "/workspace/") {
-		return ""
+	for _, m := range cfg.RepoPathMarkers {
+		if strings.Contains(cwd, m) {
+			return filepath.Base(cwd)
+		}
 	}
-	return filepath.Base(cwd)
+	return ""
 }
 
 func parseTime(s string) time.Time {
