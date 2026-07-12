@@ -127,7 +127,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 |---|---|
 | `humanizer_status` | Health check: vale installed, version, cache dir, rule count |
 | `humanizer_detect` | Scan text for AI-writing patterns (vale span rules) |
-| `humanizer_detect_file` | Scan a file on disk (sandbox: prose files under `~/code/src` and `~/workspace` only) |
+| `humanizer_detect_file` | Scan a file on disk (sandbox: prose files under the profile's workspace roots only) |
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |
 | `humanizer_rules_list` | List all detection rules |
 | `humanizer_rules_explain` | Full metadata and examples for one rule |
@@ -143,10 +143,10 @@ The consuming repo's registration wrapper runs the MCP server under macOS `sandb
 What the sandbox denies:
 
 - All network: vale runs fully offline, so no traffic is needed.
-- All `$HOME` reads, denied by default except specific paths: `~/code/bin` (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt` files under `~/code/src` and `~/workspace` (for `humanizer_detect_file`).
+- All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt` files under the profile's workspace roots (for `humanizer_detect_file`).
 - All `$HOME` writes, restricted to `~/.cache/humanizer` and system temp.
 
-This means `humanizer_detect_file` works only on prose files under those two code roots. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead.
+This means `humanizer_detect_file` works only on prose files under the workspace roots the profile grants. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead.
 
 If you add a runtime file or network need, update the consuming repo's seatbelt profile; a code change alone isn't enough.
 

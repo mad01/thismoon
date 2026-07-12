@@ -72,7 +72,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - `humanizer_status()` → `{installed, binary, version, cache_dir, rule_count, style_pack, error?, install_hint?}`. Health check: is vale installed, its version, the cache dir, bundled rule count. Call first when `humanizer_detect` fails unexpectedly.
 - `humanizer_detect(text, rules?, min_severity?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message.
 - `humanizer_detect_file(path, rules?, min_severity?)` → same shape as `humanizer_detect`. Scans a file on disk instead of inline text; saves a read and lets vale use the real extension for format detection.
-  - Sandbox-gated: only prose files (`.md`/`.markdown`/`.txt`) under `~/code/src` and `~/workspace`, plus `/tmp` paths, are readable. A denied path returns an error pointing at `humanizer_detect` instead.
+  - Sandbox-gated: only prose files (`.md`/`.markdown`/`.txt`) under the seatbelt profile's workspace roots, plus `/tmp` paths, are readable. A denied path returns an error pointing at `humanizer_detect` instead.
 - `humanizer_detect_statistical(text)` → `{findings[], profile, summary, engine}`. Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, semicolon absence, short-text em-dash, heading density, anaphora) that span rules can't catch. Most checks gate on a minimum sample size; 200+ words gives the most reliable verdict.
 - `humanizer_rules_list(category?)` → `{rules[], total}`. Lists every rule (ID, name, category, default severity, summary), optionally filtered by category.
 - `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, file?}`. Full metadata for one rule.
@@ -86,7 +86,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - **Two detection paths, run both.** Vale span rules flag a matched substring with line/column; the statistical detector flags whole-sample properties with no span. Neither alone gives full coverage.
 - **Vale rule gotcha:** `existence`/`occurrence` rules wrap each token in `\b…\b` by default, so a pattern that begins or ends with a non-word char (e.g. a leading `,` plus trailing `\.`, or a trailing `?`/`#`) never matches. Set `nonword: true` on those rules. Single-quoted YAML scalars must escape inner apostrophes as `''`; plain scalars can use `'?` directly.
 - `vale` must be available on `$PATH` (installed by the consuming repo's package recipe).
-- **The MCP server runs sandboxed** (seatbelt, via the consuming repo's registration wrapper). `humanizer_detect_file` reads only prose files (`.md`/`.markdown`/`.txt`) under `~/code/src` and `~/workspace`, plus `/tmp` paths; anything else under `$HOME` returns a clean error pointing at `humanizer_detect`. New runtime file/network needs require a change to the consuming repo's seatbelt profile, not just code.
+- **The MCP server runs sandboxed** (seatbelt, via the consuming repo's registration wrapper). `humanizer_detect_file` reads only prose files (`.md`/`.markdown`/`.txt`) under the profile's workspace roots, plus `/tmp` paths; anything else under `$HOME` returns a clean error pointing at `humanizer_detect`. The roots are defined by the consuming repo's seatbelt profile, not this code; new runtime file/network needs require a profile change there.
 
 ## See also
 
