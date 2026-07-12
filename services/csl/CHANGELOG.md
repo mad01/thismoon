@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/csl/v0.5.0...csl/v0.6.0) (2026-07-11)
+
+
+### Features
+
+* **csl:** filter build output, vendor trees, and model data from semantic indexing ([#57](https://github.com/mad01/thismoon/issues/57)) ([16ca86e](https://github.com/mad01/thismoon/commit/16ca86e172c7ac3b18e891368ddbb2e64235be8f))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/csl/v0.4.1...csl/v0.5.0) (2026-07-11)
 
 
