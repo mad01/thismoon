@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/services/status/internal/discover"
@@ -75,6 +76,37 @@ func Runs(ctx context.Context, svc discover.Service) (int, bool) {
 	defer cancel()
 	out, _ := exec.CommandContext(ctx, "launchctl", "print", target).Output()
 	return RunsFromLaunchctl(string(out))
+}
+
+// BinaryVersion asks the installed binary on disk for its build sha by running
+// `<binary> version` (the cross-tool convention: prints the bare ldflags sha).
+// Best-effort: a missing binary, a hang, or output that doesn't look like a
+// version token all return "".
+func BinaryVersion(ctx context.Context, path string) string {
+	if path == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "version").Output()
+	if err != nil {
+		return ""
+	}
+	return VersionToken(string(out))
+}
+
+// versionTokenRe accepts a single short token: a git sha, "dev", or a semver
+// string. Anything with spaces or multiple lines is not a version.
+var versionTokenRe = regexp.MustCompile(`^[0-9A-Za-z._+-]{1,64}$`)
+
+// VersionToken trims and validates one line of `version` output. Exported for
+// tests.
+func VersionToken(out string) string {
+	s := strings.TrimSpace(out)
+	if versionTokenRe.MatchString(s) {
+		return s
+	}
+	return ""
 }
 
 var runsRe = regexp.MustCompile(`(?m)^\s*runs = (\d+)`)

@@ -47,6 +47,21 @@ override).
 
 For up HTTP services, `GET /version` and `GET /webkit/version` every 10
 minutes, best-effort; services without the endpoints just show no version.
+The same refresh also runs `<binary> version` on the plist's binary to learn
+the sha installed on disk.
+
+### Version drift
+
+A running process serving an older sha than its on-disk binary means an
+install happened without a restart (the "ralph reports ok, old binary keeps
+running" failure). When running and installed shas disagree, the service is
+re-probed every cycle (the 10-minute meta cadence is bypassed) and the
+mismatch must hold for 2 consecutive cycles before it counts — a mismatch
+observed mid-`ralph up` clears instead of alerting. Confirmed drift shows
+"Stale binary" (amber) on the dashboard, fires one coalesced macOS banner,
+and records a `warn` event with `running`/`installed` tags; recovery records
+an `info` event. Services whose binary can't answer `version` (or without a
+`/version` endpoint) never count as drifted.
 
 ### Crash-loop detection
 
@@ -89,7 +104,8 @@ make test     # go test ./...
 - **History gaps are visible.** If the agent is stopped for a day, that day
   renders gray (no data), not red; absence of checks isn't downtime.
 - **t-man's plist `Version` field is t-man's build sha,** not the service's.
-  Service versions come only from the HTTP `/version` probe.
+  Service versions come from the HTTP `/version` probe (running) and the
+  binary's own `version` command (installed).
 - **`t-man stop` won't show as Down.** KeepAlive services relaunch within a
   second, faster than any poll interval. Down means a real failure: crash
   loop, hung process, port not answering, or `t-man remove`.

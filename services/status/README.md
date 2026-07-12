@@ -9,6 +9,13 @@ It discovers t-man services by scanning launchd plist directories, probes each
 one once a minute, and draws a 30-day uptime bar strip per service. No
 incident tracking, just running state and history.
 
+It also catches stale binaries: for each web service it compares the running
+process's `/version` sha with the sha the binary on disk reports (`<binary>
+version`). When they disagree for two consecutive cycles the service shows
+"Stale binary" on the dashboard, fires a macOS banner, and records a `warn`
+event — the "ralph reported ok but the old binary kept running" failure made
+visible.
+
 ## Install
 
 ```bash

@@ -17,9 +17,11 @@
     return { text: down + ' services down', cls: 'down' };
   }
 
-  // statusState mirrors buildSvcView's status text/class.
+  // statusState mirrors buildSvcView's status text/class. A running service
+  // serving an older sha than the binary on disk shows as stale, not ok.
   function statusState(s) {
     if (!s.known) return { text: 'Pending', cls: 'none' };
+    if (s.up && s.drift) return { text: 'Stale binary', cls: 'warn' };
     if (s.up) return { text: 'Operational', cls: 'ok' };
     return { text: 'Down', cls: 'down' };
   }
@@ -57,6 +59,7 @@
     rows.push(['check', s.port > 0 ? 'HTTP :' + s.port : 'launchd']);
     if (s.daemon) rows.push(['scope', 'daemon']);
     if (s.version) rows.push(['version', s.version]);
+    if (s.drift && s.installed) rows.push(['installed', s.installed]);
     if (s.webkit) rows.push(['webkit', shortenWebkit(s.webkit)]);
     if (s.known) rows.push(['last check', (s.detail || '') + ' · ' + clock(s.checked_at)]);
     return rows;

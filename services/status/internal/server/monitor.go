@@ -26,7 +26,9 @@ type ServiceStatus struct {
 	Known     bool          `json:"known"` // false until the first check completes
 	Detail    string        `json:"detail,omitempty"`
 	CheckedAt time.Time     `json:"checked_at"`
-	Version   string        `json:"version,omitempty"`
+	Version   string        `json:"version,omitempty"`   // running process, from GET /version
+	Installed string        `json:"installed,omitempty"` // binary on disk, from `<binary> version`
+	Drift     bool          `json:"drift,omitempty"`     // running != installed, confirmed over consecutive cycles
 	Webkit    string        `json:"webkit,omitempty"`
 	Uptime    float64       `json:"uptime_pct"`
 	HasUptime bool          `json:"has_uptime"`
@@ -42,10 +44,24 @@ type Snapshot struct {
 }
 
 type meta struct {
-	version string
-	webkit  string
-	fetched time.Time
+	version   string // running process, from GET /version
+	installed string // binary on disk, from `<binary> version`
+	webkit    string
+	fetched   time.Time
 }
+
+// drifted reports whether the running process and the binary on disk disagree
+// about their build sha. Both sides must be known: a service without the
+// endpoint or a binary without a version command can't drift.
+func (m meta) drifted() bool {
+	return m.version != "" && m.installed != "" && m.version != m.installed
+}
+
+// driftConfirmCycles is how many consecutive cycles a version mismatch must
+// persist before it counts as drift. A mismatch observed mid-`ralph up`
+// (binary replaced, restart a moment away) clears on the next cycle instead
+// of alerting.
+const driftConfirmCycles = 2
 
 // Monitor discovers, probes, and records services on an interval and keeps
 // the latest Snapshot for the handlers.
@@ -57,14 +73,19 @@ type Monitor struct {
 	mu   sync.RWMutex
 	snap Snapshot
 	meta map[string]meta
+
+	// driftRuns counts consecutive cycles a service's meta has shown a version
+	// mismatch. Only touched from the single cycle goroutine.
+	driftRuns map[string]int
 }
 
 func newMonitor(opts Options, store *history.Store) *Monitor {
 	return &Monitor{
-		opts:  opts,
-		store: store,
-		loops: crashloop.New(opts.RestartWindow, opts.RestartThreshold, opts.RestartCooldown),
-		meta:  map[string]meta{},
+		opts:      opts,
+		store:     store,
+		loops:     crashloop.New(opts.RestartWindow, opts.RestartThreshold, opts.RestartCooldown),
+		meta:      map[string]meta{},
+		driftRuns: map[string]int{},
 	}
 }
 
@@ -120,16 +141,20 @@ func (m *Monitor) cycle(ctx context.Context) {
 	}
 
 	m.refreshMeta(ctx, services, results, now)
+	m.countDrift(services)
 
 	statuses := make([]ServiceStatus, len(services))
 	down := 0
 	m.mu.RLock()
-	// Capture the prior up/down state per label so we can emit an event only on
-	// a transition. A label absent here (first cycle, or a freshly discovered
-	// service) is left out so startup doesn't emit a burst of spurious events.
+	// Capture the prior up/down and drift state per label so we can emit an
+	// event only on a transition. A label absent here (first cycle, or a
+	// freshly discovered service) is left out so startup doesn't emit a burst
+	// of spurious events.
 	prevUp := make(map[string]bool, len(m.snap.Services))
+	prevDrift := make(map[string]bool, len(m.snap.Services))
 	for _, st := range m.snap.Services {
 		prevUp[st.Label] = st.Up
+		prevDrift[st.Label] = st.Drift
 	}
 	for i, svc := range services {
 		st := ServiceStatus{
@@ -142,8 +167,9 @@ func (m *Monitor) cycle(ctx context.Context) {
 		}
 		st.Uptime, st.HasUptime = m.store.Uptime(svc.Label, now, m.opts.HistoryDays)
 		if md, ok := m.meta[svc.Label]; ok {
-			st.Version, st.Webkit = md.version, md.webkit
+			st.Version, st.Webkit, st.Installed = md.version, md.webkit, md.installed
 		}
+		st.Drift = m.driftRuns[svc.Label] >= driftConfirmCycles
 		if !st.Up {
 			down++
 		}
@@ -171,7 +197,23 @@ func (m *Monitor) cycle(ctx context.Context) {
 	m.mu.Unlock()
 
 	emitTransitions(statuses, prevUp)
+	emitDriftTransitions(statuses, prevDrift)
 	m.detectCrashLoops(services, runs, runsOK, now)
+}
+
+// countDrift updates the consecutive-mismatch counter per service from the
+// freshly refreshed meta. Runs on the cycle goroutine; only meta reads need
+// the lock.
+func (m *Monitor) countDrift(services []discover.Service) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, svc := range services {
+		if m.meta[svc.Label].drifted() {
+			m.driftRuns[svc.Label]++
+		} else {
+			delete(m.driftRuns, svc.Label)
+		}
+	}
 }
 
 // detectCrashLoops feeds launchd run counters into the tracker and, for each
@@ -230,6 +272,36 @@ func emitTransitions(statuses []ServiceStatus, prevUp map[string]bool) {
 	}
 }
 
+// emitDriftTransitions records an event for each service whose drift state
+// flipped since the previous cycle, plus one coalesced macOS banner when new
+// drifts appear. This is the "ralph reported ok but the old binary kept
+// running" signal: the process serves an older sha than the binary on disk.
+func emitDriftTransitions(statuses []ServiceStatus, prevDrift map[string]bool) {
+	var lines []string
+	for _, st := range statuses {
+		was, known := prevDrift[st.Label]
+		if !known || was == st.Drift {
+			continue
+		}
+		if st.Drift {
+			line := fmt.Sprintf("%s: running %s, installed %s", st.Label, st.Version, st.Installed)
+			lines = append(lines, line)
+			notify.EmitEvent("status", "warn", st.Label+" running stale binary", line,
+				map[string]string{
+					"service":   st.Label,
+					"running":   st.Version,
+					"installed": st.Installed,
+				})
+		} else {
+			notify.EmitEvent("status", "info", st.Label+" binary current", "",
+				map[string]string{"service": st.Label})
+		}
+	}
+	if len(lines) > 0 {
+		notify.Banner("status: stale binary detected", strings.Join(lines, "\n"))
+	}
+}
+
 func group(s ServiceStatus) int {
 	switch {
 	case s.Link != "":
@@ -242,8 +314,11 @@ func group(s ServiceStatus) int {
 }
 
 // refreshMeta fetches /version and /webkit/version from up HTTP services at a
-// slower cadence than the checks. Best-effort: services without the endpoints
-// simply show no version.
+// slower cadence than the checks, plus the on-disk binary's own sha via
+// `<binary> version`. Best-effort: services without the endpoints simply show
+// no version. While running and installed disagree the cadence is ignored and
+// the service is re-probed every cycle, so a mismatch confirms as drift (or
+// clears after a restart) within a couple of cycles instead of MetaInterval.
 func (m *Monitor) refreshMeta(
 	ctx context.Context,
 	services []discover.Service,
@@ -258,7 +333,7 @@ func (m *Monitor) refreshMeta(
 		m.mu.RLock()
 		md, ok := m.meta[svc.Label]
 		m.mu.RUnlock()
-		if ok && now.Sub(md.fetched) < m.opts.MetaInterval {
+		if ok && now.Sub(md.fetched) < m.opts.MetaInterval && !md.drifted() {
 			continue
 		}
 		wg.Add(1)
@@ -266,9 +341,10 @@ func (m *Monitor) refreshMeta(
 			defer wg.Done()
 			base := fmt.Sprintf("http://127.0.0.1:%d", svc.Port)
 			md := meta{
-				version: fetchVersion(ctx, base+"/version"),
-				webkit:  fetchVersion(ctx, base+"/webkit/version"),
-				fetched: now,
+				version:   fetchVersion(ctx, base+"/version"),
+				installed: check.BinaryVersion(ctx, svc.Binary),
+				webkit:    fetchVersion(ctx, base+"/webkit/version"),
+				fetched:   now,
 			}
 			m.mu.Lock()
 			m.meta[svc.Label] = md

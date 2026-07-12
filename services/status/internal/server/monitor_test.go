@@ -14,18 +14,26 @@ import (
 )
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict><key>Label</key><string>fake-web</string><key>ProgramArguments</key><array><string>/bin/fake</string><string>serve</string><string>--port</string><string>%d</string></array><key>TManMetadata</key><dict><key>ManagedBy</key><string>t-man</string></dict></dict></plist>`
+<plist version="1.0"><dict><key>Label</key><string>fake-web</string><key>ProgramArguments</key><array><string>%s</string><string>serve</string><string>--port</string><string>%d</string></array><key>TManMetadata</key><dict><key>ManagedBy</key><string>t-man</string></dict></dict></plist>`
 
 // newTestMonitor wires a Monitor at a temp agents dir containing one fake
-// t-man service whose --port points at the given httptest server.
+// t-man service whose --port points at the given httptest server. The plist's
+// binary doesn't exist, so no installed version is probed and drift stays off.
 func newTestMonitor(t *testing.T, ts *httptest.Server) *Monitor {
+	t.Helper()
+	return newTestMonitorWithBinary(t, ts, "/bin/fake")
+}
+
+// newTestMonitorWithBinary is newTestMonitor with the plist's binary under
+// test control, for the drift scenarios.
+func newTestMonitorWithBinary(t *testing.T, ts *httptest.Server, binary string) *Monitor {
 	t.Helper()
 	u, err := url.Parse(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	agents := t.TempDir()
-	plist := fmt.Sprintf(plistTemplate, mustPort(t, u))
+	plist := fmt.Sprintf(plistTemplate, binary, mustPort(t, u))
 	if err := os.WriteFile(filepath.Join(agents, "fake-web.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -138,5 +146,78 @@ func TestTodayRecoversTowardGreen(t *testing.T) {
 	day = m2.Snapshot().Services[0].Days
 	if d := day[len(day)-1]; d.Pct < 99.5 {
 		t.Fatalf("past 99.5%%: %+v, want pct >= 99.5%% (green)", d)
+	}
+}
+
+// writeFakeBinary drops a script at path that answers `version` with sha, the
+// way every fleet binary does.
+func writeFakeBinary(t *testing.T, path, sha string) {
+	t.Helper()
+	script := "#!/bin/sh\necho " + sha + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDriftDetection walks the stale-binary story: the running process serves
+// an older sha than the binary on disk. One mismatched cycle is tolerated
+// (mid-deploy), the second confirms drift, and a restart (running == installed
+// again) clears it.
+func TestDriftDetection(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/version" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"version":"abc1234"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	bin := filepath.Join(t.TempDir(), "fake-web")
+	writeFakeBinary(t, bin, "def5678")
+	m := newTestMonitorWithBinary(t, ts, bin)
+	ctx := context.Background()
+
+	m.cycle(ctx)
+	if s := m.Snapshot().Services[0]; s.Drift {
+		t.Fatalf("drift after 1 cycle = true, want false (confirms after %d)", driftConfirmCycles)
+	}
+
+	m.cycle(ctx)
+	s := m.Snapshot().Services[0]
+	if !s.Drift || s.Version != "abc1234" || s.Installed != "def5678" {
+		t.Fatalf("after 2 cycles: drift=%v version=%q installed=%q, want true/abc1234/def5678",
+			s.Drift, s.Version, s.Installed)
+	}
+
+	// The service restarts on the new binary: /version and the on-disk sha
+	// agree again. The drifted meta bypasses MetaInterval, so one cycle clears.
+	writeFakeBinary(t, bin, "abc1234")
+	m.cycle(ctx)
+	if s := m.Snapshot().Services[0]; s.Drift || s.Installed != "abc1234" {
+		t.Fatalf("after restart: drift=%v installed=%q, want false/abc1234", s.Drift, s.Installed)
+	}
+}
+
+// TestNoDriftWithoutInstalledVersion pins the guard: a binary that can't
+// report a version (missing, not a fleet tool) never counts as drift.
+func TestNoDriftWithoutInstalledVersion(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/version" {
+			fmt.Fprint(w, `{"version":"abc1234"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	m := newTestMonitor(t, ts) // plist binary /bin/fake does not exist
+	ctx := context.Background()
+
+	m.cycle(ctx)
+	m.cycle(ctx)
+	s := m.Snapshot().Services[0]
+	if s.Drift || s.Installed != "" || s.Version != "abc1234" {
+		t.Fatalf("drift=%v installed=%q version=%q, want false/empty/abc1234", s.Drift, s.Installed, s.Version)
 	}
 }

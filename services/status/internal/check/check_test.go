@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/services/status/internal/discover"
@@ -69,5 +72,47 @@ func TestFromLaunchctl(t *testing.T) {
 	}
 	if res := FromLaunchctl(""); res.Up {
 		t.Errorf("empty output (unknown service) must be down: %+v", res)
+	}
+}
+
+func TestVersionToken(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"short sha", "224d220\n", "224d220"},
+		{"dev fallback", "dev\n", "dev"},
+		{"semver", "v1.2.3\n", "v1.2.3"},
+		{"padded", "  abc1234  \n", "abc1234"},
+		{"multi line is not a version", "usage: foo\nversion\n", ""},
+		{"spaces are not a version", "foo version 1.2\n", ""},
+		{"empty", "", ""},
+		{"too long", strings.Repeat("a", 65), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VersionToken(tt.in); got != tt.want {
+				t.Errorf("VersionToken(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBinaryVersion(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fake")
+	script := "#!/bin/sh\necho abc1234\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := BinaryVersion(context.Background(), bin); got != "abc1234" {
+		t.Errorf("BinaryVersion = %q, want abc1234", got)
+	}
+	if got := BinaryVersion(context.Background(), filepath.Join(dir, "missing")); got != "" {
+		t.Errorf("BinaryVersion(missing) = %q, want empty", got)
+	}
+	if got := BinaryVersion(context.Background(), ""); got != "" {
+		t.Errorf("BinaryVersion(empty path) = %q, want empty", got)
 	}
 }
