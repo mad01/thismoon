@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/mad01/thismoon/compare/humanizer/v0.2.0...humanizer/v0.2.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **humanizer:** stop enumerating machine-specific sandbox roots in messages ([#68](https://github.com/mad01/thismoon/issues/68)) ([5228d9a](https://github.com/mad01/thismoon/commit/5228d9a284828bbe41d0c45defc6ad80dab34d1e))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/humanizer/v0.1.0...humanizer/v0.2.0) (2026-07-07)
 
 

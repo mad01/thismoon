@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mad01/thismoon/compare/status/v0.1.0...status/v0.2.0) (2026-07-12)
+
+
+### Features
+
+* **status:** flag services running a stale binary (version drift) ([#66](https://github.com/mad01/thismoon/issues/66)) ([309f17b](https://github.com/mad01/thismoon/commit/309f17b46cdef00115521215cfce2f577e115301))
+
 ## 0.1.0 (2026-07-06)
 
 
