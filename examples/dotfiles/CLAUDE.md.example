@@ -3,8 +3,8 @@
 An example `~/.claude/CLAUDE.md` (user-global instructions, applied to every
 project) tuned for someone running the `*.this` platform locally. It wires
 Claude Code to the thismoon MCP servers — csl, worklog, humanizer, events,
-deps, present, reminder, bionic — and sets sensible defaults for commits, PRs,
-code search, and agent discipline.
+deps, present, reminder, keep, bionic — and sets sensible defaults for commits,
+PRs, code search, and agent discipline.
 
 Copy the parts you want into your own `~/.claude/CLAUDE.md`. Everything here is
 portable: no machine-private hostnames, secrets, or private tracker IDs.
@@ -18,6 +18,7 @@ Each MCP server this file references is a component in this repo:
 | deps | [`services/deps`](../../services/deps) | dependency scanning (`deps_*`) |
 | present | [`services/present`](../../services/present) | briefing pages (`present_*`) |
 | reminder | [`services/reminder`](../../services/reminder) | reminders (`reminder_*`) |
+| keep | [`services/keep`](../../services/keep) | assertion store (`keep_*`) |
 | worklog | [`tools/worklog`](../../tools/worklog) | cross-session work state (`worklog_*`) |
 | humanizer | [`tools/humanizer`](../../tools/humanizer) | AI-writing detection (`humanizer_*`) |
 | bionic | [`tools/bionic`](../../tools/bionic) | bionic-reading render (`bionic_*`) |
@@ -115,6 +116,28 @@ in a tmp dir.
   session to re-discover everything.
 - Worklog holds resumable task state. "Remember" still routes to auto-memory
   (durable atomic facts); `/handoff` writes a one-off bridge doc.
+
+## keep — assertion store (evidence-pinned session knowledge)
+keep (a thismoon service, web at `http://keep.this/`) stores **assertions**:
+one-sentence statements about how a system behaves, each pinned to a hashed
+file line-range. `keep check` flips assertions stale when the pinned code
+changes, so unlike docs or memory they decay detectably.
+
+- **Consult before spelunking:** starting non-trivial work in a repo, run
+  `keep_query` with a `subject` prefix (`repo:<org>/<repo>...`) —
+  `verified`/fresh assertions are pre-derived understanding with evidence;
+  `keep_get` shows the pins.
+- **Deposit after deriving:** when a session works out something non-obvious
+  that took real effort (behavior, invariant, dead end), store it with
+  `keep_assert` — at least one evidence pin (`repo_path`, `file`,
+  `start_line`, `end_line`) is required, one sentence per assertion, subject
+  namespaced like `repo:<org>/<repo>/path`.
+- **Correct, don't tolerate:** an assertion that proves wrong gets
+  `keep_retract` with a note (the counter-evidence). Treat `stale` assertions
+  as unverified hints until re-checked.
+- **Division of labor:** auto-memory = durable facts about you and your
+  projects; worklog = resumable task state; keep = evidence-pinned claims
+  about code behavior that go stale with the code.
 
 ## Language & Tool Preferences
 - Go for CLI tools and infrastructure tooling (install to `~/code/bin`, use
@@ -307,6 +330,7 @@ confirmation. Don't silently start destructive or external ops.
 | Term | Meaning |
 |---|---|
 | csl | code-search-local (thismoon service) |
+| keep | assertion store with evidence pins (thismoon service) |
 | worklog | resumable cross-session work state (thismoon tool) |
 | humanizer | AI-writing detector/rewriter (thismoon tool) |
 | ralph | recipe-driven local service manager |
