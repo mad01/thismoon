@@ -13,7 +13,7 @@ ralph merges the recipe with the identity `thismoon/events`. The package
 ## What this recipe does
 
 - `wave = 0`: builds `~/code/bin/events` like the other Go tools (before the
-  dotfiles `recipes/claude-mcp` at wave 1 registers the MCP server).
+  the consuming repo's `recipes/claude-mcp` at wave 1 registers the MCP server).
 - **`packages.events.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
@@ -27,7 +27,7 @@ ralph merges the recipe with the identity `thismoon/events`. The package
 Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
-- MCP registration: `recipes/claude-mcp/servers.json` (entry `events`, command
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `events`, command
   `events mcp` — unsandboxed first-party code, HTTP client only)
 - the `events.this` route: `recipes/d-man/routes.toml` (`events` → 7430)
 - `depends_on = ["packages.t_man"]` references the dotfiles t-man recipe's

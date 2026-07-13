@@ -15,7 +15,7 @@ recipe's directory inside the cache.
 ## What this recipe does
 
 - `wave = 0`: builds `~/code/bin/deps` like the other Go tools (before the
-  dotfiles `recipes/claude-mcp` at wave 1 registers the MCP server).
+  the consuming repo's `recipes/claude-mcp` at wave 1 registers the MCP server).
 - `profiles = ["personal"]`: personal Mac only — it depends on d-man and scans
   the personal repos. The MCP entry and d-man route carry the same gate.
 - **`directories.deps_config`** + **`dotfiles.deps_config`** — creates
@@ -35,7 +35,7 @@ recipe's directory inside the cache.
 Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
-- MCP registration: `recipes/claude-mcp/servers.json` (entry `deps`, command
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `deps`, command
   `deps mcp`, `profiles: ["personal"]` — unsandboxed first-party code, HTTP
   client only)
 - the `deps.this` route: `recipes/d-man/routes.toml` (`deps` → 7429)

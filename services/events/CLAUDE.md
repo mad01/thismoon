@@ -183,7 +183,7 @@ confirms which embedded webkit assets the running events server serves.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before `recipes/claude-mcp` (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
 - **serve must be running for the MCP/CLI/producers to work**: it owns the
   store. It runs as a t-man agent; `t-man status events` / `t-man restart events`.
 - **MCP is unsandboxed**: it's first-party code that only makes HTTP calls to
@@ -196,6 +196,6 @@ confirms which embedded webkit assets the running events server serves.
 
 - Recipe: `recipes/events/recipe.toml` (+ `recipes/events/CLAUDE.md`)
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`events` → 7430; docs/adr/0006)
-- MCP registration: `recipes/claude-mcp/servers.json` (entry `events`, command `events mcp`)
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `events`, command `events mcp`)
 - ADR: `docs/adr/0005-webkit-client-side-rendering.md` (events was already client-side)
 - Import provenance: `docs/MIGRATED-FROM.md`

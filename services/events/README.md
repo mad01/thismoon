@@ -85,7 +85,7 @@ API only; deletion stays human-triggered.
 
 Ask in plain language: "what's happened with deps today", "any errors in the
 last hour", "log that the release finished". Claude calls the `events_*` MCP
-tools, registered in `recipes/claude-mcp/servers.json`:
+tools, registered in the consuming repo's `recipes/claude-mcp/servers.json`:
 
 - `events_query`: query the log, newest-first; filter by source, level, text, or since; the primary tool for debugging what happened
 - `events_sources`: list sources with their event counts

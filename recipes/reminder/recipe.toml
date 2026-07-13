@@ -28,7 +28,7 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove reminder 2>/
 
 # Register `reminder serve` as a long-running launchd user agent via t-man. This
 # process owns the JSON store and fires notifications; the MCP server (registered
-# in the dotfiles recipes/claude-mcp/servers.json) is a thin HTTP client to it.
+# in the consuming repo's recipes/claude-mcp/servers.json) is a thin HTTP client to it.
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
 [hooks.builds.reminder_service]
 commands = [

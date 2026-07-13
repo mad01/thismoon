@@ -12,7 +12,7 @@ ralph merges the recipe with the identity `thismoon/present`. The package
 
 ## What this recipe does
 
-Wave 0 (builds before the dotfiles `claude-mcp` recipe at wave 1 registers the
+Wave 0 (builds before the consuming repo's `claude-mcp` recipe at wave 1 registers the
 MCP server).
 
 - **`packages.present`** — `make build` + `make install` → `~/code/bin/present`
@@ -37,7 +37,7 @@ MCP server).
 Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
-- MCP registration: `recipes/claude-mcp/servers.json` — entry `present`,
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` — entry `present`,
   command pointing at `present-mcp-sandbox.sh` **in the sources cache**
   (`~/.config/ralph/sources/thismoon/recipes/present/present-mcp-sandbox.sh`)
 - the `present.this` route: `recipes/d-man/routes.toml` (`present` → 7423)

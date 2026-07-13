@@ -219,7 +219,7 @@ the same commit reports the same asset hash.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before `recipes/claude-mcp` (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
 - **serve must be running for the MCP/CLI to work**: it owns the store and does
   the pin hashing. It runs as a t-man agent; `t-man status keep` /
   `t-man restart keep`.

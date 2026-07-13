@@ -214,7 +214,7 @@ confirms which embedded webkit assets the running deps server serves.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before `recipes/claude-mcp` (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
 - **serve must be running for the MCP/CLI to work**: it owns the store and is
   the only one that reaches OSV. `t-man status deps` / `t-man restart deps`.
 - **Personal Mac only**: recipe, MCP entry, and d-man route are all
@@ -229,5 +229,5 @@ confirms which embedded webkit assets the running deps server serves.
 - Recipe: `recipes/deps/recipe.toml` (+ `recipes/deps/CLAUDE.md`)
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`deps` → 7429; docs/adr/0006)
 - Config: `recipes/deps/config.toml` → `~/.config/deps/config.toml`
-- MCP registration: `recipes/claude-mcp/servers.json`
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
 - Repo list source of truth: `recipes/catalog/registry.yaml`

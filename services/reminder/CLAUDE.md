@@ -183,7 +183,7 @@ reports the same asset hash.
 
 ## Gotchas
 
-- **Wave 0 builder.** Builds before `recipes/claude-mcp` (wave 1) registers the MCP.
+- **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
 - **serve must be running for the MCP/CLI to work**: it owns the store. It runs
   as a t-man agent; `t-man status reminder` / `t-man restart reminder`.
 - **MCP is unsandboxed.** It's first-party code that only makes HTTP calls to
@@ -199,5 +199,5 @@ reports the same asset hash.
 
 - Recipe: `recipes/reminder/recipe.toml` (+ `recipes/reminder/CLAUDE.md`)
 - Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`reminder` → 7428; docs/adr/0006)
-- MCP registration: `recipes/claude-mcp/servers.json`
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
 - Human docs: `README.md`

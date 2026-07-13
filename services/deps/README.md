@@ -91,7 +91,7 @@ active findings, and an acknowledged section. From here you can:
 
 Ask in plain language: "scan for vulnerable dependencies", "what's flagged",
 "rescan the dotfiles repo", "resolve that go-jose advisory". Claude calls the
-`deps_*` MCP tools, registered in `recipes/claude-mcp/servers.json`:
+`deps_*` MCP tools, registered in the consuming repo's `recipes/claude-mcp/servers.json`:
 
 - `deps_scan`: discover all dependencies, no advisory check
 - `deps_check`: discover and check against OSV; returns the flagged packages

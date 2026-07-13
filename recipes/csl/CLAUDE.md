@@ -13,7 +13,7 @@ What stays in the consuming repo (machine wiring, per ADR-0006):
 - `~/.config/csl/config.yaml` symlink — which directories a machine indexes
   is per-machine, as is the semantic embedding model override
   (`semantic.embed_model` / `semantic.dim`).
-- MCP registration — `csl mcp` in the claude-mcp recipe's `servers.json`.
+- MCP registration — `csl mcp` in the consuming repo's `claude-mcp` recipe `servers.json`.
 - Ollama and the embedding model pull (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`) —
   semantic search needs a running Ollama; lexical search works without it.
 

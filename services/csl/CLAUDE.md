@@ -256,7 +256,7 @@ what `webkit.js` polls every ~5s to auto-reload on a CSS/JS change.
 - **`app.js` no longer owns theme.** `webkit.js` + `<wk-header>` handle theme
   toggling and persistence entirely; `app.js` shouldn't duplicate that logic.
 - The MCP server (`csl mcp`) is registered in
-  `dotfiles/recipes/claude-mcp/servers.json` and runs via t-man; the web UI is
+  the consuming repo's `recipes/claude-mcp/servers.json` and runs via t-man; the web UI is
   `csl web --port 7424` (the `csl-web` t-man agent). There is no `csl serve`:
   `--serve` is a flag on `csl search` that runs the search daemon in the foreground.
 - **`csl hooks install` is deprecated.** suspenders now owns post-merge git

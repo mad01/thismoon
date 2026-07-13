@@ -29,7 +29,7 @@ source = "skills"
 target = "~/.claude/skills"
 action = "symlink_dir"
 
-# Keep the MCP spawn wrapper executable — the dotfiles claude-mcp overlay
+# Keep the MCP spawn wrapper executable — the consuming repo's claude-mcp overlay
 # registers the wrapper, not the bare binary (sandbox containment: the wrapper
 # execs `present mcp` under present.sb, which lives beside it in this dir).
 [hooks.builds.present_chmod_mcp_wrapper]
