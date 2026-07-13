@@ -28,10 +28,11 @@ address, managed as launchd agents by t-man.
 | d-man | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI |
 | deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP |
 | events | Local event and audit log, archive-only JSONL store | web · CLI · MCP |
+| keep | Assertion store: evidence-pinned claims about code that go stale with it | web · CLI · MCP |
 | pr | PR review dashboard aggregating open PRs from multiple GitHub hosts | web · CLI |
 | present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP |
 | reminder | Reminders that fire macOS notifications | web · CLI · MCP |
-| speak | Reads markdown aloud through a local TTS model | web · CLI |
+| speak | Reads markdown aloud through a local TTS model | web · CLI · MCP |
 | status | Status page with 30-day uptime history for the fleet | web · CLI |
 
 ## Tools
