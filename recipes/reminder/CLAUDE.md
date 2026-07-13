@@ -22,8 +22,6 @@ ralph merges the recipe with the identity `thismoon/reminder`. The package
   `run = "always"` self-heals if the agent was removed. Guarded on t-man being
   on PATH.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
-- **`dirs_mirror.reminder_skill`** — symlinks `skills/reminder/` into
-  `~/.claude/skills/` so the Claude skill ships with the service.
 
 ## What stays in dotfiles (private overlay)
 
@@ -63,5 +61,4 @@ removing the agent doesn't delete that file.
 ## See also
 
 - Source + module notes: `services/reminder/CLAUDE.md`
-- Skill: `skills/reminder/SKILL.md` (mirrored into `~/.claude/skills/`)
 - Import provenance: `docs/MIGRATED-FROM.md`

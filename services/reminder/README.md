@@ -61,8 +61,7 @@ the record), and a **Delete** button (removes it for good).
 
 Ask in plain language — "remind me to call the dentist tomorrow at 9", "what are
 my reminders", "cancel the standup one". Claude works out the time and calls
-the tools below. The `/reminder` skill spells out the conversation patterns,
-but the tools work without it.
+the tools below.
 
 | Tool | Purpose |
 |------|---------|

@@ -199,6 +199,5 @@ reports the same asset hash.
 
 - Recipe: `recipes/reminder/recipe.toml` (+ `recipes/reminder/CLAUDE.md`)
 - Route: `recipes/d-man/routes.toml` (`reminder` → 7428)
-- Skill: `recipes/claude/skills/reminder/SKILL.md`
 - MCP registration: `recipes/claude-mcp/servers.json`
 - Human docs: `README.md`
