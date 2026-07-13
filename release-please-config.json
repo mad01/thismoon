@@ -11,6 +11,7 @@
     "services/d-man": { "component": "d-man" },
     "services/deps": { "component": "deps" },
     "services/events": { "component": "events" },
+    "services/keep": { "component": "keep" },
     "services/pr": { "component": "pr" },
     "services/present": { "component": "present" },
     "services/reminder": { "component": "reminder" },

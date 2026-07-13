@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assertions</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette, header chrome, page-header, card, badge visuals all come from
+   /webkit/webkit.css. Only keep-specific layout lives here. The assertion list
+   is rendered client-side by /app.js into <div id="app">. */
+.wrap{padding-top:1.5rem}
+.hint{color:var(--text-3);font-size:0.85rem;margin:0 0 1.25rem}
+.hint code{background:var(--chip-bg);padding:0.05rem 0.35rem;border-radius:3px}
+.empty{color:var(--text-3);font-size:0.9375rem;padding:2rem 0}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:0.6rem;margin:0 0 1.5rem}
+.filters input,.filters select{appearance:none;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:0.4rem 0.7rem;font-family:inherit;font-size:0.85rem;color:var(--text-1)}
+.filters input{min-width:16rem;flex:1}
+.filters input:focus,.filters select:focus{outline:none;border-color:var(--accent)}
+.filters input::placeholder{color:var(--text-3)}
+.a-list{display:flex;flex-direction:column;gap:0.75rem}
+.a-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem}
+.a-stmt{font-size:0.9375rem;font-weight:600;color:var(--text-1)}
+.a-meta{font-size:0.78rem;color:var(--text-3);font-variant-numeric:tabular-nums}
+.a-note{font-size:0.82rem;color:var(--text-3);margin-top:0.4rem}
+</style>
+</head>
+<body>
+<wk-header brand="keep" title="Assertions"></wk-header>
+<main class="wrap"><div id="app"></div></main>
+<wk-toast-host id="toast-host"></wk-toast-host>
+<script src="/webkit/webkit.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
