@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/mad01/thismoon/compare/keep/v0.1.0...keep/v0.1.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **keep:** document pin repo_path as an absolute working-tree path ([#73](https://github.com/mad01/thismoon/issues/73)) ([0f679a0](https://github.com/mad01/thismoon/commit/0f679a0fc0758ca3aa8f5a65bdd238ac8970769b))
+
 ## 0.1.0 (2026-07-12)
 
 
