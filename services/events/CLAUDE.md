@@ -195,7 +195,7 @@ confirms which embedded webkit assets the running events server serves.
 ## See also
 
 - Recipe: `recipes/events/recipe.toml` (+ `recipes/events/CLAUDE.md`)
-- Route: `recipes/d-man/routes.toml` (`events` → 7430)
+- Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`events` → 7430; docs/adr/0006)
 - MCP registration: `recipes/claude-mcp/servers.json` (entry `events`, command `events mcp`)
 - ADR: `docs/adr/0005-webkit-client-side-rendering.md` (events was already client-side)
 - Import provenance: `docs/MIGRATED-FROM.md`

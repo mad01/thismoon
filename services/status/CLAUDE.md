@@ -113,4 +113,4 @@ make test     # go test ./...
 ## See also
 
 - Recipe: `recipes/status/recipe.toml` (+ `recipes/status/CLAUDE.md`)
-- Route: dotfiles `recipes/d-man/routes.toml` (`status` → 7426; machine overlay stays in dotfiles)
+- Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`status` → 7426; docs/adr/0006)

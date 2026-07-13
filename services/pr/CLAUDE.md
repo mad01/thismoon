@@ -95,5 +95,5 @@ webkit's own `GET /webkit/version` (asset-hash ETag); see `webkit/CLAUDE.md`.
 ## See also
 
 - Recipe: `recipes/pr/recipe.toml` (+ `recipes/pr/CLAUDE.md`)
-- Route: dotfiles `recipes/d-man/routes.toml` (`pr` -> 7427; machine overlay stays in dotfiles)
+- Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`pr` → 7427; docs/adr/0006)
 - Config: host-gated `~/.config/pr/config.toml` symlinks live in the dotfiles overlay (per-machine repo lists), the `pr-config` companion-recipe pattern cited in docs/adr/0006

@@ -227,7 +227,7 @@ confirms which embedded webkit assets the running deps server serves.
 ## See also
 
 - Recipe: `recipes/deps/recipe.toml` (+ `recipes/deps/CLAUDE.md`)
-- Route: `recipes/d-man/routes.toml` (`deps` → 7429)
+- Route: the consuming repo's `recipes/d-man/routes.toml` overlay (`deps` → 7429; docs/adr/0006)
 - Config: `recipes/deps/config.toml` → `~/.config/deps/config.toml`
 - MCP registration: `recipes/claude-mcp/servers.json`
 - Repo list source of truth: `recipes/catalog/registry.yaml`
