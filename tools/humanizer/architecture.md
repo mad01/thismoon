@@ -1,0 +1,85 @@
+# humanizer architecture
+
+## Overview
+
+humanizer is a tool: one Go program installed to `~/code/bin/humanizer` that
+detects AI-writing patterns in text and computes quantitative voice
+profiles. At runtime it is a short-lived CLI (`detect`, `profile`, `rules`)
+or an MCP stdio server (`humanizer mcp`) launched by an MCP host. For span
+detection the tool shells out to a `vale` subprocess against an embedded
+style pack rather than matching patterns itself. Everything runs offline;
+the statistical detector and voice profiler are pure Go with no subprocess
+at all.
+
+## Structure
+
+```
+cmd/humanizer/       entrypoint; delegates to internal/cli
+internal/cli/        cobra command tree: root, detect, profile, rules, mcp
+internal/rules/      vale integration: embed.go (pack embedding + cache
+                     extraction), vale.go (subprocess run + JSON parsing),
+                     metadata.go (rule metadata from YAML headers),
+                     vale/styles/Humanizer/*.yml (43 rules)
+internal/voice/      profile.go (Compute), statistical.go
+                     (DetectStatistical), diff.go (DiffProfiles)
+internal/mcpserver/  server.go plus one tools_*.go file per tool group
+testdata/            ai_sample.md / human_sample.md fixtures
+```
+
+`internal/rules` and `internal/voice` hold all the logic; `internal/cli` and
+`internal/mcpserver` are thin frontends over the same functions, so CLI and
+MCP results never diverge.
+
+## Data flow
+
+Span detection (`detect` / `humanizer_detect`): the text lands in
+`rules.Detect`, which calls `EnsurePack` to extract the embedded style pack
+to the cache directory if needed, writes the text to a temp file, and runs
+`vale --output=JSON --config=<cache>/.vale.ini` via `runVale`.
+`parseValeJSON` turns vale alerts into findings; `filterAndEnrich` applies
+the `--min-severity` and `--rule` filters and attaches rule metadata.
+`humanizer_detect_file` takes the same path through `rules.DetectFile` but
+hands vale the on-disk file, so vale sees the real extension.
+
+Statistical detection (`detect --statistical` /
+`humanizer_detect_statistical`): `voice.DetectStatistical` runs whole-sample
+checks (sentence-length uniformity, contraction rate, type-token ratio,
+heading density, anaphora), each gated on a minimum sample size. No vale, no
+spans — findings describe the sample as a whole.
+
+Profiling: `voice.Compute` tokenizes the text and produces the metric set
+(counts, sentence-length distribution, punctuation densities, contraction
+rate, Flesch reading ease, top n-grams); `voice.DiffProfiles` computes the
+metric-by-metric delta for `profile --diff` and `humanizer_voice_diff`.
+
+Rule metadata: `metadata.go` parses the `# humanizer-*` comment headers of
+every embedded YAML once and serves them to `rules list` / `rules explain`
+and the matching MCP tools.
+
+## Storage
+
+The embedded style pack extracts to `~/.cache/humanizer/vale` on first use
+(`EnsurePack`); override the location with `HUMANIZER_CACHE_DIR` or
+`XDG_CACHE_HOME`. That cache is the only thing humanizer writes. Everything
+else it reads (input files, temp files for vale) is transient.
+
+## Interfaces
+
+CLI: `detect [file]` (flags `--min-severity`, `--rule`, `--statistical`,
+`--json`), `profile [file]` (`--diff`, `--json`), `rules list`
+(`--category`, `--json`), `rules explain <rule_id>`, and `mcp`. All text
+commands read stdin when the file argument is omitted or `-`.
+
+MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing eight
+tools: `humanizer_status`, `humanizer_detect`, `humanizer_detect_file`,
+`humanizer_detect_statistical`, `humanizer_rules_list`,
+`humanizer_rules_explain`, `humanizer_voice_profile`,
+`humanizer_voice_diff`. Handlers call the same `rules` and `voice` functions
+as the CLI. When the consuming repo registers the server it runs under a
+seatbelt sandbox: no network, and `humanizer_detect_file` reads only prose
+files under the profile's workspace roots — the sandbox is the consuming
+repo's wiring (docs/adr/0006), not this code.
+
+Runtime dependency: `vale` must be on `$PATH` for span detection;
+`humanizer_status` reports whether it is installed. The statistical, voice,
+and rules-metadata paths work without it.
