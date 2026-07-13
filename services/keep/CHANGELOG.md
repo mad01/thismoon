@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mad01/thismoon/compare/keep/v0.1.1...keep/v0.2.0) (2026-07-13)
+
+
+### Features
+
+* **keep:** store assertions as an append-only JSONL log ([#75](https://github.com/mad01/thismoon/issues/75)) ([21da468](https://github.com/mad01/thismoon/commit/21da468fb46cb065e8e1b13b346d8642f1297d27))
+
 ## [0.1.1](https://github.com/mad01/thismoon/compare/keep/v0.1.0...keep/v0.1.1) (2026-07-13)
 
 
