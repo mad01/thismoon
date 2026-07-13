@@ -19,7 +19,7 @@ import (
 )
 
 // Both pages are static chrome-only shells; their bodies are rendered in the
-// browser from JSON (ADR-0017). The list shell + appJS fetch GET /api/prs; the
+// browser from JSON (docs/adr/0005). The list shell + appJS fetch GET /api/prs; the
 // detail shell + detailJS fetch GET /api/pr/{host}/{owner}/{repo}/{number}.
 
 //go:embed shell.html

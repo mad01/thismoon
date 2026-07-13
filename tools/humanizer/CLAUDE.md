@@ -53,7 +53,7 @@ make tidy     # go mod tidy
 make resign   # re-apply adhoc signature without rebuilding (macOS only)
 ```
 
-Binary installs to `~/code/bin/humanizer`. Config lives at `~/.config/humanizer/config.yaml`, symlinked into place by the consuming repo's companion recipe.
+Binary installs to `~/code/bin/humanizer`. There is no config file; the only tunable is the vale pack cache directory (`HUMANIZER_CACHE_DIR`, falling back to `XDG_CACHE_HOME`, default `~/.cache/humanizer/vale`).
 
 The test suite includes metadata validation for every YAML header and concurrent-detection race checks.
 

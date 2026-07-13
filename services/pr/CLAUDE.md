@@ -26,7 +26,8 @@ pr/
   Each `[[source]]` block specifies a GitHub host, org/owner, and list of
   repos to watch.
 - **Polling**: background goroutine fetches open PRs from all configured repos
-  every `poll_interval` (default 5m). Results cached in memory. Archived repos
+  every `poll_interval` (default 5m). Results persist to `store.json` under
+  `--workdir` (atomic writes, see `internal/store`). Archived repos
   are excluded: the pulls payload carries `base.repo.archived`, so an archived
   repo's PRs are dropped (and its stale cache overwritten) with no extra API
   call.

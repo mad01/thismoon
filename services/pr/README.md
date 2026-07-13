@@ -40,7 +40,8 @@ t-man logs pr        # stdout logs
 | `--workdir` | `~/.local/share/pr` | Working data location |
 
 A background poller refreshes all sources every `poll_interval` (default 5m)
-and caches results in memory; PRs from archived repos are dropped
+and persists results to `store.json` under `--workdir`, so the dashboard
+survives restarts without a cold poll; PRs from archived repos are dropped
 automatically.
 
 ## Endpoints
