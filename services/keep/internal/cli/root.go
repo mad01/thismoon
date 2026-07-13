@@ -38,7 +38,7 @@ Subcommands:
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagWorkdir, "workdir", defaultWorkdir(),
-		"directory holding assertions.json (env KEEP_WORKDIR)")
+		"directory holding the assertion log (env KEEP_WORKDIR)")
 	rootCmd.PersistentFlags().IntVar(&flagPort, "port", resolvedDefaultPort(),
 		"port the HTTP server listens on / the MCP talks to (env KEEP_PORT)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", os.Getenv("KEEP_BASE_URL"),

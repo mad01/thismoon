@@ -1,7 +1,7 @@
 # keep, assertion store with evidence pins
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, all over
-one JSON store. An agent session deposits a one-sentence assertion about how a
+one append-only JSONL store. An agent session deposits a one-sentence assertion about how a
 system behaves and pins it to evidence: a line range in a repo working tree,
 hashed the moment the session records it. `keep check` re-hashes those pins and flips
 an assertion stale when the pinned code has changed. **The MCP tools (driven by
@@ -17,7 +17,7 @@ keep/
     cli/               - cobra: root, serve, mcp, manage (assert/list/get/check/retract), version (Version via ldflags)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     store/             - Assertion model + pure helpers (assertion.go) and the
-                         mutex-guarded JSON store (store.go, id.go)
+                         mutex-guarded JSONL store (store.go, id.go)
     pin/               - Pin model + working-tree hashing (pin.go): resolve, re-hash, compare
     server/            - HTTP API + webkit web page (embedded shell.html + app.js)
     mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 5 tools)
@@ -32,9 +32,9 @@ Assertions are mutated from three places (the MCP, the CLI, and `keep check`),
 so to avoid two processes racing on the JSON file, **`keep serve` is the only
 writer**:
 
-- **`keep serve`** owns the store (in-memory slice guarded by a mutex,
-  persisted to `~/.local/share/keep/assertions.json`). It runs the HTTP server
-  (web page + JSON API + `/version` + `/webkit/`).
+- **`keep serve`** owns the store (in-memory map guarded by a mutex,
+  persisted to the JSONL log under `~/.local/share/keep/`). It runs the HTTP
+  server (web page + JSON API + `/version` + `/webkit/`).
 - **`keep mcp`** holds no state: it is a thin HTTP client to the serve API on
   `localhost:<port>`. If serve is down, tools return "keep serve not reachable
   … (t-man status keep)".
@@ -83,9 +83,20 @@ Pin{
 - Every assertion needs at least one pin. An assertion with zero pins can't go
   stale, so keep refuses to store one.
 
-Persisted to a single file, `~/.local/share/keep/assertions.json`, rewritten
-atomically (temp file + rename) on every write. Workdir defaults to
-`~/.local/share/keep` and is overridable with `KEEP_WORKDIR`.
+Persisted as an append-only JSONL log: every mutation appends one complete
+record as one line, and load resolves the newest record per id (greater
+`updated_at` wins; a tie goes to the later line). Two files under the workdir:
+
+- `assertions.jsonl` — everything except machine-scoped records; the file
+  federation will sync (MAD-246).
+- `local.jsonl` — records whose subject starts with `machine:`; never leaves
+  the machine. Routing happens at write time and subjects are immutable, so a
+  record never moves between files.
+
+A pre-JSONL `assertions.json` array is migrated on startup (one line per
+record, oldest first) and renamed to `assertions.json.migrated` as a backup.
+Workdir defaults to `~/.local/share/keep` and is overridable with
+`KEEP_WORKDIR`.
 
 ### State transitions
 

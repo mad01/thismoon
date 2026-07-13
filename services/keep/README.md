@@ -98,7 +98,7 @@ web page.
 
 ## Where things live
 
-- Assertions: `~/.local/share/keep/assertions.json`
+- Assertions: `~/.local/share/keep/assertions.jsonl` (plus `local.jsonl` for machine-scoped ones)
 - Binary: `~/code/bin/keep`
 - Web + API: `http://keep.this/` (or `http://localhost:7431/`)
 
