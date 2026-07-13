@@ -64,7 +64,7 @@ func (h *handlers) one(a client.Assertion) out { return out{Assertion: a, URL: h
 // ── assert ──
 
 type pinInput struct {
-	RepoPath  string `json:"repo_path"  jsonschema_description:"path to the repo working tree the evidence lives in, e.g. mad01/thismoon"`
+	RepoPath  string `json:"repo_path"  jsonschema_description:"absolute path to the repo working tree the evidence lives in, e.g. /Users/me/code/src/github.com/mad01/thismoon"`
 	File      string `json:"file"       jsonschema_description:"repo-relative path to the file"`
 	StartLine int    `json:"start_line" jsonschema_description:"first line of the evidence range (1-based, inclusive)"`
 	EndLine   int    `json:"end_line"   jsonschema_description:"last line of the evidence range (1-based, inclusive; >= start_line)"`

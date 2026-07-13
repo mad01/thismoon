@@ -51,7 +51,7 @@ $ keep assert \
     --statement "events dedupes by content hash within a 5s window" \
     --confidence verified \
     --session sess-0af3 \
-    --pin mad01/thismoon:services/events/internal/store/dedupe.go:42-58
+    --pin ~/code/src/github.com/mad01/thismoon:services/events/internal/store/dedupe.go:42-58
 018f2c...  fresh  events dedupes by content hash within a 5s window
 
 $ keep list --subject repo:mad01/thismoon

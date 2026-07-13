@@ -64,7 +64,7 @@ Assertion{
 }
 
 Pin{
-  RepoPath,          // e.g. mad01/thismoon
+  RepoPath,          // absolute path to the repo working tree
   File,              // path within the repo
   StartLine, EndLine, // 1-based inclusive
   ContentSHA256,     // sha256 of the line range read from the working tree
@@ -162,7 +162,8 @@ keep retract <id> --note <reason>
 keep version [-o json]
 ```
 
-`--pin` takes `repo_path:file:start-end` and repeats; at least one is required.
+`--pin` takes `repo_path:file:start-end` and repeats; at least one is required,
+and `repo_path` is the absolute path to the repo working tree.
 `keep check` with no id walks the whole store (skipping retracted ones) and
 prints how many flipped. `keep version` prints the git commit that built the
 binary; `-o json` prints `{"version":"<sha>"}`, the convention sibling tools
@@ -173,7 +174,7 @@ follow so ralph can probe any of them for the build they are running.
 Thin client over the API above (`internal/client`), served on stdio by
 `keep mcp`:
 
-- `keep_assert(kind, subject, statement, confidence, session, pins, cost_tokens?, links?)`: create; `pins` is a list of `repo_path:file:start-end`, at least one
+- `keep_assert(kind, subject, statement, confidence, session_id, pins, cost_tokens?, links?)`: create; `pins` is a list of objects (`repo_path` — absolute path to the working tree, `file`, `start_line`, `end_line`), at least one
 - `keep_query(subject?, kind?, status?)`: list, newest first; `subject` is a prefix match
 - `keep_get(id)`: one assertion, full detail
 - `keep_retract(id, note)`: terminal withdrawal with a counter-evidence note

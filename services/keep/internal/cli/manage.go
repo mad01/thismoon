@@ -118,8 +118,9 @@ var assertCmd = &cobra.Command{
 least one line range in a repo working tree. serve resolves and hashes each pin
 before storing; an assertion it can't ground in evidence is rejected.
 
---pin takes repo_path:file:start-end and repeats (at least one required), e.g.
-  --pin mad01/thismoon:services/keep/internal/store/store.go:41-60`,
+--pin takes repo_path:file:start-end and repeats (at least one required);
+repo_path is the absolute path to the repo working tree (~ is expanded), e.g.
+  --pin ~/code/src/github.com/mad01/thismoon:services/keep/internal/store/store.go:41-60`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if len(assertPins) == 0 {
 			return fmt.Errorf("at least one --pin is required (repo_path:file:start-end)")
