@@ -31,13 +31,13 @@ jobs:
       # the hour, so there is no long-lived PAT to rotate; its PRs still
       # trigger ci.yml. The App grants Contents + Pull requests + Issues
       # read-write on this repo only (Issues for release-please labels).
-      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
-      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -61,11 +61,11 @@ jobs:
       TAG: ${{ fromJSON(needs.release-please.outputs.outputs_json)[format('{0}--tag_name', matrix.path)] }}
       COMPONENT_PATH: ${{ matrix.path }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
 
@@ -94,7 +94,7 @@ jobs:
           done
           cd dist && shasum -a 256 ./*.tar.gz > checksums.txt
 
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4
 
       # Verify with:
       #   cosign verify-blob \
