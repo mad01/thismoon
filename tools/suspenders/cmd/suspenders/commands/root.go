@@ -8,9 +8,6 @@ import (
 	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
-// Version is the build version, injected via -ldflags at build time.
-var Version = "dev"
-
 var rootCmd = &cobra.Command{
 	Use:           "suspenders",
 	Short:         "Git secret scanner and pre-commit hook manager",

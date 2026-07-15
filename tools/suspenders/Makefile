@@ -3,7 +3,7 @@ PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/tools/suspenders/cmd/suspenders/commands.Version=$(GIT_COMMIT)
+LDFLAGS    := -X github.com/mad01/thismoon/tools/suspenders/internal/cli.Version=$(GIT_COMMIT)
 
 .PHONY: build install resign clean test test-integration tidy fmt lint
 

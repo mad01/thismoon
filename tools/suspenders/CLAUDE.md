@@ -8,7 +8,7 @@ A Go CLI tool for offline git secret scanning and hook orchestration. Detects ch
 cmd/suspenders/
   main.go                    Thin entry point, calls commands.Execute()
   commands/
-    root.go                  Cobra root command, version var
+    root.go                  Cobra root command
     scan.go                  suspenders scan: standalone secret scanning + blocked-name
                              check (guard.CheckDir, or guard.Check for --staged)
     hook.go                  suspenders hook: install/update/status/uninstall/run
@@ -18,6 +18,9 @@ cmd/suspenders/
     version.go               suspenders version
 
 internal/
+  cli/
+    version.go               Version var, the -ldflags target (the release pipeline
+                             injects <component>/internal/cli.Version monorepo-wide)
   config/
     config.go                Config struct (YAML), Load from XDG path, ExpandPath
                              Types: ScanConfig, GuardConfig, HistoryConfig, ExternalHook, HooksConfig

@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/suspenders/internal/cli"
 )
 
 // TestVersionCmd_JSONShape pins the cross-tool convention: `version -o json`
 // must emit exactly {"version":"<value>"} so a single probe parses any sibling
 // tool's build identity uniformly.
 func TestVersionCmd_JSONShape(t *testing.T) {
-	orig := Version
-	Version = "abc1234"
-	defer func() { Version = orig }()
+	orig := cli.Version
+	cli.Version = "abc1234"
+	defer func() { cli.Version = orig }()
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -43,9 +45,9 @@ func TestVersionCmd_JSONShape(t *testing.T) {
 }
 
 func TestVersionCmd_TextIsPlain(t *testing.T) {
-	orig := Version
-	Version = "abc1234"
-	defer func() { Version = orig }()
+	orig := cli.Version
+	cli.Version = "abc1234"
+	defer func() { cli.Version = orig }()
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
