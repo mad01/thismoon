@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/mad01/thismoon/compare/suspenders/v0.3.1...suspenders/v0.3.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* **suspenders:** move the version var to internal/cli so release ldflags land ([#89](https://github.com/mad01/thismoon/issues/89)) ([aacd2b1](https://github.com/mad01/thismoon/commit/aacd2b1ee26847be5c4c4247bc101bd5d6b30781))
+
 ## [0.3.1](https://github.com/mad01/thismoon/compare/suspenders/v0.3.0...suspenders/v0.3.1) (2026-07-10)
 
 
