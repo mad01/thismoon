@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/mad01/thismoon/compare/csl/v0.7.0...csl/v0.7.1) (2026-07-15)
+
+
+### Miscellaneous Chores
+
+* **csl:** note prebuilt release tarballs in the README ([#85](https://github.com/mad01/thismoon/issues/85)) ([4ec5a8e](https://github.com/mad01/thismoon/commit/4ec5a8e4461eb44c3df94c4208448337398fd816))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/csl/v0.6.0...csl/v0.7.0) (2026-07-12)
 
 
