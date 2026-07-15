@@ -39,7 +39,7 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 
 Full reference: `docs/RELEASING.md`. The short version for working here:
 
-- release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps; merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release, and the artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle. csl's matrix entry is a deliberate no-op (cgo).
+- release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps; merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release, and the artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle, natively on a macOS arm64 runner (csl builds with cgo for its tree-sitter grammars; everything else stays CGO_ENABLED=0).
 - Release PRs can sit unmerged; merge = release. Never hand-edit `.release-please-manifest.json`.
 - The workflow authenticates with the `RELEASE_PLEASE_TOKEN` fine-grained PAT (Contents + Pull requests read-write). "Error adding to tree" or a missing release PR usually means the PAT expired or lost write — it needs renewal at most yearly.
 - New component → must be added to `release-please-config.json`; CI fails the PR otherwise.

@@ -37,9 +37,11 @@ before.
 
 Each released component gets, on its GitHub Release:
 
-- `<name>_vX.Y.Z_darwin_arm64.tar.gz`: the binary, built with
-  `CGO_ENABLED=0 -trimpath`, version embedded via ldflags
-  (`internal/cli.Version` is set to `vX.Y.Z-<short-sha>`)
+- `<name>_vX.Y.Z_darwin_arm64.tar.gz`: the binary, built natively on a
+  macOS arm64 runner with `-trimpath` (`CGO_ENABLED=0` for everything
+  except csl, which needs cgo for its tree-sitter grammars), version
+  embedded via ldflags (`internal/cli.Version` is set to
+  `vX.Y.Z-<short-sha>`)
 - `checksums.txt`: sha256 sums for every tarball
 - `checksums.txt.bundle`: a cosign keyless signature over `checksums.txt`,
   signed with the workflow's GitHub OIDC identity
@@ -56,19 +58,11 @@ cosign verify-blob \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   checksums.txt
 
-sha256sum -c checksums.txt
+shasum -a 256 -c checksums.txt
 ```
 
 The first command proves this repo's release workflow produced
 `checksums.txt`; the second proves your tarball matches it.
-
-## The csl exception
-
-csl ships no prebuilt artifacts. It needs cgo (tree-sitter) plus ONNX runtime
-libraries on the target machine, so a `CGO_ENABLED=0` cross-compile can't
-build it and a tarball wouldn't run anyway. Its tag, changelog, and GitHub
-Release still happen; the artifact steps are no-ops for its matrix entry.
-Install csl from a checkout; the fleet does this via its ralph recipe.
 
 ## Adding a new component
 

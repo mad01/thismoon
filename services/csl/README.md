@@ -10,7 +10,7 @@ The CLI, `csl mcp`, `csl web`, and the search daemon share the same internal sea
 
 ## Install
 
-Builds from a checkout only. Code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out, so `go install .../csl@latest` isn't a supported install path. This is also why csl's entry in the release artifact matrix is a no-op; the fleet installs it from source (see `docs/MIGRATED-FROM.md`).
+Needs cgo. Code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out, so `go install .../csl@latest` isn't a supported install path. Release artifacts build natively on a macOS arm64 runner, so the grammars compile statically into the tarball binary; the fleet still installs from source (see `docs/MIGRATED-FROM.md`).
 
 ```sh
 git clone https://github.com/mad01/thismoon.git

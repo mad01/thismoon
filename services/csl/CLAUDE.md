@@ -88,13 +88,13 @@ All state lives under `~/.config/csl/`:
 
 ## Build / install / test
 
-**Builds from a checkout only.** Code chunking compiles tree-sitter grammars
-(`smacker/go-tree-sitter`) via cgo with no build-tag opt-out, so
-`go install .../csl@latest` isn't a supported install path and csl's entry in
-the release artifact matrix is a deliberate no-op: the fleet installs it from
-source (see `docs/MIGRATED-FROM.md`). Embedding needs no native libs — it
-goes over HTTP to a local Ollama server (semantic/hybrid features only;
-lexical search has no Ollama dependency).
+**Needs cgo.** Code chunking compiles tree-sitter grammars
+(`smacker/go-tree-sitter`) via cgo with no build-tag opt-out. Release
+artifacts build natively on a macOS arm64 runner with `CGO_ENABLED=1`
+(the grammars compile statically into the binary, so the tarball is
+self-contained); the fleet still installs from source via ralph. Embedding
+needs no native libs — it goes over HTTP to a local Ollama server
+(semantic/hybrid features only; lexical search has no Ollama dependency).
 
 ```bash
 make build    # ./csl binary

@@ -36,9 +36,9 @@ no separately managed server. Freshness is a per-repo fingerprint of
 HEAD, branch, and `git status`; a stale repo is reindexed in the background
 after results return, so the current query stays fast and the next one
 reflects the latest state. A consequence worth naming: code chunking compiles
-tree-sitter grammars via cgo, so csl builds from a checkout only and its
-release-artifact entry is a deliberate no-op; the fleet installs it from
-source.
+tree-sitter grammars via cgo, so csl cannot be cross-compiled with
+`CGO_ENABLED=0`; release artifacts build natively on a macOS arm64 runner,
+and the fleet installs it from source.
 
 ## Non-goals
 
