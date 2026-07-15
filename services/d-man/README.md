@@ -73,7 +73,7 @@ d-man version [-o json]    # build sha
 
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
-| `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml` | Path to the routes file. |
+| `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml`, then `/etc/d-man/routes.toml` | Path to the routes file, first existing path wins. |
 | `--hosts-file` | _(none)_ | `/etc/hosts` | Hosts file to sync into; point at a temp file to dry-run. |
 | `--port` (serve) | _(none)_ | `80` | Port the proxy listens on (loopback only). |
 | `--tls-port` (serve) | _(none)_ | `443` | Port the block-page TLS listener uses (loopback only). |
@@ -175,7 +175,9 @@ sudo d-man ca install      # generate the CA if needed and trust it
 ## Where things live
 
 - Binary: `~/code/bin/d-man`
-- Routes config: `~/.config/d-man/routes.toml` (or `--config`/`DMAN_CONFIG`)
+- Routes config: `~/.config/d-man/routes.toml`, falling back to
+  `/etc/d-man/routes.toml` for root daemons with no useful HOME (or
+  `--config`/`DMAN_CONFIG`)
 - Managed block: inside `/etc/hosts`, between the `# >>> d-man managed >>>` /
   `# <<< d-man managed <<<` markers; every other line stays untouched
 - Backup: `/etc/hosts.d-man.bak`, written before each change

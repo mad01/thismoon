@@ -10,7 +10,7 @@ These apply to every subcommand.
 
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
-| `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml` | Path to the routes file. A leading `~` is expanded. |
+| `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml`, then `/etc/d-man/routes.toml` | Path to the routes file, first existing path wins. A leading `~` is expanded. |
 | `--hosts-file` | — | `/etc/hosts` | Hosts file to sync the managed block into. Override it to dry-run against a temp file. |
 
 ## serve

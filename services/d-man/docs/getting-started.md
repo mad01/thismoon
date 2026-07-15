@@ -16,7 +16,8 @@ place by the consuming machine's dotfiles overlay recipe.
 
 ## 2. Write the routes file
 
-`d-man` reads `~/.config/d-man/routes.toml` by default. Create it (the dotfiles
+`d-man` reads `~/.config/d-man/routes.toml` by default (a root daemon with no
+useful HOME falls back to `/etc/d-man/routes.toml`). Create it (the dotfiles
 recipe symlinks this from `recipes/d-man/routes.toml`):
 
 ```toml
