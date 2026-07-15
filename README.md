@@ -1,20 +1,27 @@
 # thismoon
 
-A local-first development toolbox for macOS. Code search, dependency
-scanning, briefings, reminders, and a service catalog run as a fleet of web
-services and CLI tools on your own machine, each behind its own
-`http://<name>.this/` hostname. Services are launchd agents, notifications
+Give your coding agent the same tools you use, on your own disk.
+
+thismoon is a fleet of local-first developer tools for Apple Silicon Macs.
+Each one is a small web service on its own `http://<name>.this/` address and
+a CLI; most are also [MCP](https://modelcontextprotocol.io) servers, so you
+and your agent work against the same local data. The code search you run in
+a browser is the index Claude queries; the briefing an agent writes is the
+page you read at `present.this`. Services are launchd agents, notifications
 are native, binaries are codesigned. No cloud, no accounts: your code,
 notes, and dashboards stay on your disk.
 
-Every component works for two kinds of user. For you, it is a web page and a
-CLI. For your coding agents, most components are also [MCP](https://modelcontextprotocol.io)
-servers: the code search you run in a browser is the same index Claude
-queries, the briefing page an agent writes is the one you read at
-`present.this`. One fleet, driven from either side.
+Start with one tool:
 
-The repo also carries the shared web UI package (`webkit/`) and the
-[ralph](https://github.com/mad01/ralph) recipes that install the fleet.
+```sh
+brew install mad01/tap/csl    # code search over your local checkouts
+```
+
+or install the whole fleet with [ralph](https://github.com/mad01/ralph)
+(see [Install](#install)).
+
+The repo also carries the shared web UI package (`webkit/`) and the ralph
+recipes that install the fleet.
 
 ## Services
 
@@ -91,27 +98,41 @@ config repo as small companion recipes that layer on top (see
 
 ## Install
 
-Single components, from a checkout:
+### One tool
+
+The fastest path is the [Homebrew tap](https://github.com/mad01/homebrew-tap):
+
+```sh
+brew tap mad01/tap
+brew install mad01/tap/csl
+brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
+```
+
+Most components have formulas (csl, keep, present, speak, d-man, belt,
+suspenders, t-man, and ralph itself); the rest follow as they prove useful
+outside the fleet. Everything installs from the module path too:
+
+```sh
+go install github.com/mad01/thismoon/services/present/cmd/present@latest
+```
+
+or from a checkout:
 
 ```sh
 make -C services/present install    # one component
 make install-all                    # everything
 ```
 
-Or straight from the module path:
+Prebuilt darwin/arm64 tarballs hang off each component's GitHub Release,
+with `checksums.txt` and a cosign keyless signature.
 
-```sh
-go install github.com/mad01/thismoon/services/present/cmd/present@latest
-```
+### The fleet
 
-Prebuilt tarballs (darwin/arm64) hang off each component's GitHub Release.
-csl is the exception: it needs cgo (tree-sitter) and local ONNX libraries, so
-build it from a checkout.
-
-For the full fleet (services as launchd agents, `.this` routing, config
+For the full setup (services as launchd agents, `.this` routing, config
 symlinks) on a fresh machine:
 
-1. Install ralph: `go install github.com/mad01/ralph/cmd/ralph@latest`
+1. Install ralph: `brew install mad01/tap/ralph`
+   (or `go install github.com/mad01/ralph/cmd/ralph@latest`)
 2. Run `ralph init`, then add the `[[recipe_sources]]` stanza shown above to
    `~/.config/ralph/config.toml` (or to your private config repo)
 3. Run `ralph up`
@@ -156,7 +177,9 @@ git config --global url."git@github.com:".insteadOf "https://github.com/"
 Once the repo is public, neither is needed for this module: drop the
 `insteadOf` rewrite and trim `GOPRIVATE` to whatever private repos remain.
 The ralph source stanza works unchanged in both worlds; it always clones over
-SSH.
+SSH. Homebrew is the opposite: the tap formulas download release tarballs
+from this repo, so `brew install` starts working only once the repo is
+public.
 
 ## License
 
