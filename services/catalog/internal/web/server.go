@@ -2,8 +2,10 @@ package web
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -25,11 +27,21 @@ type Server struct {
 	registryPath string
 }
 
-// New builds a Server, loading the initial catalog from registryPath.
+// New builds a Server, loading the initial catalog from registryPath. A
+// missing registry file is not fatal: the server starts with an empty catalog
+// so a fresh install gets a working UI instead of a crash loop under a
+// service manager. Once the registry exists, Refresh (or a restart) loads it.
 func New(ctx context.Context, registryPath string) (*Server, error) {
 	s := &Server{registryPath: registryPath}
 	if err := s.Reload(ctx); err != nil {
-		return nil, err
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		log.Printf(
+			"catalog web: registry %s not found; serving an empty catalog (create it with a 'sources' list, then Refresh)",
+			registryPath,
+		)
+		s.cat = catalog.NewCatalog(nil)
 	}
 	return s, nil
 }

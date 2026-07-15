@@ -239,3 +239,36 @@ func TestWithinRoots(t *testing.T) {
 		}
 	}
 }
+
+// TestNewMissingRegistry asserts a fresh install (no registry file) still gets
+// a serving server with an empty catalog, while a malformed registry stays a
+// hard error.
+func TestNewMissingRegistry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "registry.yaml")
+
+	srv, err := New(context.Background(), path)
+	if err != nil {
+		t.Fatalf("New with missing registry: %v, want nil error", err)
+	}
+	rec := doGet(t, srv.Handler(), "/api/entities")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/entities = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var entities []json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &entities); err != nil {
+		t.Fatalf("decode entities: %v", err)
+	}
+	if len(entities) != 0 {
+		t.Errorf("got %d entities, want 0", len(entities))
+	}
+}
+
+func TestNewMalformedRegistry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "registry.yaml")
+	if err := os.WriteFile(path, []byte("sources: ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(context.Background(), path); err == nil {
+		t.Fatal("New with malformed registry: nil error, want parse error")
+	}
+}
