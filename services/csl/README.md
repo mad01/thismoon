@@ -12,6 +12,8 @@ The CLI, `csl mcp`, `csl web`, and the search daemon share the same internal sea
 
 Needs cgo. Code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out, so `go install .../csl@latest` isn't a supported install path. Release artifacts build natively on a macOS arm64 runner, so the grammars compile statically into the tarball binary; the fleet still installs from source (see `docs/MIGRATED-FROM.md`).
 
+Prebuilt darwin/arm64 tarballs ship on each [`csl/vX.Y.Z` release](https://github.com/mad01/thismoon/releases) with `checksums.txt` and a cosign keyless bundle; verification steps are in `docs/RELEASING.md`. Building from source:
+
 ```sh
 git clone https://github.com/mad01/thismoon.git
 cd thismoon/services/csl
