@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -40,12 +42,9 @@ func init() {
 }
 
 func runWeb(_ *cobra.Command, _ []string) error {
-	cfg, err := config.Load()
+	cfg, err := webConfig()
 	if err != nil {
-		return fmt.Errorf(
-			"failed to load config: %w\n\nHint: create ~/.config/csl/config.yaml with a 'dirs' list",
-			err,
-		)
+		return err
 	}
 
 	svc, err := web.NewService(cfg)
@@ -57,6 +56,24 @@ func runWeb(_ *cobra.Command, _ []string) error {
 	addr := listenAddr(webPortFlag)
 	log.Printf("csl web: serving on http://localhost:%d", webPortFlag)
 	return http.ListenAndServe(addr, handler)
+}
+
+// webConfig loads the csl config for the web server. A missing config file is
+// not fatal: the server starts with no configured dirs so a fresh install gets
+// a working UI instead of a crash loop under a keep_alive service manager.
+// Any other load failure (unreadable file, bad YAML) stays a hard error.
+func webConfig() (*config.Config, error) {
+	cfg, err := config.Load()
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		log.Printf(
+			"csl web: no config found; serving with no repos (create ~/.config/csl/config.yaml with a 'dirs' list, then restart)",
+		)
+		return &config.Config{}, nil
+	case err != nil:
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return cfg, nil
 }
 
 // listenAddr pins the loopback interface explicitly. A bare ":<port>" would
