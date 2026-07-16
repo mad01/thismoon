@@ -12,7 +12,6 @@
     "services/deps": { "component": "deps" },
     "services/events": { "component": "events" },
     "services/keep": { "component": "keep" },
-    "services/pr": { "component": "pr" },
     "services/present": { "component": "present" },
     "services/reminder": { "component": "reminder" },
     "services/speak": { "component": "speak" },

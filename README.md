@@ -36,7 +36,6 @@ address, managed as launchd agents by t-man.
 | deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP |
 | events | Local event and audit log, archive-only JSONL store | web · CLI · MCP |
 | keep | Assertion store: evidence-pinned claims about code that go stale with it | web · CLI · MCP |
-| pr | PR review dashboard aggregating open PRs from multiple GitHub hosts | web · CLI |
 | present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP |
 | reminder | Reminders that fire macOS notifications | web · CLI · MCP |
 | speak | Reads markdown aloud through a local TTS model | web · CLI · MCP |
