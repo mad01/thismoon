@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/mad01/thismoon/compare/csl/v0.7.1...csl/v0.7.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* **csl:** serve the web UI when the config file is missing ([#93](https://github.com/mad01/thismoon/issues/93)) ([ff0942c](https://github.com/mad01/thismoon/commit/ff0942c7d349e35de5c4aebb4e4e3e16fc99c3f3))
+
 ## [0.7.1](https://github.com/mad01/thismoon/compare/csl/v0.7.0...csl/v0.7.1) (2026-07-15)
 
 
