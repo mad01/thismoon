@@ -5,6 +5,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -37,14 +38,44 @@ func rootCmd() *cobra.Command {
 
 func hookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:       "hook <event>",
-		Short:     "Run as a Claude Code PreToolUse hook (payload on stdin, deny JSON on stdout)",
-		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{guard.EventBash, guard.EventWrite},
+		Use:   "hook <event>",
+		Short: "Run as a Claude Code PreToolUse hook (payload on stdin, deny JSON on stdout)",
+		Long: `Run as a Claude Code PreToolUse hook. Reads the tool-call payload on stdin
+and writes any deny decision as JSON on stdout; a valid event always exits 0
+(the deny travels in the JSON, not the exit code).
+
+The event argument is belt's guard event, not the Claude Code tool name:
+bash guards Bash commands, write guards Write and Edit. Wire both in
+~/.claude/settings.json:
+
+  {
+    "hooks": {
+      "PreToolUse": [
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hook bash"}]},
+        {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "belt hook write"}]}
+      ]
+    }
+  }`,
+		Args: validEventArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hook.Run(args[0], cmd.InOrStdin(), cmd.OutOrStdout())
-			return nil // always exit 0: the deny travels in the JSON
+			hook.Run(strings.ToLower(args[0]), cmd.InOrStdin(), cmd.OutOrStdout())
+			return nil // always exit 0 for a valid event: the deny travels in the JSON
 		},
+	}
+}
+
+// validEventArg rejects unknown events at parse time, case-insensitively. An
+// unmatched event would run zero guards and silently allow everything the
+// hook was wired to deny, so a miswired settings entry must fail loud.
+func validEventArg(cmd *cobra.Command, args []string) error {
+	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+		return err
+	}
+	switch strings.ToLower(args[0]) {
+	case guard.EventBash, guard.EventWrite:
+		return nil
+	default:
+		return fmt.Errorf("unknown event %q (valid: %s, %s)", args[0], guard.EventBash, guard.EventWrite)
 	}
 }
 
