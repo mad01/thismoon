@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/mad01/thismoon/compare/suspenders/v0.3.2...suspenders/v0.3.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* **suspenders:** scan plain directories, not just git working trees ([#97](https://github.com/mad01/thismoon/issues/97)) ([e798074](https://github.com/mad01/thismoon/commit/e7980741a4da3bf1ab3da933190bfb7c16446673))
+
 ## [0.3.2](https://github.com/mad01/thismoon/compare/suspenders/v0.3.1...suspenders/v0.3.2) (2026-07-15)
 
 
