@@ -75,7 +75,7 @@ guard:
 func TestGuardEnabled(t *testing.T) {
 	off := false
 	on := true
-	cfg := Config{Guards: map[string]GuardToggle{
+	cfg := Config{Guards: map[string]Toggle{
 		"disabled-guard": {Enabled: &off},
 		"enabled-guard":  {Enabled: &on},
 		"nil-toggle":     {},
@@ -143,10 +143,43 @@ enabled = true
 extra_patterns = ["rm -rf", "rm -fr"]
 `
 	path := writeFile(t, t.TempDir(), "config.toml", content)
-	got := loadToggles(path)
+	got, _ := loadToggles(path)
 	patterns := got["script-deny-list"].ExtraPatterns
 	if len(patterns) != 2 || patterns[0] != "rm -rf" || patterns[1] != "rm -fr" {
 		t.Errorf("extra_patterns = %v", patterns)
+	}
+}
+
+func TestLoadTogglesHintsSection(t *testing.T) {
+	content := `
+[guards.git-push-main]
+enabled = true
+
+[hints.keep-assertions]
+enabled = false
+`
+	path := writeFile(t, t.TempDir(), "config.toml", content)
+	guards, hints := loadToggles(path)
+	if guards["git-push-main"].Enabled == nil || !*guards["git-push-main"].Enabled {
+		t.Error("guards section did not survive adding hints")
+	}
+	if hints["keep-assertions"].Enabled == nil || *hints["keep-assertions"].Enabled {
+		t.Error("hints.keep-assertions should have decoded as disabled")
+	}
+}
+
+func TestHintEnabledDefaultsOn(t *testing.T) {
+	cfg := Config{}
+	if !cfg.HintEnabled("keep-assertions") {
+		t.Error("a hint with no config entry should default to enabled")
+	}
+	off := false
+	cfg = Config{Hints: map[string]Toggle{"keep-assertions": {Enabled: &off}}}
+	if cfg.HintEnabled("keep-assertions") {
+		t.Error("an explicitly disabled hint should report disabled")
+	}
+	if !cfg.HintEnabled("prefer-csl") {
+		t.Error("disabling one hint must not disable the others")
 	}
 }
 

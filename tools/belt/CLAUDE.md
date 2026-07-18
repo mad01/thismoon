@@ -1,6 +1,8 @@
-# belt, Claude Code PreToolUse guard hooks
+# belt, Claude Code guard and hint hooks
 
-Go CLI. Central PreToolUse hook for Claude Code sessions: guards inspect a tool call before it runs and deny risky ones with a reason the model reads. Pairs with `suspenders` (the git-hook layer): suspenders guards commits, belt guards the session before anything reaches git.
+Go CLI. Central hook binary for Claude Code sessions, with two halves: **guards** inspect a tool call before it runs and deny risky ones with a reason the model reads, **hints** inspect a tool call after it ran and add advisory context the model reads next to the result. Pairs with `suspenders` (the git-hook layer): suspenders guards commits, belt guards the session before anything reaches git.
+
+The split is load-bearing (docs/adr/0008): a guard exists to prevent damage that is hard to undo, a hint exists to improve a choice that was merely suboptimal. A hint has no denial path in its interface, so it cannot block a tool call even by mistake.
 
 Born out of a July 2026 session retrospective: a session pushed straight to master and tried to self-merge, and internal names reached `git commit` twice before the pre-commit hook caught them. belt moves both checks to the earliest point a hook can intervene.
 
@@ -10,11 +12,12 @@ Born out of a July 2026 session retrospective: a session pushed straight to mast
 belt/
   cmd/belt/          - entrypoint
   internal/
-    cli/             - cobra commands: `hook <event>`, `check`, `version`
-    hook/             - PreToolUse payload parsing + deny JSON emission
+    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `version`
+    hook/             - payload parsing + JSON emission for both events
     guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
+    hint/             - the hints (prefer-csl, keep-assertions) + csl index lookup, response parsing, session dedupe
     config/           - reads belt/ralph/suspenders/Claude-settings config surfaces
-    notify/           - synchronous best-effort event emission to events.this on every deny
+    notify/           - synchronous best-effort event emission to events.this on every deny and hint
   Makefile            - package path github.com/mad01/thismoon/tools/belt (monorepo module, no own go.mod)
 ```
 
@@ -34,6 +37,15 @@ belt/
 
 Adding a guard: implement the `Guard` interface in `internal/guard/`, register it in `ForEvent`, and add a toggle to the consuming repo's belt config overlay (`~/.config/belt/config.toml`). Only a guard that needs a new tool matcher also needs a `hooks.PreToolUse` entry in the consuming repo's Claude settings recipe.
 
+### Hints
+
+| id | event | rule |
+|----|-------|------|
+| `prefer-csl` | `bash` | After a bash command sweeps multiple files inside a csl-indexed repo, hand back the equivalent `csl_search` call with the pattern translated to zoekt. Indexed-repo lookup reads the shard listing in `~/.config/csl/search-index/` directly (no csl process launch). Silent on pipe filters (`cmd \| grep x`), single-file greps, `ls`/`cat`, and paths outside an indexed repo. |
+| `keep-assertions` | `search` | After a csl search, surface keep assertions about the code the search hit. Queries `keep serve` on `KEEP_PORT` (default 7431) with a 400ms budget; keep being down means silence. Caps at 3, drops retracted, marks stale, dedupes per session via `~/.cache/belt/seen-<session>`. |
+
+Adding a hint: implement the `Hint` interface in `internal/hint/`, register it in `hint.ForEvent`, and add a `[hints.<id>]` toggle to the consuming repo's config overlay. A hint returns `*Advice` or nil — there is no way for it to deny.
+
 ## Build / install / test
 
 ```bash
@@ -46,7 +58,8 @@ make lint     # golangci-lint run ./...
 ## Commands
 
 ```
-belt hook bash|write     # hook entrypoint: payload on stdin, deny JSON on stdout
+belt hook bash|write     # PreToolUse entrypoint: payload on stdin, deny JSON on stdout
+belt hint search|bash    # PostToolUse entrypoint: payload on stdin, additionalContext JSON on stdout
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
 belt version
@@ -57,7 +70,9 @@ belt version
 - **The bash-command parser is token-based, not a shell parser.** It splits on `&&`/`||`/`;`/`|`/newlines and matches bare `git … push` sequences. Pushes buried in quoted strings or subshell tricks aren't caught; belt is a guardrail against habit, not an adversary-proof sandbox.
 - **Same for `script-deny-list`.** Flag reordering (`rm -fr` is covered, `rm -r -f` isn't), `curl | bash`, and Python list-form `subprocess.run(["rm", "-rf", …])` slip through. Add variants to `extra_patterns` as they come up.
 - **`script-deny-list` reads the settings deny list at hook time**, so a settings edit applies to the script guard immediately, unlike hook *registration* changes, which need a new session.
-- **Hook changes (settings or binary behavior) take effect in the next Claude session.** A running session keeps its loaded settings.
+- **Hook changes take effect immediately, including registration.** Verified 2026-07-18 by adding a `PostToolUse` block to `~/.claude/settings.json` mid-session: the next tool call ran the new hook. This corrects an earlier note here claiming a running session keeps its loaded settings and that registration needs a new session — that is not the behavior. Binary changes apply immediately for the same reason: the hook is a fresh process per tool call, so `make install` is live at once.
+- **`prefer-csl` does not reuse `guard.splitSegments`.** That splitter preserves byte offsets and treats `|` exactly like `&&`, which is right for finding a denied command anywhere in a pipeline and wrong for this hint: telling a pipe filter apart from a standalone search is its entire precision requirement. The hint has its own quote-aware splitter so a `|` inside a grep pattern does not read as a pipe.
+- **keep subjects are shallower than search hits.** Assertions get labelled at the component level (`.../services/csl`) while searches return hits deeper (`.../services/csl/internal/semantic`), and keep matches subjects by prefix — so querying the hit's own subject finds nothing. `keep-assertions` queries the repo and narrows by ranking on shared path segments. Changing that to a narrower query silently returns zero results rather than erroring.
 - **`config.Load()` never errors**: missing config files mean zero values. Missing ralph profile means `git-push-main` fails closed (denies pushes to main everywhere); missing suspenders config means `write-internal-names` has an empty name list and allows every write. Keep suspenders configured.
 - **Keep literal internal hostnames and org names out of belt's own source and docs.** This repo is heading public and the suspenders pre-commit guard blocks them. The public/internal split is derived (`github.com` in the remote means public), never enumerated.
 

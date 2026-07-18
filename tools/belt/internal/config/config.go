@@ -18,18 +18,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is everything a guard needs to decide.
+// Config is everything a guard or hint needs to decide.
 type Config struct {
-	Guards     map[string]GuardToggle
+	Guards     map[string]Toggle
+	Hints      map[string]Toggle
 	Profiles   []string
 	Suspenders SuspendersGuard
 	ClaudeDeny []string // Bash command prefixes from the Claude settings deny lists
 }
 
-// GuardToggle enables or disables a single guard by id, with optional
-// per-guard path exclusions (substring match on the target file path) and
-// extra deny patterns beyond the shared sources.
-type GuardToggle struct {
+// Toggle enables or disables a single guard or hint by id, with optional
+// path exclusions (substring match on the target file path) and extra deny
+// patterns beyond the shared sources.
+type Toggle struct {
 	Enabled       *bool    `toml:"enabled"`
 	ExcludePaths  []string `toml:"exclude_paths"`
 	ExtraPatterns []string `toml:"extra_patterns"`
@@ -45,7 +46,18 @@ type SuspendersGuard struct {
 // GuardEnabled reports whether a guard is enabled; guards default to on so a
 // missing or partial config file fails closed, not silent.
 func (c Config) GuardEnabled(id string) bool {
-	t, ok := c.Guards[id]
+	return enabled(c.Guards, id)
+}
+
+// HintEnabled reports whether a hint is enabled. Hints default to on for the
+// same reason guards do, though the stakes differ: a disabled guard silently
+// stops denying, while a disabled hint only stops advising.
+func (c Config) HintEnabled(id string) bool {
+	return enabled(c.Hints, id)
+}
+
+func enabled(toggles map[string]Toggle, id string) bool {
+	t, ok := toggles[id]
 	if !ok || t.Enabled == nil {
 		return true
 	}
@@ -70,8 +82,10 @@ func Load() Config {
 	if err != nil {
 		return Config{}
 	}
+	guards, hints := loadToggles(filepath.Join(home, ".config", "belt", "config.toml"))
 	return Config{
-		Guards:     loadToggles(filepath.Join(home, ".config", "belt", "config.toml")),
+		Guards:     guards,
+		Hints:      hints,
 		Profiles:   LoadProfiles(filepath.Join(home, ".config", "ralph", "config.local.toml")),
 		Suspenders: LoadSuspendersGuard(filepath.Join(home, ".config", "suspenders", "config.yaml")),
 		ClaudeDeny: LoadClaudeDenyPatterns(
@@ -122,14 +136,15 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 	return patterns
 }
 
-func loadToggles(path string) map[string]GuardToggle {
+func loadToggles(path string) (guards, hints map[string]Toggle) {
 	var cfg struct {
-		Guards map[string]GuardToggle `toml:"guards"`
+		Guards map[string]Toggle `toml:"guards"`
+		Hints  map[string]Toggle `toml:"hints"`
 	}
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return nil
+		return nil, nil
 	}
-	return cfg.Guards
+	return cfg.Guards, cfg.Hints
 }
 
 // LoadProfiles reads the `profiles` list from a ralph config.local.toml.

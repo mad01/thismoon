@@ -1,16 +1,28 @@
 # belt
 
-Guard hooks for Claude Code sessions. belt runs as a PreToolUse hook, inspects a tool call before it executes, and denies risky ones with a reason the agent can act on.
+Guard and hint hooks for Claude Code sessions. belt inspects tool calls and either denies the risky ones before they run or advises after them, always with a reason the agent can act on.
 
 Named for the layer it adds: suspenders holds up the git side (pre-commit secret scanning and internal-name guard). belt holds up the session side, before anything reaches git.
 
-## How it works
+belt has two halves, and the split is deliberate (see `docs/adr/0008`):
+
+- **Guards** run as a PreToolUse hook and can deny. They are reserved for damage that is hard to undo.
+- **Hints** run as a PostToolUse hook and only advise. The tool has already run and its result stands, so a hint that misfires costs one line of ignored text rather than a stalled session.
+
+## Guards
 
 Three guards run against tool calls before they execute:
 
 - **git-push-main**: blocks `git push` to main/master on machines with the work profile. Personal machines push to main freely.
 - **script-deny-list**: deep deny inspection, applies the Bash deny list from the Claude settings inside scripts. `bash cleanup.sh` looks harmless to the permission system even when the script runs `kubectl delete`; this guard reads executed and sourced script files, `-c` strings, and heredocs, and denies when they contain a deny-listed command. Extra patterns (like `rm -rf`) come from the belt config.
 - **write-internal-names**: blocks file writes that would put internal org/repo names into a public github.com repo. Uses the same name config as the suspenders pre-commit guard.
+
+## Hints
+
+Two hints run after a tool call and add advisory context the agent reads next to the result:
+
+- **prefer-csl**: after a bash command sweeps multiple files inside a repo csl already indexes, hands back the equivalent `csl_search` call with the pattern translated to zoekt syntax. Pipe filters (`cmd | grep x`) and single-file greps do not fire — they are not what csl replaces.
+- **keep-assertions**: after a csl search, surfaces stored keep assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
 
 ## Install
 
@@ -32,11 +44,11 @@ belt check write --file README.md --content "mentions something internal"
 belt version
 ```
 
-`belt hook <event>` is the real hook entrypoint (payload on stdin, deny JSON on stdout); Claude Code invokes it, not the user.
+`belt hook <event>` and `belt hint <event>` are the real hook entrypoints (payload on stdin, JSON on stdout); Claude Code invokes them, not the user. `hook` carries deny decisions for guards, `hint` carries `additionalContext` for hints.
 
 ## Configuration
 
-Toggles, per-guard `exclude_paths`, and `extra_patterns` live in `~/.config/belt/config.toml`. Denials are logged to the local events timeline (events.this).
+Toggles, `exclude_paths`, and `extra_patterns` live in `~/.config/belt/config.toml`, under `[guards.<id>]` for guards and `[hints.<id>]` for hints. Both default to enabled when the file or entry is missing. Denials and hints are logged to the local events timeline (events.this).
 
 ## Develop
 

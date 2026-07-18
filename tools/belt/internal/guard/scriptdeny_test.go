@@ -12,7 +12,7 @@ import (
 func scriptDenyConfig(claudeDeny, extra []string) config.Config {
 	return config.Config{
 		ClaudeDeny: claudeDeny,
-		Guards: map[string]config.GuardToggle{
+		Guards: map[string]config.Toggle{
 			ScriptDenyListID: {ExtraPatterns: extra},
 		},
 	}

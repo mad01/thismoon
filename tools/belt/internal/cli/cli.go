@@ -1,5 +1,6 @@
 // Package cli wires the belt commands: `hook <event>` (the Claude Code
-// PreToolUse entrypoint), `check` (manual dry-run), and `version`.
+// PreToolUse guard entrypoint), `hint <event>` (the PostToolUse advisory
+// entrypoint), `check` (manual dry-run), and `version`.
 package cli
 
 import (
@@ -11,6 +12,7 @@ import (
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
+	"github.com/mad01/thismoon/tools/belt/internal/hint"
 	"github.com/mad01/thismoon/tools/belt/internal/hook"
 )
 
@@ -28,12 +30,57 @@ func Execute() {
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "belt",
-		Short:         "Claude Code PreToolUse guard hooks (pairs with suspenders)",
+		Short:         "Claude Code guard and hint hooks (pairs with suspenders)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(hookCmd(), checkCmd(), versionCmd())
+	root.AddCommand(hookCmd(), hintCmd(), checkCmd(), versionCmd())
 	return root
+}
+
+func hintCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "hint <event>",
+		Short: "Run as a Claude Code PostToolUse hint hook (payload on stdin, advice JSON on stdout)",
+		Long: `Run as a Claude Code PostToolUse hook. Reads the tool-call payload on stdin
+and writes any advice as hookSpecificOutput.additionalContext on stdout. A
+hint never blocks: the tool has already run and its result stands, so silence
+and advice are the only two outcomes.
+
+The event argument is belt's hint event, not the Claude Code tool name:
+search hints on the csl search tools, bash hints on Bash commands. Wire both
+in ~/.claude/settings.json:
+
+  {
+    "hooks": {
+      "PostToolUse": [
+        {"matcher": "mcp__csl__csl_(search|semantic_search|hybrid_search)",
+         "hooks": [{"type": "command", "command": "belt hint search"}]},
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hint bash"}]}
+      ]
+    }
+  }`,
+		Args: validHintEventArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hook.RunHint(strings.ToLower(args[0]), cmd.InOrStdin(), cmd.OutOrStdout())
+			return nil // always exit 0: advice travels in the JSON, not the exit code
+		},
+	}
+}
+
+// validHintEventArg rejects unknown hint events at parse time. A miswired
+// entry would run zero hints and silently advise nothing, which looks
+// identical to "there was nothing to say" — so it must fail loud instead.
+func validHintEventArg(cmd *cobra.Command, args []string) error {
+	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+		return err
+	}
+	switch strings.ToLower(args[0]) {
+	case hint.EventSearch, hint.EventBash:
+		return nil
+	default:
+		return fmt.Errorf("unknown hint event %q (valid: %s, %s)", args[0], hint.EventSearch, hint.EventBash)
+	}
 }
 
 func hookCmd() *cobra.Command {

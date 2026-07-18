@@ -88,7 +88,7 @@ func TestWriteInternalNamesExcludePaths(t *testing.T) {
 	guardCfg := config.SuspendersGuard{BlockedWords: []string{"internalco"}}
 	g := NewWriteInternalNames(config.Config{
 		Suspenders: guardCfg,
-		Guards: map[string]config.GuardToggle{
+		Guards: map[string]config.Toggle{
 			WriteInternalNamesID: {ExcludePaths: []string{"/recipes/ai-global-config/"}},
 		},
 	})
