@@ -23,6 +23,17 @@ restart services through t-man-guarded hooks, and docs/adr/0006 allows hard
 A standalone tool keeps that interface identical for recipes, scripts, and a
 human at the terminal.
 
+Sandboxing is the other reason t-man is its own tool. Every alternative
+(launchctl, serviceman, `brew services`) runs the service binary bare;
+none can confine what it launches. t-man's `--sandbox-profile` renders the
+plist to start the command through `/usr/bin/sandbox-exec` with a seatbelt
+profile, and the profile's content feeds the idempotency hash, so editing
+the `.sb` file reconciles like any other definition change. Apple ships no
+replacement for wrapping an unmodified binary this way (App Sandbox is
+opt-in at code-signing time), which makes the service manager the one place
+the wrapper can live — and a reason to pick t-man even where `brew services`
+would otherwise do.
+
 ## Why this shape
 
 Idempotency lives in the plist itself: a SHA256 hash of the full service

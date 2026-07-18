@@ -1,7 +1,8 @@
 # t-man
 
 **t-man** (task-manager) is an idempotent service manager for macOS that
-provides declarative, hash-based service management through launchd.
+provides declarative, hash-based service management through launchd — with
+first-class seatbelt sandboxing for the services it runs.
 
 ## How it works
 
@@ -9,6 +10,7 @@ t-man improves upon existing service managers like [serviceman](https://github.c
 by providing:
 
 - **True idempotency**: hash-based change detection ensures services are only updated when configuration actually changes
+- **Seatbelt sandboxing**: `--sandbox-profile` launches a service through `sandbox-exec` with a custom profile — no other launchd manager (serviceman, `brew services`) can confine what it runs
 - **Read-compare-apply pattern**: consistent reconciliation logic that reads current state, compares with desired state, and only applies necessary changes
 - **Type safety**: written in Go with proper error handling and validation
 - **Drop-in compatibility**: compatible with serviceman CLI for easy migration
@@ -19,6 +21,7 @@ Feature summary:
 
 - Declarative service definitions with automatic reconciliation
 - SHA256 hash-based change detection
+- Per-service seatbelt sandboxing via `--sandbox-profile` (profile content feeds the change-detection hash)
 - Support for both user agents (`~/Library/LaunchAgents`) and system daemons (`/Library/LaunchDaemons`)
 - Environment variable management
 - Custom working directories and log paths
