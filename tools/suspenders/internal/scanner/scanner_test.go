@@ -1889,3 +1889,77 @@ func TestScanFile_WithIgnoreFile(t *testing.T) {
 		}
 	})
 }
+
+// TestScanDirNonGit pins the fallback path: scanning a directory that is not
+// a git working tree walks the filesystem instead of failing on git plumbing.
+func TestScanDirNonGit(t *testing.T) {
+	t.Run("finds secrets in a plain directory", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFiles(t, dir, map[string]string{
+			"aws.env":         "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF\n",
+			"nested/deep.env": "STRIPE_KEY=sk_live_1234567890abcdefghijklmn\n",
+			"clean.go":        "package main\nfunc main() {}\n",
+		})
+
+		sc := New(DefaultRules)
+		findings, err := sc.ScanDir(dir)
+		if err != nil {
+			t.Fatalf("ScanDir error: %v", err)
+		}
+		ruleIDs := make(map[string]bool)
+		for _, f := range findings {
+			ruleIDs[f.Rule.ID] = true
+		}
+		if !ruleIDs["aws-access-key-id"] {
+			t.Error("expected aws-access-key-id finding")
+		}
+		if !ruleIDs["stripe-live-secret-key"] {
+			t.Error("expected stripe-live-secret-key finding")
+		}
+	})
+
+	t.Run("skips .git directories of nested repositories", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFiles(t, dir, map[string]string{
+			"clean.txt":                   "nothing here\n",
+			"vendored/.git/leaked.txt":    "AKIA1234567890ABCDEF\n",
+			"vendored/tracked-secret.env": "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF\n",
+		})
+
+		sc := New(DefaultRules)
+		findings, err := sc.ScanDir(dir)
+		if err != nil {
+			t.Fatalf("ScanDir error: %v", err)
+		}
+		var sawNested bool
+		for _, f := range findings {
+			rel, err := filepath.Rel(dir, f.File)
+			if err != nil {
+				t.Fatalf("Rel(%q, %q): %v", dir, f.File, err)
+			}
+			if strings.Contains(rel, ".git") {
+				t.Errorf("finding should not come from a .git directory: %s", rel)
+			}
+			if strings.Contains(rel, "tracked-secret.env") {
+				sawNested = true
+			}
+		}
+		if !sawNested {
+			t.Error("expected finding from the nested repo's working tree")
+		}
+	})
+}
+
+// writeFiles writes rel -> content files under dir, creating parents.
+func writeFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		abs := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

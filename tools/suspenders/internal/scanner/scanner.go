@@ -15,6 +15,8 @@ import (
 	"sync"
 
 	"github.com/gobwas/glob"
+
+	"github.com/mad01/thismoon/tools/suspenders/internal/repo"
 )
 
 // ErrFindingsFound is returned when scan finds secrets and --fail-on-findings is set.
@@ -371,25 +373,23 @@ func (s *Scanner) CheckFileName(rel string) ([]Finding, error) {
 	return s.checkFileRules(rel, rel, ic), nil
 }
 
-// ScanDir scans all git-tracked files in root. Uses `git ls-files` so
-// .gitignore is respected automatically and untracked files are skipped.
+// ScanDir scans the files under root. Inside a git working tree it scans the
+// tracked files (`git ls-files`), so .gitignore is respected and untracked
+// files are skipped; anywhere else it walks the filesystem, so plain
+// directories can be scanned too.
 func (s *Scanner) ScanDir(root string) ([]Finding, error) {
 	ic, err := s.loadIgnoreOnce()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command("git", "-C", root, "ls-files", "-z")
-	out, err := cmd.Output()
+	rels, err := scanPaths(root)
 	if err != nil {
-		return nil, fmt.Errorf("git ls-files in %s: %w", root, err)
+		return nil, err
 	}
 
 	var findings []Finding
-	for rel := range strings.SplitSeq(string(out), "\000") {
-		if rel == "" {
-			continue
-		}
+	for _, rel := range rels {
 		abs := filepath.Join(root, rel)
 		findings = append(findings, s.checkFileRules(rel, abs, ic)...)
 
@@ -417,6 +417,52 @@ func (s *Scanner) ScanDir(root string) ([]Finding, error) {
 		findings = append(findings, ff...)
 	}
 	return findings, nil
+}
+
+// scanPaths lists the root-relative files ScanDir visits: git-tracked files
+// inside a working tree, every file under root otherwise.
+func scanPaths(root string) ([]string, error) {
+	if !repo.InsideWorkTree(root) {
+		return walkPaths(root)
+	}
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files in %s: %w", root, err)
+	}
+	var rels []string
+	for rel := range strings.SplitSeq(string(out), "\000") {
+		if rel != "" {
+			rels = append(rels, rel)
+		}
+	}
+	return rels, nil
+}
+
+// walkPaths lists every file under root, skipping the .git directories of any
+// nested repositories.
+func walkPaths(root string) ([]string, error) {
+	var rels []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rels = append(rels, rel)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk %s: %w", root, err)
+	}
+	return rels, nil
 }
 
 // ScanStaged scans the files currently staged in the git index at repoPath.

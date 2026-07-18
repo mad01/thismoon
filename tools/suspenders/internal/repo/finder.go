@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -92,6 +93,14 @@ func Find(dirs []string, excludes []string) ([]Repo, error) {
 func IsRepo(path string) bool {
 	info, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil && info != nil
+}
+
+// InsideWorkTree reports whether dir is anywhere inside a git working tree,
+// including subdirectories of a repository (unlike IsRepo, which only checks
+// for a .git at the path itself).
+func InsideWorkTree(dir string) bool {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree").Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
 // ParseRemote extracts "org/repo" from SSH or HTTPS git remote URLs.
