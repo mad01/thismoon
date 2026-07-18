@@ -52,3 +52,17 @@ commands = [
 working_dir = "~/.config/ralph/sources/thismoon/recipes/csl"
 run = "always"
 depends_on = ["packages.code_search_local", "packages.t_man"]
+
+# Shell functions moved here from the dotfiles dev-tools recipe; keys are
+# global across sources, so each must exist in exactly one recipe.
+#
+# `repo-sync` pulls every repo (ff-only) and reindexes what changed —
+# a shell-side name for `csl sync`.
+[shell.functions.repo-sync]
+body = 'csl sync'
+
+# `repo` jumps to a repo: `repo <query>` cd's straight to the single match,
+# bare `repo` opens the fuzzy picker. Backed by `csl repo`, so it needs no
+# other tool on PATH.
+[shell.functions.repo]
+body = 'local d=$(csl repo "$@"); [[ -n "$d" ]] && cd "$d"'

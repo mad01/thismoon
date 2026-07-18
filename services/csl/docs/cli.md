@@ -248,6 +248,7 @@ Discover and pick git repos.
 
 ```sh
 csl repo                    # interactive fuzzy finder
+csl repo <query>            # print the single matching repo's path
 csl repo --list             # tab-separated name + path
 csl repo --json             # structured output
 csl repo --toon             # TOON-encoded output for LLMs
@@ -256,6 +257,8 @@ csl repo --toon             # TOON-encoded output for LLMs
 ### Description
 
 Without flags, `csl repo` opens a [fuzzy finder](https://github.com/ktr0731/go-fuzzyfinder) and prints the absolute path of the selected repo on stdout, useful for `cd $(csl repo)` workflows.
+
+With a query argument, it skips the picker and prints the path of the single repo whose `org/repo` name contains the query (case-insensitive). Zero or multiple matches exit non-zero; the multi-match error lists the candidates. Combined with `--list`/`--json`/`--toon`, a query filters the output instead of erroring.
 
 ### Flags
 
@@ -269,8 +272,16 @@ Without flags, `csl repo` opens a [fuzzy finder](https://github.com/ktr0731/go-f
 
 ```sh
 cd $(csl repo)                      # pick and cd
+cd $(csl repo thismoon)             # jump straight to the match
 csl repo --list | grep service-
 csl repo --json | jq '.[] | .host' | sort -u
+```
+
+A shell function makes the jump a habit — bare `repo` opens the picker, `repo <query>` cd's straight there:
+
+```sh
+# ~/.zshrc
+repo() { local d=$(csl repo "$@"); [[ -n "$d" ]] && cd "$d"; }
 ```
 
 ---

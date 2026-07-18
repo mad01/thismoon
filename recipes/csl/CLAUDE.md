@@ -1,8 +1,9 @@
 # CLAUDE.md — csl recipe
 
 Public-layer recipe for `services/csl` (see docs/adr/0006 for the layering).
-Builds and installs the `csl` binary from the thismoon sources cache and
-registers the `csl-web` t-man agent on port 7424.
+Builds and installs the `csl` binary from the thismoon sources cache,
+registers the `csl-web` t-man agent on port 7424, and defines two shell
+functions: `repo-sync` (`csl sync`) and `repo` (cd to a repo via `csl repo`).
 
 Item keys are the dotfiles-era names (`packages.code_search_local`,
 `hooks.builds.csl_web_service`) so ralph state carried over at cutover — do

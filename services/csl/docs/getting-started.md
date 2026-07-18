@@ -5,7 +5,7 @@ This walks from a blank machine to your first cross-repo search. Allow about fiv
 ## Prerequisites
 
 - Go 1.26 or newer. Check with `go version`.
-- Optional, for semantic search only: [Ollama](https://ollama.com) (step 8).
+- Optional, for semantic search only: [Ollama](https://ollama.com) (step 9).
 - `git` on `PATH`. `csl` reads `.git/config` directly for repo names, but uses `git` for pull and fingerprinting.
 - At least one local git checkout.
 
@@ -57,6 +57,15 @@ mad01/thismoon	/Users/you/code/src/github.com/mad01/thismoon
 Repo names come from the `origin` remote URL in `.git/config`. If a checkout has no remote, the name falls back to the parent directory plus the repo directory.
 
 If the list is empty, the `dirs` paths don't contain git repos. Re-check the config; use absolute paths to rule out tilde expansion issues.
+
+`csl repo` without `--list` opens an interactive fuzzy picker and prints the chosen repo's path; `csl repo <query>` skips the picker and prints the single match (erroring if the query is ambiguous). That makes a one-line jump function:
+
+```sh
+# ~/.zshrc
+repo() { local d=$(csl repo "$@"); [[ -n "$d" ]] && cd "$d"; }
+```
+
+Now `repo thismoon` drops you into the checkout, and bare `repo` gives you the picker.
 
 ## 4. Run your first search
 
@@ -111,7 +120,26 @@ Healthy (17):
 
 `doctor` reports corrupted shards, stale repos, dirty working trees, and daemon status in one view. Run it when results look off.
 
-## 7. Register the MCP server
+## 7. Keep the index fresh
+
+`csl search` re-indexes stale repos in the background after answering, so day-to-day searches keep themselves current. To also pull every repo and reindex whatever changed upstream in one pass:
+
+```sh
+csl sync
+```
+
+`csl sync` pulls each repo fast-forward-only (skipping dirty trees, non-default branches, and detached HEADs), then batch-reindexes the changed ones. Safe to run any time.
+
+If you like it as a habit, wrap it in a shell function:
+
+```sh
+# ~/.zshrc
+repo-sync() { csl sync; }
+```
+
+Machines provisioned through the ralph recipe in this repo (`recipes/csl`) get the `repo-sync` and `repo` functions defined automatically.
+
+## 8. Register the MCP server
 
 ```sh
 claude mcp add --scope user csl -- csl mcp
@@ -126,7 +154,7 @@ csl: csl mcp - ✓ Connected
 
 From a Claude Code session, the agent can now call `csl_search`, `csl_repo_lookup`, `csl_read`, and the nine other `csl_*` tools directly. See the [MCP reference](mcp.md) for per-tool contracts.
 
-## 8. Optional: semantic search
+## 9. Optional: semantic search
 
 Everything so far is lexical: exact text matching with no extra dependencies. Semantic search (match by meaning: "retry failed requests" finds the backoff loop whatever it's named) needs a local [Ollama](https://ollama.com) server with an embedding model pulled:
 

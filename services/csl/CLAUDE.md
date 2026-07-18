@@ -146,7 +146,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl count <pattern>`**: count matches across indexed repos. `--repo/-r`, `--lang/-l`, `--group-by` (repo\|language), `--json`.
 - **`csl query <pattern>`**: validate and parse a zoekt query without running a search. `--json`.
 - **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
-- **`csl repo`**: interactive fuzzy-finder over discovered repos. `--list` (non-interactive), `--json`/`--toon` (imply `--list`).
+- **`csl repo [query]`**: interactive fuzzy-finder over discovered repos. With a query, prints the single matching repo's path (case-insensitive substring on org/repo; errors on zero or multiple matches); a query also filters `--list` output. `--list` (non-interactive), `--json`/`--toon` (imply `--list`).
 - **`csl doctor`**: check index health (shards, staleness, dirty repos, daemon status). `--json`, `--repair` (fix a corrupt state file).
 - **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild; needs Ollama running with the model pulled), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
