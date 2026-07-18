@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/belt/v0.2.1...belt/v0.3.0) (2026-07-18)
+
+
+### Features
+
+* **belt:** add advisory hints alongside deny-only guards ([#101](https://github.com/mad01/thismoon/issues/101)) ([614128e](https://github.com/mad01/thismoon/commit/614128ecf0ce90b151dea85441ec71e93f313198))
+
 ## [0.2.1](https://github.com/mad01/thismoon/compare/belt/v0.2.0...belt/v0.2.1) (2026-07-15)
 
 
