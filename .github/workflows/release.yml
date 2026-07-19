@@ -72,6 +72,9 @@ jobs:
       # darwin/arm64 only — the platform targets macOS (docs/adr/0007).
       # cgo stays off except for csl, whose tree-sitter grammars compile as
       # C; the runner is already darwin/arm64 so no cross-compile happens.
+      # Swift components (a Package.swift in the component dir) build with
+      # the runner's Swift toolchain; their version is baked into source by
+      # release-please's generic updater, so no ldflags injection.
       # checksums.txt covers every tarball so a single cosign verify-blob
       # vouches for all artifacts of the release.
       - name: Build platform tarballs
@@ -86,9 +89,14 @@ jobs:
           for platform in darwin/arm64; do
             goos="${platform%/*}"
             goarch="${platform#*/}"
-            CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
-              go build -trimpath -ldflags "$ldflags" \
-              -o "dist/${name}" "./${COMPONENT_PATH}/cmd/${name}"
+            if [ -f "${COMPONENT_PATH}/Package.swift" ]; then
+              swift build --configuration=release --package-path "$COMPONENT_PATH"
+              cp "${COMPONENT_PATH}/.build/release/${name}" "dist/${name}"
+            else
+              CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
+                go build -trimpath -ldflags "$ldflags" \
+                -o "dist/${name}" "./${COMPONENT_PATH}/cmd/${name}"
+            fi
             tar -C dist -czf "dist/${name}_${version}_${goos}_${goarch}.tar.gz" "$name"
             rm "dist/${name}"
           done

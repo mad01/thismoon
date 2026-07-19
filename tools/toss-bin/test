@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+cd "$(dirname "$0")"
+
+# Build first
+swift build --configuration=release
+TOSS="$PWD/.build/release/toss-bin"
+
+# Pin the config away from the machine's real ~/.config/toss-bin/config.yaml
+# so local additions can't skew the baseline sections. The config section
+# below overrides this to exercise config behavior.
+export TOSS_BIN_CONFIG="$PWD/.build/toss-bin-test-no-config.yaml"
+
+echo "=== Testing toss-bin safety validation ==="
+echo ""
+
+# Test helper
+test_blocked() {
+    local path="$1"
+    local output
+    output=$($TOSS --validate "$path" 2>&1) || true
+    if echo "$output" | grep -q "^BLOCKED:"; then
+        echo "PASS: $path is blocked"
+        return 0
+    else
+        echo "FAIL: $path should be blocked but wasn't"
+        echo "  Output: $output"
+        return 1
+    fi
+}
+
+test_allowed() {
+    local path="$1"
+    local output
+    output=$($TOSS --validate "$path" 2>&1) || true
+    if echo "$output" | grep -q "^OK:"; then
+        echo "PASS: $path is allowed"
+        return 0
+    else
+        echo "FAIL: $path should be allowed but wasn't"
+        echo "  Output: $output"
+        return 1
+    fi
+}
+
+FAILED=0
+
+echo "--- System paths (should be BLOCKED) ---"
+test_blocked "/" || FAILED=1
+test_blocked "/System" || FAILED=1
+test_blocked "/Library" || FAILED=1
+test_blocked "/Applications" || FAILED=1
+test_blocked "/Users" || FAILED=1
+test_blocked "/Volumes" || FAILED=1
+test_blocked "/bin" || FAILED=1
+test_blocked "/sbin" || FAILED=1
+test_blocked "/usr" || FAILED=1
+test_blocked "/etc" || FAILED=1
+test_blocked "/var" || FAILED=1
+test_blocked "/private" || FAILED=1
+
+echo ""
+echo "--- Home directory paths (should be BLOCKED) ---"
+test_blocked "$HOME" || FAILED=1
+test_blocked "$HOME/Library" || FAILED=1
+test_blocked "$HOME/Documents" || FAILED=1
+test_blocked "$HOME/Desktop" || FAILED=1
+test_blocked "$HOME/Downloads" || FAILED=1
+test_blocked "$HOME/Pictures" || FAILED=1
+test_blocked "$HOME/Music" || FAILED=1
+test_blocked "$HOME/Movies" || FAILED=1
+test_blocked "$HOME/.Trash" || FAILED=1
+
+echo ""
+echo "--- Safe paths (should be ALLOWED) ---"
+test_allowed "/tmp/somefile.txt" || FAILED=1
+test_allowed "$HOME/code/project" || FAILED=1
+test_allowed "$HOME/Library/Caches/something" || FAILED=1
+test_allowed "$HOME/Documents/myfile.txt" || FAILED=1
+test_allowed "$HOME/.config/myapp" || FAILED=1
+
+echo ""
+echo "--- Batch behavior: blocked path should not abort remaining files ---"
+
+BATCH_DIR=$(mktemp -d)
+touch "$BATCH_DIR/keep.txt"
+touch "$BATCH_DIR/also-keep.txt"
+
+# Pass a blocked path first, then two valid files
+$TOSS --safe-mode "$HOME" "$BATCH_DIR/keep.txt" "$BATCH_DIR/also-keep.txt" 2>/dev/null
+BATCH_EXIT=$?
+
+if [ ! -f "$BATCH_DIR/keep.txt" ] && [ ! -f "$BATCH_DIR/also-keep.txt" ]; then
+    echo "PASS: valid files were trashed despite blocked path in batch"
+else
+    echo "FAIL: blocked path aborted batch — valid files were not trashed"
+    FAILED=1
+fi
+
+if [ $BATCH_EXIT -ne 0 ]; then
+    echo "PASS: batch with blocked path exits non-zero ($BATCH_EXIT)"
+else
+    echo "FAIL: batch with blocked path should exit non-zero"
+    FAILED=1
+fi
+
+rm -rf "$BATCH_DIR" 2>/dev/null
+
+echo ""
+echo "--- Symlinks: the link is trashed, the target is untouched ---"
+
+SYM_DIR=$(mktemp -d)
+
+ln -s /nonexistent-target-for-toss-bin-tests "$SYM_DIR/broken-link"
+$TOSS --safe-mode "$SYM_DIR/broken-link" 2>/dev/null
+if [ ! -L "$SYM_DIR/broken-link" ]; then
+    echo "PASS: broken symlink was trashed"
+else
+    echo "FAIL: broken symlink was not trashed"
+    FAILED=1
+fi
+
+mkdir "$SYM_DIR/realdir"
+ln -s "$SYM_DIR/realdir" "$SYM_DIR/dir-link"
+$TOSS --safe-mode "$SYM_DIR/dir-link" 2>/dev/null
+if [ ! -L "$SYM_DIR/dir-link" ] && [ -d "$SYM_DIR/realdir" ]; then
+    echo "PASS: symlink to directory trashed without -r, target kept"
+else
+    echo "FAIL: symlink to directory should be trashed without -r, keeping the target"
+    FAILED=1
+fi
+
+ln -s "$HOME/Documents" "$SYM_DIR/docs-link"
+$TOSS --safe-mode "$SYM_DIR/docs-link" 2>/dev/null
+if [ ! -L "$SYM_DIR/docs-link" ] && [ -e "$HOME/Documents" ]; then
+    echo "PASS: symlink to protected directory trashed (link only), target intact"
+else
+    echo "FAIL: symlink to protected directory should be trashable"
+    FAILED=1
+fi
+
+rm -rf "$SYM_DIR"
+
+echo ""
+echo "--- Refuses . and .. ---"
+
+DOT_DIR=$(mktemp -d)
+
+(cd "$DOT_DIR" && "$TOSS" --safe-mode -r .) >/dev/null 2>&1
+DOT_EXIT=$?
+if [ $DOT_EXIT -ne 0 ] && [ -d "$DOT_DIR" ]; then
+    echo "PASS: -r . is refused and the directory survives"
+else
+    echo "FAIL: -r . should be refused (exit=$DOT_EXIT)"
+    FAILED=1
+fi
+
+(cd "$DOT_DIR" && "$TOSS" --safe-mode -r ..) >/dev/null 2>&1
+DOTDOT_EXIT=$?
+if [ $DOTDOT_EXIT -ne 0 ] && [ -d "$DOT_DIR" ]; then
+    echo "PASS: -r .. is refused and the parent survives"
+else
+    echo "FAIL: -r .. should be refused (exit=$DOTDOT_EXIT)"
+    FAILED=1
+fi
+
+rm -rf "$DOT_DIR"
+
+echo ""
+echo "--- -h / -v: sole argument = help/version, mixed with paths = passthrough ---"
+
+VERSION_OUT=$($TOSS -v)
+if echo "$VERSION_OUT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "PASS: sole -v prints version"
+else
+    echo "FAIL: sole -v should print version, got: $VERSION_OUT"
+    FAILED=1
+fi
+
+V_DIR=$(mktemp -d)
+touch "$V_DIR/victim.txt"
+$TOSS --safe-mode -v "$V_DIR/victim.txt" 2>/dev/null
+if [ ! -f "$V_DIR/victim.txt" ]; then
+    echo "PASS: -v mixed with a path still trashes the file"
+else
+    echo "FAIL: -v mixed with a path swallowed the file operation"
+    FAILED=1
+fi
+rm -rf "$V_DIR"
+
+echo ""
+echo "--- Dry-run reports nonexistent files instead of previewing them ---"
+
+DRY_OUT=$($TOSS --dry-run --safe-mode /does/not/exist-toss-bin-test.txt 2>&1)
+DRY_EXIT=$?
+if [ $DRY_EXIT -ne 0 ] && echo "$DRY_OUT" | grep -q "No such file"; then
+    echo "PASS: dry-run on nonexistent path errors"
+else
+    echo "FAIL: dry-run on nonexistent path should error (exit=$DRY_EXIT, output=$DRY_OUT)"
+    FAILED=1
+fi
+
+echo ""
+echo "--- --validate with no paths shows usage ---"
+
+VALIDATE_OUTPUT=$($TOSS --validate 2>&1)
+VALIDATE_EXIT=$?
+
+if [ $VALIDATE_EXIT -ne 0 ]; then
+    echo "PASS: --validate with no paths exits non-zero"
+else
+    echo "FAIL: --validate with no paths should exit non-zero"
+    FAILED=1
+fi
+
+echo ""
+echo "--- Config file extends the deny-list ---"
+
+CFG_DIR=$(mktemp -d)
+mkdir -p "$CFG_DIR/backup" "$CFG_DIR/media/movies"
+cat > "$CFG_DIR/config.yaml" <<EOF
+protected_paths:
+  - $CFG_DIR/backup
+protected_trees:
+  - $CFG_DIR/media/
+EOF
+
+export TOSS_BIN_CONFIG="$CFG_DIR/config.yaml"
+test_blocked "$CFG_DIR/backup" || FAILED=1
+test_allowed "$CFG_DIR/backup/inside.txt" || FAILED=1
+test_blocked "$CFG_DIR/media" || FAILED=1
+test_blocked "$CFG_DIR/media/movies/film.mp4" || FAILED=1
+test_blocked "/System" || FAILED=1
+
+# A malformed config warns and falls back to the built-in list only.
+printf 'protected_paths: [unclosed' > "$CFG_DIR/config.yaml"
+MALFORMED_OUT=$($TOSS --validate /System "$CFG_DIR/backup" 2>&1) || true
+if echo "$MALFORMED_OUT" | grep -q "warning" \
+    && echo "$MALFORMED_OUT" | grep -q "^BLOCKED: /System" \
+    && echo "$MALFORMED_OUT" | grep -q "^OK: $CFG_DIR/backup"; then
+    echo "PASS: malformed config warns and keeps only built-ins"
+else
+    echo "FAIL: malformed config handling, got: $MALFORMED_OUT"
+    FAILED=1
+fi
+
+export TOSS_BIN_CONFIG="$CFG_DIR/does-not-exist.yaml"
+rm -rf "$CFG_DIR"
+
+echo ""
+if [ $FAILED -eq 0 ]; then
+    echo "=== ALL TESTS PASSED ==="
+    exit 0
+else
+    echo "=== SOME TESTS FAILED ==="
+    exit 1
+fi

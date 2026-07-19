@@ -17,6 +17,8 @@ jobs:
     outputs:
       components: ${{ steps.matrix.outputs.components }}
       has_components: ${{ steps.matrix.outputs.has_components }}
+      swift_components: ${{ steps.matrix.outputs.swift_components }}
+      has_swift: ${{ steps.matrix.outputs.has_swift }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -55,6 +57,9 @@ jobs:
         with:
           filters: .github/filters.generated.yml
 
+      # Swift components (a Package.swift beside the Makefile) split into
+      # their own matrix: the Go toolchain steps don't apply to them and
+      # they need a macOS runner.
       - name: Build component matrix
         id: matrix
         env:
@@ -63,14 +68,21 @@ jobs:
           all=$(for dir in services/*/ tools/*/; do
             [ -f "${dir}Makefile" ] && echo "${dir%/}"
           done | jq -R . | jq -sc .)
+          all_swift=$(for dir in services/*/ tools/*/; do
+            [ -f "${dir}Makefile" ] && [ -f "${dir}Package.swift" ] && echo "${dir%/}"
+          done | jq -R . | jq -sc .)
           if echo "$CHANGES" | jq -e 'index("fanout")' > /dev/null; then
-            components="$all"
+            changed="$all"
           else
-            components=$(echo "$CHANGES" | jq -c .)
+            changed=$(echo "$CHANGES" | jq -c .)
           fi
+          components=$(echo "$changed" | jq -c --argjson swift "$all_swift" '. - $swift')
+          swift_components=$(echo "$changed" | jq -c --argjson swift "$all_swift" 'map(select(IN($swift[])))')
           echo "components=$components" >> "$GITHUB_OUTPUT"
           echo "has_components=$(echo "$components" | jq 'length > 0')" >> "$GITHUB_OUTPUT"
-          echo "matrix: $components"
+          echo "swift_components=$swift_components" >> "$GITHUB_OUTPUT"
+          echo "has_swift=$(echo "$swift_components" | jq 'length > 0')" >> "$GITHUB_OUTPUT"
+          echo "matrix: go=$components swift=$swift_components"
 
   component:
     name: ${{ matrix.component }}
@@ -102,6 +114,30 @@ jobs:
         env:
           COMPONENT: ${{ matrix.component }}
         run: go build "./${COMPONENT}/..."
+
+  component-swift:
+    name: ${{ matrix.component }}
+    needs: changes
+    if: needs.changes.outputs.has_swift == 'true'
+    # Swift components target macOS APIs; build and test on the platform
+    # they ship to instead of standing up Swift on Linux.
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.changes.outputs.swift_components) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Test
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: make -C "$COMPONENT" test
+
+      - name: Build
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: make -C "$COMPONENT" build
 
   repo-safety-net:
     name: Repo-wide vet and build

@@ -1,0 +1,36 @@
+# toss-bin — public layer only: build + install of the safe-rm binary plus
+# the rm shell function. Nothing machine-private exists for this tool
+# (docs/adr/0006): no config file, no MCP registration, no service.
+[recipe]
+name = "toss-bin"
+description = "toss-bin — safe rm replacement, trashes to dated ~/.Trash folders (binary build/install + rm shell function)"
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the path below names that cache directly.
+#
+# Item key keeps the dotfiles-era name (packages.toss_bin) so ralph state
+# carries over at cutover — item keys are global, not namespaced per recipe.
+# Install path stays ~/.local/bin (not ~/code/bin like the Go tools): the rm
+# wrapper has always resolved toss-bin from there.
+[packages.toss_bin]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/tools/toss-bin"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/.local/bin/toss-bin"]
+
+# rm routes through toss-bin --safe-mode when the binary is present, so shell
+# deletes become recoverable trash moves with the system-path deny-list
+# active; plain rm is the fallback on machines without the binary. Moved here
+# from the dotfiles shell-aliases recipe — shell item keys are global across
+# sources, so the function must exist in exactly one recipe.
+[shell.functions.rm]
+body = '''
+if command -v toss-bin >/dev/null 2>&1; then
+  toss-bin --safe-mode "$@"
+else
+  command rm "$@"
+fi
+'''

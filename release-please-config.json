@@ -21,6 +21,7 @@
     "tools/humanizer": { "component": "humanizer" },
     "tools/suspenders": { "component": "suspenders" },
     "tools/t-man": { "component": "t-man" },
+    "tools/toss-bin": { "component": "toss-bin", "extra-files": ["Sources/toss-bin/main.swift"] },
     "tools/worklog": { "component": "worklog" }
   }
 }

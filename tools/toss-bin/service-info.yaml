@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: toss-bin
+  description: Safe trash for macOS — moves files to dated ~/.Trash folders instead of deleting
+  tags: [swift, cli, macos]
+spec:
+  type: cli
+  lifecycle: production
+  owner: mad01
+  system: thismoon
