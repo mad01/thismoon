@@ -21,12 +21,21 @@ build = ["make build"]
 install = ["make install"]
 install_paths = ["~/.local/bin/toss-bin"]
 
-# rm routes through toss-bin --safe-mode when the binary is present, so shell
-# deletes become recoverable trash moves with the system-path deny-list
-# active; plain rm is the fallback on machines without the binary. Moved here
-# from the dotfiles shell-aliases recipe — shell item keys are global across
-# sources, so the function must exist in exactly one recipe.
-[shell.functions.rm]
+# The wrapper name is a recipe variable so a machine can ship it under a
+# different name without disabling the recipe:
+#   [recipes_config.overrides."thismoon/toss-bin"]
+#   vars = { rm_alias = "del" }
+# Requires ralph >= cd7a913 (recipe variables); older ralph fails validation
+# on the placeholder name.
+[recipe.vars]
+rm_alias = "rm"
+
+# The wrapper routes through toss-bin --safe-mode when the binary is present,
+# so shell deletes become recoverable trash moves with the system-path
+# deny-list active; plain rm is the fallback on machines without the binary.
+# Moved here from the dotfiles shell-aliases recipe — shell item keys are
+# global across sources, so the function must exist in exactly one recipe.
+[shell.functions."{{vars.rm_alias}}"]
 body = '''
 if command -v toss-bin >/dev/null 2>&1; then
   toss-bin --safe-mode "$@"

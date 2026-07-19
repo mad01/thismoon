@@ -10,6 +10,19 @@ Item keys are the dotfiles-era names (`packages.toss_bin` from the packages
 recipe, `shell.functions.rm` from shell-aliases) so ralph state carries over
 at cutover — do not rename them.
 
+The wrapper's name is the recipe variable `rm_alias` (default `rm`). A
+machine overrides it without touching the recipe:
+
+```toml
+[recipes_config.overrides."thismoon/toss-bin"]
+vars = { rm_alias = "del" }
+```
+
+Recipe variables need ralph cd7a913 or newer; an older ralph rejects the
+`{{vars.rm_alias}}` function name at validation and the whole `ralph up`
+fails. Update ralph on every consuming machine before merging changes that
+rely on this.
+
 The only machine-private piece is optional: a machine that wants extra
 protected paths ships `~/.config/toss-bin/config.yaml` from the consuming
 repo (docs/adr/0006); without it the built-in deny-list applies. There is
