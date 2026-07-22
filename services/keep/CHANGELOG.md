@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/keep/v0.2.0...keep/v0.3.0) (2026-07-22)
+
+
+### Features
+
+* **keep:** show full assertion metadata in the web view ([#107](https://github.com/mad01/thismoon/issues/107)) ([c86cd44](https://github.com/mad01/thismoon/commit/c86cd446468e25f3fa4b5e8f3edcc503a067bf60))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/keep/v0.1.1...keep/v0.2.0) (2026-07-13)
 
 
