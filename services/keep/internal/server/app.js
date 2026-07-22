@@ -51,14 +51,21 @@
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
-  // checkedText renders checked_at in the browser's local zone, or "never
-  // checked" when the assertion has not been checked since it was recorded.
-  function checkedText(iso) {
-    if (!iso) return 'never checked';
+  // fmtTime renders an ISO timestamp in the browser's local zone in the same
+  // style as the sibling services' Local().Format, or '' for absent/zero times.
+  function fmtTime(iso) {
+    if (!iso) return '';
     var d = new Date(iso);
-    if (isNaN(d) || d.getFullYear() <= 1) return 'never checked';
-    return 'checked ' + DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() +
+    if (isNaN(d) || d.getFullYear() <= 1) return '';
+    return DAYS[d.getDay()] + ' ' + MONTHS[d.getMonth()] + ' ' + d.getDate() +
       ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  // checkedText renders checked_at, or "never checked" when the assertion has
+  // not been checked since it was recorded.
+  function checkedText(iso) {
+    var t = fmtTime(iso);
+    return t ? 'checked ' + t : 'never checked';
   }
 
   // statusBadge maps status → a distinct wk-badge variant + label.
@@ -70,6 +77,72 @@
   }
 
   // ── rendering ──
+
+  // openIds remembers which cards have their details expanded, so the 60s
+  // refresh (which rebuilds every card) doesn't snap them shut.
+  var openIds = {};
+
+  // pinEl renders one evidence pin: file:range, then the repo path and the
+  // commit/hash/time the pin was resolved against.
+  function pinEl(p) {
+    var range = p.start_line + (p.end_line !== p.start_line ? '–' + p.end_line : '');
+    var src = p.repo_path;
+    if (p.head_commit) src += ' · @' + p.head_commit.slice(0, 7);
+    if (p.content_sha256) src += ' · sha ' + p.content_sha256.slice(0, 12);
+    var resolved = fmtTime(p.resolved_at);
+    if (resolved) src += ' · resolved ' + resolved;
+    return Webkit.el('div', { class: 'a-pin' }, [
+      Webkit.el('div', { class: 'a-pin-loc' }, p.file + ':' + range),
+      Webkit.el('div', { class: 'a-pin-src' }, src)
+    ]);
+  }
+
+  // row builds one label/value line in the expanded details.
+  function row(label, value) {
+    return Webkit.el('div', { class: 'a-row' }, [
+      Webkit.el('span', { class: 'a-key' }, label),
+      Webkit.el('span', { class: 'a-val' }, value)
+    ]);
+  }
+
+  // detailsEl is the collapsed metadata block per card: everything keep_get /
+  // keep get return that the compact card doesn't show — id, timestamps,
+  // provenance, links, and each pin in full.
+  function detailsEl(a) {
+    var rows = [row('id', Webkit.el('code', {}, a.id))];
+    var created = fmtTime(a.created_at);
+    if (created) rows.push(row('created', created));
+    var updated = fmtTime(a.updated_at);
+    if (updated && updated !== created) rows.push(row('updated', updated));
+    var retracted = fmtTime(a.retracted_at);
+    if (retracted) rows.push(row('retracted', retracted));
+    var prov = a.provenance || {};
+    if (prov.session_id) {
+      var pv = 'session ' + prov.session_id;
+      var derived = fmtTime(prov.derived_at);
+      if (derived) pv += ' · derived ' + derived;
+      if (prov.cost_tokens) pv += ' · ' + prov.cost_tokens + ' tokens';
+      rows.push(row('provenance', pv));
+    }
+    (a.links || []).forEach(function (l) {
+      rows.push(row('link', /^https?:\/\//.test(l)
+        ? Webkit.el('a', { href: l, target: '_blank', rel: 'noopener' }, l)
+        : l));
+    });
+
+    var body = [Webkit.el('div', { class: 'a-rows' }, rows)];
+    var pins = a.pins || [];
+    if (pins.length) body.push(Webkit.el('div', { class: 'a-pins' }, pins.map(pinEl)));
+
+    var attrs = { class: 'a-details' };
+    if (openIds[a.id]) attrs.open = '';
+    var det = Webkit.el('details', attrs, [
+      Webkit.el('summary', {}, 'details'),
+      Webkit.el('div', { class: 'a-detail-body' }, body)
+    ]);
+    det.addEventListener('toggle', function () { openIds[a.id] = det.open; });
+    return det;
+  }
 
   function card(a) {
     var sb = statusBadge(a);
@@ -95,6 +168,8 @@
     if (a.status === 'retracted' && a.retract_note) {
       kids.push(Webkit.el('div', { class: 'a-note' }, 'retracted: ' + a.retract_note));
     }
+
+    kids.push(detailsEl(a));
 
     return Webkit.el('wk-card', {}, kids);
   }
