@@ -25,7 +25,6 @@ services/reminder/reminder
 services/speak/speak
 services/status/status
 tools/belt/belt
-tools/bionic/bionic
 tools/humanizer/humanizer
 tools/suspenders/suspenders
 tools/t-man/t-man

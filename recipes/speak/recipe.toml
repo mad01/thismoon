@@ -68,7 +68,7 @@ depends_on = ["packages.speak", "packages.t_man"]
 # give it an --extra-log sandbox=... pointing at the denials log.
 [hooks.builds.sandbox_watch_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name sandbox-watch --env SANDBOX_WATCH_PROCESSES=python,Python,humanizer,vale,github-mcp-server,bionic,present --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log --extra-log sandbox-notifications=$HOME/.local/share/speak/logs/sandbox-notifications.log -- $HOME/.config/ralph/sources/thismoon/recipes/speak/sandbox-watch.sh; else echo 'speak: skip sandbox-watch service (t-man not on PATH)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name sandbox-watch --env SANDBOX_WATCH_PROCESSES=python,Python,humanizer,vale,github-mcp-server,present --extra-log sandbox=$HOME/.local/share/speak/logs/sandbox-denials.log --extra-log sandbox-notifications=$HOME/.local/share/speak/logs/sandbox-notifications.log -- $HOME/.config/ralph/sources/thismoon/recipes/speak/sandbox-watch.sh; else echo 'speak: skip sandbox-watch service (t-man not on PATH)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"

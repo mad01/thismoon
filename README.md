@@ -23,36 +23,51 @@ or install the whole fleet with [ralph](https://github.com/mad01/ralph)
 The repo also carries the shared web UI package (`webkit/`) and the ralph
 recipes that install the fleet.
 
+## Component states
+
+The **State** column in the tables below says how settled a component is, not
+how well it works — everything listed is running on real machines.
+
+- **proven** — earns its keep, used often enough that it is likely to stick.
+  Treat its shape and interfaces as stable.
+- **evaluating** — works, but still on trial. It might graduate to proven, or
+  it might be reworked or dropped once it has had a fair run.
+- **experimental** — early and unsettled. Expect it to change or disappear;
+  don't build anything load-bearing on top of it yet.
+
+A component only moves up once it has been used enough to trust. The lower two
+levels are honest labels: some of them won't stay.
+
 ## Services
 
 Long-running local web services under `services/`, each on its own `*.this`
 address, managed as launchd agents by t-man.
 
-| Service | What it does | Interfaces |
-|---------|--------------|------------|
-| catalog | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI |
-| csl | Code search over local checkouts (zoekt index) | web · CLI · MCP |
-| d-man | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI |
-| deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP |
-| events | Local event and audit log, archive-only JSONL store | web · CLI · MCP |
-| keep | Assertion store: evidence-pinned claims about code that go stale with it | web · CLI · MCP |
-| present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP |
-| reminder | Reminders that fire macOS notifications | web · CLI · MCP |
-| speak | Reads markdown aloud through a local TTS model | web · CLI · MCP |
-| status | Status page with 30-day uptime history for the fleet | web · CLI |
+| Service | What it does | Interfaces | State |
+|---------|--------------|------------|-------|
+| catalog | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
+| csl | Code search over local checkouts (zoekt index) | web · CLI · MCP | proven |
+| d-man | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
+| deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
+| events | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
+| keep | Assertion store: evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
+| present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
+| reminder | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
+| speak | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
+| status | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
 
 ## Tools
 
 CLI tools under `tools/`, installed to your local bin.
 
-| Tool | What it does | Interfaces |
-|------|--------------|------------|
-| belt | Claude Code guard hooks (blocks push-to-main, internal-name writes) | CLI |
-| bionic | Bionic-reading text transform | CLI · MCP |
-| humanizer | AI-writing detection and voice profiling | CLI · MCP |
-| suspenders | Git secret scanner and pre-commit hook orchestrator | CLI |
-| t-man | Declarative launchd agent/daemon manager | CLI |
-| worklog | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP |
+| Tool | What it does | Interfaces | State |
+|------|--------------|------------|-------|
+| belt | Claude Code guard hooks (blocks push-to-main, internal-name writes) | CLI | evaluating |
+| humanizer | AI-writing detection and voice profiling | CLI · MCP | proven |
+| suspenders | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
+| t-man | Declarative launchd agent/daemon manager | CLI | proven |
+| toss-bin | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
+| worklog | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
 
 The MCP column is the AI half of the toolbox: register those components as
 stdio MCP servers and an agent gets code search, dependency checks, reminders,
