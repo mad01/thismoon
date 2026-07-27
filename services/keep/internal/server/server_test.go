@@ -21,7 +21,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
-	return httptest.NewServer(New(st, "test").Handler())
+	return httptest.NewServer(New(st, "test", "tester").Handler())
 }
 
 // gitRepo creates a temp git repo with a committed f.txt of five lines
@@ -103,6 +103,9 @@ func TestAssertResolvesPins(t *testing.T) {
 	}
 	if p.HeadCommit == "" {
 		t.Error("pin head_commit should be resolved")
+	}
+	if a.Provenance.Author != "tester" {
+		t.Errorf("provenance author = %q, want tester (server-stamped)", a.Provenance.Author)
 	}
 }
 

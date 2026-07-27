@@ -17,6 +17,7 @@ import (
 // Pin mirrors a resolved evidence pin as the serve API returns it.
 type Pin struct {
 	RepoPath      string    `json:"repo_path"`
+	Repo          string    `json:"repo,omitempty"`
 	File          string    `json:"file"`
 	StartLine     int       `json:"start_line"`
 	EndLine       int       `json:"end_line"`
@@ -27,6 +28,7 @@ type Pin struct {
 
 // Provenance mirrors where an assertion came from.
 type Provenance struct {
+	Author     string    `json:"author,omitempty"`
 	SessionID  string    `json:"session_id"`
 	DerivedAt  time.Time `json:"derived_at"`
 	CostTokens int       `json:"cost_tokens,omitempty"`

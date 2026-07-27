@@ -21,6 +21,7 @@ import (
 // pinned it, so a later Check can tell whether the referenced code still holds.
 type Pin struct {
 	RepoPath      string    `json:"repo_path"`      // absolute path to repo working tree
+	Repo          string    `json:"repo,omitempty"` // canonical host/org/name from the origin remote; "" when there is none
 	File          string    `json:"file"`           // repo-relative
 	StartLine     int       `json:"start_line"`     // 1-based inclusive
 	EndLine       int       `json:"end_line"`       // inclusive, >= StartLine
@@ -73,6 +74,7 @@ func Resolve(ref Ref, now time.Time) (Pin, error) {
 	}
 	return Pin{
 		RepoPath:      ref.RepoPath,
+		Repo:          repoIdentity(ref.RepoPath),
 		File:          ref.File,
 		StartLine:     ref.StartLine,
 		EndLine:       ref.EndLine,
@@ -115,6 +117,41 @@ func headCommit(repoPath string) (string, error) {
 		return "", errors.New("git rev-parse HEAD returned empty output")
 	}
 	return head, nil
+}
+
+// repoIdentity returns the canonical host/org/name identity of the repo at
+// repoPath, derived from its origin remote URL. Identity is best-effort
+// portability metadata, so a working tree without an origin remote yields ""
+// rather than an error — the pin still resolves and checks via repo_path.
+func repoIdentity(repoPath string) string {
+	out, err := exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	return canonicalRepo(strings.TrimSpace(string(out)))
+}
+
+// canonicalRepo normalizes a git remote URL to host/org/name form, so
+// git@github.com:mad01/x.git and https://github.com/mad01/x.git both become
+// github.com/mad01/x. A remote it cannot shape that way (a local path, a
+// host with a port) yields "".
+func canonicalRepo(remote string) string {
+	r := strings.TrimSuffix(strings.TrimSpace(remote), "/")
+	r = strings.TrimSuffix(r, ".git")
+	if i := strings.Index(r, "://"); i >= 0 {
+		r = r[i+3:]
+	} else if i := strings.Index(r, "@"); i >= 0 {
+		// scp-like [user@]host:org/name
+		r = strings.Replace(r[i+1:], ":", "/", 1)
+	}
+	if i := strings.Index(r, "@"); i >= 0 && i < strings.IndexByte(r, '/') {
+		r = r[i+1:] // userinfo left after scheme strip, e.g. ssh://git@host/...
+	}
+	if r == "" || strings.HasPrefix(r, "/") || !strings.Contains(r, "/") ||
+		strings.Contains(r, ":") {
+		return ""
+	}
+	return r
 }
 
 // hashLines returns the hex sha256 of lines start..end (1-based inclusive),

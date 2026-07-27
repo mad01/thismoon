@@ -34,14 +34,17 @@ var appJS []byte
 type Server struct {
 	store   *store.Store
 	version string
+	author  string
 	now     func() time.Time
 }
 
-// New returns a Server backed by st, reporting version on /version.
-func New(st *store.Store, version string) *Server {
+// New returns a Server backed by st, reporting version on /version and
+// stamping author into the provenance of every assertion it creates.
+func New(st *store.Store, version, author string) *Server {
 	return &Server{
 		store:   st,
 		version: version,
+		author:  author,
 		now:     func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -139,6 +142,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Statement:  req.Statement,
 		Confidence: req.Confidence,
 		Links:      req.Links,
+		Author:     s.author,
 		SessionID:  req.SessionID,
 		CostTokens: req.CostTokens,
 		Pins:       pins,

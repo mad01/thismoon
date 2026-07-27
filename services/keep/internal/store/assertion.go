@@ -26,9 +26,11 @@ type Assertion struct {
 	RetractedAt *time.Time `json:"retracted_at,omitempty"`
 }
 
-// Provenance records where an assertion came from: the session that derived it,
-// when, and its token cost.
+// Provenance records where an assertion came from: who asserted it, the
+// session that derived it, when, and its token cost. Author is stamped by the
+// serve process, never taken from the request.
 type Provenance struct {
+	Author     string    `json:"author,omitempty"`
 	SessionID  string    `json:"session_id"`
 	DerivedAt  time.Time `json:"derived_at"`
 	CostTokens int       `json:"cost_tokens,omitempty"`

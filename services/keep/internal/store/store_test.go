@@ -122,6 +122,110 @@ func TestAssertGetRoundTrips(t *testing.T) {
 	}
 }
 
+func TestAssertStampsAuthor(t *testing.T) {
+	s := newTestStore(t)
+	in := validInput("api")
+	in.Author = "alex"
+	a, err := s.Assert(in)
+	if err != nil {
+		t.Fatalf("Assert: %v", err)
+	}
+	if a.Provenance.Author != "alex" {
+		t.Errorf("Provenance.Author = %q, want alex", a.Provenance.Author)
+	}
+}
+
+// externalAppend writes one complete record line to the main log file the way
+// another process (a git pull of a synced workdir) would.
+func externalAppend(t *testing.T, dir string, a Assertion) {
+	t.Helper()
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	f, err := os.OpenFile(
+		filepath.Join(dir, logFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644,
+	)
+	if err != nil {
+		t.Fatalf("open log: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(raw, '\n')); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+}
+
+func TestReloadIfChangedPicksUpExternalAppend(t *testing.T) {
+	s := newTestStore(t)
+
+	if reloaded, err := s.ReloadIfChanged(); err != nil || reloaded {
+		t.Fatalf("unchanged store: ReloadIfChanged = (%v, %v), want (false, nil)", reloaded, err)
+	}
+
+	externalAppend(t, s.dir, Assertion{
+		ID:         "ext-1",
+		Kind:       KindCodeBehavior,
+		Subject:    "repo:x/y",
+		Statement:  "written by another process",
+		Pins:       []pin.Pin{testPin("a.go", 1, 3)},
+		Confidence: ConfidenceDerived,
+		Status:     StatusFresh,
+		UpdatedAt:  time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC),
+	})
+	reloaded, err := s.ReloadIfChanged()
+	if err != nil {
+		t.Fatalf("ReloadIfChanged: %v", err)
+	}
+	if !reloaded {
+		t.Fatal("external append should trigger a reload")
+	}
+	got, err := s.Get("ext-1")
+	if err != nil {
+		t.Fatalf("Get after reload: %v", err)
+	}
+	if got.Statement != "written by another process" {
+		t.Errorf("reloaded statement = %q", got.Statement)
+	}
+}
+
+func TestReloadIgnoresOwnAppends(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.Assert(validInput("api")); err != nil {
+		t.Fatalf("Assert: %v", err)
+	}
+	if reloaded, err := s.ReloadIfChanged(); err != nil || reloaded {
+		t.Errorf("own append: ReloadIfChanged = (%v, %v), want (false, nil)", reloaded, err)
+	}
+}
+
+func TestReloadKeepsStoreOnCorruptLine(t *testing.T) {
+	s := newTestStore(t)
+	a, err := s.Assert(validInput("api"))
+	if err != nil {
+		t.Fatalf("Assert: %v", err)
+	}
+
+	// A complete but unparseable line: reload must fail and leave the
+	// in-memory store untouched.
+	f, err := os.OpenFile(
+		filepath.Join(s.dir, logFileName), os.O_APPEND|os.O_WRONLY, 0o644,
+	)
+	if err != nil {
+		t.Fatalf("open log: %v", err)
+	}
+	if _, err := f.Write([]byte("not json\n")); err != nil {
+		t.Fatalf("append garbage: %v", err)
+	}
+	_ = f.Close()
+
+	if reloaded, err := s.ReloadIfChanged(); err == nil || reloaded {
+		t.Fatalf("corrupt line: ReloadIfChanged = (%v, %v), want (false, error)", reloaded, err)
+	}
+	if _, err := s.Get(a.ID); err != nil {
+		t.Errorf("existing data lost after failed reload: %v", err)
+	}
+}
+
 func TestPersistenceReload(t *testing.T) {
 	dir := t.TempDir()
 	s1, err := New(dir)

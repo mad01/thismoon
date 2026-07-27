@@ -45,6 +45,12 @@ So the MCP, the CLI, and the web page all see the same data, and there are no
 file locks. Pin resolution and hashing happen inside serve, which is the process
 with a coherent view of the working tree the pins point at.
 
+The one sanctioned exception: serve polls the log files every 2 seconds and
+reloads the store when another **process** changed them on disk (a git pull of
+a synced workdir, a manual append). The reload never repairs the files and
+keeps the old in-memory data on any parse error. keep processes themselves
+still never write concurrently — serve stays the single keep writer.
+
 ## Data model & storage
 
 ```go
@@ -55,7 +61,7 @@ Assertion{
   Statement,         // one sentence
   Pins,              // >= 1 required
   Confidence,        // verified | derived | hint
-  Provenance{ SessionID, DerivedAt, CostTokens },
+  Provenance{ Author, SessionID, DerivedAt, CostTokens },
   Status,            // fresh | stale | retracted
   StaleReason,       // set when Status is stale
   RetractNote,       // set when Status is retracted
@@ -65,6 +71,7 @@ Assertion{
 
 Pin{
   RepoPath,          // absolute path to the repo working tree
+  Repo,              // canonical host/org/name from the origin remote ("" when none)
   File,              // path within the repo
   StartLine, EndLine, // 1-based inclusive
   ContentSHA256,     // sha256 of the line range read from the working tree
@@ -80,6 +87,10 @@ Pin{
 - **Confidence** is the session's own grading: `verified` (checked against a
   primary source), `derived` (reasoned from evidence), `hint` (a weak signal
   worth recording).
+- serve stamps **Author** at assert time (`KEEP_AUTHOR`, else the OS username)
+  and never takes it from the request. serve likewise derives `Pin.Repo` from
+  the checkout's origin remote; both are the machine-independent identity a
+  shared store will need, while resolution still goes via `repo_path`.
 - Every assertion needs at least one pin. An assertion with zero pins can't go
   stale, so keep refuses to store one.
 

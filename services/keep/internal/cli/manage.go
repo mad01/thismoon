@@ -80,6 +80,9 @@ func printAssertion(cmd *cobra.Command, a client.Assertion) {
 	fmt.Fprintf(out, "  confidence: %s\n", a.Confidence)
 	prov := fmt.Sprintf("session %s, derived %s",
 		a.Provenance.SessionID, a.Provenance.DerivedAt.Local().Format("Mon Jan 2 15:04"))
+	if a.Provenance.Author != "" {
+		prov = a.Provenance.Author + ", " + prov
+	}
 	if a.Provenance.CostTokens > 0 {
 		prov += fmt.Sprintf(", %d tokens", a.Provenance.CostTokens)
 	}

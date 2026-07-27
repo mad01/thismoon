@@ -4,7 +4,10 @@
 // Load resolves the newest record per id: greater updated_at wins, and a tie
 // goes to the later line. The serve process owns a Store and is the only
 // writer; the MCP server and CLI reach it over HTTP, so there is exactly one
-// writer and no file-lock contention.
+// writer and no file-lock contention. The one sanctioned exception is an
+// external process replacing or appending to the files (a git pull of a synced
+// workdir): ReloadIfChanged detects that and re-reads, so serve keeps serving
+// current data without ever racing another keep process on a write.
 //
 // Check appends each changed record independently, so a failure mid-run leaves
 // the earlier appends persisted. That is deliberate: status and checked_at are
@@ -55,12 +58,21 @@ var ErrNotFound = errors.New("assertion: not found")
 
 // Store holds the assertions and persists them to the JSONL log.
 type Store struct {
-	mu       sync.Mutex
-	dir      string
-	now      func() time.Time
-	rnd      io.Reader
-	checkPin func(pin.Pin) (bool, string)
-	data     map[string]*Assertion
+	mu        sync.Mutex
+	dir       string
+	now       func() time.Time
+	rnd       io.Reader
+	checkPin  func(pin.Pin) (bool, string)
+	data      map[string]*Assertion
+	fileState map[string]fileStat
+}
+
+// fileStat records a log file's size and mtime as of the store's last read or
+// write of it; ReloadIfChanged compares a fresh stat against it to spot
+// changes made by an external process. A missing file is the zero fileStat.
+type fileStat struct {
+	size      int64
+	modTimeNS int64
 }
 
 // New loads the store from the JSONL log under workdir, creating the directory
@@ -71,11 +83,12 @@ func New(workdir string) (*Store, error) {
 		return nil, fmt.Errorf("create workdir: %w", err)
 	}
 	s := &Store{
-		dir:      workdir,
-		now:      func() time.Time { return time.Now().UTC() },
-		rnd:      rand.Reader,
-		checkPin: pin.Check,
-		data:     map[string]*Assertion{},
+		dir:       workdir,
+		now:       func() time.Time { return time.Now().UTC() },
+		rnd:       rand.Reader,
+		checkPin:  pin.Check,
+		data:      map[string]*Assertion{},
+		fileState: map[string]fileStat{},
 	}
 	if err := s.migrate(); err != nil {
 		return nil, err
@@ -129,21 +142,79 @@ func (s *Store) migrate() error {
 
 func (s *Store) load() error {
 	for _, name := range []string{logFileName, localFileName} {
-		if err := s.loadFile(name); err != nil {
+		if err := scanFile(s.data, filepath.Join(s.dir, name), name, true); err != nil {
 			return err
 		}
+	}
+	// Record the post-repair state so the first ReloadIfChanged has a baseline.
+	for _, name := range []string{logFileName, localFileName} {
+		st, err := statFile(filepath.Join(s.dir, name))
+		if err != nil {
+			return err
+		}
+		s.fileState[name] = st
 	}
 	return nil
 }
 
-// loadFile folds one log file into the map, newest record per id winning. An
+// statFile returns the fileStat for path, with a missing file as the zero value.
+func statFile(path string) (fileStat, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fileStat{}, nil
+	}
+	if err != nil {
+		return fileStat{}, fmt.Errorf("stat store: %w", err)
+	}
+	return fileStat{size: info.Size(), modTimeNS: info.ModTime().UnixNano()}, nil
+}
+
+// ReloadIfChanged re-reads the log files when they changed on disk since the
+// store last read or wrote them — the seam that lets an external process (a
+// git pull of a synced workdir, a manual append) update a running serve. The
+// reload never repairs the files: it builds a fresh map and swaps it in only
+// when every line parses, so on any error the in-memory store stays as it was.
+// The stat baseline is taken before reading, so an append landing mid-reload
+// is at worst read twice, never missed.
+func (s *Store) ReloadIfChanged() (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := map[string]fileStat{}
+	changed := false
+	for _, name := range []string{logFileName, localFileName} {
+		st, err := statFile(filepath.Join(s.dir, name))
+		if err != nil {
+			return false, err
+		}
+		seen[name] = st
+		if st != s.fileState[name] {
+			changed = true
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	data := map[string]*Assertion{}
+	for _, name := range []string{logFileName, localFileName} {
+		if err := scanFile(data, filepath.Join(s.dir, name), name, false); err != nil {
+			return false, err
+		}
+	}
+	s.data = data
+	s.fileState = seen
+	return true, nil
+}
+
+// scanFile folds one log file into data, newest record per id winning. An
 // unparseable line is fatal with its file and line number — except a torn
 // final line without its newline, the crash artifact of an interrupted append:
-// that one is dropped and truncated away. A parseable final line that only
-// lacks its newline is kept and repaired, so the next append cannot merge into
-// it. Repairs are safe here because load runs before any writer exists.
-func (s *Store) loadFile(name string) error {
-	path := filepath.Join(s.dir, name)
+// that one is dropped. With repair set (startup, before any writer exists) the
+// torn line is also truncated away, and a parseable final line that only lacks
+// its newline gets one appended so the next append cannot merge into it.
+// Without repair (a live reload) the file is never modified: a torn line is
+// skipped and re-read once its writer finishes it.
+func scanFile(data map[string]*Assertion, path, name string, repair bool) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -165,19 +236,21 @@ func (s *Store) loadFile(name string) error {
 			var a Assertion
 			switch uerr := json.Unmarshal([]byte(text), &a); {
 			case uerr == nil:
-				if cur, ok := s.data[a.ID]; !ok || !a.UpdatedAt.Before(cur.UpdatedAt) {
+				if cur, ok := data[a.ID]; !ok || !a.UpdatedAt.Before(cur.UpdatedAt) {
 					rec := a
-					s.data[a.ID] = &rec
+					data[a.ID] = &rec
 				}
-				if !complete {
+				if !complete && repair {
 					if aerr := appendNewline(path); aerr != nil {
 						return fmt.Errorf("repair %s: %w", name, aerr)
 					}
 				}
 			case !complete:
 				logf("keep: dropping torn final line %s:%d (interrupted append)", name, lineNo)
-				if terr := os.Truncate(path, offset); terr != nil {
-					return fmt.Errorf("repair %s: %w", name, terr)
+				if repair {
+					if terr := os.Truncate(path, offset); terr != nil {
+						return fmt.Errorf("repair %s: %w", name, terr)
+					}
 				}
 			default:
 				return fmt.Errorf("parse %s:%d: %w", name, lineNo, uerr)
@@ -221,6 +294,13 @@ func (s *Store) appendOne(a *Assertion) error {
 	if _, err := f.Write(append(raw, '\n')); err != nil {
 		return fmt.Errorf("append assertion: %w", err)
 	}
+	// Record the file state after our own write so ReloadIfChanged only fires
+	// on changes made by someone else.
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat store: %w", err)
+	}
+	s.fileState[name] = fileStat{size: info.Size(), modTimeNS: info.ModTime().UnixNano()}
 	return nil
 }
 
@@ -232,6 +312,7 @@ type AssertInput struct {
 	Statement  string
 	Confidence string
 	Links      []string
+	Author     string
 	SessionID  string
 	CostTokens int
 	Pins       []pin.Pin
@@ -266,6 +347,7 @@ func (s *Store) Assert(in AssertInput) (Assertion, error) {
 		Pins:       in.Pins,
 		Confidence: in.Confidence,
 		Provenance: Provenance{
+			Author:     in.Author,
 			SessionID:  in.SessionID,
 			DerivedAt:  now,
 			CostTokens: in.CostTokens,

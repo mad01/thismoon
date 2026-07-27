@@ -111,6 +111,62 @@ func TestResolve(t *testing.T) {
 	})
 }
 
+func TestRepoIdentity(t *testing.T) {
+	now := time.Date(2026, 6, 25, 9, 0, 0, 0, time.UTC)
+	ref := func(repo string) Ref {
+		return Ref{RepoPath: repo, File: "code.txt", StartLine: 1, EndLine: 2}
+	}
+
+	t.Run("origin remote becomes host/org/name", func(t *testing.T) {
+		repo := newTestRepo(t, "code.txt", fixture)
+		cmd := exec.Command(
+			"git", "-C", repo, "remote", "add", "origin", "git@github.com:mad01/example.git",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git remote add: %v\n%s", err, out)
+		}
+		p, err := Resolve(ref(repo), now)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if want := "github.com/mad01/example"; p.Repo != want {
+			t.Errorf("Repo = %q, want %q", p.Repo, want)
+		}
+	})
+
+	t.Run("no origin remote yields empty identity", func(t *testing.T) {
+		repo := newTestRepo(t, "code.txt", fixture)
+		p, err := Resolve(ref(repo), now)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if p.Repo != "" {
+			t.Errorf("Repo = %q, want empty without an origin remote", p.Repo)
+		}
+	})
+}
+
+func TestCanonicalRepo(t *testing.T) {
+	cases := []struct {
+		remote, want string
+	}{
+		{"git@github.com:mad01/thismoon.git", "github.com/mad01/thismoon"},
+		{"https://github.com/mad01/thismoon.git", "github.com/mad01/thismoon"},
+		{"https://github.com/mad01/thismoon", "github.com/mad01/thismoon"},
+		{"https://github.com/mad01/thismoon/", "github.com/mad01/thismoon"},
+		{"ssh://git@github.com/mad01/thismoon.git", "github.com/mad01/thismoon"},
+		{"https://user@git.example.com/org/repo.git", "git.example.com/org/repo"},
+		{"/some/local/path", ""},
+		{"ssh://git@host:2222/org/repo", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := canonicalRepo(tc.remote); got != tc.want {
+			t.Errorf("canonicalRepo(%q) = %q, want %q", tc.remote, got, tc.want)
+		}
+	}
+}
+
 func TestCheck(t *testing.T) {
 	now := time.Date(2026, 6, 25, 9, 0, 0, 0, time.UTC)
 
