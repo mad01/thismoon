@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/keep/v0.3.0...keep/v0.4.0) (2026-07-27)
+
+
+### Features
+
+* **keep:** portable pin identity, author provenance, store reload ([#109](https://github.com/mad01/thismoon/issues/109)) ([566657a](https://github.com/mad01/thismoon/commit/566657ae7d9a04cd65cc280db6f0037f6db86755))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/keep/v0.2.0...keep/v0.3.0) (2026-07-22)
 
 
