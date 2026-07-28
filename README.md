@@ -31,11 +31,11 @@ how well it works — everything listed is running on real machines.
 - **proven** — earns its keep, used often enough that it is likely to stick.
   Treat its shape and interfaces as stable.
 - **evaluating** — works, but still on trial. It might graduate to proven, or
-  it might be reworked or dropped once it has had a fair run.
+  it might be reworked or dropped once it's had a fair run.
 - **experimental** — early and unsettled. Expect it to change or disappear;
   don't build anything load-bearing on top of it yet.
 
-A component only moves up once it has been used enough to trust. The lower two
+A component only moves up once it's been used enough to trust. The lower two
 levels are honest labels: some of them won't stay.
 
 ## Services
@@ -55,6 +55,7 @@ address, managed as launchd agents by t-man.
 | reminder | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
 | speak | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | status | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
+| wire | Channels two agent sessions talk over, with blocking reads | web · CLI · MCP | experimental |
 
 ## Tools
 
@@ -69,10 +70,10 @@ CLI tools under `tools/`, installed to your local bin.
 | toss-bin | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
 | worklog | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
 
-The MCP column is the AI half of the toolbox: register those components as
-stdio MCP servers and an agent gets code search, dependency checks, reminders,
-briefing pages, an audit log, and work-state checkpoints on the same local
-data you see in the web UIs.
+The MCP column is the AI half of the toolbox. Register those components as
+stdio MCP servers and your agent gets the code search, the audit log, and the
+work-state checkpoints you already use, reading the same files you do rather
+than a copy of them.
 
 ## How it fits together
 
@@ -104,10 +105,9 @@ Recipes merge under the identity `thismoon/<recipe>`. With `ref = "main"` and
 latest recipes; pin `ref` to a tag or commit to stay put.
 
 The recipes here are deliberately the public layer only: portable build and
-install steps. Anything machine-private (which `.this` names exist, MCP
-registration, env and secrets, config overlays) lives in your own private
-config repo as small companion recipes that layer on top (see
-`docs/adr/0006`). A change to a service ships by merging to main; the next
+install steps. Anything machine-private lives in your own config repo as small
+companion recipes that layer on top: which `.this` names exist, MCP
+registration, secrets, config overlays (see `docs/adr/0006`). A change to a service ships by merging to main; the next
 `ralph up` on each machine rebuilds and restarts it.
 
 ## Install

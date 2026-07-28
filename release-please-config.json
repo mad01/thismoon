@@ -16,6 +16,7 @@
     "services/reminder": { "component": "reminder" },
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },
+    "services/wire": { "component": "wire" },
     "tools/belt": { "component": "belt" },
     "tools/humanizer": { "component": "humanizer" },
     "tools/suspenders": { "component": "suspenders" },
