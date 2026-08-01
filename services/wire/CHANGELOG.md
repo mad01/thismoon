@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/wire/v0.2.0...wire/v0.3.0) (2026-08-01)
+
+
+### Features
+
+* **wire:** surface off-roster obligations as awaiting_reply_off_roster ([#118](https://github.com/mad01/thismoon/issues/118)) ([25333eb](https://github.com/mad01/thismoon/commit/25333eb086729fee75cf480b0e065cbc1fc4f4e4))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/wire/v0.1.0...wire/v0.2.0) (2026-08-01)
 
 
