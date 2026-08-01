@@ -26,14 +26,15 @@ const requestTimeout = 10 * time.Second
 
 // Channel mirrors a conversation as the serve API returns it.
 type Channel struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Topic     string     `json:"topic,omitempty"`
-	OpenedBy  string     `json:"opened_by,omitempty"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	CreatedAt time.Time  `json:"created_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
-	CloseNote string     `json:"close_note,omitempty"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Topic       string     `json:"topic,omitempty"`
+	OpenedBy    string     `json:"opened_by,omitempty"`
+	Conventions string     `json:"conventions,omitempty"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ClosedAt    *time.Time `json:"closed_at,omitempty"`
+	CloseNote   string     `json:"close_note,omitempty"`
 }
 
 // Closed reports whether the conversation takes no more messages.
@@ -43,43 +44,53 @@ func (c Channel) Closed() bool { return c.ClosedAt != nil }
 // connection string to hand another session.
 type Summary struct {
 	Channel
-	Connect      string     `json:"connect"`
-	Messages     int        `json:"messages"`
-	Cursor       int64      `json:"cursor"`
-	Participants []string   `json:"participants"`
-	LastFrom     string     `json:"last_from,omitempty"`
-	LastBody     string     `json:"last_body,omitempty"`
-	LastAt       *time.Time `json:"last_at,omitempty"`
+	Connect       string     `json:"connect"`
+	Messages      int        `json:"messages"`
+	Cursor        int64      `json:"cursor"`
+	Participants  []string   `json:"participants"`
+	AwaitingReply []int64    `json:"awaiting_reply,omitempty"`
+	LastFrom      string     `json:"last_from,omitempty"`
+	LastBody      string     `json:"last_body,omitempty"`
+	LastAt        *time.Time `json:"last_at,omitempty"`
 }
 
 // Message mirrors one turn in a channel.
 type Message struct {
-	ChannelID string    `json:"channel_id"`
-	Seq       int64     `json:"seq"`
-	From      string    `json:"from"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
+	ChannelID   string    `json:"channel_id"`
+	Seq         int64     `json:"seq"`
+	From        string    `json:"from"`
+	Body        string    `json:"body"`
+	Kind        string    `json:"kind,omitempty"`
+	ReplyTo     int64     `json:"reply_to,omitempty"`
+	ReplyNeeded bool      `json:"reply_needed,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Batch is one read's result: the channel, the messages after the cursor the
-// reader gave, and the cursor to resume from.
+// reader gave, the cursor to resume from, and the seqs still owed an answer.
 type Batch struct {
-	Channel  Channel   `json:"channel"`
-	Messages []Message `json:"messages"`
-	Cursor   int64     `json:"cursor"`
+	Channel       Channel   `json:"channel"`
+	Messages      []Message `json:"messages"`
+	Cursor        int64     `json:"cursor"`
+	AwaitingReply []int64   `json:"awaiting_reply,omitempty"`
 }
 
 // OpenBody is the POST /api/channels payload; every field is optional.
 type OpenBody struct {
-	Name  string `json:"name,omitempty"`
-	Topic string `json:"topic,omitempty"`
-	From  string `json:"from,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Topic       string `json:"topic,omitempty"`
+	From        string `json:"from,omitempty"`
+	Conventions string `json:"conventions,omitempty"`
 }
 
-// PostBody is one message. Both fields are required.
+// PostBody is one message. From and Body are required; the rest are the
+// optional protocol fields.
 type PostBody struct {
-	From string `json:"from"`
-	Body string `json:"body"`
+	From        string `json:"from"`
+	Body        string `json:"body"`
+	Kind        string `json:"kind,omitempty"`
+	ReplyTo     int64  `json:"reply_to,omitempty"`
+	ReplyNeeded bool   `json:"reply_needed,omitempty"`
 }
 
 // ReadOptions selects what a read returns. Wait is how many seconds the server

@@ -107,6 +107,8 @@ Channel{
   Name,        // the handle passed between sessions; lowercase slug, unique
   Topic,       // optional one-line description
   OpenedBy,    // who opened it
+  Conventions, // optional ground rules, declared at open — on the channel, not
+               // in message #1, so a session joining mid-transcript sees them
   CreatedAt,
   UpdatedAt,   // when the RECORD changed (open/close), not last activity
   ClosedAt,    // nil while open
@@ -118,9 +120,25 @@ Message{
   Seq,         // 1-based, contiguous; ChannelID+Seq is the identity AND the cursor
   From,        // required — an unsigned message cannot be answered
   Body,        // required, max 64 KiB
+  Kind,        // optional; closed set: task, result, question, answer, ack
+  ReplyTo,     // optional; seq this message answers — must exist on the channel
+  ReplyNeeded, // optional; sender expects an answer
   CreatedAt,
 }
 ```
+
+**Seq is arrival order, ReplyTo is causal order — the two are independent.**
+Seq is the authoritative total order the server assigns; ReplyTo is the
+correlation a writer declares. When two sessions post concurrently their
+messages interleave in seq, and ReplyTo is what keeps the transcript
+followable. The kind set is server-owned and closed on purpose: it is the
+vocabulary cross-channel tooling can rely on, and channel-specific tags belong
+in the body or the channel's `Conventions`, not in new kinds.
+
+`awaiting_reply` (on Summary and on every read Batch) is derived, never
+stored: every seq posted with ReplyNeeded that no later message names in
+ReplyTo. It is the machine answer to "what am I still owed" that used to
+require re-reading the transcript.
 
 - **Names** match `^[a-z0-9][a-z0-9.-]{0,63}$` and are lowercased on the way in.
   The `_` character is excluded on purpose: ids start with `ch_`, so an id can
@@ -173,11 +191,11 @@ Owned by `wire serve`:
 - `GET  /`                                   : webkit-chromed web page (list + live transcript)
 - `GET  /app.js`                             : the page's client script
 - `GET  /api/channels?all=1`                 : list, most recently active first; `all` includes closed
-- `POST /api/channels`                       : body `{name?, topic?, from?}` → the channel (409 on a taken name)
+- `POST /api/channels`                       : body `{name?, topic?, from?, conventions?}` → the channel (409 on a taken name)
 - `GET  /api/channels/{ref}`                 : one channel by id or name, with derived counts
 - `POST /api/channels/{ref}/close`           : body `{note?}`; terminal
 - `GET  /api/channels/{ref}/messages`        : `?since=&limit=&wait=` → `{channel, messages, cursor}`
-- `POST /api/channels/{ref}/messages`        : body `{from, body}` → the message
+- `POST /api/channels/{ref}/messages`        : body `{from, body, kind?, reply_to?, reply_needed?}` → the message
 - `GET  /api/channels/{ref}/stream`          : `?since=` → SSE; `message` events carry the seq as the SSE id, honors `Last-Event-ID`
 - `GET  /healthz`                            : 204
 - `GET  /version`                            → `{"version":"<sha>"}`
@@ -199,10 +217,10 @@ CLI surface beyond `serve`/`mcp`, wired as thin HTTP clients to `wire serve`
 ```bash
 wire serve --port 7432 --workdir ~/.local/share/wire
 wire mcp
-wire open [name] [--topic <text>] [--from <who>]  # prints the connection string first
+wire open [name] [--topic <text>] [--from <who>] [--conventions <rules>]  # prints the connection string first
 wire list [--all]
 wire connect <ref>                                # print just the connection string
-wire post <ref> [message]                         # body from args, else stdin
+wire post <ref> [message] [--kind <k>] [--reply-to <seq>] [--reply-needed]  # body from args, else stdin
 wire read <ref> [--since <n>] [--wait <secs>] [--limit <n>]
 wire follow <ref> [--since <n>]                   # blocking reads in a loop until closed
 wire close <ref> [--note <why>]
@@ -221,9 +239,9 @@ lands immediately instead of after the current 60-second wait.
 Thin client over the API above (`internal/client`), served on stdio by
 `wire mcp`:
 
-- `wire_open(from, name?, topic?)`: open a channel; returns `connect`, the token to pass to the other session
-- `wire_post(channel, from, body)`: append a message; returns its `seq`
-- `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s
+- `wire_open(from, name?, topic?, conventions?)`: open a channel; returns `connect`, the token to pass to the other session
+- `wire_post(channel, from, body, kind?, reply_to?, reply_needed?)`: append a message; returns its `seq`
+- `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s; reports `awaiting_reply`
 - `wire_list(include_closed?)`: channels, most recently active first
 - `wire_close(channel, note?)`: terminal close that wakes every waiter
 

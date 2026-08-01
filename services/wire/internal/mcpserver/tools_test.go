@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -101,6 +102,36 @@ func TestPostReportsTheCursor(t *testing.T) {
 	}
 	if out.Cursor != 4 || out.Message.Seq != 4 {
 		t.Errorf("post output = %+v, want cursor 4", out)
+	}
+}
+
+func TestPostForwardsProtocolFields(t *testing.T) {
+	var seen http.Request
+	var sentBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = *r
+		sentBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.Message{Seq: 5})
+	}))
+	t.Cleanup(srv.Close)
+	h := &handlers{client: client.New(srv.URL), webURL: "http://wire.this"}
+
+	if _, _, err := h.handlePost(context.Background(), nil, postInput{
+		Channel: "typed", From: "a", Body: "7432",
+		Kind: "answer", ReplyTo: 3, ReplyNeeded: true,
+	}); err != nil {
+		t.Fatalf("handlePost: %v", err)
+	}
+	if seen.URL.Path != "/api/channels/typed/messages" {
+		t.Errorf("called %s", seen.URL.Path)
+	}
+	var body client.PostBody
+	if err := json.Unmarshal(sentBody, &body); err != nil {
+		t.Fatalf("decode forwarded body: %v", err)
+	}
+	if body.Kind != "answer" || body.ReplyTo != 3 || !body.ReplyNeeded {
+		t.Errorf("forwarded body = %+v, want the protocol fields intact", body)
 	}
 }
 

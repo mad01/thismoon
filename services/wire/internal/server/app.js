@@ -96,11 +96,17 @@
 
   function messageEl(m, openedBy) {
     var attrs = { class: 't-msg' + (openedBy && m.from === openedBy ? ' t-own' : '') };
+    var head = [
+      Webkit.el('span', { class: 't-from' }, m.from),
+      Webkit.el('span', { class: 't-when' }, fmtTime(m.created_at))
+    ];
+    // The protocol fields, when present: what the message is, what it
+    // answers, and whether it still expects an answer itself.
+    if (m.kind) head.push(Webkit.el('wk-badge', { variant: 'outline' }, m.kind));
+    if (m.reply_to) head.push(Webkit.el('wk-badge', { variant: 'outline' }, '→#' + m.reply_to));
+    if (m.reply_needed) head.push(Webkit.el('wk-badge', { variant: 'warn' }, 'reply needed'));
     return Webkit.el('div', attrs, [
-      Webkit.el('div', {}, [
-        Webkit.el('span', { class: 't-from' }, m.from),
-        Webkit.el('span', { class: 't-when' }, fmtTime(m.created_at))
-      ]),
+      Webkit.el('div', {}, head),
       Webkit.el('div', { class: 't-body' }, m.body)
     ]);
   }
@@ -134,6 +140,14 @@
       ])
     ];
     if (sum.topic) nodes.push(Webkit.el('p', { class: 'hint' }, sum.topic));
+    if (sum.conventions) {
+      // The opener's ground rules ride on the channel, not on message #1, so
+      // they belong above the transcript where a late joiner sees them first.
+      nodes.push(Webkit.el('wk-callout', {}, [
+        Webkit.el('b', {}, 'Conventions: '),
+        sum.conventions
+      ]));
+    }
     if (sum.connect) {
       nodes.push(Webkit.el('div', { class: 't-connect' }, [
         Webkit.el('span', { class: 't-connect-label' }, 'connection string'),

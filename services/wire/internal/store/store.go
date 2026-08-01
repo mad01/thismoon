@@ -112,9 +112,12 @@ func (s *Store) messagePath(channelID string) string {
 // OpenInput carries the fields needed to open a channel. An empty Name gets a
 // generated one; the caller does not have to invent a unique handle.
 type OpenInput struct {
-	Name  string
+	Name string
 	Topic string
-	From  string
+	From string
+	// Conventions is the opener's ground rules for the conversation, carried
+	// on the channel so a late joiner sees them without reading from seq 1.
+	Conventions string
 }
 
 // Open creates a channel. A name already in use is ErrNameTaken rather than a
@@ -137,12 +140,13 @@ func (s *Store) Open(in OpenInput) (Channel, error) {
 
 	now := s.now()
 	c := &Channel{
-		ID:        s.freeIDLocked(),
-		Name:      name,
-		Topic:     in.Topic,
-		OpenedBy:  in.From,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          s.freeIDLocked(),
+		Name:        name,
+		Topic:       in.Topic,
+		OpenedBy:    in.From,
+		Conventions: in.Conventions,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := appendJSONL(filepath.Join(s.dir, channelsFileName), channelsFileName, c); err != nil {
 		return Channel{}, err
@@ -227,11 +231,21 @@ func (s *Store) List(includeClosed bool) []Summary {
 	return out
 }
 
-// PostInput carries one message. Both fields are required: an empty body says
-// nothing, and an unsigned message cannot be answered.
+// PostInput carries one message. From and Body are required: an empty body
+// says nothing, and an unsigned message cannot be answered. Kind, ReplyTo,
+// and ReplyNeeded are the optional protocol fields that keep an interleaved
+// transcript followable without conventions living in prose.
 type PostInput struct {
 	From string
 	Body string
+	// Kind classifies intent from the closed set: task, result, question,
+	// answer, or ack. Empty is a plain message.
+	Kind string
+	// ReplyTo names the seq this message answers; it must exist on the
+	// channel. Zero means the message stands alone.
+	ReplyTo int64
+	// ReplyNeeded marks that the sender expects an answer.
+	ReplyNeeded bool
 }
 
 // Post appends a message to a channel and wakes everyone waiting on it. The
@@ -245,6 +259,13 @@ func (s *Store) Post(ref string, in PostInput) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
+	kind, err := checkKind(in.Kind)
+	if err != nil {
+		return Message{}, err
+	}
+	if in.ReplyTo < 0 {
+		return Message{}, fmt.Errorf("invalid reply_to %d: want a message seq", in.ReplyTo)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -256,13 +277,20 @@ func (s *Store) Post(ref string, in PostInput) (Message, error) {
 	if c.Closed() {
 		return Message{}, fmt.Errorf("%w: %s", ErrClosed, c.Name)
 	}
+	if last := int64(len(s.messages[c.ID])); in.ReplyTo > last {
+		return Message{}, fmt.Errorf(
+			"reply_to %d names no message on %s (last seq is %d)", in.ReplyTo, c.Name, last)
+	}
 
 	m := Message{
-		ChannelID: c.ID,
-		Seq:       int64(len(s.messages[c.ID])) + 1,
-		From:      from,
-		Body:      body,
-		CreatedAt: s.now(),
+		ChannelID:   c.ID,
+		Seq:         int64(len(s.messages[c.ID])) + 1,
+		From:        from,
+		Body:        body,
+		Kind:        kind,
+		ReplyTo:     in.ReplyTo,
+		ReplyNeeded: in.ReplyNeeded,
+		CreatedAt:   s.now(),
 	}
 	if err := appendJSONL(s.messagePath(c.ID), messagesFileName(c.ID), m); err != nil {
 		return Message{}, err
@@ -300,11 +328,14 @@ func (s *Store) Close(ref, note string) (Channel, error) {
 }
 
 // Batch is one read's result: the channel as it stands, the messages after the
-// cursor the reader gave, and the cursor to resume from next time.
+// cursor the reader gave, the cursor to resume from next time, and the seqs
+// still owed an answer — so a reader knows what it must respond to without
+// re-reading the whole transcript.
 type Batch struct {
-	Channel  Channel   `json:"channel"`
-	Messages []Message `json:"messages"`
-	Cursor   int64     `json:"cursor"`
+	Channel       Channel   `json:"channel"`
+	Messages      []Message `json:"messages"`
+	Cursor        int64     `json:"cursor"`
+	AwaitingReply []int64   `json:"awaiting_reply,omitempty"`
 }
 
 // Read returns the messages after the given cursor without blocking. A cursor
@@ -339,7 +370,12 @@ func (s *Store) Wait(
 		msgs := messagesSince(all, since, limit)
 		if len(msgs) > 0 || c.Closed() || timeout <= 0 {
 			s.mu.Unlock()
-			return Batch{Channel: c, Messages: msgs, Cursor: cursorAfter(len(all), since, msgs)}, nil
+			return Batch{
+				Channel:       c,
+				Messages:      msgs,
+				Cursor:        cursorAfter(len(all), since, msgs),
+				AwaitingReply: awaitingReply(all),
+			}, nil
 		}
 		changed := s.watcherLocked(c.ID)
 		s.mu.Unlock()
@@ -347,7 +383,11 @@ func (s *Store) Wait(
 		select {
 		case <-changed:
 		case <-deadline.C:
-			return Batch{Channel: c, Cursor: cursorAfter(len(all), since, nil)}, nil
+			return Batch{
+				Channel:       c,
+				Cursor:        cursorAfter(len(all), since, nil),
+				AwaitingReply: awaitingReply(all),
+			}, nil
 		case <-ctx.Done():
 			return Batch{Channel: c, Cursor: cursorAfter(len(all), since, nil)}, ctx.Err()
 		}

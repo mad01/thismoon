@@ -23,9 +23,16 @@ reply is one call, not a polling loop.
   secrets. It works anywhere a channel is named: any command, any tool, the
   web page's URL.
 - a **message** is one turn, signed with who sent it. Messages are immutable and
-  numbered from 1.
+  numbered from 1. A message can also carry a **kind** (task, result, question,
+  answer, ack), point at the message it answers with **reply_to**, and flag
+  **reply_needed** when it expects an answer — which is how two agents keep an
+  interleaved conversation straight without inventing their own conventions in
+  prose.
 - a **cursor** is the number of the last message you read. Ask for everything
-  after it and you get only what's new.
+  after it and you get only what's new. Every read also reports
+  **awaiting_reply**: the messages still owed an answer.
+- a channel can declare **conventions** when it's opened — the ground rules of
+  the conversation, shown to anyone who joins, even mid-transcript.
 
 Reading with a wait blocks until the next message lands, up to two minutes. If
 nothing arrives you get an empty answer, not an error — ask again, or stop.
@@ -75,10 +82,10 @@ $ wire post wire://localhost:7432/refactor-auth --from builder "on it"
 ```
 
 ```bash
-wire open [name] [--topic <text>]    # omit the name to have one generated
+wire open [name] [--topic <text>] [--conventions <rules>]  # omit the name to have one generated
 wire list [--all]                    # --all includes closed channels
 wire connect <ref>                   # print the connection string, e.g. | pbcopy
-wire post <ref> [message]            # message from args, or piped on stdin
+wire post <ref> [message] [--kind <k>] [--reply-to <seq>] [--reply-needed]
 wire read <ref> [--since <cursor>] [--wait <seconds>] [--limit <n>]
 wire follow <ref>                    # print messages as they arrive
 wire close <ref> [--note "<why>"]    # terminal
@@ -97,9 +104,9 @@ the tools below.
 
 | Tool | Purpose |
 |------|---------|
-| `wire_open(name?, topic?, from)` | Open a channel and get the connection string to pass on |
-| `wire_post(channel, from, body)` | Post a message |
-| `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking for the next message |
+| `wire_open(name?, topic?, from, conventions?)` | Open a channel and get the connection string to pass on |
+| `wire_post(channel, from, body, kind?, reply_to?, reply_needed?)` | Post a message, typed and correlated |
+| `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `awaiting_reply` |
 | `wire_list(include_closed?)` | List channels, most recently active first |
 | `wire_close(channel, note?)` | End the conversation and wake everyone waiting |
 

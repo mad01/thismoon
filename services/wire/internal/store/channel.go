@@ -30,6 +30,11 @@ type Channel struct {
 	Name     string `json:"name"`
 	Topic    string `json:"topic,omitempty"`
 	OpenedBy string `json:"opened_by,omitempty"`
+	// Conventions is the opener's ground rules for the conversation — tag
+	// vocabulary, expected message shapes, whatever the participants should
+	// agree on. It lives on the channel rather than in the first message so a
+	// session joining at a non-zero cursor still sees it.
+	Conventions string `json:"conventions,omitempty"`
 	// UpdatedAt is when the channel record itself last changed (opened or
 	// closed), not when it last saw a message — that is the newest-wins key
 	// for the JSONL log. Last activity is derived from the messages.
@@ -47,11 +52,23 @@ func (c Channel) Closed() bool { return c.ClosedAt != nil }
 // identity; Seq is also the cursor a reader advances, so "everything after
 // what I already saw" is a single integer comparison.
 type Message struct {
-	ChannelID string    `json:"channel_id"`
-	Seq       int64     `json:"seq"`
-	From      string    `json:"from"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
+	ChannelID string `json:"channel_id"`
+	Seq       int64  `json:"seq"`
+	From      string `json:"from"`
+	Body      string `json:"body"`
+	// Kind classifies the message's intent from a small closed set (see
+	// checkKind); empty is a plain message. It is what lets a reader answer
+	// "which of these are open questions" without parsing prose.
+	Kind string `json:"kind,omitempty"`
+	// ReplyTo is the seq of the message this one answers, 0 when it stands
+	// alone. Seq is arrival order and ReplyTo is causal order; the two are
+	// independent, which is what keeps an interleaved transcript followable.
+	ReplyTo int64 `json:"reply_to,omitempty"`
+	// ReplyNeeded marks that the sender expects an answer. A later message
+	// naming this one in ReplyTo settles it; until then the channel reports
+	// the seq in AwaitingReply.
+	ReplyNeeded bool      `json:"reply_needed,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Summary is a channel plus the read-model the list view needs: how much has
@@ -62,6 +79,7 @@ type Summary struct {
 	Messages     int        `json:"messages"`
 	Cursor       int64      `json:"cursor"`
 	Participants []string   `json:"participants"`
+	AwaitingReply []int64   `json:"awaiting_reply,omitempty"`
 	LastFrom     string     `json:"last_from,omitempty"`
 	LastBody     string     `json:"last_body,omitempty"`
 	LastAt       *time.Time `json:"last_at,omitempty"`
@@ -95,6 +113,28 @@ func checkFrom(from string) (string, error) {
 		return "", errors.New("from must be at most 64 characters")
 	}
 	return f, nil
+}
+
+// kinds is the closed set of message intents. It is server-owned and small on
+// purpose: these are the classifications cross-channel tooling can rely on,
+// and channel-specific vocabulary belongs in the body or the channel's
+// conventions, not in new kinds.
+var kinds = map[string]bool{
+	"task":     true,
+	"result":   true,
+	"question": true,
+	"answer":   true,
+	"ack":      true,
+}
+
+// checkKind rejects a kind outside the closed set. Empty is valid: a plain
+// message needs no classification.
+func checkKind(kind string) (string, error) {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	if k == "" || kinds[k] {
+		return k, nil
+	}
+	return "", fmt.Errorf("invalid kind %q: use task, result, question, answer, or ack", kind)
 }
 
 // checkBody rejects an empty or oversized message body.
@@ -134,13 +174,33 @@ func participants(msgs []Message) []string {
 	return out
 }
 
+// awaitingReply lists the messages still owed an answer: every seq posted
+// with ReplyNeeded that no later message has named in ReplyTo. Derived from
+// the transcript on every read, never stored, so it cannot drift from it.
+func awaitingReply(msgs []Message) []int64 {
+	answered := map[int64]bool{}
+	for _, m := range msgs {
+		if m.ReplyTo > 0 {
+			answered[m.ReplyTo] = true
+		}
+	}
+	var out []int64
+	for _, m := range msgs {
+		if m.ReplyNeeded && !answered[m.Seq] {
+			out = append(out, m.Seq)
+		}
+	}
+	return out
+}
+
 // summarize folds a channel and its messages into the list read-model.
 func summarize(c Channel, msgs []Message) Summary {
 	s := Summary{
-		Channel:      c,
-		Messages:     len(msgs),
-		Cursor:       int64(len(msgs)),
-		Participants: participants(msgs),
+		Channel:       c,
+		Messages:      len(msgs),
+		Cursor:        int64(len(msgs)),
+		Participants:  participants(msgs),
+		AwaitingReply: awaitingReply(msgs),
 	}
 	if len(msgs) > 0 {
 		last := msgs[len(msgs)-1]

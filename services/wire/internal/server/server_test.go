@@ -107,6 +107,56 @@ func TestOpenPostRead(t *testing.T) {
 	}
 }
 
+func TestProtocolFieldsRoundTrip(t *testing.T) {
+	srv := newTestServer(t)
+
+	var sum apiChannel
+	code := do(t, srv, http.MethodPost, "/api/channels",
+		map[string]string{"name": "typed", "from": "a", "conventions": "answer questions first"},
+		&sum)
+	if code != http.StatusCreated || sum.Conventions != "answer questions first" {
+		t.Fatalf("open with conventions returned %d, channel %+v", code, sum)
+	}
+
+	var q store.Message
+	code = do(t, srv, http.MethodPost, "/api/channels/typed/messages",
+		map[string]any{
+			"from": "a", "body": "which port?", "kind": "question", "reply_needed": true,
+		}, &q)
+	if code != http.StatusCreated || q.Kind != "question" || !q.ReplyNeeded {
+		t.Fatalf("post question returned %d, message %+v", code, q)
+	}
+
+	var batch store.Batch
+	do(t, srv, http.MethodGet, "/api/channels/typed/messages", nil, &batch)
+	if len(batch.AwaitingReply) != 1 || batch.AwaitingReply[0] != q.Seq {
+		t.Fatalf("awaiting_reply = %v, want the unanswered question", batch.AwaitingReply)
+	}
+
+	var a store.Message
+	code = do(t, srv, http.MethodPost, "/api/channels/typed/messages",
+		map[string]any{"from": "b", "body": "7432", "kind": "answer", "reply_to": q.Seq}, &a)
+	if code != http.StatusCreated || a.ReplyTo != q.Seq {
+		t.Fatalf("post answer returned %d, message %+v", code, a)
+	}
+	var after store.Batch
+	do(t, srv, http.MethodGet, "/api/channels/typed/messages", nil, &after)
+	if len(after.AwaitingReply) != 0 {
+		t.Fatalf("awaiting_reply after the answer = %v, want none", after.AwaitingReply)
+	}
+
+	code = do(t, srv, http.MethodPost, "/api/channels/typed/messages",
+		map[string]any{"from": "a", "body": "x", "kind": "banter"}, nil)
+	if code != http.StatusBadRequest {
+		t.Errorf("unknown kind returned %d, want 400", code)
+	}
+	code = do(t, srv, http.MethodPost, "/api/channels/typed/messages",
+		map[string]any{"from": "a", "body": "x", "reply_to": 99}, nil)
+	if code != http.StatusBadRequest {
+		t.Errorf("reply_to a missing seq returned %d, want 400", code)
+	}
+}
+
 func TestReadFromCursorSkipsSeenMessages(t *testing.T) {
 	srv := newTestServer(t)
 	openChannel(t, srv, "cursor")

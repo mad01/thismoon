@@ -21,13 +21,17 @@ import (
 const followWait = 60
 
 var (
-	flagTopic  string
-	flagAll    bool
-	flagSince  int64
-	flagWait   int
-	flagLimit  int
-	flagNote   string
-	flagOutput string
+	flagTopic       string
+	flagConventions string
+	flagAll         bool
+	flagSince       int64
+	flagWait        int
+	flagLimit       int
+	flagNote        string
+	flagOutput      string
+	flagKind        string
+	flagReplyTo     int64
+	flagReplyNeeded bool
 )
 
 // api returns a client for the running serve instance. Every mutation goes
@@ -48,7 +52,9 @@ generated.`,
 		if len(args) == 1 {
 			name = args[0]
 		}
-		c, err := api().Open(cmd.Context(), client.OpenBody{Name: name, Topic: flagTopic, From: flagFrom})
+		c, err := api().Open(cmd.Context(), client.OpenBody{
+			Name: name, Topic: flagTopic, From: flagFrom, Conventions: flagConventions,
+		})
 		if err != nil {
 			return err
 		}
@@ -103,7 +109,13 @@ command's output can be piped into a conversation.`,
 		if err != nil {
 			return err
 		}
-		m, err := api().Post(cmd.Context(), args[0], client.PostBody{From: flagFrom, Body: body})
+		m, err := api().Post(cmd.Context(), args[0], client.PostBody{
+			From:        flagFrom,
+			Body:        body,
+			Kind:        flagKind,
+			ReplyTo:     flagReplyTo,
+			ReplyNeeded: flagReplyNeeded,
+		})
 		if err != nil {
 			return err
 		}
@@ -146,7 +158,8 @@ expires, which is how you wait for another session's reply.`,
 			return writeJSON(cmd.OutOrStdout(), b)
 		}
 		printMessages(cmd.OutOrStdout(), b.Messages)
-		fmt.Fprintf(cmd.OutOrStdout(), "-- cursor %d%s\n", b.Cursor, closedSuffix(b.Channel))
+		fmt.Fprintf(cmd.OutOrStdout(), "-- cursor %d%s%s\n",
+			b.Cursor, awaitingSuffix(b.AwaitingReply), closedSuffix(b.Channel))
 		return nil
 	},
 }
@@ -226,14 +239,48 @@ The transcript stays readable.`,
 }
 
 // printMessages renders a transcript: a header line per turn, then the body
-// indented under it.
+// indented under it. The header carries the protocol fields — kind, what the
+// message answers, whether it expects an answer — so the correlation is
+// visible without reading the bodies.
 func printMessages(w io.Writer, msgs []client.Message) {
 	for _, m := range msgs {
-		fmt.Fprintf(w, "#%d  %s  %s\n", m.Seq, m.From, m.CreatedAt.Local().Format(time.Stamp))
-		for _, line := range strings.Split(m.Body, "\n") {
+		fmt.Fprintf(w, "#%d  %s%s  %s\n",
+			m.Seq, m.From, messageMarkers(m), m.CreatedAt.Local().Format(time.Stamp))
+		for line := range strings.SplitSeq(m.Body, "\n") {
 			fmt.Fprintf(w, "    %s\n", line)
 		}
 	}
+}
+
+// messageMarkers renders a message's protocol fields for the header line,
+// e.g. "  [answer →#3]" or "  [question, reply needed]".
+func messageMarkers(m client.Message) string {
+	var parts []string
+	if m.Kind != "" {
+		parts = append(parts, m.Kind)
+	}
+	if m.ReplyTo > 0 {
+		parts = append(parts, fmt.Sprintf("→#%d", m.ReplyTo))
+	}
+	if m.ReplyNeeded {
+		parts = append(parts, "reply needed")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "  [" + strings.Join(parts, ", ") + "]"
+}
+
+// awaitingSuffix renders the seqs still owed an answer, or nothing at all.
+func awaitingSuffix(seqs []int64) string {
+	if len(seqs) == 0 {
+		return ""
+	}
+	parts := make([]string, len(seqs))
+	for i, seq := range seqs {
+		parts[i] = fmt.Sprintf("#%d", seq)
+	}
+	return "  awaiting reply on " + strings.Join(parts, " ")
 }
 
 // closedSuffix renders a closed channel's parting note, or nothing at all.
@@ -255,6 +302,12 @@ func writeJSON(w io.Writer, v any) error {
 
 func init() {
 	openCmd.Flags().StringVar(&flagTopic, "topic", "", "one-line description of what the conversation is for")
+	openCmd.Flags().StringVar(&flagConventions, "conventions", "",
+		"ground rules for the conversation, shown to every joiner")
+	postCmd.Flags().StringVar(&flagKind, "kind", "",
+		"message intent: task, result, question, answer, or ack")
+	postCmd.Flags().Int64Var(&flagReplyTo, "reply-to", 0, "seq of the message this answers")
+	postCmd.Flags().BoolVar(&flagReplyNeeded, "reply-needed", false, "mark that you expect an answer")
 	listCmd.Flags().BoolVar(&flagAll, "all", false, "include closed channels")
 	readCmd.Flags().Int64Var(&flagSince, "since", 0, "only messages after this cursor")
 	readCmd.Flags().IntVar(&flagWait, "wait", 0, "seconds to block waiting for a new message (max 120)")

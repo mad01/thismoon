@@ -139,6 +139,70 @@ func TestPostRequiresFromAndBody(t *testing.T) {
 	}
 }
 
+func TestPostValidatesKindAndReplyTo(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "protocol"})
+	mustPost(t, s, c.Name, "a", "first")
+
+	if _, err := s.Post(c.Name, PostInput{From: "a", Body: "x", Kind: "banter"}); err == nil {
+		t.Error("post with an unknown kind succeeded")
+	}
+	if _, err := s.Post(c.Name, PostInput{From: "a", Body: "x", ReplyTo: 99}); err == nil {
+		t.Error("post replying to a seq the channel does not have succeeded")
+	}
+	if _, err := s.Post(c.Name, PostInput{From: "a", Body: "x", ReplyTo: -1}); err == nil {
+		t.Error("post with a negative reply_to succeeded")
+	}
+
+	m, err := s.Post(c.Name, PostInput{
+		From: "b", Body: "why?", Kind: "Question", ReplyTo: 1, ReplyNeeded: true,
+	})
+	if err != nil {
+		t.Fatalf("Post with protocol fields: %v", err)
+	}
+	if m.Kind != "question" || m.ReplyTo != 1 || !m.ReplyNeeded {
+		t.Errorf("posted message = %+v, want kind question (lowercased), reply_to 1, reply_needed", m)
+	}
+}
+
+func TestAwaitingReplyTracksOpenQuestions(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "owed"})
+	mustPost(t, s, c.Name, "a", "context")
+	if _, err := s.Post(c.Name, PostInput{
+		From: "a", Body: "which port?", Kind: "question", ReplyNeeded: true,
+	}); err != nil {
+		t.Fatalf("Post question: %v", err)
+	}
+	if _, err := s.Post(c.Name, PostInput{
+		From: "a", Body: "run the tests", Kind: "task", ReplyNeeded: true,
+	}); err != nil {
+		t.Fatalf("Post task: %v", err)
+	}
+
+	sum, err := s.Get(c.Name)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(sum.AwaitingReply) != 2 || sum.AwaitingReply[0] != 2 || sum.AwaitingReply[1] != 3 {
+		t.Fatalf("awaiting_reply = %v, want [2 3]", sum.AwaitingReply)
+	}
+
+	// Answering the question settles it; the task stays owed.
+	if _, err := s.Post(c.Name, PostInput{
+		From: "b", Body: "7432", Kind: "answer", ReplyTo: 2,
+	}); err != nil {
+		t.Fatalf("Post answer: %v", err)
+	}
+	b, err := s.Read(c.Name, 0, 0)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(b.AwaitingReply) != 1 || b.AwaitingReply[0] != 3 {
+		t.Fatalf("awaiting_reply after the answer = %v, want [3]", b.AwaitingReply)
+	}
+}
+
 func TestReadFromCursor(t *testing.T) {
 	s := newTestStore(t)
 	c := mustOpen(t, s, OpenInput{Name: "cursor"})
@@ -367,9 +431,13 @@ func TestReloadFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	c := mustOpen(t, s, OpenInput{Name: "persisted", Topic: "handoff"})
+	c := mustOpen(t, s, OpenInput{Name: "persisted", Topic: "handoff", Conventions: "tag your posts"})
 	mustPost(t, s, c.Name, "a", "one")
-	mustPost(t, s, c.Name, "b", "two")
+	if _, err := s.Post(c.Name, PostInput{
+		From: "b", Body: "two", Kind: "answer", ReplyTo: 1, ReplyNeeded: true,
+	}); err != nil {
+		t.Fatalf("Post with protocol fields: %v", err)
+	}
 	if _, err := s.Close(c.Name, "wrapped"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -385,6 +453,9 @@ func TestReloadFromDisk(t *testing.T) {
 	if got.ID != c.ID || got.Topic != "handoff" {
 		t.Errorf("reloaded channel = %+v, want id %s and topic handoff", got, c.ID)
 	}
+	if got.Conventions != "tag your posts" {
+		t.Errorf("reloaded conventions = %q, want the opener's ground rules", got.Conventions)
+	}
 	if !got.Closed() || got.CloseNote != "wrapped" {
 		t.Errorf("close state did not survive the reload: %+v", got)
 	}
@@ -397,6 +468,10 @@ func TestReloadFromDisk(t *testing.T) {
 	}
 	if b.Messages[0].Body != "one" || b.Messages[1].Seq != 2 {
 		t.Errorf("reloaded messages out of order: %+v", b.Messages)
+	}
+	second := b.Messages[1]
+	if second.Kind != "answer" || second.ReplyTo != 1 || !second.ReplyNeeded {
+		t.Errorf("protocol fields did not survive the reload: %+v", second)
 	}
 }
 

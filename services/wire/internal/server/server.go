@@ -127,9 +127,10 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 // openReq is the POST /api/channels body. Every field is optional: a channel
 // with no name gets a generated one.
 type openReq struct {
-	Name  string `json:"name"`
-	Topic string `json:"topic"`
-	From  string `json:"from"`
+	Name        string `json:"name"`
+	Topic       string `json:"topic"`
+	From        string `json:"from"`
+	Conventions string `json:"conventions"`
 }
 
 func (s *Server) handleOpen(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +139,12 @@ func (s *Server) handleOpen(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	c, err := s.store.Open(store.OpenInput{Name: req.Name, Topic: req.Topic, From: req.From})
+	c, err := s.store.Open(store.OpenInput{
+		Name:        req.Name,
+		Topic:       req.Topic,
+		From:        req.From,
+		Conventions: req.Conventions,
+	})
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -170,10 +176,14 @@ func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
 	s.writeSummary(w, http.StatusOK, c.ID)
 }
 
-// postReq is one message. Both fields are required.
+// postReq is one message. From and body are required; kind, reply_to, and
+// reply_needed are the optional protocol fields.
 type postReq struct {
-	From string `json:"from"`
-	Body string `json:"body"`
+	From        string `json:"from"`
+	Body        string `json:"body"`
+	Kind        string `json:"kind"`
+	ReplyTo     int64  `json:"reply_to"`
+	ReplyNeeded bool   `json:"reply_needed"`
 }
 
 func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +192,13 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	m, err := s.store.Post(r.PathValue("ref"), store.PostInput{From: req.From, Body: req.Body})
+	m, err := s.store.Post(r.PathValue("ref"), store.PostInput{
+		From:        req.From,
+		Body:        req.Body,
+		Kind:        req.Kind,
+		ReplyTo:     req.ReplyTo,
+		ReplyNeeded: req.ReplyNeeded,
+	})
 	if err != nil {
 		writeStoreErr(w, err)
 		return
