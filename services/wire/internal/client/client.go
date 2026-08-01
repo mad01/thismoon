@@ -44,16 +44,17 @@ func (c Channel) Closed() bool { return c.ClosedAt != nil }
 // connection string to hand another session.
 type Summary struct {
 	Channel
-	Connect         string             `json:"connect"`
-	Messages        int                `json:"messages"`
-	Cursor          int64              `json:"cursor"`
-	Participants    []string           `json:"participants"`
-	Members         []string           `json:"members,omitempty"`
-	AwaitingReply   []int64            `json:"awaiting_reply,omitempty"`
-	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
-	LastFrom        string             `json:"last_from,omitempty"`
-	LastBody        string             `json:"last_body,omitempty"`
-	LastAt          *time.Time         `json:"last_at,omitempty"`
+	Connect                string             `json:"connect"`
+	Messages               int                `json:"messages"`
+	Cursor                 int64              `json:"cursor"`
+	Participants           []string           `json:"participants"`
+	Members                []string           `json:"members,omitempty"`
+	AwaitingReply          []int64            `json:"awaiting_reply,omitempty"`
+	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"`
+	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty"`
+	LastFrom               string             `json:"last_from,omitempty"`
+	LastBody               string             `json:"last_body,omitempty"`
+	LastAt                 *time.Time         `json:"last_at,omitempty"`
 }
 
 // Message mirrors one turn in a channel.
@@ -72,12 +73,13 @@ type Message struct {
 // Batch is one read's result: the channel, the messages after the cursor the
 // reader gave, the cursor to resume from, and the seqs still owed an answer.
 type Batch struct {
-	Channel         Channel            `json:"channel"`
-	Messages        []Message          `json:"messages"`
-	Cursor          int64              `json:"cursor"`
-	Members         []string           `json:"members,omitempty"`
-	AwaitingReply   []int64            `json:"awaiting_reply,omitempty"`
-	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
+	Channel                Channel            `json:"channel"`
+	Messages               []Message          `json:"messages"`
+	Cursor                 int64              `json:"cursor"`
+	Members                []string           `json:"members,omitempty"`
+	AwaitingReply          []int64            `json:"awaiting_reply,omitempty"`
+	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"`
+	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty"`
 }
 
 // OpenBody is the POST /api/channels payload; every field is optional.

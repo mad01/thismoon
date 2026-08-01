@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -93,9 +94,15 @@ type Summary struct {
 	// addressed to. Unaddressed ones appear only in AwaitingReply — with
 	// several agents on a channel they belong to whoever picks them up.
 	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
-	LastFrom        string             `json:"last_from,omitempty"`
-	LastBody        string             `json:"last_body,omitempty"`
-	LastAt          *time.Time         `json:"last_at,omitempty"`
+	// AwaitingReplyOffRoster lists the AwaitingReplyBy keys that are not in
+	// Members — open obligations addressed to a name nobody currently answers
+	// to. Advisory only: a pre-join handoff, a typo'd name, and an obligation
+	// stranded by a leave all look identical here, and only the first resolves
+	// itself.
+	AwaitingReplyOffRoster []string   `json:"awaiting_reply_off_roster,omitempty"`
+	LastFrom               string     `json:"last_from,omitempty"`
+	LastBody               string     `json:"last_body,omitempty"`
+	LastAt                 *time.Time `json:"last_at,omitempty"`
 }
 
 // NormalizeName lowercases and trims a channel name and checks it against the
@@ -284,16 +291,39 @@ func awaitingReplyBy(msgs []Message) map[string][]int64 {
 	return out
 }
 
+// awaitingReplyOffRoster lists the addressees in the obligation ledger that
+// the roster does not contain. It exists because a misaddressed question is
+// otherwise silent: it files under a key matching no member, the addressee's
+// own awaitingReplyBy entry stays empty, and an agent settling only what is
+// under its own name drops a question plainly meant for it. The signal is
+// advisory and does not classify — a handoff addressed before the agent joins,
+// a typo, and an obligation stranded by a leave have the same shape here, the
+// server cannot tell them apart, and judging which is which belongs to a
+// reader. Sorted so the list is stable across reads.
+func awaitingReplyOffRoster(byName map[string][]int64, roster []string) []string {
+	var out []string
+	for who := range byName {
+		if !slices.Contains(roster, who) {
+			out = append(out, who)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // summarize folds a channel and its messages into the list read-model.
 func summarize(c Channel, msgs []Message) Summary {
+	mem := members(c, msgs)
+	by := awaitingReplyBy(msgs)
 	s := Summary{
-		Channel:         c,
-		Messages:        len(msgs),
-		Cursor:          int64(len(msgs)),
-		Participants:    participants(msgs),
-		Members:         members(c, msgs),
-		AwaitingReply:   awaitingReply(msgs),
-		AwaitingReplyBy: awaitingReplyBy(msgs),
+		Channel:                c,
+		Messages:               len(msgs),
+		Cursor:                 int64(len(msgs)),
+		Participants:           participants(msgs),
+		Members:                mem,
+		AwaitingReply:          awaitingReply(msgs),
+		AwaitingReplyBy:        by,
+		AwaitingReplyOffRoster: awaitingReplyOffRoster(by, mem),
 	}
 	if len(msgs) > 0 {
 		last := msgs[len(msgs)-1]

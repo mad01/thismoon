@@ -660,6 +660,81 @@ func TestAwaitingReplyByGroupsByAddressee(t *testing.T) {
 	}
 }
 
+func TestAwaitingReplyOffRosterFlagsUnknownAddressees(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "swarm", From: "planner"})
+	if _, err := s.Join(c.Name, "worker", ""); err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+
+	q1, err := s.Post(c.Name, PostInput{
+		From: "planner", To: "worker", Body: "status?", Kind: "question", ReplyNeeded: true,
+	})
+	if err != nil {
+		t.Fatalf("Post to a member: %v", err)
+	}
+	q2, err := s.Post(c.Name, PostInput{
+		From: "planner", To: "quil", Body: "and you?", Kind: "question", ReplyNeeded: true,
+	})
+	if err != nil {
+		t.Fatalf("Post to a name not on the roster: %v", err)
+	}
+
+	sum, err := s.Get(c.Name)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got := sum.AwaitingReplyOffRoster; len(got) != 1 || got[0] != "quil" {
+		t.Errorf("off-roster = %v, want [quil]: the member's debt must not be flagged", got)
+	}
+
+	// Leaving strands the member's obligation under a departed name.
+	if _, err := s.Leave(c.Name, "worker", ""); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	sum, err = s.Get(c.Name)
+	if err != nil {
+		t.Fatalf("Get after leave: %v", err)
+	}
+	if got := sum.AwaitingReplyOffRoster; len(got) != 2 || got[0] != "quil" || got[1] != "worker" {
+		t.Errorf("off-roster after leave = %v, want [quil worker]", got)
+	}
+
+	// A pre-join handoff resolves itself when the addressee joins.
+	if _, err := s.Join(c.Name, "worker", ""); err != nil {
+		t.Fatalf("rejoin: %v", err)
+	}
+	// Answering settles the typo'd obligation like any other.
+	if _, err := s.Post(c.Name, PostInput{
+		From: "quill", Body: "fine", Kind: "answer", ReplyTo: q2.Seq,
+	}); err != nil {
+		t.Fatalf("Post answer: %v", err)
+	}
+	sum, err = s.Get(c.Name)
+	if err != nil {
+		t.Fatalf("Get after rejoin and answer: %v", err)
+	}
+	if sum.AwaitingReplyOffRoster != nil {
+		t.Errorf("off-roster = %v, want nil once every addressee is back on the roster",
+			sum.AwaitingReplyOffRoster)
+	}
+	if got := sum.AwaitingReplyBy["worker"]; len(got) != 1 || got[0] != q1.Seq {
+		t.Errorf("awaiting_reply_by[worker] = %v, want [%d] still open", got, q1.Seq)
+	}
+
+	// The read batch carries the same signal.
+	if _, err := s.Leave(c.Name, "worker", ""); err != nil {
+		t.Fatalf("Leave again: %v", err)
+	}
+	b, err := s.Read(c.Name, 0, 0)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got := b.AwaitingReplyOffRoster; len(got) != 1 || got[0] != "worker" {
+		t.Errorf("batch off-roster = %v, want [worker]", got)
+	}
+}
+
 func TestPostBoundsTo(t *testing.T) {
 	s := newTestStore(t)
 	c := mustOpen(t, s, OpenInput{Name: "swarm", From: "planner"})

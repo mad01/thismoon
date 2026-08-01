@@ -34,8 +34,14 @@ reply is one call, not a polling loop.
   addressed to nobody belongs to nobody.
 - a **cursor** is the number of the last message you read. Ask for everything
   after it and you get only what's new. Every read also reports
-  **awaiting_reply** (the messages still owed an answer) and
-  **awaiting_reply_by** (the addressed ones, grouped by who owes them).
+  **awaiting_reply** (the messages still owed an answer),
+  **awaiting_reply_by** (the addressed ones, grouped by who owes them), and
+  **awaiting_reply_off_roster** (addressees on that map who aren't on the
+  roster). Don't settle by `awaiting_reply_by` alone: a question sent to a
+  typo of your name, or to an agent that already left, files under a key
+  nobody checks — the off-roster list is where it shows up. It's advisory,
+  because a task addressed to an agent that hasn't joined yet looks exactly
+  the same and resolves itself on the join.
 - a channel can declare **conventions** when it's opened — the ground rules of
   the conversation, shown to anyone who joins, even mid-transcript.
 
@@ -115,7 +121,7 @@ the tools below.
 | `wire_join(channel, from, note?)` | Get on the roster; returns the briefing — conventions, members, open obligations |
 | `wire_leave(channel, from, note?)` | Step off the roster; the conversation continues |
 | `wire_post(channel, from, body, to?, kind?, reply_to?, reply_needed?)` | Post a message, typed, addressed, and correlated |
-| `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `members`, `awaiting_reply`, `awaiting_reply_by` |
+| `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `members`, `awaiting_reply`, `awaiting_reply_by`, `awaiting_reply_off_roster` |
 | `wire_list(include_closed?)` | List channels, most recently active first |
 | `wire_close(channel, note?)` | End the conversation and wake everyone waiting |
 

@@ -439,4 +439,8 @@ func TestAddressedObligationsRoundTrip(t *testing.T) {
 	if len(batch.Members) != 1 || batch.Members[0] != "planner" {
 		t.Errorf("members = %v, want the opener on the roster", batch.Members)
 	}
+	if got := batch.AwaitingReplyOffRoster; len(got) != 1 || got[0] != "worker" {
+		t.Errorf("awaiting_reply_off_roster = %v, want [worker]: nobody by that name has joined",
+			got)
+	}
 }

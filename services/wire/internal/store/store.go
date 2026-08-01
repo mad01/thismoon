@@ -412,6 +412,10 @@ type Batch struct {
 	// AwaitingReplyBy groups the open obligations by addressee, so a reader
 	// finds its own debts under its name instead of inferring them.
 	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
+	// AwaitingReplyOffRoster lists the AwaitingReplyBy keys not on the roster,
+	// because a reader trusting its own name's entry alone would silently miss
+	// a question misaddressed to it. Advisory: see awaitingReplyOffRoster.
+	AwaitingReplyOffRoster []string `json:"awaiting_reply_off_roster,omitempty"`
 }
 
 // Read returns the messages after the given cursor without blocking. A cursor
@@ -446,13 +450,16 @@ func (s *Store) Wait(
 		msgs := messagesSince(all, since, limit)
 		if len(msgs) > 0 || c.Closed() || timeout <= 0 {
 			s.mu.Unlock()
+			mem := members(c, all)
+			by := awaitingReplyBy(all)
 			return Batch{
-				Channel:         c,
-				Messages:        msgs,
-				Cursor:          cursorAfter(len(all), since, msgs),
-				Members:         members(c, all),
-				AwaitingReply:   awaitingReply(all),
-				AwaitingReplyBy: awaitingReplyBy(all),
+				Channel:                c,
+				Messages:               msgs,
+				Cursor:                 cursorAfter(len(all), since, msgs),
+				Members:                mem,
+				AwaitingReply:          awaitingReply(all),
+				AwaitingReplyBy:        by,
+				AwaitingReplyOffRoster: awaitingReplyOffRoster(by, mem),
 			}, nil
 		}
 		changed := s.watcherLocked(c.ID)
@@ -461,12 +468,15 @@ func (s *Store) Wait(
 		select {
 		case <-changed:
 		case <-deadline.C:
+			mem := members(c, all)
+			by := awaitingReplyBy(all)
 			return Batch{
-				Channel:         c,
-				Cursor:          cursorAfter(len(all), since, nil),
-				Members:         members(c, all),
-				AwaitingReply:   awaitingReply(all),
-				AwaitingReplyBy: awaitingReplyBy(all),
+				Channel:                c,
+				Cursor:                 cursorAfter(len(all), since, nil),
+				Members:                mem,
+				AwaitingReply:          awaitingReply(all),
+				AwaitingReplyBy:        by,
+				AwaitingReplyOffRoster: awaitingReplyOffRoster(by, mem),
 			}, nil
 		case <-ctx.Done():
 			return Batch{Channel: c, Cursor: cursorAfter(len(all), since, nil)}, ctx.Err()

@@ -29,7 +29,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Pass a `name` describing the work (e.g. refactor-auth); omit it and one is generated. Names are lowercase letters, digits, dots, and dashes. " +
 			"**Give the returned `connect` string to the other sessions verbatim** (e.g. wire://localhost:7432/refactor-auth). It is the entire join protocol: there are no invites or tokens, and it works as the `channel` argument of every other wire tool. " +
 			"Show it to the user so they can paste it wherever the other sessions are. " +
-			"`from` names you and puts you on the roster; every message you post must be signed the same way. Everyone else arrives via wire_join. " +
+			"`from` names you and puts you on the roster; every message you post must be signed the same way. Give yourself a real name — short and distinctive (planner, quill), never a generic placeholder like agent — because `to` addressing and the obligation ledger key on it. Everyone else arrives via wire_join. " +
 			"Set `conventions` to the conversation's ground rules — they ride on the channel itself, so a session joining mid-conversation sees them without reading from the start. " +
 			"A convention set that holds up: \"one question per message; answer with reply_to; address questions with to; reply_needed only when blocked\".",
 	}, h.handleOpen)
@@ -38,7 +38,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "wire_join",
 		Description: "Join a channel another session opened — call this FIRST, before posting or reading, whenever you were handed a connection string. " +
 			"`from` is the name you are joining as; every message you post must be signed with it, and messages addressed `to` that name are yours to answer. " +
-			"One call returns the full briefing: `channel.conventions` (the ground rules — follow them), `members` (who is on the channel), `cursor` (pass it to wire_read as since to read the backlog, or read from 0 for the full transcript), and `awaiting_reply_by` (open obligations by addressee — check your name). " +
+			"Pick the name yourself unless the briefing assigns you one: short and distinctive (quill, forge, mapper), never a generic placeholder like agent or assistant — addressing and the obligation ledger key on it, and two sessions both called agent are indistinguishable. " +
+			"One call returns the full briefing: `channel.conventions` (the ground rules — follow them), `members` (who is on the channel), `cursor` (pass it to wire_read as since to read the backlog, or read from 0 for the full transcript), `awaiting_reply_by` (open obligations by addressee — check your name), and `awaiting_reply_off_roster` (obligation addressees nobody on the roster matches — check it for near-misses of your name; a misaddressed question will not appear under yours). " +
 			"Your join lands in the transcript, so sessions blocked waiting for you wake immediately. " +
 			"Set `note` to say what you are joining as or ready for — it becomes the join message's body. Joining a channel you are already on is a no-op that still returns the briefing.",
 	}, h.handleJoin)
@@ -72,6 +73,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"A wait that expires returns an empty list, not an error: read again, or give up. " +
 			"Always keep the returned `cursor` for your next read, and check `channel.closed_at` — a closed channel will never produce another message, so stop waiting on it. " +
 			"`awaiting_reply_by` maps roster names to the seqs each one owes an answer — **look up your own name and settle those before posting anything new**. `awaiting_reply` is every open obligation including unaddressed ones, which belong to whoever picks them up. " +
+			"Do not trust `awaiting_reply_by` alone: `awaiting_reply_off_roster` lists the addressees on that map who are not on the roster, and a question misaddressed to you (a typo of your name, or sent after someone left) sits under a key you would never check. When it is non-empty, read the seqs under those names and judge which are yours — the server cannot tell a typo from a handoff to an agent that has not joined yet. " +
 			"`members` is the current roster; `channel.conventions` carries the ground rules the opener declared — follow them.",
 	}, h.handleRead)
 
@@ -113,7 +115,7 @@ func (h *handlers) channelURL(ref string) string {
 type openInput struct {
 	Name        string `json:"name,omitempty"        jsonschema_description:"channel name to open, lowercase letters/digits/dots/dashes, e.g. refactor-auth; omit to have one generated"`
 	Topic       string `json:"topic,omitempty"       jsonschema_description:"optional one-line description of what this conversation is for"`
-	From        string `json:"from"                  jsonschema_description:"who you are, e.g. planner or reviewer — the name your messages will be signed with"`
+	From        string `json:"from"                  jsonschema_description:"the name you give yourself for this conversation — short and distinctive (planner, quill), not a generic placeholder like agent; your messages are signed with it and replies are addressed to it"`
 	Conventions string `json:"conventions,omitempty" jsonschema_description:"ground rules for the conversation (tag vocabulary, expected message shapes); carried on the channel so a late joiner sees them without reading from the start"`
 }
 
@@ -138,7 +140,7 @@ func (h *handlers) handleOpen(
 
 type joinInput struct {
 	Channel string `json:"channel"        jsonschema_description:"channel name, id, or connection string to join"`
-	From    string `json:"from"           jsonschema_description:"the name you join as; sign every later post with it, and answer messages addressed to it"`
+	From    string `json:"from"           jsonschema_description:"the name you join as — pick it yourself, short and distinctive (quill, forge), not a generic placeholder like agent; sign every later post with it, and answer messages addressed to it"`
 	Note    string `json:"note,omitempty" jsonschema_description:"optional intro: what you are joining as or ready for; becomes the join message's body"`
 }
 
@@ -219,15 +221,16 @@ type readInput struct {
 }
 
 type readOutput struct {
-	Channel         client.Channel     `json:"channel"`
-	Connect         string             `json:"connect"                     jsonschema_description:"the connection string for this channel"`
-	Messages        []client.Message   `json:"messages"`
-	Cursor          int64              `json:"cursor"                      jsonschema_description:"pass this as the since argument on your next read"`
-	Members         []string           `json:"members,omitempty"           jsonschema_description:"the roster: everyone currently on the channel"`
-	AwaitingReply   []int64            `json:"awaiting_reply,omitempty"    jsonschema_description:"every seq posted with reply_needed that nothing has answered yet"`
-	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty" jsonschema_description:"open obligations grouped by the roster name they are addressed to — settle the ones under your name before posting anything new"`
-	Closed          bool               `json:"closed"                      jsonschema_description:"true when the channel is finished and will never produce another message"`
-	URL             string             `json:"url"`
+	Channel                client.Channel     `json:"channel"`
+	Connect                string             `json:"connect"                             jsonschema_description:"the connection string for this channel"`
+	Messages               []client.Message   `json:"messages"`
+	Cursor                 int64              `json:"cursor"                              jsonschema_description:"pass this as the since argument on your next read"`
+	Members                []string           `json:"members,omitempty"                   jsonschema_description:"the roster: everyone currently on the channel"`
+	AwaitingReply          []int64            `json:"awaiting_reply,omitempty"            jsonschema_description:"every seq posted with reply_needed that nothing has answered yet"`
+	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"         jsonschema_description:"open obligations grouped by the roster name they are addressed to — settle the ones under your name before posting anything new"`
+	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty" jsonschema_description:"addressees in awaiting_reply_by who are not on the roster — a typo'd name, a departed member, or an agent yet to join. When non-empty, read the seqs under those names: a question misaddressed to you sits under a key you would never check, so awaiting_reply_by alone can mislead"`
+	Closed                 bool               `json:"closed"                              jsonschema_description:"true when the channel is finished and will never produce another message"`
+	URL                    string             `json:"url"`
 }
 
 func (h *handlers) handleRead(
@@ -245,15 +248,16 @@ func (h *handlers) handleRead(
 		return nil, readOutput{}, err
 	}
 	return nil, readOutput{
-		Channel:         b.Channel,
-		Connect:         ref.String(h.port, b.Channel.Name),
-		Messages:        b.Messages,
-		Cursor:          b.Cursor,
-		Members:         b.Members,
-		AwaitingReply:   b.AwaitingReply,
-		AwaitingReplyBy: b.AwaitingReplyBy,
-		Closed:          b.Channel.Closed(),
-		URL:             h.channelURL(b.Channel.Name),
+		Channel:                b.Channel,
+		Connect:                ref.String(h.port, b.Channel.Name),
+		Messages:               b.Messages,
+		Cursor:                 b.Cursor,
+		Members:                b.Members,
+		AwaitingReply:          b.AwaitingReply,
+		AwaitingReplyBy:        b.AwaitingReplyBy,
+		AwaitingReplyOffRoster: b.AwaitingReplyOffRoster,
+		Closed:                 b.Channel.Closed(),
+		URL:                    h.channelURL(b.Channel.Name),
 	}, nil
 }
 

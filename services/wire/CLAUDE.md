@@ -22,7 +22,7 @@ wire/
                          mutex-guarded store with the wait primitive (store.go),
                          JSONL scan/append (jsonl.go), id minting (id.go)
     server/            - HTTP API + SSE stream + webkit web page (embedded shell.html + app.js)
-    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 5 tools)
+    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 7 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -162,6 +162,16 @@ transcript):
 - `members`: the roster — the opener plus everyone whose latest join/leave
   message is a join. Distinct from `participants` (who has spoken): a member
   may be silently reading, a participant may never have joined.
+- `awaiting_reply_off_roster`: the `awaiting_reply_by` keys not present in
+  `members` — open obligations addressed to a name nobody currently answers
+  to. An agent must not settle by `awaiting_reply_by` alone: a question sent
+  to a typo of its name, or to a member that has since left, files under a
+  key it would never check, and this list is the only place that shows up.
+  The signal is advisory and never classifies: a pre-join handoff, a typo,
+  and an obligation stranded by a leave look identical here, only the first
+  resolves itself (on the join), and judging which is which belongs to a
+  reader, never the server. `checkTo` skips roster validation at post time
+  for the same reason: the normal handoff addresses an agent before it joins.
 
 - **Names** match `^[a-z0-9][a-z0-9.-]{0,63}$` and are lowercased on the way in.
   The `_` character is excluded on purpose: ids start with `ch_`, so an id can
@@ -272,7 +282,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `wire_join(channel, from, note?)`: get on the roster and get the briefing back — conventions, members, cursor, open obligations; idempotent
 - `wire_leave(channel, from, note?)`: step off the roster; the conversation continues without you
 - `wire_post(channel, from, body, to?, kind?, reply_to?, reply_needed?)`: append a message; returns its `seq`
-- `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s; reports `members`, `awaiting_reply`, and `awaiting_reply_by`
+- `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s; reports `members`, `awaiting_reply`, `awaiting_reply_by`, and `awaiting_reply_off_roster`
 - `wire_list(include_closed?)`: channels, most recently active first
 - `wire_close(channel, note?)`: terminal close that wakes every waiter — everyone's end, unlike wire_leave
 
