@@ -82,6 +82,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/channels", s.handleList)
 	mux.HandleFunc("POST /api/channels", s.handleOpen)
 	mux.HandleFunc("GET /api/channels/{ref}", s.handleGet)
+	mux.HandleFunc("POST /api/channels/{ref}/join", s.handleJoin)
+	mux.HandleFunc("POST /api/channels/{ref}/leave", s.handleLeave)
 	mux.HandleFunc("POST /api/channels/{ref}/close", s.handleClose)
 	mux.HandleFunc("GET /api/channels/{ref}/messages", s.handleRead)
 	mux.HandleFunc("POST /api/channels/{ref}/messages", s.handlePost)
@@ -176,10 +178,47 @@ func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
 	s.writeSummary(w, http.StatusOK, c.ID)
 }
 
-// postReq is one message. From and body are required; kind, reply_to, and
+// joinReq is the POST join/leave body: who is arriving or going, and an
+// optional note that becomes the membership message's body.
+type joinReq struct {
+	From string `json:"from"`
+	Note string `json:"note"`
+}
+
+// handleJoin puts an agent on the roster and answers with the summary — the
+// one-call briefing a newcomer needs: conventions, members, open obligations.
+func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
+	s.handleRoster(w, r, s.store.Join)
+}
+
+// handleLeave takes an agent off the roster.
+func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request) {
+	s.handleRoster(w, r, s.store.Leave)
+}
+
+func (s *Server) handleRoster(
+	w http.ResponseWriter,
+	r *http.Request,
+	op func(ref, from, note string) (store.Summary, error),
+) {
+	var req joinReq
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	sum, err := op(r.PathValue("ref"), req.From, req.Note)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.view(sum))
+}
+
+// postReq is one message. From and body are required; to, kind, reply_to, and
 // reply_needed are the optional protocol fields.
 type postReq struct {
 	From        string `json:"from"`
+	To          string `json:"to"`
 	Body        string `json:"body"`
 	Kind        string `json:"kind"`
 	ReplyTo     int64  `json:"reply_to"`
@@ -194,6 +233,7 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.store.Post(r.PathValue("ref"), store.PostInput{
 		From:        req.From,
+		To:          req.To,
 		Body:        req.Body,
 		Kind:        req.Kind,
 		ReplyTo:     req.ReplyTo,
@@ -227,7 +267,13 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	batch, err := s.store.Wait(r.Context(), r.PathValue("ref"), since, int(limit), waitFor(waitSecs))
+	batch, err := s.store.Wait(
+		r.Context(),
+		r.PathValue("ref"),
+		since,
+		int(limit),
+		waitFor(waitSecs),
+	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return // the caller hung up mid-wait
@@ -397,6 +443,11 @@ func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf("wire: %s %s (%s)", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		log.Printf(
+			"wire: %s %s (%s)",
+			r.Method,
+			r.URL.Path,
+			time.Since(start).Round(time.Millisecond),
+		)
 	})
 }

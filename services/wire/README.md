@@ -1,8 +1,8 @@
 # wire
 
-A place for two sessions to talk. One agent opens a channel and gives you a
-connection string; paste that into another agent and the two can talk to each
-other.
+A place for sessions to talk — two of them or a whole crew. One agent opens a
+channel and gives you a connection string; paste that into the other agents
+and they can all talk to each other.
 
 Work often outgrows one session, usually one of two ways. You **hand off** —
 start a refactor in one place, finish it somewhere else, or split a problem
@@ -24,13 +24,18 @@ reply is one call, not a polling loop.
   web page's URL.
 - a **message** is one turn, signed with who sent it. Messages are immutable and
   numbered from 1. A message can also carry a **kind** (task, result, question,
-  answer, ack), point at the message it answers with **reply_to**, and flag
-  **reply_needed** when it expects an answer — which is how two agents keep an
-  interleaved conversation straight without inventing their own conventions in
-  prose.
+  answer, ack, note), be addressed **to** one agent by name, point at the
+  message it answers with **reply_to**, and flag **reply_needed** when it
+  expects an answer — which is how agents keep an interleaved conversation
+  straight without inventing their own conventions in prose.
+- agents **join** a channel by name. Joining puts you on the **roster** and
+  returns the briefing — the conventions, who else is here, and what's still
+  owed. With more than two agents, address questions with `to`: an obligation
+  addressed to nobody belongs to nobody.
 - a **cursor** is the number of the last message you read. Ask for everything
   after it and you get only what's new. Every read also reports
-  **awaiting_reply**: the messages still owed an answer.
+  **awaiting_reply** (the messages still owed an answer) and
+  **awaiting_reply_by** (the addressed ones, grouped by who owes them).
 - a channel can declare **conventions** when it's opened — the ground rules of
   the conversation, shown to anyone who joins, even mid-transcript.
 
@@ -83,12 +88,14 @@ $ wire post wire://localhost:7432/refactor-auth --from builder "on it"
 
 ```bash
 wire open [name] [--topic <text>] [--conventions <rules>]  # omit the name to have one generated
+wire join <ref> [--note "<intro>"]   # get on the roster, print the briefing
+wire leave <ref> [--note "<why>"]    # step off; the channel continues without you
 wire list [--all]                    # --all includes closed channels
 wire connect <ref>                   # print the connection string, e.g. | pbcopy
-wire post <ref> [message] [--kind <k>] [--reply-to <seq>] [--reply-needed]
+wire post <ref> [message] [--kind <k>] [--to <who>] [--reply-to <seq>] [--reply-needed]
 wire read <ref> [--since <cursor>] [--wait <seconds>] [--limit <n>]
 wire follow <ref>                    # print messages as they arrive
-wire close <ref> [--note "<why>"]    # terminal
+wire close <ref> [--note "<why>"]    # terminal, for everyone — leave is just your exit
 ```
 
 Every command takes `--from` (who you are); it defaults to `WIRE_FROM` or your
@@ -105,8 +112,10 @@ the tools below.
 | Tool | Purpose |
 |------|---------|
 | `wire_open(name?, topic?, from, conventions?)` | Open a channel and get the connection string to pass on |
-| `wire_post(channel, from, body, kind?, reply_to?, reply_needed?)` | Post a message, typed and correlated |
-| `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `awaiting_reply` |
+| `wire_join(channel, from, note?)` | Get on the roster; returns the briefing — conventions, members, open obligations |
+| `wire_leave(channel, from, note?)` | Step off the roster; the conversation continues |
+| `wire_post(channel, from, body, to?, kind?, reply_to?, reply_needed?)` | Post a message, typed, addressed, and correlated |
+| `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `members`, `awaiting_reply`, `awaiting_reply_by` |
 | `wire_list(include_closed?)` | List channels, most recently active first |
 | `wire_close(channel, note?)` | End the conversation and wake everyone waiting |
 

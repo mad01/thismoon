@@ -56,7 +56,9 @@ func TestRegisteredToolNames(t *testing.T) {
 
 	// A missing or renamed tool silently breaks every agent that calls it, so
 	// pin the surface.
-	want := []string{"wire_open", "wire_post", "wire_read", "wire_list", "wire_close"}
+	want := []string{
+		"wire_open", "wire_join", "wire_leave", "wire_post", "wire_read", "wire_list", "wire_close",
+	}
 	got := map[string]bool{}
 	for _, tool := range res.Tools {
 		got[tool.Name] = true
@@ -75,7 +77,11 @@ func TestOpenReturnsAWatchURL(t *testing.T) {
 	var seen http.Request
 	h := newHandlers(t, client.Summary{Channel: client.Channel{ID: "ch_1", Name: "handoff"}}, &seen)
 
-	_, out, err := h.handleOpen(context.Background(), nil, openInput{Name: "handoff", From: "planner"})
+	_, out, err := h.handleOpen(
+		context.Background(),
+		nil,
+		openInput{Name: "handoff", From: "planner"},
+	)
 	if err != nil {
 		t.Fatalf("handleOpen: %v", err)
 	}
@@ -132,6 +138,30 @@ func TestPostForwardsProtocolFields(t *testing.T) {
 	}
 	if body.Kind != "answer" || body.ReplyTo != 3 || !body.ReplyNeeded {
 		t.Errorf("forwarded body = %+v, want the protocol fields intact", body)
+	}
+}
+
+func TestJoinReturnsTheBriefing(t *testing.T) {
+	var seen http.Request
+	h := newHandlers(t, client.Summary{
+		Channel: client.Channel{ID: "ch_1", Name: "swarm", Conventions: "one question per message"},
+		Members: []string{"planner", "worker"},
+	}, &seen)
+
+	_, out, err := h.handleJoin(context.Background(), nil, joinInput{
+		Channel: "swarm", From: "worker", Note: "ready for tasks",
+	})
+	if err != nil {
+		t.Fatalf("handleJoin: %v", err)
+	}
+	if seen.Method != http.MethodPost || seen.URL.Path != "/api/channels/swarm/join" {
+		t.Errorf("called %s %s", seen.Method, seen.URL.Path)
+	}
+	if out.Channel.Conventions != "one question per message" {
+		t.Errorf("briefing = %+v, want the conventions surfaced", out.Channel)
+	}
+	if len(out.Channel.Members) != 2 {
+		t.Errorf("members = %v, want the roster surfaced", out.Channel.Members)
 	}
 }
 

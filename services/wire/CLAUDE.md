@@ -119,8 +119,9 @@ Message{
   ChannelID,
   Seq,         // 1-based, contiguous; ChannelID+Seq is the identity AND the cursor
   From,        // required — an unsigned message cannot be answered
+  To,          // optional; roster name this message is addressed to, empty = everyone
   Body,        // required, max 64 KiB
-  Kind,        // optional; closed set: task, result, question, answer, ack
+  Kind,        // optional; closed set: task, result, question, answer, ack, note, join, leave
   ReplyTo,     // optional; seq this message answers — must exist on the channel
   ReplyNeeded, // optional; sender expects an answer
   CreatedAt,
@@ -133,12 +134,34 @@ correlation a writer declares. When two sessions post concurrently their
 messages interleave in seq, and ReplyTo is what keeps the transcript
 followable. The kind set is server-owned and closed on purpose: it is the
 vocabulary cross-channel tooling can rely on, and channel-specific tags belong
-in the body or the channel's `Conventions`, not in new kinds.
+in the body or the channel's `Conventions`, not in new kinds. `note` is the
+kind for substance that answers nothing and demands nothing (intros, status,
+findings), so `ack` keeps its one machine-checkable meaning: pure receipt,
+safe to skip. `join` and `leave` are the membership events; the dedicated
+join/leave operations post them, but they are ordinary messages and can be
+posted directly.
 
-`awaiting_reply` (on Summary and on every read Batch) is derived, never
-stored: every seq posted with ReplyNeeded that no later message names in
-ReplyTo. It is the machine answer to "what am I still owed" that used to
-require re-reading the transcript.
+**A channel takes any number of sessions, and addressing is what makes that
+work.** At two participants "not me" means "you", so an open obligation has an
+obvious owner. Beyond two it belongs to nobody, which is why a question or
+task meant for a specific agent carries its roster name in `To`. Protocol
+conventions that hold up at any width: one question per message (a single
+reply clears the whole seq from `awaiting_reply`, answered fully or not);
+one `reply_to` per obligation; `reply_needed` only when blocked — its value is
+that the debt survives in the record, not that it hurries anyone.
+
+Derived at read time, never stored (so none of it can drift from the
+transcript):
+
+- `awaiting_reply` (Summary and every read Batch): every seq posted with
+  ReplyNeeded that no later message names in ReplyTo — the machine answer to
+  "what is still owed".
+- `awaiting_reply_by`: the addressed subset of `awaiting_reply`, grouped by
+  `To` — each agent's own debts under its name. Unaddressed obligations stay
+  in the flat list only; they belong to whoever picks them up.
+- `members`: the roster — the opener plus everyone whose latest join/leave
+  message is a join. Distinct from `participants` (who has spoken): a member
+  may be silently reading, a participant may never have joined.
 
 - **Names** match `^[a-z0-9][a-z0-9.-]{0,63}$` and are lowercased on the way in.
   The `_` character is excluded on purpose: ids start with `ch_`, so an id can
@@ -169,8 +192,10 @@ away at startup; a mid-file parse error is fatal. Repair only ever happens in
 |------|-------|-----|-------|
 | (none) | `open` | open | name generated when omitted; a taken name is a 409 |
 | open | `post` | open | seq assigned, waiters woken |
+| open | `join(from)` | open | posts a `join` message unless already on the roster; waiters woken, so a session waiting for its peer wakes on the join |
+| open | `leave(from)` | open | posts a `leave` message unless already gone |
 | open | `close(note)` | closed | terminal; waiters woken so none blocks forever |
-| closed | `post` | — | rejected (409) |
+| closed | `post`/`join`/`leave` | — | rejected (409) |
 | closed | `close(note)` | closed | idempotent no-op; the original note stands |
 
 There is no reopen and no delete. A closed channel stays readable — the
@@ -193,9 +218,11 @@ Owned by `wire serve`:
 - `GET  /api/channels?all=1`                 : list, most recently active first; `all` includes closed
 - `POST /api/channels`                       : body `{name?, topic?, from?, conventions?}` → the channel (409 on a taken name)
 - `GET  /api/channels/{ref}`                 : one channel by id or name, with derived counts
+- `POST /api/channels/{ref}/join`            : body `{from, note?}` → the summary (the joiner's one-call briefing); idempotent
+- `POST /api/channels/{ref}/leave`           : body `{from, note?}` → the summary; idempotent
 - `POST /api/channels/{ref}/close`           : body `{note?}`; terminal
-- `GET  /api/channels/{ref}/messages`        : `?since=&limit=&wait=` → `{channel, messages, cursor}`
-- `POST /api/channels/{ref}/messages`        : body `{from, body, kind?, reply_to?, reply_needed?}` → the message
+- `GET  /api/channels/{ref}/messages`        : `?since=&limit=&wait=` → `{channel, messages, cursor, members, awaiting_reply, awaiting_reply_by}`
+- `POST /api/channels/{ref}/messages`        : body `{from, to?, body, kind?, reply_to?, reply_needed?}` → the message
 - `GET  /api/channels/{ref}/stream`          : `?since=` → SSE; `message` events carry the seq as the SSE id, honors `Last-Event-ID`
 - `GET  /healthz`                            : 204
 - `GET  /version`                            → `{"version":"<sha>"}`
@@ -218,9 +245,11 @@ CLI surface beyond `serve`/`mcp`, wired as thin HTTP clients to `wire serve`
 wire serve --port 7432 --workdir ~/.local/share/wire
 wire mcp
 wire open [name] [--topic <text>] [--from <who>] [--conventions <rules>]  # prints the connection string first
+wire join <ref> [--from <who>] [--note <intro>]   # get on the roster, print the briefing
+wire leave <ref> [--from <who>] [--note <why>]    # step off the roster; the channel continues
 wire list [--all]
 wire connect <ref>                                # print just the connection string
-wire post <ref> [message] [--kind <k>] [--reply-to <seq>] [--reply-needed]  # body from args, else stdin
+wire post <ref> [message] [--kind <k>] [--to <who>] [--reply-to <seq>] [--reply-needed]  # body from args, else stdin
 wire read <ref> [--since <n>] [--wait <secs>] [--limit <n>]
 wire follow <ref> [--since <n>]                   # blocking reads in a loop until closed
 wire close <ref> [--note <why>]
@@ -239,11 +268,13 @@ lands immediately instead of after the current 60-second wait.
 Thin client over the API above (`internal/client`), served on stdio by
 `wire mcp`:
 
-- `wire_open(from, name?, topic?, conventions?)`: open a channel; returns `connect`, the token to pass to the other session
-- `wire_post(channel, from, body, kind?, reply_to?, reply_needed?)`: append a message; returns its `seq`
-- `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s; reports `awaiting_reply`
+- `wire_open(from, name?, topic?, conventions?)`: open a channel; returns `connect`, the token to pass to the other sessions; the opener is on the roster
+- `wire_join(channel, from, note?)`: get on the roster and get the briefing back — conventions, members, cursor, open obligations; idempotent
+- `wire_leave(channel, from, note?)`: step off the roster; the conversation continues without you
+- `wire_post(channel, from, body, to?, kind?, reply_to?, reply_needed?)`: append a message; returns its `seq`
+- `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s; reports `members`, `awaiting_reply`, and `awaiting_reply_by`
 - `wire_list(include_closed?)`: channels, most recently active first
-- `wire_close(channel, note?)`: terminal close that wakes every waiter
+- `wire_close(channel, note?)`: terminal close that wakes every waiter — everyone's end, unlike wire_leave
 
 Tool responses include `connect` (the connection string to hand on) and `url`
 (the human-facing `WIRE_BASE_URL`, e.g.

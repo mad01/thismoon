@@ -20,7 +20,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -112,9 +114,9 @@ func (s *Store) messagePath(channelID string) string {
 // OpenInput carries the fields needed to open a channel. An empty Name gets a
 // generated one; the caller does not have to invent a unique handle.
 type OpenInput struct {
-	Name string
+	Name  string
 	Topic string
-	From string
+	From  string
 	// Conventions is the opener's ground rules for the conversation, carried
 	// on the channel so a late joiner sees them without reading from seq 1.
 	Conventions string
@@ -237,9 +239,13 @@ func (s *Store) List(includeClosed bool) []Summary {
 // transcript followable without conventions living in prose.
 type PostInput struct {
 	From string
+	// To addresses the message to one agent by name; empty means everyone.
+	// An addressed obligation (To plus ReplyNeeded) is what shows up under
+	// that agent's name in AwaitingReplyBy.
+	To   string
 	Body string
 	// Kind classifies intent from the closed set: task, result, question,
-	// answer, or ack. Empty is a plain message.
+	// answer, ack, note, join, or leave. Empty is a plain message.
 	Kind string
 	// ReplyTo names the seq this message answers; it must exist on the
 	// channel. Zero means the message stands alone.
@@ -252,6 +258,10 @@ type PostInput struct {
 // message's sequence number is its position in the channel, starting at 1.
 func (s *Store) Post(ref string, in PostInput) (Message, error) {
 	from, err := checkFrom(in.From)
+	if err != nil {
+		return Message{}, err
+	}
+	to, err := checkTo(in.To)
 	if err != nil {
 		return Message{}, err
 	}
@@ -279,25 +289,86 @@ func (s *Store) Post(ref string, in PostInput) (Message, error) {
 	}
 	if last := int64(len(s.messages[c.ID])); in.ReplyTo > last {
 		return Message{}, fmt.Errorf(
-			"reply_to %d names no message on %s (last seq is %d)", in.ReplyTo, c.Name, last)
+			"reply_to %d names no message on %s (last seq is %d)", in.ReplyTo, c.Name, last,
+		)
 	}
 
-	m := Message{
-		ChannelID:   c.ID,
-		Seq:         int64(len(s.messages[c.ID])) + 1,
+	return s.appendLocked(c.ID, Message{
 		From:        from,
+		To:          to,
 		Body:        body,
 		Kind:        kind,
 		ReplyTo:     in.ReplyTo,
 		ReplyNeeded: in.ReplyNeeded,
-		CreatedAt:   s.now(),
-	}
-	if err := appendJSONL(s.messagePath(c.ID), messagesFileName(c.ID), m); err != nil {
+	})
+}
+
+// appendLocked stamps a message's identity onto it — channel, seq, time —
+// persists it, and wakes everyone waiting on the channel. The caller has
+// validated the fields and still holds the mutex.
+func (s *Store) appendLocked(channelID string, m Message) (Message, error) {
+	m.ChannelID = channelID
+	m.Seq = int64(len(s.messages[channelID])) + 1
+	m.CreatedAt = s.now()
+	if err := appendJSONL(s.messagePath(channelID), messagesFileName(channelID), m); err != nil {
 		return Message{}, err
 	}
-	s.messages[c.ID] = append(s.messages[c.ID], m)
-	s.notifyLocked(c.ID)
+	s.messages[channelID] = append(s.messages[channelID], m)
+	s.notifyLocked(channelID)
 	return m, nil
+}
+
+// Join adds an agent to a channel's roster by appending a join message, and
+// returns the channel's summary — conventions, members, and open obligations —
+// so one call is a complete briefing for the newcomer. Joining is idempotent:
+// an agent already on the roster gets the summary and no duplicate message.
+// The join lands in the transcript, so a session blocked waiting for its peer
+// to arrive wakes on the join itself.
+func (s *Store) Join(ref, from, note string) (Summary, error) {
+	return s.roster(ref, from, "join", note, "joined")
+}
+
+// Leave takes an agent off a channel's roster by appending a leave message.
+// Like Join it is idempotent — leaving a channel you are not on just returns
+// the summary.
+func (s *Store) Leave(ref, from, note string) (Summary, error) {
+	return s.roster(ref, from, "leave", note, "left")
+}
+
+// roster is the shared join/leave path: append the membership message unless
+// it would say nothing (already joined, already gone), and answer with the
+// channel summary either way.
+func (s *Store) roster(ref, from, kind, note, fallback string) (Summary, error) {
+	f, err := checkFrom(from)
+	if err != nil {
+		return Summary{}, err
+	}
+	body := fallback
+	if strings.TrimSpace(note) != "" {
+		if body, err = checkBody(note); err != nil {
+			return Summary{}, err
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c, err := s.resolveLocked(ref)
+	if err != nil {
+		return Summary{}, err
+	}
+	if c.Closed() {
+		return Summary{}, fmt.Errorf("%w: %s", ErrClosed, c.Name)
+	}
+
+	onRoster := slices.Contains(members(c, s.messages[c.ID]), f)
+	if onRoster == (kind == "join") {
+		return summarize(c, s.messages[c.ID]), nil
+	}
+	if _, err := s.appendLocked(c.ID, Message{From: f, Body: body, Kind: kind}); err != nil {
+		return Summary{}, err
+	}
+	return summarize(c, s.messages[c.ID]), nil
 }
 
 // Close ends a conversation: no further messages, and every waiter wakes so
@@ -332,10 +403,15 @@ func (s *Store) Close(ref, note string) (Channel, error) {
 // still owed an answer — so a reader knows what it must respond to without
 // re-reading the whole transcript.
 type Batch struct {
-	Channel       Channel   `json:"channel"`
-	Messages      []Message `json:"messages"`
-	Cursor        int64     `json:"cursor"`
-	AwaitingReply []int64   `json:"awaiting_reply,omitempty"`
+	Channel  Channel   `json:"channel"`
+	Messages []Message `json:"messages"`
+	Cursor   int64     `json:"cursor"`
+	// Members is the roster as of this read — who is on the channel now.
+	Members       []string `json:"members,omitempty"`
+	AwaitingReply []int64  `json:"awaiting_reply,omitempty"`
+	// AwaitingReplyBy groups the open obligations by addressee, so a reader
+	// finds its own debts under its name instead of inferring them.
+	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
 }
 
 // Read returns the messages after the given cursor without blocking. A cursor
@@ -371,10 +447,12 @@ func (s *Store) Wait(
 		if len(msgs) > 0 || c.Closed() || timeout <= 0 {
 			s.mu.Unlock()
 			return Batch{
-				Channel:       c,
-				Messages:      msgs,
-				Cursor:        cursorAfter(len(all), since, msgs),
-				AwaitingReply: awaitingReply(all),
+				Channel:         c,
+				Messages:        msgs,
+				Cursor:          cursorAfter(len(all), since, msgs),
+				Members:         members(c, all),
+				AwaitingReply:   awaitingReply(all),
+				AwaitingReplyBy: awaitingReplyBy(all),
 			}, nil
 		}
 		changed := s.watcherLocked(c.ID)
@@ -384,9 +462,11 @@ func (s *Store) Wait(
 		case <-changed:
 		case <-deadline.C:
 			return Batch{
-				Channel:       c,
-				Cursor:        cursorAfter(len(all), since, nil),
-				AwaitingReply: awaitingReply(all),
+				Channel:         c,
+				Cursor:          cursorAfter(len(all), since, nil),
+				Members:         members(c, all),
+				AwaitingReply:   awaitingReply(all),
+				AwaitingReplyBy: awaitingReplyBy(all),
 			}, nil
 		case <-ctx.Done():
 			return Batch{Channel: c, Cursor: cursorAfter(len(all), since, nil)}, ctx.Err()

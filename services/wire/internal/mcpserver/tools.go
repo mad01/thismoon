@@ -24,21 +24,42 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "wire_open",
-		Description: "Open a channel so this session can talk to another session. " +
-			"Use it when work has to continue somewhere else — handing a task to a second agent, or having a separate session exercise and report back on something you just changed — and the two of you need to exchange messages rather than guess. " +
+		Description: "Open a channel so this session can talk to other sessions — two of them or ten. " +
+			"Use it when work has to continue somewhere else — handing a task to another agent, or having a separate session exercise and report back on something you just changed — and you need to exchange messages rather than guess. " +
 			"Pass a `name` describing the work (e.g. refactor-auth); omit it and one is generated. Names are lowercase letters, digits, dots, and dashes. " +
-			"**Give the returned `connect` string to the other session verbatim** (e.g. wire://localhost:7432/refactor-auth). It is the entire join protocol: there are no invites or tokens, and it works as the `channel` argument of every other wire tool. " +
-			"Show it to the user so they can paste it wherever the other session is. " +
-			"`from` names you, and every message you post must be signed the same way. " +
-			"Set `conventions` to the conversation's ground rules (tag vocabulary, expected message shapes) — they ride on the channel itself, so a session joining mid-conversation sees them without reading from the start.",
+			"**Give the returned `connect` string to the other sessions verbatim** (e.g. wire://localhost:7432/refactor-auth). It is the entire join protocol: there are no invites or tokens, and it works as the `channel` argument of every other wire tool. " +
+			"Show it to the user so they can paste it wherever the other sessions are. " +
+			"`from` names you and puts you on the roster; every message you post must be signed the same way. Everyone else arrives via wire_join. " +
+			"Set `conventions` to the conversation's ground rules — they ride on the channel itself, so a session joining mid-conversation sees them without reading from the start. " +
+			"A convention set that holds up: \"one question per message; answer with reply_to; address questions with to; reply_needed only when blocked\".",
 	}, h.handleOpen)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "wire_join",
+		Description: "Join a channel another session opened — call this FIRST, before posting or reading, whenever you were handed a connection string. " +
+			"`from` is the name you are joining as; every message you post must be signed with it, and messages addressed `to` that name are yours to answer. " +
+			"One call returns the full briefing: `channel.conventions` (the ground rules — follow them), `members` (who is on the channel), `cursor` (pass it to wire_read as since to read the backlog, or read from 0 for the full transcript), and `awaiting_reply_by` (open obligations by addressee — check your name). " +
+			"Your join lands in the transcript, so sessions blocked waiting for you wake immediately. " +
+			"Set `note` to say what you are joining as or ready for — it becomes the join message's body. Joining a channel you are already on is a no-op that still returns the briefing.",
+	}, h.handleJoin)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "wire_leave",
+		Description: "Leave a channel: take yourself off the roster when your part is done but the conversation continues without you. " +
+			"Other sessions see the leave in the transcript and stop addressing messages to you. " +
+			"Set `note` to say why you are going and where your work landed. " +
+			"Do not confuse this with wire_close — close ends the conversation for everyone; leave is just your exit.",
+	}, h.handleLeave)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "wire_post",
 		Description: "Post a message to a channel, addressed by its name, its id, or the connection string you were given. " +
 			"`from` is REQUIRED — in a channel several sessions write to, an unsigned message cannot be answered. " +
-			"Say what the other session needs (what you did, what you need back, what you are blocked on); the transcript is the only context it gets. " +
-			"Use the protocol fields instead of prose sentinels: `kind` classifies intent (task, result, question, answer, ack), `reply_to` names the seq you are answering — set it on every response so an interleaved transcript stays followable — and `reply_needed: true` says you expect an answer, which keeps the message listed in `awaiting_reply` until someone replies to it. " +
+			"Say what the readers need (what you did, what you need back, what you are blocked on); the transcript is the only context they get. " +
+			"Use the protocol fields instead of prose sentinels: `kind` classifies intent — task, result, question, answer, ack, or note (note is for intros, status, and findings: substance that answers nothing and demands nothing). " +
+			"`to` addresses the message to one agent by roster name — set it on every question and task when more than two agents share the channel, or the obligation belongs to nobody. " +
+			"`reply_to` names the seq you are answering; set it on every response so an interleaved transcript stays followable. One reply_to per obligation: answer each question with its own message, and never bundle two questions into one seq — a single reply clears the whole seq from awaiting_reply whether or not it covered everything. " +
+			"`reply_needed: true` says you are blocked until someone answers; it keeps the seq in awaiting_reply (and under the addressee's name in awaiting_reply_by) until a reply names it. It does not speed anything up — its value is that the debt survives in the record. " +
 			"Returns the message's `seq`, which is the cursor the next reader resumes from and the id other messages reference in `reply_to`. Posting to a closed channel is an error.",
 	}, h.handlePost)
 
@@ -50,7 +71,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Set `wait` to a number of seconds (up to 120) to block until a message lands — that is how you wait for the other session's reply in one call instead of polling in a loop. " +
 			"A wait that expires returns an empty list, not an error: read again, or give up. " +
 			"Always keep the returned `cursor` for your next read, and check `channel.closed_at` — a closed channel will never produce another message, so stop waiting on it. " +
-			"`awaiting_reply` lists the seqs still owed an answer (posted with reply_needed and not yet named by any reply_to) — answer the ones addressed to you before posting anything new, and check `channel.conventions` for the ground rules the opener declared.",
+			"`awaiting_reply_by` maps roster names to the seqs each one owes an answer — **look up your own name and settle those before posting anything new**. `awaiting_reply` is every open obligation including unaddressed ones, which belong to whoever picks them up. " +
+			"`members` is the current roster; `channel.conventions` carries the ground rules the opener declared — follow them.",
 	}, h.handleRead)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -112,15 +134,54 @@ func (h *handlers) handleOpen(
 	return nil, h.channel(c), nil
 }
 
+// ── join / leave ──
+
+type joinInput struct {
+	Channel string `json:"channel"        jsonschema_description:"channel name, id, or connection string to join"`
+	From    string `json:"from"           jsonschema_description:"the name you join as; sign every later post with it, and answer messages addressed to it"`
+	Note    string `json:"note,omitempty" jsonschema_description:"optional intro: what you are joining as or ready for; becomes the join message's body"`
+}
+
+func (h *handlers) handleJoin(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in joinInput,
+) (*mcp.CallToolResult, channelOut, error) {
+	c, err := h.client.Join(ctx, in.Channel, in.From, in.Note)
+	if err != nil {
+		return nil, channelOut{}, err
+	}
+	return nil, h.channel(c), nil
+}
+
+type leaveInput struct {
+	Channel string `json:"channel"        jsonschema_description:"channel name, id, or connection string to leave"`
+	From    string `json:"from"           jsonschema_description:"the name you joined as"`
+	Note    string `json:"note,omitempty" jsonschema_description:"optional parting note: why you are going, where your work landed"`
+}
+
+func (h *handlers) handleLeave(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in leaveInput,
+) (*mcp.CallToolResult, channelOut, error) {
+	c, err := h.client.Leave(ctx, in.Channel, in.From, in.Note)
+	if err != nil {
+		return nil, channelOut{}, err
+	}
+	return nil, h.channel(c), nil
+}
+
 // ── post ──
 
 type postInput struct {
 	Channel     string `json:"channel"                jsonschema_description:"channel name or id to post to"`
 	From        string `json:"from"                   jsonschema_description:"who is speaking (required)"`
+	To          string `json:"to,omitempty"           jsonschema_description:"roster name this message is addressed to; set it on questions and tasks whenever more than two agents share the channel"`
 	Body        string `json:"body"                   jsonschema_description:"the message (required)"`
-	Kind        string `json:"kind,omitempty"         jsonschema_description:"intent of the message: task, result, question, answer, or ack; omit for a plain message"`
-	ReplyTo     int64  `json:"reply_to,omitempty"     jsonschema_description:"seq of the message this answers — set it on every response so the transcript stays followable when messages interleave"`
-	ReplyNeeded bool   `json:"reply_needed,omitempty" jsonschema_description:"true when you expect an answer; the message stays in awaiting_reply until another message names it in reply_to"`
+	Kind        string `json:"kind,omitempty"         jsonschema_description:"intent of the message: task, result, question, answer, ack, or note; omit for a plain message"`
+	ReplyTo     int64  `json:"reply_to,omitempty"     jsonschema_description:"seq of the message this answers — set it on every response, one reply_to per obligation"`
+	ReplyNeeded bool   `json:"reply_needed,omitempty" jsonschema_description:"true when you are blocked until someone answers; the message stays in awaiting_reply until another message names it in reply_to"`
 }
 
 type postOutput struct {
@@ -136,6 +197,7 @@ func (h *handlers) handlePost(
 ) (*mcp.CallToolResult, postOutput, error) {
 	m, err := h.client.Post(ctx, in.Channel, client.PostBody{
 		From:        in.From,
+		To:          in.To,
 		Body:        in.Body,
 		Kind:        in.Kind,
 		ReplyTo:     in.ReplyTo,
@@ -157,13 +219,15 @@ type readInput struct {
 }
 
 type readOutput struct {
-	Channel       client.Channel   `json:"channel"`
-	Connect       string           `json:"connect" jsonschema_description:"the connection string for this channel"`
-	Messages      []client.Message `json:"messages"`
-	Cursor        int64            `json:"cursor" jsonschema_description:"pass this as the since argument on your next read"`
-	AwaitingReply []int64          `json:"awaiting_reply,omitempty" jsonschema_description:"seqs posted with reply_needed that nothing has answered yet — respond to the ones addressed to you before posting anything new"`
-	Closed        bool             `json:"closed" jsonschema_description:"true when the channel is finished and will never produce another message"`
-	URL           string           `json:"url"`
+	Channel         client.Channel     `json:"channel"`
+	Connect         string             `json:"connect"                     jsonschema_description:"the connection string for this channel"`
+	Messages        []client.Message   `json:"messages"`
+	Cursor          int64              `json:"cursor"                      jsonschema_description:"pass this as the since argument on your next read"`
+	Members         []string           `json:"members,omitempty"           jsonschema_description:"the roster: everyone currently on the channel"`
+	AwaitingReply   []int64            `json:"awaiting_reply,omitempty"    jsonschema_description:"every seq posted with reply_needed that nothing has answered yet"`
+	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty" jsonschema_description:"open obligations grouped by the roster name they are addressed to — settle the ones under your name before posting anything new"`
+	Closed          bool               `json:"closed"                      jsonschema_description:"true when the channel is finished and will never produce another message"`
+	URL             string             `json:"url"`
 }
 
 func (h *handlers) handleRead(
@@ -172,18 +236,24 @@ func (h *handlers) handleRead(
 	in readInput,
 ) (*mcp.CallToolResult, readOutput, error) {
 	wait := min(in.Wait, maxWaitSeconds)
-	b, err := h.client.Read(ctx, in.Channel, client.ReadOptions{Since: in.Since, Limit: in.Limit, Wait: wait})
+	b, err := h.client.Read(
+		ctx,
+		in.Channel,
+		client.ReadOptions{Since: in.Since, Limit: in.Limit, Wait: wait},
+	)
 	if err != nil {
 		return nil, readOutput{}, err
 	}
 	return nil, readOutput{
-		Channel:       b.Channel,
-		Connect:       ref.String(h.port, b.Channel.Name),
-		Messages:      b.Messages,
-		Cursor:        b.Cursor,
-		AwaitingReply: b.AwaitingReply,
-		Closed:        b.Channel.Closed(),
-		URL:           h.channelURL(b.Channel.Name),
+		Channel:         b.Channel,
+		Connect:         ref.String(h.port, b.Channel.Name),
+		Messages:        b.Messages,
+		Cursor:          b.Cursor,
+		Members:         b.Members,
+		AwaitingReply:   b.AwaitingReply,
+		AwaitingReplyBy: b.AwaitingReplyBy,
+		Closed:          b.Channel.Closed(),
+		URL:             h.channelURL(b.Channel.Name),
 	}, nil
 }
 

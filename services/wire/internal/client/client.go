@@ -44,14 +44,16 @@ func (c Channel) Closed() bool { return c.ClosedAt != nil }
 // connection string to hand another session.
 type Summary struct {
 	Channel
-	Connect       string     `json:"connect"`
-	Messages      int        `json:"messages"`
-	Cursor        int64      `json:"cursor"`
-	Participants  []string   `json:"participants"`
-	AwaitingReply []int64    `json:"awaiting_reply,omitempty"`
-	LastFrom      string     `json:"last_from,omitempty"`
-	LastBody      string     `json:"last_body,omitempty"`
-	LastAt        *time.Time `json:"last_at,omitempty"`
+	Connect         string             `json:"connect"`
+	Messages        int                `json:"messages"`
+	Cursor          int64              `json:"cursor"`
+	Participants    []string           `json:"participants"`
+	Members         []string           `json:"members,omitempty"`
+	AwaitingReply   []int64            `json:"awaiting_reply,omitempty"`
+	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
+	LastFrom        string             `json:"last_from,omitempty"`
+	LastBody        string             `json:"last_body,omitempty"`
+	LastAt          *time.Time         `json:"last_at,omitempty"`
 }
 
 // Message mirrors one turn in a channel.
@@ -59,6 +61,7 @@ type Message struct {
 	ChannelID   string    `json:"channel_id"`
 	Seq         int64     `json:"seq"`
 	From        string    `json:"from"`
+	To          string    `json:"to,omitempty"`
 	Body        string    `json:"body"`
 	Kind        string    `json:"kind,omitempty"`
 	ReplyTo     int64     `json:"reply_to,omitempty"`
@@ -69,10 +72,12 @@ type Message struct {
 // Batch is one read's result: the channel, the messages after the cursor the
 // reader gave, the cursor to resume from, and the seqs still owed an answer.
 type Batch struct {
-	Channel       Channel   `json:"channel"`
-	Messages      []Message `json:"messages"`
-	Cursor        int64     `json:"cursor"`
-	AwaitingReply []int64   `json:"awaiting_reply,omitempty"`
+	Channel         Channel            `json:"channel"`
+	Messages        []Message          `json:"messages"`
+	Cursor          int64              `json:"cursor"`
+	Members         []string           `json:"members,omitempty"`
+	AwaitingReply   []int64            `json:"awaiting_reply,omitempty"`
+	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
 }
 
 // OpenBody is the POST /api/channels payload; every field is optional.
@@ -87,6 +92,7 @@ type OpenBody struct {
 // optional protocol fields.
 type PostBody struct {
 	From        string `json:"from"`
+	To          string `json:"to,omitempty"`
 	Body        string `json:"body"`
 	Kind        string `json:"kind,omitempty"`
 	ReplyTo     int64  `json:"reply_to,omitempty"`
@@ -189,6 +195,32 @@ func readTimeout(wait int) time.Duration {
 	return requestTimeout + time.Duration(wait)*time.Second
 }
 
+// Join puts an agent on a channel's roster and returns the summary — the
+// one-call briefing: conventions, members, and open obligations. Idempotent.
+func (c *Client) Join(ctx context.Context, channel, from, note string) (Summary, error) {
+	return c.roster(ctx, channel, "/join", from, note)
+}
+
+// Leave takes an agent off a channel's roster. Idempotent.
+func (c *Client) Leave(ctx context.Context, channel, from, note string) (Summary, error) {
+	return c.roster(ctx, channel, "/leave", from, note)
+}
+
+func (c *Client) roster(ctx context.Context, channel, op, from, note string) (Summary, error) {
+	path, err := channelPath(channel)
+	if err != nil {
+		return Summary{}, err
+	}
+	var out Summary
+	return out, c.do(ctx, http.MethodPost, path+op, joinBody{From: from, Note: note},
+		requestTimeout, &out)
+}
+
+type joinBody struct {
+	From string `json:"from"`
+	Note string `json:"note,omitempty"`
+}
+
 // Close ends a conversation with an optional parting note.
 func (c *Client) Close(ctx context.Context, channel, note string) (Summary, error) {
 	path, err := channelPath(channel)
@@ -196,7 +228,14 @@ func (c *Client) Close(ctx context.Context, channel, note string) (Summary, erro
 		return Summary{}, err
 	}
 	var out Summary
-	return out, c.do(ctx, http.MethodPost, path+"/close", closeBody{Note: note}, requestTimeout, &out)
+	return out, c.do(
+		ctx,
+		http.MethodPost,
+		path+"/close",
+		closeBody{Note: note},
+		requestTimeout,
+		&out,
+	)
 }
 
 type closeBody struct {

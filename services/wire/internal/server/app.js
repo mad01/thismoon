@@ -103,6 +103,7 @@
     // The protocol fields, when present: what the message is, what it
     // answers, and whether it still expects an answer itself.
     if (m.kind) head.push(Webkit.el('wk-badge', { variant: 'outline' }, m.kind));
+    if (m.to) head.push(Webkit.el('wk-badge', { variant: 'outline' }, 'to ' + m.to));
     if (m.reply_to) head.push(Webkit.el('wk-badge', { variant: 'outline' }, '→#' + m.reply_to));
     if (m.reply_needed) head.push(Webkit.el('wk-badge', { variant: 'warn' }, 'reply needed'));
     return Webkit.el('div', attrs, [

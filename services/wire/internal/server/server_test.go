@@ -300,7 +300,14 @@ func TestErrorStatuses(t *testing.T) {
 	if code != http.StatusConflict {
 		t.Errorf("duplicate name returned %d, want 409", code)
 	}
-	code = do(t, srv, http.MethodPost, "/api/channels", map[string]string{"name": "Not A Name"}, nil)
+	code = do(
+		t,
+		srv,
+		http.MethodPost,
+		"/api/channels",
+		map[string]string{"name": "Not A Name"},
+		nil,
+	)
 	if code != http.StatusBadRequest {
 		t.Errorf("invalid name returned %d, want 400", code)
 	}
@@ -370,5 +377,66 @@ func TestWaitIsCapped(t *testing.T) {
 	}
 	if got := waitFor(9999); got != maxWait {
 		t.Errorf("waitFor(9999) = %v, want the %v cap", got, maxWait)
+	}
+}
+
+func TestJoinLeaveEndpoints(t *testing.T) {
+	srv := newTestServer(t)
+	openChannel(t, srv, "swarm")
+
+	var sum apiChannel
+	code := do(t, srv, http.MethodPost, "/api/channels/swarm/join",
+		map[string]string{"from": "worker", "note": "ready"}, &sum)
+	if code != http.StatusOK {
+		t.Fatalf("join returned %d", code)
+	}
+	if got := sum.Members; len(got) != 2 || got[0] != "planner" || got[1] != "worker" {
+		t.Errorf("members after join = %v, want [planner worker]", got)
+	}
+	if sum.Messages != 1 || sum.LastBody != "ready" {
+		t.Errorf("join summary = %+v, want the join message recorded", sum.Summary)
+	}
+
+	code = do(t, srv, http.MethodPost, "/api/channels/swarm/leave",
+		map[string]string{"from": "worker"}, &sum)
+	if code != http.StatusOK {
+		t.Fatalf("leave returned %d", code)
+	}
+	if got := sum.Members; len(got) != 1 || got[0] != "planner" {
+		t.Errorf("members after leave = %v, want [planner]", got)
+	}
+
+	// The roster ops surface store errors like every other endpoint.
+	if code = do(t, srv, http.MethodPost, "/api/channels/nope/join",
+		map[string]string{"from": "worker"}, nil); code != http.StatusNotFound {
+		t.Errorf("join on a missing channel returned %d, want 404", code)
+	}
+}
+
+func TestAddressedObligationsRoundTrip(t *testing.T) {
+	srv := newTestServer(t)
+	openChannel(t, srv, "typed")
+
+	var posted store.Message
+	code := do(t, srv, http.MethodPost, "/api/channels/typed/messages", map[string]any{
+		"from": "planner", "to": "worker", "body": "status?",
+		"kind": "question", "reply_needed": true,
+	}, &posted)
+	if code != http.StatusCreated {
+		t.Fatalf("post returned %d", code)
+	}
+	if posted.To != "worker" {
+		t.Errorf("posted to = %q, want worker", posted.To)
+	}
+
+	var batch store.Batch
+	if code = do(t, srv, http.MethodGet, "/api/channels/typed/messages", nil, &batch); code != http.StatusOK {
+		t.Fatalf("read returned %d", code)
+	}
+	if got := batch.AwaitingReplyBy["worker"]; len(got) != 1 || got[0] != posted.Seq {
+		t.Errorf("awaiting_reply_by = %v, want the worker's debt listed", batch.AwaitingReplyBy)
+	}
+	if len(batch.Members) != 1 || batch.Members[0] != "planner" {
+		t.Errorf("members = %v, want the opener on the roster", batch.Members)
 	}
 }

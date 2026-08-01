@@ -43,7 +43,10 @@ func TestOpenSendsFields(t *testing.T) {
 	s := &stub{reply: Summary{Channel: Channel{ID: "ch_1", Name: "handoff"}}}
 	c := s.server(t)
 
-	got, err := c.Open(context.Background(), OpenBody{Name: "handoff", Topic: "auth work", From: "planner"})
+	got, err := c.Open(
+		context.Background(),
+		OpenBody{Name: "handoff", Topic: "auth work", From: "planner"},
+	)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -99,7 +102,10 @@ func TestReadTimeoutOutlastsTheServerWait(t *testing.T) {
 }
 
 func TestAPIErrorSurfacesUnwrapped(t *testing.T) {
-	s := &stub{status: http.StatusNotFound, reply: map[string]string{"error": "wire: channel not found: nope"}}
+	s := &stub{
+		status: http.StatusNotFound,
+		reply:  map[string]string{"error": "wire: channel not found: nope"},
+	}
 	c := s.server(t)
 
 	_, err := c.Get(context.Background(), "nope")

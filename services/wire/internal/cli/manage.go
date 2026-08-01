@@ -30,6 +30,7 @@ var (
 	flagNote        string
 	flagOutput      string
 	flagKind        string
+	flagTo          string
 	flagReplyTo     int64
 	flagReplyNeeded bool
 )
@@ -111,6 +112,7 @@ command's output can be piped into a conversation.`,
 		}
 		m, err := api().Post(cmd.Context(), args[0], client.PostBody{
 			From:        flagFrom,
+			To:          flagTo,
 			Body:        body,
 			Kind:        flagKind,
 			ReplyTo:     flagReplyTo,
@@ -200,6 +202,57 @@ func follow(ctx context.Context, w io.Writer, ref string, since int64) error {
 	}
 }
 
+var joinCmd = &cobra.Command{
+	Use:   "join <channel|connection-string>",
+	Short: "Join a channel's roster and print the briefing",
+	Long: `Join a channel: put your name on the roster and get the briefing back —
+conventions, members, cursor, and the open obligations by addressee. Joining a
+channel you are already on is a no-op that still prints the briefing.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := api().Join(cmd.Context(), args[0], flagFrom, flagNote)
+		if err != nil {
+			return err
+		}
+		if flagOutput == "json" {
+			return writeJSON(cmd.OutOrStdout(), c)
+		}
+		printBriefing(cmd.OutOrStdout(), c)
+		return nil
+	},
+}
+
+var leaveCmd = &cobra.Command{
+	Use:   "leave <channel|connection-string>",
+	Short: "Leave a channel's roster; the conversation continues without you",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := api().Leave(cmd.Context(), args[0], flagFrom, flagNote)
+		if err != nil {
+			return err
+		}
+		if flagOutput == "json" {
+			return writeJSON(cmd.OutOrStdout(), c)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "left %s  members: %s\n",
+			c.Name, strings.Join(c.Members, ", "))
+		return nil
+	},
+}
+
+// printBriefing renders what a joiner needs before its first post: the ground
+// rules, who is here, where to resume reading, and who owes what.
+func printBriefing(w io.Writer, c client.Summary) {
+	fmt.Fprintf(w, "joined %s  cursor %d\n", c.Name, c.Cursor)
+	fmt.Fprintf(w, "members: %s\n", strings.Join(c.Members, ", "))
+	if c.Conventions != "" {
+		fmt.Fprintf(w, "conventions: %s\n", c.Conventions)
+	}
+	for who, seqs := range c.AwaitingReplyBy {
+		fmt.Fprintf(w, "awaiting reply from %s:%s\n", who, awaitingSuffix(seqs))
+	}
+}
+
 var connectCmd = &cobra.Command{
 	Use:   "connect <channel|connection-string>",
 	Short: "Print a channel's connection string",
@@ -259,6 +312,9 @@ func messageMarkers(m client.Message) string {
 	if m.Kind != "" {
 		parts = append(parts, m.Kind)
 	}
+	if m.To != "" {
+		parts = append(parts, "to "+m.To)
+	}
 	if m.ReplyTo > 0 {
 		parts = append(parts, fmt.Sprintf("→#%d", m.ReplyTo))
 	}
@@ -301,21 +357,28 @@ func writeJSON(w io.Writer, v any) error {
 }
 
 func init() {
-	openCmd.Flags().StringVar(&flagTopic, "topic", "", "one-line description of what the conversation is for")
+	openCmd.Flags().
+		StringVar(&flagTopic, "topic", "", "one-line description of what the conversation is for")
 	openCmd.Flags().StringVar(&flagConventions, "conventions", "",
 		"ground rules for the conversation, shown to every joiner")
 	postCmd.Flags().StringVar(&flagKind, "kind", "",
-		"message intent: task, result, question, answer, or ack")
+		"message intent: task, result, question, answer, ack, or note")
+	postCmd.Flags().StringVar(&flagTo, "to", "", "roster name this message is addressed to")
 	postCmd.Flags().Int64Var(&flagReplyTo, "reply-to", 0, "seq of the message this answers")
-	postCmd.Flags().BoolVar(&flagReplyNeeded, "reply-needed", false, "mark that you expect an answer")
+	postCmd.Flags().
+		BoolVar(&flagReplyNeeded, "reply-needed", false, "mark that you expect an answer")
+	joinCmd.Flags().StringVar(&flagNote, "note", "", "intro: what you are joining as or ready for")
+	leaveCmd.Flags().StringVar(&flagNote, "note", "", "parting note: why you are going")
 	listCmd.Flags().BoolVar(&flagAll, "all", false, "include closed channels")
 	readCmd.Flags().Int64Var(&flagSince, "since", 0, "only messages after this cursor")
-	readCmd.Flags().IntVar(&flagWait, "wait", 0, "seconds to block waiting for a new message (max 120)")
+	readCmd.Flags().
+		IntVar(&flagWait, "wait", 0, "seconds to block waiting for a new message (max 120)")
 	readCmd.Flags().IntVar(&flagLimit, "limit", 0, "maximum messages to return")
-	followCmd.Flags().Int64Var(&flagSince, "since", 0, "start after this cursor instead of the beginning")
+	followCmd.Flags().
+		Int64Var(&flagSince, "since", 0, "start after this cursor instead of the beginning")
 	closeCmd.Flags().StringVar(&flagNote, "note", "", "parting note: how the conversation ended")
 
-	for _, c := range []*cobra.Command{openCmd, listCmd, postCmd, readCmd, closeCmd} {
+	for _, c := range []*cobra.Command{openCmd, listCmd, postCmd, readCmd, closeCmd, joinCmd, leaveCmd} {
 		c.Flags().StringVarP(&flagOutput, "output", "o", "text", "Output format: text or json")
 		rootCmd.AddCommand(c)
 	}

@@ -161,7 +161,10 @@ func TestPostValidatesKindAndReplyTo(t *testing.T) {
 		t.Fatalf("Post with protocol fields: %v", err)
 	}
 	if m.Kind != "question" || m.ReplyTo != 1 || !m.ReplyNeeded {
-		t.Errorf("posted message = %+v, want kind question (lowercased), reply_to 1, reply_needed", m)
+		t.Errorf(
+			"posted message = %+v, want kind question (lowercased), reply_to 1, reply_needed",
+			m,
+		)
 	}
 }
 
@@ -431,7 +434,11 @@ func TestReloadFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	c := mustOpen(t, s, OpenInput{Name: "persisted", Topic: "handoff", Conventions: "tag your posts"})
+	c := mustOpen(
+		t,
+		s,
+		OpenInput{Name: "persisted", Topic: "handoff", Conventions: "tag your posts"},
+	)
 	mustPost(t, s, c.Name, "a", "one")
 	if _, err := s.Post(c.Name, PostInput{
 		From: "b", Body: "two", Kind: "answer", ReplyTo: 1, ReplyNeeded: true,
@@ -542,5 +549,125 @@ func TestPreviewCollapsesAndClips(t *testing.T) {
 	}
 	if n := len([]rune(got)); n != previewRunes+1 {
 		t.Errorf("clipped preview is %d runes, want %d", n, previewRunes+1)
+	}
+}
+
+func TestJoinAndLeaveDriveTheRoster(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "swarm", From: "planner"})
+
+	sum, err := s.Join(c.Name, "worker", "ready for tasks")
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if got := sum.Members; len(got) != 2 || got[0] != "planner" || got[1] != "worker" {
+		t.Errorf("members after join = %v, want [planner worker]", got)
+	}
+	if sum.Messages != 1 || sum.LastBody != "ready for tasks" {
+		t.Errorf("join summary = %+v, want the join message with its note as body", sum)
+	}
+
+	// Joining again says nothing new: no duplicate message, same roster.
+	again, err := s.Join(c.Name, "worker", "")
+	if err != nil {
+		t.Fatalf("Join twice: %v", err)
+	}
+	if again.Messages != 1 || len(again.Members) != 2 {
+		t.Errorf("second join = %+v, want it idempotent", again)
+	}
+
+	left, err := s.Leave(c.Name, "worker", "done here")
+	if err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	if got := left.Members; len(got) != 1 || got[0] != "planner" {
+		t.Errorf("members after leave = %v, want [planner]", got)
+	}
+	if left.Messages != 2 {
+		t.Errorf("leave summary has %d messages, want the leave recorded", left.Messages)
+	}
+
+	// Leaving when already gone is a no-op, and rejoining works.
+	if sum, err = s.Leave(c.Name, "worker", ""); err != nil || sum.Messages != 2 {
+		t.Errorf("second leave = %+v, %v; want it idempotent", sum, err)
+	}
+	if sum, err = s.Join(c.Name, "worker", ""); err != nil || len(sum.Members) != 2 {
+		t.Errorf("rejoin = %+v, %v; want worker back on the roster", sum, err)
+	}
+}
+
+func TestJoinRejectsClosedChannel(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "done", From: "planner"})
+	if _, err := s.Close(c.Name, ""); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := s.Join(c.Name, "late", ""); !errors.Is(err, ErrClosed) {
+		t.Errorf("Join on closed = %v, want ErrClosed", err)
+	}
+}
+
+func TestAwaitingReplyByGroupsByAddressee(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "swarm", From: "planner"})
+
+	q1, err := s.Post(c.Name, PostInput{
+		From: "planner", To: "worker", Body: "status?", Kind: "question", ReplyNeeded: true,
+	})
+	if err != nil {
+		t.Fatalf("Post addressed question: %v", err)
+	}
+	q2, err := s.Post(c.Name, PostInput{
+		From: "planner", Body: "anyone seen the logs?", Kind: "question", ReplyNeeded: true,
+	})
+	if err != nil {
+		t.Fatalf("Post broadcast question: %v", err)
+	}
+
+	sum, err := s.Get(c.Name)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(sum.AwaitingReply) != 2 {
+		t.Errorf("awaiting_reply = %v, want both questions open", sum.AwaitingReply)
+	}
+	if got := sum.AwaitingReplyBy["worker"]; len(got) != 1 || got[0] != q1.Seq {
+		t.Errorf("awaiting_reply_by[worker] = %v, want [%d]", got, q1.Seq)
+	}
+	if _, ok := sum.AwaitingReplyBy[""]; ok {
+		t.Error("the broadcast question was grouped under an empty addressee")
+	}
+
+	// Answering the addressed question clears it from the map; the broadcast
+	// one stays in the flat list.
+	if _, err := s.Post(c.Name, PostInput{
+		From: "worker", Body: "on it", Kind: "answer", ReplyTo: q1.Seq,
+	}); err != nil {
+		t.Fatalf("Post answer: %v", err)
+	}
+	sum, err = s.Get(c.Name)
+	if err != nil {
+		t.Fatalf("Get after answer: %v", err)
+	}
+	if sum.AwaitingReplyBy != nil {
+		t.Errorf(
+			"awaiting_reply_by = %v, want it empty once the addressed debt settles",
+			sum.AwaitingReplyBy,
+		)
+	}
+	if len(sum.AwaitingReply) != 1 || sum.AwaitingReply[0] != q2.Seq {
+		t.Errorf("awaiting_reply = %v, want just the broadcast question", sum.AwaitingReply)
+	}
+}
+
+func TestPostBoundsTo(t *testing.T) {
+	s := newTestStore(t)
+	c := mustOpen(t, s, OpenInput{Name: "swarm", From: "planner"})
+	long := strings.Repeat("x", 65)
+	if _, err := s.Post(c.Name, PostInput{From: "a", To: long, Body: "hi"}); err == nil {
+		t.Error("a 65-rune to was accepted")
+	}
+	if _, err := s.Post(c.Name, PostInput{From: "a", To: "  worker  ", Body: "hi"}); err != nil {
+		t.Errorf("a padded to was rejected: %v", err)
 	}
 }

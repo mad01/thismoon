@@ -55,7 +55,12 @@ type Message struct {
 	ChannelID string `json:"channel_id"`
 	Seq       int64  `json:"seq"`
 	From      string `json:"from"`
-	Body      string `json:"body"`
+	// To addresses the message to one agent by name. Empty means everyone.
+	// With several sessions on a channel an unaddressed obligation belongs to
+	// nobody in particular, so a question meant for a specific agent should
+	// carry its name — that is what routes it into AwaitingReplyBy.
+	To   string `json:"to,omitempty"`
+	Body string `json:"body"`
 	// Kind classifies the message's intent from a small closed set (see
 	// checkKind); empty is a plain message. It is what lets a reader answer
 	// "which of these are open questions" without parsing prose.
@@ -76,13 +81,21 @@ type Message struct {
 // last line. All of it is derived from the messages, never stored.
 type Summary struct {
 	Channel
-	Messages     int        `json:"messages"`
-	Cursor       int64      `json:"cursor"`
-	Participants []string   `json:"participants"`
-	AwaitingReply []int64   `json:"awaiting_reply,omitempty"`
-	LastFrom     string     `json:"last_from,omitempty"`
-	LastBody     string     `json:"last_body,omitempty"`
-	LastAt       *time.Time `json:"last_at,omitempty"`
+	Messages     int      `json:"messages"`
+	Cursor       int64    `json:"cursor"`
+	Participants []string `json:"participants"`
+	// Members is the roster: the opener plus everyone who joined and has not
+	// left. Distinct from Participants (who has spoken) — a member may be
+	// silently reading, and a participant may never have joined.
+	Members       []string `json:"members,omitempty"`
+	AwaitingReply []int64  `json:"awaiting_reply,omitempty"`
+	// AwaitingReplyBy groups the open obligations by the agent they are
+	// addressed to. Unaddressed ones appear only in AwaitingReply — with
+	// several agents on a channel they belong to whoever picks them up.
+	AwaitingReplyBy map[string][]int64 `json:"awaiting_reply_by,omitempty"`
+	LastFrom        string             `json:"last_from,omitempty"`
+	LastBody        string             `json:"last_body,omitempty"`
+	LastAt          *time.Time         `json:"last_at,omitempty"`
 }
 
 // NormalizeName lowercases and trims a channel name and checks it against the
@@ -125,6 +138,9 @@ var kinds = map[string]bool{
 	"question": true,
 	"answer":   true,
 	"ack":      true,
+	"note":     true,
+	"join":     true,
+	"leave":    true,
 }
 
 // checkKind rejects a kind outside the closed set. Empty is valid: a plain
@@ -134,7 +150,21 @@ func checkKind(kind string) (string, error) {
 	if k == "" || kinds[k] {
 		return k, nil
 	}
-	return "", fmt.Errorf("invalid kind %q: use task, result, question, answer, or ack", kind)
+	return "", fmt.Errorf(
+		"invalid kind %q: use task, result, question, answer, ack, note, join, or leave", kind,
+	)
+}
+
+// checkTo bounds an addressee name. Empty is valid — an unaddressed message is
+// for everyone. The name is not checked against the roster on purpose: the
+// normal handoff posts a task addressed to an agent before that agent has
+// joined.
+func checkTo(to string) (string, error) {
+	t := strings.TrimSpace(to)
+	if utf8.RuneCountInString(t) > 64 {
+		return "", errors.New("to must be at most 64 characters")
+	}
+	return t, nil
 }
 
 // checkBody rejects an empty or oversized message body.
@@ -174,16 +204,59 @@ func participants(msgs []Message) []string {
 	return out
 }
 
-// awaitingReply lists the messages still owed an answer: every seq posted
-// with ReplyNeeded that no later message has named in ReplyTo. Derived from
-// the transcript on every read, never stored, so it cannot drift from it.
-func awaitingReply(msgs []Message) []int64 {
+// members derives the roster from the transcript: the opener, plus everyone
+// whose latest join/leave message is a join. Like participants it is never
+// stored, so there is no membership record to keep in sync — a join or leave
+// is just a message, and the roster is what the messages say it is.
+func members(c Channel, msgs []Message) []string {
+	present := map[string]bool{}
+	seen := map[string]bool{}
+	var order []string
+	add := func(who string) {
+		if who == "" {
+			return
+		}
+		if !seen[who] {
+			seen[who] = true
+			order = append(order, who)
+		}
+		present[who] = true
+	}
+	add(c.OpenedBy)
+	for _, m := range msgs {
+		switch m.Kind {
+		case "join":
+			add(m.From)
+		case "leave":
+			present[m.From] = false
+		}
+	}
+	var out []string
+	for _, who := range order {
+		if present[who] {
+			out = append(out, who)
+		}
+	}
+	return out
+}
+
+// answeredSeqs collects every seq some later message has named in ReplyTo —
+// the settled side of the obligation ledger.
+func answeredSeqs(msgs []Message) map[int64]bool {
 	answered := map[int64]bool{}
 	for _, m := range msgs {
 		if m.ReplyTo > 0 {
 			answered[m.ReplyTo] = true
 		}
 	}
+	return answered
+}
+
+// awaitingReply lists the messages still owed an answer: every seq posted
+// with ReplyNeeded that no later message has named in ReplyTo. Derived from
+// the transcript on every read, never stored, so it cannot drift from it.
+func awaitingReply(msgs []Message) []int64 {
+	answered := answeredSeqs(msgs)
 	var out []int64
 	for _, m := range msgs {
 		if m.ReplyNeeded && !answered[m.Seq] {
@@ -193,14 +266,34 @@ func awaitingReply(msgs []Message) []int64 {
 	return out
 }
 
+// awaitingReplyBy groups the open obligations by addressee, so each agent on a
+// busy channel can answer "which of these are mine" without scanning the
+// transcript. Unaddressed obligations are left out — they belong to whoever
+// picks them up, and are still listed in awaitingReply.
+func awaitingReplyBy(msgs []Message) map[string][]int64 {
+	answered := answeredSeqs(msgs)
+	out := map[string][]int64{}
+	for _, m := range msgs {
+		if m.ReplyNeeded && m.To != "" && !answered[m.Seq] {
+			out[m.To] = append(out[m.To], m.Seq)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // summarize folds a channel and its messages into the list read-model.
 func summarize(c Channel, msgs []Message) Summary {
 	s := Summary{
-		Channel:       c,
-		Messages:      len(msgs),
-		Cursor:        int64(len(msgs)),
-		Participants:  participants(msgs),
-		AwaitingReply: awaitingReply(msgs),
+		Channel:         c,
+		Messages:        len(msgs),
+		Cursor:          int64(len(msgs)),
+		Participants:    participants(msgs),
+		Members:         members(c, msgs),
+		AwaitingReply:   awaitingReply(msgs),
+		AwaitingReplyBy: awaitingReplyBy(msgs),
 	}
 	if len(msgs) > 0 {
 		last := msgs[len(msgs)-1]
