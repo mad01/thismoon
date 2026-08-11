@@ -10,6 +10,7 @@ import (
 func newGitPushGuard(profiles []string, currentBranch string) *GitPushMain {
 	g := NewGitPushMain(config.Config{Profiles: profiles})
 	g.resolveBranch = func(dir string) string { return currentBranch }
+	g.resolveRepo = func(dir string) string { return "" }
 	return g
 }
 
@@ -83,5 +84,59 @@ func TestGitPushPrefersDashCDir(t *testing.T) {
 	g.Check(Input{Event: EventBash, Command: "git -C /other/repo push", Cwd: "/session/cwd"})
 	if gotDir != "/other/repo" {
 		t.Errorf("resolver dir = %q, want /other/repo", gotDir)
+	}
+}
+
+func TestGitPushMainAllowRepos(t *testing.T) {
+	const dotfiles = "github.com/mad01/dotfiles"
+	allow := []string{dotfiles}
+	tests := []struct {
+		name          string
+		command       string
+		currentBranch string
+		repo          string
+		allow         []string
+		wantDeny      bool
+	}{
+		{"dotfiles bare push on main allowed", "git push", "main", dotfiles, allow, false},
+		{"dotfiles explicit origin main allowed", "git push origin main", "feature", dotfiles, allow, false},
+		{"dotfiles HEAD:main allowed", "git push origin HEAD:main", "feature", dotfiles, allow, false},
+		{"dotfiles git -C push allowed", "git -C /repo push", "main", dotfiles, allow, false},
+		{"non-allowlisted repo denied", "git push origin main", "feature", "github.com/mad01/thismoon", allow, true},
+		{"unresolved repo denied", "git push origin main", "feature", "", allow, true},
+		{"empty allowlist denied", "git push origin main", "feature", dotfiles, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGitPushMain(config.Config{
+				Profiles: []string{"work"},
+				Guards:   map[string]config.Toggle{GitPushMainID: {AllowRepos: tt.allow}},
+			})
+			g.resolveBranch = func(string) string { return tt.currentBranch }
+			g.resolveRepo = func(string) string { return tt.repo }
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+		})
+	}
+}
+
+func TestCanonicalRepo(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"git@github.com:mad01/dotfiles.git", "github.com/mad01/dotfiles"},
+		{"https://github.com/mad01/dotfiles.git", "github.com/mad01/dotfiles"},
+		{"https://github.com/mad01/dotfiles", "github.com/mad01/dotfiles"},
+		{"ssh://git@github.com/mad01/dotfiles.git", "github.com/mad01/dotfiles"},
+		{"ssh://git@github.com:22/mad01/dotfiles.git", "github.com/mad01/dotfiles"},
+		{"/local/path/repo", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := canonicalRepo(tt.in); got != tt.want {
+			t.Errorf("canonicalRepo(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }

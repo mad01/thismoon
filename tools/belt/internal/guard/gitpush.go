@@ -2,6 +2,7 @@ package guard
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -13,18 +14,27 @@ const GitPushMainID = "git-push-main"
 var defaultBranches = map[string]bool{"main": true, "master": true}
 
 // GitPushMain blocks `git push` to main/master unless the machine runs the
-// personal ralph profile. On the work profile (or when the profile is
+// personal ralph profile or the target repository is on the guard's
+// allow_repos allowlist. On the work profile (or when the profile is
 // unknown — fail closed) direct pushes to the default branch are denied.
 type GitPushMain struct {
 	cfg config.Config
 	// resolveBranch returns the current branch of the repo at dir, or ""
 	// when it cannot be determined. Injectable for tests.
 	resolveBranch func(dir string) string
+	// resolveRepo returns the canonical host/owner/repo of the repo at dir
+	// (e.g. github.com/mad01/dotfiles), or "" when it cannot be determined.
+	// Injectable for tests.
+	resolveRepo func(dir string) string
 }
 
-// NewGitPushMain builds the guard with the real git-backed branch resolver.
+// NewGitPushMain builds the guard with the real git-backed resolvers.
 func NewGitPushMain(cfg config.Config) *GitPushMain {
-	return &GitPushMain{cfg: cfg, resolveBranch: gitCurrentBranch}
+	return &GitPushMain{
+		cfg:           cfg,
+		resolveBranch: gitCurrentBranch,
+		resolveRepo:   func(dir string) string { return canonicalRepo(gitRemoteURL(dir)) },
+	}
 }
 
 func (g *GitPushMain) ID() string    { return GitPushMainID }
@@ -36,21 +46,39 @@ func (g *GitPushMain) Check(in Input) *Denial {
 	if g.cfg.HasProfile("personal") {
 		return nil
 	}
+	allow := g.cfg.Guards[GitPushMainID].AllowRepos
 	for _, push := range findGitPushes(in.Command) {
-		branch := push.targetBranch(func(dir string) string {
-			if dir == "" {
-				dir = in.Cwd
-			}
-			return g.resolveBranch(dir)
-		})
-		if defaultBranches[branch] {
-			return Reasonf(GitPushMainID,
-				"pushing to %q is blocked on this machine (work profile — direct pushes to the default branch are never allowed here). "+
-					"Create a feature branch and open a PR instead: git checkout -b <branch> && git push -u origin <branch>.",
-				branch)
+		dir := push.dir
+		if dir == "" {
+			dir = in.Cwd
 		}
+		branch := push.targetBranch(func(string) string { return g.resolveBranch(dir) })
+		if !defaultBranches[branch] {
+			continue
+		}
+		if g.repoAllowed(dir, allow) {
+			continue
+		}
+		return Reasonf(GitPushMainID,
+			"pushing to %q is blocked on this machine (work profile — direct pushes to the default branch are never allowed here). "+
+				"Create a feature branch and open a PR instead: git checkout -b <branch> && git push -u origin <branch>.",
+			branch)
 	}
 	return nil
+}
+
+// repoAllowed reports whether the repo at dir is on the allowlist. An empty
+// allowlist or an unresolved repo fails closed: only an explicit,
+// successfully-resolved match exempts a push to the default branch.
+func (g *GitPushMain) repoAllowed(dir string, allow []string) bool {
+	if len(allow) == 0 {
+		return false
+	}
+	repo := g.resolveRepo(dir)
+	if repo == "" {
+		return false
+	}
+	return slices.Contains(allow, repo)
 }
 
 // gitPush is one parsed `git push` invocation.
@@ -181,6 +209,40 @@ func splitSegments(command string) []segment {
 		pos += len(piece) + 1
 	}
 	return segs
+}
+
+// canonicalRepo normalizes a git remote URL to "host/owner/repo"
+// (github.com/mad01/dotfiles for both the SSH and HTTPS forms). It returns ""
+// for anything it cannot resolve — an empty remote, a bare local path — so an
+// unresolved repo fails closed against the allowlist.
+func canonicalRepo(remote string) string {
+	remote = strings.TrimSpace(remote)
+	remote = strings.TrimSuffix(remote, ".git")
+	switch {
+	case strings.Contains(remote, "://"):
+		// scheme://[user@]host[:port]/owner/repo
+		remote = remote[strings.Index(remote, "://")+3:]
+		if i := strings.LastIndex(remote, "@"); i >= 0 {
+			remote = remote[i+1:]
+		}
+	case strings.Contains(remote, "@") && strings.Contains(remote, ":"):
+		// scp-like: [user@]host:owner/repo
+		remote = remote[strings.Index(remote, "@")+1:]
+		remote = strings.Replace(remote, ":", "/", 1)
+	default:
+		return ""
+	}
+	// Drop a :port from the host segment.
+	if i := strings.Index(remote, "/"); i >= 0 {
+		if j := strings.Index(remote[:i], ":"); j >= 0 {
+			remote = remote[:j] + remote[i:]
+		}
+	}
+	// Need at least host/owner/repo.
+	if strings.Count(remote, "/") < 2 {
+		return ""
+	}
+	return remote
 }
 
 // gitCurrentBranch shells out to git; "" when dir is not a repo or git fails.

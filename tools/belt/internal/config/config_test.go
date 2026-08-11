@@ -150,6 +150,19 @@ extra_patterns = ["rm -rf", "rm -fr"]
 	}
 }
 
+func TestLoadTogglesAllowRepos(t *testing.T) {
+	content := `
+[guards.git-push-main]
+allow_repos = ["github.com/mad01/dotfiles"]
+`
+	path := writeFile(t, t.TempDir(), "config.toml", content)
+	got, _ := loadToggles(path)
+	repos := got["git-push-main"].AllowRepos
+	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
+		t.Errorf("allow_repos = %v", repos)
+	}
+}
+
 func TestLoadTogglesHintsSection(t *testing.T) {
 	content := `
 [guards.git-push-main]

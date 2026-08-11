@@ -28,12 +28,15 @@ type Config struct {
 }
 
 // Toggle enables or disables a single guard or hint by id, with optional
-// path exclusions (substring match on the target file path) and extra deny
-// patterns beyond the shared sources.
+// path exclusions (substring match on the target file path), extra deny
+// patterns beyond the shared sources, and a repository allowlist that lets a
+// guard exempt specific repos (canonical host/owner/repo, e.g.
+// github.com/mad01/dotfiles).
 type Toggle struct {
 	Enabled       *bool    `toml:"enabled"`
 	ExcludePaths  []string `toml:"exclude_paths"`
 	ExtraPatterns []string `toml:"extra_patterns"`
+	AllowRepos    []string `toml:"allow_repos"`
 }
 
 // SuspendersGuard mirrors the `guard:` section of the suspenders config.

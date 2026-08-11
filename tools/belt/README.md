@@ -48,7 +48,7 @@ belt version
 
 ## Configuration
 
-Toggles, `exclude_paths`, and `extra_patterns` live in `~/.config/belt/config.toml`, under `[guards.<id>]` for guards and `[hints.<id>]` for hints. Both default to enabled when the file or entry is missing. Denials and hints are logged to the local events timeline (events.this).
+Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.toml`, under `[guards.<id>]` for guards and `[hints.<id>]` for hints. Both default to enabled when the file or entry is missing. `allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo` — for example `[guards.git-push-main]` with `allow_repos = ["github.com/mad01/dotfiles"]` permits direct pushes to the default branch in that repo while every other repo stays fail-closed. Denials and hints are logged to the local events timeline (events.this).
 
 ## Develop
 
