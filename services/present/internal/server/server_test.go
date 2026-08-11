@@ -45,7 +45,7 @@ func TestPageServesShell(t *testing.T) {
 	}
 	// The shell is chrome only; the body is fetched from /api/p/{id} and built
 	// client-side by /app.js, so the page content is NOT in the served HTML.
-	for _, want := range []string{`id="root"`, "/app.js", "/webkit/webkit.js"} {
+	for _, want := range []string{`id="root"`, "/app.js", "/webkit/webkit.js", "wk-section li"} {
 		if !contains(body, want) {
 			t.Errorf("shell missing %q", want)
 		}
