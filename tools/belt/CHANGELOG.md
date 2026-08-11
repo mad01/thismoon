@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/belt/v0.3.0...belt/v0.4.0) (2026-08-11)
+
+
+### Features
+
+* **belt:** add per-repo allow_repos exemption to git-push-main guard ([#122](https://github.com/mad01/thismoon/issues/122)) ([79d3380](https://github.com/mad01/thismoon/commit/79d3380d1453ba79d05e0cdbdbb4f63f904e0051))
+* **belt:** allow internal names in repos matched by allow_repos ([9f966e9](https://github.com/mad01/thismoon/commit/9f966e9b68d109078284171e64f3dc85bd6c14df))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/belt/v0.2.1...belt/v0.3.0) (2026-07-18)
 
 

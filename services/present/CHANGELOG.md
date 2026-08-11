@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/mad01/thismoon/compare/present/v0.1.1...present/v0.1.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **present:** apply bionic reading to list items ([#120](https://github.com/mad01/thismoon/issues/120)) ([785831a](https://github.com/mad01/thismoon/commit/785831a9d84f8d3bfa9847024be8b419c34cb215))
+
 ## [0.1.1](https://github.com/mad01/thismoon/compare/present/v0.1.0...present/v0.1.1) (2026-07-08)
 
 
