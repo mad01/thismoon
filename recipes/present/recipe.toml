@@ -29,6 +29,13 @@ source = "skills"
 target = "~/.claude/skills"
 action = "symlink_dir"
 
+# Codex discovers user skills from ~/.agents/skills. Keep the Claude mirror
+# above until its discovery path is consolidated with Codex and Pi.
+[dirs_mirror.present_codex_skill]
+source = "skills"
+target = "~/.agents/skills"
+action = "symlink_dir"
+
 # Keep the MCP spawn wrapper executable — the consuming repo's claude-mcp overlay
 # registers the wrapper, not the bare binary (sandbox containment: the wrapper
 # execs `present mcp` under present.sb, which lives beside it in this dir).

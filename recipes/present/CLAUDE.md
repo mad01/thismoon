@@ -30,6 +30,8 @@ MCP server).
   `~/.config/present` so pages have zero CDN dependencies. Offline-safe.
 - **`dirs_mirror.present_skill`** — symlinks `skills/present/` into
   `~/.claude/skills/` so the Claude skill ships with the service.
+- **`dirs_mirror.present_codex_skill`** — symlinks the same skill into
+  `~/.agents/skills/` so Codex and Pi discover it too.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
 ## What stays in dotfiles (private overlay)
