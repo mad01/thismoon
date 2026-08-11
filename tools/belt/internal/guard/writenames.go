@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -48,6 +49,15 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 	}
 	remote := g.remoteURL(nearestExistingDir(in.FilePath))
 	if !isPublicRemote(remote) {
+		return nil
+	}
+	// Repos allowlisted by canonical host/owner/repo may carry internal names
+	// even though they live on github.com — a private companion repo whose
+	// whole purpose is internal-only config. Matched by remote identity, not a
+	// fragile path substring, so both the working checkout and any cached
+	// clone (same origin) are covered.
+	if repo := canonicalRepo(remote); repo != "" &&
+		slices.Contains(g.cfg.Guards[WriteInternalNamesID].AllowRepos, repo) {
 		return nil
 	}
 	names := g.blockedNames()

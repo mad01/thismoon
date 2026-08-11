@@ -104,6 +104,35 @@ func TestWriteInternalNamesExcludePaths(t *testing.T) {
 	}
 }
 
+func TestWriteInternalNamesAllowRepos(t *testing.T) {
+	guardCfg := config.SuspendersGuard{BlockedWords: []string{"internalco"}}
+	g := NewWriteInternalNames(config.Config{
+		Suspenders: guardCfg,
+		Guards: map[string]config.Toggle{
+			WriteInternalNamesID: {AllowRepos: []string{"github.com/example/internal-overlay"}},
+		},
+	})
+
+	// Allowlisted repo: internal names permitted despite a github.com remote,
+	// matched by canonical identity across both SSH and HTTPS remote forms.
+	for _, remote := range []string{
+		"git@github.com:example/internal-overlay.git",
+		"https://github.com/example/internal-overlay.git",
+	} {
+		g.remoteURL = func(string) string { return remote }
+		in := Input{Event: EventWrite, FilePath: "/repo/f.md", Content: "internalco"}
+		if d := g.Check(in); d != nil {
+			t.Errorf("allowlisted repo %q should not deny: %v", remote, d)
+		}
+	}
+
+	// A different github.com repo stays fail-closed.
+	g.remoteURL = func(string) string { return "git@github.com:mad01/dotfiles.git" }
+	if d := g.Check(Input{Event: EventWrite, FilePath: "/repo/f.md", Content: "internalco"}); d == nil {
+		t.Error("non-allowlisted repo should still deny")
+	}
+}
+
 func TestWriteInternalNamesEmptyContent(t *testing.T) {
 	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.SuspendersGuard{BlockedWords: []string{"internalco"}})
 	if d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: ""}); d != nil {
