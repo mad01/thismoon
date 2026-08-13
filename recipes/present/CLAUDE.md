@@ -26,8 +26,9 @@ MCP server).
 - **`hooks.builds.present_chmod_mcp_wrapper`** — keeps `present-mcp-sandbox.sh`
   executable inside the sources cache (the overlay registers the wrapper, not
   the bare binary).
-- **`post_install` cache hook** — `make cache` fetches fonts/JS into
-  `~/.config/present` so pages have zero CDN dependencies. Offline-safe.
+- **`post_apply` cache hook** — `make cache` fetches fonts/JS into
+  `~/.config/present` so pages have zero CDN dependencies. Offline-safe,
+  and cache-assets.sh exits early once the assets exist.
 - **`dirs_mirror.present_skill`** — symlinks `skills/present/` into
   `~/.claude/skills/` so the Claude skill ships with the service.
 - **`dirs_mirror.present_codex_skill`** — symlinks the same skill into

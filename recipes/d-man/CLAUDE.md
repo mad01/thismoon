@@ -14,7 +14,7 @@ ralph merges the recipe with the identity `thismoon/d-man`. The package
 - `wave = 0`: builds `~/code/bin/d-man` (platform foundation, before wave-1
   recipes). Hard `depends_on` from other recipes onto `packages.d_man` is
   allowed — d-man is a foundation per `docs/adr/0006`.
-- **`hooks.post_install`** — prints the one-time daemon registration command
+- **`hooks.post_apply`** — prints the one-time daemon registration command
   until `/Library/LaunchDaemons/d-man.plist` exists. Registration itself is a
   manual sudo step (`SETUP.md`); it must never run unattended.
 - **`hooks.pre_uninstall`** — prints the daemon removal command (also sudo).

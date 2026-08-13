@@ -33,7 +33,9 @@ install_paths = ["~/code/bin/d-man"]
 # unattended in a ralph hook. On a fresh machine the daemon plist won't exist
 # yet, so print the one-time setup reminder until it does (no sudo needed: the
 # plist path is world-readable). Goes quiet once the daemon is registered.
-post_install = [
+# post_apply, not post_install: ralph has no post_install hook — the original
+# key parsed as unknown TOML and this reminder never printed.
+post_apply = [
   "if [ ! -f /Library/LaunchDaemons/d-man.plist ]; then printf '\\n  d-man: daemon not registered yet — one-time setup (needs sudo once):\\n    sudo t-man --daemon add --name d-man -- $HOME/code/bin/d-man serve --config $HOME/.config/d-man/routes.toml\\n  details: recipes/d-man/SETUP.md in the thismoon repo\\n\\n'; fi || true",
 ]
 

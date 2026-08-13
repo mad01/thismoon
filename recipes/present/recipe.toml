@@ -47,10 +47,12 @@ idempotent = true
 
 [hooks]
 # Cache fonts and JS locally so the serve daemon has zero external CDN
-# dependencies. Runs after `make install` puts the binary in place. Offline-
+# dependencies. Runs after every apply (post_apply, not post_install — ralph
+# has no post_install hook, and the original key was silently ignored, so this
+# never ran); cache-assets.sh exits early once the assets exist. Offline-
 # safe: curl failures are swallowed (|| true) so the service still starts;
 # pages degrade to system fonts / no graph until the next successful cache.
-post_install = ["make -C ~/.config/ralph/sources/thismoon/services/present cache || true"]
+post_apply = ["make -C ~/.config/ralph/sources/thismoon/services/present cache || true"]
 
 # Stop and remove the t-man-managed serve agent during cleanup, before the
 # binary it runs is removed (ralph disable thismoon/present && ralph up --enable-cleanup).
