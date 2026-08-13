@@ -13,7 +13,7 @@ the web page are the primary surfaces**; the `deps` CLI mirrors them.
 deps/
   cmd/deps/            - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, version
+    cli/               - cobra: root, serve, scan, check (+--repo), resolve, notify, mcp, config, version
     config/            - discovery config (exclude_repos / exclude_paths), ~/.config/deps/config.toml
     registry/          - reads the catalog registry.yaml → repo roots to scan
     discover/          - Ecosystem interface + Go (`go list -m -json all`) + npm (package-lock) + Python (requirements.txt exact pins) + Swift (Package.resolved); shared walker skips worktrees/nested checkouts
@@ -139,6 +139,11 @@ deps resolve <key>...        # POST /api/resolve - acknowledge advisories by key
 deps notify                  # POST /api/notify - fire pending notifications now
 deps version [-o json]       # bare git sha; -o json prints the full build metadata object
 ```
+
+`deps config` is the exception: it reads the local discovery config directly (no
+serve needed), printing the resolved path with its status (`loaded` / `missing,
+defaults in use` / `parse error: <err>`) and the effective exclude lists as TOML.
+The annotated key reference lives in `deps config --help`.
 
 ## MCP tools
 

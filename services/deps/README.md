@@ -66,6 +66,7 @@ deps check                         # discover + check against OSV, print flagged
 deps check --repo dotfiles         # rescan one repo (by path or basename)
 deps resolve <key> [<key>...]      # acknowledge advisories by key (from `deps check`)
 deps notify                        # fire notifications for anything not yet notified
+deps config                        # print the discovery config in use and its effective values
 ```
 
 The CLI and MCP tools both need `deps serve` running: they're HTTP clients to
@@ -110,6 +111,9 @@ basename. Edits take effect on the next scan without a restart.
 exclude_repos = ["archive-*"]      # skip whole repos
 exclude_paths = ["third_party"]    # skip sub-directories while walking a repo
 ```
+
+`deps config` prints which file was picked up (`--config`, `$DEPS_CONFIG`, or the
+default path) and the values in effect; `deps config --help` documents both keys.
 
 ## Where things live
 
