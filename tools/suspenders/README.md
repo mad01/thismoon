@@ -231,6 +231,12 @@ suspenders doctor                # current directory
 suspenders doctor /path/to/repo
 ```
 
+`suspenders config` prints the config file location and an annotated reference of every setting — which key exempts a repo (`exclude`), which marks a name safe (`guard.allowlist`), and what the per-repo `.suspenders.yaml` can override.
+
+```sh
+suspenders config
+```
+
 ### Print version
 
 ```sh

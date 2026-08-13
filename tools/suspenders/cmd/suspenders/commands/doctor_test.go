@@ -103,3 +103,18 @@ func TestDoctorWithDefaultConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigDocPrintsPathAndReference(t *testing.T) {
+	var b strings.Builder
+	configDocCmd.SetOut(&b)
+	defer configDocCmd.SetOut(nil)
+	if err := configDocCmd.RunE(configDocCmd, nil); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	out := b.String()
+	for _, want := range []string{"config file:", ".suspenders.yaml", "workspace_dirs", "blocked_words", "safe references"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+}
