@@ -38,6 +38,9 @@ worklog show ABC-1234
 
 # Close it out:
 worklog status ABC-1234 done
+
+# Which config file is read, and the settings in effect:
+worklog config
 ```
 
 ## MCP

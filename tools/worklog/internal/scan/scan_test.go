@@ -107,7 +107,7 @@ func TestResolveTicketsFirewall(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			linear, jira, issues := newSet(), newSet(), newSet()
-			extractKeys(Config{}.withDefaults(), tc.text, linear, jira)
+			extractKeys(Config{}.WithDefaults(), tc.text, linear, jira)
 			extractIssues(tc.text, issues)
 			got := resolveTickets(tc.context, linear, jira, issues)
 			if len(got) != len(tc.want) {
@@ -123,7 +123,7 @@ func TestResolveTicketsFirewall(t *testing.T) {
 }
 
 func TestClassifyCwd(t *testing.T) {
-	cfg := Config{}.withDefaults()
+	cfg := Config{}.WithDefaults()
 	cases := []struct {
 		name     string
 		cwd      string
@@ -153,7 +153,7 @@ func TestConfigOverrides(t *testing.T) {
 		LinearPrefixes:      []string{"XYZ"},
 		PersonalPathMarkers: []string{"github.com/someone/"},
 		InternalPathMarkers: []string{"/dayjob/"},
-	}.withDefaults()
+	}.WithDefaults()
 
 	linear, jira := newSet(), newSet()
 	extractKeys(cfg, "XYZ-12 and MAD-34", linear, jira)
@@ -176,7 +176,7 @@ func TestConfigOverrides(t *testing.T) {
 }
 
 func TestCheckoutRootsOverride(t *testing.T) {
-	cfg := Config{CheckoutRoots: []string{"/checkouts/"}}.withDefaults()
+	cfg := Config{CheckoutRoots: []string{"/checkouts/"}}.WithDefaults()
 	if _, i := classifyCwd(cfg, "/Users/x/checkouts/git.internal.example/org/repo"); !i {
 		t.Error("configured checkout root not honored for internal-host detection")
 	}
@@ -186,7 +186,7 @@ func TestCheckoutRootsOverride(t *testing.T) {
 }
 
 func TestRepoName(t *testing.T) {
-	def := Config{}.withDefaults()
+	def := Config{}.WithDefaults()
 	cases := []struct {
 		name string
 		cfg  Config
@@ -197,8 +197,8 @@ func TestRepoName(t *testing.T) {
 		{"workspace checkout", def, "/Users/x/workspace/some-service", "some-service"},
 		{"tmp dir is not a repo", def, "/tmp/scratch", ""},
 		{"empty cwd", def, "", ""},
-		{"configured marker", Config{RepoPathMarkers: []string{"/repos/"}}.withDefaults(), "/Users/x/repos/thing", "thing"},
-		{"configured marker replaces default", Config{RepoPathMarkers: []string{"/repos/"}}.withDefaults(), "/Users/x/code/src/github.com/mad01/dotfiles", ""},
+		{"configured marker", Config{RepoPathMarkers: []string{"/repos/"}}.WithDefaults(), "/Users/x/repos/thing", "thing"},
+		{"configured marker replaces default", Config{RepoPathMarkers: []string{"/repos/"}}.WithDefaults(), "/Users/x/code/src/github.com/mad01/dotfiles", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

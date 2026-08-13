@@ -42,6 +42,7 @@ func root() *cobra.Command {
 		statusCmd(),
 		pathCmd(),
 		scanCmd(),
+		configCmd(),
 		mcpCmd(),
 	)
 	return c

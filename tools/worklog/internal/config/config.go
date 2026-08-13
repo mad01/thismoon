@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -47,11 +48,24 @@ func Path() string {
 // Load reads the config file at Path. Missing or unreadable files and YAML
 // errors all yield the zero Config.
 func Load() Config {
+	c, _ := LoadFile()
+	return c
+}
+
+// LoadFile reads the config file at Path and reports why it could not be used:
+// an fs.ErrNotExist-wrapping error when no file is there, a parse error when
+// the YAML is malformed. The returned Config is usable either way — whatever
+// survived the failure, which for a missing file is the zero value. Callers
+// that must explain themselves (`worklog config`) use this; Load discards the
+// error because worklog runs on defaults regardless.
+func LoadFile() (Config, error) {
 	var c Config
 	data, err := os.ReadFile(Path())
 	if err != nil {
-		return c
+		return c, err
 	}
-	_ = yaml.Unmarshal(data, &c)
-	return c
+	if err := yaml.Unmarshal(data, &c); err != nil {
+		return c, fmt.Errorf("parsing %s: %w", Path(), err)
+	}
+	return c, nil
 }

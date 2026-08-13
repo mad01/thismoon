@@ -66,8 +66,10 @@ var defaultConfig = Config{
 	RepoPathMarkers:     []string{"/code/", "/workspace/"},
 }
 
-// withDefaults fills empty fields from defaultConfig.
-func (c Config) withDefaults() Config {
+// WithDefaults returns c with every empty field filled from the built-in
+// defaults. Scan applies it before scanning; `worklog config` applies it to
+// print the settings actually in effect.
+func (c Config) WithDefaults() Config {
 	if len(c.LinearPrefixes) == 0 {
 		c.LinearPrefixes = defaultConfig.LinearPrefixes
 	}
@@ -213,7 +215,7 @@ func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Sessio
 	if root == "" {
 		root = ProjectsDir()
 	}
-	cfg = cfg.withDefaults()
+	cfg = cfg.WithDefaults()
 	cutoff := now.Add(-since)
 	projects, err := os.ReadDir(root)
 	if err != nil {

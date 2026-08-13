@@ -109,6 +109,7 @@ worklog status <key> active|paused|done
 worklog new <key> [--ticket ID]
 worklog path [key]
 worklog scan --since 14d   # digest ~/.claude/projects/*/*.jsonl as JSON; see How it works
+worklog config     # config file location + the settings in effect; --help carries the annotated reference
 worklog mcp        # MCP stdio server (blocks)
 worklog version [-o json]
 ```
