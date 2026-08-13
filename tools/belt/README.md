@@ -41,14 +41,17 @@ Manual dry-runs, useful for checking what a guard would decide without going thr
 belt check bash "git push origin main"
 belt check bash "bash cleanup.sh"
 belt check write --file README.md --content "mentions something internal"
+belt doctor
 belt version
 ```
+
+`belt doctor` prints the resolved state behind those decisions: which config file loaded (or failed to parse), which guards and hints are enabled with their allow/exclude counts, and the full blocked-name set the write-internal-names guard matches against. When a deny surprises you, `check` shows the verdict and `doctor` shows the config that produced it.
 
 `belt hook <event>` and `belt hint <event>` are the real hook entrypoints (payload on stdin, JSON on stdout); Claude Code invokes them, not the user. `hook` carries deny decisions for guards, `hint` carries `additionalContext` for hints.
 
 ## Configuration
 
-Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.toml`, under `[guards.<id>]` for guards and `[hints.<id>]` for hints. Both default to enabled when the file or entry is missing. `allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo` — for example `[guards.git-push-main]` with `allow_repos = ["github.com/mad01/dotfiles"]` permits direct pushes to the default branch in that repo while every other repo stays fail-closed. Denials and hints are logged to the local events timeline (events.this).
+Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.yaml`, under `guards.<id>` for guards and `hints.<id>` for hints (a legacy `config.toml` in the same directory is still read when no YAML file exists). Both default to enabled when the file or entry is missing. `allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo` — for example `guards.git-push-main` with `allow_repos: [github.com/mad01/dotfiles]` permits direct pushes to the default branch in that repo while every other repo stays fail-closed. Denials and hints are logged to the local events timeline (events.this).
 
 ## Develop
 

@@ -42,14 +42,19 @@ type Hint interface {
 	Check(in Input) *Advice
 }
 
-// ForEvent returns the enabled hints for an event, in fixed order.
-func ForEvent(event string, cfg config.Config) []Hint {
-	all := []Hint{
+// All returns every registered hint, enabled or not, in registration order.
+// Introspection (belt doctor) needs the disabled ones too.
+func All(cfg config.Config) []Hint {
+	return []Hint{
 		NewKeepAssertions(cfg),
 		NewPreferCSL(cfg),
 	}
+}
+
+// ForEvent returns the enabled hints for an event, in fixed order.
+func ForEvent(event string, cfg config.Config) []Hint {
 	var out []Hint
-	for _, h := range all {
+	for _, h := range All(cfg) {
 		if h.Event() == event && cfg.HintEnabled(h.ID()) {
 			out = append(out, h)
 		}

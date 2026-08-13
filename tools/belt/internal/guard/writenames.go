@@ -60,7 +60,7 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 		slices.Contains(g.cfg.Guards[WriteInternalNamesID].AllowRepos, repo) {
 		return nil
 	}
-	names := g.blockedNames()
+	names := BlockedNames(g.cfg.Suspenders)
 	var hits []string
 	for _, name := range names {
 		if matchWord(in.Content, name) {
@@ -79,11 +79,14 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 		in.FilePath, strings.Join(hits, ", "), remote)
 }
 
-// blockedNames merges configured blocked words with workspace-derived repo
-// names, minus the allowlist.
-func (g *WriteInternalNames) blockedNames() []string {
+// BlockedNames resolves the name set the write-internal-names guard matches:
+// configured blocked words plus the top-level directory names under each
+// workspace dir, lowercased and deduplicated, minus safe references
+// (guard.allowlist) and anything shorter than three characters. Exported so
+// `belt doctor` shows exactly the set the guard uses.
+func BlockedNames(s config.SuspendersGuard) []string {
 	allow := map[string]bool{}
-	for _, a := range g.cfg.Suspenders.Allowlist {
+	for _, a := range s.Allowlist {
 		allow[strings.ToLower(a)] = true
 		allow[strings.ToLower(filepath.Base(a))] = true
 	}
@@ -97,10 +100,10 @@ func (g *WriteInternalNames) blockedNames() []string {
 		seen[name] = true
 		names = append(names, name)
 	}
-	for _, w := range g.cfg.Suspenders.BlockedWords {
+	for _, w := range s.BlockedWords {
 		add(w)
 	}
-	for _, dir := range g.cfg.Suspenders.WorkspaceDirs {
+	for _, dir := range s.WorkspaceDirs {
 		for _, entry := range topLevelDirs(expandHome(dir)) {
 			add(entry)
 		}

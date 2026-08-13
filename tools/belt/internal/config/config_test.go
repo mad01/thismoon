@@ -136,14 +136,21 @@ func TestLoadClaudeDenyPatternsMalformed(t *testing.T) {
 	}
 }
 
+// missingYAML returns a config.yaml path that does not exist in dir, so
+// loadToggles exercises its legacy-TOML fallback.
+func missingYAML(dir string) string {
+	return filepath.Join(dir, "config.yaml")
+}
+
 func TestLoadTogglesExtraPatterns(t *testing.T) {
 	content := `
 [guards.script-deny-list]
 enabled = true
 extra_patterns = ["rm -rf", "rm -fr"]
 `
-	path := writeFile(t, t.TempDir(), "config.toml", content)
-	got, _ := loadToggles(path)
+	dir := t.TempDir()
+	path := writeFile(t, dir, "config.toml", content)
+	got, _ := loadToggles(missingYAML(dir), path)
 	patterns := got["script-deny-list"].ExtraPatterns
 	if len(patterns) != 2 || patterns[0] != "rm -rf" || patterns[1] != "rm -fr" {
 		t.Errorf("extra_patterns = %v", patterns)
@@ -155,8 +162,9 @@ func TestLoadTogglesAllowRepos(t *testing.T) {
 [guards.git-push-main]
 allow_repos = ["github.com/mad01/dotfiles"]
 `
-	path := writeFile(t, t.TempDir(), "config.toml", content)
-	got, _ := loadToggles(path)
+	dir := t.TempDir()
+	path := writeFile(t, dir, "config.toml", content)
+	got, _ := loadToggles(missingYAML(dir), path)
 	repos := got["git-push-main"].AllowRepos
 	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
 		t.Errorf("allow_repos = %v", repos)
@@ -171,13 +179,64 @@ enabled = true
 [hints.keep-assertions]
 enabled = false
 `
-	path := writeFile(t, t.TempDir(), "config.toml", content)
-	guards, hints := loadToggles(path)
+	dir := t.TempDir()
+	path := writeFile(t, dir, "config.toml", content)
+	guards, hints := loadToggles(missingYAML(dir), path)
 	if guards["git-push-main"].Enabled == nil || !*guards["git-push-main"].Enabled {
 		t.Error("guards section did not survive adding hints")
 	}
 	if hints["keep-assertions"].Enabled == nil || *hints["keep-assertions"].Enabled {
 		t.Error("hints.keep-assertions should have decoded as disabled")
+	}
+}
+
+func TestLoadTogglesYAML(t *testing.T) {
+	content := `
+guards:
+  git-push-main:
+    enabled: true
+    allow_repos:
+      - github.com/mad01/dotfiles
+  write-internal-names:
+    exclude_paths:
+      - recipes/belt/
+hints:
+  keep-assertions:
+    enabled: false
+`
+	dir := t.TempDir()
+	yamlPath := writeFile(t, dir, "config.yaml", content)
+	guards, hints := loadToggles(yamlPath, missingYAML(dir))
+	repos := guards["git-push-main"].AllowRepos
+	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
+		t.Errorf("allow_repos = %v", repos)
+	}
+	excl := guards["write-internal-names"].ExcludePaths
+	if len(excl) != 1 || excl[0] != "recipes/belt/" {
+		t.Errorf("exclude_paths = %v", excl)
+	}
+	if hints["keep-assertions"].Enabled == nil || *hints["keep-assertions"].Enabled {
+		t.Error("hints.keep-assertions should have decoded as disabled")
+	}
+}
+
+func TestLoadTogglesYAMLWinsOverTOML(t *testing.T) {
+	dir := t.TempDir()
+	yamlPath := writeFile(t, dir, "config.yaml", "guards:\n  git-push-main:\n    enabled: false\n")
+	tomlPath := writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = true\n")
+	guards, _ := loadToggles(yamlPath, tomlPath)
+	if guards["git-push-main"].Enabled == nil || *guards["git-push-main"].Enabled {
+		t.Error("YAML config should win when both files exist")
+	}
+}
+
+func TestLoadTogglesBrokenYAMLYieldsDefaultsNotTOML(t *testing.T) {
+	dir := t.TempDir()
+	yamlPath := writeFile(t, dir, "config.yaml", "guards: [broken")
+	tomlPath := writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = false\n")
+	guards, hints := loadToggles(yamlPath, tomlPath)
+	if guards != nil || hints != nil {
+		t.Errorf("broken YAML must yield defaults, not the stale TOML: guards=%v hints=%v", guards, hints)
 	}
 }
 

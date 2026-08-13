@@ -49,7 +49,7 @@ decision can be inspected without a live Claude Code session.
 Nothing is stored on disk. belt reads four config surfaces, every one
 optional (`config.Load()` never errors; a missing file yields zero values):
 
-- `~/.config/belt/config.toml`: per-guard toggles, exclude paths, extra patterns
+- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns (legacy `config.toml` read when the YAML file is absent)
 - `~/.config/ralph/config.local.toml`: the machine profile for git-push-main
 - `~/.config/suspenders/config.yaml`: the guard section write-internal-names shares with the pre-commit guard
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list
@@ -62,6 +62,7 @@ Persisting them is that service's job, not belt's.
 
 CLI commands: `belt hook bash|write` (the hook entrypoint), `belt check bash
 "<command>"` and `belt check write --file <path> --content <text>` (dry runs),
+`belt doctor` (resolved config, guard/hint state, and the blocked-name set),
 `belt version`.
 
 Hook contract: PreToolUse payload on stdin, deny JSON on stdout, exit 0 in

@@ -12,7 +12,7 @@ Born out of a July 2026 session retrospective: a session pushed straight to mast
 belt/
   cmd/belt/          - entrypoint
   internal/
-    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `version`
+    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `version`
     hook/             - payload parsing + JSON emission for both events
     guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
     hint/             - the hints (prefer-csl, keep-assertions) + csl index lookup, response parsing, session dedupe
@@ -25,7 +25,7 @@ belt/
 
 `internal/hook` parses a PreToolUse payload from stdin, runs the guards registered for that event, and writes a deny decision to stdout. Deny always travels in `hookSpecificOutput.permissionDecision` with exit 0: a hook must not break tool calls on its own bugs, so the deny is data, not a process exit code. Guards for an event run in registration order and the first denial wins; every deny reason is prefixed `belt[<guard-id>]:` so a block is always attributable to the guard that fired.
 
-`internal/config` reads four surfaces so belt's guards never drift from the systems they overlap with: `~/.config/belt/config.toml` (per-guard toggles, exclude paths, extra patterns), `~/.config/ralph/config.local.toml` (the machine profile), `~/.config/suspenders/config.yaml` (the internal-name guard section, shared source of truth with the pre-commit guard), and the `permissions.deny` Bash entries of `~/.claude/settings.json` + `settings.local.json` (shared source of truth with the permission system for the script guard). Every file is optional: `config.Load()` never errors, and a missing file yields zero values.
+`internal/config` reads four surfaces so belt's guards never drift from the systems they overlap with: `~/.config/belt/config.yaml` (per-guard toggles, exclude paths, extra patterns; a legacy `config.toml` beside it is read only when the YAML file is absent, and a present-but-broken file of either format yields defaults rather than the other file), `~/.config/ralph/config.local.toml` (the machine profile), `~/.config/suspenders/config.yaml` (the internal-name guard section, shared source of truth with the pre-commit guard), and the `permissions.deny` Bash entries of `~/.claude/settings.json` + `settings.local.json` (shared source of truth with the permission system for the script guard). Every file is optional: `config.Load()` never errors, and a missing file yields zero values.
 
 ### Guards
 
@@ -35,7 +35,7 @@ belt/
 | `script-deny-list` | `bash` | Deep deny inspection: apply the Bash deny list inside scripts, closing the "write it to a script, then run the script" bypass. Scans executed/sourced script files (`bash x.sh`, `python x.py`, `./x.sh`, `source x.sh`, relative paths resolved against the payload cwd), `-c` strings, and heredocs piped into an interpreter. Patterns = `permissions.deny` `Bash(...)` entries read live from `~/.claude/settings.json` + `settings.local.json`, plus `extra_patterns` in the belt config (carries `rm -rf`/`rm -fr`, since settings only lists `rm` under "ask"). Matching is per non-comment line, whole-word, whitespace-normalized; it catches shell lines and Python `subprocess`/`os.system` strings alike. Unreadable files and `python -m` allow; `exclude_paths` skips trusted script dirs. |
 | `write-internal-names` | `write` | Deny Write/Edit content that mentions internal names when the target file is in a github.com repo. Names = suspenders `guard.blocked_words` + top-level dir names under `guard.workspace_dirs`, minus `guard.allowlist`. Only github.com remotes count as public; other git hosts and non-repo paths are exempt. Per-guard `exclude_paths` (substring match) skips paths that deliberately carry internal references; those live in the consuming repo's belt config overlay, not here (see docs/adr/0006). |
 
-Adding a guard: implement the `Guard` interface in `internal/guard/`, register it in `ForEvent`, and add a toggle to the consuming repo's belt config overlay (`~/.config/belt/config.toml`). Only a guard that needs a new tool matcher also needs a `hooks.PreToolUse` entry in the consuming repo's Claude settings recipe.
+Adding a guard: implement the `Guard` interface in `internal/guard/`, register it in `All`, and add a toggle to the consuming repo's belt config overlay (`~/.config/belt/config.yaml`). Only a guard that needs a new tool matcher also needs a `hooks.PreToolUse` entry in the consuming repo's Claude settings recipe.
 
 ### Hints
 
@@ -62,6 +62,7 @@ belt hook bash|write     # PreToolUse entrypoint: payload on stdin, deny JSON on
 belt hint search|bash    # PostToolUse entrypoint: payload on stdin, additionalContext JSON on stdout
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
+belt doctor              # resolved config: surfaces loaded, guard/hint state, blocked names
 belt version
 ```
 
@@ -79,5 +80,5 @@ belt version
 ## See also
 
 - Recipe: `recipes/belt/recipe.toml` (this repo: build/install only, wave 0, builds before the consuming repo's claude recipe registers the hooks)
-- Config overlay + hook registration: the consuming repo's companion recipe carries `~/.config/belt/config.toml` (with its internal-name `exclude_paths`) and the `hooks.PreToolUse` settings entries (machine-private wiring, see docs/adr/0006)
+- Config overlay + hook registration: the consuming repo's companion recipe carries `~/.config/belt/config.yaml` (with its internal-name `exclude_paths`) and the `hooks.PreToolUse` settings entries (machine-private wiring, see docs/adr/0006)
 - Pairs with `suspenders` (git pre-commit guard layer, same internal-name source of truth)

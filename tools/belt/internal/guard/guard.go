@@ -45,15 +45,21 @@ type Guard interface {
 	Check(in Input) *Denial
 }
 
-// ForEvent returns the enabled guards for an event, in fixed order.
-func ForEvent(event string, cfg config.Config) []Guard {
-	all := []Guard{
+// All returns every registered guard, enabled or not, in registration order.
+// Introspection (belt doctor) needs the disabled ones too: a guard filtered
+// out of ForEvent looks identical to one that never existed.
+func All(cfg config.Config) []Guard {
+	return []Guard{
 		NewGitPushMain(cfg),
 		NewScriptDenyList(cfg),
 		NewWriteInternalNames(cfg),
 	}
+}
+
+// ForEvent returns the enabled guards for an event, in fixed order.
+func ForEvent(event string, cfg config.Config) []Guard {
 	var out []Guard
-	for _, g := range all {
+	for _, g := range All(cfg) {
 		if g.Event() == event && cfg.GuardEnabled(g.ID()) {
 			out = append(out, g)
 		}
