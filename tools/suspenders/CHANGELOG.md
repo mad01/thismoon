@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/suspenders/v0.3.3...suspenders/v0.4.0) (2026-08-13)
+
+
+### Features
+
+* **suspenders:** add config reference command ([00bd004](https://github.com/mad01/thismoon/commit/00bd0041929c3cf8f0205b3c5f51fd9eace02d35))
+* **suspenders:** add doctor command ([ded36b6](https://github.com/mad01/thismoon/commit/ded36b6c3f237ee6f1ef3109dd4d865b82915c16))
+
 ## [0.3.3](https://github.com/mad01/thismoon/compare/suspenders/v0.3.2...suspenders/v0.3.3) (2026-07-18)
 
 

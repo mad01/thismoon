@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/belt/v0.4.0...belt/v0.5.0) (2026-08-13)
+
+
+### Features
+
+* **belt:** add config reference command ([364768f](https://github.com/mad01/thismoon/commit/364768f0f91481527ea2310d46c3632eb568de67))
+* **belt:** add doctor command and YAML config ([9989e2b](https://github.com/mad01/thismoon/commit/9989e2b0ac4d34435b9ed479937d649d6568b4ef))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/belt/v0.3.0...belt/v0.4.0) (2026-08-11)
 
 
