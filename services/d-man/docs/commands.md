@@ -108,6 +108,37 @@ suffix: this
 
 A `cname` route shows the backend it resolves to and the alias target.
 
+## config
+
+Print which routes file d-man loaded and the effective configuration it
+produced: the file's own values with the built-in defaults applied.
+
+```bash
+d-man config
+```
+
+```
+config file: /Users/you/.config/d-man/routes.toml (loaded)
+
+suffix = "this"
+games_dir = ""
+blocklist = []
+
+[[route]]
+  name = "present"
+  port = 7423
+  target = "127.0.0.1"
+  cname = ""
+```
+
+The status in the header is `loaded`, `missing, defaults in use`, or
+`parse error: <err>`. A broken file doesn't fail the command: it names the
+error and prints the defaults d-man falls back to.
+
+`d-man config --help` carries an annotated example documenting every key,
+including the ordering rule that `blocklist` must appear before the first
+`[[route]]` table.
+
 ## version
 
 Print the git commit the binary was built from.

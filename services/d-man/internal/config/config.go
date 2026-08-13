@@ -57,6 +57,14 @@ func Load(path string) (*Config, error) {
 	return &c, nil
 }
 
+// Default returns the config d-man runs with when no routes file exists: the
+// built-in defaults, no routes, no block list.
+func Default() *Config {
+	c := &Config{}
+	c.applyDefaults()
+	return c
+}
+
 func (c *Config) applyDefaults() {
 	if c.Suffix == "" {
 		c.Suffix = DefaultSuffix

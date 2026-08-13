@@ -13,12 +13,14 @@ d-man/
   cmd/d-man/
     main.go              entrypoint, delegates to internal/cli.Execute
   internal/
-    cli/                 cobra command tree: root, serve, sync, list, version, ca
+    cli/                 cobra command tree: root, serve, sync, list, config, version, ca
       root.go              flags (--config/DMAN_CONFIG, --hosts-file)
       serve.go             the daemon: reload loop, fsnotify watch, binary self-watch,
                            :80 proxy + :443 block-page TLS listener
       sync.go              one-shot managed-block write
       list.go              print resolved host -> backend routes
+      config.go            print the resolved routes file + the effective config
+                           as TOML; annotated key reference lives in --help
       version.go           build metadata from the shared buildinfo package;
                            -o json convention shared with sibling tools
       ca.go                install/uninstall/path for the block-page CA (system keychain)
@@ -123,6 +125,7 @@ go test ./...
 | `sudo d-man sync` | Write the managed `/etc/hosts` block once and exit (manual fallback). |
 | `sudo d-man ca install` | Generate the block-page CA (if absent) and trust it in the system keychain; `uninstall`/`path` too. |
 | `d-man list` | Print resolved host -> backend routes. |
+| `d-man config` | Print which routes file was loaded (`loaded` / `missing` / `parse error`) and the effective config as TOML; `--help` carries the annotated key reference. |
 | `d-man version [-o json]` | Print the build sha; `-o json` prints the full build metadata object (`version`, `commit`, `tag`, `build_time`). |
 
 ## Gotchas

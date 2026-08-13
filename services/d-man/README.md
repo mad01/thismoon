@@ -66,6 +66,7 @@ Other subcommands:
 
 ```bash
 d-man list                 # print resolved host -> backend routes
+d-man config               # print the routes file in use and the effective config
 sudo d-man sync             # write the /etc/hosts block once (manual fallback)
 sudo d-man ca install       # trust the local block-page CA (one-time, see below)
 d-man version [-o json]    # build sha; -o json adds commit, tag, build time
