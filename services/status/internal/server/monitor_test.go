@@ -200,6 +200,51 @@ func TestDriftDetection(t *testing.T) {
 	}
 }
 
+// TestBuildMetaFromVersionEndpoint checks the dashboard picks up the tag and
+// build time a service reports alongside its version.
+func TestBuildMetaFromVersionEndpoint(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/version" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"version":"abc1234","commit":"abc1234def","tag":"fake/v1.2.3",`+
+				`"build_time":"2026-08-13T09:00:00Z"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	m := newTestMonitor(t, ts)
+	m.cycle(context.Background())
+	s := m.Snapshot().Services[0]
+	if s.Version != "abc1234" || s.Tag != "fake/v1.2.3" || s.BuildTime != "2026-08-13T09:00:00Z" {
+		t.Fatalf("version=%q tag=%q build_time=%q, want abc1234/fake/v1.2.3/2026-08-13T09:00:00Z",
+			s.Version, s.Tag, s.BuildTime)
+	}
+}
+
+// TestBuildMetaBestEffort pins the "" semantics: a service still serving the
+// older bare {"version":"..."} payload reports its version and leaves the tag
+// and build time empty, so the dashboard renders neither.
+func TestBuildMetaBestEffort(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/version" {
+			fmt.Fprint(w, `{"version":"abc1234"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	m := newTestMonitor(t, ts)
+	m.cycle(context.Background())
+	s := m.Snapshot().Services[0]
+	if s.Version != "abc1234" || s.Tag != "" || s.BuildTime != "" {
+		t.Fatalf("version=%q tag=%q build_time=%q, want abc1234 and two empties",
+			s.Version, s.Tag, s.BuildTime)
+	}
+}
+
 // TestNoDriftWithoutInstalledVersion pins the guard: a binary that can't
 // report a version (missing, not a fleet tool) never counts as drift.
 func TestNoDriftWithoutInstalledVersion(t *testing.T) {

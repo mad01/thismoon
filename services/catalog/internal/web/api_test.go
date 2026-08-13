@@ -10,8 +10,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/catalog/internal/catalog"
 )
+
+// testInfo is the build metadata the test servers report on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "catalog/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 func fixtureCatalog() *catalog.Catalog {
 	return catalog.NewCatalog([]catalog.Entity{
@@ -120,7 +129,7 @@ spec:
 	if err := os.WriteFile(registry, []byte("sources:\n  - path: "+repo+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(context.Background(), registry)
+	s, err := New(context.Background(), registry, testInfo)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -246,7 +255,7 @@ func TestWithinRoots(t *testing.T) {
 func TestNewMissingRegistry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "registry.yaml")
 
-	srv, err := New(context.Background(), path)
+	srv, err := New(context.Background(), path, testInfo)
 	if err != nil {
 		t.Fatalf("New with missing registry: %v, want nil error", err)
 	}
@@ -268,7 +277,43 @@ func TestNewMalformedRegistry(t *testing.T) {
 	if err := os.WriteFile(path, []byte("sources: ["), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(context.Background(), path); err == nil {
+	if _, err := New(context.Background(), path, testInfo); err == nil {
 		t.Fatal("New with malformed registry: nil error, want parse error")
+	}
+}
+
+// TestVersionEndpoint pins the cross-tool build metadata contract: the four
+// keys, the injected values, and the headers ralph and status probe with.
+func TestVersionEndpoint(t *testing.T) {
+	s := newServerWithCatalog(fixtureCatalog(), nil)
+	s.info = testInfo
+
+	rec := doGet(t, s.Handler(), "/version")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal %q: %v", rec.Body.String(), err)
+	}
+	want := map[string]string{
+		"version":    testInfo.Version,
+		"commit":     testInfo.Commit,
+		"tag":        testInfo.Tag,
+		"build_time": testInfo.BuildTime,
+	}
+	if len(got) != len(want) {
+		t.Errorf("version body = %q, want exactly the keys %v", rec.Body.String(), want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("version[%q] = %q, want %q", k, got[k], v)
+		}
 	}
 }

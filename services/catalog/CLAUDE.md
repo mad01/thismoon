@@ -167,7 +167,7 @@ inside a registered source root.
 ## Build / install / test
 
 ```sh
-make build    # go build; ldflags-injected git sha into internal/cli.Version
+make build    # go build; build metadata via ldflags, from ../../buildinfo.mk
 make install  # build + cp to ~/code/bin/catalog + codesign ("mad01 Local Signing" or adhoc)
 make test     # go test -timeout 30s ./...
 make lint     # golangci-lint run ./...
@@ -192,7 +192,8 @@ make tidy     # go mod tidy
   on bad JSON or missing `dir`, 403 if `dir` is outside every registered source
   root, 201 with `{"path": ..., "name": ...}` on success
 - `GET  /healthz`: `200 ok` (plain text)
-- `GET  /version`: `{"version":"<catalog git sha>"}`
+- `GET  /version`: the four-key build metadata object (`version`, `commit`,
+  `tag`, `build_time`)
 - `GET  /assets/`: embedded static assets
 - `GET  /webkit/*`: shared chrome, mounted via `webkit.Mount(mux)`
 
@@ -203,7 +204,7 @@ CLI surface beyond `web`:
 ```sh
 catalog list [--owner O] [--system S] [--kind K] [--json] [query]
 catalog validate [path...]
-catalog version
+catalog version [-o json]
 ```
 
 - `catalog list`: prints Systems/Components as a table (or `--json`). Filter
@@ -213,7 +214,10 @@ catalog version
   then enforces global name uniqueness (`CheckUnique`). No arguments validates
   the whole registry; one or more directory/file paths validates just those
   (the mode you'd use to check specific repos before merging).
-- `catalog version`: prints the ldflags-injected build version.
+- `catalog version`: prints the bare version token (the git commit it was built
+  from), the token sibling tools also print so ralph and status can probe any of
+  them for the build they are running; `-o json` prints the full build metadata
+  object.
 
 ## Shared UI: webkit
 
@@ -279,8 +283,10 @@ their click handlers by `id`. `webkit.js` injects the full control set
 
 ### Version check
 
-`GET /version` → `{"version":"<catalog git sha>"}`, the catalog build version
-(ldflags-injected).
+`GET /version` returns the four-key build metadata object (`version`, `commit`,
+`tag`, `build_time`, every key present and `""` when unknown) from
+`github.com/mad01/thismoon/buildinfo`, the consumer contract every
+webkit-mounted tool implements.
 
 ## Gotchas
 

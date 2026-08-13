@@ -109,6 +109,17 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 `rules explain` prints the rule ID, name, category, severity, summary, rationale, before/after examples, and reference link.
 
+### version
+
+Report which build is installed.
+
+```sh
+humanizer version              # bare version token
+humanizer version -o json      # version, commit, tag, build_time
+```
+
+Plain output is the version and nothing else, so a probe can read the line as-is. The JSON form is the four-key build metadata object, with each key present and `""` for anything the build did not stamp.
+
 ## MCP
 
 ```sh

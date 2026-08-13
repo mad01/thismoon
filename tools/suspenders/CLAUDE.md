@@ -15,15 +15,14 @@ cmd/suspenders/
     history.go               suspenders history: scan/clean across full git history
                              clean flags: --replace, --replace-file, --replace-map,
                              --redact-file, --dry-run, --yes
-    doctor.go                suspenders doctor: guard config in effect + derived
-                             blocked names for a repo (never persisted, derived per run)
+    doctor.go                suspenders doctor: installed build + guard config in effect
+                             + derived blocked names for a repo (never persisted,
+                             derived per run)
     configdoc.go             suspenders config: config path + annotated setting reference
-    version.go               suspenders version
+    version.go               suspenders version: bare token, or -o json for the
+                             four-key build metadata object (shared buildinfo package)
 
 internal/
-  cli/
-    version.go               Version var, the -ldflags target (the release pipeline
-                             injects <component>/internal/cli.Version monorepo-wide)
   config/
     config.go                Config struct (YAML), Load from XDG path, ExpandPath
                              Types: ScanConfig, GuardConfig, HistoryConfig, ExternalHook, HooksConfig
@@ -101,7 +100,7 @@ make lint                # run golangci-lint
 make fmt                 # format source with golines & gofumpt
 ```
 
-Version is embedded via `-ldflags` from the thismoon monorepo's short HEAD commit (`git rev-parse --short HEAD`), read by `suspenders version`.
+Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/thismoon/buildinfo` package by `buildinfo.mk` (short HEAD commit, full commit, the newest `suspenders/v*` tag, and the build time), read by `suspenders version` and printed at the top of `suspenders doctor`.
 
 ## Commands
 
@@ -112,9 +111,9 @@ Version is embedded via `-ldflags` from the thismoon monorepo's short HEAD commi
 | `hook run <event>` | Run the hook pipeline for one event directly (what generated hooks call) |
 | `history scan` | Walk full git history for findings. `--branch`, `--fail-on-findings` |
 | `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
-| `doctor [path]` | Explain the guard for a repo: config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
+| `doctor [path]` | Explain the guard for a repo: the installed build, config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
 | `config` | Print the config file location and an annotated reference of every setting |
-| `version` | Print the build version |
+| `version` | Print the bare version token; `-o json` prints the four-key build metadata object |
 
 ## Configuration
 
@@ -164,6 +163,7 @@ hooks:
 
 ## Gotchas
 
+- **`suspenders version` prints a bare token now.** It used to print `suspenders <sha>`, two tokens, which broke every probe that reads the line as a version. Plain output is the version and nothing else; `-o json` carries the identifying detail (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown). Anything parsing the old two-token line needs updating.
 - **Keep the fixture-bearing paths in this component real.** The monorepo root `.suspenders.yaml` suppresses scan findings under `tools/suspenders/` (`*_test.go`, `rules.go`, `tests/integration/**`, `README.md`). These are secret-shaped fixtures by design; don't replace them with dummy values, or the tests stop exercising real detection.
 
 ## See also

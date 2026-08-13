@@ -1,13 +1,13 @@
 BINARY_NAME := csl
 CMD_PATH := ./cmd/csl
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+COMPONENT := csl
+include ../../buildinfo.mk
 
 .PHONY: build test install clean fmt lint
 
 build:
-	@go build \
-		-ldflags "-X github.com/mad01/thismoon/services/csl/internal/cli.Version=$(GIT_COMMIT)" \
-		-o $(BINARY_NAME) $(CMD_PATH)
+	@go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BINARY_NAME) $(CMD_PATH)
 
 test:
 	@go test -timeout 120s ./...

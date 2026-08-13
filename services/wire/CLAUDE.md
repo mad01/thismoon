@@ -15,7 +15,7 @@ surface**; the `wire` CLI mirrors them. The web page at `http://wire.this/` is a
 wire/
   cmd/wire/            - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, mcp, manage (open/list/post/read/follow/close), version (Version via ldflags)
+    cli/               - cobra: root, serve, mcp, manage (open/list/post/read/follow/close), version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     ref/               - the connection string: mint it (server) and parse it (client)
     store/             - Channel/Message model + pure helpers (channel.go), the
@@ -214,7 +214,7 @@ transcript is the point.
 ## Build / install / test
 
 ```bash
-make build    # ./wire binary (Version via ldflags)
+make build    # ./wire binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/wire + adhoc codesign
 make test     # go test ./...  (hermetic: t.TempDir, never touches the real store)
 ```
@@ -235,7 +235,7 @@ Owned by `wire serve`:
 - `POST /api/channels/{ref}/messages`        : body `{from, to?, body, kind?, reply_to?, reply_needed?}` → the message
 - `GET  /api/channels/{ref}/stream`          : `?since=` → SSE; `message` events carry the seq as the SSE id, honors `Last-Event-ID`
 - `GET  /healthz`                            : 204
-- `GET  /version`                            → `{"version":"<sha>"}`
+- `GET  /version`                            → the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`                            : shared chrome (asset drift checks use `GET /webkit/version`)
 
 `{ref}` is a channel id or name throughout — the client reduces a connection
@@ -335,7 +335,10 @@ make install && t-man restart wire
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).
 - **Version probe convention.** `GET /version` and `wire version -o json` both
-  return `{"version":"<sha>"}` so ralph can check which build is live.
+  return the shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is live.
+  Plain `wire version` stays a bare token — status parses it as one.
 
 ## See also
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/events/internal/server"
 	"github.com/mad01/thismoon/services/events/internal/store"
 )
@@ -41,7 +42,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	handler := server.New(st, Version).Handler()
+	handler := server.New(st, buildinfo.Get()).Handler()
 	log.Printf(
 		"events: serving %s on http://localhost:%d (per-source cap %d, global cap %d)",
 		flagWorkdir,

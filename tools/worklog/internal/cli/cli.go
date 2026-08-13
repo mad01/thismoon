@@ -14,14 +14,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/tools/worklog/internal/config"
 	"github.com/mad01/thismoon/tools/worklog/internal/mcpserver"
 	"github.com/mad01/thismoon/tools/worklog/internal/scan"
 	"github.com/mad01/thismoon/tools/worklog/internal/store"
 )
-
-// Version is set via -ldflags at build time.
-var Version = "dev"
 
 // Execute runs the root command.
 func Execute() error { return root().Execute() }
@@ -30,11 +28,12 @@ func root() *cobra.Command {
 	c := &cobra.Command{
 		Use:           "worklog",
 		Short:         "Resumable, ticket/topic-keyed cross-session work state",
-		Version:       Version,
+		Version:       buildinfo.Get().Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	c.AddCommand(
+		versionCmd(),
 		newCmd(),
 		checkpointCmd(),
 		listCmd(),
@@ -90,7 +89,8 @@ func mcpCmd() *cobra.Command {
 		Short: "Start the worklog MCP stdio server for Claude Code",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return mcpserver.New(Version).Run(context.Background(), &mcp.StdioTransport{})
+			return mcpserver.New(buildinfo.Get().Version).
+				Run(context.Background(), &mcp.StdioTransport{})
 		},
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/deps/internal/config"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
 	"github.com/mad01/thismoon/services/deps/internal/notify"
@@ -89,7 +90,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	defer cancel()
 	go runScanLoop(ctx, st, engine, flagInterval)
 
-	handler := server.New(st, engine, Version).Handler()
+	handler := server.New(st, engine, buildinfo.Get()).Handler()
 	log.Printf(
 		"deps: serving %s on http://localhost:%d (full scan when older than %s)",
 		flagWorkdir, flagPort, flagInterval,

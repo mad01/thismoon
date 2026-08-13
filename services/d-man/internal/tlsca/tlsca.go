@@ -32,8 +32,8 @@ const (
 	caKeyFile  = "ca-key.pem"
 
 	caValidity   = 10 * 365 * 24 * time.Hour // ~10 years
-	leafValidity = 365 * 24 * time.Hour       // ~1 year
-	backdate     = time.Hour                   // tolerate small clock skew
+	leafValidity = 365 * 24 * time.Hour      // ~1 year
+	backdate     = time.Hour                 // tolerate small clock skew
 )
 
 // CA holds the CA certificate and key and caches minted leaves per SNI.

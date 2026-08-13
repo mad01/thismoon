@@ -15,7 +15,7 @@ launchd job.
 
 ```
 cmd/status/          entrypoint, delegates to internal/cli
-internal/cli/        Cobra commands: serve, version; flag and env defaults
+internal/cli/        Cobra commands: serve (root.go), version (version.go); flag and env defaults
 internal/discover/   launchd plist scan + d-man routes.toml link mapping
 internal/check/      HTTP and launchctl PID probes, on-disk version lookup
 internal/crashloop/  restart-counter tracker (window, threshold, cooldown)
@@ -42,7 +42,11 @@ recorded into the history store, pruned at 90 days, and saved.
 Still inside the cycle, `refreshMeta` fetches `/version` and
 `/webkit/version` from up HTTP services and runs the installed executable's
 own `version` command, normally every 10 minutes but every cycle while the
-two shas disagree. `countDrift` requires the mismatch to hold for two
+two shas disagree. `/version` carries the shared build metadata object, so
+the same fetch also picks up the running build's release tag and build time,
+which the dashboard shows beside the sha; anything the payload omits stays
+empty and renders as nothing. Only the bare version token is compared for
+drift. `countDrift` requires the mismatch to hold for two
 consecutive cycles before `Drift` flags, so a mismatch seen mid-install
 clears instead of alerting. The cycle then builds a sorted `Snapshot` (routed
 web services first, then other HTTP services, then PID-checked jobs) and
@@ -68,7 +72,7 @@ does not survive a restart, only the day buckets do.
 
 Web: `GET /` (dashboard shell, no-store), `GET /app.js`, `GET /api/status`
 (full snapshot as JSON), `GET /healthz` (204), `GET /version`
-(ldflags-injected sha), and `/webkit/*`.
+(the four-key build metadata object), and `/webkit/*`.
 
 CLI: `status serve` with `--port` (7426, env `STATUS_PORT`), `--interval`,
 `--workdir` (env `STATUS_WORKDIR`), `--routes`, `--restart-window`, and

@@ -8,7 +8,7 @@ Go CLI + MCP server. Detects AI-writing patterns by shelling out to `vale` again
 humanizer/
   cmd/humanizer/     - entrypoint (delegates to internal/cli)
   internal/
-    cli/             - cobra command tree (root, detect, profile, rules, mcp); version injected via ldflags
+    cli/             - cobra command tree (root, detect, profile, rules, mcp, version); build metadata from the shared buildinfo package
     mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_status.go, tools_voice.go)
     rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
     voice/           - voice profiler, statistical detector, and diff logic (profile.go, statistical.go, diff.go)
@@ -64,6 +64,7 @@ The test suite includes metadata validation for every YAML header and concurrent
 - `humanizer rules list`: list every bundled rule (ID, category, default severity, summary). Flags: `--category` (`content`|`language`|`style`|`communication`), `--json`.
 - `humanizer rules explain <rule_id>`: print full metadata for one rule: ID, name, category, severity, summary, rationale, before/after examples, reference link.
 - `humanizer mcp`: start the MCP stdio server. An MCP host such as Claude Code launches this; don't run it by hand in normal use. Register once with `claude mcp add --scope user humanizer -- humanizer mcp`.
+- `humanizer version`: print the bare version token of the running build. Flags: `-o json` for the four-key build metadata object (`version`, `commit`, `tag`, `build_time`).
 
 ## MCP tools
 
@@ -82,6 +83,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 ## Gotchas
 
 - **Wave 0 builder.** Must build before the consuming repo's MCP registration recipe (wave 1) registers it.
+- **Version probe convention.** `humanizer version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, injected by `buildinfo.mk` at link time. Plain `humanizer version` stays a bare token — ralph and status parse it as one. The same `buildinfo.Get().Version` is what the MCP initialize handshake advertises as `serverInfo.version`.
 - **Codesign required for MCP.** macOS 15+ `taskgated` kills adhoc-signed binaries whose provenance xattr no longer matches. `make install` handles this; manual copies need `make resign BIN=~/code/bin/humanizer`.
 - **Two detection paths, run both.** Vale span rules flag a matched substring with line/column; the statistical detector flags whole-sample properties with no span. Neither alone gives full coverage.
 - **Vale rule gotcha:** `existence`/`occurrence` rules wrap each token in `\b…\b` by default, so a pattern that begins or ends with a non-word char (e.g. a leading `,` plus trailing `\.`, or a trailing `?`/`#`) never matches. Set `nonword: true` on those rules. Single-quoted YAML scalars must escape inner apostrophes as `''`; plain scalars can use `'?` directly.

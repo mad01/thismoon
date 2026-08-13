@@ -39,15 +39,35 @@ Each released component gets, on its GitHub Release:
 
 - `<name>_vX.Y.Z_darwin_arm64.tar.gz`: the binary, built natively on a
   macOS arm64 runner with `-trimpath` (`CGO_ENABLED=0` for everything
-  except csl, which needs cgo for its tree-sitter grammars), version
-  embedded via ldflags (`internal/cli.Version` is set to
-  `vX.Y.Z-<short-sha>`)
+  except csl, which needs cgo for its tree-sitter grammars), build metadata
+  embedded via ldflags
 - `checksums.txt`: sha256 sums for every tarball
 - `checksums.txt.bundle`: a cosign keyless signature over `checksums.txt`,
   signed with the workflow's GitHub OIDC identity
 
 Artifacts target darwin/arm64 only; the platform is macOS-focused and the
 linux targets carried no users (`docs/adr/0007`).
+
+## Build metadata
+
+The ldflags set four variables in the shared
+`github.com/mad01/thismoon/buildinfo` package, the same four every local
+`make build` injects through `buildinfo.mk`:
+
+| Variable | Release build |
+|---|---|
+| `Version` | `vX.Y.Z-<short-sha>` (a local build sets the short sha alone) |
+| `Commit` | the full sha the tag points at |
+| `Tag` | the component tag, `<name>/vX.Y.Z` |
+| `BuildTime` | UTC, RFC 3339 |
+
+A released binary reports all four with `<name> version -o json`, and services
+serve the same object from `GET /version` — so you can ask a downloaded or
+deployed binary which release it came from. Plain `<name> version` stays the
+bare version token that status and ralph parse.
+
+Swift components take no ldflags: release-please writes the version into their
+source, and the workflow builds them with `swift build`.
 
 ## Verifying a release
 

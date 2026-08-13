@@ -2,13 +2,13 @@ BIN      ?= deps
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/services/deps/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := deps
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/deps
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/deps
 
 install: build
 	mkdir -p $(PREFIX)

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/present/internal/notify"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/mad01/thismoon/webkit"
@@ -43,13 +44,13 @@ var indexJS []byte
 type Server struct {
 	store   *store.Store
 	workdir string
-	version string
+	info    buildinfo.Info
 }
 
 // New returns a Server backed by the given store and template working directory.
-// version is present's own build version, reported on GET /version.
-func New(st *store.Store, workdir, version string) *Server {
-	return &Server{store: st, workdir: workdir, version: version}
+// info is present's own build metadata, reported on GET /version.
+func New(st *store.Store, workdir string, info buildinfo.Info) *Server {
+	return &Server{store: st, workdir: workdir, info: info}
 }
 
 // Handler builds the HTTP routes, wrapped in request logging.
@@ -63,7 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /app.js", handleAppJS)
 	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
 	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
-	mux.HandleFunc("GET /version", s.handleServiceVersion)
+	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", s.assetsHandler())
 	webkit.Mount(mux)
 	return logRequests(mux)
@@ -346,14 +347,6 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, "%d", p.Version)
-}
-
-// handleServiceVersion reports present's own build version and the webkit
-// module version it ships, matching the cross-tool /version JSON contract.
-func (s *Server) handleServiceVersion(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
 }
 
 func (s *Server) assetsHandler() http.Handler {

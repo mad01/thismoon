@@ -12,7 +12,7 @@ import (
 func TestGroupMatches(t *testing.T) {
 	repos := map[string]finder.Repo{
 		"mad01/thismoon": {Name: "mad01/thismoon", Host: "github.com"},
-		"acme/widget":             {Name: "acme/widget", Host: "git.example.com"},
+		"acme/widget":    {Name: "acme/widget", Host: "git.example.com"},
 	}
 	matches := []search.Match{
 		{Repo: "mad01/thismoon", File: "a.go", Line: 10, Text: "x"},
@@ -55,7 +55,7 @@ func TestGroupMatches(t *testing.T) {
 func TestGroupMatchesLocalPath(t *testing.T) {
 	repos := map[string]finder.Repo{
 		"mad01/thismoon": {Name: "mad01/thismoon", Path: "/home/u/code/csl", Host: "github.com"},
-		"acme/widget":             {Name: "acme/widget" /* no Path */, Host: "git.example.com"},
+		"acme/widget":    {Name: "acme/widget" /* no Path */, Host: "git.example.com"},
 	}
 	matches := []search.Match{
 		{Repo: "mad01/thismoon", File: "internal/web/api.go", Line: 1},

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/wire/internal/server"
 	"github.com/mad01/thismoon/services/wire/internal/store"
 )
@@ -36,7 +37,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	handler := server.New(st, Version, flagPort).Handler()
+	handler := server.New(st, buildinfo.Get(), flagPort).Handler()
 	log.Printf("wire: serving %s on http://localhost:%d", flagWorkdir, flagPort)
 	log.Printf(
 		"wire: register as a background service with: t-man add --name wire -- wire serve --port %d",

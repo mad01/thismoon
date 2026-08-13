@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
 	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
@@ -18,13 +19,14 @@ func init() {
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor [path]",
-	Short: "Explain the guard: the config in effect and the blocked names it derives",
-	Long: `Show why the guard decides what it decides for a repo: the global config,
-any per-repo overrides, whether the repo is guard-exempt, and the full
-blocked-name set derived from the workspace dirs and blocked words. The list
-is derived fresh on every run, exactly as a pre-commit check derives it —
-nothing here is persisted (see why.md: a file enumerating the names would
-itself be the leak the guard prevents). Defaults to the current directory.`,
+	Short: "Explain the guard: the build, the config in effect, and the blocked names it derives",
+	Long: `Show why the guard decides what it decides for a repo: which build is
+installed, the global config, any per-repo overrides, whether the repo is
+guard-exempt, and the full blocked-name set derived from the workspace dirs
+and blocked words. The list is derived fresh on every run, exactly as a
+pre-commit check derives it — nothing here is persisted (see why.md: a file
+enumerating the names would itself be the leak the guard prevents). Defaults
+to the current directory.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runDoctor,
 }
@@ -47,6 +49,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	out := cmd.OutOrStdout()
+	printBuild(out)
 	fmt.Fprintf(out, "config: %s\n", config.Path())
 	fmt.Fprintf(out, "scan:  %s\n", onOff(cfg.Scan.ScanEnabled()))
 	fmt.Fprintf(out, "guard: %s\n", onOff(cfg.Guard.Enabled))
@@ -68,6 +71,27 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(out, "  %s\n", n)
 	}
 	return nil
+}
+
+// printBuild reports which build of suspenders is answering. It comes first
+// because every line after it is what *this* binary derived — a doctor run
+// against a stale binary is the failure mode the section exists to expose.
+func printBuild(out io.Writer) {
+	info := buildinfo.Get()
+	fmt.Fprintln(out, "build:")
+	fmt.Fprintf(out, "  %-12s %s\n", "version", info.Version)
+	fmt.Fprintf(out, "  %-12s %s\n", "commit", orUnknown(info.Commit))
+	fmt.Fprintf(out, "  %-12s %s\n", "tag", orUnknown(info.Tag))
+	fmt.Fprintf(out, "  %-12s %s\n", "build time", orUnknown(info.BuildTime))
+	fmt.Fprintln(out)
+}
+
+// orUnknown renders a build metadata field the build did not inject.
+func orUnknown(s string) string {
+	if s == "" {
+		return "(unknown)"
+	}
+	return s
 }
 
 // printRepoStatus reports the guard's view of one repo: per-repo overrides

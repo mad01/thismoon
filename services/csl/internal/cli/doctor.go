@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
@@ -23,10 +24,21 @@ var doctorCmd = &cobra.Command{
 	Short: "Check search index health",
 	Long: `Check the health of the search index.
 
-Reports issues (stale, missing, or dirty indexes) and lists healthy repos.
+Reports issues (stale, missing, or dirty indexes), lists healthy repos, and
+prints the build metadata of the csl binary doing the checking — the same
+version, commit, tag and build time 'csl version -o json' reports, so a
+diagnosis names the build it came from.
 Use --json for machine-readable output.
 Use --repair to fix a corrupt state file (backs up the old file and resets state).`,
 	RunE: runDoctor,
+}
+
+// doctorDocument is the --json document: the index report with the build
+// metadata of the binary that produced it nested under "build". DoctorReport is
+// embedded, so its own keys stay at the top level where consumers expect them.
+type doctorDocument struct {
+	search.DoctorReport
+	Build buildinfo.Info `json:"build"`
 }
 
 func init() {
@@ -138,11 +150,12 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	w := cmd.OutOrStdout()
+	build := buildinfo.Get()
 
 	if doctorJSONFlag {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(report)
+		return enc.Encode(doctorDocument{DoctorReport: report, Build: build})
 	}
 
 	// Daemon status
@@ -166,6 +179,13 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		corruptedCount,
 	)
 	fmt.Fprintf(w, "Search daemon:   %s\n", daemonStatus)
+	fmt.Fprintln(w)
+
+	fmt.Fprintln(w, "Build:")
+	fmt.Fprintf(w, "  version:       %s\n", orDash(build.Version))
+	fmt.Fprintf(w, "  commit:        %s\n", orDash(build.Commit))
+	fmt.Fprintf(w, "  tag:           %s\n", orDash(build.Tag))
+	fmt.Fprintf(w, "  build time:    %s\n", orDash(build.BuildTime))
 	fmt.Fprintln(w)
 
 	if corruptedCount > 0 {
@@ -206,6 +226,15 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// orDash renders an unknown build metadata field, which buildinfo reports as
+// the empty string, as a dash so the column never looks truncated.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func formatBytes(b int64) string {

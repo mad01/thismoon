@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/present/internal/server"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
@@ -34,7 +35,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	handler := server.New(st, flagWorkdir, Version).Handler()
+	handler := server.New(st, flagWorkdir, buildinfo.Get()).Handler()
 	log.Printf("present: serving %s on http://localhost:%d", flagWorkdir, flagPort)
 	return http.ListenAndServe(listenAddr(flagPort), handler)
 }

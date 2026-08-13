@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/status/internal/check"
 	"github.com/mad01/thismoon/services/status/internal/crashloop"
 	"github.com/mad01/thismoon/services/status/internal/discover"
@@ -26,9 +27,11 @@ type ServiceStatus struct {
 	Known     bool          `json:"known"` // false until the first check completes
 	Detail    string        `json:"detail,omitempty"`
 	CheckedAt time.Time     `json:"checked_at"`
-	Version   string        `json:"version,omitempty"`   // running process, from GET /version
-	Installed string        `json:"installed,omitempty"` // binary on disk, from `<binary> version`
-	Drift     bool          `json:"drift,omitempty"`     // running != installed, confirmed over consecutive cycles
+	Version   string        `json:"version,omitempty"`    // running process, from GET /version
+	Tag       string        `json:"tag,omitempty"`        // release tag the running build came from
+	BuildTime string        `json:"build_time,omitempty"` // when the running build was linked, RFC 3339
+	Installed string        `json:"installed,omitempty"`  // binary on disk, from `<binary> version`
+	Drift     bool          `json:"drift,omitempty"`      // running != installed, confirmed over consecutive cycles
 	Webkit    string        `json:"webkit,omitempty"`
 	Uptime    float64       `json:"uptime_pct"`
 	HasUptime bool          `json:"has_uptime"`
@@ -45,6 +48,8 @@ type Snapshot struct {
 
 type meta struct {
 	version   string // running process, from GET /version
+	tag       string // release tag the running build came from, "" if untagged
+	buildTime string // when the running build was linked, "" if the service predates the field
 	installed string // binary on disk, from `<binary> version`
 	webkit    string
 	fetched   time.Time
@@ -168,6 +173,7 @@ func (m *Monitor) cycle(ctx context.Context) {
 		st.Uptime, st.HasUptime = m.store.Uptime(svc.Label, now, m.opts.HistoryDays)
 		if md, ok := m.meta[svc.Label]; ok {
 			st.Version, st.Webkit, st.Installed = md.version, md.webkit, md.installed
+			st.Tag, st.BuildTime = md.tag, md.buildTime
 		}
 		st.Drift = m.driftRuns[svc.Label] >= driftConfirmCycles
 		if !st.Up {
@@ -340,10 +346,13 @@ func (m *Monitor) refreshMeta(
 		go func() {
 			defer wg.Done()
 			base := fmt.Sprintf("http://127.0.0.1:%d", svc.Port)
+			info := fetchBuildInfo(ctx, base+"/version")
 			md := meta{
-				version:   fetchVersion(ctx, base+"/version"),
+				version:   info.Version,
+				tag:       info.Tag,
+				buildTime: info.BuildTime,
 				installed: check.BinaryVersion(ctx, svc.Binary),
-				webkit:    fetchVersion(ctx, base+"/webkit/version"),
+				webkit:    fetchBuildInfo(ctx, base+"/webkit/version").Version,
 				fetched:   now,
 			}
 			m.mu.Lock()
@@ -356,26 +365,26 @@ func (m *Monitor) refreshMeta(
 
 var metaClient = &http.Client{Timeout: 3 * time.Second}
 
-// fetchVersion reads a {"version":"..."} payload (the cross-tool convention);
-// any failure returns "".
-func fetchVersion(ctx context.Context, url string) string {
+// fetchBuildInfo reads the build metadata object a component serves at
+// GET /version (the cross-tool convention). Keys the payload omits stay "", so
+// a service still serving the older bare {"version":"..."} shape reports its
+// version and nothing else; any failure returns the zero Info.
+func fetchBuildInfo(ctx context.Context, url string) buildinfo.Info {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return ""
+		return buildinfo.Info{}
 	}
 	resp, err := metaClient.Do(req)
 	if err != nil {
-		return ""
+		return buildinfo.Info{}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return buildinfo.Info{}
 	}
-	var body struct {
-		Version string `json:"version"`
+	var info buildinfo.Info
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return buildinfo.Info{}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return ""
-	}
-	return body.Version
+	return info
 }

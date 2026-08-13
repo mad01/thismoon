@@ -85,7 +85,7 @@ active findings, and an acknowledged section. From here you can:
 - `POST /api/scan` / `POST /api/check[?repo=]`: trigger a scan
 - `POST /api/resolve`: acknowledge advisories by key
 - `POST /api/notify`: fire pending notifications now
-- `GET  /version`
+- `GET  /version`: build metadata (`version`, `commit`, `tag`, `build_time`)
 
 ## MCP
 

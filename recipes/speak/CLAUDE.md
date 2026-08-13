@@ -14,7 +14,8 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
 ## What this recipe does
 
 - **`packages.speak`** — `make build` + `make install` → `~/code/bin/speak`
-  (codesigned). Version (git sha) is injected via ldflags.
+  (codesigned). Build metadata (version, commit, tag, build time) is injected
+  via ldflags from the repo-root `buildinfo.mk`.
 - **`packages.speak.service`** — restarts `speak-web` only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).

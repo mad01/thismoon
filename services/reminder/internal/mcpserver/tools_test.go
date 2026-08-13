@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/reminder/internal/client"
 	"github.com/mad01/thismoon/services/reminder/internal/server"
 	"github.com/mad01/thismoon/services/reminder/internal/store"
@@ -25,7 +26,7 @@ func testHandlers(t *testing.T) (*handlers, *fakeNotifier, func()) {
 		t.Fatalf("store.New: %v", err)
 	}
 	fn := &fakeNotifier{}
-	ts := httptest.NewServer(server.New(st, "test", fn).Handler())
+	ts := httptest.NewServer(server.New(st, buildinfo.Info{Version: "test"}, fn).Handler())
 	h := &handlers{client: client.New(ts.URL), webURL: ts.URL}
 	return h, fn, ts.Close
 }

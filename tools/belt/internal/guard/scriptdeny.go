@@ -240,4 +240,3 @@ func stripWrappers(tokens []string) []string {
 	}
 	return tokens
 }
-

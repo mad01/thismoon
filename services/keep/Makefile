@@ -2,13 +2,13 @@ BIN      ?= keep
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/services/keep/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := keep
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/keep
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/keep
 
 install: build
 	mkdir -p $(PREFIX)

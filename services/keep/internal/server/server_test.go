@@ -12,8 +12,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/keep/internal/store"
 )
+
+// testInfo is the build metadata the test server reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "keep/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -21,7 +30,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
-	return httptest.NewServer(New(st, "test", "tester").Handler())
+	return httptest.NewServer(New(st, testInfo, "tester").Handler())
 }
 
 // gitRepo creates a temp git repo with a committed f.txt of five lines
@@ -368,6 +377,8 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+// TestVersion pins the cross-tool build metadata contract: the four keys, the
+// injected values, and the headers ralph and status probe with.
 func TestVersion(t *testing.T) {
 	ts := newTestServer(t)
 	defer ts.Close()
@@ -376,12 +387,30 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("version: %v", err)
 	}
 	defer func() { _ = res.Body.Close() }()
+	if ct := res.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
 	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
 	body, _ := io.ReadAll(res.Body)
-	if !strings.Contains(string(body), `"version":"test"`) {
-		t.Errorf("version body = %q", body)
+	var keys map[string]string
+	if err := json.Unmarshal(body, &keys); err != nil {
+		t.Fatalf("unmarshal %q: %v", body, err)
+	}
+	want := map[string]string{
+		"version":    testInfo.Version,
+		"commit":     testInfo.Commit,
+		"tag":        testInfo.Tag,
+		"build_time": testInfo.BuildTime,
+	}
+	if len(keys) != len(want) {
+		t.Errorf("version body = %q, want exactly the keys %v", body, want)
+	}
+	for k, v := range want {
+		if keys[k] != v {
+			t.Errorf("version[%q] = %q, want %q", k, keys[k], v)
+		}
 	}
 }
 

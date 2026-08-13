@@ -23,7 +23,6 @@ internal/reconcile/        read-compare-apply: decide create/update/delete/none
 internal/service/          the Definition struct, its Hash(), the Manager interface
 internal/platform/launchd/ plist rendering (howett.net/plist) and the launchctl wrapper
 internal/notify/           best-effort event emission to the local events service
-pkg/version/               version variables (not stamped; the Makefile stamps cli.Version)
 ```
 
 The CLI layer never calls launchctl directly. `Manager` is an interface and
@@ -66,7 +65,8 @@ t-man itself writes only plists; the services it manages write the log files.
 CLI commands: `add --name N [flags] -- CMD [args]` (idempotent
 create-or-update), `list`, `remove`, `start`/`stop`/`restart`, `status`,
 `logs` (with `--stdout`/`--stderr`/`--source` and `-f`), `logs sandbox`, and
-`version`. Global flags: `--agent` (default), `--daemon`, `--dryrun`. The
+`version` (bare token, or the shared four-key build metadata object with
+`-o json`). Global flags: `--agent` (default), `--daemon`, `--dryrun`. The
 `add` syntax is CLI-compatible with serviceman, and t-man adopts serviceman
 plists for migration.
 

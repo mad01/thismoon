@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/present/internal/mcpserver"
 )
 
@@ -38,7 +39,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	// where nothing serves them — this line makes the divergence visible.
 	log.Printf("present mcp: workdir=%s port=%d base-url=%s", flagWorkdir, flagPort, flagBaseURL)
 	server, err := mcpserver.New(
-		Version,
+		buildinfo.Get().Version,
 		mcpserver.Config{Workdir: flagWorkdir, Port: flagPort, BaseURL: flagBaseURL},
 	)
 	if err != nil {

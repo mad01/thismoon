@@ -16,7 +16,8 @@ Wave 0 (builds before the consuming repo's `claude-mcp` recipe at wave 1 registe
 MCP server).
 
 - **`packages.present`** — `make build` + `make install` → `~/code/bin/present`
-  (codesigned). Version (git sha) is injected via ldflags.
+  (codesigned). Build metadata (git sha, commit, release tag, build time) is
+  injected via ldflags from the repo-root `buildinfo.mk`.
 - **`packages.present.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).

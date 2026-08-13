@@ -9,15 +9,57 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/buildinfo"
 )
+
+// testInfo is the build metadata the test mux reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test-sha",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "speak/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 func newTestMux(t *testing.T, ttsURL string) *http.ServeMux {
 	t.Helper()
-	mux, err := NewMux(ttsURL, "test-sha")
+	mux, err := NewMux(ttsURL, testInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return mux
+}
+
+// TestVersion pins the cross-tool build metadata contract: the four keys, the
+// injected values, and the headers ralph and status probe with.
+func TestVersion(t *testing.T) {
+	mux := newTestMux(t, "http://127.0.0.1:1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/version", nil))
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	var keys map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &keys); err != nil {
+		t.Fatalf("unmarshal %q: %v", rec.Body.Bytes(), err)
+	}
+	want := map[string]string{
+		"version":    testInfo.Version,
+		"commit":     testInfo.Commit,
+		"tag":        testInfo.Tag,
+		"build_time": testInfo.BuildTime,
+	}
+	if len(keys) != len(want) {
+		t.Errorf("version body = %q, want exactly the keys %v", rec.Body.Bytes(), want)
+	}
+	for k, v := range want {
+		if keys[k] != v {
+			t.Errorf("version[%q] = %q, want %q", k, keys[k], v)
+		}
+	}
 }
 
 func TestIndexServesShell(t *testing.T) {

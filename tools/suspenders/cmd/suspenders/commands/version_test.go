@@ -6,68 +6,87 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mad01/thismoon/tools/suspenders/internal/cli"
+	"github.com/mad01/thismoon/buildinfo"
 )
 
-// TestVersionCmd_JSONShape pins the cross-tool convention: `version -o json`
-// must emit exactly {"version":"<value>"} so a single probe parses any sibling
-// tool's build identity uniformly.
-func TestVersionCmd_JSONShape(t *testing.T) {
-	orig := cli.Version
-	cli.Version = "abc1234"
-	defer func() { cli.Version = orig }()
+// setBuildInfo pins the linker-injected build metadata for one test. Get()
+// only falls back to the toolchain's vcs stamps for fields left empty, so a
+// fully populated fixture keeps the assertions hermetic.
+func setBuildInfo(t *testing.T, version, commit, tag, buildTime string) {
+	t.Helper()
+	orig := [4]string{
+		buildinfo.Version,
+		buildinfo.Commit,
+		buildinfo.Tag,
+		buildinfo.BuildTime,
+	}
+	t.Cleanup(func() {
+		buildinfo.Version, buildinfo.Commit = orig[0], orig[1]
+		buildinfo.Tag, buildinfo.BuildTime = orig[2], orig[3]
+	})
+	buildinfo.Version, buildinfo.Commit = version, commit
+	buildinfo.Tag, buildinfo.BuildTime = tag, buildTime
+}
 
+// runVersion executes the version command and returns what it wrote. The
+// output flag binds to a package var that cobra does not reset between
+// Execute calls, so the helper restores the default first — a real invocation
+// is always a fresh process.
+func runVersion(t *testing.T, args ...string) string {
+	t.Helper()
+	versionOutput = "text"
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"version", "-o", "json"})
-	defer func() {
+	rootCmd.SetArgs(append([]string{"version"}, args...))
+	t.Cleanup(func() {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
-	}()
-
+	})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
+	return buf.String()
+}
 
-	out := strings.TrimSpace(buf.String())
+// TestVersionCmd_JSONShape pins the cross-tool convention: `version -o json`
+// must emit the shared four-key build metadata object so a single probe parses
+// any sibling tool's build identity uniformly.
+func TestVersionCmd_JSONShape(t *testing.T) {
+	setBuildInfo(t, "abc1234", "abc1234def5678", "suspenders/v1.2.3", "2026-08-13T10:00:00Z")
+
+	out := runVersion(t, "-o", "json")
+
 	var got map[string]string
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %q: %v", out, err)
 	}
-	if got["version"] != "abc1234" {
-		t.Fatalf(`expected version "abc1234", got %q`, got["version"])
+	want := map[string]string{
+		"version":    "abc1234",
+		"commit":     "abc1234def5678",
+		"tag":        "suspenders/v1.2.3",
+		"build_time": "2026-08-13T10:00:00Z",
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected exactly one key %q, got %v", "version", got)
+	if len(got) != len(want) {
+		t.Fatalf("got %d keys %v, want %d", len(got), got, len(want))
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("key %q: got %q, want %q", k, got[k], w)
+		}
 	}
 }
 
-func TestVersionCmd_TextIsPlain(t *testing.T) {
-	orig := cli.Version
-	cli.Version = "abc1234"
-	defer func() { cli.Version = orig }()
+// TestVersionCmd_TextIsBareToken pins the other half of the convention: plain
+// output is the version and nothing else. A second token (the tool name, as
+// suspenders once printed) breaks the probes that parse the line as a version.
+func TestVersionCmd_TextIsBareToken(t *testing.T) {
+	setBuildInfo(t, "abc1234", "abc1234def5678", "suspenders/v1.2.3", "2026-08-13T10:00:00Z")
 
-	var buf bytes.Buffer
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"version", "-o", "text"})
-	defer func() {
-		rootCmd.SetArgs(nil)
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-	}()
+	got := strings.TrimSpace(runVersion(t))
 
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-
-	out := strings.TrimSpace(buf.String())
-	if strings.Contains(out, "{") {
-		t.Fatalf("text output should not be JSON: %q", out)
-	}
-	if !strings.Contains(out, "abc1234") {
-		t.Fatalf("text output should contain the version: %q", out)
+	if got != "abc1234" {
+		t.Fatalf("text output: got %q, want the bare token %q", got, "abc1234")
 	}
 }

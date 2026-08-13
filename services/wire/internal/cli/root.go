@@ -10,9 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is injected at build time via -ldflags.
-var Version = "dev"
-
 const defaultPort = 7432
 
 var (

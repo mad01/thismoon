@@ -392,6 +392,8 @@ csl doctor [--json]
 
 `doctor` combines everything `csl index --status` reports plus shard integrity, daemon state, and total index size. It classifies issues into `stale`, `missing`, and `dirty`. Run it when searches look wrong or slow.
 
+It also prints the build metadata of the binary doing the checking: the same version, commit, tag and build time that `csl version -o json` reports, so a diagnosis names the build it came from. Under `--json` those four values sit in a `build` object beside the report's existing top-level keys.
+
 ### Example output
 
 ```
@@ -401,6 +403,12 @@ Total repos:     17
 Index shards:    17 (17 healthy, 0 corrupted)
 Search daemon:   running
 
+Build:
+  version:       98b59d9
+  commit:        98b59d992678fdf3b67f3e32911fae98d73165b2
+  tag:           csl/v0.8.0
+  build time:    2026-08-13T19:47:44Z
+
 Issues (1):
   dirty    myorg/service-a                          3 modified, 1 untracked
 
@@ -409,7 +417,7 @@ Healthy (16):
   ...
 ```
 
-If corrupted shards are reported, the output suggests `csl index --repair` followed by `csl index`.
+A field the build didn't record prints as `-`. If corrupted shards are reported, the output suggests `csl index --repair` followed by `csl index`.
 
 ---
 
@@ -527,6 +535,18 @@ Print the version string.
 
 ```sh
 csl version
+csl version -o json
 ```
 
-The version is set at build time via `-ldflags "-X github.com/mad01/thismoon/services/csl/internal/cli.Version=<value>"`. `make install` sets it to the short git hash; `go install` without ldflags yields `dev`.
+Plain output is the bare version token — the cross-tool convention sibling tools follow, so ralph and status can probe any of them for the build they are running. `-o json` prints the full build metadata object, every key present and `""` for anything unknown:
+
+```json
+{
+  "version": "98b59d9",
+  "commit": "98b59d992678fdf3b67f3e32911fae98d73165b2",
+  "tag": "csl/v0.8.0",
+  "build_time": "2026-08-13T19:47:44Z"
+}
+```
+
+The four values are injected at build time from `buildinfo.mk` at the repo root, which links them into `github.com/mad01/thismoon/buildinfo`. `make build` and `make install` set all four; a `go install` build with no ldflags falls back to the vcs stamps the Go toolchain records.

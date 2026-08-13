@@ -1,12 +1,11 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/tools/suspenders/internal/cli"
+	"github.com/mad01/thismoon/buildinfo"
 )
 
 var versionOutput string
@@ -16,19 +15,18 @@ var versionCmd = &cobra.Command{
 	Short: "Print the suspenders version",
 	Long: `Print the suspenders version (the git commit it was built from).
 
-With -o json, prints {"version":"<sha>"} — the cross-tool convention sibling
-tools follow so a single probe can ask any of them what build it is.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
+Plain output is the bare version token — the cross-tool convention sibling
+tools follow so ralph and status can probe any of them for the build they are
+running. With -o json, prints the full build metadata object: version, commit,
+tag, build_time, with every key present and "" for anything unknown.`,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		info := buildinfo.Get()
 		if versionOutput == "json" {
-			b, err := json.Marshal(map[string]string{"version": cli.Version})
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-			return err
+			fmt.Fprint(cmd.OutOrStdout(), info.PrettyJSON())
+			return nil
 		}
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), "suspenders", cli.Version)
-		return err
+		fmt.Fprintln(cmd.OutOrStdout(), info.Version)
+		return nil
 	},
 }
 

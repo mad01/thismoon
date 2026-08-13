@@ -14,12 +14,13 @@ d-man/
     main.go              entrypoint, delegates to internal/cli.Execute
   internal/
     cli/                 cobra command tree: root, serve, sync, list, version, ca
-      root.go              flags (--config/DMAN_CONFIG, --hosts-file); Version via ldflags
+      root.go              flags (--config/DMAN_CONFIG, --hosts-file)
       serve.go             the daemon: reload loop, fsnotify watch, binary self-watch,
                            :80 proxy + :443 block-page TLS listener
       sync.go              one-shot managed-block write
       list.go              print resolved host -> backend routes
-      version.go           build sha; -o json convention shared with sibling tools
+      version.go           build metadata from the shared buildinfo package;
+                           -o json convention shared with sibling tools
       ca.go                install/uninstall/path for the block-page CA (system keychain)
     config/               pure: parse + validate routes.toml (+ config_test.go);
                            Hosts(), RouteMap(), Sites(), BlockedHosts()
@@ -122,7 +123,7 @@ go test ./...
 | `sudo d-man sync` | Write the managed `/etc/hosts` block once and exit (manual fallback). |
 | `sudo d-man ca install` | Generate the block-page CA (if absent) and trust it in the system keychain; `uninstall`/`path` too. |
 | `d-man list` | Print resolved host -> backend routes. |
-| `d-man version [-o json]` | Print the build sha. |
+| `d-man version [-o json]` | Print the build sha; `-o json` prints the full build metadata object (`version`, `commit`, `tag`, `build_time`). |
 
 ## Gotchas
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/reminder/internal/notify"
 	"github.com/mad01/thismoon/services/reminder/internal/server"
 	"github.com/mad01/thismoon/services/reminder/internal/store"
@@ -51,7 +52,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 		func() time.Time { return time.Now().UTC() },
 	)
 
-	handler := server.New(st, Version, notify.Osascript{}).Handler()
+	handler := server.New(st, buildinfo.Get(), notify.Osascript{}).Handler()
 	log.Printf(
 		"reminder: serving %s on http://localhost:%d (tick %s)",
 		flagWorkdir,

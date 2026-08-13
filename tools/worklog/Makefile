@@ -2,13 +2,13 @@ BIN      ?= worklog
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/tools/worklog/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := worklog
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/worklog
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/worklog
 
 install: build
 	mkdir -p $(PREFIX)

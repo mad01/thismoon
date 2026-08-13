@@ -8,7 +8,7 @@ Go CLI + MCP server. Manages single-page HTML presentations as create / read / u
 present/
   cmd/present/         - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra command tree: root, serve, mcp, version (Version via ldflags)
+    cli/               - cobra command tree: root, serve, mcp, version (build metadata from the shared buildinfo package)
     store/             - filesystem CRUD over pages/<id>/ (id.go, store.go); Delete is web-index-only, not exposed via MCP
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
     server/            - HTTP handlers: GET / (static index shell), /api/pages (page list as JSON), /index.js (client index renderer), /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js (embedded client renderer), /p/{id}/version, DELETE /p/{id}; embeds index_shell.html, shell.html, index.js, app.js
@@ -175,7 +175,7 @@ confirms which embedded webkit assets the running present server serves.
 - **Client render uses webkit's shared helpers.** `app.js` builds the DOM with `Webkit.el` / `Webkit.escapeHtml` and polls `/p/{id}/version` for live-reload via `Webkit.poll` (webkit shared helpers). Decision recorded in `docs/adr/0005-webkit-client-side-rendering.md`.
 - **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/bionic are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-bionic`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
 - **Codesign for MCP.** macOS kills adhoc-signed binaries with stale provenance xattrs; `make install` re-signs.
-- **Version probe.** `present version -o json` → `{"version":"<sha>"}` (the cross-tool convention `ralph outdated` uses). The recipe bakes this sha into the t-man service env so a new build reloads the running `serve` agent automatically.
+- **Version probe.** `GET /version` and `present version -o json` both return the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph outdated` uses. Plain `present version` stays a bare token — status parses it as one. The recipe bakes this sha into the t-man service env so a new build reloads the running `serve` agent automatically. Not to be confused with `GET /p/{id}/version`, the per-page revision counter `app.js` polls for live reload.
 
 ## See also
 

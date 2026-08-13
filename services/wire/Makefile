@@ -2,13 +2,13 @@ BIN      ?= wire
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/services/wire/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := wire
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/wire
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/wire
 
 install: build
 	mkdir -p $(PREFIX)

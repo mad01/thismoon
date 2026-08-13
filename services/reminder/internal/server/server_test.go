@@ -8,8 +8,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/reminder/internal/store"
 )
+
+// testInfo is the build metadata the test server reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "reminder/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 // fakeNotifier records Notify calls instead of firing a real macOS
 // notification, so tests can assert delivery without side effects.
@@ -37,7 +46,7 @@ func newTestServerN(t *testing.T) (*httptest.Server, *fakeNotifier) {
 		t.Fatalf("store.New: %v", err)
 	}
 	fn := &fakeNotifier{}
-	return httptest.NewServer(New(st, "test", fn).Handler()), fn
+	return httptest.NewServer(New(st, testInfo, fn).Handler()), fn
 }
 
 func TestCreateWithRelativeIn(t *testing.T) {

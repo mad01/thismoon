@@ -23,11 +23,10 @@ and adopts serviceman plists for migration.
 
 ```
 cmd/t-man/main.go            entry point → cli.Execute()
-internal/cli/                cobra commands (root, add, list, remove, control, logs, version)
+internal/cli/                cobra commands (root, add, list, remove, control, logs, version — build metadata from the shared buildinfo package)
 internal/service/            Definition struct, Hash(), Manager interface
 internal/platform/launchd/   plist generation, launchctl wrapper, the launchd Manager
 internal/reconcile/          read-compare-apply reconciler + state comparison
-pkg/version/                 version variables (not stamped by the Makefile)
 ```
 
 Package: `github.com/mad01/thismoon/tools/t-man`, part of the thismoon
@@ -80,10 +79,12 @@ make lint           # golangci-lint run ./...
 make fmt            # golines (100 cols, gofumpt base)
 ```
 
-`make build` stamps `internal/cli.Version` with `git rev-parse --short HEAD`
-via `-ldflags`. `t-man version` prints that value. The `pkg/version` package
-has its own variables but they aren't wired to ldflags; only `cli.Version`
-is stamped.
+`make build` injects the build metadata into
+`github.com/mad01/thismoon/buildinfo` via `-ldflags` from `../../buildinfo.mk`:
+the short sha, the full commit, the newest `t-man/v*` tag, and the build time.
+`t-man version` prints the bare version token; `t-man version -o json` prints
+the four-key object. The same token is what `GetVersion()` stamps into a
+managed plist's `TManMetadata.Version`.
 
 `make install` builds and copies the binary to `~/code/bin/t-man`, signing
 with the "mad01 Local Signing" identity (ad-hoc fallback). On consuming
@@ -100,7 +101,7 @@ machines ralph builds it via `recipes/t-man/` from the sources cache.
 | `status N` | | Detailed info for one service |
 | `logs N` | | Tail stdout + stderr (and named extra logs) |
 | `logs sandbox [N]` | | Collect `sandbox`/`sandbox-*` extra logs across services |
-| `version` | | Print the build SHA |
+| `version [-o json]` | | Print the build SHA, or the full build metadata object |
 
 Global persistent flags (all commands): `--agent` (default true), `--daemon`
 (requires root, mutually exclusive with `--agent`), `--dryrun`.
@@ -126,6 +127,12 @@ and `KeepAlive` are always set to true on the generated plist.
 - **t-man only manages plists it recognises**: its own (via `TManMetadata`)
   or serviceman's (via the `Generated for serviceman` marker). It ignores
   unrelated plists in the LaunchAgents/LaunchDaemons directories.
+- **Version probe convention.** `t-man version -o json` returns the shared
+  four-key build metadata object (`version`, `commit`, `tag`, `build_time`,
+  every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, the same shape services serve from
+  `GET /version`. Plain `t-man version` stays a bare token — status parses it
+  as one. t-man is CLI-only, so it has no `/version` endpoint.
 
 ## See also
 

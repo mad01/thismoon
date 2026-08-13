@@ -16,7 +16,7 @@ program alone.
 
 ```
 cmd/speak/           entrypoint, delegates to internal/cli
-internal/cli/        cobra: serve and version (root.go), mcp (mcp.go)
+internal/cli/        cobra: serve (root.go), mcp (mcp.go), version (version.go)
 internal/web/        server.go (mux, CORS wrapper, TTS proxy, HTTP API),
                      markdown.go (goldmark render + section split),
                      assets/shell.html + assets/app.js (client render)

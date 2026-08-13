@@ -97,7 +97,7 @@ needs no native libs — it goes over HTTP to a local Ollama server
 (semantic/hybrid features only; lexical search has no Ollama dependency).
 
 ```bash
-make build    # ./csl binary
+make build    # ./csl binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/csl + codesign
 make test     # go test -timeout 120s ./... (unit tests use a fake embedder, no ollama needed)
 make lint     # golangci-lint run ./...
@@ -132,7 +132,7 @@ Typically run as a background service: `t-man add --name csl-web -- csl web --po
 - `GET /api/read?repo=&file=&start=&end=`: read a line range from a repo file.
 - `GET /api/repos`: list discovered repos.
 - `GET /healthz`: health check.
-- `GET /version`: `{"version":"<service git sha>"}`, the consumer `/version` contract every webkit-mounted tool implements (see Shared UI: webkit).
+- `GET /version`: the four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the consumer `/version` contract every webkit-mounted tool implements (see Shared UI: webkit).
 - `GET /webkit/*`: shared UI assets, mounted via `webkit.Mount(mux)`.
 - `GET /assets/*`: csl's own static assets (`app.css`, `app.js`).
 
@@ -147,14 +147,14 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl query <pattern>`**: validate and parse a zoekt query without running a search. `--json`.
 - **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
 - **`csl repo [query]`**: interactive fuzzy-finder over discovered repos. With a query, prints the single matching repo's path (case-insensitive substring on org/repo; errors on zero or multiple matches); a query also filters `--list` output. `--list` (non-interactive), `--json`/`--toon` (imply `--list`).
-- **`csl doctor`**: check index health (shards, staleness, dirty repos, daemon status). `--json`, `--repair` (fix a corrupt state file).
+- **`csl doctor`**: check index health (shards, staleness, dirty repos, daemon status) and print the binary's own build metadata, so a diagnosis names the build it came from (`build` object under `--json`). `--json`, `--repair` (fix a corrupt state file).
 - **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild; needs Ollama running with the model pulled), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
 - **`csl semantic files [path]`**: classify every tracked file under a path with the indexer's skip rules, without embedding. Default output lists the files that would be embedded; `--skipped` lists filtered files with reasons; `--json` dumps every decision.
 - **`csl hybrid <query>`**: lexical + semantic, RRF-fused. `--repo/-r`, `--lang/-l`, `--limit` (50), `--rrf-k` (60), `--expand`, `--json`.
 - **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue` and, when `semantic.sync: true`, re-embeds changed repos.
 - **`csl hooks`**: **deprecated.** csl no longer manages post-merge hooks; suspenders is the single git-hook manager, feeding `reindex.queue` via a `csl-reindex` post_merge entry that csl still drains (`csl sync` / `csl index --drain`). `csl hooks install` prints a deprecation notice and still writes the legacy hook when `hooks.post_merge.enabled` is set. `csl hooks uninstall` removes any csl-managed post-merge hook; `csl hooks status` (`--json`) reports per-repo hook state. Migration: run `csl hooks uninstall`, then add the `csl-reindex` entry to suspenders' `post_merge` config.
-- **`csl version`**: print the version (git commit built from). `-o/--output text|json`.
+- **`csl version`**: print the bare version token (the git commit built from). `-o/--output text|json`; `-o json` prints the full build metadata object (`version`, `commit`, `tag`, `build_time`).
 
 ## MCP tools
 
@@ -245,11 +245,13 @@ automatically; don't add those controls manually.
 
 ### Version check
 
-`GET /version` on csl's own HTTP service returns `{"version":"<service git
-sha>"}`, the consumer contract every webkit-mounted tool implements
-(`internal/web/server.go`, `handleVersion`). It is separate from
-`GET /webkit/version`, which reports the embedded webkit asset hash and is
-what `webkit.js` polls every ~5s to auto-reload on a CSS/JS change.
+`GET /version` on csl's own HTTP service returns the four-key build metadata
+object (`version`, `commit`, `tag`, `build_time`, every key present and `""`
+when unknown) from `github.com/mad01/thismoon/buildinfo`, the consumer contract
+every webkit-mounted tool implements (`internal/web/server.go` wires
+`s.info.Handler()`). It is separate from `GET /webkit/version`, which reports
+the embedded webkit asset hash and is what `webkit.js` polls every ~5s to
+auto-reload on a CSS/JS change.
 
 ## Gotchas
 

@@ -48,11 +48,11 @@ type dataKind int
 
 const (
 	kindOther     dataKind = iota // unknown payload: pass through untouched
-	kindBlob                     // file content: replace unless binary
-	kindMessage                  // commit or tag message: always replace
-	kindDrop                     // stale signature: emit nothing
-	kindProtected                // file in a protected path: pass through, count skip
-	kindRedact                   // file in a redacted path: whole payload becomes RedactedPlaceholder
+	kindBlob                      // file content: replace unless binary
+	kindMessage                   // commit or tag message: always replace
+	kindDrop                      // stale signature: emit nothing
+	kindProtected                 // file in a protected path: pass through, count skip
+	kindRedact                    // file in a redacted path: whole payload becomes RedactedPlaceholder
 )
 
 // Stats reports what a Transform did or (in a dry run) would do.

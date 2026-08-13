@@ -2,11 +2,11 @@ package web
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/webkit"
@@ -26,14 +26,14 @@ type searcher interface {
 // Server serves the code-search web UI and JSON API. Pages and assets are
 // embedded in the binary; search and read run through the searcher.
 type Server struct {
-	svc     searcher
-	version string
+	svc  searcher
+	info buildinfo.Info
 }
 
-// New returns a Server backed by the given Service. version is the csl build
-// version (git sha), surfaced at GET /version.
-func New(svc *Service, version string) *Server {
-	return &Server{svc: svc, version: version}
+// New returns a Server backed by the given Service, reporting info at
+// GET /version.
+func New(svc *Service, info buildinfo.Info) *Server {
+	return &Server{svc: svc, info: info}
 }
 
 // Handler builds the HTTP routes, wrapped in request logging.
@@ -46,7 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/read", s.handleRead)
 	mux.HandleFunc("GET /api/repos", s.handleRepos)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /version", s.handleVersion)
+	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", assetsHandler())
 	webkit.Mount(mux)
 	return logRequests(mux)
@@ -69,15 +69,6 @@ func (s *Server) handlePage(name string) http.HandlerFunc {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok"))
-}
-
-// handleVersion reports the csl build version so a single probe can confirm
-// which build is running.
-func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"version": s.version,
-	})
 }
 
 // statusRecorder captures the response status and byte count for access logging.

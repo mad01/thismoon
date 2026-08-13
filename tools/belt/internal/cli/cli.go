@@ -11,14 +11,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
 	"github.com/mad01/thismoon/tools/belt/internal/hook"
 )
-
-// Version is set at build time via -ldflags.
-var Version = "dev"
 
 // Execute runs the root command.
 func Execute() {
@@ -168,11 +166,27 @@ func checkCmd() *cobra.Command {
 }
 
 func versionCmd() *cobra.Command {
-	return &cobra.Command{
+	var output string
+	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print the version",
-		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), Version)
+		Short: "Print the belt version",
+		Long: `Print the belt version (the git commit it was built from).
+
+Plain output is the bare version token — the cross-tool convention sibling
+tools follow so ralph and status can probe any of them for the build they are
+running. With -o json, prints the full build metadata object: version, commit,
+tag, build_time, with every key present and "" for anything unknown.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			info := buildinfo.Get()
+			if output == "json" {
+				fmt.Fprint(cmd.OutOrStdout(), info.PrettyJSON())
+				return nil
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), info.Version)
+			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text or json")
+	return cmd
 }

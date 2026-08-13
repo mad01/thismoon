@@ -2,13 +2,13 @@ BIN      ?= reminder
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/services/reminder/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := reminder
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/reminder
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/reminder
 
 install: build
 	mkdir -p $(PREFIX)

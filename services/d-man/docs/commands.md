@@ -114,15 +114,26 @@ Print the git commit the binary was built from.
 
 ```bash
 d-man version
-d-man version -o json     # {"version":"<sha>"}
+d-man version -o json
+```
+
+```json
+{
+  "version": "98b59d9",
+  "commit": "98b59d992678fdf3b67f3e32911fae98d73165b2",
+  "tag": "d-man/v0.3.1",
+  "build_time": "2026-08-13T19:47:36Z"
+}
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-o`, `--output` | `text` | Output format: `text` or `json`. |
 
-The JSON form is the cross-tool convention sibling tools follow, so `ralph` can
-probe any of them for the build they are running.
+Plain output is the bare version token; the JSON form is the cross-tool
+convention sibling tools follow, so `ralph` and `status` can probe any of them
+for the build they are running. Every key is present, and holds `""` for
+anything the build didn't record.
 
 ## Exit codes
 

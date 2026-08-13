@@ -20,6 +20,14 @@ _Avoid_: binary, utility
 The shared Go web UI package that services import in-module. Not a component; it has no release line of its own.
 _Avoid_: web kit, ui-lib
 
+**buildinfo**:
+The shared Go package holding the build metadata every component links in, injected at link time by the `buildinfo.mk` ldflags. Like webkit, an in-module package rather than a component.
+_Avoid_: version package, versioninfo
+
+**Build metadata**:
+What a binary reports about its own build: version, commit, component tag, and build time. Serialized as a four-key JSON object, every key always present and `""` when unknown, printed by `<binary> version -o json` and served at `GET /version`.
+_Avoid_: version info, version payload
+
 **Recipe**:
 A ralph recipe under `recipes/` that installs a component on a machine. Consumed remotely through ralph's `[[recipe_sources]]`, identified as `thismoon/<recipe>`.
 _Avoid_: config, manifest

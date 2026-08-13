@@ -22,8 +22,8 @@ present mcp                # MCP stdio server exposing present_* tools to Claude
 Typically `present serve` runs as a background launchd agent (via t-man); Claude Code launches `present mcp`.
 
 ```bash
-present version           # git sha the binary was built from
-present version -o json   # {"version":"<sha>"} - probed by `ralph outdated`
+present version           # bare git sha the binary was built from
+present version -o json   # build metadata: version, commit, tag, build_time - probed by `ralph outdated`
 ```
 
 | Flag | Env | Default |

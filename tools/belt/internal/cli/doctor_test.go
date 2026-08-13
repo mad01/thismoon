@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
@@ -100,6 +101,53 @@ func TestDoctorReportsMissingConfigs(t *testing.T) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
+}
+
+func TestDoctorReportsBuildMetadata(t *testing.T) {
+	setBuildInfo(t, "abc1234", "abc1234def5678", "belt/v1.2.3", "2026-08-13T10:00:00Z")
+
+	out := runDoctorString(t, doctorPaths(t.TempDir()))
+
+	for _, want := range []string{
+		"build:",
+		"version      abc1234",
+		"commit       abc1234def5678",
+		"tag          belt/v1.2.3",
+		"build time   2026-08-13T10:00:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDoctorReportsUnknownBuildFields(t *testing.T) {
+	setBuildInfo(t, "abc1234", "", "", "")
+
+	out := runDoctorString(t, doctorPaths(t.TempDir()))
+
+	if !strings.Contains(out, "tag          (unknown)") {
+		t.Errorf("empty build field not rendered as unknown:\n%s", out)
+	}
+}
+
+// setBuildInfo pins the linker-injected build metadata for one test. Get()
+// only falls back to the toolchain's vcs stamps for fields left empty, so a
+// non-empty Version keeps the fixture hermetic.
+func setBuildInfo(t *testing.T, version, commit, tag, buildTime string) {
+	t.Helper()
+	orig := [4]string{
+		buildinfo.Version,
+		buildinfo.Commit,
+		buildinfo.Tag,
+		buildinfo.BuildTime,
+	}
+	t.Cleanup(func() {
+		buildinfo.Version, buildinfo.Commit = orig[0], orig[1]
+		buildinfo.Tag, buildinfo.BuildTime = orig[2], orig[3]
+	})
+	buildinfo.Version, buildinfo.Commit = version, commit
+	buildinfo.Tag, buildinfo.BuildTime = tag, buildTime
 }
 
 func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/keep/internal/server"
 	"github.com/mad01/thismoon/services/keep/internal/store"
 )
@@ -36,7 +37,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	handler := server.New(st, Version, serveAuthor()).Handler()
+	handler := server.New(st, buildinfo.Get(), serveAuthor()).Handler()
 	go watchStore(st)
 	log.Printf("keep: serving %s on http://localhost:%d", flagWorkdir, flagPort)
 	log.Printf(

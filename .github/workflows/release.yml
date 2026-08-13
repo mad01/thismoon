@@ -82,7 +82,11 @@ jobs:
           name=$(basename "$COMPONENT_PATH")
           version="${TAG##*/}"
           short_sha=$(git rev-parse --short HEAD)
-          ldflags="-X github.com/mad01/thismoon/${COMPONENT_PATH}/internal/cli.Version=${version}-${short_sha}"
+          buildinfo="github.com/mad01/thismoon/buildinfo"
+          ldflags="-X ${buildinfo}.Version=${version}-${short_sha}"
+          ldflags="$ldflags -X ${buildinfo}.Commit=$(git rev-parse HEAD)"
+          ldflags="$ldflags -X ${buildinfo}.Tag=${TAG}"
+          ldflags="$ldflags -X ${buildinfo}.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           cgo=0
           if [ "$COMPONENT_PATH" = "services/csl" ]; then cgo=1; fi
           mkdir -p dist

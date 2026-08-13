@@ -12,7 +12,7 @@ Born out of a July 2026 session retrospective: a session pushed straight to mast
 belt/
   cmd/belt/          - entrypoint
   internal/
-    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `version`
+    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `version` (build metadata from the shared buildinfo package)
     hook/             - payload parsing + JSON emission for both events
     guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
     hint/             - the hints (prefer-csl, keep-assertions) + csl index lookup, response parsing, session dedupe
@@ -62,9 +62,9 @@ belt hook bash|write     # PreToolUse entrypoint: payload on stdin, deny JSON on
 belt hint search|bash    # PostToolUse entrypoint: payload on stdin, additionalContext JSON on stdout
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
-belt doctor              # resolved config: surfaces loaded, guard/hint state, blocked names
+belt doctor              # build metadata + resolved config: surfaces loaded, guard/hint state, blocked names
 belt config              # config file locations + annotated reference of every setting
-belt version
+belt version [-o json]   # bare version token, or the four-key build metadata object
 ```
 
 ## Gotchas
@@ -76,6 +76,7 @@ belt version
 - **`prefer-csl` does not reuse `guard.splitSegments`.** That splitter preserves byte offsets and treats `|` exactly like `&&`, which is right for finding a denied command anywhere in a pipeline and wrong for this hint: telling a pipe filter apart from a standalone search is its entire precision requirement. The hint has its own quote-aware splitter so a `|` inside a grep pattern does not read as a pipe.
 - **keep subjects are shallower than search hits.** Assertions get labelled at the component level (`.../services/csl`) while searches return hits deeper (`.../services/csl/internal/semantic`), and keep matches subjects by prefix — so querying the hit's own subject finds nothing. `keep-assertions` queries the repo and narrows by ranking on shared path segments. Changing that to a narrower query silently returns zero results rather than erroring.
 - **`config.Load()` never errors**: missing config files mean zero values. Missing ralph profile means `git-push-main` fails closed (denies pushes to main everywhere); missing suspenders config means `write-internal-names` has an empty name list and allows every write. Keep suspenders configured.
+- **Version probe convention.** `belt version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, injected by `buildinfo.mk` at link time. Plain `belt version` stays a bare token — ralph and status parse it as one. `belt doctor` opens with the same metadata, so a doctor report always names the binary that produced it.
 - **Keep literal internal hostnames and org names out of belt's own source and docs.** This repo is heading public and the suspenders pre-commit guard blocks them. The public/internal split is derived (`github.com` in the remote means public), never enumerated.
 
 ## See also

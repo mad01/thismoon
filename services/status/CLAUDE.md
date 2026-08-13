@@ -11,7 +11,7 @@ running state plus history.
 status/
   cmd/status/          entrypoint (delegates to internal/cli)
   internal/
-    cli/               cobra: serve, version (Version via ldflags)
+    cli/               cobra: serve, version (build metadata from the shared buildinfo package)
     discover/          plist scan + d-man routes.toml link mapping
     check/             HTTP and launchctl PID probes
     crashloop/         restart-counter tracker behind crash-loop alerts
@@ -50,6 +50,13 @@ minutes, best-effort; services without the endpoints just show no version.
 The same refresh also runs `<binary> version` on the plist's binary to learn
 the sha installed on disk.
 
+`/version` returns the shared four-key build metadata object, so the same
+probe also yields the release `tag` and `build_time` of the running build.
+Both are best-effort: a service that answers with only `{"version":"<sha>"}`
+reports its version and leaves the other two empty, and the dashboard renders
+an empty field as nothing rather than a placeholder. Only the bare `version`
+token feeds the drift comparison.
+
 ### Version drift
 
 A running process serving an older sha than its on-disk binary means an
@@ -84,7 +91,7 @@ below that red; a day without recorded checks renders gray.
 ## Build / install / test
 
 ```bash
-make build    # ./status binary
+make build    # ./status binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/status + adhoc codesign
 make test     # go test ./...
 ```
@@ -94,7 +101,7 @@ make test     # go test ./...
 - `GET /`: the dashboard (no-store; reloads itself every 60s)
 - `GET /api/status`: full snapshot as JSON
 - `GET /healthz`: 204
-- `GET /version`: `{"version":"<sha>"}` (ldflags, same convention as the other services)
+- `GET /version`: the four-key build metadata object (`version`, `commit`, `tag`, `build_time`), same convention as the other services
 - `GET /webkit/`: shared chrome from the in-module `github.com/mad01/thismoon/webkit` package
 
 ## Gotchas
@@ -106,6 +113,13 @@ make test     # go test ./...
 - **t-man's plist `Version` field is t-man's build sha,** not the service's.
   Service versions come from the HTTP `/version` probe (running) and the
   binary's own `version` command (installed).
+- **Version probe convention.** `GET /version` and `status version -o json`
+  both return the shared four-key build metadata object (`version`, `commit`,
+  `tag`, `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`. Plain `status version` stays a bare
+  token — `check.BinaryVersion` parses sibling tools' output as one, so a
+  `version` command that prints anything else disables drift detection for
+  that service.
 - **`t-man stop` won't show as Down.** KeepAlive services relaunch within a
   second, faster than any poll interval. Down means a real failure: crash
   loop, hung process, port not answering, or `t-man remove`.

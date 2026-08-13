@@ -2,13 +2,13 @@ BIN      ?= t-man
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/tools/t-man/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := t-man
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/t-man
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/t-man
 
 install: build
 	mkdir -p $(PREFIX)

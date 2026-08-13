@@ -2,13 +2,13 @@ BIN      ?= suspenders
 PREFIX   ?= $(HOME)/code/bin
 DEST     := $(PREFIX)/$(BIN)
 
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS    := -X github.com/mad01/thismoon/tools/suspenders/internal/cli.Version=$(GIT_COMMIT)
+COMPONENT := suspenders
+include ../../buildinfo.mk
 
 .PHONY: build install resign clean test test-integration tidy fmt lint
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/suspenders
+	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/suspenders
 
 install: build
 	mkdir -p $(PREFIX)

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/reminder/internal/notify"
@@ -32,18 +33,18 @@ var appJS []byte
 type Server struct {
 	store    *store.Store
 	notifier notify.Notifier
-	version  string
+	info     buildinfo.Info
 	now      func() time.Time
 }
 
-// New returns a Server backed by st, reporting version on /version. notifier is
+// New returns a Server backed by st, reporting info on /version. notifier is
 // the same delivery path the ticker uses; the test/fire endpoints reuse it so an
 // on-demand notification is identical to a real one.
-func New(st *store.Store, version string, notifier notify.Notifier) *Server {
+func New(st *store.Store, info buildinfo.Info, notifier notify.Notifier) *Server {
 	return &Server{
 		store:    st,
 		notifier: notifier,
-		version:  version,
+		info:     info,
 		now:      func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -65,11 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
-	})
+	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
 	return logRequests(mux)
 }

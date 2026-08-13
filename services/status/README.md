@@ -16,6 +16,10 @@ version`). When they disagree for two consecutive cycles the service shows
 event — the "ralph reported ok but the old binary kept running" failure made
 visible.
 
+Each service card also shows the release tag and build time of the running
+build, when the service reports them on `/version`. Services that only serve
+a bare version sha show just the sha.
+
 ## Install
 
 ```bash
@@ -59,7 +63,7 @@ or `http://localhost:7426/` (on hosts without d-man).
 | `GET /` | Dashboard (no-store, auto-refreshes every 60s) |
 | `GET /api/status` | Full snapshot as JSON |
 | `GET /healthz` | 204 |
-| `GET /version` | `{"version":"<sha>"}` build sha |
+| `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
 ## Where things live

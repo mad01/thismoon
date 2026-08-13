@@ -20,10 +20,13 @@ A few things worth knowing:
   extended attributes and re-signs the binary — with the "mad01 Local Signing"
   identity when present, ad-hoc otherwise. This is required on recent macOS: a
   plain `cp` of a linker-signed Go binary gets killed on launch otherwise.
-- The build stamps the version. `make build` passes
-  `-ldflags "-X github.com/mad01/thismoon/tools/t-man/internal/cli.Version=<short-sha>"`,
-  and `t-man version` prints that SHA. Only `cli.Version` is stamped; the
-  variables in `pkg/version` exist but are not wired to the Makefile.
+- The build stamps the build metadata. `make build` includes
+  `../../buildinfo.mk`, which passes `-ldflags` for the four
+  `github.com/mad01/thismoon/buildinfo` variables: the short sha, the full
+  commit, the newest `t-man/v*` tag, and the UTC build time. `t-man version`
+  prints the short sha as a bare token; `t-man version -o json` prints all
+  four as `{version, commit, tag, build_time}`. A `go build` with no ldflags
+  still reports something: buildinfo falls back to the toolchain's vcs stamps.
 
 Requirements: macOS 10.15+ and Go 1.25+.
 
@@ -91,7 +94,6 @@ internal/platform/launchd/
 internal/reconcile/
   reconciler.go              read-compare-apply
   state.go                   CompareStates → create/update/delete/none
-pkg/version/version.go       version vars (not stamped by the Makefile)
 ```
 
 ## Debugging a stuck agent

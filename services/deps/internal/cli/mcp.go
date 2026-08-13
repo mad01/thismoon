@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/deps/internal/mcpserver"
 )
 
@@ -33,7 +34,10 @@ func init() {
 func runMCP(_ *cobra.Command, _ []string) error {
 	// stdout is the MCP protocol channel; log the resolved target to stderr.
 	log.Printf("deps mcp: port=%d base-url=%s", flagPort, flagBaseURL)
-	srv, err := mcpserver.New(Version, mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL})
+	srv, err := mcpserver.New(
+		buildinfo.Get().Version,
+		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL},
+	)
 	if err != nil {
 		return err
 	}

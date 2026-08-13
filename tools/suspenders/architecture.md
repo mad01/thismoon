@@ -69,8 +69,10 @@ every run from the repos checked out under `guard.workspace_dirs`.
 CLI commands: `scan [path]` (`--staged`, `--fail-on-findings`), `hook
 install|update|status|uninstall [--all]`, `hook run <event>` (what the
 generated scripts call), `history scan` (`--branch`), `history clean`
-(`--replace`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes`), and
-`version`.
+(`--replace`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes`),
+`doctor [path]` (which opens with the installed build), and `version [-o
+json]` (the bare version token, or the four-key build metadata object shared
+across the repo's components).
 
 Config surfaces: the global YAML file, the per-repo override file, and the
 inline `suspenders:ignore` line marker. The guard section doubles as a shared

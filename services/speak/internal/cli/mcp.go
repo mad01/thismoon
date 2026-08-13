@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/speak/internal/mcpserver"
 )
 
@@ -41,7 +42,7 @@ func init() {
 func runMCP(_ *cobra.Command, _ []string) error {
 	// stdout is the MCP protocol channel; log the resolved target to stderr.
 	log.Printf("speak mcp: tts-url=%s", flagTTSURL)
-	srv, err := mcpserver.New(Version, mcpserver.Config{TTSURL: flagTTSURL})
+	srv, err := mcpserver.New(buildinfo.Get().Version, mcpserver.Config{TTSURL: flagTTSURL})
 	if err != nil {
 		return err
 	}

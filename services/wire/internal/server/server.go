@@ -20,6 +20,7 @@ import (
 
 	"github.com/mad01/thismoon/webkit"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/wire/internal/ref"
 	"github.com/mad01/thismoon/services/wire/internal/store"
 )
@@ -47,18 +48,18 @@ const (
 
 // Server serves the wire store.
 type Server struct {
-	store   *store.Store
-	version string
+	store *store.Store
+	info  buildinfo.Info
 	// port is the port serve listens on. It is here only to mint connection
 	// strings — the token a session hands to another session — which is why
 	// the server, not the store, is what stamps them onto a response.
 	port int
 }
 
-// New returns a Server backed by st, reporting version on /version and minting
+// New returns a Server backed by st, reporting info on /version and minting
 // connection strings against port.
-func New(st *store.Store, version string, port int) *Server {
-	return &Server{store: st, version: version, port: port}
+func New(st *store.Store, info buildinfo.Info, port int) *Server {
+	return &Server{store: st, info: info, port: port}
 }
 
 // channelView is a channel as the API returns it: the store's summary plus the
@@ -91,11 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
-	})
+	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
 	return logRequests(mux)
 }

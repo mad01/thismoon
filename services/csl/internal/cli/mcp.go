@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/csl/internal/mcpserver"
 )
 
@@ -44,7 +45,7 @@ func init() {
 }
 
 func runMCP(_ *cobra.Command, _ []string) error {
-	server := mcpserver.New(Version)
+	server := mcpserver.New(buildinfo.Get().Version)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintf(os.Stderr, "csl mcp: %v\n", err)
 		return err

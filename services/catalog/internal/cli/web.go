@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/catalog/internal/web"
 )
 
@@ -40,8 +41,7 @@ func init() {
 }
 
 func runWeb(cmd *cobra.Command, _ []string) error {
-	web.Version = Version
-	srv, err := web.New(cmd.Context(), registryPath)
+	srv, err := web.New(cmd.Context(), registryPath, buildinfo.Get())
 	if err != nil {
 		return fmt.Errorf("failed to load catalog: %w\n\nHint: create %s with a 'sources' list", err, registryPath)
 	}

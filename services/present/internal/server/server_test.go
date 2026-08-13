@@ -9,8 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
+
+// testInfo is the build metadata the test server reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "present/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 func setup(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
@@ -19,7 +28,7 @@ func setup(t *testing.T) (*httptest.Server, *store.Store) {
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
-	ts := httptest.NewServer(New(st, dir, "test").Handler())
+	ts := httptest.NewServer(New(st, dir, testInfo).Handler())
 	t.Cleanup(ts.Close)
 	return ts, st
 }

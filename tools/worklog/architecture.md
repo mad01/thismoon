@@ -71,8 +71,10 @@ written.
 ## Interfaces
 
 CLI: `checkpoint`, `list`, `show`, `search`, `status`, `new`, `path`,
-`scan`, and `mcp`. Version is injected via ldflags into
-`internal/cli.Version`.
+`scan`, `mcp`, and `version` (bare token, or the shared four-key build
+metadata object with `-o json`). The build metadata is injected via ldflags
+into the shared `github.com/mad01/thismoon/buildinfo` package, which also
+backs the `worklog --version` flag and the MCP server's reported version.
 
 MCP: `worklog mcp` starts a stdio server registering five tools
 (`worklog_checkpoint`, `worklog_list`, `worklog_search`, `worklog_show`,

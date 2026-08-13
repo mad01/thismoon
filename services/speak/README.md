@@ -88,7 +88,7 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 | `POST /v1/audio/speech` | Proxy to the Kokoro engine (adds CORS) |
 | `GET /healthz` | 204, CORS'd; reachability probe for this page |
 | `GET /enginez` | 204/502; reachability probe for the TTS engine behind the proxy |
-| `GET /version` | `{"version":"<sha>"}` build sha |
+| `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-repo `webkit` package |
 
 The `<wk-read-aloud>` webkit component on the rendered page calls

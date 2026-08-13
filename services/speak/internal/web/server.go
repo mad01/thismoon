@@ -14,6 +14,7 @@ import (
 
 	"github.com/mad01/thismoon/webkit"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/speak/internal/notify"
 )
 
@@ -37,10 +38,10 @@ const enginezTimeout = 1500 * time.Millisecond
 // NewMux builds the speak HTTP handler: the markdown read-aloud page plus a
 // CORS-enabled reverse proxy in front of the mlx-audio speech endpoint, so
 // pages on other local origins (present.this etc.) can fetch speech from
-// http://speak.this. version is the build sha baked in via ldflags, exposed
+// http://speak.this. info is the build metadata linked in via ldflags, exposed
 // at GET /version (the HTTP twin of the fleet-wide `speak version -o json`
 // probe ralph uses for update detection).
-func NewMux(ttsURL, version string) (*http.ServeMux, error) {
+func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 	upstream, err := url.Parse(ttsURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse tts url %q: %w", ttsURL, err)
@@ -158,11 +159,7 @@ func NewMux(ttsURL, version string) (*http.ServeMux, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", version)
-	})
+	mux.HandleFunc("GET /version", info.Handler())
 
 	return mux, nil
 }
@@ -195,8 +192,8 @@ func writeReadJSON(w http.ResponseWriter, docName, content string) {
 // Serve runs the HTTP server on 127.0.0.1:<port>. The wrapper handler adds the
 // CORS header to every response so cross-origin probes and speech fetches work
 // regardless of route.
-func Serve(port int, ttsURL, version string) error {
-	mux, err := NewMux(ttsURL, version)
+func Serve(port int, ttsURL string, info buildinfo.Info) error {
+	mux, err := NewMux(ttsURL, info)
 	if err != nil {
 		return err
 	}

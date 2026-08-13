@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
@@ -17,12 +18,12 @@ import (
 func doctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Show the resolved config: surfaces loaded, guard/hint state, blocked names",
-		Long: `Show what belt is actually running with: which config surface loaded (or
-didn't), which guards and hints are enabled, and the resolved blocked-name
-set the write-internal-names guard matches against. Use it to answer "why
-did that check fire" — a deny names the guard, doctor names the config
-behind it.`,
+		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, blocked names",
+		Long: `Show what belt is actually running with: which build is installed, which
+config surface loaded (or didn't), which guards and hints are enabled, and
+the resolved blocked-name set the write-internal-names guard matches
+against. Use it to answer "why did that check fire" — a deny names the
+guard, doctor names the build and the config behind it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := config.DefaultPaths()
@@ -37,6 +38,8 @@ behind it.`,
 
 func runDoctor(w io.Writer, p config.Paths) {
 	cfg := config.LoadFrom(p)
+
+	printBuild(w)
 
 	fmt.Fprintln(w, "config surfaces:")
 	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
@@ -68,6 +71,27 @@ func runDoctor(w io.Writer, p config.Paths) {
 	for _, n := range names {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
+}
+
+// printBuild reports which build of belt is answering. It comes first because
+// every line after it describes what *this* binary resolved — a doctor run
+// against a stale binary is the failure mode the section exists to expose.
+func printBuild(w io.Writer) {
+	info := buildinfo.Get()
+	fmt.Fprintln(w, "build:")
+	fmt.Fprintf(w, "  %-12s %s\n", "version", info.Version)
+	fmt.Fprintf(w, "  %-12s %s\n", "commit", orUnknown(info.Commit))
+	fmt.Fprintf(w, "  %-12s %s\n", "tag", orUnknown(info.Tag))
+	fmt.Fprintf(w, "  %-12s %s\n", "build time", orUnknown(info.BuildTime))
+	fmt.Fprintln(w)
+}
+
+// orUnknown renders a build metadata field the build did not inject.
+func orUnknown(s string) string {
+	if s == "" {
+		return "(unknown)"
+	}
+	return s
 }
 
 // beltConfigLine reports which belt config file is in effect, mirroring the

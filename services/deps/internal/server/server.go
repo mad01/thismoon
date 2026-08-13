@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/deps/internal/api"
@@ -32,14 +33,14 @@ var appJS []byte
 
 // Server serves the dependency scan store and drives on-demand scans.
 type Server struct {
-	store   *store.Store
-	engine  *scanner.Engine
-	version string
+	store  *store.Store
+	engine *scanner.Engine
+	info   buildinfo.Info
 }
 
-// New returns a Server backed by st and engine, reporting version on /version.
-func New(st *store.Store, engine *scanner.Engine, version string) *Server {
-	return &Server{store: st, engine: engine, version: version}
+// New returns a Server backed by st and engine, reporting info on /version.
+func New(st *store.Store, engine *scanner.Engine, info buildinfo.Info) *Server {
+	return &Server{store: st, engine: engine, info: info}
 }
 
 // Handler builds the routes, wrapped in request logging.
@@ -56,11 +57,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
-	})
+	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
 	return logRequests(mux)
 }

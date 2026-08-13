@@ -7,9 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/status/internal/discover"
 	"github.com/mad01/thismoon/services/status/internal/history"
 )
+
+// testInfo is the build metadata the test mux reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test-sha",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "status/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 func testMonitor() *Monitor {
 	m := newMonitor(Options{HistoryDays: 30}, nil)
@@ -27,6 +36,7 @@ func testMonitor() *Monitor {
 				Up: true, Known: true, Detail: "HTTP 200",
 				CheckedAt: time.Date(2026, 6, 10, 12, 0, 0, 0, time.Local),
 				Uptime:    99.93, HasUptime: true, Version: "80d09e8",
+				Tag: "speak/v0.2.0", BuildTime: "2026-06-10T11:00:00Z",
 				Days: []history.Day{
 					{Date: "2026-06-10", OK: 100, Fail: 0, HasData: true, Pct: 100},
 				},
@@ -43,7 +53,7 @@ func testMonitor() *Monitor {
 }
 
 func TestPageServesShell(t *testing.T) {
-	mux := NewMux(testMonitor(), "test-sha")
+	mux := NewMux(testMonitor(), testInfo)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 
@@ -68,7 +78,7 @@ func TestPageServesShell(t *testing.T) {
 }
 
 func TestAppJS(t *testing.T) {
-	mux := NewMux(testMonitor(), "test-sha")
+	mux := NewMux(testMonitor(), testInfo)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/app.js", nil))
 
@@ -84,7 +94,7 @@ func TestAppJS(t *testing.T) {
 }
 
 func TestAPIStatus(t *testing.T) {
-	mux := NewMux(testMonitor(), "test-sha")
+	mux := NewMux(testMonitor(), testInfo)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/status", nil))
 
@@ -104,7 +114,8 @@ func TestAPIStatus(t *testing.T) {
 	for _, want := range []string{
 		`"generated_at"`, `"window_days"`, `"down"`, `"services"`,
 		`"label"`, `"link"`, `"up"`, `"known"`, `"detail"`, `"checked_at"`,
-		`"version"`, `"uptime_pct"`, `"has_uptime"`, `"days"`, `"port"`,
+		`"version"`, `"tag"`, `"build_time"`,
+		`"uptime_pct"`, `"has_uptime"`, `"days"`, `"port"`,
 		`"date"`, `"has_data"`, `"pct"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -113,8 +124,10 @@ func TestAPIStatus(t *testing.T) {
 	}
 }
 
+// TestVersionAndHealthz pins the cross-tool build metadata contract: the four
+// keys and the injected values, plus the healthz probe beside it.
 func TestVersionAndHealthz(t *testing.T) {
-	mux := NewMux(testMonitor(), "test-sha")
+	mux := NewMux(testMonitor(), testInfo)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/version", nil))
@@ -122,8 +135,19 @@ func TestVersionAndHealthz(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
 		t.Fatal(err)
 	}
-	if v["version"] != "test-sha" {
-		t.Errorf("version = %q", v["version"])
+	want := map[string]string{
+		"version":    testInfo.Version,
+		"commit":     testInfo.Commit,
+		"tag":        testInfo.Tag,
+		"build_time": testInfo.BuildTime,
+	}
+	if len(v) != len(want) {
+		t.Errorf("version body = %q, want exactly the keys %v", rec.Body.Bytes(), want)
+	}
+	for k, w := range want {
+		if v[k] != w {
+			t.Errorf("version[%q] = %q, want %q", k, v[k], w)
+		}
 	}
 
 	rec = httptest.NewRecorder()

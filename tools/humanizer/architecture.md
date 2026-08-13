@@ -15,7 +15,8 @@ at all.
 
 ```
 cmd/humanizer/       entrypoint; delegates to internal/cli
-internal/cli/        cobra command tree: root, detect, profile, rules, mcp
+internal/cli/        cobra command tree: root, detect, profile, rules, mcp,
+                     version
 internal/rules/      vale integration: embed.go (pack embedding + cache
                      extraction), vale.go (subprocess run + JSON parsing),
                      metadata.go (rule metadata from YAML headers),
@@ -67,8 +68,10 @@ else it reads (input files, temp files for vale) is transient.
 
 CLI: `detect [file]` (flags `--min-severity`, `--rule`, `--statistical`,
 `--json`), `profile [file]` (`--diff`, `--json`), `rules list`
-(`--category`, `--json`), `rules explain <rule_id>`, and `mcp`. All text
-commands read stdin when the file argument is omitted or `-`.
+(`--category`, `--json`), `rules explain <rule_id>`, `mcp`, and `version
+[-o json]` (the bare version token, or the four-key build metadata object
+shared across the repo's components). All text commands read stdin when the
+file argument is omitted or `-`.
 
 MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing eight
 tools: `humanizer_status`, `humanizer_detect`, `humanizer_detect_file`,

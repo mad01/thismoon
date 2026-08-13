@@ -9,13 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/catalog/internal/catalog"
 	"github.com/mad01/thismoon/webkit"
 )
-
-// Version is the catalog build version, set by the CLI from its ldflags-injected
-// value before the server starts. Defaults to "dev" for tests and bare builds.
-var Version = "dev"
 
 // Server serves the catalog web UI and JSON API. The catalog is held behind a
 // read-write mutex so the Refresh endpoint can swap in a freshly scanned copy
@@ -25,14 +22,16 @@ type Server struct {
 	cat          *catalog.Catalog
 	roots        []string // source paths; also the allowed roots for UI writes
 	registryPath string
+	info         buildinfo.Info
 }
 
-// New builds a Server, loading the initial catalog from registryPath. A
-// missing registry file is not fatal: the server starts with an empty catalog
-// so a fresh install gets a working UI instead of a crash loop under a
-// service manager. Once the registry exists, Refresh (or a restart) loads it.
-func New(ctx context.Context, registryPath string) (*Server, error) {
-	s := &Server{registryPath: registryPath}
+// New builds a Server, loading the initial catalog from registryPath and
+// reporting info on /version. A missing registry file is not fatal: the server
+// starts with an empty catalog so a fresh install gets a working UI instead of
+// a crash loop under a service manager. Once the registry exists, Refresh (or
+// a restart) loads it.
+func New(ctx context.Context, registryPath string, info buildinfo.Info) (*Server, error) {
+	s := &Server{registryPath: registryPath, info: info}
 	if err := s.Reload(ctx); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, err
@@ -96,7 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/entities", s.handleAdd)
 
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /version", s.handleVersion)
+	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", assetsHandler())
 	webkit.Mount(mux)
 	return logRequests(mux)
@@ -119,14 +118,6 @@ func (s *Server) handlePage(name string) http.HandlerFunc {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok"))
-}
-
-// handleVersion reports the catalog build version, so a running server can be
-// matched to its sources.
-func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"version": Version,
-	})
 }
 
 // statusRecorder captures the response status and byte count for access logging.

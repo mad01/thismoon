@@ -1,18 +1,14 @@
 package cli
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/speak/internal/web"
 )
-
-// Version is injected at build time via -ldflags.
-var Version = "dev"
 
 const defaultPort = 7425
 
@@ -35,19 +31,7 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Run the local HTTP server",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		return web.Serve(flagPort, flagTTSURL, Version)
-	},
-}
-
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the build version",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		if out, _ := cmd.Flags().GetString("output"); out == "json" {
-			return json.NewEncoder(os.Stdout).Encode(map[string]string{"version": Version})
-		}
-		fmt.Println(Version)
-		return nil
+		return web.Serve(flagPort, flagTTSURL, buildinfo.Get())
 	},
 }
 
@@ -56,8 +40,7 @@ func init() {
 		"port the HTTP server listens on (env SPEAK_PORT)")
 	serveCmd.Flags().StringVar(&flagTTSURL, "tts-url", resolvedTTSURL(),
 		"base URL of the mlx-audio TTS server (env SPEAK_TTS_URL)")
-	versionCmd.Flags().StringP("output", "o", "", "output format (json)")
-	rootCmd.AddCommand(serveCmd, versionCmd)
+	rootCmd.AddCommand(serveCmd)
 }
 
 func Execute() error {

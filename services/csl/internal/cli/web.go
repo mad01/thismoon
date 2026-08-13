@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/web"
 )
@@ -52,7 +53,7 @@ func runWeb(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	handler := web.New(svc, Version).Handler()
+	handler := web.New(svc, buildinfo.Get()).Handler()
 	addr := listenAddr(webPortFlag)
 	log.Printf("csl web: serving on http://localhost:%d", webPortFlag)
 	return http.ListenAndServe(addr, handler)

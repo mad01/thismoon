@@ -83,11 +83,26 @@ CSS/JS. `webkit.js` polls `/webkit/version` every ~5s and reloads on change.
 `webkit.NoCacheHTML(w)` sets `Cache-Control: no-cache` for consumer HTML.
 
 ## Consumer `/version` contract
-Each consumer's own HTTP service exposes `GET /version` →
-`{"version":"<service git sha>"}`. webkit is an in-module package: a binary
-always embeds the webkit committed alongside it, so there is no module pin to
-report or compare. Drift checks use `GET /webkit/version` — the embedded-asset
-hash, uniform across consumers built from the same commit.
+Separate endpoint, separate meaning: don't confuse it with `/webkit/version`
+above. Each consumer's own HTTP service exposes `GET /version` → the four-key
+build metadata object from `github.com/mad01/thismoon/buildinfo`, served
+`no-store`:
+
+```json
+{
+  "version": "9f3c1ab",
+  "commit": "9f3c1abf20e4c7d1b8a5e6003f2c9d47a1b6e850",
+  "tag": "present/v1.2.3",
+  "build_time": "2026-08-13T19:40:02Z"
+}
+```
+
+The `version` key stays the bare service git sha (status compares that key
+alone for binary drift); the other three describe the same build. Nothing
+webkit-related appears in it: webkit is an in-module package, so a binary
+always embeds the webkit committed alongside it and there is no module pin to
+report or compare. Asset drift is `GET /webkit/version`'s job, the
+embedded-asset hash, uniform across consumers built from the same commit.
 
 ## Build / test
 

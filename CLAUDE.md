@@ -17,6 +17,8 @@ Monorepo for the `*.this` platform: local web services, CLI tools, the shared we
 services/    *.this local web services (one directory per service)
 tools/       CLI tools installed to the local bin
 webkit/      shared Go web UI package (in-module, no separate versioning)
+buildinfo/   shared build-metadata package (ldflags targets, /version handler)
+buildinfo.mk Makefile fragment every component includes to inject it
 recipes/     ralph recipes, consumed remotely via [[recipe_sources]]
 docs/adr/    architecture decision records
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
@@ -28,6 +30,7 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Single Go module: `github.com/mad01/thismoon`, go 1.26.2. No nested go.mod files.
 - A component is a directory under `services/` or `tools/` with its own Makefile exposing `build`, `test`, and `install` targets. The root Makefile discovers and delegates to them.
 - Releases are per-component semver with `svc/vX.Y.Z` tags, cut by release-please manifest mode on merge to main. Artifact builds are a plain CI matrix job.
+- Build metadata is shared: a component Makefile sets `COMPONENT := <name>`, does `include ../../buildinfo.mk`, and links with `$(BUILDINFO_LDFLAGS)`. Every component then reports the same four-key object (`version`, `commit`, `tag`, `build_time`) from `GET /version` and `<binary> version -o json`, while plain `<binary> version` stays a bare token that status parses.
 - Build targets: darwin/arm64 only — the platform is macOS-focused (see docs/adr/0007; supersedes the target list in 0004).
 - Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity.
 - Code imported from another repo comes in clean (no git history) and gets a row in `docs/MIGRATED-FROM.md` with the source repo and SHA it came from.

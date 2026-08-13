@@ -224,7 +224,7 @@ suspenders hook run post-merge
 
 ### Explain the guard for a repo
 
-`doctor` shows why the guard decides what it decides: the global config, any per-repo overrides from `.suspenders.yaml`, whether the repo is guard-exempt, and the full blocked-name list derived from the workspace dirs and blocked words. Use it when a commit was blocked (or wasn't) and the reason isn't obvious. The list is derived fresh on every run and never written anywhere.
+`doctor` shows why the guard decides what it decides: the installed build, the global config, any per-repo overrides from `.suspenders.yaml`, whether the repo is guard-exempt, and the full blocked-name list derived from the workspace dirs and blocked words. Use it when a commit was blocked (or wasn't) and the reason isn't obvious. The list is derived fresh on every run and never written anywhere.
 
 ```sh
 suspenders doctor                # current directory
@@ -240,8 +240,11 @@ suspenders config
 ### Print version
 
 ```sh
-suspenders version
+suspenders version              # bare version token
+suspenders version -o json      # version, commit, tag, build_time
 ```
+
+Plain output is the version and nothing else, so a probe can read the line as-is. The JSON form is the four-key build metadata object every tool in this repo reports, with each key present and `""` for anything the build did not stamp.
 
 ## Detection rules
 

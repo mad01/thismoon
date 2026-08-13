@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-)
 
-var Version = "dev"
+	"github.com/mad01/thismoon/buildinfo"
+)
 
 var (
 	// Global flags
@@ -49,9 +49,10 @@ func getContext() context.Context {
 	return context.Background()
 }
 
-// GetVersion returns the current version
+// GetVersion returns the build's version token, the value stamped into a
+// managed plist's TManMetadata.
 func GetVersion() string {
-	return Version
+	return buildinfo.Get().Version
 }
 
 // IsDryRun returns whether dry run mode is enabled

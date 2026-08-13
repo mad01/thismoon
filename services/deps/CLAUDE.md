@@ -111,7 +111,7 @@ Advisory{ ID, Summary, Severity, FixedVersion }   // OSV advisory for that exact
 ## Build / install / test
 
 ```bash
-make build    # ./deps binary (Version via ldflags)
+make build    # ./deps binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/deps + adhoc codesign
 make test     # go test ./... (hermetic: t.TempDir, canned go-list/OSV/lock fixtures, fake notifier; no real network/go/osascript)
 ```
@@ -125,7 +125,7 @@ make test     # go test ./... (hermetic: t.TempDir, canned go-list/OSV/lock fixt
 - `POST /api/check[?repo=]`    : discover + OSV check (full, or one repo merged), return flagged
 - `POST /api/resolve`          : body `{keys:[…]}`; acknowledge advisories
 - `POST /api/notify`           : fire pending notifications now
-- `GET  /version` · `GET /webkit/`
+- `GET  /version`              : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`) · `GET /webkit/`
 
 ## Commands
 
@@ -137,7 +137,7 @@ deps scan                    # POST /api/scan - discover only, print per-ecosyst
 deps check [--repo <repo>]   # POST /api/check[?repo=] - discover + OSV, print flagged
 deps resolve <key>...        # POST /api/resolve - acknowledge advisories by key
 deps notify                  # POST /api/notify - fire pending notifications now
-deps version                 # git sha the binary was built from
+deps version [-o json]       # bare git sha; -o json prints the full build metadata object
 ```
 
 ## MCP tools

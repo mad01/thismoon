@@ -52,13 +52,32 @@
     return v;
   }
 
+  // shortenTag drops the component prefix a release tag carries
+  // ("keep/v0.4.0" → "v0.4.0"): the card already names the service.
+  function shortenTag(t) {
+    var i = t.lastIndexOf('/');
+    return i >= 0 ? t.slice(i + 1) : t;
+  }
+
+  // fmtBuildTime renders an RFC3339 build stamp as local "YYYY-MM-DD HH:MM".
+  // Seconds are noise at this altitude; an unparseable value passes through.
+  function fmtBuildTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
   // metaRows mirrors buildSvcView's kv pairs. HTTP() is derived from port > 0
-  // (the Go method does not serialize).
+  // (the Go method does not serialize). tag and built come from the shared
+  // build metadata object; a service that reports neither shows neither.
   function metaRows(s) {
     var rows = [];
     rows.push(['check', s.port > 0 ? 'HTTP :' + s.port : 'launchd']);
     if (s.daemon) rows.push(['scope', 'daemon']);
     if (s.version) rows.push(['version', s.version]);
+    if (s.tag) rows.push(['tag', shortenTag(s.tag)]);
+    if (s.build_time) rows.push(['built', fmtBuildTime(s.build_time)]);
     if (s.drift && s.installed) rows.push(['installed', s.installed]);
     if (s.webkit) rows.push(['webkit', shortenWebkit(s.webkit)]);
     if (s.known) rows.push(['last check', (s.detail || '') + ' · ' + clock(s.checked_at)]);

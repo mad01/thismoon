@@ -6,8 +6,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
+
+// testInfo is the build metadata the test server reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test-sha",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "deps/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 // testServer builds a Server over a temp store seeded with one flagged dep and
 // one clean dep. The engine is nil — the page/API/version routes under test
@@ -30,7 +39,7 @@ func testServer(t *testing.T) *Server {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return New(st, nil, "test-sha")
+	return New(st, nil, testInfo)
 }
 
 func TestPageServesShell(t *testing.T) {
@@ -137,7 +146,7 @@ func TestAPIDepsExcludesNonImportedFromFlagged(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	h := New(st, nil, "test-sha").Handler()
+	h := New(st, nil, testInfo).Handler()
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/deps", nil))
 
@@ -156,17 +165,36 @@ func TestAPIDepsExcludesNonImportedFromFlagged(t *testing.T) {
 	}
 }
 
+// TestVersionAndHealthz pins the cross-tool build metadata contract: the four
+// keys, the injected values, and the headers ralph and status probe with.
 func TestVersionAndHealthz(t *testing.T) {
 	h := testServer(t).Handler()
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/version", nil))
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
 	var v map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
 		t.Fatal(err)
 	}
-	if v["version"] != "test-sha" {
-		t.Errorf("version = %q", v["version"])
+	want := map[string]string{
+		"version":    testInfo.Version,
+		"commit":     testInfo.Commit,
+		"tag":        testInfo.Tag,
+		"build_time": testInfo.BuildTime,
+	}
+	if len(v) != len(want) {
+		t.Errorf("version body = %q, want exactly the keys %v", rec.Body.Bytes(), want)
+	}
+	for k, w := range want {
+		if v[k] != w {
+			t.Errorf("version[%q] = %q, want %q", k, v[k], w)
+		}
 	}
 
 	rec = httptest.NewRecorder()

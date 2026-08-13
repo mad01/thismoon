@@ -31,12 +31,12 @@ type Advisory struct {
 // Dependency is one resolved external package found in a repo, with any
 // advisories OSV reports for that exact version (empty = clean).
 type Dependency struct {
-	Ecosystem    string     `json:"ecosystem"` // OSV ecosystem: Go | npm | PyPI
-	Name         string     `json:"name"`
-	Version      string     `json:"version"`
-	Repo         string     `json:"repo"`          // repo root the dep was found in
-	ManifestPath string     `json:"manifest_path"` // module/lockfile that declared it
-	Direct       bool       `json:"direct"`        // direct vs transitive
+	Ecosystem    string `json:"ecosystem"` // OSV ecosystem: Go | npm | PyPI
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	Repo         string `json:"repo"`          // repo root the dep was found in
+	ManifestPath string `json:"manifest_path"` // module/lockfile that declared it
+	Direct       bool   `json:"direct"`        // direct vs transitive
 	// Imported is true when the dependency contributes at least one package to
 	// the main module's build (Go) — i.e. it is actually compiled in, not a
 	// graph-only transitive. Ecosystems where reachability isn't computed (npm,

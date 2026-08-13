@@ -78,7 +78,7 @@ Event{ ID, Time, Source, Component, Level, Title, Message, Tags, Data }
 ## Build / install / test
 
 ```bash
-make build    # ./events binary (Version via ldflags)
+make build    # ./events binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/events + adhoc codesign
 make test     # go test ./...  (hermetic: t.TempDir + injected clock, never touches real $HOME)
 ```
@@ -90,7 +90,7 @@ make test     # go test ./...  (hermetic: t.TempDir + injected clock, never touc
 - `POST /api/events`    : emit one event (JSON body); returns `{"id":"…"}` (201)
 - `DELETE /api/events?source=<s>[&before=<id>]` : purge a source (all, or only events with id <= cursor); returns `{"purged":n}`
 - `GET  /api/sources`   : `[{"source":"…","count":n}]`
-- `GET  /version`       : `{"version":"<sha>"}`
+- `GET  /version`       : the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /healthz`       : `200 ok`
 - `GET  /webkit/`       : shared chrome
 
@@ -106,7 +106,7 @@ events emit --source deps --title "3 advisories" --level warn \
 events list --source deps --level warn --limit 20
 events purge --source deps                  # drop a whole source
 events purge --source deps --before <id>    # or only events at/before a cursor
-events version                              # git sha the binary was built from
+events version [-o json]                    # bare git sha; -o json prints the full build metadata object
 ```
 
 The log is append-only in normal operation, but junk happens (e.g. test events

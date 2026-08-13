@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/keep/internal/pin"
@@ -32,20 +33,20 @@ var appJS []byte
 
 // Server serves the keep store.
 type Server struct {
-	store   *store.Store
-	version string
-	author  string
-	now     func() time.Time
+	store  *store.Store
+	info   buildinfo.Info
+	author string
+	now    func() time.Time
 }
 
-// New returns a Server backed by st, reporting version on /version and
-// stamping author into the provenance of every assertion it creates.
-func New(st *store.Store, version, author string) *Server {
+// New returns a Server backed by st, reporting info on /version and stamping
+// author into the provenance of every assertion it creates.
+func New(st *store.Store, info buildinfo.Info, author string) *Server {
 	return &Server{
-		store:   st,
-		version: version,
-		author:  author,
-		now:     func() time.Time { return time.Now().UTC() },
+		store:  st,
+		info:   info,
+		author: author,
+		now:    func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -62,11 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
-	})
+	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
 	return logRequests(mux)
 }

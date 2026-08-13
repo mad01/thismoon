@@ -14,7 +14,7 @@ Claude) are the primary surface**; the `keep` CLI mirrors them. The web page at
 keep/
   cmd/keep/            - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, mcp, manage (assert/list/get/check/retract), version (Version via ldflags)
+    cli/               - cobra: root, serve, mcp, manage (assert/list/get/check/retract), version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     store/             - Assertion model + pure helpers (assertion.go) and the
                          mutex-guarded JSONL store (store.go, id.go)
@@ -140,7 +140,7 @@ pins is the way to record the moved evidence.
 ## Build / install / test
 
 ```bash
-make build    # ./keep binary (Version via ldflags)
+make build    # ./keep binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/keep + adhoc codesign
 make test     # go test ./...  (hermetic: t.TempDir + a temp git repo, never touches real $HOME)
 ```
@@ -157,7 +157,7 @@ Owned by `keep serve`:
 - `POST /api/assertions/{id}/retract`     : body `{note}`; terminal withdrawal
 - `POST /api/check`                        : body `{id?}`; check one assertion or all → `{checked, fresh, stale, flipped, assertions}`
 - `GET  /healthz`                         : 204
-- `GET  /version`                          → `{"version":"<sha>"}`
+- `GET  /version`                          → the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`                         : shared chrome (asset drift checks use `GET /webkit/version`)
 
 Pin resolution lives on the server because it is the process that can read the
@@ -187,9 +187,10 @@ keep version [-o json]
 `--pin` takes `repo_path:file:start-end` and repeats; at least one is required,
 and `repo_path` is the absolute path to the repo working tree.
 `keep check` with no id walks the whole store (skipping retracted ones) and
-prints how many flipped. `keep version` prints the git commit that built the
-binary; `-o json` prints `{"version":"<sha>"}`, the convention sibling tools
-follow so ralph can probe any of them for the build they are running.
+prints how many flipped. `keep version` prints the bare git commit that built
+the binary, the token sibling tools also print so ralph and status can probe any
+of them for the build they are running; `-o json` prints the full build
+metadata object.
 
 ## MCP tools
 
@@ -240,7 +241,10 @@ the same commit reports the same asset hash.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).
 - **Version probe convention.** `GET /version` and `keep version -o json` both
-  return `{"version":"<sha>"}` so ralph can check which build is live.
+  return the shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is live.
+  Plain `keep version` stays a bare token — status parses it as one.
 
 ## See also
 

@@ -12,7 +12,7 @@ origins (present.this) can fetch speech from `http://speak.this` too.
 services/speak/
   cmd/speak/           # entrypoint (delegates to internal/cli)
   internal/
-    cli/               # cobra: serve, mcp, version (Version via ldflags)
+    cli/               # cobra: serve, mcp, version (build metadata from the shared buildinfo package)
     web/               # server.go (mux, CORS, TTS proxy, HTTP API), markdown.go
                         # (goldmark render + section split), assets/shell.html
                         # (chrome-only shell) + assets/app.js (client render)
@@ -115,7 +115,7 @@ WAV and plays it there); mcp plays audio **on the machine's speakers** via
 ## Build / install / test
 
 ```bash
-make build    # ./speak binary
+make build    # ./speak binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/speak + adhoc codesign
 make test     # go test ./...
 ```
@@ -130,7 +130,7 @@ make test     # go test ./...
 | `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (adds CORS, strips the upstream's own CORS headers) |
 | `GET /healthz` | CORS'd 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets the same header from the wrapper handler, which sets CORS on every response |
 | `GET /enginez` | Pings the TTS engine's `GET /` with a 1.5s timeout; 204 if reachable, 502 otherwise. `app.js` polls this to warn when play buttons won't work; distinct from `/healthz`, which only proves this page is up |
-| `GET /version` | `{"version":"<sha>"}`, the HTTP twin of `speak version -o json`, which ralph uses for update detection |
+| `GET /version` | The four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the HTTP twin of `speak version -o json`, which ralph uses for update detection |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
 ## Shared UI: webkit
@@ -170,6 +170,11 @@ palette/topbar/theme CSS locally; it lives in webkit only.
 
 ## Gotchas
 
+- **Version probe convention.** `GET /version` and `speak version -o json` both
+  return the shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is live.
+  Plain `speak version` stays a bare token — status parses it as one.
 - **Two processes, one release artifact.** The release artifact is the Go
   binary only. It serves the page and proxies speech requests, but synthesis
   needs the recipe-managed Kokoro sidecar running on `:8765`; without it the

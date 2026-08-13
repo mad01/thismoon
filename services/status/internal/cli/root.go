@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,11 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/status/internal/server"
 )
-
-// Version is injected at build time via -ldflags.
-var Version = "dev"
 
 const (
 	defaultPort    = 7426
@@ -49,22 +45,10 @@ var serveCmd = &cobra.Command{
 			Interval:         flagInterval,
 			Workdir:          expandTilde(flagWorkdir),
 			RoutesPath:       expandTilde(flagRoutes),
-			Version:          Version,
+			Info:             buildinfo.Get(),
 			RestartWindow:    flagRestartWindow,
 			RestartThreshold: flagRestartThreshold,
 		})
-	},
-}
-
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the build version",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		if out, _ := cmd.Flags().GetString("output"); out == "json" {
-			return json.NewEncoder(os.Stdout).Encode(map[string]string{"version": Version})
-		}
-		fmt.Println(Version)
-		return nil
 	},
 }
 
@@ -81,8 +65,7 @@ func init() {
 		"window for counting launchd respawns per service")
 	serveCmd.Flags().IntVar(&flagRestartThreshold, "restart-threshold", 50,
 		"respawns within the window that trigger a crash-loop alert")
-	versionCmd.Flags().StringP("output", "o", "", "output format (json)")
-	rootCmd.AddCommand(serveCmd, versionCmd)
+	rootCmd.AddCommand(serveCmd)
 }
 
 func Execute() error {

@@ -522,7 +522,6 @@ internal/
   service/              # Service definition and manager interface
   platform/launchd/     # macOS launchd implementation
   reconcile/            # Reconciliation engine
-pkg/version/            # Version information
 ```
 
 Key components:

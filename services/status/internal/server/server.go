@@ -14,6 +14,7 @@ import (
 
 	"github.com/mad01/thismoon/webkit"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/status/internal/discover"
 	"github.com/mad01/thismoon/services/status/internal/history"
 )
@@ -37,7 +38,7 @@ type Options struct {
 	RoutesPath   string
 	AgentsDir    string
 	DaemonsDir   string
-	Version      string
+	Info         buildinfo.Info
 	HistoryDays  int // days shown on the page
 	KeepDays     int // days kept in the history file
 
@@ -79,8 +80,8 @@ func (o *Options) defaults() {
 	}
 }
 
-// NewMux wires the handlers around a Monitor.
-func NewMux(m *Monitor, version string) *http.ServeMux {
+// NewMux wires the handlers around a Monitor, reporting info on /version.
+func NewMux(m *Monitor, info buildinfo.Info) *http.ServeMux {
 	mux := http.NewServeMux()
 	webkit.Mount(mux)
 
@@ -109,11 +110,7 @@ func NewMux(m *Monitor, version string) *http.ServeMux {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", version)
-	})
+	mux.HandleFunc("GET /version", info.Handler())
 
 	return mux
 }
@@ -131,7 +128,7 @@ func Serve(opts Options) error {
 	defer cancel()
 	go m.run(ctx)
 
-	mux := NewMux(m, opts.Version)
+	mux := NewMux(m, opts.Info)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mux.ServeHTTP(w, r)
 		log.Printf("%s %s", r.Method, r.URL.Path)

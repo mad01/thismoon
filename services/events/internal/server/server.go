@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/events/internal/event"
@@ -23,13 +24,13 @@ var indexHTML []byte
 
 // Server serves the event store.
 type Server struct {
-	store   *store.Store
-	version string
+	store *store.Store
+	info  buildinfo.Info
 }
 
-// New returns a Server backed by st, reporting version on /version.
-func New(st *store.Store, version string) *Server {
-	return &Server{store: st, version: version}
+// New returns a Server backed by st, reporting info on /version.
+func New(st *store.Store, info buildinfo.Info) *Server {
+	return &Server{store: st, info: info}
 }
 
 // Handler builds the routes, wrapped in request logging.
@@ -44,11 +45,7 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, "{\"version\":%q}\n", s.version)
-	})
+	mux.HandleFunc("GET /version", s.info.Handler())
 	webkit.Mount(mux)
 	return logRequests(mux)
 }

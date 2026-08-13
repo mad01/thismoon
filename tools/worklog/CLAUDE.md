@@ -93,7 +93,7 @@ context-pipeline.json, agent-card.json.
 ## Build / install / test
 
 ```bash
-make build    # ./worklog
+make build    # ./worklog (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/worklog + adhoc codesign
 make test     # go test ./...
 ```
@@ -110,7 +110,13 @@ worklog new <key> [--ticket ID]
 worklog path [key]
 worklog scan --since 14d   # digest ~/.claude/projects/*/*.jsonl as JSON; see How it works
 worklog mcp        # MCP stdio server (blocks)
+worklog version [-o json]
 ```
+
+`worklog version` prints the bare git commit that built the binary, the token
+sibling tools also print so ralph and status can probe any of them for the
+build they are running; `-o json` prints the full build metadata object. The
+cobra `worklog --version` flag prints the same token in cobra's own phrasing.
 
 ## MCP tools
 
@@ -150,6 +156,13 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
   the user's working directory. The CLI uses `os.Getwd()` directly.
 - **No remote.** Cross-machine sync is intentionally out of scope for now.
   Resume on the machine you left.
+- **Version probe convention.** `worklog version -o json` returns the shared
+  four-key build metadata object (`version`, `commit`, `tag`, `build_time`,
+  every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is
+  installed. Plain `worklog version` stays a bare token — status parses it as
+  one. worklog is CLI + MCP only, so there is no `/version` endpoint; the MCP
+  server reports the same token as its server version.
 
 ## See also
 

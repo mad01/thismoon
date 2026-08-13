@@ -11,8 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/services/wire/internal/store"
 )
+
+// testInfo is the build metadata the test server reports on /version.
+var testInfo = buildinfo.Info{
+	Version:   "test",
+	Commit:    "0123456789abcdef0123456789abcdef01234567",
+	Tag:       "wire/v0.0.0",
+	BuildTime: "2026-08-13T09:00:00Z",
+}
 
 // newTestServer returns a live server over a temp workdir, so tests never
 // touch a real store.
@@ -22,7 +31,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
-	srv := httptest.NewServer(New(st, "test", 7432).Handler())
+	srv := httptest.NewServer(New(st, testInfo, 7432).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -344,9 +353,8 @@ func TestListHidesClosedUnlessAsked(t *testing.T) {
 func TestStaticRoutes(t *testing.T) {
 	srv := newTestServer(t)
 	for path, want := range map[string]string{
-		"/":        "wk-header",
-		"/app.js":  "EventSource",
-		"/version": `"version":"test"`,
+		"/":       "wk-header",
+		"/app.js": "EventSource",
 	} {
 		res, err := srv.Client().Get(srv.URL + path)
 		if err != nil {
@@ -365,6 +373,42 @@ func TestStaticRoutes(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusNoContent {
 		t.Errorf("GET /healthz returned %d", res.StatusCode)
+	}
+}
+
+// TestVersion pins the cross-tool build metadata contract: the four keys, the
+// injected values, and the headers ralph and status probe with.
+func TestVersion(t *testing.T) {
+	srv := newTestServer(t)
+	res, err := srv.Client().Get(srv.URL + "/version")
+	if err != nil {
+		t.Fatalf("GET /version: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if ct := res.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	body, _ := io.ReadAll(res.Body)
+	var keys map[string]string
+	if err := json.Unmarshal(body, &keys); err != nil {
+		t.Fatalf("unmarshal %q: %v", body, err)
+	}
+	want := map[string]string{
+		"version":    testInfo.Version,
+		"commit":     testInfo.Commit,
+		"tag":        testInfo.Tag,
+		"build_time": testInfo.BuildTime,
+	}
+	if len(keys) != len(want) {
+		t.Errorf("version body = %q, want exactly the keys %v", body, want)
+	}
+	for k, v := range want {
+		if keys[k] != v {
+			t.Errorf("version[%q] = %q, want %q", k, keys[k], v)
+		}
 	}
 }
 

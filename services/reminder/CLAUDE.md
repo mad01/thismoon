@@ -13,7 +13,7 @@ can recur. **The MCP tools (driven by Claude) are the primary surface**; the
 reminder/
   cmd/reminder/        - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, mcp, manage (add/list/get/edit/cancel/test/fire), version (Version via ldflags)
+    cli/               - cobra: root, serve, mcp, manage (add/list/get/edit/cancel/test/fire), version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     store/             - Reminder model + pure helpers (reminder.go) and the
                          mutex-guarded JSON store (store.go, id.go)
@@ -65,7 +65,7 @@ atomically (temp file + rename) on every write.
 ## Build / install / test
 
 ```bash
-make build    # ./reminder binary (Version via ldflags)
+make build    # ./reminder binary (build metadata via ldflags, from ../../buildinfo.mk)
 make install  # build + cp to ~/code/bin/reminder + adhoc codesign
 make test     # go test ./...  (hermetic: t.TempDir + injected clock, never touches real $HOME)
 ```
@@ -84,9 +84,9 @@ Owned by `reminder serve`:
 - `POST /api/reminders/{id}/fire`       : fire for real now (recurring → reschedule, one-shot → fired; emits an event), same path as the ticker
 - `POST /api/test`                      : generic test notification, no reminder needed → `{"ok":true}`
 - `DELETE /api/reminders/{id}`          : hard delete (web only)
-- `GET  /version` → `{"version":"<sha>"}`; `GET /webkit/` : shared chrome (asset drift checks use `GET /webkit/version`)
+- `GET  /version` → the four-key build metadata object (`version`, `commit`, `tag`, `build_time`); `GET /webkit/` : shared chrome (asset drift checks use `GET /webkit/version`)
 
-The server is constructed with a `notify.Notifier` (`server.New(st, version, n)`)
+The server is constructed with a `notify.Notifier` (`server.New(st, info, n)`)
 so the test/fire endpoints reuse the exact delivery path the ticker uses. **test
 vs fire:** test is a dry run that never mutates state (doesn't consume a one-shot
 or advance a recurring schedule): the primary "do notifications work here?"
@@ -110,9 +110,10 @@ reminder version [-o json]
 
 `--due` accepts RFC3339 or `2006-01-02T15:04` (parsed in the local timezone,
 then normalized to RFC3339 before the API call); `--in` accepts a Go duration
-(e.g. `2h30m`). `reminder version` prints the git commit that built the
-binary; `-o json` prints `{"version":"<sha>"}`, the convention sibling tools
-follow so ralph can probe any of them for the build they are running.
+(e.g. `2h30m`). `reminder version` prints the bare git commit that built the
+binary, the token sibling tools also print so ralph and status can probe any of
+them for the build they are running; `-o json` prints the full build metadata
+object.
 
 ## MCP tools
 

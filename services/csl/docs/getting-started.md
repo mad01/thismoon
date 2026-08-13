@@ -19,7 +19,7 @@ cd thismoon/services/csl
 make install
 ```
 
-`make install` builds with the short git hash embedded as the version, copies the binary to `~/code/bin/csl`, strips the macOS quarantine attribute, and ad-hoc codesigns it.
+`make install` builds with the build metadata embedded (short git hash, full commit, release tag, build time), copies the binary to `~/code/bin/csl`, strips the macOS quarantine attribute, and ad-hoc codesigns it.
 
 Verify:
 

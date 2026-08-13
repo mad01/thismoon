@@ -12,9 +12,6 @@ import (
 	"github.com/mad01/thismoon/services/deps/internal/registry"
 )
 
-// Version is injected at build time via -ldflags.
-var Version = "dev"
-
 const defaultPort = 7429
 
 var (

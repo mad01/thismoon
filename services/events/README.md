@@ -78,7 +78,7 @@ API only; deletion stays human-triggered.
 | `DELETE /api/events?source=<s>[&before=<id>]` | Purge a source; returns `{"purged":n}` |
 | `GET /api/sources` | Sources with counts |
 | `GET /healthz` | 200 |
-| `GET /version` | `{"version":"<sha>"}` build sha |
+| `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
 ## MCP
