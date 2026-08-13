@@ -8,6 +8,8 @@ Path: `~/.config/csl/config.yaml`.
 
 Loaded by the CLI and the MCP server on every invocation that needs to discover repos (`search`, `count`, `read`, `repo`, `doctor`, `index`, and most `csl_*` MCP tools).
 
+`csl config` prints that path, whether it loaded, and the settings in effect once defaults are applied; `csl config --help` carries an annotated example of every key below.
+
 ### Schema
 
 | Field | Type | Required | Description |

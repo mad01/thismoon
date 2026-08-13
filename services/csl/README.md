@@ -82,6 +82,7 @@ csl semantic "where do we retry failed requests"  # meaning-based search
 csl count "TODO" --group-by repo         # cross-repo tally
 csl sync                                 # pull every repo (ff-only), reindex what changed
 csl doctor                               # check index + daemon health
+csl config                               # which config file is read, and the settings in effect
 ```
 
 First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`).

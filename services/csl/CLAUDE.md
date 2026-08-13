@@ -11,7 +11,7 @@ cmd/csl/           entrypoint
 internal/
   cli/             Cobra commands (web, mcp, search, count, query, read,
                     repo, index, semantic, hybrid, sync, hooks, doctor,
-                    version)
+                    config, version)
   daemon/          search daemon lifecycle (socket, pid, log)
   search/          zoekt indexer/searcher wrappers
   semantic/        text embedding + code chunking for vector search
@@ -105,7 +105,7 @@ make lint     # golangci-lint run ./...
 
 ## Configuration
 
-Config lives at `~/.config/csl/config.yaml`. Key sections:
+Config lives at `~/.config/csl/config.yaml`; `csl config` prints that path, whether it loaded, and the settings in effect. Key sections:
 
 - **`dirs`**: directories to walk for git repos.
 - **`index.hosts`**: allowlist of git remote hosts. Only repos whose origin remote matches a listed host are indexed. Omit to index all repos.
@@ -148,6 +148,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
 - **`csl repo [query]`**: interactive fuzzy-finder over discovered repos. With a query, prints the single matching repo's path (case-insensitive substring on org/repo; errors on zero or multiple matches); a query also filters `--list` output. `--list` (non-interactive), `--json`/`--toon` (imply `--list`).
 - **`csl doctor`**: check index health (shards, staleness, dirty repos, daemon status) and print the binary's own build metadata, so a diagnosis names the build it came from (`build` object under `--json`). `--json`, `--repair` (fix a corrupt state file).
+- **`csl config`**: print which config file csl reads, whether it loaded, and the settings in effect once defaults are applied. `--help` carries an annotated reference of every key.
 - **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild; needs Ollama running with the model pulled), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
 - **`csl semantic files [path]`**: classify every tracked file under a path with the indexer's skip rules, without embedding. Default output lists the files that would be embedded; `--skipped` lists filtered files with reasons; `--json` dumps every decision.

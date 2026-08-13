@@ -193,13 +193,23 @@ func (c *Config) EffectiveLayout() string {
 	return LayoutSplit
 }
 
-// Load reads config.yaml from ~/.config/csl/config.yaml.
-func Load() (*Config, error) {
+// Path returns the config file location, ~/.config/csl/config.yaml. It is the
+// only path Load reads; `csl config` prints it so a diagnosis names the file
+// it is talking about.
+func Path() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("cannot determine home directory: %w", err)
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	globalPath := filepath.Join(home, ".config", "csl", configFileName)
+	return filepath.Join(home, ".config", "csl", configFileName), nil
+}
+
+// Load reads config.yaml from ~/.config/csl/config.yaml.
+func Load() (*Config, error) {
+	globalPath, err := Path()
+	if err != nil {
+		return nil, err
+	}
 	cfg, err := loadFrom(globalPath)
 	if err != nil {
 		return nil, fmt.Errorf("no config found (checked %s): %w", globalPath, err)

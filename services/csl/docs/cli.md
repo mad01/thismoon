@@ -16,6 +16,7 @@ Every command that reads repos loads `~/.config/csl/config.yaml` and walks the c
 | [`csl index`](#csl-index) | Manage the zoekt index (status, repair, clean) |
 | [`csl hooks`](#csl-hooks) | Install a `post-merge` git hook to auto-reindex on `git pull` |
 | [`csl doctor`](#csl-doctor) | Report index and daemon health |
+| [`csl config`](#csl-config) | Show which config file is read and the settings in effect |
 | [`csl query`](#csl-query) | Validate a zoekt query without running it |
 | [`csl mcp`](#csl-mcp) | Start the MCP stdio server (for Claude Code) |
 | [`csl version`](#csl-version) | Print the build version |
@@ -418,6 +419,55 @@ Healthy (16):
 ```
 
 A field the build didn't record prints as `-`. If corrupted shards are reported, the output suggests `csl index --repair` followed by `csl index`.
+
+---
+
+## `csl config`
+
+Show which config file csl reads and the settings in effect.
+
+### Synopsis
+
+```sh
+csl config
+```
+
+### Description
+
+The first line names the resolved path and how it went — `loaded`, `missing, defaults in use`, or `parse error: <err>`. Below it is the config csl is actually running on: the file's values with every default filled in, printed as YAML in the same shape the file takes. A broken file is not fatal; the header says so and the defaults print anyway.
+
+`csl config --help` carries an annotated example documenting every key, so a fresh machine can be configured without this page. Pair it with `doctor`: doctor shows the state csl resolved, config shows which file and key to change.
+
+### Example output
+
+```
+config file: /Users/you/.config/csl/config.yaml (loaded)
+
+dirs:
+    - /Users/you/code/src
+layout: split
+summary: false
+tmpdir: ""
+hooks:
+    post_merge:
+        enabled: false
+        exclude: []
+sync:
+    concurrency: 8
+index:
+    hosts:
+        - github.com
+semantic:
+    enabled: false
+    sync: false
+    ollama_url: http://localhost:11434
+    embed_model: unclemusclez/jina-embeddings-v2-base-code:f16
+    dim: 768
+daemon:
+    idle_timeout_minutes: 10
+```
+
+`layout`, `summary`, and `tmpdir` are inert, carried over from csl's origin as a session launcher. They print so a config that sets them is not silently misreported.
 
 ---
 
