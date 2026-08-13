@@ -222,6 +222,15 @@ suspenders hook run pre-commit
 suspenders hook run post-merge
 ```
 
+### Explain the guard for a repo
+
+`doctor` shows why the guard decides what it decides: the global config, any per-repo overrides from `.suspenders.yaml`, whether the repo is guard-exempt, and the full blocked-name list derived from the workspace dirs and blocked words. Use it when a commit was blocked (or wasn't) and the reason isn't obvious. The list is derived fresh on every run and never written anywhere.
+
+```sh
+suspenders doctor                # current directory
+suspenders doctor /path/to/repo
+```
+
 ### Print version
 
 ```sh

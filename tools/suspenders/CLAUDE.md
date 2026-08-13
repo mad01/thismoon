@@ -15,6 +15,8 @@ cmd/suspenders/
     history.go               suspenders history: scan/clean across full git history
                              clean flags: --replace, --replace-file, --replace-map,
                              --redact-file, --dry-run, --yes
+    doctor.go                suspenders doctor: guard config in effect + derived
+                             blocked names for a repo (never persisted, derived per run)
     version.go               suspenders version
 
 internal/
@@ -109,6 +111,7 @@ Version is embedded via `-ldflags` from the thismoon monorepo's short HEAD commi
 | `hook run <event>` | Run the hook pipeline for one event directly (what generated hooks call) |
 | `history scan` | Walk full git history for findings. `--branch`, `--fail-on-findings` |
 | `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
+| `doctor [path]` | Explain the guard for a repo: config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
 | `version` | Print the build version |
 
 ## Configuration
