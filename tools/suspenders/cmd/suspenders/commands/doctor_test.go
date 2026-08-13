@@ -7,9 +7,10 @@ import (
 	"testing"
 )
 
-// runDoctorString points the global config at a temp XDG home holding content,
-// runs doctor against root, and returns its output.
-func runDoctorString(t *testing.T, content, root string) string {
+// xdgConfig points config.Path() at a temp XDG home, holding content as the
+// global config file when content is non-empty. Keeps a test off the real
+// user config, which the commands under test would otherwise read.
+func xdgConfig(t *testing.T, content string) {
 	t.Helper()
 	xdg := t.TempDir()
 	if content != "" {
@@ -22,6 +23,13 @@ func runDoctorString(t *testing.T, content, root string) string {
 		}
 	}
 	t.Setenv("XDG_CONFIG_HOME", xdg)
+}
+
+// runDoctorString points the global config at a temp XDG home holding content,
+// runs doctor against root, and returns its output.
+func runDoctorString(t *testing.T, content, root string) string {
+	t.Helper()
+	xdgConfig(t, content)
 
 	var b strings.Builder
 	doctorCmd.SetOut(&b)
@@ -100,21 +108,6 @@ func TestDoctorWithDefaultConfig(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
-		}
-	}
-}
-
-func TestConfigDocPrintsPathAndReference(t *testing.T) {
-	var b strings.Builder
-	configDocCmd.SetOut(&b)
-	defer configDocCmd.SetOut(nil)
-	if err := configDocCmd.RunE(configDocCmd, nil); err != nil {
-		t.Fatalf("config: %v", err)
-	}
-	out := b.String()
-	for _, want := range []string{"config file:", ".suspenders.yaml", "workspace_dirs", "blocked_words", "safe references"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q", want)
 		}
 	}
 }

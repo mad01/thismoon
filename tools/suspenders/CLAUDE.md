@@ -18,7 +18,8 @@ cmd/suspenders/
     doctor.go                suspenders doctor: installed build + guard config in effect
                              + derived blocked names for a repo (never persisted,
                              derived per run)
-    configdoc.go             suspenders config: config path + annotated setting reference
+    configdoc.go             suspenders config: config path + the settings in
+                             effect (annotated setting reference in --help)
     version.go               suspenders version: bare token, or -o json for the
                              four-key build metadata object (shared buildinfo package)
 
@@ -112,7 +113,7 @@ Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/this
 | `history scan` | Walk full git history for findings. `--branch`, `--fail-on-findings` |
 | `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
 | `doctor [path]` | Explain the guard for a repo: the installed build, config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
-| `config` | Print the config file location and an annotated reference of every setting |
+| `config` | Print the config file location and the settings in effect; `--help` carries the annotated reference of every setting |
 | `version` | Print the bare version token; `-o json` prints the four-key build metadata object |
 
 ## Configuration
