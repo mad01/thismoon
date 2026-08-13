@@ -42,10 +42,11 @@ belt check bash "git push origin main"
 belt check bash "bash cleanup.sh"
 belt check write --file README.md --content "mentions something internal"
 belt doctor
+belt config
 belt version
 ```
 
-`belt doctor` prints the resolved state behind those decisions: which config file loaded (or failed to parse), which guards and hints are enabled with their allow/exclude counts, and the full blocked-name set the write-internal-names guard matches against. When a deny surprises you, `check` shows the verdict and `doctor` shows the config that produced it.
+`belt doctor` prints the resolved state behind those decisions: which config file loaded (or failed to parse), which guards and hints are enabled with their allow/exclude counts, and the full blocked-name set the write-internal-names guard matches against. `belt config` prints the config file locations and an annotated reference of every setting — including how `allow_repos` exempts a repo from a guard and `exclude_paths` exempts paths. When a deny surprises you: `check` shows the verdict, `doctor` shows the state that produced it, `config` shows which file and key to change.
 
 `belt hook <event>` and `belt hint <event>` are the real hook entrypoints (payload on stdin, JSON on stdout); Claude Code invokes them, not the user. `hook` carries deny decisions for guards, `hint` carries `additionalContext` for hints.
 

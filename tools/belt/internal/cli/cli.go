@@ -1,7 +1,7 @@
 // Package cli wires the belt commands: `hook <event>` (the Claude Code
 // PreToolUse guard entrypoint), `hint <event>` (the PostToolUse advisory
 // entrypoint), `check` (manual dry-run), `doctor` (resolved-config report),
-// and `version`.
+// `config` (config locations + annotated setting reference), and `version`.
 package cli
 
 import (
@@ -35,7 +35,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(hookCmd(), hintCmd(), checkCmd(), doctorCmd(), versionCmd())
+	root.AddCommand(hookCmd(), hintCmd(), checkCmd(), doctorCmd(), configDocCmd(), versionCmd())
 	return root
 }
 

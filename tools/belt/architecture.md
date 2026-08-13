@@ -63,7 +63,7 @@ Persisting them is that service's job, not belt's.
 CLI commands: `belt hook bash|write` (the hook entrypoint), `belt check bash
 "<command>"` and `belt check write --file <path> --content <text>` (dry runs),
 `belt doctor` (resolved config, guard/hint state, and the blocked-name set),
-`belt version`.
+`belt config` (config locations + annotated setting reference), `belt version`.
 
 Hook contract: PreToolUse payload on stdin, deny JSON on stdout, exit 0 in
 every case. Config surfaces are read-only, listed above. There is no web or

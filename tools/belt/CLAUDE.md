@@ -12,7 +12,7 @@ Born out of a July 2026 session retrospective: a session pushed straight to mast
 belt/
   cmd/belt/          - entrypoint
   internal/
-    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `version`
+    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `version`
     hook/             - payload parsing + JSON emission for both events
     guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
     hint/             - the hints (prefer-csl, keep-assertions) + csl index lookup, response parsing, session dedupe
@@ -63,6 +63,7 @@ belt hint search|bash    # PostToolUse entrypoint: payload on stdin, additionalC
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
 belt doctor              # resolved config: surfaces loaded, guard/hint state, blocked names
+belt config              # config file locations + annotated reference of every setting
 belt version
 ```
 
