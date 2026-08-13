@@ -35,11 +35,14 @@ type Config struct {
 // patterns beyond the shared sources, and a repository allowlist that lets a
 // guard exempt specific repos (canonical host/owner/repo, e.g.
 // github.com/mad01/dotfiles).
+//
+// The list fields are omitempty so `belt config` can print a resolved toggle
+// without three empty lists under every guard.
 type Toggle struct {
 	Enabled       *bool    `toml:"enabled"        yaml:"enabled"`
-	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths"`
-	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns"`
-	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos"`
+	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
+	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
+	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
 }
 
 // SuspendersGuard mirrors the `guard:` section of the suspenders config.

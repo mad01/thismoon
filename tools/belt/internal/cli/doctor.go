@@ -94,20 +94,24 @@ func orUnknown(s string) string {
 	return s
 }
 
-// beltConfigLine reports which belt config file is in effect, mirroring the
-// YAML-first, legacy-TOML-fallback order of config.LoadFrom.
+// beltConfigLine reports which belt config file is in effect, spelling out
+// what `belt config` puts in its header status.
 func beltConfigLine(p config.Paths) string {
-	if _, _, err := config.LoadTogglesYAML(p.BeltYAML); err == nil {
-		return p.BeltYAML + "  loaded"
-	} else if !os.IsNotExist(err) {
-		return fmt.Sprintf("%s  PARSE ERROR (%v) — running with defaults, everything enabled", p.BeltYAML, err)
+	path, legacy, err := resolveBeltConfig(p)
+	switch {
+	case err == nil && legacy:
+		return path + "  loaded (legacy TOML — rename to config.yaml)"
+	case err == nil:
+		return path + "  loaded"
+	case os.IsNotExist(err):
+		return path + "  missing — defaults, everything enabled"
+	default:
+		return fmt.Sprintf(
+			"%s  PARSE ERROR (%v) — running with defaults, everything enabled",
+			path,
+			err,
+		)
 	}
-	if _, _, err := config.LoadTogglesTOML(p.BeltTOML); err == nil {
-		return p.BeltTOML + "  loaded (legacy TOML — rename to config.yaml)"
-	} else if !os.IsNotExist(err) {
-		return fmt.Sprintf("%s  PARSE ERROR (%v) — running with defaults, everything enabled", p.BeltTOML, err)
-	}
-	return p.BeltYAML + "  missing — defaults, everything enabled"
 }
 
 func profilesNote(profiles []string) string {

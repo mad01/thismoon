@@ -169,18 +169,3 @@ func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 		}
 	})
 }
-
-func TestConfigDocPrintsPathsAndReference(t *testing.T) {
-	cmd := configDocCmd()
-	var b strings.Builder
-	cmd.SetOut(&b)
-	if err := cmd.RunE(cmd, nil); err != nil {
-		t.Fatalf("config: %v", err)
-	}
-	out := b.String()
-	for _, want := range []string{"config.yaml", "legacy fallback", "allow_repos", "exclude_paths", "blocked-name source"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q", want)
-		}
-	}
-}

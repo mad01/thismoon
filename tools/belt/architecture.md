@@ -63,8 +63,9 @@ Persisting them is that service's job, not belt's.
 CLI commands: `belt hook bash|write` (the hook entrypoint), `belt check bash
 "<command>"` and `belt check write --file <path> --content <text>` (dry runs),
 `belt doctor` (installed build, resolved config, guard/hint state, and the
-blocked-name set), `belt config` (config locations + annotated setting
-reference), `belt version [-o json]` (bare version token, or the four-key
+blocked-name set), `belt config` (config locations + the settings in
+effect; the annotated setting reference is in its `--help`),
+`belt version [-o json]` (bare version token, or the four-key
 build metadata object shared across the repo's components).
 
 Hook contract: PreToolUse payload on stdin, deny JSON on stdout, exit 0 in
