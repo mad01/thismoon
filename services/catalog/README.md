@@ -31,6 +31,7 @@ catalog list --owner mad01  # filter by owner
 catalog list --kind System  # filter by kind
 catalog validate            # schema-check + enforce global name uniqueness
 catalog validate ./path     # validate specific dirs/files (used by CI)
+catalog config              # print the registry file in use and how many sources it lists
 ```
 
 The web UI lists Systems and Components, searches by name/owner, and has detail
@@ -63,6 +64,9 @@ sources:
 
 Paths may use `~`; catalog expands them at load time. Point any command at a
 different registry with `catalog --registry <path> ...`.
+
+`catalog config` prints which registry file was resolved and how many sources it
+lists, so you can tell an empty catalog from a registry that never loaded.
 
 ## Where things live
 

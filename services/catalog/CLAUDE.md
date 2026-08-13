@@ -17,7 +17,7 @@ catalog/
     catalog/             - pure functional core: parse, scan, index, query, render,
                             uniqueness, remote-URL derivation (fully unit-tested; the
                             only I/O is the scanner's file reads)
-    cli/                  - Cobra commands (web, list, validate, version)
+    cli/                  - Cobra commands (web, list, validate, config, version)
     web/                  - HTTP shell + JSON API + embedded vanilla frontend
                             (assets/, no build toolchain, //go:embed)
   registry.yaml           - sample registry shipped with the repo
@@ -204,6 +204,7 @@ CLI surface beyond `web`:
 ```sh
 catalog list [--owner O] [--system S] [--kind K] [--json] [query]
 catalog validate [path...]
+catalog config
 catalog version [-o json]
 ```
 
@@ -214,6 +215,10 @@ catalog version [-o json]
   then enforces global name uniqueness (`CheckUnique`). No arguments validates
   the whole registry; one or more directory/file paths validates just those
   (the mode you'd use to check specific repos before merging).
+- `catalog config`: prints the resolved registry path and its status — `loaded,
+  N sources`, `missing`, or `parse error: <err>`. Deliberately one line: the
+  registry is a data file, and `catalog list` already prints what it produces.
+  `catalog config --help` documents the registry format and `--registry`.
 - `catalog version`: prints the bare version token (the git commit it was built
   from), the token sibling tools also print so ralph and status can probe any of
   them for the build they are running; `-o json` prints the full build metadata
