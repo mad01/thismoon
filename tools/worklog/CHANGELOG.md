@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/worklog/v0.2.1...worklog/v0.3.0) (2026-08-13)
+
+
+### Features
+
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+* **worklog:** add config command ([a200f64](https://github.com/mad01/thismoon/commit/a200f64da2a3d1e3019c990d01c13610c83a9e98))
+
 ## [0.2.1](https://github.com/mad01/thismoon/compare/worklog/v0.2.0...worklog/v0.2.1) (2026-07-12)
 
 

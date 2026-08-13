@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/csl/v0.8.0...csl/v0.9.0) (2026-08-13)
+
+
+### Features
+
+* **csl:** add config command ([515467c](https://github.com/mad01/thismoon/commit/515467c97459a3a1779754ba6ba8d99c44700e1d))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/csl/v0.7.2...csl/v0.8.0) (2026-07-18)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/d-man/v0.3.1...d-man/v0.4.0) (2026-08-13)
+
+
+### Features
+
+* **d-man:** add config command ([d4678c0](https://github.com/mad01/thismoon/commit/d4678c0e11a27c16939a097f088b4143885fe8d3))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+
 ## [0.3.1](https://github.com/mad01/thismoon/compare/d-man/v0.3.0...d-man/v0.3.1) (2026-07-15)
 
 

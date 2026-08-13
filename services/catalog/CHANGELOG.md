@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/catalog/v0.2.1...catalog/v0.3.0) (2026-08-13)
+
+
+### Features
+
+* **catalog:** add config command ([0113e4e](https://github.com/mad01/thismoon/commit/0113e4e36eb841838150808242defb44b4c6230d))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+
 ## [0.2.1](https://github.com/mad01/thismoon/compare/catalog/v0.2.0...catalog/v0.2.1) (2026-07-15)
 
 

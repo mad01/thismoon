@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/keep/v0.4.0...keep/v0.5.0) (2026-08-13)
+
+
+### Features
+
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/keep/v0.3.0...keep/v0.4.0) (2026-07-27)
 
 

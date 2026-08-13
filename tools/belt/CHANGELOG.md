@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/belt/v0.5.0...belt/v0.6.0) (2026-08-13)
+
+
+### Features
+
+* **belt:** show effective config in config command, move reference to --help ([edb67af](https://github.com/mad01/thismoon/commit/edb67afb9559fcbd8280d6bcae64f14d3e6861c8))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/belt/v0.4.0...belt/v0.5.0) (2026-08-13)
 
 

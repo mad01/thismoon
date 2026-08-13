@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/suspenders/v0.4.0...suspenders/v0.5.0) (2026-08-13)
+
+
+### Features
+
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([3fc9af5](https://github.com/mad01/thismoon/commit/3fc9af5f3014052300da6ab55325190623867d96))
+* **suspenders:** show effective config in config command, move reference to --help ([3b9f9e3](https://github.com/mad01/thismoon/commit/3b9f9e350dfefd3ba22b0a5d8ee3ebfeab37306c))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/suspenders/v0.3.3...suspenders/v0.4.0) (2026-08-13)
 
 
