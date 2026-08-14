@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
@@ -18,9 +19,9 @@ const WriteInternalNamesID = "write-internal-names"
 // WriteInternalNames blocks Write/Edit content that references internal
 // org/repo names when the target file lives in a public (github.com) repo.
 // Only github.com remotes count as public — other git hosts and files
-// outside any repo are exempt. The name list comes from the suspenders guard
-// config — the same source the pre-commit guard uses — plus the top-level
-// directory names under each configured workspace dir.
+// outside any repo are exempt. The name list comes from the internal_names
+// section of the belt config, falling back to the guard: section of the
+// suspenders config when belt does not set one.
 type WriteInternalNames struct {
 	cfg config.Config
 	// remoteURL returns the origin URL for the repo containing dir, or ""
@@ -42,10 +43,8 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 	if in.FilePath == "" || in.Content == "" {
 		return nil
 	}
-	for _, excl := range g.cfg.Guards[WriteInternalNamesID].ExcludePaths {
-		if excl != "" && strings.Contains(in.FilePath, excl) {
-			return nil
-		}
+	if g.cfg.Guards[WriteInternalNamesID].ExcludesPath(in.FilePath) {
+		return nil
 	}
 	remote := g.remoteURL(nearestExistingDir(in.FilePath))
 	if !isPublicRemote(remote) {
@@ -60,7 +59,7 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 		slices.Contains(g.cfg.Guards[WriteInternalNamesID].AllowRepos, repo) {
 		return nil
 	}
-	names := BlockedNames(g.cfg.Suspenders)
+	names := BlockedNames(g.cfg.Names)
 	var hits []string
 	for _, name := range names {
 		if matchWord(in.Content, name) {
@@ -80,11 +79,15 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 }
 
 // BlockedNames resolves the name set the write-internal-names guard matches:
-// configured blocked words plus the top-level directory names under each
-// workspace dir, lowercased and deduplicated, minus safe references
-// (guard.allowlist) and anything shorter than three characters. Exported so
-// `belt doctor` shows exactly the set the guard uses.
-func BlockedNames(s config.SuspendersGuard) []string {
+// configured blocked words plus, for every git repo under the workspace
+// dirs, the org and repo segments of its origin remote (falling back to the
+// filesystem path) and the checkout dir basename — the same derivation the
+// suspenders pre-commit guard uses, so a nested checkout like
+// ~/workspace/foo/bar contributes "foo" and "bar" as separate names. The
+// result is lowercased and deduplicated, minus allowlisted names and
+// anything shorter than three characters. Exported so `belt doctor` shows
+// exactly the set the guard uses.
+func BlockedNames(s config.InternalNames) []string {
 	allow := map[string]bool{}
 	for _, a := range s.Allowlist {
 		allow[strings.ToLower(a)] = true
@@ -103,10 +106,14 @@ func BlockedNames(s config.SuspendersGuard) []string {
 	for _, w := range s.BlockedWords {
 		add(w)
 	}
-	for _, dir := range s.WorkspaceDirs {
-		for _, entry := range topLevelDirs(expandHome(dir)) {
-			add(entry)
+	// A hook must not break tool calls, so a partial walk (unreadable dir)
+	// still contributes whatever repos it found.
+	repos, _ := repofind.Find(s.WorkspaceDirs, nil)
+	for _, r := range repos {
+		for seg := range strings.SplitSeq(r.Name, "/") {
+			add(seg)
 		}
+		add(filepath.Base(r.Path))
 	}
 	return names
 }
@@ -143,31 +150,6 @@ func nearestExistingDir(path string) string {
 		}
 		dir = parent
 	}
-}
-
-func topLevelDirs(root string) []string {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-			names = append(names, e.Name())
-		}
-	}
-	return names
-}
-
-func expandHome(path string) string {
-	if !strings.HasPrefix(path, "~") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, strings.TrimPrefix(path, "~"))
 }
 
 // gitRemoteURL shells out to git; "" when dir is outside a repo or the repo

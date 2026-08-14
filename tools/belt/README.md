@@ -15,7 +15,7 @@ Three guards run against tool calls before they execute:
 
 - **git-push-main**: blocks `git push` to main/master on machines with the work profile. Personal machines push to main freely.
 - **script-deny-list**: deep deny inspection, applies the Bash deny list from the Claude settings inside scripts. `bash cleanup.sh` looks harmless to the permission system even when the script runs `kubectl delete`; this guard reads executed and sourced script files, `-c` strings, and heredocs, and denies when they contain a deny-listed command. Extra patterns (like `rm -rf`) come from the belt config.
-- **write-internal-names**: blocks file writes that would put internal org/repo names into a public github.com repo. Uses the same name config as the suspenders pre-commit guard.
+- **write-internal-names**: blocks file writes that would put internal org/repo names into a public github.com repo. Names come from the `internal_names` section of belt's own config; when that section is unset, belt falls back to the name config of the suspenders pre-commit guard.
 
 ## Hints
 

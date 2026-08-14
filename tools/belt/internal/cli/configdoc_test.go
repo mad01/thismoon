@@ -68,8 +68,8 @@ guards:
 	for _, want := range []string{
 		"config file:  " + p.BeltYAML,
 		"legacy fallback " + p.BeltTOML,
-		p.Suspenders + "  (missing — guard: section = the blocked-name source)",
-		p.Ralph + "  (missing — profiles list = machine profile)",
+		p.Suspenders + "  (missing — guard: section, used only when internal_names is unset here)",
+		p.Ralph + "  (missing — profiles list, used only when profiles is unset here)",
 		"script-deny-list:",
 		"enabled: false",
 		"rm -rf",

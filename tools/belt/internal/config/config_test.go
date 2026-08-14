@@ -137,7 +137,7 @@ func TestLoadClaudeDenyPatternsMalformed(t *testing.T) {
 }
 
 // missingYAML returns a config.yaml path that does not exist in dir, so
-// loadToggles exercises its legacy-TOML fallback.
+// loadFile exercises its legacy-TOML fallback.
 func missingYAML(dir string) string {
 	return filepath.Join(dir, "config.yaml")
 }
@@ -150,8 +150,8 @@ extra_patterns = ["rm -rf", "rm -fr"]
 `
 	dir := t.TempDir()
 	path := writeFile(t, dir, "config.toml", content)
-	got, _ := loadToggles(missingYAML(dir), path)
-	patterns := got["script-deny-list"].ExtraPatterns
+	f := loadFile(missingYAML(dir), path)
+	patterns := f.Guards["script-deny-list"].ExtraPatterns
 	if len(patterns) != 2 || patterns[0] != "rm -rf" || patterns[1] != "rm -fr" {
 		t.Errorf("extra_patterns = %v", patterns)
 	}
@@ -164,8 +164,8 @@ allow_repos = ["github.com/mad01/dotfiles"]
 `
 	dir := t.TempDir()
 	path := writeFile(t, dir, "config.toml", content)
-	got, _ := loadToggles(missingYAML(dir), path)
-	repos := got["git-push-main"].AllowRepos
+	f := loadFile(missingYAML(dir), path)
+	repos := f.Guards["git-push-main"].AllowRepos
 	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
 		t.Errorf("allow_repos = %v", repos)
 	}
@@ -181,7 +181,8 @@ enabled = false
 `
 	dir := t.TempDir()
 	path := writeFile(t, dir, "config.toml", content)
-	guards, hints := loadToggles(missingYAML(dir), path)
+	f := loadFile(missingYAML(dir), path)
+	guards, hints := f.Guards, f.Hints
 	if guards["git-push-main"].Enabled == nil || !*guards["git-push-main"].Enabled {
 		t.Error("guards section did not survive adding hints")
 	}
@@ -206,7 +207,8 @@ hints:
 `
 	dir := t.TempDir()
 	yamlPath := writeFile(t, dir, "config.yaml", content)
-	guards, hints := loadToggles(yamlPath, missingYAML(dir))
+	f := loadFile(yamlPath, missingYAML(dir))
+	guards, hints := f.Guards, f.Hints
 	repos := guards["git-push-main"].AllowRepos
 	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
 		t.Errorf("allow_repos = %v", repos)
@@ -224,8 +226,8 @@ func TestLoadTogglesYAMLWinsOverTOML(t *testing.T) {
 	dir := t.TempDir()
 	yamlPath := writeFile(t, dir, "config.yaml", "guards:\n  git-push-main:\n    enabled: false\n")
 	tomlPath := writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = true\n")
-	guards, _ := loadToggles(yamlPath, tomlPath)
-	if guards["git-push-main"].Enabled == nil || *guards["git-push-main"].Enabled {
+	f := loadFile(yamlPath, tomlPath)
+	if f.Guards["git-push-main"].Enabled == nil || *f.Guards["git-push-main"].Enabled {
 		t.Error("YAML config should win when both files exist")
 	}
 }
@@ -234,9 +236,9 @@ func TestLoadTogglesBrokenYAMLYieldsDefaultsNotTOML(t *testing.T) {
 	dir := t.TempDir()
 	yamlPath := writeFile(t, dir, "config.yaml", "guards: [broken")
 	tomlPath := writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = false\n")
-	guards, hints := loadToggles(yamlPath, tomlPath)
-	if guards != nil || hints != nil {
-		t.Errorf("broken YAML must yield defaults, not the stale TOML: guards=%v hints=%v", guards, hints)
+	f := loadFile(yamlPath, tomlPath)
+	if f.Guards != nil || f.Hints != nil {
+		t.Errorf("broken YAML must yield defaults, not the stale TOML: guards=%v hints=%v", f.Guards, f.Hints)
 	}
 }
 
@@ -252,6 +254,128 @@ func TestHintEnabledDefaultsOn(t *testing.T) {
 	}
 	if !cfg.HintEnabled("prefer-csl") {
 		t.Error("disabling one hint must not disable the others")
+	}
+}
+
+// fixturePaths builds a Paths pointing into dir, so LoadFrom tests control
+// exactly which surfaces exist.
+func fixturePaths(dir string) Paths {
+	return Paths{
+		BeltYAML:       filepath.Join(dir, "belt.yaml"),
+		BeltTOML:       filepath.Join(dir, "belt.toml"),
+		Ralph:          filepath.Join(dir, "ralph.toml"),
+		Suspenders:     filepath.Join(dir, "suspenders.yaml"),
+		ClaudeSettings: []string{filepath.Join(dir, "settings.json")},
+	}
+}
+
+func TestLoadFromProfilesBeltWins(t *testing.T) {
+	dir := t.TempDir()
+	p := fixturePaths(dir)
+	writeFile(t, dir, "belt.yaml", "profiles:\n  - personal\n")
+	writeFile(t, dir, "ralph.toml", `profiles = ["work"]`)
+
+	cfg := LoadFrom(p)
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0] != "personal" {
+		t.Errorf("profiles = %v, want [personal]", cfg.Profiles)
+	}
+	if cfg.ProfileSource != SourceBelt {
+		t.Errorf("ProfileSource = %q, want %q", cfg.ProfileSource, SourceBelt)
+	}
+}
+
+func TestLoadFromProfilesRalphFallback(t *testing.T) {
+	dir := t.TempDir()
+	p := fixturePaths(dir)
+	writeFile(t, dir, "belt.yaml", "guards:\n  git-push-main:\n    enabled: true\n")
+	writeFile(t, dir, "ralph.toml", `profiles = ["work"]`)
+
+	cfg := LoadFrom(p)
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0] != "work" {
+		t.Errorf("profiles = %v, want [work]", cfg.Profiles)
+	}
+	if cfg.ProfileSource != SourceRalph {
+		t.Errorf("ProfileSource = %q, want %q", cfg.ProfileSource, SourceRalph)
+	}
+}
+
+func TestLoadFromInternalNamesBeltWins(t *testing.T) {
+	dir := t.TempDir()
+	p := fixturePaths(dir)
+	writeFile(t, dir, "belt.yaml", `
+internal_names:
+  workspace_dirs:
+    - ~/workspace
+  blocked_words:
+    - beltword
+`)
+	writeFile(t, dir, "suspenders.yaml", "guard:\n  blocked_words:\n    - suspword\n")
+
+	cfg := LoadFrom(p)
+	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "beltword" {
+		t.Errorf("blocked_words = %v, want [beltword]", cfg.Names.BlockedWords)
+	}
+	if cfg.NamesSource != SourceBelt {
+		t.Errorf("NamesSource = %q, want %q", cfg.NamesSource, SourceBelt)
+	}
+}
+
+func TestLoadFromInternalNamesEmptySectionStillBelt(t *testing.T) {
+	dir := t.TempDir()
+	p := fixturePaths(dir)
+	writeFile(t, dir, "belt.yaml", "internal_names: {}\n")
+	writeFile(t, dir, "suspenders.yaml", "guard:\n  blocked_words:\n    - suspword\n")
+
+	cfg := LoadFrom(p)
+	if len(cfg.Names.BlockedWords) != 0 {
+		t.Errorf("blocked_words = %v, want empty — a present internal_names section owns the list", cfg.Names.BlockedWords)
+	}
+	if cfg.NamesSource != SourceBelt {
+		t.Errorf("NamesSource = %q, want %q", cfg.NamesSource, SourceBelt)
+	}
+}
+
+func TestLoadFromInternalNamesSuspendersFallback(t *testing.T) {
+	dir := t.TempDir()
+	p := fixturePaths(dir)
+	writeFile(t, dir, "belt.yaml", "guards:\n  git-push-main:\n    enabled: true\n")
+	writeFile(t, dir, "suspenders.yaml", "guard:\n  blocked_words:\n    - suspword\n")
+
+	cfg := LoadFrom(p)
+	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "suspword" {
+		t.Errorf("blocked_words = %v, want [suspword]", cfg.Names.BlockedWords)
+	}
+	if cfg.NamesSource != SourceSuspenders {
+		t.Errorf("NamesSource = %q, want %q", cfg.NamesSource, SourceSuspenders)
+	}
+}
+
+func TestExcludesPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tests := []struct {
+		name string
+		excl string
+		path string
+		want bool
+	}{
+		{"tilde prefix match", "~/notes", filepath.Join(home, "notes", "a.md"), true},
+		{"tilde exact dir", "~/notes", filepath.Join(home, "notes"), true},
+		{"tilde no partial dir", "~/notes", filepath.Join(home, "notesx", "a.md"), false},
+		{"tilde trailing slash", "~/notes/", filepath.Join(home, "notes", "a.md"), true},
+		{"absolute prefix", "/tmp/trusted", "/tmp/trusted/run.sh", true},
+		{"absolute non-prefix", "/tmp/trusted", "/opt/tmp/trusted/run.sh", false},
+		{"substring", "recipes/belt/", "/x/recipes/belt/recipe.toml", true},
+		{"substring miss", "recipes/belt/", "/x/recipes/csl/recipe.toml", false},
+		{"empty entry", "", "/anything", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tg := Toggle{ExcludePaths: []string{tt.excl}}
+			if got := tg.ExcludesPath(tt.path); got != tt.want {
+				t.Errorf("ExcludesPath(%q) with %q = %v, want %v", tt.path, tt.excl, got, tt.want)
+			}
+		})
 	}
 }
 

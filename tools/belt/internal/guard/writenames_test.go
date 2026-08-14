@@ -16,15 +16,15 @@ func gitCmd(dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func newWriteGuard(t *testing.T, remote string, guardCfg config.SuspendersGuard) *WriteInternalNames {
+func newWriteGuard(t *testing.T, remote string, guardCfg config.InternalNames) *WriteInternalNames {
 	t.Helper()
-	g := NewWriteInternalNames(config.Config{Suspenders: guardCfg})
+	g := NewWriteInternalNames(config.Config{Names: guardCfg})
 	g.remoteURL = func(dir string) string { return remote }
 	return g
 }
 
 func TestWriteInternalNames(t *testing.T) {
-	guardCfg := config.SuspendersGuard{
+	guardCfg := config.InternalNames{
 		BlockedWords: []string{"internalco"},
 		Allowlist:    []string{"grpc/grpc-go"},
 	}
@@ -55,14 +55,24 @@ func TestWriteInternalNames(t *testing.T) {
 	}
 }
 
+// fakeRepo creates a directory with an empty .git so repofind treats it as a
+// repository; with no remote config the org/repo name falls back to the
+// filesystem path.
+func fakeRepo(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(path, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWriteInternalNamesWorkspaceDirs(t *testing.T) {
 	workspace := t.TempDir()
-	for _, name := range []string{"secret-infra-repo", ".hidden"} {
-		if err := os.Mkdir(filepath.Join(workspace, name), 0o755); err != nil {
-			t.Fatal(err)
-		}
+	fakeRepo(t, filepath.Join(workspace, "secret-infra-repo"))
+	fakeRepo(t, filepath.Join(workspace, ".hidden"))
+	if err := os.Mkdir(filepath.Join(workspace, "plain-dir"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	guardCfg := config.SuspendersGuard{WorkspaceDirs: []string{workspace}}
+	guardCfg := config.InternalNames{WorkspaceDirs: []string{workspace}}
 	g := newWriteGuard(t, "git@github.com:mad01/public.git", guardCfg)
 
 	if d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: "deploy secret-infra-repo now"}); d == nil {
@@ -71,10 +81,45 @@ func TestWriteInternalNamesWorkspaceDirs(t *testing.T) {
 	if d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: "mention .hidden dir"}); d != nil {
 		t.Errorf("hidden dirs should not become blocked names: %v", d)
 	}
+	if d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: "mention plain-dir here"}); d != nil {
+		t.Errorf("non-repo dirs should not become blocked names: %v", d)
+	}
+}
+
+func TestBlockedNamesNestedRepoSplitsOrgAndRepo(t *testing.T) {
+	workspace := t.TempDir()
+	fakeRepo(t, filepath.Join(workspace, "secretorg", "secret-repo"))
+
+	names := BlockedNames(config.InternalNames{WorkspaceDirs: []string{workspace}})
+	found := map[string]bool{}
+	for _, n := range names {
+		found[n] = true
+	}
+	if !found["secretorg"] || !found["secret-repo"] {
+		t.Errorf("expected separate org and repo names, got %v", names)
+	}
+	if found["secretorg/secret-repo"] {
+		t.Errorf("combined org/repo must not be a name, got %v", names)
+	}
+}
+
+func TestBlockedNamesAllowlistDropsSegment(t *testing.T) {
+	workspace := t.TempDir()
+	fakeRepo(t, filepath.Join(workspace, "secretorg", "secret-repo"))
+
+	names := BlockedNames(config.InternalNames{
+		WorkspaceDirs: []string{workspace},
+		Allowlist:     []string{"secretorg"},
+	})
+	for _, n := range names {
+		if n == "secretorg" {
+			t.Errorf("allowlisted org must be dropped, got %v", names)
+		}
+	}
 }
 
 func TestWriteInternalNamesAllowlist(t *testing.T) {
-	guardCfg := config.SuspendersGuard{
+	guardCfg := config.InternalNames{
 		BlockedWords: []string{"grpc-go"},
 		Allowlist:    []string{"grpc/grpc-go"},
 	}
@@ -85,11 +130,11 @@ func TestWriteInternalNamesAllowlist(t *testing.T) {
 }
 
 func TestWriteInternalNamesExcludePaths(t *testing.T) {
-	guardCfg := config.SuspendersGuard{BlockedWords: []string{"internalco"}}
+	guardCfg := config.InternalNames{BlockedWords: []string{"internalco"}}
 	g := NewWriteInternalNames(config.Config{
-		Suspenders: guardCfg,
+		Names: guardCfg,
 		Guards: map[string]config.Toggle{
-			WriteInternalNamesID: {ExcludePaths: []string{"/recipes/ai-global-config/"}},
+			WriteInternalNamesID: {ExcludePaths: []string{"recipes/ai-global-config/"}},
 		},
 	})
 	g.remoteURL = func(dir string) string { return "git@github.com:mad01/dotfiles.git" }
@@ -105,9 +150,9 @@ func TestWriteInternalNamesExcludePaths(t *testing.T) {
 }
 
 func TestWriteInternalNamesAllowRepos(t *testing.T) {
-	guardCfg := config.SuspendersGuard{BlockedWords: []string{"internalco"}}
+	guardCfg := config.InternalNames{BlockedWords: []string{"internalco"}}
 	g := NewWriteInternalNames(config.Config{
-		Suspenders: guardCfg,
+		Names: guardCfg,
 		Guards: map[string]config.Toggle{
 			WriteInternalNamesID: {AllowRepos: []string{"github.com/example/internal-overlay"}},
 		},
@@ -134,7 +179,7 @@ func TestWriteInternalNamesAllowRepos(t *testing.T) {
 }
 
 func TestWriteInternalNamesEmptyContent(t *testing.T) {
-	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.SuspendersGuard{BlockedWords: []string{"internalco"}})
+	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.InternalNames{BlockedWords: []string{"internalco"}})
 	if d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: ""}); d != nil {
 		t.Errorf("empty content should never deny: %v", d)
 	}
@@ -155,7 +200,7 @@ func TestWriteInternalNamesNewDirectory(t *testing.T) {
 	// Real remote lookup: the target's parent dirs do not exist yet (a Write
 	// creates them), so the guard must walk up to the repo to find the remote.
 	g := NewWriteInternalNames(config.Config{
-		Suspenders: config.SuspendersGuard{BlockedWords: []string{"internalco"}},
+		Names: config.InternalNames{BlockedWords: []string{"internalco"}},
 	})
 	target := filepath.Join(dir, "brand", "new", "doc.md")
 	if d := g.Check(Input{Event: EventWrite, FilePath: target, Content: "internalco"}); d == nil {
@@ -165,7 +210,7 @@ func TestWriteInternalNamesNewDirectory(t *testing.T) {
 
 func TestWriteInternalNamesTruncatesHits(t *testing.T) {
 	words := []string{"aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff", "gggg"}
-	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.SuspendersGuard{BlockedWords: words})
+	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.InternalNames{BlockedWords: words})
 	d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: strings.Join(words, " ")})
 	if d == nil {
 		t.Fatal("expected denial")

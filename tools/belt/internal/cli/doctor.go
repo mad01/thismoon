@@ -43,8 +43,8 @@ func runDoctor(w io.Writer, p config.Paths) {
 
 	fmt.Fprintln(w, "config surfaces:")
 	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
-	fmt.Fprintf(w, "  ralph        %s  %s\n", p.Ralph, profilesNote(cfg.Profiles))
-	fmt.Fprintf(w, "  suspenders   %s  %s\n", p.Suspenders, suspendersNote(p.Suspenders, cfg.Suspenders))
+	fmt.Fprintf(w, "  profiles     %s\n", profilesNote(cfg, p))
+	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg, p))
 	fmt.Fprintf(w, "  claude deny  %s  %d bash deny patterns\n",
 		strings.Join(p.ClaudeSettings, " + "), len(cfg.ClaudeDeny))
 
@@ -60,12 +60,13 @@ func runDoctor(w io.Writer, p config.Paths) {
 			h.ID(), h.Event(), enabledWord(cfg.HintEnabled(h.ID())), toggleNote(cfg.Hints[h.ID()]))
 	}
 
-	names := guard.BlockedNames(cfg.Suspenders)
+	names := guard.BlockedNames(cfg.Names)
 	sort.Strings(names)
 	fmt.Fprintf(w, "\nblocked names (%d) — write-internal-names denies these in github.com repos:\n",
 		len(names))
 	if len(names) == 0 {
-		fmt.Fprintln(w, "  (none — without a suspenders guard config the guard allows every write)")
+		fmt.Fprintln(w, "  (none — without an internal_names section in the belt config or a"+
+			" suspenders guard config the guard allows every write)")
 		return
 	}
 	for _, n := range names {
@@ -114,19 +115,40 @@ func beltConfigLine(p config.Paths) string {
 	}
 }
 
-func profilesNote(profiles []string) string {
-	if len(profiles) == 0 {
-		return "no profiles — git-push-main fails closed (denies every push to main)"
+// profilesNote reports the resolved machine profiles and which config file
+// supplied them: the belt config's own profiles list, or the ralph machine
+// config it falls back to.
+func profilesNote(cfg config.Config, p config.Paths) string {
+	if len(cfg.Profiles) == 0 {
+		return fmt.Sprintf(
+			"none (belt config profiles unset, ralph fallback %s empty or missing) — git-push-main fails closed (denies every push to main)",
+			p.Ralph,
+		)
 	}
-	return "profiles: " + strings.Join(profiles, ", ")
+	source := "belt config"
+	if cfg.ProfileSource == config.SourceRalph {
+		source = "ralph fallback " + p.Ralph
+	}
+	return fmt.Sprintf("%s  (from %s)", strings.Join(cfg.Profiles, ", "), source)
 }
 
-func suspendersNote(path string, s config.SuspendersGuard) string {
-	if _, err := os.Stat(path); err != nil {
-		return "missing — write-internal-names has no names to match"
+// namesNote reports where the internal-name list came from: the belt
+// config's own internal_names section, or the suspenders guard config it
+// falls back to.
+func namesNote(cfg config.Config, p config.Paths) string {
+	source := "belt config internal_names"
+	if cfg.NamesSource == config.SourceSuspenders {
+		source = "suspenders fallback " + p.Suspenders
+		if _, err := os.Stat(p.Suspenders); err != nil {
+			return fmt.Sprintf(
+				"none (belt config internal_names unset, %s missing) — write-internal-names has no names to match",
+				p.Suspenders,
+			)
+		}
 	}
-	return fmt.Sprintf("workspace dirs: %d, blocked words: %d, safe references: %d",
-		len(s.WorkspaceDirs), len(s.BlockedWords), len(s.Allowlist))
+	return fmt.Sprintf("workspace dirs: %d, blocked words: %d, allowlist: %d  (from %s)",
+		len(cfg.Names.WorkspaceDirs), len(cfg.Names.BlockedWords), len(cfg.Names.Allowlist),
+		source)
 }
 
 func enabledWord(on bool) string {

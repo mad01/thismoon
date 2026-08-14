@@ -41,7 +41,7 @@ func runDoctorString(t *testing.T, p config.Paths) string {
 func TestDoctorReportsLoadedSurfacesAndBlockedNames(t *testing.T) {
 	dir := t.TempDir()
 	workspace := filepath.Join(dir, "workspace")
-	if err := os.MkdirAll(filepath.Join(workspace, "internalco"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(workspace, "secretorg", "internalco", ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, dir, "config.yaml", `
@@ -66,10 +66,12 @@ guard:
 
 	for _, want := range []string{
 		"config.yaml  loaded",
-		"profiles: work",
-		"workspace dirs: 1, blocked words: 1, safe references: 1",
-		"blocked names (2)",
+		"work  (from ralph fallback",
+		"workspace dirs: 1, blocked words: 1, allowlist: 1",
+		"(from suspenders fallback",
+		"blocked names (3)",
 		"acmecorp",
+		"secretorg",
 		"internalco",
 	} {
 		if !strings.Contains(out, want) {
@@ -92,8 +94,8 @@ func TestDoctorReportsMissingConfigs(t *testing.T) {
 
 	for _, want := range []string{
 		"missing — defaults, everything enabled",
-		"no profiles — git-push-main fails closed",
-		"missing — write-internal-names has no names to match",
+		"git-push-main fails closed",
+		"write-internal-names has no names to match",
 		"blocked names (0)",
 		"allows every write",
 	} {

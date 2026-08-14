@@ -18,8 +18,8 @@ internal/cli/       cobra commands: hook <event>, check, version
 internal/hook/      PreToolUse payload parsing and deny JSON emission
 internal/guard/     the Guard interface, the ForEvent registry, and the three
                     guards (git-push-main, script-deny-list, write-internal-names)
-internal/config/    config.Load(): reads the belt, ralph, suspenders, and
-                    Claude-settings surfaces into one Config
+internal/config/    config.Load(): the belt config plus its ralph/suspenders
+                    fallbacks and the Claude-settings deny list, into one Config
 internal/notify/    best-effort event emission to the local events service
 ```
 
@@ -49,9 +49,9 @@ decision can be inspected without a live Claude Code session.
 Nothing is stored on disk. belt reads four config surfaces, every one
 optional (`config.Load()` never errors; a missing file yields zero values):
 
-- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns (legacy `config.toml` read when the YAML file is absent)
-- `~/.config/ralph/config.local.toml`: the machine profile for git-push-main
-- `~/.config/suspenders/config.yaml`: the guard section write-internal-names shares with the pre-commit guard
+- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `profiles`, and the `internal_names` section (legacy `config.toml` read when the YAML file is absent)
+- `~/.config/ralph/config.local.toml`: profiles fallback for git-push-main when the belt config sets none
+- `~/.config/suspenders/config.yaml`: internal-name fallback for write-internal-names when the belt config has no `internal_names` section
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list
 
 Denials are recorded remotely: a POST to the local events service

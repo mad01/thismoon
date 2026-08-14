@@ -126,14 +126,12 @@ func (g *ScriptDenyList) patterns() []string {
 // and scans it. Unreadable files are allowed — the shell will fail on them
 // anyway, and belt must not block on its own limitations.
 func (g *ScriptDenyList) scanFile(path, cwd string, patterns []deny) *Denial {
-	resolved := expandHome(path)
+	resolved := config.ExpandHome(path)
 	if !filepath.IsAbs(resolved) && cwd != "" {
 		resolved = filepath.Join(cwd, resolved)
 	}
-	for _, excl := range g.cfg.Guards[ScriptDenyListID].ExcludePaths {
-		if excl != "" && strings.Contains(resolved, excl) {
-			return nil
-		}
+	if g.cfg.Guards[ScriptDenyListID].ExcludesPath(resolved) {
+		return nil
 	}
 	f, err := os.Open(resolved)
 	if err != nil {

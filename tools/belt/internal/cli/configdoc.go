@@ -21,6 +21,25 @@ import (
 const configReference = `# ~/.config/belt/config.yaml — every key optional; guards and hints default
 # to enabled when the file or their entry is missing (fail closed, not silent).
 
+# Machine profiles for profile-gated guards (git-push-main allows pushes to
+# main on the personal profile). When unset, belt falls back to the profiles
+# list in the ralph machine config (~/.config/ralph/config.local.toml).
+profiles:
+  - personal
+
+# The internal-name list for write-internal-names, owned by belt. When this
+# whole section is unset, belt falls back to the guard: section of the
+# suspenders config (~/.config/suspenders/config.yaml); when set, it is the
+# only source. Every repo found under workspace_dirs contributes its org
+# name, repo name, and checkout dir name as separate blocked names.
+internal_names:
+  workspace_dirs:
+    - ~/workspace
+  blocked_words:
+    - internal-brand
+  allowlist:
+    - some-safe-name
+
 guards:
   git-push-main:
     enabled: true
@@ -37,9 +56,10 @@ guards:
     # permissions.deny Bash(...) entries (which are read live, never copied).
     extra_patterns:
       - rm -rf
-    # Skip trusted script locations (substring match on the script path).
+    # Skip trusted script locations. A ~/ or absolute entry is matched as a
+    # directory prefix; anything else as a substring of the script path.
     exclude_paths:
-      - /trusted/scripts/
+      - ~/trusted/scripts
 
   write-internal-names:
     enabled: true
@@ -48,13 +68,13 @@ guards:
     # remote) — a private companion repo whose purpose is internal config.
     allow_repos:
       - github.com/you/private-companion
-    # Paths where internal references are deliberate (substring match on the
-    # target file path).
+    # Paths where internal references are deliberate. A ~/ or absolute entry
+    # is matched as a directory prefix; anything else as a substring of the
+    # target file path.
     exclude_paths:
-      - /notes/
-    # The blocked-name list itself is NOT configured here: it comes from the
-    # guard: section of the suspenders config, shared with the pre-commit
-    # guard. See suspenders config.
+      - ~/notes
+    # The blocked-name list itself lives in the top-level internal_names
+    # section (or its suspenders fallback), not here.
 
 hints:
   prefer-csl:
@@ -105,11 +125,11 @@ func runConfigDoc(w io.Writer, p config.Paths) error {
 	} else {
 		fmt.Fprintf(w, "              (legacy fallback %s, read only when this file is absent)\n", p.BeltTOML)
 	}
-	fmt.Fprintf(w, "also read:    %s  (%s — guard: section = the blocked-name source)\n",
+	fmt.Fprintf(w, "fallbacks:    %s  (%s — guard: section, used only when internal_names is unset here)\n",
 		p.Suspenders, pathStatus(p.Suspenders))
-	fmt.Fprintf(w, "              %s  (%s — profiles list = machine profile)\n",
+	fmt.Fprintf(w, "              %s  (%s — profiles list, used only when profiles is unset here)\n",
 		p.Ralph, pathStatus(p.Ralph))
-	fmt.Fprintf(w, "              %s  (%s — permissions.deny Bash entries)\n",
+	fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
 		strings.Join(p.ClaudeSettings, " + "), pathStatus(p.ClaudeSettings...))
 
 	fmt.Fprintln(w)
@@ -169,12 +189,12 @@ func withEnabled(t config.Toggle, on bool) config.Toggle {
 // means no config file exists at all, and anything else is a parse failure
 // that leaves belt running on defaults.
 func resolveBeltConfig(p config.Paths) (path string, legacy bool, err error) {
-	if _, _, err := config.LoadTogglesYAML(p.BeltYAML); err == nil {
+	if _, err := config.LoadFileYAML(p.BeltYAML); err == nil {
 		return p.BeltYAML, false, nil
 	} else if !os.IsNotExist(err) {
 		return p.BeltYAML, false, err
 	}
-	_, _, err = config.LoadTogglesTOML(p.BeltTOML)
+	_, err = config.LoadFileTOML(p.BeltTOML)
 	switch {
 	case err == nil:
 		return p.BeltTOML, true, nil
