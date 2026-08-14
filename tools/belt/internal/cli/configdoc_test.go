@@ -68,8 +68,8 @@ guards:
 	for _, want := range []string{
 		"config file:  " + p.BeltYAML,
 		"legacy fallback " + p.BeltTOML,
-		p.Suspenders + "  (missing — guard: section, used only when internal_names is unset here)",
-		p.Ralph + "  (missing — profiles list, used only when profiles is unset here)",
+		p.Suspenders + "  (missing, fallback empty — guard: section, used only when internal_names is unset here)",
+		p.Ralph + "  (missing, fallback empty — profiles list, used only when profiles is unset here)",
 		"script-deny-list:",
 		"enabled: false",
 		"rm -rf",
@@ -107,6 +107,75 @@ func TestConfigBodyIsEffectiveYAML(t *testing.T) {
 	}
 	if len(got.Hints) == 0 {
 		t.Error("hints = empty, want the registered hints")
+	}
+	for _, key := range []string{"profiles:", "internal_names:", "claude_deny:"} {
+		if !strings.Contains(body, key) {
+			t.Errorf("body missing the %s section:\n%s", key, body)
+		}
+	}
+}
+
+// TestConfigRendersResolvedFallbacksAndClaudeDeny pins the full-render rule:
+// values belt resolved from other files (ralph profiles, suspenders names,
+// the Claude deny patterns) appear in the body, and the fallback header lines
+// say which file was actually read.
+func TestConfigRendersResolvedFallbacksAndClaudeDeny(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
+	writeFile(t, dir, "suspenders.yaml", `
+guard:
+  workspace_dirs:
+    - ~/workspace
+  blocked_words:
+    - acmecorp
+  allowlist:
+    - grpc/grpc-go
+`)
+	writeFile(t, dir, "settings.json", `{
+  "permissions": {"deny": ["Bash(kubectl delete:*)", "WebFetch"]}
+}`)
+	p := doctorPaths(dir)
+
+	out := runConfigDocString(t, p)
+
+	for _, want := range []string{
+		p.Suspenders + "  (in use — guard: section",
+		p.Ralph + "  (in use — profiles list",
+		"- work",
+		"- acmecorp",
+		"- kubectl delete",
+		"claude_deny:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestConfigWarnsOnUnknownToggleKeys pins the typo guard: a config key no
+// registered guard or hint answers to prints a warning instead of silently
+// vanishing from the effective output.
+func TestConfigWarnsOnUnknownToggleKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.yaml", `
+guards:
+  git-push-mian:
+    enabled: false
+hints:
+  prefer-csl:
+    enabled: true
+`)
+
+	out := runConfigDocString(t, doctorPaths(dir))
+
+	if !strings.Contains(out, `warning:      unknown guard "git-push-mian"`) {
+		t.Errorf("unknown guard key not warned about:\n%s", out)
+	}
+	if strings.Contains(out, `unknown hint "prefer-csl"`) {
+		t.Errorf("registered hint flagged as unknown:\n%s", out)
+	}
+	if strings.Contains(out, "git-push-mian:") {
+		t.Errorf("unknown key should not appear in the effective body:\n%s", out)
 	}
 }
 

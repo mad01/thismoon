@@ -45,13 +45,22 @@ func runDoctor(w io.Writer, p config.Paths) {
 	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
 	fmt.Fprintf(w, "  profiles     %s\n", profilesNote(cfg, p))
 	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg, p))
-	fmt.Fprintf(w, "  claude deny  %s  %d bash deny patterns\n",
+	fmt.Fprintf(w, "  claude deny  %s  %d bash deny patterns (belt config lists them)\n",
 		strings.Join(p.ClaudeSettings, " + "), len(cfg.ClaudeDeny))
+	for _, warn := range unknownToggleWarnings(cfg) {
+		fmt.Fprintf(w, "  warning      %s\n", warn)
+	}
 
 	fmt.Fprintln(w, "\nguards:")
 	for _, g := range guard.All(cfg) {
-		fmt.Fprintf(w, "  %-22s %-7s %s%s\n",
-			g.ID(), g.Event(), enabledWord(cfg.GuardEnabled(g.ID())), toggleNote(cfg.Guards[g.ID()]))
+		fmt.Fprintf(
+			w,
+			"  %-22s %-7s %s%s\n",
+			g.ID(),
+			g.Event(),
+			enabledWord(cfg.GuardEnabled(g.ID())),
+			toggleNote(cfg.Guards[g.ID()]),
+		)
 	}
 
 	fmt.Fprintln(w, "\nhints:")
@@ -62,8 +71,11 @@ func runDoctor(w io.Writer, p config.Paths) {
 
 	names := guard.BlockedNames(cfg.Names)
 	sort.Strings(names)
-	fmt.Fprintf(w, "\nblocked names (%d) — write-internal-names denies these in github.com repos:\n",
-		len(names))
+	fmt.Fprintf(
+		w,
+		"\nblocked names (%d) — write-internal-names denies these in github.com repos:\n",
+		len(names),
+	)
 	if len(names) == 0 {
 		fmt.Fprintln(w, "  (none — without an internal_names section in the belt config or a"+
 			" suspenders guard config the guard allows every write)")

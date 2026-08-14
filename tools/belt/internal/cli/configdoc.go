@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -86,15 +87,17 @@ func configDocCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
 		Short: "Show the current effective config",
-		Long: `Show which config file belt loaded and the guard and hint settings in effect
-after defaults are applied — what this binary runs with, not what the file
-happens to spell out.
+		Long: `Show which config file belt loaded and every setting in effect after
+defaults and fallbacks are applied — what this binary runs with, not what
+the file happens to spell out.
 
 belt reads ~/.config/belt/config.yaml; a legacy config.toml beside it is read
 only when the YAML file is absent, and a present-but-broken file of either
-format means defaults rather than a fall back to the other one. The surfaces
-belt shares with other tools (ralph, suspenders, the Claude settings) are
-listed as paths only — doctor is where their resolved state lives.
+format means defaults rather than a fall back to the other one. Profiles and
+internal_names print with their resolved values whichever file supplied them;
+the header names the winning source. claude_deny is the one section that is
+not a config.yaml key: the Bash deny patterns are read live from the Claude
+settings and shown here because the script-deny-list guard enforces them.
 
 Every setting:
 
@@ -118,6 +121,7 @@ file and key to change.`,
 // prints the defaults belt fell back to: the command has to stay useful when
 // the file it describes is the thing that is wrong.
 func runConfigDoc(w io.Writer, p config.Paths) error {
+	cfg := config.LoadFrom(p)
 	path, legacy, loadErr := resolveBeltConfig(p)
 	fmt.Fprintf(w, "config file:  %s (%s)\n", path, loadStatus(loadErr))
 	if legacy {
@@ -125,15 +129,26 @@ func runConfigDoc(w io.Writer, p config.Paths) error {
 	} else {
 		fmt.Fprintf(w, "              (legacy fallback %s, read only when this file is absent)\n", p.BeltTOML)
 	}
-	fmt.Fprintf(w, "fallbacks:    %s  (%s — guard: section, used only when internal_names is unset here)\n",
-		p.Suspenders, pathStatus(p.Suspenders))
-	fmt.Fprintf(w, "              %s  (%s — profiles list, used only when profiles is unset here)\n",
-		p.Ralph, pathStatus(p.Ralph))
+	fmt.Fprintf(
+		w,
+		"fallbacks:    %s  (%s — guard: section, used only when internal_names is unset here)\n",
+		p.Suspenders,
+		fallbackStatus(p.Suspenders, cfg.NamesSource == config.SourceSuspenders),
+	)
+	fmt.Fprintf(
+		w,
+		"              %s  (%s — profiles list, used only when profiles is unset here)\n",
+		p.Ralph,
+		fallbackStatus(p.Ralph, cfg.ProfileSource == config.SourceRalph),
+	)
 	fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
 		strings.Join(p.ClaudeSettings, " + "), pathStatus(p.ClaudeSettings...))
+	for _, warn := range unknownToggleWarnings(cfg) {
+		fmt.Fprintf(w, "warning:      %s\n", warn)
+	}
 
 	fmt.Fprintln(w)
-	return encodeYAML(w, resolveEffective(config.LoadFrom(p)))
+	return encodeYAML(w, resolveEffective(cfg))
 }
 
 // encodeYAML writes v at the 2-space indent the config files themselves use,
@@ -147,14 +162,19 @@ func encodeYAML(w io.Writer, v any) error {
 	return enc.Close()
 }
 
-// effectiveConfig is the belt-owned half of the resolved config: the shape of
-// ~/.config/belt/config.yaml with every default made explicit. The surfaces
-// belt only reads (ralph, suspenders, the Claude settings) stay out of it —
-// they are other tools' config, and `belt doctor` already reports what they
-// resolved to.
+// effectiveConfig is the full resolved config in the shape of
+// ~/.config/belt/config.yaml with every default and fallback made explicit:
+// profiles and internal_names carry the values belt resolved whichever file
+// supplied them (the header names the source). ClaudeDeny is the one section
+// that is not a config.yaml key — the Bash deny patterns read live from the
+// Claude settings — included because the script-deny-list guard enforces
+// them and no other command lists them.
 type effectiveConfig struct {
-	Guards map[string]config.Toggle `yaml:"guards"`
-	Hints  map[string]config.Toggle `yaml:"hints"`
+	Profiles      []string                 `yaml:"profiles"`
+	InternalNames config.InternalNames     `yaml:"internal_names"`
+	Guards        map[string]config.Toggle `yaml:"guards"`
+	Hints         map[string]config.Toggle `yaml:"hints"`
+	ClaudeDeny    []string                 `yaml:"claude_deny"`
 }
 
 // resolveEffective materializes every registered guard and hint with the
@@ -164,8 +184,11 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 	guards := guard.All(cfg)
 	hints := hint.All(cfg)
 	e := effectiveConfig{
-		Guards: make(map[string]config.Toggle, len(guards)),
-		Hints:  make(map[string]config.Toggle, len(hints)),
+		Profiles:      cfg.Profiles,
+		InternalNames: cfg.Names,
+		Guards:        make(map[string]config.Toggle, len(guards)),
+		Hints:         make(map[string]config.Toggle, len(hints)),
+		ClaudeDeny:    cfg.ClaudeDeny,
 	}
 	for _, g := range guards {
 		e.Guards[g.ID()] = withEnabled(cfg.Guards[g.ID()], cfg.GuardEnabled(g.ID()))
@@ -174,6 +197,58 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		e.Hints[h.ID()] = withEnabled(cfg.Hints[h.ID()], cfg.HintEnabled(h.ID()))
 	}
 	return e
+}
+
+// unknownToggleWarnings lists guard and hint keys the config file sets that
+// no registered guard or hint answers to. A typo'd id configures nothing,
+// and resolveEffective keys off the registry — without the warning the entry
+// would vanish from the output with the guard still armed.
+func unknownToggleWarnings(cfg config.Config) []string {
+	warns := unknownKeys(
+		"guard",
+		cfg.Guards,
+		guard.All(cfg),
+		func(g guard.Guard) string { return g.ID() },
+	)
+	warns = append(
+		warns,
+		unknownKeys(
+			"hint",
+			cfg.Hints,
+			hint.All(cfg),
+			func(h hint.Hint) string { return h.ID() },
+		)...)
+	return warns
+}
+
+// unknownKeys reports the toggle keys with no registered counterpart, sorted
+// so the warnings print in a stable order.
+func unknownKeys[T any](
+	kind string,
+	toggles map[string]config.Toggle,
+	registered []T,
+	id func(T) string,
+) []string {
+	known := make(map[string]bool, len(registered))
+	for _, r := range registered {
+		known[id(r)] = true
+	}
+	var warns []string
+	for key := range toggles {
+		if !known[key] {
+			warns = append(
+				warns,
+				fmt.Sprintf(
+					"unknown %s %q in config file — no registered %s answers to it",
+					kind,
+					key,
+					kind,
+				),
+			)
+		}
+	}
+	sort.Strings(warns)
+	return warns
 }
 
 // withEnabled pins a toggle's implicit default to an explicit value, so an
@@ -219,13 +294,30 @@ func loadStatus(err error) string {
 }
 
 // pathStatus reports whether a surface belt only reads is there. Presence is
-// all this command promises for those files; doctor reports what each one
-// resolved to.
+// all this check performs, so "present" is all it claims.
 func pathStatus(paths ...string) string {
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
-			return "loaded"
+			return "present"
 		}
 	}
 	return "missing"
+}
+
+// fallbackStatus reports a fallback file's role in the resolved config, not
+// just its presence: whether this run actually read it, and when the
+// fallback was selected but the file is absent, that the setting is empty.
+func fallbackStatus(path string, inUse bool) string {
+	_, err := os.Stat(path)
+	present := err == nil
+	switch {
+	case inUse && present:
+		return "in use"
+	case inUse:
+		return "missing, fallback empty"
+	case present:
+		return "present, unused — set in belt config"
+	default:
+		return "missing, unused — set in belt config"
+	}
 }

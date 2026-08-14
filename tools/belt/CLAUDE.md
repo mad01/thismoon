@@ -63,7 +63,7 @@ belt hint search|bash    # PostToolUse entrypoint: payload on stdin, additionalC
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
 belt doctor              # build metadata + resolved config: surfaces loaded, guard/hint state, blocked names
-belt config              # config file locations + the settings in effect (annotated reference in --help)
+belt config              # config file locations + every setting in effect, incl. resolved fallbacks and claude deny patterns (annotated reference in --help)
 belt version [-o json]   # bare version token, or the four-key build metadata object
 ```
 
