@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/suspenders/v0.5.0...suspenders/v0.6.0) (2026-08-14)
+
+
+### Features
+
+* **suspenders:** derive org and repo blocked names as separate segments ([f1749bf](https://github.com/mad01/thismoon/commit/f1749bfc950223d6839441c3390ebf3b018fd187))
+
+
+### Bug Fixes
+
+* **suspenders:** disable background git maintenance in history tests ([4cfcb03](https://github.com/mad01/thismoon/commit/4cfcb03da277aa0395a326b73364460869df3c5b))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/suspenders/v0.4.0...suspenders/v0.5.0) (2026-08-13)
 
 

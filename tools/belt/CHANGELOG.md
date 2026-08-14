@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/belt/v0.6.0...belt/v0.7.0) (2026-08-14)
+
+
+### Features
+
+* **belt:** own internal_names and profiles config with repo-based names ([d53353b](https://github.com/mad01/thismoon/commit/d53353b1543e9bdfda1bbb33d9226f0260ba6b2d))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/belt/v0.5.0...belt/v0.6.0) (2026-08-13)
 
 
