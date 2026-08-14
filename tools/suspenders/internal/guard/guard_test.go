@@ -149,8 +149,36 @@ func TestCollectNames_discoversRepos(t *testing.T) {
 	for _, n := range names {
 		found[n] = true
 	}
-	if !found["myorg/secret-repo"] {
-		t.Errorf("expected 'myorg/secret-repo' in names, got %v", names)
+	if !found["myorg"] || !found["secret-repo"] {
+		t.Errorf("expected 'myorg' and 'secret-repo' in names, got %v", names)
+	}
+	if found["myorg/secret-repo"] {
+		t.Errorf("combined 'myorg/secret-repo' should not be a name, got %v", names)
+	}
+}
+
+func TestCollectNames_allowlistFiltersSegments(t *testing.T) {
+	workspace := t.TempDir()
+	repoPath := filepath.Join(workspace, "myorg", "secret-repo")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, repoPath)
+
+	g := New(config.GuardConfig{
+		Enabled:       true,
+		WorkspaceDirs: []string{workspace},
+		Allowlist:     []string{"myorg"},
+	})
+
+	names, err := g.CollectNames()
+	if err != nil {
+		t.Fatalf("CollectNames: %v", err)
+	}
+	for _, n := range names {
+		if n == "myorg" {
+			t.Errorf("allowlisted org 'myorg' should be filtered, got %v", names)
+		}
 	}
 }
 

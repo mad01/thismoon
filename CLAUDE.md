@@ -17,6 +17,8 @@ Monorepo for the `*.this` platform: local web services, CLI tools, the shared we
 services/    *.this local web services (one directory per service)
 tools/       CLI tools installed to the local bin
 webkit/      shared Go web UI package (in-module, no separate versioning)
+kit/         shared Go packages for cross-tool functionality (one subpackage
+             per concern, e.g. kit/repofind for git repo discovery)
 buildinfo/   shared build-metadata package (ldflags targets, /version handler)
 buildinfo.mk Makefile fragment every component includes to inject it
 recipes/     ralph recipes, consumed remotely via [[recipe_sources]]

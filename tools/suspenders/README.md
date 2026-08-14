@@ -481,8 +481,8 @@ Any match blocks the commit with a message listing the matched terms.
 The block list is derived from your filesystem, not maintained by hand. Enumerating internal repo names in a config file is itself a leak waiting to happen: the config would be the one file that lists everything it is supposed to protect. So the guard recomputes the list on every run from what is actually checked out:
 
 1. Each directory in `workspace_dirs` is walked (`~` expands to your home; repo inspection fans out to 32 workers). Hidden directories are skipped, discovery doesn't recurse into nested repos, and unreadable entries are silently passed over.
-2. A directory counts as a repo when it contains `.git`. For each repo found, the guard derives **two** names:
-   - the `org/repo` name parsed from the `origin` remote URL, handling both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms
+2. A directory counts as a repo when it contains `.git`. For each repo found, the guard derives separate names:
+   - the org name and the repo name, each on its own, parsed from the `origin` remote URL — both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms. The combined `org/repo` string is never a name of its own: a nested checkout like `~/workspace/foo/bar` blocks `foo` and `bar`, and allowlisting a segment works without spelling out every combination.
    - the repo's directory basename, so a repo checked out under a local name that differs from its remote name is blocked under both
 3. When a repo has no `origin` remote or the URL can't be parsed, discovery falls back to `parentdir/repodir` from the filesystem path.
 4. Safe references (`guard.allowlist`) are dropped, `blocked_words` entries are appended, and the result is deduplicated.

@@ -11,9 +11,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
-	"github.com/mad01/thismoon/tools/suspenders/internal/repo"
 	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
@@ -139,7 +139,7 @@ func checkBlockedNames(
 	}
 	// The guard protects public repos; a plain directory has no remote to be
 	// public on, and the guard's git plumbing would fail there anyway.
-	if !repo.InsideWorkTree(root) {
+	if !repofind.InsideWorkTree(root) {
 		return nil, nil
 	}
 	g := guard.New(guardConfigFor(root, cfg))

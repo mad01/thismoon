@@ -1,5 +1,9 @@
-// Package repo discovers git repositories on the local filesystem.
-package repo
+// Package repofind discovers git repositories on the local filesystem and
+// parses their remotes. It is the shared git/file-tree layer under the
+// suspenders pre-commit guard and the belt write-time firewall, so the two
+// tools discover the same repos and derive the same org/repo names from
+// them.
+package repofind
 
 import (
 	"bufio"
@@ -14,7 +18,6 @@ import (
 	"sync"
 
 	"github.com/gobwas/glob"
-	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 )
 
 const workerCount = 32
@@ -61,7 +64,7 @@ func Find(dirs []string, excludes []string) ([]Repo, error) {
 	var walkErr error
 	go func() {
 		for _, dir := range dirs {
-			expanded := config.ExpandPath(dir)
+			expanded := ExpandHome(dir)
 			if err := walkDir(expanded, workCh); err != nil {
 				walkErr = fmt.Errorf("walk %s: %w", dir, err)
 			}
@@ -74,8 +77,15 @@ func Find(dirs []string, excludes []string) ([]Repo, error) {
 		close(resultCh)
 	}()
 
+	// Overlapping roots (~/code plus ~/code/src) discover the same repo
+	// twice; keep the first.
+	seen := make(map[string]bool)
 	var repos []Repo
 	for r := range resultCh {
+		if seen[r.Path] {
+			continue
+		}
+		seen[r.Path] = true
 		repos = append(repos, r)
 	}
 
@@ -115,6 +125,18 @@ func ParseRemote(url string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// ExpandHome expands a leading ~ to the user's home directory.
+func ExpandHome(p string) string {
+	if len(p) == 0 || p[0] != '~' {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	return filepath.Join(home, p[1:])
 }
 
 // walkDir sends all candidate repo root paths into workCh.

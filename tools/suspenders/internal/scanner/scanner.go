@@ -16,7 +16,7 @@ import (
 
 	"github.com/gobwas/glob"
 
-	"github.com/mad01/thismoon/tools/suspenders/internal/repo"
+	"github.com/mad01/thismoon/kit/repofind"
 )
 
 // ErrFindingsFound is returned when scan finds secrets and --fail-on-findings is set.
@@ -422,7 +422,7 @@ func (s *Scanner) ScanDir(root string) ([]Finding, error) {
 // scanPaths lists the root-relative files ScanDir visits: git-tracked files
 // inside a working tree, every file under root otherwise.
 func scanPaths(root string) ([]string, error) {
-	if !repo.InsideWorkTree(root) {
+	if !repofind.InsideWorkTree(root) {
 		return walkPaths(root)
 	}
 	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()

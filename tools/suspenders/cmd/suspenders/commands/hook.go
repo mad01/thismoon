@@ -11,11 +11,11 @@ import (
 	"github.com/gobwas/glob"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
 	"github.com/mad01/thismoon/tools/suspenders/internal/hook"
 	"github.com/mad01/thismoon/tools/suspenders/internal/notify"
-	"github.com/mad01/thismoon/tools/suspenders/internal/repo"
 	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
@@ -109,7 +109,7 @@ func runHookInstall(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return forEachRepo(repos, "Installing", func(r repo.Repo) error {
+		return forEachRepo(repos, "Installing", func(r repofind.Repo) error {
 			return mgr.Install(r.Path, events)
 		})
 	}
@@ -134,7 +134,7 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		return forEachRepo(repos, "Uninstalling", func(r repo.Repo) error {
+		return forEachRepo(repos, "Uninstalling", func(r repofind.Repo) error {
 			return mgr.Uninstall(r.Path, allEvents)
 		})
 	}
@@ -164,7 +164,7 @@ func runHookUpdate(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		updated := 0
-		err = forEachRepo(repos, "Checking", func(r repo.Repo) error {
+		err = forEachRepo(repos, "Checking", func(r repofind.Repo) error {
 			for _, event := range events {
 				if !mgr.NeedsUpdate(r.Path, event) {
 					continue
@@ -439,7 +439,7 @@ func repoNameFromPath(repoPath string) string {
 		parent := filepath.Base(filepath.Dir(repoPath))
 		return parent + "/" + filepath.Base(repoPath)
 	}
-	name := repo.ParseRemote(remote)
+	name := repofind.ParseRemote(remote)
 	if name == "" {
 		parent := filepath.Base(filepath.Dir(repoPath))
 		return parent + "/" + filepath.Base(repoPath)
@@ -502,13 +502,13 @@ func resolveRepoPath(args []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
-	if !repo.IsRepo(abs) {
+	if !repofind.IsRepo(abs) {
 		return "", fmt.Errorf("%s is not a git repository", abs)
 	}
 	return abs, nil
 }
 
-func discoverRepos() ([]repo.Repo, error) {
+func discoverRepos() ([]repofind.Repo, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
@@ -519,7 +519,7 @@ func discoverRepos() ([]repo.Repo, error) {
 		expanded[i] = config.ExpandPath(d)
 	}
 
-	repos, err := repo.Find(expanded, cfg.Exclude)
+	repos, err := repofind.Find(expanded, cfg.Exclude)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
@@ -529,7 +529,7 @@ func discoverRepos() ([]repo.Repo, error) {
 	return repos, nil
 }
 
-func forEachRepo(repos []repo.Repo, action string, fn func(repo.Repo) error) error {
+func forEachRepo(repos []repofind.Repo, action string, fn func(repofind.Repo) error) error {
 	var errs int
 	for _, r := range repos {
 		if err := fn(r); err != nil {

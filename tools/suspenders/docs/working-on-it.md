@@ -36,7 +36,7 @@ Keep two binaries straight, because mixing them up is the usual reason a change 
 | Redaction of matched secrets | `internal/scanner/result.go` — `Redact` |
 | The internal-reference guard | `internal/guard/guard.go` |
 | Hook script generation and install/update | `internal/hook/hook.go` |
-| Repo discovery for `--all` | `internal/repo/finder.go` |
+| Repo discovery for `--all` | `kit/repofind/finder.go` (shared package at the repo root) |
 | CLI commands | `cmd/suspenders/commands/` |
 
 ### Config you will touch

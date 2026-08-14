@@ -1,4 +1,4 @@
-package repo
+package repofind
 
 import (
 	"os"
@@ -110,5 +110,22 @@ func makeRepo(t *testing.T, root, name, remoteURL string) {
 	cfg := "[remote \"origin\"]\n\turl = " + remoteURL + "\n"
 	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFindDedupesOverlappingRoots(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "src")
+	repoPath := filepath.Join(nested, "myrepo")
+	if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	repos, err := Find([]string{root, nested}, nil)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Errorf("expected 1 repo from overlapping roots, got %d: %v", len(repos), repos)
 	}
 }

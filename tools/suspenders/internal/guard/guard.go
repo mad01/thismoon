@@ -14,8 +14,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
-	"github.com/mad01/thismoon/tools/suspenders/internal/repo"
 )
 
 // Finding represents a blocked name found by a guard check. Staged-diff
@@ -68,7 +68,7 @@ func (g *Guard) CollectNames() ([]string, error) {
 		expandedDirs = append(expandedDirs, config.ExpandPath(d))
 	}
 
-	repos, err := repo.Find(expandedDirs, nil)
+	repos, err := repofind.Find(expandedDirs, nil)
 	if err != nil {
 		return nil, fmt.Errorf("discover repos: %w", err)
 	}
@@ -92,8 +92,14 @@ func (g *Guard) CollectNames() ([]string, error) {
 		names = append(names, name)
 	}
 
+	// A repo contributes its org and repo name as separate entries, never
+	// the combined "org/repo" string: a nested checkout like
+	// ~/workspace/foo/bar must block "foo" and "bar", and allowlisting one
+	// segment must not require knowing every combination it appears in.
 	for _, r := range repos {
-		add(r.Name)
+		for seg := range strings.SplitSeq(r.Name, "/") {
+			add(seg)
+		}
 		add(filepath.Base(r.Path))
 	}
 

@@ -30,7 +30,7 @@ internal/
   guard/
     guard.go                 Internal-reference guard: CollectNames, Check (staged diff),
                              CheckDir (tracked working-tree files), StagedFiles
-                             Walks workspace dirs via repo.Find, regex match on content
+                             Walks workspace dirs via kit/repofind, regex match on content
   scanner/
     rules.go                 84 content rules (DefaultRules) + 7 filename rules (DefaultFileRules)
                              Rule fields: MinEntropy, ExcludeFiles, SkipOverlapping, Filter
@@ -52,9 +52,12 @@ internal/
     hook.go                    Manager type: HookScript, Checksum, Install, Uninstall,
                              Update, IsInstalled, NeedsUpdate, Status
                              Event type: PreCommit, PostMerge
-  repo/
-    finder.go                  Find (concurrent, 32 workers), IsRepo, ParseRemote
 ```
+
+Repository discovery and remote parsing live in the shared
+`github.com/mad01/thismoon/kit/repofind` package (Find with 32 concurrent
+workers, IsRepo, InsideWorkTree, ParseRemote) — shared with belt so the
+pre-commit guard and the write-time firewall derive the same names.
 
 Package `github.com/mad01/thismoon/tools/suspenders`, part of the thismoon monorepo module; there is no go.mod here.
 
@@ -87,7 +90,7 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 - Per-repo overrides via `.suspenders.yaml` or `.suspenders.yml` (ignore rules, paths, patterns, allowlist, and a `guard` section whose allowlist/blocked_words append to the global guard config); resolved from the scan root or the enclosing git top-level (`repoConfigPath` in commands/scan.go)
 - Guard allowlist filtering and name dedup are case-insensitive, matching the case-insensitive matcher
 - Guard exemption: repos inside `guard.workspace_dirs` or whose org/repo name matches a top-level `exclude` glob are never guard-blocked (`guardExempt` in commands/hook.go, used by hook run, scan, and history); name collection is unaffected
-- Repository discovery via `repo.Find`, which walks dirs concurrently and extracts org/repo from remotes
+- Repository discovery via the shared `kit/repofind` package, which walks dirs concurrently and extracts org/repo from remotes; each repo contributes its org and repo name as separate blocked names
 - Glob matching for excludes and repo filters via `github.com/gobwas/glob`
 
 ## Build / install / test

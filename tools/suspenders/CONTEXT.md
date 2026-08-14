@@ -13,7 +13,7 @@ Org/repo names the guard permits in staged diffs of public repos (e.g. `grpc/grp
 _Avoid_: guard allowlist (in prose)
 
 **Blocked name**:
-A term the guard rejects in public repos — in staged diffs at pre-commit, in tracked files during `scan`, and in added lines and messages during history scan/clean. Collected from workspace-dir repo names (org/repo and directory basename) plus `blocked_words` (brand names, internal domains, doc links; `*` wildcards allowed), minus safe references. Repo excludes do not remove blocked names — that is deliberate.
+A term the guard rejects in public repos — in staged diffs at pre-commit, in tracked files during `scan`, and in added lines and messages during history scan/clean. Collected from workspace-dir repos (the org name and the repo name as separate entries, never the combined `org/repo` string, plus the checkout directory basename) plus `blocked_words` (brand names, internal domains, doc links; `*` wildcards allowed), minus safe references. Repo excludes do not remove blocked names — that is deliberate.
 _Avoid_: banned word, internal name (as the mechanism's name)
 
 **Repo exclude**:
