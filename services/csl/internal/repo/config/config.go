@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
@@ -123,7 +123,7 @@ func (h *PostMergeHook) IsExcluded(repoPath, repoName string) bool {
 		return false
 	}
 	for _, e := range h.Exclude {
-		e = expandTilde(e)
+		e = repofind.ExpandHome(e)
 		if e == repoPath || e == repoName {
 			return true
 		}
@@ -179,7 +179,7 @@ func (c *Config) SummaryEnabled() bool {
 // Returns empty string when unset, meaning os.MkdirTemp default should be used.
 func (c *Config) EffectiveTmpDir() string {
 	if c != nil && c.TmpDir != "" {
-		return expandTilde(c.TmpDir)
+		return repofind.ExpandHome(c.TmpDir)
 	}
 	return ""
 }
@@ -235,23 +235,12 @@ func loadFrom(path string) (*Config, error) {
 
 	// Expand tildes in directory paths
 	for i, d := range cfg.Dirs {
-		cfg.Dirs[i] = expandTilde(d)
+		cfg.Dirs[i] = repofind.ExpandHome(d)
 	}
-	cfg.TmpDir = expandTilde(cfg.TmpDir)
+	cfg.TmpDir = repofind.ExpandHome(cfg.TmpDir)
 	for i, e := range cfg.Hooks.PostMerge.Exclude {
-		cfg.Hooks.PostMerge.Exclude[i] = expandTilde(e)
+		cfg.Hooks.PostMerge.Exclude[i] = repofind.ExpandHome(e)
 	}
 
 	return &cfg, nil
-}
-
-func expandTilde(p string) string {
-	if strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return p
-		}
-		return filepath.Join(home, p[2:])
-	}
-	return p
 }

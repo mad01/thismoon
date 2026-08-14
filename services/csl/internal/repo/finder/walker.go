@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/mad01/thismoon/kit/repofind"
 )
 
 const numWorkers = 32
@@ -30,7 +32,7 @@ func Walk(dirs []string) ([]Repo, error) {
 
 	// Seed initial directories before starting the closer goroutine
 	for _, dir := range dirs {
-		dir = expandTilde(dir)
+		dir = repofind.ExpandHome(dir)
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			continue
 		}
@@ -190,15 +192,4 @@ func readOriginURL(path string) string {
 		}
 	}
 	return ""
-}
-
-func expandTilde(p string) string {
-	if strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return p
-		}
-		return filepath.Join(home, p[2:])
-	}
-	return p
 }

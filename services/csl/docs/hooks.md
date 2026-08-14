@@ -237,7 +237,7 @@ The hook calls `csl index --repo <path>`, which is the only way to reindex one r
 csl index --repo ~/code/src/github.com/myorg/foo
 ```
 
-The flag bypasses the global staleness check, calls [`finder.Inspect`](../internal/repo/finder/walker.go#L111) to resolve the repo's name and remote, and updates the per-repo entry in `state.json` so the next `csl index` run won't redundantly re-process it. See [CLI reference](cli.md#csl-index) for the full `csl index` flag list.
+The flag bypasses the global staleness check, calls [`finder.Inspect`](../internal/repo/finder/walker.go) to resolve the repo's name and remote, and updates the per-repo entry in `state.json` so the next `csl index` run won't redundantly re-process it. See [CLI reference](cli.md#csl-index) for the full `csl index` flag list.
 
 ## Re-applying with ralph
 
