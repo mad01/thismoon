@@ -1,0 +1,19 @@
+# humanizer-id: Humanizer.UTMParameters
+# humanizer-name: ChatGPT UTM tracking parameter
+# humanizer-category: communication
+# humanizer-summary: URLs carrying utm_source=chatgpt.com / utm_source=openai tracking parameters.
+# humanizer-rationale: ChatGPT appends its own UTM source to links it surfaces; the parameter surviving into finished text is a direct paste tell.
+# humanizer-before: See the full report at https://example.com/report?utm_source=chatgpt.com for details.
+# humanizer-after: See the full report at https://example.com/report for details.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing
+extends: existence
+message: "ChatGPT UTM tracking parameter: '%s' — strip it from the URL."
+level: error
+# raw scope: the match lives inside a URL, which vale's markdown-aware scope
+# treats as a link and skips. Match against the unprocessed text instead.
+scope: raw
+nonword: true
+tokens:
+  - 'utm_source=chatgpt\.com'
+  - 'utm_source=openai'
+  - '[?&]utm_source=(?:chatgpt|openai)'

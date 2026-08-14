@@ -98,3 +98,8 @@ tokens:
   - meticulously
   - invaluable
   - dynamic
+  # 2026 Wikipedia additions (distinctive phrasings only; bare common words
+  # like "shift"/"land"/"actually"/"signal" are aggregate tells, not per-word,
+  # and firing on them here would flood ordinary prose with false positives)
+  - built different
+  - quietly (?:became|shaping|reshaping|transforming|redefining)

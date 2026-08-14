@@ -2,6 +2,8 @@
 
 `humanizer` shells out to [vale](https://vale.sh) against a bundled Humanizer style pack to flag AI-writing patterns in text. It also computes quantitative voice profiles (sentence length distribution, punctuation densities, contraction rate, Flesch reading ease) and can diff two samples metric by metric. Both the CLI and the MCP server are in this binary.
 
+It also lints and fixes the invisible watermark carriers that get embedded in text: zero-width and format Unicode, bidi overrides, tag characters, variation selectors, and exotic space homoglyphs. `lint` reports them, `fix` scrubs them, and `rewrite` builds a prompt for the statistical (token-sampling) marks a scrub can't reach. This half is ported from [watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover) (MIT); see `docs/MIGRATED-FROM.md`.
+
 ## How it works
 
 Detection is purely deterministic. The tool flags patterns; rewriting is left to the calling agent. Two independent paths cover different tells:
@@ -11,11 +13,13 @@ Detection is purely deterministic. The tool flags patterns; rewriting is left to
 
 Run both for full coverage.
 
+The watermark side (`lint`, `fix`, `rewrite`) is separate from the AI-writing detection above. `lint` and `fix` are deterministic and offline: they classify each code point against fixed tables and strip or normalize the carriers, preserving load-bearing invisibles. `rewrite` handles statistical marks a scrub can't reach — by default it only builds the prompt, so it too is offline; the model backends are opt-in and CLI-only.
+
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 43 rules covering patterns from Wikipedia's "Signs of AI writing":
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 46 rules covering patterns from Wikipedia's "Signs of AI writing":
 
-AIVocabulary, AphoristicClosure, BoldOveruse, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, VagueAttribution
+AIVocabulary, AphoristicClosure, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) comes from `# humanizer-*` comment headers in each YAML file, served by both the CLI (`rules explain`) and the MCP tools.
 
@@ -109,6 +113,73 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 `rules explain` prints the rule ID, name, category, severity, summary, rationale, before/after examples, and reference link.
 
+### lint
+
+Report invisible-Unicode and space-homoglyph watermark carriers. Reports only — it changes nothing.
+
+```sh
+humanizer lint draft.md
+cat draft.md | humanizer lint --json
+```
+
+| Flag | Description |
+|---|---|
+| `--aggressive` | Also flag Cyrillic/fullwidth Latin confusable lookalikes |
+| `--strip-emoji-glue` | Paranoid: also flag load-bearing invisibles (emoji glue, script joiners, flag tags, orthographic Cf) |
+| `--json` | Emit the report as JSON |
+
+Each hit reports a codepoint, kind (`strip`, `bidi`, `tag_chars`, `variation_selector`, `zwj_family`, `space`, `confusable`, `other_cf`), a confidence (`probable` for edit-carriers, `informational` for spaces), a count, and sample character offsets. Load-bearing invisibles — emoji ZWJ/variation selectors after an emoji base, script joiners inside complex scripts, flag tag characters, and orthographic Arabic/Syriac marks — are preserved and not flagged unless `--strip-emoji-glue` is set. Exits non-zero when any carrier is found.
+
+### fix
+
+Apply the scrub and emit the cleaned text.
+
+```sh
+humanizer fix draft.md               # cleaned text to stdout, stats to stderr
+humanizer fix draft.md -o clean.md
+humanizer fix draft.md --in-place    # overwrite, writing draft.md.bak first
+```
+
+| Flag | Description |
+|---|---|
+| `-o`, `--output` | Write cleaned text here (default: stdout) |
+| `--in-place` | Overwrite the input file (writes a `.bak` backup first) |
+| `--no-normalize-spaces` | Do not rewrite exotic spaces to U+0020 |
+| `--aggressive-homoglyphs` | Risky: map Cyrillic/fullwidth Latin confusables to ASCII |
+| `--nfkc` | Risky: apply Unicode NFKC normalization after the scrub |
+| `--strip-emoji-glue` | Risky: strip load-bearing invisibles too |
+| `--json` | Emit the stats summary as JSON on stderr |
+
+The default is non-intrusive: it strips invisible/format controls and normalizes exotic spaces, neither of which changes a visible character. The three risky flags rewrite visible content, so they are opt-in.
+
+### rewrite
+
+Build (or run) a rewrite prompt for statistical watermarks, which the deterministic scrub cannot touch.
+
+```sh
+# offline default: print the prompt for you (or an agent) to run
+humanizer rewrite draft.md --strength humanize
+
+# run a local Ollama model directly
+export WATERMARKS_REWRITE_MODEL=llama3.2
+humanizer rewrite draft.md --backend ollama -o draft.rewritten.md
+```
+
+| Flag | Description |
+|---|---|
+| `--backend` | `print-prompt` (default, offline), `ollama`, or `openai-compatible` |
+| `--strength` | `paraphrase` (default), `humanize`, `code`, `backtranslate`, `structural` |
+| `--model` | Model name (required for the model backends) |
+| `--base-url` | Backend base URL (default `http://127.0.0.1:11434`) |
+| `--allow-remote` | Allow non-loopback backend hosts (default: deny) |
+| `--candidates` | Generate N candidates and keep the most lexically diverged |
+| `--temperature` | Sampling temperature (default 0.9) |
+| `--no-layer-a-after` | Skip the Layer A scrub on model output |
+| `-o`, `--output` | Write the result here (default: stdout) |
+| `--json-stats` | Emit the info block as JSON on stderr |
+
+The default `print-prompt` backend calls no model — it returns the prompt so you or the calling agent produce the rewrite. The `ollama` and `openai-compatible` backends send text off-process: non-loopback hosts are refused unless `--allow-remote` (or `WATERMARKS_REWRITE_ALLOW_REMOTE=1`) is set, redirects are refused so the API-key header can't be forwarded to an unvalidated host, and the key is read from `WATERMARKS_REWRITE_API_KEY` only — never a flag. Prefer a rewrite model different from the suspected origin; rewriting with the origin model can re-stamp the text.
+
 ### version
 
 Report which build is installed.
@@ -132,7 +203,7 @@ An MCP host such as Claude Code launches this; don't run it by hand in normal us
 claude mcp add --scope user humanizer -- humanizer mcp
 ```
 
-The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes eight tools:
+The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes eleven tools:
 
 | Tool | Description |
 |---|---|
@@ -144,6 +215,9 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | `humanizer_rules_explain` | Full metadata and examples for one rule |
 | `humanizer_voice_profile` | Quantitative voice profile of a text sample |
 | `humanizer_voice_diff` | Metric-by-metric delta between two samples |
+| `humanizer_lint` | Report invisible-Unicode / space-homoglyph watermark carriers (offline) |
+| `humanizer_fix` | Scrub those carriers; returns cleaned text + stats (offline) |
+| `humanizer_rewrite` | Build a rewrite prompt for statistical watermarks (offline; network backends are CLI-only) |
 
 The consuming repo registers the server with the MCP host; in that setup it runs under a seatbelt sandbox (see Sandbox below).
 
@@ -176,6 +250,8 @@ The style pack extracts to `~/.cache/humanizer/vale` on first use. To override t
 | `internal/voice/profile.go` | Sentence stats, punctuation densities, contraction rate, Flesch ease. |
 | `internal/voice/statistical.go` | Statistical AI-signal detectors (size-gated). |
 | `internal/voice/diff.go` | Metric-by-metric diff between two profiles. |
+| `internal/scrub/scrub.go` | Invisible-Unicode/homoglyph carrier tables, `Inspect` (lint) and `Clean` (fix). |
+| `internal/rewrite/` | Rewrite prompt builder, candidate selection, and the hardened HTTP backends. |
 | consuming repo's seatbelt profile | Sandbox for the MCP server (machine-private wiring, kept beside the MCP registration). |
 
 Package path: `github.com/mad01/thismoon/tools/humanizer`, part of the monorepo module; it has no go.mod of its own.

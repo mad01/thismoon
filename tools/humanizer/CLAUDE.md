@@ -8,10 +8,12 @@ Go CLI + MCP server. Detects AI-writing patterns by shelling out to `vale` again
 humanizer/
   cmd/humanizer/     - entrypoint (delegates to internal/cli)
   internal/
-    cli/             - cobra command tree (root, detect, profile, rules, mcp, version); build metadata from the shared buildinfo package
-    mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_status.go, tools_voice.go)
+    cli/             - cobra command tree (root, detect, profile, rules, lint, fix, rewrite, mcp, version); build metadata from the shared buildinfo package
+    mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
     rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
     voice/           - voice profiler, statistical detector, and diff logic (profile.go, statistical.go, diff.go)
+    scrub/           - Layer A watermark scrub: invisible-Unicode/homoglyph carrier tables, Inspect (lint) and Clean (fix)
+    rewrite/         - Layer B watermark rewrite: prompt builder, candidate selection, hardened HTTP backends (ported from watermarks-remover, MIT)
   testdata/          - fixture files for tests (ai_sample.md, human_sample.md)
   Makefile           - package path github.com/mad01/thismoon/tools/humanizer, part of the monorepo module; no go.mod of its own
 ```
@@ -27,9 +29,9 @@ Run both for full coverage. Span rules catch specific phrasing tells; the statis
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 43 rules covering patterns from Wikipedia's "Signs of AI writing":
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 46 rules covering patterns from Wikipedia's "Signs of AI writing":
 
-AIVocabulary, AphoristicClosure, BoldOveruse, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, VagueAttribution
+AIVocabulary, AphoristicClosure, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) is parsed from `# humanizer-*` comment headers in each YAML file and served by both the CLI and the MCP tools.
 
@@ -63,12 +65,15 @@ The test suite includes metadata validation for every YAML header and concurrent
 - `humanizer profile [file]`: compute a quantitative voice profile: word/sentence/paragraph counts, type-token ratio, sentence length (mean/stddev/p50/p90), punctuation densities per 100 words (em-dash, semicolon, colon, paren, comma, hyphenated-pair, bold), contraction rate, Flesch reading ease, top bigrams/trigrams. Flags: `--diff <file>` (also print a metric-by-metric delta against a reference sample), `--json`.
 - `humanizer rules list`: list every bundled rule (ID, category, default severity, summary). Flags: `--category` (`content`|`language`|`style`|`communication`), `--json`.
 - `humanizer rules explain <rule_id>`: print full metadata for one rule: ID, name, category, severity, summary, rationale, before/after examples, reference link.
+- `humanizer lint [file]`: report invisible-Unicode / space-homoglyph watermark carriers (Layer A `scrub.Inspect`). Reports only; exits non-zero when any carrier is found. Flags: `--aggressive` (flag confusables), `--strip-emoji-glue` (paranoid), `--json`.
+- `humanizer fix [file]`: apply the Layer A scrub (`scrub.Clean`). Cleaned text to stdout / `-o` / `--in-place` (writes `.bak`); stats to stderr. Non-intrusive by default (strip invisibles, normalize spaces); risky flags `--nfkc`, `--aggressive-homoglyphs`, `--strip-emoji-glue` alter visible characters. `--no-normalize-spaces` opts out of the default space fold.
+- `humanizer rewrite [file]`: Layer B rewrite for statistical marks. `--backend print-prompt` (default, offline) returns the prompt; `ollama`/`openai-compatible` run a model. Flags: `--strength`, `--model`, `--base-url`, `--allow-remote`, `--candidates`, `--temperature`, `--no-layer-a-after`, `-o`, `--json-stats`. API key via `WATERMARKS_REWRITE_API_KEY` only.
 - `humanizer mcp`: start the MCP stdio server. An MCP host such as Claude Code launches this; don't run it by hand in normal use. Register once with `claude mcp add --scope user humanizer -- humanizer mcp`.
 - `humanizer version`: print the bare version token of the running build. Flags: `-o json` for the four-key build metadata object (`version`, `commit`, `tag`, `build_time`).
 
 ## MCP tools
 
-The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing eight tools:
+The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing eleven tools:
 
 - `humanizer_status()` → `{installed, binary, version, cache_dir, rule_count, style_pack, error?, install_hint?}`. Health check: is vale installed, its version, the cache dir, bundled rule count. Call first when `humanizer_detect` fails unexpectedly.
 - `humanizer_detect(text, rules?, min_severity?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message.
@@ -79,6 +84,9 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, file?}`. Full metadata for one rule.
 - `humanizer_voice_profile(text)` → the voice `Profile` (same metrics as `humanizer profile`). 500+ words gives the most reliable metrics.
 - `humanizer_voice_diff(draft, sample)` → `{draft_profile, sample_profile, diff}`. Profiles both texts and returns a metric-by-metric delta sorted by magnitude. Use when the user supplies their own writing as a voice reference.
+- `humanizer_lint(text, aggressive?, strip_emoji_glue?)` → the `scrub.Report` (hits with codepoint, kind, confidence, count, sample offsets). Offline, deterministic. Reports invisible-Unicode / space-homoglyph carriers without changing anything.
+- `humanizer_fix(text, normalize_spaces?, nfkc?, aggressive_homoglyphs?, strip_emoji_glue?)` → `{cleaned_text, stats}`. Offline, deterministic. `normalize_spaces` defaults true; the other three are the risky, visibly-altering transforms. The caller writes the result.
+- `humanizer_rewrite(text, strength?, lang?, original_lang?)` → `{prompt, info}`. Builds a Layer B rewrite prompt (print-prompt only over MCP, so it stays offline). Network backends live in the `humanizer rewrite` CLI, not here.
 
 ## Gotchas
 
@@ -86,6 +94,8 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - **Version probe convention.** `humanizer version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, injected by `buildinfo.mk` at link time. Plain `humanizer version` stays a bare token — ralph and status parse it as one. The same `buildinfo.Get().Version` is what the MCP initialize handshake advertises as `serverInfo.version`.
 - **Codesign required for MCP.** macOS 15+ `taskgated` kills adhoc-signed binaries whose provenance xattr no longer matches. `make install` handles this; manual copies need `make resign BIN=~/code/bin/humanizer`.
 - **Two detection paths, run both.** Vale span rules flag a matched substring with line/column; the statistical detector flags whole-sample properties with no span. Neither alone gives full coverage.
+- **Watermark scrub is a third, separate path.** `lint`/`fix` (`internal/scrub`) work on code points, not prose patterns — deterministic and offline, sharing one classifier so a report and its fix never disagree. Load-bearing invisibles (emoji ZWJ/VS after an emoji base, script joiners inside complex scripts, flag tag chars, orthographic Arabic/Syriac Cf) are preserved by default; `strip_emoji_glue` is the paranoid override.
+- **Rewrite network backends are CLI-only.** `humanizer_rewrite` over MCP is print-prompt only, because the MCP seatbelt denies all network. The `ollama`/`openai-compatible` backends run from the (unsandboxed) CLI; they default-deny non-loopback hosts, refuse redirects (so the API-key header can't be forwarded), and read the key from `WATERMARKS_REWRITE_API_KEY` only. To let the MCP tool call a local model, the consuming repo's seatbelt would need a loopback exception — not added here.
 - **Vale rule gotcha:** `existence`/`occurrence` rules wrap each token in `\b…\b` by default, so a pattern that begins or ends with a non-word char (e.g. a leading `,` plus trailing `\.`, or a trailing `?`/`#`) never matches. Set `nonword: true` on those rules. Single-quoted YAML scalars must escape inner apostrophes as `''`; plain scalars can use `'?` directly.
 - `vale` must be available on `$PATH` (installed by the consuming repo's package recipe).
 - **The MCP server runs sandboxed** (seatbelt, via the consuming repo's registration wrapper). `humanizer_detect_file` reads only prose files (`.md`/`.markdown`/`.txt`) under the profile's workspace roots, plus `/tmp` paths; anything else under `$HOME` returns a clean error pointing at `humanizer_detect`. The roots are defined by the consuming repo's seatbelt profile, not this code; new runtime file/network needs require a profile change there.

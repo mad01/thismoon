@@ -15,21 +15,35 @@ at all.
 
 ```
 cmd/humanizer/       entrypoint; delegates to internal/cli
-internal/cli/        cobra command tree: root, detect, profile, rules, mcp,
-                     version
+internal/cli/        cobra command tree: root, detect, profile, rules, lint,
+                     fix, rewrite, mcp, version
 internal/rules/      vale integration: embed.go (pack embedding + cache
                      extraction), vale.go (subprocess run + JSON parsing),
                      metadata.go (rule metadata from YAML headers),
                      vale/styles/Humanizer/*.yml (43 rules)
 internal/voice/      profile.go (Compute), statistical.go
                      (DetectStatistical), diff.go (DiffProfiles)
+internal/scrub/      Layer A watermark scrub: carrier tables, Inspect (lint),
+                     Clean (fix) — deterministic, offline
+internal/rewrite/    Layer B watermark rewrite: prompt.go (BuildPrompt),
+                     select.go (candidate scoring), backend.go (hardened
+                     ollama/openai HTTP), rewrite.go (orchestration)
 internal/mcpserver/  server.go plus one tools_*.go file per tool group
 testdata/            ai_sample.md / human_sample.md fixtures
 ```
 
-`internal/rules` and `internal/voice` hold all the logic; `internal/cli` and
-`internal/mcpserver` are thin frontends over the same functions, so CLI and
-MCP results never diverge.
+`internal/rules`, `internal/voice`, `internal/scrub`, and `internal/rewrite`
+hold all the logic; `internal/cli` and `internal/mcpserver` are thin frontends
+over the same functions, so CLI and MCP results never diverge.
+
+The watermark half (`internal/scrub`, `internal/rewrite`) is a Go port of
+watermarks-remover's text scripts (MIT; see docs/MIGRATED-FROM.md). `scrub`
+classifies each rune against fixed carrier tables — one classifier drives both
+`Inspect` (the lint report) and `Clean` (the fix), so they never disagree — and
+is fully deterministic and offline. `rewrite` targets statistical marks the
+scrub can't reach: its default backend only builds the prompt (offline), while
+the `ollama`/`openai-compatible` backends make network calls and are therefore
+CLI-only under the MCP seatbelt.
 
 ## Data flow
 

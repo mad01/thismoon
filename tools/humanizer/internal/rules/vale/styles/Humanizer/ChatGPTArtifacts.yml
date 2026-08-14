@@ -1,0 +1,19 @@
+# humanizer-id: Humanizer.ChatGPTArtifacts
+# humanizer-name: ChatGPT paste artifact
+# humanizer-category: communication
+# humanizer-summary: Machine tokens left in text copied straight out of ChatGPT (oaicite, contentReference, sandbox paths).
+# humanizer-rationale: These are internal citation and file-reference markers ChatGPT emits; a human never types them, so their presence is near-certain paste residue.
+# humanizer-before: The treaty was signed in 1848 :contentReference[oaicite:0]{index=0}.
+# humanizer-after: The treaty was signed in 1848.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing
+extends: existence
+message: "ChatGPT paste artifact: '%s' — remove; this is copy-paste residue from a chatbot."
+level: error
+nonword: true
+tokens:
+  - ':contentReference\[oaicite:\d+\]\{index=\d+\}'
+  - '\[oaicite:\d+\]'
+  - 'oai_citation:\d+'
+  - 'oai_citation'
+  - 'sandbox:/mnt/data/'
+  - 'https?://chat\.openai\.com/'

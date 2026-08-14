@@ -1,0 +1,16 @@
+# humanizer-id: Humanizer.CitationArtifacts
+# humanizer-name: LLM citation artifact
+# humanizer-category: communication
+# humanizer-summary: Orphaned return-arrow footnote markers left behind when LLM output is pasted.
+# humanizer-rationale: These return-arrow reference markers come from rendered chatbot citations; carried into plain text they are stray artifacts, not real footnotes.
+# humanizer-before: The bridge opened in 1937.↩1
+# humanizer-after: The bridge opened in 1937 (Golden Gate Bridge District, 1937).
+# humanizer-reference: Wikipedia:Signs_of_AI_writing
+extends: existence
+message: "LLM citation artifact: '%s' — remove or replace with a real citation."
+level: error
+nonword: true
+tokens:
+  - '↩\d+'
+  - '\[↩\]'
+  - '<sup>\[↩\]</sup>'

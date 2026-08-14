@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "humanizer",
@@ -22,6 +26,16 @@ to the calling agent (Claude).`,
 	SilenceErrors: true,
 }
 
+// pendingExitCode lets a command (e.g. lint) request a non-zero exit without
+// returning an error, so findings don't print as an error message.
+var pendingExitCode int
+
 func Execute() error {
-	return rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		return err
+	}
+	if pendingExitCode != 0 {
+		os.Exit(pendingExitCode)
+	}
+	return nil
 }
