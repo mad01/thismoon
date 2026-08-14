@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/belt/v0.7.0...belt/v0.8.0) (2026-08-14)
+
+
+### Features
+
+* **belt:** render the full effective config from belt config ([#132](https://github.com/mad01/thismoon/issues/132)) ([6888e01](https://github.com/mad01/thismoon/commit/6888e01cdfea5dc81d1603748cf467fc09913fe8))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/belt/v0.6.0...belt/v0.7.0) (2026-08-14)
 
 
