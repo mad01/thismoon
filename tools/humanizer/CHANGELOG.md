@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/humanizer/v0.3.0...humanizer/v0.4.0) (2026-08-14)
+
+
+### Features
+
+* **humanizer:** add watermark lint/fix/rewrite and ChatGPT-artifact rules ([#130](https://github.com/mad01/thismoon/issues/130)) ([b93d5b6](https://github.com/mad01/thismoon/commit/b93d5b65d0f4cea472e14a1a0ffbcb1da7be22b9))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/humanizer/v0.2.1...humanizer/v0.3.0) (2026-08-13)
 
 
