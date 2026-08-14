@@ -15,6 +15,12 @@ func git(t *testing.T, dir string, args ...string) string {
 		"-c", "user.name=Test",
 		"-c", "user.email=test@example.com",
 		"-c", "commit.gpgsign=false",
+		// No background maintenance: a detached auto-gc can still be
+		// writing .git/objects/pack when t.TempDir cleanup runs, which
+		// fails the test with "directory not empty".
+		"-c", "gc.auto=0",
+		"-c", "gc.autoDetach=false",
+		"-c", "maintenance.auto=false",
 	}
 	cmd := exec.Command("git", append(base, args...)...)
 	out, err := cmd.CombinedOutput()
@@ -32,6 +38,9 @@ func gitTry(dir string, args ...string) {
 		"-c", "user.name=Test",
 		"-c", "user.email=test@example.com",
 		"-c", "commit.gpgsign=false",
+		"-c", "gc.auto=0",
+		"-c", "gc.autoDetach=false",
+		"-c", "maintenance.auto=false",
 	}
 	_ = exec.Command("git", append(base, args...)...).Run()
 }
