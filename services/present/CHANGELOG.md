@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/present/v0.2.0...present/v0.3.0) (2026-08-17)
+
+
+### Features
+
+* **recipes:** ship worklog, humanizer, golang-style, and present skills from repo-root skills/ ([#136](https://github.com/mad01/thismoon/issues/136)) ([c21beb9](https://github.com/mad01/thismoon/commit/c21beb98a289f5d1410e633c7beded856c38c6c7))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/present/v0.1.2...present/v0.2.0) (2026-08-13)
 
 
