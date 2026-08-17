@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/mad01/thismoon/compare/csl/v0.9.0...csl/v0.10.0) (2026-08-17)
+
+
+### Features
+
+* **csl:** fleet repo-health report and file-view portal (MAD-224) ([#134](https://github.com/mad01/thismoon/issues/134)) ([72eef81](https://github.com/mad01/thismoon/commit/72eef81b975e71500e788b172d9cdb68d81cfc76))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/csl/v0.8.0...csl/v0.9.0) (2026-08-13)
 
 
