@@ -30,9 +30,9 @@ MCP server).
 - **`post_apply` cache hook** — `make cache` fetches fonts/JS into
   `~/.config/present` so pages have zero CDN dependencies. Offline-safe,
   and cache-assets.sh exits early once the assets exist.
-- **`dirs_mirror.present_skill`** — symlinks `skills/present/` into
-  `~/.claude/skills/` so the Claude skill ships with the service.
-- **`dirs_mirror.present_codex_skill`** — symlinks the same skill into
+- **`dotfiles.present_skill`** — symlinks the repo-root `skills/present/` dir
+  into `~/.claude/skills/` so the Claude skill ships with the service.
+- **`dotfiles.present_codex_skill`** — symlinks the same dir into
   `~/.agents/skills/` so Codex and Pi discover it too.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
@@ -101,6 +101,6 @@ picks up the new code:
 ## See also
 
 - Source + module notes: `services/present/CLAUDE.md`
-- Skill: `skills/present/SKILL.md` (mirrored into `~/.claude/skills/`)
+- Skill: repo-root `skills/present/SKILL.md` (linked into `~/.claude/skills/`)
 - Seatbelt profile + wrapper: `present.sb`, `present-mcp-sandbox.sh` (this dir)
 - Import provenance: `docs/MIGRATED-FROM.md`

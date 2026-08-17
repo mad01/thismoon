@@ -13,9 +13,12 @@ ralph merges the recipe with the identity `thismoon/humanizer`. The package
 
 - `wave = 0`: builds `~/code/bin/humanizer` before the consuming repo's MCP
   registration recipe (wave 1) points the MCP host at it.
-- Package only — public layer per docs/adr/0006. MCP registration, the
-  sandbox wrapper + seatbelt profile, and the `config.yaml` symlink are
-  machine-private wiring and live in the consuming repo's companion recipe.
+- **`dotfiles.humanizer_skill` / `dotfiles.humanizer_codex_skill`** — symlink
+  the repo-root `skills/humanizer/` dir into `~/.claude/skills/` and
+  `~/.agents/skills/` so the skill ships with the tool on every machine.
+- Public layer per docs/adr/0006. MCP registration, the sandbox wrapper +
+  seatbelt profile, and the `config.yaml` symlink are machine-private wiring
+  and live in the consuming repo's companion recipe.
 
 The item key `packages.humanizer` is the same one the dotfiles recipe used
 before the migration, so ralph state carries across the cutover with no

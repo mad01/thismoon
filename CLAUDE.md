@@ -22,6 +22,9 @@ kit/         shared Go packages for cross-tool functionality (one subpackage
 buildinfo/   shared build-metadata package (ldflags targets, /version handler)
 buildinfo.mk Makefile fragment every component includes to inject it
 recipes/     ralph recipes, consumed remotely via [[recipe_sources]]
+skills/      agent skills (Claude + Codex), one directory per skill; each is
+             symlinked into ~/.claude/skills and ~/.agents/skills by its
+             paired recipe (skill-only recipes for skills with no binary)
 docs/adr/    architecture decision records
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
 docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA

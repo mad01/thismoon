@@ -1,0 +1,80 @@
+# Function & method design
+
+Backed by [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments), the [Google Go Style Guide](https://google.github.io/styleguide/go/best-practices), and the [Uber Go Style Guide](https://github.com/uber-go/guide/blob/master/style.md).
+
+## Input/Config/Patch structs over long parameter lists
+
+When a function needs more than ~3 parameters, or when callers will grow over time, pass a struct. This is the dominant house pattern — and the codebase **does not** use functional `WithX` options.
+
+```go
+// worklog/internal/store/item.go
+// CheckpointInput carries one checkpoint's content. Empty fields are skipped.
+type CheckpointInput struct {
+	Ticket string // set on first creation
+	Topic  string
+	Where  string // replaces the "Where I am" snapshot
+	Note   string // prepended as a new "Log" entry
+	Repo   string // repo this checkpoint touched ("" = none / not in a repo)
+	Cwd    string // recorded as last_cwd
+}
+```
+
+Other examples: `store.CreateInput`, `present`'s `store.Patch`, `mcpserver.Config`. The struct documents each field inline and lets callers set only what they need.
+
+> Backing: the Google guide recommends grouping many or shared parameters into an options struct; Uber warns against opaque "naked" parameters at call sites.
+
+## Pointer fields for optional-vs-clear
+
+When a patch must distinguish "field omitted, leave unchanged" from "field set to empty, clear it", use pointer fields. From `present/internal/store/store.go`:
+
+```go
+// Patch carries optional field updates for Update. Nil fields are left
+// unchanged; a non-nil empty string clears the field.
+type Patch struct {
+	Title      *string
+	Content    *string
+	Graph      *string
+	References *[]Reference
+}
+```
+
+The HTTP layer mirrors this with `*string` JSON fields (`reminder`'s `updateReq`). Document the nil-vs-empty meaning in a comment every time.
+
+## Receivers: value vs pointer
+
+- **Pointer receiver** when the method mutates, when the type is large, or when it holds a `sync.Mutex`/uncopyable field. Stateful types (`*Store`, `*Server`, `*Client`, `*Handler`) always use pointer receivers.
+- **Value receiver** for small, immutable, behavior-only types. `notify.Osascript` is an empty struct, so `func (Osascript) Notify(...)` takes a value receiver.
+- Be consistent within a type: don't mix value and pointer receivers on the same type.
+
+## Returns
+
+- **Return `(value, error)`** rather than an in-band sentinel like `-1` or `""`. `error` is the last return value and is typed `error`, not a concrete type.
+- **Avoid named returns** in general. The one idiomatic use here is the single-return-through-a-helper pattern, where a named return reads no better than the explicit form, so the repo writes it explicitly:
+
+```go
+// reminder/internal/client/client.go
+func (c *Client) Get(id string) (Reminder, error) {
+	var out Reminder
+	return out, c.do(http.MethodGet, "/api/reminders/"+id, nil, &out)
+}
+```
+
+- Use named returns only when they genuinely aid the reader (e.g. a deferred close that sets the error), and keep naked returns to short functions. `nakedret` in the lint config flags the rest.
+
+## Accept interfaces, return structs
+
+Return concrete types from constructors and functions (`*Store`, `*Server`). Accept an interface only where you need a seam, and define that interface **in the consumer**, as small as possible. From `reminder/internal/ticker/ticker.go`:
+
+```go
+// Store is the subset of *store.Store the ticker needs.
+type Store interface {
+	DueReminders(now time.Time) []store.Reminder
+	Trigger(id string, now time.Time) (store.Reminder, error)
+}
+```
+
+The ticker takes this two-method view, so a fake store in a test only implements two methods. The `notify.Notifier` interface (one method) and `proxy.Prober` (a func type) are the same idea: a tiny consumer-side seam for the side effect. Don't define an interface next to its only implementation "just in case" — add it when a second implementation or a test seam actually appears. See `safety.md` for keeping the implementation behind the seam pure.
+
+## Keep functions short and single-purpose
+
+Functions in this codebase are short; the longest are cobra command builders (~35 lines) and they stay flat. If a function name needs "and", split it. The `gocyclo` linter bounds complexity.

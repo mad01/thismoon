@@ -180,5 +180,5 @@ confirms which embedded webkit assets the running present server serves.
 ## See also
 
 - Recipe: `recipes/present/recipe.toml` (+ `recipes/present/CLAUDE.md`)
-- Skill: `recipes/claude/skills/present/SKILL.md`
+- Skill: repo-root `skills/present/SKILL.md`
 - MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`

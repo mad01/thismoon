@@ -1,6 +1,6 @@
-# worklog — public layer only: build + install. MCP registration, the
-# ticket-firewall config overlay (~/.config/worklog/config.yaml), and the
-# worklog/worklog-backfill skills stay in the consuming repo's companion
+# worklog — public layer: build + install + the worklog skill. MCP
+# registration and the ticket-firewall config overlay
+# (~/.config/worklog/config.yaml) stay in the consuming repo's companion
 # recipe — machine-private wiring (see docs/adr/0006).
 [recipe]
 name = "worklog"
@@ -19,3 +19,18 @@ working_dir = "~/.config/ralph/sources/thismoon/tools/worklog"
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/worklog"]
+
+# The worklog skill lives in the repo-root skills/ dir (discoverable by
+# browsing the repo); link just this skill's directory into place. Relative
+# sources resolve against the recipe dir and are path-cleaned, so ../../
+# reaches the source-checkout root.
+[dotfiles.worklog_skill]
+source = "../../skills/worklog"
+target = "~/.claude/skills/worklog"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.worklog_codex_skill]
+source = "../../skills/worklog"
+target = "~/.agents/skills/worklog"
+action = "symlink_dir"

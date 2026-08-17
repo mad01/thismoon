@@ -1,6 +1,7 @@
-# humanizer — public layer only: build + install. MCP registration, the
-# sandbox wrapper + seatbelt profile, and the config.yaml symlink stay in the
-# consuming repo's companion recipe — machine-private wiring (see docs/adr/0006).
+# humanizer — public layer: build + install + the humanizer skill. MCP
+# registration, the sandbox wrapper + seatbelt profile, and the config.yaml
+# symlink stay in the consuming repo's companion recipe — machine-private
+# wiring (see docs/adr/0006).
 [recipe]
 name = "humanizer"
 description = "humanizer — local CLI and MCP server that detects AI-writing patterns and profiles voice"
@@ -18,3 +19,18 @@ working_dir = "~/.config/ralph/sources/thismoon/tools/humanizer"
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/humanizer"]
+
+# The humanizer skill lives in the repo-root skills/ dir (discoverable by
+# browsing the repo); link just this skill's directory into place. Relative
+# sources resolve against the recipe dir and are path-cleaned, so ../../
+# reaches the source-checkout root.
+[dotfiles.humanizer_skill]
+source = "../../skills/humanizer"
+target = "~/.claude/skills/humanizer"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.humanizer_codex_skill]
+source = "../../skills/humanizer"
+target = "~/.agents/skills/humanizer"
+action = "symlink_dir"

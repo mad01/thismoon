@@ -21,19 +21,19 @@ install_paths = ["~/code/bin/present"]
 [packages.present.service]
 restart = "if command -v t-man >/dev/null && t-man status present >/dev/null 2>&1; then t-man restart present; fi"
 
-# The present Claude skill ships beside the recipe; mirror it into
-# ~/.claude/skills as a per-child symlink (same pattern as the reminder
-# recipe's skills mirror — child names are disjoint across mirrors).
-[dirs_mirror.present_skill]
-source = "skills"
-target = "~/.claude/skills"
+# The present skill lives in the repo-root skills/ dir (discoverable by
+# browsing the repo); link just this skill's directory into place. Relative
+# sources resolve against the recipe dir and are path-cleaned, so ../../
+# reaches the source-checkout root.
+[dotfiles.present_skill]
+source = "../../skills/present"
+target = "~/.claude/skills/present"
 action = "symlink_dir"
 
-# Codex discovers user skills from ~/.agents/skills. Keep the Claude mirror
-# above until its discovery path is consolidated with Codex and Pi.
-[dirs_mirror.present_codex_skill]
-source = "skills"
-target = "~/.agents/skills"
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.present_codex_skill]
+source = "../../skills/present"
+target = "~/.agents/skills/present"
 action = "symlink_dir"
 
 # Keep the MCP spawn wrapper executable — the consuming repo's claude-mcp overlay

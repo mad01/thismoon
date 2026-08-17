@@ -13,10 +13,12 @@ ralph merges the recipe with the identity `thismoon/worklog`. The package
 
 - `wave = 0`: builds `~/code/bin/worklog` before the consuming repo's MCP
   registration recipe (wave 1) registers `worklog mcp`.
-- Package only — public layer per docs/adr/0006. MCP registration, the
-  ticket-firewall config overlay (`~/.config/worklog/config.yaml`), and the
-  worklog + worklog-backfill Claude skills are machine-private wiring and live
-  in the consuming repo's companion recipe.
+- **`dotfiles.worklog_skill` / `dotfiles.worklog_codex_skill`** — symlink the
+  repo-root `skills/worklog/` dir into `~/.claude/skills/` and
+  `~/.agents/skills/` so the skill ships with the tool on every machine.
+- Public layer per docs/adr/0006. MCP registration and the ticket-firewall
+  config overlay (`~/.config/worklog/config.yaml`) are machine-private wiring
+  and live in the consuming repo's companion recipe.
 
 The item key `packages.worklog` is the same one the dotfiles recipe used
 before the migration, so ralph state carries across the cutover with no

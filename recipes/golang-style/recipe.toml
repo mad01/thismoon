@@ -1,0 +1,21 @@
+# golang-style — skill-only recipe. The skill has no companion binary; it
+# ships the Go style guide (SKILL.md + references/) from the repo-root
+# skills/ dir into the agent skill directories on every machine.
+[recipe]
+name = "golang-style"
+description = "golang-style — agent skill for idiomatic Go structure, naming, errors, and review"
+
+# The skill lives in the repo-root skills/ dir (discoverable by browsing the
+# repo); link just this skill's directory into place. Relative sources resolve
+# against the recipe dir and are path-cleaned, so ../../ reaches the
+# source-checkout root.
+[dotfiles.golang_style_skill]
+source = "../../skills/golang-style"
+target = "~/.claude/skills/golang-style"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.golang_style_codex_skill]
+source = "../../skills/golang-style"
+target = "~/.agents/skills/golang-style"
+action = "symlink_dir"
