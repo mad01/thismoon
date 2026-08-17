@@ -115,6 +115,7 @@ Config lives at `~/.config/csl/config.yaml`; `csl config` prints that path, whet
 - **`semantic.sync`**: whether `csl sync` also re-embeds changed repos after the lexical reindex (best-effort, never fails the sync). Off by default.
 - **`semantic.ollama_url` / `semantic.embed_model` / `semantic.dim`**: the Ollama server and embedding model (defaults: `http://localhost:11434`, `unclemusclez/jina-embeddings-v2-base-code:f16`, 768). Per-machine — a smaller machine can point at a smaller model. Changing model or dim triggers a full re-embed on the next index run.
 - **`daemon.idle_timeout_minutes`**: how long the search daemon stays alive with no queries (default 10).
+- **`web.base_url`**: where the csl web UI is reachable, used by `csl_show_file` to build the links it opens (default `http://127.0.0.1:7424`; set to `http://csl.this` when fronted by d-man).
 
 A repo can also carry a `.cslignore` at its root — one glob per line, `#` comments, trailing `/` for whole trees, leading `/` to anchor at the repo root. It filters both indexes (lexical zoekt and semantic); check its effect with `csl semantic files --skipped <path>`.
 
@@ -126,11 +127,14 @@ Owned by `csl web --port 7424` (default port 7424; binds `127.0.0.1` only).
 Typically run as a background service: `t-man add --name csl-web -- csl web --port 7424`.
 
 - `GET /`: the search UI (embedded `index.html`).
+- `GET /health`: the repo-health page (fleet git state, backed by `/api/repo_health`).
+- `GET /file?repo=&file=&start=&end=`: the file-view page — renders a file section like a search match, with expand-to-full-file and copy-path controls. The URL carries all state; `csl_show_file` builds and opens these links.
 - `GET /api/search?q=&mode=files_with_matches|content&repo=&lang=&file=&case=yes&limit=&context=`: lexical search, JSON.
 - `GET /api/semantic_search?q=&repo=&lang=&k=&expand=`: semantic search, JSON.
 - `GET /api/hybrid_search?q=&repo=&lang=&limit=&rrf_k=&expand=`: hybrid (RRF) search, JSON.
-- `GET /api/read?repo=&file=&start=&end=`: read a line range from a repo file.
+- `GET /api/read?repo=&file=&start=&end=`: read a line range from a repo file; the response also carries `localPath`, `fileURL`, `totalLines`, and `truncated` for the file-view page.
 - `GET /api/repos`: list discovered repos.
+- `GET /api/repo_health?all=`: fleet git-health sweep (dirty counts, ahead/behind upstream, suggested action per repo); only repos needing attention unless `all=true`.
 - `GET /healthz`: health check.
 - `GET /version`: the four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the consumer `/version` contract every webkit-mounted tool implements (see Shared UI: webkit).
 - `GET /webkit/*`: shared UI assets, mounted via `webkit.Mount(mux)`.
@@ -159,13 +163,14 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 
 ## MCP tools
 
-`csl mcp` starts the MCP stdio server and registers twelve `csl_*` tools
+`csl mcp` starts the MCP stdio server and registers fourteen `csl_*` tools
 (`internal/mcpserver.New()`). Handlers reuse the same daemon-first-then-fallback
 path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 
 **Repo:**
 - `csl_repo_lookup(name)` → `{matches: [{name, path, remote?, host?}]}`. Resolves a repo name (case-insensitive regex/substring) to its local checkout path; an empty `matches` means the repo isn't checked out locally, so don't guess a path.
 - `csl_repo_info(name)` → `{matches: [{..., branch, dirty, modified_files, untracked_files, index_stale, indexed_at, action}]}`. Reports git and index health; `action` is one of `ready`, `commit_or_stash`, `pull_recommended`, `needs_reindex`. Call before creating branches or making changes.
+- `csl_repo_health(all?)` → `{total, attention, repos: [{name, path, host?, branch?, dirty, modified_files, untracked_files, ahead, behind, has_upstream, action, error?}]}`. Fleet-wide git-health sweep: which checkouts hold uncommitted or unpushed work. `ahead`/`behind` compare against the last-fetched upstream (no network fetch). `action` is one of `commit_or_stash`, `diverged`, `push_recommended`, `pull_recommended`, `no_upstream`, `detached_head`, `error`, `ready`; default returns only repos needing attention, `all=true` for every repo. Use before a machine switch or as a hygiene sweep.
 - `csl_repo_pull(name, force?)` → `{name, path, branch, updated, warning?, old_head?, new_head?}`. Runs `git pull --ff-only`; warns (and no-ops) on a dirty tree or detached HEAD unless `force=true`.
 - `csl_repo_reindex(name)` → `{name, path, reindexed, duration}`. Blocking reindex of one repo.
 
@@ -180,6 +185,7 @@ path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 
 **Read and info:**
 - `csl_read(repo, file, start_line?, end_line?)` → `{repo, path, lines[], total_lines, truncated}`. Reads a file by repo name and relative path; caps output at 500 lines unless the caller sets a range.
+- `csl_show_file(repo, file, start_line?, end_line?, no_open?)` → `{url, repo, file, local_path, opened, warning?}`. Shows a file section to the USER: builds a `/file` deep link into the csl web UI and opens it in the browser (`no_open=true` to just get the URL). The page renders the section like a search match with expand-to-full-file and copy-path controls, reading live from disk — `csl web` must be running. For reading content yourself, use `csl_read`.
 - `csl_ls(repo, path?, glob?, recursive?)` → `{repo, path, entries[], total, truncated, total_available?}`. Lists files/dirs in a repo (glob matches base names; `recursive` returns files only, no dirs); caps at 500 entries.
 - `csl_index_info()` → `{repos_indexed, dirty_repos, shards, corrupt_shards, index_size_bytes, newest_indexed_at?, oldest_indexed_at?, daemon_running, semantic: {built, stores, chunks, model_present}}`. Index-wide health in one call; reads state from disk and pings the daemon (no repo scan, sub-second).
 
@@ -215,8 +221,14 @@ stylesheet and before `webkit.js`:
 ```html
 <wk-header brand="csl·search">
   <a data-nav class="active" href="/">Search</a>
+  <a data-nav href="/health">Health</a>
 </wk-header>
 ```
+
+The health and file pages (`health.html`, `file.html`) carry the same header
+with the matching link marked `active`; page-specific logic lives in
+`static/health.js` / `static/file.js`, with the clipboard helpers shared via
+`static/common.js`.
 
 `webkit.js` injects the full control set (font · bionic · size ± · reload · theme)
 automatically; don't add those controls manually.

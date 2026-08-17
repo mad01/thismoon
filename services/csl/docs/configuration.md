@@ -25,6 +25,7 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `semantic.dim` | int | no (default `1024`) | Vector dimensionality of `embed_model`. Must match the model. |
 | `sync.concurrency` | int | no (default `8`) | Parallel `git pull` workers for `csl sync`. `--concurrency` on the command line overrides it. |
 | `daemon.idle_timeout_minutes` | int | no (default `10`) | How long the search daemon stays alive with no queries. Higher values keep the zoekt shards and semantic stores warm at the cost of resident memory. |
+| `web.base_url` | string | no (default `http://127.0.0.1:7424`) | Where the csl web UI is reachable, used by `csl_show_file` to build the links it opens. Set to `http://csl.this` when the UI is fronted by d-man. |
 
 Every key with its default, in one place:
 
@@ -68,6 +69,10 @@ sync:
 # Search daemon idle exit.
 daemon:
   idle_timeout_minutes: 10
+
+# Where the web UI is reachable, for links `csl_show_file` opens.
+web:
+  base_url: http://127.0.0.1:7424
 ```
 
 ### What you can and can't toggle

@@ -21,12 +21,13 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Ten tools are registered, grouped into three areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, and `csl_read` for file reads.
+Fourteen tools are registered, grouped into three areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, and `csl_read` / `csl_ls` / `csl_show_file` / `csl_index_info` for file reads and info.
 
 | Tool | Purpose |
 |---|---|
 | [`csl_repo_lookup`](#csl_repo_lookup) | Resolve a repo name to its local checkout path |
 | [`csl_repo_info`](#csl_repo_info) | Git and index health for a repo, plus a suggested action |
+| [`csl_repo_health`](#csl_repo_health) | Fleet-wide sweep for uncommitted or unpushed work |
 | [`csl_repo_pull`](#csl_repo_pull) | `git pull --ff-only` with safety checks |
 | [`csl_repo_reindex`](#csl_repo_reindex) | Rebuild the zoekt index for a single repo |
 | [`csl_search`](#csl_search) | Search code by exact text or regex (lexical) |
@@ -34,6 +35,9 @@ Ten tools are registered, grouped into three areas: `csl_repo_*` for repo manage
 | [`csl_hybrid_search`](#csl_hybrid_search) | Fuse lexical and semantic results with Reciprocal Rank Fusion |
 | [`csl_count`](#csl_count) | Count matches, optionally grouped by repo or language |
 | [`csl_read`](#csl_read) | Read a file from a named local repo |
+| `csl_ls` | List files and directories in a repo (contract in the service CLAUDE.md) |
+| [`csl_show_file`](#csl_show_file) | Open a file section in the web UI for the user to look at |
+| `csl_index_info` | Index-wide health in one call (contract in the service CLAUDE.md) |
 | [`csl_query_validate`](#csl_query_validate) | Validate a zoekt query and return its parsed tree |
 
 ### `csl_repo_lookup`
@@ -130,6 +134,50 @@ The `action` field encodes the decision tree:
   }]
 }
 ```
+
+### `csl_repo_health`
+
+Fleet-wide git-health report: which local checkouts hold uncommitted or unpushed work. Walks every repo concurrently and compares each branch against its last-fetched upstream — no network fetch runs, so `behind` is as of the last pull.
+
+**When to call:** before a machine switch, before a bootstrap, or as a periodic hygiene sweep. For one repo's health including index staleness, use `csl_repo_info` instead.
+
+**Input:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `all` | bool | no | Include clean repos too; default returns only repos needing attention |
+
+**Output:**
+
+| Field | Type | Description |
+|---|---|---|
+| `total` | int | Repos checked |
+| `attention` | int | Repos needing attention (`action != ready`) |
+| `repos` | array | Per-repo git health, in discovery order |
+| `repos[].name` | string | `org/repo` name |
+| `repos[].path` | string | Absolute filesystem path |
+| `repos[].branch` | string | Current branch (`HEAD` when detached) |
+| `repos[].dirty` | bool | Working tree has uncommitted changes |
+| `repos[].modified_files` | int | Count of modified tracked files |
+| `repos[].untracked_files` | int | Count of untracked files |
+| `repos[].ahead` | int | Commits on HEAD not on the upstream (unpushed work) |
+| `repos[].behind` | int | Commits on the last-fetched upstream not on HEAD |
+| `repos[].has_upstream` | bool | False when the branch has no upstream to compare against |
+| `repos[].action` | string | Suggested action, see below |
+| `repos[].error` | string | Git failure for this repo; the sweep continues past it |
+
+The `action` ladder, most urgent first:
+
+- `error` — git failed for this repo.
+- `detached_head` — not on a branch.
+- `commit_or_stash` — the working tree is dirty.
+- `no_upstream` — the branch has no upstream; unpushed by definition.
+- `diverged` — ahead and behind at once.
+- `push_recommended` — unpushed commits.
+- `pull_recommended` — behind the last-fetched upstream.
+- `ready` — clean and synced.
+
+The same report backs `GET /api/repo_health` and the web UI's Health page.
 
 ### `csl_repo_pull`
 
@@ -444,6 +492,33 @@ Read a file from a named local repo by repo name and relative path.
 ```
 
 The line scanner buffers up to 1 MB per line, so files with very long minified lines still read cleanly.
+
+### `csl_show_file`
+
+Show a file section to the user: builds a deep link into the csl web UI's file-view page and opens it in the browser via `/usr/bin/open`. The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button; it reads the file live from disk, so `csl web` must be running.
+
+**When to call:** the user should look at a piece of code being referenced, instead of pasting it into chat or making them hunt for the file in an editor. To read file content for yourself, use `csl_read`.
+
+**Input:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `repo` | string | yes | Case-insensitive regex or substring; must resolve to exactly one repo |
+| `file` | string | yes | File path relative to the repo root |
+| `start_line` | int | no | First line of the section to highlight, 1-based; omit to show the whole file |
+| `end_line` | int | no | Last line of the section, inclusive; defaults to `start_line` |
+| `no_open` | bool | no | Return the URL without opening the browser |
+
+**Output:**
+
+| Field | Type | Description |
+|---|---|---|
+| `url` | string | The file-view URL (base from `web.base_url`, default `http://127.0.0.1:7424`) |
+| `repo` | string | Resolved `org/repo` name |
+| `file` | string | File path relative to the repo root |
+| `local_path` | string | Absolute on-disk path to the file |
+| `opened` | bool | True when the browser was opened |
+| `warning` | string | Non-fatal problem, e.g. the browser could not be opened |
 
 ### `csl_query_validate`
 

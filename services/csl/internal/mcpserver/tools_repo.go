@@ -52,6 +52,17 @@ func registerRepoTools(s *mcp.Server) {
 	}, handleRepoInfo)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "csl_repo_health",
+		Description: "Fleet-wide repo health report: which local checkouts hold uncommitted or unpushed work. " +
+			"Walks every repo and returns branch, dirty counts, and commits ahead/behind the last-fetched upstream (no network fetch). " +
+			"action is one of \"commit_or_stash\" (dirty tree), \"diverged\" (ahead and behind), \"push_recommended\" (unpushed commits), " +
+			"\"pull_recommended\" (behind upstream), \"no_upstream\" (branch without upstream), \"detached_head\", \"error\", \"ready\". " +
+			"Default returns only repos needing attention; set all=true for the full list. " +
+			"Use before a machine switch or as a hygiene sweep. Unlike csl_repo_info this runs git across the whole fleet, so it takes a few seconds; " +
+			"for one repo's health including index staleness, use csl_repo_info.",
+	}, handleRepoHealth)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "csl_repo_pull",
 		Description: "Git pull a workspace repo with safety checks. " +
 			"Warns if there are uncommitted changes or detached HEAD. Uses --ff-only (no merge commits). " +
@@ -216,6 +227,63 @@ func deriveAction(m repoInfoMatch) string {
 		}
 	}
 	return "ready"
+}
+
+// --- csl_repo_health ---
+
+type repoHealthInput struct {
+	All bool `json:"all,omitempty" jsonschema:"include clean repos too; default returns only repos needing attention"`
+}
+
+// repoHealthEntry is one repo in the csl_repo_health result. It mirrors
+// search.GitHealth with jsonschema descriptions for the tool contract.
+type repoHealthEntry struct {
+	Name           string `json:"name"             jsonschema:"org/repo name"`
+	Path           string `json:"path"             jsonschema:"absolute filesystem path"`
+	Host           string `json:"host,omitempty"   jsonschema:"git host"`
+	Branch         string `json:"branch,omitempty" jsonschema:"current git branch; HEAD when detached"`
+	Dirty          bool   `json:"dirty"            jsonschema:"working tree has uncommitted changes"`
+	ModifiedFiles  int    `json:"modified_files"   jsonschema:"count of modified tracked files"`
+	UntrackedFiles int    `json:"untracked_files"  jsonschema:"count of untracked files"`
+	Ahead          int    `json:"ahead"            jsonschema:"commits on HEAD not on the upstream (unpushed work)"`
+	Behind         int    `json:"behind"           jsonschema:"commits on the last-fetched upstream not on HEAD"`
+	HasUpstream    bool   `json:"has_upstream"     jsonschema:"false when the branch has no upstream to compare against"`
+	Action         string `json:"action"           jsonschema:"suggested action: commit_or_stash, diverged, push_recommended, pull_recommended, no_upstream, detached_head, error, ready"`
+	Error          string `json:"error,omitempty"  jsonschema:"git failure for this repo; the sweep continues past it"`
+}
+
+type repoHealthOutput struct {
+	Total     int               `json:"total"     jsonschema:"repos checked"`
+	Attention int               `json:"attention" jsonschema:"repos needing attention (action != ready)"`
+	Repos     []repoHealthEntry `json:"repos"     jsonschema:"per-repo git health; only repos needing attention unless all=true"`
+}
+
+func handleRepoHealth(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in repoHealthInput,
+) (*mcp.CallToolResult, repoHealthOutput, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, repoHealthOutput{}, fmt.Errorf("load csl config: %w", err)
+	}
+
+	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	if err != nil {
+		return nil, repoHealthOutput{}, fmt.Errorf("walk repos: %w", err)
+	}
+
+	entries := search.GitHealthSweep(ctx, repos)
+	out := repoHealthOutput{Total: len(entries), Repos: []repoHealthEntry{}}
+	for _, e := range entries {
+		if e.NeedsAttention() {
+			out.Attention++
+		}
+		if in.All || e.NeedsAttention() {
+			out.Repos = append(out.Repos, repoHealthEntry(e))
+		}
+	}
+	return nil, out, nil
 }
 
 // --- csl_repo_pull ---

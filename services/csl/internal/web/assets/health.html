@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>csl · repo health</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<link href="/assets/app.css" rel="stylesheet">
+</head>
+<body>
+<wk-header brand="csl·search">
+  <a data-nav href="/">Search</a>
+  <a data-nav class="active" href="/health">Health</a>
+</wk-header>
+<main class="wrap">
+  <wk-page-header>
+    <wk-title>Repo health</wk-title>
+    <wk-subtitle>Uncommitted and unpushed work across every local checkout — dirty trees and commits ahead or behind the last-fetched upstream. No fetch runs; "behind" is as of the last pull.</wk-subtitle>
+  </wk-page-header>
+
+  <div class="status-row">
+    <div class="status" id="status">checking repos…</div>
+    <wk-seg id="scopeToggle">
+      <button type="button" data-scope="attention" class="active">Needs attention</button>
+      <button type="button" data-scope="all">All repos</button>
+    </wk-seg>
+  </div>
+  <div id="results"></div>
+</main>
+<script src="/webkit/webkit.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/health.js"></script>
+</body>
+</html>

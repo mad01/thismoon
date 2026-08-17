@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -31,6 +32,15 @@ type Config struct {
 	Index    IndexConfig    `yaml:"index"`
 	Semantic SemanticConfig `yaml:"semantic"`
 	Daemon   DaemonConfig   `yaml:"daemon"`
+	Web      WebConfig      `yaml:"web"`
+}
+
+// WebConfig tells the other csl surfaces where the web UI is reachable.
+type WebConfig struct {
+	// BaseURL is the web UI's base URL, used by csl_show_file to build the
+	// links it opens. Empty means http://127.0.0.1:7424 (the `csl web` default
+	// port); set it to http://csl.this when the UI is fronted by d-man.
+	BaseURL string `yaml:"base_url"`
 }
 
 // DaemonConfig controls the background search daemon.
@@ -158,6 +168,16 @@ func (c *Config) SemanticEnabled() bool {
 // Safe to call on a nil receiver (returns false).
 func (c *Config) SemanticSyncEnabled() bool {
 	return c != nil && c.Semantic.Sync
+}
+
+// EffectiveWebBaseURL returns the web UI base URL without a trailing slash,
+// defaulting to the `csl web` default port on loopback. Safe to call on a nil
+// receiver.
+func (c *Config) EffectiveWebBaseURL() string {
+	if c != nil && c.Web.BaseURL != "" {
+		return strings.TrimRight(c.Web.BaseURL, "/")
+	}
+	return "http://127.0.0.1:7424"
 }
 
 // DaemonIdleTimeout returns the configured daemon idle timeout, defaulting to

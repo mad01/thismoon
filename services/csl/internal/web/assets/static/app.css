@@ -148,3 +148,8 @@ code, .mono { font-family: inherit; background: var(--chip-bg); border-radius: 4
   .filter-input { width: 100%; }
   .ex-q { width: auto; }
 }
+
+/* ── Health page ── */
+.health-err { font-size: 0.75rem; color: var(--red); margin-top: 0.2rem; }
+.health-empty { color: var(--text-2); font-size: 0.875rem; padding: 1.5rem 0; }
+.repo-name { font-weight: 500; }

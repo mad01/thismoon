@@ -22,6 +22,8 @@ type fakeSearcher struct {
 	semErr       error
 	hybridResult HybridResult
 	hybridErr    error
+	health       []search.GitHealth
+	healthErr    error
 }
 
 func (f *fakeSearcher) Search(_ context.Context, _ search.SearchOptions) ([]search.Match, error) {
@@ -36,6 +38,10 @@ func (f *fakeSearcher) HybridSearch(_ context.Context, _ HybridRequest) (HybridR
 func (f *fakeSearcher) Repos() ([]finder.Repo, error) { return f.repos, nil }
 func (f *fakeSearcher) ReadFile(_, _ string, _, _ int) (*ReadResult, error) {
 	return f.read, f.readErr
+}
+
+func (f *fakeSearcher) GitHealth(_ context.Context) ([]search.GitHealth, error) {
+	return f.health, f.healthErr
 }
 
 func serverWith(f *fakeSearcher) http.Handler {
@@ -149,6 +155,59 @@ func TestReadEndpoint(t *testing.T) {
 	if len(rr.Lines) != 1 || rr.Lines[0].Text != "package main" {
 		t.Errorf("unexpected read result: %+v", rr)
 	}
+}
+
+func TestRepoHealthEndpoint(t *testing.T) {
+	fake := &fakeSearcher{health: []search.GitHealth{
+		{Name: "o/clean", Action: search.GitActionReady},
+		{Name: "o/dirty", Action: search.GitActionCommitOrStash, Dirty: true},
+		{Name: "o/unpushed", Action: search.GitActionPush, Ahead: 2},
+	}}
+
+	t.Run("default returns only attention", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		serverWith(fake).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var resp repoHealthResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Total != 3 || resp.Attention != 2 {
+			t.Errorf("total/attention = %d/%d, want 3/2", resp.Total, resp.Attention)
+		}
+		if len(resp.Repos) != 2 {
+			t.Fatalf("got %d repos, want 2 (ready filtered out)", len(resp.Repos))
+		}
+		if resp.Repos[0].Name != "o/dirty" || resp.Repos[1].Name != "o/unpushed" {
+			t.Errorf("unexpected repos: %+v", resp.Repos)
+		}
+	})
+
+	t.Run("all=true includes clean repos", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		serverWith(fake).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health?all=true", nil))
+		var resp repoHealthResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(resp.Repos) != 3 {
+			t.Errorf("got %d repos, want all 3", len(resp.Repos))
+		}
+	})
+
+	t.Run("empty fleet marshals repos as array", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		serverWith(&fakeSearcher{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health", nil))
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if string(raw["repos"]) != "[]" {
+			t.Errorf("repos = %s, want []", raw["repos"])
+		}
+	})
 }
 
 func TestReposEndpoint(t *testing.T) {

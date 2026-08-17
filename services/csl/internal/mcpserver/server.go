@@ -29,6 +29,7 @@ func New(version string) *mcp.Server {
 	registerSemanticTools(s)
 	registerHybridTools(s)
 	registerReadTools(s)
+	registerShowTools(s)
 	registerInfoTools(s)
 
 	return s

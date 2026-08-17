@@ -21,6 +21,7 @@ type searcher interface {
 	HybridSearch(ctx context.Context, req HybridRequest) (HybridResult, error)
 	Repos() ([]finder.Repo, error)
 	ReadFile(repo, file string, start, end int) (*ReadResult, error)
+	GitHealth(ctx context.Context) ([]search.GitHealth, error)
 }
 
 // Server serves the code-search web UI and JSON API. Pages and assets are
@@ -40,11 +41,14 @@ func New(svc *Service, info buildinfo.Info) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handlePage("index.html"))
+	mux.HandleFunc("GET /health", s.handlePage("health.html"))
+	mux.HandleFunc("GET /file", s.handlePage("file.html"))
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/semantic_search", s.handleSemanticSearch)
 	mux.HandleFunc("GET /api/hybrid_search", s.handleHybridSearch)
 	mux.HandleFunc("GET /api/read", s.handleRead)
 	mux.HandleFunc("GET /api/repos", s.handleRepos)
+	mux.HandleFunc("GET /api/repo_health", s.handleRepoHealth)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", assetsHandler())

@@ -52,6 +52,12 @@ daemon:
                              # semantic stores warm at the cost of resident
                              # memory; 0 or negative means 10.
 
+web:
+  base_url: ""               # where the csl web UI is reachable, for the links
+                             # csl_show_file opens; empty means
+                             # http://127.0.0.1:7424. Set http://csl.this when
+                             # fronted by d-man.
+
 hooks:
   post_merge:                # DEPRECATED installer — suspenders owns git hooks
     enabled: false           # now and feeds ~/.config/csl/reindex.queue, which
@@ -130,6 +136,7 @@ func effectiveConfig(cfg *config.Config) config.Config {
 	eff.Daemon.IdleTimeoutMinutes = int(cfg.DaemonIdleTimeout() / time.Minute)
 	eff.Semantic.Enabled = cfg.SemanticEnabled()
 	eff.Semantic.Sync = cfg.SemanticSyncEnabled()
+	eff.Web.BaseURL = cfg.EffectiveWebBaseURL()
 
 	// The embedding defaults live in the embedder, not in the config package;
 	// building one is the only way to read them without duplicating them here.

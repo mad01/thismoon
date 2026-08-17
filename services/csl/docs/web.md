@@ -21,7 +21,21 @@ install or build separately.
   the server-side file cap is reached, a note explains the result was truncated
   and suggests narrowing the query.
 
-The empty state (no query) shows a categorized set of example queries. Each
+- **Health** (`/health`) — the fleet git-health report: every checkout's
+  branch, dirty counts, and commits ahead/behind the last-fetched upstream,
+  with a suggested action per repo and a copy-path button. A toggle switches
+  between repos needing attention (the default) and the full fleet. Backed by
+  `GET /api/repo_health`; the same report is exposed as the `csl_repo_health`
+  MCP tool.
+- **File view** (`/file?repo=&file=&start=&end=`) — renders one file section
+  like a search match: numbered lines with the requested range highlighted,
+  controls to widen the context stepwise or jump to the full file, a
+  copy-local-path button, and a link to the file on its git host. The URL
+  carries all state and every load reads the content live from disk; there is
+  no server-side record of the view. The `csl_show_file` MCP tool builds and
+  opens these links so an agent can point the user at a piece of code.
+
+The Search page's empty state (no query) shows a categorized set of example queries. Each
 example deep-links to the Search page (`/?q=<query>`) and runs automatically.
 The examples differ by mode: lexical shows zoekt query syntax (basics, regular
 expressions, boolean operators, scoping, symbol search); semantic shows
@@ -190,10 +204,26 @@ curl 'http://localhost:7424/api/semantic_search?q=retry%20a%20failed%20request&k
 curl 'http://localhost:7424/api/read?repo=thismoon&file=internal/cli/root.go&start=1&end=20'
 ```
 
+Besides `repo`, `path`, and `lines`, the response carries `localPath` (absolute
+on-disk path, home collapsed to `~`), `fileURL` (the file on its git host),
+`totalLines`, and `truncated` (true when the 2000-line read cap was hit). The
+file-view page builds on these fields.
+
 ### `GET /api/repos`
 
 Lists discovered repos (`name`, `host`, `remote`), filtered by the configured
 host allowlist.
+
+### `GET /api/repo_health`
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `all` | — | `true` includes clean repos; default returns only repos needing attention. |
+
+Runs the fleet git-health sweep and returns `{total, attention, repos}` with
+per-repo branch, dirty counts, ahead/behind the last-fetched upstream (no
+fetch runs), and a suggested `action`. Field-level contract in
+[docs/mcp.md](mcp.md#csl_repo_health) — the MCP tool returns the same shape.
 
 ### `GET /healthz`
 

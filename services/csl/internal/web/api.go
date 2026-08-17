@@ -330,6 +330,35 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+// repoHealthResponse is the /api/repo_health payload.
+type repoHealthResponse struct {
+	Total     int                `json:"total"`
+	Attention int                `json:"attention"`
+	Repos     []search.GitHealth `json:"repos"`
+}
+
+// handleRepoHealth runs the fleet git-health sweep. Default returns only the
+// repos needing attention; ?all=true includes clean ones.
+func (s *Server) handleRepoHealth(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.svc.GitHealth(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	all := r.URL.Query().Get("all") == "true"
+	// Repos starts non-nil so it marshals as [] not null.
+	resp := repoHealthResponse{Total: len(entries), Repos: []search.GitHealth{}}
+	for _, e := range entries {
+		if e.NeedsAttention() {
+			resp.Attention++
+		}
+		if all || e.NeedsAttention() {
+			resp.Repos = append(resp.Repos, e)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // repoJSON is one repo in the /api/repos list.
 type repoJSON struct {
 	Name   string `json:"name"`

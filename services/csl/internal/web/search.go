@@ -117,11 +117,20 @@ type FileLine struct {
 	Text   string `json:"text"`
 }
 
-// ReadResult holds a slice of file lines for inline expansion.
+// ReadResult holds a slice of file lines for inline expansion and the file
+// view page.
 type ReadResult struct {
-	Repo  string     `json:"repo"`
-	Path  string     `json:"path"`
-	Lines []FileLine `json:"lines"`
+	Repo string `json:"repo"`
+	Path string `json:"path"`
+	// LocalPath is the absolute on-disk path with the home directory collapsed
+	// to "~" (see collapseHome); it powers the copy-path action.
+	LocalPath string     `json:"localPath,omitempty"`
+	FileURL   string     `json:"fileURL,omitempty"`
+	Lines     []FileLine `json:"lines"`
+	// TotalLines is the file's full line count, so a capped read can say
+	// "showing X of Y lines".
+	TotalLines int  `json:"totalLines"`
+	Truncated  bool `json:"truncated"`
 }
 
 // maxReadLines caps how many lines a single read returns, protecting the server
@@ -137,11 +146,23 @@ func (s *Service) ReadFile(repoName, relPath string, start, end int) (*ReadResul
 		return nil, err
 	}
 
+	// An exact name wins before the substring fallback: csl_show_file puts the
+	// canonical org/repo name in its deep links, and a bare substring pick
+	// would send "mad01/thismoon" to "mad01/thismoon-arcade" when the walk
+	// returns the latter first.
 	var matched *finder.Repo
 	for i := range repos {
-		if strings.Contains(repos[i].Name, repoName) {
+		if repos[i].Name == repoName {
 			matched = &repos[i]
 			break
+		}
+	}
+	if matched == nil {
+		for i := range repos {
+			if strings.Contains(repos[i].Name, repoName) {
+				matched = &repos[i]
+				break
+			}
 		}
 	}
 	if matched == nil {
@@ -165,22 +186,47 @@ func (s *Service) ReadFile(repoName, relPath string, start, end int) (*ReadResul
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var lines []FileLine
 	lineNum := 0
+	truncated := false
 	for scanner.Scan() {
 		lineNum++
 		if start > 0 && lineNum < start {
 			continue
 		}
+		// Past the range or the cap: keep counting for TotalLines but stop
+		// collecting.
 		if end > 0 && lineNum > end {
-			break
+			continue
+		}
+		if len(lines) >= maxReadLines {
+			truncated = true
+			continue
 		}
 		lines = append(lines, FileLine{Number: lineNum, Text: scanner.Text()})
-		if len(lines) >= maxReadLines {
-			break
-		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading %s: %w", relPath, err)
 	}
 
-	return &ReadResult{Repo: matched.Name, Path: relPath, Lines: lines}, nil
+	res := &ReadResult{
+		Repo:       matched.Name,
+		Path:       relPath,
+		LocalPath:  absPath,
+		FileURL:    finder.FileURL(*matched, strings.TrimPrefix(clean, "/"), 0),
+		Lines:      lines,
+		TotalLines: lineNum,
+		Truncated:  truncated,
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		res.LocalPath = collapseHome(res.LocalPath, home)
+	}
+	return res, nil
+}
+
+// GitHealth runs the fleet git-health sweep across the discovered repos.
+func (s *Service) GitHealth(ctx context.Context) ([]search.GitHealth, error) {
+	repos, err := s.Repos()
+	if err != nil {
+		return nil, err
+	}
+	return search.GitHealthSweep(ctx, repos), nil
 }
