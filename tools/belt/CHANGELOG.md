@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/mad01/thismoon/compare/belt/v0.9.0...belt/v0.10.0) (2026-08-18)
+
+
+### Features
+
+* **belt:** rename keep-* hint ids to kof-* ([#150](https://github.com/mad01/thismoon/issues/150)) ([6e0c8d7](https://github.com/mad01/thismoon/commit/6e0c8d75c9924ceb73eb68869d9c0799b559bb5c))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/belt/v0.8.0...belt/v0.9.0) (2026-08-18)
 
 
