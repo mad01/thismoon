@@ -51,6 +51,7 @@ type Hint interface {
 // Introspection (belt doctor) needs the disabled ones too.
 func All(cfg config.Config) []Hint {
 	return []Hint{
+		NewAgentMemory(cfg),
 		NewKeepAssertions(cfg),
 		NewKeepConsult(cfg),
 		NewKeepDeposit(cfg),

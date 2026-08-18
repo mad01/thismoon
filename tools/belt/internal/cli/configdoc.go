@@ -78,6 +78,8 @@ guards:
     # section (or its suspenders fallback), not here.
 
 hints:
+  agent-memory:
+    enabled: true
   prefer-csl:
     enabled: true
   keep-assertions:
