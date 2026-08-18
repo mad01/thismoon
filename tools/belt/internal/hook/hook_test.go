@@ -3,6 +3,8 @@ package hook
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -62,5 +64,43 @@ func TestDecisionShape(t *testing.T) {
 		if !strings.Contains(string(raw), key) {
 			t.Errorf("decision JSON missing %q: %s", key, raw)
 		}
+	}
+}
+
+func TestToHintInputCarriesSessionFields(t *testing.T) {
+	in := toHintInput("prompt", payload{
+		Cwd:            "/x",
+		SessionID:      "s1",
+		TranscriptPath: "/t.jsonl",
+	})
+	if in.SessionID != "s1" || in.TranscriptPath != "/t.jsonl" || in.Cwd != "/x" {
+		t.Errorf("unexpected hint input: %+v", in)
+	}
+}
+
+// The prompt event must emit plain text: UserPromptSubmit adds stdout to
+// context and is not in the hookSpecificOutput.additionalContext family.
+func TestRunHintPromptEmitsPlainText(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	transcript := filepath.Join(t.TempDir(), "t.jsonl")
+	line := `{"message":{"content":[{"type":"tool_use","name":"mcp__csl__csl_search"}]}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(strings.Repeat(line, 40)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := json.Marshal(map[string]string{
+		"session_id":      "prompt-test",
+		"transcript_path": transcript,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	RunHint("prompt", bytes.NewReader(p), &out)
+	got := out.String()
+	if !strings.HasPrefix(got, "belt[keep-deposit]:") {
+		t.Fatalf("prompt advice = %q, want plain text starting with belt[keep-deposit]:", got)
+	}
+	if strings.Contains(got, "hookSpecificOutput") {
+		t.Errorf("prompt advice %q must not be wrapped in the JSON envelope", got)
 	}
 }

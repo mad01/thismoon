@@ -19,16 +19,18 @@ const (
 	EventSearch       = "search"        // matcher: the csl search MCP tools
 	EventBash         = "bash"          // matcher: Bash
 	EventSessionStart = "session-start" // hook: SessionStart
+	EventPrompt       = "prompt"        // hook: UserPromptSubmit
 )
 
-// Input carries the fields extracted from a PostToolUse payload.
+// Input carries the fields extracted from a hook payload.
 type Input struct {
-	Event     string
-	Command   string   // bash: the shell command that ran
-	Cwd       string   // the session working directory
-	Repo      string   // search: the repo filter the search was given
-	Paths     []string // search: repo-relative file paths the search returned
-	SessionID string   // used to suppress repeat advice within one session
+	Event          string
+	Command        string   // bash: the shell command that ran
+	Cwd            string   // the session working directory
+	Repo           string   // search: the repo filter the search was given
+	Paths          []string // search: repo-relative file paths the search returned
+	SessionID      string   // used to suppress repeat advice within one session
+	TranscriptPath string   // prompt: the session transcript JSONL on disk
 }
 
 // Advice is one hint's output: which hint spoke and what it said.
@@ -51,6 +53,7 @@ func All(cfg config.Config) []Hint {
 	return []Hint{
 		NewKeepAssertions(cfg),
 		NewKeepConsult(cfg),
+		NewKeepDeposit(cfg),
 		NewPreferCSL(cfg),
 	}
 }

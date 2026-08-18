@@ -17,14 +17,16 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
-// payload is the subset of the hook payload belt reads. ToolResponse and
-// SessionID are only populated on PostToolUse.
+// payload is the subset of the hook payload belt reads. ToolName, ToolInput,
+// and ToolResponse are only populated on PreToolUse/PostToolUse; the session
+// fields ride every hook event.
 type payload struct {
-	ToolName     string          `json:"tool_name"`
-	ToolInput    map[string]any  `json:"tool_input"`
-	ToolResponse json.RawMessage `json:"tool_response"`
-	Cwd          string          `json:"cwd"`
-	SessionID    string          `json:"session_id"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      map[string]any  `json:"tool_input"`
+	ToolResponse   json.RawMessage `json:"tool_response"`
+	Cwd            string          `json:"cwd"`
+	SessionID      string          `json:"session_id"`
+	TranscriptPath string          `json:"transcript_path"`
 }
 
 type decision struct {
@@ -90,6 +92,13 @@ func RunHint(event string, r io.Reader, w io.Writer) {
 		notify.EmitEvent("belt", "info", fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint), a.Text,
 			map[string]string{"hint": a.Hint, "event": event})
 	}
+	// UserPromptSubmit adds plain stdout to context on exit 0; it is not in
+	// the hookSpecificOutput.additionalContext event family, so the JSON
+	// envelope would be dropped (or injected verbatim) there.
+	if event == hint.EventPrompt {
+		fmt.Fprintln(w, text)
+		return
+	}
 	_ = json.NewEncoder(w).Encode(adviceDecision{
 		HookSpecificOutput: adviceOutput{
 			HookEventName:     hintHookEventName(event),
@@ -111,7 +120,7 @@ func hintHookEventName(event string) string {
 // carries its repo and hit paths in the response; a bash command carries only
 // what it ran.
 func toHintInput(event string, p payload) hint.Input {
-	in := hint.Input{Event: event, Cwd: p.Cwd, SessionID: p.SessionID}
+	in := hint.Input{Event: event, Cwd: p.Cwd, SessionID: p.SessionID, TranscriptPath: p.TranscriptPath}
 	switch event {
 	case hint.EventBash:
 		if s, ok := p.ToolInput["command"].(string); ok {

@@ -15,7 +15,7 @@ belt/
     cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `version` (build metadata from the shared buildinfo package)
     hook/             - payload parsing + JSON emission for both events
     guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
-    hint/             - the hints (prefer-csl, keep-assertions, keep-consult) + csl index lookup, response parsing, session dedupe
+    hint/             - the hints (prefer-csl, keep-assertions, keep-consult, keep-deposit) + csl index lookup, response parsing, session dedupe
     config/           - belt config (profiles, internal_names, toggles) + ralph/suspenders fallbacks + Claude-settings deny list
     notify/           - synchronous best-effort event emission to events.this on every deny and hint
   Makefile            - package path github.com/mad01/thismoon/tools/belt (monorepo module, no own go.mod)
@@ -44,6 +44,7 @@ Adding a guard: implement the `Guard` interface in `internal/guard/`, register i
 | `prefer-csl` | `bash` | After a bash command sweeps multiple files inside a csl-indexed repo, hand back the equivalent `csl_search` call with the pattern translated to zoekt. Indexed-repo lookup reads the shard listing in `~/.config/csl/search-index/` directly (no csl process launch). Silent on pipe filters (`cmd \| grep x`), single-file greps, `ls`/`cat`, and paths outside an indexed repo. |
 | `keep-assertions` | `search` | After a csl search, surface keep assertions about the code the search hit. Queries `keep serve` on `KEEP_PORT` (default 7431) with a 400ms budget; keep being down means silence. Caps at 3, drops retracted, marks stale, dedupes per session via `~/.cache/belt/seen-<session>`. |
 | `keep-consult` | `session-start` | When a session opens, surface the cwd repo's keep assertions before any searching happens. Derives org/name from the git origin remote (exec `git remote get-url origin`), queries the same `keep serve` API, and matches the repo-name boundary so `thismoon` does not drag in `thismoon-arcade`. Caps at 5; outside a repo, or with keep down, silence. Rides the SessionStart hook, not PostToolUse. |
+| `keep-deposit` | `prompt` | Once per session, nudge a session that did substantial work (≥30 tool_use blocks in the transcript) but never called `keep_assert` to deposit what it derived. Matches the `"name":"mcp__keep__keep_assert"` JSON key form, not the bare name — prose mentions in echoed instructions must not count as a deposit. Rides UserPromptSubmit and emits plain stdout text (that event adds stdout to context; it does not take the additionalContext envelope). Skips before the transcript read once the seen-file marker is set; no session id means no nudge. |
 
 Adding a hint: implement the `Hint` interface in `internal/hint/`, register it in `hint.ForEvent`, and add a `[hints.<id>]` toggle to the consuming repo's config overlay. A hint returns `*Advice` or nil — there is no way for it to deny.
 
@@ -62,6 +63,7 @@ make lint     # golangci-lint run ./...
 belt hook bash|write     # PreToolUse entrypoint: payload on stdin, deny JSON on stdout
 belt hint search|bash    # PostToolUse entrypoint: payload on stdin, additionalContext JSON on stdout
 belt hint session-start  # SessionStart entrypoint: same contract, emits hookEventName SessionStart
+belt hint prompt         # UserPromptSubmit entrypoint: advice as plain stdout text, not JSON
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
 belt doctor              # build metadata + resolved config: surfaces loaded, guard/hint state, blocked names

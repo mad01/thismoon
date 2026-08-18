@@ -47,9 +47,11 @@ hint never blocks: the tool has already run and its result stands, so silence
 and advice are the only two outcomes.
 
 The event argument is belt's hint event, not the Claude Code tool name:
-search hints on the csl search tools, bash hints on Bash commands, and
-session-start hints once when a session opens (a SessionStart hook, not
-PostToolUse). Wire them in ~/.claude/settings.json:
+search hints on the csl search tools, bash hints on Bash commands,
+session-start hints once when a session opens (a SessionStart hook), and
+prompt hints on each user prompt (a UserPromptSubmit hook — advice goes to
+stdout as plain text, the form that event adds to context). Wire them in
+~/.claude/settings.json:
 
   {
     "hooks": {
@@ -60,6 +62,9 @@ PostToolUse). Wire them in ~/.claude/settings.json:
       ],
       "SessionStart": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint session-start"}]}
+      ],
+      "UserPromptSubmit": [
+        {"matcher": "", "hooks": [{"type": "command", "command": "belt hint prompt"}]}
       ]
     }
   }`,
@@ -79,11 +84,11 @@ func validHintEventArg(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	switch strings.ToLower(args[0]) {
-	case hint.EventSearch, hint.EventBash, hint.EventSessionStart:
+	case hint.EventSearch, hint.EventBash, hint.EventSessionStart, hint.EventPrompt:
 		return nil
 	default:
-		return fmt.Errorf("unknown hint event %q (valid: %s, %s, %s)",
-			args[0], hint.EventSearch, hint.EventBash, hint.EventSessionStart)
+		return fmt.Errorf("unknown hint event %q (valid: %s, %s, %s, %s)",
+			args[0], hint.EventSearch, hint.EventBash, hint.EventSessionStart, hint.EventPrompt)
 	}
 }
 

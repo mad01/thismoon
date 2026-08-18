@@ -83,6 +83,8 @@ hints:
   keep-assertions:
     enabled: true
   keep-consult:
+    enabled: true
+  keep-deposit:
     enabled: true`
 
 func configDocCmd() *cobra.Command {
