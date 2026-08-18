@@ -1,4 +1,4 @@
-// Package server exposes the keep store over HTTP: a webkit-chromed web page, a
+// Package server exposes the kof store over HTTP: a webkit-chromed web page, a
 // JSON API the MCP server and CLI call, plus /version and /webkit/. The serve
 // process is the single writer of the store and the only one that resolves and
 // hashes evidence pins against the working tree.
@@ -32,7 +32,7 @@ var shellHTML []byte
 //go:embed app.js
 var appJS []byte
 
-// Server serves the keep store.
+// Server serves the kof store.
 type Server struct {
 	store  *store.Store
 	info   buildinfo.Info
@@ -83,7 +83,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(shellHTML)
 }
 
-// handleAppJS serves the client renderer; no-cache so a keep rebuild's app.js
+// handleAppJS serves the client renderer; no-cache so a kof rebuild's app.js
 // is picked up on the next load.
 func (s *Server) handleAppJS(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
@@ -272,7 +272,7 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 }
 
 // logRequests logs one line per request so update problems are visible in
-// t-man logs: t-man logs keep --stderr.
+// t-man logs: t-man logs keeper-of-facts --stderr.
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

@@ -1,4 +1,4 @@
-// Package mcpserver exposes the keep assertion store as MCP tools. Each tool is
+// Package mcpserver exposes the kof assertion store as MCP tools. Each tool is
 // a thin HTTP call to a running `kof serve`, which owns the store and resolves
 // the evidence pins — so the MCP server holds no state and never writes the JSON
 // file directly.
@@ -21,7 +21,7 @@ type Config struct {
 	BaseURL string // display/link URL shown to the user (e.g. http://kof.this); falls back to the API URL
 }
 
-// New builds the keep MCP server. The HTTP client always targets
+// New builds the kof MCP server. The HTTP client always targets
 // localhost:<Port> (always reachable, no d-man dependency); BaseURL is used only
 // for the human-facing link returned in tool responses.
 func New(version string, cfg Config) (*mcp.Server, error) {

@@ -79,7 +79,13 @@ jobs:
       # vouches for all artifacts of the release.
       - name: Build platform tarballs
         run: |
+          # Go components name the binary after the sole cmd/ subdir, which can
+          # differ from the component dir (services/keeper-of-facts -> kof).
+          # Swift components have no cmd/ and keep the component dir name.
           name=$(basename "$COMPONENT_PATH")
+          if [ -d "${COMPONENT_PATH}/cmd" ]; then
+            name=$(basename "$(find "${COMPONENT_PATH}/cmd" -mindepth 1 -maxdepth 1 -type d | head -1)")
+          fi
           version="${TAG##*/}"
           short_sha=$(git rev-parse --short HEAD)
           buildinfo="github.com/mad01/thismoon/buildinfo"

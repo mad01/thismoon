@@ -13,8 +13,8 @@ import (
 
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
-	Short: "Start the keep MCP stdio server for Claude Code",
-	Long: `Start an MCP (Model Context Protocol) stdio server exposing the keep
+	Short: "Start the kof MCP stdio server for Claude Code",
+	Long: `Start an MCP (Model Context Protocol) stdio server exposing the kof
 assertion store as native tools for Claude Code.
 
 The tools are a thin client over a running ` + "`kof serve`" + ` — start the serve

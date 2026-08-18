@@ -16,7 +16,7 @@ import (
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Run the keep HTTP server that owns the store",
+	Short: "Run the kof HTTP server that owns the store",
 	Long: `Serve assertions over HTTP on localhost: the read-only web page at /, the
 JSON API the MCP and CLI call, and the pin resolution/hashing that only the
 process with a coherent view of the working tree can do.
