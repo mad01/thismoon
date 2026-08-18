@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.6.0...keeper-of-facts/v0.7.0) (2026-08-18)
+
+
+### Features
+
+* **keeper-of-facts:** auto-migrate store workdir keep -&gt; kof on serve start (MAD-269) ([#145](https://github.com/mad01/thismoon/issues/145)) ([28a7c9b](https://github.com/mad01/thismoon/commit/28a7c9b63e6a746c00bb19701e1c81417b77b551))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.5.0...keeper-of-facts/v0.6.0) (2026-08-18)
 
 
