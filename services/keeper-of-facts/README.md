@@ -100,7 +100,7 @@ web page.
 
 ## Where things live
 
-- Assertions: `~/.local/share/keep/assertions.jsonl` (plus `local.jsonl` for machine-scoped ones)
+- Assertions: `~/.local/share/kof/assertions.jsonl` (plus `local.jsonl` for machine-scoped ones)
 - Binary: `~/code/bin/kof`
 - Web + API: `http://kof.this/` (or `http://localhost:7431/`)
 

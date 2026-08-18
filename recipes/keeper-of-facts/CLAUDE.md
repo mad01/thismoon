@@ -18,7 +18,7 @@ ralph merges the recipe with the identity `thismoon/keeper-of-facts`. The packag
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
 - **`hooks.builds.keeper_of_facts_service`** — `t-man add --name keeper-of-facts -- kof serve
-  --port 7431 --workdir ~/.local/share/keep`. Idempotent; `run = "always"`
+  --port 7431 --workdir ~/.local/share/kof`. Idempotent; `run = "always"`
   self-heals if the agent was removed. Guarded on t-man being on PATH.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
@@ -37,7 +37,7 @@ Machine-specific wiring is deliberately not here (docs/adr/0006):
 ## Architecture
 
 ```
-kof mcp / CLI ─HTTP─►  kof serve (t-man agent, port 7431)  ─owns─►  ~/.local/share/keep/assertions.jsonl
+kof mcp / CLI ─HTTP─►  kof serve (t-man agent, port 7431)  ─owns─►  ~/.local/share/kof/assertions.jsonl
 web page (kof.this) ──┘
 ```
 
@@ -55,7 +55,7 @@ t-man logs keeper-of-facts --stderr
 ralph disable thismoon/keeper-of-facts && ralph up --enable-cleanup   # pre_uninstall removes the agent, then the binary is cleaned up
 ```
 
-The serve agent stores assertions in `~/.local/share/keep/assertions.jsonl` —
+The serve agent stores assertions in `~/.local/share/kof/assertions.jsonl` —
 removing the agent doesn't delete that file.
 
 ## See also

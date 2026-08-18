@@ -29,12 +29,12 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove keeper-of-fa
 # Register `kof serve` as a long-running launchd user agent via t-man. This
 # process owns the assertion store; the MCP server (registered in the
 # consuming repo's recipes/claude-mcp/servers.json) is a thin HTTP client to it.
-# The workdir stays at the pre-rename ~/.local/share/keep until the store
-# migration cutover (MAD-269).
+# serve auto-migrates a pre-rename ~/.local/share/keep store to this path on
+# start (MAD-269).
 # Idempotent; run = "always" keeps it registered and self-heals if it was removed.
 [hooks.builds.keeper_of_facts_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name keeper-of-facts -- $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/keep; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name keeper-of-facts -- $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/kof; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/keeper-of-facts"
 run = "always"

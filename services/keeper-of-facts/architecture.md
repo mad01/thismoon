@@ -57,7 +57,7 @@ idempotent, and never re-checked. There is no un-retract and no removal path.
 
 ## Storage
 
-The store is an append-only JSONL log under `~/.local/share/keep` (overridable
+The store is an append-only JSONL log under `~/.local/share/kof` (overridable
 with `KOF_WORKDIR`). Every mutation appends one complete record as one line;
 load resolves the newest record per id (greater `updated_at` wins, a tie goes
 to the later line), so history is never rewritten in place. Two files:

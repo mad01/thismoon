@@ -33,7 +33,7 @@ so to avoid two processes racing on the JSON file, **`kof serve` is the only
 writer**:
 
 - **`kof serve`** owns the store (in-memory map guarded by a mutex,
-  persisted to the JSONL log under `~/.local/share/keep/`). It runs the HTTP
+  persisted to the JSONL log under `~/.local/share/kof/`). It runs the HTTP
   server (web page + JSON API + `/version` + `/webkit/`).
 - **`kof mcp`** holds no state: it is a thin HTTP client to the serve API on
   `localhost:<port>`. If serve is down, tools return "kof serve not reachable
@@ -106,7 +106,7 @@ record as one line, and load resolves the newest record per id (greater
 
 A pre-JSONL `assertions.json` array is migrated on startup (one line per
 record, oldest first) and renamed to `assertions.json.migrated` as a backup.
-Workdir defaults to `~/.local/share/keep` and is overridable with
+serve auto-migrates a pre-rename `~/.local/share/keep` store to `~/.local/share/kof` on start (MAD-269; two populated stores refuse loudly). Workdir defaults to `~/.local/share/kof` and is overridable with
 `KOF_WORKDIR`.
 
 ### State transitions
@@ -172,7 +172,7 @@ CLI surface beyond `serve`/`mcp`, wired as thin HTTP clients to `kof serve`
 (`internal/client`):
 
 ```bash
-kof serve --port 7431 --workdir ~/.local/share/keep
+kof serve --port 7431 --workdir ~/.local/share/kof
 kof mcp
 kof assert --kind <kind> --subject <key> --statement <text> \
             --confidence verified|derived|hint --session <id> \

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/user"
 	"time"
 
@@ -32,6 +31,9 @@ func init() {
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
+	if err := migrateWorkdir(flagWorkdir); err != nil {
+		return err
+	}
 	st, err := store.New(flagWorkdir)
 	if err != nil {
 		return err
@@ -48,9 +50,10 @@ func runServe(_ *cobra.Command, _ []string) error {
 }
 
 // serveAuthor is the identity stamped into the provenance of every assertion
-// created through this server: KEEP_AUTHOR when set, else the OS username.
+// created through this server: KOF_AUTHOR (or the pre-rename KEEP_AUTHOR)
+// when set, else the OS username.
 func serveAuthor() string {
-	if a := os.Getenv("KEEP_AUTHOR"); a != "" {
+	if a := envFirst("KOF_AUTHOR", "KEEP_AUTHOR"); a != "" {
 		return a
 	}
 	if u, err := user.Current(); err == nil {

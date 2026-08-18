@@ -67,18 +67,18 @@ func envFirst(names ...string) string {
 }
 
 // defaultWorkdir resolves the data directory, honoring KOF_WORKDIR (then the
-// pre-rename KEEP_WORKDIR) and falling back to ~/.local/share/keep. The
-// on-disk path deliberately stays the old one: the store migration is its own
-// cutover step (MAD-269), so a freshly renamed binary reads the existing data.
+// pre-rename KEEP_WORKDIR) and falling back to ~/.local/share/kof. serve
+// auto-migrates a pre-rename ~/.local/share/keep store to the new path on
+// start (MAD-269).
 func defaultWorkdir() string {
 	if v := envFirst("KOF_WORKDIR", "KEEP_WORKDIR"); v != "" {
 		return v
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".keep"
+		return ".kof"
 	}
-	return filepath.Join(home, ".local", "share", "keep")
+	return filepath.Join(home, ".local", "share", "kof")
 }
 
 // expandTilde rewrites a leading ~ or ~/ to the user's home directory.
