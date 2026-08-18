@@ -18,8 +18,8 @@ import (
 // errors, the advice is simply ignored (docs/adr/0008).
 const maxAssertions = 3
 
-// keepTimeout bounds the call to keep serve. The search already returned, so
-// a slow or dead keep costs nothing but this budget and then stays quiet.
+// keepTimeout bounds the call to kof serve. The search already returned, so
+// a slow or dead kof costs nothing but this budget and then stays quiet.
 const keepTimeout = 400 * time.Millisecond
 
 // KeepAssertions surfaces stored assertions whose subject matches the code a
@@ -27,7 +27,7 @@ const keepTimeout = 400 * time.Millisecond
 // later session reads them, and nothing was prompting that read.
 type KeepAssertions struct {
 	cfg  config.Config
-	base string // keep serve base URL; overridable for tests
+	base string // kof serve base URL; overridable for tests
 }
 
 func NewKeepAssertions(cfg config.Config) *KeepAssertions {
@@ -51,7 +51,7 @@ func keepBaseURL() string {
 	return "http://127.0.0.1:" + port
 }
 
-// assertion is the subset of keep's API shape this hint renders.
+// assertion is the subset of kof's API shape this hint renders.
 type assertion struct {
 	ID        string `json:"id"`
 	Subject   string `json:"subject"`
@@ -99,7 +99,7 @@ func subjectFor(in Input) string {
 // repoPrefix reduces a hit subject to the repo it belongs to. Assertions are
 // labelled at whatever depth the session that wrote them chose — usually the
 // component (`.../services/csl`), which is shallower than the directory a
-// search returns hits in (`.../services/csl/internal/semantic`). Since keep's
+// search returns hits in (`.../services/csl/internal/semantic`). Since kof's
 // subject filter matches by prefix, querying the deep hit subject would find
 // nothing. Query the repo instead and let rank do the narrowing.
 func repoPrefix(subject string) string {
@@ -117,7 +117,7 @@ func repoPrefix(subject string) string {
 // rank keeps assertions that overlap the searched location and orders them by
 // how closely. Overlap is counted in path segments below the repo: an
 // assertion on `services/csl` scores 2 against a hit in
-// `services/csl/internal/semantic`, while one on `services/keep` scores 1 and
+// `services/csl/internal/semantic`, while one on `services/keeper-of-facts` scores 1 and
 // is dropped for sharing only the generic `services` segment.
 func rank(hitSubject string, as []assertion) []assertion {
 	want := segmentsBelowRepo(hitSubject)
@@ -196,9 +196,9 @@ func commonDir(paths []string) string {
 	return strings.Join(parts, "/")
 }
 
-// queryKeep asks keep serve for assertions under the subject prefix.
+// queryKeep asks kof serve for assertions under the subject prefix.
 // Retracted ones are dropped: they are a record that a claim was withdrawn,
-// not advice. Any failure returns nothing — keep being down must not produce
+// not advice. Any failure returns nothing — kof being down must not produce
 // noise.
 func queryKeep(base, subject string) []assertion {
 	client := &http.Client{Timeout: keepTimeout}
@@ -228,7 +228,7 @@ func queryKeep(base, subject string) []assertion {
 }
 
 // render writes the advice block. Stale assertions are included and marked:
-// a claim whose pinned code has since moved is the most useful thing keep can
+// a claim whose pinned code has since moved is the most useful thing kof can
 // say about code being read right now, so suppressing it would waste the
 // mechanism's best signal.
 func render(subject string, as []assertion) string {

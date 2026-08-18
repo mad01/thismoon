@@ -50,7 +50,7 @@ address, managed as launchd agents by t-man.
 | d-man | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
 | deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
 | events | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
-| keep | Assertion store: evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
+| keeper-of-facts | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
 | present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
 | reminder | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
 | speak | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
@@ -122,7 +122,7 @@ brew install mad01/tap/csl
 brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
 ```
 
-Most components have formulas (csl, keep, present, speak, d-man, belt,
+Most components have formulas (csl, kof, present, speak, d-man, belt,
 suspenders, t-man, and ralph itself); the rest follow as they prove useful
 outside the fleet. Everything installs from the module path too:
 

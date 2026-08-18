@@ -22,7 +22,7 @@ Three guards run against tool calls before they execute:
 Two hints run after a tool call and add advisory context the agent reads next to the result:
 
 - **prefer-csl**: after a bash command sweeps multiple files inside a repo csl already indexes, hands back the equivalent `csl_search` call with the pattern translated to zoekt syntax. Pipe filters (`cmd | grep x`) and single-file greps do not fire — they are not what csl replaces.
-- **keep-assertions**: after a csl search, surfaces stored keep assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
+- **keep-assertions**: after a csl search, surfaces stored kof assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
 
 ## Install
 

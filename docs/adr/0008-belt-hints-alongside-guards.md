@@ -23,8 +23,9 @@ use csl heavily and still reach for `grep -r`. This is not a knowledge gap
 that more documentation closes. The convention has been in CLAUDE.md, with a
 grep-to-zoekt translation table, for months.
 
-The second is keep. Assertions only pay off when a later session reads them,
-and in the same window 3 of 95 sessions touched keep at all, with zero
+The second is keeper-of-facts (then named keep). Assertions only pay off when
+a later session reads them, and in the same window 3 of 95 sessions touched
+the store at all, with zero
 organic queries. The store cannot earn its keep if nothing surfaces it at the
 moment the question arises.
 
@@ -83,7 +84,7 @@ and risks breaking anything that parses the output.
 - Subject matching runs wider than the search and narrows afterwards.
   Assertions are labelled at whatever depth the session that wrote them chose,
   usually the component (`.../services/csl`), while a search returns hits
-  deeper inside it (`.../services/csl/internal/semantic`). keep matches
+  deeper inside it (`.../services/csl/internal/semantic`). kof matches
   subjects by prefix, so querying the hit's own subject finds nothing. The
   hint queries the repo and ranks by shared path segments, dropping anything
   that overlaps only on a generic top segment like `services`.

@@ -21,7 +21,7 @@ const maxConsultAssertions = 5
 // in.
 type KeepConsult struct {
 	cfg  config.Config
-	base string // keep serve base URL; overridable for tests
+	base string // kof serve base URL; overridable for tests
 	// originURL resolves a directory to its git origin remote URL;
 	// overridable for tests.
 	originURL func(dir string) string
@@ -66,7 +66,7 @@ func matchRepo(repo string, as []assertion) []assertion {
 	return out
 }
 
-// repoFromOrigin reduces a git remote URL to the lowercased org/name keep
+// repoFromOrigin reduces a git remote URL to the lowercased org/name kof
 // subjects are keyed by: `git@github.com:mad01/thismoon.git` and
 // `https://github.com/mad01/thismoon.git` both yield `mad01/thismoon`.
 func repoFromOrigin(url string) string {
@@ -78,7 +78,7 @@ func repoFromOrigin(url string) string {
 	}
 	org, name := parts[len(parts)-2], parts[len(parts)-1]
 	// An org segment containing a dot or @ is a host, so the URL had no org
-	// (e.g. https://host/name) and names nothing keep subjects are keyed by.
+	// (e.g. https://host/name) and names nothing kof subjects are keyed by.
 	if org == "" || name == "" || strings.ContainsAny(org, ".@") {
 		return ""
 	}

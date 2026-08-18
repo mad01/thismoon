@@ -41,11 +41,11 @@ Bringing code in from a source repo without its git history; the mapping to the 
 _Avoid_: migration (too broad), fork
 
 **Assertion**:
-A one-sentence, evidence-pinned statement about system behavior stored by keep, carrying a kind, a subject, a confidence, and a fresh/stale/retracted status.
+A one-sentence, evidence-pinned statement about system behavior stored by keeper-of-facts, carrying a kind, a subject, a confidence, and a fresh/stale/retracted status.
 _Avoid_: fact, memory
 
 **Evidence pin**:
-A hashed line range in a repo working tree that grounds an assertion. keep v1's only pin kind is a code pin.
+A hashed line range in a repo working tree that grounds an assertion. kof v1's only pin kind is a code pin.
 _Avoid_: citation, reference
 
 **Stale**:
