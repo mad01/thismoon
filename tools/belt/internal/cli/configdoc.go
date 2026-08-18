@@ -81,6 +81,8 @@ hints:
   prefer-csl:
     enabled: true
   keep-assertions:
+    enabled: true
+  keep-consult:
     enabled: true`
 
 func configDocCmd() *cobra.Command {
@@ -217,7 +219,8 @@ func unknownToggleWarnings(cfg config.Config) []string {
 			cfg.Hints,
 			hint.All(cfg),
 			func(h hint.Hint) string { return h.ID() },
-		)...)
+		)...,
+	)
 	return warns
 }
 

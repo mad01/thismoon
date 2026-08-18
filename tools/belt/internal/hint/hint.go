@@ -11,11 +11,14 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
-// Event names match `belt hint <event>` and the PostToolUse matcher they are
-// registered under.
+// Event names match `belt hint <event>` and the hook matcher they are
+// registered under. Search and bash run on PostToolUse; session-start runs on
+// SessionStart, where there is no tool call — the input carries only the
+// session's cwd and id.
 const (
-	EventSearch = "search" // matcher: the csl search MCP tools
-	EventBash   = "bash"   // matcher: Bash
+	EventSearch       = "search"        // matcher: the csl search MCP tools
+	EventBash         = "bash"          // matcher: Bash
+	EventSessionStart = "session-start" // hook: SessionStart
 )
 
 // Input carries the fields extracted from a PostToolUse payload.
@@ -47,6 +50,7 @@ type Hint interface {
 func All(cfg config.Config) []Hint {
 	return []Hint{
 		NewKeepAssertions(cfg),
+		NewKeepConsult(cfg),
 		NewPreferCSL(cfg),
 	}
 }

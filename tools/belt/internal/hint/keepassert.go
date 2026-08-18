@@ -65,7 +65,7 @@ func (h *KeepAssertions) Check(in Input) *Advice {
 	if subject == "" {
 		return nil
 	}
-	found := h.query(repoPrefix(subject))
+	found := queryKeep(h.base, repoPrefix(subject))
 	relevant := rank(subject, found)
 	if len(relevant) == 0 {
 		return nil
@@ -192,12 +192,13 @@ func commonDir(paths []string) string {
 	return strings.Join(parts, "/")
 }
 
-// query asks keep serve for assertions under the subject prefix. Retracted
-// ones are dropped: they are a record that a claim was withdrawn, not advice.
-// Any failure returns nothing — keep being down must not produce noise.
-func (h *KeepAssertions) query(subject string) []assertion {
+// queryKeep asks keep serve for assertions under the subject prefix.
+// Retracted ones are dropped: they are a record that a claim was withdrawn,
+// not advice. Any failure returns nothing — keep being down must not produce
+// noise.
+func queryKeep(base, subject string) []assertion {
 	client := &http.Client{Timeout: keepTimeout}
-	url := h.base + "/api/assertions?subject=" + urlEscape(subject)
+	url := base + "/api/assertions?subject=" + urlEscape(subject)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil

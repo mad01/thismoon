@@ -71,8 +71,7 @@ func TestQueryDropsRetracted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	h := &KeepAssertions{cfg: testConfig(), base: srv.URL}
-	got := h.query("repo:x/y/")
+	got := queryKeep(srv.URL, "repo:x/y/")
 	if len(got) != 1 || got[0].ID != "1" {
 		t.Fatalf("query = %+v, want only the non-retracted assertion", got)
 	}
@@ -126,8 +125,7 @@ func TestRankCapsOutput(t *testing.T) {
 }
 
 func TestQuerySilentWhenKeepIsDown(t *testing.T) {
-	h := &KeepAssertions{cfg: testConfig(), base: "http://127.0.0.1:1"}
-	if got := h.query("repo:x/y"); got != nil {
+	if got := queryKeep("http://127.0.0.1:1", "repo:x/y"); got != nil {
 		t.Errorf("query with keep down = %v, want nil", got)
 	}
 }

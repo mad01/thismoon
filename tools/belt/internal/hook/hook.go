@@ -70,9 +70,12 @@ func Run(event string, r io.Reader, w io.Writer) {
 	})
 }
 
-// RunHint reads a PostToolUse payload from r, runs the hints for event, and
-// writes any advice as additionalContext. Silence is the common case: when no
-// hint fires, nothing is written at all, so the model sees no extra context.
+// RunHint reads a hook payload from r, runs the hints for event, and writes
+// any advice as additionalContext. Silence is the common case: when no hint
+// fires, nothing is written at all, so the model sees no extra context. Most
+// hint events ride PostToolUse; session-start rides SessionStart, and the
+// emitted hookEventName must match the hook that invoked belt or Claude Code
+// drops the output.
 func RunHint(event string, r io.Reader, w io.Writer) {
 	var p payload
 	if err := json.NewDecoder(r).Decode(&p); err != nil {
@@ -89,10 +92,19 @@ func RunHint(event string, r io.Reader, w io.Writer) {
 	}
 	_ = json.NewEncoder(w).Encode(adviceDecision{
 		HookSpecificOutput: adviceOutput{
-			HookEventName:     "PostToolUse",
+			HookEventName:     hintHookEventName(event),
 			AdditionalContext: text,
 		},
 	})
+}
+
+// hintHookEventName maps a belt hint event to the Claude Code hook event it
+// is registered under.
+func hintHookEventName(event string) string {
+	if event == hint.EventSessionStart {
+		return "SessionStart"
+	}
+	return "PostToolUse"
 }
 
 // toHintInput maps a PostToolUse payload onto the shared hint input. A search
