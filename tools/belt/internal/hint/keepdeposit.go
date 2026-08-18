@@ -17,13 +17,18 @@ const depositMinToolUses = 30
 // most once per session.
 const depositMarker = "keep-deposit-nudge"
 
-// toolUseKey and assertNameKey are matched as raw JSON key/value substrings
+// toolUseKey and assertNameKeys are matched as raw JSON key/value substrings
 // of the transcript. The key form is deliberate: the bare tool name appears
 // in prose (instructions, this very hint's advice) while the `"name":`
-// adjacency only occurs in a real tool_use block.
+// adjacency only occurs in a real tool_use block. Both the kof spelling and
+// the pre-rename keep spelling count as a deposit, so sessions spanning the
+// keep → keeper-of-facts cutover are not nudged twice.
 var (
-	toolUseKey    = []byte(`"type":"tool_use"`)
-	assertNameKey = []byte(`"name":"mcp__keep__keep_assert"`)
+	toolUseKey     = []byte(`"type":"tool_use"`)
+	assertNameKeys = [][]byte{
+		[]byte(`"name":"mcp__kof__kof_assert"`),
+		[]byte(`"name":"mcp__keep__keep_assert"`),
+	}
 )
 
 // KeepDeposit nudges a session that did substantial work to deposit what it
@@ -58,14 +63,16 @@ func (h *KeepDeposit) Check(in Input) *Advice {
 	if bytes.Count(raw, toolUseKey) < depositMinToolUses {
 		return nil
 	}
-	if bytes.Contains(raw, assertNameKey) {
-		return nil // the session already deposited on its own
+	for _, key := range assertNameKeys {
+		if bytes.Contains(raw, key) {
+			return nil // the session already deposited on its own
+		}
 	}
 	seen.record(path, []string{depositMarker})
 	return &Advice{Hint: h.ID(), Text: depositAdvice}
 }
 
-const depositAdvice = "this session has done substantial work and deposited nothing in keep. " +
+const depositAdvice = "this session has done substantial work and deposited nothing in keeper-of-facts. " +
 	"If it derived a non-obvious finding — a behavior, an invariant, a dead end — record it now " +
-	"with keep_assert (one sentence, at least one evidence pin, subject like repo:org/name/path). " +
+	"with kof_assert (one sentence, at least one evidence pin, subject like repo:org/name/path). " +
 	"If nothing is worth keeping, carry on; this reminder fires once per session."

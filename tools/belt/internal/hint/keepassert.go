@@ -37,10 +37,14 @@ func NewKeepAssertions(cfg config.Config) *KeepAssertions {
 func (h *KeepAssertions) ID() string    { return "keep-assertions" }
 func (h *KeepAssertions) Event() string { return EventSearch }
 
-// keepBaseURL points at keep serve on localhost. KEEP_PORT mirrors what the
-// keep MCP reads, so both find the same instance.
+// keepBaseURL points at kof serve on localhost. KOF_PORT (with the pre-rename
+// KEEP_PORT honored as a fallback) mirrors what the kof MCP reads, so both
+// find the same instance.
 func keepBaseURL() string {
-	port := os.Getenv("KEEP_PORT")
+	port := os.Getenv("KOF_PORT")
+	if port == "" {
+		port = os.Getenv("KEEP_PORT")
+	}
 	if port == "" {
 		port = "7431"
 	}
@@ -238,10 +242,10 @@ func render(subject string, as []assertion) string {
 		fmt.Fprintf(&b, "  [%s] %s\n", status, a.Statement)
 		if len(a.Pins) > 0 {
 			p := a.Pins[0]
-			fmt.Fprintf(&b, "          %s:%d-%d (keep_get id=%s)\n", p.File, p.StartLine, p.EndLine, a.ID)
+			fmt.Fprintf(&b, "          %s:%d-%d (kof_get id=%s)\n", p.File, p.StartLine, p.EndLine, a.ID)
 		}
 	}
-	b.WriteString("  Correct one that proves wrong with keep_retract rather than working around it.")
+	b.WriteString("  Correct one that proves wrong with kof_retract rather than working around it.")
 	return b.String()
 }
 

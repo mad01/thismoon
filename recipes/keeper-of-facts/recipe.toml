@@ -1,0 +1,41 @@
+[recipe]
+name = "keeper-of-facts"
+description = "keeper-of-facts (kof) — local assertion store with evidence pins; CLI + MCP + web view for an agent's world model"
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the paths below name that cache directly.
+[packages.keeper_of_facts]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/services/keeper-of-facts"
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/kof"]
+
+# Restart the serve agent when the freshly installed binary actually changed.
+# ralph hashes install_paths and runs this only when the bytes differ. The
+# `t-man status` guard skips the restart on first install, where this fires
+# before [hooks.builds.keeper_of_facts_service] has registered the agent.
+[packages.keeper_of_facts.service]
+restart = "if command -v t-man >/dev/null && t-man status keeper-of-facts >/dev/null 2>&1; then t-man restart keeper-of-facts; fi"
+
+[hooks]
+# Stop and remove the t-man-managed serve agent during cleanup, before the
+# binary it runs is removed (ralph disable thismoon/keeper-of-facts && ralph up --enable-cleanup).
+pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove keeper-of-facts 2>/dev/null; fi || true"]
+
+# Register `kof serve` as a long-running launchd user agent via t-man. This
+# process owns the assertion store; the MCP server (registered in the
+# consuming repo's recipes/claude-mcp/servers.json) is a thin HTTP client to it.
+# The workdir stays at the pre-rename ~/.local/share/keep until the store
+# migration cutover (MAD-269).
+# Idempotent; run = "always" keeps it registered and self-heals if it was removed.
+[hooks.builds.keeper_of_facts_service]
+commands = [
+  "if command -v t-man >/dev/null; then t-man add --name keeper-of-facts -- $HOME/code/bin/kof serve --port 7431 --workdir $HOME/.local/share/keep; else echo 'kof: skip service (t-man not on PATH; install t-man then run: t-man add --name keeper-of-facts -- kof serve --port 7431)'; fi",
+]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/keeper-of-facts"
+run = "always"
+depends_on = ["packages.keeper_of_facts", "packages.t_man"]

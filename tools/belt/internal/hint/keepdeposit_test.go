@@ -36,8 +36,8 @@ func TestKeepDepositNudgesOnceAboveThreshold(t *testing.T) {
 	if got == nil {
 		t.Fatal("Check above threshold = nil, want the deposit nudge")
 	}
-	if !strings.Contains(got.Text, "keep_assert") {
-		t.Errorf("advice %q does not mention keep_assert", got.Text)
+	if !strings.Contains(got.Text, "kof_assert") {
+		t.Errorf("advice %q does not mention kof_assert", got.Text)
 	}
 	if again := h.Check(in); again != nil {
 		t.Errorf("second Check = %+v, want nil: the nudge must fire once per session", again)
@@ -53,7 +53,7 @@ func TestKeepDepositSilentBelowThreshold(t *testing.T) {
 }
 
 func TestKeepDepositSilentWhenSessionDeposited(t *testing.T) {
-	deposited := `{"message":{"content":[{"type":"tool_use","name":"mcp__keep__keep_assert"}]}}` + "\n"
+	deposited := `{"message":{"content":[{"type":"tool_use","name":"mcp__kof__kof_assert"}]}}` + "\n"
 	path := depositTranscript(t, depositMinToolUses, deposited)
 	h := NewKeepDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, SessionID: "kept", TranscriptPath: path}); got != nil {
@@ -65,7 +65,7 @@ func TestKeepDepositSilentWhenSessionDeposited(t *testing.T) {
 // echoed into the transcript) without the session ever depositing, so the
 // check must match the tool_use JSON key form, not the name as a substring.
 func TestKeepDepositIgnoresProseMentions(t *testing.T) {
-	prose := `{"message":{"content":[{"type":"text","text":"deposit via keep_assert (mcp__keep__keep_assert)"}]}}` + "\n"
+	prose := `{"message":{"content":[{"type":"text","text":"deposit via keep_assert (mcp__kof__kof_assert)"}]}}` + "\n"
 	path := depositTranscript(t, depositMinToolUses, prose)
 	h := NewKeepDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, SessionID: "prose", TranscriptPath: path}); got == nil {
@@ -87,5 +87,14 @@ func TestKeepDepositSilentWithoutTranscript(t *testing.T) {
 	in := Input{Event: EventPrompt, SessionID: "gone", TranscriptPath: "/nonexistent/t.jsonl"}
 	if got := h.Check(in); got != nil {
 		t.Errorf("Check with a missing transcript = %+v, want nil", got)
+	}
+}
+
+func TestKeepDepositHonorsLegacyToolName(t *testing.T) {
+	deposited := `{"message":{"content":[{"type":"tool_use","name":"mcp__keep__keep_assert"}]}}` + "\n"
+	path := depositTranscript(t, depositMinToolUses, deposited)
+	h := NewKeepDeposit(testConfig())
+	if got := h.Check(Input{Event: EventPrompt, SessionID: "legacy", TranscriptPath: path}); got != nil {
+		t.Errorf("Check with a pre-rename keep_assert = %+v, want nil", got)
 	}
 }
