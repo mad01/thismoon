@@ -88,11 +88,18 @@ type AssertBody struct {
 type Client struct {
 	baseURL string
 	http    *http.Client
+	// slow covers requests that wait on the recall model judge; every other
+	// call is a local store operation and keeps the short timeout.
+	slow *http.Client
 }
 
 // New returns a Client for the serve instance at baseURL.
 func New(baseURL string) *Client {
-	return &Client{baseURL: baseURL, http: &http.Client{Timeout: 5 * time.Second}}
+	return &Client{
+		baseURL: baseURL,
+		http:    &http.Client{Timeout: 5 * time.Second},
+		slow:    &http.Client{Timeout: 45 * time.Second},
+	}
 }
 
 func (c *Client) Assert(in AssertBody) (Assertion, error) {
@@ -119,6 +126,17 @@ func (c *Client) List(subject, kind, status string) ([]Assertion, error) {
 		Assertions []Assertion `json:"assertions"`
 	}
 	return out.Assertions, c.do(http.MethodGet, path, nil, &out)
+}
+
+// Recall asks serve to rank the store against a free-form question with the
+// model judge and returns the relevant assertions in rank order. The judge
+// takes seconds, so this rides the slow client.
+func (c *Client) Recall(question string) ([]Assertion, error) {
+	var out struct {
+		Assertions []Assertion `json:"assertions"`
+	}
+	body := map[string]string{"question": question}
+	return out.Assertions, c.doWith(c.slow, http.MethodPost, "/api/recall", body, &out)
 }
 
 func (c *Client) Get(id string) (Assertion, error) {
@@ -159,6 +177,12 @@ type checkBody struct {
 // running) and an API error ({"error": ...}) both come back as descriptive
 // errors callers can relay to the user.
 func (c *Client) do(method, path string, body, out any) error {
+	return c.doWith(c.http, method, path, body, out)
+}
+
+// doWith is do with an explicit http client, so slow judge-backed requests
+// can outlive the default timeout without loosening it for everything.
+func (c *Client) doWith(hc *http.Client, method, path string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -174,7 +198,7 @@ func (c *Client) do(method, path string, body, out any) error {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	res, err := c.http.Do(req)
+	res, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf(
 			"kof serve not reachable at %s — is the t-man agent running? (t-man status keeper-of-facts): %w",

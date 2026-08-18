@@ -156,6 +156,7 @@ Owned by `kof serve`:
 - `GET  /api/assertions/{id}`             : one assertion, full detail
 - `POST /api/assertions/{id}/retract`     : body `{note}`; terminal withdrawal
 - `POST /api/check`                        : body `{id?}`; check one assertion or all → `{checked, fresh, stale, flipped, assertions}`
+- `POST /api/recall`                       : body `{question}`; model-judged relevance over the whole store, ranked, capped at 5 (502 naming the kof_query fallback when the judge fails)
 - `GET  /healthz`                         : 204
 - `GET  /version`                          → the four-key build metadata object (`version`, `commit`, `tag`, `build_time`)
 - `GET  /webkit/`                         : shared chrome (asset drift checks use `GET /webkit/version`)
@@ -178,6 +179,7 @@ kof assert --kind <kind> --subject <key> --statement <text> \
             [--cost-tokens <n>] [--link <url>]... \
             --pin <repo_path>:<file>:<start>-<end>   # repeatable, at least one
 kof list [--subject <prefix>] [--kind <kind>] [--status fresh|stale|retracted]
+kof recall "<question>"                     # model-judged relevance over the whole store
 kof get <id>
 kof check [id]                             # one assertion, or all when id is omitted
 kof retract <id> --note <reason>
@@ -199,6 +201,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 
 - `kof_assert(kind, subject, statement, confidence, session_id, pins, cost_tokens?, links?)`: create; `pins` is a list of objects (`repo_path` — absolute path to the working tree, `file`, `start_line`, `end_line`), at least one
 - `kof_query(subject?, kind?, status?)`: list, newest first; `subject` is a prefix match
+- `kof_recall(question)`: ask the keeper what it knows relevant to a free-form question — a one-shot isolated `claude -p` haiku judge (`internal/recall`) ranks the whole store and returns the relevant assertions in rank order; no embeddings (MAD-265). Judge failure errors name the kof_query fallback. Needs `claude` on serve's PATH.
 - `kof_get(id)`: one assertion, full detail
 - `kof_retract(id, note)`: terminal withdrawal with a counter-evidence note
 - `kof_check(id?)`: re-hash one assertion's pins, or all when `id` is omitted; returns the fresh/stale/flipped counts

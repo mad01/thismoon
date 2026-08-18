@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/pin"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/recall"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/store"
 )
 
@@ -448,5 +452,100 @@ func TestAppJS(t *testing.T) {
 	body, _ := io.ReadAll(res.Body)
 	if !strings.Contains(string(body), "/api/assertions") {
 		t.Error("app.js should fetch /api/assertions")
+	}
+}
+
+// recallServer builds a test server with one seeded assertion and a judge
+// that returns a fixed reply instead of exec-ing claude. It hands back the
+// seeded assertion's id so replies can name it.
+func recallServer(t *testing.T, judge func(context.Context, string, string) (string, error)) (*httptest.Server, string) {
+	t.Helper()
+	st, err := store.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	repo := gitRepo(t)
+	resolved, err := pin.Resolve(pin.Ref{RepoPath: repo, File: "f.txt", StartLine: 1, EndLine: 2}, time.Now())
+	if err != nil {
+		t.Fatalf("resolve pin: %v", err)
+	}
+	a, err := st.Assert(store.AssertInput{
+		Kind:       store.KindCodeBehavior,
+		Subject:    "repo:x/y",
+		Statement:  "serve is the single writer",
+		Confidence: store.ConfidenceVerified,
+		SessionID:  "s",
+		Pins:       []pin.Pin{resolved},
+	})
+	if err != nil {
+		t.Fatalf("seed assertion: %v", err)
+	}
+	srv := New(st, testInfo, "tester")
+	srv.SetJudge(recall.NewJudgeWithRunner(judge))
+	return httptest.NewServer(srv.Handler()), a.ID
+}
+
+func postRecall(t *testing.T, url, question string) *http.Response {
+	t.Helper()
+	res, err := http.Post(url+"/api/recall", "application/json",
+		strings.NewReader(fmt.Sprintf("{\"question\": %q}", question)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func TestRecallReturnsJudgedAssertions(t *testing.T) {
+	var id string
+	ts, seeded := recallServer(t, func(context.Context, string, string) (string, error) {
+		return fmt.Sprintf("[%q]", id), nil
+	})
+	id = seeded
+	defer ts.Close()
+
+	res := postRecall(t, ts.URL, "why no write races")
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	var body struct {
+		Assertions []store.Assertion `json:"assertions"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Assertions) != 1 || body.Assertions[0].ID != seeded {
+		t.Errorf("recall = %+v, want the seeded assertion", body.Assertions)
+	}
+}
+
+func TestRecallJudgeFailureIs502NamingFallback(t *testing.T) {
+	ts, _ := recallServer(t, func(context.Context, string, string) (string, error) {
+		return "", fmt.Errorf("claude not on PATH")
+	})
+	defer ts.Close()
+
+	res := postRecall(t, ts.URL, "anything")
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", res.StatusCode)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(raw), "kof_query") {
+		t.Errorf("error body %s does not name the kof_query fallback", raw)
+	}
+}
+
+func TestRecallRequiresQuestion(t *testing.T) {
+	ts, _ := recallServer(t, func(context.Context, string, string) (string, error) {
+		t.Fatal("judge must not run without a question")
+		return "", nil
+	})
+	defer ts.Close()
+
+	res := postRecall(t, ts.URL, "")
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", res.StatusCode)
 	}
 }

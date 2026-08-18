@@ -180,6 +180,30 @@ var listCmd = &cobra.Command{
 	},
 }
 
+var recallCmd = &cobra.Command{
+	Use:   "recall <question>",
+	Short: "Ask the keeper what it knows relevant to a question (model-judged)",
+	Long: `Rank the whole store against a free-form question with a one-shot model
+judge and print the relevant assertions in rank order. Not a text search:
+"why does the store not lose writes" finds the single-writer assertion even
+though no word matches. On judge failure, fall back to: kof list.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		as, err := apiClient().Recall(args[0])
+		if err != nil {
+			return err
+		}
+		if len(as) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "no relevant assertions")
+			return nil
+		}
+		for _, a := range as {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  [%s] %s\n    %s\n", a.ID, a.Status, a.Subject, a.Statement)
+		}
+		return nil
+	},
+}
+
 var getCmd = &cobra.Command{
 	Use:   "get <id>",
 	Short: "Show one assertion in full",
@@ -260,5 +284,5 @@ func init() {
 
 	retractCmd.Flags().StringVar(&retractNote, "note", "", "counter-evidence note (required)")
 
-	rootCmd.AddCommand(assertCmd, listCmd, getCmd, checkCmd, retractCmd)
+	rootCmd.AddCommand(assertCmd, listCmd, recallCmd, getCmd, checkCmd, retractCmd)
 }

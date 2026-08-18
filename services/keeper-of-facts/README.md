@@ -71,6 +71,7 @@ kof assert --kind <kind> --subject <key> --statement "<sentence>" \
             --confidence verified|derived|hint --session <id> \
             --pin <repo>:<file>:<start>-<end>    # repeatable, at least one
 kof list [--subject <prefix>] [--kind <kind>] [--status fresh|stale|retracted]
+kof recall "<question>"       # model-judged relevance over the whole store
 kof get <id>                                    # full detail, all pins
 kof check [id]                                  # re-hash one assertion, or all
 kof retract <id> --note "<why it's wrong>"      # terminal withdrawal
@@ -87,6 +88,7 @@ findings still hold. Claude calls the tools below.
 |------|---------|
 | `kof_assert(kind, subject, statement, confidence, session, pins, …)` | Store an assertion with one or more evidence pins |
 | `kof_query(subject?, kind?, status?)` | List assertions, newest first; `subject` is a prefix match |
+| `kof_recall(question)` | Ask the keeper what it knows relevant to a question — model-judged, ranked, no embeddings |
 | `kof_get(id)` | Get one assertion's full detail |
 | `kof_check(id?)` | Re-hash pins and report what flipped; one assertion or all |
 | `kof_retract(id, note)` | Withdraw an assertion with a counter-evidence note |

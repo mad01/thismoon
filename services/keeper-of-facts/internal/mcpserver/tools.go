@@ -32,6 +32,15 @@ func registerTools(s *mcp.Server, h *handlers) {
 	}, h.handleQuery)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "kof_recall",
+		Description: "Ask the keeper what it knows relevant to a free-form question. " +
+			"A one-shot model judge ranks the whole store against the question and returns the relevant assertions in rank order — " +
+			"use this when you don't know the subject key: \"why does the store not lose writes\" finds the single-writer assertion even though no word matches. " +
+			"Stale assertions are included and marked (treat them as needing re-verification); retracted ones never appear. " +
+			"Takes a few seconds. If the judge is unavailable the error says so — fall back to kof_query.",
+	}, h.handleRecall)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "kof_get",
 		Description: "Get one assertion's full detail by id, including every evidence pin (repo, file, line range, content hash, resolved commit) and its provenance (which session derived it, when, and the token cost).",
 	}, h.handleGet)
@@ -109,6 +118,24 @@ func (h *handlers) handleAssert(
 		return nil, out{}, err
 	}
 	return nil, h.one(a), nil
+}
+
+// ── recall ──
+
+type recallInput struct {
+	Question string `json:"question" jsonschema_description:"the free-form question to rank the store against, e.g. \"what do we know about JSONL write races\""`
+}
+
+func (h *handlers) handleRecall(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in recallInput,
+) (*mcp.CallToolResult, queryOutput, error) {
+	as, err := h.client.Recall(in.Question)
+	if err != nil {
+		return nil, queryOutput{}, err
+	}
+	return nil, queryOutput{Assertions: as, URL: h.webURL}, nil
 }
 
 // ── query ──

@@ -18,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/pin"
+	"github.com/mad01/thismoon/services/keeper-of-facts/internal/recall"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/store"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	info   buildinfo.Info
 	author string
 	now    func() time.Time
+	judge  *recall.Judge
 }
 
 // New returns a Server backed by st, reporting info on /version and stamping
@@ -47,8 +49,12 @@ func New(st *store.Store, info buildinfo.Info, author string) *Server {
 		info:   info,
 		author: author,
 		now:    func() time.Time { return time.Now().UTC() },
+		judge:  recall.NewJudge(),
 	}
 }
+
+// SetJudge swaps the recall judge, for tests.
+func (s *Server) SetJudge(j *recall.Judge) { s.judge = j }
 
 // Handler builds the routes, wrapped in request logging.
 func (s *Server) Handler() http.Handler {
@@ -60,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/assertions/{id}", s.handleGet)
 	mux.HandleFunc("POST /api/assertions/{id}/retract", s.handleRetract)
 	mux.HandleFunc("POST /api/check", s.handleCheck)
+	mux.HandleFunc("POST /api/recall", s.handleRecall)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -217,6 +224,32 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		Flipped:    report.Flipped,
 		Assertions: report.Assertions,
 	})
+}
+
+// recallReq is the POST /api/recall body.
+type recallReq struct {
+	Question string `json:"question"`
+}
+
+// handleRecall ranks the store against a question with the model judge. A
+// judge failure is a 502 whose message names the kof_query fallback — recall
+// degrading must never read as "the store knows nothing".
+func (s *Server) handleRecall(w http.ResponseWriter, r *http.Request) {
+	var req recallReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	if req.Question == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("question is required"))
+		return
+	}
+	as, err := s.judge.Rank(r.Context(), req.Question, s.store.List(store.Filter{}))
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"assertions": as})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
