@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.5.0...keeper-of-facts/v0.6.0) (2026-08-18)
+
+
+### Features
+
+* **keeper-of-facts:** kof_recall — model-judged relevance over the assertion store (MAD-265) ([#143](https://github.com/mad01/thismoon/issues/143)) ([94df9b1](https://github.com/mad01/thismoon/commit/94df9b1483cfec1c0e985464e42fcc2a9f160ab6))
+* **keeper-of-facts:** rename keep -&gt; keeper-of-facts, kof binary and kof_* tools (MAD-266) ([#141](https://github.com/mad01/thismoon/issues/141)) ([8731a62](https://github.com/mad01/thismoon/commit/8731a623ddb965f7a0a11e9fef55e8b593ca98a9))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/keep/v0.4.0...keep/v0.5.0) (2026-08-13)
 
 

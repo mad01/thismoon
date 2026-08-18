@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/belt/v0.8.0...belt/v0.9.0) (2026-08-18)
+
+
+### Features
+
+* **belt:** agent-memory hint — inject the shared memory index at session start (MAD-271) ([#144](https://github.com/mad01/thismoon/issues/144)) ([269602a](https://github.com/mad01/thismoon/commit/269602a5aa1e8fe61a1cbabb2fac823ad2f67b6c))
+* **belt:** deposit nudge — remind keep_assert once per session (MAD-264) ([#140](https://github.com/mad01/thismoon/issues/140)) ([58c6f3d](https://github.com/mad01/thismoon/commit/58c6f3d21ad8baeaeac3161d8f2e3c80a8dca884))
+* **belt:** session-start keep consult hint (MAD-263) ([#138](https://github.com/mad01/thismoon/issues/138)) ([18324c3](https://github.com/mad01/thismoon/commit/18324c3e9b9403d1f6581519d23b5168fbd62347))
+* **keeper-of-facts:** rename keep -&gt; keeper-of-facts, kof binary and kof_* tools (MAD-266) ([#141](https://github.com/mad01/thismoon/issues/141)) ([8731a62](https://github.com/mad01/thismoon/commit/8731a623ddb965f7a0a11e9fef55e8b593ca98a9))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/belt/v0.7.0...belt/v0.8.0) (2026-08-14)
 
 
