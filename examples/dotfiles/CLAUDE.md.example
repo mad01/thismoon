@@ -18,7 +18,7 @@ Each MCP server this file references is a component in this repo:
 | deps | [`services/deps`](../../services/deps) | dependency scanning (`deps_*`) |
 | present | [`services/present`](../../services/present) | briefing pages (`present_*`) |
 | reminder | [`services/reminder`](../../services/reminder) | reminders (`reminder_*`) |
-| keep | [`services/keep`](../../services/keep) | assertion store (`keep_*`) |
+| keeper-of-facts | [`services/keeper-of-facts`](../../services/keeper-of-facts) | assertion store (`kof_*`) |
 | worklog | [`tools/worklog`](../../tools/worklog) | cross-session work state (`worklog_*`) |
 | humanizer | [`tools/humanizer`](../../tools/humanizer) | AI-writing detection (`humanizer_*`) |
 | bionic | [`tools/bionic`](../../tools/bionic) | bionic-reading render (`bionic_*`) |
@@ -118,22 +118,22 @@ in a tmp dir.
   (durable atomic facts); `/handoff` writes a one-off bridge doc.
 
 ## keep — assertion store (evidence-pinned session knowledge)
-keep (a thismoon service, web at `http://keep.this/`) stores **assertions**:
+keeper-of-facts, short kof (a thismoon service, web at `http://kof.this/`) stores **assertions**:
 one-sentence statements about how a system behaves, each pinned to a hashed
-file line-range. `keep check` flips assertions stale when the pinned code
+file line-range. `kof check` flips assertions stale when the pinned code
 changes, so unlike docs or memory they decay detectably.
 
 - **Consult before spelunking:** starting non-trivial work in a repo, run
-  `keep_query` with a `subject` prefix (`repo:<org>/<repo>...`) —
+  `kof_query` with a `subject` prefix (`repo:<org>/<repo>...`) —
   `verified`/fresh assertions are pre-derived understanding with evidence;
-  `keep_get` shows the pins.
+  `kof_get` shows the pins.
 - **Deposit after deriving:** when a session works out something non-obvious
   that took real effort (behavior, invariant, dead end), store it with
-  `keep_assert` — at least one evidence pin (`repo_path`, `file`,
+  `kof_assert` — at least one evidence pin (`repo_path`, `file`,
   `start_line`, `end_line`) is required, one sentence per assertion, subject
   namespaced like `repo:<org>/<repo>/path`.
 - **Correct, don't tolerate:** an assertion that proves wrong gets
-  `keep_retract` with a note (the counter-evidence). Treat `stale` assertions
+  `kof_retract` with a note (the counter-evidence). Treat `stale` assertions
   as unverified hints until re-checked.
 - **Division of labor:** auto-memory = durable facts about you and your
   projects; worklog = resumable task state; keep = evidence-pinned claims
@@ -330,7 +330,7 @@ confirmation. Don't silently start destructive or external ops.
 | Term | Meaning |
 |---|---|
 | csl | code-search-local (thismoon service) |
-| keep | assertion store with evidence pins (thismoon service) |
+| keeper-of-facts | assertion store with evidence pins (thismoon service) |
 | worklog | resumable cross-session work state (thismoon tool) |
 | humanizer | AI-writing detector/rewriter (thismoon tool) |
 | ralph | recipe-driven local service manager |

@@ -49,7 +49,7 @@ A hashed line range in a repo working tree that grounds an assertion. keep v1's 
 _Avoid_: citation, reference
 
 **Stale**:
-A reversible assertion status set by `keep check` when a pin's content no longer hashes the same; it flips back to fresh when the content matches again.
+A reversible assertion status set by `kof check` when a pin's content no longer hashes the same; it flips back to fresh when the content matches again.
 _Avoid_: expired, invalid
 
 **Retract**:

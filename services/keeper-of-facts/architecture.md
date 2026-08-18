@@ -1,20 +1,20 @@
-# keep architecture
+# keeper-of-facts architecture
 
 ## Overview
 
-keep is the assertion store service: an agent session deposits a one-sentence
-assertion about how a system behaves, pinned to evidence, and `keep check`
+keeper-of-facts (kof) is the assertion store service: an agent session deposits a one-sentence
+assertion about how a system behaves, pinned to evidence, and `kof check`
 flips it stale when the pinned code changes. At runtime
-`keep serve --port 7431` (loopback only, fronted by d-man as
-`http://keep.this/`, run as a t-man agent) is the single writer: it owns the
+`kof serve --port 7431` (loopback only, fronted by d-man as
+`http://kof.this/`, run as a t-man agent) is the single writer: it owns the
 store, resolves and hashes every evidence pin, and serves the web page, the
-JSON API, and `/webkit/`. `keep mcp` and the mutating CLI commands hold no
+JSON API, and `/webkit/`. `kof mcp` and the mutating CLI commands hold no
 state; both are thin HTTP clients to the serve API. The web page is read-only.
 
 ## Structure
 
 ```
-cmd/keep/            entrypoint, delegates to internal/cli
+cmd/kof/            entrypoint, delegates to internal/cli
 internal/
   cli/               Cobra commands: serve, mcp, assert, list, get, check,
                      retract, version
@@ -35,14 +35,14 @@ pins point at.
 
 ## Data flow
 
-Assert: `keep_assert` or `keep assert` sends `POST /api/assertions` through
+Assert: `kof_assert` or `kof assert` sends `POST /api/assertions` through
 `internal/client`. The server resolves each evidence pin with `internal/pin`:
 it reads the named line range from the repo working tree, hashes the raw bytes
 into `content_sha256`, records the HEAD commit, and derives the repo's
 canonical `host/org/name` identity from its origin remote (empty when there is
-none). The server also stamps an author into the provenance (`KEEP_AUTHOR`,
+none). The server also stamps an author into the provenance (`KOF_AUTHOR`,
 else the OS username), never trusting the request for it. An assertion with zero
-pins, or a pin naming a missing file or an out-of-range span, is a 400; keep
+pins, or a pin naming a missing file or an out-of-range span, is a 400; kof
 never stores an assertion it could not ground. On success the store appends
 the record with status fresh.
 
@@ -58,7 +58,7 @@ idempotent, and never re-checked. There is no un-retract and no removal path.
 ## Storage
 
 The store is an append-only JSONL log under `~/.local/share/keep` (overridable
-with `KEEP_WORKDIR`). Every mutation appends one complete record as one line;
+with `KOF_WORKDIR`). Every mutation appends one complete record as one line;
 load resolves the newest record per id (greater `updated_at` wins, a tie goes
 to the later line), so history is never rewritten in place. Two files:
 `assertions.jsonl` holds everything except machine-scoped records, and
@@ -68,7 +68,7 @@ so a record never moves between files. The serve process polls the files every
 two seconds and reloads the store when another process changed them on disk (a
 git pull of a synced workdir, a manual append); the reload never repairs the
 files and keeps the old data on any parse error, so serve remains the single
-keep writer. A pre-JSONL `assertions.json` array is
+kof writer. A pre-JSONL `assertions.json` array is
 migrated on startup and kept as `assertions.json.migrated`. Each record
 carries the assertion (kind, subject, statement, confidence, provenance,
 status, links) and its pins (repo path, file, line range, content hash, HEAD
@@ -79,10 +79,10 @@ commit, resolved-at).
 HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/assertions`,
 `POST /api/assertions`, `GET /api/assertions/{id}`,
 `POST /api/assertions/{id}/retract`, `POST /api/check`, `GET /healthz`,
-`GET /version`, `GET /webkit/`. CLI: `keep serve`, `mcp`, `assert` (with
+`GET /version`, `GET /webkit/`. CLI: `kof serve`, `mcp`, `assert` (with
 repeatable `--pin repo_path:file:start-end`), `list`, `get`, `check [id]`,
-`retract --note`, `version`. MCP tools: `keep_assert`, `keep_query`,
-`keep_get`, `keep_check`, and `keep_retract`; responses include a `url`
-pointing at the web page. Config surfaces are `--port` (`KEEP_PORT`),
-`--workdir` (`KEEP_WORKDIR`), `KEEP_AUTHOR` for the provenance author stamp,
-and `KEEP_BASE_URL` for the human-facing link.
+`retract --note`, `version`. MCP tools: `kof_assert`, `kof_query`,
+`kof_get`, `kof_check`, and `kof_retract`; responses include a `url`
+pointing at the web page. Config surfaces are `--port` (`KOF_PORT`),
+`--workdir` (`KOF_WORKDIR`), `KOF_AUTHOR` for the provenance author stamp,
+and `KOF_BASE_URL` for the human-facing link.

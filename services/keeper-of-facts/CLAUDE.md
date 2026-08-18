@@ -1,18 +1,18 @@
-# keep, assertion store with evidence pins
+# keeper-of-facts (kof), assertion store with evidence pins
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, all over
 one append-only JSONL store. An agent session deposits a one-sentence assertion about how a
 system behaves and pins it to evidence: a line range in a repo working tree,
-hashed the moment the session records it. `keep check` re-hashes those pins and flips
+hashed the moment the session records it. `kof check` re-hashes those pins and flips
 an assertion stale when the pinned code has changed. **The MCP tools (driven by
-Claude) are the primary surface**; the `keep` CLI mirrors them. The web page at
-`http://keep.this/` is a **read-only** view of the same store.
+Claude) are the primary surface**; the `kof` CLI mirrors them. The web page at
+`http://kof.this/` is a **read-only** view of the same store.
 
 ## Module layout
 
 ```
-keep/
-  cmd/keep/            - entrypoint (delegates to internal/cli)
+keeper-of-facts/
+  cmd/kof/            - entrypoint (delegates to internal/cli)
   internal/
     cli/               - cobra: root, serve, mcp, manage (assert/list/get/check/retract), version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
@@ -28,17 +28,17 @@ keep/
 
 ### Single-writer architecture (load-bearing)
 
-Assertions are mutated from three places (the MCP, the CLI, and `keep check`),
-so to avoid two processes racing on the JSON file, **`keep serve` is the only
+Assertions are mutated from three places (the MCP, the CLI, and `kof check`),
+so to avoid two processes racing on the JSON file, **`kof serve` is the only
 writer**:
 
-- **`keep serve`** owns the store (in-memory map guarded by a mutex,
+- **`kof serve`** owns the store (in-memory map guarded by a mutex,
   persisted to the JSONL log under `~/.local/share/keep/`). It runs the HTTP
   server (web page + JSON API + `/version` + `/webkit/`).
-- **`keep mcp`** holds no state: it is a thin HTTP client to the serve API on
-  `localhost:<port>`. If serve is down, tools return "keep serve not reachable
-  … (t-man status keep)".
-- **`keep` CLI** mutations (`assert`, `check`, `retract`) are the same thin
+- **`kof mcp`** holds no state: it is a thin HTTP client to the serve API on
+  `localhost:<port>`. If serve is down, tools return "kof serve not reachable
+  … (t-man status keeper-of-facts)".
+- **`kof` CLI** mutations (`assert`, `check`, `retract`) are the same thin
   HTTP client.
 
 So the MCP, the CLI, and the web page all see the same data, and there are no
@@ -48,8 +48,8 @@ with a coherent view of the working tree the pins point at.
 The one sanctioned exception: serve polls the log files every 2 seconds and
 reloads the store when another **process** changed them on disk (a git pull of
 a synced workdir, a manual append). The reload never repairs the files and
-keeps the old in-memory data on any parse error. keep processes themselves
-still never write concurrently — serve stays the single keep writer.
+keeps the old in-memory data on any parse error. kof processes themselves
+still never write concurrently — serve stays the single kof writer.
 
 ## Data model & storage
 
@@ -87,12 +87,12 @@ Pin{
 - **Confidence** is the session's own grading: `verified` (checked against a
   primary source), `derived` (reasoned from evidence), `hint` (a weak signal
   worth recording).
-- serve stamps **Author** at assert time (`KEEP_AUTHOR`, else the OS username)
+- serve stamps **Author** at assert time (`KOF_AUTHOR`, else the OS username)
   and never takes it from the request. serve likewise derives `Pin.Repo` from
   the checkout's origin remote; both are the machine-independent identity a
   shared store will need, while resolution still goes via `repo_path`.
 - Every assertion needs at least one pin. An assertion with zero pins can't go
-  stale, so keep refuses to store one.
+  stale, so kof refuses to store one.
 
 Persisted as an append-only JSONL log: every mutation appends one complete
 record as one line, and load resolves the newest record per id (greater
@@ -107,7 +107,7 @@ record as one line, and load resolves the newest record per id (greater
 A pre-JSONL `assertions.json` array is migrated on startup (one line per
 record, oldest first) and renamed to `assertions.json.migrated` as a backup.
 Workdir defaults to `~/.local/share/keep` and is overridable with
-`KEEP_WORKDIR`.
+`KOF_WORKDIR`.
 
 ### State transitions
 
@@ -140,14 +140,14 @@ pins is the way to record the moved evidence.
 ## Build / install / test
 
 ```bash
-make build    # ./keep binary (build metadata via ldflags, from ../../buildinfo.mk)
-make install  # build + cp to ~/code/bin/keep + adhoc codesign
+make build    # ./kof binary (build metadata via ldflags, from ../../buildinfo.mk)
+make install  # build + cp to ~/code/bin/kof + adhoc codesign
 make test     # go test ./...  (hermetic: t.TempDir + a temp git repo, never touches real $HOME)
 ```
 
 ## HTTP API
 
-Owned by `keep serve`:
+Owned by `kof serve`:
 
 - `GET  /`                                : webkit-chromed web page, read-only list with filters
 - `GET  /app.js`                          : the page's client script
@@ -162,32 +162,32 @@ Owned by `keep serve`:
 
 Pin resolution lives on the server because it is the process that can read the
 working tree the pins name. A `POST /api/assertions` with zero pins, or with a
-pin that names a missing file or an out-of-range line span, is a 400: keep never
+pin that names a missing file or an out-of-range line span, is a 400: kof never
 stores an assertion it couldn't ground.
 
 ## Commands
 
-CLI surface beyond `serve`/`mcp`, wired as thin HTTP clients to `keep serve`
+CLI surface beyond `serve`/`mcp`, wired as thin HTTP clients to `kof serve`
 (`internal/client`):
 
 ```bash
-keep serve --port 7431 --workdir ~/.local/share/keep
-keep mcp
-keep assert --kind <kind> --subject <key> --statement <text> \
+kof serve --port 7431 --workdir ~/.local/share/keep
+kof mcp
+kof assert --kind <kind> --subject <key> --statement <text> \
             --confidence verified|derived|hint --session <id> \
             [--cost-tokens <n>] [--link <url>]... \
             --pin <repo_path>:<file>:<start>-<end>   # repeatable, at least one
-keep list [--subject <prefix>] [--kind <kind>] [--status fresh|stale|retracted]
-keep get <id>
-keep check [id]                             # one assertion, or all when id is omitted
-keep retract <id> --note <reason>
-keep version [-o json]
+kof list [--subject <prefix>] [--kind <kind>] [--status fresh|stale|retracted]
+kof get <id>
+kof check [id]                             # one assertion, or all when id is omitted
+kof retract <id> --note <reason>
+kof version [-o json]
 ```
 
 `--pin` takes `repo_path:file:start-end` and repeats; at least one is required,
 and `repo_path` is the absolute path to the repo working tree.
-`keep check` with no id walks the whole store (skipping retracted ones) and
-prints how many flipped. `keep version` prints the bare git commit that built
+`kof check` with no id walks the whole store (skipping retracted ones) and
+prints how many flipped. `kof version` prints the bare git commit that built
 the binary, the token sibling tools also print so ralph and status can probe any
 of them for the build they are running; `-o json` prints the full build
 metadata object.
@@ -195,16 +195,16 @@ metadata object.
 ## MCP tools
 
 Thin client over the API above (`internal/client`), served on stdio by
-`keep mcp`:
+`kof mcp`:
 
-- `keep_assert(kind, subject, statement, confidence, session_id, pins, cost_tokens?, links?)`: create; `pins` is a list of objects (`repo_path` — absolute path to the working tree, `file`, `start_line`, `end_line`), at least one
-- `keep_query(subject?, kind?, status?)`: list, newest first; `subject` is a prefix match
-- `keep_get(id)`: one assertion, full detail
-- `keep_retract(id, note)`: terminal withdrawal with a counter-evidence note
-- `keep_check(id?)`: re-hash one assertion's pins, or all when `id` is omitted; returns the fresh/stale/flipped counts
+- `kof_assert(kind, subject, statement, confidence, session_id, pins, cost_tokens?, links?)`: create; `pins` is a list of objects (`repo_path` — absolute path to the working tree, `file`, `start_line`, `end_line`), at least one
+- `kof_query(subject?, kind?, status?)`: list, newest first; `subject` is a prefix match
+- `kof_get(id)`: one assertion, full detail
+- `kof_retract(id, note)`: terminal withdrawal with a counter-evidence note
+- `kof_check(id?)`: re-hash one assertion's pins, or all when `id` is omitted; returns the fresh/stale/flipped counts
 
-Tool responses include `url` (the human-facing `KEEP_BASE_URL`, e.g.
-`http://keep.this`), while the client itself calls `localhost:<KEEP_PORT>`. Both
+Tool responses include `url` (the human-facing `KOF_BASE_URL`, e.g.
+`http://kof.this`), while the client itself calls `localhost:<KOF_PORT>`. Both
 env vars pin where the MCP looks, the same way reminder's do.
 
 ## Shared UI: webkit
@@ -216,14 +216,14 @@ in-module package **`github.com/mad01/thismoon/webkit`**, mounted at `GET
 (which pulls the FOUC guard from `/webkit/boot.js`). Don't re-add
 palette/topbar/theme CSS locally; it lives in webkit only.
 
-keep's web page is **read-only**: it lists assertions with filters for subject,
+kof's web page is **read-only**: it lists assertions with filters for subject,
 kind, and status, and shows each one's pins and current state. It makes no
 mutations. Writing an assertion, checking it, and retracting it all go through
-the MCP or the CLI. keep is a webkit consumer like the other services in this
+the MCP or the CLI. kof is a webkit consumer like the other services in this
 repo: no pin or bump step, so a webkit change ships at the next build.
 
 ```bash
-make install && t-man restart keep
+make install && t-man restart keeper-of-facts
 ```
 
 Confirm the shared assets with `GET /webkit/version`: every consumer built from
@@ -233,23 +233,23 @@ the same commit reports the same asset hash.
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
 - **serve must be running for the MCP/CLI to work**: it owns the store and does
-  the pin hashing. It runs as a t-man agent; `t-man status keep` /
-  `t-man restart keep`.
+  the pin hashing. It runs as a t-man agent; `t-man status keeper-of-facts` /
+  `t-man restart keeper-of-facts`.
 - **check is conservative.** It hashes the pinned line range, so an edit above a
   pin shifts the lines and flips the assertion stale even though the content
   only moved. Stale means "re-verify", not "wrong". Re-assert with fresh pins.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).
-- **Version probe convention.** `GET /version` and `keep version -o json` both
+- **Version probe convention.** `GET /version` and `kof version -o json` both
   return the shared four-key build metadata object (`version`, `commit`, `tag`,
   `build_time`, every key present and `""` when unknown) from
   `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is live.
-  Plain `keep version` stays a bare token — status parses it as one.
+  Plain `kof version` stays a bare token — status parses it as one.
 
 ## See also
 
-- Recipe: `recipes/keep/recipe.toml` (+ `recipes/keep/CLAUDE.md`)
+- Recipe: `recipes/keeper-of-facts/recipe.toml` (+ `recipes/keeper-of-facts/CLAUDE.md`)
 - Human docs: `README.md`
-- The `keep.this` d-man route and the `claude-mcp` `servers.json` MCP
+- The `kof.this` d-man route and the `claude-mcp` `servers.json` MCP
   registration live in the consuming repo's private overlay (docs/adr/0006),
   not here.
