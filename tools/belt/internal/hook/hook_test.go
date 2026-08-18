@@ -97,8 +97,8 @@ func TestRunHintPromptEmitsPlainText(t *testing.T) {
 	var out bytes.Buffer
 	RunHint("prompt", bytes.NewReader(p), &out)
 	got := out.String()
-	if !strings.HasPrefix(got, "belt[keep-deposit]:") {
-		t.Fatalf("prompt advice = %q, want plain text starting with belt[keep-deposit]:", got)
+	if !strings.HasPrefix(got, "belt[kof-deposit]:") {
+		t.Fatalf("prompt advice = %q, want plain text starting with belt[kof-deposit]:", got)
 	}
 	if strings.Contains(got, "hookSpecificOutput") {
 		t.Errorf("prompt advice %q must not be wrapped in the JSON envelope", got)

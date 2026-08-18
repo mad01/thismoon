@@ -14,12 +14,12 @@ import (
 // block stops being read (docs/adr/0008).
 const maxConsultAssertions = 5
 
-// KeepConsult surfaces a repo's stored assertions when a session starts in
-// that repo. The search hint (keep-assertions) covers code a session already
+// KofConsult surfaces a repo's stored assertions when a session starts in
+// that repo. The search hint (kof-assertions) covers code a session already
 // went looking at; this one covers the consult that should happen before any
 // searching — prior sessions' conclusions about the repo the session opened
 // in.
-type KeepConsult struct {
+type KofConsult struct {
 	cfg  config.Config
 	base string // kof serve base URL; overridable for tests
 	// originURL resolves a directory to its git origin remote URL;
@@ -27,19 +27,19 @@ type KeepConsult struct {
 	originURL func(dir string) string
 }
 
-func NewKeepConsult(cfg config.Config) *KeepConsult {
-	return &KeepConsult{cfg: cfg, base: keepBaseURL(), originURL: gitOriginURL}
+func NewKofConsult(cfg config.Config) *KofConsult {
+	return &KofConsult{cfg: cfg, base: kofBaseURL(), originURL: gitOriginURL}
 }
 
-func (h *KeepConsult) ID() string    { return "keep-consult" }
-func (h *KeepConsult) Event() string { return EventSessionStart }
+func (h *KofConsult) ID() string    { return "kof-consult" }
+func (h *KofConsult) Event() string { return EventSessionStart }
 
-func (h *KeepConsult) Check(in Input) *Advice {
+func (h *KofConsult) Check(in Input) *Advice {
 	repo := repoFromOrigin(h.originURL(nearestDir(in.Cwd)))
 	if repo == "" {
 		return nil
 	}
-	found := matchRepo(repo, queryKeep(h.base, "repo:"+repo))
+	found := matchRepo(repo, queryKof(h.base, "repo:"+repo))
 	if len(found) > maxConsultAssertions {
 		found = found[:maxConsultAssertions]
 	}

@@ -82,11 +82,11 @@ hints:
     enabled: true
   prefer-csl:
     enabled: true
-  keep-assertions:
+  kof-assertions:
     enabled: true
-  keep-consult:
+  kof-consult:
     enabled: true
-  keep-deposit:
+  kof-deposit:
     enabled: true`
 
 func configDocCmd() *cobra.Command {

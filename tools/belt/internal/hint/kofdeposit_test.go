@@ -27,9 +27,9 @@ func depositTranscript(t *testing.T, n int, extra string) string {
 	return path
 }
 
-func TestKeepDepositNudgesOnceAboveThreshold(t *testing.T) {
+func TestKofDepositNudgesOnceAboveThreshold(t *testing.T) {
 	path := depositTranscript(t, depositMinToolUses, "")
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	in := Input{Event: EventPrompt, SessionID: "deposit-test", TranscriptPath: path}
 
 	got := h.Check(in)
@@ -44,18 +44,18 @@ func TestKeepDepositNudgesOnceAboveThreshold(t *testing.T) {
 	}
 }
 
-func TestKeepDepositSilentBelowThreshold(t *testing.T) {
+func TestKofDepositSilentBelowThreshold(t *testing.T) {
 	path := depositTranscript(t, depositMinToolUses-1, "")
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, SessionID: "small", TranscriptPath: path}); got != nil {
 		t.Errorf("Check below threshold = %+v, want nil", got)
 	}
 }
 
-func TestKeepDepositSilentWhenSessionDeposited(t *testing.T) {
+func TestKofDepositSilentWhenSessionDeposited(t *testing.T) {
 	deposited := `{"message":{"content":[{"type":"tool_use","name":"mcp__kof__kof_assert"}]}}` + "\n"
 	path := depositTranscript(t, depositMinToolUses, deposited)
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, SessionID: "kept", TranscriptPath: path}); got != nil {
 		t.Errorf("Check after a real keep_assert = %+v, want nil", got)
 	}
@@ -64,36 +64,36 @@ func TestKeepDepositSilentWhenSessionDeposited(t *testing.T) {
 // The bug this pins: the bare tool name appears in prose (instruction files
 // echoed into the transcript) without the session ever depositing, so the
 // check must match the tool_use JSON key form, not the name as a substring.
-func TestKeepDepositIgnoresProseMentions(t *testing.T) {
+func TestKofDepositIgnoresProseMentions(t *testing.T) {
 	prose := `{"message":{"content":[{"type":"text","text":"deposit via keep_assert (mcp__kof__kof_assert)"}]}}` + "\n"
 	path := depositTranscript(t, depositMinToolUses, prose)
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, SessionID: "prose", TranscriptPath: path}); got == nil {
 		t.Error("Check = nil: a prose mention of keep_assert must not count as a deposit")
 	}
 }
 
-func TestKeepDepositSilentWithoutSessionID(t *testing.T) {
+func TestKofDepositSilentWithoutSessionID(t *testing.T) {
 	path := depositTranscript(t, depositMinToolUses, "")
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, TranscriptPath: path}); got != nil {
 		t.Errorf("Check without a session id = %+v, want nil: once-per-session needs an id", got)
 	}
 }
 
-func TestKeepDepositSilentWithoutTranscript(t *testing.T) {
+func TestKofDepositSilentWithoutTranscript(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	in := Input{Event: EventPrompt, SessionID: "gone", TranscriptPath: "/nonexistent/t.jsonl"}
 	if got := h.Check(in); got != nil {
 		t.Errorf("Check with a missing transcript = %+v, want nil", got)
 	}
 }
 
-func TestKeepDepositHonorsLegacyToolName(t *testing.T) {
+func TestKofDepositHonorsLegacyToolName(t *testing.T) {
 	deposited := `{"message":{"content":[{"type":"tool_use","name":"mcp__keep__keep_assert"}]}}` + "\n"
 	path := depositTranscript(t, depositMinToolUses, deposited)
-	h := NewKeepDeposit(testConfig())
+	h := NewKofDeposit(testConfig())
 	if got := h.Check(Input{Event: EventPrompt, SessionID: "legacy", TranscriptPath: path}); got != nil {
 		t.Errorf("Check with a pre-rename keep_assert = %+v, want nil", got)
 	}

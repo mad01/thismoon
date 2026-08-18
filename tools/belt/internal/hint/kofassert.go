@@ -18,29 +18,29 @@ import (
 // errors, the advice is simply ignored (docs/adr/0008).
 const maxAssertions = 3
 
-// keepTimeout bounds the call to kof serve. The search already returned, so
+// kofTimeout bounds the call to kof serve. The search already returned, so
 // a slow or dead kof costs nothing but this budget and then stays quiet.
-const keepTimeout = 400 * time.Millisecond
+const kofTimeout = 400 * time.Millisecond
 
-// KeepAssertions surfaces stored assertions whose subject matches the code a
+// KofAssertions surfaces stored assertions whose subject matches the code a
 // csl search just looked at. It exists because assertions only pay off when a
 // later session reads them, and nothing was prompting that read.
-type KeepAssertions struct {
+type KofAssertions struct {
 	cfg  config.Config
 	base string // kof serve base URL; overridable for tests
 }
 
-func NewKeepAssertions(cfg config.Config) *KeepAssertions {
-	return &KeepAssertions{cfg: cfg, base: keepBaseURL()}
+func NewKofAssertions(cfg config.Config) *KofAssertions {
+	return &KofAssertions{cfg: cfg, base: kofBaseURL()}
 }
 
-func (h *KeepAssertions) ID() string    { return "keep-assertions" }
-func (h *KeepAssertions) Event() string { return EventSearch }
+func (h *KofAssertions) ID() string    { return "kof-assertions" }
+func (h *KofAssertions) Event() string { return EventSearch }
 
-// keepBaseURL points at kof serve on localhost. KOF_PORT (with the pre-rename
+// kofBaseURL points at kof serve on localhost. KOF_PORT (with the pre-rename
 // KEEP_PORT honored as a fallback) mirrors what the kof MCP reads, so both
 // find the same instance.
-func keepBaseURL() string {
+func kofBaseURL() string {
 	port := os.Getenv("KOF_PORT")
 	if port == "" {
 		port = os.Getenv("KEEP_PORT")
@@ -64,12 +64,12 @@ type assertion struct {
 	} `json:"pins"`
 }
 
-func (h *KeepAssertions) Check(in Input) *Advice {
+func (h *KofAssertions) Check(in Input) *Advice {
 	subject := subjectFor(in)
 	if subject == "" {
 		return nil
 	}
-	found := queryKeep(h.base, repoPrefix(subject))
+	found := queryKof(h.base, repoPrefix(subject))
 	relevant := rank(subject, found)
 	if len(relevant) == 0 {
 		return nil
@@ -196,12 +196,12 @@ func commonDir(paths []string) string {
 	return strings.Join(parts, "/")
 }
 
-// queryKeep asks kof serve for assertions under the subject prefix.
+// queryKof asks kof serve for assertions under the subject prefix.
 // Retracted ones are dropped: they are a record that a claim was withdrawn,
 // not advice. Any failure returns nothing — kof being down must not produce
 // noise.
-func queryKeep(base, subject string) []assertion {
-	client := &http.Client{Timeout: keepTimeout}
+func queryKof(base, subject string) []assertion {
+	client := &http.Client{Timeout: kofTimeout}
 	url := base + "/api/assertions?subject=" + urlEscape(subject)
 	resp, err := client.Get(url)
 	if err != nil {

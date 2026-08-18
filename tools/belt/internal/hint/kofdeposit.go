@@ -15,7 +15,7 @@ const depositMinToolUses = 30
 
 // depositMarker is the synthetic seen-file id that makes the nudge fire at
 // most once per session.
-const depositMarker = "keep-deposit-nudge"
+const depositMarker = "kof-deposit-nudge"
 
 // toolUseKey and assertNameKeys are matched as raw JSON key/value substrings
 // of the transcript. The key form is deliberate: the bare tool name appears
@@ -31,22 +31,22 @@ var (
 	}
 )
 
-// KeepDeposit nudges a session that did substantial work to deposit what it
-// derived. The consult half (keep-consult, keep-assertions) only pays off
+// KofDeposit nudges a session that did substantial work to deposit what it
+// derived. The consult half (kof-consult, kof-assertions) only pays off
 // when earlier sessions wrote assertions, and nothing prompts that write —
 // instruction-file prose alone does not trigger reliably.
-type KeepDeposit struct {
+type KofDeposit struct {
 	cfg config.Config
 }
 
-func NewKeepDeposit(cfg config.Config) *KeepDeposit {
-	return &KeepDeposit{cfg: cfg}
+func NewKofDeposit(cfg config.Config) *KofDeposit {
+	return &KofDeposit{cfg: cfg}
 }
 
-func (h *KeepDeposit) ID() string    { return "keep-deposit" }
-func (h *KeepDeposit) Event() string { return EventPrompt }
+func (h *KofDeposit) ID() string    { return "kof-deposit" }
+func (h *KofDeposit) Event() string { return EventPrompt }
 
-func (h *KeepDeposit) Check(in Input) *Advice {
+func (h *KofDeposit) Check(in Input) *Advice {
 	// Without a session id the once-per-session guarantee is impossible, and
 	// a nudge on every prompt is worse than none.
 	path := seen.path(in.SessionID)

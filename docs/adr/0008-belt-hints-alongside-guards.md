@@ -53,7 +53,7 @@ belt carries two concepts:
   A hint has no denial path in its signature, so it cannot block a tool call
   even by mistake.
 
-Two hints ship with this decision: `keep-assertions` surfaces stored
+Two hints ship with this decision: `kof-assertions` surfaces stored
 assertions matching the subject of a csl search, and `prefer-csl` hands back
 the translated zoekt query after a multi-file sweep in an indexed repo.
 
@@ -77,7 +77,7 @@ and risks breaking anything that parses the output.
   The `hooks.PostToolUse` entries are not added here.
 - A hint that fires too often becomes wallpaper and stops being read, which
   is a silent failure — nothing errors, the advice is simply ignored. The
-  `keep-assertions` hint caps at three assertions, dedupes per session, and
+  `kof-assertions` hint caps at three assertions, dedupes per session, and
   requires the search to have hit at least one path segment below the repo
   root. If those gates prove wrong, the fix is tighter gating, not a louder
   channel.

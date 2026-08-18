@@ -72,15 +72,15 @@ func consultServer(t *testing.T, as []assertion) *httptest.Server {
 
 // Empty session ids skip the seen-file dedupe, which keeps these tests off
 // the real ~/.cache/belt.
-func consultHint(base string, origin string) *KeepConsult {
-	return &KeepConsult{
+func consultHint(base string, origin string) *KofConsult {
+	return &KofConsult{
 		cfg:       testConfig(),
 		base:      base,
 		originURL: func(string) string { return origin },
 	}
 }
 
-func TestKeepConsultSurfacesRepoAssertions(t *testing.T) {
+func TestKofConsultSurfacesRepoAssertions(t *testing.T) {
 	srv := consultServer(t, []assertion{
 		{
 			ID:        "1",
@@ -108,7 +108,7 @@ func TestKeepConsultSurfacesRepoAssertions(t *testing.T) {
 	}
 }
 
-func TestKeepConsultCapsAssertions(t *testing.T) {
+func TestKofConsultCapsAssertions(t *testing.T) {
 	var as []assertion
 	for i := range 8 {
 		as = append(as, assertion{
@@ -128,14 +128,14 @@ func TestKeepConsultCapsAssertions(t *testing.T) {
 	}
 }
 
-func TestKeepConsultSilentOutsideARepo(t *testing.T) {
+func TestKofConsultSilentOutsideARepo(t *testing.T) {
 	h := consultHint("http://127.0.0.1:1", "")
 	if got := h.Check(Input{Event: EventSessionStart, Cwd: t.TempDir()}); got != nil {
 		t.Errorf("Check outside a repo = %+v, want nil", got)
 	}
 }
 
-func TestKeepConsultSilentWhenKeepIsDown(t *testing.T) {
+func TestKofConsultSilentWhenKeepIsDown(t *testing.T) {
 	h := consultHint("http://127.0.0.1:1", "git@github.com:mad01/thismoon.git")
 	if got := h.Check(Input{Event: EventSessionStart, Cwd: t.TempDir()}); got != nil {
 		t.Errorf("Check with keep down = %+v, want nil", got)

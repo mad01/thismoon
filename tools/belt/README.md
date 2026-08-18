@@ -7,7 +7,7 @@ Named for the layer it adds: suspenders holds up the git side (pre-commit secret
 belt has two halves, and the split is deliberate (see `docs/adr/0008`):
 
 - **Guards** run as a PreToolUse hook and can deny. They are reserved for damage that is hard to undo.
-- **Hints** run as a PostToolUse hook and only advise. The tool has already run and its result stands, so a hint that misfires costs one line of ignored text rather than a stalled session.
+- **Hints** only advise. Most run as a PostToolUse hook after the tool call whose result stands; two ride session lifecycle events instead (SessionStart and UserPromptSubmit). A hint that misfires costs a few lines of ignored text rather than a stalled session.
 
 ## Guards
 
@@ -19,10 +19,13 @@ Three guards run against tool calls before they execute:
 
 ## Hints
 
-Two hints run after a tool call and add advisory context the agent reads next to the result:
+Five hints add advisory context the agent reads next to a tool result or at session boundaries:
 
 - **prefer-csl**: after a bash command sweeps multiple files inside a repo csl already indexes, hands back the equivalent `csl_search` call with the pattern translated to zoekt syntax. Pipe filters (`cmd | grep x`) and single-file greps do not fire — they are not what csl replaces.
-- **keep-assertions**: after a csl search, surfaces stored kof assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
+- **kof-assertions**: after a csl search, surfaces stored kof assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
+- **kof-consult**: when a session opens inside a git repo, surfaces that repo's kof assertions before any searching happens, so the session starts from what earlier sessions concluded. Caps at five; outside a repo, or with kof down, it stays silent.
+- **agent-memory**: when a session opens, injects the shared agent memory index (`~/.config/agent-memory/MEMORY.md`) so cross-agent facts arrive as context instead of relying on instruction prose to prompt a read.
+- **kof-deposit**: once per session, nudges a session that did substantial work but never recorded a kof assertion to deposit what it derived before the conclusions evaporate with the context.
 
 ## Install
 
@@ -51,7 +54,7 @@ belt version -o json
 
 `belt version` prints the bare version token of the installed build. With `-o json` it prints the full build metadata — `version`, `commit`, `tag`, `build_time` — the same four keys every tool in this repo reports, so one probe can ask any of them what build is running.
 
-`belt hook <event>` and `belt hint <event>` are the real hook entrypoints (payload on stdin, JSON on stdout); Claude Code invokes them, not the user. `hook` carries deny decisions for guards, `hint` carries `additionalContext` for hints.
+`belt hook <event>` and `belt hint <event>` are the real hook entrypoints (payload on stdin, output on stdout); Claude Code invokes them, not the user. `hook` carries deny decisions for guards; `hint` carries `additionalContext` JSON for the search, bash, and session-start events, and plain stdout text for prompt (UserPromptSubmit adds stdout to context directly).
 
 ## Configuration
 

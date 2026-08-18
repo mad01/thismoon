@@ -176,7 +176,7 @@ func TestLoadTogglesHintsSection(t *testing.T) {
 [guards.git-push-main]
 enabled = true
 
-[hints.keep-assertions]
+[hints.kof-assertions]
 enabled = false
 `
 	dir := t.TempDir()
@@ -186,8 +186,8 @@ enabled = false
 	if guards["git-push-main"].Enabled == nil || !*guards["git-push-main"].Enabled {
 		t.Error("guards section did not survive adding hints")
 	}
-	if hints["keep-assertions"].Enabled == nil || *hints["keep-assertions"].Enabled {
-		t.Error("hints.keep-assertions should have decoded as disabled")
+	if hints["kof-assertions"].Enabled == nil || *hints["kof-assertions"].Enabled {
+		t.Error("hints.kof-assertions should have decoded as disabled")
 	}
 }
 
@@ -202,7 +202,7 @@ guards:
     exclude_paths:
       - recipes/belt/
 hints:
-  keep-assertions:
+  kof-assertions:
     enabled: false
 `
 	dir := t.TempDir()
@@ -217,8 +217,8 @@ hints:
 	if len(excl) != 1 || excl[0] != "recipes/belt/" {
 		t.Errorf("exclude_paths = %v", excl)
 	}
-	if hints["keep-assertions"].Enabled == nil || *hints["keep-assertions"].Enabled {
-		t.Error("hints.keep-assertions should have decoded as disabled")
+	if hints["kof-assertions"].Enabled == nil || *hints["kof-assertions"].Enabled {
+		t.Error("hints.kof-assertions should have decoded as disabled")
 	}
 }
 
@@ -244,12 +244,12 @@ func TestLoadTogglesBrokenYAMLYieldsDefaultsNotTOML(t *testing.T) {
 
 func TestHintEnabledDefaultsOn(t *testing.T) {
 	cfg := Config{}
-	if !cfg.HintEnabled("keep-assertions") {
+	if !cfg.HintEnabled("kof-assertions") {
 		t.Error("a hint with no config entry should default to enabled")
 	}
 	off := false
-	cfg = Config{Hints: map[string]Toggle{"keep-assertions": {Enabled: &off}}}
-	if cfg.HintEnabled("keep-assertions") {
+	cfg = Config{Hints: map[string]Toggle{"kof-assertions": {Enabled: &off}}}
+	if cfg.HintEnabled("kof-assertions") {
 		t.Error("an explicitly disabled hint should report disabled")
 	}
 	if !cfg.HintEnabled("prefer-csl") {

@@ -52,9 +52,9 @@ type Hint interface {
 func All(cfg config.Config) []Hint {
 	return []Hint{
 		NewAgentMemory(cfg),
-		NewKeepAssertions(cfg),
-		NewKeepConsult(cfg),
-		NewKeepDeposit(cfg),
+		NewKofAssertions(cfg),
+		NewKofConsult(cfg),
+		NewKofDeposit(cfg),
 		NewPreferCSL(cfg),
 	}
 }
