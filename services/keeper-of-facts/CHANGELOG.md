@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.7.0...keeper-of-facts/v0.7.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* **keeper-of-facts:** stale keep naming in CLI help; release build derives binary from cmd/ dir ([#147](https://github.com/mad01/thismoon/issues/147)) ([a2dc2d0](https://github.com/mad01/thismoon/commit/a2dc2d08fb6bc3ef404f9864bf854cbeef4038d4))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.6.0...keeper-of-facts/v0.7.0) (2026-08-18)
 
 
