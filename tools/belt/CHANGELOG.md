@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/belt/v0.10.0...belt/v0.11.0) (2026-08-19)
+
+
+### Features
+
+* **belt:** doctor reports kof serve reachability and store size ([#152](https://github.com/mad01/thismoon/issues/152)) ([d2dcad9](https://github.com/mad01/thismoon/commit/d2dcad99f3a91aec2e7f8f21dd6cc6a602b02b26))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/belt/v0.9.0...belt/v0.10.0) (2026-08-18)
 
 
