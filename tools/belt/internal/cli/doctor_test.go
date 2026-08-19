@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,8 +35,16 @@ func doctorPaths(dir string) config.Paths {
 func runDoctorString(t *testing.T, p config.Paths) string {
 	t.Helper()
 	var b strings.Builder
-	runDoctor(&b, p)
+	runDoctor(&b, p, stubKofProbe(3, nil))
 	return b.String()
+}
+
+// stubKofProbe keeps doctor tests off the network: the real probe dials the
+// kof port, which may or may not have a server behind it on a dev machine.
+func stubKofProbe(count int, err error) kofProbe {
+	return func() (string, int, error) {
+		return "http://127.0.0.1:7431", count, err
+	}
 }
 
 func TestDoctorReportsLoadedSurfacesAndBlockedNames(t *testing.T) {
@@ -150,6 +159,42 @@ func setBuildInfo(t *testing.T, version, commit, tag, buildTime string) {
 	})
 	buildinfo.Version, buildinfo.Commit = version, commit
 	buildinfo.Tag, buildinfo.BuildTime = tag, buildTime
+}
+
+func TestDoctorReportsKofReachability(t *testing.T) {
+	tests := []struct {
+		name  string
+		count int
+		err   error
+		want  string
+	}{
+		{"populated", 27, nil, "reachable, 27 assertions stored"},
+		{
+			"empty store",
+			0,
+			nil,
+			"reachable, 0 assertions stored — kof-* hints stay silent until something deposits",
+		},
+		{
+			"unreachable",
+			0,
+			errors.New("dial tcp 127.0.0.1:7431: connection refused"),
+			"UNREACHABLE (dial tcp 127.0.0.1:7431: connection refused) — kof-* hints stay silent",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b strings.Builder
+			runDoctor(&b, doctorPaths(t.TempDir()), stubKofProbe(tt.count, tt.err))
+			out := b.String()
+			if !strings.Contains(out, "kof serve — backs the kof-* hints:") {
+				t.Errorf("kof section header missing:\n%s", out)
+			}
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output missing %q:\n%s", tt.want, out)
+			}
+		})
+	}
 }
 
 func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {

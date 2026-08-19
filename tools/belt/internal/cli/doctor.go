@@ -18,9 +18,10 @@ import (
 func doctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, blocked names",
+		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names",
 		Long: `Show what belt is actually running with: which build is installed, which
-config surface loaded (or didn't), which guards and hints are enabled, and
+config surface loaded (or didn't), which guards and hints are enabled,
+whether the kof serve instance the kof-* hints query is reachable, and
 the resolved blocked-name set the write-internal-names guard matches
 against. Use it to answer "why did that check fire" — a deny names the
 guard, doctor names the build and the config behind it.`,
@@ -30,13 +31,25 @@ guard, doctor names the build and the config behind it.`,
 			if err != nil {
 				return err
 			}
-			runDoctor(cmd.OutOrStdout(), p)
+			runDoctor(cmd.OutOrStdout(), p, liveKofProbe)
 			return nil
 		},
 	}
 }
 
-func runDoctor(w io.Writer, p config.Paths) {
+// kofProbe reports kof serve reachability for the doctor report: the base URL
+// the hints query, the stored assertion count, and the connection error when
+// unreachable. Injected so tests never dial the real port.
+type kofProbe func() (base string, count int, err error)
+
+// liveKofProbe probes the same kof serve instance the kof-* hints query.
+func liveKofProbe() (string, int, error) {
+	base := hint.KofBaseURL()
+	count, err := hint.KofProbe(base)
+	return base, count, err
+}
+
+func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	cfg := config.LoadFrom(p)
 
 	printBuild(w)
@@ -68,6 +81,10 @@ func runDoctor(w io.Writer, p config.Paths) {
 		fmt.Fprintf(w, "  %-22s %-7s %s%s\n",
 			h.ID(), h.Event(), enabledWord(cfg.HintEnabled(h.ID())), toggleNote(cfg.Hints[h.ID()]))
 	}
+
+	base, count, probeErr := probe()
+	fmt.Fprintln(w, "\nkof serve — backs the kof-* hints:")
+	fmt.Fprintf(w, "  %s  %s\n", base, kofNote(count, probeErr))
 
 	names := guard.BlockedNames(cfg.Names)
 	sort.Strings(names)
@@ -161,6 +178,20 @@ func namesNote(cfg config.Config, p config.Paths) string {
 	return fmt.Sprintf("workspace dirs: %d, blocked words: %d, allowlist: %d  (from %s)",
 		len(cfg.Names.WorkspaceDirs), len(cfg.Names.BlockedWords), len(cfg.Names.Allowlist),
 		source)
+}
+
+// kofNote renders the kof reachability line. It exists to split the three
+// states the hints render identically (as silence): kof down, store empty,
+// and store populated.
+func kofNote(count int, err error) string {
+	switch {
+	case err != nil:
+		return fmt.Sprintf("UNREACHABLE (%v) — kof-* hints stay silent", err)
+	case count == 0:
+		return "reachable, 0 assertions stored — kof-* hints stay silent until something deposits (kof_assert)"
+	default:
+		return fmt.Sprintf("reachable, %d assertions stored", count)
+	}
 }
 
 func enabledWord(on bool) string {
