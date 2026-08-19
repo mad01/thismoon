@@ -12,8 +12,8 @@ stops and resumes days later. worklog keys that state on the **task** (a ticket
 id or topic slug) so it's findable again — unlike Claude Code's per-directory
 auto-memory, which orphans anything started in a tmp dir.
 
-This is a different path from `/handoff` (which writes a one-off `$TMPDIR`
-bridge doc). worklog is the durable, keyed, searchable store.
+This is a different path from `/handoff` (which writes a one-off bridge doc
+under `~/.claude/handoffs/`). worklog is the durable, keyed, searchable store.
 
 ## Tools
 
@@ -49,7 +49,7 @@ checkpoint forces the next session to re-discover everything — wasting time an
 risking different conclusions. Err on the side of too much detail, not too
 little.
 
-1. **Derive the key.** Prefer a ticket id if one is in play (`MAD-1234`); else a
+1. **Derive the key.** Prefer a ticket id if one is in play (`ABC-1234`); else a
    short stable topic slug. Confirm with the user if ambiguous.
 2. **Gather state.** The `where` field must include ALL of the following that
    apply:
@@ -66,7 +66,7 @@ little.
      failed. Prevents the next session from repeating dead ends
    - **Decisions made** — what was decided and the reasoning. Include who
      decided and when if relevant
-   - **Links** — tickets, RFCs, Google Docs, PRs, Jira comment IDs, SLO IDs,
+   - **Links** — tickets, RFCs, Google Docs, PRs, tracker comment IDs, SLO IDs,
      dashboard URLs. Anything a resuming session would need to look up
    - **External content that can't be re-fetched easily** — if the session
      generated replacement text, draft wording, or received important data from
@@ -96,8 +96,7 @@ auto-memory; worklog triggers only on the verbs above.
 - The store is local-only (`~/code/worklog/`, no remote) — resume on the same
   machine. Don't promise cross-machine sync.
 - One task spanning N repos is **one item** with N per-repo notes, not N items.
-- **Ticket firewall:** a personal item (github.com/mad01 work) keys on a Linear
-  key (`MAD-NN`) — legacy `mad01/issues` refs (`#NN`) are still recognized for
-  older items; an item from any other tracker world (e.g. a day-job issue
-  tracker) keys on that tracker's own key. Never reference one world's ticket
-  from the other's item — the worlds stay strictly separated.
+- **Ticket firewall:** an item keys on the tracker its work actually lives in,
+  and only that one. Never reference one tracker world's ticket from an item
+  keyed in another — the worlds stay strictly separated. Which trackers are in
+  play, and their key formats, come from the agent's own global config.
