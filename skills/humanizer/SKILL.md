@@ -1,6 +1,6 @@
 ---
 name: humanizer
-version: 2.9.0
+version: 2.10.0
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
@@ -8,8 +8,8 @@ description: |
   inflated symbolism, promotional language, superficial -ing analyses, vague
   attributions, em dash overuse, rule of three, AI vocabulary words, passive
   voice, negative parallelisms, and filler phrases. Backed by the local
-  humanizer MCP for deterministic detection and voice profiling, plus a Haiku
-  subagent for holistic whole-passage AI/human judgment.
+  humanizer MCP for deterministic detection and voice profiling, plus a
+  headless `claude -p` pass for holistic whole-passage AI/human judgment.
 license: MIT
 compatibility: claude-code opencode
 allowed-tools:
@@ -19,8 +19,7 @@ allowed-tools:
   - Grep
   - Glob
   - AskUserQuestion
-  - Task
-  - Agent
+  - Bash
 ---
 
 # Humanizer: Remove AI Writing Patterns
@@ -39,22 +38,25 @@ Always start by calling the local `humanizer` MCP tools — they do the pattern 
 
 The MCP never rewrites prose — it finds, measures, and (for `humanizer_fix`) deterministically strips invisible carriers. **You still do the prose rewrite.** Use the findings as a checklist; use the voice diff as the target.
 
-## Holistic judgment via Haiku subagent
+## Holistic judgment via `claude -p`
 
-The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: spawn a **Haiku subagent** that judges the full text for the gestalt "does this read as machine-written" — buzzword density, generic structure, hedging, tidy-but-soulless rhythm.
+The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: a **headless `claude -p` call on Haiku** that judges the full text for the gestalt "does this read as machine-written" — buzzword density, generic structure, hedging, tidy-but-soulless rhythm. Piping text in and reading a verdict back in one shell call is simpler than managing a subagent's lifecycle.
 
 This is the fuzzy complement to the deterministic layer; the two cover disjoint failure modes, so run both. Two rules earned from testing:
 
 - **Whole-passage framing, never per-word.** Asked "is this flagged word a tell?", models defend every common word as fine (local 3B/9B scored 0/4 on real tells this way). Asked "is this passage AI-written?", they judge well. Feed sections or paragraphs, not isolated words.
 - **Haiku, not a local model.** Small local models (llama3.2:3b, gemma2:9b) false-positive on terse technical prose — they read a concrete debugging story as AI. Haiku got that case right. Still treat every verdict as advisory, not authoritative.
 
-**When:** running inside Claude Code (subagent-capable). Skip if the host has no subagent tool — the deterministic MCP layer already stands on its own.
+**When:** the `claude` CLI is on PATH. Skip if it is not — the deterministic MCP layer already stands on its own.
 
-**How:** spawn one subagent (Task/Agent tool, model `haiku`) with this prompt, then paste the labeled sections after it:
+**How:** pipe the labeled sections into `claude -p` on Haiku. The prompt goes as the argument; the passages arrive on stdin and get appended to it:
 
-> You are an AI-writing detector. Read each passage holistically — word-choice density, rhythm, hedging, buzzword stacking, generic vs specific detail, structure. For EACH labeled passage output exactly one line: `LABEL|VERDICT|confidence|reason(<=12 words)` where VERDICT is AI or HUMAN and confidence is 0-100. Judge from your own reading; do not use any tools.
+```bash
+printf '%s\n' "$LABELED_SECTIONS" | claude -p --model haiku \
+  "You are an AI-writing detector. Read each passage holistically — word-choice density, rhythm, hedging, buzzword stacking, generic vs specific detail, structure. For EACH labeled passage output exactly one line: LABEL|VERDICT|confidence|reason(<=12 words) where VERDICT is AI or HUMAN and confidence is 0-100. Judge from your own reading; do not use any tools. The labeled passages follow on stdin."
+```
 
-Use the verdicts as rewrite targets: any section flagged AI with high confidence gets priority alongside the MCP findings. On the final pass, re-run the subagent on your rewrite — a HUMAN verdict across sections is the exit signal.
+Use the verdicts as rewrite targets: any section flagged AI with high confidence gets priority alongside the MCP findings. On the final pass, re-run the same call on your rewrite — a HUMAN verdict across sections is the exit signal.
 
 ## Your Task
 
@@ -62,13 +64,13 @@ When given text to humanize:
 
 1. **Call `humanizer_detect`** on the input. Note every finding.
 2. **Call `humanizer_detect_statistical`** on the input. Note the whole-sample signals (uniformity, contractions, short-text em-dash, anaphora).
-3. **Run the holistic Haiku subagent pass** (see the section above) when the host is subagent-capable. Add any section it flags AI with high confidence to your rewrite targets.
+3. **Run the holistic `claude -p` pass** (see the section above) when the `claude` CLI is available. Add any section it flags AI with high confidence to your rewrite targets.
 4. **Call `humanizer_voice_diff`** when a voice sample is available; capture the metric deltas.
 5. **Rewrite problematic sections** - Replace AI-isms with natural alternatives informed by the findings.
 6. **Preserve meaning** - Keep the core message intact
 7. **Maintain voice** - Match the intended tone; when a sample is present, close the biggest voice-diff deltas.
 8. **Add soul** - Don't just remove bad patterns; inject actual personality
-9. **Do a final anti-AI pass** — Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run the Haiku subagent if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
+9. **Do a final anti-AI pass** — Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run the `claude -p` pass if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
 
 
 ## Voice Calibration (Optional)

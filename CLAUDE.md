@@ -43,6 +43,19 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
 
+## Skills
+
+The repo ships four agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand; the paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+
+| Skill | What it does | Backed by |
+|-------|--------------|-----------|
+| `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
+| `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus a headless `claude -p` pass on Haiku for holistic judgment |
+| `present` | Generates a scrollable briefing page with bionic reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
+| `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
+
+Prerequisites: `golang-style` needs nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+
 ## Release process
 
 Full reference: `docs/RELEASING.md`. The short version for working here:
