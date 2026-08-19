@@ -118,7 +118,7 @@ func hintHookEventName(event string) string {
 
 // toHintInput maps a PostToolUse payload onto the shared hint input. A search
 // carries its repo and hit paths in the response; a bash command carries only
-// what it ran.
+// what it ran; an external-text call is identified by the tool that made it.
 func toHintInput(event string, p payload) hint.Input {
 	in := hint.Input{Event: event, Cwd: p.Cwd, SessionID: p.SessionID, TranscriptPath: p.TranscriptPath}
 	switch event {
@@ -126,6 +126,8 @@ func toHintInput(event string, p payload) hint.Input {
 		if s, ok := p.ToolInput["command"].(string); ok {
 			in.Command = s
 		}
+	case hint.EventExternalText:
+		in.ToolName = p.ToolName
 	case hint.EventSearch:
 		in.Paths = hint.PathsFromResponse(p.ToolResponse)
 		in.Repo = hint.RepoFromResponse(p.ToolResponse)

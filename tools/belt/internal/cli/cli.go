@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -48,6 +49,7 @@ and advice are the only two outcomes.
 
 The event argument is belt's hint event, not the Claude Code tool name:
 search hints on the csl search tools, bash hints on Bash commands,
+external-text hints on the MCP tools that publish text off this machine,
 session-start hints once when a session opens (a SessionStart hook), and
 prompt hints on each user prompt (a UserPromptSubmit hook — advice goes to
 stdout as plain text, the form that event adds to context). Wire them in
@@ -58,7 +60,9 @@ stdout as plain text, the form that event adds to context). Wire them in
       "PostToolUse": [
         {"matcher": "mcp__csl__csl_(search|semantic_search|hybrid_search)",
          "hooks": [{"type": "command", "command": "belt hint search"}]},
-        {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hint bash"}]}
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "belt hint bash"}]},
+        {"matcher": "mcp__(github|slack)__.*",
+         "hooks": [{"type": "command", "command": "belt hint external-text"}]}
       ],
       "SessionStart": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint session-start"}]}
@@ -83,13 +87,10 @@ func validHintEventArg(cmd *cobra.Command, args []string) error {
 	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
 		return err
 	}
-	switch strings.ToLower(args[0]) {
-	case hint.EventSearch, hint.EventBash, hint.EventSessionStart, hint.EventPrompt:
+	if slices.Contains(hint.Events(), strings.ToLower(args[0])) {
 		return nil
-	default:
-		return fmt.Errorf("unknown hint event %q (valid: %s, %s, %s, %s)",
-			args[0], hint.EventSearch, hint.EventBash, hint.EventSessionStart, hint.EventPrompt)
 	}
+	return fmt.Errorf("unknown hint event %q (valid: %s)", args[0], strings.Join(hint.Events(), ", "))
 }
 
 func hookCmd() *cobra.Command {

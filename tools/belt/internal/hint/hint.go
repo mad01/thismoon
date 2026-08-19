@@ -12,15 +12,26 @@ import (
 )
 
 // Event names match `belt hint <event>` and the hook matcher they are
-// registered under. Search and bash run on PostToolUse; session-start runs on
-// SessionStart, where there is no tool call — the input carries only the
-// session's cwd and id.
+// registered under. Search, bash, and external-text run on PostToolUse;
+// session-start runs on SessionStart, where there is no tool call — the input
+// carries only the session's cwd and id.
 const (
 	EventSearch       = "search"        // matcher: the csl search MCP tools
 	EventBash         = "bash"          // matcher: Bash
 	EventSessionStart = "session-start" // hook: SessionStart
 	EventPrompt       = "prompt"        // hook: UserPromptSubmit
+	// matcher: the MCP tools that write human-read text off this machine.
+	// Which tools those are is consuming-repo wiring (docs/adr/0006); belt
+	// only drops the read-only calls a broad matcher would sweep in.
+	EventExternalText = "external-text"
 )
+
+// Events lists every valid hint event. CLI validation and its error text read
+// from here so a new event cannot be added to the constants above and then be
+// silently rejected at the command line.
+func Events() []string {
+	return []string{EventSearch, EventBash, EventSessionStart, EventPrompt, EventExternalText}
+}
 
 // Input carries the fields extracted from a hook payload.
 type Input struct {
@@ -30,7 +41,8 @@ type Input struct {
 	Repo           string   // search: the repo filter the search was given
 	Paths          []string // search: repo-relative file paths the search returned
 	SessionID      string   // used to suppress repeat advice within one session
-	TranscriptPath string   // prompt: the session transcript JSONL on disk
+	TranscriptPath string   // prompt, external-text: the session transcript JSONL on disk
+	ToolName       string   // external-text: the tool call that just ran
 }
 
 // Advice is one hint's output: which hint spoke and what it said.
@@ -55,6 +67,7 @@ func All(cfg config.Config) []Hint {
 		NewKofAssertions(cfg),
 		NewKofConsult(cfg),
 		NewKofDeposit(cfg),
+		NewHumanizer(cfg),
 		NewPreferCSL(cfg),
 	}
 }
