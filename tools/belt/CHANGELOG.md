@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/belt/v0.11.0...belt/v0.12.0) (2026-08-19)
+
+
+### Features
+
+* **belt:** add humanizer-check hint for externally published text ([#155](https://github.com/mad01/thismoon/issues/155)) ([f4b5cb4](https://github.com/mad01/thismoon/commit/f4b5cb4335cecf0cc4b261a244a28bed3bd00422))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/belt/v0.10.0...belt/v0.11.0) (2026-08-19)
 
 
