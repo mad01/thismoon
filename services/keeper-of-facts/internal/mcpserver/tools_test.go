@@ -145,7 +145,7 @@ func testHandlers(t *testing.T) *handlers {
 }
 
 func validPins() []pinInput {
-	return []pinInput{{RepoPath: "mad01/thismoon", File: "keep.go", StartLine: 1, EndLine: 3}}
+	return []pinInput{{RepoPath: "mad01/thismoon", File: "kof.go", StartLine: 1, EndLine: 3}}
 }
 
 func TestAssertThenGetAndQuery(t *testing.T) {

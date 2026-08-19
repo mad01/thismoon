@@ -24,7 +24,7 @@ import (
 var testInfo = buildinfo.Info{
 	Version:   "test",
 	Commit:    "0123456789abcdef0123456789abcdef01234567",
-	Tag:       "keep/v0.0.0",
+	Tag:       "keeper-of-facts/v0.0.0",
 	BuildTime: "2026-08-13T09:00:00Z",
 }
 

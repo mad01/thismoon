@@ -22,8 +22,8 @@ func TestPathsFromResponse(t *testing.T) {
 		},
 		{
 			name: "string envelope wrapping the same object",
-			raw:  `"{\"lines\":[{\"path\":\"services/keep/x.go\",\"repo\":\"mad01/thismoon\"}]}"`,
-			want: []string{"services/keep/x.go"},
+			raw:  `"{\"lines\":[{\"path\":\"services/keeper-of-facts/x.go\",\"repo\":\"mad01/thismoon\"}]}"`,
+			want: []string{"services/keeper-of-facts/x.go"},
 		},
 		{
 			name: "files_with_matches flat list",

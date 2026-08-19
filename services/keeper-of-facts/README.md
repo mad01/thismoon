@@ -79,7 +79,7 @@ kof retract <id> --note "<why it's wrong>"      # terminal withdrawal
 
 ## MCP + web view
 
-Mostly you'll use kof through Claude. Ask it to record what it found ("keep
+Mostly you'll use kof through Claude. Ask it to record what it found ("record
 that events dedupes by content hash, pin the store file"), to look things up
 ("what do we know about the events service"), or to check whether prior
 findings still hold. Claude calls the tools below.

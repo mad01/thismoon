@@ -1,5 +1,5 @@
 'use strict';
-// keep page — client-side render. The backend serves a static chrome-only shell
+// kof page — client-side render. The backend serves a static chrome-only shell
 // plus the assertion list as JSON at /api/assertions; this script fetches it and
 // builds the DOM with webkit's shared helpers. The page is read-only: writing,
 // checking, and retracting an assertion all go through the MCP or the CLI.
@@ -105,7 +105,7 @@
     ]);
   }
 
-  // detailsEl is the collapsed metadata block per card: everything keep_get /
+  // detailsEl is the collapsed metadata block per card: everything kof_get /
   // kof get return that the compact card doesn't show — id, timestamps,
   // provenance, links, and each pin in full.
   function detailsEl(a) {
@@ -225,7 +225,7 @@
       ]),
       Webkit.el('p', { class: 'hint' }, [
         'Recorded by agent sessions via the ',
-        Webkit.el('code', {}, 'keep'),
+        Webkit.el('code', {}, 'kof'),
         ' MCP or CLI, each pinned to a line range that ',
         Webkit.el('code', {}, 'kof check'),
         ' re-verifies. This view is read-only.'

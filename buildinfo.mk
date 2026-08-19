@@ -4,11 +4,11 @@
 # Include it from a component Makefile after setting COMPONENT (the name the
 # component's release tags are prefixed with), then link with the flags:
 #
-#     COMPONENT := keep
+#     COMPONENT := keeper-of-facts
 #     include ../../buildinfo.mk
 #
 #     build:
-#     	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/keep
+#     	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/kof
 #
 # The relative include path holds on fleet machines too: ralph's sources cache
 # preserves the repo layout, and component Makefiles always run with the

@@ -8,7 +8,7 @@ import (
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
 )
 
-// handlers carries the dependencies shared by all keep tools.
+// handlers carries the dependencies shared by all kof tools.
 type handlers struct {
 	client *client.Client
 	webURL string // where the user views assertions in a browser
@@ -20,7 +20,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Record a one-sentence assertion about how a system behaves and ground it in evidence pins. " +
 			"An assertion is a durable, checkable claim you derived this session — how some code acts, an approach that failed, a settled decision — so a later session can trust it without re-deriving it. " +
 			"Each pin captures a line range in a repo working tree, hashed the moment you assert; `kof_check` re-hashes them later and flips the assertion stale if the pinned code changed. " +
-			"At least one pin is REQUIRED — pins are what let keep tell whether the claim still holds, so an assertion with no pin is rejected. " +
+			"At least one pin is REQUIRED — pins are what let kof tell whether the claim still holds, so an assertion with no pin is rejected. " +
 			"Keep the returned id — it is the handle for kof_get / kof_retract / kof_check.",
 	}, h.handleAssert)
 

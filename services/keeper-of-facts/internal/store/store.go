@@ -7,7 +7,7 @@
 // writer and no file-lock contention. The one sanctioned exception is an
 // external process replacing or appending to the files (a git pull of a synced
 // workdir): ReloadIfChanged detects that and re-reads, so serve keeps serving
-// current data without ever racing another keep process on a write.
+// current data without ever racing another kof process on a write.
 //
 // Check appends each changed record independently, so a failure mid-run leaves
 // the earlier appends persisted. That is deliberate: status and checked_at are

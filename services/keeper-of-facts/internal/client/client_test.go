@@ -35,7 +35,7 @@ func TestAssertSendsBodyAndDecodes(t *testing.T) {
 		Confidence: "verified",
 		SessionID:  "sess-1",
 		Pins: []PinRef{
-			{RepoPath: "mad01/thismoon", File: "keep.go", StartLine: 1, EndLine: 3},
+			{RepoPath: "mad01/thismoon", File: "kof.go", StartLine: 1, EndLine: 3},
 		},
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func TestAssertSendsBodyAndDecodes(t *testing.T) {
 	if gotMethod != http.MethodPost || gotPath != "/api/assertions" {
 		t.Errorf("request = %s %s, want POST /api/assertions", gotMethod, gotPath)
 	}
-	if len(gotBody.Pins) != 1 || gotBody.Pins[0].File != "keep.go" {
+	if len(gotBody.Pins) != 1 || gotBody.Pins[0].File != "kof.go" {
 		t.Errorf("pins not round-tripped: %+v", gotBody.Pins)
 	}
 	if got.ID != "a1" || got.Status != "fresh" {

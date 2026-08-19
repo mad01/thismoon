@@ -52,7 +52,7 @@ func TestRepoFromOrigin(t *testing.T) {
 func TestMatchRepoRespectsNameBoundary(t *testing.T) {
 	as := []assertion{
 		{ID: "root", Subject: "repo:mad01/thismoon"},
-		{ID: "deep", Subject: "repo:mad01/thismoon/services/keep"},
+		{ID: "deep", Subject: "repo:mad01/thismoon/services/keeper-of-facts"},
 		{ID: "sibling", Subject: "repo:mad01/thismoon-arcade/game"},
 	}
 	got := matchRepo("mad01/thismoon", as)
@@ -84,7 +84,7 @@ func TestKofConsultSurfacesRepoAssertions(t *testing.T) {
 	srv := consultServer(t, []assertion{
 		{
 			ID:        "1",
-			Subject:   "repo:mad01/thismoon/services/keep",
+			Subject:   "repo:mad01/thismoon/services/keeper-of-facts",
 			Statement: "serve is the single writer",
 			Status:    "fresh",
 		},
@@ -113,7 +113,7 @@ func TestKofConsultCapsAssertions(t *testing.T) {
 	for i := range 8 {
 		as = append(as, assertion{
 			ID:        string(rune('a' + i)),
-			Subject:   "repo:mad01/thismoon/services/keep",
+			Subject:   "repo:mad01/thismoon/services/keeper-of-facts",
 			Statement: "claim",
 			Status:    "fresh",
 		})
@@ -138,7 +138,7 @@ func TestKofConsultSilentOutsideARepo(t *testing.T) {
 func TestKofConsultSilentWhenKeepIsDown(t *testing.T) {
 	h := consultHint("http://127.0.0.1:1", "git@github.com:mad01/thismoon.git")
 	if got := h.Check(Input{Event: EventSessionStart, Cwd: t.TempDir()}); got != nil {
-		t.Errorf("Check with keep down = %+v, want nil", got)
+		t.Errorf("Check with kof down = %+v, want nil", got)
 	}
 }
 

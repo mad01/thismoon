@@ -26,7 +26,7 @@ func TestSubjectForRequiresDepth(t *testing.T) {
 		},
 		{
 			name: "divergent paths fall back to the common prefix",
-			in:   Input{Repo: "mad01/thismoon", Paths: []string{"services/csl/a.go", "services/keep/b.go"}},
+			in:   Input{Repo: "mad01/thismoon", Paths: []string{"services/csl/a.go", "services/keeper-of-facts/b.go"}},
 			want: "repo:mad01/thismoon/services",
 		},
 		{
@@ -78,7 +78,7 @@ func TestQueryDropsRetracted(t *testing.T) {
 }
 
 // The bug this pins: assertions are labelled at the component level while
-// searches return hits deeper inside it, and keep matches subjects by prefix.
+// searches return hits deeper inside it, and kof matches subjects by prefix.
 // Querying the hit's own subject finds nothing, so the query has to widen to
 // the repo and narrow again by ranking.
 func TestRepoPrefixWidensToTheRepo(t *testing.T) {
@@ -91,7 +91,7 @@ func TestRepoPrefixWidensToTheRepo(t *testing.T) {
 func TestRankPrefersCloserSubjects(t *testing.T) {
 	hit := "repo:mad01/thismoon/services/csl/internal/semantic"
 	as := []assertion{
-		{ID: "far", Subject: "repo:mad01/thismoon/services/keep"},
+		{ID: "far", Subject: "repo:mad01/thismoon/services/keeper-of-facts"},
 		{ID: "near", Subject: "repo:mad01/thismoon/services/csl"},
 		{ID: "exact", Subject: "repo:mad01/thismoon/services/csl/internal/semantic"},
 		{ID: "root", Subject: "repo:mad01/thismoon"},
@@ -126,7 +126,7 @@ func TestRankCapsOutput(t *testing.T) {
 
 func TestQuerySilentWhenKeepIsDown(t *testing.T) {
 	if got := queryKof("http://127.0.0.1:1", "repo:x/y"); got != nil {
-		t.Errorf("query with keep down = %v, want nil", got)
+		t.Errorf("query with kof down = %v, want nil", got)
 	}
 }
 
