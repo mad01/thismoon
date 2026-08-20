@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.7.1...keeper-of-facts/v0.7.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* **keeper-of-facts:** sweep remaining pre-rename keep references ([#157](https://github.com/mad01/thismoon/issues/157)) ([11aad7b](https://github.com/mad01/thismoon/commit/11aad7b949d138dcc7eb7565f9652aa8b3f98dd0))
+
 ## [0.7.1](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.7.0...keeper-of-facts/v0.7.1) (2026-08-18)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/mad01/thismoon/compare/belt/v0.12.0...belt/v0.12.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **keeper-of-facts:** sweep remaining pre-rename keep references ([#157](https://github.com/mad01/thismoon/issues/157)) ([11aad7b](https://github.com/mad01/thismoon/commit/11aad7b949d138dcc7eb7565f9652aa8b3f98dd0))
+
 ## [0.12.0](https://github.com/mad01/thismoon/compare/belt/v0.11.0...belt/v0.12.0) (2026-08-19)
 
 
