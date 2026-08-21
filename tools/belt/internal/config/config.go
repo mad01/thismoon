@@ -56,6 +56,13 @@ type Toggle struct {
 	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
 	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
 	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
+	// AllowReposByProfile scopes an allowlist entry to machines carrying a
+	// ralph profile: profile name -> repos allowlisted only there. Lets one
+	// fleet-shared config allow a repo on personal machines while work
+	// machines stay fail-closed (e.g. the personal agent-memory store may
+	// carry internal names on personal Macs, where no work store exists to
+	// route them to).
+	AllowReposByProfile map[string][]string `toml:"allow_repos_by_profile" yaml:"allow_repos_by_profile,omitempty"`
 }
 
 // ExcludesPath reports whether the toggle's exclude_paths cover the given
@@ -114,6 +121,25 @@ func enabled(toggles map[string]Toggle, id string) bool {
 // HasProfile reports whether the resolved machine profile list contains name.
 func (c Config) HasProfile(name string) bool {
 	return slices.Contains(c.Profiles, name)
+}
+
+// RepoAllowed reports whether a guard's allowlist covers the canonical repo
+// on this machine: the flat allow_repos list, or an allow_repos_by_profile
+// bucket whose profile this machine carries. An empty repo never matches.
+func (c Config) RepoAllowed(guardID, repo string) bool {
+	if repo == "" {
+		return false
+	}
+	t := c.Guards[guardID]
+	if slices.Contains(t.AllowRepos, repo) {
+		return true
+	}
+	for profile, repos := range t.AllowReposByProfile {
+		if c.HasProfile(profile) && slices.Contains(repos, repo) {
+			return true
+		}
+	}
+	return false
 }
 
 // Paths lists the locations of every config surface belt reads. `belt doctor`

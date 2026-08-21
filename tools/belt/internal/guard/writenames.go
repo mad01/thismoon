@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/mad01/thismoon/kit/repofind"
@@ -54,9 +53,9 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 	// even though they live on github.com — a private companion repo whose
 	// whole purpose is internal-only config. Matched by remote identity, not a
 	// fragile path substring, so both the working checkout and any cached
-	// clone (same origin) are covered.
-	if repo := canonicalRepo(remote); repo != "" &&
-		slices.Contains(g.cfg.Guards[WriteInternalNamesID].AllowRepos, repo) {
+	// clone (same origin) are covered. allow_repos_by_profile entries apply
+	// only on machines carrying that profile.
+	if g.cfg.RepoAllowed(WriteInternalNamesID, canonicalRepo(remote)) {
 		return nil
 	}
 	names := BlockedNames(g.cfg.Names)

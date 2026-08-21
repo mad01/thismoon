@@ -69,6 +69,13 @@ guards:
     # remote) — a private companion repo whose purpose is internal config.
     allow_repos:
       - github.com/you/private-companion
+    # Like allow_repos, but scoped to machines carrying a ralph profile:
+    # the entry applies only where the profile matches, so one fleet-shared
+    # config can allow a repo on personal machines while work machines stay
+    # fail-closed.
+    allow_repos_by_profile:
+      personal:
+        - github.com/you/personal-store
     # Paths where internal references are deliberate. A ~/ or absolute entry
     # is matched as a directory prefix; anything else as a substring of the
     # target file path.
