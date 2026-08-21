@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/belt/v0.13.0...belt/v0.14.0) (2026-08-21)
+
+
+### Features
+
+* **belt:** profile-scoped guard allowlist (allow_repos_by_profile) ([#169](https://github.com/mad01/thismoon/issues/169)) ([22ea212](https://github.com/mad01/thismoon/commit/22ea212caa113c0d480e8727fe32b70742f32efb))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/belt/v0.12.1...belt/v0.13.0) (2026-08-21)
 
 
