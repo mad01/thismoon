@@ -16,6 +16,7 @@ wave = 0
 [packages.humanizer]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/tools/humanizer"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/humanizer"]

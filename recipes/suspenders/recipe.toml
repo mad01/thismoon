@@ -16,6 +16,7 @@ wave = 0
 [packages.suspenders]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/tools/suspenders"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/suspenders"]

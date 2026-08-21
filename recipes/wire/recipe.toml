@@ -10,6 +10,7 @@ wave = 0
 [packages.wire]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/services/wire"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/wire"]

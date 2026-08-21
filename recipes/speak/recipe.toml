@@ -21,6 +21,7 @@ wave = 0
 [packages.speak]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/services/speak"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/speak"]

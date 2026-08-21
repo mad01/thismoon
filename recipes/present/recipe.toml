@@ -10,6 +10,7 @@ wave = 0
 [packages.present]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/services/present"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/present"]

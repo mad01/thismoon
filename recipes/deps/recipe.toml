@@ -12,6 +12,7 @@ profiles = ["personal"]  # depends on d-man + scans personal repos; personal Mac
 [packages.deps]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/services/deps"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/deps"]

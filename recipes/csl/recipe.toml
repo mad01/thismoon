@@ -20,6 +20,7 @@ wave = 0
 [packages.code_search_local]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/services/csl"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/csl"]

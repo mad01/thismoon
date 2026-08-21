@@ -10,6 +10,7 @@ wave = 0
 [packages.events]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/services/events"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/events"]

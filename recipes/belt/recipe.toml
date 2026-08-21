@@ -15,6 +15,7 @@ wave = 0
 [packages.belt]
 source = "local"
 working_dir = "~/.config/ralph/sources/thismoon/tools/belt"
+version_check = true
 build = ["make build"]
 install = ["make install"]
 install_paths = ["~/code/bin/belt"]
