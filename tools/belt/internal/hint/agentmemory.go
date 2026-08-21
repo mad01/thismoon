@@ -21,14 +21,21 @@ const maxMemoryFacts = 30
 // failure mode the kof consult had before the session-start hint. Unlike the
 // kof hints this one has no per-session dedupe: the index is the thing to see
 // every session, not advice to show once.
+//
+// Two stores exist: the personal one at ~/.config/agent-memory (cloned on
+// every machine) and a work one at ~/.config/agent-memory-work, which only
+// work-profile machines clone at all. Both are injected when present; absence
+// of either is silence, so personal machines never see or need the work store.
 type AgentMemory struct {
 	cfg config.Config
-	// path locates the index; overridable for tests.
+	// path locates the personal index; overridable for tests.
 	path func() string
+	// workPath locates the work index; overridable for tests.
+	workPath func() string
 }
 
 func NewAgentMemory(cfg config.Config) *AgentMemory {
-	return &AgentMemory{cfg: cfg, path: memoryIndexPath}
+	return &AgentMemory{cfg: cfg, path: memoryIndexPath, workPath: workMemoryIndexPath}
 }
 
 func (h *AgentMemory) ID() string    { return "agent-memory" }
@@ -42,20 +49,46 @@ func memoryIndexPath() string {
 	return filepath.Join(home, ".config", "agent-memory", "MEMORY.md")
 }
 
+func workMemoryIndexPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "agent-memory-work", "MEMORY.md")
+}
+
 func (h *AgentMemory) Check(_ Input) *Advice {
-	path := h.path()
-	if path == "" {
+	sections := []string{
+		renderStore(h.path(), "shared agent memory"),
+		renderStore(h.workPath(), "work agent memory"),
+	}
+	var parts []string
+	for _, s := range sections {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	if len(parts) == 0 {
 		return nil
+	}
+	return &Advice{Hint: h.ID(), Text: strings.Join(parts, "\n")}
+}
+
+// renderStore reads one store's index and renders its section; a missing file
+// or factless index renders nothing (that store doesn't exist here).
+func renderStore(path, label string) string {
+	if path == "" {
+		return ""
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil // no shared memory on this machine: silence, not an error
+		return "" // no such store on this machine: silence, not an error
 	}
 	facts := factLines(string(raw))
 	if len(facts) == 0 {
-		return nil
+		return ""
 	}
-	return &Advice{Hint: h.ID(), Text: renderMemory(facts, filepath.Dir(path))}
+	return renderMemory(facts, filepath.Dir(path), label)
 }
 
 // factLines keeps the index's fact bullets and drops the header prose — the
@@ -71,11 +104,12 @@ func factLines(raw string) []string {
 	return out
 }
 
-func renderMemory(facts []string, dir string) string {
+func renderMemory(facts []string, dir, label string) string {
 	var b strings.Builder
 	fmt.Fprintf(
 		&b,
-		"shared agent memory (%s) — durable cross-agent facts; open a linked file only when the one-liner isn't enough.\n",
+		"%s (%s) — durable cross-agent facts; open a linked file only when the one-liner isn't enough.\n",
+		label,
 		dir,
 	)
 	over := len(facts) > maxMemoryFacts

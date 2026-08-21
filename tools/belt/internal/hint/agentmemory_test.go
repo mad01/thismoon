@@ -15,7 +15,18 @@ func memoryHint(t *testing.T, content string) *AgentMemory {
 	}
 	h := NewAgentMemory(testConfig())
 	h.path = func() string { return path }
+	// Keep the work store out of the real $HOME: absent unless a test sets it.
+	h.workPath = func() string { return filepath.Join(t.TempDir(), "MEMORY.md") }
 	return h
+}
+
+func withWorkMemory(t *testing.T, h *AgentMemory, content string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "MEMORY.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.workPath = func() string { return path }
 }
 
 func TestAgentMemoryInjectsFactLines(t *testing.T) {
@@ -50,8 +61,39 @@ func TestAgentMemoryRepeatsEverySession(t *testing.T) {
 func TestAgentMemorySilentWithoutIndex(t *testing.T) {
 	h := NewAgentMemory(testConfig())
 	h.path = func() string { return filepath.Join(t.TempDir(), "MEMORY.md") }
+	h.workPath = func() string { return filepath.Join(t.TempDir(), "MEMORY.md") }
 	if got := h.Check(Input{Event: EventSessionStart}); got != nil {
 		t.Errorf("Check without an index file = %+v, want nil", got)
+	}
+}
+
+func TestAgentMemoryInjectsWorkStoreWhenPresent(t *testing.T) {
+	h := memoryHint(t, "- [p.md](p.md) — a personal fact\n")
+	withWorkMemory(t, h, "- [w.md](w.md) — an internal-only fact\n")
+	got := h.Check(Input{Event: EventSessionStart})
+	if got == nil {
+		t.Fatal("Check = nil, want both stores injected")
+	}
+	if !strings.Contains(got.Text, "a personal fact") ||
+		!strings.Contains(got.Text, "an internal-only fact") {
+		t.Errorf("advice %q is missing a store's facts", got.Text)
+	}
+	if !strings.Contains(got.Text, "shared agent memory") ||
+		!strings.Contains(got.Text, "work agent memory") {
+		t.Errorf("advice %q is missing a store label", got.Text)
+	}
+}
+
+func TestAgentMemoryWorkStoreAloneStillInjects(t *testing.T) {
+	h := NewAgentMemory(testConfig())
+	h.path = func() string { return filepath.Join(t.TempDir(), "MEMORY.md") }
+	withWorkMemory(t, h, "- [w.md](w.md) — an internal-only fact\n")
+	got := h.Check(Input{Event: EventSessionStart})
+	if got == nil {
+		t.Fatal("Check = nil, want the work store injected without the personal one")
+	}
+	if strings.Contains(got.Text, "shared agent memory") {
+		t.Errorf("advice %q renders an absent personal store", got.Text)
 	}
 }
 
