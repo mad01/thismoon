@@ -59,6 +59,11 @@ service an `--extra-log sandbox=...` pointing at the denials log.
 
 The watch list is deliberately a plain hardcoded default: extra names on a
 machine that never runs those services are harmless (they simply never match).
+Each entry is matched as a **prefix of the denial's process name** — `python`
+catches `python3.14`, and nothing matches on the denial's target path (an
+earlier version substring-matched the whole message, so unrelated system
+daemons leaked in whenever a watched name appeared inside a path or property
+name).
 
 ### Triaging a denial
 

@@ -1,10 +1,9 @@
 ;; present MCP seatbelt profile (sandbox-exec)
 ;;
 ;; Confines the present MCP server so a poisoned dependency can't exfiltrate
-;; data or read secrets. `present mcp` never serves or dials HTTP — it shares
-;; the page store on disk with the separate (unsandboxed) `present serve`
-;; daemon, so the posture is egress-zero:
-;;   - NO network at all
+;; data or read secrets. `present mcp` never serves pages — it shares the page
+;; store on disk with the separate (unsandboxed) `present serve` daemon:
+;;   - no network except one loopback port (the local events service)
 ;;   - $HOME reads default-DENIED; allow-list is the binaries dir and the
 ;;     page store (a secrets blocklist can never be complete — deny the lot,
 ;;     allow what the server needs)
@@ -26,9 +25,17 @@
 (version 1)
 (allow default)
 
-;; ── Network: none. The server speaks stdio; pages are served by the
-;; separate `present serve` process, not this one. ──
+;; ── Network: one loopback port. The server speaks stdio; pages are served by
+;; the separate `present serve` process, not this one. The exception is the
+;; fire-and-forget POST to the local events service
+;; (internal/notify/events.go → 127.0.0.1:7430). Before this allow it was
+;; denied on every page create, so the MCP archived nothing to events.this —
+;; the denial is what surfaced it (sandbox-watch, 2026-08-20). events has no
+;; egress of its own, so the reachable surface is one local append-only log.
+;; Everything else, including DNS, stays denied; EVENTS_BASE_URL can't
+;; redirect this because present-mcp-sandbox.sh scrubs env with `env -i`. ──
 (deny network*)
+(allow network-outbound (remote tcp "localhost:7430"))
 
 ;; ── Filesystem writes: page store + temp only ──
 (deny file-write*)

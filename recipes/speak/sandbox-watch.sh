@@ -59,10 +59,21 @@ mkdir -p "$(dirname "$LOGFILE")"
 
 IFS=',' read -r -a procs <<< "$PROCESSES"
 
+# Match on the PROCESS NAME ONLY, as a prefix (so a "python" entry still
+# catches python3.14). This used to substring-match the whole message, which
+# let unrelated system processes through whenever a watched name happened to
+# appear in the denial target: studentd's "property:ean-storage-present" and
+# softwareupdated's "panicmedic-auxkc-present" both matched "present", and
+# GamePolicyAgent reading ".../Python3.framework/..." matched "Python".
+# Message shape is "Sandbox: <proc>(<pid>) deny(<n>) <op> <target>".
 matches_watched() {
-  local line=$1 p
+  local msg=$1 proc p
+  proc=${msg#Sandbox: }   # "python3.14(123) deny(1) file-read-data /path"
+  proc=${proc%% *}        # "python3.14(123)"
+  proc=${proc%%(*}        # "python3.14"
+  [ -n "$proc" ] || return 1
   for p in "${procs[@]}"; do
-    case "$line" in *"$p"*) return 0 ;; esac
+    case "$proc" in "$p"*) return 0 ;; esac
   done
   return 1
 }
