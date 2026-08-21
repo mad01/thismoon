@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.7.2...keeper-of-facts/v0.8.0) (2026-08-21)
+
+
+### Features
+
+* **keeper-of-facts:** show when an assertion was recorded on its card ([#162](https://github.com/mad01/thismoon/issues/162)) ([26e7915](https://github.com/mad01/thismoon/commit/26e7915499ec7b8c6c57796f7d369ed660a04386))
+
 ## [0.7.2](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.7.1...keeper-of-facts/v0.7.2) (2026-08-19)
 
 
