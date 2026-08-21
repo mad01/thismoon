@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/mad01/thismoon/compare/worklog/v0.3.0...worklog/v0.4.0) (2026-08-21)
+
+
+### Features
+
+* **worklog:** remote upstream support for the store ([#166](https://github.com/mad01/thismoon/issues/166)) ([a822d90](https://github.com/mad01/thismoon/commit/a822d90146fd66c6dd26f1783d39fa696f667b6e))
+
 ## [0.3.0](https://github.com/mad01/thismoon/compare/worklog/v0.2.1...worklog/v0.3.0) (2026-08-13)
 
 

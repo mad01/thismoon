@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/mad01/thismoon/compare/belt/v0.12.1...belt/v0.13.0) (2026-08-21)
+
+
+### Features
+
+* **belt:** inject the work agent-memory store when present ([#167](https://github.com/mad01/thismoon/issues/167)) ([5bc353d](https://github.com/mad01/thismoon/commit/5bc353d01c85eb7259af4cbffb9f3a0ed90e73ec))
+
 ## [0.12.1](https://github.com/mad01/thismoon/compare/belt/v0.12.0...belt/v0.12.1) (2026-08-19)
 
 
