@@ -27,9 +27,11 @@ later see exactly the same state.
 The store is one directory per item under `~/code/worklog/`: a CONTEXT.md
 with status frontmatter, a "Where I am" section rewritten on every
 checkpoint, an append-only log, and lazily created per-repo notes. Every
-checkpoint is a git commit in a local repo with no remote — machine-local
-by design, so internal references never leave the machine. Plainness is
-deliberate: markdown files stay searchable and readable without the tool.
+checkpoint is a git commit, auto-pushed to a private per-profile remote
+when one is configured — the machine profile picks the remote, so a
+work machine's items land in a work-only repo and internal references
+never cross into the personal store. Plainness is deliberate: markdown
+files stay searchable and readable without the tool.
 
 `scan` digests local session transcripts into compact JSON so past work
 can be imported without pulling raw transcripts into context, and it
@@ -42,8 +44,9 @@ markers.
 
 ## Non-goals
 
-No cross-machine sync: the store has no remote, and you resume on the
-machine you left. worklog is not a ticket tracker — status is only active,
+No merge strategy: the remote assumes a single writer, `worklog sync` is
+a fast-forward pull plus push for machine switches, and concurrent writes
+from two machines are not reconciled. worklog is not a ticket tracker — status is only active,
 paused, or done, and tickets live in whatever system issued their keys. It
 also skips workflow machinery on purpose: no stage folders and no
 per-stage state files, just the item's markdown.
