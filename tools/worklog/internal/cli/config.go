@@ -34,7 +34,20 @@ scan:                        # ticket-firewall strings for 'worklog scan',
                              # split is derived, never enumerated.
   repo_path_markers:         # a cwd matching none of these reports no repo
     - /code/                 # (a tmp dir, say)
-    - /workspace/`
+    - /workspace/
+
+remote:                      # git upstream for the store (~/code/worklog).
+                             # No upstreams = local-only git, the default.
+  push: true                 # auto commit+push after each write; omitting the
+                             # key means true once an upstream resolves.
+  upstreams:                 # machine profile (from ralph's config.local.toml)
+    personal: git@github.com:you/worklog-personal.git   # -> remote URL. The
+    work: git@github.com:you/worklog-work.git           # machine's first
+                             # profile with an entry wins, so one shared file
+                             # sends each machine's store to its own repo.
+                             # worklog keeps origin pointed at the resolved
+                             # URL, clones it when the store dir is missing,
+                             # and 'worklog sync' pulls+pushes on demand.`
 
 func configCmd() *cobra.Command {
 	return &cobra.Command{
@@ -71,9 +84,14 @@ which file and key to change.`,
 
 // effectiveConfig resolves cfg against the defaults the scan package applies,
 // so the printed YAML shows the values worklog runs on rather than the blanks
-// the file left behind.
+// the file left behind. The remote section passes through as written: its only
+// default (push=true) is resolved per machine, which the header of `worklog
+// config` is not the place to flatten.
 func effectiveConfig(cfg config.Config) config.Config {
-	return config.Config{Scan: config.Scan(scan.Config(cfg.Scan).WithDefaults())}
+	return config.Config{
+		Scan:   config.Scan(scan.Config(cfg.Scan).WithDefaults()),
+		Remote: cfg.Remote,
+	}
 }
 
 // configStatus describes a config load for the header line. A broken file is

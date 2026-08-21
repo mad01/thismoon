@@ -73,9 +73,12 @@ machine-private values ship via the consuming repo's config overlay
 ## Data model & storage
 
 One directory per work item under `~/code/worklog/` (override with
-`$WORKLOG_DIR`). The store is a **local git repo with no remote**,
-machine-local by design so internal references never leave the machine. csl
-indexes it for free.
+`$WORKLOG_DIR`). The store is a **git repo, local-first**: with no `remote:`
+section in the config it has no upstream at all, and with one it clones from
+and pushes to a private per-machine repo. The upstream is keyed by machine
+profile (ralph's `config.local.toml`), so a work machine's store — internal
+references included — only ever reaches that profile's own private repo,
+never the personal one. csl indexes the store for free.
 
 ```
 ~/code/worklog/<key>/
@@ -155,8 +158,15 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
 - **Repo auto-detect needs a real cwd.** The MCP server process runs from `/`,
   so the `worklog_checkpoint` tool takes a `cwd` argument; the skill passes
   the user's working directory. The CLI uses `os.Getwd()` directly.
-- **No remote.** Cross-machine sync is intentionally out of scope for now.
-  Resume on the machine you left.
+- **Remote sync is config-driven and single-writer.** The `remote:` config
+  section maps machine profiles to upstream URLs; worklog auto-configures
+  `origin`, clones the upstream when the store dir is missing (fresh machine),
+  and commits+pushes after every write (`push: false` turns the push off).
+  `worklog sync` does a fast-forward pull then push. There is no merge
+  strategy: the assumption is one writer at a time, so concurrent checkpoints
+  of the same item from two machines will conflict — run `worklog sync` when
+  switching machines. A failed push degrades to a warning; the write always
+  lands locally.
 - **Version probe convention.** `worklog version -o json` returns the shared
   four-key build metadata object (`version`, `commit`, `tag`, `build_time`,
   every key present and `""` when unknown) from

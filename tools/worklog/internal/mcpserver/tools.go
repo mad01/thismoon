@@ -2,10 +2,12 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/tools/worklog/internal/config"
 	"github.com/mad01/thismoon/tools/worklog/internal/store"
 )
 
@@ -16,6 +18,20 @@ type itemView struct {
 	Topic   string   `json:"topic,omitempty"`
 	Updated string   `json:"updated"`
 	Repos   []string `json:"repos,omitempty"`
+	Warning string   `json:"warning,omitempty"`
+}
+
+// newStore mirrors the CLI's store construction: remote resolved from the
+// config for this machine's profile, with a bootstrap clone when the store
+// directory is missing. A failed clone degrades to the local-only store — a
+// tool call must not break because the network is away.
+func newStore() *store.Store {
+	s := store.New("")
+	rc := config.Load().Remote
+	url := rc.ResolveUpstream(config.MachineProfiles())
+	s.Remote = store.Remote{URL: url, Push: url != "" && rc.PushEnabled()}
+	_ = s.EnsureCloned()
+	return s
 }
 
 func view(it *store.Item) itemView {
@@ -84,9 +100,16 @@ func handleCheckpoint(
 	if repo == "" {
 		repo = store.DetectRepo(in.Cwd)
 	}
-	it, err := store.New("").Checkpoint(store.Sanitize(in.Key), store.CheckpointInput{
+	it, err := newStore().Checkpoint(store.Sanitize(in.Key), store.CheckpointInput{
 		Ticket: in.Ticket, Topic: in.Topic, Where: in.Where, Note: in.Note, Repo: repo, Cwd: in.Cwd,
 	})
+	if errors.Is(err, store.ErrPush) {
+		// The checkpoint is written and committed; surface the failed push
+		// without failing the tool call.
+		v := view(it)
+		v.Warning = err.Error()
+		return nil, v, nil
+	}
 	if err != nil {
 		return nil, itemView{}, err
 	}
@@ -107,7 +130,7 @@ func handleList(
 	_ *mcp.CallToolRequest,
 	in listInput,
 ) (*mcp.CallToolResult, listOutput, error) {
-	items, err := store.New("").List(in.Status, in.Repo)
+	items, err := newStore().List(in.Status, in.Repo)
 	if err != nil {
 		return nil, listOutput{}, err
 	}
@@ -123,7 +146,7 @@ func handleSearch(
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, listOutput, error) {
-	hits, err := store.New("").Search(in.Query)
+	hits, err := newStore().Search(in.Query)
 	if err != nil {
 		return nil, listOutput{}, err
 	}
@@ -144,7 +167,7 @@ func handleShow(
 	_ *mcp.CallToolRequest,
 	in showInput,
 ) (*mcp.CallToolResult, showOutput, error) {
-	s := store.New("")
+	s := newStore()
 	key := store.Sanitize(in.Key)
 	if in.Repo != "" {
 		note, err := s.RepoNote(key, in.Repo)
@@ -177,7 +200,12 @@ func handleStatus(
 	if in.Status != "active" && in.Status != "paused" && in.Status != "done" {
 		return nil, itemView{}, fmt.Errorf("status must be active, paused, or done")
 	}
-	it, err := store.New("").SetStatus(store.Sanitize(in.Key), in.Status)
+	it, err := newStore().SetStatus(store.Sanitize(in.Key), in.Status)
+	if errors.Is(err, store.ErrPush) {
+		v := view(it)
+		v.Warning = err.Error()
+		return nil, v, nil
+	}
 	if err != nil {
 		return nil, itemView{}, err
 	}

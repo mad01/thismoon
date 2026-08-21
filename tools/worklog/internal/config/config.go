@@ -8,12 +8,64 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 )
 
 // Config is the on-disk shape of the worklog config file.
 type Config struct {
-	Scan Scan `yaml:"scan"`
+	Scan   Scan   `yaml:"scan"`
+	Remote Remote `yaml:"remote"`
+}
+
+// Remote configures a git upstream for the store. With no upstreams the store
+// stays a local-only git repo, which is the pre-remote behavior.
+type Remote struct {
+	// Push toggles auto commit+push after each store write; nil means true.
+	// It only matters when an upstream resolves for this machine.
+	Push *bool `yaml:"push"`
+	// Upstreams maps a machine profile label (from ralph's config.local.toml,
+	// e.g. "personal" or "work") to a git remote URL. The machine's first
+	// profile with an entry wins, so one fleet-shared config file can send
+	// each machine's store to its own private repo.
+	Upstreams map[string]string `yaml:"upstreams"`
+}
+
+// ResolveUpstream returns the remote URL for a machine with the given profile
+// labels: the first profile (in the given order) with an upstream entry.
+// Empty when no profile matches or no upstreams are configured.
+func (r Remote) ResolveUpstream(profiles []string) string {
+	for _, p := range profiles {
+		if url := r.Upstreams[p]; url != "" {
+			return url
+		}
+	}
+	return ""
+}
+
+// PushEnabled reports whether store writes should push to the upstream; an
+// unset push key means yes.
+func (r Remote) PushEnabled() bool {
+	return r.Push == nil || *r.Push
+}
+
+// MachineProfiles reads this machine's profile labels from ralph's
+// config.local.toml — the same per-machine, gitignored file belt reads.
+// $WORKLOG_RALPH_CONFIG overrides the path (tests); a missing or malformed
+// file means no profiles, which resolves to no upstream.
+func MachineProfiles() []string {
+	path := os.Getenv("WORKLOG_RALPH_CONFIG")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, ".config", "ralph", "config.local.toml")
+	}
+	var cfg struct {
+		Profiles []string `toml:"profiles"`
+	}
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		return nil
+	}
+	return cfg.Profiles
 }
 
 // Scan carries the ticket-firewall strings for `worklog scan`. Empty fields

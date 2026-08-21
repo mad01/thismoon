@@ -1,10 +1,14 @@
 // Package store manages the on-disk worklog tree: one directory per work item
 // (keyed by ticket id or topic slug), a CONTEXT.md contract per item, lazy
-// per-repo note files, and a local git history. There is no remote — the store
-// is machine-local by design so internal references never leave the machine.
+// per-repo note files, and a git history. The store is local-first; when a
+// Remote is configured it also keeps origin pointed at that URL, clones it on
+// a fresh machine, and pushes after each write. Which machine gets which
+// upstream is the config's problem (profile-keyed), keeping the personal and
+// work worlds in separate private repos.
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,10 +18,23 @@ import (
 	"time"
 )
 
+// ErrPush marks a write that was committed locally but could not be pushed to
+// the configured upstream. The write succeeded; callers surface this as a
+// warning, not a failure.
+var ErrPush = errors.New("worklog: push failed")
+
+// Remote is the store's resolved upstream: the git URL origin should point at
+// and whether writes push. The zero value means local-only.
+type Remote struct {
+	URL  string
+	Push bool
+}
+
 // Store is a worklog tree rooted at Root. Now is injectable for tests.
 type Store struct {
-	Root string
-	Now  func() time.Time
+	Root   string
+	Now    func() time.Time
+	Remote Remote
 }
 
 // DefaultRoot returns $WORKLOG_DIR, or ~/code/worklog.
@@ -58,28 +75,122 @@ func (s *Store) Exists(key string) bool {
 	return err == nil
 }
 
-// ensureGit initializes the store directory as a local git repo on first use.
+// ensureGit makes the store directory a usable git repo: cloning the upstream
+// when the directory is missing entirely (fresh machine), initializing
+// otherwise, and reconciling origin with the configured remote either way. An
+// existing local-only store therefore adopts a newly configured remote on its
+// next write.
 func (s *Store) ensureGit() error {
+	// A failed bootstrap clone (offline, bad URL) degrades to a local repo:
+	// the write must still succeed, and the push that follows reports the
+	// remote problem as ErrPush.
+	_ = s.EnsureCloned()
 	if err := os.MkdirAll(s.Root, 0o755); err != nil {
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(s.Root, ".git")); err == nil {
+	if _, err := os.Stat(filepath.Join(s.Root, ".git")); err != nil {
+		if err := s.git("init"); err != nil {
+			return err
+		}
+	}
+	return s.ensureOrigin()
+}
+
+// EnsureCloned clones the configured upstream when the store directory does
+// not exist yet — the fresh-machine bootstrap. With no remote, or with the
+// directory already present, it does nothing.
+func (s *Store) EnsureCloned() error {
+	if s.Remote.URL == "" {
 		return nil
 	}
-	return s.git("init")
+	if _, err := os.Stat(s.Root); err == nil || !os.IsNotExist(err) {
+		return err
+	}
+	cmd := exec.Command("git", "clone", s.Remote.URL, s.Root)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf(
+			"git clone %s: %w: %s",
+			s.Remote.URL,
+			err,
+			strings.TrimSpace(string(out)),
+		)
+	}
+	return nil
+}
+
+// ensureOrigin points origin at the configured remote URL, adding or
+// repointing it as needed. With no remote configured it leaves any manually
+// added origin alone.
+func (s *Store) ensureOrigin() error {
+	if s.Remote.URL == "" {
+		return nil
+	}
+	current, err := s.gitOut("remote", "get-url", "origin")
+	if err != nil {
+		return s.git("remote", "add", "origin", s.Remote.URL)
+	}
+	if current != s.Remote.URL {
+		return s.git("remote", "set-url", "origin", s.Remote.URL)
+	}
+	return nil
+}
+
+// maybePush pushes the current branch to origin when the remote asks for it.
+// Failures come back wrapped in ErrPush so callers can downgrade them to a
+// warning — the local write already succeeded.
+func (s *Store) maybePush() error {
+	if s.Remote.URL == "" || !s.Remote.Push {
+		return nil
+	}
+	branch, err := s.gitOut("rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrPush, err)
+	}
+	if err := s.git("push", "-u", "origin", branch); err != nil {
+		return fmt.Errorf("%w: %s", ErrPush, err)
+	}
+	return nil
+}
+
+// Sync reconciles the store with its upstream: fast-forward pull, then push.
+// A remote with no commits yet (nothing to pull from) is fine; anything else
+// that blocks the pull — divergence, auth — is an error.
+func (s *Store) Sync() error {
+	if s.Remote.URL == "" {
+		return fmt.Errorf("worklog: no remote configured for this machine")
+	}
+	if err := s.ensureGit(); err != nil {
+		return err
+	}
+	branch, err := s.gitOut("rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	if err := s.git("pull", "--ff-only", "origin", branch); err != nil {
+		if !strings.Contains(err.Error(), "couldn't find remote ref") {
+			return err
+		}
+	}
+	return s.git("push", "-u", "origin", branch)
 }
 
 func (s *Store) git(args ...string) error {
+	_, err := s.gitOut(args...)
+	return err
+}
+
+func (s *Store) gitOut(args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", s.Root}, args...)...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf(
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf(
 			"git %s: %w: %s",
 			strings.Join(args, " "),
 			err,
 			strings.TrimSpace(string(out)),
 		)
 	}
-	return nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // commit stages everything and commits. A no-op tree (nothing changed) is not

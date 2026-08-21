@@ -50,3 +50,58 @@ func TestLoadMalformedFileIsZero(t *testing.T) {
 		t.Errorf("expected zero config for malformed yaml, got %+v", c)
 	}
 }
+
+func TestRemoteResolveUpstream(t *testing.T) {
+	r := Remote{Upstreams: map[string]string{
+		"personal": "git@example.com:me/personal.git",
+		"work":     "git@example.com:me/work.git",
+	}}
+	tests := []struct {
+		name     string
+		profiles []string
+		want     string
+	}{
+		{"first profile wins", []string{"work", "personal"}, "git@example.com:me/work.git"},
+		{"personal machine", []string{"personal"}, "git@example.com:me/personal.git"},
+		{"unknown profile", []string{"lab"}, ""},
+		{"no profiles", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := r.ResolveUpstream(tt.profiles); got != tt.want {
+				t.Errorf("ResolveUpstream(%v) = %q, want %q", tt.profiles, got, tt.want)
+			}
+		})
+	}
+	if got := (Remote{}).ResolveUpstream([]string{"personal"}); got != "" {
+		t.Errorf("no upstreams: got %q, want empty", got)
+	}
+}
+
+func TestRemotePushEnabled(t *testing.T) {
+	off, on := false, true
+	if !(Remote{}).PushEnabled() {
+		t.Error("unset push should be enabled")
+	}
+	if (Remote{Push: &off}).PushEnabled() {
+		t.Error("push: false should disable")
+	}
+	if !(Remote{Push: &on}).PushEnabled() {
+		t.Error("push: true should enable")
+	}
+}
+
+func TestMachineProfiles(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.local.toml")
+	t.Setenv("WORKLOG_RALPH_CONFIG", p)
+	if got := MachineProfiles(); got != nil {
+		t.Errorf("missing file: got %v, want nil", got)
+	}
+	if err := os.WriteFile(p, []byte("profiles = [\"work\", \"lab\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := MachineProfiles()
+	if len(got) != 2 || got[0] != "work" || got[1] != "lab" {
+		t.Errorf("MachineProfiles() = %v, want [work lab]", got)
+	}
+}

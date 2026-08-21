@@ -138,7 +138,9 @@ func (s *Store) Checkpoint(key string, in CheckpointInput) (*Item, error) {
 	if err := s.commit(fmt.Sprintf("worklog: checkpoint %s", key)); err != nil {
 		return nil, err
 	}
-	return it, nil
+	// The item is returned even when only the push fails (ErrPush): the write
+	// and local commit succeeded, and callers report the push as a warning.
+	return it, s.maybePush()
 }
 
 func (s *Store) writeItem(it *Item) error {
@@ -182,7 +184,8 @@ func (s *Store) SetStatus(key, status string) (*Item, error) {
 	if err := s.commit(fmt.Sprintf("worklog: %s -> %s", key, status)); err != nil {
 		return nil, err
 	}
-	return it, nil
+	// Same contract as Checkpoint: an ErrPush still carries the updated item.
+	return it, s.maybePush()
 }
 
 // RepoNote returns the markdown of an item's per-repo note file.

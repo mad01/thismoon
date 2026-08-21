@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -41,11 +42,58 @@ func root() *cobra.Command {
 		searchCmd(),
 		statusCmd(),
 		pathCmd(),
+		syncCmd(),
 		scanCmd(),
 		configCmd(),
 		mcpCmd(),
 	)
 	return c
+}
+
+// newStore returns the store wired with the upstream resolved from the config
+// for this machine's profile, cloning it first when the store directory is
+// missing (fresh machine). A failed bootstrap clone degrades to the local-only
+// store with a warning — worklog must keep working offline.
+func newStore() *store.Store {
+	s := store.New("")
+	s.Remote = resolveRemote()
+	if err := s.EnsureCloned(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	}
+	return s
+}
+
+// resolveRemote maps the config's profile-keyed upstreams onto this machine.
+func resolveRemote() store.Remote {
+	rc := config.Load().Remote
+	url := rc.ResolveUpstream(config.MachineProfiles())
+	return store.Remote{URL: url, Push: url != "" && rc.PushEnabled()}
+}
+
+// warnPush downgrades a push failure to a stderr warning: the write and local
+// commit already succeeded, so the command itself did not fail.
+func warnPush(err error) error {
+	if errors.Is(err, store.ErrPush) {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		return nil
+	}
+	return err
+}
+
+func syncCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync",
+		Short: "Pull the store's upstream (fast-forward only) and push local commits",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s := newStore()
+			if err := s.Sync(); err != nil {
+				return err
+			}
+			fmt.Println("synced", s.Remote.URL)
+			return nil
+		},
+	}
 }
 
 func scanCmd() *cobra.Command {
@@ -108,7 +156,7 @@ func newCmd() *cobra.Command {
 		Short: "Create a new work item",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := store.New("")
+			s := newStore()
 			key := store.Sanitize(args[0])
 			if s.Exists(key) {
 				return fmt.Errorf("item %q already exists", key)
@@ -117,7 +165,7 @@ func newCmd() *cobra.Command {
 			it, err := s.Checkpoint(key, store.CheckpointInput{
 				Ticket: ticket, Topic: topic, Repo: repo, Cwd: cwd(),
 			})
-			if err != nil {
+			if err = warnPush(err); err != nil {
 				return err
 			}
 			fmt.Printf("created %s\n", it.FM.Key)
@@ -136,7 +184,7 @@ func checkpointCmd() *cobra.Command {
 		Short: "Append a checkpoint to a work item (creates it if missing)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := store.New("")
+			s := newStore()
 			key := store.Sanitize(args[0])
 			if where == "" && note == "" {
 				return fmt.Errorf("nothing to record: pass --where and/or --note")
@@ -147,7 +195,7 @@ func checkpointCmd() *cobra.Command {
 			it, err := s.Checkpoint(key, store.CheckpointInput{
 				Ticket: ticket, Topic: topic, Where: where, Note: note, Repo: repo, Cwd: cwd(),
 			})
-			if err != nil {
+			if err = warnPush(err); err != nil {
 				return err
 			}
 			scope := repo
@@ -173,7 +221,7 @@ func listCmd() *cobra.Command {
 		Short: "List work items (newest first)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := store.New("")
+			s := newStore()
 			items, err := s.List(status, repo)
 			if err != nil {
 				return err
@@ -206,7 +254,7 @@ func showCmd() *cobra.Command {
 		Short: "Print a work item's CONTEXT.md (or a repo note with --repo)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := store.New("")
+			s := newStore()
 			key := store.Sanitize(args[0])
 			if repo != "" {
 				note, err := s.RepoNote(key, repo)
@@ -238,7 +286,7 @@ func searchCmd() *cobra.Command {
 		Short: "Search items by key and content (active first)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := store.New("")
+			s := newStore()
 			hits, err := s.Search(strings.Join(args, " "))
 			if err != nil {
 				return err
@@ -266,8 +314,8 @@ func statusCmd() *cobra.Command {
 			if st != "active" && st != "paused" && st != "done" {
 				return fmt.Errorf("status must be active, paused, or done")
 			}
-			it, err := store.New("").SetStatus(store.Sanitize(args[0]), st)
-			if err != nil {
+			it, err := newStore().SetStatus(store.Sanitize(args[0]), st)
+			if err = warnPush(err); err != nil {
 				return err
 			}
 			fmt.Printf("%s -> %s\n", it.FM.Key, it.FM.Status)
@@ -282,7 +330,7 @@ func pathCmd() *cobra.Command {
 		Short: "Print the store root, or an item's directory",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := store.New("")
+			s := newStore()
 			if len(args) == 0 {
 				fmt.Println(s.Root)
 				return nil

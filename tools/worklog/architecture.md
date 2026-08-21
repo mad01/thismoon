@@ -53,8 +53,10 @@ writes to the store.
 
 ## Storage
 
-The store root is `~/code/worklog/` (override: `$WORKLOG_DIR`), a local git
-repo with no remote, initialized on first write. One directory per item:
+The store root is `~/code/worklog/` (override: `$WORKLOG_DIR`), a git repo
+initialized on first write. With no `remote:` config it stays local-only;
+with one, the store clones/pushes to a per-machine private upstream (see the
+config reference in `worklog config --help`). One directory per item:
 
 ```
 <key>/
