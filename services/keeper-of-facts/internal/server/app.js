@@ -68,6 +68,29 @@
     return t ? 'checked ' + t : 'never checked';
   }
 
+  // relTime renders an ISO timestamp as a short "Xs/m/h/d ago", the same shape
+  // the events timeline uses. It sits alongside fmtTime rather than replacing
+  // it: the card head answers "how recent is this?", the details block below
+  // still wants the exact local time.
+  function relTime(iso) {
+    var d = new Date(iso), s = Math.max(0, (Date.now() - d.getTime()) / 1000);
+    if (s < 60) return Math.floor(s) + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  // timeEl renders when an assertion was recorded, carrying its ISO time in
+  // data-iso so refreshTimes() can re-derive the label between the 60s
+  // re-renders. Hovering gives the exact time. Returns null for an absent or
+  // zero timestamp so the caller can skip it; created_at is always set in
+  // practice, but a hand-edited store shouldn't render "56y ago".
+  function timeEl(iso) {
+    var exact = fmtTime(iso);
+    if (!exact) return null;
+    return Webkit.el('span', { class: 'a-time', 'data-iso': iso, title: exact }, relTime(iso));
+  }
+
   // statusBadge maps status → a distinct wk-badge variant + label.
   function statusBadge(a) {
     if (a.status === 'fresh') return { variant: 'ok', label: 'fresh' };
@@ -152,6 +175,11 @@
       Webkit.el('wk-badge', { variant: sb.variant }, sb.label),
       Webkit.el('wk-badge', { variant: 'stat' }, a.confidence)
     ];
+
+    // When the assertion was recorded, leading the head row — same position
+    // the events timeline puts it in.
+    var recorded = timeEl(a.created_at);
+    if (recorded) head.unshift(recorded);
 
     var kids = [
       Webkit.el('div', { class: 'a-head' }, head),
@@ -270,9 +298,19 @@
       .catch(renderError);
   }
 
+  // refreshTimes re-derives the relative labels in place. Without it a card
+  // would keep claiming "3m ago" until the next full re-render, which is up to
+  // a minute away — so this ticks faster than refresh() and touches only text.
+  function refreshTimes() {
+    app.querySelectorAll('[data-iso]').forEach(function (node) {
+      node.textContent = relTime(node.dataset.iso);
+    });
+  }
+
   // refresh() honours the current filters, so drive the 60s live refresh with
   // it rather than Webkit.poll (whose URL is fixed at call time and would clobber
   // a filtered view). One immediate fetch, then every 60s.
   refresh();
   setInterval(refresh, 60000);
+  setInterval(refreshTimes, 7000);
 })();
