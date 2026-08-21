@@ -149,6 +149,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Test recipes
+        run: make test-recipes
+
       # go list exits non-zero both when the module has no packages AND when a
       # package is broken — only the first may skip; the second must fail loud
       # (a broken go:embed once turned this job into a silent false green).

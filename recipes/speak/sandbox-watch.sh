@@ -51,7 +51,7 @@ LOGFILE="${SANDBOX_WATCH_LOG:-$HOME/.local/share/speak/logs/sandbox-denials.log}
 NOTIFYLOG="${SANDBOX_WATCH_NOTIFY_LOG:-$HOME/.local/share/speak/logs/sandbox-notifications.log}"
 WINDOW="${SANDBOX_WATCH_WINDOW:-60}"   # notification batch cadence (seconds)
 TICK="${SANDBOX_WATCH_TICK:-5}"        # stream read timeout / flush check (seconds)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IGNORE_FILE="${SANDBOX_WATCH_IGNORE_FILE:-$SCRIPT_DIR/sandbox-ignore.conf}"
 LOCAL_IGNORE_FILE="${SANDBOX_WATCH_LOCAL_IGNORE_FILE:-$HOME/.config/sandbox-watch/ignore.conf}"
 
@@ -114,12 +114,12 @@ batch_first=""
 batch_unique=""        # newline-separated unique ALERT summaries this window
 batch_unique_n=0
 UNIQUE_CAP=10          # cap per notification record; the full stream is in LOGFILE
-last_flush=$(/bin/date +%s)
+batch_started=0        # epoch when the first ALERT entered the current batch
 
 flush() {
   local now ts
   now=$(/bin/date +%s)
-  if [ "$batch_count" -gt 0 ] && [ $((now - last_flush)) -ge "$WINDOW" ]; then
+  if [ "$batch_count" -gt 0 ] && [ $((now - batch_started)) -ge "$WINDOW" ]; then
     /usr/bin/osascript -e "display notification \"${batch_first:0:160}\" with title \"sandbox: ${batch_count} new denial(s)\" subtitle \"tail ${LOGFILE/#$HOME/~}\" sound name \"Funk\"" >/dev/null 2>&1 || true
     # Also archive the banner as an event (events.this). Best-effort and
     # fire-and-forget — never block or fail the watcher if events is down.
@@ -151,7 +151,7 @@ flush() {
     batch_first=""
     batch_unique=""
     batch_unique_n=0
-    last_flush=$now
+    batch_started=0
   fi
 }
 
@@ -167,6 +167,7 @@ handle_line() {
     printf '%s\tIGNORED\t%s\n' "$ts" "$summary" >> "$LOGFILE"
   else
     printf '%s\tALERT\t%s\n' "$ts" "$summary" >> "$LOGFILE"
+    [ "$batch_count" -eq 0 ] && batch_started=$(/bin/date +%s)
     batch_count=$((batch_count + 1))
     [ -z "$batch_first" ] && batch_first=$summary
     if [ "$batch_unique_n" -lt "$UNIQUE_CAP" ] && \
@@ -182,16 +183,22 @@ handle_line() {
 # timeout so batched notifications flush even when the stream is quiet; on EOF
 # (stream died) break to restart in place — the agent never exits, so there's
 # no KeepAlive-restart gap.
-while :; do
+main() {
   while :; do
-    if IFS= read -r -t "$TICK" line <&3; then
-      handle_line "$line"
-    else
-      [ $? -le 128 ] && break   # EOF: stream ended; >128 = tick timeout
-    fi
+    while :; do
+      if IFS= read -r -t "$TICK" line <&3; then
+        handle_line "$line"
+      else
+        [ $? -le 128 ] && break   # EOF: stream ended; >128 = tick timeout
+      fi
+      flush
+    done 3< <(/usr/bin/log stream --style ndjson \
+      --predicate 'eventMessage CONTAINS "deny(1)"')
     flush
-  done 3< <(/usr/bin/log stream --style ndjson \
-    --predicate 'eventMessage CONTAINS "deny(1)"')
-  flush
-  sleep 1
-done
+    sleep 1
+  done
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main
+fi
