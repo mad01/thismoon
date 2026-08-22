@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -62,11 +63,24 @@ func newStubServer(t *testing.T) *httptest.Server {
 		writeJSON(w, http.StatusCreated, a)
 	})
 
-	mux.HandleFunc("GET /api/assertions", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/assertions", func(w http.ResponseWriter, r *http.Request) {
+		subject := r.URL.Query().Get("subject")
+		kind := r.URL.Query().Get("kind")
+		status := r.URL.Query().Get("status")
 		s.mu.Lock()
 		list := make([]client.Assertion, 0, len(s.order))
 		for _, id := range s.order {
-			list = append(list, s.byID[id])
+			a := s.byID[id]
+			if subject != "" && !strings.HasPrefix(a.Subject, subject) {
+				continue
+			}
+			if kind != "" && a.Kind != kind {
+				continue
+			}
+			if status != "" && a.Status != status {
+				continue
+			}
+			list = append(list, a)
 		}
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, struct {
@@ -259,5 +273,102 @@ func TestServeUnreachableError(t *testing.T) {
 	_, _, err := h.handleQuery(context.Background(), nil, queryInput{})
 	if err == nil {
 		t.Fatal("want error when serve is unreachable")
+	}
+}
+
+func TestQueryEmptyStoreCarriesZeroHint(t *testing.T) {
+	h := testHandlers(t)
+
+	_, res, err := h.handleQuery(context.Background(), nil, queryInput{})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if res.ZeroHint == nil {
+		t.Fatal("want zero_result_hint on empty store")
+	}
+	if res.ZeroHint.StoreAssertions != 0 {
+		t.Errorf("store_assertions = %d, want 0", res.ZeroHint.StoreAssertions)
+	}
+	if len(res.ZeroHint.Notes) != 1 {
+		t.Errorf("notes = %v, want the empty-store note", res.ZeroHint.Notes)
+	}
+}
+
+func TestQuerySubjectPrefixMissCarriesShorterPrefixNote(t *testing.T) {
+	h := testHandlers(t)
+	ctx := context.Background()
+
+	_, _, _ = h.handleAssert(ctx, nil, assertInput{
+		Kind: "code-behavior", Subject: "repo:mad01/thismoon/services/events",
+		Statement: "x", Confidence: "derived", SessionID: "s", Pins: validPins(),
+	})
+
+	_, res, err := h.handleQuery(ctx, nil, queryInput{
+		Subject: "repo:mad01/thismoon/services/nosuch",
+	})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(res.Assertions) != 0 {
+		t.Fatalf("want empty result, got %d", len(res.Assertions))
+	}
+	hint := res.ZeroHint
+	if hint == nil {
+		t.Fatal("want zero_result_hint")
+	}
+	if hint.SubjectsMatched != 0 || hint.SubjectsStored != 1 || hint.StoreAssertions != 1 {
+		t.Errorf("hint = %+v, want matched=0 stored=1 assertions=1", hint)
+	}
+	if len(hint.Notes) != 1 || !strings.Contains(hint.Notes[0], `"repo:mad01/thismoon/services"`) {
+		t.Errorf("notes = %v, want a shorter-prefix suggestion", hint.Notes)
+	}
+}
+
+func TestQueryFiltersExcludedMatchesCarriesFilterNote(t *testing.T) {
+	h := testHandlers(t)
+	ctx := context.Background()
+
+	_, _, _ = h.handleAssert(ctx, nil, assertInput{
+		Kind: "code-behavior", Subject: "repo:mad01/thismoon",
+		Statement: "x", Confidence: "derived", SessionID: "s", Pins: validPins(),
+	})
+
+	_, res, err := h.handleQuery(ctx, nil, queryInput{
+		Subject: "repo:mad01/thismoon",
+		Status:  "retracted",
+	})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	hint := res.ZeroHint
+	if hint == nil {
+		t.Fatal("want zero_result_hint")
+	}
+	if hint.SubjectsMatched != 1 {
+		t.Errorf("subjects_matched = %d, want 1", hint.SubjectsMatched)
+	}
+	if len(hint.Notes) != 1 || !strings.Contains(hint.Notes[0], "kind/status") {
+		t.Errorf("notes = %v, want the filter-excluded note", hint.Notes)
+	}
+}
+
+func TestQueryNonEmptyResultHasNoZeroHint(t *testing.T) {
+	h := testHandlers(t)
+	ctx := context.Background()
+
+	_, _, _ = h.handleAssert(ctx, nil, assertInput{
+		Kind: "code-behavior", Subject: "repo:mad01/thismoon",
+		Statement: "x", Confidence: "derived", SessionID: "s", Pins: validPins(),
+	})
+
+	_, res, err := h.handleQuery(ctx, nil, queryInput{Subject: "repo:mad01"})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(res.Assertions) != 1 {
+		t.Fatalf("want 1 assertion, got %d", len(res.Assertions))
+	}
+	if res.ZeroHint != nil {
+		t.Errorf("zero_result_hint must be absent on non-empty results, got %+v", res.ZeroHint)
 	}
 }

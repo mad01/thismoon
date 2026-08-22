@@ -66,7 +66,8 @@ func handleShowFile(
 	}
 	if in.StartLine > 0 && in.EndLine > 0 && in.StartLine > in.EndLine {
 		return nil, showFileOutput{}, fmt.Errorf(
-			"start_line (%d) must be <= end_line (%d)", in.StartLine, in.EndLine)
+			"start_line (%d) must be <= end_line (%d)", in.StartLine, in.EndLine,
+		)
 	}
 
 	matched, err := resolveRepo(in.Repo)

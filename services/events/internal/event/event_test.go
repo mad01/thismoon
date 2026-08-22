@@ -2,6 +2,7 @@ package event
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -101,5 +102,24 @@ func TestNewIDOrdering(t *testing.T) {
 	}
 	if len(id1) != len(id2) {
 		t.Errorf("ids should be fixed width: %d vs %d", len(id1), len(id2))
+	}
+}
+
+func TestTimeFromID(t *testing.T) {
+	stamp := time.Date(2026, 8, 22, 10, 30, 0, 123, time.UTC)
+	id := NewID(stamp, strings.NewReader("ab"))
+
+	got, ok := TimeFromID(id)
+	if !ok {
+		t.Fatalf("TimeFromID(%q) not ok", id)
+	}
+	if !got.Equal(stamp) {
+		t.Errorf("TimeFromID = %v, want %v", got, stamp)
+	}
+
+	for _, bad := range []string{"", "short", "not-a-number-prefix-x"} {
+		if _, ok := TimeFromID(bad); ok {
+			t.Errorf("TimeFromID(%q) ok = true, want false", bad)
+		}
 	}
 }

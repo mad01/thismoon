@@ -143,7 +143,7 @@ func SearchWith(
 	opts SearchOptions,
 	repoNames map[string]string,
 ) ([]Match, error) {
-	qStr := buildQueryString(opts)
+	qStr := BuildQueryString(opts)
 	q, err := query.Parse(qStr)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -271,8 +271,10 @@ func ValidateQuery(pattern string) QueryInfo {
 	}
 }
 
-// buildQueryString combines SearchOptions into a zoekt query string.
-func buildQueryString(opts SearchOptions) string {
+// BuildQueryString combines SearchOptions into the zoekt query string a
+// search actually runs, with repo/file/lang/case filters folded in. Exported
+// so zero-result hints can show the effective query as zoekt parsed it.
+func BuildQueryString(opts SearchOptions) string {
 	parts := []string{opts.Pattern}
 	if opts.RepoFilter != "" {
 		parts = append(parts, "repo:"+opts.RepoFilter)

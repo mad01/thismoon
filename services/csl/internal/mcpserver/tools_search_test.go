@@ -2,8 +2,11 @@ package mcpserver
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -147,5 +150,207 @@ func TestBuildSearchOutput_FilesDeduplicated(t *testing.T) {
 	}
 	if out.Truncated {
 		t.Error("expected truncated=false for 1 unique file")
+	}
+}
+
+func TestQueryTrapNotes(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{name: "clean query", query: "foo|bar", want: 0},
+		{name: "spaced pipe", query: "foo | bar", want: 1},
+		{name: "uppercase OR", query: "foo OR bar", want: 1},
+		{name: "both traps", query: "foo | bar OR baz", want: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := queryTrapNotes(tt.query)
+			if len(got) != tt.want {
+				t.Errorf(
+					"queryTrapNotes(%q) = %d notes %v, want %d",
+					tt.query,
+					len(got),
+					got,
+					tt.want,
+				)
+			}
+		})
+	}
+}
+
+func TestBuildZeroHint_RepoFilterMatchesNone(t *testing.T) {
+	repos := []finder.Repo{
+		{Name: "org/alpha", Path: "/tmp/alpha"},
+		{Name: "org/beta", Path: "/tmp/beta"},
+	}
+	in := searchInput{Query: "foo", Repo: "nosuchrepo"}
+	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
+
+	hint := buildZeroHint(in, opts, repos, t.TempDir())
+
+	if hint.ReposDiscovered != 2 {
+		t.Errorf("expected repos_discovered=2, got %d", hint.ReposDiscovered)
+	}
+	if hint.ReposSearched != 0 {
+		t.Errorf("expected repos_searched=0 for non-matching filter, got %d", hint.ReposSearched)
+	}
+	if len(hint.Notes) != 1 {
+		t.Fatalf("expected 1 note about the repo filter, got %v", hint.Notes)
+	}
+}
+
+func TestBuildZeroHint_RepoFilterCaseInsensitive(t *testing.T) {
+	indexDir := t.TempDir()
+	state := search.EmptyState()
+	state.Repos["/tmp/alpha"] = search.RepoState{IndexedAt: time.Now()}
+	state.Repos["/tmp/beta"] = search.RepoState{IndexedAt: time.Now()}
+	if err := state.Save(indexDir); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	repos := []finder.Repo{
+		{Name: "org/Alpha", Path: "/tmp/alpha"},
+		{Name: "org/beta", Path: "/tmp/beta"},
+	}
+	in := searchInput{Query: "foo", Repo: "alpha"}
+	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
+
+	hint := buildZeroHint(in, opts, repos, indexDir)
+
+	if hint.ReposSearched != 1 {
+		t.Errorf("expected repos_searched=1 (case-insensitive match), got %d", hint.ReposSearched)
+	}
+	if len(hint.Notes) != 0 {
+		t.Errorf("expected no notes when the filter matches, got %v", hint.Notes)
+	}
+}
+
+func TestBuildZeroHint_MatchedButUnindexedRepoCarriesNote(t *testing.T) {
+	indexDir := t.TempDir()
+	state := search.EmptyState()
+	state.Repos["/tmp/beta"] = search.RepoState{IndexedAt: time.Now()}
+	if err := state.Save(indexDir); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	repos := []finder.Repo{
+		{Name: "org/alpha", Path: "/tmp/alpha"},
+		{Name: "org/beta", Path: "/tmp/beta"},
+	}
+	in := searchInput{Query: "foo", Repo: "alpha"}
+	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
+
+	hint := buildZeroHint(in, opts, repos, indexDir)
+
+	if hint.ReposSearched != 0 {
+		t.Errorf("expected repos_searched=0 for a matched-but-unindexed repo, got %d",
+			hint.ReposSearched)
+	}
+	if len(hint.Notes) != 1 || !strings.Contains(hint.Notes[0], "not in the search index") {
+		t.Errorf("notes = %v, want the unindexed-repo note", hint.Notes)
+	}
+}
+
+func TestBuildZeroHint_WhitespaceRepoFilterCarriesNote(t *testing.T) {
+	repos := []finder.Repo{{Name: "org/alpha", Path: "/tmp/alpha"}}
+	in := searchInput{Query: "foo", Repo: "my repo"}
+	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
+
+	hint := buildZeroHint(in, opts, repos, t.TempDir())
+
+	if len(hint.Notes) != 1 || !strings.Contains(hint.Notes[0], "whitespace") {
+		t.Errorf("notes = %v, want the whitespace-filter note", hint.Notes)
+	}
+}
+
+func TestBuildZeroHint_ZeroIndexedAtEntriesSkipped(t *testing.T) {
+	indexDir := t.TempDir()
+	state := search.EmptyState()
+	stamp := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	state.Repos["/tmp/alpha"] = search.RepoState{IndexedAt: stamp}
+	state.Repos["/tmp/beta"] = search.RepoState{} // zero IndexedAt, e.g. legacy state
+	if err := state.Save(indexDir); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	repos := []finder.Repo{{Name: "org/alpha", Path: "/tmp/alpha"}}
+	in := searchInput{Query: "foo"}
+	opts := search.SearchOptions{Pattern: in.Query}
+
+	hint := buildZeroHint(in, opts, repos, indexDir)
+
+	want := stamp.Format(time.RFC3339)
+	if hint.NewestIndexedAt != want || hint.OldestIndexedAt != want {
+		t.Errorf("index age = %q / %q, want both %q (zero entries skipped)",
+			hint.NewestIndexedAt, hint.OldestIndexedAt, want)
+	}
+}
+
+func TestQueryTrapNotes_QuotedOperatorsIgnored(t *testing.T) {
+	if notes := queryTrapNotes(`"dead OR alive"`); len(notes) != 0 {
+		t.Errorf("quoted phrase produced trap notes: %v", notes)
+	}
+	if notes := queryTrapNotes(`"a | b"`); len(notes) != 0 {
+		t.Errorf("quoted pipe produced trap notes: %v", notes)
+	}
+}
+
+func TestBuildZeroHint_ParsedQueryAndIndexAge(t *testing.T) {
+	indexDir := t.TempDir()
+	state := search.EmptyState()
+	older := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	state.Repos["/tmp/alpha"] = search.RepoState{IndexedAt: older}
+	state.Repos["/tmp/beta"] = search.RepoState{IndexedAt: newer}
+	if err := state.Save(indexDir); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	repos := []finder.Repo{{Name: "org/alpha", Path: "/tmp/alpha"}}
+	in := searchInput{Query: "foo bar"}
+	opts := search.SearchOptions{Pattern: in.Query}
+
+	hint := buildZeroHint(in, opts, repos, indexDir)
+
+	if hint.ParsedQuery == "" {
+		t.Error("expected parsed_query to be set for a valid query")
+	}
+	if hint.ReposIndexed != 2 {
+		t.Errorf("expected repos_indexed=2, got %d", hint.ReposIndexed)
+	}
+	if hint.NewestIndexedAt != newer.Format(time.RFC3339) {
+		t.Errorf(
+			"expected newest_indexed_at=%s, got %s",
+			newer.Format(time.RFC3339),
+			hint.NewestIndexedAt,
+		)
+	}
+	if hint.OldestIndexedAt != older.Format(time.RFC3339) {
+		t.Errorf(
+			"expected oldest_indexed_at=%s, got %s",
+			older.Format(time.RFC3339),
+			hint.OldestIndexedAt,
+		)
+	}
+	if hint.ReposSearched != 1 {
+		t.Errorf("expected repos_searched=1 with no filter, got %d", hint.ReposSearched)
+	}
+}
+
+func TestBuildZeroHint_MissingStateOmitsIndexFields(t *testing.T) {
+	repos := []finder.Repo{{Name: "org/alpha", Path: "/tmp/alpha"}}
+	in := searchInput{Query: "foo"}
+	opts := search.SearchOptions{Pattern: in.Query}
+
+	hint := buildZeroHint(in, opts, repos, t.TempDir())
+
+	if hint.ReposIndexed != 0 {
+		t.Errorf("expected repos_indexed=0 with no state file, got %d", hint.ReposIndexed)
+	}
+	if hint.NewestIndexedAt != "" || hint.OldestIndexedAt != "" {
+		t.Errorf(
+			"expected empty index-age fields, got %q / %q",
+			hint.NewestIndexedAt,
+			hint.OldestIndexedAt,
+		)
 	}
 }

@@ -58,12 +58,14 @@ func registerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_list",
 		Description: "List work items, newest first. Filter by status (active|paused|done) or repo. " +
-			"Use to answer 'what was I working on' or to find an item to resume.",
+			"Use to answer 'what was I working on' or to find an item to resume. " +
+			"On zero results the response carries zero_result_hint (how many items the store holds) — read it to tell a filter miss from an empty or unclonable store.",
 	}, handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "worklog_search",
-		Description: "Search work items by key and content (active items first). Use to find a past task by ticket, topic, or keyword.",
+		Name: "worklog_search",
+		Description: "Search work items by key and content (active items first). Use to find a past task by ticket, topic, or keyword. " +
+			"On zero results the response carries zero_result_hint (how many items the store holds) — read it to tell a query miss from an empty or unclonable store.",
 	}, handleSearch)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -122,7 +124,36 @@ type listInput struct {
 }
 
 type listOutput struct {
-	Items []itemView `json:"items"`
+	Items    []itemView    `json:"items"`
+	ZeroHint *listZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how many items the store actually holds, so a filter or query miss is distinguishable from an empty or unclonable store"`
+}
+
+// listZeroHint explains an empty worklog_list or worklog_search so an agent
+// can tell "the filters missed" from "nothing is checkpointed" — the store
+// degrades to local-only silently when its clone fails, so an unexpected
+// empty store is worth naming. Additive: it appears only on zero results.
+type listZeroHint struct {
+	ItemsStored int      `json:"items_stored" jsonschema:"work items in the store regardless of filters"`
+	Notes       []string `json:"notes,omitempty" jsonschema:"one note naming why the result is empty"`
+}
+
+// buildZeroHint counts the unfiltered store. Best-effort: it returns nil when
+// the extra lookup fails, leaving the plain empty result. filteredNote phrases
+// the miss for the caller's filter or query.
+func buildZeroHint(s *store.Store, filteredNote string) *listZeroHint {
+	all, err := s.List("", "")
+	if err != nil {
+		return nil
+	}
+	hint := &listZeroHint{ItemsStored: len(all)}
+	if len(all) == 0 {
+		hint.Notes = []string{
+			"the store holds no items: nothing has been checkpointed on this machine, or the store clone failed silently (run 'worklog docs' to debug)",
+		}
+		return hint
+	}
+	hint.Notes = []string{fmt.Sprintf("%d items stored; %s", len(all), filteredNote)}
+	return hint
 }
 
 func handleList(
@@ -130,11 +161,16 @@ func handleList(
 	_ *mcp.CallToolRequest,
 	in listInput,
 ) (*mcp.CallToolResult, listOutput, error) {
-	items, err := newStore().List(in.Status, in.Repo)
+	s := newStore()
+	items, err := s.List(in.Status, in.Repo)
 	if err != nil {
 		return nil, listOutput{}, err
 	}
-	return nil, listOutput{Items: toViews(items)}, nil
+	out := listOutput{Items: toViews(items)}
+	if len(items) == 0 {
+		out.ZeroHint = buildZeroHint(s, "the status/repo filter matched none")
+	}
+	return nil, out, nil
 }
 
 type searchInput struct {
@@ -146,11 +182,16 @@ func handleSearch(
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, listOutput, error) {
-	hits, err := newStore().Search(in.Query)
+	s := newStore()
+	hits, err := s.Search(in.Query)
 	if err != nil {
 		return nil, listOutput{}, err
 	}
-	return nil, listOutput{Items: toViews(hits)}, nil
+	out := listOutput{Items: toViews(hits)}
+	if len(hits) == 0 {
+		out.ZeroHint = buildZeroHint(s, fmt.Sprintf("no key or content contains %q", in.Query))
+	}
+	return nil, out, nil
 }
 
 type showInput struct {

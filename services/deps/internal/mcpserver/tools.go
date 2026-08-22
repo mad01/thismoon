@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -31,7 +33,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_list_flagged",
 		Description: "Return the flagged packages from the most recent check WITHOUT re-scanning (fast, no network). " +
-			"Use after deps_check to re-read the findings. Each advisory carries a `key` and a `resolved` flag.",
+			"Use after deps_check to re-read the findings. Each advisory carries a `key` and a `resolved` flag. " +
+			"An empty flagged list with total > 0 means the persisted inventory carries no unresolved advisories (run deps_check to re-verify against OSV); with total == 0 the response carries zero_result_hint, because an empty store means nothing was checked, not that anything is clean.",
 	}, h.handleListFlagged)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -73,6 +76,14 @@ type flaggedOut struct {
 	FlaggedCount int              `json:"flagged_count" jsonschema_description:"number of dependencies with at least one UNRESOLVED advisory"`
 	Flagged      []api.Dependency `json:"flagged"       jsonschema_description:"the flagged dependencies; each advisory has a key and a resolved flag"`
 	URL          string           `json:"url"           jsonschema_description:"web page where the user can view findings"`
+	ZeroHint     *flaggedZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set by deps_list_flagged only, when the store holds zero dependencies: an empty flagged list then means nothing was checked, not that the dependencies are clean"`
+}
+
+// flaggedZeroHint explains a deps_list_flagged response whose store holds no
+// dependencies at all — the one case where an empty flagged list must not be
+// read as clean. Additive: it appears only when total is zero.
+type flaggedZeroHint struct {
+	Notes []string `json:"notes" jsonschema:"why the store is empty and what to run"`
 }
 
 func (h *handlers) flagged(res client.CheckResult) flaggedOut {
@@ -105,7 +116,26 @@ func (h *handlers) handleListFlagged(
 	if err != nil {
 		return nil, flaggedOut{}, err
 	}
-	return nil, h.flagged(res), nil
+	out := h.flagged(res)
+	if out.Total == 0 {
+		out.ZeroHint = flaggedZero(res)
+	}
+	return nil, out, nil
+}
+
+// flaggedZero phrases the empty-store hint. ScannedAt tells "nothing ever
+// ran" apart from "a scan completed but discovered zero dependencies" (an
+// empty or fully excluded catalog).
+func flaggedZero(res client.CheckResult) *flaggedZeroHint {
+	if res.ScannedAt.IsZero() {
+		return &flaggedZeroHint{Notes: []string{
+			"no scan or check has completed on this machine, so an empty flagged list means nothing was verified; run deps_check",
+		}}
+	}
+	return &flaggedZeroHint{Notes: []string{fmt.Sprintf(
+		"the last scan at %s discovered zero dependencies; check the catalog registry and the deps config excludes before reading this as clean",
+		res.ScannedAt.UTC().Format(time.RFC3339),
+	)}}
 }
 
 type scanRepoInput struct {

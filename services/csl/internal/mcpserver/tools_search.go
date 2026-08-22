@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -53,12 +54,26 @@ type searchMatchLine struct {
 // searchOutput is the typed output of the csl_search tool. Exactly one of
 // Files / Lines is populated depending on OutputMode.
 type searchOutput struct {
-	OutputMode     string            `json:"output_mode"               jsonschema:"echoes the output mode actually used (files_with_matches or content)"`
-	Files          []searchMatchFile `json:"files,omitempty"           jsonschema:"unique file paths that matched; set when output_mode is files_with_matches"`
-	Lines          []searchMatchLine `json:"lines,omitempty"           jsonschema:"matching lines; set when output_mode is content"`
-	Total          int               `json:"total"                     jsonschema:"total number of match records returned (files or lines)"`
-	Truncated      bool              `json:"truncated"                 jsonschema:"true if results were capped by limit; more matches exist — refine your query or increase limit"`
-	TotalAvailable int               `json:"total_available,omitempty" jsonschema:"total matches available before truncation (only set when truncated is true)"`
+	OutputMode     string            `json:"output_mode"                jsonschema:"echoes the output mode actually used (files_with_matches or content)"`
+	Files          []searchMatchFile `json:"files,omitempty"            jsonschema:"unique file paths that matched; set when output_mode is files_with_matches"`
+	Lines          []searchMatchLine `json:"lines,omitempty"            jsonschema:"matching lines; set when output_mode is content"`
+	Total          int               `json:"total"                      jsonschema:"total number of match records returned (files or lines)"`
+	Truncated      bool              `json:"truncated"                  jsonschema:"true if results were capped by limit; more matches exist — refine your query or increase limit"`
+	TotalAvailable int               `json:"total_available,omitempty"  jsonschema:"total matches available before truncation (only set when truncated is true)"`
+	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, how many repos the filters covered, and index age — read it before assuming the code does not exist"`
+}
+
+// searchZeroHint explains a zero-hit search so an agent can tell a genuinely
+// empty result from a malformed query or a stale index. Additive: it appears
+// only when the search returned nothing, and never changes non-empty output.
+type searchZeroHint struct {
+	ParsedQuery     string   `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it — check that terms and operators mean what you intended"`
+	ReposSearched   int      `json:"repos_searched"              jsonschema:"repos the repo filter matched that are also present in the search index (only indexed repos can produce hits); 0 means the filter or index coverage is the problem, not the query"`
+	ReposDiscovered int      `json:"repos_discovered"            jsonschema:"git repos discovered under the configured dirs"`
+	ReposIndexed    int      `json:"repos_indexed,omitempty"     jsonschema:"repos present in the search index; a repo discovered but not indexed is invisible to search until indexed"`
+	NewestIndexedAt string   `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
+	OldestIndexedAt string   `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339) — very old means some repo's index is stale"`
+	Notes           []string `json:"notes,omitempty"             jsonschema:"targeted suggestions for this query (known syntax traps, filter mismatches)"`
 }
 
 // countInput is the typed input for the csl_count tool.
@@ -105,6 +120,7 @@ func registerSearchTools(s *mcp.Server) {
 			"Use | or lowercase 'or' for OR — uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
 			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax — the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
 			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call — when capped, truncated=true and total_available says how many matched, so narrow the query or paginate with filters. " +
+			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps) — read it before retrying or concluding the code does not exist. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session.",
 	}, handleSearch)
 
@@ -165,7 +181,11 @@ func handleSearch(
 		return nil, searchOutput{}, fmt.Errorf("walk repos: %w", err)
 	}
 	if len(repos) == 0 {
-		return nil, searchOutput{OutputMode: outputMode}, nil
+		return nil, searchOutput{OutputMode: outputMode, ZeroHint: &searchZeroHint{
+			Notes: []string{
+				"no git repos discovered under the configured dirs; run 'csl config' to check dirs and index.hosts",
+			},
+		}}, nil
 	}
 
 	repoNames := make(map[string]string, len(repos))
@@ -189,7 +209,147 @@ func handleSearch(
 		return nil, searchOutput{}, err
 	}
 
-	return nil, buildSearchOutput(outputMode, limit, matches), nil
+	out := buildSearchOutput(outputMode, limit, matches)
+	if out.Total == 0 {
+		out.ZeroHint = buildZeroHint(in, opts, repos, indexDir)
+	}
+	return nil, out, nil
+}
+
+// buildZeroHint assembles the zero_result_hint payload for a search that ran
+// cleanly but matched nothing. Best-effort: any piece that cannot be computed
+// is omitted rather than failing the response.
+func buildZeroHint(
+	in searchInput,
+	opts search.SearchOptions,
+	repos []finder.Repo,
+	indexDir string,
+) *searchZeroHint {
+	hint := &searchZeroHint{
+		ReposDiscovered: len(repos),
+		Notes:           queryTrapNotes(in.Query),
+	}
+
+	if info := search.ValidateQuery(search.BuildQueryString(opts)); info.Valid {
+		hint.ParsedQuery = info.Parsed
+	}
+
+	indexed := make(map[string]struct{})
+	if state, err := search.LoadState(indexDir); err == nil {
+		hint.ReposIndexed = len(state.Repos)
+		var newest, oldest time.Time
+		for path, rs := range state.Repos {
+			indexed[path] = struct{}{}
+			if rs.IndexedAt.IsZero() {
+				continue
+			}
+			if newest.IsZero() || rs.IndexedAt.After(newest) {
+				newest = rs.IndexedAt
+			}
+			if oldest.IsZero() || rs.IndexedAt.Before(oldest) {
+				oldest = rs.IndexedAt
+			}
+		}
+		if !newest.IsZero() {
+			hint.NewestIndexedAt = newest.Format(time.RFC3339)
+			hint.OldestIndexedAt = oldest.Format(time.RFC3339)
+		}
+	}
+
+	searched, notes := repoFilterHint(in.Repo, repos, indexed)
+	hint.ReposSearched = searched
+	hint.Notes = append(hint.Notes, notes...)
+	return hint
+}
+
+// repoFilterHint reports how many discovered repos the repo filter matches
+// AND the index actually covers — zoekt cannot return hits from a repo that
+// is discovered on disk but not yet indexed. It mirrors the case-insensitive
+// matching the repo tools use; the whitespace case is called out instead of
+// diagnosed, because the search itself space-splits the filter into separate
+// zoekt terms and no repo-name count describes what actually ran.
+func repoFilterHint(
+	repoFilter string,
+	repos []finder.Repo,
+	indexed map[string]struct{},
+) (int, []string) {
+	countIndexed := func(rs []finder.Repo) (n int) {
+		for _, r := range rs {
+			if _, ok := indexed[r.Path]; ok {
+				n++
+			}
+		}
+		return n
+	}
+
+	if repoFilter == "" {
+		return countIndexed(repos), nil
+	}
+	if strings.ContainsAny(repoFilter, " \t") {
+		return 0, []string{fmt.Sprintf(
+			"repo filter %q contains whitespace; the search splits it into separate zoekt terms, so it is not matched as one repo name — use a regex without spaces",
+			repoFilter,
+		)}
+	}
+
+	re, err := finder.CompileMatcher(repoFilter)
+	if err != nil {
+		return 0, nil
+	}
+	var matched []finder.Repo
+	for _, r := range repos {
+		if re.MatchString(r.Name) {
+			matched = append(matched, r)
+		}
+	}
+	if len(matched) == 0 {
+		return 0, []string{fmt.Sprintf(
+			"repo filter %q matched none of the %d locally discovered repos; check the name with csl_repo_lookup",
+			repoFilter, len(repos),
+		)}
+	}
+	searched := countIndexed(matched)
+	if unindexed := len(matched) - searched; unindexed > 0 {
+		return searched, []string{fmt.Sprintf(
+			"%d of the %d repos matching the filter are not in the search index yet and are invisible to search; run csl_repo_reindex on them",
+			unindexed, len(matched),
+		)}
+	}
+	return searched, nil
+}
+
+// queryTrapNotes flags known zoekt syntax traps present in the raw query that
+// commonly explain a surprising zero-hit result. Quoted phrases are stripped
+// first: an ' OR ' inside a "quoted literal" is content, not an operator.
+func queryTrapNotes(query string) []string {
+	query = stripQuoted(query)
+	var notes []string
+	if strings.Contains(query, " | ") {
+		notes = append(notes,
+			"'a | b' parses as three AND terms, not OR; write a|b with no spaces")
+	}
+	if strings.Contains(query, " OR ") {
+		notes = append(notes,
+			"uppercase OR is a literal search term; use | with no spaces or lowercase 'or'")
+	}
+	return notes
+}
+
+// stripQuoted removes double-quoted spans from a query so trap sniffing does
+// not fire on operators that appear inside a quoted literal phrase.
+func stripQuoted(s string) string {
+	var b strings.Builder
+	inQuote := false
+	for _, r := range s {
+		if r == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if !inQuote {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // runSearch mirrors the daemon-first-then-fallback pattern from

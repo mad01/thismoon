@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -28,7 +30,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "kof_query",
 		Description: "List assertions, newest first, to see what past sessions already established before deriving it again. " +
 			"Filter by `subject` (prefix match on the namespaced key), `kind`, and/or `status` (fresh | stale | retracted); omit all to list everything. " +
-			"Returns each assertion's id, statement, kind, confidence, and status — follow up with kof_get for the full record including pins.",
+			"Returns each assertion's id, statement, kind, confidence, and status — follow up with kof_get for the full record including pins. " +
+			"On zero results the response carries zero_result_hint (how many stored subjects the prefix matched, whether other filters excluded everything) — read it before assuming nothing is stored.",
 	}, h.handleQuery)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -123,7 +126,7 @@ func (h *handlers) handleAssert(
 // ── recall ──
 
 type recallInput struct {
-	Question string `json:"question" jsonschema_description:"the free-form question to rank the store against, e.g. \"what do we know about JSONL write races\""`
+	Question string `json:"question" jsonschema_description:"the free-form question to rank the store against, e.g. 'what do we know about JSONL write races'"`
 }
 
 func (h *handlers) handleRecall(
@@ -149,6 +152,18 @@ type queryInput struct {
 type queryOutput struct {
 	Assertions []client.Assertion `json:"assertions"`
 	URL        string             `json:"url"`
+	ZeroHint   *queryZeroHint     `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: what the filters actually matched against the store, so an empty list is distinguishable from a wrong subject prefix"`
+}
+
+// queryZeroHint explains an empty kof_query so an agent can tell "nothing is
+// stored about this" from "the subject prefix or filters missed". Additive:
+// it appears only when the query returned nothing.
+type queryZeroHint struct {
+	SubjectPrefix   string   `json:"subject_prefix,omitempty" jsonschema:"the subject prefix that was applied (prefix-from-the-left match)"`
+	SubjectsMatched int      `json:"subjects_matched"         jsonschema:"distinct stored subjects the prefix matched; 0 means the prefix is the problem, not the store"`
+	SubjectsStored  int      `json:"subjects_stored"          jsonschema:"distinct subjects in the store"`
+	StoreAssertions int      `json:"store_assertions"         jsonschema:"total assertions in the store"`
+	Notes           []string `json:"notes,omitempty"          jsonschema:"targeted suggestions, e.g. a shorter prefix to try"`
 }
 
 func (h *handlers) handleQuery(
@@ -160,7 +175,71 @@ func (h *handlers) handleQuery(
 	if err != nil {
 		return nil, queryOutput{}, err
 	}
-	return nil, queryOutput{Assertions: as, URL: h.webURL}, nil
+	outp := queryOutput{Assertions: as, URL: h.webURL}
+	if len(as) == 0 {
+		outp.ZeroHint = h.buildQueryZeroHint(in)
+	}
+	return nil, outp, nil
+}
+
+// buildQueryZeroHint compares the query's filters against the unfiltered
+// store. Best-effort: it returns nil when the extra lookup fails, leaving the
+// plain empty result.
+func (h *handlers) buildQueryZeroHint(in queryInput) *queryZeroHint {
+	all, err := h.client.List("", "", "")
+	if err != nil {
+		return nil
+	}
+
+	subjects := make(map[string]struct{})
+	matchedSubjects := make(map[string]struct{})
+	matchedAssertions := 0
+	for _, a := range all {
+		subjects[a.Subject] = struct{}{}
+		if in.Subject != "" && strings.HasPrefix(a.Subject, in.Subject) {
+			matchedSubjects[a.Subject] = struct{}{}
+			matchedAssertions++
+		}
+	}
+
+	hint := &queryZeroHint{
+		SubjectPrefix:   in.Subject,
+		SubjectsMatched: len(matchedSubjects),
+		SubjectsStored:  len(subjects),
+		StoreAssertions: len(all),
+	}
+	hint.Notes = queryZeroNotes(in, hint, matchedAssertions)
+	return hint
+}
+
+// queryZeroNotes phrases the one note that names why the query came back
+// empty, given the store stats the hint carries.
+func queryZeroNotes(in queryInput, hint *queryZeroHint, matchedAssertions int) []string {
+	if hint.StoreAssertions == 0 {
+		return []string{"the store is empty; nothing has been asserted yet"}
+	}
+	if in.Subject == "" {
+		return []string{fmt.Sprintf(
+			"no assertions matched kind=%q status=%q; the store holds %d assertions",
+			in.Kind, in.Status, hint.StoreAssertions,
+		)}
+	}
+	if hint.SubjectsMatched == 0 {
+		note := fmt.Sprintf(
+			"subject prefix %q matched none of the %d stored subjects; matching is prefix-from-the-left, so try a shorter prefix",
+			in.Subject,
+			hint.SubjectsStored,
+		)
+		if i := strings.LastIndex(strings.TrimRight(in.Subject, "/"), "/"); i > 0 {
+			note += fmt.Sprintf(", e.g. %q", in.Subject[:i])
+		}
+		return []string{note}
+	}
+	return []string{fmt.Sprintf(
+		"subject prefix matched %d subjects (%d assertions) but the kind/status filters excluded them all",
+		hint.SubjectsMatched,
+		matchedAssertions,
+	)}
 }
 
 // ── get ──

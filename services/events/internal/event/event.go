@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -105,4 +106,17 @@ func NewID(t time.Time, rnd io.Reader) string {
 		panic("event: rand read failed: " + err.Error())
 	}
 	return fmt.Sprintf("%020d-%04x", t.UTC().UnixNano(), b[:])
+}
+
+// TimeFromID decodes the timestamp embedded in an event id minted by NewID.
+// Returns false when the id does not carry a parseable unix-nano prefix.
+func TimeFromID(id string) (time.Time, bool) {
+	if len(id) < 20 {
+		return time.Time{}, false
+	}
+	nanos, err := strconv.ParseInt(id[:20], 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(0, nanos).UTC(), true
 }
