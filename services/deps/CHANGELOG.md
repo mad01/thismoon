@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/deps/v0.6.0...deps/v0.7.0) (2026-08-22)
+
+
+### Features
+
+* in-band hints on zero-result MCP tool responses ([#176](https://github.com/mad01/thismoon/issues/176)) ([f48f1b0](https://github.com/mad01/thismoon/commit/f48f1b0c9f278f081a457555f8f7716bfc229f4f))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/deps/v0.5.0...deps/v0.6.0) (2026-08-22)
 
 

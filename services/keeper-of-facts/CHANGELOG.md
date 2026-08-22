@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.10.0...keeper-of-facts/v0.11.0) (2026-08-22)
+
+
+### Features
+
+* in-band hints on zero-result MCP tool responses ([#176](https://github.com/mad01/thismoon/issues/176)) ([f48f1b0](https://github.com/mad01/thismoon/commit/f48f1b0c9f278f081a457555f8f7716bfc229f4f))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.9.0...keeper-of-facts/v0.10.0) (2026-08-22)
 
 
