@@ -15,10 +15,9 @@ that writes page files straight into the workdir and never serves HTTP. The
 shim being up says nothing about serve: present_create succeeds with serve
 down, and the returned URL is dead until serve runs. Both processes resolve
 the workdir and port from --workdir/PRESENT_WORKDIR and --port/PRESENT_PORT
-and log the resolved values to stderr at startup. Machines usually also route
-http://present.this to serve via the local domain front door; if the
-localhost port answers but the .this host does not, the router is the
-problem, not this service.
+and log the resolved values to stderr at startup. The local domain front door
+usually also routes http://present.this to serve; if the localhost port
+answers but the .this host does not, blame the router, not this service.
 
 ## where state lives
 
@@ -32,10 +31,13 @@ raw HTML have no doc.json and can only be edited as HTML.
 
 ## failure modes
 
-Connection refused, or a tool-returned URL that does not load: serve is not
-running. t-man typically supervises it: `t-man list`, then `t-man restart
-present`. For a quick test without t-man, `present serve` in a spare terminal
-also works.
+Start with `present doctor`: store readable, serve reachable, version skew;
+one line per check, FAIL lines naming the cause. Store-readable is the
+load-bearing check: the MCP tools write the store directly, so a readable
+store means create and update still work with serve down. A service-reachable
+FAIL means the page URLs the tools return are dead, not that the tools are
+broken. t-man typically supervises serve: `t-man list`, then `t-man restart
+present`; without t-man, `present serve` in a spare terminal works too.
 
 Updates land but the page never changes: the MCP and serve resolved a
 different workdir or port. Compare the resolved workdir and port each process
@@ -56,23 +58,23 @@ paragraphs, lists, callouts, or kv rows. Inline code in prose is fine and is
 read aloud.
 
 Page not found: the id is the directory name under pages/, minted by
-present_create; it is not derived from the title. present_list returns every
-page's id and URL.
+present_create, not derived from the title. present_list returns every id and
+URL.
 
 ## version skew
 
 `present version -o json` reports the build of the binary on PATH. `GET
 {{.BaseURL}}/version` reports the build the running serve process came from.
 When the `commit` values differ, an old process is still serving after an
-upgrade: restart it (`t-man restart present`) and compare again. Do not
-confuse this with `GET /p/{id}/version`, the per-page counter open tabs poll
-for live reload.
+upgrade: restart it (`t-man restart present`) and compare again; `present
+doctor` runs this comparison as its version-skew check. Do not confuse it
+with `GET /p/{id}/version`, the per-page counter open tabs poll for reload.
 
 ## first moves
 
-1. `curl -s {{.BaseURL}}/version` (a JSON response means serve is up)
-2. If unreachable: `t-man list`, then `t-man restart present`
-3. Compare `present version -o json` with the `/version` endpoint for skew
+1. `present doctor`: store readable, serve reachable, version skew in one pass
+2. If serve is unreachable: `t-man restart present` (dead page links only)
+3. On version skew: `t-man restart present`, then `present doctor` again
 4. `present_list`, to confirm the store loads and to get real page ids
 5. On a wrong-looking page: `present_source`, check the Doc JSON against the
    content rules above, then `present_update`

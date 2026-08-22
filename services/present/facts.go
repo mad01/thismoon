@@ -24,6 +24,7 @@ func Facts() agentdoc.Facts {
 		Purpose:   "scrollable briefing pages agents publish and keep editing, served on localhost",
 		BaseURL:   baseURL,
 		StorePath: DefaultWorkdir,
+		HasDoctor: true,
 		MCPNote:   "Tools read and write the page store directly; present serve (default " + baseURL + ") only serves the page URLs the tools return.",
 	}
 }

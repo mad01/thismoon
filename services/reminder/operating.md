@@ -34,6 +34,11 @@ Removing the service leaves the file behind.
 
 ## failure modes
 
+Start with `reminder doctor`: one command runs the reachability, store, and
+version-skew checks below and prints one line per check, FAIL lines naming
+the cause. The paragraphs here cover what each failure means and what to do
+next.
+
 Connection refused, or "reminder serve not reachable": serve is not
 running. t-man typically supervises it. Run `t-man list` to see whether the
 reminder agent exists, then `t-man restart reminder`. For a quick test
@@ -62,11 +67,12 @@ the filter before concluding the store is empty, then check that
 {{.BaseURL}}/version` reports the build the running serve process came
 from. When the `commit` values differ, an old process is still serving
 after an upgrade: restart it (`t-man restart reminder`) and compare again.
+`reminder doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `curl -s -o /dev/null -w '%{http_code}' {{.BaseURL}}/healthz` (204 means serve is up)
-2. If unreachable: `t-man list`, then `t-man restart reminder`
-3. Compare `reminder version -o json` with the `/version` endpoint for skew
+1. `reminder doctor`: serve reachable, store readable, and version skew in one pass
+2. If serve is unreachable: `t-man list`, then `t-man restart reminder`
+3. On version skew: `t-man restart reminder`, then `reminder doctor` again
 4. `reminder list` with no filters, to confirm the store loads and has records
 5. `reminder test`, to confirm notifications deliver on this machine

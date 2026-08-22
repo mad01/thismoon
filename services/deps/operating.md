@@ -30,6 +30,10 @@ from the catalog registry.
 
 ## failure modes
 
+Start with `deps doctor`: one command runs the reachability, store, and
+version-skew checks below and prints one line per check, FAIL lines naming the
+cause. The paragraphs here cover what each failure means and what to do next.
+
 Connection refused, or "deps serve not reachable": serve is not running. t-man
 typically supervises it. Run `t-man list` to see whether the deps agent
 exists, then `t-man restart deps`. For a quick test without t-man, `deps
@@ -61,13 +65,14 @@ of re-scanning, for example
 `deps version -o json` reports the build of the binary on PATH. `GET
 {{.BaseURL}}/version` reports the build the running serve process came from.
 When the `commit` values differ, an old process is still serving after an
-upgrade: restart it (`t-man restart deps`) and compare again.
+upgrade: restart it (`t-man restart deps`) and compare again. `deps doctor`
+runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `curl -s -o /dev/null -w '%{http_code}' {{.BaseURL}}/healthz` (204 means serve is up)
-2. If unreachable: `t-man list`, then `t-man restart deps`
-3. Compare `deps version -o json` with the `/version` endpoint for skew
+1. `deps doctor`: serve reachable, store readable, and version skew in one pass
+2. If serve is unreachable: `t-man list`, then `t-man restart deps`
+3. On version skew: `t-man restart deps`, then `deps doctor` again
 4. Before treating a finding as real, check whether it sits in the dimmed
    "Not compiled in" section
 5. List the workdir, to confirm `scan.json` exists and its `scanned_at` is

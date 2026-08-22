@@ -1,256 +1,172 @@
 package cli
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
-	"time"
 
-	"github.com/spf13/cobra"
-
-	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
+	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
-var (
-	doctorJSONFlag   bool
-	doctorRepairFlag bool
-)
-
-var doctorCmd = &cobra.Command{
-	Use:   "doctor",
-	Short: "Check search index health",
-	Long: `Check the health of the search index.
-
-Reports issues (stale, missing, or dirty indexes), lists healthy repos, and
-prints the build metadata of the csl binary doing the checking — the same
-version, commit, tag and build time 'csl version -o json' reports, so a
-diagnosis names the build it came from.
-Use --json for machine-readable output.
-Use --repair to fix a corrupt state file (backs up the old file and resets state).`,
-	RunE: runDoctor,
-}
-
-// doctorDocument is the --json document: the index report with the build
-// metadata of the binary that produced it nested under "build". DoctorReport is
-// embedded, so its own keys stay at the top level where consumers expect them.
-type doctorDocument struct {
-	search.DoctorReport
-	Build buildinfo.Info `json:"build"`
-}
+var doctorRepairFlag bool
 
 func init() {
-	doctorCmd.Flags().BoolVar(&doctorJSONFlag, "json", false, "output as JSON")
+	// Checks build at run time so --repair has resolved before the state
+	// check decides whether to reset a corrupt file.
+	doctorCmd := agentcli.DoctorCommand(csl.Facts(), func(context.Context) []doctor.Check {
+		return doctorChecks(doctorRepairFlag)
+	})
 	doctorCmd.Flags().
-		BoolVar(&doctorRepairFlag, "repair", false, "fix corrupt state file and continue")
+		BoolVar(&doctorRepairFlag, "repair", false, "back up a corrupt state file and reset it")
 	rootCmd.AddCommand(doctorCmd)
 }
 
-func runDoctor(cmd *cobra.Command, args []string) error {
+// doctorChecks is the csl check list. The first five carry over what the
+// pre-kit doctor examined: config, state file, index freshness, shard
+// integrity, and the search server. The last two are the kit's web probes
+// renamed to say which process they are about — `csl web` is the one
+// long-lived process, and search works without it, so a web FAIL must not
+// read as "csl is down".
+func doctorChecks(repair bool) []doctor.Check {
 	indexDir, err := search.DefaultIndexDir()
 	if err != nil {
-		return err
+		return []doctor.Check{{
+			Name: "index-dir",
+			Run:  func(context.Context) error { return err },
+		}}
 	}
-
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	webReachable := doctor.ServiceReachable(csl.DefaultBaseURL)
+	webReachable.Name = "web-ui-reachable"
+	webSkew := doctor.VersionSkew(csl.DefaultBaseURL)
+	webSkew.Name = "web-ui-version-skew"
+	return []doctor.Check{
+		configLoads(),
+		stateFileLoads(indexDir, repair),
+		indexFreshness(indexDir),
+		indexShardsValid(indexDir),
+		searchServerResponsive(daemon.DefaultPIDPath(), daemon.DefaultSocketPath()),
+		webReachable,
+		webSkew,
 	}
-
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
-	if err != nil {
-		return err
-	}
-
-	state, stateErr := search.LoadState(indexDir)
-	if stateErr != nil && !doctorRepairFlag {
-		w := cmd.OutOrStdout()
-		fmt.Fprintf(w, "State file corrupt: %v\n", stateErr)
-		fmt.Fprintln(
-			w,
-			"Run 'csl doctor --repair' to back up the corrupt file and reset state.",
-		)
-		return stateErr
-	}
-	if stateErr != nil {
-		// --repair: LoadState already backed up the corrupt file; start fresh.
-		state = search.EmptyState()
-		if err := state.Save(indexDir); err != nil {
-			return fmt.Errorf("failed to write repaired state: %w", err)
-		}
-		fmt.Fprintf(
-			cmd.OutOrStdout(),
-			"Repaired: reset state file (corrupt backup saved).\n\n",
-		)
-	}
-
-	staleness, err := search.CheckStaleness(repos, state)
-	if err != nil {
-		return err
-	}
-
-	indexSize, _ := search.IndexDirSize(indexDir)
-
-	// Validate shard integrity.
-	shards, corrupted, _ := search.ValidateShards(indexDir)
-
-	report := search.DoctorReport{
-		IndexDir:       indexDir,
-		IndexSizeBytes: indexSize,
-		TotalRepos:     len(repos),
-	}
-
-	// Classify stale repos into issues.
-	for _, r := range staleness.Stale {
-		rs, indexed := state.GetRepo(r.Path)
-
-		issue := search.RepoIssue{
-			Repo: r.Name,
-			Path: r.Path,
-		}
-
-		if !indexed {
-			issue.Type = "missing"
-			issue.Message = "not indexed"
-		} else {
-			fp, ok := staleness.Current[r.Path]
-			if ok && fp.Dirty {
-				issue.Type = "dirty"
-				issue.Dirty = true
-				mod, untracked, _ := search.DirtyInfo(r.Path)
-				issue.ModifiedFiles = mod
-				issue.UntrackedFiles = untracked
-				issue.Message = fmt.Sprintf("%d modified, %d untracked", mod, untracked)
-			} else {
-				issue.Type = "stale"
-				if !rs.IndexedAt.IsZero() {
-					issue.IndexAge = time.Since(rs.IndexedAt).Truncate(time.Second).String()
-				}
-				issue.Message = "index out of date"
-			}
-		}
-
-		report.Issues = append(report.Issues, issue)
-	}
-
-	// Classify fresh repos as healthy.
-	for _, r := range staleness.Fresh {
-		rs, _ := state.GetRepo(r.Path)
-		age := "-"
-		if !rs.IndexedAt.IsZero() {
-			age = time.Since(rs.IndexedAt).Truncate(time.Second).String()
-		}
-		report.Healthy = append(report.Healthy, search.RepoHealth{
-			Repo:     r.Name,
-			Path:     r.Path,
-			IndexAge: age,
-		})
-	}
-
-	w := cmd.OutOrStdout()
-	build := buildinfo.Get()
-
-	if doctorJSONFlag {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(doctorDocument{DoctorReport: report, Build: build})
-	}
-
-	// Daemon status
-	daemonStatus := "stopped"
-	if daemon.IsRunning(daemon.DefaultPIDPath()) {
-		daemonStatus = "running"
-	}
-
-	// Shard health
-	corruptedCount := len(corrupted)
-	shardCount := len(shards)
-
-	fmt.Fprintf(w, "Index directory: %s\n", report.IndexDir)
-	fmt.Fprintf(w, "Index size:      %s\n", formatBytes(report.IndexSizeBytes))
-	fmt.Fprintf(w, "Total repos:     %d\n", report.TotalRepos)
-	fmt.Fprintf(
-		w,
-		"Index shards:    %d (%d healthy, %d corrupted)\n",
-		shardCount,
-		shardCount-corruptedCount,
-		corruptedCount,
-	)
-	fmt.Fprintf(w, "Search daemon:   %s\n", daemonStatus)
-	fmt.Fprintln(w)
-
-	fmt.Fprintln(w, "Build:")
-	fmt.Fprintf(w, "  version:       %s\n", orDash(build.Version))
-	fmt.Fprintf(w, "  commit:        %s\n", orDash(build.Commit))
-	fmt.Fprintf(w, "  tag:           %s\n", orDash(build.Tag))
-	fmt.Fprintf(w, "  build time:    %s\n", orDash(build.BuildTime))
-	fmt.Fprintln(w)
-
-	if corruptedCount > 0 {
-		fmt.Fprintf(w, "Corrupted shards (%d):\n", corruptedCount)
-		for _, s := range shards {
-			if !s.OK {
-				fmt.Fprintf(w, "  %s — %s\n", s.Path, s.Error)
-			}
-		}
-		fmt.Fprintln(
-			w,
-			"  Run 'csl index --repair' to remove corrupted shards, then 'csl index' to rebuild.",
-		)
-		fmt.Fprintln(w)
-	}
-
-	if len(report.Issues) > 0 {
-		fmt.Fprintf(w, "Issues (%d):\n", len(report.Issues))
-		for _, issue := range report.Issues {
-			fmt.Fprintf(w, "  %-8s %-40s %s\n", issue.Type, issue.Repo, issue.Message)
-		}
-		fmt.Fprintln(w)
-	}
-
-	if len(report.Healthy) > 0 {
-		fmt.Fprintf(w, "Healthy (%d):\n", len(report.Healthy))
-		for _, h := range report.Healthy {
-			fmt.Fprintf(w, "  %-40s indexed %s ago\n", h.Repo, h.IndexAge)
-		}
-	}
-
-	if len(report.Issues) == 0 && len(report.Healthy) > 0 {
-		fmt.Fprintln(w, "\nAll repos are healthy.")
-	}
-
-	if len(report.Issues) == 0 && len(report.Healthy) == 0 {
-		fmt.Fprintln(w, "No repos found. Run 'csl index' to build the index.")
-	}
-
-	return nil
 }
 
-// orDash renders an unknown build metadata field, which buildinfo reports as
-// the empty string, as a dash so the column never looks truncated.
-func orDash(s string) string {
-	if s == "" {
-		return "-"
+// configLoads verifies config.yaml parses. A missing file fails too: without
+// it csl has no dirs to walk, so nothing downstream can work.
+func configLoads() doctor.Check {
+	return doctor.Check{
+		Name: "config-loads",
+		Run: func(context.Context) error {
+			_, err := config.Load()
+			return err
+		},
 	}
-	return s
 }
 
-func formatBytes(b int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-	)
-	switch {
-	case b >= gb:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
-	case b >= mb:
-		return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
-	case b >= kb:
-		return fmt.Sprintf("%.1f KB", float64(b)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", b)
+// stateFileLoads verifies state.json parses. LoadState renames a corrupt
+// file to state.json.corrupt on the way out, so with --repair the check
+// completes the reset by writing a fresh empty state; the next index run
+// rebuilds from scratch.
+func stateFileLoads(indexDir string, repair bool) doctor.Check {
+	return doctor.Check{
+		Name: "state-file-loads",
+		Run: func(context.Context) error {
+			_, err := search.LoadState(indexDir)
+			if err == nil {
+				return nil
+			}
+			if !repair {
+				return fmt.Errorf("%w; run 'csl doctor --repair' to reset state", err)
+			}
+			if saveErr := search.EmptyState().Save(indexDir); saveErr != nil {
+				return fmt.Errorf("reset state: %w", saveErr)
+			}
+			return nil
+		},
+	}
+}
+
+// indexFreshness compares each discovered repo's fingerprint against the
+// indexed state. Stale repos are not broken — searches answer from the old
+// shards and reindex them in the background — but the count is the first
+// thing to know when results look wrong, so it fails with the totals.
+func indexFreshness(indexDir string) doctor.Check {
+	return doctor.Check{
+		Name: "index-freshness",
+		Run: func(context.Context) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+			if err != nil {
+				return err
+			}
+			if len(repos) == 0 {
+				return errors.New("no git repos found under the configured dirs; check 'csl config'")
+			}
+			state, err := search.LoadState(indexDir)
+			if err != nil {
+				return fmt.Errorf("load state: %w", err)
+			}
+			staleness, err := search.CheckStaleness(repos, state)
+			if err != nil {
+				return err
+			}
+			if n := len(staleness.Stale); n > 0 {
+				return fmt.Errorf(
+					"%d of %d repos stale, dirty, or unindexed; "+
+						"the next search reindexes them in the background, 'csl index' does it now",
+					n, len(repos))
+			}
+			return nil
+		},
+	}
+}
+
+// indexShardsValid opens every .zoekt shard and verifies it, the same scan
+// `csl index --repair` uses to decide what to drop.
+func indexShardsValid(indexDir string) doctor.Check {
+	return doctor.Check{
+		Name: "index-shards-valid",
+		Run: func(context.Context) error {
+			shards, corrupted, err := search.ValidateShards(indexDir)
+			if err != nil {
+				return err
+			}
+			if len(corrupted) > 0 {
+				return fmt.Errorf(
+					"%d of %d shards corrupted; run 'csl index --repair' to drop them, then 'csl index' to rebuild",
+					len(corrupted), len(shards))
+			}
+			return nil
+		},
+	}
+}
+
+// searchServerResponsive fails only when the PID file names a live process
+// whose socket does not answer: every query then burns the fallback path,
+// opening shards in-process. A stopped server is healthy — the next query
+// starts one, and it idle-exits by design.
+func searchServerResponsive(pidPath, socketPath string) doctor.Check {
+	return doctor.Check{
+		Name: "search-server-responsive",
+		Run: func(context.Context) error {
+			if !daemon.IsRunning(pidPath) {
+				return nil
+			}
+			if err := daemon.Ping(socketPath); err != nil {
+				return fmt.Errorf(
+					"search server is alive but its socket does not answer: %w; "+
+						"'csl search --stop' kills it and the next query starts a fresh one",
+					err)
+			}
+			return nil
+		},
 	}
 }

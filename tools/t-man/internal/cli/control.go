@@ -3,8 +3,6 @@ package cli
 import (
 	"fmt"
 
-	"github.com/mad01/thismoon/kit/agentdoc"
-	tman "github.com/mad01/thismoon/tools/t-man"
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/spf13/cobra"
 )
@@ -14,7 +12,7 @@ var startCmd = &cobra.Command{
 	Use:   "start <service-name>",
 	Short: "Start a service",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runStart,
+	RunE:  hintRunE(runStart),
 }
 
 // stopCmd represents the stop command
@@ -22,7 +20,7 @@ var stopCmd = &cobra.Command{
 	Use:   "stop <service-name>",
 	Short: "Stop a service",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runStop,
+	RunE:  hintRunE(runStop),
 }
 
 // restartCmd represents the restart command
@@ -30,7 +28,7 @@ var restartCmd = &cobra.Command{
 	Use:   "restart <service-name>",
 	Short: "Restart a service",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runRestart,
+	RunE:  hintRunE(runRestart),
 }
 
 // statusCmd represents the status command
@@ -38,7 +36,7 @@ var statusCmd = &cobra.Command{
 	Use:   "status <service-name>",
 	Short: "Get status of a service",
 	Args:  cobra.ExactArgs(1),
-	RunE:  runStatus,
+	RunE:  hintRunE(runStatus),
 }
 
 func init() {
@@ -63,7 +61,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	manager := launchd.NewManager(GetVersion(), !daemonMode)
 
 	if err := manager.Start(getContext(), serviceName); err != nil {
-		return agentdoc.Hint(fmt.Errorf("failed to start service: %w", err), tman.Facts())
+		return fmt.Errorf("failed to start service: %w", err)
 	}
 
 	fmt.Printf("✓ Service '%s' started\n", serviceName)
@@ -85,7 +83,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	manager := launchd.NewManager(GetVersion(), !daemonMode)
 
 	if err := manager.Stop(getContext(), serviceName); err != nil {
-		return agentdoc.Hint(fmt.Errorf("failed to stop service: %w", err), tman.Facts())
+		return fmt.Errorf("failed to stop service: %w", err)
 	}
 
 	fmt.Printf("✓ Service '%s' stopped\n", serviceName)
@@ -108,12 +106,12 @@ func runRestart(cmd *cobra.Command, args []string) error {
 
 	// Stop first
 	if err := manager.Stop(getContext(), serviceName); err != nil {
-		return agentdoc.Hint(fmt.Errorf("failed to stop service: %w", err), tman.Facts())
+		return fmt.Errorf("failed to stop service: %w", err)
 	}
 
 	// Then start
 	if err := manager.Start(getContext(), serviceName); err != nil {
-		return agentdoc.Hint(fmt.Errorf("failed to start service: %w", err), tman.Facts())
+		return fmt.Errorf("failed to start service: %w", err)
 	}
 
 	fmt.Printf("✓ Service '%s' restarted\n", serviceName)
@@ -132,7 +130,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Get service details
 	svc, err := manager.Get(getContext(), serviceName)
 	if err != nil {
-		return agentdoc.Hint(fmt.Errorf("failed to get service: %w", err), tman.Facts())
+		return fmt.Errorf("failed to get service: %w", err)
 	}
 
 	// Get status

@@ -26,5 +26,6 @@ func Facts() agentdoc.Facts {
 		Bin:       "d-man",
 		Purpose:   "local domain front door routing *.this hostnames to localhost services",
 		StorePath: DefaultRoutesPath,
+		HasDoctor: true,
 	}
 }

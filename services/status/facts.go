@@ -24,5 +24,6 @@ func Facts() agentdoc.Facts {
 		Purpose:   "status page for t-man-managed local services with uptime history and stale-binary detection",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultWorkdir,
+		HasDoctor: true,
 	}
 }

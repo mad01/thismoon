@@ -16,6 +16,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
+	"github.com/mad01/thismoon/tools/worklog"
 	"github.com/mad01/thismoon/tools/worklog/internal/config"
 	"github.com/mad01/thismoon/tools/worklog/internal/mcpserver"
 	"github.com/mad01/thismoon/tools/worklog/internal/scan"
@@ -35,7 +37,7 @@ func root() *cobra.Command {
 	}
 	c.AddCommand(
 		versionCmd(),
-		docsCmd(),
+		agentcli.DocsCommand(worklog.OperatingDoc, worklog.Facts()),
 		newCmd(),
 		checkpointCmd(),
 		listCmd(),

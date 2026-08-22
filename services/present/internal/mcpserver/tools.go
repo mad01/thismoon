@@ -23,10 +23,23 @@ var openURL = func(url string) error {
 	return exec.Command("/usr/bin/open", url).Start()
 }
 
-// hint points a store error's reader at `present docs`. Every tool call goes
-// through exactly one store operation, so wrapping those covers the surface.
+// hint points an error's reader at present's self-diagnosis surface. Tool
+// errors pick it up in withHint; server.go calls it directly for the one
+// error that never flows through a handler.
 func hint(err error) error {
 	return agentdoc.Hint(err, present.Facts())
+}
+
+// withHint wraps a tool handler so any error it returns carries the hint,
+// applied exactly once here at registration instead of at every return site
+// inside the handlers. hint is nil-safe, so a clean return passes through.
+func withHint[In, Out any](
+	h func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
+) func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		res, out, err := h(ctx, req, in)
+		return res, out, hint(err)
+	}
 }
 
 // handlers carries the dependencies shared by all present tools.
@@ -43,19 +56,19 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Provide a Doc JSON object as `content` — the server renders it to HTML with the correct CSS classes and structure. " +
 			"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
 			"Keep the returned id; it is the handle for present_update/present_read/present_open.",
-	}, h.handleCreate)
+	}, withHint(h.handleCreate))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "present_read",
 		Description: "Read a presentation's current title, rendered HTML content, graph JS, version, and URL by id. For editing, prefer present_source — it returns the structured source in the format present_update accepts.",
-	}, h.handleRead)
+	}, withHint(h.handleRead))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_source",
 		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc) and the structured graph JSON (graph_format=json), plus references. " +
 			"Both come back in exactly the format present_update accepts, so you can modify them and pass them straight back — use this to mutate a page from a new or restored session. " +
 			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form.",
-	}, h.handleSource)
+	}, withHint(h.handleSource))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_update",
@@ -63,12 +76,12 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Provide a Doc JSON object as `content` and/or a Graph JSON object as `graph`. " +
 			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph. " +
 			"Bumps the page version so any open browser tab auto-reloads — you do NOT need to call present_open again after an update.",
-	}, h.handleUpdate)
+	}, withHint(h.handleUpdate))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "present_list",
 		Description: "List all presentations (id, title, URL, version, last updated), newest first.",
-	}, h.handleList)
+	}, withHint(h.handleList))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_open",
@@ -76,7 +89,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Call this AT MOST ONCE per presentation — after the tab is open, present_update triggers an automatic reload, " +
 			"so do not call present_open again for subsequent edits. " +
 			"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
-	}, h.handleOpen)
+	}, withHint(h.handleOpen))
 }
 
 func (h *handlers) url(id string) string {
@@ -181,19 +194,19 @@ func (h *handlers) handleCreate(
 	}
 	p, err := h.store.Create(in.Title, content, graph, toStoreRefs(in.References))
 	if err != nil {
-		return nil, pageOutput{}, hint(err)
+		return nil, pageOutput{}, err
 	}
 	// Persist the structured sources (only when the input was structured, not
 	// legacy HTML/JS) so future renderer/template changes can re-render the
 	// page from source and present_source can hand the source back for edits.
 	if docJSON != nil {
 		if err := h.store.SaveDoc(p.ID, docJSON); err != nil {
-			return nil, pageOutput{}, hint(fmt.Errorf("save doc: %w", err))
+			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
 		}
 	}
 	if graphJSON != nil {
 		if err := h.store.SaveGraphSource(p.ID, graphJSON); err != nil {
-			return nil, pageOutput{}, hint(fmt.Errorf("save graph source: %w", err))
+			return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
 		}
 	}
 	notify.EmitEvent("present", "info", "page created: "+p.Title, "",
@@ -247,7 +260,7 @@ func (h *handlers) handleRead(
 ) (*mcp.CallToolResult, readOutput, error) {
 	p, err := h.store.Get(in.ID)
 	if err != nil {
-		return nil, readOutput{}, hint(err)
+		return nil, readOutput{}, err
 	}
 	return nil, readOutput{
 		ID: p.ID, Title: p.Title, Content: p.Content, Graph: p.Graph,
@@ -281,7 +294,7 @@ func (h *handlers) handleSource(
 ) (*mcp.CallToolResult, sourceOutput, error) {
 	p, err := h.store.Get(in.ID)
 	if err != nil {
-		return nil, sourceOutput{}, hint(err)
+		return nil, sourceOutput{}, err
 	}
 	out := sourceOutput{
 		ID: p.ID, Title: p.Title,
@@ -295,7 +308,7 @@ func (h *handlers) handleSource(
 	case errors.Is(err, store.ErrNotFound):
 		out.ContentFormat, out.Content = "html", p.Content
 	default:
-		return nil, sourceOutput{}, hint(err)
+		return nil, sourceOutput{}, err
 	}
 	if p.HasGraph {
 		src, err := h.store.LoadGraphSource(in.ID)
@@ -305,7 +318,7 @@ func (h *handlers) handleSource(
 		case errors.Is(err, store.ErrNotFound):
 			out.GraphFormat, out.Graph = "js", p.Graph
 		default:
-			return nil, sourceOutput{}, hint(err)
+			return nil, sourceOutput{}, err
 		}
 	}
 	return nil, out, nil
@@ -373,28 +386,28 @@ func (h *handlers) handleUpdate(
 
 	p, err := h.store.Update(in.ID, patch)
 	if err != nil {
-		return nil, pageOutput{}, hint(err)
+		return nil, pageOutput{}, err
 	}
 	switch {
 	case contentIsDoc:
 		if err := h.store.SaveDoc(p.ID, newDocJSON); err != nil {
-			return nil, pageOutput{}, hint(fmt.Errorf("save doc: %w", err))
+			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
 		}
 	case clearDoc:
 		if err := h.store.DeleteDoc(p.ID); err != nil {
-			return nil, pageOutput{}, hint(fmt.Errorf("clear doc: %w", err))
+			return nil, pageOutput{}, fmt.Errorf("clear doc: %w", err)
 		}
 	}
 	if in.Graph != nil {
 		if graphIsJSON {
 			if err := h.store.SaveGraphSource(p.ID, newGraphJSON); err != nil {
-				return nil, pageOutput{}, hint(fmt.Errorf("save graph source: %w", err))
+				return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
 			}
 		} else {
 			// Graph cleared or replaced with legacy JS: any prior graph.json is
 			// now stale and would mislead a later re-render.
 			if err := h.store.DeleteGraphSource(p.ID); err != nil {
-				return nil, pageOutput{}, hint(fmt.Errorf("clear graph source: %w", err))
+				return nil, pageOutput{}, fmt.Errorf("clear graph source: %w", err)
 			}
 		}
 	}
@@ -425,7 +438,7 @@ func (h *handlers) handleList(
 ) (*mcp.CallToolResult, listOutput, error) {
 	pages, err := h.store.ListMeta()
 	if err != nil {
-		return nil, listOutput{}, hint(err)
+		return nil, listOutput{}, err
 	}
 	out := listOutput{Pages: make([]listItem, 0, len(pages))}
 	for _, p := range pages {
@@ -456,7 +469,7 @@ func (h *handlers) handleOpen(
 ) (*mcp.CallToolResult, openOutput, error) {
 	// Confirm the page exists before launching a browser at a dead URL.
 	if _, err := h.store.Get(in.ID); err != nil {
-		return nil, openOutput{}, hint(err)
+		return nil, openOutput{}, err
 	}
 	url := h.url(in.ID)
 	if err := h.open(url); err != nil {

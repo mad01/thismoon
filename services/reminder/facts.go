@@ -23,5 +23,6 @@ func Facts() agentdoc.Facts {
 		Purpose:   "time-based reminders that fire a native macOS notification at their due time",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultWorkdir,
+		HasDoctor: true,
 	}
 }

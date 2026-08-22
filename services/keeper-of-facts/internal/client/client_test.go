@@ -230,7 +230,7 @@ func TestDoReportsUnreachableServe(t *testing.T) {
 	if !strings.Contains(err.Error(), "t-man status keeper-of-facts") {
 		t.Errorf("error = %q, want it to mention 't-man status keeper-of-facts'", err.Error())
 	}
-	if !strings.Contains(err.Error(), "kof docs") {
-		t.Errorf("error = %q, want the agentdoc hint pointing at 'kof docs'", err.Error())
+	if !strings.Contains(err.Error(), "kof doctor") {
+		t.Errorf("error = %q, want the agentdoc hint pointing at 'kof doctor'", err.Error())
 	}
 }

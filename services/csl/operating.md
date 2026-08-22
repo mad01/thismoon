@@ -38,9 +38,10 @@ Everything sits under {{.StorePath}}:
 
 ## failure modes
 
-Start with `csl doctor`: it checks shards, index staleness, dirty repos, and
-search-server status, and prints the build it came from. `--repair` fixes a
-corrupt state file.
+Start with `csl doctor`: one ok/FAIL line per check — config, state file,
+index freshness, shard integrity, and search-server responsiveness, plus two
+web-only checks (web-ui-reachable, web-ui-version-skew) that can fail while
+search keeps working. `--repair` resets a corrupt state file.
 
 Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return
@@ -69,14 +70,15 @@ test without t-man, `csl web` in a spare terminal also works.
 ## version skew
 
 `csl version -o json` reports the binary on PATH; `GET {{.BaseURL}}/version`
-reports the running web process. When the `commit` values differ, an old
+reports the running web process. `csl doctor` runs the comparison as its
+web-ui-version-skew check. When the `commit` values differ, an old
 process survived an upgrade: `t-man restart csl-web`. The background search
 server can also be an old build; `csl search --stop` kills it, and the next
 query forks a fresh one from the current binary.
 
 ## first moves
 
-1. `csl doctor` (index health, staleness, search-server status, build)
+1. `csl doctor` (config, state, freshness, shards, search server, web UI)
 2. Zero results: `csl query "<pattern>"` to see the parse, then retry with
    1-2 terms and filters
 3. `csl repo <name> --list` to confirm the repo is discovered at all

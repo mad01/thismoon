@@ -31,6 +31,35 @@ jobs:
             <(for dir in services/*/ tools/*/; do [ -f "${dir}Makefile" ] && echo "${dir%/}"; done | sort) \
             || { echo "::error::release-please-config.json packages out of sync with services/*, tools/*"; exit 1; }
 
+      # Serve-bearing components must ship a doctor subcommand (ADR-0009,
+      # docs/adr/0009-agent-facing-operating-docs.md). The list is explicit,
+      # not inferred from directories: some tools carry MCP subcommands with
+      # no doctor obligation, and belt/suspenders keep best-effort doctors
+      # outside the requirement.
+      - name: Serve-bearing components ship a doctor
+        run: |
+          required='
+            services/keeper-of-facts
+            services/events
+            services/deps
+            services/reminder
+            services/wire
+            services/present
+            services/speak
+            services/status
+            services/catalog
+            services/csl
+            services/d-man
+          '
+          fail=0
+          for c in $required; do
+            if [ ! -f "${c}/internal/cli/doctor.go" ] && ! grep -rq 'DoctorCommand(' --include='*.go' "$c" 2>/dev/null; then
+              echo "::error::${c} ships no doctor subcommand (expected ${c}/internal/cli/doctor.go or a 'DoctorCommand(' registration) — required for serve-bearing components by ADR-0009"
+              fail=1
+            fi
+          done
+          exit $fail
+
       # Filters are generated, not hand-maintained: one filter per component
       # (a directory under services/ or tools/ with a Makefile) plus a fanout
       # filter for changes that affect every component.

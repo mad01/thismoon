@@ -139,3 +139,25 @@ func TestSyncPreservesPreexistingMalformedAndWarns(t *testing.T) {
 		t.Error("managed block not written")
 	}
 }
+
+func TestManagedBlock(t *testing.T) {
+	base := "127.0.0.1\tlocalhost\n"
+	spliced := Splice([]byte(base), Render([]string{"csl.this", "p.this"}))
+
+	block, ok := ManagedBlock(spliced)
+	if !ok {
+		t.Fatal("ManagedBlock found no block in a spliced file")
+	}
+	for _, host := range []string{"csl.this", "p.this"} {
+		if !strings.Contains(block, host) {
+			t.Errorf("block missing %q:\n%s", host, block)
+		}
+	}
+	if strings.Contains(block, "managed") {
+		t.Errorf("block includes a marker line:\n%s", block)
+	}
+
+	if _, ok := ManagedBlock([]byte(base)); ok {
+		t.Error("ManagedBlock reported a block in a file without markers")
+	}
+}

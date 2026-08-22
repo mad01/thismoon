@@ -40,8 +40,8 @@ only where it lives and how big it is. Use 'catalog list' to see the entities it
 produces, and 'catalog validate' to schema-check them and enforce the
 globally-unique name rule.
 
-Pair it with doctor: doctor shows the state catalog resolved, config shows which
-file and key to change.`,
+Pair it with doctor: doctor checks that the resolved registry reads and loads,
+config shows which file and key to change.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		writeRegistryStatus(cmd.OutOrStdout(), registryPath)

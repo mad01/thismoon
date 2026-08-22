@@ -23,5 +23,6 @@ func Facts() agentdoc.Facts {
 		Purpose:   "assertion store for evidence-pinned claims about how systems behave",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultWorkdir,
+		HasDoctor: true,
 	}
 }

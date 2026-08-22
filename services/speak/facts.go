@@ -24,6 +24,7 @@ func Facts() agentdoc.Facts {
 		Purpose:   "local text-to-speech that reads text and markdown aloud on this machine's speakers",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultStateDir,
+		HasDoctor: true,
 		MCPNote:   "Tools play audio in this process via the local TTS engine (t-man agent speak-tts); the speak web service is separate and not required.",
 	}
 }

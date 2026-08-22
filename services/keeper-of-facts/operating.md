@@ -31,6 +31,10 @@ directly and history stays intact.
 
 ## failure modes
 
+Start with `kof doctor`: one command runs the reachability, store, and
+version-skew checks below and prints one line per check, FAIL lines naming the
+cause. The paragraphs here cover what each failure means and what to do next.
+
 Connection refused, or "kof serve not reachable": serve is not running. t-man
 typically supervises it. Run `t-man list` to see whether the
 keeper-of-facts agent exists, then `t-man restart keeper-of-facts`. For a
@@ -60,11 +64,12 @@ absolute path to the repo working tree on this machine.
 {{.BaseURL}}/version` reports the build the running serve process came from.
 When the `commit` values differ, an old process is still serving after an
 upgrade: restart it (`t-man restart keeper-of-facts`) and compare again.
+`kof doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `curl -s -o /dev/null -w '%{http_code}' {{.BaseURL}}/healthz` (204 means serve is up)
-2. If unreachable: `t-man list`, then `t-man restart keeper-of-facts`
-3. Compare `kof version -o json` with the `/version` endpoint for skew
+1. `kof doctor`: serve reachable, store readable, and version skew in one pass
+2. If serve is unreachable: `t-man list`, then `t-man restart keeper-of-facts`
+3. On version skew: `t-man restart keeper-of-facts`, then `kof doctor` again
 4. `kof list` with no filters, to confirm the store loads and has records
 5. List the workdir, to confirm the two JSONL files exist and are non-empty

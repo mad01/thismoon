@@ -34,5 +34,6 @@ func Facts() agentdoc.Facts {
 		Purpose:   "local event/audit log producers post to and agents query",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultWorkdir,
+		HasDoctor: true,
 	}
 }

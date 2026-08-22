@@ -24,5 +24,6 @@ func Facts() agentdoc.Facts {
 		Purpose:   "self-hosted systems catalog indexing service-info.yaml files from local repos",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultRegistry,
+		HasDoctor: true,
 	}
 }

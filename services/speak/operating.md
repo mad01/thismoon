@@ -19,9 +19,8 @@ problem, not this service.
 
 `speak mcp` does not go through serve. Playback lives in the mcp process
 itself: each tool call splits text into sentences, fetches one WAV per
-sentence from the engine, and plays it with afplay. The shim being up says
-nothing about serve, and serve being up says nothing about the shim; the only
-dependency the two share is the engine.
+sentence from the engine, and plays it with afplay. The only dependency the
+two surfaces share is the engine.
 
 ## where state lives
 
@@ -33,13 +32,23 @@ pause state live only in the memory of the mcp process that started playback.
 
 ## failure modes
 
-Connection refused on {{.BaseURL}}: serve is not running. t-man supervises it
-as speak-web. Run `t-man list`, then `t-man restart speak-web`.
+Start with `speak doctor`: four checks, one line each, FAIL lines naming the
+cause. In order: tts-engine-reachable pings the engine the way serve's
+/enginez does, store-readable opens the state dir, and service-reachable plus
+version-skew probe the optional web surface at {{.BaseURL}}. The last two
+failing means only the web page is down; the MCP tools can still speak as
+long as tts-engine-reachable passes.
 
-"TTS engine not reachable": the engine sidecar is down, not speak. Check
-`t-man status speak-tts` (restart with `t-man restart speak-tts`), or `GET
-{{.BaseURL}}/enginez`, which answers 204 when the engine responds and 502 when
-it does not. `/healthz` proves only that serve is up, never the engine.
+FAIL tts-engine-reachable: the engine sidecar is down, and nothing can
+synthesize -- not the web page, not the tools. `t-man status speak-tts`, then
+`t-man restart speak-tts`. From the web side the same fact shows as `GET
+{{.BaseURL}}/enginez` answering 502; `/healthz` proves only that serve is up,
+never the engine.
+
+FAIL service-reachable: serve is not running, so the upload page and the
+speech proxy are down. t-man supervises it as speak-web: `t-man list`, then
+`t-man restart speak-web`. Playback tools are unaffected while the engine
+answers.
 
 Calls succeed but nothing is audible: afplay plays on the system default
 output device, so check the volume and the selected output device first. Then
@@ -60,13 +69,14 @@ frees the lock.
 `speak version -o json` reports the build of the binary on PATH. `GET
 {{.BaseURL}}/version` reports the build the running serve came from. When the
 `commit` values differ, an old process survived an upgrade: `t-man restart
-speak-web` and compare again. The mcp shim always runs the PATH binary, so it
-never skews on its own.
+speak-web` and compare again. `speak doctor` runs this comparison as its
+version-skew check; the mcp shim always runs the PATH binary, so it never
+skews on its own.
 
 ## first moves
 
-1. `curl -s -o /dev/null -w '%{http_code}' {{.BaseURL}}/healthz` (204 means serve is up)
-2. Same host, `/enginez` (204 means the engine answers, 502 means it is down)
-3. If either fails: `t-man list`, then `t-man restart speak-web` or `t-man restart speak-tts`
+1. `speak doctor`: engine, state dir, web surface, and version skew in one pass
+2. FAIL tts-engine-reachable: `t-man restart speak-tts`, then `speak doctor` again
+3. FAIL service-reachable or version-skew only: `t-man restart speak-web`; tools keep working meanwhile
 4. `speak_status` for playback state, the lock holder, and the last worker error
-5. Compare `speak version -o json` with `GET /version` for skew
+5. All checks pass but nothing is audible: volume and output device, then `speak_status` last_result

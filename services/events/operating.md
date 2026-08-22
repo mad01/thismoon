@@ -35,6 +35,10 @@ accident.
 
 ## failure modes
 
+Start with `events doctor`: one command runs the reachability, store, and
+version-skew checks below and prints one line per check, FAIL lines naming the
+cause. The paragraphs here cover what each failure means and what to do next.
+
 Connection refused, or "events serve not reachable": serve is not running.
 t-man typically supervises it. Run `t-man list` to see whether the events
 agent exists, then `t-man restart events`. For a quick test without t-man,
@@ -56,12 +60,13 @@ events once a source passes 500.
 `events version -o json` reports the build of the binary on PATH. `GET
 {{.BaseURL}}/version` reports the build the running serve process came from.
 When the `commit` values differ, an old process is still serving after an
-upgrade: restart it (`t-man restart events`) and compare again.
+upgrade: restart it (`t-man restart events`) and compare again. `events
+doctor` runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `curl -s {{.BaseURL}}/healthz` (`ok` means serve is up)
-2. If unreachable: `t-man list`, then `t-man restart events`
-3. Compare `events version -o json` with the `/version` endpoint for skew
+1. `events doctor`: serve reachable, store readable, and version skew in one pass
+2. If serve is unreachable: `t-man list`, then `t-man restart events`
+3. On version skew: `t-man restart events`, then `events doctor` again
 4. `events list` with no filters, to confirm the store loads and has records
 5. List `{{.StorePath}}/sources/`, to confirm the per-source JSONL files exist

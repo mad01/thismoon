@@ -32,6 +32,10 @@ web service to its `.this` page; it never writes that file.
 
 ## failure modes
 
+Start with `status doctor`: one command runs the reachability, store, and
+version-skew checks and prints one line per check, FAIL lines naming the
+cause. The paragraphs here cover what each failure means and what to do next.
+
 Status page unreachable: the status process itself is down. t-man supervises
 it: `t-man list`, then `t-man restart status`. For a quick look without
 t-man, `status serve` in a spare terminal also works.
@@ -61,12 +65,14 @@ because status itself was not running. Absence of data is not downtime.
 `status version -o json` reports the build of the binary on PATH. `GET
 {{.BaseURL}}/version` reports the build the running serve process came from.
 When the `commit` values differ, an old process is still serving after an
-upgrade: `t-man restart status` and compare again.
+upgrade: `t-man restart status` and compare again. `status doctor` runs this
+comparison as its version-skew check: the dashboard detects other services'
+skew, doctor detects status's own.
 
 ## first moves
 
-1. `curl -s -o /dev/null -w '%{http_code}' {{.BaseURL}}/healthz` (204 means serve is up)
-2. If unreachable: `t-man list`, then `t-man restart status`
-3. `curl -s {{.BaseURL}}/api/status` to see the snapshot the dashboard renders
-4. For a suspect service, compare its own `/version` with what the dashboard shows
-5. Check that `history.json` in the workdir updated within the last few minutes
+1. `status doctor`: serve reachable, history store readable, and version skew in one pass
+2. If serve is unreachable: `t-man list`, then `t-man restart status`
+3. On version skew: `t-man restart status`, then `status doctor` again
+4. `curl -s {{.BaseURL}}/api/status` to see the snapshot the dashboard renders
+5. For a suspect service, compare its own `/version` with what the dashboard shows

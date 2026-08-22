@@ -1,0 +1,108 @@
+package cli
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/mad01/thismoon/services/csl/internal/search"
+)
+
+func TestDoctorCheckNamesAndOrder(t *testing.T) {
+	want := []string{
+		"config-loads",
+		"state-file-loads",
+		"index-freshness",
+		"index-shards-valid",
+		"search-server-responsive",
+		"web-ui-reachable",
+		"web-ui-version-skew",
+	}
+	checks := doctorChecks(false)
+	if len(checks) != len(want) {
+		t.Fatalf("doctorChecks returned %d checks, want %d", len(checks), len(want))
+	}
+	for i, c := range checks {
+		if c.Name != want[i] {
+			t.Errorf("check %d name = %q, want %q", i, c.Name, want[i])
+		}
+	}
+}
+
+func TestStateFileLoads_CorruptWithoutRepair(t *testing.T) {
+	dir := t.TempDir()
+	writeDoctorFile(t, filepath.Join(dir, "state.json"), "{not json")
+
+	err := stateFileLoads(dir, false).Run(context.Background())
+	if err == nil {
+		t.Fatal("stateFileLoads on corrupt state = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "--repair") {
+		t.Errorf("error %q does not mention --repair", err)
+	}
+}
+
+func TestStateFileLoads_RepairResets(t *testing.T) {
+	dir := t.TempDir()
+	writeDoctorFile(t, filepath.Join(dir, "state.json"), "{not json")
+
+	if err := stateFileLoads(dir, true).Run(context.Background()); err != nil {
+		t.Fatalf("stateFileLoads with repair = %v, want nil", err)
+	}
+	if _, err := search.LoadState(dir); err != nil {
+		t.Errorf("state after repair does not load: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state.json.corrupt")); err != nil {
+		t.Errorf("corrupt backup missing: %v", err)
+	}
+}
+
+func TestIndexShardsValid(t *testing.T) {
+	t.Run("empty dir passes", func(t *testing.T) {
+		if err := indexShardsValid(t.TempDir()).Run(context.Background()); err != nil {
+			t.Errorf("Run() = %v, want nil", err)
+		}
+	})
+
+	t.Run("corrupt shard fails with repair hint", func(t *testing.T) {
+		dir := t.TempDir()
+		writeDoctorFile(t, filepath.Join(dir, "bad.zoekt"), "not a shard")
+		err := indexShardsValid(dir).Run(context.Background())
+		if err == nil {
+			t.Fatal("Run() = nil, want error for corrupt shard")
+		}
+		if !strings.Contains(err.Error(), "csl index --repair") {
+			t.Errorf("error %q does not name the repair command", err)
+		}
+	})
+}
+
+func TestSearchServerResponsive(t *testing.T) {
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "daemon.pid")
+	socketPath := filepath.Join(dir, "daemon.sock")
+
+	t.Run("not running passes", func(t *testing.T) {
+		if err := searchServerResponsive(pidPath, socketPath).Run(context.Background()); err != nil {
+			t.Errorf("Run() = %v, want nil", err)
+		}
+	})
+
+	t.Run("alive pid with dead socket fails", func(t *testing.T) {
+		writeDoctorFile(t, pidPath, strconv.Itoa(os.Getpid()))
+		err := searchServerResponsive(pidPath, socketPath).Run(context.Background())
+		if err == nil {
+			t.Fatal("Run() = nil, want error for live pid with unresponsive socket")
+		}
+	})
+}
+
+func writeDoctorFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

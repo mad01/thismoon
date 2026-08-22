@@ -78,6 +78,20 @@ func Render(hosts []string) string {
 	return b.String()
 }
 
+// ManagedBlock returns the text between the managed-block markers in a hosts
+// file (marker lines excluded), and whether a complete block was found. It is
+// the read-only counterpart to Splice, for diagnostics that inspect the block
+// without touching the file.
+func ManagedBlock(existing []byte) (string, bool) {
+	text := string(existing)
+	_, bEnd, bok := findMarkerLine(text, beginMarker)
+	eStart, _, eok := findMarkerLine(text, endMarker)
+	if !bok || !eok || eStart < bEnd {
+		return "", false
+	}
+	return text[bEnd:eStart], true
+}
+
 // Splice replaces the existing managed block (between the markers) with block,
 // or appends block if no markers are present. Every byte outside the block is
 // preserved verbatim.

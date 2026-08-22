@@ -9,6 +9,7 @@ import (
 
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func newTestHandlers(t *testing.T) (*handlers, *[]string) {
@@ -917,5 +918,33 @@ func TestListIncludesHasDoc(t *testing.T) {
 	}
 	if byID[htmlPage.ID] {
 		t.Error("html page should report has_doc=false")
+	}
+}
+
+func TestWithHintWrapsErrorsOnce(t *testing.T) {
+	sentinel := errors.New("boom")
+	fail := withHint(func(
+		context.Context, *mcp.CallToolRequest, struct{},
+	) (*mcp.CallToolResult, struct{}, error) {
+		return nil, struct{}{}, sentinel
+	})
+	_, _, err := fail(context.Background(), nil, struct{}{})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("wrapped error does not unwrap to the handler error: %v", err)
+	}
+	if want := "run 'present doctor'"; !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %q, want it to contain %q", err, want)
+	}
+	if n := strings.Count(err.Error(), "doctor"); n != 1 {
+		t.Errorf("hint applied %d times, want once: %q", n, err)
+	}
+
+	ok := withHint(func(
+		context.Context, *mcp.CallToolRequest, struct{},
+	) (*mcp.CallToolResult, struct{}, error) {
+		return nil, struct{}{}, nil
+	})
+	if _, _, err := ok(context.Background(), nil, struct{}{}); err != nil {
+		t.Fatalf("clean handler returned error: %v", err)
 	}
 }

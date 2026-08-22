@@ -23,5 +23,6 @@ func Facts() agentdoc.Facts {
 		Purpose:   "message bus between agent sessions: named channels with blocking reads",
 		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath: DefaultWorkdir,
+		HasDoctor: true,
 	}
 }

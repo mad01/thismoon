@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mad01/thismoon/kit/agentdoc"
-	tman "github.com/mad01/thismoon/tools/t-man"
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/mad01/thismoon/tools/t-man/internal/service"
 	"github.com/spf13/cobra"
@@ -47,7 +45,7 @@ registered with 'add --extra-log' (e.g. --source sandbox).`,
   # A named extra log (registered via: add --extra-log sandbox=/path/to.log)
   t-man logs myapp --source sandbox`,
 	Args: cobra.ExactArgs(1),
-	RunE: runLogs,
+	RunE: hintRunE(runLogs),
 }
 
 // logsSandboxCmd represents the logs sandbox subcommand
@@ -67,7 +65,7 @@ file paths (the same ledger registered on several services) are shown once.`,
   # Follow one service's sandbox logs
   t-man logs sandbox speak-tts -f`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: runSandboxLogs,
+	RunE: hintRunE(runSandboxLogs),
 }
 
 func init() {
@@ -101,19 +99,19 @@ func runLogs(cmd *cobra.Command, args []string) error {
 
 	svc, err := manager.Get(getContext(), serviceName)
 	if err != nil {
-		return agentdoc.Hint(fmt.Errorf("failed to get service: %w", err), tman.Facts())
+		return fmt.Errorf("failed to get service: %w", err)
 	}
 
 	sources, err := resolveLogSources(svc, logsSource, logsStdout, logsStderr)
 	if err != nil {
-		return agentdoc.Hint(err, tman.Facts())
+		return err
 	}
 
 	w := os.Stdout
 	printer := newSourcePrinter(w, len(sources) > 1)
 
 	if err := tailSources(printer, sources, logsLines); err != nil {
-		return agentdoc.Hint(err, tman.Facts())
+		return err
 	}
 
 	if logsFollow {
@@ -135,7 +133,7 @@ func runSandboxLogs(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		svc, err := manager.Get(getContext(), args[0])
 		if err != nil {
-			return agentdoc.Hint(fmt.Errorf("failed to get service: %w", err), tman.Facts())
+			return fmt.Errorf("failed to get service: %w", err)
 		}
 		sources = sandboxSources([]*service.Definition{svc}, false)
 		if len(sources) == 0 {

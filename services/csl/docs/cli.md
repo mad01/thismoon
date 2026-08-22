@@ -381,44 +381,41 @@ See [hooks reference](hooks.md) for the config schema, exclusion semantics, the 
 
 ## `csl doctor`
 
-Report index and daemon health in one view.
+Run csl's self-checks, one line per check.
 
 ### Synopsis
 
 ```sh
-csl doctor [--json]
+csl doctor [--repair]
 ```
 
 ### Description
 
-`doctor` combines everything `csl index --status` reports plus shard integrity, daemon state, and total index size. It classifies issues into `stale`, `missing`, and `dirty`. Run it when searches look wrong or slow.
+`doctor` prints one `ok` or `FAIL` line per check and exits nonzero when any check failed. Run it when searches look wrong or slow. The checks, in order:
 
-It also prints the build metadata of the binary doing the checking: the same version, commit, tag and build time that `csl version -o json` reports, so a diagnosis names the build it came from. Under `--json` those four values sit in a `build` object beside the report's existing top-level keys.
+| Check | What it verifies |
+|-------|------------------|
+| `config-loads` | `~/.config/csl/config.yaml` exists and parses |
+| `state-file-loads` | `state.json` parses; with `--repair`, a corrupt file is backed up and reset |
+| `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count |
+| `index-shards-valid` | every `.zoekt` shard opens cleanly |
+| `search-server-responsive` | a running search server answers on its socket (a stopped server passes — it auto-starts) |
+| `web-ui-reachable` | the `csl web` process answers on its base URL (web-only; search works without it) |
+| `web-ui-version-skew` | the running web process was built from the same commit as this binary (web-only) |
+
+A stale-index FAIL self-heals: searches answer from the old shards and reindex in the background, or `csl index` does it synchronously. On a clean pass the last line points at `csl docs`, the embedded operating doc.
 
 ### Example output
 
 ```
-Index directory: /Users/you/.config/csl/search-index
-Index size:      84.3 MB
-Total repos:     17
-Index shards:    17 (17 healthy, 0 corrupted)
-Search daemon:   running
-
-Build:
-  version:       98b59d9
-  commit:        98b59d992678fdf3b67f3e32911fae98d73165b2
-  tag:           csl/v0.8.0
-  build time:    2026-08-13T19:47:44Z
-
-Issues (1):
-  dirty    myorg/service-a                          3 modified, 1 untracked
-
-Healthy (16):
-  mad01/thismoon                           indexed 2m12s ago
-  ...
+ok config-loads
+ok state-file-loads
+FAIL index-freshness: 3 of 17 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now
+ok index-shards-valid
+ok search-server-responsive
+ok web-ui-reachable
+ok web-ui-version-skew
 ```
-
-A field the build didn't record prints as `-`. If corrupted shards are reported, the output suggests `csl index --repair` followed by `csl index`.
 
 ---
 
