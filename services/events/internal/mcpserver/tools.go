@@ -45,11 +45,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 // ── query ──
 
 type queryInput struct {
-	Source string `json:"source,omitempty" jsonschema_description:"filter to one source (e.g. 'deps')"`
-	Level  string `json:"level,omitempty"  jsonschema_description:"filter by level: info | warn | error"`
-	Q      string `json:"q,omitempty"      jsonschema_description:"case-insensitive substring over title, message, component, and tags"`
-	Since  string `json:"since,omitempty"  jsonschema_description:"an event id; return only events newer than it (exclusive)"`
-	Limit  int    `json:"limit,omitempty"  jsonschema_description:"max events to return; defaults to the global cap"`
+	Source string `json:"source,omitempty" jsonschema:"filter to one source (e.g. 'deps')"`
+	Level  string `json:"level,omitempty"  jsonschema:"filter by level: info | warn | error"`
+	Q      string `json:"q,omitempty"      jsonschema:"case-insensitive substring over title, message, component, and tags"`
+	Since  string `json:"since,omitempty"  jsonschema:"an event id; return only events newer than it (exclusive)"`
+	Limit  int    `json:"limit,omitempty"  jsonschema:"max events to return; defaults to the global cap"`
 }
 
 type queryOutput struct {
@@ -193,17 +193,17 @@ func (h *handlers) handleSources(
 // ── emit ──
 
 type emitInput struct {
-	Source    string            `json:"source"              jsonschema_description:"event source, e.g. 'deps' (required)"`
-	Title     string            `json:"title"               jsonschema_description:"short summary of the event (required)"`
-	Level     string            `json:"level,omitempty"     jsonschema_description:"info (default) | warn | error"`
-	Component string            `json:"component,omitempty" jsonschema_description:"optional sub-area within the source"`
-	Message   string            `json:"message,omitempty"   jsonschema_description:"optional longer detail"`
-	Tags      map[string]string `json:"tags,omitempty"      jsonschema_description:"optional flat object of string key/values"`
+	Source    string            `json:"source"              jsonschema:"event source, e.g. 'deps' (required)"`
+	Title     string            `json:"title"               jsonschema:"short summary of the event (required)"`
+	Level     string            `json:"level,omitempty"     jsonschema:"info (default) | warn | error"`
+	Component string            `json:"component,omitempty" jsonschema:"optional sub-area within the source"`
+	Message   string            `json:"message,omitempty"   jsonschema:"optional longer detail"`
+	Tags      map[string]string `json:"tags,omitempty"      jsonschema:"optional flat object of string key/values"`
 }
 
 type emitOutput struct {
 	ID  string `json:"id"`
-	URL string `json:"url" jsonschema_description:"web page where the user can view the event timeline"`
+	URL string `json:"url" jsonschema:"web page where the user can view the event timeline"`
 }
 
 func (h *handlers) handleEmit(

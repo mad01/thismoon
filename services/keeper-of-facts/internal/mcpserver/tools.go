@@ -68,7 +68,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 // plus the web URL to view it.
 type out struct {
 	Assertion client.Assertion `json:"assertion"`
-	URL       string           `json:"url"       jsonschema_description:"web page where the user can view assertions"`
+	URL       string           `json:"url"       jsonschema:"web page where the user can view assertions"`
 }
 
 func (h *handlers) one(a client.Assertion) out { return out{Assertion: a, URL: h.webURL} }
@@ -76,21 +76,21 @@ func (h *handlers) one(a client.Assertion) out { return out{Assertion: a, URL: h
 // ── assert ──
 
 type pinInput struct {
-	RepoPath  string `json:"repo_path"  jsonschema_description:"absolute path to the repo working tree the evidence lives in, e.g. /Users/me/code/src/github.com/mad01/thismoon"`
-	File      string `json:"file"       jsonschema_description:"repo-relative path to the file"`
-	StartLine int    `json:"start_line" jsonschema_description:"first line of the evidence range (1-based, inclusive)"`
-	EndLine   int    `json:"end_line"   jsonschema_description:"last line of the evidence range (1-based, inclusive; >= start_line)"`
+	RepoPath  string `json:"repo_path"  jsonschema:"absolute path to the repo working tree the evidence lives in, e.g. /Users/me/code/src/github.com/mad01/thismoon"`
+	File      string `json:"file"       jsonschema:"repo-relative path to the file"`
+	StartLine int    `json:"start_line" jsonschema:"first line of the evidence range (1-based, inclusive)"`
+	EndLine   int    `json:"end_line"   jsonschema:"last line of the evidence range (1-based, inclusive; >= start_line)"`
 }
 
 type assertInput struct {
-	Kind       string     `json:"kind"                  jsonschema_description:"what sort of claim this is; one of: code-behavior (how code acts), dead-end (an approach that failed), preference (a stated way of working), decision (a settled choice), machine-state (a fact about the local machine), open-thread (unfinished work worth resuming)"`
-	Subject    string     `json:"subject"               jsonschema_description:"namespaced key the claim is about, e.g. repo:mad01/thismoon/services/events"`
-	Statement  string     `json:"statement"             jsonschema_description:"the claim in one sentence"`
-	Confidence string     `json:"confidence"            jsonschema_description:"how strongly you believe it: verified (checked against a primary source), derived (reasoned from evidence), or hint (a weak signal)"`
-	SessionID  string     `json:"session_id"            jsonschema_description:"identifier of the session deriving this assertion"`
-	CostTokens int        `json:"cost_tokens,omitempty" jsonschema_description:"optional token cost of deriving the assertion"`
-	Links      []string   `json:"links,omitempty"       jsonschema_description:"optional related URLs (tickets, PRs, docs)"`
-	Pins       []pinInput `json:"pins"                  jsonschema_description:"evidence pins grounding the claim in hashed line ranges; at least one is REQUIRED"`
+	Kind       string     `json:"kind"                  jsonschema:"what sort of claim this is; one of: code-behavior (how code acts), dead-end (an approach that failed), preference (a stated way of working), decision (a settled choice), machine-state (a fact about the local machine), open-thread (unfinished work worth resuming)"`
+	Subject    string     `json:"subject"               jsonschema:"namespaced key the claim is about, e.g. repo:mad01/thismoon/services/events"`
+	Statement  string     `json:"statement"             jsonschema:"the claim in one sentence"`
+	Confidence string     `json:"confidence"            jsonschema:"how strongly you believe it: verified (checked against a primary source), derived (reasoned from evidence), or hint (a weak signal)"`
+	SessionID  string     `json:"session_id"            jsonschema:"identifier of the session deriving this assertion"`
+	CostTokens int        `json:"cost_tokens,omitempty" jsonschema:"optional token cost of deriving the assertion"`
+	Links      []string   `json:"links,omitempty"       jsonschema:"optional related URLs (tickets, PRs, docs)"`
+	Pins       []pinInput `json:"pins"                  jsonschema:"evidence pins grounding the claim in hashed line ranges; at least one is REQUIRED"`
 }
 
 func (h *handlers) handleAssert(
@@ -126,7 +126,7 @@ func (h *handlers) handleAssert(
 // ── recall ──
 
 type recallInput struct {
-	Question string `json:"question" jsonschema_description:"the free-form question to rank the store against, e.g. 'what do we know about JSONL write races'"`
+	Question string `json:"question" jsonschema:"the free-form question to rank the store against, e.g. 'what do we know about JSONL write races'"`
 }
 
 func (h *handlers) handleRecall(
@@ -144,9 +144,9 @@ func (h *handlers) handleRecall(
 // ── query ──
 
 type queryInput struct {
-	Subject string `json:"subject,omitempty" jsonschema_description:"optional prefix match on the subject key"`
-	Kind    string `json:"kind,omitempty"    jsonschema_description:"optional kind filter: code-behavior | dead-end | preference | decision | machine-state | open-thread"`
-	Status  string `json:"status,omitempty"  jsonschema_description:"optional status filter: fresh | stale | retracted"`
+	Subject string `json:"subject,omitempty" jsonschema:"optional prefix match on the subject key"`
+	Kind    string `json:"kind,omitempty"    jsonschema:"optional kind filter: code-behavior | dead-end | preference | decision | machine-state | open-thread"`
+	Status  string `json:"status,omitempty"  jsonschema:"optional status filter: fresh | stale | retracted"`
 }
 
 type queryOutput struct {
@@ -245,7 +245,7 @@ func queryZeroNotes(in queryInput, hint *queryZeroHint, matchedAssertions int) [
 // ── get ──
 
 type idInput struct {
-	ID string `json:"id" jsonschema_description:"assertion id returned by kof_assert"`
+	ID string `json:"id" jsonschema:"assertion id returned by kof_assert"`
 }
 
 func (h *handlers) handleGet(
@@ -263,8 +263,8 @@ func (h *handlers) handleGet(
 // ── retract ──
 
 type retractInput struct {
-	ID   string `json:"id"   jsonschema_description:"assertion id to retract (required)"`
-	Note string `json:"note" jsonschema_description:"the reason or counter-evidence for withdrawing the assertion (required)"`
+	ID   string `json:"id"   jsonschema:"assertion id to retract (required)"`
+	Note string `json:"note" jsonschema:"the reason or counter-evidence for withdrawing the assertion (required)"`
 }
 
 func (h *handlers) handleRetract(
@@ -282,7 +282,7 @@ func (h *handlers) handleRetract(
 // ── check ──
 
 type checkInput struct {
-	ID string `json:"id,omitempty" jsonschema_description:"assertion id to re-check; omit to re-check every non-retracted assertion"`
+	ID string `json:"id,omitempty" jsonschema:"assertion id to re-check; omit to re-check every non-retracted assertion"`
 }
 
 type checkOutput struct {

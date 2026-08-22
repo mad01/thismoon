@@ -39,19 +39,19 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 ## Typed input and output structs with schema descriptions
 
-Each tool has an input struct and an output struct. Tag fields with `json` and a `jsonschema_description` so the generated schema documents itself to the model. Use `omitempty` for optional fields:
+Each tool has an input struct and an output struct. Tag fields with `json` and a `jsonschema` description so the generated schema documents itself to the model — the go-sdk's schema inferrer reads only the `jsonschema` tag, so a `jsonschema_description` tag is silently dropped. Use `omitempty` for optional fields:
 
 ```go
 type createInput struct {
-	Title  string `json:"title"            jsonschema_description:"what to be reminded about"`
-	Due    string `json:"due,omitempty"    jsonschema_description:"absolute due time as RFC3339. Provide this OR 'in', not both."`
-	In     string `json:"in,omitempty"     jsonschema_description:"relative due time as a Go duration from now. Provide this OR 'due', not both."`
-	Repeat string `json:"repeat,omitempty" jsonschema_description:"recurrence: 'daily', 'weekly', or a Go duration like '24h'. Omit for a one-shot."`
+	Title  string `json:"title"            jsonschema:"what to be reminded about"`
+	Due    string `json:"due,omitempty"    jsonschema:"absolute due time as RFC3339. Provide this OR 'in', not both."`
+	In     string `json:"in,omitempty"     jsonschema:"relative due time as a Go duration from now. Provide this OR 'due', not both."`
+	Repeat string `json:"repeat,omitempty" jsonschema:"recurrence: 'daily', 'weekly', or a Go duration like '24h'. Omit for a one-shot."`
 }
 
 type out struct {
 	Reminder client.Reminder `json:"reminder"`
-	URL      string          `json:"url" jsonschema_description:"web page where the user can view and manage reminders"`
+	URL      string          `json:"url" jsonschema:"web page where the user can view and manage reminders"`
 }
 ```
 

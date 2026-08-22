@@ -59,41 +59,61 @@ func registerTools(s *mcp.Server, h *handlers) {
 // ── text ──
 
 type textInput struct {
-	Text  string `json:"text"            jsonschema_description:"the text to speak; may be a sentence or several paragraphs"`
-	Voice string `json:"voice,omitempty" jsonschema_description:"optional Kokoro voice id (af_heart default, af_bella, af_nicole, af_sarah, af_sky, am_adam, am_michael)"`
+	Text  string `json:"text"            jsonschema:"the text to speak; may be a sentence or several paragraphs"`
+	Voice string `json:"voice,omitempty" jsonschema:"optional Kokoro voice id (af_heart default, af_bella, af_nicole, af_sarah, af_sky, am_adam, am_michael)"`
 }
 
-func (h *handlers) handleText(_ context.Context, _ *mcp.CallToolRequest, in textInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handleText(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in textInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.SpeakText(in.Text, in.Voice))
 }
 
 // ── file ──
 
 type fileInput struct {
-	Path     string `json:"path"               jsonschema_description:"path to a .md file (absolute or ~-prefixed)"`
-	Voice    string `json:"voice,omitempty"    jsonschema_description:"optional Kokoro voice id (see speak_voices)"`
-	Sections string `json:"sections,omitempty" jsonschema_description:"optional comma-separated 1-based section indices to read; empty reads all"`
+	Path     string `json:"path"               jsonschema:"path to a .md file (absolute or ~-prefixed)"`
+	Voice    string `json:"voice,omitempty"    jsonschema:"optional Kokoro voice id (see speak_voices)"`
+	Sections string `json:"sections,omitempty" jsonschema:"optional comma-separated 1-based section indices to read; empty reads all"`
 }
 
-func (h *handlers) handleFile(_ context.Context, _ *mcp.CallToolRequest, in fileInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handleFile(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in fileInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.SpeakFile(in.Path, in.Voice, in.Sections))
 }
 
 // ── session-scoped controls ──
 
 type sessionInput struct {
-	Session string `json:"session,omitempty" jsonschema_description:"optional session id from speak_text/speak_file; if set, the call only applies when it matches the active session"`
+	Session string `json:"session,omitempty" jsonschema:"optional session id from speak_text/speak_file; if set, the call only applies when it matches the active session"`
 }
 
-func (h *handlers) handlePause(_ context.Context, _ *mcp.CallToolRequest, in sessionInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handlePause(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in sessionInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.Pause(in.Session))
 }
 
-func (h *handlers) handleResume(_ context.Context, _ *mcp.CallToolRequest, in sessionInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handleResume(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in sessionInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.Resume(in.Session))
 }
 
-func (h *handlers) handleStop(_ context.Context, _ *mcp.CallToolRequest, in sessionInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handleStop(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in sessionInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.Stop(in.Session))
 }
 
@@ -101,11 +121,19 @@ func (h *handlers) handleStop(_ context.Context, _ *mcp.CallToolRequest, in sess
 
 type emptyInput struct{}
 
-func (h *handlers) handleVoices(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handleVoices(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	_ emptyInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.Voices())
 }
 
-func (h *handlers) handleStatus(_ context.Context, _ *mcp.CallToolRequest, _ emptyInput) (*mcp.CallToolResult, playback.Result, error) {
+func (h *handlers) handleStatus(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	_ emptyInput,
+) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.Status())
 }
 

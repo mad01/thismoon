@@ -162,15 +162,15 @@ func parseGraphAndRender(data []byte) (js string, srcJSON []byte, err error) {
 // ── create ──
 
 type refInput struct {
-	Title string `json:"title" jsonschema_description:"display label for the link"`
-	URL   string `json:"url"   jsonschema_description:"full URL (https://...) — repos, docs, PRs, or any external material cited in the brief"`
+	Title string `json:"title" jsonschema:"display label for the link"`
+	URL   string `json:"url"   jsonschema:"full URL (https://...) — repos, docs, PRs, or any external material cited in the brief"`
 }
 
 type createInput struct {
-	Title      string     `json:"title"                jsonschema_description:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content"              jsonschema_description:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string. Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|area|sparkline, title?, unit?, series:[{name?, color?, points:[{x,y}]}] — inline metric chart, many per page), code (text + lang?, verbatim code block with copy button — no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
-	Graph      string     `json:"graph,omitempty"      jsonschema_description:"optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?}], edges:[{from,to,type?,label?}], layout?, direction?} or a legacy JS string. Node types: center, module, leaf, registry. Edge types: consumes (solid), publishes (dashed). Layouts: dagre (default, layered DAG), cose (no hierarchy). Direction (dagre): TB or LR; omit for auto (LR when the graph has few nodes)."`
-	References []refInput `json:"references,omitempty" jsonschema_description:"source links shown in a References section at the bottom of the page — repos, docs, PRs consulted while writing the brief"`
+	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
+	Content    string     `json:"content"              jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string. Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|area|sparkline, title?, unit?, series:[{name?, color?, points:[{x,y}]}] — inline metric chart, many per page), code (text + lang?, verbatim code block with copy button — no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
+	Graph      string     `json:"graph,omitempty"      jsonschema:"optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?}], edges:[{from,to,type?,label?}], layout?, direction?} or a legacy JS string. Node types: center, module, leaf, registry. Edge types: consumes (solid), publishes (dashed). Layouts: dagre (default, layered DAG), cose (no hierarchy). Direction (dagre): TB or LR; omit for auto (LR when the graph has few nodes)."`
+	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page — repos, docs, PRs consulted while writing the brief"`
 }
 
 type pageOutput struct {
@@ -239,7 +239,7 @@ func fromStoreRefs(in []store.Reference) []refInput {
 // ── read ──
 
 type readInput struct {
-	ID string `json:"id" jsonschema_description:"page id returned by present_create"`
+	ID string `json:"id" jsonschema:"page id returned by present_create"`
 }
 
 type readOutput struct {
@@ -272,15 +272,15 @@ func (h *handlers) handleRead(
 // ── source ──
 
 type sourceInput struct {
-	ID string `json:"id" jsonschema_description:"page id returned by present_create"`
+	ID string `json:"id" jsonschema:"page id returned by present_create"`
 }
 
 type sourceOutput struct {
 	ID            string     `json:"id"`
 	Title         string     `json:"title"`
-	ContentFormat string     `json:"content_format"         jsonschema_description:"doc = structured Doc JSON (editable, pass back to present_update); html = legacy raw HTML (no Doc source persisted)"`
+	ContentFormat string     `json:"content_format"         jsonschema:"doc = structured Doc JSON (editable, pass back to present_update); html = legacy raw HTML (no Doc source persisted)"`
 	Content       string     `json:"content"`
-	GraphFormat   string     `json:"graph_format,omitempty" jsonschema_description:"json = structured GraphInput JSON (editable); js = legacy raw JS; empty = page has no graph"`
+	GraphFormat   string     `json:"graph_format,omitempty" jsonschema:"json = structured GraphInput JSON (editable); js = legacy raw JS; empty = page has no graph"`
 	Graph         string     `json:"graph,omitempty"`
 	References    []refInput `json:"references,omitempty"`
 	Version       int        `json:"version"`
@@ -327,11 +327,11 @@ func (h *handlers) handleSource(
 // ── update ──
 
 type updateInput struct {
-	ID         string      `json:"id"                   jsonschema_description:"page id to update"`
-	Title      *string     `json:"title,omitempty"      jsonschema_description:"new title; omit to leave unchanged"`
-	Content    *string     `json:"content,omitempty"    jsonschema_description:"new page content as a Doc JSON string or legacy HTML string; omit to leave unchanged"`
-	Graph      *string     `json:"graph,omitempty"      jsonschema_description:"new graph as structured JSON string or legacy JS string; omit to leave unchanged, empty string to remove"`
-	References *[]refInput `json:"references,omitempty" jsonschema_description:"replace the references list; omit to leave unchanged, empty array to clear"`
+	ID         string      `json:"id"                   jsonschema:"page id to update"`
+	Title      *string     `json:"title,omitempty"      jsonschema:"new title; omit to leave unchanged"`
+	Content    *string     `json:"content,omitempty"    jsonschema:"new page content as a Doc JSON string or legacy HTML string; omit to leave unchanged"`
+	Graph      *string     `json:"graph,omitempty"      jsonschema:"new graph as structured JSON string or legacy JS string; omit to leave unchanged, empty string to remove"`
+	References *[]refInput `json:"references,omitempty" jsonschema:"replace the references list; omit to leave unchanged, empty array to clear"`
 }
 
 func (h *handlers) handleUpdate(
@@ -424,7 +424,7 @@ type listItem struct {
 	URL       string `json:"url"`
 	Version   int    `json:"version"`
 	UpdatedAt string `json:"updated_at"`
-	HasDoc    bool   `json:"has_doc"    jsonschema_description:"true when the page has a persisted Doc source — present_source returns it ready for editing"`
+	HasDoc    bool   `json:"has_doc"    jsonschema:"true when the page has a persisted Doc source — present_source returns it ready for editing"`
 }
 
 type listOutput struct {
@@ -454,7 +454,7 @@ func (h *handlers) handleList(
 // ── open ──
 
 type openInput struct {
-	ID string `json:"id" jsonschema_description:"page id to open in the browser"`
+	ID string `json:"id" jsonschema:"page id to open in the browser"`
 }
 
 type openOutput struct {

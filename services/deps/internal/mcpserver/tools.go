@@ -53,9 +53,9 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 // scanOut is the deps_scan response.
 type scanOut struct {
-	Total       int            `json:"total"        jsonschema_description:"total dependencies discovered"`
-	ByEcosystem map[string]int `json:"by_ecosystem" jsonschema_description:"count per ecosystem (Go, npm, PyPI)"`
-	URL         string         `json:"url"          jsonschema_description:"web page where the user can view findings"`
+	Total       int            `json:"total"        jsonschema:"total dependencies discovered"`
+	ByEcosystem map[string]int `json:"by_ecosystem" jsonschema:"count per ecosystem (Go, npm, PyPI)"`
+	URL         string         `json:"url"          jsonschema:"web page where the user can view findings"`
 }
 
 func (h *handlers) handleScan(
@@ -72,10 +72,10 @@ func (h *handlers) handleScan(
 
 // flaggedOut is the deps_check / deps_list_flagged / deps_scan_repo response.
 type flaggedOut struct {
-	Total        int              `json:"total"         jsonschema_description:"total dependencies checked"`
-	FlaggedCount int              `json:"flagged_count" jsonschema_description:"number of dependencies with at least one UNRESOLVED advisory"`
-	Flagged      []api.Dependency `json:"flagged"       jsonschema_description:"the flagged dependencies; each advisory has a key and a resolved flag"`
-	URL          string           `json:"url"           jsonschema_description:"web page where the user can view findings"`
+	Total        int              `json:"total"                      jsonschema:"total dependencies checked"`
+	FlaggedCount int              `json:"flagged_count"              jsonschema:"number of dependencies with at least one UNRESOLVED advisory"`
+	Flagged      []api.Dependency `json:"flagged"                    jsonschema:"the flagged dependencies; each advisory has a key and a resolved flag"`
+	URL          string           `json:"url"                        jsonschema:"web page where the user can view findings"`
 	ZeroHint     *flaggedZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set by deps_list_flagged only, when the store holds zero dependencies: an empty flagged list then means nothing was checked, not that the dependencies are clean"`
 }
 
@@ -139,7 +139,7 @@ func flaggedZero(res client.CheckResult) *flaggedZeroHint {
 }
 
 type scanRepoInput struct {
-	Repo string `json:"repo" jsonschema_description:"repo to rescan: absolute path or basename (e.g. 'dotfiles')"`
+	Repo string `json:"repo" jsonschema:"repo to rescan: absolute path or basename (e.g. 'dotfiles')"`
 }
 
 func (h *handlers) handleScanRepo(
@@ -155,11 +155,11 @@ func (h *handlers) handleScanRepo(
 }
 
 type resolveInput struct {
-	Keys []string `json:"keys" jsonschema_description:"advisory keys to acknowledge (from deps_check / deps_list_flagged)"`
+	Keys []string `json:"keys" jsonschema:"advisory keys to acknowledge (from deps_check / deps_list_flagged)"`
 }
 
 type resolveOut struct {
-	Resolved int    `json:"resolved" jsonschema_description:"number of advisories newly acknowledged"`
+	Resolved int    `json:"resolved" jsonschema:"number of advisories newly acknowledged"`
 	URL      string `json:"url"`
 }
 

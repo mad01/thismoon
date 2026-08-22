@@ -81,13 +81,13 @@ func registerTools(s *mcp.Server) {
 }
 
 type checkpointInput struct {
-	Key    string `json:"key"              jsonschema_description:"ticket id (ABC-1234) or topic slug"`
-	Where  string `json:"where,omitempty"  jsonschema_description:"current state snapshot; replaces the Where I am section. Write for cold-start: goal, repo paths, all conclusions with reasoning, working query/tool examples, anti-patterns, decisions, next steps. This is the ONLY context a resuming session sees."`
-	Note   string `json:"note,omitempty"   jsonschema_description:"a log entry appended to the item's history. Summarize what changed this session and list remaining work items."`
-	Ticket string `json:"ticket,omitempty" jsonschema_description:"ticket id, set on first creation"`
-	Topic  string `json:"topic,omitempty"  jsonschema_description:"free-text topic, set on first creation"`
-	Repo   string `json:"repo,omitempty"   jsonschema_description:"repo this checkpoint touched; overrides cwd detection"`
-	Cwd    string `json:"cwd,omitempty"    jsonschema_description:"the user's working directory, used to detect the repo and record last_cwd"`
+	Key    string `json:"key"              jsonschema:"ticket id (ABC-1234) or topic slug"`
+	Where  string `json:"where,omitempty"  jsonschema:"current state snapshot; replaces the Where I am section. Write for cold-start: goal, repo paths, all conclusions with reasoning, working query/tool examples, anti-patterns, decisions, next steps. This is the ONLY context a resuming session sees."`
+	Note   string `json:"note,omitempty"   jsonschema:"a log entry appended to the item's history. Summarize what changed this session and list remaining work items."`
+	Ticket string `json:"ticket,omitempty" jsonschema:"ticket id, set on first creation"`
+	Topic  string `json:"topic,omitempty"  jsonschema:"free-text topic, set on first creation"`
+	Repo   string `json:"repo,omitempty"   jsonschema:"repo this checkpoint touched; overrides cwd detection"`
+	Cwd    string `json:"cwd,omitempty"    jsonschema:"the user's working directory, used to detect the repo and record last_cwd"`
 }
 
 func handleCheckpoint(
@@ -119,8 +119,8 @@ func handleCheckpoint(
 }
 
 type listInput struct {
-	Status string `json:"status,omitempty" jsonschema_description:"filter by status: active, paused, or done"`
-	Repo   string `json:"repo,omitempty"   jsonschema_description:"filter to items touching this repo"`
+	Status string `json:"status,omitempty" jsonschema:"filter by status: active, paused, or done"`
+	Repo   string `json:"repo,omitempty"   jsonschema:"filter to items touching this repo"`
 }
 
 type listOutput struct {
@@ -133,7 +133,7 @@ type listOutput struct {
 // degrades to local-only silently when its clone fails, so an unexpected
 // empty store is worth naming. Additive: it appears only on zero results.
 type listZeroHint struct {
-	ItemsStored int      `json:"items_stored" jsonschema:"work items in the store regardless of filters"`
+	ItemsStored int      `json:"items_stored"    jsonschema:"work items in the store regardless of filters"`
 	Notes       []string `json:"notes,omitempty" jsonschema:"one note naming why the result is empty"`
 }
 
@@ -174,7 +174,7 @@ func handleList(
 }
 
 type searchInput struct {
-	Query string `json:"query" jsonschema_description:"substring to match against keys and content"`
+	Query string `json:"query" jsonschema:"substring to match against keys and content"`
 }
 
 func handleSearch(
@@ -195,8 +195,8 @@ func handleSearch(
 }
 
 type showInput struct {
-	Key  string `json:"key"            jsonschema_description:"ticket id or topic slug"`
-	Repo string `json:"repo,omitempty" jsonschema_description:"print this repo's note file instead of CONTEXT.md"`
+	Key  string `json:"key"            jsonschema:"ticket id or topic slug"`
+	Repo string `json:"repo,omitempty" jsonschema:"print this repo's note file instead of CONTEXT.md"`
 }
 
 type showOutput struct {
@@ -229,8 +229,8 @@ func handleShow(
 }
 
 type statusInput struct {
-	Key    string `json:"key"    jsonschema_description:"ticket id or topic slug"`
-	Status string `json:"status" jsonschema_description:"active, paused, or done"`
+	Key    string `json:"key"    jsonschema:"ticket id or topic slug"`
+	Status string `json:"status" jsonschema:"active, paused, or done"`
 }
 
 func handleStatus(

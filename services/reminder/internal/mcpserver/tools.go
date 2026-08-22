@@ -64,7 +64,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 // out is the tool response shape: the reminder plus the web URL to view it.
 type out struct {
 	Reminder client.Reminder `json:"reminder"`
-	URL      string          `json:"url"      jsonschema_description:"web page where the user can view and manage reminders"`
+	URL      string          `json:"url"      jsonschema:"web page where the user can view and manage reminders"`
 }
 
 func (h *handlers) one(r client.Reminder) out { return out{Reminder: r, URL: h.webURL} }
@@ -72,11 +72,11 @@ func (h *handlers) one(r client.Reminder) out { return out{Reminder: r, URL: h.w
 // ── create ──
 
 type createInput struct {
-	Title  string `json:"title"            jsonschema_description:"what to be reminded about"`
-	Body   string `json:"body,omitempty"   jsonschema_description:"optional longer note shown in the notification body"`
-	Due    string `json:"due,omitempty"    jsonschema_description:"absolute due time as RFC3339 (e.g. 2026-06-26T09:00:00+02:00). Provide this OR 'in', not both."`
-	In     string `json:"in,omitempty"     jsonschema_description:"relative due time as a Go duration from now (e.g. '2h30m', '45m'). Provide this OR 'due', not both."`
-	Repeat string `json:"repeat,omitempty" jsonschema_description:"recurrence: 'daily', 'weekly', or a Go duration like '24h'. Omit for a one-shot."`
+	Title  string `json:"title"            jsonschema:"what to be reminded about"`
+	Body   string `json:"body,omitempty"   jsonschema:"optional longer note shown in the notification body"`
+	Due    string `json:"due,omitempty"    jsonschema:"absolute due time as RFC3339 (e.g. 2026-06-26T09:00:00+02:00). Provide this OR 'in', not both."`
+	In     string `json:"in,omitempty"     jsonschema:"relative due time as a Go duration from now (e.g. '2h30m', '45m'). Provide this OR 'due', not both."`
+	Repeat string `json:"repeat,omitempty" jsonschema:"recurrence: 'daily', 'weekly', or a Go duration like '24h'. Omit for a one-shot."`
 }
 
 func (h *handlers) handleCreate(
@@ -102,7 +102,7 @@ func (h *handlers) handleCreate(
 // ── list ──
 
 type listInput struct {
-	Status string `json:"status,omitempty" jsonschema_description:"optional filter: pending | fired | done | cancelled"`
+	Status string `json:"status,omitempty" jsonschema:"optional filter: pending | fired | done | cancelled"`
 }
 
 type listOutput struct {
@@ -125,7 +125,7 @@ func (h *handlers) handleList(
 // ── get ──
 
 type idInput struct {
-	ID string `json:"id" jsonschema_description:"reminder id returned by reminder_create"`
+	ID string `json:"id" jsonschema:"reminder id returned by reminder_create"`
 }
 
 func (h *handlers) handleGet(
@@ -143,11 +143,11 @@ func (h *handlers) handleGet(
 // ── edit ──
 
 type editInput struct {
-	ID     string  `json:"id"               jsonschema_description:"reminder id to edit (required)"`
-	Title  *string `json:"title,omitempty"  jsonschema_description:"new title; omit to leave unchanged"`
-	Body   *string `json:"body,omitempty"   jsonschema_description:"new body note; omit to leave unchanged"`
-	Due    *string `json:"due,omitempty"    jsonschema_description:"new absolute due time as RFC3339; omit to leave unchanged. A future time re-arms a fired reminder."`
-	Repeat *string `json:"repeat,omitempty" jsonschema_description:"new recurrence ('daily'|'weekly'|Go duration|empty for one-shot); omit to leave unchanged"`
+	ID     string  `json:"id"               jsonschema:"reminder id to edit (required)"`
+	Title  *string `json:"title,omitempty"  jsonschema:"new title; omit to leave unchanged"`
+	Body   *string `json:"body,omitempty"   jsonschema:"new body note; omit to leave unchanged"`
+	Due    *string `json:"due,omitempty"    jsonschema:"new absolute due time as RFC3339; omit to leave unchanged. A future time re-arms a fired reminder."`
+	Repeat *string `json:"repeat,omitempty" jsonschema:"new recurrence ('daily'|'weekly'|Go duration|empty for one-shot); omit to leave unchanged"`
 }
 
 func (h *handlers) handleEdit(
@@ -182,7 +182,7 @@ func (h *handlers) handleCancel(
 // ── test ──
 
 type testInput struct {
-	ID string `json:"id,omitempty" jsonschema_description:"reminder id to send a test notification for; omit for a generic 'notifications are working' test"`
+	ID string `json:"id,omitempty" jsonschema:"reminder id to send a test notification for; omit for a generic 'notifications are working' test"`
 }
 
 // testOutput carries an ok flag, the web URL, and — for an id-scoped test — the

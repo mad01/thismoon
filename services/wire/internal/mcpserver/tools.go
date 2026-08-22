@@ -96,8 +96,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 // channel with its derived counts, plus the web URL for watching it live.
 type channelOut struct {
 	Channel client.Summary `json:"channel"`
-	Connect string         `json:"connect" jsonschema_description:"the connection string to hand the other session; it works as the channel argument of every wire tool"`
-	URL     string         `json:"url"     jsonschema_description:"web page where the user can watch this channel live"`
+	Connect string         `json:"connect" jsonschema:"the connection string to hand the other session; it works as the channel argument of every wire tool"`
+	URL     string         `json:"url"     jsonschema:"web page where the user can watch this channel live"`
 }
 
 func (h *handlers) channel(s client.Summary) channelOut {
@@ -113,10 +113,10 @@ func (h *handlers) channelURL(ref string) string {
 // ── open ──
 
 type openInput struct {
-	Name        string `json:"name,omitempty"        jsonschema_description:"channel name to open, lowercase letters/digits/dots/dashes, e.g. refactor-auth; omit to have one generated"`
-	Topic       string `json:"topic,omitempty"       jsonschema_description:"optional one-line description of what this conversation is for"`
-	From        string `json:"from"                  jsonschema_description:"the name you give yourself for this conversation — short and distinctive (planner, quill), not a generic placeholder like agent; your messages are signed with it and replies are addressed to it"`
-	Conventions string `json:"conventions,omitempty" jsonschema_description:"ground rules for the conversation (tag vocabulary, expected message shapes); carried on the channel so a late joiner sees them without reading from the start"`
+	Name        string `json:"name,omitempty"        jsonschema:"channel name to open, lowercase letters/digits/dots/dashes, e.g. refactor-auth; omit to have one generated"`
+	Topic       string `json:"topic,omitempty"       jsonschema:"optional one-line description of what this conversation is for"`
+	From        string `json:"from"                  jsonschema:"the name you give yourself for this conversation — short and distinctive (planner, quill), not a generic placeholder like agent; your messages are signed with it and replies are addressed to it"`
+	Conventions string `json:"conventions,omitempty" jsonschema:"ground rules for the conversation (tag vocabulary, expected message shapes); carried on the channel so a late joiner sees them without reading from the start"`
 }
 
 func (h *handlers) handleOpen(
@@ -139,9 +139,9 @@ func (h *handlers) handleOpen(
 // ── join / leave ──
 
 type joinInput struct {
-	Channel string `json:"channel"        jsonschema_description:"channel name, id, or connection string to join"`
-	From    string `json:"from"           jsonschema_description:"the name you join as — pick it yourself, short and distinctive (quill, forge), not a generic placeholder like agent; sign every later post with it, and answer messages addressed to it"`
-	Note    string `json:"note,omitempty" jsonschema_description:"optional intro: what you are joining as or ready for; becomes the join message's body"`
+	Channel string `json:"channel"        jsonschema:"channel name, id, or connection string to join"`
+	From    string `json:"from"           jsonschema:"the name you join as — pick it yourself, short and distinctive (quill, forge), not a generic placeholder like agent; sign every later post with it, and answer messages addressed to it"`
+	Note    string `json:"note,omitempty" jsonschema:"optional intro: what you are joining as or ready for; becomes the join message's body"`
 }
 
 func (h *handlers) handleJoin(
@@ -157,9 +157,9 @@ func (h *handlers) handleJoin(
 }
 
 type leaveInput struct {
-	Channel string `json:"channel"        jsonschema_description:"channel name, id, or connection string to leave"`
-	From    string `json:"from"           jsonschema_description:"the name you joined as"`
-	Note    string `json:"note,omitempty" jsonschema_description:"optional parting note: why you are going, where your work landed"`
+	Channel string `json:"channel"        jsonschema:"channel name, id, or connection string to leave"`
+	From    string `json:"from"           jsonschema:"the name you joined as"`
+	Note    string `json:"note,omitempty" jsonschema:"optional parting note: why you are going, where your work landed"`
 }
 
 func (h *handlers) handleLeave(
@@ -177,18 +177,18 @@ func (h *handlers) handleLeave(
 // ── post ──
 
 type postInput struct {
-	Channel     string `json:"channel"                jsonschema_description:"channel name or id to post to"`
-	From        string `json:"from"                   jsonschema_description:"who is speaking (required)"`
-	To          string `json:"to,omitempty"           jsonschema_description:"roster name this message is addressed to; set it on questions and tasks whenever more than two agents share the channel"`
-	Body        string `json:"body"                   jsonschema_description:"the message (required)"`
-	Kind        string `json:"kind,omitempty"         jsonschema_description:"intent of the message: task, result, question, answer, ack, or note; omit for a plain message"`
-	ReplyTo     int64  `json:"reply_to,omitempty"     jsonschema_description:"seq of the message this answers — set it on every response, one reply_to per obligation"`
-	ReplyNeeded bool   `json:"reply_needed,omitempty" jsonschema_description:"true when you are blocked until someone answers; the message stays in awaiting_reply until another message names it in reply_to"`
+	Channel     string `json:"channel"                jsonschema:"channel name or id to post to"`
+	From        string `json:"from"                   jsonschema:"who is speaking (required)"`
+	To          string `json:"to,omitempty"           jsonschema:"roster name this message is addressed to; set it on questions and tasks whenever more than two agents share the channel"`
+	Body        string `json:"body"                   jsonschema:"the message (required)"`
+	Kind        string `json:"kind,omitempty"         jsonschema:"intent of the message: task, result, question, answer, ack, or note; omit for a plain message"`
+	ReplyTo     int64  `json:"reply_to,omitempty"     jsonschema:"seq of the message this answers — set it on every response, one reply_to per obligation"`
+	ReplyNeeded bool   `json:"reply_needed,omitempty" jsonschema:"true when you are blocked until someone answers; the message stays in awaiting_reply until another message names it in reply_to"`
 }
 
 type postOutput struct {
 	Message client.Message `json:"message"`
-	Cursor  int64          `json:"cursor"  jsonschema_description:"the posted message's sequence number"`
+	Cursor  int64          `json:"cursor"  jsonschema:"the posted message's sequence number"`
 	URL     string         `json:"url"`
 }
 
@@ -214,22 +214,22 @@ func (h *handlers) handlePost(
 // ── read ──
 
 type readInput struct {
-	Channel string `json:"channel"         jsonschema_description:"channel name or id to read"`
-	Since   int64  `json:"since,omitempty" jsonschema_description:"cursor from your last read; omit or 0 to read from the start"`
-	Wait    int    `json:"wait,omitempty"  jsonschema_description:"seconds to block waiting for a new message, up to 120; omit or 0 to return whatever is there right now"`
-	Limit   int    `json:"limit,omitempty" jsonschema_description:"maximum messages to return; omit for no limit"`
+	Channel string `json:"channel"         jsonschema:"channel name or id to read"`
+	Since   int64  `json:"since,omitempty" jsonschema:"cursor from your last read; omit or 0 to read from the start"`
+	Wait    int    `json:"wait,omitempty"  jsonschema:"seconds to block waiting for a new message, up to 120; omit or 0 to return whatever is there right now"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"maximum messages to return; omit for no limit"`
 }
 
 type readOutput struct {
 	Channel                client.Channel     `json:"channel"`
-	Connect                string             `json:"connect"                             jsonschema_description:"the connection string for this channel"`
+	Connect                string             `json:"connect"                             jsonschema:"the connection string for this channel"`
 	Messages               []client.Message   `json:"messages"`
-	Cursor                 int64              `json:"cursor"                              jsonschema_description:"pass this as the since argument on your next read"`
-	Members                []string           `json:"members,omitempty"                   jsonschema_description:"the roster: everyone currently on the channel"`
-	AwaitingReply          []int64            `json:"awaiting_reply,omitempty"            jsonschema_description:"every seq posted with reply_needed that nothing has answered yet"`
-	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"         jsonschema_description:"open obligations grouped by the roster name they are addressed to — settle the ones under your name before posting anything new"`
-	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty" jsonschema_description:"addressees in awaiting_reply_by who are not on the roster — a typo'd name, a departed member, or an agent yet to join. When non-empty, read the seqs under those names: a question misaddressed to you sits under a key you would never check, so awaiting_reply_by alone can mislead"`
-	Closed                 bool               `json:"closed"                              jsonschema_description:"true when the channel is finished and will never produce another message"`
+	Cursor                 int64              `json:"cursor"                              jsonschema:"pass this as the since argument on your next read"`
+	Members                []string           `json:"members,omitempty"                   jsonschema:"the roster: everyone currently on the channel"`
+	AwaitingReply          []int64            `json:"awaiting_reply,omitempty"            jsonschema:"every seq posted with reply_needed that nothing has answered yet"`
+	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"         jsonschema:"open obligations grouped by the roster name they are addressed to — settle the ones under your name before posting anything new"`
+	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty" jsonschema:"addressees in awaiting_reply_by who are not on the roster — a typo'd name, a departed member, or an agent yet to join. When non-empty, read the seqs under those names: a question misaddressed to you sits under a key you would never check, so awaiting_reply_by alone can mislead"`
+	Closed                 bool               `json:"closed"                              jsonschema:"true when the channel is finished and will never produce another message"`
 	URL                    string             `json:"url"`
 }
 
@@ -264,7 +264,7 @@ func (h *handlers) handleRead(
 // ── list ──
 
 type listInput struct {
-	IncludeClosed bool `json:"include_closed,omitempty" jsonschema_description:"include finished conversations as well as live ones"`
+	IncludeClosed bool `json:"include_closed,omitempty" jsonschema:"include finished conversations as well as live ones"`
 }
 
 type listOutput struct {
@@ -287,8 +287,8 @@ func (h *handlers) handleList(
 // ── close ──
 
 type closeInput struct {
-	Channel string `json:"channel"        jsonschema_description:"channel name or id to close"`
-	Note    string `json:"note,omitempty" jsonschema_description:"optional parting note: how the conversation ended"`
+	Channel string `json:"channel"        jsonschema:"channel name or id to close"`
+	Note    string `json:"note,omitempty" jsonschema:"optional parting note: how the conversation ended"`
 }
 
 func (h *handlers) handleClose(

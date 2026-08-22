@@ -41,8 +41,8 @@ const (
 
 // Result is a tool's reply: an optional session id plus a human-readable message.
 type Result struct {
-	Session string `json:"session,omitempty" jsonschema_description:"playback session id; pass it back to speak_pause/speak_resume/speak_stop"`
-	Message string `json:"message"           jsonschema_description:"human-readable status of the call"`
+	Session string `json:"session,omitempty" jsonschema:"playback session id; pass it back to speak_pause/speak_resume/speak_stop"`
+	Message string `json:"message"           jsonschema:"human-readable status of the call"`
 }
 
 // Engine owns the single server-side playback session. All mutable fields are
@@ -166,7 +166,10 @@ func (e *Engine) Pause(session string) Result {
 	e.mu.Unlock()
 
 	e.releaseLock()
-	return Result{Session: sid, Message: fmt.Sprintf("Paused at sentence %d of %d. Playback lock released.", pos, total)}
+	return Result{
+		Session: sid,
+		Message: fmt.Sprintf("Paused at sentence %d of %d. Playback lock released.", pos, total),
+	}
 }
 
 // Resume continues after Pause (SIGCONT) or restarts from the saved position
@@ -195,7 +198,10 @@ func (e *Engine) Resume(session string) Result {
 		e.cond.Signal()
 		pos, total := e.currentIndex+1, e.total
 		e.mu.Unlock()
-		return Result{Session: sid, Message: fmt.Sprintf("Resumed at sentence %d of %d.", pos, total)}
+		return Result{
+			Session: sid,
+			Message: fmt.Sprintf("Resumed at sentence %d of %d.", pos, total),
+		}
 	case !alive && hasQueue:
 		return e.startPlayback(sents, v, from, sid)
 	default:
@@ -215,7 +221,14 @@ func (e *Engine) Stop(session string) Result {
 
 	e.fullStop()
 	if savedTotal > 0 {
-		return Result{Session: sid, Message: fmt.Sprintf("Stopped at sentence %d of %d. Call speak_resume to continue.", savedIndex+1, savedTotal)}
+		return Result{
+			Session: sid,
+			Message: fmt.Sprintf(
+				"Stopped at sentence %d of %d. Call speak_resume to continue.",
+				savedIndex+1,
+				savedTotal,
+			),
+		}
 	}
 	return Result{Message: "Stopped."}
 }
@@ -274,7 +287,14 @@ func (e *Engine) Status() Result {
 
 	return Result{Session: e.sessionID, Message: fmt.Sprintf(
 		"session: %s\nengine_reachable: %t\nstate: %s\nposition: %s\nlocked: %t\nlock_holder: %s\ndefault_voice: %s\nlast_result: %s",
-		sid, reachable, state, position, locked, holder, e.defaultVoice, result,
+		sid,
+		reachable,
+		state,
+		position,
+		locked,
+		holder,
+		e.defaultVoice,
+		result,
 	)}
 }
 
@@ -282,7 +302,12 @@ func (e *Engine) Status() Result {
 
 // startPlayback stops any current session, acquires the lock, and launches the
 // worker from startIndex. Reuses sessionID when resuming, else mints a new one.
-func (e *Engine) startPlayback(sentences []string, voice string, startIndex int, sessionID string) Result {
+func (e *Engine) startPlayback(
+	sentences []string,
+	voice string,
+	startIndex int,
+	sessionID string,
+) Result {
 	e.fullStop()
 
 	if sessionID == "" {
@@ -309,9 +334,23 @@ func (e *Engine) startPlayback(sentences []string, voice string, startIndex int,
 
 	if startIndex > 0 {
 		remaining := len(sentences) - startIndex
-		return Result{Session: sessionID, Message: fmt.Sprintf("Resuming from sentence %d of %d (%d remaining).", startIndex+1, len(sentences), remaining)}
+		return Result{
+			Session: sessionID,
+			Message: fmt.Sprintf(
+				"Resuming from sentence %d of %d (%d remaining).",
+				startIndex+1,
+				len(sentences),
+				remaining,
+			),
+		}
 	}
-	return Result{Session: sessionID, Message: fmt.Sprintf("Playing %d sentence(s). Use speak_pause/speak_resume/speak_stop with this session id.", len(sentences))}
+	return Result{
+		Session: sessionID,
+		Message: fmt.Sprintf(
+			"Playing %d sentence(s). Use speak_pause/speak_resume/speak_stop with this session id.",
+			len(sentences),
+		),
+	}
 }
 
 func (e *Engine) worker(sentences []string, voice string, start int) {
@@ -414,7 +453,10 @@ func (e *Engine) synthToFile(text, voice string) (string, error) {
 	if err := os.MkdirAll(e.audioDir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(e.audioDir, fmt.Sprintf("speak_%d_%d.wav", time.Now().UnixMilli(), os.Getpid()))
+	path := filepath.Join(
+		e.audioDir,
+		fmt.Sprintf("speak_%d_%d.wav", time.Now().UnixMilli(), os.Getpid()),
+	)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", err
 	}
@@ -432,7 +474,9 @@ func (e *Engine) resolveVoice(voice string) string {
 // Result when session is non-empty and does not match the active session.
 func (e *Engine) checkSession(session string) (Result, bool) {
 	if session != "" && session != e.sessionID {
-		return Result{Message: fmt.Sprintf("Session mismatch: active=%s, requested=%s", e.sessionID, session)}, false
+		return Result{
+			Message: fmt.Sprintf("Session mismatch: active=%s, requested=%s", e.sessionID, session),
+		}, false
 	}
 	return Result{}, true
 }
