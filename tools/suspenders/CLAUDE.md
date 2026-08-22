@@ -20,6 +20,9 @@ cmd/suspenders/
                              derived per run)
     configdoc.go             suspenders config: config path + the settings in
                              effect (annotated setting reference in --help)
+    docs.go                  suspenders docs: prints the embedded operating doc
+                             (operating.md, rendered via kit/agentdoc from the
+                             component root's embed.go + facts.go)
     version.go               suspenders version: bare token, or -o json for the
                              four-key build metadata object (shared buildinfo package)
 
@@ -117,6 +120,7 @@ Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/this
 | `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
 | `doctor [path]` | Explain the guard for a repo: the installed build, config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
 | `config` | Print the config file location and the settings in effect; `--help` carries the annotated reference of every setting |
+| `docs` | Print the embedded operating doc: hook pipeline, config locations, failure modes when a commit is blocked, first moves |
 | `version` | Print the bare version token; `-o json` prints the four-key build metadata object |
 
 ## Configuration
@@ -167,6 +171,10 @@ hooks:
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `suspenders docs`): the hook pipeline, blocked-commit failure
+  modes, the overrides that exist, and version-skew checks. Keep those facts
+  there, not here.
 - **`suspenders version` prints a bare token now.** It used to print `suspenders <sha>`, two tokens, which broke every probe that reads the line as a version. Plain output is the version and nothing else; `-o json` carries the identifying detail (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown). Anything parsing the old two-token line needs updating.
 - **Keep the fixture-bearing paths in this component real.** The monorepo root `.suspenders.yaml` suppresses scan findings under `tools/suspenders/` (`*_test.go`, `rules.go`, `tests/integration/**`, `README.md`). These are secret-shaped fixtures by design; don't replace them with dummy values, or the tests stop exercising real detection.
 

@@ -7,6 +7,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	present "github.com/mad01/thismoon/services/present"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
@@ -25,13 +27,16 @@ type Config struct {
 func New(version string, cfg Config) (*mcp.Server, error) {
 	st, err := store.New(cfg.Workdir)
 	if err != nil {
-		return nil, err
+		return nil, hint(err)
 	}
 	base := cfg.BaseURL
 	if base == "" {
 		base = fmt.Sprintf("http://localhost:%d", cfg.Port)
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: version}, nil)
+	s := mcp.NewServer(
+		&mcp.Implementation{Name: Name, Version: version},
+		&mcp.ServerOptions{Instructions: agentdoc.Instructions(present.Facts())},
+	)
 	registerTools(s, &handlers{store: st, baseURL: base, open: openURL})
 	return s, nil
 }

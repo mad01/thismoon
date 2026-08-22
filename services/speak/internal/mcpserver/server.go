@@ -8,6 +8,8 @@ package mcpserver
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/playback"
 	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
@@ -26,7 +28,10 @@ type Config struct {
 // New builds the speak MCP server with a fresh playback engine.
 func New(version string, cfg Config) (*mcp.Server, error) {
 	engine := playback.New(ttsclient.New(cfg.TTSURL), DefaultVoice)
-	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: version}, nil)
+	s := mcp.NewServer(
+		&mcp.Implementation{Name: Name, Version: version},
+		&mcp.ServerOptions{Instructions: agentdoc.Instructions(speak.Facts())},
+	)
 	registerTools(s, &handlers{engine: engine})
 	return s, nil
 }

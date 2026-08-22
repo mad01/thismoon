@@ -11,6 +11,9 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/reminder"
 )
 
 // Reminder mirrors the JSON the serve API returns.
@@ -127,11 +130,13 @@ func (c *Client) do(method, path string, body, out any) error {
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf(
+		// The one transport chokepoint every CLI command and MCP tool goes
+		// through; Hint points the reader at the operating doc from here.
+		return agentdoc.Hint(fmt.Errorf(
 			"reminder serve not reachable at %s — is the t-man agent running? (t-man status reminder): %w",
 			c.baseURL,
 			err,
-		)
+		), reminder.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 

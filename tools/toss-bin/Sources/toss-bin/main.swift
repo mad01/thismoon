@@ -187,8 +187,13 @@ func printUsage() {
     print("  --dry-run            Show what would be done without doing it")
     print("  --validate           Only check if paths would be blocked (no file operations)")
     print("")
-    print("-h and -v act as help/version only when they are the sole argument;")
-    print("mixed with paths they are ignored like other unknown rm flags.")
+    print("Subcommands (sole argument only):")
+    print("  docs                 Print the embedded operating doc (runtime debugging guide)")
+    print("")
+    print("-h, -v, and docs act as help/version/docs only when they are the sole")
+    print("argument; mixed with paths they are treated as ordinary rm arguments.")
+    print("A file or directory named docs in the working directory takes priority:")
+    print("sole `docs` then trashes it instead of printing the doc.")
 }
 
 // Main
@@ -198,6 +203,19 @@ guard !CLI.arguments.isEmpty else {
 }
 
 let parsed = parseArguments(CLI.arguments)
+
+// `docs` only counts as a subcommand when it is the sole argument AND no
+// entry named "docs" exists in the working directory — unlike -h/-v, "docs"
+// is a plausible filename, and printing the doc while leaving the file in
+// place would be a silent no-op for a caller trying to trash it. The stat
+// deliberately does not follow symlinks, matching how toss() decides
+// existence. (The rm alias always adds --safe-mode and never matches the
+// sole-argument form anyway.)
+if CLI.arguments == ["docs"],
+    (try? FileManager.default.attributesOfItem(atPath: "docs")) == nil {
+    print(operatingDoc)
+    exit(0)
+}
 
 // Short -h/-v only count when they are the sole argument, so the rm alias
 // can pass rm's own flags (like -v, verbose) through without toss-bin

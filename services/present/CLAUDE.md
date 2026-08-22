@@ -168,9 +168,15 @@ confirms which embedded webkit assets the running present server serves.
 ## Gotchas
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers it.
-- **Two processes.** `present mcp` only touches files; pages don't render until `present serve` runs (as a t-man agent, see the recipe).
-- **Shared workdir is load-bearing.** The MCP and serve must resolve the *same* workdir/port or updates land where nothing serves them. `serve` pins `--workdir/--port`; the MCP is pinned via `env` in the consuming repo's `recipes/claude-mcp/servers.json` (`PRESENT_WORKDIR`/`PRESENT_PORT`). A leading `~` in either is expanded in Go (`expandTilde`, `root.go`) since neither shell nor `sync_mcp.py` expands env values. Both processes log their resolved `workdir=… port=…` at startup; diff those first if updates don't appear.
-- **Request logging → stderr.** `serve` logs one line per request (`method path -> status bytes (dur)`) to stderr: `t-man logs present --stderr`. A reload-loop (repeated `GET /p/<id>` every ~1s) means the served HTML was cached; pages set `Cache-Control: no-store` to prevent exactly that.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `present docs`): the two-process split, shared-workdir/port
+  mismatch, content rules that corrupt pages, failure modes, version-skew
+  checks. Keep those facts there, not here. Dev-side notes that stay: the MCP
+  is pinned via `env` in the consuming repo's `recipes/claude-mcp/servers.json`
+  (`PRESENT_WORKDIR`/`PRESENT_PORT`), with leading `~` expanded in Go
+  (`expandTilde`, `root.go`); `serve` request logs go to stderr (`t-man logs
+  present --stderr`), and a reload-loop of `GET /p/<id>` means cached HTML —
+  pages set `Cache-Control: no-store` to prevent exactly that.
 - **Page view is a static shell + client render.** `GET /p/{id}` serves `internal/server/shell.html` (chrome only: `<wk-header>` + webkit assets), and `app.js` builds the body in the browser from `GET /api/p/{id}` JSON (`{id,title,version,has_graph,content,graph,references}`): it mounts `content` as innerHTML, runs the `graph` field as a `<script>`, then inits the Cytoscape graph, metric charts, references, read-aloud, and theme-recolor. The old `{{CONTENT}}`/`{{GRAPH_SCRIPT}}`/`{{REFERENCES}}`/`{{LIVE_RELOAD}}` template substitutions (`render.Render` + `template.html`) have been removed; the index renders client-side from `index_shell.html` + `index.js` the same way. The header/theme/font/size/bionic chrome lives in the in-module `webkit` package (served at `/webkit/`; see *Shared UI: webkit* above).
 - **Client render uses webkit's shared helpers.** `app.js` builds the DOM with `Webkit.el` / `Webkit.escapeHtml` and polls `/p/{id}/version` for live-reload via `Webkit.poll` (webkit shared helpers). Decision recorded in `docs/adr/0005-webkit-client-side-rendering.md`.
 - **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/bionic are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-bionic`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.

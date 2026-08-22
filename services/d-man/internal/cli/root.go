@@ -6,6 +6,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	dman "github.com/mad01/thismoon/services/d-man"
+	"github.com/mad01/thismoon/services/d-man/internal/config"
 )
 
 var (
@@ -58,12 +62,6 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// systemConfig is the root-context routes file. A root launchd daemon (e.g.
-// `sudo brew services start d-man`) has no useful HOME, so the per-user
-// default resolves to root's home where no routes live; this system path is
-// the fallback that makes a bare `d-man serve` work there.
-const systemConfig = "/etc/d-man/routes.toml"
-
 // defaultConfig resolves the routes file, honoring DMAN_CONFIG and falling
 // back to the first existing path.
 func defaultConfig() string {
@@ -73,22 +71,30 @@ func defaultConfig() string {
 // resolveConfig picks the routes file: DMAN_CONFIG when set, then the
 // per-user ~/.config path when the file exists, then the system /etc path
 // when that file exists, else the per-user path so error messages name the
-// place most users should create it.
+// place most users should create it. The paths are the component-root
+// constants so the operating doc names the same files.
 func resolveConfig(env string, exists func(string) bool) string {
 	if env != "" {
 		return env
 	}
-	userPath := "routes.toml"
-	if home, err := os.UserHomeDir(); err == nil {
-		userPath = filepath.Join(home, ".config", "d-man", "routes.toml")
-	}
+	userPath := expandTilde(dman.DefaultRoutesPath)
 	if exists(userPath) {
 		return userPath
 	}
-	if exists(systemConfig) {
-		return systemConfig
+	if exists(dman.SystemRoutesPath) {
+		return dman.SystemRoutesPath
 	}
 	return userPath
+}
+
+// loadRoutes loads and validates the routes file every subcommand works from,
+// tagging failures with the pointer to the embedded operating doc.
+func loadRoutes() (*config.Config, error) {
+	cfg, err := config.Load(flagConfig)
+	if err != nil {
+		return nil, agentdoc.Hint(err, dman.Facts())
+	}
+	return cfg, nil
 }
 
 func fileExists(path string) bool {
@@ -97,14 +103,19 @@ func fileExists(path string) bool {
 }
 
 // expandTilde rewrites a leading ~ or ~/ to the user's home directory. Other
-// paths (absolute or already-expanded) are returned unchanged.
+// paths (absolute or already-expanded) are returned unchanged. When the home
+// directory cannot be resolved, the ~ prefix is stripped so the path degrades
+// to cwd-relative instead of naming a literal "~" directory.
 func expandTilde(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return path
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
 	}
 	if path == "~" {
 		return home

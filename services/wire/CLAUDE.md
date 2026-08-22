@@ -318,18 +318,13 @@ make install && t-man restart wire
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe
   (wave 1) registers the MCP.
-- **serve must be running for the MCP/CLI to work**: it owns the store and is
-  where blocking reads park. It runs as a t-man agent; `t-man status wire` /
-  `t-man restart wire`.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `wire docs`): serve-must-be-running, store layout, failure modes
+  (empty reads, closed channels, port mismatches, abandoned waiters),
+  version-skew checks. Keep those facts there, not here.
 - **Never put `_` in a channel name.** The grammar rejects it, and that
   exclusion is what keeps ids (`ch_…`) and names in disjoint spaces so one
   `ref` parameter resolves both.
-- **The connection string's port comes from `--port`.** Serve on a non-default
-  port and the tokens it mints name that port, which is correct but surprising
-  if you were copying between two instances.
-- **Close, don't abandon.** A session blocked on a read of a forgotten channel
-  waits out its full timeout every call. Closing wakes waiters immediately and
-  tells them not to come back.
 - **Don't add a WriteTimeout to serve.** It would cut off long polls and event
   streams, which are supposed to hold a connection open.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS

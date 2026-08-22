@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-)
 
-const defaultPort = 7428
+	"github.com/mad01/thismoon/services/reminder"
+)
 
 var (
 	flagWorkdir string
@@ -34,7 +34,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&flagPort, "port", resolvedDefaultPort(),
 		"port the HTTP server listens on / the MCP talks to (env REMINDER_PORT)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", os.Getenv("REMINDER_BASE_URL"),
-		"base URL the MCP calls and links to (env REMINDER_BASE_URL); defaults to http://localhost:<port>")
+		"human-facing base URL the MCP links to (env REMINDER_BASE_URL); defaults to http://localhost:<port>")
 	// Expand a leading ~ in the workdir before any subcommand runs: REMINDER_WORKDIR
 	// reaches Go without shell expansion.
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
@@ -49,26 +49,29 @@ func Execute() error {
 }
 
 // defaultWorkdir resolves the data directory, honoring REMINDER_WORKDIR and
-// falling back to ~/.local/share/reminder.
+// falling back to reminder.DefaultWorkdir — the same constant the operating
+// doc renders, so the two cannot drift. The leading ~ expands in
+// PersistentPreRunE.
 func defaultWorkdir() string {
 	if v := os.Getenv("REMINDER_WORKDIR"); v != "" {
 		return v
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".reminder"
-	}
-	return filepath.Join(home, ".local", "share", "reminder")
+	return reminder.DefaultWorkdir
 }
 
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory.
+// expandTilde rewrites a leading ~ or ~/ to the user's home directory. When
+// the home directory cannot be resolved, the ~ prefix is stripped so the path
+// degrades to cwd-relative instead of creating a literal "~" directory.
 func expandTilde(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return path
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
 	}
 	if path == "~" {
 		return home
@@ -82,5 +85,5 @@ func resolvedDefaultPort() int {
 			return n
 		}
 	}
-	return defaultPort
+	return reminder.DefaultPort
 }

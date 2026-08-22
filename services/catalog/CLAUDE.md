@@ -295,10 +295,14 @@ webkit-mounted tool implements.
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `catalog docs`): web-process supervision, registry resolution,
+  missing-entity and name-collision triage, version-skew checks. Keep those
+  facts there, not here.
 - **Only `catalog validate` enforces the global-uniqueness rule.**
   `catalog.Load` (used by `web` and `list`) doesn't, so a name collision can
   sit in the running UI without complaint. Run `catalog validate` before
-  merging. Don't treat "the UI looks fine" as proof there's no duplicate.
+  merging.
 - **Add refuses to overwrite.** `WriteServiceInfo` fails loud if
   `service-info.yaml` already exists in the target directory, so a second Add
   there needs a manual edit instead of clobbering the first.

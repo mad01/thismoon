@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	tman "github.com/mad01/thismoon/tools/t-man"
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/mad01/thismoon/tools/t-man/internal/service"
 	"github.com/spf13/cobra"
@@ -99,19 +101,19 @@ func runLogs(cmd *cobra.Command, args []string) error {
 
 	svc, err := manager.Get(getContext(), serviceName)
 	if err != nil {
-		return fmt.Errorf("failed to get service: %w", err)
+		return agentdoc.Hint(fmt.Errorf("failed to get service: %w", err), tman.Facts())
 	}
 
 	sources, err := resolveLogSources(svc, logsSource, logsStdout, logsStderr)
 	if err != nil {
-		return err
+		return agentdoc.Hint(err, tman.Facts())
 	}
 
 	w := os.Stdout
 	printer := newSourcePrinter(w, len(sources) > 1)
 
 	if err := tailSources(printer, sources, logsLines); err != nil {
-		return err
+		return agentdoc.Hint(err, tman.Facts())
 	}
 
 	if logsFollow {
@@ -133,7 +135,7 @@ func runSandboxLogs(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		svc, err := manager.Get(getContext(), args[0])
 		if err != nil {
-			return fmt.Errorf("failed to get service: %w", err)
+			return agentdoc.Hint(fmt.Errorf("failed to get service: %w", err), tman.Facts())
 		}
 		sources = sandboxSources([]*service.Definition{svc}, false)
 		if len(sources) == 0 {

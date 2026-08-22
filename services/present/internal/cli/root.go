@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-)
 
-const defaultPort = 7423
+	present "github.com/mad01/thismoon/services/present"
+)
 
 var (
 	flagWorkdir string
@@ -57,27 +57,30 @@ func Execute() error {
 }
 
 // defaultWorkdir resolves the pages directory, honoring PRESENT_WORKDIR and
-// falling back to ~/.config/present.
+// falling back to present.DefaultWorkdir — the same constant the operating
+// doc renders, so the two cannot drift. The leading ~ expands in
+// PersistentPreRunE.
 func defaultWorkdir() string {
 	if v := os.Getenv("PRESENT_WORKDIR"); v != "" {
 		return v
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".present"
-	}
-	return filepath.Join(home, ".config", "present")
+	return present.DefaultWorkdir
 }
 
 // expandTilde rewrites a leading ~ or ~/ to the user's home directory. Other
-// paths (absolute or already-expanded) are returned unchanged.
+// paths (absolute or already-expanded) are returned unchanged. When the home
+// directory cannot be resolved, the ~ prefix is stripped so the path degrades
+// to cwd-relative instead of creating a literal "~" directory.
 func expandTilde(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return path
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
 	}
 	if path == "~" {
 		return home
@@ -91,5 +94,5 @@ func resolvedDefaultPort() int {
 			return n
 		}
 	}
-	return defaultPort
+	return present.DefaultPort
 }

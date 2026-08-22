@@ -113,6 +113,7 @@ worklog new <key> [--ticket ID]
 worklog path [key]
 worklog scan --since 14d   # digest ~/.claude/projects/*/*.jsonl as JSON; see How it works
 worklog config     # config file location + the settings in effect; --help carries the annotated reference
+worklog docs       # print the embedded operating doc (runtime debugging for agents and humans)
 worklog mcp        # MCP stdio server (blocks)
 worklog version [-o json]
 ```
@@ -153,8 +154,9 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
 
 - **Wave 0 builder.** Must build before the consuming repo's MCP registration
   recipe (wave 1) registers `worklog mcp`.
-- **Codesign required for MCP.** `make install` strips xattrs and re-signs.
-  Manual copy → `make resign BIN=~/code/bin/worklog`.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `worklog docs`): codesign-for-MCP, store and push failure modes,
+  version-skew checks. Keep those facts there, not here.
 - **Repo auto-detect needs a real cwd.** The MCP server process runs from `/`,
   so the `worklog_checkpoint` tool takes a `cwd` argument; the skill passes
   the user's working directory. The CLI uses `os.Getwd()` directly.

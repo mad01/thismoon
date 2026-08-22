@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	tman "github.com/mad01/thismoon/tools/t-man"
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/mad01/thismoon/tools/t-man/internal/reconcile"
 	"github.com/mad01/thismoon/tools/t-man/internal/service"
@@ -122,7 +123,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if logDir == "" {
 		if !daemonMode {
 			homeDir, _ := os.UserHomeDir()
-			logDir = filepath.Join(homeDir, "Library", "Logs", addName)
+			logDir = filepath.Join(homeDir, tman.UserLogsDir, addName)
 		} else {
 			logDir = filepath.Join("/var/log", addName)
 		}

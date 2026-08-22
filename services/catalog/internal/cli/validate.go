@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	catalogroot "github.com/mad01/thismoon/services/catalog"
 	"github.com/mad01/thismoon/services/catalog/internal/catalog"
 )
 
@@ -34,13 +36,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	var entities []catalog.Entity
 	if len(args) == 0 {
+		// Hint only environment errors (registry, scan roots); a schema or
+		// uniqueness failure below is the command's finding, not a breakage.
 		reg, err := catalog.LoadRegistry(registryPath)
 		if err != nil {
-			return err
+			return agentdoc.Hint(err, catalogroot.Facts())
 		}
 		entities, err = catalog.ScanPaths(ctx, reg.Paths())
 		if err != nil {
-			return err
+			return agentdoc.Hint(err, catalogroot.Facts())
 		}
 	} else {
 		for _, p := range args {

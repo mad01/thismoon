@@ -235,12 +235,9 @@ the same commit reports the same asset hash.
 ## Gotchas
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
-- **serve must be running for the MCP/CLI to work**: it owns the store and does
-  the pin hashing. It runs as a t-man agent; `t-man status keeper-of-facts` /
-  `t-man restart keeper-of-facts`.
-- **check is conservative.** It hashes the pinned line range, so an edit above a
-  pin shifts the lines and flips the assertion stale even though the content
-  only moved. Stale means "re-verify", not "wrong". Re-assert with fresh pins.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `kof docs`): serve-must-be-running, store layout, failure modes,
+  version-skew checks. Keep those facts there, not here.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).
 - **Version probe convention.** `GET /version` and `kof version -o json` both

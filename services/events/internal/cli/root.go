@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-)
 
-const defaultPort = 7430
+	"github.com/mad01/thismoon/services/events"
+)
 
 var (
 	flagWorkdir string
@@ -52,26 +52,28 @@ func Execute() error {
 }
 
 // defaultWorkdir resolves the data directory, honoring EVENTS_WORKDIR and
-// falling back to ~/.local/share/events.
+// falling back to events.DefaultWorkdir — the same constant the operating doc
+// renders with. The leading ~ is expanded in PersistentPreRunE.
 func defaultWorkdir() string {
 	if v := os.Getenv("EVENTS_WORKDIR"); v != "" {
 		return v
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".events"
-	}
-	return filepath.Join(home, ".local", "share", "events")
+	return events.DefaultWorkdir
 }
 
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory.
+// expandTilde rewrites a leading ~ or ~/ to the user's home directory. When
+// the home directory cannot be resolved, the ~ prefix is stripped so the path
+// degrades to cwd-relative instead of creating a literal "~" directory.
 func expandTilde(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return path
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
 	}
 	if path == "~" {
 		return home
@@ -85,5 +87,5 @@ func resolvedDefaultPort() int {
 			return n
 		}
 	}
-	return defaultPort
+	return events.DefaultPort
 }

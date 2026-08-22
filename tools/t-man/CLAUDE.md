@@ -101,6 +101,7 @@ machines ralph builds it via `recipes/t-man/` from the sources cache.
 | `status N` | | Detailed info for one service |
 | `logs N` | | Tail stdout + stderr (and named extra logs) |
 | `logs sandbox [N]` | | Collect `sandbox`/`sandbox-*` extra logs across services |
+| `docs` | | Print the embedded operating doc (runtime debugging for supervised services) |
 | `version [-o json]` | | Print the build SHA, or the full build metadata object |
 
 Global persistent flags (all commands): `--agent` (default true), `--daemon`
@@ -113,6 +114,10 @@ and `KeepAlive` are always set to true on the generated plist.
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `t-man docs`): where supervised services' logs land, the
+  crash-loop first moves, the stale-binary-after-rebuild check, and why a
+  service can be missing from `list`. Keep those facts there, not here.
 - **No declarative manifest.** t-man builds a `Definition` from `add` flags;
   there is no YAML/JSON service file it reads at runtime. `service-info.yaml`
   in this directory is catalog metadata, not service config.

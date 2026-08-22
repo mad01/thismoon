@@ -16,6 +16,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/tools/worklog"
 )
 
 // ErrPush marks a write that was committed locally but could not be pushed to
@@ -37,13 +40,13 @@ type Store struct {
 	Remote Remote
 }
 
-// DefaultRoot returns $WORKLOG_DIR, or ~/code/worklog.
+// DefaultRoot returns $WORKLOG_DIR, or worklog.DefaultRoot with ~ expanded.
 func DefaultRoot() string {
 	if d := os.Getenv("WORKLOG_DIR"); d != "" {
 		return d
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "code", "worklog")
+	return filepath.Join(home, strings.TrimPrefix(worklog.DefaultRoot, "~/"))
 }
 
 // New returns a Store rooted at root (DefaultRoot if empty).
@@ -75,12 +78,18 @@ func (s *Store) Exists(key string) bool {
 	return err == nil
 }
 
-// ensureGit makes the store directory a usable git repo: cloning the upstream
-// when the directory is missing entirely (fresh machine), initializing
-// otherwise, and reconciling origin with the configured remote either way. An
-// existing local-only store therefore adopts a newly configured remote on its
-// next write.
+// ensureGit makes the store directory a usable git repo. Failure here is the
+// store-broken chokepoint every write shares (the CLI and the MCP tools both
+// call through it), so the error carries the operating-doc hint.
 func (s *Store) ensureGit() error {
+	return agentdoc.Hint(s.initGit(), worklog.Facts())
+}
+
+// initGit clones the upstream when the directory is missing entirely (fresh
+// machine), initializes otherwise, and reconciles origin with the configured
+// remote either way. An existing local-only store therefore adopts a newly
+// configured remote on its next write.
+func (s *Store) initGit() error {
 	// A failed bootstrap clone (offline, bad URL) degrades to a local repo:
 	// the write must still succeed, and the push that follows reports the
 	// remote problem as ErrPush.

@@ -9,6 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	wire "github.com/mad01/thismoon/services/wire"
 	"github.com/mad01/thismoon/services/wire/internal/client"
 )
 
@@ -30,7 +32,10 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 	if webURL == "" {
 		webURL = apiURL
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: version}, nil)
+	s := mcp.NewServer(
+		&mcp.Implementation{Name: Name, Version: version},
+		&mcp.ServerOptions{Instructions: agentdoc.Instructions(wire.Facts())},
+	)
 	registerTools(s, &handlers{client: client.New(apiURL), webURL: webURL, port: cfg.Port})
 	return s, nil
 }

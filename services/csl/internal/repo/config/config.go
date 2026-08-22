@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/kit/repofind"
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
@@ -177,7 +178,7 @@ func (c *Config) EffectiveWebBaseURL() string {
 	if c != nil && c.Web.BaseURL != "" {
 		return strings.TrimRight(c.Web.BaseURL, "/")
 	}
-	return "http://127.0.0.1:7424"
+	return csl.DefaultBaseURL
 }
 
 // DaemonIdleTimeout returns the configured daemon idle timeout, defaulting to

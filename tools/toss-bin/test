@@ -190,6 +190,30 @@ fi
 rm -rf "$V_DIR"
 
 echo ""
+echo "--- docs: sole argument prints the doc unless an entry named docs exists ---"
+
+DOCS_DIR=$(mktemp -d)
+
+DOCS_OUT=$(cd "$DOCS_DIR" && "$TOSS" docs)
+if echo "$DOCS_OUT" | grep -q "^# operating toss-bin"; then
+    echo "PASS: sole docs with no such file prints the operating doc"
+else
+    echo "FAIL: sole docs should print the operating doc, got: $DOCS_OUT"
+    FAILED=1
+fi
+
+touch "$DOCS_DIR/docs"
+DOCS_FILE_OUT=$(cd "$DOCS_DIR" && "$TOSS" docs 2>/dev/null)
+if [ ! -e "$DOCS_DIR/docs" ] && ! echo "$DOCS_FILE_OUT" | grep -q "^# operating toss-bin"; then
+    echo "PASS: file named docs is trashed, not printed"
+else
+    echo "FAIL: file named docs should be trashed instead of printing the doc"
+    FAILED=1
+fi
+
+rm -rf "$DOCS_DIR"
+
+echo ""
 echo "--- Dry-run reports nonexistent files instead of previewing them ---"
 
 DRY_OUT=$($TOSS --dry-run --safe-mode /does/not/exist-toss-bin-test.txt 2>&1)

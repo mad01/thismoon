@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/tools/humanizer"
 )
 
 // defaultValeTimeout bounds a single vale invocation. The MCP SDK does
@@ -126,7 +129,8 @@ func Detect(ctx context.Context, text string, opts DetectOptions) ([]Finding, er
 	if err := tmp.Close(); err != nil {
 		return nil, fmt.Errorf("close temp file: %w", err)
 	}
-	return runVale(ctx, tmp.Name(), opts)
+	findings, err := runVale(ctx, tmp.Name(), opts)
+	return findings, agentdoc.Hint(err, humanizer.Facts())
 }
 
 // DetectFile is like Detect but lints a real file on disk instead of
@@ -139,7 +143,8 @@ func DetectFile(ctx context.Context, filePath string, opts DetectOptions) ([]Fin
 	if _, err := os.Stat(filePath); err != nil {
 		return nil, fmt.Errorf("stat %s: %w", filePath, err)
 	}
-	return runVale(ctx, filePath, opts)
+	findings, err := runVale(ctx, filePath, opts)
+	return findings, agentdoc.Hint(err, humanizer.Facts())
 }
 
 // runVale is the shared backbone for Detect / DetectFile. It ensures the

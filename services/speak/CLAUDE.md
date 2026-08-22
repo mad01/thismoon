@@ -12,7 +12,7 @@ origins (present.this) can fetch speech from `http://speak.this` too.
 services/speak/
   cmd/speak/           # entrypoint (delegates to internal/cli)
   internal/
-    cli/               # cobra: serve, mcp, version (build metadata from the shared buildinfo package)
+    cli/               # cobra: serve, mcp, docs, version (build metadata from the shared buildinfo package)
     web/               # server.go (mux, CORS, TTS proxy, HTTP API), markdown.go
                         # (goldmark render + section split), assets/shell.html
                         # (chrome-only shell) + assets/app.js (client render)
@@ -170,6 +170,10 @@ palette/topbar/theme CSS locally; it lives in webkit only.
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `speak docs`): serve/engine reachability, playback lock and
+  pause/resume semantics, no-audio triage, version-skew checks. Keep those
+  facts there, not here.
 - **Version probe convention.** `GET /version` and `speak version -o json` both
   return the shared four-key build metadata object (`version`, `commit`, `tag`,
   `build_time`, every key present and `""` when unknown) from

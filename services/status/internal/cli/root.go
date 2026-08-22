@@ -10,12 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	status "github.com/mad01/thismoon/services/status"
 	"github.com/mad01/thismoon/services/status/internal/server"
-)
-
-const (
-	defaultPort    = 7426
-	defaultWorkdir = "~/.local/share/status"
 )
 
 var (
@@ -40,7 +37,7 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Run the status HTTP server and check poller",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		return server.Serve(server.Options{
+		return agentdoc.Hint(server.Serve(server.Options{
 			Port:             flagPort,
 			Interval:         flagInterval,
 			Workdir:          expandTilde(flagWorkdir),
@@ -48,7 +45,7 @@ var serveCmd = &cobra.Command{
 			Info:             buildinfo.Get(),
 			RestartWindow:    flagRestartWindow,
 			RestartThreshold: flagRestartThreshold,
-		})
+		}), status.Facts())
 	},
 }
 
@@ -78,23 +75,30 @@ func resolvedDefaultPort() int {
 			return p
 		}
 	}
-	return defaultPort
+	return status.DefaultPort
 }
 
 func resolvedDefaultWorkdir() string {
 	if v := os.Getenv("STATUS_WORKDIR"); v != "" {
 		return v
 	}
-	return defaultWorkdir
+	return status.DefaultWorkdir
 }
 
 // expandTilde resolves a leading ~ since launchd agents don't run through a
-// shell and nothing else expands it.
+// shell and nothing else expands it. When the home directory cannot be
+// resolved, the ~ prefix is stripped so the path degrades to cwd-relative
+// instead of naming a literal "~" directory.
 func expandTilde(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(p, "~"))
-		}
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
 	}
-	return p
+	home, err := os.UserHomeDir()
+	if err != nil {
+		if p == "~" {
+			return "."
+		}
+		return p[2:]
+	}
+	return filepath.Join(home, strings.TrimPrefix(p, "~"))
 }

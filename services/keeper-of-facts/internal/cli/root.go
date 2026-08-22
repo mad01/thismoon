@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-)
 
-const defaultPort = 7431
+	kof "github.com/mad01/thismoon/services/keeper-of-facts"
+)
 
 var (
 	flagWorkdir string
@@ -40,7 +40,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&flagPort, "port", resolvedDefaultPort(),
 		"port the HTTP server listens on / the MCP talks to (env KOF_PORT)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", envFirst("KOF_BASE_URL", "KEEP_BASE_URL"),
-		"base URL the MCP calls and links to (env KOF_BASE_URL); defaults to http://localhost:<port>")
+		"human-facing base URL the MCP links to (env KOF_BASE_URL); defaults to http://localhost:<port>")
 	// Expand a leading ~ in the workdir before any subcommand runs: KOF_WORKDIR
 	// reaches Go without shell expansion.
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
@@ -67,28 +67,30 @@ func envFirst(names ...string) string {
 }
 
 // defaultWorkdir resolves the data directory, honoring KOF_WORKDIR (then the
-// pre-rename KEEP_WORKDIR) and falling back to ~/.local/share/kof. serve
-// auto-migrates a pre-rename ~/.local/share/keep store to the new path on
-// start (MAD-269).
+// pre-rename KEEP_WORKDIR) and falling back to kof.DefaultWorkdir — the same
+// constant the operating doc renders, so the two cannot drift. The leading ~
+// expands in PersistentPreRunE. serve auto-migrates a pre-rename
+// ~/.local/share/keep store to the new path on start (MAD-269).
 func defaultWorkdir() string {
 	if v := envFirst("KOF_WORKDIR", "KEEP_WORKDIR"); v != "" {
 		return v
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".kof"
-	}
-	return filepath.Join(home, ".local", "share", "kof")
+	return kof.DefaultWorkdir
 }
 
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory.
+// expandTilde rewrites a leading ~ or ~/ to the user's home directory. When
+// the home directory cannot be resolved, the ~ prefix is stripped so the path
+// degrades to cwd-relative instead of creating a literal "~" directory.
 func expandTilde(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return path
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
 	}
 	if path == "~" {
 		return home
@@ -102,5 +104,5 @@ func resolvedDefaultPort() int {
 			return n
 		}
 	}
-	return defaultPort
+	return kof.DefaultPort
 }

@@ -7,10 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/web"
 )
-
-const defaultPort = 7425
 
 var (
 	flagPort   int
@@ -53,7 +52,7 @@ func resolvedDefaultPort() int {
 			return p
 		}
 	}
-	return defaultPort
+	return speak.DefaultPort
 }
 
 func resolvedTTSURL() string {

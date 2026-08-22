@@ -134,6 +134,12 @@ jobs:
           COMPONENT: ${{ matrix.component }}
         run: make -C "$COMPONENT" test
 
+      # make test regenerates codegenned sources before running, so a stale
+      # committed copy would pass silently — fail the PR if regeneration
+      # changed what is checked in.
+      - name: Generated files are committed
+        run: git diff --exit-code tools/toss-bin/Sources/TossBinCore/OperatingDoc.generated.swift
+
       - name: Build
         env:
           COMPONENT: ${{ matrix.component }}

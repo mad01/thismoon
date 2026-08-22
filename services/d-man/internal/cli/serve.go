@@ -18,7 +18,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/services/d-man/internal/config"
 	"github.com/mad01/thismoon/services/d-man/internal/hosts"
 	"github.com/mad01/thismoon/services/d-man/internal/notify"
 	"github.com/mad01/thismoon/services/d-man/internal/proxy"
@@ -147,7 +146,7 @@ func (rh *reloadableHandler) set(h http.Handler) {
 // error it returns without mutating the running handler, so a bad edit leaves
 // the previous good routes and hosts in place.
 func reloadOnce(rh *reloadableHandler) error {
-	cfg, err := config.Load(flagConfig)
+	cfg, err := loadRoutes()
 	if err != nil {
 		return err
 	}

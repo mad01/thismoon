@@ -16,7 +16,8 @@ program alone.
 
 ```
 cmd/speak/           entrypoint, delegates to internal/cli
-internal/cli/        cobra: serve (root.go), mcp (mcp.go), version (version.go)
+internal/cli/        cobra: serve (root.go), mcp (mcp.go), docs (docs.go),
+                     version (version.go)
 internal/web/        server.go (mux, CORS wrapper, TTS proxy, HTTP API),
                      markdown.go (goldmark render + section split),
                      assets/shell.html + assets/app.js (client render)
@@ -78,7 +79,7 @@ Web: `GET /` (upload page), `GET /app.js`, `POST /read`,
 `POST /v1/audio/speech` (engine proxy), `GET /healthz`, `GET /enginez`,
 `GET /version`, `GET /webkit/` from the webkit Go package.
 
-CLI: `speak serve`, `speak mcp`, `speak version [-o json]`.
+CLI: `speak serve`, `speak mcp`, `speak docs`, `speak version [-o json]`.
 
 MCP tools: `speak_text`, `speak_file`, `speak_pause`, `speak_resume`,
 `speak_stop`, `speak_voices`, `speak_status`. Registering the MCP server with

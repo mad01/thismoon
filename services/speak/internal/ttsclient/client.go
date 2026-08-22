@@ -13,6 +13,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	speak "github.com/mad01/thismoon/services/speak"
 )
 
 // Client talks to the mlx-audio engine's OpenAI-compatible speech endpoint.
@@ -52,10 +55,12 @@ func (c *Client) Synthesize(text, voice string) ([]byte, error) {
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf(
+		// The one transport chokepoint every playback path goes through;
+		// Hint points the reader at the operating doc from here.
+		return nil, agentdoc.Hint(fmt.Errorf(
 			"TTS engine not reachable at %s — is the speak-tts agent running? (t-man status speak-tts): %w",
 			c.baseURL, err,
-		)
+		), speak.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 

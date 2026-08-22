@@ -28,3 +28,20 @@ func TestExpandTilde(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandTildeNoHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"~", "."},
+		{"~/.config/present", ".config/present"},
+		{"/abs/path", "/abs/path"},
+	}
+	for _, c := range cases {
+		if got := expandTilde(c.in); got != c.want {
+			t.Errorf("expandTilde(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

@@ -13,10 +13,13 @@ tools/toss-bin/
     TossBinCore/
       Safety.swift      PathSafety — the deny-list and validate(). Edit built-in protected paths here.
       Config.swift      TossConfig + ConfigLoader — machine-local deny-list additions (YAML via Yams)
+      OperatingDoc.generated.swift  Codegenned from operating.md — never edit by hand
   Tests/TossBinTests/
     SafetyTests.swift   XCTest suite for PathSafety
+  operating.md          Agent-facing runtime doc, embedded via codegen (`toss-bin docs`)
+  scripts/gen-operating-doc.sh  operating.md -> OperatingDoc.generated.swift
   Package.swift         swift-tools-version 5.9, macOS 10.15+
-  Makefile              build / test / test-integration / install
+  Makefile              build / test / test-integration / install / gen-operating-doc
   test                  Shell suite: builds a fresh binary, exercises --validate paths
 ```
 
@@ -64,6 +67,7 @@ Single command: `toss-bin [flags] <path> [...]`
 | `-f` | Suppress errors for nonexistent files (matches `rm -f`) |
 | `--help`, `-h` | Usage (`-h` only as the sole argument) |
 | `--version`, `-v` | Version (`-v` only as the sole argument) |
+| `docs` | Print the embedded operating doc (only as the sole argument, so a file named `docs` stays trashable) |
 
 ## Configuration
 
@@ -81,6 +85,13 @@ Entries take a leading `~`, trailing slashes are stripped, duplicates (including
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded via codegen,
+  printed by `toss-bin docs`): safe-mode block messages, codesign/quarantine
+  kills, trash recovery paths, version-skew checks. Keep those facts there,
+  not here. Swift has no `go:embed`, so `scripts/gen-operating-doc.sh`
+  regenerates `Sources/TossBinCore/OperatingDoc.generated.swift` before
+  every `make build`/`make test`; the generated file is committed, and an
+  XCTest asserts the constant carries the doc's heading.
 - **Run both test suites before touching the deny-list.** `make test` covers `PathSafety` at unit level; `make test-integration` builds a fresh binary and exercises every blocked and allowed path end to end.
 - **Don't hand-bump `VERSION` in `main.swift`.** The `// x-release-please-version` annotation lets release-please's generic updater manage it (`extra-files` in `release-please-config.json`); there is no ldflags injection for Swift.
 - **Silently-ignored unknown flags are deliberate.** They keep the `rm` wrapper transparent. Don't "fix" argument parsing to reject them.

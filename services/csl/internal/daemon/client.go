@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/csl"
 	pb "github.com/mad01/thismoon/services/csl/internal/daemon/proto"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"google.golang.org/grpc"
@@ -15,6 +17,13 @@ import (
 
 // ErrDaemonNotRunning indicates the search daemon is unreachable.
 var ErrDaemonNotRunning = errors.New("daemon: search daemon is not running")
+
+// notRunning is the one wrap point every failed daemon RPC goes through: the
+// sentinel plus the agentdoc hint pointing at 'csl doctor'. errors.Is against
+// ErrDaemonNotRunning still matches, so fallback decisions are unaffected.
+func notRunning() error {
+	return agentdoc.Hint(ErrDaemonNotRunning, csl.Facts())
+}
 
 // isConnectionError returns true if the error indicates the daemon is
 // unreachable (as opposed to a real application-level error).
@@ -55,7 +64,7 @@ func SearchVia(
 ) ([]search.Match, error) {
 	client, conn, err := dial(socketPath)
 	if err != nil {
-		return nil, ErrDaemonNotRunning
+		return nil, notRunning()
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -75,7 +84,7 @@ func SearchVia(
 	})
 	if err != nil {
 		if isConnectionError(err) {
-			return nil, ErrDaemonNotRunning
+			return nil, notRunning()
 		}
 		return nil, err
 	}
@@ -104,7 +113,7 @@ func CountVia(
 ) ([]search.CountResult, int, error) {
 	client, conn, err := dial(socketPath)
 	if err != nil {
-		return nil, 0, ErrDaemonNotRunning
+		return nil, 0, notRunning()
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -119,7 +128,7 @@ func CountVia(
 	})
 	if err != nil {
 		if isConnectionError(err) {
-			return nil, 0, ErrDaemonNotRunning
+			return nil, 0, notRunning()
 		}
 		return nil, 0, err
 	}
@@ -138,7 +147,7 @@ func CountVia(
 func ValidateVia(socketPath string, pattern string) (search.QueryInfo, error) {
 	client, conn, err := dial(socketPath)
 	if err != nil {
-		return search.QueryInfo{}, ErrDaemonNotRunning
+		return search.QueryInfo{}, notRunning()
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -150,7 +159,7 @@ func ValidateVia(socketPath string, pattern string) (search.QueryInfo, error) {
 	})
 	if err != nil {
 		if isConnectionError(err) {
-			return search.QueryInfo{}, ErrDaemonNotRunning
+			return search.QueryInfo{}, notRunning()
 		}
 		return search.QueryInfo{}, err
 	}
@@ -169,7 +178,7 @@ func ValidateVia(socketPath string, pattern string) (search.QueryInfo, error) {
 func SemanticSearchVia(socketPath string, req *pb.SemanticSearchRequest) (*pb.SemanticSearchResponse, error) {
 	client, conn, err := dial(socketPath)
 	if err != nil {
-		return nil, ErrDaemonNotRunning
+		return nil, notRunning()
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -179,7 +188,7 @@ func SemanticSearchVia(socketPath string, req *pb.SemanticSearchRequest) (*pb.Se
 	resp, err := client.SemanticSearch(ctx, req)
 	if err != nil {
 		if isConnectionError(err) {
-			return nil, ErrDaemonNotRunning
+			return nil, notRunning()
 		}
 		return nil, err
 	}
@@ -190,7 +199,7 @@ func SemanticSearchVia(socketPath string, req *pb.SemanticSearchRequest) (*pb.Se
 func Ping(socketPath string) error {
 	client, conn, err := dial(socketPath)
 	if err != nil {
-		return ErrDaemonNotRunning
+		return notRunning()
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -200,7 +209,7 @@ func Ping(socketPath string) error {
 	_, err = client.Ping(ctx, &pb.PingRequest{})
 	if err != nil {
 		if isConnectionError(err) {
-			return ErrDaemonNotRunning
+			return notRunning()
 		}
 		return err
 	}
@@ -211,7 +220,7 @@ func Ping(socketPath string) error {
 func Shutdown(socketPath string) error {
 	client, conn, err := dial(socketPath)
 	if err != nil {
-		return ErrDaemonNotRunning
+		return notRunning()
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -220,7 +229,7 @@ func Shutdown(socketPath string) error {
 
 	_, err = client.Shutdown(ctx, &pb.ShutdownRequest{})
 	if err != nil {
-		return ErrDaemonNotRunning
+		return notRunning()
 	}
 	return nil
 }
@@ -233,7 +242,7 @@ func EnsureDaemon(indexDir, socketPath string) error {
 	}
 
 	if err := StartBackground(); err != nil {
-		return ErrDaemonNotRunning
+		return notRunning()
 	}
 
 	for i := 0; i < 10; i++ {
@@ -242,5 +251,5 @@ func EnsureDaemon(indexDir, socketPath string) error {
 			return nil
 		}
 	}
-	return ErrDaemonNotRunning
+	return notRunning()
 }

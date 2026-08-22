@@ -3,6 +3,8 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	catalogroot "github.com/mad01/thismoon/services/catalog"
 	"github.com/mad01/thismoon/services/catalog/internal/catalog"
 )
 
@@ -11,7 +13,8 @@ import (
 var registryPath string
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&registryPath, "registry", catalog.DefaultRegistryPath(),
+	rootCmd.PersistentFlags().StringVar(&registryPath, "registry",
+		catalog.ExpandPath(catalogroot.DefaultRegistry),
 		"path to registry.yaml listing source repos")
 }
 
@@ -19,5 +22,5 @@ func init() {
 // command's context for cancellation.
 func loadCatalog(cmd *cobra.Command) (*catalog.Catalog, error) {
 	cat, _, err := catalog.Load(cmd.Context(), registryPath)
-	return cat, err
+	return cat, agentdoc.Hint(err, catalogroot.Facts())
 }

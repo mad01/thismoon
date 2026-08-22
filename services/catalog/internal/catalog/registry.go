@@ -48,13 +48,19 @@ func (r *Registry) Paths() []string {
 }
 
 // ExpandPath expands a leading '~' (or '~/...') to the user's home directory.
-// Paths without a leading tilde are returned unchanged.
+// Paths without a leading tilde are returned unchanged. When the home
+// directory cannot be resolved, the ~ prefix is stripped so the path degrades
+// to cwd-relative instead of naming a literal "~" directory.
 func ExpandPath(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, strings.TrimPrefix(p, "~"))
-		}
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
 	}
-	return p
+	home, err := os.UserHomeDir()
+	if err != nil {
+		if p == "~" {
+			return "."
+		}
+		return p[2:]
+	}
+	return filepath.Join(home, strings.TrimPrefix(p, "~"))
 }

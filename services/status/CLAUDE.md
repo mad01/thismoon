@@ -11,7 +11,7 @@ running state plus history.
 status/
   cmd/status/          entrypoint (delegates to internal/cli)
   internal/
-    cli/               cobra: serve, version (build metadata from the shared buildinfo package)
+    cli/               cobra: serve, version (build metadata from the shared buildinfo package), docs
     discover/          plist scan + d-man routes.toml link mapping
     check/             HTTP and launchctl PID probes
     crashloop/         restart-counter tracker behind crash-loop alerts
@@ -106,10 +106,12 @@ make test     # go test ./...
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `status docs`): probe mechanics, down-vs-actually-up, stale
+  binary semantics, `t-man stop` not showing Down, gray days, version-skew
+  checks. Keep those facts there, not here.
 - **status monitors itself.** Once registered, its own plist is discovered like
   any other; expect a `status` row on the page.
-- **History gaps are visible.** If the agent is stopped for a day, that day
-  renders gray (no data), not red; absence of checks isn't downtime.
 - **t-man's plist `Version` field is t-man's build sha,** not the service's.
   Service versions come from the HTTP `/version` probe (running) and the
   binary's own `version` command (installed).
@@ -120,9 +122,6 @@ make test     # go test ./...
   token — `check.BinaryVersion` parses sibling tools' output as one, so a
   `version` command that prints anything else disables drift detection for
   that service.
-- **`t-man stop` won't show as Down.** KeepAlive services relaunch within a
-  second, faster than any poll interval. Down means a real failure: crash
-  loop, hung process, port not answering, or `t-man remove`.
 
 ## See also
 

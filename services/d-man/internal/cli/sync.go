@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mad01/thismoon/services/d-man/internal/config"
 	"github.com/mad01/thismoon/services/d-man/internal/hosts"
 )
 
@@ -30,7 +29,7 @@ func init() {
 }
 
 func runSync(cmd *cobra.Command, _ []string) error {
-	cfg, err := config.Load(flagConfig)
+	cfg, err := loadRoutes()
 	if err != nil {
 		return err
 	}

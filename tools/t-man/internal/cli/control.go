@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	tman "github.com/mad01/thismoon/tools/t-man"
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/spf13/cobra"
 )
@@ -61,7 +63,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	manager := launchd.NewManager(GetVersion(), !daemonMode)
 
 	if err := manager.Start(getContext(), serviceName); err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
+		return agentdoc.Hint(fmt.Errorf("failed to start service: %w", err), tman.Facts())
 	}
 
 	fmt.Printf("✓ Service '%s' started\n", serviceName)
@@ -83,7 +85,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	manager := launchd.NewManager(GetVersion(), !daemonMode)
 
 	if err := manager.Stop(getContext(), serviceName); err != nil {
-		return fmt.Errorf("failed to stop service: %w", err)
+		return agentdoc.Hint(fmt.Errorf("failed to stop service: %w", err), tman.Facts())
 	}
 
 	fmt.Printf("✓ Service '%s' stopped\n", serviceName)
@@ -106,12 +108,12 @@ func runRestart(cmd *cobra.Command, args []string) error {
 
 	// Stop first
 	if err := manager.Stop(getContext(), serviceName); err != nil {
-		return fmt.Errorf("failed to stop service: %w", err)
+		return agentdoc.Hint(fmt.Errorf("failed to stop service: %w", err), tman.Facts())
 	}
 
 	// Then start
 	if err := manager.Start(getContext(), serviceName); err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
+		return agentdoc.Hint(fmt.Errorf("failed to start service: %w", err), tman.Facts())
 	}
 
 	fmt.Printf("✓ Service '%s' restarted\n", serviceName)
@@ -130,7 +132,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Get service details
 	svc, err := manager.Get(getContext(), serviceName)
 	if err != nil {
-		return fmt.Errorf("failed to get service: %w", err)
+		return agentdoc.Hint(fmt.Errorf("failed to get service: %w", err), tman.Facts())
 	}
 
 	// Get status

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	dman "github.com/mad01/thismoon/services/d-man"
 )
 
 // TestResolveConfig pins the routes-file resolution order: DMAN_CONFIG, then
@@ -26,13 +28,13 @@ func TestResolveConfig(t *testing.T) {
 	if got := resolveConfig("", only(userPath)); got != userPath {
 		t.Fatalf("existing user path should win, got %q", got)
 	}
-	if got := resolveConfig("", only(systemConfig)); got != systemConfig {
+	if got := resolveConfig("", only(dman.SystemRoutesPath)); got != dman.SystemRoutesPath {
 		t.Fatalf("system path should be the fallback, got %q", got)
 	}
 	if got := resolveConfig("", none); got != userPath {
 		t.Fatalf("with nothing on disk the user path is the default, got %q", got)
 	}
-	both := func(q string) bool { return q == userPath || q == systemConfig }
+	both := func(q string) bool { return q == userPath || q == dman.SystemRoutesPath }
 	if got := resolveConfig("", both); got != userPath {
 		t.Fatalf("user path should take precedence over system path, got %q", got)
 	}

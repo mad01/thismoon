@@ -2,9 +2,15 @@ BIN      ?= toss-bin
 PREFIX   ?= $(HOME)/.local/bin
 DEST     := $(PREFIX)/$(BIN)
 
-.PHONY: build install resign clean test test-integration
+.PHONY: build install resign clean test test-integration gen-operating-doc
 
-build:
+# Regenerate the embedded operating doc before every compile so the
+# constant can never lag operating.md. The generated file is committed;
+# a plain `swift build` still works without this step.
+gen-operating-doc:
+	./scripts/gen-operating-doc.sh
+
+build: gen-operating-doc
 	swift build --configuration=release
 
 # Installs to ~/.local/bin (not ~/code/bin like the Go tools) — the path the
@@ -24,7 +30,7 @@ resign:
 		fi; \
 	fi
 
-test:
+test: gen-operating-doc
 	swift test
 
 test-integration:

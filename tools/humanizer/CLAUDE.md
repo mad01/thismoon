@@ -8,7 +8,7 @@ Go CLI + MCP server. Detects AI-writing patterns by shelling out to `vale` again
 humanizer/
   cmd/humanizer/     - entrypoint (delegates to internal/cli)
   internal/
-    cli/             - cobra command tree (root, detect, profile, rules, lint, fix, rewrite, mcp, version); build metadata from the shared buildinfo package
+    cli/             - cobra command tree (root, detect, profile, rules, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
     mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
     rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
     voice/           - voice profiler, statistical detector, and diff logic (profile.go, statistical.go, diff.go)
@@ -68,6 +68,7 @@ The test suite includes metadata validation for every YAML header and concurrent
 - `humanizer lint [file]`: report invisible-Unicode / space-homoglyph watermark carriers (Layer A `scrub.Inspect`). Reports only; exits non-zero when any carrier is found. Flags: `--aggressive` (flag confusables), `--strip-emoji-glue` (paranoid), `--json`.
 - `humanizer fix [file]`: apply the Layer A scrub (`scrub.Clean`). Cleaned text to stdout / `-o` / `--in-place` (writes `.bak`); stats to stderr. Non-intrusive by default (strip invisibles, normalize spaces); risky flags `--nfkc`, `--aggressive-homoglyphs`, `--strip-emoji-glue` alter visible characters. `--no-normalize-spaces` opts out of the default space fold.
 - `humanizer rewrite [file]`: Layer B rewrite for statistical marks. `--backend print-prompt` (default, offline) returns the prompt; `ollama`/`openai-compatible` run a model. Flags: `--strength`, `--model`, `--base-url`, `--allow-remote`, `--candidates`, `--temperature`, `--no-layer-a-after`, `-o`, `--json-stats`. API key via `WATERMARKS_REWRITE_API_KEY` only.
+- `humanizer docs`: print the embedded operating doc (`operating.md` rendered with the binary's own defaults): how humanizer runs, cache location, failure modes, first moves.
 - `humanizer mcp`: start the MCP stdio server. An MCP host such as Claude Code launches this; don't run it by hand in normal use. Register once with `claude mcp add --scope user humanizer -- humanizer mcp`.
 - `humanizer version`: print the bare version token of the running build. Flags: `-o json` for the four-key build metadata object (`version`, `commit`, `tag`, `build_time`).
 
@@ -91,14 +92,13 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 ## Gotchas
 
 - **Wave 0 builder.** Must build before the consuming repo's MCP registration recipe (wave 1) registers it.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary, printed by `humanizer docs`): vale-on-PATH, cache location and safety of deleting it, codesign kills, MCP sandbox limits, version skew. Keep those facts there, not here.
 - **Version probe convention.** `humanizer version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, injected by `buildinfo.mk` at link time. Plain `humanizer version` stays a bare token — ralph and status parse it as one. The same `buildinfo.Get().Version` is what the MCP initialize handshake advertises as `serverInfo.version`.
-- **Codesign required for MCP.** macOS 15+ `taskgated` kills adhoc-signed binaries whose provenance xattr no longer matches. `make install` handles this; manual copies need `make resign BIN=~/code/bin/humanizer`.
 - **Two detection paths, run both.** Vale span rules flag a matched substring with line/column; the statistical detector flags whole-sample properties with no span. Neither alone gives full coverage.
 - **Watermark scrub is a third, separate path.** `lint`/`fix` (`internal/scrub`) work on code points, not prose patterns — deterministic and offline, sharing one classifier so a report and its fix never disagree. Load-bearing invisibles (emoji ZWJ/VS after an emoji base, script joiners inside complex scripts, flag tag chars, orthographic Arabic/Syriac Cf) are preserved by default; `strip_emoji_glue` is the paranoid override.
 - **Rewrite network backends are CLI-only.** `humanizer_rewrite` over MCP is print-prompt only, because the MCP seatbelt denies all network. The `ollama`/`openai-compatible` backends run from the (unsandboxed) CLI; they default-deny non-loopback hosts, refuse redirects (so the API-key header can't be forwarded), and read the key from `WATERMARKS_REWRITE_API_KEY` only. To let the MCP tool call a local model, the consuming repo's seatbelt would need a loopback exception — not added here.
 - **Vale rule gotcha:** `existence`/`occurrence` rules wrap each token in `\b…\b` by default, so a pattern that begins or ends with a non-word char (e.g. a leading `,` plus trailing `\.`, or a trailing `?`/`#`) never matches. Set `nonword: true` on those rules. Single-quoted YAML scalars must escape inner apostrophes as `''`; plain scalars can use `'?` directly.
-- `vale` must be available on `$PATH` (installed by the consuming repo's package recipe).
-- **The MCP server runs sandboxed** (seatbelt, via the consuming repo's registration wrapper). `humanizer_detect_file` reads only prose files (`.md`/`.markdown`/`.txt`) under the profile's workspace roots, plus `/tmp` paths; anything else under `$HOME` returns a clean error pointing at `humanizer_detect`. The roots are defined by the consuming repo's seatbelt profile, not this code; new runtime file/network needs require a profile change there.
+- **The MCP sandbox roots are the consuming repo's.** The seatbelt profile that gates `humanizer_detect_file` (and denies all network) is registered by the consuming repo's wrapper, not this code; new runtime file or network needs require a profile change there.
 
 ## See also
 

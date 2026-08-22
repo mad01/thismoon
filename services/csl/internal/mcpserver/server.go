@@ -10,6 +10,9 @@ package mcpserver
 
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/csl"
 )
 
 // Name is the MCP server name advertised during the initialize handshake.
@@ -22,7 +25,7 @@ func New(version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    Name,
 		Version: version,
-	}, nil)
+	}, &mcp.ServerOptions{Instructions: agentdoc.Instructions(csl.Facts())})
 
 	registerRepoTools(s)
 	registerSearchTools(s)

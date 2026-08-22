@@ -2,7 +2,12 @@
 // checkpoint, list, search, show, and re-status work items without shelling out.
 package mcpserver
 
-import "github.com/modelcontextprotocol/go-sdk/mcp"
+import (
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/tools/worklog"
+)
 
 const Name = "worklog"
 
@@ -11,7 +16,7 @@ func New(version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    Name,
 		Version: version,
-	}, nil)
+	}, &mcp.ServerOptions{Instructions: agentdoc.Instructions(worklog.Facts())})
 	registerTools(s)
 	return s
 }

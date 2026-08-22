@@ -64,15 +64,9 @@ lexical-only with `semantic_available=false`.
 
 ### zoekt query pitfalls
 
-When writing or debugging `csl_search`/`csl search` queries:
-
-- AND requires all terms in the same file. 3+ space-separated terms almost always return zero results. Use 1-2 terms + filters.
-- OR: `|` with no spaces. Uppercase `OR` is literal. `a | b` (with spaces) is three AND terms.
-- Filter prefixes: `repo:` (not `r:`), `f:` (not `file:`). The MCP tool also has dedicated `repo`/`lang`/`file` params; prefer those over inline syntax.
-- `f:` is regex not glob: `f:.*\.go$` not `f:*.go`.
-- Dots in terms trigger regex mode: escape with `\.` for literal dots.
-- Unclosed quotes fail with a parse error.
-- `csl_query_validate` / `csl query` shows the parsed tree; use it whenever a query returns unexpected results.
+Query-writing pitfalls (AND/OR semantics, filter prefixes, regex escaping)
+live in `operating.md` under "failure modes"; `csl_query_validate` / `csl
+query` shows the parsed tree whenever a query returns unexpected results.
 
 ## Data model & storage
 
@@ -276,13 +270,14 @@ auto-reload on a CSS/JS change.
   `--serve` is a flag on `csl search` that runs the search daemon in the foreground.
 - **`csl hooks install` is deprecated.** suspenders now owns post-merge git
   hooks; don't reintroduce csl-managed hooks in a repo. See Commands.
-- **Semantic/hybrid features need an explicit build step and Ollama.**
-  `csl_semantic_search` / `csl_hybrid_search` / `csl semantic` / `csl hybrid`
-  return `available=false` (or degrade to lexical-only) until
-  `csl index --semantic-all` has run once. Embedding goes through a local
-  Ollama server — it must be running with the model pulled
-  (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`). Bulk index runs unload the model when
-  they finish; interactive queries keep it warm for 20 minutes.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `csl docs`): search-server fallback behavior, empty-result
+  triage, stale-index detection, semantic availability, version-skew checks.
+  Keep those facts there, not here.
+- **Ollama model lifecycle.** Bulk semantic index runs unload the embedding
+  model when they finish; interactive queries keep it warm for 20 minutes.
+  Pull it with `ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`
+  (the default; per-machine config may point elsewhere).
 
 ## See also
 

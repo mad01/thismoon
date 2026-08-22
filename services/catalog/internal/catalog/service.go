@@ -1,21 +1,6 @@
 package catalog
 
-import (
-	"context"
-	"os"
-	"path/filepath"
-)
-
-// DefaultRegistryPath returns the conventional registry location,
-// ~/.config/catalog/registry.yaml. It falls back to a relative path if the
-// home directory cannot be determined.
-func DefaultRegistryPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".config", "catalog", "registry.yaml")
-	}
-	return filepath.Join(home, ".config", "catalog", "registry.yaml")
-}
+import "context"
 
 // Load reads the registry at registryPath, scans every source for
 // service-info.yaml entities, and returns a built Catalog alongside the

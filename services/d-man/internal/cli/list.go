@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/mad01/thismoon/services/d-man/internal/config"
 )
 
 var listCmd = &cobra.Command{
@@ -19,7 +17,7 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, _ []string) error {
-	cfg, err := config.Load(flagConfig)
+	cfg, err := loadRoutes()
 	if err != nil {
 		return err
 	}

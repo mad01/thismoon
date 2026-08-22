@@ -100,7 +100,10 @@ jobs:
             goos="${platform%/*}"
             goarch="${platform#*/}"
             if [ -f "${COMPONENT_PATH}/Package.swift" ]; then
-              swift build --configuration=release --package-path "$COMPONENT_PATH"
+              # make build regenerates codegenned sources (e.g. toss-bin's
+              # embedded operating doc) before compiling, so a stale
+              # committed copy can never ship in a release.
+              make -C "$COMPONENT_PATH" build
               cp "${COMPONENT_PATH}/.build/release/${name}" "dist/${name}"
             else
               CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \

@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/reminder"
 	"github.com/mad01/thismoon/services/reminder/internal/client"
 )
 
@@ -29,7 +31,10 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 	if webURL == "" {
 		webURL = apiURL
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: version}, nil)
+	s := mcp.NewServer(
+		&mcp.Implementation{Name: Name, Version: version},
+		&mcp.ServerOptions{Instructions: agentdoc.Instructions(reminder.Facts())},
+	)
 	registerTools(s, &handlers{client: client.New(apiURL), webURL: webURL})
 	return s, nil
 }

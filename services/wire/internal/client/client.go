@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mad01/thismoon/kit/agentdoc"
+	wire "github.com/mad01/thismoon/services/wire"
 	"github.com/mad01/thismoon/services/wire/internal/ref"
 )
 
@@ -291,11 +293,15 @@ func (c *Client) do(
 	}
 	res, err := hc.Do(req)
 	if err != nil {
-		return fmt.Errorf(
+		// The one transport chokepoint every CLI command and MCP tool goes
+		// through; Hint points the reader at the operating doc from here. An
+		// expired blocking read is a 200 with an empty batch, never a
+		// transport error, so the hint stays off the normal wait path.
+		return agentdoc.Hint(fmt.Errorf(
 			"wire serve not reachable at %s — is the t-man agent running? (t-man status wire): %w",
 			c.baseURL,
 			err,
-		)
+		), wire.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 

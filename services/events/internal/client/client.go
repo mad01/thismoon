@@ -13,6 +13,9 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/events"
 )
 
 // Event mirrors the JSON an event record carries over the API.
@@ -146,11 +149,13 @@ func (c *Client) do(method, path string, body, out any) error {
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf(
+		// The one transport chokepoint every CLI command and MCP tool goes
+		// through; Hint points the reader at the operating doc from here.
+		return agentdoc.Hint(fmt.Errorf(
 			"events serve not reachable at %s — is the t-man agent running? (t-man status events): %w",
 			c.baseURL,
 			err,
-		)
+		), events.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 

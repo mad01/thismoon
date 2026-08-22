@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	catalogroot "github.com/mad01/thismoon/services/catalog"
 	"github.com/mad01/thismoon/services/catalog/internal/web"
 )
 
@@ -36,7 +37,8 @@ reachable from localhost alone.`,
 }
 
 func init() {
-	webCmd.Flags().IntVar(&webPortFlag, "port", 7575, "port to listen on (loopback only)")
+	webCmd.Flags().IntVar(&webPortFlag, "port", catalogroot.DefaultPort,
+		"port to listen on (loopback only)")
 	rootCmd.AddCommand(webCmd)
 }
 

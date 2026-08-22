@@ -10,10 +10,14 @@ a platform foundation of the `.this` stack: other recipes may take a hard
 
 ```
 d-man/
+  operating.md           agent-facing operating doc, embedded via embed.go and
+                         rendered by `d-man docs` from the facts in facts.go
+                         (kit/agentdoc; facts.go also holds the routes-file
+                         path constants internal/cli resolves with)
   cmd/d-man/
     main.go              entrypoint, delegates to internal/cli.Execute
   internal/
-    cli/                 cobra command tree: root, serve, sync, list, config, version, ca
+    cli/                 cobra command tree: root, serve, sync, list, config, version, ca, docs
       root.go              flags (--config/DMAN_CONFIG, --hosts-file)
       serve.go             the daemon: reload loop, fsnotify watch, binary self-watch,
                            :80 proxy + :443 block-page TLS listener
@@ -127,9 +131,15 @@ go test ./...
 | `d-man list` | Print resolved host -> backend routes. |
 | `d-man config` | Print which routes file was loaded (`loaded` / `missing` / `parse error`) and the effective config as TOML; `--help` carries the annotated key reference. |
 | `d-man version [-o json]` | Print the build sha; `-o json` prints the full build metadata object (`version`, `commit`, `tag`, `build_time`). |
+| `d-man docs` | Print the embedded operating doc: failure modes, reload semantics, first moves when a `.this` host stops resolving. |
 
 ## Gotchas
 
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `d-man docs`): the is-it-d-man-or-the-backend split, config
+  resolution and reload semantics (symlink watch, blocklist-before-route
+  ordering), CA trust, version-skew checks, first moves. Keep those facts
+  there, not here.
 - **`serve` needs root in production** (binds `:80`/`:443`, writes `/etc/hosts`).
   For local testing use `--port`/`--tls-port <high>`, `--hosts-file <temp>`, and
   a throwaway `--ca-dir <temp>` to avoid root.

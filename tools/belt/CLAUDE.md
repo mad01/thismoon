@@ -12,7 +12,7 @@ Born out of a July 2026 session retrospective: a session pushed straight to mast
 belt/
   cmd/belt/          - entrypoint
   internal/
-    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `version` (build metadata from the shared buildinfo package)
+    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `docs`, `version` (build metadata from the shared buildinfo package)
     hook/             - payload parsing + output emission per event (deny JSON, additionalContext JSON, or plain stdout for prompt)
     guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
     hint/             - the hints (prefer-csl, kof-assertions, kof-consult, kof-deposit, agent-memory, humanizer-check) + csl index lookup, response parsing, session dedupe
@@ -70,6 +70,7 @@ belt check bash "git push origin main"                # dry-run, one verdict lin
 belt check write --file <path> --content "text"
 belt doctor              # build metadata + resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names
 belt config              # config file locations + every setting in effect, incl. resolved fallbacks and claude deny patterns (annotated reference in --help)
+belt docs                # print the embedded operating doc: execution model, failure modes, first moves
 belt version [-o json]   # bare version token, or the four-key build metadata object
 ```
 
@@ -77,11 +78,9 @@ belt version [-o json]   # bare version token, or the four-key build metadata ob
 
 - **The bash-command parser is token-based, not a shell parser.** It splits on `&&`/`||`/`;`/`|`/newlines and matches bare `git … push` sequences. Pushes buried in quoted strings or subshell tricks aren't caught; belt is a guardrail against habit, not an adversary-proof sandbox.
 - **Same for `script-deny-list`.** Flag reordering (`rm -fr` is covered, `rm -r -f` isn't), `curl | bash`, and Python list-form `subprocess.run(["rm", "-rf", …])` slip through. Add variants to `extra_patterns` as they come up.
-- **`script-deny-list` reads the settings deny list at hook time**, so a settings edit applies to the script guard immediately, unlike hook *registration* changes, which need a new session.
-- **Hook changes take effect immediately, including registration.** Verified 2026-07-18 by adding a `PostToolUse` block to `~/.claude/settings.json` mid-session: the next tool call ran the new hook. This corrects an earlier note here claiming a running session keeps its loaded settings and that registration needs a new session — that is not the behavior. Binary changes apply immediately for the same reason: the hook is a fresh process per tool call, so `make install` is live at once.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary, printed by `belt docs`): the no-daemon execution model and changes-apply-immediately behavior, the config fallback and fail-closed/fail-open matrix, deny false-positive paths, version-skew checks. Keep those facts there, not here.
 - **`prefer-csl` does not reuse `guard.splitSegments`.** That splitter preserves byte offsets and treats `|` exactly like `&&`, which is right for finding a denied command anywhere in a pipeline and wrong for this hint: telling a pipe filter apart from a standalone search is its entire precision requirement. The hint has its own quote-aware splitter so a `|` inside a grep pattern does not read as a pipe.
 - **kof subjects are shallower than search hits.** Assertions get labelled at the component level (`.../services/csl`) while searches return hits deeper (`.../services/csl/internal/semantic`), and kof matches subjects by prefix — so querying the hit's own subject finds nothing. `kof-assertions` queries the repo and narrows by ranking on shared path segments. Changing that to a narrower query silently returns zero results rather than erroring.
-- **`config.Load()` never errors**: missing config files mean zero values. No profiles anywhere (belt config and ralph fallback both empty) means `git-push-main` fails closed (denies pushes to main everywhere); no name config anywhere (no `internal_names` in the belt config and no suspenders guard section) means `write-internal-names` has an empty name list and allows every write. Keep one of the two name sources configured.
 - **Version probe convention.** `belt version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, injected by `buildinfo.mk` at link time. Plain `belt version` stays a bare token — ralph and status parse it as one. `belt doctor` opens with the same metadata, so a doctor report always names the binary that produced it.
 - **Keep literal internal hostnames and org names out of belt's own source and docs.** This repo is heading public and the suspenders pre-commit guard blocks them. The public/internal split is derived (`github.com` in the remote means public), never enumerated.
 

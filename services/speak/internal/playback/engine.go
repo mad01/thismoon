@@ -23,6 +23,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 
+	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
@@ -78,8 +79,7 @@ type Engine struct {
 // New builds an Engine that fetches audio from tts and speaks it aloud. It
 // reaps stale WAV files left by earlier runs.
 func New(tts *ttsclient.Client, defaultVoice string) *Engine {
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".local", "share", "speak")
+	base := expandUser(speak.DefaultStateDir)
 	e := &Engine{
 		tts:          tts,
 		defaultVoice: defaultVoice,
@@ -516,11 +516,19 @@ func (e *Engine) reapOldAudio() {
 	}
 }
 
+// expandUser rewrites a leading ~ or ~/ to the user's home directory. When
+// the home directory cannot be resolved, the ~ prefix is stripped so the path
+// degrades to cwd-relative instead of creating a literal "~" directory.
 func expandUser(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, strings.TrimPrefix(path, "~"))
-		}
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
 	}
-	return path
+	home, err := os.UserHomeDir()
+	if err != nil {
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~"))
 }

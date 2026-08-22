@@ -35,6 +35,7 @@ func root() *cobra.Command {
 	}
 	c.AddCommand(
 		versionCmd(),
+		docsCmd(),
 		newCmd(),
 		checkpointCmd(),
 		listCmd(),

@@ -220,13 +220,12 @@ confirms which embedded webkit assets the running deps server serves.
 ## Gotchas
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
-- **serve must be running for the MCP/CLI to work**: it owns the store and is
-  the only one that reaches OSV. `t-man status deps` / `t-man restart deps`.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `deps docs`): serve-must-be-running, store layout, phantom
+  "Not compiled in" advisories, version-scoped resolve resurfacing,
+  version-skew checks. Keep those facts there, not here.
 - **Personal Mac only**: recipe, MCP entry, and d-man route are all
   `profiles = ["personal"]`.
-- **Resolve is version-scoped**: acknowledging an advisory hides it until the
-  package version changes; it intentionally resolves the same advisory across
-  every repo that pins that exact version.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs.
 
 ## See also

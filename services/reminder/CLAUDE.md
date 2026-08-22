@@ -185,11 +185,12 @@ reports the same asset hash.
 ## Gotchas
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
-- **serve must be running for the MCP/CLI to work**: it owns the store. It runs
-  as a t-man agent; `t-man status reminder` / `t-man restart reminder`.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `reminder docs`): serve-must-be-running, store location, firing
+  and notification failure modes, version-skew checks. Keep those facts
+  there, not here.
 - **MCP is unsandboxed.** It's first-party code that only makes HTTP calls to
   localhost, so it runs without a seatbelt wrapper, the same as `worklog`.
-- **Notifications fire within ~30s** of due (the ticker interval), not to the second.
 - **osascript at the edge.** Only the ticker fires `osascript`; titles/bodies are
   escaped into an AppleScript string literal (`notify.appleScriptString`) so
   quotes can't break out.

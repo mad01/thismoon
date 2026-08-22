@@ -8,11 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	deps "github.com/mad01/thismoon/services/deps"
 	"github.com/mad01/thismoon/services/deps/internal/config"
 	"github.com/mad01/thismoon/services/deps/internal/registry"
 )
-
-const defaultPort = 7429
 
 var (
 	flagWorkdir  string
@@ -67,16 +66,13 @@ func Execute() error {
 }
 
 // defaultWorkdir resolves the data directory, honoring DEPS_WORKDIR and falling
-// back to ~/.local/share/deps.
+// back to deps.DefaultWorkdir — the same constant the operating doc renders.
+// The leading ~ is expanded by PersistentPreRunE before any subcommand runs.
 func defaultWorkdir() string {
 	if v := os.Getenv("DEPS_WORKDIR"); v != "" {
 		return v
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".deps"
-	}
-	return filepath.Join(home, ".local", "share", "deps")
+	return deps.DefaultWorkdir
 }
 
 // defaultRegistry resolves the catalog registry path, honoring DEPS_REGISTRY.
@@ -95,14 +91,19 @@ func defaultConfig() string {
 	return config.DefaultPath
 }
 
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory.
+// expandTilde rewrites a leading ~ or ~/ to the user's home directory. When
+// the home directory cannot be resolved, the ~ prefix is stripped so the path
+// degrades to cwd-relative instead of creating a literal "~" directory.
 func expandTilde(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return path
+		if path == "~" {
+			return "."
+		}
+		return path[2:]
 	}
 	if path == "~" {
 		return home
@@ -116,5 +117,5 @@ func resolvedDefaultPort() int {
 			return n
 		}
 	}
-	return defaultPort
+	return deps.DefaultPort
 }

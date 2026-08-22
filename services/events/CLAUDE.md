@@ -184,8 +184,9 @@ confirms which embedded webkit assets the running events server serves.
 ## Gotchas
 
 - **Wave 0 builder.** Builds before the consuming repo's `claude-mcp` recipe (wave 1) registers the MCP.
-- **serve must be running for the MCP/CLI/producers to work**: it owns the
-  store. It runs as a t-man agent; `t-man status events` / `t-man restart events`.
+- **Runtime debugging lives in `operating.md`** (embedded in the binary,
+  printed by `events docs`): serve-must-be-running, store layout, failure
+  modes, version-skew checks. Keep those facts there, not here.
 - **MCP is unsandboxed**: it's first-party code that only makes HTTP calls to
   localhost, so it runs without a seatbelt wrapper, same as `reminder` and
   `worklog`.
