@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/csl/v0.10.0...csl/v0.11.0) (2026-08-22)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([d52b48a](https://github.com/mad01/thismoon/commit/d52b48a5983e3c3f3ed8d1d1f30d269c326f5bee))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/csl/v0.9.0...csl/v0.10.0) (2026-08-17)
 
 

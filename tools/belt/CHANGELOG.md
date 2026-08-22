@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/mad01/thismoon/compare/belt/v0.14.0...belt/v0.15.0) (2026-08-22)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([d52b48a](https://github.com/mad01/thismoon/commit/d52b48a5983e3c3f3ed8d1d1f30d269c326f5bee))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/belt/v0.13.0...belt/v0.14.0) (2026-08-21)
 
 

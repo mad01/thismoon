@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/d-man/v0.4.0...d-man/v0.5.0) (2026-08-22)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([d52b48a](https://github.com/mad01/thismoon/commit/d52b48a5983e3c3f3ed8d1d1f30d269c326f5bee))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/d-man/v0.3.1...d-man/v0.4.0) (2026-08-13)
 
 

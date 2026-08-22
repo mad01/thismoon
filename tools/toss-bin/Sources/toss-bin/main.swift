@@ -1,7 +1,7 @@
 import Foundation
 import TossBinCore
 
-let VERSION = "1.2.0" // x-release-please-version
+let VERSION = "1.3.0" // x-release-please-version
 
 /// Load deny-list additions from the config file. A malformed config warns
 /// and falls back to the built-in list so rm keeps working — the default
