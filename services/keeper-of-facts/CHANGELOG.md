@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.11.0...keeper-of-facts/v0.11.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* ship MCP field descriptions via the jsonschema tag ([#178](https://github.com/mad01/thismoon/issues/178)) ([c38161e](https://github.com/mad01/thismoon/commit/c38161ed0ecb106ae64b3b9bf02a9039c7879a21))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.10.0...keeper-of-facts/v0.11.0) (2026-08-22)
 
 
