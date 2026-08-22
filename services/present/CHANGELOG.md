@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/present/v0.4.0...present/v0.5.0) (2026-08-22)
+
+
+### Features
+
+* doctor contract for serve-bearing components (ADR-0009 wave 2) ([#174](https://github.com/mad01/thismoon/issues/174)) ([1e68bf4](https://github.com/mad01/thismoon/commit/1e68bf47c522c671828c2cd05fa5ea5ef20e0d87))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/present/v0.3.0...present/v0.4.0) (2026-08-22)
 
 

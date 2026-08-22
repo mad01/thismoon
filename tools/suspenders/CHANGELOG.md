@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/suspenders/v0.7.0...suspenders/v0.8.0) (2026-08-22)
+
+
+### Features
+
+* doctor contract for serve-bearing components (ADR-0009 wave 2) ([#174](https://github.com/mad01/thismoon/issues/174)) ([1e68bf4](https://github.com/mad01/thismoon/commit/1e68bf47c522c671828c2cd05fa5ea5ef20e0d87))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/suspenders/v0.6.0...suspenders/v0.7.0) (2026-08-22)
 
 
