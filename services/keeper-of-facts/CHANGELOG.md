@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.11.1...keeper-of-facts/v0.12.0) (2026-08-24)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([03b3db8](https://github.com/mad01/thismoon/commit/03b3db8887a744910ee4772309cf88a9fcf0ced6))
+* doctor contract for serve-bearing components (ADR-0009 wave 2) ([#174](https://github.com/mad01/thismoon/issues/174)) ([1ed2b87](https://github.com/mad01/thismoon/commit/1ed2b87a4c6a97d63382d03b182f0362ed6fc9f1))
+* in-band hints on zero-result MCP tool responses ([#176](https://github.com/mad01/thismoon/issues/176)) ([2747c1e](https://github.com/mad01/thismoon/commit/2747c1ee2dfcd17b9c68cba63c96e8e4cb8be27a))
+* **keeper-of-facts:** auto-migrate store workdir keep -&gt; kof on serve start (MAD-269) ([#145](https://github.com/mad01/thismoon/issues/145)) ([b0101b9](https://github.com/mad01/thismoon/commit/b0101b9a98288a680c9a993f9be816dcd6727a44))
+* **keeper-of-facts:** kof_recall — model-judged relevance over the assertion store (MAD-265) ([#143](https://github.com/mad01/thismoon/issues/143)) ([87f6067](https://github.com/mad01/thismoon/commit/87f60677f04591b24b1df290efb2184c481e5cf1))
+* **keeper-of-facts:** rename keep -&gt; keeper-of-facts, kof binary and kof_* tools (MAD-266) ([#141](https://github.com/mad01/thismoon/issues/141)) ([0ce70be](https://github.com/mad01/thismoon/commit/0ce70be4d5f9af24cf24beffc5071dafb32e924b))
+* **keeper-of-facts:** show when an assertion was recorded on its card ([#162](https://github.com/mad01/thismoon/issues/162)) ([2f84c3e](https://github.com/mad01/thismoon/commit/2f84c3e8c94855f16f58c65caf57201449ad03df))
+
+
+### Bug Fixes
+
+* **keeper-of-facts:** stale keep naming in CLI help; release build derives binary from cmd/ dir ([#147](https://github.com/mad01/thismoon/issues/147)) ([7c80eaa](https://github.com/mad01/thismoon/commit/7c80eaa6d410872e64e7ccfe7993ef513668d2c8))
+* **keeper-of-facts:** sweep remaining pre-rename keep references ([#157](https://github.com/mad01/thismoon/issues/157)) ([39727e0](https://github.com/mad01/thismoon/commit/39727e0d9b8894f23ebf28ee491592d3ffb59839))
+* ship MCP field descriptions via the jsonschema tag ([#178](https://github.com/mad01/thismoon/issues/178)) ([d83cfd4](https://github.com/mad01/thismoon/commit/d83cfd4e05f10c4f406f010ce0d01c18fff4afe6))
+
 ## [0.11.1](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.11.0...keeper-of-facts/v0.11.1) (2026-08-22)
 
 

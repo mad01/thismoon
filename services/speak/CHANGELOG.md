@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/speak/v0.5.1...speak/v0.6.0) (2026-08-24)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([03b3db8](https://github.com/mad01/thismoon/commit/03b3db8887a744910ee4772309cf88a9fcf0ced6))
+* doctor contract for serve-bearing components (ADR-0009 wave 2) ([#174](https://github.com/mad01/thismoon/issues/174)) ([1ed2b87](https://github.com/mad01/thismoon/commit/1ed2b87a4c6a97d63382d03b182f0362ed6fc9f1))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([6b2ee8b](https://github.com/mad01/thismoon/commit/6b2ee8b29f7ff1180e7f69cc8a3cbe58a8cefe38))
+* **speak:** add MCP server with server-side read-aloud playback ([#33](https://github.com/mad01/thismoon/issues/33)) ([e61cb07](https://github.com/mad01/thismoon/commit/e61cb0734600d1a5a3246de27bca24278b72fd54))
+* **speak:** migrate speak into services/speak + recipe ([#11](https://github.com/mad01/thismoon/issues/11)) ([36313df](https://github.com/mad01/thismoon/commit/36313dfd80518a1a321ada61b8c3aa803e58e5e1))
+
+
+### Bug Fixes
+
+* ship MCP field descriptions via the jsonschema tag ([#178](https://github.com/mad01/thismoon/issues/178)) ([d83cfd4](https://github.com/mad01/thismoon/commit/d83cfd4e05f10c4f406f010ce0d01c18fff4afe6))
+
 ## [0.5.1](https://github.com/mad01/thismoon/compare/speak/v0.5.0...speak/v0.5.1) (2026-08-22)
 
 
