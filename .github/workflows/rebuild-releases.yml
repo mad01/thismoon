@@ -1,0 +1,110 @@
+name: rebuild-releases
+
+# One-off, manually dispatched: rebuild the GitHub Release + darwin/arm64
+# artifacts for the latest tag of every component. Needed after the repo was
+# recreated (releases do not survive a repo delete) without bumping any version.
+# Uses the default GITHUB_TOKEN + OIDC only; no App secret required. cosign
+# keyless signing works because id-token: write grants the OIDC token.
+on:
+  workflow_dispatch:
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # For each package path, resolve its latest semver tag (tag prefix is the
+      # path basename, e.g. tools/belt -> belt/vX.Y.Z). Emit a matrix include.
+      - id: plan
+        run: |
+          items=()
+          for path in $(jq -r '.packages | keys[]' release-please-config.json); do
+            prefix=$(basename "$path")
+            tag=$(git tag -l "${prefix}/v*" | sort -V | tail -1)
+            if [ -z "$tag" ]; then
+              echo "no tag for $path, skipping" >&2
+              continue
+            fi
+            items+=("{\"path\":\"$path\",\"tag\":\"$tag\"}")
+          done
+          echo "matrix={\"include\":[$(IFS=,; echo "${items[*]}")]}" >> "$GITHUB_OUTPUT"
+
+      - run: echo '${{ steps.plan.outputs.matrix }}'
+
+  rebuild:
+    name: ${{ matrix.tag }}
+    needs: plan
+    runs-on: macos-15
+    permissions:
+      contents: write # create the Release and upload assets
+      id-token: write # cosign keyless signing via GitHub OIDC
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      TAG: ${{ matrix.tag }}
+      COMPONENT_PATH: ${{ matrix.path }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      # Identical build to release.yml's artifacts job: darwin/arm64 only, cgo
+      # on for csl (tree-sitter), Swift components build via make, buildinfo
+      # ldflags injected, checksums.txt covers every tarball.
+      - name: Build platform tarballs
+        run: |
+          name=$(basename "$COMPONENT_PATH")
+          if [ -d "${COMPONENT_PATH}/cmd" ]; then
+            name=$(basename "$(find "${COMPONENT_PATH}/cmd" -mindepth 1 -maxdepth 1 -type d | head -1)")
+          fi
+          version="${TAG##*/}"
+          short_sha=$(git rev-parse --short HEAD)
+          buildinfo="github.com/mad01/thismoon/buildinfo"
+          ldflags="-X ${buildinfo}.Version=${version}-${short_sha}"
+          ldflags="$ldflags -X ${buildinfo}.Commit=$(git rev-parse HEAD)"
+          ldflags="$ldflags -X ${buildinfo}.Tag=${TAG}"
+          ldflags="$ldflags -X ${buildinfo}.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cgo=0
+          if [ "$COMPONENT_PATH" = "services/csl" ]; then cgo=1; fi
+          mkdir -p dist
+          for platform in darwin/arm64; do
+            goos="${platform%/*}"
+            goarch="${platform#*/}"
+            if [ -f "${COMPONENT_PATH}/Package.swift" ]; then
+              make -C "$COMPONENT_PATH" build
+              cp "${COMPONENT_PATH}/.build/release/${name}" "dist/${name}"
+            else
+              CGO_ENABLED="$cgo" GOOS="$goos" GOARCH="$goarch" \
+                go build -trimpath -ldflags "$ldflags" \
+                -o "dist/${name}" "./${COMPONENT_PATH}/cmd/${name}"
+            fi
+            tar -C dist -czf "dist/${name}_${version}_${goos}_${goarch}.tar.gz" "$name"
+            rm "dist/${name}"
+          done
+          cd dist && shasum -a 256 ./*.tar.gz > checksums.txt
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4
+
+      - name: Sign checksums (keyless)
+        run: cosign sign-blob --yes --bundle dist/checksums.txt.bundle dist/checksums.txt
+
+      - name: Create Release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Re-cut release for ${TAG} after repo recreation (no version change)." \
+            dist/*.tar.gz dist/checksums.txt dist/checksums.txt.bundle
