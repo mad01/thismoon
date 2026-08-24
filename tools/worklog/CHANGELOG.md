@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/worklog/v0.7.1...worklog/v0.8.0) (2026-08-24)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([03b3db8](https://github.com/mad01/thismoon/commit/03b3db8887a744910ee4772309cf88a9fcf0ced6))
+* doctor contract for serve-bearing components (ADR-0009 wave 2) ([#174](https://github.com/mad01/thismoon/issues/174)) ([1ed2b87](https://github.com/mad01/thismoon/commit/1ed2b87a4c6a97d63382d03b182f0362ed6fc9f1))
+* in-band hints on zero-result MCP tool responses ([#176](https://github.com/mad01/thismoon/issues/176)) ([2747c1e](https://github.com/mad01/thismoon/commit/2747c1ee2dfcd17b9c68cba63c96e8e4cb8be27a))
+* MAD-210 migrate worklog into tools/worklog ([#21](https://github.com/mad01/thismoon/issues/21)) ([ddfb60b](https://github.com/mad01/thismoon/commit/ddfb60b4e3df94760012506726e374c72f4c05fa))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([6b2ee8b](https://github.com/mad01/thismoon/commit/6b2ee8b29f7ff1180e7f69cc8a3cbe58a8cefe38))
+* **worklog:** add config command ([78b16ff](https://github.com/mad01/thismoon/commit/78b16fff8003beea9ceec15a46bab8c752de9ce1))
+* **worklog:** remote upstream support for the store ([#166](https://github.com/mad01/thismoon/issues/166)) ([2ae9442](https://github.com/mad01/thismoon/commit/2ae94426b74322557063e724e3fe1fb6149aa868))
+
+
+### Bug Fixes
+
+* ship MCP field descriptions via the jsonschema tag ([#178](https://github.com/mad01/thismoon/issues/178)) ([d83cfd4](https://github.com/mad01/thismoon/commit/d83cfd4e05f10c4f406f010ce0d01c18fff4afe6))
+* **worklog:** make checkout roots and repo path markers configurable ([#67](https://github.com/mad01/thismoon/issues/67)) ([ec28eec](https://github.com/mad01/thismoon/commit/ec28eecbc885d43f4b6c8436191c92bb8f0aabe1))
+
 ## [0.7.1](https://github.com/mad01/thismoon/compare/worklog/v0.7.0...worklog/v0.7.1) (2026-08-22)
 
 

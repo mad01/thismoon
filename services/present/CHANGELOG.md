@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/present/v0.5.1...present/v0.6.0) (2026-08-24)
+
+
+### Features
+
+* agent-facing operating docs across all components (ADR-0009) ([#172](https://github.com/mad01/thismoon/issues/172)) ([03b3db8](https://github.com/mad01/thismoon/commit/03b3db8887a744910ee4772309cf88a9fcf0ced6))
+* doctor contract for serve-bearing components (ADR-0009 wave 2) ([#174](https://github.com/mad01/thismoon/issues/174)) ([1ed2b87](https://github.com/mad01/thismoon/commit/1ed2b87a4c6a97d63382d03b182f0362ed6fc9f1))
+* migrate present, status, pr, deps, events from dotfiles ([6da5bc2](https://github.com/mad01/thismoon/commit/6da5bc2e982e14e31aa76eaf0e71bcf1249ba270))
+* **present:** import present service from dotfiles as services/present ([16b1ab1](https://github.com/mad01/thismoon/commit/16b1ab10156d2f73ce41cf18da66975361c9ab8f))
+* **recipes:** ship worklog, humanizer, golang-style, and present skills from repo-root skills/ ([#136](https://github.com/mad01/thismoon/issues/136)) ([1d58911](https://github.com/mad01/thismoon/commit/1d58911ddd34b03b137f660add00487bfe1cd8a7))
+* shared buildinfo package — commit/tag/build time in version and /version across all components ([#125](https://github.com/mad01/thismoon/issues/125)) ([6b2ee8b](https://github.com/mad01/thismoon/commit/6b2ee8b29f7ff1180e7f69cc8a3cbe58a8cefe38))
+
+
+### Bug Fixes
+
+* **present:** apply bionic reading to list items ([#120](https://github.com/mad01/thismoon/issues/120)) ([89c14a1](https://github.com/mad01/thismoon/commit/89c14a1f725d5d3421f35dafc676842de5a4f77c))
+* **present:** correct stale --help text, remove dead server-side render layer ([#29](https://github.com/mad01/thismoon/issues/29)) ([8abc1f7](https://github.com/mad01/thismoon/commit/8abc1f7d53763077c7da6b8b74db814ff2901fba))
+* ship MCP field descriptions via the jsonschema tag ([#178](https://github.com/mad01/thismoon/issues/178)) ([d83cfd4](https://github.com/mad01/thismoon/commit/d83cfd4e05f10c4f406f010ce0d01c18fff4afe6))
+
 ## [0.5.1](https://github.com/mad01/thismoon/compare/present/v0.5.0...present/v0.5.1) (2026-08-22)
 
 
