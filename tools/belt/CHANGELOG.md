@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/mad01/thismoon/compare/belt/v0.17.0...belt/v0.18.0) (2026-08-25)
+
+
+### Features
+
+* **belt:** git-identity and work-hours commit guards, custom external guards ([#12](https://github.com/mad01/thismoon/issues/12)) ([4988ce6](https://github.com/mad01/thismoon/commit/4988ce638684d0e09966276c0ca19303fe7d6f8f))
+
 ## [0.17.0](https://github.com/mad01/thismoon/compare/belt/v0.16.0...belt/v0.17.0) (2026-08-25)
 
 
