@@ -41,6 +41,50 @@ internal_names:
   allowlist:
     - some-safe-name
 
+# Git identity enforcement for git commit, first matching rule wins. Rules
+# are repo-scoped: the repo decides the expected email, whatever machine the
+# commit happens on. repos entries are canonical host/owner/repo, exact or
+# with a trailing /* org wildcard; an empty repos list covers every repo, and
+# profile (optional) limits a rule to machines carrying that ralph profile.
+# mode hard (default) blocks a mismatched commit; soft warns via the events
+# service and allows.
+git_identity:
+  - repos:
+      - github.com/you/*
+    email: you@personal.example
+    mode: hard
+
+# Work-hours commit guard: commits to matching repos inside the local-time
+# window are blocked (hard) or warned about (soft, the default) on machines
+# carrying the rule's profile. always_allow exempts repos needed at any hour;
+# block_days defaults to mon-fri; override names a switch (belt override set
+# <name>) that disables the rule while set.
+commit_guards:
+  - repos:
+      - github.com/you/*
+    always_allow:
+      - github.com/you/essential-tooling
+    profile: work
+    block_hours: "09:00-17:00"
+    block_days: [mon, tue, wed, thu, fri]
+    mode: soft
+    override: vacation
+
+# Named external guards: belt execs the command with the tool-call fields as
+# JSON on stdin ({"command","cwd"} for bash, {"file_path","content","cwd"}
+# for write). Exit 0 allows; exit 1 denies with stdout line one as the
+# reason (soft mode downgrades it to a warn event); exit 2+, a timeout (5s),
+# or a start failure allow with a warn event — a broken external fails open.
+# match gates when the external is exec'd at all: a substring of the bash
+# command (bash event) or target file path (write event).
+custom_guards:
+  check-branch-naming:
+    enabled: true
+    event: bash
+    command: [branch-lint, check]
+    match: git commit
+    mode: hard
+
 guards:
   git-push-main:
     enabled: true
@@ -183,11 +227,14 @@ func encodeYAML(w io.Writer, v any) error {
 // Claude settings — included because the script-deny-list guard enforces
 // them and no other command lists them.
 type effectiveConfig struct {
-	Profiles      []string                 `yaml:"profiles"`
-	InternalNames config.InternalNames     `yaml:"internal_names"`
-	Guards        map[string]config.Toggle `yaml:"guards"`
-	Hints         map[string]config.Toggle `yaml:"hints"`
-	ClaudeDeny    []string                 `yaml:"claude_deny"`
+	Profiles      []string                      `yaml:"profiles"`
+	InternalNames config.InternalNames          `yaml:"internal_names"`
+	GitIdentity   []config.GitIdentity          `yaml:"git_identity,omitempty"`
+	CommitGuards  []config.CommitGuard          `yaml:"commit_guards,omitempty"`
+	CustomGuards  map[string]config.CustomGuard `yaml:"custom_guards,omitempty"`
+	Guards        map[string]config.Toggle      `yaml:"guards"`
+	Hints         map[string]config.Toggle      `yaml:"hints"`
+	ClaudeDeny    []string                      `yaml:"claude_deny"`
 }
 
 // resolveEffective materializes every registered guard and hint with the
@@ -199,11 +246,17 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 	e := effectiveConfig{
 		Profiles:      cfg.Profiles,
 		InternalNames: cfg.Names,
+		GitIdentity:   cfg.GitIdentity,
+		CommitGuards:  cfg.CommitGuards,
+		CustomGuards:  cfg.CustomGuards,
 		Guards:        make(map[string]config.Toggle, len(guards)),
 		Hints:         make(map[string]config.Toggle, len(hints)),
 		ClaudeDeny:    cfg.ClaudeDeny,
 	}
 	for _, g := range guards {
+		if _, ok := g.(*guard.Custom); ok {
+			continue // rendered under custom_guards with their full definition
+		}
 		e.Guards[g.ID()] = withEnabled(cfg.Guards[g.ID()], cfg.GuardEnabled(g.ID()))
 	}
 	for _, h := range hints {

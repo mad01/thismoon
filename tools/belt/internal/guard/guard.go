@@ -6,6 +6,8 @@ package guard
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
@@ -47,13 +49,21 @@ type Guard interface {
 
 // All returns every registered guard, enabled or not, in registration order.
 // Introspection (belt doctor) needs the disabled ones too: a guard filtered
-// out of ForEvent looks identical to one that never existed.
+// out of ForEvent looks identical to one that never existed. Built-in guards
+// run first in fixed order; custom guards follow, alphabetical by name so
+// the order is deterministic across runs.
 func All(cfg config.Config) []Guard {
-	return []Guard{
+	guards := []Guard{
 		NewGitPushMain(cfg),
+		NewGitIdentity(cfg),
+		NewCommitGuard(cfg),
 		NewScriptDenyList(cfg),
 		NewWriteInternalNames(cfg),
 	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.CustomGuards)) {
+		guards = append(guards, NewCustom(name, cfg.CustomGuards[name]))
+	}
+	return guards
 }
 
 // ForEvent returns the enabled guards for an event, in fixed order.

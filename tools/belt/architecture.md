@@ -16,8 +16,10 @@ repo's companion recipe (docs/adr/0006).
 cmd/belt/           entry point, hands off to internal/cli
 internal/cli/       cobra commands: hook <event>, check, version
 internal/hook/      PreToolUse payload parsing and deny JSON emission
-internal/guard/     the Guard interface, the ForEvent registry, and the three
-                    guards (git-push-main, script-deny-list, write-internal-names)
+internal/guard/     the Guard interface, the ForEvent registry, the built-in
+                    guards (git-push-main, git-identity, commit-guard,
+                    script-deny-list, write-internal-names), and the Custom
+                    guard that execs config-registered external commands
 internal/config/    config.Load(): the belt config plus its ralph/suspenders
                     fallbacks and the Claude-settings deny list, into one Config
 internal/notify/    best-effort event emission to the local events service

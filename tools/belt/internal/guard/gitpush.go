@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"os/exec"
 	"slices"
 	"strings"
 
@@ -119,57 +118,22 @@ var pushFlagsWithValue = map[string]bool{
 	"--repo": true,
 }
 
-// findGitPushes extracts git push invocations from a shell command. The
-// parser is deliberately token-based: it splits on shell separators and
-// matches bare `git ... push` sequences. Quoted strings containing the words
-// do not tokenize to a bare `git` and are ignored.
+// findGitPushes extracts git push invocations from a shell command via the
+// shared token-based git parser (see findGitCommands).
 func findGitPushes(command string) []gitPush {
 	var pushes []gitPush
-	for _, seg := range splitSegments(command) {
-		tokens := strings.Fields(seg.text)
-		for i := 0; i < len(tokens); i++ {
-			if tokens[i] != "git" {
-				continue
-			}
-			push, ok := parseGitInvocation(tokens[i+1:])
-			if ok {
-				pushes = append(pushes, push)
-			}
-			break // one git invocation per segment
-		}
+	for _, c := range findGitCommands(command, "push") {
+		pushes = append(pushes, parsePushArgs(c))
 	}
 	return pushes
 }
 
-// parseGitInvocation parses the tokens after `git`; ok is false when the
-// subcommand is not push.
-func parseGitInvocation(tokens []string) (gitPush, bool) {
-	var push gitPush
-	i := 0
-	// Global git flags before the subcommand.
-	for i < len(tokens) {
-		switch {
-		case tokens[i] == "-C" && i+1 < len(tokens):
-			push.dir = tokens[i+1]
-			i += 2
-		case tokens[i] == "-c" && i+1 < len(tokens):
-			i += 2
-		case tokens[i] == "--git-dir" || tokens[i] == "--work-tree":
-			i += 2 // separate-value form consumes the path token too
-		case strings.HasPrefix(tokens[i], "--git-dir=") || strings.HasPrefix(tokens[i], "--work-tree="):
-			i++
-		default:
-			goto subcommand
-		}
-	}
-subcommand:
-	if i >= len(tokens) || tokens[i] != "push" {
-		return gitPush{}, false
-	}
-	i++
+// parsePushArgs reads the remote and refspecs out of a parsed push.
+func parsePushArgs(c gitInvocation) gitPush {
+	push := gitPush{dir: c.dir}
 	var positional []string
-	for ; i < len(tokens); i++ {
-		tok := tokens[i]
+	for i := 0; i < len(c.args); i++ {
+		tok := c.args[i]
 		if strings.HasPrefix(tok, "-") {
 			if pushFlagsWithValue[tok] {
 				i++
@@ -183,7 +147,7 @@ subcommand:
 		push.refspecs = positional[1:]
 		push.explicit = true
 	}
-	return push, true
+	return push
 }
 
 // segment is one piece of a compound shell command, with its byte offset in
@@ -209,51 +173,4 @@ func splitSegments(command string) []segment {
 		pos += len(piece) + 1
 	}
 	return segs
-}
-
-// canonicalRepo normalizes a git remote URL to "host/owner/repo"
-// (github.com/mad01/dotfiles for both the SSH and HTTPS forms). It returns ""
-// for anything it cannot resolve — an empty remote, a bare local path — so an
-// unresolved repo fails closed against the allowlist.
-func canonicalRepo(remote string) string {
-	remote = strings.TrimSpace(remote)
-	remote = strings.TrimSuffix(remote, ".git")
-	switch {
-	case strings.Contains(remote, "://"):
-		// scheme://[user@]host[:port]/owner/repo
-		remote = remote[strings.Index(remote, "://")+3:]
-		if i := strings.LastIndex(remote, "@"); i >= 0 {
-			remote = remote[i+1:]
-		}
-	case strings.Contains(remote, "@") && strings.Contains(remote, ":"):
-		// scp-like: [user@]host:owner/repo
-		remote = remote[strings.Index(remote, "@")+1:]
-		remote = strings.Replace(remote, ":", "/", 1)
-	default:
-		return ""
-	}
-	// Drop a :port from the host segment.
-	if i := strings.Index(remote, "/"); i >= 0 {
-		if j := strings.Index(remote[:i], ":"); j >= 0 {
-			remote = remote[:j] + remote[i:]
-		}
-	}
-	// Need at least host/owner/repo.
-	if strings.Count(remote, "/") < 2 {
-		return ""
-	}
-	return remote
-}
-
-// gitCurrentBranch shells out to git; "" when dir is not a repo or git fails.
-func gitCurrentBranch(dir string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }

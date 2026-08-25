@@ -12,9 +12,9 @@ Born out of a July 2026 session retrospective: a session pushed straight to mast
 belt/
   cmd/belt/          - entrypoint
   internal/
-    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `docs`, `version` (build metadata from the shared buildinfo package)
+    cli/             - cobra commands: `hook <event>`, `hint <event>`, `check`, `doctor`, `config`, `override`, `docs`, `version` (build metadata from the shared buildinfo package)
     hook/             - payload parsing + output emission per event (deny JSON, additionalContext JSON, or plain stdout for prompt)
-    guard/            - the guards (git-push-main, script-deny-list, write-internal-names)
+    guard/            - the guards (git-push-main, git-identity, commit-guard, script-deny-list, write-internal-names) + config-registered custom guards
     hint/             - the hints (prefer-csl, kof-assertions, kof-consult, kof-deposit, agent-memory, humanizer-check) + csl index lookup, response parsing, session dedupe
     config/           - belt config (profiles, internal_names, toggles) + ralph/suspenders fallbacks + Claude-settings deny list
     notify/           - synchronous best-effort event emission to events.this on every deny and hint
@@ -32,10 +32,14 @@ belt/
 | id | event | rule |
 |----|-------|------|
 | `git-push-main` | `bash` | Deny `git push` targeting main/master unless the ralph profile is `personal` or the target repo is on the guard's `allow_repos` allowlist (canonical `host/owner/repo`, e.g. `github.com/mad01/dotfiles`, resolved from the push working dir's `origin` remote). Unknown profile, unresolved repo, and off-allowlist repos all fail closed. Resolves bare `git push`/`HEAD` refspecs via `git rev-parse --abbrev-ref HEAD` in the payload cwd (or `git -C` dir). |
+| `git-identity` | `bash` | Deny `git commit` when the repo's effective `git config user.email` does not match the first `git_identity` rule covering the repo. Rules are repo-pattern scoped (exact `host/owner/repo` or trailing `/*` org wildcard) rather than profile scoped: the repo decides the expected identity whatever machine the commit happens on, so a work machine committing to a personal repo in the evening still gets the personal email enforced. `mode: soft` downgrades the deny to a warn event. No config, an unresolved repo or email, and uncovered repos all fail open. |
+| `commit-guard` | `bash` | The work-hours nudge: `git commit` to repos matching a `commit_guards` rule inside its local-time window (`block_hours`, `block_days` defaulting to mon–fri) is denied (`mode: hard`) or warned about via the events service (`mode: soft`, the default) on machines carrying the rule's `profile`. `always_allow` exempts repos needed at any hour; a rule's `override` names a switch (`belt override set <name>`) that disables it while set. Unresolved repos and malformed windows fail open. |
 | `script-deny-list` | `bash` | Deep deny inspection: apply the Bash deny list inside scripts, closing the "write it to a script, then run the script" bypass. Scans executed/sourced script files (`bash x.sh`, `python x.py`, `./x.sh`, `source x.sh`, relative paths resolved against the payload cwd), `-c` strings, and heredocs piped into an interpreter. Patterns = `permissions.deny` `Bash(...)` entries read live from `~/.claude/settings.json` + `settings.local.json`, plus `extra_patterns` in the belt config (carries `rm -rf`/`rm -fr`, since settings only lists `rm` under "ask"). Matching is per non-comment line, whole-word, whitespace-normalized; it catches shell lines and Python `subprocess`/`os.system` strings alike. Unreadable files and `python -m` allow; `exclude_paths` skips trusted script dirs. |
 | `write-internal-names` | `write` | Deny Write/Edit content that mentions internal names when the target file is in a github.com repo. Names = `internal_names.blocked_words` plus, for every git repo `kit/repofind` discovers under `internal_names.workspace_dirs`, the org and repo segments of its origin remote (path fallback) and the checkout dir basename — each a separate name, never the combined `org/repo` — minus `internal_names.allowlist` and anything under three characters. The same derivation the suspenders pre-commit guard uses, so the two layers agree when their configs do. Only github.com remotes count as public; other git hosts and non-repo paths are exempt. Per-guard `exclude_paths` skips paths that deliberately carry internal references (`~/` and absolute entries match as directory prefixes, others as substrings); those live in the consuming repo's belt config overlay, not here (see docs/adr/0006). |
 
 Adding a guard: implement the `Guard` interface in `internal/guard/`, register it in `All`, and add a toggle to the consuming repo's belt config overlay (`~/.config/belt/config.yaml`). Only a guard that needs a new tool matcher also needs a `hooks.PreToolUse` entry in the consuming repo's Claude settings recipe.
+
+**Custom guards** skip the Go step entirely: a `custom_guards` entry in the belt config registers a named guard that execs an external command with the tool-call fields as JSON on stdin (`{"command","cwd"}` for bash, `{"file_path","content","cwd"}` for write). Exit 0 allows; exit 1 denies with stdout line one as the reason (prefixed `belt[<name>]:`); exit 2+, a 5s timeout, or a start failure allow with a warn event, so a broken external fails open. An optional `match` substring gates when the external is exec'd at all, and `mode: soft` turns denials into warn events. Custom guards run after the built-ins, alphabetical by name; `belt doctor` lists them with a PATH reachability check. The commands run with the user's full environment on purpose — they are user-configured, not agent-configured, and belt never writes its own config.
 
 ### Hints
 
@@ -68,7 +72,8 @@ belt hint session-start  # SessionStart entrypoint: same contract, emits hookEve
 belt hint prompt         # UserPromptSubmit entrypoint: advice as plain stdout text, not JSON
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
-belt doctor              # build metadata + resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names
+belt doctor              # build metadata + resolved config: surfaces loaded, guard/hint state, custom guards + reachability, overrides, kof reachability, blocked names
+belt override            # list active guard overrides; set/clear <name> toggles them (a commit_guards rule naming one stops applying while set)
 belt config              # config file locations + every setting in effect, incl. resolved fallbacks and claude deny patterns (annotated reference in --help)
 belt docs                # print the embedded operating doc: execution model, failure modes, first moves
 belt version [-o json]   # bare version token, or the four-key build metadata object

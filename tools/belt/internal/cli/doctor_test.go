@@ -197,6 +197,62 @@ func TestDoctorReportsKofReachability(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsCustomGuardsAndRules(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.yaml", `
+git_identity:
+  - repos: [github.com/mad01/*]
+    email: personal@example.com
+commit_guards:
+  - repos: [github.com/mad01/*]
+    block_hours: "09:00-17:00"
+custom_guards:
+  branch-check:
+    event: bash
+    command: [definitely-not-on-path-xyz, check]
+    match: git commit
+  extra-scan:
+    enabled: false
+    event: write
+    command: [ls]
+    mode: soft
+`)
+	out := runDoctorString(t, doctorPaths(dir))
+
+	for _, want := range []string{
+		"git-identity",
+		"(git_identity rules: 1)",
+		"commit-guard",
+		"(commit_guards rules: 1)",
+		"custom guards — external commands",
+		"branch-check",
+		"command: definitely-not-on-path-xyz check",
+		`match: "git commit"`,
+		"UNREACHABLE",
+		"extra-scan",
+		"soft",
+		"DISABLED",
+		"overrides — rules naming one stop applying",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDoctorReportsRulelessGuardsAsNoOps(t *testing.T) {
+	out := runDoctorString(t, doctorPaths(t.TempDir()))
+	for _, want := range []string{
+		"(no git_identity rules — guard is a no-op)",
+		"(no commit_guards rules — guard is a no-op)",
+		"(none configured)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 	t.Run("legacy toml", func(t *testing.T) {
 		dir := t.TempDir()

@@ -38,9 +38,61 @@ type Config struct {
 	Profiles      []string
 	ProfileSource string // SourceBelt when the belt config sets profiles, else SourceRalph
 	Names         InternalNames
-	NamesSource   string   // SourceBelt when the belt config sets internal_names, else SourceSuspenders
-	ClaudeDeny    []string // Bash command prefixes from the Claude settings deny lists
+	NamesSource   string                 // SourceBelt when the belt config sets internal_names, else SourceSuspenders
+	ClaudeDeny    []string               // Bash command prefixes from the Claude settings deny lists
+	GitIdentity   []GitIdentity          // git-identity rules, first matching rule wins
+	CommitGuards  []CommitGuard          // commit-guard rules, every rule is checked
+	CustomGuards  map[string]CustomGuard // external-command guards keyed by guard name
 }
+
+// GitIdentity is one git-identity rule: the git user.email expected for
+// commits in repos matching the rule. Rules are repo-scoped rather than
+// profile-scoped because the repo decides the identity — a work machine
+// committing to a personal repo in the evening must still use the personal
+// email, whatever profile the machine carries. Profile is an optional extra
+// gate for rules that should only exist on some machines.
+type GitIdentity struct {
+	Repos   []string `toml:"repos"   yaml:"repos,omitempty"`   // repo patterns (exact or trailing /*); empty = every repo
+	Profile string   `toml:"profile" yaml:"profile,omitempty"` // optional: rule active only on machines with this profile
+	Email   string   `toml:"email"   yaml:"email"`
+	Mode    string   `toml:"mode"    yaml:"mode,omitempty"` // "hard" (default) blocks, "soft" warns via events
+}
+
+// Soft reports whether the rule warns instead of denying. Identity mismatches
+// default to hard: a wrong email is painful to fix after push.
+func (g GitIdentity) Soft() bool { return g.Mode == "soft" }
+
+// CommitGuard is one work-hours commit rule: commits to matching repos are
+// blocked (or warned about) inside the configured local-time window on
+// machines carrying the rule's profile.
+type CommitGuard struct {
+	Repos       []string `toml:"repos"        yaml:"repos"`                  // repo patterns (exact or trailing /*)
+	AlwaysAllow []string `toml:"always_allow" yaml:"always_allow,omitempty"` // repos exempt from the hours check
+	Profile     string   `toml:"profile"      yaml:"profile,omitempty"`      // rule active only on machines with this profile
+	BlockHours  string   `toml:"block_hours"  yaml:"block_hours"`            // "HH:MM-HH:MM" local time
+	BlockDays   []string `toml:"block_days"   yaml:"block_days,omitempty"`   // mon..sun; empty = weekdays
+	Mode        string   `toml:"mode"         yaml:"mode,omitempty"`         // "soft" (default) warns, "hard" blocks
+	Override    string   `toml:"override"     yaml:"override,omitempty"`     // override name that disables the rule
+}
+
+// Hard reports whether the rule denies instead of warning. Hours guards
+// default to soft: the point is a nudge toward evenings, not lost work.
+func (g CommitGuard) Hard() bool { return g.Mode == "hard" }
+
+// CustomGuard is one externally-implemented guard: a named command belt execs
+// with the tool-call payload on stdin. Exit 0 allows, exit 1 denies with
+// stdout as the reason, anything else (or a timeout) allows with a warn event
+// so a broken external never blocks work.
+type CustomGuard struct {
+	Enabled *bool    `toml:"enabled" yaml:"enabled,omitempty"`
+	Event   string   `toml:"event"   yaml:"event"`          // "bash" or "write"
+	Command []string `toml:"command" yaml:"command"`        // external tool + args
+	Mode    string   `toml:"mode"    yaml:"mode,omitempty"` // "hard" (default) blocks, "soft" warns via events
+	Match   string   `toml:"match"   yaml:"match,omitempty"` // substring gate on the command (bash) or file path (write)
+}
+
+// Soft reports whether the guard warns instead of denying.
+func (g CustomGuard) Soft() bool { return g.Mode == "soft" }
 
 // Toggle enables or disables a single guard or hint by id, with optional
 // path exclusions, extra deny patterns beyond the shared sources, and a
@@ -98,8 +150,14 @@ type InternalNames struct {
 }
 
 // GuardEnabled reports whether a guard is enabled; guards default to on so a
-// missing or partial config file fails closed, not silent.
+// missing or partial config file fails closed, not silent. A custom guard's
+// own enabled field wins over a guards: toggle of the same name — the
+// custom_guards entry is where the guard is defined, so it is where it is
+// switched off.
 func (c Config) GuardEnabled(id string) bool {
+	if cg, ok := c.CustomGuards[id]; ok && cg.Enabled != nil {
+		return *cg.Enabled
+	}
 	return enabled(c.Guards, id)
 }
 
@@ -140,6 +198,66 @@ func (c Config) RepoAllowed(guardID, repo string) bool {
 		}
 	}
 	return false
+}
+
+// RepoMatches reports whether the canonical host/owner/repo matches any of
+// the patterns: an exact match, or a prefix match for a pattern ending in
+// "/*" (github.com/mad01/* covers the whole org). An empty repo never
+// matches — an unresolved remote must not trip a repo-scoped rule.
+func RepoMatches(patterns []string, repo string) bool {
+	if repo == "" {
+		return false
+	}
+	for _, p := range patterns {
+		if prefix, ok := strings.CutSuffix(p, "/*"); ok {
+			if strings.HasPrefix(repo, prefix+"/") {
+				return true
+			}
+			continue
+		}
+		if p == repo {
+			return true
+		}
+	}
+	return false
+}
+
+// OverridesDir is where active guard overrides live: one empty file per
+// active override name, managed by `belt override set|clear`.
+func OverridesDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "belt", "overrides")
+}
+
+// OverrideActive reports whether the named override file exists. A missing
+// overrides dir means no override is active.
+func OverrideActive(name string) bool {
+	dir := OverridesDir()
+	if dir == "" || name == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, name))
+	return err == nil
+}
+
+// ActiveOverrides lists the override names currently set, sorted, for the
+// doctor report.
+func ActiveOverrides() []string {
+	entries, err := os.ReadDir(OverridesDir())
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 // Paths lists the locations of every config surface belt reads. `belt doctor`
@@ -188,9 +306,12 @@ func Load() Config {
 func LoadFrom(p Paths) Config {
 	f := loadFile(p.BeltYAML, p.BeltTOML)
 	cfg := Config{
-		Guards:     f.Guards,
-		Hints:      f.Hints,
-		ClaudeDeny: LoadClaudeDenyPatterns(p.ClaudeSettings...),
+		Guards:       f.Guards,
+		Hints:        f.Hints,
+		ClaudeDeny:   LoadClaudeDenyPatterns(p.ClaudeSettings...),
+		GitIdentity:  f.GitIdentity,
+		CommitGuards: f.CommitGuards,
+		CustomGuards: f.CustomGuards,
 	}
 	cfg.Profiles, cfg.ProfileSource = f.Profiles, SourceBelt
 	if len(cfg.Profiles) == 0 {
@@ -250,10 +371,13 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 // to the suspenders config) is distinguishable from a present-but-empty one
 // (belt owns the list, and it is empty).
 type File struct {
-	Guards        map[string]Toggle `toml:"guards"         yaml:"guards"`
-	Hints         map[string]Toggle `toml:"hints"          yaml:"hints"`
-	Profiles      []string          `toml:"profiles"       yaml:"profiles"`
-	InternalNames *InternalNames    `toml:"internal_names" yaml:"internal_names"`
+	Guards        map[string]Toggle      `toml:"guards"         yaml:"guards"`
+	Hints         map[string]Toggle      `toml:"hints"          yaml:"hints"`
+	Profiles      []string               `toml:"profiles"       yaml:"profiles"`
+	InternalNames *InternalNames         `toml:"internal_names" yaml:"internal_names"`
+	GitIdentity   []GitIdentity          `toml:"git_identity"   yaml:"git_identity"`
+	CommitGuards  []CommitGuard          `toml:"commit_guards"  yaml:"commit_guards"`
+	CustomGuards  map[string]CustomGuard `toml:"custom_guards"  yaml:"custom_guards"`
 }
 
 // loadFile prefers the YAML config and falls back to the legacy TOML file

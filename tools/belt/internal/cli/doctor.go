@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -65,15 +66,32 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	}
 
 	fmt.Fprintln(w, "\nguards:")
+	var customs []*guard.Custom
 	for _, g := range guard.All(cfg) {
+		if c, ok := g.(*guard.Custom); ok {
+			customs = append(customs, c)
+			continue
+		}
 		fmt.Fprintf(
 			w,
-			"  %-22s %-7s %s%s\n",
+			"  %-22s %-7s %s%s%s\n",
 			g.ID(),
 			g.Event(),
 			enabledWord(cfg.GuardEnabled(g.ID())),
 			toggleNote(cfg.Guards[g.ID()]),
+			ruleNote(cfg, g.ID()),
 		)
+	}
+
+	printCustomGuards(w, cfg, customs)
+
+	fmt.Fprintln(w, "\noverrides — rules naming one stop applying while it is set (belt override set|clear <name>):")
+	if active := config.ActiveOverrides(); len(active) > 0 {
+		for _, name := range active {
+			fmt.Fprintf(w, "  %s  ACTIVE\n", name)
+		}
+	} else {
+		fmt.Fprintln(w, "  (none active)")
 	}
 
 	fmt.Fprintln(w, "\nhints:")
@@ -192,6 +210,66 @@ func kofNote(count int, err error) string {
 	default:
 		return fmt.Sprintf("reachable, %d assertions stored", count)
 	}
+}
+
+// ruleNote reports how many config rules feed the rule-driven guards — a
+// rule-less git-identity or commit-guard is enabled yet checks nothing, and
+// that must be visible.
+func ruleNote(cfg config.Config, id string) string {
+	switch id {
+	case guard.GitIdentityID:
+		return countNote("git_identity rules", len(cfg.GitIdentity))
+	case guard.CommitGuardID:
+		return countNote("commit_guards rules", len(cfg.CommitGuards))
+	}
+	return ""
+}
+
+func countNote(what string, n int) string {
+	if n == 0 {
+		return fmt.Sprintf("  (no %s — guard is a no-op)", what)
+	}
+	return fmt.Sprintf("  (%s: %d)", what, n)
+}
+
+// printCustomGuards renders the config-registered external guards with the
+// one health fact belt can check for them: whether the command resolves on
+// PATH.
+func printCustomGuards(w io.Writer, cfg config.Config, customs []*guard.Custom) {
+	fmt.Fprintln(w, "\ncustom guards — external commands from custom_guards in the belt config:")
+	if len(customs) == 0 {
+		fmt.Fprintln(w, "  (none configured)")
+		return
+	}
+	for _, c := range customs {
+		cg := c.Config()
+		mode := "hard"
+		if cg.Soft() {
+			mode = "soft"
+		}
+		fmt.Fprintf(w, "  %-22s %-7s %-5s %-9s command: %s%s%s\n",
+			c.ID(), cg.Event, mode, enabledWord(cfg.GuardEnabled(c.ID())),
+			strings.Join(cg.Command, " "), matchNote(cg.Match), reachabilityNote(cg.Command))
+	}
+}
+
+func matchNote(match string) string {
+	if match == "" {
+		return ""
+	}
+	return fmt.Sprintf("  match: %q", match)
+}
+
+// reachabilityNote flags a command PATH cannot resolve: the guard would warn
+// and allow on every call, i.e. check nothing.
+func reachabilityNote(command []string) string {
+	if len(command) == 0 {
+		return "  MISCONFIGURED (empty command — guard checks nothing)"
+	}
+	if _, err := exec.LookPath(command[0]); err != nil {
+		return fmt.Sprintf("  UNREACHABLE (%q not on PATH — guard allows with a warn event)", command[0])
+	}
+	return ""
 }
 
 func enabledWord(on bool) string {
