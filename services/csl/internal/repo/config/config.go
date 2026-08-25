@@ -34,6 +34,20 @@ type Config struct {
 	Semantic SemanticConfig `yaml:"semantic"`
 	Daemon   DaemonConfig   `yaml:"daemon"`
 	Web      WebConfig      `yaml:"web"`
+	Refresh  RefreshConfig  `yaml:"refresh"`
+}
+
+// RefreshConfig controls the background index refresh loop that `csl web`
+// runs: a periodic sync (pull + reindex changed repos) sharing the sync lock
+// with the manual `csl sync` command.
+type RefreshConfig struct {
+	// Enabled gates the periodic background refresh. Unset means enabled — a
+	// pointer distinguishes "not configured" from an explicit false. Manual
+	// refresh from the web UI works either way.
+	Enabled *bool `yaml:"enabled"`
+	// IntervalMinutes is how often the background refresh runs. Zero or
+	// negative means the default (15 minutes).
+	IntervalMinutes int `yaml:"interval_minutes"`
 }
 
 // WebConfig tells the other csl surfaces where the web UI is reachable.
@@ -179,6 +193,25 @@ func (c *Config) EffectiveWebBaseURL() string {
 		return strings.TrimRight(c.Web.BaseURL, "/")
 	}
 	return csl.DefaultBaseURL
+}
+
+// RefreshEnabled reports whether `csl web` should run the periodic background
+// refresh. Defaults to true when unset. Safe to call on a nil receiver.
+func (c *Config) RefreshEnabled() bool {
+	if c == nil || c.Refresh.Enabled == nil {
+		return true
+	}
+	return *c.Refresh.Enabled
+}
+
+// RefreshInterval returns the configured background refresh interval,
+// defaulting to 15 minutes when unset or non-positive. Safe to call on a nil
+// receiver.
+func (c *Config) RefreshInterval() time.Duration {
+	if c != nil && c.Refresh.IntervalMinutes > 0 {
+		return time.Duration(c.Refresh.IntervalMinutes) * time.Minute
+	}
+	return 15 * time.Minute
 }
 
 // DaemonIdleTimeout returns the configured daemon idle timeout, defaulting to

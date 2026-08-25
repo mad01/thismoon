@@ -25,6 +25,8 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `semantic.dim` | int | no (default `1024`) | Vector dimensionality of `embed_model`. Must match the model. |
 | `sync.concurrency` | int | no (default `8`) | Parallel `git pull` workers for `csl sync`. `--concurrency` on the command line overrides it. |
 | `daemon.idle_timeout_minutes` | int | no (default `10`) | How long the search daemon stays alive with no queries. Higher values keep the zoekt shards and semantic stores warm at the cost of resident memory. |
+| `refresh.enabled` | bool | no (default `true`) | Whether `csl web` runs the periodic background refresh (pull + reindex changed repos). Manual refresh from the web UI works either way. |
+| `refresh.interval_minutes` | int | no (default `15`) | How often the background refresh runs. Every cycle contacts every repo's remote, so keep it conservative. |
 | `web.base_url` | string | no (default `http://127.0.0.1:7424`) | Where the csl web UI is reachable, used by `csl_show_file` to build the links it opens. Set to `http://csl.this` when the UI is fronted by d-man. |
 
 Every key with its default, in one place:
@@ -69,6 +71,11 @@ sync:
 # Search daemon idle exit.
 daemon:
   idle_timeout_minutes: 10
+
+# Background index refresh inside `csl web` (see docs/web.md).
+refresh:
+  enabled: true
+  interval_minutes: 15
 
 # Where the web UI is reachable, for links `csl_show_file` opens.
 web:
@@ -131,7 +138,7 @@ All paths below are relative to `~/.config/csl/`.
 | `config.yaml` | The config file above. |
 | `search-index/` | Zoekt index directory. Contains `*.zoekt` shard files and `state.json`. |
 | `search-index/state.json` | Per-repo fingerprints used to decide which repos need re-indexing. |
-| `search-index/.csl-sync.lock` | Lock file guarding against concurrent `csl sync` runs racing on `state.json`. |
+| `search-index/.csl-sync.lock` | Lock file coordinating sync runs across processes: a manual `csl sync` and the background refresh in `csl web` take it before pulling or indexing, so they never race each other on working trees or `state.json`. |
 | `semantic-index/` | Per-repo vector stores (`<org>_<repo>.gob`), written by `csl index --semantic*`. No model files live here — embedding goes through Ollama. |
 | `reindex.queue` | Repo paths appended by the suspenders `csl-reindex` post-merge hook, drained by `csl sync` or `csl index --drain`. |
 | `search-daemon.sock` | Unix socket the in-memory gRPC search daemon listens on. |

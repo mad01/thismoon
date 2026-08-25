@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/csl/internal/refresh"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/webkit"
@@ -24,17 +25,27 @@ type searcher interface {
 	GitHealth(ctx context.Context) ([]search.GitHealth, error)
 }
 
+// refresher is the background-refresh backend the refresh page depends on.
+// *refresh.Refresher is the production implementation; tests inject a fake or
+// nil (the handlers answer 503 without one).
+type refresher interface {
+	Status() refresh.Status
+	Kick(only string) error
+}
+
 // Server serves the code-search web UI and JSON API. Pages and assets are
 // embedded in the binary; search and read run through the searcher.
 type Server struct {
 	svc  searcher
 	info buildinfo.Info
+	ref  refresher
 }
 
 // New returns a Server backed by the given Service, reporting info at
-// GET /version.
-func New(svc *Service, info buildinfo.Info) *Server {
-	return &Server{svc: svc, info: info}
+// GET /version and driving manual refreshes through ref (nil disables the
+// refresh API).
+func New(svc *Service, info buildinfo.Info, ref refresher) *Server {
+	return &Server{svc: svc, info: info, ref: ref}
 }
 
 // Handler builds the HTTP routes, wrapped in request logging.
@@ -43,6 +54,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handlePage("index.html"))
 	mux.HandleFunc("GET /health", s.handlePage("health.html"))
 	mux.HandleFunc("GET /file", s.handlePage("file.html"))
+	mux.HandleFunc("GET /refresh", s.handlePage("refresh.html"))
+	mux.HandleFunc("GET /api/refresh_status", s.handleRefreshStatus)
+	mux.HandleFunc("POST /api/refresh", s.handleRefreshKick)
 	mux.HandleFunc("GET /api/search", s.handleSearch)
 	mux.HandleFunc("GET /api/semantic_search", s.handleSemanticSearch)
 	mux.HandleFunc("GET /api/hybrid_search", s.handleHybridSearch)

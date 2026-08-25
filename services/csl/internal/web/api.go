@@ -359,6 +359,30 @@ func (s *Server) handleRepoHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleRefreshStatus reports the background refresh loop state and one row
+// per repo (last refresh outcome, indexed_at).
+func (s *Server) handleRefreshStatus(w http.ResponseWriter, _ *http.Request) {
+	if s.ref == nil {
+		writeError(w, http.StatusServiceUnavailable, "refresh unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.ref.Status())
+}
+
+// handleRefreshKick queues a manual refresh: everything by default, one repo
+// with ?repo=<org/repo>. 409 while a refresh is already running.
+func (s *Server) handleRefreshKick(w http.ResponseWriter, r *http.Request) {
+	if s.ref == nil {
+		writeError(w, http.StatusServiceUnavailable, "refresh unavailable")
+		return
+	}
+	if err := s.ref.Kick(r.URL.Query().Get("repo")); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
+}
+
 // repoJSON is one repo in the /api/repos list.
 type repoJSON struct {
 	Name   string `json:"name"`

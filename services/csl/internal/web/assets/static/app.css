@@ -153,3 +153,4 @@ code, .mono { font-family: inherit; background: var(--chip-bg); border-radius: 4
 .health-err { font-size: 0.75rem; color: var(--red); margin-top: 0.2rem; }
 .health-empty { color: var(--text-2); font-size: 0.875rem; padding: 1.5rem 0; }
 .repo-name { font-weight: 500; }
+.refresh-none { color: var(--text-2); font-size: 0.8125rem; }

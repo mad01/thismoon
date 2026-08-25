@@ -17,6 +17,9 @@ internal/
   semantic/        text embedding + code chunking for vector search
   hybrid/          Reciprocal Rank Fusion of lexical + semantic results
   queue/           reindex queue drained by `csl sync` / `csl index --drain`
+  syncer/          the sync engine (pull all + reindex changed) shared by
+                    `csl sync` and the background refresh, incl. the sync lock
+  refresh/         background refresh loop + status inside `csl web`
   repo/            repo discovery + host routing
     config/        ~/.config/csl/config.yaml loading
     finder/        concurrent filesystem walk + remote URL parsing
@@ -73,7 +76,7 @@ query` shows the parsed tree whenever a query returns unexpected results.
 All state lives under `~/.config/csl/`:
 
 - **`config.yaml`**: see Configuration below.
-- **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` guards against concurrent `csl sync` runs racing on `state.json`.
+- **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` is the cross-process sync lock: `csl sync` and the `csl web` background refresh both take it for the whole pull + index phase, so the two entry points never overlap.
 - **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (jina-code-v2 by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
 - **`search-daemon.sock`**, **`search-daemon.pid`**, **`search-daemon.log`**: the search daemon's Unix socket, PID file, and rotated log (`lumberjack`, 5 MB / 1 backup).
 - **`reindex.queue`**: repo paths appended by the suspenders `csl-reindex` post-merge hook after an ad-hoc `git pull`, drained by `csl sync` or `csl index --drain`.
@@ -109,6 +112,7 @@ Config lives at `~/.config/csl/config.yaml`; `csl config` prints that path, whet
 - **`semantic.sync`**: whether `csl sync` also re-embeds changed repos after the lexical reindex (best-effort, never fails the sync). Off by default.
 - **`semantic.ollama_url` / `semantic.embed_model` / `semantic.dim`**: the Ollama server and embedding model (defaults: `http://localhost:11434`, `unclemusclez/jina-embeddings-v2-base-code:f16`, 768). Per-machine — a smaller machine can point at a smaller model. Changing model or dim triggers a full re-embed on the next index run.
 - **`daemon.idle_timeout_minutes`**: how long the search daemon stays alive with no queries (default 10).
+- **`refresh.enabled` / `refresh.interval_minutes`**: the background index refresh in `csl web` — a periodic run of the same engine as `csl sync`, sharing its lock. Default enabled, every 15 minutes; manual refresh from the `/refresh` page works even when disabled.
 - **`web.base_url`**: where the csl web UI is reachable, used by `csl_show_file` to build the links it opens (default `http://127.0.0.1:7424`; set to `http://csl.this` when fronted by d-man).
 
 A repo can also carry a `.cslignore` at its root — one glob per line, `#` comments, trailing `/` for whole trees, leading `/` to anchor at the repo root. It filters both indexes (lexical zoekt and semantic); check its effect with `csl semantic files --skipped <path>`.
@@ -122,6 +126,7 @@ Typically run as a background service: `t-man add --name csl-web -- csl web --po
 
 - `GET /`: the search UI (embedded `index.html`).
 - `GET /health`: the repo-health page (fleet git state, backed by `/api/repo_health`).
+- `GET /refresh`: the index-refresh page — background loop state, per-repo last refresh outcome and indexed-at, manual refresh buttons.
 - `GET /file?repo=&file=&start=&end=`: the file-view page — renders a file section like a search match, with expand-to-full-file and copy-path controls. The URL carries all state; `csl_show_file` builds and opens these links.
 - `GET /api/search?q=&mode=files_with_matches|content&repo=&lang=&file=&case=yes&limit=&context=`: lexical search, JSON.
 - `GET /api/semantic_search?q=&repo=&lang=&k=&expand=`: semantic search, JSON.
@@ -129,6 +134,8 @@ Typically run as a background service: `t-man add --name csl-web -- csl web --po
 - `GET /api/read?repo=&file=&start=&end=`: read a line range from a repo file; the response also carries `localPath`, `fileURL`, `totalLines`, and `truncated` for the file-view page.
 - `GET /api/repos`: list discovered repos.
 - `GET /api/repo_health?all=`: fleet git-health sweep (dirty counts, ahead/behind upstream, suggested action per repo); only repos needing attention unless `all=true`.
+- `GET /api/refresh_status`: background refresh loop state plus per-repo last refresh outcome and `indexed_at`.
+- `POST /api/refresh?repo=`: queue a manual refresh (everything, or one repo by `org/repo` name); 202 on queue, 409 while one is already running.
 - `GET /healthz`: health check.
 - `GET /version`: the four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the consumer `/version` contract every webkit-mounted tool implements (see Shared UI: webkit).
 - `GET /webkit/*`: shared UI assets, mounted via `webkit.Mount(mux)`.
@@ -151,7 +158,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
 - **`csl semantic files [path]`**: classify every tracked file under a path with the indexer's skip rules, without embedding. Default output lists the files that would be embedded; `--skipped` lists filtered files with reasons; `--json` dumps every decision.
 - **`csl hybrid <query>`**: lexical + semantic, RRF-fused. `--repo/-r`, `--lang/-l`, `--limit` (50), `--rrf-k` (60), `--expand`, `--json`.
-- **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue` and, when `semantic.sync: true`, re-embeds changed repos.
+- **`csl sync`**: pull all repos (parallel, ff-only) and batch-reindex the changed ones in one process, one `state.json` write. `--concurrency` (0 = config default, fallback 8), `--dry-run`. Skips repos on a non-default branch, in detached HEAD, with a dirty tree, without a remote, or matching `hooks.post_merge.exclude`. Also drains `reindex.queue` and, when `semantic.sync: true`, re-embeds changed repos. Fails fast (instead of racing) when the background refresh in `csl web` — or another sync — holds the sync lock; the engine is shared with that refresh via `internal/syncer`.
 - **`csl hooks`**: **deprecated.** csl no longer manages post-merge hooks; suspenders is the single git-hook manager, feeding `reindex.queue` via a `csl-reindex` post_merge entry that csl still drains (`csl sync` / `csl index --drain`). `csl hooks install` prints a deprecation notice and still writes the legacy hook when `hooks.post_merge.enabled` is set. `csl hooks uninstall` removes any csl-managed post-merge hook; `csl hooks status` (`--json`) reports per-repo hook state. Migration: run `csl hooks uninstall`, then add the `csl-reindex` entry to suspenders' `post_merge` config.
 - **`csl version`**: print the bare version token (the git commit built from). `-o/--output text|json`; `-o json` prints the full build metadata object (`version`, `commit`, `tag`, `build_time`).
 
