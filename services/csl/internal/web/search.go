@@ -7,6 +7,7 @@ package web
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
+	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
 
 // Service runs searches and file reads against the local index. It mirrors the
@@ -96,19 +98,44 @@ func (s *Service) searchInProcess(
 
 	// If no index exists at all, do a full index before searching.
 	if len(state.Repos) == 0 {
-		if err := search.IndexRepos(s.indexDir, repos, nil); err != nil {
-			return nil, fmt.Errorf("indexing failed: %w", err)
+		if err := s.buildInitialIndex(repos, staleness, state); err != nil {
+			return nil, err
 		}
-		for _, repo := range repos {
-			if fp, ok := staleness.Current[repo.Path]; ok {
-				fp.IndexedAt = time.Now()
-				state.SetRepo(repo.Path, fp)
-			}
-		}
-		_ = state.Save(s.indexDir)
 	}
 
 	return search.Search(ctx, s.indexDir, opts, repoNames)
+}
+
+// buildInitialIndex does the first-ever full index build, holding the
+// cross-process sync lock for the write. When csl sync or the background
+// refresher already holds the lock — the refresher's startup catch-up cycle
+// lands exactly here — the holder is producing the same shards, so the build
+// is skipped and the caller searches whatever exists.
+func (s *Service) buildInitialIndex(
+	repos []finder.Repo,
+	staleness *search.StalenessResult,
+	state *search.IndexState,
+) error {
+	unlock, err := syncer.Lock(s.indexDir)
+	if errors.Is(err, syncer.ErrLocked) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := search.IndexRepos(s.indexDir, repos, nil); err != nil {
+		return fmt.Errorf("indexing failed: %w", err)
+	}
+	for _, repo := range repos {
+		if fp, ok := staleness.Current[repo.Path]; ok {
+			fp.IndexedAt = time.Now()
+			state.SetRepo(repo.Path, fp)
+		}
+	}
+	_ = state.Save(s.indexDir)
+	return nil
 }
 
 // FileLine is a single numbered line of a file.

@@ -19,13 +19,19 @@ var ErrLocked = errors.New("syncer: another sync is running")
 
 // Locked reports whether a sync lock file currently exists in indexDir. It is
 // the cheap pre-check used by ad-hoc single-repo indexing to step aside while
-// a sync runs; acquireSyncLock remains the authoritative gate.
+// a sync runs; Lock remains the authoritative gate.
 func Locked(indexDir string) bool {
 	_, err := os.Stat(filepath.Join(indexDir, syncLockFile))
 	return err == nil
 }
 
-func acquireSyncLock(indexDir string) (unlock func(), err error) {
+// Lock acquires the cross-process sync lock in indexDir and returns the func
+// that releases it. Every writer of shards or state.json must hold it: Run
+// takes it for the whole pull + index phase, and the ad-hoc index builds
+// (search-time reindex, the web fallback's first build) take it around their
+// writes. A live holder makes Lock fail with an error matching ErrLocked; a
+// lock left by a dead process is removed and re-acquired.
+func Lock(indexDir string) (unlock func(), err error) {
 	if err := os.MkdirAll(indexDir, 0o755); err != nil {
 		return nil, err
 	}

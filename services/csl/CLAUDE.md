@@ -76,7 +76,7 @@ query` shows the parsed tree whenever a query returns unexpected results.
 All state lives under `~/.config/csl/`:
 
 - **`config.yaml`**: see Configuration below.
-- **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` is the cross-process sync lock: `csl sync` and the `csl web` background refresh both take it for the whole pull + index phase, so the two entry points never overlap.
+- **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` is the cross-process sync lock: `csl sync` and the `csl web` background refresh take it for the whole pull + index phase, and the ad-hoc index writers (`csl search`'s foreground and background reindex, the web fallback's first build, `csl index --repo`) hold it or step aside, so no two writers ever overlap on shards or `state.json`.
 - **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (jina-code-v2 by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
 - **`search-daemon.sock`**, **`search-daemon.pid`**, **`search-daemon.log`**: the search daemon's Unix socket, PID file, and rotated log (`lumberjack`, 5 MB / 1 backup).
 - **`reindex.queue`**: repo paths appended by the suspenders `csl-reindex` post-merge hook after an ad-hoc `git pull`, drained by `csl sync` or `csl index --drain`.
