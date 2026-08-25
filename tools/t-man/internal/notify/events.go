@@ -43,7 +43,12 @@ func EmitEvent(source, level, title, message string, tags map[string]string) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/events", bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			base+"/api/events",
+			bytes.NewReader(body),
+		)
 		if err != nil {
 			return
 		}

@@ -93,30 +93,66 @@ func (r *Reconciler) Reconcile(
 	case ChangeTypeCreate:
 		if err := r.manager.Create(ctx, desired); err != nil {
 			result.Error = fmt.Errorf("failed to create service: %w", err)
-			emitReconcile("error", desired.Name, "create", "service "+desired.Name+" create failed", err.Error())
+			emitReconcile(
+				"error",
+				desired.Name,
+				"create",
+				"service "+desired.Name+" create failed",
+				err.Error(),
+			)
 			return result, err
 		}
 		result.Applied = true
-		emitReconcile("info", desired.Name, "create", "service "+desired.Name+" created", change.Reason)
+		emitReconcile(
+			"info",
+			desired.Name,
+			"create",
+			"service "+desired.Name+" created",
+			change.Reason,
+		)
 
 	case ChangeTypeUpdate:
 		if err := r.manager.Update(ctx, desired); err != nil {
 			result.Error = fmt.Errorf("failed to update service: %w", err)
-			emitReconcile("error", desired.Name, "update", "service "+desired.Name+" update failed", err.Error())
+			emitReconcile(
+				"error",
+				desired.Name,
+				"update",
+				"service "+desired.Name+" update failed",
+				err.Error(),
+			)
 			return result, err
 		}
 		result.Applied = true
-		emitReconcile("info", desired.Name, "update", "service "+desired.Name+" updated", change.Reason)
+		emitReconcile(
+			"info",
+			desired.Name,
+			"update",
+			"service "+desired.Name+" updated",
+			change.Reason,
+		)
 
 	case ChangeTypeDelete:
 		// Delete service
 		if err := r.manager.Delete(ctx, current.Name); err != nil {
 			result.Error = fmt.Errorf("failed to delete service: %w", err)
-			emitReconcile("error", desired.Name, "delete", "service "+desired.Name+" delete failed", err.Error())
+			emitReconcile(
+				"error",
+				desired.Name,
+				"delete",
+				"service "+desired.Name+" delete failed",
+				err.Error(),
+			)
 			return result, err
 		}
 		result.Applied = true
-		emitReconcile("info", desired.Name, "delete", "service "+desired.Name+" removed", change.Reason)
+		emitReconcile(
+			"info",
+			desired.Name,
+			"delete",
+			"service "+desired.Name+" removed",
+			change.Reason,
+		)
 
 	case ChangeTypeNone:
 		// No change needed - idempotency achieved!

@@ -26,6 +26,7 @@ Feature summary:
 - Environment variable management
 - Custom working directories and log paths
 - Service control: start, stop, restart, status
+- Resource monitoring: `list --resources` columns and a live `top` view (PID, RSS, CPU%, uptime)
 - Log viewing with tail support
 - Dry-run mode for safe testing
 - serviceman CLI compatibility for migration
@@ -244,6 +245,45 @@ NAME                           STATUS          COMMAND
 -----------------------------------------------------------------------------------------------
 myapp                          running         /usr/local/bin/myapp
 webapp                         stopped         /usr/local/bin/node /var/www/app.js
+```
+
+Add `--resources` for PID, RSS, CPU%, and uptime columns:
+
+```bash
+t-man list --resources
+```
+
+Output:
+```
+NAME                           STATUS          PID      RSS   CPU%   UPTIME  COMMAND
+----------------------------------------------------------------------------------------------------------------------
+myapp                          running       53009    20.3M    0.0    7m17s  /usr/local/bin/myapp
+webapp                         stopped           -        -      -        -  /usr/local/bin/node /var/www/app.js
+```
+
+PIDs come from one `launchctl list` call and the stats from one `ps` call, so
+the flag adds no per-service overhead.
+
+### Monitor resources live
+
+`top` is a live-updating resource view scoped to t-man-managed services,
+sorted by RSS descending. It refreshes every 2 seconds by default; press
+Ctrl-C to quit.
+
+```bash
+t-man top
+# custom refresh interval
+t-man top --interval 5s
+```
+
+Output (refreshed in place):
+```
+t-man top - 2/2 running - total RSS 238.1M - refresh 2s - 18:27:33  (Ctrl-C to quit)
+
+NAME                              PID      RSS   CPU%   UPTIME
+--------------------------------------------------------------
+webapp                          53355   218.8M    0.0    7m23s
+myapp                           53009    20.3M    0.0    7m28s
 ```
 
 ### Remove a service
