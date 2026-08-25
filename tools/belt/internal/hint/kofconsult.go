@@ -106,10 +106,19 @@ func nearestDir(path string) string {
 // gitOriginURL shells out to git; "" when dir is outside a repo or the repo
 // has no origin remote.
 func gitOriginURL(dir string) string {
+	return gitLine(dir, "remote", "get-url", "origin")
+}
+
+// gitTopLevel shells out to git; "" when dir is outside a repo working tree.
+func gitTopLevel(dir string) string {
+	return gitLine(dir, "rev-parse", "--show-toplevel")
+}
+
+func gitLine(dir string, args ...string) string {
 	if dir == "" {
 		return ""
 	}
-	cmd := exec.Command("git", "remote", "get-url", "origin")
+	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

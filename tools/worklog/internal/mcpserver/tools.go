@@ -71,7 +71,9 @@ func registerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_show",
 		Description: "Read a work item's full CONTEXT.md (goal, where-I-am, log), or a per-repo note with `repo`. " +
-			"Use when resuming to restore context before continuing.",
+			"Use when resuming to restore context before continuing. " +
+			"Only explicitly checkpointed tasks have items — unless a prior call already confirmed the key exists, " +
+			"run worklog_search first instead of assuming a ticket was checkpointed.",
 	}, handleShow)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -219,7 +221,10 @@ func handleShow(
 	}
 	it, err := s.Load(key)
 	if err != nil {
-		return nil, showOutput{}, fmt.Errorf("no item %q", key)
+		return nil, showOutput{}, fmt.Errorf(
+			"no item %q — only explicitly checkpointed tasks have worklog items; run worklog_search(query: %q) to check what exists before assuming saved state",
+			key, key,
+		)
 	}
 	b, err := it.Render()
 	if err != nil {

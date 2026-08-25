@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -119,19 +120,28 @@ func handleDetectFile(
 	return nil, buildDetectOutput(findings), nil
 }
 
-// detectFileError translates a sandbox permission denial into an error that
-// tells the agent what is readable and what to do instead. The seatbelt
-// profile (recipes/humanizer/humanizer.sb, ADR-0016) only exposes prose
-// files under the code roots; everything else under $HOME is denied.
+// detectFileError translates a sandbox permission denial into a structured
+// error with a machine-readable use_instead field. The seatbelt profile
+// (recipes/humanizer/humanizer.sb, ADR-0016) only exposes prose files under
+// the code roots; everything else under $HOME is denied — including every
+// sibling of a denied path, so the hint says to switch tools, not retry
+// with the next file from the same directory.
 func detectFileError(err error, path string) error {
 	if !errors.Is(err, fs.ErrPermission) {
 		return err
 	}
-	return fmt.Errorf(
-		"%s is not readable under the MCP sandbox (readable: .md/.markdown/.txt under the sandbox profile's workspace roots, and /tmp paths) — pass the text via humanizer_detect instead: %w",
-		path,
-		err,
-	)
+	redirect, _ := json.Marshal(struct {
+		Error      string `json:"error"`
+		UseInstead string `json:"use_instead"`
+		Hint       string `json:"hint"`
+	}{
+		Error:      path + " is not readable under the MCP sandbox",
+		UseInstead: "humanizer_detect",
+		Hint: "read the file yourself and pass its content as the text param to humanizer_detect. " +
+			"Do not retry humanizer_detect_file on other paths in the same directory — the whole directory is outside the sandbox. " +
+			"Readable here: .md/.markdown/.txt under the sandbox profile's workspace roots, and /tmp paths.",
+	})
+	return fmt.Errorf("%s — use humanizer_detect instead: %w", redirect, err)
 }
 
 func buildDetectOutput(findings []rules.Finding) detectOutput {

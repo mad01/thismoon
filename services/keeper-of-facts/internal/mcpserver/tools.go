@@ -23,6 +23,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"An assertion is a durable, checkable claim you derived this session — how some code acts, an approach that failed, a settled decision — so a later session can trust it without re-deriving it. " +
 			"Each pin captures a line range in a repo working tree, hashed the moment you assert; `kof_check` re-hashes them later and flips the assertion stale if the pinned code changed. " +
 			"At least one pin is REQUIRED — pins are what let kof tell whether the claim still holds, so an assertion with no pin is rejected. " +
+			"`kind` must be EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread — write \"code-behavior\", not \"behavior\". " +
+			"`confidence` must be EXACTLY one of: verified | derived | hint — not high/medium/low. Any other value in either field is rejected. " +
 			"Keep the returned id — it is the handle for kof_get / kof_retract / kof_check.",
 	}, h.handleAssert)
 
@@ -40,6 +42,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"A one-shot model judge ranks the whole store against the question and returns the relevant assertions in rank order — " +
 			"use this when you don't know the subject key: \"why does the store not lose writes\" finds the single-writer assertion even though no word matches. " +
 			"Stale assertions are included and marked (treat them as needing re-verification); retracted ones never appear. " +
+			"`question` is the ONLY parameter — there is no subject/kind/status filtering here; those params belong to kof_query. " +
 			"Takes a few seconds. If the judge is unavailable the error says so — fall back to kof_query.",
 	}, h.handleRecall)
 
@@ -83,10 +86,10 @@ type pinInput struct {
 }
 
 type assertInput struct {
-	Kind       string     `json:"kind"                  jsonschema:"what sort of claim this is; one of: code-behavior (how code acts), dead-end (an approach that failed), preference (a stated way of working), decision (a settled choice), machine-state (a fact about the local machine), open-thread (unfinished work worth resuming)"`
+	Kind       string     `json:"kind"                  jsonschema:"EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread. Meanings: code-behavior (how code acts — write code-behavior, not behavior), dead-end (an approach that failed), preference (a stated way of working), decision (a settled choice), machine-state (a fact about the local machine), open-thread (unfinished work worth resuming)"`
 	Subject    string     `json:"subject"               jsonschema:"namespaced key the claim is about, e.g. repo:mad01/thismoon/services/events"`
 	Statement  string     `json:"statement"             jsonschema:"the claim in one sentence"`
-	Confidence string     `json:"confidence"            jsonschema:"how strongly you believe it: verified (checked against a primary source), derived (reasoned from evidence), or hint (a weak signal)"`
+	Confidence string     `json:"confidence"            jsonschema:"EXACTLY one of: verified | derived | hint — not high/medium/low. Meanings: verified (checked against a primary source), derived (reasoned from evidence), hint (a weak signal)"`
 	SessionID  string     `json:"session_id"            jsonschema:"identifier of the session deriving this assertion"`
 	CostTokens int        `json:"cost_tokens,omitempty" jsonschema:"optional token cost of deriving the assertion"`
 	Links      []string   `json:"links,omitempty"       jsonschema:"optional related URLs (tickets, PRs, docs)"`

@@ -3,7 +3,9 @@ package hint
 import (
 	"bytes"
 	"os"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
@@ -58,7 +60,7 @@ func (h *Humanizer) Check(in Input) *Advice {
 		return nil // the session already linted something on its own
 	}
 	seen.record(path, []string{humanizerMarker})
-	return &Advice{Hint: h.ID(), Text: humanizerAdvice}
+	return &Advice{Hint: h.ID(), Text: humanizerAdvice(in.ToolName, publishedText(in.ToolInput))}
 }
 
 // publishesText reports whether a tool name looks like an MCP call that puts
@@ -86,8 +88,83 @@ func publishesText(tool string) bool {
 	return true
 }
 
-const humanizerAdvice = "that call published text other people will read. " +
-	"Run humanizer_detect over the wording and fix what it flags — a posted comment, " +
-	"a PR body, and a Slack draft are all still editable after the fact. Short operational " +
-	"notes carry the same tells as long-form docs; brevity is not an exemption. " +
-	"This reminder fires once per session."
+// humanizerExcerptLen caps how much of the published text the nudge quotes:
+// enough to identify the text unambiguously, small enough not to bloat the
+// context the nudge rides in.
+const humanizerExcerptLen = 200
+
+// bodyKeys are the top-level field names publishing tools put their prose
+// under, checked before the longest-string fallback so a long identifier (a
+// URL, a page of ids) does not shadow the actual message.
+var bodyKeys = []string{"text", "body", "comment", "message", "description", "content"}
+
+// publishedText pulls the prose a publishing tool call sent: a known body
+// field when one is set, else the longest string anywhere in the input.
+func publishedText(input map[string]any) string {
+	var best string
+	for _, key := range bodyKeys {
+		if s, ok := input[key].(string); ok && len(s) > len(best) {
+			best = s
+		}
+	}
+	if best != "" {
+		return best
+	}
+	var walk func(v any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case string:
+			if len(t) > len(best) {
+				best = t
+			}
+		case map[string]any:
+			for _, val := range t {
+				walk(val)
+			}
+		case []any:
+			for _, item := range t {
+				walk(item)
+			}
+		}
+	}
+	walk(input)
+	return best
+}
+
+// humanizerAdvice names the exact text to check, quoting its head so the
+// instruction cannot be read as generic advice for later. The earlier
+// generic "run humanizer_detect over the wording" form was skipped in half
+// the sessions it fired in (MAD-300 audit).
+func humanizerAdvice(toolName, published string) string {
+	var b strings.Builder
+	b.WriteString("that call")
+	if toolName != "" {
+		b.WriteString(" (")
+		b.WriteString(toolName)
+		b.WriteString(")")
+	}
+	b.WriteString(" published text other people will read. Run humanizer_detect on it now, " +
+		"before the next task, and fix what it flags — a posted comment, a PR body, and a " +
+		"Slack draft are all still editable after the fact. ")
+	if published != "" {
+		b.WriteString("The text to check is the one just sent, beginning: ")
+		b.WriteString(strconv.Quote(truncateRunes(published, humanizerExcerptLen)))
+		b.WriteString(" — pass the full body as humanizer_detect(text: ...). ")
+	}
+	b.WriteString("Short operational notes carry the same tells as long-form docs; " +
+		"brevity is not an exemption. This reminder fires once per session.")
+	return b.String()
+}
+
+// truncateRunes cuts s at the last rune boundary at or below max bytes,
+// appending an ellipsis when anything was cut.
+func truncateRunes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
+}

@@ -128,6 +128,7 @@ func toHintInput(event string, p payload) hint.Input {
 		}
 	case hint.EventExternalText:
 		in.ToolName = p.ToolName
+		in.ToolInput = p.ToolInput
 	case hint.EventSearch:
 		in.Paths = hint.PathsFromResponse(p.ToolResponse)
 		in.Repo = hint.RepoFromResponse(p.ToolResponse)

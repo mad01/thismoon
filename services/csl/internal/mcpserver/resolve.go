@@ -56,10 +56,11 @@ func resolveRepo(name string) (finder.Repo, error) {
 			names[i] = m.Name
 		}
 		return finder.Repo{}, fmt.Errorf(
-			"ambiguous: %d repos match %q: %s — be more specific",
+			"ambiguous: %d repos match %q: %s — use the full org/repo name to disambiguate (e.g. %q)",
 			len(matches),
 			normalized,
 			strings.Join(names, ", "),
+			matches[0].Name,
 		)
 	}
 

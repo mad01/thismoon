@@ -43,6 +43,9 @@ type Input struct {
 	SessionID      string   // used to suppress repeat advice within one session
 	TranscriptPath string   // prompt, external-text: the session transcript JSONL on disk
 	ToolName       string   // external-text: the tool call that just ran
+	// ToolInput carries the external-text tool call's input fields, so the
+	// nudge can name the exact text that was published.
+	ToolInput map[string]any
 }
 
 // Advice is one hint's output: which hint spoke and what it said.

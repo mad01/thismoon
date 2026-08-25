@@ -180,6 +180,51 @@ func TestQueryTrapNotes(t *testing.T) {
 	}
 }
 
+func TestOverConstraintNotes(t *testing.T) {
+	tests := []struct {
+		name string
+		in   searchInput
+		want int
+	}{
+		{name: "one term, no filters", in: searchInput{Query: "cluster_name"}, want: 0},
+		{name: "two terms", in: searchInput{Query: "cluster name"}, want: 0},
+		{name: "three AND terms", in: searchInput{Query: "backend service health"}, want: 1},
+		{name: "five AND terms", in: searchInput{Query: "backend service health check endpoint"}, want: 1},
+		{name: "file filter set", in: searchInput{Query: "x", File: `.*\.tf$`}, want: 1},
+		{name: "multi-word quoted phrase", in: searchInput{Query: `"backend service"`}, want: 1},
+		{name: "single-word quote is silent", in: searchInput{Query: `"backend"`}, want: 0},
+		{name: "filters, negations, OR groups don't count", in: searchInput{Query: "foo|bar -test lang:go f:x repo:y"}, want: 0},
+		{name: "terms and file filter stack", in: searchInput{Query: "backend service health", File: "x"}, want: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := overConstraintNotes(tt.in)
+			if len(got) != tt.want {
+				t.Errorf("overConstraintNotes(%+v) = %d notes %v, want %d", tt.in, len(got), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAndTermCount(t *testing.T) {
+	tests := []struct {
+		query string
+		want  int
+	}{
+		{query: "foo", want: 1},
+		{query: "foo bar baz", want: 3},
+		{query: `"foo bar" baz`, want: 2},
+		{query: "foo|bar baz", want: 1},
+		{query: "foo -bar lang:go", want: 1},
+		{query: "foo or bar", want: 2},
+	}
+	for _, tt := range tests {
+		if got := andTermCount(tt.query); got != tt.want {
+			t.Errorf("andTermCount(%q) = %d, want %d", tt.query, got, tt.want)
+		}
+	}
+}
+
 func TestBuildZeroHint_RepoFilterMatchesNone(t *testing.T) {
 	repos := []finder.Repo{
 		{Name: "org/alpha", Path: "/tmp/alpha"},
