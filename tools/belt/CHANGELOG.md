@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/mad01/thismoon/compare/belt/v0.16.0...belt/v0.17.0) (2026-08-25)
+
+
+### Features
+
+* **belt:** make kof-deposit and humanizer-check nudges directive and concrete (MAD-307) ([b45f961](https://github.com/mad01/thismoon/commit/b45f961f176f511d2914ce16edab228fe93b4a92))
+
+
+### Bug Fixes
+
+* MCP tool-call reliability fixes from the 30-day session audit (MAD-300) ([bdd66e4](https://github.com/mad01/thismoon/commit/bdd66e4e34306ad3180a5c2f5ddc06141aa9fb42))
+
 ## [0.16.0](https://github.com/mad01/thismoon/compare/belt/v0.15.0...belt/v0.16.0) (2026-08-22)
 
 
