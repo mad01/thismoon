@@ -19,6 +19,7 @@
     "services/wire": { "component": "wire" },
     "tools/belt": { "component": "belt" },
     "tools/humanizer": { "component": "humanizer" },
+    "tools/opener": { "component": "opener" },
     "tools/suspenders": { "component": "suspenders" },
     "tools/t-man": { "component": "t-man" },
     "tools/toss-bin": { "component": "toss-bin", "extra-files": ["Sources/toss-bin/main.swift"] },

@@ -26,6 +26,7 @@ services/speak/speak
 services/status/status
 tools/belt/belt
 tools/humanizer/humanizer
+tools/opener/opener
 tools/suspenders/suspenders
 tools/t-man/t-man
 tools/worklog/worklog
