@@ -227,7 +227,7 @@ func buildZeroHint(
 ) *searchZeroHint {
 	hint := &searchZeroHint{
 		ReposDiscovered: len(repos),
-		Notes:           queryTrapNotes(in.Query),
+		Notes:           append(queryTrapNotes(in.Query), overConstraintNotes(in)...),
 	}
 
 	if info := search.ValidateQuery(search.BuildQueryString(opts)); info.Valid {
@@ -304,7 +304,7 @@ func repoFilterHint(
 	}
 	if len(matched) == 0 {
 		return 0, []string{fmt.Sprintf(
-			"repo filter %q matched none of the %d locally discovered repos; check the name with csl_repo_lookup",
+			"repo filter %q matched none of the %d locally discovered repos; check the name with csl_repo_lookup — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here",
 			repoFilter, len(repos),
 		)}
 	}
@@ -333,6 +333,67 @@ func queryTrapNotes(query string) []string {
 			"uppercase OR is a literal search term; use | with no spaces or lowercase 'or'")
 	}
 	return notes
+}
+
+// overConstraintNotes flags the query shapes that most often explain a
+// zero-hit search: 3+ AND terms, a verbatim-only quoted phrase, and a stacked
+// file filter. Sessions loosen these one guess at a time over long refinement
+// chains; naming them up front is what shortens the chain.
+func overConstraintNotes(in searchInput) []string {
+	var notes []string
+	if n := andTermCount(in.Query); n >= 3 {
+		notes = append(notes, fmt.Sprintf(
+			"query has %d AND terms that must ALL appear in the same file — retry with 1-2 key terms, or join alternatives as a|b (no spaces)",
+			n,
+		))
+	}
+	for _, span := range quotedSpans(in.Query) {
+		if strings.ContainsAny(span, " \t") {
+			notes = append(notes,
+				"a \"quoted phrase\" matches only that exact text verbatim — drop the quotes to match the words as separate AND terms")
+			break
+		}
+	}
+	if in.File != "" {
+		notes = append(notes,
+			"the file filter is the most common over-constraint — retry without it before loosening the query")
+	}
+	return notes
+}
+
+// andTermCount counts the AND terms zoekt will require in the same file:
+// bare whitespace-separated tokens plus one per quoted phrase. Filters
+// (repo:/f:/lang:), negations, OR groups, and the or operator don't count —
+// they narrow or widen, but they are not another required term.
+func andTermCount(query string) int {
+	n := len(quotedSpans(query))
+	for tok := range strings.FieldsSeq(stripQuoted(query)) {
+		if strings.Contains(tok, ":") || strings.HasPrefix(tok, "-") ||
+			strings.Contains(tok, "|") || strings.EqualFold(tok, "or") {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// quotedSpans returns the contents of every complete double-quoted span in
+// the query, in order. An unclosed quote yields no span for its tail.
+func quotedSpans(s string) []string {
+	var spans []string
+	for {
+		i := strings.Index(s, `"`)
+		if i < 0 {
+			return spans
+		}
+		s = s[i+1:]
+		j := strings.Index(s, `"`)
+		if j < 0 {
+			return spans
+		}
+		spans = append(spans, s[:j])
+		s = s[j+1:]
+	}
 }
 
 // stripQuoted removes double-quoted spans from a query so trap sniffing does
