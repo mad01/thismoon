@@ -1,0 +1,20 @@
+# clipboard — public layer: build + install. MCP registration stays in the
+# consuming repo's companion recipe — machine-private wiring (docs/adr/0006).
+[recipe]
+name = "clipboard"
+description = "clipboard — macOS system clipboard bridge over pbcopy/pbpaste (CLI + MCP)"
+# wave 0: builds the binary before the consuming repo's MCP registration
+# recipe (wave 1) registers `clipboard mcp`.
+wave = 0
+
+# Consumed as a remote recipe: machines point at this repo with a
+# [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
+# under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
+# working_dir on packages/builds, so the path below names that cache directly.
+[packages.clipboard]
+source = "local"
+working_dir = "~/.config/ralph/sources/thismoon/tools/clipboard"
+version_check = true
+build = ["make build"]
+install = ["make install"]
+install_paths = ["~/code/bin/clipboard"]

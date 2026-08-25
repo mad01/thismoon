@@ -18,6 +18,7 @@
     "services/status": { "component": "status" },
     "services/wire": { "component": "wire" },
     "tools/belt": { "component": "belt" },
+    "tools/clipboard": { "component": "clipboard" },
     "tools/humanizer": { "component": "humanizer" },
     "tools/opener": { "component": "opener" },
     "tools/suspenders": { "component": "suspenders" },

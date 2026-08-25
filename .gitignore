@@ -25,6 +25,7 @@ services/reminder/reminder
 services/speak/speak
 services/status/status
 tools/belt/belt
+tools/clipboard/clipboard
 tools/humanizer/humanizer
 tools/opener/opener
 tools/suspenders/suspenders
