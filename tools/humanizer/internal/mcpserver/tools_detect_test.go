@@ -15,6 +15,9 @@ func TestDetectFileError(t *testing.T) {
 		if !strings.Contains(got.Error(), "humanizer_detect instead") {
 			t.Errorf("want guidance pointing at humanizer_detect, got: %v", got)
 		}
+		if !strings.Contains(got.Error(), `"use_instead":"humanizer_detect"`) {
+			t.Errorf("want the machine-readable use_instead field, got: %v", got)
+		}
 		if !errors.Is(got, fs.ErrPermission) {
 			t.Errorf("original error should stay wrapped, got: %v", got)
 		}
