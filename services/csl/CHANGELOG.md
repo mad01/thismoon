@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/mad01/thismoon/compare/csl/v0.14.0...csl/v0.14.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **csl:** take the sync lock in the ad-hoc index writers ([#4](https://github.com/mad01/thismoon/issues/4)) ([9259562](https://github.com/mad01/thismoon/commit/9259562f77f128b807abd92d15bc093f11f15c97))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/csl/v0.13.0...csl/v0.14.0) (2026-08-25)
 
 

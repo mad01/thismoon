@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mad01/thismoon/compare/t-man/v0.4.0...t-man/v0.5.0) (2026-08-25)
+
+
+### Features
+
+* **t-man:** add resource monitoring (list --resources, top) (MAD-297) ([#6](https://github.com/mad01/thismoon/issues/6)) ([cab1a87](https://github.com/mad01/thismoon/commit/cab1a877b282cbb43cb320a60e36d849d0723581))
+
 ## [0.4.0](https://github.com/mad01/thismoon/compare/t-man/v0.3.0...t-man/v0.4.0) (2026-08-22)
 
 
