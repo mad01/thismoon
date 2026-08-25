@@ -60,6 +60,25 @@ const (
 	StatusRetracted = "retracted" // withdrawn by the user (terminal)
 )
 
+// KindValues lists every valid assertion kind, in a fixed order, for error
+// messages that teach the caller the enum instead of just rejecting it.
+func KindValues() []string {
+	return []string{
+		KindCodeBehavior, KindDeadEnd, KindPreference,
+		KindDecision, KindMachineState, KindOpenThread,
+	}
+}
+
+// ConfidenceValues lists every valid confidence level, in a fixed order.
+func ConfidenceValues() []string {
+	return []string{ConfidenceVerified, ConfidenceDerived, ConfidenceHint}
+}
+
+// StatusValues lists every valid assertion status, in a fixed order.
+func StatusValues() []string {
+	return []string{StatusFresh, StatusStale, StatusRetracted}
+}
+
 // ValidKind reports whether k is a known assertion kind.
 func ValidKind(k string) bool {
 	switch k {

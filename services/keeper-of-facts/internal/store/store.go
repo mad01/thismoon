@@ -321,10 +321,12 @@ type AssertInput struct {
 // Assert validates and stores a new fresh assertion.
 func (s *Store) Assert(in AssertInput) (Assertion, error) {
 	if !ValidKind(in.Kind) {
-		return Assertion{}, fmt.Errorf("invalid kind %q", in.Kind)
+		return Assertion{}, fmt.Errorf("invalid kind %q; valid: %s (write %q, not \"behavior\")",
+			in.Kind, strings.Join(KindValues(), " | "), KindCodeBehavior)
 	}
 	if !ValidConfidence(in.Confidence) {
-		return Assertion{}, fmt.Errorf("invalid confidence %q", in.Confidence)
+		return Assertion{}, fmt.Errorf("invalid confidence %q; valid: %s (not high/medium/low)",
+			in.Confidence, strings.Join(ConfidenceValues(), " | "))
 	}
 	if strings.TrimSpace(in.Subject) == "" {
 		return Assertion{}, errors.New("subject is required")

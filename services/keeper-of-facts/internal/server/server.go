@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
@@ -95,12 +96,14 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	kind := q.Get("kind")
 	if kind != "" && !store.ValidKind(kind) {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid kind %q", kind))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid kind %q; valid: %s",
+			kind, strings.Join(store.KindValues(), " | ")))
 		return
 	}
 	status := q.Get("status")
 	if status != "" && !store.ValidStatus(status) {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid status %q", status))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid status %q; valid: %s",
+			status, strings.Join(store.StatusValues(), " | ")))
 		return
 	}
 	as := s.store.List(store.Filter{Subject: q.Get("subject"), Kind: kind, Status: status})
