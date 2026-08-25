@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/mad01/thismoon/compare/humanizer/v0.6.0...humanizer/v0.6.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **humanizer:** structured use_instead redirect on detect_file sandbox denial (MAD-302) ([d1cb5a1](https://github.com/mad01/thismoon/commit/d1cb5a1dee5728420cafc3ca8c2a2d79bff7daa4))
+* MCP tool-call reliability fixes from the 30-day session audit (MAD-300) ([bdd66e4](https://github.com/mad01/thismoon/commit/bdd66e4e34306ad3180a5c2f5ddc06141aa9fb42))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/humanizer/v0.5.0...humanizer/v0.6.0) (2026-08-22)
 
 

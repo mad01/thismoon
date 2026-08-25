@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/mad01/thismoon/compare/worklog/v0.8.0...worklog/v0.8.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* MCP tool-call reliability fixes from the 30-day session audit (MAD-300) ([bdd66e4](https://github.com/mad01/thismoon/commit/bdd66e4e34306ad3180a5c2f5ddc06141aa9fb42))
+* **worklog:** point worklog_show key misses at worklog_search (MAD-305) ([2cfb88e](https://github.com/mad01/thismoon/commit/2cfb88eeb4bd0f4b0dd0e185cf52d1f8f699823a))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/worklog/v0.7.1...worklog/v0.8.0) (2026-08-24)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.2](https://github.com/mad01/thismoon/compare/csl/v0.14.1...csl/v0.14.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **csl:** actionable zero-result notes and ambiguous-repo suggestion (MAD-303, MAD-304) ([c03fe72](https://github.com/mad01/thismoon/commit/c03fe72256c7f56402e873fcbb2b4aa25dbb5656))
+* MCP tool-call reliability fixes from the 30-day session audit (MAD-300) ([bdd66e4](https://github.com/mad01/thismoon/commit/bdd66e4e34306ad3180a5c2f5ddc06141aa9fb42))
+
 ## [0.14.1](https://github.com/mad01/thismoon/compare/csl/v0.14.0...csl/v0.14.1) (2026-08-25)
 
 

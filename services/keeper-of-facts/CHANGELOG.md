@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.12.0...keeper-of-facts/v0.12.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **keeper-of-facts:** surface valid enum values in kof_assert errors and tool description (MAD-301) ([f93ec5e](https://github.com/mad01/thismoon/commit/f93ec5ea69024c5442e4d43d7461c0ed8f738ba7))
+* MCP tool-call reliability fixes from the 30-day session audit (MAD-300) ([bdd66e4](https://github.com/mad01/thismoon/commit/bdd66e4e34306ad3180a5c2f5ddc06141aa9fb42))
+
 ## [0.12.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.11.1...keeper-of-facts/v0.12.0) (2026-08-24)
 
 
