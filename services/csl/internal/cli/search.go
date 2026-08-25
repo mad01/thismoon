@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
+	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
 
 var (
@@ -215,22 +217,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			toIndex = staleness.Stale
 		}
 		if len(toIndex) > 0 {
-			w := cmd.ErrOrStderr()
-			fmt.Fprintf(w, "Indexing %d repo(s)...\n", len(toIndex))
-			err := search.IndexRepos(indexDir, toIndex, func(i, total int, repo finder.Repo) {
-				fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
-			})
-			if err != nil {
-				return fmt.Errorf("indexing failed: %w", err)
-			}
-			for _, repo := range toIndex {
-				if fp, ok := staleness.Current[repo.Path]; ok {
-					fp.IndexedAt = time.Now()
-					state.SetRepo(repo.Path, fp)
-				}
-			}
-			if err := state.Save(indexDir); err != nil {
-				fmt.Fprintf(w, "warning: failed to save index state: %v\n", err)
+			if err := indexForSearch(cmd, indexDir, toIndex, staleness, state); err != nil {
+				return err
 			}
 		}
 	}
@@ -240,9 +228,16 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Background re-index for stale repos.
+	// Background re-index for stale repos, under the sync lock so it never
+	// races csl sync or the web refresher. When one of those holds the lock
+	// it is picking these repos up itself, so just skip.
 	if !noIndex && !searchReindexFlag && len(staleness.Stale) > 0 {
 		go func() {
+			unlock, err := syncer.Lock(indexDir)
+			if err != nil {
+				return
+			}
+			defer unlock()
 			_ = search.IndexRepos(indexDir, staleness.Stale, nil)
 			// Reload state from disk to avoid clobbering concurrent writers.
 			freshState, err := search.LoadState(indexDir)
@@ -263,6 +258,48 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	return outputSearchResults(cmd, matches)
+}
+
+// indexForSearch builds the index for toIndex before the foreground search
+// runs, holding the cross-process sync lock for the write. When csl sync or
+// the web refresher already holds the lock, the build is skipped with a note
+// and the search runs against whatever shards exist instead of racing the
+// other writer's shard and state.json updates.
+func indexForSearch(
+	cmd *cobra.Command,
+	indexDir string,
+	toIndex []finder.Repo,
+	staleness *search.StalenessResult,
+	state *search.IndexState,
+) error {
+	w := cmd.ErrOrStderr()
+
+	unlock, err := syncer.Lock(indexDir)
+	if errors.Is(err, syncer.ErrLocked) {
+		fmt.Fprintln(w, "another sync or background refresh is indexing; searching the existing index")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	fmt.Fprintf(w, "Indexing %d repo(s)...\n", len(toIndex))
+	if err := search.IndexRepos(indexDir, toIndex, func(i, total int, repo finder.Repo) {
+		fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
+	}); err != nil {
+		return fmt.Errorf("indexing failed: %w", err)
+	}
+	for _, repo := range toIndex {
+		if fp, ok := staleness.Current[repo.Path]; ok {
+			fp.IndexedAt = time.Now()
+			state.SetRepo(repo.Path, fp)
+		}
+	}
+	if err := state.Save(indexDir); err != nil {
+		fmt.Fprintf(w, "warning: failed to save index state: %v\n", err)
+	}
+	return nil
 }
 
 func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {

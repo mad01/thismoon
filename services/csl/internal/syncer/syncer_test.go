@@ -294,7 +294,7 @@ func TestFilterOnly(t *testing.T) {
 func TestAcquireSyncLock(t *testing.T) {
 	dir := t.TempDir()
 
-	unlock, err := acquireSyncLock(dir)
+	unlock, err := Lock(dir)
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestAcquireSyncLock(t *testing.T) {
 		t.Fatalf("lock file should exist: %v", err)
 	}
 
-	_, err = acquireSyncLock(dir)
+	_, err = Lock(dir)
 	if err == nil {
 		t.Fatal("second acquire should fail")
 	}
@@ -314,7 +314,7 @@ func TestAcquireSyncLock(t *testing.T) {
 		t.Error("lock file should be removed after unlock")
 	}
 
-	unlock2, err := acquireSyncLock(dir)
+	unlock2, err := Lock(dir)
 	if err != nil {
 		t.Fatalf("re-acquire after unlock should succeed: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestAcquireSyncLock(t *testing.T) {
 func TestAcquireSyncLock_WritesPID(t *testing.T) {
 	dir := t.TempDir()
 
-	unlock, err := acquireSyncLock(dir)
+	unlock, err := Lock(dir)
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestAcquireSyncLock_RemovesStaleLock(t *testing.T) {
 	_ = os.WriteFile(lockPath, []byte(deadPID+"\n"), 0o600)
 
 	// Acquiring should succeed by detecting the stale lock.
-	unlock, err := acquireSyncLock(dir)
+	unlock, err := Lock(dir)
 	if err != nil {
 		t.Fatalf("acquire with stale lock should succeed: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestAcquireSyncLock_RemovesStaleLockNoPID(t *testing.T) {
 	// Write a lock file with no PID (old format).
 	_ = os.WriteFile(lockPath, []byte(""), 0o600)
 
-	unlock, err := acquireSyncLock(dir)
+	unlock, err := Lock(dir)
 	if err != nil {
 		t.Fatalf("acquire with old-format lock should succeed: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestAcquireSyncLock_RefusesLiveLock(t *testing.T) {
 	// Write a lock file with our own PID (definitely alive).
 	_ = os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 
-	_, err := acquireSyncLock(dir)
+	_, err := Lock(dir)
 	if err == nil {
 		t.Fatal("acquire should fail when lock holder is alive")
 	}
@@ -402,7 +402,7 @@ func TestLocked(t *testing.T) {
 		t.Error("Locked should be false with no lock file")
 	}
 
-	unlock, err := acquireSyncLock(dir)
+	unlock, err := Lock(dir)
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}

@@ -103,7 +103,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 	// runs pulling the same working trees is exactly the collision the
 	// background refresher and a manual `csl sync` must not have.
 	if !opts.DryRun {
-		unlock, lockErr := acquireSyncLock(indexDir)
+		unlock, lockErr := Lock(indexDir)
 		if lockErr != nil {
 			return nil, lockErr
 		}

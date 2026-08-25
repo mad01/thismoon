@@ -138,7 +138,7 @@ All paths below are relative to `~/.config/csl/`.
 | `config.yaml` | The config file above. |
 | `search-index/` | Zoekt index directory. Contains `*.zoekt` shard files and `state.json`. |
 | `search-index/state.json` | Per-repo fingerprints used to decide which repos need re-indexing. |
-| `search-index/.csl-sync.lock` | Lock file coordinating sync runs across processes: a manual `csl sync` and the background refresh in `csl web` take it before pulling or indexing, so they never race each other on working trees or `state.json`. |
+| `search-index/.csl-sync.lock` | Lock file coordinating index writers across processes: a manual `csl sync` and the background refresh in `csl web` take it before pulling or indexing, and the ad-hoc builds (`csl search` reindex, the web fallback's first build) hold it or skip, so no two writers race each other on working trees, shards, or `state.json`. |
 | `semantic-index/` | Per-repo vector stores (`<org>_<repo>.gob`), written by `csl index --semantic*`. No model files live here — embedding goes through Ollama. |
 | `reindex.queue` | Repo paths appended by the suspenders `csl-reindex` post-merge hook, drained by `csl sync` or `csl index --drain`. |
 | `search-daemon.sock` | Unix socket the in-memory gRPC search daemon listens on. |
