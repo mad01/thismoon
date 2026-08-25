@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>csl · index refresh</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<link href="/assets/app.css" rel="stylesheet">
+</head>
+<body>
+<wk-header brand="csl·search">
+  <a data-nav href="/">Search</a>
+  <a data-nav href="/health">Health</a>
+  <a data-nav class="active" href="/refresh">Refresh</a>
+</wk-header>
+<main class="wrap">
+  <wk-page-header>
+    <wk-title>Index refresh</wk-title>
+    <wk-subtitle>Background pull + reindex keeping the search index current. Repos on non-default branches or with uncommitted changes are skipped; the loop shares a lock with the manual csl sync.</wk-subtitle>
+  </wk-page-header>
+
+  <div class="status-row">
+    <div class="status" id="status">loading refresh status…</div>
+    <button type="button" class="mini-btn" id="refreshAll" title="Pull and reindex every repo now">refresh all</button>
+  </div>
+  <div id="results"></div>
+</main>
+<script src="/webkit/webkit.js"></script>
+<script src="/assets/common.js"></script>
+<script src="/assets/refresh.js"></script>
+</body>
+</html>

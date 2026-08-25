@@ -52,6 +52,15 @@ daemon:
                              # semantic stores warm at the cost of resident
                              # memory; 0 or negative means 10.
 
+refresh:
+  enabled: true              # whether 'csl web' runs a periodic background
+                             # sync (pull + reindex changed repos). Omitted
+                             # means enabled; manual refresh from the web UI
+                             # works either way.
+  interval_minutes: 15       # how often the background refresh runs; 0 or
+                             # negative means 15. Keep it conservative — every
+                             # cycle contacts every repo's remote.
+
 web:
   base_url: ""               # where the csl web UI is reachable, for the links
                              # csl_show_file opens; empty means
@@ -134,6 +143,9 @@ func effectiveConfig(cfg *config.Config) config.Config {
 	eff.TmpDir = cfg.EffectiveTmpDir()
 	eff.Sync.Concurrency = cfg.Sync.EffectiveConcurrency()
 	eff.Daemon.IdleTimeoutMinutes = int(cfg.DaemonIdleTimeout() / time.Minute)
+	enabled := cfg.RefreshEnabled()
+	eff.Refresh.Enabled = &enabled
+	eff.Refresh.IntervalMinutes = int(cfg.RefreshInterval() / time.Minute)
 	eff.Semantic.Enabled = cfg.SemanticEnabled()
 	eff.Semantic.Sync = cfg.SemanticSyncEnabled()
 	eff.Web.BaseURL = cfg.EffectiveWebBaseURL()

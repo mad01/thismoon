@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/csl/internal/refresh"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/web"
 )
@@ -53,7 +55,19 @@ func runWeb(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	handler := web.New(svc, buildinfo.Get()).Handler()
+	// The refresher loop runs for the life of the server; manual kicks from
+	// the UI work even when the periodic refresh is disabled in config.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ref := refresh.New(cfg)
+	go ref.Run(ctx)
+	if cfg.RefreshEnabled() {
+		log.Printf("csl web: background refresh every %s", cfg.RefreshInterval())
+	} else {
+		log.Printf("csl web: background refresh disabled (refresh.enabled: false)")
+	}
+
+	handler := web.New(svc, buildinfo.Get(), ref).Handler()
 	addr := listenAddr(webPortFlag)
 	log.Printf("csl web: serving on http://localhost:%d", webPortFlag)
 	return http.ListenAndServe(addr, handler)

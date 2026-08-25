@@ -27,6 +27,15 @@ install or build separately.
   between repos needing attention (the default) and the full fleet. Backed by
   `GET /api/repo_health`; the same report is exposed as the `csl_repo_health`
   MCP tool.
+- **Refresh** (`/refresh`) — the background index refresh: whether the
+  periodic loop is enabled, its interval, the last and next run, and one row
+  per repo with the last refresh outcome (up to date, updated, skipped dirty,
+  failed, …) and when it was last indexed. A **refresh all** button and a
+  per-repo **refresh** button trigger a manual pull + reindex; the page polls
+  while a refresh runs. Backed by `GET /api/refresh_status` and
+  `POST /api/refresh`. The loop itself lives in the `csl web` process (see
+  below); repos on non-default branches or with uncommitted tracked changes
+  are never pulled.
 - **File view** (`/file?repo=&file=&start=&end=`) — renders one file section
   like a search match: numbered lines with the requested range highlighted,
   controls to widen the context stepwise or jump to the full file, a
@@ -225,9 +234,47 @@ per-repo branch, dirty counts, ahead/behind the last-fetched upstream (no
 fetch runs), and a suggested `action`. Field-level contract in
 [docs/mcp.md](mcp.md#csl_repo_health) — the MCP tool returns the same shape.
 
+### `GET /api/refresh_status`
+
+Reports the background refresh loop (`enabled`, `interval_minutes`, `running`,
+`last_run`, `next_run`, `last_error`) plus one row per repo: `name`, `path`,
+the last refresh outcome (`status`, `message`, `indexed`, `refreshed_at`), and
+`indexed_at` from the index state. Times are RFC3339 strings, empty when not
+applicable.
+
+### `POST /api/refresh`
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `repo` | — | Refresh only this repo (`org/repo` name). Omit to refresh everything. |
+
+Queues a manual refresh and returns `202 {"started": true}`. Returns `409`
+while a refresh is already running or queued. The refresh shares the sync lock
+with the `csl sync` command, so it also answers with a skipped cycle (visible
+in `last_error`) when a manual sync is running in a terminal.
+
 ### `GET /healthz`
 
 Returns `ok`. Useful for readiness checks when running as a service.
+
+## Background index refresh
+
+While `csl web` runs, it keeps the index current on its own: a loop wakes
+every minute and, when the last full cycle is older than
+`refresh.interval_minutes` (default 15), runs the same engine as `csl sync` —
+pull every discovered repo (parallel, ff-only) and reindex the ones that
+changed. Comparing timestamps instead of counting ticks means a Mac waking
+from sleep catches up on the next wake instead of skipping a cycle; failed
+cycles back off exponentially (up to an hour) so an offline stretch doesn't
+hammer remotes.
+
+The same safety rules as `csl sync` apply: repos on non-default branches, in
+detached HEAD, with uncommitted tracked changes, or without a remote are
+skipped, and both entry points take the shared sync lock
+(`~/.config/csl/search-index/.csl-sync.lock`) before touching anything — a
+manual sync fails fast while a refresh runs, and a refresh cycle steps aside
+while a manual sync runs. Disable the loop with `refresh.enabled: false`; the
+manual buttons on the `/refresh` page keep working.
 
 ## Running as a service
 

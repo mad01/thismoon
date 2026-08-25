@@ -18,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
+	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
 
 var (
@@ -271,7 +272,7 @@ func printIndexStatus(
 // git hook: cheap, no global scan, fingerprint state still updated so the next
 // `csl index` won't redundantly re-process this repo.
 func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
-	if _, err := os.Stat(filepath.Join(indexDir, syncLockFile)); err == nil {
+	if syncer.Locked(indexDir) {
 		fmt.Fprintf(
 			cmd.ErrOrStderr(),
 			"csl sync in progress, skipping auto-index for %s\n",
