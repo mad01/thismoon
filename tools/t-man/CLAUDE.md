@@ -23,9 +23,10 @@ and adopts serviceman plists for migration.
 
 ```
 cmd/t-man/main.go            entry point → cli.Execute()
-internal/cli/                cobra commands (root, add, list, remove, control, logs, version — build metadata from the shared buildinfo package)
+internal/cli/                cobra commands (root, add, list, top, remove, control, logs, version — build metadata from the shared buildinfo package)
 internal/service/            Definition struct, Hash(), Manager interface
 internal/platform/launchd/   plist generation, launchctl wrapper, the launchd Manager
+internal/procstat/           PID → RSS/CPU%/uptime via one ps call (launchd-agnostic)
 internal/reconcile/          read-compare-apply reconciler + state comparison
 ```
 
@@ -95,7 +96,8 @@ machines ralph builds it via `recipes/t-man/` from the sources cache.
 | Command | Aliases | What it does |
 |---------|---------|--------------|
 | `add --name N -- CMD [args]` | | Create or update a service (idempotent) |
-| `list` | `ls` | List managed services (NAME / STATUS / COMMAND) |
+| `list` | `ls` | List managed services (NAME / STATUS / COMMAND); `--resources` adds PID / RSS / CPU% / UPTIME |
+| `top` | | Live resource view of managed services, sorted by RSS; `--interval` (default 2s), Ctrl-C quits |
 | `remove N` | `rm`, `delete` | Unload and delete a service |
 | `start N` / `stop N` / `restart N` | | Control a running service |
 | `status N` | | Detailed info for one service |

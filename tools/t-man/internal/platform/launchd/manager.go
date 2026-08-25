@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/mad01/thismoon/tools/t-man/internal/service"
 )
@@ -343,6 +344,28 @@ func (m *Manager) Status(ctx context.Context, name string) (string, error) {
 	}
 
 	return status.Status, nil
+}
+
+// RunningPIDs returns the PID of every running launchd job visible to a
+// single `launchctl list` call, keyed by label. Labels that are loaded but
+// have no running process are omitted. The map covers all jobs in the
+// domain, not just t-man-managed ones — callers look up the labels they
+// care about.
+func (m *Manager) RunningPIDs(ctx context.Context) (map[string]int, error) {
+	statuses, err := m.launchctl.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pids := make(map[string]int, len(statuses))
+	for _, svc := range statuses {
+		pid, err := strconv.Atoi(svc.PID)
+		if err != nil || pid <= 0 {
+			continue
+		}
+		pids[svc.Label] = pid
+	}
+	return pids, nil
 }
 
 // plistToDefinition converts a LaunchdPlist to a service.Definition
