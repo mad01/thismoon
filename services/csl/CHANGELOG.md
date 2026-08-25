@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/csl/v0.13.0...csl/v0.14.0) (2026-08-25)
+
+
+### Features
+
+* **csl:** background index refresh when the web service is running (MAD-313) ([#2](https://github.com/mad01/thismoon/issues/2)) ([fc25fd9](https://github.com/mad01/thismoon/commit/fc25fd9a2c56a96b94b21f19bad8426562f7284b))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/csl/v0.12.0...csl/v0.13.0) (2026-08-22)
 
 
