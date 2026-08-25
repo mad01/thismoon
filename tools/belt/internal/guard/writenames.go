@@ -3,7 +3,6 @@ package guard
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -149,16 +148,4 @@ func nearestExistingDir(path string) string {
 		}
 		dir = parent
 	}
-}
-
-// gitRemoteURL shells out to git; "" when dir is outside a repo or the repo
-// has no origin remote.
-func gitRemoteURL(dir string) string {
-	cmd := exec.Command("git", "remote", "get-url", "origin")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }

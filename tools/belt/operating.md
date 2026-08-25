@@ -53,6 +53,14 @@ the belt config and no suspenders guard section), `write-internal-names` has
 an empty name list and allows every write: that one fails open. `belt
 doctor` reports both conditions in its config-surfaces section.
 
+The rule-driven commit guards fail open across the board: `git-identity`
+and `commit-guard` are no-ops without their config sections, skip repos
+whose remote does not resolve, and a malformed block_hours window blocks
+nothing. Soft-mode rules and broken custom guards allow with a warn event
+to the events service — check there when a guard seems silent. A hard
+`commit-guard` deny names its override; `belt override set <name>` is the
+sanctioned escape hatch, not rewording the commit command.
+
 Silence from the kof-backed hints is normal when the kof service is down or
 its store is empty; the doctor kof line tells those states apart.
 
@@ -72,5 +80,6 @@ again.
    --content "<text>"`: dry-run the guards and print each verdict
 3. `belt config`: every setting in effect, with resolved fallbacks,
    profile-scoped allowlists, and the Claude deny patterns
-4. `belt version -o json`, when a fix does not seem to apply: confirm the
+4. `belt override`: which guard overrides are active (set/clear to toggle)
+5. `belt version -o json`, when a fix does not seem to apply: confirm the
    binary is the build you expect

@@ -11,11 +11,15 @@ belt has two halves, and the split is deliberate (see `docs/adr/0008`):
 
 ## Guards
 
-Three guards run against tool calls before they execute:
+Five built-in guards run against tool calls before they execute:
 
 - **git-push-main**: blocks `git push` to main/master on machines with the work profile. Personal machines push to main freely.
+- **git-identity**: blocks `git commit` when the repo's `git config user.email` does not match the email the config expects for that repo. Rules match by repo pattern (exact `host/owner/repo` or a trailing `/*` org wildcard), so the repo decides the identity whatever machine the commit happens on. Soft mode downgrades the block to a warn event.
+- **commit-guard**: nudges personal-repo work out of work hours. Commits to configured repos inside a local-time window are warned about (soft, the default) or blocked (hard) on machines carrying the rule's profile; `always_allow` exempts repos needed at any hour, and `belt override set <name>` switches a rule off for vacations.
 - **script-deny-list**: deep deny inspection, applies the Bash deny list from the Claude settings inside scripts. `bash cleanup.sh` looks harmless to the permission system even when the script runs `kubectl delete`; this guard reads executed and sourced script files, `-c` strings, and heredocs, and denies when they contain a deny-listed command. Extra patterns (like `rm -rf`) come from the belt config.
 - **write-internal-names**: blocks file writes that would put internal org/repo names into a public github.com repo. Names come from the `internal_names` section of belt's own config; when that section is unset, belt falls back to the name config of the suspenders pre-commit guard.
+
+Beyond the built-ins, a `custom_guards` config section registers named guards that shell out to an external command: the tool-call fields arrive as JSON on stdin, exit 0 allows, exit 1 denies with stdout as the reason, and anything else — a crash, a missing binary, a 5-second timeout — allows with a warn event so a broken external never blocks work.
 
 ## Hints
 
@@ -59,7 +63,7 @@ belt version -o json
 
 ## Configuration
 
-Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.yaml`, under `guards.<id>` for guards and `hints.<id>` for hints (a legacy `config.toml` in the same directory is still read when no YAML file exists). Both default to enabled when the file or entry is missing. `allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo` — for example `guards.git-push-main` with `allow_repos: [github.com/mad01/dotfiles]` permits direct pushes to the default branch in that repo while every other repo stays fail-closed. `allow_repos_by_profile` scopes an entry to machines carrying a ralph profile (`personal: [github.com/you/store]` allows the repo on personal machines only; everywhere else it stays fail-closed). Denials and hints are logged to the local events timeline (events.this).
+Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.yaml`, under `guards.<id>` for guards and `hints.<id>` for hints (a legacy `config.toml` in the same directory is still read when no YAML file exists). Both default to enabled when the file or entry is missing. `allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo` — for example `guards.git-push-main` with `allow_repos: [github.com/mad01/dotfiles]` permits direct pushes to the default branch in that repo while every other repo stays fail-closed. `allow_repos_by_profile` scopes an entry to machines carrying a ralph profile (`personal: [github.com/you/store]` allows the repo on personal machines only; everywhere else it stays fail-closed). The rule-driven guards read three more top-level sections: `git_identity` (expected email per repo pattern), `commit_guards` (work-hours rules with `block_hours`, `always_allow`, and an `override` name), and `custom_guards` (external commands registered as named guards); `belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this).
 
 ## Develop
 

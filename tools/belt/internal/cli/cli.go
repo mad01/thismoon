@@ -37,7 +37,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(hookCmd(), hintCmd(), checkCmd(), doctorCmd(), configDocCmd(),
+	root.AddCommand(hookCmd(), hintCmd(), checkCmd(), doctorCmd(), configDocCmd(), overrideCmd(),
 		agentcli.DocsCommand(belt.OperatingDoc, belt.Facts()), versionCmd())
 	return root
 }
