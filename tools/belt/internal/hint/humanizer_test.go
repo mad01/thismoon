@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // humanizerTranscript writes a transcript holding the given content and points
@@ -75,6 +76,68 @@ func TestHumanizerNudgesWhenTranscriptMissing(t *testing.T) {
 	in := Input{Event: EventExternalText, ToolName: "mcp__github__add_issue_comment", SessionID: "gone", TranscriptPath: "/nonexistent/t.jsonl"}
 	if got := h.Check(in); got == nil {
 		t.Error("Check with a missing transcript = nil, want the nudge")
+	}
+}
+
+func TestHumanizerAdviceQuotesPublishedText(t *testing.T) {
+	path := humanizerTranscript(t, "")
+	h := NewHumanizer(testConfig())
+	in := Input{
+		Event: EventExternalText, ToolName: "mcp__github__add_issue_comment",
+		SessionID: "quoted", TranscriptPath: path,
+		ToolInput: map[string]any{"body": "This PR description delves into the changes."},
+	}
+	got := h.Check(in)
+	if got == nil {
+		t.Fatal("Check on an external write = nil, want the humanizer nudge")
+	}
+	if !strings.Contains(got.Text, `"This PR description delves into the changes."`) {
+		t.Errorf("advice %q does not quote the published text", got.Text)
+	}
+	if !strings.Contains(got.Text, "mcp__github__add_issue_comment") {
+		t.Errorf("advice %q does not name the publishing tool", got.Text)
+	}
+}
+
+func TestPublishedText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input map[string]any
+		want  string
+	}{
+		{name: "nil input", input: nil, want: ""},
+		{name: "body key wins over a longer identifier", input: map[string]any{
+			"url":  "https://example.com/a/very/long/identifier/path/that/is/not/prose",
+			"body": "short note",
+		}, want: "short note"},
+		{name: "longest body key wins", input: map[string]any{
+			"comment": "longer of the two bodies",
+			"text":    "short",
+		}, want: "longer of the two bodies"},
+		{name: "fallback walks nested values", input: map[string]any{
+			"fields": map[string]any{"inner": []any{"the nested prose that was sent"}},
+		}, want: "the nested prose that was sent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := publishedText(tt.input); got != tt.want {
+				t.Errorf("publishedText(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncateRunes(t *testing.T) {
+	if got := truncateRunes("short", 200); got != "short" {
+		t.Errorf("truncateRunes(short) = %q, want unchanged", got)
+	}
+	long := strings.Repeat("ä", 150) // 300 bytes, so the cut lands mid-rune
+	got := truncateRunes(long, 200)
+	if !utf8.ValidString(got) {
+		t.Errorf("truncateRunes cut mid-rune: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("truncated text %q missing ellipsis", got)
 	}
 }
 

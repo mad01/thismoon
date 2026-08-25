@@ -44,6 +44,37 @@ func TestKofDepositNudgesOnceAboveThreshold(t *testing.T) {
 	}
 }
 
+func TestKofDepositPrefillsSkeletonFromCwd(t *testing.T) {
+	path := depositTranscript(t, depositMinToolUses, "")
+	h := NewKofDeposit(testConfig())
+	h.originURL = func(string) string { return "git@github.com:mad01/thismoon.git" }
+	h.topLevel = func(string) string { return "/Users/me/code/thismoon" }
+	in := Input{Event: EventPrompt, SessionID: "prefill", TranscriptPath: path, Cwd: t.TempDir()}
+
+	got := h.Check(in)
+	if got == nil {
+		t.Fatal("Check = nil, want the deposit nudge")
+	}
+	for _, want := range []string{
+		`subject: "repo:mad01/thismoon/<component>"`,
+		`repo_path: "/Users/me/code/thismoon"`,
+		`session_id: "prefill"`,
+	} {
+		if !strings.Contains(got.Text, want) {
+			t.Errorf("advice missing prefilled %q:\n%s", want, got.Text)
+		}
+	}
+}
+
+func TestDepositAdvicePlaceholdersOutsideRepo(t *testing.T) {
+	text := depositAdvice("", "", "")
+	for _, want := range []string{"repo:<org>/<name>/<component>", "<absolute repo path>", "<session id>"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("advice missing placeholder %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestKofDepositSilentBelowThreshold(t *testing.T) {
 	path := depositTranscript(t, depositMinToolUses-1, "")
 	h := NewKofDeposit(testConfig())
