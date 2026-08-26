@@ -2,16 +2,7 @@
   <img src="docs/assets/logo.png" alt="thismoon logo: an open sardine tin" width="220">
 </p>
 
-<!-- regenerate wordmark: figlet -f "ANSI Shadow" thismoon
-     brew install figlet; font: https://github.com/xero/figlet-fonts/blob/master/ANSI%20Shadow.flf -->
-```text
-████████╗██╗  ██╗██╗███████╗███╗   ███╗ ██████╗  ██████╗ ███╗   ██╗
-╚══██╔══╝██║  ██║██║██╔════╝████╗ ████║██╔═══██╗██╔═══██╗████╗  ██║
-   ██║   ███████║██║███████╗██╔████╔██║██║   ██║██║   ██║██╔██╗ ██║
-   ██║   ██╔══██║██║╚════██║██║╚██╔╝██║██║   ██║██║   ██║██║╚██╗██║
-   ██║   ██║  ██║██║███████║██║ ╚═╝ ██║╚██████╔╝╚██████╔╝██║ ╚████║
-   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝
-```
+# thismoon
 
 Give your coding agent the same tools you use, on your own disk.
 
