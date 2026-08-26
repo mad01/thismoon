@@ -114,3 +114,10 @@ make build          # ./events
 
 See [`CLAUDE.md`](CLAUDE.md) for the architecture: the store, the HTTP API, and
 the MCP tools.
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

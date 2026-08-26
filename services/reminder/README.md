@@ -95,3 +95,10 @@ make build   # ./reminder
 
 Architecture, the data model, the HTTP API, and the build commands are in
 [`CLAUDE.md`](CLAUDE.md).
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

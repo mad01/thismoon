@@ -115,3 +115,10 @@ make build   # ./kof
 
 Architecture, the data model, the state transitions, and the HTTP API are in
 [`CLAUDE.md`](CLAUDE.md).
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

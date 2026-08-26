@@ -104,3 +104,10 @@ If the MCP writes succeed but pages don't render, the HTTP server is likely
 not running: `t-man status present`.
 
 See [CLAUDE.md](CLAUDE.md) for architecture and debugging details.
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

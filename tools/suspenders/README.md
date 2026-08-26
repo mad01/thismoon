@@ -664,3 +664,10 @@ See [`CLAUDE.md`](CLAUDE.md) for the module layout and domain vocabulary in [`CO
 ## License
 
 [MIT](LICENSE) -- Copyright (c) 2025 Alexander Brandstedt
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

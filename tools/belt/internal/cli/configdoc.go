@@ -138,6 +138,8 @@ hints:
   kof-consult:
     enabled: true
   kof-deposit:
+    enabled: true
+  humanizer-check:
     enabled: true`
 
 func configDocCmd() *cobra.Command {
