@@ -116,6 +116,11 @@ registration, secrets, config overlays (see `docs/adr/0006`). A change to a serv
 
 ## Install
 
+The short version of both paths is below;
+[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) covers them in depth:
+prerequisites, what each path gives you, the step-by-step fleet bootstrap,
+and how to verify the result.
+
 ### One tool
 
 The fastest path is the [Homebrew tap](https://github.com/mad01/homebrew-tap):
@@ -154,6 +159,8 @@ symlinks) on a fresh machine:
 2. Run `ralph init`, then add the `[[recipe_sources]]` stanza shown above to
    `~/.config/ralph/config.toml` (or to your private config repo)
 3. Run `ralph up`
+4. Register the d-man daemon (the one sudo step) and verify — walkthrough in
+   [the getting-started guide](docs/GETTING-STARTED.md)
 
 See `recipes/` and
 [ralph's configuration reference](https://github.com/mad01/ralph/blob/main/docs/configuration.md)
@@ -176,6 +183,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `webkit/` | Shared Go web UI package, compiled in, no separate versioning |
 | `recipes/` | ralph recipes, consumed remotely via `[[recipe_sources]]` |
 | `docs/adr/` | Architecture decision records |
+| `docs/GETTING-STARTED.md` | Install guide: one tool vs the fleet |
 | `docs/RELEASING.md` | Release process |
 
 Everything is one Go module: `github.com/mad01/thismoon`. Each component
