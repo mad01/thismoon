@@ -133,3 +133,10 @@ make install
 toss-bin --validate /path/you/care/about
 toss-bin --dry-run --safe-mode /tmp/testfile.txt
 ```
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

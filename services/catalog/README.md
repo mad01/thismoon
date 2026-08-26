@@ -103,3 +103,10 @@ catch a duplicate name or a malformed entity.
 See [`CLAUDE.md`](CLAUDE.md) for the domain model (System vs Component, global
 namespace, adding/removing entities) and [`docs/deep-dive.md`](docs/deep-dive.md)
 for a longer walkthrough (validate output, debugging failures).
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

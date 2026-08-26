@@ -630,3 +630,10 @@ BSD 3-Clause License - see the LICENSE file at the repository root
 - Inspired by [serviceman](https://github.com/therootcompany/serviceman)
 - Built with [cobra](https://github.com/spf13/cobra) CLI framework
 - Uses [howett.net/plist](https://github.com/DHowett/go-plist) for plist handling
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

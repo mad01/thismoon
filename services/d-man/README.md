@@ -196,3 +196,10 @@ make tidy    # go mod tidy
 See [`CLAUDE.md`](CLAUDE.md) for the module layout and design rationale, and
 [`recipes/d-man/SETUP.md`](../../recipes/d-man/SETUP.md) for first-time setup
 on a new machine.
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

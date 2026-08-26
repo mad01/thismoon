@@ -60,7 +60,7 @@ semantic:
   sync: false      # also re-embed changed repos on `csl sync` (best-effort)
   # ollama_url: http://localhost:11434   # Ollama server for embeddings
   # embed_model: unclemusclez/jina-embeddings-v2-base-code:f16    # embedding model (must be pulled)
-  # dim: 1024                            # its vector dimensionality
+  # dim: 768                             # its vector dimensionality
 
 daemon:
   idle_timeout_minutes: 10   # how long the search daemon stays alive when idle
@@ -206,6 +206,13 @@ Further docs:
 - [Hooks](docs/hooks.md): the deprecated post-merge hook installer and the suspenders migration path.
 - [MCP server reference](docs/mcp.md): `csl mcp` tool reference for Claude Code.
 - [Architecture](docs/architecture.md): how the daemon, index, and MCP adapter fit together.
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference
 
 ## License
 

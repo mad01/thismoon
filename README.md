@@ -45,17 +45,17 @@ address, managed as launchd agents by t-man.
 
 | Service | What it does | Interfaces | State |
 |---------|--------------|------------|-------|
-| catalog | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
-| csl | Code search over local checkouts (zoekt index) | web · CLI · MCP | proven |
-| d-man | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
-| deps | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
-| events | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
-| keeper-of-facts | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
-| present | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
-| reminder | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
-| speak | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
-| status | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
-| wire | Channels two agent sessions talk over, with blocking reads | web · CLI · MCP | experimental |
+| [catalog](services/catalog/README.md) | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
+| [csl](services/csl/README.md) | Code search over local checkouts (zoekt index) | web · CLI · MCP | proven |
+| [d-man](services/d-man/README.md) | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
+| [deps](services/deps/README.md) | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
+| [events](services/events/README.md) | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
+| [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
+| [present](services/present/README.md) | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
+| [reminder](services/reminder/README.md) | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
+| [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
+| [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
+| [wire](services/wire/README.md) | Channels two agent sessions talk over, with blocking reads | web · CLI · MCP | experimental |
 
 ## Tools
 
@@ -63,12 +63,12 @@ CLI tools under `tools/`, installed to your local bin.
 
 | Tool | What it does | Interfaces | State |
 |------|--------------|------------|-------|
-| belt | Claude Code guard hooks (blocks push-to-main, internal-name writes) | CLI | evaluating |
-| humanizer | AI-writing detection and voice profiling | CLI · MCP | proven |
-| suspenders | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
-| t-man | Declarative launchd agent/daemon manager | CLI | proven |
-| toss-bin | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
-| worklog | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
+| [belt](tools/belt/README.md) | Claude Code guard hooks (blocks push-to-main, internal-name writes) | CLI | evaluating |
+| [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling | CLI · MCP | proven |
+| [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
+| [t-man](tools/t-man/README.md) | Declarative launchd agent/daemon manager | CLI | proven |
+| [toss-bin](tools/toss-bin/README.md) | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
+| [worklog](tools/worklog/README.md) | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
 
 The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers and your agent gets the code search, the audit log, and the

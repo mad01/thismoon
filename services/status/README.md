@@ -83,3 +83,10 @@ Removing the t-man agent doesn't delete history.
 make test           # go test ./...
 make build          # ./status
 ```
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

@@ -22,7 +22,7 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `semantic.sync` | bool | no (default `false`) | Whether `csl sync` also re-embeds the changed files of changed repos after the lexical reindex. When `false`, embeddings refresh only via `csl index --semantic`. |
 | `semantic.ollama_url` | string | no (default `http://localhost:11434`) | Base URL of the Ollama server that serves the embedding model. |
 | `semantic.embed_model` | string | no (default `unclemusclez/jina-embeddings-v2-base-code:f16`) | Ollama embedding model. Must be pulled (`ollama pull`). Changing it triggers a full re-embed on the next index run. |
-| `semantic.dim` | int | no (default `1024`) | Vector dimensionality of `embed_model`. Must match the model. |
+| `semantic.dim` | int | no (default `768`) | Vector dimensionality of `embed_model`. Must match the model. |
 | `sync.concurrency` | int | no (default `8`) | Parallel `git pull` workers for `csl sync`. `--concurrency` on the command line overrides it. |
 | `daemon.idle_timeout_minutes` | int | no (default `10`) | How long the search daemon stays alive with no queries. Higher values keep the zoekt shards and semantic stores warm at the cost of resident memory. |
 | `refresh.enabled` | bool | no (default `true`) | Whether `csl web` runs the periodic background refresh (pull + reindex changed repos). Manual refresh from the web UI works either way. |
@@ -62,7 +62,7 @@ semantic:
   sync: false                             # `csl sync` also re-embeds changed repos
   ollama_url: http://localhost:11434      # default
   embed_model: unclemusclez/jina-embeddings-v2-base-code:f16  # default; must be pulled in ollama
-  dim: 1024                               # must match embed_model
+  dim: 768                                # must match embed_model
 
 # `csl sync` pull parallelism.
 sync:
@@ -119,7 +119,7 @@ semantic:
   sync: false
   # ollama_url: http://localhost:11434   # default
   # embed_model: unclemusclez/jina-embeddings-v2-base-code:f16    # default; must be pulled in ollama
-  # dim: 1024                            # must match embed_model
+  # dim: 768                             # must match embed_model
 ```
 
 ### Discovery rules
@@ -179,12 +179,13 @@ See [architecture](architecture.md#search-daemon) for the full lifecycle.
 
 ## Environment
 
-`csl` reads only two environment variables, both standard:
+`csl` reads three environment variables:
 
 | Variable | Description |
 |---|---|
 | `HOME` | Root of config/state paths. Used to build `~/.config/csl/...`. |
 | `PATH` | The `EnsureDaemon` helper shells out to `csl search --serve` via `os.Executable()` rather than `PATH`, so daemon start works from any cwd. `git` is looked up on `PATH` for pull/fingerprint operations. |
+| `EVENTS_BASE_URL` | Where the events service listens for best-effort telemetry events (default `http://127.0.0.1:7430`). Events are fire-and-forget; an unreachable events service never fails a csl operation. |
 
 There are no `CSL_*` environment overrides. File issues if you need one.
 

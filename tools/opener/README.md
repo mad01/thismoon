@@ -49,3 +49,10 @@ make test     # go test ./...
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for the module layout and MCP tool signatures.
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference

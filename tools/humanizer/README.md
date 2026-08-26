@@ -288,3 +288,10 @@ make test
 ```
 
 The test suite includes metadata validation for every YAML header and concurrent-detection race checks.
+
+## Docs
+
+- [architecture](architecture.md): internal structure and data flow
+- [operating](operating.md): runtime behavior, failure modes, first moves
+- [why](why.md): why this component exists
+- [config](config.md): configuration reference
