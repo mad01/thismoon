@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/mad01/thismoon/compare/belt/v0.18.0...belt/v0.18.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **belt:** add missing humanizer-check hint to embedded config reference ([2c78bb4](https://github.com/mad01/thismoon/commit/2c78bb49e813984df9d08790ad1b6b5279f69960))
+
 ## [0.18.0](https://github.com/mad01/thismoon/compare/belt/v0.17.0...belt/v0.18.0) (2026-08-25)
 
 
