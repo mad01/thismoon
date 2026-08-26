@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.png" alt="thismoon logo: an open sardine tin" width="220">
+</p>
+
 # thismoon
 
 Give your coding agent the same tools you use, on your own disk.
