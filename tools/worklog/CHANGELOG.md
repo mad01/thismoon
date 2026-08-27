@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/mad01/thismoon/compare/worklog/v0.8.1...worklog/v0.8.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* **worklog:** point config help at docs, not a nonexistent doctor ([4148b56](https://github.com/mad01/thismoon/commit/4148b56578d2136e76a71ed2734a2a49fc8c06bc))
+
 ## [0.8.1](https://github.com/mad01/thismoon/compare/worklog/v0.8.0...worklog/v0.8.1) (2026-08-25)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/mad01/thismoon/compare/belt/v0.18.1...belt/v0.19.0) (2026-08-27)
+
+
+### Features
+
+* **belt:** timed guard overrides with extend and audit events ([07b8c70](https://github.com/mad01/thismoon/commit/07b8c70d704fc913dafb70d3c0043137a8ff8e37))
+
 ## [0.18.1](https://github.com/mad01/thismoon/compare/belt/v0.18.0...belt/v0.18.1) (2026-08-26)
 
 

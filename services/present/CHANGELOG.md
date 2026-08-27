@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/mad01/thismoon/compare/present/v0.6.0...present/v1.0.0) (2026-08-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **webkit,present:** the <wk-header> control token and targets attribute are now `fixation` and `fixation-targets`; the rendered marker attribute is `data-fixation` (run `present rerender` to migrate already-stored pages); the localStorage key is `webkit-fixation` (per-browser toggle state resets, harmless); the public export is `toFixation` (was `toBionic`) and the source file is `webkit/src/fixation.ts`.
+
+### Features
+
+* **webkit,present:** rename reading feature to "fixation", add a ? feature guide ([a88f586](https://github.com/mad01/thismoon/commit/a88f58634b650e3fdffe94b1be0af9e86996c047))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/present/v0.5.1...present/v0.6.0) (2026-08-24)
 
 

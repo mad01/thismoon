@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/speak/v0.6.0...speak/v0.7.0) (2026-08-27)
+
+
+### Features
+
+* **speak:** adopt the fixation rename and the webkit feature guide ([a2917cc](https://github.com/mad01/thismoon/commit/a2917cc096e3a128a824e3cb218e136b01808cee))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/speak/v0.5.1...speak/v0.6.0) (2026-08-24)
 
 
