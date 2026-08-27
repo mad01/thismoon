@@ -13,10 +13,14 @@ ignorecase: true
 tokens:
   - serves as a[n]?
   - serves as the
+  - 'serves as \w+[''’]s'
   - stands as a[n]?
   - stands as the
+  - 'stands as \w+[''’]s'
   - functions as a[n]?
   - acts as a[n]?
   - boasts (?:a|an|over)
+  - 'boasts (?:\d+|two|three|four|five|six|seven|eight|nine|ten)'
   - features a[n]?
+  - 'features (?:\d+|two|three|four|five|six|seven|eight|nine|ten)'
   - offers a[n]?

@@ -12,4 +12,5 @@ level: suggestion
 ignorecase: true
 tokens:
   - '\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?\w+ed\s+by\b'
-  - '\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?(?:given|taken|made|done|shown|written|seen|known|held|kept|built|sent|told|found|brought|chosen|driven|handled|generated|produced|created|defined|determined|performed|conducted)\b'
+  - '\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?(?:given|taken|made|done|shown|written|seen|known|held|kept|built|sent|told|found|brought|chosen|driven|handled|generated|produced|created|defined|determined|performed|conducted|preserved|stored|saved|applied|updated|removed|installed|configured)\b'
+  - '(?m)^no [\w -]{1,40}(?:needed|required)\b'

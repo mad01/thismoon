@@ -128,9 +128,9 @@ func DetectStatistical(text string) []StatFinding {
 		})
 	}
 
-	// Any em-dash in short text. The Vale EmDashOveruse rule only counts
-	// per-block density, so a single em-dash in a short Slack-length draft
-	// slips through; this catches it.
+	// Any em-dash in short text. The Vale EmDashOveruse rule flags each
+	// em-dash span too; this whole-sample check keeps the signal when only
+	// the statistical path runs.
 	if p.WordCount >= shortTextWordFloor && p.WordCount < shortTextWordCeil && p.EmDashDensity > 0 {
 		out = append(out, StatFinding{
 			RuleID:    "Humanizer.ShortTextEmDash",

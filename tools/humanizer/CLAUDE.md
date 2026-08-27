@@ -29,9 +29,9 @@ Run both for full coverage. Span rules catch specific phrasing tells; the statis
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 46 rules covering patterns from Wikipedia's "Signs of AI writing":
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 47 rules covering patterns from Wikipedia's "Signs of AI writing":
 
-AIVocabulary, AphoristicClosure, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
+AIVocabulary, AphoristicClosure, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) is parsed from `# humanizer-*` comment headers in each YAML file and served by both the CLI and the MCP tools.
 
@@ -57,7 +57,7 @@ make resign   # re-apply adhoc signature without rebuilding (macOS only)
 
 Binary installs to `~/code/bin/humanizer`. There is no config file; the only tunable is the vale pack cache directory (`HUMANIZER_CACHE_DIR`, falling back to `XDG_CACHE_HOME`, default `~/.cache/humanizer/vale`).
 
-The test suite includes metadata validation for every YAML header and concurrent-detection race checks.
+The test suite includes metadata validation for every YAML header, a gate asserting every rule fires on its own before-example (skipped when vale is not installed), and concurrent-detection race checks.
 
 ## Commands
 
@@ -97,7 +97,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - **Two detection paths, run both.** Vale span rules flag a matched substring with line/column; the statistical detector flags whole-sample properties with no span. Neither alone gives full coverage.
 - **Watermark scrub is a third, separate path.** `lint`/`fix` (`internal/scrub`) work on code points, not prose patterns — deterministic and offline, sharing one classifier so a report and its fix never disagree. Load-bearing invisibles (emoji ZWJ/VS after an emoji base, script joiners inside complex scripts, flag tag chars, orthographic Arabic/Syriac Cf) are preserved by default; `strip_emoji_glue` is the paranoid override.
 - **Rewrite network backends are CLI-only.** `humanizer_rewrite` over MCP is print-prompt only, because the MCP seatbelt denies all network. The `ollama`/`openai-compatible` backends run from the (unsandboxed) CLI; they default-deny non-loopback hosts, refuse redirects (so the API-key header can't be forwarded), and read the key from `WATERMARKS_REWRITE_API_KEY` only. To let the MCP tool call a local model, the consuming repo's seatbelt would need a loopback exception — not added here.
-- **Vale rule gotcha:** `existence`/`occurrence` rules wrap each token in `\b…\b` by default, so a pattern that begins or ends with a non-word char (e.g. a leading `,` plus trailing `\.`, or a trailing `?`/`#`) never matches. Set `nonword: true` on those rules. Single-quoted YAML scalars must escape inner apostrophes as `''`; plain scalars can use `'?` directly.
+- **Vale rule gotcha:** `existence`/`occurrence` rules wrap each token in `\b…\b` by default, so a pattern that begins or ends with a non-word char (e.g. a leading `,` plus trailing `\.`, or a trailing `?`/`#`) never matches. Set `nonword: true` on those rules. Single-quoted YAML scalars must escape inner apostrophes as `''`; plain scalars can use `'?` directly. Two more traps: an `occurrence` rule with `max: 0` is disabled (the zero value reads as unset — use `existence` for zero-tolerance), and the default text scope strips markdown markup and splits blocks, so tokens targeting `**`/bullet syntax or spanning blank lines only match under `scope: raw` (stripped inline-code spans also leave `**`-like residue in text scope, which is what made the old BoldOveruse fire on bold-free table rows).
 - **The MCP sandbox roots are the consuming repo's.** The seatbelt profile that gates `humanizer_detect_file` (and denies all network) is registered by the consuming repo's wrapper, not this code; new runtime file or network needs require a profile change there.
 
 ## See also

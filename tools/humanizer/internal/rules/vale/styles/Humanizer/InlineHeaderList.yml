@@ -9,5 +9,7 @@
 extends: existence
 message: "Inline-header list item: '%s' — rewrite as prose or a plain bullet."
 level: error
+scope: raw
+nonword: true
 tokens:
   - '(?m)^\s*[-*]\s+\*\*[^*\n]+?:\*\*'

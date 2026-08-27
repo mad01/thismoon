@@ -67,9 +67,17 @@ func runDetect(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if detectJSON {
+		if findings == nil {
+			findings = []rules.Finding{}
+		}
+		payload := struct {
+			Findings []rules.Finding `json:"findings"`
+			Summary  rules.Summary   `json:"summary"`
+			Engine   string          `json:"engine"`
+		}{findings, rules.Summarize(findings), "vale"}
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
-		return enc.Encode(findings)
+		return enc.Encode(payload)
 	}
 	printFindings(cmd.OutOrStdout(), findings)
 	return nil
@@ -78,9 +86,22 @@ func runDetect(cmd *cobra.Command, args []string) error {
 func runDetectStatistical(cmd *cobra.Command, text string) error {
 	findings := voice.DetectStatistical(text)
 	if detectJSON {
+		if findings == nil {
+			findings = []voice.StatFinding{}
+		}
+		sum := rules.NewSummary()
+		for _, f := range findings {
+			sum.Add(f.Severity, f.Category, f.RuleID)
+		}
+		payload := struct {
+			Findings []voice.StatFinding `json:"findings"`
+			Profile  voice.Profile       `json:"profile"`
+			Summary  rules.Summary       `json:"summary"`
+			Engine   string              `json:"engine"`
+		}{findings, voice.Compute(text), sum, "statistical"}
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
-		return enc.Encode(findings)
+		return enc.Encode(payload)
 	}
 	printStatFindings(cmd.OutOrStdout(), findings)
 	return nil

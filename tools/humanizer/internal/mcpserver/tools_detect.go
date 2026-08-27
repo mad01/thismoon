@@ -37,16 +37,9 @@ type detectFinding struct {
 	Link     string `json:"link,omitempty"`
 }
 
-type detectSummary struct {
-	Total      int            `json:"total"`
-	BySeverity map[string]int `json:"by_severity"`
-	ByCategory map[string]int `json:"by_category"`
-	ByRule     map[string]int `json:"by_rule"`
-}
-
 type detectOutput struct {
 	Findings []detectFinding `json:"findings"`
-	Summary  detectSummary   `json:"summary"`
+	Summary  rules.Summary   `json:"summary"`
 	Engine   string          `json:"engine"`
 }
 
@@ -147,12 +140,8 @@ func detectFileError(err error, path string) error {
 func buildDetectOutput(findings []rules.Finding) detectOutput {
 	out := detectOutput{
 		Findings: make([]detectFinding, 0, len(findings)),
+		Summary:  rules.Summarize(findings),
 		Engine:   "vale",
-	}
-	sum := detectSummary{
-		BySeverity: map[string]int{},
-		ByCategory: map[string]int{},
-		ByRule:     map[string]int{},
 	}
 	for _, f := range findings {
 		out.Findings = append(out.Findings, detectFinding{
@@ -166,13 +155,6 @@ func buildDetectOutput(findings []rules.Finding) detectOutput {
 			Message:  f.Message,
 			Link:     f.Link,
 		})
-		sum.Total++
-		sum.BySeverity[f.Severity]++
-		if f.Category != "" {
-			sum.ByCategory[f.Category]++
-		}
-		sum.ByRule[f.RuleID]++
 	}
-	out.Summary = sum
 	return out
 }

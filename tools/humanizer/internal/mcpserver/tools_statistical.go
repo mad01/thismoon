@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/tools/humanizer/internal/rules"
 	"github.com/mad01/thismoon/tools/humanizer/internal/voice"
 )
 
@@ -28,7 +29,7 @@ type statFinding struct {
 type detectStatisticalOutput struct {
 	Findings []statFinding `json:"findings"`
 	Profile  voice.Profile `json:"profile"`
-	Summary  detectSummary `json:"summary"`
+	Summary  rules.Summary `json:"summary"`
 	Engine   string        `json:"engine"`
 }
 
@@ -58,11 +59,7 @@ func handleDetectStatistical(
 		Profile:  voice.Compute(in.Text),
 		Engine:   "statistical",
 	}
-	sum := detectSummary{
-		BySeverity: map[string]int{},
-		ByCategory: map[string]int{},
-		ByRule:     map[string]int{},
-	}
+	sum := rules.NewSummary()
 	for _, f := range findings {
 		out.Findings = append(out.Findings, statFinding{
 			RuleID:    f.RuleID,
@@ -74,12 +71,7 @@ func handleDetectStatistical(
 			Threshold: f.Threshold,
 			Message:   f.Message,
 		})
-		sum.Total++
-		sum.BySeverity[f.Severity]++
-		if f.Category != "" {
-			sum.ByCategory[f.Category]++
-		}
-		sum.ByRule[f.RuleID]++
+		sum.Add(f.Severity, f.Category, f.RuleID)
 	}
 	out.Summary = sum
 	return nil, out, nil

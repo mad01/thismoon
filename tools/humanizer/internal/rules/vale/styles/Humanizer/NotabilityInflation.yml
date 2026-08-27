@@ -13,4 +13,4 @@ ignorecase: true
 tokens:
   - active social media presence
   - written by a leading expert
-  - has been (?:featured|cited) in [A-Z][^.]*,\s+[A-Z][^.]*,\s+[A-Z][^.]*
+  - ha(?:s|ve) been (?:featured|cited) in [A-Z][^.]*,\s+[A-Z][^.]*,\s+[A-Z][^.]*
