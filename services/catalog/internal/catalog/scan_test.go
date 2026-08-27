@@ -38,10 +38,10 @@ spec:
   owner: mad01
   system: dotfiles
 `)
-	writeFile(t, filepath.Join(root, "bionic", "service-info.yaml"), `
+	writeFile(t, filepath.Join(root, "abacus", "service-info.yaml"), `
 kind: Component
 metadata:
-  name: bionic
+  name: abacus
 spec:
   type: cli
   owner: mad01
