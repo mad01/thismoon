@@ -113,4 +113,3 @@ curl http://speak.this/     # via the d-man route
 
 - Source + module notes: `services/speak/CLAUDE.md`
 - Triage helper: `sandbox-audit.sh` (this dir)
-- Import provenance: `docs/MIGRATED-FROM.md`

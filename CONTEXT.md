@@ -37,7 +37,7 @@ A release tag in the form `svc/vX.Y.Z` (component path prefix, slash separator),
 _Avoid_: version tag, release tag (ambiguous — repo-wide vs per-component)
 
 **Clean import**:
-Bringing code in from a source repo without its git history; the mapping to the source repo and SHA lives in `docs/MIGRATED-FROM.md`.
+Bringing code in from a source repo without its git history; the import commit message records the source repo and SHA.
 _Avoid_: migration (too broad), fork
 
 **Assertion**:

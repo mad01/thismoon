@@ -103,4 +103,3 @@ picks up the new code:
 - Source + module notes: `services/present/CLAUDE.md`
 - Skill: repo-root `skills/present/SKILL.md` (linked into `~/.claude/skills/`)
 - Seatbelt profile + wrapper: `present.sb`, `present-mcp-sandbox.sh` (this dir)
-- Import provenance: `docs/MIGRATED-FROM.md`

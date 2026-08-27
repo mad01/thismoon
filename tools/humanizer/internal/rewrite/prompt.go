@@ -14,7 +14,7 @@
 // and API keys come from the environment only — never a flag.
 //
 // Ported from watermarks-remover's rewrite_text.py (MIT,
-// guillaumemeyer/watermarks-remover @28eca2d); see docs/MIGRATED-FROM.md.
+// guillaumemeyer/watermarks-remover @28eca2d).
 package rewrite
 
 import "fmt"

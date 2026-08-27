@@ -1,3 +1,5 @@
 # Monorepo with clean imports, no git history
 
 The `*.this` platform lived across five repos (dotfiles services, csl, catalog, webkit, tools) with no CI and no semver on most of them. We consolidated into this single repo and import each piece clean: the files come over without their git history. The history stays in the source repos; `docs/MIGRATED-FROM.md` maps every imported directory to the repo and SHA it came from. This keeps the repo small, avoids dragging five unrelated histories into one graph, and gives the planned public flip a clean provenance story (every commit here is post-LICENSE).
+
+Amended 2026-08-27: `docs/MIGRATED-FROM.md` was removed. Each import commit message now records the source repo and SHA instead, and the table's final state stays reachable in git history before this amendment.

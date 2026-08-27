@@ -207,4 +207,3 @@ muscle memory carries over. Implementation notes:
   builds the binary and registers the `speak-web` and `sandbox-watch` agents
 - Component: `webkit/src/read-aloud.ts` (`<wk-read-aloud>`, `webkit/COMPONENTS.md`)
 - Route: `speak` → 7425 in the consuming repo's d-man routes overlay (docs/adr/0006)
-- Import provenance: `docs/MIGRATED-FROM.md`

@@ -13,7 +13,7 @@
 // Options (the "risky" levels).
 //
 // Ported from watermarks-remover's text_unicode.py (MIT,
-// guillaumemeyer/watermarks-remover @28eca2d); see docs/MIGRATED-FROM.md.
+// guillaumemeyer/watermarks-remover @28eca2d).
 package scrub
 
 import (

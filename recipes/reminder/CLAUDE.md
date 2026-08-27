@@ -61,4 +61,3 @@ removing the agent doesn't delete that file.
 ## See also
 
 - Source + module notes: `services/reminder/CLAUDE.md`
-- Import provenance: `docs/MIGRATED-FROM.md`

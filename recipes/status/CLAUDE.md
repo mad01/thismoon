@@ -49,4 +49,3 @@ applies where d-man runs.
 ## See also
 
 - Source + module notes: `services/status/CLAUDE.md`
-- Import provenance: `docs/MIGRATED-FROM.md`

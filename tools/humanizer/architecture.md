@@ -37,7 +37,7 @@ hold all the logic; `internal/cli` and `internal/mcpserver` are thin frontends
 over the same functions, so CLI and MCP results never diverge.
 
 The watermark half (`internal/scrub`, `internal/rewrite`) is a Go port of
-watermarks-remover's text scripts (MIT; see docs/MIGRATED-FROM.md). `scrub`
+watermarks-remover's text scripts (MIT, ported at `28eca2d`). `scrub`
 classifies each rune against fixed carrier tables — one classifier drives both
 `Inspect` (the lint report) and `Clean` (the fix), so they never disagree — and
 is fully deterministic and offline. `rewrite` targets statistical marks the

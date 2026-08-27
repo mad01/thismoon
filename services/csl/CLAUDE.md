@@ -1,8 +1,8 @@
 # csl, local code search daemon and MCP server backed by zoekt
 
 Indexes local git repos and exposes them over a stdio MCP interface, a CLI,
-and a localhost web UI. Imported from `github.com/mad01/code-search-local`
-(see `docs/MIGRATED-FROM.md`); the name is the source repo's initialism.
+and a localhost web UI. Imported from `github.com/mad01/code-search-local`;
+the name is the source repo's initialism.
 
 ## Module layout
 
@@ -304,7 +304,6 @@ auto-reload on a CSS/JS change.
 
 - Recipe: `recipes/csl/recipe.toml` (this repo)
 - Shared UI package: `webkit/` at the repo root
-- Provenance: `docs/MIGRATED-FROM.md` (imported from `github.com/mad01/code-search-local`)
 - Deep-dive docs (not part of this pass): `docs/architecture.md`, `docs/mcp.md`, `docs/cli.md`, `docs/configuration.md`, `docs/getting-started.md`, `docs/semantic.md`, `docs/web.md`, `docs/hooks.md`
 - MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
   (entry `csl`, command `csl mcp`), machine-private wiring (docs/adr/0006)

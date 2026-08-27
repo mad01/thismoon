@@ -162,6 +162,5 @@ and the extraction-pattern rules live in the dotfiles repo:
 ## See also
 
 - Catalog entry: `service-info.yaml` (System `webkit`, Component `webkit-ui`).
-- Consumers live under `services/` as they migrate into this repo (import
-  provenance: `docs/MIGRATED-FROM.md` at the repo root).
+- Consumers live under `services/` as they migrate into this repo.
 - Full component spec: `COMPONENTS.md`.

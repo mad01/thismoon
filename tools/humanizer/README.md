@@ -2,7 +2,7 @@
 
 `humanizer` shells out to [vale](https://vale.sh) against a bundled Humanizer style pack to flag AI-writing patterns in text. It also computes quantitative voice profiles (sentence length distribution, punctuation densities, contraction rate, Flesch reading ease) and can diff two samples metric by metric. Both the CLI and the MCP server are in this binary.
 
-It also lints and fixes the invisible watermark carriers that get embedded in text: zero-width and format Unicode, bidi overrides, tag characters, variation selectors, and exotic space homoglyphs. `lint` reports them, `fix` scrubs them, and `rewrite` builds a prompt for the statistical (token-sampling) marks a scrub can't reach. This half is ported from [watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover) (MIT); see `docs/MIGRATED-FROM.md`.
+It also lints and fixes the invisible watermark carriers that get embedded in text: zero-width and format Unicode, bidi overrides, tag characters, variation selectors, and exotic space homoglyphs. `lint` reports them, `fix` scrubs them, and `rewrite` builds a prompt for the statistical (token-sampling) marks a scrub can't reach. This half is ported from [watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover) (MIT, ported at `28eca2d`).
 
 ## How it works
 
