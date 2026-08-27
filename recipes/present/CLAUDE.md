@@ -33,7 +33,7 @@ MCP server).
 - **`dotfiles.present_skill`** — symlinks the repo-root `skills/present/` dir
   into `~/.claude/skills/` so the Claude skill ships with the service.
 - **`dotfiles.present_codex_skill`** — symlinks the same dir into
-  `~/.agents/skills/` so Codex and Pi discover it too.
+  `~/.agents/skills/` so Codex and other agents discover it too.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
 ## What stays in dotfiles (private overlay)

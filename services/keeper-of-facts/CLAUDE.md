@@ -14,13 +14,14 @@ Claude) are the primary surface**; the `kof` CLI mirrors them. The web page at
 keeper-of-facts/
   cmd/kof/            - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, mcp, manage (assert/list/get/check/retract), version (build metadata from the shared buildinfo package)
+    cli/               - cobra: root, serve, mcp, manage (assert/list/recall/get/check/retract), version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     store/             - Assertion model + pure helpers (assertion.go) and the
                          mutex-guarded JSONL store (store.go, id.go)
     pin/               - Pin model + working-tree hashing (pin.go): resolve, re-hash, compare
+    recall/            - one-shot `claude -p` judge that ranks the whole store against a free-form question (recall.go)
     server/            - HTTP API + webkit web page (embedded shell.html + app.js)
-    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 5 tools)
+    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 6 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 

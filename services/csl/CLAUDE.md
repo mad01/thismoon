@@ -12,7 +12,11 @@ internal/
   cli/             Cobra commands (web, mcp, search, count, query, read,
                     repo, index, semantic, hybrid, sync, hooks, doctor,
                     config, version)
+  cslignore/       loads a repo's .cslignore file into compiled glob patterns,
+                    shared by the lexical and semantic indexers
   daemon/          search daemon lifecycle (socket, pid, log)
+    proto/         gRPC service definition + generated code for the daemon
+                    RPC (search.proto, search.pb.go, search_grpc.pb.go)
   search/          zoekt indexer/searcher wrappers
   semantic/        text embedding + code chunking for vector search
   hybrid/          Reciprocal Rank Fusion of lexical + semantic results
@@ -24,6 +28,9 @@ internal/
     config/        ~/.config/csl/config.yaml loading
     finder/        concurrent filesystem walk + remote URL parsing
   mcpserver/       MCP stdio server wiring (csl_* tools)
+  notify/          events.this emit, best-effort and synchronous (csl commands
+                    exit right after finishing, unlike the long-running serve
+                    tools; per-tool copy of the same helper, not shared)
   web/             HTTP shell + embedded frontend (assets/index.html,
                     assets/static/app.js, app.css)
 Makefile
@@ -192,7 +199,7 @@ path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 
 ## Shared UI: webkit
 
-The chrome (header, theme toggle, font/size/bionic controls) comes from
+The chrome (header, theme toggle, font/size/fixation controls) comes from
 **`github.com/mad01/thismoon/webkit`**, the in-module package at the repo root
 (`webkit/`) that embeds compiled TypeScript/CSS web components. csl compiles
 against the webkit committed beside it; there is no version pin. Do NOT re-add
@@ -231,7 +238,7 @@ with the matching link marked `active`; page-specific logic lives in
 `static/health.js` / `static/file.js`, with the clipboard helpers shared via
 `static/common.js`.
 
-`webkit.js` injects the full control set (font · bionic · size ± · reload · theme)
+`webkit.js` injects the full control set (font · fixation · size ± · reload · theme)
 automatically; don't add those controls manually.
 
 ### Per-repo changes
@@ -285,6 +292,13 @@ auto-reload on a CSS/JS change.
   model when they finish; interactive queries keep it warm for 20 minutes.
   Pull it with `ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`
   (the default; per-machine config may point elsewhere).
+- **Version probe.** `GET /version` and `csl version -o json` both return the
+  shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph` and
+  `status` use to probe the build a sibling tool is running. Plain
+  `csl version` stays a bare token. Distinct from `GET /webkit/version` (see
+  Shared UI: webkit above), which reports the embedded webkit asset hash.
 
 ## See also
 
@@ -292,3 +306,7 @@ auto-reload on a CSS/JS change.
 - Shared UI package: `webkit/` at the repo root
 - Provenance: `docs/MIGRATED-FROM.md` (imported from `github.com/mad01/code-search-local`)
 - Deep-dive docs (not part of this pass): `docs/architecture.md`, `docs/mcp.md`, `docs/cli.md`, `docs/configuration.md`, `docs/getting-started.md`, `docs/semantic.md`, `docs/web.md`, `docs/hooks.md`
+- MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
+  (entry `csl`, command `csl mcp`), machine-private wiring (docs/adr/0006)
+- Route: the consuming repo's `recipes/d-man/routes.toml` overlay
+  (`csl` → `csl.this`; docs/adr/0006), machine-private wiring

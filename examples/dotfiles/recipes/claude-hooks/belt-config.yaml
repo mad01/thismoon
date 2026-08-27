@@ -1,0 +1,53 @@
+# ~/.config/belt/config.yaml (symlinked there by this recipe).
+# Every key is optional; guards and hints default to enabled when a key is
+# missing. Full reference: tools/belt/config.md in the thismoon repo, or
+# `belt config --help`. Verify the resolved result with `belt doctor`.
+
+# Machine profiles usually come from ~/.config/ralph/config.local.toml (belt
+# falls back to it), so a fleet-shared belt config stays per-machine-agnostic.
+# Set them here only if this config is not shared across machines:
+# profiles:
+#   - personal
+
+# Name sources for the write-internal-names guard (and, via the shared shape,
+# the suspenders pre-commit guard). Every git repo found under workspace_dirs
+# contributes its org, repo, and directory names as blocked words in public
+# (github.com) repos — the list is derived, never enumerated.
+internal_names:
+  workspace_dirs:
+    - ~/work-checkouts
+  blocked_words:
+    - internal-codename
+  allowlist:
+    - some-safe-name
+
+# The repo decides the commit identity, whatever machine you are on.
+git_identity:
+  - repos:
+      - github.com/you/*
+    email: you@personal.example
+    mode: hard
+
+# Work-hours nudge: soft-warn on personal-repo commits during work hours on
+# machines carrying the work profile. `belt override set vacation` disables it.
+commit_guards:
+  - repos:
+      - github.com/you/*
+    profile: work
+    block_hours: "09:00-17:00"
+    mode: soft
+    override: vacation
+
+guards:
+  git-push-main:
+    enabled: true
+    allow_repos:
+      - github.com/you/dotfiles # direct pushes to main allowed here only
+  script-deny-list:
+    enabled: true
+    extra_patterns:
+      - rm -rf # settings.json lists bare `rm` under "ask" only
+  write-internal-names:
+    enabled: true
+    exclude_paths:
+      - ~/notes # internal references are deliberate here

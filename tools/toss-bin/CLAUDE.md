@@ -42,6 +42,20 @@ Files land in `~/.Trash/my-trash/<YYYY-MM-DD>/`, so recovery is a Finder trip aw
 - `.` and `..` are refused, same as `rm`.
 - Symlinks are trashed as links: the link moves, the target is never touched. Safe mode validates a symlink by where the link lives, not what it points at.
 
+## Configuration
+
+Optional; toss-bin runs with the built-in deny-list when no file exists.
+
+```yaml
+# ~/.config/toss-bin/config.yaml
+protected_paths:        # exact match — the path itself, contents still pass
+  - /Volumes/backup
+protected_trees:        # the path and everything under it
+  - ~/code/archive
+```
+
+Entries take a leading `~`, trailing slashes are stripped, duplicates (including of built-ins) are harmless. Config-added trees get no `treeAllowList` exemptions — those carve-outs exist for built-in system trees only. A malformed config prints a warning to stderr and the run continues on built-ins alone, so a YAML typo never breaks `rm`. The config is read only when safe mode or `--validate` runs.
+
 ## Build / install / test
 
 ```bash
@@ -68,20 +82,6 @@ Single command: `toss-bin [flags] <path> [...]`
 | `--help`, `-h` | Usage (`-h` only as the sole argument) |
 | `--version`, `-v` | Version (`-v` only as the sole argument) |
 | `docs` | Print the embedded operating doc (only as the sole argument, so a file named `docs` stays trashable) |
-
-## Configuration
-
-Optional; toss-bin runs with the built-in deny-list when no file exists.
-
-```yaml
-# ~/.config/toss-bin/config.yaml
-protected_paths:        # exact match — the path itself, contents still pass
-  - /Volumes/backup
-protected_trees:        # the path and everything under it
-  - ~/code/archive
-```
-
-Entries take a leading `~`, trailing slashes are stripped, duplicates (including of built-ins) are harmless. Config-added trees get no `treeAllowList` exemptions — those carve-outs exist for built-in system trees only. A malformed config prints a warning to stderr and the run continues on built-ins alone, so a YAML typo never breaks `rm`. The config is read only when safe mode or `--validate` runs.
 
 ## Gotchas
 

@@ -1,0 +1,35 @@
+# Example overlay: wire belt (the Claude Code guard/hint tool) into an agent.
+#
+# The belt binary ships from the thismoon source (thismoon/belt, wave 0); this
+# consuming-repo recipe owns the two machine-private halves (docs/adr/0006):
+#
+#   1. The belt config overlay. Internal-name workspace dirs, allowlists, and
+#      exclude_paths name machine-private things, so the config can never live
+#      in the public recipe. belt-config.yaml here is tracked in your repo and
+#      symlinked into place; editing it in the repo is the whole workflow
+#      (belt reads config fresh on every tool call — no restart).
+#
+#   2. Hook registration. Claude Code only runs belt if ~/.claude/settings.json
+#      has hooks entries pointing at it; settings.hooks.json.example beside
+#      this file is the complete block. Merge it into your settings once by
+#      hand, or manage the whole settings file the way the mcp-registration
+#      pattern manages MCP servers: a versioned template plus a
+#      run = "always" sync script with a verify command for ralph doctor.
+#      Codex reads the same schema from ~/.codex/hooks.json — the tool-event
+#      entries (PreToolUse + PostToolUse) work there verbatim; see
+#      tools/belt/docs/hooks.md "Other harnesses" in the thismoon repo.
+#
+# Wave 1: the belt binary (wave 0, from the thismoon source) must exist before
+# anything points at it.
+[recipe]
+name = "claude-hooks"
+description = "belt config overlay + the Claude Code hooks block that registers belt's guards and hints"
+wave = 1
+
+[directories.belt_config]
+target = "~/.config/belt"
+
+[dotfiles.belt_config_yaml]
+source = "belt-config.yaml"
+target = "~/.config/belt/config.yaml"
+action = "symlink"

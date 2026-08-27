@@ -24,11 +24,10 @@ pure Go with no subprocess and keep working when vale is missing.
 ## where state lives
 
 Nothing persists between runs: humanizer reads no config file, keeps no
-store, and writes no log. The one
-on-disk artifact is the extracted vale style pack, default {{.StorePath}}
-(HUMANIZER_CACHE_DIR or XDG_CACHE_HOME override it). It is a regenerable
-cache: a run rewrites any file that drifted from the embedded copy, so
-deleting the directory is always safe.
+store, and writes no log. The one on-disk artifact is the extracted vale
+style pack, default {{.StorePath}} (HUMANIZER_CACHE_DIR or XDG_CACHE_HOME
+override it). It is a regenerable cache: a run rewrites any file that
+drifted from the embedded copy, so deleting the directory is always safe.
 
 ## failure modes
 

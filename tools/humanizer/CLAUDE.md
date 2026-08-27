@@ -69,7 +69,7 @@ The test suite includes metadata validation for every YAML header and concurrent
 - `humanizer fix [file]`: apply the Layer A scrub (`scrub.Clean`). Cleaned text to stdout / `-o` / `--in-place` (writes `.bak`); stats to stderr. Non-intrusive by default (strip invisibles, normalize spaces); risky flags `--nfkc`, `--aggressive-homoglyphs`, `--strip-emoji-glue` alter visible characters. `--no-normalize-spaces` opts out of the default space fold.
 - `humanizer rewrite [file]`: Layer B rewrite for statistical marks. `--backend print-prompt` (default, offline) returns the prompt; `ollama`/`openai-compatible` run a model. Flags: `--strength`, `--model`, `--base-url`, `--allow-remote`, `--candidates`, `--temperature`, `--no-layer-a-after`, `-o`, `--json-stats`. API key via `WATERMARKS_REWRITE_API_KEY` only.
 - `humanizer docs`: print the embedded operating doc (`operating.md` rendered with the binary's own defaults): how humanizer runs, cache location, failure modes, first moves.
-- `humanizer mcp`: start the MCP stdio server. An MCP host such as Claude Code launches this; don't run it by hand in normal use. Register once with `claude mcp add --scope user humanizer -- humanizer mcp`.
+- `humanizer mcp`: start the MCP stdio server. An MCP host such as Claude Code launches this; don't run it by hand in normal use. Standalone installs register it once with `claude mcp add --scope user humanizer -- humanizer mcp`; fleet machines get it from the consuming repo's MCP-registration recipe instead (docs/adr/0006).
 - `humanizer version`: print the bare version token of the running build. Flags: `-o json` for the four-key build metadata object (`version`, `commit`, `tag`, `build_time`).
 
 ## MCP tools

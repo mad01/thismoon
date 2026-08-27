@@ -159,7 +159,7 @@ the events routes.
 <wk-header brand="events" title="Events"></wk-header>
 ```
 
-`webkit.js` injects the full control set (font · bionic · size ± · reload ·
+`webkit.js` injects the full control set (font · fixation · size ± · reload ·
 theme). Don't add those controls manually.
 
 ### Per-repo changes
@@ -192,6 +192,12 @@ confirms which embedded webkit assets the running events server serves.
   `worklog`.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).
+- **Version probe.** `GET /version` and `events version -o json` both return
+  the shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph` and
+  `status` use to probe the build a sibling tool is running. Plain
+  `events version` stays a bare token.
 
 ## See also
 

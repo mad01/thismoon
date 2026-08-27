@@ -75,8 +75,8 @@ duplicate.
 
 ## version skew
 
-`catalog version -o json` reports the build of the binary on PATH. GET
-{{.BaseURL}}/version reports the build the running web process came from.
+`catalog version -o json` reports the build of the binary on PATH. `GET
+{{.BaseURL}}/version` reports the build the running web process came from.
 When the `commit` values differ, an old process is still serving after an
 upgrade: `t-man restart catalog-web` and compare again. `catalog doctor` runs
 this comparison as its version-skew check.

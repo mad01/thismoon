@@ -37,9 +37,22 @@ clear error instead of a GUI dialog.
 tools so an agent can open things without shelling out: `open_url`,
 `open_file`, `open_app`, `open_with`, `reveal_in_finder`.
 
-Registration is machine-private: the consuming repo's companion recipe
-registers `opener mcp` with the MCP host. See [`CLAUDE.md`](CLAUDE.md) for
+On a standalone install, register it once:
+
+```sh
+claude mcp add --scope user opener -- opener mcp
+```
+
+On a ralph-managed machine, skip the manual command — registration is
+machine-private wiring that ships from the consuming repo's companion
+recipe (`docs/adr/0006` at the repo root). See [`CLAUDE.md`](CLAUDE.md) for
 the two-layer build/install vs. wiring split.
+
+No backing service has to be running: the tools exec `/usr/bin/open`
+in-process, macOS only. Confirm the server is registered with
+`claude mcp list`, which should list `opener` among the connected servers.
+There is no `opener doctor` — `opener docs` prints the embedded operating
+doc (path and app-name failure modes, the silent-success case) instead.
 
 ## Develop
 

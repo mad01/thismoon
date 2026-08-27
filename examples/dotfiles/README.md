@@ -13,6 +13,8 @@ your-dotfiles/
     d-man/               # overlay: machine-personal routes for the d-man front door
     mcp-registration/    # overlay: register MCP servers (+ seatbelt sandbox variant)
     config-overlay/      # overlay: per-machine service config (watch list, host gate)
+    claude-hooks/        # overlay: belt config + the Claude Code hooks block
+    agent-memory/        # overlay: clone the shared memory store belt injects
     secrets-env/         # overlay: secret/env wiring without committing values
 ```
 
@@ -38,6 +40,8 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
 | Routes + block list | [`recipes/d-man/`](recipes/d-man/) | which `.this` names resolve on this machine, and which hosts the work profile blocks |
 | MCP registration | [`recipes/mcp-registration/`](recipes/mcp-registration/) | which MCP servers Claude Code sees, and the seatbelt sandbox untrusted ones run under |
 | Config overlay | [`recipes/config-overlay/`](recipes/config-overlay/) | per-machine service config — watch lists, host gates, local paths |
+| Agent hooks (belt) | [`recipes/claude-hooks/`](recipes/claude-hooks/) | the belt config overlay and the `~/.claude/settings.json` hooks block that registers belt's guards and hints |
+| Agent memory store | [`recipes/agent-memory/`](recipes/agent-memory/) | the private facts repo cloned to `~/.config/agent-memory`, with the index and fact-file format belt injects at session start |
 | Secrets / env | [`recipes/secrets-env/`](recipes/secrets-env/) | a service's secret, resolved at runtime or from a gitignored env-file — never committed |
 | Host-scoping | [`config.toml`](config.toml) | enabling a remote recipe on a subset of machines (`hosts = [...]`) |
 

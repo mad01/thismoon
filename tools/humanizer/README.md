@@ -197,11 +197,13 @@ Plain output is the version and nothing else, so a probe can read the line as-is
 humanizer mcp
 ```
 
-An MCP host such as Claude Code launches this; don't run it by hand in normal use. To register it once:
+An MCP host such as Claude Code launches this; don't run it by hand in normal use. On a standalone install, register it once:
 
 ```sh
 claude mcp add --scope user humanizer -- humanizer mcp
 ```
+
+On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root).
 
 The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes eleven tools:
 

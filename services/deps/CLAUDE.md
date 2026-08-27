@@ -155,7 +155,7 @@ The annotated key reference lives in `deps config --help`.
 
 ## Shared UI: webkit
 
-The chrome (header, theme toggle, font/size/bionic controls, toast host) comes
+The chrome (header, theme toggle, font/size/fixation controls, toast host) comes
 from the in-module package **`github.com/mad01/thismoon/webkit`**, which embeds
 compiled TypeScript/CSS web components. Don't re-add palette, topbar, or theme
 CSS locally; those live in webkit only. There is no pin or bump step: the
@@ -191,7 +191,7 @@ The boot script is blocking (no `defer`/`async`) on purpose: it must set
 <wk-header brand="deps" title="Dependencies"></wk-header>
 ```
 
-`webkit.js` injects the full control set (font · bionic · size ± · reload ·
+`webkit.js` injects the full control set (font · fixation · size ± · reload ·
 theme). Don't add those controls manually.
 
 ### Per-repo changes
@@ -227,6 +227,12 @@ confirms which embedded webkit assets the running deps server serves.
 - **Personal Mac only**: recipe, MCP entry, and d-man route are all
   `profiles = ["personal"]`.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs.
+- **Version probe.** `GET /version` and `deps version -o json` both return the
+  shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph` and
+  `status` use to probe the build a sibling tool is running. Plain
+  `deps version` stays a bare token.
 
 ## See also
 

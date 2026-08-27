@@ -12,10 +12,33 @@ search.
 
 ## How it works
 
-The store has no git remote: work state stays on the machine that created it,
-so you resume where you left off. The task is the unit, not the directory.
-One ticket spanning three repos is one item with three per-repo notes, not
-three scattered memories.
+The task is the unit, not the directory. One ticket spanning three repos is
+one item with three per-repo notes, not three scattered memories. The store
+is a git repo, local-first: with no `remote:` config it stays on the machine
+that created it, and with one it follows you across machines.
+
+### Sync across machines
+
+Give the store an upstream in `~/.config/worklog/config.yaml`, a private
+git repo you create once, empty:
+
+```yaml
+remote:
+  push: true
+  upstreams:
+    personal: git@github.com:you/worklog-store.git
+```
+
+Upstreams are keyed by machine profile (from ralph's `config.local.toml`;
+the machine's first profile with an entry wins), so one shared config can
+send different machines to different stores. With a single store, key it
+under the one profile all your machines carry. From then on every
+checkpoint commits and pushes automatically (a failed push degrades to a
+warning; the write always lands locally), a fresh machine clones the store
+on first use, and `worklog sync` fast-forward pulls then pushes when you
+switch machines. One writer at a time is the assumption: sync before
+switching, there is no merge strategy. Full reference:
+[config.md](config.md).
 
 ## Install
 
@@ -50,9 +73,24 @@ tools so an agent can checkpoint and resume without shelling out:
 `worklog_checkpoint`, `worklog_list`, `worklog_search`, `worklog_show`,
 `worklog_status`.
 
-Registration is machine-private: the consuming repo's companion recipe
-registers `worklog mcp` with the MCP host, unsandboxed as first-party code.
-See [`CLAUDE.md`](CLAUDE.md) for the two-layer build/install vs. wiring split.
+On a standalone install, register it once:
+
+```sh
+claude mcp add --scope user worklog -- worklog mcp
+```
+
+On a ralph-managed machine, skip the manual command — registration is
+machine-private wiring that ships from the consuming repo's companion
+recipe, unsandboxed as first-party code (`docs/adr/0006` at the repo root).
+See [`CLAUDE.md`](CLAUDE.md) for the two-layer build/install vs. wiring
+split.
+
+No backing service has to be running: the MCP process reads and writes
+`~/code/worklog` directly, the same store the CLI uses. Confirm the server
+is registered with `claude mcp list`, which should list `worklog` among the
+connected servers. There is no `worklog doctor` — `worklog docs` prints the
+embedded operating doc (runtime behavior, failure modes, first moves)
+instead.
 
 ## Where things live
 

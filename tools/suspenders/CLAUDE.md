@@ -55,14 +55,17 @@ internal/
     hook.go                    Manager type: HookScript, Checksum, Install, Uninstall,
                              Update, IsInstalled, NeedsUpdate, Status
                              Event type: PreCommit, PostMerge
+  notify/
+    events.go                 EmitEvent: best-effort POST to events.this on a
+                             blocked-commit hook; never emits during go test
+
+Makefile                     part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
 Repository discovery and remote parsing live in the shared
 `github.com/mad01/thismoon/kit/repofind` package (Find with 32 concurrent
 workers, IsRepo, InsideWorkTree, ParseRemote) — shared with belt so the
 pre-commit guard and the write-time firewall derive the same names.
-
-Package `github.com/mad01/thismoon/tools/suspenders`, part of the thismoon monorepo module; there is no go.mod here.
 
 ## How it works
 
@@ -95,33 +98,6 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 - Guard exemption: repos inside `guard.workspace_dirs` or whose org/repo name matches a top-level `exclude` glob are never guard-blocked (`guardExempt` in commands/hook.go, used by hook run, scan, and history); name collection is unaffected
 - Repository discovery via the shared `kit/repofind` package, which walks dirs concurrently and extracts org/repo from remotes; each repo contributes its org and repo name as separate blocked names
 - Glob matching for excludes and repo filters via `github.com/gobwas/glob`
-
-## Build / install / test
-
-```bash
-make build              # build to ./suspenders
-make install             # install to ~/code/bin
-make test                # run unit tests
-make test-integration    # run Docker-based integration tests
-make lint                # run golangci-lint
-make fmt                 # format source with golines & gofumpt
-```
-
-Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/thismoon/buildinfo` package by `buildinfo.mk` (short HEAD commit, full commit, the newest `suspenders/v*` tag, and the build time), read by `suspenders version` and printed at the top of `suspenders doctor`.
-
-## Commands
-
-| Command | What it does |
-|---------|---------------|
-| `scan [path]` | Scan for secrets and blocked names. `--staged` (index only), `--fail-on-findings` |
-| `hook install\|uninstall\|update\|status [path]` | Manage pre-commit/post-merge hooks. `--all` for every discovered repo |
-| `hook run <event>` | Run the hook pipeline for one event directly (what generated hooks call) |
-| `history scan` | Walk full git history for findings. `--branch`, `--fail-on-findings` |
-| `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
-| `doctor [path]` | Explain the guard for a repo: the installed build, config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
-| `config` | Print the config file location and the settings in effect; `--help` carries the annotated reference of every setting |
-| `docs` | Print the embedded operating doc: hook pipeline, config locations, failure modes when a commit is blocked, first moves |
-| `version` | Print the bare version token; `-o json` prints the four-key build metadata object |
 
 ## Configuration
 
@@ -169,17 +145,45 @@ hooks:
 - `.git/hooks/post-merge`: generated hook script (calls `suspenders hook run post-merge`)
 - `.git/hooks/<event>.backup`: backup of pre-existing foreign hooks
 
+## Build / install / test
+
+```bash
+make build              # build to ./suspenders
+make install             # install to ~/code/bin
+make test                # run unit tests
+make test-integration    # run Docker-based integration tests
+make lint                # run golangci-lint
+make fmt                 # format source with golines & gofumpt
+```
+
+Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/thismoon/buildinfo` package by `buildinfo.mk` (short HEAD commit, full commit, the newest `suspenders/v*` tag, and the build time), read by `suspenders version` and printed at the top of `suspenders doctor`.
+
+## Commands
+
+| Command | What it does |
+|---------|---------------|
+| `scan [path]` | Scan for secrets and blocked names. `--staged` (index only), `--fail-on-findings` |
+| `hook install\|uninstall\|update\|status [path]` | Manage pre-commit/post-merge hooks. `--all` for every discovered repo |
+| `hook run <event>` | Run the hook pipeline for one event directly (what generated hooks call) |
+| `history scan` | Walk full git history for findings. `--branch`, `--fail-on-findings` |
+| `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
+| `doctor [path]` | Explain the guard for a repo: the installed build, config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
+| `config` | Print the config file location and the settings in effect; `--help` carries the annotated reference of every setting |
+| `docs` | Print the embedded operating doc: hook pipeline, config locations, failure modes when a commit is blocked, first moves |
+| `version` | Print the bare version token; `-o json` prints the four-key build metadata object |
+
 ## Gotchas
 
 - **Runtime debugging lives in `operating.md`** (embedded in the binary,
   printed by `suspenders docs`): the hook pipeline, blocked-commit failure
   modes, the overrides that exist, and version-skew checks. Keep those facts
   there, not here.
-- **`suspenders version` prints a bare token now.** It used to print `suspenders <sha>`, two tokens, which broke every probe that reads the line as a version. Plain output is the version and nothing else; `-o json` carries the identifying detail (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown). Anything parsing the old two-token line needs updating.
+- **Version probe convention.** `suspenders version -o json` returns the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`. Plain `suspenders version` stays a bare token — status parses it as one; it used to print `suspenders <sha>` (two tokens), which broke that convention, so anything still parsing the old two-token line needs updating.
 - **Keep the fixture-bearing paths in this component real.** The monorepo root `.suspenders.yaml` suppresses scan findings under `tools/suspenders/` (`*_test.go`, `rules.go`, `tests/integration/**`, `README.md`). These are secret-shaped fixtures by design; don't replace them with dummy values, or the tests stop exercising real detection.
 
 ## See also
 
+- Recipe: `recipes/suspenders/recipe.toml` — public layer only (binary build/install); the config overlay and hook install/uninstall wiring stay in the consuming repo's companion recipe (docs/adr/0006).
 - `README.md`: user-facing reference; install, usage, full config schema, detection rule catalog.
 - `CONTEXT.md`: domain vocabulary (allowlist vs. safe references vs. blocked name; ignore vs. rule exclusion vs. rule ignore).
 - `docs/working-on-it.md`: hands-on guide; build loop, add/tune a rule, debug a false positive/negative.

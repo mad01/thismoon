@@ -15,6 +15,34 @@ page you read at `present.this`. Services are launchd agents, notifications
 are native, binaries are codesigned. No cloud, no accounts: your code,
 notes, and dashboards stay on your disk.
 
+One of the things I use daily is the reading support. The shared web chrome
+has a fixation toggle that bolds the first half of every word to pull your
+eye along the line, and present and speak can read a page aloud section by
+section at a speed you pick. For a long briefing that combination is easier
+on the eyes and the attention, and it genuinely helps if you read with
+dyslexia. speak extends it to files: hand it a markdown document and it reads
+the whole thing aloud, so you can take in a long doc by ear.
+
+This is a personal project in the plainest sense: each tool grew out of a
+problem I hit building my own things — an agent that pushed straight to
+master, internal names that nearly reached a public commit, sessions
+re-deriving what a previous session had already worked out. I experiment
+here first, run everything daily on my own machines, and plan to keep
+building and sharing in the open. The hope is that some of these tools earn
+a place in someone else's setup too; the State column below is the honest
+record of what has stuck on mine.
+
+> [!NOTE]
+> I run this as one system: [ralph](https://github.com/mad01/ralph) installs
+> and updates everything, and the core set (ralph, t-man, d-man, csl, belt,
+> suspenders, humanizer, worklog, events, present, toss-bin) is what I use
+> daily, wired together. Every tool works standalone, but some run degraded
+> that way: belt does nothing until its hooks are wired, events is only as
+> useful as what reports into it, and the cross-tool loops (search hints,
+> guard audit trails, memory injection) exist only in the full setup. The
+> remaining services are easier to leave out. If you take just one thing,
+> csl is the best standalone pick.
+
 Start with one tool:
 
 ```sh
@@ -23,9 +51,6 @@ brew install mad01/tap/csl    # code search over your local checkouts
 
 or install the whole fleet with [ralph](https://github.com/mad01/ralph)
 (see [Install](#install)).
-
-The repo also carries the shared web UI package (`webkit/`) and the ralph
-recipes that install the fleet.
 
 ## Component states
 
@@ -67,8 +92,10 @@ CLI tools under `tools/`, installed to your local bin.
 
 | Tool | What it does | Interfaces | State |
 |------|--------------|------------|-------|
-| [belt](tools/belt/README.md) | Claude Code guard hooks (blocks push-to-main, internal-name writes) | CLI | evaluating |
+| [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | evaluating |
+| [clipboard](tools/clipboard/README.md) | macOS clipboard bridge over pbcopy/pbpaste | CLI · MCP | evaluating |
 | [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling | CLI · MCP | proven |
+| [opener](tools/opener/README.md) | macOS open bridge: URLs, files, apps, Finder reveal | CLI · MCP | evaluating |
 | [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
 | [t-man](tools/t-man/README.md) | Declarative launchd agent/daemon manager | CLI | proven |
 | [toss-bin](tools/toss-bin/README.md) | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
@@ -78,6 +105,28 @@ The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers and your agent gets the code search, the audit log, and the
 work-state checkpoints you already use, reading the same files you do rather
 than a copy of them.
+
+## Skills
+
+Alongside the binaries, `skills/` ships five agent skills — instructions
+Claude Code and Codex load on demand. Invoke one by name (`/golang-style`)
+or let the agent pick it up when a task matches its description. Each
+skill's ralph recipe symlinks it into `~/.claude/skills` and
+`~/.agents/skills`, so a fleet machine has them in every session; without
+ralph, symlink the skill directory there yourself.
+
+| Skill | Use it when | Backed by |
+|-------|-------------|-----------|
+| [golang-style](skills/golang-style/SKILL.md) | writing or reviewing Go: naming, package layout, error handling, the HTTP/CLI/store patterns this codebase uses | nothing — guidance only |
+| [handoff](skills/handoff/SKILL.md) | a session is ending mid-task and the next one must continue from a cold start | nothing — guidance only |
+| [humanizer](skills/humanizer/SKILL.md) | prose is headed for docs, PR descriptions, or commit bodies and should not read as AI-written | the humanizer MCP |
+| [present](skills/present/SKILL.md) | a work summary or research result deserves a scrollable briefing page with graphs and charts | the present service |
+| [worklog](skills/worklog/SKILL.md) | a long task spans sessions and repos and needs to be resumable by ticket or topic | the worklog MCP |
+
+The skill is the workflow; the MCP server or service behind it is its hands.
+A skill loads fine without its backing component, but its tool-backed steps
+have nothing to call — registration is machine-private wiring (see
+[docs/HOW-IT-FITS-TOGETHER.md](docs/HOW-IT-FITS-TOGETHER.md)).
 
 ## How it fits together
 
@@ -113,6 +162,12 @@ install steps. Anything machine-private lives in your own config repo as small
 companion recipes that layer on top: which `.this` names exist, MCP
 registration, secrets, config overlays (see `docs/adr/0006`). A change to a service ships by merging to main; the next
 `ralph up` on each machine rebuilds and restarts it.
+
+The longer version of this story — what the fleet adds over standalone
+tools, the ralph vocabulary, and the rollout order — is
+[docs/HOW-IT-FITS-TOGETHER.md](docs/HOW-IT-FITS-TOGETHER.md), and
+[`examples/dotfiles/`](examples/dotfiles/) is a working private config repo
+to start from, including an example global `CLAUDE.md`.
 
 ## Install
 
@@ -181,9 +236,14 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `services/` | Local web services, one directory per service |
 | `tools/` | CLI tools |
 | `webkit/` | Shared Go web UI package, compiled in, no separate versioning |
+| `kit/` | Shared Go packages for cross-tool concerns |
+| `buildinfo/` | Shared build-metadata package behind every `/version` |
 | `recipes/` | ralph recipes, consumed remotely via `[[recipe_sources]]` |
+| `skills/` | Agent skills (Claude Code + Codex), symlinked in by their recipes |
+| `examples/dotfiles/` | Worked private config repo: overlays + example CLAUDE.md |
 | `docs/adr/` | Architecture decision records |
 | `docs/GETTING-STARTED.md` | Install guide: one tool vs the fleet |
+| `docs/HOW-IT-FITS-TOGETHER.md` | The fleet pitch, ralph vocabulary, rollout order |
 | `docs/RELEASING.md` | Release process |
 
 Everything is one Go module: `github.com/mad01/thismoon`. Each component

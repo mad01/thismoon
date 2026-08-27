@@ -1,0 +1,39 @@
+{
+  "__comment": "The hooks block that registers belt in ~/.claude/settings.json. Merge the 'hooks' key into your settings (keep your existing entries); tools/belt/docs/hooks.md in the thismoon repo explains every entry. The external-text matcher below is an example - list the MCP tools on YOUR machine that publish text other people read (issue comments, PR reviews, chat messages).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hook bash" }]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hook write" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__csl__csl_(search|semantic_search|hybrid_search)$",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint search" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint bash" }]
+      },
+      {
+        "matcher": "^mcp__(github|linear)__.*|^mcp__slack__slack_send_.*",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint external-text" }]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint session-start" }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint prompt" }]
+      }
+    ]
+  }
+}
