@@ -30,6 +30,10 @@ The house rule: thread `context.Context` where it crosses a real boundary (a pro
 
 When you do take a context, it is the **first** parameter, named `ctx`, never stored in a struct field. Only call `context.Background()` at an entry point.
 
+## Parse at the boundary
+
+CLI flags, HTTP bodies, config files, environment variables, and persisted data are untrusted input. Decode and validate them at the boundary, then pass typed values to inner packages. Do not spread the same validation across handlers, stores, and business logic. A domain invariant should have one owner and one error shape.
+
 ## Concurrency only where it pays; single-writer over scattered locks
 
 These are mostly sequential CLI/HTTP tools. Add goroutines only where they earn it, and prefer one owner of mutable state over locks sprinkled everywhere.
@@ -37,6 +41,7 @@ These are mostly sequential CLI/HTTP tools. Add goroutines only where they earn 
 - **Single-writer:** `reminder serve` is the *only* writer of the JSON store; the MCP and CLI are HTTP clients to it, so there are no file-lock races. Design for one owner before reaching for mutexes.
 - **Goroutines where justified:** `d-man` probes backends concurrently with a `sync.WaitGroup` and an indexed result slice (no shared-write race), behind a `sync.Mutex`-guarded TTL cache. Its `serve` runs a watch loop plus signal handling.
 - **Cancellation:** loop on `select { case <-ctx.Done(): return; case <-t.C: ... }` (the `reminder` ticker), and shut an HTTP server down on `signal.NotifyContext` (the `d-man` daemon — see `http.md`).
+- **Lifetimes:** when spawning a goroutine, make its owner and exit condition clear at the call site. Do not start background work that has no cancellation, join, or process-lifetime contract.
 - A swappable handler guards its pointer with a `sync.RWMutex` (`d-man`'s `reloadableHandler`) so config reloads don't restart the listener.
 
 Run tests with `-race` when you do add concurrency (the internal tools don't yet pass `-race` by default — adding it is a worthwhile uplift).

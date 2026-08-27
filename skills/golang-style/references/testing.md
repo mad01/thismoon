@@ -63,7 +63,9 @@ Test handlers with `net/http/httptest` (a recorder, or a server for an end-to-en
 
 ## What to test
 
-- Cover new code with unit tests; the larger tools (`present`, `humanizer`, `d-man`, `reminder`) carry real suites.
+- Derive expected behavior from the task's contract or a reproduced bug, not from the implementation under test. AI-generated tests are not an independent oracle when they merely restate AI-generated code.
+- Add a regression test for a bug fix when the failure can be reproduced deterministically.
+- Scale coverage to risk. Prioritize public behavior, boundary parsing, error mapping, persistence, and concurrency over trivial accessors.
 - Test behavior through the public surface, not private internals, so the tests survive refactors.
 - Tests live beside source as `*_test.go`.
 
