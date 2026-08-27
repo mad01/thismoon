@@ -1,0 +1,30 @@
+# Example overlay: the shared agent-memory store.
+#
+# Agent memory is a plain private git repo of durable facts — one fact per
+# file, indexed by MEMORY.md — cloned to ~/.config/agent-memory. belt's
+# agent-memory hint injects the index into every Claude Code session at
+# SessionStart (thismoon tools/belt/docs/hooks.md), so a fact recorded once
+# arrives as context on every machine that has the clone. The store is
+# agent-agnostic: anything that can read a directory of markdown files can
+# use it.
+#
+# Setup is two steps, then this recipe keeps the clone converged:
+#   1. Create an empty private repo (e.g. github.com/you/agent-memory).
+#   2. Seed it from MEMORY.md.example and draft-only-messaging.md.example
+#      beside this file (drop the .example suffix).
+# Agents write new facts in the clone and commit + push there; with
+# update = true, every `ralph up` pulls other machines' facts down.
+#
+# One store is all most setups need. A second, differently-scoped store is
+# this item again with a different url and target — belt also injects
+# ~/.config/agent-memory-work when that directory exists, and stays silent
+# on machines that lack it.
+[recipe]
+name = "agent-memory"
+description = "Clone the shared agent-memory store that belt's session-start hint injects"
+wave = 1
+
+[repos.agent_memory]
+url = "git@github.com:you/agent-memory.git"
+target = "~/.config/agent-memory"
+update = true

@@ -1,7 +1,7 @@
 // fuzzy.ts — pure subsequence matcher for the ⌘K site picker.
 // fuzzyMatch() scores a target against a query; rankSites() orders a site list
 // best-first and returns the matched character indices so the UI can highlight
-// them. No DOM here — kept pure so it's unit-testable (cf. bionic.ts, size.ts).
+// them. No DOM here — kept pure so it's unit-testable (cf. fixation.ts, size.ts).
 
 export interface Site {
   name: string;

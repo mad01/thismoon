@@ -64,8 +64,8 @@ happened.
 
 ` + configReference + `
 
-Pair it with doctor: doctor shows the state worklog resolved, config shows
-which file and key to change.`,
+Pair it with docs: docs prints the operating doc (runtime behavior, failure
+modes, first moves), config shows which file and key to change.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()

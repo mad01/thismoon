@@ -92,13 +92,15 @@ active findings, and an acknowledged section. From here you can:
 
 Ask in plain language: "scan for vulnerable dependencies", "what's flagged",
 "rescan the dotfiles repo", "resolve that go-jose advisory". Claude calls the
-`deps_*` MCP tools, registered in the consuming repo's `recipes/claude-mcp/servers.json`:
+`deps_*` MCP tools:
 
 - `deps_scan`: discover all dependencies, no advisory check
 - `deps_check`: discover and check against OSV; returns the flagged packages
 - `deps_list_flagged`: re-read the last findings without re-scanning
 - `deps_scan_repo`: rescan one repo (by path or basename) and merge the result
 - `deps_resolve`: acknowledge advisories by their key
+
+On a standalone install, register the server once: `claude mcp add --scope user deps -- deps mcp`. On a ralph-managed machine, skip the manual command — registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `deps serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for deps yet, so start it directly (`deps serve`) or under a process supervisor. Confirm with `claude mcp list`, then `deps doctor` if a tool call fails.
 
 ## Configuration
 

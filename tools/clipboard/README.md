@@ -29,9 +29,23 @@ Text moves verbatim in both directions: no trimming, no newline appended.
 tools so an agent can use the clipboard without shelling out:
 `clipboard_copy(text)` and `clipboard_paste()`.
 
-Registration is machine-private: the consuming repo's companion recipe
-registers `clipboard mcp` with the MCP host. See [`CLAUDE.md`](CLAUDE.md)
+On a standalone install, register it once:
+
+```sh
+claude mcp add --scope user clipboard -- clipboard mcp
+```
+
+On a ralph-managed machine, skip the manual command — registration is
+machine-private wiring that ships from the consuming repo's companion
+recipe (`docs/adr/0006` at the repo root). See [`CLAUDE.md`](CLAUDE.md)
 for the two-layer build/install vs. wiring split.
+
+No backing service has to be running: the tools shell out to
+`pbcopy`/`pbpaste` in-process, macOS only. Confirm the server is registered
+with `claude mcp list`, which should list `clipboard` among the connected
+servers. There is no `clipboard doctor` — `clipboard docs` prints the
+embedded operating doc (pasteboard failure modes, the empty-paste case)
+instead.
 
 ## Develop
 

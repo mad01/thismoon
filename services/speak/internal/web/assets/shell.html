@@ -70,7 +70,12 @@ wk-callout { margin-top: 1rem; }
 </style>
 </head>
 <body>
-<wk-header brand="speak·aloud" controls="cmdk,font,bionic,size,speed,reload,theme" bionic-targets="[data-bionic], .doc-section p, .doc-section li"></wk-header>
+<wk-header brand="speak·aloud" controls="cmdk,font,fixation,size,speed,reload,theme,help" fixation-targets="[data-fixation], .doc-section p, .doc-section li"></wk-header>
+<template data-wk-help>
+  <div class="wk-help-section-title">This tool</div>
+  <div class="wk-help-row"><div class="wk-help-term">Read a document</div>
+  <div class="wk-help-desc">Choose a markdown file and speak reads it aloud, section by section, over your speakers — a hands-free way to get through a long document by ear.</div></div>
+</template>
 <main class="wrap"><div id="app"></div></main>
 <script src="/webkit/webkit.js"></script>
 <script src="/app.js"></script>

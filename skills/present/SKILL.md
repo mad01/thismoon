@@ -1,18 +1,18 @@
 ---
 name: present
-description: Generate a scrollable briefing page with bionic reading, Cytoscape.js graphs, and inline metric charts for digesting work summaries or research
+description: Generate a scrollable briefing page with fixation reading, Cytoscape.js graphs, and inline metric charts for digesting work summaries or research
 ---
 
 # Present — Scrollable Briefing Pages
 
-Generate scrollable HTML briefing pages served live over localhost by the **present MCP**. You pass structured JSON; the server renders it into the full page with warm-neutral theme, bionic-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
+Generate scrollable HTML briefing pages served live over localhost by the **present MCP**. You pass structured JSON; the server renders it into the full page with warm-neutral theme, fixation-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
 
 ## Trigger
 When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes").
 
 ## How it works
 
-- **You pass structured JSON** — a Doc object with sections and typed blocks. The server renders it to HTML with the correct CSS classes, `data-bionic` attributes, and structure. You never write HTML.
+- **You pass structured JSON** — a Doc object with sections and typed blocks. The server renders it to HTML with the correct CSS classes, `data-fixation` attributes, and structure. You never write HTML.
 - **The MCP stores and serves it.** `present_create` returns an `id` and a `url`. Keep the id for later edits.
 - **Updates auto-reload.** `present_update` bumps the version; open browser tabs refresh. Call `present_open` **once**, never again for the same page.
 
@@ -135,7 +135,7 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `summary` | string | Executive summary paragraph (rendered with bionic reading) |
+| `summary` | string | Executive summary paragraph (rendered with fixation reading) |
 | `meta` | string | Meta line below title (date, category, stats) |
 | `chips` | array | Chip tags below summary |
 | `sections` | array | Content sections with headings, optional IDs, and blocks |
@@ -158,7 +158,7 @@ Chip styles: `stat` (gray), `a` (warm), `b` (green), `c` (blue), `outline`.
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `p` | `text` | Paragraph with bionic reading |
+| `p` | `text` | Paragraph with fixation reading |
 | `h3` | `text` | Subsection heading |
 | `callout` | `text`, `sev?` | Highlighted callout. Severity: `info` (blue border), `warn` (amber border), or omit for default |
 | `table` | `cols`, `rows` | Data table. Cells support inline markdown |
@@ -182,7 +182,7 @@ Chip styles: `stat` (gray), `a` (warm), `b` (green), `c` (blue), `outline`.
 ### Notes
 
 - **TOC is auto-generated** from section headings when there are 2+ sections. Do not write TOC markup.
-- **`data-bionic`** is applied automatically to paragraphs, summaries, callouts, kv-values, and panel titles.
+- **`data-fixation`** is applied automatically to paragraphs, summaries, callouts, kv-values, and panel titles.
 - **Unknown block types** produce an HTML comment error — they don't break the page.
 - **Use `code` blocks for multi-line code**, not `p` with backticks (inline `code` is for short identifiers) and not `html` with a hand-written `<pre>`.
 

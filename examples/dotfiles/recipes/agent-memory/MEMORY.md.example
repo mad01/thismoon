@@ -1,0 +1,8 @@
+# Memory index
+
+One line per fact, linking its file. belt injects the bullet lines below at
+session start (capped at 30 — prune before adding past that); an agent opens
+the linked file only when the one-liner isn't enough. Keep facts out of this
+file: the index is a table of contents, not the store.
+
+- [Draft-only messaging](draft-only-messaging.md) — never send Slack/email directly; always create drafts

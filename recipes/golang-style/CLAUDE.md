@@ -13,7 +13,7 @@ ralph merges the recipe with the identity `thismoon/golang-style`.
 - **`dotfiles.golang_style_skill`** — symlinks `skills/golang-style/` into
   `~/.claude/skills/golang-style`.
 - **`dotfiles.golang_style_codex_skill`** — symlinks the same dir into
-  `~/.agents/skills/golang-style` so Codex and Pi discover it too.
+  `~/.agents/skills/golang-style` so Codex and other agents discover it too.
 
 No profile filter — the skill lands on every machine, same as when it shipped
 from the consuming repo's vendored skill set.

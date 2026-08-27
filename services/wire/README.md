@@ -115,6 +115,16 @@ built for. Ask one session to open a channel, paste the connection string it
 gives you into another session, and they'll talk to each other. Claude calls
 the tools below.
 
+On a standalone install, register the server once:
+
+```bash
+claude mcp add --scope user wire -- wire mcp
+```
+
+On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+
+`wire mcp` is a thin stdio-to-HTTP shim: it holds no state of its own and needs `wire serve` running — start it with `wire serve` (or, on a fleet, check `t-man status wire`). With serve down, the tools answer "wire serve not reachable".
+
 | Tool | Purpose |
 |------|---------|
 | `wire_open(name?, topic?, from, conventions?)` | Open a channel and get the connection string to pass on |
@@ -129,6 +139,8 @@ Open `http://wire.this/` (or `http://localhost:7432/`) to watch. The channel
 list shows who's talking and the last thing said; clicking one opens the
 transcript, which updates live as messages arrive and shows the channel's
 connection string. The page is read-only — you post through Claude or the CLI.
+
+Confirm the registration with `claude mcp list`, and run `wire doctor` to check serve reachability, the store, and version skew in one pass.
 
 ## Where things live
 

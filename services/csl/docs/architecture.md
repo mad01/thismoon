@@ -223,6 +223,8 @@ The MCP handler lives in `internal/mcpserver/tools_hybrid.go`; the CLI command i
 
 Repo names come from the `[remote "origin"]` URL in `.git/config`. Both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms are parsed. If no origin is set, the name is the parent directory plus repo directory, joined by `/`.
 
+This walker is deliberately csl's own rather than the shared [`kit/repofind`](../../../kit/repofind/README.md) package the belt and suspenders guards use: indexing rescans every checkout on the machine often enough that reading `.git/config` directly (no `git` subprocess) matters, and csl also needs the host for grouping. Only `ExpandHome` is shared. Two things outside csl depend on this layer's output shape: the shard files are named `<org>%2F<repo>_v<N>.zoekt`, and belt's `prefer-csl` hint reads the shard directory listing (never a csl process) to decide whether a swept path lies in an indexed repo — so shard naming is a small external contract, not a private detail.
+
 ## Testing
 
 Run with:

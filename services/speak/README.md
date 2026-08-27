@@ -107,6 +107,14 @@ need `speak serve` running.
 speak mcp --tts-url http://127.0.0.1:8765   # stdio MCP server for Claude Code
 ```
 
+On a standalone install, register it once:
+
+```bash
+claude mcp add --scope user speak -- speak mcp
+```
+
+On a ralph-managed machine, skip the manual command above — registering the server with a client is machine-private wiring that ships from the consuming repo's companion recipe (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+
 Only one server-side session plays at a time; playback is serialised across
 processes by an `flock` on `~/.local/share/speak/playback.lock`, so a second
 caller gets a `BUSY | …` reply instead of talking over the first.
@@ -121,8 +129,7 @@ caller gets a `BUSY | …` reply instead of talking over the first.
 | `speak_voices` | List the Kokoro voices. |
 | `speak_status` | Report engine reachability and playback state (session, playing/paused/stopped/idle, position, lock holder). |
 
-Registering the server with a client is machine-private wiring — it lives in the
-consuming repo, not here (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+Confirm the registration with `claude mcp list`, and run `speak doctor` to check the TTS engine, the store, the web surface, and version skew in one pass.
 
 ## Configuration
 

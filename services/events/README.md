@@ -85,13 +85,15 @@ API only; deletion stays human-triggered.
 
 Ask in plain language: "what's happened with deps today", "any errors in the
 last hour", "log that the release finished". Claude calls the `events_*` MCP
-tools, registered in the consuming repo's `recipes/claude-mcp/servers.json`:
+tools:
 
 - `events_query`: query the log, newest-first; filter by source, level, text, or since; the primary tool for debugging what happened
 - `events_sources`: list sources with their event counts
 - `events_emit`: record a single event (`source` and `title` required)
 
 Purge has no MCP tool; deletion stays CLI + API only, human-triggered.
+
+On a standalone install, register the server once: `claude mcp add --scope user events -- events mcp`. On a ralph-managed machine, skip the manual command — registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `events serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for events yet, so start it directly (`events serve`) or under a process supervisor. Confirm with `claude mcp list`, then `events doctor` if a tool call fails.
 
 ## Where things live
 

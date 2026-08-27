@@ -134,7 +134,20 @@ every recipe in it, merged under the identity `thismoon/<recipe>`. With
 applying; pin `ref` to a tag or commit to stay put. The clone runs over SSH,
 so this works while the repo is private.
 
-### 4. First `ralph up`
+### 4. Declare the machine's profiles
+
+```sh
+ralph profile set personal    # or: work, or both
+```
+
+This writes the git-ignored `~/.config/ralph/config.local.toml` beside your
+config, the per-machine answer to "what kind of machine is this".
+Profile-gated recipes key off it, and so does belt's `git-push-main` guard,
+which reads the same file at runtime. Do this before the first `ralph up`: a
+machine with no profiles silently skips every profile-gated recipe, and only
+`ralph doctor` will mention it.
+
+### 5. First `ralph up`
 
 ```sh
 ralph up            # add --dry-run to preview
@@ -155,7 +168,7 @@ Later runs are incremental: a component rebuilds when its source changed,
 and a service restarts only when the installed binary's bytes actually
 differ.
 
-### 5. Register the d-man daemon (the one sudo)
+### 6. Register the d-man daemon (the one sudo)
 
 [d-man](../services/d-man/README.md) is the `.this` front door: it writes a
 managed block into `/etc/hosts` and reverse-proxies `127.0.0.1:80` by `Host`
@@ -198,7 +211,7 @@ rebuild by `ralph up` makes it exit and launchd relaunch the new build. The
 full walkthrough, including the optional block-page CA, is in
 [recipes/d-man/SETUP.md](../recipes/d-man/SETUP.md).
 
-### 6. Verify
+### 7. Verify
 
 ```sh
 ralph doctor       # config, symlinks, missing tools
@@ -261,6 +274,11 @@ worklog) sit in `~/code/bin`.
   assertions about your code; belt's hints surface them in Claude Code
   sessions when you work in the matching repo.
 
+The longer version of this argument — what the connections between the
+tools add up to, the ralph vocabulary, and the full rollout order including
+the private overlay layer — is
+[HOW-IT-FITS-TOGETHER.md](HOW-IT-FITS-TOGETHER.md).
+
 ## Wire up your agent
 
 The MCP column in the [README](../README.md) component tables marks which
@@ -280,6 +298,21 @@ layered over these ([docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.m
 The same split covers belt's Claude Code hooks and per-machine config files
 like csl's index list: the public recipe installs the binary, your private
 overlay wires it up.
+
+Every piece of that wiring has a worked example in
+[`examples/dotfiles/`](../examples/dotfiles/):
+[`recipes/mcp-registration/`](../examples/dotfiles/recipes/mcp-registration/)
+for the MCP server set,
+[`recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/) for
+the settings block that turns belt's guards and hints on (explained hook by
+hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)), and
+[`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) for the
+instruction file that teaches the agent when to reach for which tool. The
+five skills under `skills/` need no registration — their recipes symlink
+them into `~/.claude/skills`, and they load when invoked by name
+(`/golang-style`, `/handoff`, `/humanizer`, `/present`, `/worklog`) or when
+a task matches; the MCP-backed ones assume their server from this section is
+registered.
 
 ## Updating
 

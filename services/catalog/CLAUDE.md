@@ -226,7 +226,7 @@ catalog version [-o json]
 
 ## Shared UI: webkit
 
-The chrome (header, theme toggle, font/size/bionic controls) comes from
+The chrome (header, theme toggle, font/size/fixation controls) comes from
 **`github.com/mad01/thismoon/webkit`**, the in-module package at the repo root
 (`webkit/`) that embeds compiled TypeScript/CSS web components. catalog
 compiles against the webkit committed beside it; there is no version pin. Do
@@ -262,7 +262,7 @@ load webkit assets, and use `<wk-header>`:
 
 `[data-extra]` children are rendered in the controls area as-is; `app.js` wires
 their click handlers by `id`. `webkit.js` injects the full control set
-(font · bionic · size ± · reload · theme). Don't add those controls manually.
+(font · fixation · size ± · reload · theme). Don't add those controls manually.
 
 ### Per-repo changes
 
@@ -308,6 +308,12 @@ webkit-mounted tool implements.
   there needs a manual edit instead of clobbering the first.
 - **Codesign for the binary.** `make install` strips quarantine xattrs and
   re-signs with the "mad01 Local Signing" identity (falls back to adhoc).
+- **Version probe.** `GET /version` and `catalog version -o json` both return
+  the shared four-key build metadata object (`version`, `commit`, `tag`,
+  `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph` and
+  `status` use to probe the build a sibling tool is running. Plain
+  `catalog version` stays a bare token.
 
 ## See also
 
@@ -316,3 +322,5 @@ webkit-mounted tool implements.
   debugging failures, and working on catalog by hand
 - Live registry: `dotfiles/recipes/catalog/registry.yaml`
 - Shared UI package: `webkit/` at the repo root
+- Route: the consuming repo's `recipes/d-man/routes.toml` overlay
+  (`catalog` → `catalog.this`; docs/adr/0006), machine-private wiring

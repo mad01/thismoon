@@ -28,10 +28,9 @@ internal/service/            Definition struct, Hash(), Manager interface
 internal/platform/launchd/   plist generation, launchctl wrapper, the launchd Manager
 internal/procstat/           PID → RSS/CPU%/uptime via one ps call (launchd-agnostic)
 internal/reconcile/          read-compare-apply reconciler + state comparison
+internal/notify/             EmitEvent: best-effort POST to events.this from the reconciler (fire-and-forget goroutine)
+Makefile                     part of module github.com/mad01/thismoon (no own go.mod)
 ```
-
-Package: `github.com/mad01/thismoon/tools/t-man`, part of the thismoon
-monorepo module; it has no go.mod of its own.
 
 ## How it works
 
@@ -143,6 +142,7 @@ and `KeepAlive` are always set to true on the generated plist.
 
 ## See also
 
+- Recipe: `recipes/t-man/recipe.toml` — package build/install only (wave 0, no service block: t-man is the tool other recipes register services *with*, not a service itself). t-man is a platform foundation (docs/adr/0006): every service recipe in this repo hard-depends on `packages.t_man`.
 - `README.md`: user-facing reference and quick start.
 - `docs/architecture.md`: how t-man wraps launchd; the reconcile loop.
 - `docs/agents-and-daemons.md`: agent vs daemon, the one-time daemon setup,

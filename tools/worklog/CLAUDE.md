@@ -18,6 +18,7 @@ worklog/
     store/           the on-disk tree: items, per-repo notes, git, repo detection
     mcpserver/       MCP tool wiring (server.go, tools.go)
     config/          optional ~/.config/worklog/config.yaml (ticket-firewall strings)
+    scan/            reads Claude session transcripts, emits per-session JSON digests (see `scan` below)
   Makefile           package path github.com/mad01/thismoon/tools/worklog (monorepo module, no own go.mod)
 ```
 
@@ -111,6 +112,7 @@ worklog search <query>
 worklog status <key> active|paused|done
 worklog new <key> [--ticket ID]
 worklog path [key]
+worklog sync       # fast-forward pull then push against the configured remote
 worklog scan --since 14d   # digest ~/.claude/projects/*/*.jsonl as JSON; see How it works
 worklog config     # config file location + the settings in effect; --help carries the annotated reference
 worklog docs       # print the embedded operating doc (runtime debugging for agents and humans)

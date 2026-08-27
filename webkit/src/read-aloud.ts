@@ -133,7 +133,7 @@ function wrapSentences(nodes: Text[], sentences: Sentence[]): Map<number, HTMLEl
 
 /** Replaces highlight spans with plain text and merges adjacent text nodes.
  * Surgical (no innerHTML rewrite) so sibling element identity — which the
- * bionic toggle depends on — is preserved. */
+ * fixation toggle depends on — is preserved. */
 function unwrapSentences(section: Element, spans: Map<number, HTMLElement[]>): void {
   for (const list of spans.values()) {
     for (const span of list) {
@@ -161,7 +161,7 @@ interface Session {
 
 let session: Session | null = null;
 
-/** Ends any active playback session. Exported for the bionic toggle: bionic
+/** Ends any active playback session. Exported for the fixation toggle: fixation
  * rewrites the target subtrees via innerHTML, which detaches the highlight
  * spans a live session holds — ending the session first keeps the DOM clean. */
 export function stopReadAloud(): void {

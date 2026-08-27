@@ -9,7 +9,7 @@ func fixtureCatalog() *Catalog {
 	return NewCatalog([]Entity{
 		{Kind: KindSystem, Metadata: Metadata{Name: "dotfiles", Description: "tooling monorepo", Tags: []string{"monorepo"}}, Spec: Spec{Owner: "mad01"}},
 		{Kind: KindComponent, Metadata: Metadata{Name: "present", Tags: []string{"go", "cli"}}, Spec: Spec{Owner: "mad01", System: "dotfiles", Type: "cli"}},
-		{Kind: KindComponent, Metadata: Metadata{Name: "bionic"}, Spec: Spec{Owner: "mad01", System: "dotfiles", Type: "cli"}},
+		{Kind: KindComponent, Metadata: Metadata{Name: "abacus"}, Spec: Spec{Owner: "mad01", System: "dotfiles", Type: "cli"}},
 		{Kind: KindSystem, Metadata: Metadata{Name: "code-search-local"}, Spec: Spec{Owner: "alice"}},
 		{Kind: KindComponent, Metadata: Metadata{Name: "csl"}, Spec: Spec{Owner: "alice", System: "code-search-local"}},
 	})
@@ -28,14 +28,14 @@ func TestCatalog_KindAccessors(t *testing.T) {
 	if got := names(c.Systems()); !reflect.DeepEqual(got, []string{"code-search-local", "dotfiles"}) {
 		t.Errorf("Systems() = %v", got)
 	}
-	if got := names(c.Components()); !reflect.DeepEqual(got, []string{"bionic", "csl", "present"}) {
+	if got := names(c.Components()); !reflect.DeepEqual(got, []string{"abacus", "csl", "present"}) {
 		t.Errorf("Components() = %v", got)
 	}
 }
 
 func TestCatalog_ComponentsOf(t *testing.T) {
 	c := fixtureCatalog()
-	if got := names(c.ComponentsOf("dotfiles")); !reflect.DeepEqual(got, []string{"bionic", "present"}) {
+	if got := names(c.ComponentsOf("dotfiles")); !reflect.DeepEqual(got, []string{"abacus", "present"}) {
 		t.Errorf("ComponentsOf(dotfiles) = %v", got)
 	}
 	if got := names(c.ComponentsOf("code-search-local")); !reflect.DeepEqual(got, []string{"csl"}) {
@@ -70,14 +70,14 @@ func TestCatalog_Search(t *testing.T) {
 		q    Query
 		want []string
 	}{
-		{"empty matches all", Query{}, []string{"bionic", "code-search-local", "csl", "dotfiles", "present"}},
+		{"empty matches all", Query{}, []string{"abacus", "code-search-local", "csl", "dotfiles", "present"}},
 		{"by owner", Query{Owner: "alice"}, []string{"code-search-local", "csl"}},
-		{"by owner case-insensitive", Query{Owner: "MAD01"}, []string{"bionic", "dotfiles", "present"}},
+		{"by owner case-insensitive", Query{Owner: "MAD01"}, []string{"abacus", "dotfiles", "present"}},
 		{"by name substring", Query{Text: "pres"}, []string{"present"}},
 		{"by tag", Query{Text: "monorepo"}, []string{"dotfiles"}},
 		{"by description", Query{Text: "tooling"}, []string{"dotfiles"}},
 		{"kind filter", Query{Kind: KindSystem}, []string{"code-search-local", "dotfiles"}},
-		{"owner + kind", Query{Owner: "mad01", Kind: KindComponent}, []string{"bionic", "present"}},
+		{"owner + kind", Query{Owner: "mad01", Kind: KindComponent}, []string{"abacus", "present"}},
 		{"no match", Query{Text: "zzz"}, nil},
 	}
 	for _, tt := range tests {

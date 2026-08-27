@@ -3,28 +3,24 @@
 An example `~/.claude/CLAUDE.md` (user-global instructions, applied to every
 project) tuned for someone running the `*.this` platform locally. It wires
 Claude Code to the thismoon MCP servers — csl, worklog, humanizer, events,
-deps, present, reminder, kof, bionic — and sets sensible defaults for commits,
-PRs, code search, and agent discipline.
+deps, present, reminder, kof, wire, speak, clipboard, opener — and sets
+sensible defaults for commits, PRs, code search, and agent discipline.
 
 Copy the parts you want into your own `~/.claude/CLAUDE.md`. Everything here is
 portable: no machine-private hostnames, secrets, or private tracker IDs.
 
-Each MCP server this file references is a component in this repo:
+Every MCP server named here is a thismoon component; each component's README
+covers what it does and how to register it.
 
-| Component | Source | What it backs here |
-|-----------|--------|--------------------|
-| csl | [`services/csl`](../../services/csl) | code search (`csl_*`) |
-| events | [`services/events`](../../services/events) | event log (`events_*`) |
-| deps | [`services/deps`](../../services/deps) | dependency scanning (`deps_*`) |
-| present | [`services/present`](../../services/present) | briefing pages (`present_*`) |
-| reminder | [`services/reminder`](../../services/reminder) | reminders (`reminder_*`) |
-| keeper-of-facts | [`services/keeper-of-facts`](../../services/keeper-of-facts) | assertion store (`kof_*`) |
-| worklog | [`tools/worklog`](../../tools/worklog) | cross-session work state (`worklog_*`) |
-| humanizer | [`tools/humanizer`](../../tools/humanizer) | AI-writing detection (`humanizer_*`) |
-| bionic | [`tools/bionic`](../../tools/bionic) | bionic-reading render (`bionic_*`) |
-
-Skill references like `/golang-pro`, `/simplify`, `/handoff`, and `/plan` are
-your own Claude Code skills — not shipped by this repo.
+Two more pieces this file leans on are not MCP servers: **belt**
+([`tools/belt`](../../tools/belt)) shapes every session from the hook side —
+its guards and hints fire without any instruction here (see the
+`claude-hooks` recipe in this example repo) — and the repo's **skills**
+(`skills/` at the repo root: `/golang-style`, `/handoff`, `/humanizer`,
+`/present`, `/worklog`) load on demand when invoked by name or when a task
+matches their description; their recipes symlink them into
+`~/.claude/skills`. Other skill references you might carry (like
+`/simplify`) are your own.
 
 ---
 
@@ -52,14 +48,13 @@ your own Claude Code skills — not shipped by this repo.
 - When using the `gh` CLI, use the repo's GitHub PR template if one exists
   (check `.github/`).
 
-## Model Selection & Context Efficiency
+## Agent Discipline
 **Keep the main context lean — delegate search-heavy work to subagents and
 receive summaries back.** Subagents protect the main context from large tool
 results (file dumps, search output, MCP responses). Direct tool use in the main
 context is fine for targeted reads and writes — avoid broad searches that dump
 hundreds of lines into context.
 
-**Agent discipline:**
 - **Scale to task complexity.** Single-file or few-line changes: no plan mode,
   no task tracking, no subagents — just do it. Multi-file changes: light task
   tracking. Architectural or cross-repo work: plan mode + agents.
@@ -78,18 +73,27 @@ hundreds of lines into context.
   indexed repos, not bash grep/find; (2) never commit/push or push to main —
   return a diff/summary and let the main agent handle git. Keep it to the rules
   the agent's task actually touches.
+- **Subagents must return findings concisely** — no raw file dumps, no full
+  search blocks. Summaries only, with file paths and key snippets.
 
-## Context Management
-- Run /compact proactively — don't wait until context is full.
-- At 150K tokens: mention that context is getting large.
-- At 250K, 350K, and 450K tokens: explicitly ask whether to compact before
-  continuing.
-- After completing any discrete task (feature shipped, PR merged, review done),
-  split to a new session rather than carrying context forward.
-- Subagents return findings concisely — no raw file dumps, no full search
-  blocks. Summaries only, with file paths and key snippets.
-- After any Agent-heavy phase (5+ agents in one turn), consider compacting
-  before the next phase.
+## Shared Agent Memory — portable across agents
+Cross-agent memory lives at `~/.config/agent-memory/`, a clone of a private
+git repo: one fact per file with frontmatter (`name`, `description`,
+`metadata.type`), plus a one-line index entry in `MEMORY.md`. Commit and push
+in the clone itself; git carries it across machines. belt's `agent-memory`
+hint injects the index into every session at SessionStart, so facts recorded
+once arrive as context everywhere without any instruction prose.
+
+- Write there when asked to remember something durable and agent-agnostic —
+  a preference, correction, or workflow rule that should hold in every coding
+  agent, not just Claude Code.
+- Division of labor: Claude's own auto-memory keeps project-scoped and
+  Claude-specific facts; the shared store holds only facts that should follow
+  you into other agents. A plain "remember this" routes to auto-memory unless
+  it is clearly cross-agent.
+- Setup (one-time): create the private repo and clone it into place — the
+  `agent-memory` recipe in this example repo does the clone and carries the
+  index and fact-file templates.
 
 ## Worklog — resumable cross-session work state
 For long tasks that span multiple sessions and multiple repos (often started
@@ -99,8 +103,8 @@ directory. This is the fix for work that auto-memory loses because it started
 in a tmp dir.
 
 - **Store:** `~/code/worklog/`, one directory per task (`<key>/CONTEXT.md` +
-  lazy `repos/<repo>.md`). Local-only git, no remote — resume on the machine you
-  left. csl indexes it.
+  lazy `repos/<repo>.md`). Git-backed with a private remote: auto-commit and
+  push on every write, `worklog sync` when switching machines. csl indexes it.
 - **Prefer the worklog MCP tools** (`worklog_checkpoint`, `worklog_list`,
   `worklog_search`, `worklog_show`, `worklog_status`); the `worklog` CLI is the
   fallback. When checkpointing via MCP, pass `cwd` so the touched repo is
@@ -123,10 +127,13 @@ one-sentence statements about how a system behaves, each pinned to a hashed
 file line-range. `kof check` flips assertions stale when the pinned code
 changes, so unlike docs or memory they decay detectably.
 
-- **Consult before spelunking:** starting non-trivial work in a repo, run
-  `kof_query` with a `subject` prefix (`repo:<org>/<repo>...`) —
-  `verified`/fresh assertions are pre-derived understanding with evidence;
-  `kof_get` shows the pins.
+- **belt hooks do the prompting:** session start surfaces the cwd repo's
+  assertions (`belt[kof-consult]`), csl searches surface assertions about the
+  code they hit (`belt[kof-assertions]`), and a once-per-session nudge reminds
+  about depositing (`belt[kof-deposit]`). Act on those when they appear. The
+  hooks can't see repos that are neither the cwd nor csl-searched — when
+  working in one, run `kof_query` yourself with a `subject` prefix
+  (`repo:<org>/<repo>...`); `kof_get` shows the pins.
 - **Deposit after deriving:** when a session works out something non-obvious
   that took real effort (behavior, invariant, dead end), store it with
   `kof_assert` — at least one evidence pin (`repo_path`, `file`,
@@ -139,13 +146,41 @@ changes, so unlike docs or memory they decay detectably.
   projects; worklog = resumable task state; kof = evidence-pinned claims
   about code behavior that go stale with the code.
 
+## wire — talking to another session
+wire (a thismoon service, `http://wire.this/`) is a channel two agent
+sessions post to. Opening one returns a connection string that is the whole
+join protocol: hand it to the other session and it works as the `channel`
+argument of every `wire_*` tool.
+
+- **Two triggers:** handing work to another session (it needs to ask you
+  questions, not just read a summary), and having a separate session exercise
+  what you just built — a check from outside the context that produced the
+  bug is worth more than one from inside it.
+- **Waiting is one call, not a loop:** `wire_read(channel, since: <cursor>,
+  wait: 60)` blocks server-side until a message lands. Never poll with
+  `wait: 0`. Keep the returned cursor for the next read.
+- **Sign every message** (`from` is required) and close channels when done,
+  so whoever is blocked on them wakes up instead of waiting out a timeout.
+- **Ask before opening one** — two sessions talking is a workflow the user
+  runs, not something to start unprompted.
+
 ## Language & Tool Preferences
 - Go for CLI tools and infrastructure tooling (install to `~/code/bin`, use
   `go env GOBIN`/`GOPATH`).
 - Python 3 for agents/bots/services — use `pip3` not `pip`.
-- Use /golang-pro for Go code review and implementation.
-- Use /simplify for code quality passes.
-- Use /humanizer for documentation and external-facing text.
+- Use /golang-style (shipped by thismoon) when writing new Go or reviewing a
+  Go diff for structure and idioms; skip it for mechanical few-line edits.
+- Use /humanizer (shipped by thismoon) for documentation and external-facing
+  text.
+- Use /worklog (shipped by thismoon) to checkpoint and resume long
+  cross-session tasks, and /present to publish a briefing page of a work
+  summary or research result.
+- Use an available MCP server instead of a shell CLI or raw HTTP request when
+  it supports the requested operation.
+- Use WebSearch or WebFetch for current version and release lookups, and
+  prefer official package registries or vendor sources.
+- If an existing shell workflow only needs a small JSON transformation, use
+  `jq` instead of an inline Python program.
 
 ## Local Code Search — Global Default (csl)
 **Use `csl_*` MCP tools for repo discovery AND code search** — repo lookup,
@@ -205,11 +240,26 @@ Available `csl_*` MCP tools:
 - **Peek mode:** exploring, orienting, browsing — just use
   `csl_search`/`csl_read`/`csl_repo_info`. No pull needed. State results as
   "based on local checkout, may be behind upstream."
-- **Conclusion mode:** before acting on repo state (code changes, conclusions,
-  PRs, plans), run `csl_repo_info` first. If dirty: STOP and ask — don't assume
-  what to preserve. If on a non-default branch: ask before switching. If stale:
-  ask before pulling. If clean and current: proceed. Re-verify after any pull.
+- **Conclusion mode:** before changing a repo, or telling the user something
+  about its current state they'll act on (a fix, a PR, a plan that depends on
+  what's committed), run `csl_repo_info` first. Pure analysis that doesn't
+  hinge on freshness stays in peek mode. Dirty: never stash, checkout, or
+  discard autonomously — if the task doesn't touch the dirty files, proceed
+  and say so; ask only when it does. Non-default branch: ask before switching.
+  Stale: pull if clean and note it. If the pull brought in new commits (or you
+  switched branches), re-run `csl_repo_info` — the earlier read is stale.
 - Same protocol applies to subagents — tell them which mode they're in.
+
+## Sparse Checkout Awareness
+Many repos use git sparse checkout. Before reading files in a monorepo:
+1. Check if the path exists on disk first. If a read fails, don't retry with
+   glob/find — the file likely isn't checked out.
+2. Use `git show HEAD:<path>` to read files not in the sparse checkout, or
+   `git sparse-checkout add <path>` to check them out.
+3. Run `git sparse-checkout list` to understand what's available before
+   assuming paths exist.
+4. When a build tool or test runner fails with "not found" errors, check
+   sparse checkout before investigating other causes.
 
 ## Multi-Repo Awareness
 - When changing working directory to a different git repo, read the repo-root
@@ -284,6 +334,10 @@ confirmation. Don't silently start destructive or external ops.
 - Tests that test implementation details rather than behavior.
 - "Unrelated" test failures — main is always green. If tests fail, fix them.
 
+## Communication
+- NEVER send messages (Slack, email, etc.) directly on the user's behalf —
+  always create a draft instead.
+
 ## Response Style
 - Keep responses concise and technical — no AI-sounding fluff.
 - Don't summarize what you just did at the end of responses.
@@ -324,14 +378,3 @@ confirmation. Don't silently start destructive or external ops.
 - **When architectural choices are still open, surface them before writing
   code.** Raise the decision first; don't implement option A and then discover
   the user wanted an RFC exploring A through E.
-
-## Glossary
-
-| Term | Meaning |
-|---|---|
-| csl | code-search-local (thismoon service) |
-| keeper-of-facts | assertion store with evidence pins (thismoon service) |
-| worklog | resumable cross-session work state (thismoon tool) |
-| humanizer | AI-writing detector/rewriter (thismoon tool) |
-| ralph | recipe-driven local service manager |
-| t-man / d-man | thismoon platform foundations (service manager, front door) |

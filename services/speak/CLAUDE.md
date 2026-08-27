@@ -22,10 +22,8 @@ services/speak/
     mcpserver/         # go-sdk MCP server: 7 speak_* tools over the playback engine
     notify/            # events.go (best-effort EmitEvent to events.this on
                         # TTS proxy failures)
-  Makefile
+  Makefile             # part of module github.com/mad01/thismoon (no own go.mod)
 ```
-
-Part of the `github.com/mad01/thismoon` module. No nested go.mod.
 
 ## How it works
 
@@ -78,40 +76,6 @@ Gotchas that cost time once:
   sandbox blocks the lazy download path); the recipe's install script handles
   this. Warm latency is ~100–200ms per sentence on M-series.
 
-## MCP server
-
-`speak mcp` is a second, independent surface from `speak serve`. serve plays
-audio **in the browser** (the `<wk-read-aloud>` component fetches per-sentence
-WAV and plays it there); mcp plays audio **on the machine's speakers** via
-`afplay`, so an agent can make the host talk. They share only the TTS engine.
-
-- **Playback lives in the mcp process** (faithful port of the Python
-  `speak_mcp.py`), not in serve. `speak mcp` does not require `speak serve` to
-  be running — it only needs the `speak-tts` engine reachable on `--tts-url`.
-  This is deliberately unlike reminder's MCP (a thin client to its serve): the
-  shared resource here is the audio device, serialised by an `flock`, not a
-  JSON store, so there is no single-writer file to funnel through.
-- `internal/playback` runs a worker goroutine over the sentence list: fetch WAV
-  from `internal/ttsclient`, write it under `~/.local/share/speak/audio/`,
-  `afplay` it, `Wait`. Pause = `SIGSTOP` the afplay child + release the lock;
-  resume = re-acquire the lock + `SIGCONT`; stop saves the index so resume can
-  restart the worker from there.
-- **One session at a time, cross-process.** An `flock` on
-  `~/.local/share/speak/playback.lock` (with a `.owner` sidecar naming the
-  holder) means a second `speak mcp` gets a `BUSY | …` reply. Old WAVs are
-  reaped after 24h on start.
-- **Go `regexp` has no lookbehind** — the sentence splitter
-  (`playback.SplitSentences`) is hand-rolled, not a translation of the Python
-  `re.split(r'(?<=[.!?])\s+')`.
-- **stdout is the MCP protocol channel** — `runMCP` logs the resolved tts-url to
-  stderr only.
-- Tools: `speak_text`, `speak_file`, `speak_pause`, `speak_resume`,
-  `speak_stop`, `speak_voices`, `speak_status` (names/behaviour ported from the
-  Python server so agent muscle memory carries over).
-- **MCP registration stays host-gated in the consuming repo** (docs/adr/0006) —
-  the binary ships the `mcp` subcommand, but wiring it into a client is
-  machine-private and is NOT added to `recipes/speak/` here.
-
 ## Build / install / test
 
 ```bash
@@ -135,7 +99,7 @@ make test     # go test ./...
 
 ## Shared UI: webkit
 
-The chrome (`<wk-header>` + theme/font/size/bionic controls) comes from the
+The chrome (`<wk-header>` + theme/font/size/fixation controls) comes from the
 in-module package **`github.com/mad01/thismoon/webkit`**, mounted at
 `GET /webkit/` via `webkit.Mount(mux)` and loaded by `internal/web/assets/shell.html`
 (which pulls the FOUC guard from `/webkit/boot.js`). Don't re-add
@@ -146,8 +110,8 @@ palette/topbar/theme CSS locally; it lives in webkit only.
 `shell.html` uses:
 
 ```html
-<wk-header brand="speak·aloud" controls="cmdk,font,bionic,size,speed,reload,theme"
-  bionic-targets="[data-bionic], .doc-section p, .doc-section li"></wk-header>
+<wk-header brand="speak·aloud" controls="cmdk,font,fixation,size,speed,reload,theme"
+  fixation-targets="[data-fixation], .doc-section p, .doc-section li"></wk-header>
 ```
 
 ### Per-repo changes
@@ -167,6 +131,46 @@ palette/topbar/theme CSS locally; it lives in webkit only.
 
 `GET /webkit/version` confirms which embedded webkit assets the running
 `speak` server serves.
+
+## MCP tools
+
+`speak mcp` is a second, independent surface from `speak serve`. serve plays
+audio **in the browser** (the `<wk-read-aloud>` component fetches per-sentence
+WAV and plays it there); mcp plays audio **on the machine's speakers** via
+`afplay`, so an agent can make the host talk. They share only the TTS engine.
+
+- `speak_text`: speak a text string on the host speakers.
+- `speak_file`: read a file (text or markdown) aloud.
+- `speak_pause` / `speak_resume` / `speak_stop`: control the running playback
+  session; stop saves the sentence index so a later resume restarts there.
+- `speak_voices`: list the engine's available voices.
+- `speak_status`: report the playback state and current session.
+
+Names and behaviour are ported from the Python `speak_mcp.py` server so agent
+muscle memory carries over. Implementation notes:
+
+- **Playback lives in the mcp process**, not in serve. `speak mcp` does not
+  require `speak serve` to be running — it only needs the `speak-tts` engine
+  reachable on `--tts-url`. This is deliberately unlike reminder's MCP (a thin
+  client to its serve): the shared resource here is the audio device,
+  serialised by an `flock`, not a JSON store, so there is no single-writer
+  file to funnel through.
+- `internal/playback` runs a worker goroutine over the sentence list: fetch WAV
+  from `internal/ttsclient`, write it under `~/.local/share/speak/audio/`,
+  `afplay` it, `Wait`. Pause = `SIGSTOP` the afplay child + release the lock;
+  resume = re-acquire the lock + `SIGCONT`.
+- **One session at a time, cross-process.** An `flock` on
+  `~/.local/share/speak/playback.lock` (with a `.owner` sidecar naming the
+  holder) means a second `speak mcp` gets a `BUSY | …` reply. Old WAVs are
+  reaped after 24h on start.
+- **Go `regexp` has no lookbehind** — the sentence splitter
+  (`playback.SplitSentences`) is hand-rolled, not a translation of the Python
+  `re.split(r'(?<=[.!?])\s+')`.
+- **stdout is the MCP protocol channel** — `runMCP` logs the resolved tts-url to
+  stderr only.
+- **MCP registration stays host-gated in the consuming repo** (docs/adr/0006) —
+  the binary ships the `mcp` subcommand, but wiring it into a client is
+  machine-private and is NOT added to `recipes/speak/` here.
 
 ## Gotchas
 
@@ -202,5 +206,5 @@ palette/topbar/theme CSS locally; it lives in webkit only.
 - Recipe: `recipes/speak/recipe.toml` (+ `recipes/speak/CLAUDE.md`), which
   builds the binary and registers the `speak-web` and `sandbox-watch` agents
 - Component: `webkit/src/read-aloud.ts` (`<wk-read-aloud>`, `webkit/COMPONENTS.md`)
-- Route: `speak` → 7425 in the consuming repo's d-man routes overlay
+- Route: `speak` → 7425 in the consuming repo's d-man routes overlay (docs/adr/0006)
 - Import provenance: `docs/MIGRATED-FROM.md`

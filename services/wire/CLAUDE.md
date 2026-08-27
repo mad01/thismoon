@@ -15,7 +15,7 @@ surface**; the `wire` CLI mirrors them. The web page at `http://wire.this/` is a
 wire/
   cmd/wire/            - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, mcp, manage (open/list/post/read/follow/close), version (build metadata from the shared buildinfo package)
+    cli/               - cobra: root, serve, mcp, manage (open/join/leave/list/connect/post/read/follow/close), version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     ref/               - the connection string: mint it (server) and parse it (client)
     store/             - Channel/Message model + pure helpers (channel.go), the

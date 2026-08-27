@@ -38,17 +38,21 @@ whose entries append to the global guard config.
 ## failure modes
 
 Commit blocked: read the finding. A scan finding names the rule and the
-file:line with the match redacted; a guard block lists the blocked names. It
-is usually a true positive: remove the secret or the reference and commit
-again. Do not reach for `git commit --no-verify`; it is the explicit, audited
-last resort, not the fix.
+file:line with the match redacted; a guard block lists the blocked names.
+Usually a true positive: remove the secret or the reference and commit
+again — that is the fix, not an override.
 
-False positive: use the narrowest override that exists. For a scan finding:
-append a `suspenders:ignore` marker to the flagged line, add the exact value
-to `allowlist` (global or per-repo), or suppress a rule id, path glob, or
-match substring in `.suspenders.yaml`. For a guard hit: add the name to
-`guard.allowlist` (global or the per-repo `guard` section); the guard has no
-path-based exclusion. There is no environment-variable override.
+Wrong block: take the lowest rung that solves it. One commit —
+`git commit --no-verify` skips the hook entirely; it is the explicit,
+auditable override, preferred over silently weakening the scan for
+everyone. One line — a `suspenders:ignore` marker on the flagged line. One
+value — the exact string in `allowlist` (scan finding) or `guard.allowlist`
+(guard hit), global or per-repo. One repo — `.suspenders.yaml` at the repo
+root suppresses a rule id, path glob, or match substring; per-repo
+`allowlist` and `guard` entries append to the global config rather than
+replacing it. One check — `scan.enabled: false` or `guard.enabled: false`
+turns it off entirely. There is no environment-variable override, and the
+guard has no path-based exclusion.
 
 Hook not firing: hooks are per-clone, so run `{{.Bin}} hook install` after
 every clone. `{{.Bin}} hook status` reports installed, outdated,

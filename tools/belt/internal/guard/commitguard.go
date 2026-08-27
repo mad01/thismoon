@@ -26,8 +26,9 @@ var dayNames = map[time.Weekday]string{
 // to configured repos inside a local-time window — the "no personal-repo work
 // during work hours" nudge. Rules apply only on machines carrying the rule's
 // profile; always_allow carves out repos needed at any hour, and an active
-// override (belt override set <name>) disables the rule entirely. Unresolved
-// repos, malformed windows, and missing config all fail open.
+// override (belt override set <name>, timed, 10m default) suppresses the rule
+// with a warn event so the exception stays auditable. Unresolved repos,
+// malformed windows, and missing config all fail open.
 type CommitGuard struct {
 	cfg config.Config
 	// resolveRepo returns the canonical host/owner/repo of the repo at dir,
@@ -99,11 +100,18 @@ func (g *CommitGuard) checkRule(rule config.CommitGuard, repo string) *Denial {
 	if !config.RepoMatches(rule.Repos, repo) {
 		return nil
 	}
-	if rule.Override != "" && g.overrideActive(rule.Override) {
-		return nil
-	}
 	now := g.now()
 	if !inBlockedWindow(rule, now) {
+		return nil
+	}
+	// The override check runs after the window check on purpose: a suppressed
+	// would-be block leaves a warn event, so overridden guards stay auditable
+	// instead of silently dark.
+	if rule.Override != "" && g.overrideActive(rule.Override) {
+		g.emit("belt", "warn", "commit-guard overridden ("+rule.Override+")",
+			fmt.Sprintf("belt[%s]: override %q suppressed a block on %q inside the %s window. "+
+				"Commit proceeding.", CommitGuardID, rule.Override, repo, rule.BlockHours),
+			map[string]string{"guard": CommitGuardID, "repo": repo})
 		return nil
 	}
 	when := fmt.Sprintf("%s, %s", now.Format("15:04"), now.Format("Monday"))
@@ -127,7 +135,7 @@ func overrideHint(override string) string {
 	if override == "" {
 		return ""
 	}
-	return fmt.Sprintf(" (override: belt override set %s)", override)
+	return fmt.Sprintf(" (override: belt override set %s [--for 1h])", override)
 }
 
 // inBlockedWindow reports whether t falls inside the rule's blocked window:

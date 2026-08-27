@@ -1,20 +1,20 @@
 // webkit.ts — shared web-chrome bundle (globalName: Webkit)
-// Exports: init (backward-compat shim), toBionic, bootSnippet
+// Exports: init (backward-compat shim), toFixation, bootSnippet
 
-import { toBionic } from './bionic.js';
+import { toFixation } from './fixation.js';
 import { clampSize, SIZE_STEP, SIZE_DEFAULT } from './size.js';
 import { WkReadAloud, stopReadAloud } from './read-aloud.js';
 import { rankSites } from './fuzzy.js';
 import type { Site, SiteMatch } from './fuzzy.js';
 import { initProse } from './prose.js';
 
-export { toBionic } from './bionic.js';
+export { toFixation } from './fixation.js';
 export { segmentSentences } from './sentences.js';
 export { enhanceProse } from './prose.js';
 export { escapeHtml, el, poll } from './render.js';
 export type { ElChild, ElAttrs, PollHandle } from './render.js';
 
-export type Control = 'cmdk' | 'bionic' | 'font' | 'size' | 'speed' | 'reload' | 'theme';
+export type Control = 'cmdk' | 'fixation' | 'font' | 'size' | 'speed' | 'reload' | 'theme' | 'help';
 
 export interface WebkitConfig {
   mount?: string;
@@ -32,7 +32,7 @@ export interface WebkitConfig {
   }[];
   controls?: Control[];
   pageWidth?: number;
-  bionicTargets?: string;
+  fixationTargets?: string;
   /** @deprecated — listen to document 'wk-themechange' instead */
   onThemeChange?: (theme: 'light' | 'dark') => void;
 }
@@ -41,7 +41,7 @@ export interface WebkitConfig {
 const THEME_KEY  = 'webkit-theme';
 const FONT_KEY   = 'webkit-font';
 const SIZE_KEY   = 'webkit-size';
-const BIONIC_KEY = 'webkit-bionic';
+const FIXATION_KEY = 'webkit-fixation';
 const SPEED_KEY  = 'webkit-ra-speed';
 
 const FONT_STACKS: Record<string, string> = {
@@ -51,19 +51,21 @@ const FONT_STACKS: Record<string, string> = {
   'Work Sans': "'Work Sans', 'Helvetica Neue', Arial, sans-serif",
 };
 
-// ── Default bionic targets — component-aware ──
-const DEFAULT_BIONIC_TARGETS =
-  '[data-bionic], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td';
+// ── Default fixation targets — component-aware ──
+const DEFAULT_FIXATION_TARGETS =
+  '[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td';
 
 // ── SVG assets ──
 
-const SVG_BIONIC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`;
+const SVG_FIXATION = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`;
 const SVG_SUN    = `<svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>`;
 const SVG_MOON   = `<svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>`;
 const SVG_RELOAD  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
 const SVG_REFRESH = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
 const SVG_ADD     = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`;
 const SVG_SEARCH  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>`;
+const SVG_HELP    = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 8.5a3.4 3.4 0 0 1 6.6 1.1c0 2.2-3.2 2.9-3.2 5"/><path d="M12 18.5h.01"/></svg>`;
+const SVG_CLOSE   = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`;
 
 const SPEED_OPTIONS: { value: string; label: string }[] = [
   { value: '0.75', label: '0.75×' },
@@ -78,7 +80,7 @@ const SPEED_OPTIONS: { value: string; label: string }[] = [
 function walkText(node: Node): void {
   if (node.nodeType === Node.TEXT_NODE) {
     const span = document.createElement('span');
-    span.innerHTML = toBionic((node as Text).textContent ?? '');
+    span.innerHTML = toFixation((node as Text).textContent ?? '');
     node.parentNode?.replaceChild(span, node);
   } else if (
     node.nodeType === Node.ELEMENT_NODE &&
@@ -152,7 +154,7 @@ class WkHeader extends HTMLElement {
     // `speed` (read-aloud playback speed) is intentionally NOT in the default —
     // it only makes sense on pages with <wk-read-aloud> content (speak, present
     // briefings). Those consumers opt in via controls="…,speed,…".
-    const raw = this._attr('controls', 'cmdk,font,bionic,size,reload,theme');
+    const raw = this._attr('controls', 'cmdk,font,fixation,size,reload,theme,help');
     return raw.split(',').map(s => s.trim()).filter(Boolean) as Control[];
   }
 
@@ -220,11 +222,11 @@ class WkHeader extends HTMLElement {
           needsDivider = true;
           break;
 
-        case 'bionic':
+        case 'fixation':
           controlParts.push(divider());
           controlParts.push(
-            `<button class="ctrl-btn" id="webkit-bionic" aria-label="Toggle bionic reading" aria-pressed="false">` +
-            SVG_BIONIC + ` Bionic</button>`
+            `<button class="ctrl-btn" id="webkit-fixation" aria-label="Toggle fixation reading" aria-pressed="false">` +
+            SVG_FIXATION + ` Fixation</button>`
           );
           needsDivider = true;
           break;
@@ -267,6 +269,17 @@ class WkHeader extends HTMLElement {
           );
           needsDivider = false;
           break;
+
+        case 'help':
+          // Always separate the guide from whatever precedes it (theme ends the
+          // divider chain), so the ? reads as its own affordance at the end.
+          controlParts.push('<span class="ctrl-divider"></span>');
+          controlParts.push(
+            `<button class="ctrl-btn" id="webkit-help" aria-label="Feature guide" aria-haspopup="dialog" title="Feature guide">` +
+            SVG_HELP + `</button>`
+          );
+          needsDivider = false;
+          break;
       }
     }
 
@@ -294,7 +307,7 @@ class WkHeader extends HTMLElement {
   }
 
   private _wire(): void {
-    const bionicTargets = this.getAttribute('bionic-targets') ?? DEFAULT_BIONIC_TARGETS;
+    const fixationTargets = this.getAttribute('fixation-targets') ?? DEFAULT_FIXATION_TARGETS;
 
     // Font
     const fontEl = this.querySelector('#webkit-font') as HTMLSelectElement | null;
@@ -327,47 +340,47 @@ class WkHeader extends HTMLElement {
       });
     }
 
-    // Bionic — half-bold the first half of every word in the target elements.
+    // Fixation — half-bold the first half of every word in the target elements.
     // Under client-side rendering the page content is injected (and re-rendered
     // on poll) *after* this runs, so a one-time walk of the targets present at
-    // init misses everything. Instead, while bionic is active a MutationObserver
+    // init misses everything. Instead, while fixation is active a MutationObserver
     // re-walks freshly rendered content, so it survives both the initial CSR
     // render and later poll/version re-renders with zero consumer changes. When
-    // bionic is off the observer is disconnected, so the default case is free.
-    const bionicBtn = this.querySelector('#webkit-bionic');
+    // fixation is off the observer is disconnected, so the default case is free.
+    const fixationBtn = this.querySelector('#webkit-fixation');
     // Per-element original markup, so toggling off restores the plain text. A
     // WeakMap (not the targets at init) keys on the live nodes and lets replaced
     // nodes be garbage-collected on re-render.
-    const bionicOriginals = new WeakMap<HTMLElement, string>();
-    let bionicActive = localStorage.getItem(BIONIC_KEY) === 'true';
+    const fixationOriginals = new WeakMap<HTMLElement, string>();
+    let fixationActive = localStorage.getItem(FIXATION_KEY) === 'true';
 
     // walk one target if it hasn't been walked yet (idempotent via a dataset
     // flag, so a re-walk pass skips already-processed nodes and only touches
     // freshly rendered ones).
-    const bionicify = (el: HTMLElement): void => {
-      if (el.dataset.bionicDone === '1') return;
-      bionicOriginals.set(el, el.innerHTML);
-      el.classList.add('bionic');
+    const fixationify = (el: HTMLElement): void => {
+      if (el.dataset.fixationDone === '1') return;
+      fixationOriginals.set(el, el.innerHTML);
+      el.classList.add('fixation');
       const frag = document.createElement('div');
       frag.innerHTML = el.innerHTML;
       walkText(frag);
       el.innerHTML = frag.innerHTML;
-      el.dataset.bionicDone = '1';
+      el.dataset.fixationDone = '1';
     };
 
     const unbionify = (el: HTMLElement): void => {
-      if (el.dataset.bionicDone !== '1') return;
-      const orig = bionicOriginals.get(el);
+      if (el.dataset.fixationDone !== '1') return;
+      const orig = fixationOriginals.get(el);
       if (orig !== undefined) el.innerHTML = orig;
-      el.classList.remove('bionic');
-      delete el.dataset.bionicDone;
+      el.classList.remove('fixation');
+      delete el.dataset.fixationDone;
     };
 
-    const applyBionic = (active: boolean): void => {
-      bionicBtn?.classList.toggle('active', active);
-      bionicBtn?.setAttribute('aria-pressed', String(active));
-      document.querySelectorAll<HTMLElement>(bionicTargets).forEach(el => {
-        if (active) bionicify(el); else unbionify(el);
+    const applyFixation = (active: boolean): void => {
+      fixationBtn?.classList.toggle('active', active);
+      fixationBtn?.setAttribute('aria-pressed', String(active));
+      document.querySelectorAll<HTMLElement>(fixationTargets).forEach(el => {
+        if (active) fixationify(el); else unbionify(el);
       });
     };
 
@@ -375,40 +388,46 @@ class WkHeader extends HTMLElement {
     // the walk doesn't retrigger the observer (disconnect() also drops queued
     // records); a requestAnimationFrame debounce coalesces a render burst — and
     // read-aloud's per-sentence churn — into a single pass per frame.
-    let bionicScheduled = false;
+    let fixationScheduled = false;
     const observe = (): void =>
-      bionicObserver.observe(document.body, { childList: true, subtree: true });
-    const bionicObserver = new MutationObserver(() => {
-      if (bionicScheduled || !bionicActive) return;
-      bionicScheduled = true;
+      fixationObserver.observe(document.body, { childList: true, subtree: true });
+    const fixationObserver = new MutationObserver(() => {
+      if (fixationScheduled || !fixationActive) return;
+      fixationScheduled = true;
       requestAnimationFrame(() => {
-        bionicScheduled = false;
-        if (!bionicActive) return;
-        bionicObserver.disconnect();
-        applyBionic(true);
+        fixationScheduled = false;
+        if (!fixationActive) return;
+        fixationObserver.disconnect();
+        applyFixation(true);
         observe();
       });
     });
 
-    applyBionic(bionicActive);
-    if (bionicActive) observe();
+    applyFixation(fixationActive);
+    if (fixationActive) observe();
 
-    bionicBtn?.addEventListener('click', () => {
-      // End any read-aloud session first: bionicify snapshots and rewrites
+    fixationBtn?.addEventListener('click', () => {
+      // End any read-aloud session first: fixationify snapshots and rewrites
       // innerHTML, which would detach the session's highlight spans and strand
       // stale .wk-ra-sentence markup in the restored snapshot.
       stopReadAloud();
-      bionicActive = !bionicActive;
-      localStorage.setItem(BIONIC_KEY, String(bionicActive));
-      bionicObserver.disconnect();
-      applyBionic(bionicActive);
-      if (bionicActive) observe();
+      fixationActive = !fixationActive;
+      localStorage.setItem(FIXATION_KEY, String(fixationActive));
+      fixationObserver.disconnect();
+      applyFixation(fixationActive);
+      if (fixationActive) observe();
     });
 
     // Reload
     this.querySelector('#webkit-reload')?.addEventListener('click', () => {
       location.reload();
     });
+
+    // Feature guide — the ? button opens a modal explaining the controls this
+    // header actually renders (plus a read-aloud section when speed is present
+    // and any consumer <template data-wk-help> sections).
+    const controls = this._controls();
+    this.querySelector('#webkit-help')?.addEventListener('click', () => openHelp(controls));
 
     // ⌘K site picker — the button just asks the global controller to open.
     const cmdkBtn = this.querySelector('#webkit-cmdk');
@@ -658,6 +677,122 @@ function initCmdK(): void {
 }
 initCmdK();
 
+// ── Feature guide (help modal) ──
+// The ? header control opens a <wk-modal> explaining the controls THIS header
+// renders (so a tool only documents what it shows), plus a read-aloud/speed
+// section when the page has read-aloud, plus any consumer-provided
+// <template data-wk-help> sections (e.g. speak's file upload). Content is
+// rebuilt on each open. Dismiss on X, Escape, or a click outside the panel —
+// the same affordances as the ⌘K overlay.
+
+interface ControlHelp { term: string; desc: string; }
+
+const CONTROL_HELP: Partial<Record<Control, ControlHelp>> = {
+  cmdk:     { term: '⌘K / Ctrl-K', desc: 'Jump to any .this tool — fuzzy-search the site list and press Enter.' },
+  font:     { term: 'Font',        desc: 'Switch typeface. Lexend and Work Sans are tuned for easier reading.' },
+  size:     { term: '− / +',  desc: 'Shrink or enlarge the text. Your size is remembered across pages.' },
+  fixation: { term: 'Fixation',    desc: 'Bolds the first half of every word so your eyes anchor on each one — a reading aid that helps many dyslexic readers move through text faster.' },
+  speed:    { term: 'Speed',       desc: 'Playback speed for read-aloud — steps through 0.75× · 1× · 1.25× · 1.5× · 2×.' },
+  reload:   { term: 'Reload',      desc: 'Reload the page.' },
+  theme:    { term: 'Theme',       desc: 'Toggle light and dark.' },
+};
+
+// Row order in the guide, independent of the header's control order.
+const HELP_ORDER: Control[] = ['cmdk', 'font', 'size', 'fixation', 'speed', 'reload', 'theme'];
+
+let helpOverlay: HTMLElement | null = null;
+let helpPrevFocus: Element | null = null;
+
+function helpIsOpen(): boolean {
+  return !!helpOverlay && !helpOverlay.hasAttribute('hidden');
+}
+
+function helpRowsHtml(controls: Control[]): string {
+  const present = new Set(controls);
+  const rows: string[] = [];
+  for (const c of HELP_ORDER) {
+    const h = present.has(c) ? CONTROL_HELP[c] : undefined;
+    if (!h) continue;
+    rows.push(
+      `<div class="wk-help-row"><div class="wk-help-term">${escHtml(h.term)}</div>` +
+      `<div class="wk-help-desc">${escHtml(h.desc)}</div></div>`,
+    );
+  }
+  return rows.join('');
+}
+
+function helpReadAloudHtml(): string {
+  return (
+    `<div class="wk-help-section-title">Read aloud</div>` +
+    `<div class="wk-help-row"><div class="wk-help-term">Play a section</div>` +
+    `<div class="wk-help-desc">Each section gets a play button. It reads the text sentence by sentence and highlights the current one, so you can follow along or listen hands-free — a strong pairing with fixation for getting through long pages.</div></div>` +
+    `<div class="wk-help-row"><div class="wk-help-term">Speed ladder</div>` +
+    `<div class="wk-help-desc">The speed selector steps 0.75× · 1× · 1.25× · 1.5× · 2×. A change applies from the next sentence and is remembered across pages.</div></div>`
+  );
+}
+
+// Consumer-provided sections: the innerHTML of every <template data-wk-help> in
+// the document, appended verbatim. Consumers own that markup (trusted, from
+// their own shell), so it is not escaped.
+function helpExtraHtml(): string {
+  let out = '';
+  document.querySelectorAll<HTMLTemplateElement>('template[data-wk-help]').forEach(t => {
+    out += t.innerHTML;
+  });
+  return out;
+}
+
+function helpBuild(): void {
+  if (helpOverlay) return;
+  const overlay = document.createElement('wk-modal');
+  overlay.setAttribute('hidden', '');
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Feature guide');
+  overlay.innerHTML =
+    `<wk-modal-panel>` +
+    `<wk-modal-head><h3>Feature guide</h3>` +
+    `<button class="wk-help-close" aria-label="Close guide">${SVG_CLOSE}</button></wk-modal-head>` +
+    `<wk-modal-body></wk-modal-body>` +
+    `</wk-modal-panel>`;
+  document.body.appendChild(overlay);
+  helpOverlay = overlay;
+
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) closeHelp(); });
+  overlay.querySelector('.wk-help-close')?.addEventListener('click', () => closeHelp());
+}
+
+function openHelp(controls: Control[]): void {
+  helpBuild();
+  if (!helpOverlay || helpIsOpen()) return;
+  const body = helpOverlay.querySelector('wk-modal-body');
+  if (body) {
+    body.innerHTML =
+      helpRowsHtml(controls) +
+      (controls.includes('speed') ? helpReadAloudHtml() : '') +
+      helpExtraHtml();
+  }
+  helpPrevFocus = document.activeElement;
+  helpOverlay.removeAttribute('hidden');
+  (helpOverlay.querySelector('.wk-help-close') as HTMLElement | null)?.focus();
+}
+
+function closeHelp(): void {
+  if (!helpOverlay) return;
+  helpOverlay.setAttribute('hidden', '');
+  if (helpPrevFocus instanceof HTMLElement) helpPrevFocus.focus();
+  helpPrevFocus = null;
+}
+
+/** Open the feature guide programmatically (documents the given controls). */
+export function openFeatureGuide(controls: Control[] = ['cmdk', 'font', 'size', 'fixation', 'reload', 'theme']): void {
+  openHelp(controls);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && helpIsOpen()) { e.preventDefault(); closeHelp(); }
+});
+
 // ── Version-poll soft-reload ──
 // The webkit assets are served no-cache with a content-hash ETag, but a browser
 // sitting on an already-loaded page won't notice a redeploy on its own. Poll
@@ -716,9 +851,9 @@ export function init(cfg?: WebkitConfig): void {
     title:         cfg?.title          ?? '',
     nav:           cfg?.nav            ?? [],
     extra:         cfg?.extra          ?? [],
-    controls:      cfg?.controls       ?? ['cmdk', 'font', 'bionic', 'size', 'reload', 'theme'],
+    controls:      cfg?.controls       ?? ['cmdk', 'font', 'fixation', 'size', 'reload', 'theme', 'help'],
     pageWidth:     cfg?.pageWidth      ?? 1080,
-    bionicTargets: cfg?.bionicTargets  ?? DEFAULT_BIONIC_TARGETS,
+    fixationTargets: cfg?.fixationTargets  ?? DEFAULT_FIXATION_TARGETS,
     onThemeChange: cfg?.onThemeChange  ?? ((_t) => { /* no-op */ }),
   };
 
@@ -735,7 +870,7 @@ export function init(cfg?: WebkitConfig): void {
   if (config.title)   header.setAttribute('title', config.title);
   header.setAttribute('controls', config.controls.join(','));
   header.setAttribute('page-width', String(config.pageWidth));
-  if (config.bionicTargets) header.setAttribute('bionic-targets', config.bionicTargets);
+  if (config.fixationTargets) header.setAttribute('fixation-targets', config.fixationTargets);
 
   // Inject nav as light-DOM children
   for (const item of config.nav) {

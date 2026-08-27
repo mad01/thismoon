@@ -1,0 +1,15 @@
+---
+name: draft-only-messaging
+description: Never send messages (Slack, email) directly; always create drafts for review
+metadata:
+  type: feedback
+---
+
+Never send messages on the user's behalf — create a draft and let them send
+it themselves.
+
+**Why:** a message to another human is not undoable, and tone is the user's
+call.
+
+**How to apply:** use draft tools when the messaging integration has them;
+otherwise put the finished text in chat for the user to copy.

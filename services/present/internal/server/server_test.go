@@ -46,7 +46,7 @@ func get(t *testing.T, url string) (int, string) {
 
 func TestPageServesShell(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Demo", "<p data-bionic>unique-marker-text</p>", "", nil)
+	p, _ := st.Create("Demo", "<p data-fixation>unique-marker-text</p>", "", nil)
 
 	code, body := get(t, ts.URL+"/p/"+p.ID)
 	if code != http.StatusOK {
@@ -66,7 +66,7 @@ func TestPageServesShell(t *testing.T) {
 
 func TestAPIPageReturnsContentAndTitle(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Demo", "<p data-bionic>unique-marker-text</p>", "", nil)
+	p, _ := st.Create("Demo", "<p data-fixation>unique-marker-text</p>", "", nil)
 
 	code, body := get(t, ts.URL+"/api/p/"+p.ID)
 	if code != http.StatusOK {

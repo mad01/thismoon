@@ -100,8 +100,17 @@ wildcard).
 - `commit_guards[].mode` (string, default `"soft"`): `"soft"` warns via the
   events service and allows the commit; `"hard"` denies it.
 - `commit_guards[].override` (string, default: empty = no override switch):
-  names an override that disables the rule while active (`belt override set
-  <name>`; see Example). A hard denial names its override in the deny reason.
+  names a timed override that suppresses the rule while active (`belt
+  override set <name>`, 10 minutes by default, `--for` to size it; see
+  Example). The name is freeform — name the exception, like `vacation` —
+  and becomes the override's filename verbatim, so it must be a plain path
+  segment (no `/`, no leading dot). Several rules may share one name; the
+  rule field and the CLI argument connect by exact string match, and a set
+  name no rule references does nothing, silently. A hard denial names its
+  override in the deny reason (the safe place to copy it from), a
+  suppressed block leaves a warn event on the events timeline, and the
+  override expires on its own — `belt override extend <name>` pushes it
+  forward when the exception outlives the window.
 
 ### custom_guards
 
@@ -304,9 +313,15 @@ hints:
 ```
 
 Activating the `vacation` override above so the `commit_guards` rule stops
-applying:
+applying. An override is timed: 10 minutes by default, sized with `--for`,
+extendable, and self-expiring. The switch is one file under
+`~/.config/belt/overrides/` carrying its RFC 3339 expiry (an empty file
+from an older belt counts as untimed and stays active until cleared —
+re-set it with `--for` to make it expire).
 
 ```bash
-belt override set vacation
-belt override clear vacation
+belt override set vacation --for 2h   # active for two hours
+belt override extend vacation         # push the expiry 10 more minutes
+belt override                         # list every override with its state
+belt override clear vacation          # end it early
 ```

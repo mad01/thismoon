@@ -2,7 +2,7 @@
 
 A field guide for adding or restyling `<wk-*>` elements without rereading the source.
 
-All components use **light DOM** only — no Shadow DOM. CSS vars and bionic text-walk work normally. Most components are pure CSS on the tag name; only `<wk-header>` and `<wk-read-aloud>` have JavaScript behaviour.
+All components use **light DOM** only — no Shadow DOM. CSS vars and fixation text-walk work normally. Most components are pure CSS on the tag name; only `<wk-header>` and `<wk-read-aloud>` have JavaScript behaviour.
 
 ---
 
@@ -19,9 +19,9 @@ The only interactive custom element. Renders the sticky topbar with brand, nav, 
 | `back-label` | — | Optional back link label (e.g. `← All`) |
 | `back-href` | — | Back link target; required when `back-label` is set |
 | `title` | — | Small muted label rendered next to the brand |
-| `controls` | `cmdk,font,bionic,size,speed,reload,theme` | CSV of controls to render; omit any you don't want |
+| `controls` | `cmdk,font,fixation,size,reload,theme,help` | CSV of controls to render; omit any you don't want |
 | `page-width` | `1080` | Sets `--page-width` on `:root` |
-| `bionic-targets` | `[data-bionic], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td` | CSS selector for bionic text-walk |
+| `fixation-targets` | `[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td` | CSS selector for fixation text-walk |
 
 **Light-DOM children relocated by the element:**
 
@@ -34,11 +34,12 @@ The only interactive custom element. Renders the sticky topbar with brand, nav, 
 |-------|----------------|
 | `cmdk` | ⌘K / Ctrl+K site-picker button |
 | `font` | Font family selector (Fira Code, Inter, Lexend, Work Sans) |
-| `bionic` | Bionic reading toggle |
+| `fixation` | Fixation reading toggle |
 | `size` | Font size −/+ buttons (12–24 px, 2 px steps) |
 | `speed` | Speech speed selector (0.75×, 1×, 1.25×, 1.5×, 2×) |
 | `reload` | Page reload button |
 | `theme` | Light/dark toggle |
+| `help` | `?` button — opens the feature-guide modal (X / Esc / click-outside to close) |
 
 **Events dispatched on `document`:**
 
@@ -436,7 +437,7 @@ webkit.css defines the palette as CSS custom properties on `:root` and overrides
 | `webkit-theme` | `light` \| `dark` |
 | `webkit-font` | `Fira Code` \| `Inter` \| `Lexend` \| `Work Sans` |
 | `webkit-size` | integer 12–24 |
-| `webkit-bionic` | `true` \| `false` |
+| `webkit-fixation` | `true` \| `false` |
 
 **Theme-change event:** `wk-themechange` fires on `document` with `detail.theme` set to the new value. Listen there to recolor dynamic visuals.
 

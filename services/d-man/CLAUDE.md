@@ -40,7 +40,7 @@ d-man/
                            optional games_dir config key (go:embed assets/ +
                            blockpage_test.go)
     notify/               events.this emit, best-effort (per-tool copy, see Gotchas)
-  Makefile               part of module github.com/mad01/thismoon (no own go.mod)
+  Makefile               - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
 ## How it works
@@ -123,15 +123,21 @@ go test ./...
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `d-man serve [--port 80] [--tls-port 443]` | The long-running daemon: sync `/etc/hosts`, serve the reverse proxy (`:80`) and block-page TLS listener (`:443`), watch `routes.toml` + own binary. |
-| `sudo d-man sync` | Write the managed `/etc/hosts` block once and exit (manual fallback). |
-| `sudo d-man ca install` | Generate the block-page CA (if absent) and trust it in the system keychain; `uninstall`/`path` too. |
-| `d-man list` | Print resolved host -> backend routes. |
-| `d-man config` | Print which routes file was loaded (`loaded` / `missing` / `parse error`) and the effective config as TOML; `--help` carries the annotated key reference. |
-| `d-man version [-o json]` | Print the build sha; `-o json` prints the full build metadata object (`version`, `commit`, `tag`, `build_time`). |
-| `d-man docs` | Print the embedded operating doc: failure modes, reload semantics, first moves when a `.this` host stops resolving. |
+```bash
+d-man serve [--port 80] [--tls-port 443]  # the long-running daemon: sync /etc/hosts, serve the
+                                           # reverse proxy (:80) and block-page TLS listener (:443),
+                                           # watch routes.toml + own binary
+sudo d-man sync                           # write the managed /etc/hosts block once and exit (manual fallback)
+sudo d-man ca install                     # generate the block-page CA (if absent) and trust it in the
+                                           # system keychain; uninstall/path too
+d-man list                                # print resolved host -> backend routes
+d-man config                              # print which routes file was loaded (loaded/missing/parse error)
+                                           # and the effective config as TOML; --help has the key reference
+d-man version [-o json]                   # print the build sha; -o json prints the full build metadata
+                                           # object (version, commit, tag, build_time)
+d-man docs                                # print the embedded operating doc: failure modes, reload
+                                           # semantics, first moves when a .this host stops resolving
+```
 
 ## Gotchas
 
@@ -155,6 +161,13 @@ go test ./...
   and speak. The tools are separate Go modules (and t-man is a separate repo),
   so a shared package would need require+replace coupling across module
   boundaries; the copy is cheaper.
+- **Version probe.** `d-man version -o json` returns the shared four-key
+  build metadata object (`version`, `commit`, `tag`, `build_time`, every key
+  present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`,
+  the cross-tool convention `ralph` and `status` use to probe the build a
+  sibling tool is running. Plain `d-man version` stays a bare token. Unlike
+  the webkit-mounted services, d-man has no `GET /version` HTTP route — it's a
+  proxy/daemon, not a web UI.
 
 ## See also
 

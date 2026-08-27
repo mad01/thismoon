@@ -28,7 +28,7 @@ git diff dist/
 ## Tests
 
 ```bash
-npm test        # node --test: pure-function unit tests for toBionic, clampSize
+npm test        # node --test: pure-function unit tests for toFixation, clampSize
 go test ./...   # asserts Handler() serves embedded CSS/JS; checks wk-header and wk-card presence
 make check      # tsc --noEmit typecheck only (host, no build)
 ```

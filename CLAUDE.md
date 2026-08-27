@@ -25,8 +25,11 @@ recipes/     ralph recipes, consumed remotely via [[recipe_sources]]
 skills/      agent skills (Claude + Codex), one directory per skill; each is
              symlinked into ~/.claude/skills and ~/.agents/skills by its
              paired recipe (skill-only recipes for skills with no binary)
+examples/    worked private-config-repo layout (overlay recipes, example
+             global CLAUDE.md) — the reference for the machine-private layer
 docs/adr/    architecture decision records
 docs/GETTING-STARTED.md install guide: one tool via brew vs the fleet via ralph
+docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
 docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 ```
@@ -43,19 +46,21 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
+- Every `CLAUDE.md` in the repo has a sibling `AGENTS.md` symlink pointing at it, so non-Claude agents (Codex and others that read `AGENTS.md`) discover the same instructions; new components get the symlink alongside the `CLAUDE.md`.
 
 ## Skills
 
-The repo ships four agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand; the paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+The repo ships five agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand; the paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
+| `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
 | `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus a headless `claude -p` pass on Haiku for holistic judgment |
-| `present` | Generates a scrollable briefing page with bionic reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
+| `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `golang-style` needs nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+Prerequisites: `golang-style` and `handoff` need nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
 
 ## Release process
 

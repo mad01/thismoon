@@ -23,7 +23,7 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 
 | Component | Type | Notes |
 |-----------|------|-------|
-| `<wk-header>` | JS custom element | Brand/nav/back/title + font·bionic·size·reload·theme controls; fires `wk-themechange` on `document` |
+| `<wk-header>` | JS custom element | Brand/nav/back/title + font·fixation·size·reload·theme controls; fires `wk-themechange` on `document` |
 | `<wk-page-header>`, `<wk-title>`, `<wk-subtitle>` | CSS-only | Hero/page header block |
 | `<wk-card>` | CSS-only | Content card; `a.wk-card` / `[href]` gets hover lift; `--accent` left bar |
 | `<wk-panel>`, `<wk-panel-title>`, `<wk-panel-subtitle>` | CSS-only | Info panel |
@@ -42,7 +42,7 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 | `<wk-form>`, `<wk-form-row>`, `<wk-form-hint>` | CSS-only | Form layout, typically inside a modal |
 | `<wk-toast-host>`, `<wk-toast variant="ok\|err">` | CSS-only | Fixed bottom-right toast stack |
 
-All components use **light DOM** only (no Shadow DOM) — CSS vars and bionic
+All components use **light DOM** only (no Shadow DOM) — CSS vars and fixation
 text-walk work normally.
 
 ## Consume it (Go)
@@ -92,7 +92,7 @@ snippet is also available at runtime as `Webkit.bootSnippet`; all three
 <script src="/webkit/webkit.js"></script>
 ```
 
-`webkit.js` injects the full control bar (font · bionic · size ± · reload ·
+`webkit.js` injects the full control bar (font · fixation · size ± · reload ·
 theme) automatically — do not add those manually.
 
 ### Version check + cache busting
@@ -136,7 +136,7 @@ Global `localStorage` keys shared across a tool's pages, default theme light:
 | `webkit-theme` | `light` or `dark` |
 | `webkit-font` | font family choice |
 | `webkit-size` | font size (12–24 px) |
-| `webkit-bionic` | bionic reading on/off |
+| `webkit-fixation` | fixation reading on/off |
 
 Theme changes dispatch `new CustomEvent('wk-themechange', {detail:{theme}})` on
 `document` — listen there to recolor graphs or other dynamic visuals.

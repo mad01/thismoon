@@ -75,6 +75,6 @@ type Store interface {
 
 The ticker takes this two-method view, so a fake store in a test only implements two methods. The `notify.Notifier` interface (one method) and `proxy.Prober` (a func type) are the same idea: a tiny consumer-side seam for the side effect. Don't define an interface next to its only implementation "just in case" — add it when a second implementation or a test seam actually appears. See `safety.md` for keeping the implementation behind the seam pure.
 
-## Keep functions short and single-purpose
+## Let semantics set function boundaries
 
-Functions in this codebase are short; the longest are cobra command builders (~35 lines) and they stay flat. If a function name needs "and", split it. The `gocyclo` linter bounds complexity.
+Do not split functions by line count. Keep a function at one level of abstraction with one reason to change. Split when it mixes policy with mechanics, owns unrelated state, or forces callers to understand details that belong behind a boundary. A long flat table or switch can be clearer than several tiny forwarding functions. Use complexity and nesting as signals to inspect the design, not as proof that a particular line count is wrong.

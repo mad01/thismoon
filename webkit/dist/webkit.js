@@ -1489,13 +1489,14 @@ var Webkit = (() => {
     escapeHtml: () => escapeHtml,
     init: () => init,
     openCmdK: () => openCmdK,
+    openFeatureGuide: () => openFeatureGuide,
     poll: () => poll,
     segmentSentences: () => segmentSentences,
-    toBionic: () => toBionic
+    toFixation: () => toFixation
   });
 
-  // src/bionic.ts
-  function toBionic(text) {
+  // src/fixation.ts
+  function toFixation(text) {
     return text.replace(/\b([a-zA-Z]+)\b/g, (word) => {
       if (word.length <= 1) return word;
       const mid = Math.ceil(word.length / 2);
@@ -2627,7 +2628,7 @@ var Webkit = (() => {
   var THEME_KEY = "webkit-theme";
   var FONT_KEY = "webkit-font";
   var SIZE_KEY = "webkit-size";
-  var BIONIC_KEY = "webkit-bionic";
+  var FIXATION_KEY = "webkit-fixation";
   var SPEED_KEY = "webkit-ra-speed";
   var FONT_STACKS = {
     "Fira Code": "'Fira Code', 'SF Mono', 'Cascadia Code', monospace",
@@ -2635,14 +2636,16 @@ var Webkit = (() => {
     "Lexend": "'Lexend', 'Helvetica Neue', Arial, sans-serif",
     "Work Sans": "'Work Sans', 'Helvetica Neue', Arial, sans-serif"
   };
-  var DEFAULT_BIONIC_TARGETS = "[data-bionic], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td";
-  var SVG_BIONIC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`;
+  var DEFAULT_FIXATION_TARGETS = "[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td";
+  var SVG_FIXATION = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`;
   var SVG_SUN = `<svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>`;
   var SVG_MOON = `<svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>`;
   var SVG_RELOAD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
   var SVG_REFRESH = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
   var SVG_ADD = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`;
   var SVG_SEARCH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>`;
+  var SVG_HELP = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 8.5a3.4 3.4 0 0 1 6.6 1.1c0 2.2-3.2 2.9-3.2 5"/><path d="M12 18.5h.01"/></svg>`;
+  var SVG_CLOSE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`;
   var SPEED_OPTIONS = [
     { value: "0.75", label: "0.75\xD7" },
     { value: "1", label: "1\xD7" },
@@ -2653,7 +2656,7 @@ var Webkit = (() => {
   function walkText(node) {
     if (node.nodeType === Node.TEXT_NODE) {
       const span = document.createElement("span");
-      span.innerHTML = toBionic(node.textContent ?? "");
+      span.innerHTML = toFixation(node.textContent ?? "");
       node.parentNode?.replaceChild(span, node);
     } else if (node.nodeType === Node.ELEMENT_NODE && !["CODE", "B", "STRONG", "SCRIPT", "STYLE"].includes(node.tagName)) {
       Array.from(node.childNodes).forEach(walkText);
@@ -2706,7 +2709,7 @@ var Webkit = (() => {
       return this.getAttribute(name) ?? fallback;
     }
     _controls() {
-      const raw = this._attr("controls", "cmdk,font,bionic,size,reload,theme");
+      const raw = this._attr("controls", "cmdk,font,fixation,size,reload,theme,help");
       return raw.split(",").map((s) => s.trim()).filter(Boolean);
     }
     _render() {
@@ -2758,10 +2761,10 @@ var Webkit = (() => {
             );
             needsDivider = true;
             break;
-          case "bionic":
+          case "fixation":
             controlParts.push(divider());
             controlParts.push(
-              `<button class="ctrl-btn" id="webkit-bionic" aria-label="Toggle bionic reading" aria-pressed="false">` + SVG_BIONIC + ` Bionic</button>`
+              `<button class="ctrl-btn" id="webkit-fixation" aria-label="Toggle fixation reading" aria-pressed="false">` + SVG_FIXATION + ` Fixation</button>`
             );
             needsDivider = true;
             break;
@@ -2793,6 +2796,13 @@ var Webkit = (() => {
             );
             needsDivider = false;
             break;
+          case "help":
+            controlParts.push('<span class="ctrl-divider"></span>');
+            controlParts.push(
+              `<button class="ctrl-btn" id="webkit-help" aria-label="Feature guide" aria-haspopup="dialog" title="Feature guide">` + SVG_HELP + `</button>`
+            );
+            needsDivider = false;
+            break;
         }
       }
       if (extraChildren.length > 0) {
@@ -2808,7 +2818,7 @@ var Webkit = (() => {
       document.documentElement.setAttribute("data-theme", saved);
     }
     _wire() {
-      const bionicTargets = this.getAttribute("bionic-targets") ?? DEFAULT_BIONIC_TARGETS;
+      const fixationTargets = this.getAttribute("fixation-targets") ?? DEFAULT_FIXATION_TARGETS;
       const fontEl = this.querySelector("#webkit-font");
       if (fontEl) {
         const savedFont = localStorage.getItem(FONT_KEY) ?? "Fira Code";
@@ -2833,60 +2843,62 @@ var Webkit = (() => {
           document.dispatchEvent(new CustomEvent("wk-speedchange", { detail: { speed: parseFloat(speedEl.value) } }));
         });
       }
-      const bionicBtn = this.querySelector("#webkit-bionic");
-      const bionicOriginals = /* @__PURE__ */ new WeakMap();
-      let bionicActive = localStorage.getItem(BIONIC_KEY) === "true";
-      const bionicify = (el2) => {
-        if (el2.dataset.bionicDone === "1") return;
-        bionicOriginals.set(el2, el2.innerHTML);
-        el2.classList.add("bionic");
+      const fixationBtn = this.querySelector("#webkit-fixation");
+      const fixationOriginals = /* @__PURE__ */ new WeakMap();
+      let fixationActive = localStorage.getItem(FIXATION_KEY) === "true";
+      const fixationify = (el2) => {
+        if (el2.dataset.fixationDone === "1") return;
+        fixationOriginals.set(el2, el2.innerHTML);
+        el2.classList.add("fixation");
         const frag = document.createElement("div");
         frag.innerHTML = el2.innerHTML;
         walkText(frag);
         el2.innerHTML = frag.innerHTML;
-        el2.dataset.bionicDone = "1";
+        el2.dataset.fixationDone = "1";
       };
       const unbionify = (el2) => {
-        if (el2.dataset.bionicDone !== "1") return;
-        const orig = bionicOriginals.get(el2);
+        if (el2.dataset.fixationDone !== "1") return;
+        const orig = fixationOriginals.get(el2);
         if (orig !== void 0) el2.innerHTML = orig;
-        el2.classList.remove("bionic");
-        delete el2.dataset.bionicDone;
+        el2.classList.remove("fixation");
+        delete el2.dataset.fixationDone;
       };
-      const applyBionic = (active) => {
-        bionicBtn?.classList.toggle("active", active);
-        bionicBtn?.setAttribute("aria-pressed", String(active));
-        document.querySelectorAll(bionicTargets).forEach((el2) => {
-          if (active) bionicify(el2);
+      const applyFixation = (active) => {
+        fixationBtn?.classList.toggle("active", active);
+        fixationBtn?.setAttribute("aria-pressed", String(active));
+        document.querySelectorAll(fixationTargets).forEach((el2) => {
+          if (active) fixationify(el2);
           else unbionify(el2);
         });
       };
-      let bionicScheduled = false;
-      const observe = () => bionicObserver.observe(document.body, { childList: true, subtree: true });
-      const bionicObserver = new MutationObserver(() => {
-        if (bionicScheduled || !bionicActive) return;
-        bionicScheduled = true;
+      let fixationScheduled = false;
+      const observe = () => fixationObserver.observe(document.body, { childList: true, subtree: true });
+      const fixationObserver = new MutationObserver(() => {
+        if (fixationScheduled || !fixationActive) return;
+        fixationScheduled = true;
         requestAnimationFrame(() => {
-          bionicScheduled = false;
-          if (!bionicActive) return;
-          bionicObserver.disconnect();
-          applyBionic(true);
+          fixationScheduled = false;
+          if (!fixationActive) return;
+          fixationObserver.disconnect();
+          applyFixation(true);
           observe();
         });
       });
-      applyBionic(bionicActive);
-      if (bionicActive) observe();
-      bionicBtn?.addEventListener("click", () => {
+      applyFixation(fixationActive);
+      if (fixationActive) observe();
+      fixationBtn?.addEventListener("click", () => {
         stopReadAloud();
-        bionicActive = !bionicActive;
-        localStorage.setItem(BIONIC_KEY, String(bionicActive));
-        bionicObserver.disconnect();
-        applyBionic(bionicActive);
-        if (bionicActive) observe();
+        fixationActive = !fixationActive;
+        localStorage.setItem(FIXATION_KEY, String(fixationActive));
+        fixationObserver.disconnect();
+        applyFixation(fixationActive);
+        if (fixationActive) observe();
       });
       this.querySelector("#webkit-reload")?.addEventListener("click", () => {
         location.reload();
       });
+      const controls = this._controls();
+      this.querySelector("#webkit-help")?.addEventListener("click", () => openHelp(controls));
       const cmdkBtn = this.querySelector("#webkit-cmdk");
       if (cmdkBtn) {
         const kbd = cmdkBtn.querySelector("[data-cmdk-kbd]");
@@ -3154,6 +3166,84 @@ var Webkit = (() => {
     });
   }
   initCmdK();
+  var CONTROL_HELP = {
+    cmdk: { term: "\u2318K / Ctrl-K", desc: "Jump to any .this tool \u2014 fuzzy-search the site list and press Enter." },
+    font: { term: "Font", desc: "Switch typeface. Lexend and Work Sans are tuned for easier reading." },
+    size: { term: "\u2212 / +", desc: "Shrink or enlarge the text. Your size is remembered across pages." },
+    fixation: { term: "Fixation", desc: "Bolds the first half of every word so your eyes anchor on each one \u2014 a reading aid that helps many dyslexic readers move through text faster." },
+    speed: { term: "Speed", desc: "Playback speed for read-aloud \u2014 steps through 0.75\xD7 \xB7 1\xD7 \xB7 1.25\xD7 \xB7 1.5\xD7 \xB7 2\xD7." },
+    reload: { term: "Reload", desc: "Reload the page." },
+    theme: { term: "Theme", desc: "Toggle light and dark." }
+  };
+  var HELP_ORDER = ["cmdk", "font", "size", "fixation", "speed", "reload", "theme"];
+  var helpOverlay = null;
+  var helpPrevFocus = null;
+  function helpIsOpen() {
+    return !!helpOverlay && !helpOverlay.hasAttribute("hidden");
+  }
+  function helpRowsHtml(controls) {
+    const present = new Set(controls);
+    const rows = [];
+    for (const c of HELP_ORDER) {
+      const h = present.has(c) ? CONTROL_HELP[c] : void 0;
+      if (!h) continue;
+      rows.push(
+        `<div class="wk-help-row"><div class="wk-help-term">${escHtml(h.term)}</div><div class="wk-help-desc">${escHtml(h.desc)}</div></div>`
+      );
+    }
+    return rows.join("");
+  }
+  function helpReadAloudHtml() {
+    return `<div class="wk-help-section-title">Read aloud</div><div class="wk-help-row"><div class="wk-help-term">Play a section</div><div class="wk-help-desc">Each section gets a play button. It reads the text sentence by sentence and highlights the current one, so you can follow along or listen hands-free \u2014 a strong pairing with fixation for getting through long pages.</div></div><div class="wk-help-row"><div class="wk-help-term">Speed ladder</div><div class="wk-help-desc">The speed selector steps 0.75\xD7 \xB7 1\xD7 \xB7 1.25\xD7 \xB7 1.5\xD7 \xB7 2\xD7. A change applies from the next sentence and is remembered across pages.</div></div>`;
+  }
+  function helpExtraHtml() {
+    let out = "";
+    document.querySelectorAll("template[data-wk-help]").forEach((t) => {
+      out += t.innerHTML;
+    });
+    return out;
+  }
+  function helpBuild() {
+    if (helpOverlay) return;
+    const overlay = document.createElement("wk-modal");
+    overlay.setAttribute("hidden", "");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Feature guide");
+    overlay.innerHTML = `<wk-modal-panel><wk-modal-head><h3>Feature guide</h3><button class="wk-help-close" aria-label="Close guide">${SVG_CLOSE}</button></wk-modal-head><wk-modal-body></wk-modal-body></wk-modal-panel>`;
+    document.body.appendChild(overlay);
+    helpOverlay = overlay;
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.target === overlay) closeHelp();
+    });
+    overlay.querySelector(".wk-help-close")?.addEventListener("click", () => closeHelp());
+  }
+  function openHelp(controls) {
+    helpBuild();
+    if (!helpOverlay || helpIsOpen()) return;
+    const body = helpOverlay.querySelector("wk-modal-body");
+    if (body) {
+      body.innerHTML = helpRowsHtml(controls) + (controls.includes("speed") ? helpReadAloudHtml() : "") + helpExtraHtml();
+    }
+    helpPrevFocus = document.activeElement;
+    helpOverlay.removeAttribute("hidden");
+    helpOverlay.querySelector(".wk-help-close")?.focus();
+  }
+  function closeHelp() {
+    if (!helpOverlay) return;
+    helpOverlay.setAttribute("hidden", "");
+    if (helpPrevFocus instanceof HTMLElement) helpPrevFocus.focus();
+    helpPrevFocus = null;
+  }
+  function openFeatureGuide(controls = ["cmdk", "font", "size", "fixation", "reload", "theme"]) {
+    openHelp(controls);
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && helpIsOpen()) {
+      e.preventDefault();
+      closeHelp();
+    }
+  });
   var VERSION_URL = "/webkit/version";
   var VERSION_POLL_MS = 5e3;
   var seenVersion = null;
@@ -3187,9 +3277,9 @@ var Webkit = (() => {
       title: cfg?.title ?? "",
       nav: cfg?.nav ?? [],
       extra: cfg?.extra ?? [],
-      controls: cfg?.controls ?? ["cmdk", "font", "bionic", "size", "reload", "theme"],
+      controls: cfg?.controls ?? ["cmdk", "font", "fixation", "size", "reload", "theme", "help"],
       pageWidth: cfg?.pageWidth ?? 1080,
-      bionicTargets: cfg?.bionicTargets ?? DEFAULT_BIONIC_TARGETS,
+      fixationTargets: cfg?.fixationTargets ?? DEFAULT_FIXATION_TARGETS,
       onThemeChange: cfg?.onThemeChange ?? ((_t) => {
       })
     };
@@ -3203,7 +3293,7 @@ var Webkit = (() => {
     if (config.title) header.setAttribute("title", config.title);
     header.setAttribute("controls", config.controls.join(","));
     header.setAttribute("page-width", String(config.pageWidth));
-    if (config.bionicTargets) header.setAttribute("bionic-targets", config.bionicTargets);
+    if (config.fixationTargets) header.setAttribute("fixation-targets", config.fixationTargets);
     for (const item of config.nav) {
       const a = document.createElement("a");
       a.setAttribute("data-nav", "");

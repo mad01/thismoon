@@ -163,7 +163,7 @@ the reminder routes.
 <wk-header brand="reminder" title="Reminders"></wk-header>
 ```
 
-`webkit.js` injects the full control set (font · bionic · size ± · reload ·
+`webkit.js` injects the full control set (font · fixation · size ± · reload ·
 theme). Don't add those controls manually.
 
 ### Per-repo changes
@@ -196,6 +196,11 @@ reports the same asset hash.
   quotes can't break out.
 - **Codesign for the binary.** `make install` strips xattrs and re-signs (macOS
   kills adhoc-signed binaries with drifted provenance).
+- **Version probe convention.** `GET /version` and `reminder version -o json`
+  both return the shared four-key build metadata object (`version`, `commit`,
+  `tag`, `build_time`, every key present and `""` when unknown) from
+  `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is live.
+  Plain `reminder version` stays a bare token — status parses it as one.
 
 ## See also
 

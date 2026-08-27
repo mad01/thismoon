@@ -84,6 +84,8 @@ that events dedupes by content hash, pin the store file"), to look things up
 ("what do we know about the events service"), or to check whether prior
 findings still hold. Claude calls the tools below.
 
+On a standalone install, register the server once: `claude mcp add --scope user kof -- kof mcp`. On a ralph-managed machine, skip the manual command — registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) instead. Either way, `kof serve` must already be running — `kof mcp` is a thin HTTP client to it and returns an unreachable error otherwise; start it with `brew services start mad01/tap/kof` or `kof serve`. Confirm with `claude mcp list`, then `kof doctor` if a tool call fails.
+
 | Tool | Purpose |
 |------|---------|
 | `kof_assert(kind, subject, statement, confidence, session, pins, …)` | Store an assertion with one or more evidence pins |

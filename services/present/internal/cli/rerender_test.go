@@ -97,8 +97,8 @@ func TestRerenderUnchangedReportsUnchanged(t *testing.T) {
 	}
 	// Already-migrated content with no legacy classes; upgrade is a no-op.
 	// Seed in serializer-normalized form (the upgrader parses then re-serializes,
-	// so bare boolean attributes like data-bionic must already be data-bionic="").
-	clean := render.UpgradeLegacyHTML(`<wk-section id="x"><p data-bionic>clean</p></wk-section>`)
+	// so bare boolean attributes like data-fixation must already be data-fixation="").
+	clean := render.UpgradeLegacyHTML(`<wk-section id="x"><p data-fixation>clean</p></wk-section>`)
 	id := seedLegacyPage(t, st, clean)
 	before, _ := st.Get(id)
 

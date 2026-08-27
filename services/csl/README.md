@@ -118,6 +118,8 @@ claude mcp add --scope user csl -- csl mcp
 claude mcp list   # expect: csl: csl mcp - ✓ Connected
 ```
 
+On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root). Nothing needs to be running first: the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in `~/.config/csl/config.yaml` (see Configuration) — without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
+
 The MCP server exposes twelve `csl_*` tools:
 
 - **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`

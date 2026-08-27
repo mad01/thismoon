@@ -197,8 +197,8 @@ func TestRenderDocMinimal(t *testing.T) {
 	if !strings.Contains(out, `<h1 class="brief-title">Title</h1>`) {
 		t.Error("title not rendered")
 	}
-	if !strings.Contains(out, `data-bionic`) {
-		t.Error("bionic attribute missing on paragraph")
+	if !strings.Contains(out, `data-fixation`) {
+		t.Error("fixation attribute missing on paragraph")
 	}
 }
 
@@ -241,7 +241,7 @@ func TestRenderDocWithAllBlocks(t *testing.T) {
 		{"chip-row", `class="chip-row"`},
 		{"section", `<wk-section`},
 		{"section-heading", `<wk-section-heading>`},
-		{"paragraph", `<p data-bionic>para</p>`},
+		{"paragraph", `<p data-fixation>para</p>`},
 		{"h3", `<wk-section-subheading>`},
 		{"callout", `<wk-callout variant="info"`},
 		{"table-wrap", `<wk-table><table>`},

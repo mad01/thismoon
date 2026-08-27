@@ -1,4 +1,4 @@
-# CLAUDE.md — webkit (shared web-component UI kit)
+# webkit, shared web-component UI kit
 
 Private Go module + TS package that supplies the **shared theme/header/controls
 and content components** for the mad01 local web tools (`present`, `csl`,
@@ -20,12 +20,16 @@ embed.go         # //go:embed dist + Handler() http.Handler + FS()
 
 ### `<wk-header>` (JS custom element — the only interactive one)
 Renders the sticky topbar. Key attributes: `brand`, `brand-href`, `back-label`,
-`back-href`, `title`, `controls` (CSV, default `font,bionic,size,reload,theme`),
+`back-href`, `title`, `controls` (CSV, default `cmdk,font,fixation,size,reload,theme,help`),
 `page-width` (default 1080).
 
 Light-DOM children it relocates:
 - `<a data-nav>…</a>` → nav links area.
 - `<button data-extra id=…>…</button>` → controls area (app wires its own handler by `id`).
+- `<template data-wk-help>…</template>` → its innerHTML is appended into the `help`
+  control's feature-guide modal, so a consumer adds app-specific sections without JS
+  (e.g. speak's "read a document" note). The base modal already documents the shared
+  controls plus a read-aloud/speed section when `speed` is present.
 
 On theme toggle dispatches `new CustomEvent('wk-themechange', {detail:{theme}})` on
 `document` — consumers listen there (catalog/present recolor their Cytoscape graphs).
@@ -111,7 +115,7 @@ make build        # SANDBOXED build (default): npm ci + npm run build inside a
                   # throwaway Apple-container VM; artifacts extracted via the
                   # BuildKit local exporter. Needs `container system start`.
 make build-local  # fallback: npm run build on the host (container runtime down)
-npm test          # node --test; pure-function unit tests (toBionic, clampSize) in test/
+npm test          # node --test; pure-function unit tests (toFixation, clampSize) in test/
 go test ./...     # asserts Handler() serves /webkit/webkit.css + .js; checks wk-header and wk-card presence
 ```
 
@@ -149,11 +153,11 @@ and the extraction-pattern rules live in the dotfiles repo:
   running tool with `curl http://<tool>.this/webkit/version` — the asset hash
   is identical across consumers built from the same commit.
 - **State keys are global per origin** (`webkit-theme`, `webkit-font`,
-  `webkit-size`, `webkit-bionic`, `webkit-ra-speed`). They persist across a tool's own pages.
+  `webkit-size`, `webkit-fixation`, `webkit-ra-speed`). They persist across a tool's own pages.
 - **`data-extra` buttons are not wired by webkit.** The consuming app keeps its
   own click handler (e.g. catalog's `refreshBtn`/`addBtn`).
 - **Light DOM only.** No Shadow DOM — everything is styled by tag + attribute
-  selectors in `webkit.css`, so CSS vars and bionic text-walk work normally.
+  selectors in `webkit.css`, so CSS vars and fixation text-walk work normally.
 
 ## See also
 

@@ -1,5 +1,5 @@
 // Package webkit ships the shared web chrome — palette, header, and the
-// font/bionic/size/reload/theme controls — used by the mad01 local web tools
+// font/fixation/size/reload/theme controls — used by the mad01 local web tools
 // (present, csl, catalog). The CSS/JS are authored in TypeScript under src/ and
 // compiled to dist/ (committed), which is embedded here so consumers need no
 // node toolchain. Mount Handler() at "GET /webkit/" to serve them.

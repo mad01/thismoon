@@ -40,7 +40,7 @@ failing means only the web page is down; the MCP tools can still speak as
 long as tts-engine-reachable passes.
 
 FAIL tts-engine-reachable: the engine sidecar is down, and nothing can
-synthesize -- not the web page, not the tools. `t-man status speak-tts`, then
+synthesize — not the web page, not the tools. `t-man status speak-tts`, then
 `t-man restart speak-tts`. From the web side the same fact shows as `GET
 {{.BaseURL}}/enginez` answering 502; `/healthz` proves only that serve is up,
 never the engine.

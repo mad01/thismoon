@@ -2,6 +2,86 @@
 
 A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, runs user-defined hook scripts, and can rewrite git history to remove a secret that already made it into a commit.
 
+Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself, and reads the same internal-name config, so the two layers agree. belt only sees what an agent does — suspenders also catches what you type.
+
+## Quickstart
+
+```sh
+make install                   # builds and installs to ~/code/bin/suspenders
+suspenders hook install --all  # pre-commit hook in every repo under your dirs
+```
+
+The first run creates `~/.config/suspenders/config.yaml` with defaults:
+secret scanning on, repo discovery over `~/code/src` and `~/workspace`
+(adjust `dirs` to your layout). From then on, a staged secret blocks the
+commit that would carry it.
+
+Two things the defaults do not do:
+
+- **The internal-name guard ships disabled.** Turn it on by giving it a name
+  source — every repo found under `workspace_dirs` contributes its org,
+  repo, and directory names to the blocked set:
+
+  ```yaml
+  guard:
+    enabled: true
+    workspace_dirs:
+      - ~/work-checkouts
+  ```
+
+  Then `suspenders doctor` in any repo shows the derived blocked names, the
+  config in effect, and whether that repo is exempt.
+
+- **Hooks are per-clone.** Re-run `suspenders hook install` after cloning
+  something new, or `suspenders hook install --all` to sweep every
+  discovered repo. On a ralph-managed machine, a companion recipe in your
+  config repo can run the sweep on every `ralph up` (the post-install wiring
+  pattern — see `docs/adr/0006` and `examples/dotfiles/` at the repo root).
+
+## When a block is wrong
+
+A pre-commit block you disagree with has an escape ladder, narrowest first;
+take the lowest rung that solves it. `suspenders doctor` in the repo shows
+the state behind any decision: the config in effect, per-repo overrides,
+whether the repo is exempt, and the derived blocked-name list.
+
+1. **One commit**: `git commit --no-verify` skips the hook entirely. It is
+   the deliberate, audited override — the block message names it, and the
+   attempt that was blocked is already on the events timeline.
+2. **One line**: a `suspenders:ignore` comment on the flagged line suppresses
+   findings on that line permanently.
+3. **One value**: a known-safe secret-shaped string goes in the `allowlist`
+   (global config or the repo's `.suspenders.yaml`); a safe internal-name
+   reference goes in `guard.allowlist`.
+4. **One repo**: `.suspenders.yaml` at the repo root suppresses rules,
+   paths, or patterns for that repo only; per-repo `allowlist` and `guard`
+   entries append to the global config rather than replacing it.
+5. **One rule or check**: `scan.enabled: false` or `guard.enabled: false`
+   turns a whole check off; `suspenders hook uninstall [--all]` removes the
+   hooks and restores whatever they backed up.
+
+### Including and excluding repos
+
+Three different mechanisms decide which repos the checks apply to, and they
+answer different questions:
+
+- **`dirs` + `exclude`** decide which repos suspenders manages at all.
+  `exclude` entries are globs matched against the `org/repo` name from the
+  origin remote — an excluded repo is skipped by `--all` discovery *and*
+  exempt from the internal-name guard.
+- **`guard.workspace_dirs` membership** exempts a repo from the guard by
+  definition: a repo inside a workspace dir is internal, so referencing
+  internal names there is fine. Exemption does not remove that repo's names
+  from the block list other repos are checked against.
+- **Public vs internal is derived, never declared**: there is no per-repo
+  "this one is public" flag to get wrong. A repo is guarded exactly when it
+  is neither inside `workspace_dirs` nor matched by `exclude`.
+
+The session-side twin has the same shape: belt's repo scoping (allowlists by
+canonical `host/owner/repo`, path excludes) is documented in
+[`tools/belt/docs/hooks.md`](../belt/docs/hooks.md), "Overriding, allowing,
+and disabling".
+
 ## Features
 
 - 84 built-in detection rules covering AWS, GitHub, GitLab, Google, Slack, Stripe, OpenAI, Anthropic, HuggingFace, and dozens more
@@ -75,6 +155,13 @@ Each hook file includes a SHA-256 checksum of its body (excluding the version li
 ### Repository discovery
 
 The `--all` flag walks every directory in `config.yaml`'s `dirs` array, discovers git repositories with 32 concurrent workers, extracts the `org/repo` name from each remote origin URL, and filters out repos matching `exclude` globs.
+
+Discovery runs through the shared [`kit/repofind`](../../kit/repofind/README.md) package, and suspenders uses it for two separate walks with two separate config lists:
+
+- **`dirs`** answers "which repos do I manage": `hook install --all` installs hooks into every repo found here (minus `exclude` globs).
+- **`guard.workspace_dirs`** answers "which names are internal": every repo found here contributes its org segment, repo segment, and checkout directory basename as three separate blocked names — never the combined `org/repo` form.
+
+belt's `write-internal-names` guard runs the same walk over the same package (and falls back to this tool's `guard:` config section), which is what keeps the write-time and commit-time block lists identical. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
 
 ## Install
 
@@ -663,7 +750,8 @@ See [`CLAUDE.md`](CLAUDE.md) for the module layout and domain vocabulary in [`CO
 
 ## License
 
-[MIT](LICENSE) -- Copyright (c) 2025 Alexander Brandstedt
+BSD-3-Clause via the repo root [LICENSE](../../LICENSE); no per-file
+headers, the root license covers the whole monorepo.
 
 ## Docs
 
@@ -671,3 +759,6 @@ See [`CLAUDE.md`](CLAUDE.md) for the module layout and domain vocabulary in [`CO
 - [operating](operating.md): runtime behavior, failure modes, first moves
 - [why](why.md): why this component exists
 - [config](config.md): configuration reference
+- [CONTEXT](CONTEXT.md): domain vocabulary — allowlist vs safe references vs blocked name
+- [history-clean](docs/history-clean.md): walkthrough of the history rewrite
+- [working-on-it](docs/working-on-it.md): hands-on guide to adding and tuning detection rules
