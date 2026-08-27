@@ -1,0 +1,16 @@
+# humanizer-id: Humanizer.DashSubstitute
+# humanizer-name: Dash substitute
+# humanizer-category: style
+# humanizer-summary: Double hyphens or spaced en-dashes standing in for em-dashes.
+# humanizer-rationale: When a channel strips typography, the LLM em-dash habit surfaces as -- or a spaced en-dash; same tell, different bytes.
+# humanizer-before: The build is fast -- most runs finish in seconds.
+# humanizer-after: The build is fast; most runs finish in seconds.
+# humanizer-reference: Wikipedia:Signs_of_AI_writing#Em_dash_overuse
+extends: existence
+message: "Dash substitute '%s' — prefer a comma, semicolon, period, or parentheses."
+level: warning
+nonword: true
+tokens:
+  - '\s--\s'
+  - '\w--\w'
+  - '\s–\s'

@@ -11,4 +11,4 @@ message: "Ordinal signpost '%s' — formulaic essay scaffolding; prefer prose or
 level: suggestion
 nonword: true
 tokens:
-  - '\b(?i)(?:First|Second|Third|Fourth|Finally|Firstly|Secondly|Thirdly|Lastly),'
+  - '(?m)(?:^|[.!?]\s)(?i)(?:First|Second|Third|Fourth|Finally|Firstly|Secondly|Thirdly|Lastly),'

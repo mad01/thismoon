@@ -11,4 +11,4 @@ message: "Three-item list: '%s' — consider whether two or one item would serve
 level: suggestion
 ignorecase: true
 tokens:
-  - '(?:\b\w+(?:\s+\w+){0,2},\s+){2}\b\w+(?:\s+\w+){0,2},?\s+and\s+\w+(?:\s+\w+){0,2}'
+  - '(?:\b\w+(?:\s+\w+){0,2},\s+){1}\b\w+(?:\s+\w+){0,2},?\s+and\s+\w+(?:\s+\w+){0,2}'

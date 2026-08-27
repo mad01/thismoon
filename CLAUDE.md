@@ -31,7 +31,6 @@ docs/adr/    architecture decision records
 docs/GETTING-STARTED.md install guide: one tool via brew vs the fleet via ralph
 docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
-docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 ```
 
 ## Conventions
@@ -42,7 +41,7 @@ docs/MIGRATED-FROM.md   maps each imported directory to its source repo + SHA
 - Build metadata is shared: a component Makefile sets `COMPONENT := <name>`, does `include ../../buildinfo.mk`, and links with `$(BUILDINFO_LDFLAGS)`. Every component then reports the same four-key object (`version`, `commit`, `tag`, `build_time`) from `GET /version` and `<binary> version -o json`, while plain `<binary> version` stays a bare token that status parses.
 - Build targets: darwin/arm64 only — the platform is macOS-focused (see docs/adr/0007; supersedes the target list in 0004).
 - Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity.
-- Code imported from another repo comes in clean (no git history) and gets a row in `docs/MIGRATED-FROM.md` with the source repo and SHA it came from.
+- Code imported from another repo comes in clean (no git history); the import commit message records the source repo and SHA it came from.
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
@@ -82,12 +81,12 @@ Machine-private wiring (which `.this` hosts exist, MCP registration, env/secrets
 
 ## Importing a service from another repo
 
-The migration playbook, applied to every service brought in so far (see
-`docs/MIGRATED-FROM.md` for provenance). Follow it in order; each step earned
-its place:
+The migration playbook, applied to every service brought in so far. Follow it
+in order; each step earned its place:
 
 1. **Import clean.** `git archive HEAD:<svc>` from the source repo, extract
-   into `services/<svc>` (or `tools/<name>`). No git history comes along.
+   into `services/<svc>` (or `tools/<name>`). No git history comes along; the
+   import commit message records the source repo and SHA.
 2. **Fold into the module.** Delete the imported `go.mod`/`go.sum`, rewrite
    module paths to `github.com/mad01/thismoon/...`, switch webkit imports to
    the in-module package.
@@ -104,14 +103,12 @@ its place:
 6. **Register for release.** Add the component to the `packages` map in
    `release-please-config.json` — CI fails the PR if a Makefile-bearing
    component is missing from it.
-7. **Record provenance.** Add the service's row to `docs/MIGRATED-FROM.md`
-   (source repo + SHA).
-8. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
+7. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
    sources-cache `working_dir` (see Conventions), then the scratch-config
    `ralph up --dry-run` gate: commit first, move the real sources cache aside,
    remove the test cache between runs, and put a `config.local.toml` with the
    right profiles beside the scratch config.
-9. **Two commits per service:** one for the import, one for the recipe.
+8. **Two commits per service:** one for the import, one for the recipe.
 
 Cutover happens in the consuming repo (dotfiles): delete the old source dir +
 recipe in one PR, keep item keys identical so ralph state carries over, then a

@@ -17,5 +17,7 @@
 extends: existence
 message: "Fragmented header: drop the one-line warm-up between the heading and the real content."
 level: suggestion
+scope: raw
+nonword: true
 tokens:
-  - '(?m)^#{1,6}\s+.+\n\n[^\n]{1,80}\n\n'
+  - '(?m)^#{1,6}\s+.+\n\n[A-Z][^\n:]{0,60}\.\n\n'

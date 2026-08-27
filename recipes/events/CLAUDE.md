@@ -69,4 +69,3 @@ the `events.this` route only applies where d-man runs.
 ## See also
 
 - Source + module notes: `services/events/CLAUDE.md`
-- Import provenance: `docs/MIGRATED-FROM.md`

@@ -77,4 +77,3 @@ at `http://localhost:7429/`; the `deps.this` route only applies where d-man runs
 ## See also
 
 - Source + module notes: `services/deps/CLAUDE.md`
-- Import provenance: `docs/MIGRATED-FROM.md`

@@ -53,4 +53,3 @@ Editing routes needs no ralph run at all: the daemon watches its routes file
 
 - Source + module notes: `services/d-man/CLAUDE.md`
 - One-time daemon setup: `SETUP.md`
-- Import provenance: `docs/MIGRATED-FROM.md`

@@ -15,7 +15,7 @@ guessing.
 
 Search is the substrate the rest of the platform's code work leans on, not a
 feature of any one component; csl predates the monorepo and came in as a clean
-import (see `docs/MIGRATED-FROM.md`). Hosted code search would mean shipping
+import from `github.com/mad01/code-search-local`. Hosted code search would mean shipping
 local checkouts to a cloud service, which the platform's local-only stance
 rules out. zoekt itself is an engine, not a finished tool: csl adds the parts
 an agent and a human actually need on top of it: repo discovery and host
