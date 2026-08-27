@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.3](https://github.com/mad01/thismoon/compare/csl/v0.14.2...csl/v0.14.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* **humanizer:** make dead vale rules fire, add dash-substitute rule, align CLI json with MCP payload ([13fd610](https://github.com/mad01/thismoon/commit/13fd6103fca45c7a0a4c90e81d1e96b3fb73a46f))
+
 ## [0.14.2](https://github.com/mad01/thismoon/compare/csl/v0.14.1...csl/v0.14.2) (2026-08-25)
 
 
