@@ -33,6 +33,16 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 
 ## MCP
 
+On a standalone install, register it once:
+
+```bash
+claude mcp add --scope user present -- present mcp
+```
+
+On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+
+The tools write the page store directly, so they work with `present serve` down; only the `url` a tool returns needs the server running to actually open in a browser.
+
 | Tool | Purpose |
 |------|---------|
 | `present_create(title, content, graph?)` | Create a page; returns `{id, url, version, server_running}` |
@@ -41,6 +51,8 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 | `present_update(id, title?, content?, graph?)` | Patch a page (omitted fields unchanged); bumps version → open tabs auto-reload |
 | `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source |
 | `present_open(id)` | Open a page in the browser (call once per page) |
+
+Confirm the registration with `claude mcp list`, and run `present doctor` for a full check of the store, the server, and version skew.
 
 ## Where things live
 
@@ -70,7 +82,7 @@ make tidy    # go mod tidy
 chrome-only shell and the browser fetches each page as JSON and builds the DOM.
 There is no on-disk template to edit.
 
-Chrome (header, theme toggle, font/size/bionic controls) comes from the
+Chrome (header, theme toggle, font/size/fixation controls) comes from the
 in-module `webkit` package (served at `GET /webkit/`). Do not re-add those
 controls locally. A webkit change ships at the next build; run
 `present rerender` afterwards to re-render all pages through the updated

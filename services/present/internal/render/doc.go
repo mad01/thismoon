@@ -96,7 +96,7 @@ type ChartPoint struct {
 	Y float64 `json:"y"`
 }
 
-// textNorms normalizes text for bionic reading and TTS pronunciation.
+// textNorms normalizes text for fixation reading and TTS pronunciation.
 var textNorms = []struct {
 	re   *regexp.Regexp
 	repl string
@@ -286,7 +286,7 @@ const docTemplateSrc = `<h1 class="brief-title">{{.Title}}</h1>
 <div class="brief-meta">{{.}}</div>
 {{- end}}
 {{- with .Summary}}
-<div class="brief-summary" data-bionic>{{inlineMd .}}</div>
+<div class="brief-summary" data-fixation>{{inlineMd .}}</div>
 {{- end}}
 {{- with .Chips}}
 <div class="chip-row">
@@ -314,11 +314,11 @@ const docTemplateSrc = `<h1 class="brief-title">{{.Title}}</h1>
 </wk-section>
 {{- end}}`
 
-const blockTemplatesSrc = `{{define "block-p"}}<p data-bionic>{{inlineMd .Text}}</p>{{end}}
+const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text}}</p>{{end}}
 
 {{define "block-h3"}}<wk-section-subheading>{{.Text}}</wk-section-subheading>{{end}}
 
-{{define "block-callout"}}<wk-callout{{with .Severity}} variant="{{.}}"{{end}} data-bionic>{{inlineMd .Text}}</wk-callout>{{end}}
+{{define "block-callout"}}<wk-callout{{with .Severity}} variant="{{.}}"{{end}} data-fixation>{{inlineMd .Text}}</wk-callout>{{end}}
 
 {{define "block-table"}}<wk-table><table>
   <thead><tr>{{range .Cols}}<th>{{.}}</th>{{end}}</tr></thead>

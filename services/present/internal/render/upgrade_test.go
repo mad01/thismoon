@@ -33,9 +33,9 @@ func TestUpgradeLegacyHTML(t *testing.T) {
 			gone: []string{`class="section-heading"`, `class="section-id"`, `<h2`, `<span`},
 		},
 		{
-			name: "section-text paragraph drops class keeps data-bionic",
-			in:   `<p class="section-text" data-bionic>body</p>`,
-			want: []string{`data-bionic`, `body`, `<p`},
+			name: "section-text paragraph drops class keeps data-fixation",
+			in:   `<p class="section-text" data-fixation>body</p>`,
+			want: []string{`data-fixation`, `body`, `<p`},
 			gone: []string{`class="section-text"`},
 		},
 		{
@@ -94,10 +94,10 @@ func TestUpgradeLegacyHTML(t *testing.T) {
 		},
 		{
 			name: "callout info default",
-			in:   `<div class="callout callout-info" data-bionic>note</div>`,
+			in:   `<div class="callout callout-info" data-fixation>note</div>`,
 			// The html serializer normalizes a bare boolean attribute to ="" —
-			// semantically identical to the renderer's `data-bionic`.
-			want: []string{`<wk-callout variant="info"`, `data-bionic`, `>note</wk-callout>`},
+			// semantically identical to the renderer's `data-fixation`.
+			want: []string{`<wk-callout variant="info"`, `data-fixation`, `>note</wk-callout>`},
 			gone: []string{`class="callout`},
 		},
 		{
@@ -167,7 +167,7 @@ func TestUpgradeLegacyHTML(t *testing.T) {
 		},
 		{
 			name: "idempotent on already-migrated wk markup",
-			in:   `<wk-section id="x"><wk-section-heading>H</wk-section-heading><p data-bionic>t</p><wk-callout variant="info">c</wk-callout></wk-section>`,
+			in:   `<wk-section id="x"><wk-section-heading>H</wk-section-heading><p data-fixation>t</p><wk-callout variant="info">c</wk-callout></wk-section>`,
 			want: []string{
 				`<wk-section id="x">`,
 				`<wk-section-heading>H</wk-section-heading>`,
@@ -222,7 +222,7 @@ func TestUpgradeLegacyHTML(t *testing.T) {
 // second pass is a no-op over the first.
 func TestUpgradeLegacyHTMLIdempotent(t *testing.T) {
 	in := `<div class="section" id="s"><h2 class="section-heading"><span class="section-id">A1</span>H</h2>` +
-		`<p class="section-text" data-bionic>body</p>` +
+		`<p class="section-text" data-fixation>body</p>` +
 		`<div class="kv-row"><span class="kv-label">L</span><span class="kv-value">V</span></div>` +
 		`<div class="callout callout-warn">w</div>` +
 		`<span class="chip chip-b">b</span>` +

@@ -248,9 +248,9 @@ wk-button[variant="danger"] {
 .btn-danger:hover,
 wk-button[variant="danger"]:hover { opacity: 0.88; }
 
-/* ── Bionic ── */
+/* ── Fixation ── */
 
-.bionic b { font-weight: 700; }
+.fixation b { font-weight: 700; }
 
 /* ═══════════════════════════════════════════════════
    COMPONENT STYLES
@@ -1129,6 +1129,47 @@ wk-form wk-modal-actions { padding: 0; margin-top: 0.4rem; }
 
 @keyframes wkFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes wkPop { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+/* ── Feature guide (help modal) ── */
+.wk-help-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.wk-help-close:hover { color: var(--text-1); background: var(--chip-bg); }
+.wk-help-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.wk-help-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.4rem 1rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+.wk-help-row:first-child { border-top: none; }
+.wk-help-term { font-weight: 600; color: var(--text-1); font-size: 0.82rem; }
+.wk-help-desc { color: var(--text-2); font-size: 0.82rem; line-height: 1.55; }
+.wk-help-section-title {
+  margin: 1rem 0 0.1rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.wk-help-section-title + .wk-help-row { border-top: none; }
+@media (max-width: 520px) {
+  .wk-help-row { grid-template-columns: 1fr; gap: 0.15rem; padding: 0.5rem 0; }
+}
 
 /* ── ⌘K site picker (wk-cmdk) ── */
 .wk-cmdk-overlay {

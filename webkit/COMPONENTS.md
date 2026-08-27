@@ -4,7 +4,7 @@ Goal: a small, reusable UI kit shared by `present`, `csl`, `catalog`. React-like
 **composition without React** via **web components (custom elements), light DOM**,
 styled by the shared `webkit.css`. Consumers write declarative markup
 (`<wk-card>…`) in their server-rendered HTML; `webkit.js` upgrades the interactive
-ones. CSS-vars (palette) and the bionic text-walk keep working because everything
+ones. CSS-vars (palette) and the fixation text-walk keep working because everything
 is light DOM (no Shadow DOM).
 
 ## Principles
@@ -29,18 +29,23 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
 - `brand`, `brand-href` (default `/`) — wordmark (wrap trailing `.`/`·` in `.dot`).
 - `back-label`, `back-href` — optional back link (present's "← All").
 - `title` — small muted label (present's "Brief").
-- `controls` — CSV, default `cmdk,font,bionic,size,speed,reload,theme`.
+- `controls` — CSV, default `cmdk,font,fixation,size,reload,theme,help`.
 - `page-width` — number, sets `--page-width` (default 1080).
-- `bionic-targets` — selector override.
+- `fixation-targets` — selector override.
+- `help` — a `?` control that opens a feature-guide modal (dismiss on X, Esc, or
+  a click outside). It documents the controls this header renders, adds a
+  read-aloud/speed section when `speed` is present, and appends the innerHTML of
+  any `<template data-wk-help>` in the page so a consumer can add its own
+  sections (e.g. speak's file upload).
 
 Light-DOM children it relocates into the bar:
 - `<a data-nav [class=active]>…</a>` → nav links area.
 - `<button data-extra id=…>…</button>` → controls area (rendered as-is, app keeps
   its own click handler — e.g. catalog's `refreshBtn`/`addBtn`).
 
-Behavior (ported from the current `Webkit.init`): font/bionic/size/reload/theme
-controls wired to GLOBAL keys `webkit-theme|font|size|bionic` (default light,
-size 16 clamp 12–24, bionic persisted). On theme toggle it sets `data-theme`,
+Behavior (ported from the current `Webkit.init`): font/fixation/size/reload/theme
+controls wired to GLOBAL keys `webkit-theme|font|size|fixation` (default light,
+size 16 clamp 12–24, fixation persisted). On theme toggle it sets `data-theme`,
 saves, and **dispatches `new CustomEvent('wk-themechange', {detail:{theme}})` on
 `document`** (consumers listen to recolor graphs, replacing the `onThemeChange`
 callback). Keep a thin `Webkit.init(cfg)` shim that creates a `<wk-header>` from a
@@ -78,7 +83,7 @@ highlight spans (the selection itself is the visual). Esc clears the
 selection, the float button, and any selection playback. One element on the
 page enables this even with no `targets` attribute.
 
-Caveat: toggling bionic mid-playback rewrites the section's innerHTML and
+Caveat: toggling fixation mid-playback rewrites the section's innerHTML and
 detaches the live highlight spans — audio keeps playing but highlighting stops
 until that section is played again.
 
@@ -233,8 +238,8 @@ until that section is played again.
   setTimeout(() => t.remove(), 2500);
   ```
 
-Update `<wk-header>` default `bionic-targets` to be component-aware, e.g.
-`[data-bionic], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td`.
+Update `<wk-header>` default `fixation-targets` to be component-aware, e.g.
+`[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td`.
 
 ## FOUC guard — `Webkit.bootSnippet`
 `webkit.js` is deferred, so theme + font-size are only applied after it runs —
@@ -282,8 +287,8 @@ webkit asset bump shows up on the next navigation, not after a force-refresh.
 - Go: `embed_test.go` still asserts Handler serves css/js. ADD assertions that
   `webkit.js` contains `wk-header` (customElements.define) and `webkit.css`
   contains `wk-card`. Keep `--page-width`/`--terracotta` assertions.
-- Pure-fn unit tests (node, `npm test` → `node --test`) for `toBionic`/`clampSize`
-  live in `test/`; the logic is imported from pure modules (`src/bionic.ts`,
+- Pure-fn unit tests (node, `npm test` → `node --test`) for `toFixation`/`clampSize`
+  live in `test/`; the logic is imported from pure modules (`src/fixation.ts`,
   `src/size.ts`) shared with `webkit.ts` — not duplicated.
 
 ## Consumer usage (target)

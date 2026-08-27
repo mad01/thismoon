@@ -3,22 +3,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { toBionic } from '../src/bionic.ts';
+import { toFixation } from '../src/fixation.ts';
 import { clampSize, SIZE_MIN, SIZE_MAX } from '../src/size.ts';
 
-test('toBionic: single-character word is returned unchanged (length <= 1 edge)', () => {
-  assert.equal(toBionic('a'), 'a');
-  assert.equal(toBionic('I'), 'I');
+test('toFixation: single-character word is returned unchanged (length <= 1 edge)', () => {
+  assert.equal(toFixation('a'), 'a');
+  assert.equal(toFixation('I'), 'I');
 });
 
-test('toBionic: bolds the first half of each word in a multi-word string', () => {
+test('toFixation: bolds the first half of each word in a multi-word string', () => {
   // "the" (len 3) -> ceil(3/2)=2 -> <b>th</b>e
   // "code" (len 4) -> ceil(4/2)=2 -> <b>co</b>de
-  assert.equal(toBionic('the code'), '<b>th</b>e <b>co</b>de');
+  assert.equal(toFixation('the code'), '<b>th</b>e <b>co</b>de');
 });
 
-test('toBionic: leaves non-letter runs intact between words', () => {
-  assert.equal(toBionic('a, bb'), 'a, <b>b</b>b');
+test('toFixation: leaves non-letter runs intact between words', () => {
+  assert.equal(toFixation('a, bb'), 'a, <b>b</b>b');
 });
 
 test('clampSize: pins to the lower bound (12)', () => {

@@ -25,7 +25,7 @@ internal/notify/     best-effort event emit to events.this
 
 `internal/server` mounts the in-module webkit Go package with
 `webkit.Mount(mux)`, serving the shared chrome (header, theme, font, size,
-bionic controls) at `GET /webkit/`. The embedded shells carry only the
+fixation controls) at `GET /webkit/`. The embedded shells carry only the
 `<wk-header>` markup and present-specific styling (hero, chips, graph and
 chart chrome); the client renderers build the DOM with webkit's shared
 helpers (`Webkit.el`, `Webkit.escapeHtml`, `Webkit.poll`).

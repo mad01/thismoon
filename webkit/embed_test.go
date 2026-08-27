@@ -53,6 +53,8 @@ func TestHandlerServesCSS(t *testing.T) {
 		"wk-button[variant=\"danger\"]",
 		// ⌘K site picker
 		".wk-cmdk-overlay", ".wk-cmdk-item", ".ctrl-kbd",
+		// feature guide (help modal)
+		".wk-help-row", ".wk-help-close", ".wk-help-section-title",
 		// read aloud
 		"wk-read-aloud", ".wk-ra-btn", ".wk-ra-sentence",
 		// a11y
@@ -81,6 +83,8 @@ func TestHandlerServesJS(t *testing.T) {
 		"wk-read-aloud", "v1/audio/speech",
 		// ⌘K site picker
 		"wk-cmdk:open", "__this/sites.json", "webkit-cmdk",
+		// feature guide (help modal)
+		"webkit-help", "data-wk-help", "Feature guide",
 		// rich markdown / prose (issue #37): client-side highlight + copy enhancer,
 		// covering both .wk-prose bodies and standalone pre.wk-code-block
 		"enhanceProse", "wk-code-copy", "wk-prose",

@@ -11,6 +11,7 @@ present/
     cli/               - cobra command tree: root, serve, mcp, version (build metadata from the shared buildinfo package)
     store/             - filesystem CRUD over pages/<id>/ (id.go, store.go); Delete is web-index-only, not exposed via MCP
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
+    notify/            - best-effort event archiving to events.this (events.go)
     server/            - HTTP handlers: GET / (static index shell), /api/pages (page list as JSON), /index.js (client index renderer), /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js (embedded client renderer), /p/{id}/version, DELETE /p/{id}; embeds index_shell.html, shell.html, index.js, app.js
     mcpserver/         - MCP wiring + present_* tools
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
@@ -74,7 +75,7 @@ bump or renderer change that alters emitted markup.
 
 ## Shared UI: webkit
 
-The chrome (header, theme toggle, font/size/bionic controls) comes from the
+The chrome (header, theme toggle, font/size/fixation controls) comes from the
 in-module package **`github.com/mad01/thismoon/webkit`**, which embeds compiled
 TypeScript/CSS web components. Do NOT re-add palette, topbar, or theme CSS
 locally; those live in webkit only. There is no pin or bump step: the binary
@@ -112,7 +113,7 @@ The index template uses:
 <wk-header brand="present"></wk-header>
 ```
 
-`webkit.js` injects the full control set (font · bionic · size ± · reload ·
+`webkit.js` injects the full control set (font · fixation · size ± · reload ·
 theme). Do not add those controls manually.
 
 ### Per-repo changes
@@ -177,9 +178,9 @@ confirms which embedded webkit assets the running present server serves.
   (`expandTilde`, `root.go`); `serve` request logs go to stderr (`t-man logs
   present --stderr`), and a reload-loop of `GET /p/<id>` means cached HTML —
   pages set `Cache-Control: no-store` to prevent exactly that.
-- **Page view is a static shell + client render.** `GET /p/{id}` serves `internal/server/shell.html` (chrome only: `<wk-header>` + webkit assets), and `app.js` builds the body in the browser from `GET /api/p/{id}` JSON (`{id,title,version,has_graph,content,graph,references}`): it mounts `content` as innerHTML, runs the `graph` field as a `<script>`, then inits the Cytoscape graph, metric charts, references, read-aloud, and theme-recolor. The old `{{CONTENT}}`/`{{GRAPH_SCRIPT}}`/`{{REFERENCES}}`/`{{LIVE_RELOAD}}` template substitutions (`render.Render` + `template.html`) have been removed; the index renders client-side from `index_shell.html` + `index.js` the same way. The header/theme/font/size/bionic chrome lives in the in-module `webkit` package (served at `/webkit/`; see *Shared UI: webkit* above).
+- **Page view is a static shell + client render.** `GET /p/{id}` serves `internal/server/shell.html` (chrome only: `<wk-header>` + webkit assets), and `app.js` builds the body in the browser from `GET /api/p/{id}` JSON (`{id,title,version,has_graph,content,graph,references}`): it mounts `content` as innerHTML, runs the `graph` field as a `<script>`, then inits the Cytoscape graph, metric charts, references, read-aloud, and theme-recolor. The old `{{CONTENT}}`/`{{GRAPH_SCRIPT}}`/`{{REFERENCES}}`/`{{LIVE_RELOAD}}` template substitutions (`render.Render` + `template.html`) have been removed; the index renders client-side from `index_shell.html` + `index.js` the same way. The header/theme/font/size/fixation chrome lives in the in-module `webkit` package (served at `/webkit/`; see *Shared UI: webkit* above).
 - **Client render uses webkit's shared helpers.** `app.js` builds the DOM with `Webkit.el` / `Webkit.escapeHtml` and polls `/p/{id}/version` for live-reload via `Webkit.poll` (webkit shared helpers). Decision recorded in `docs/adr/0005-webkit-client-side-rendering.md`.
-- **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/bionic are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-bionic`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
+- **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/fixation are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-fixation`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
 - **Codesign for MCP.** macOS kills adhoc-signed binaries with stale provenance xattrs; `make install` re-signs.
 - **Version probe.** `GET /version` and `present version -o json` both return the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph outdated` uses. Plain `present version` stays a bare token — status parses it as one. The recipe bakes this sha into the t-man service env so a new build reloads the running `serve` agent automatically. Not to be confused with `GET /p/{id}/version`, the per-page revision counter `app.js` polls for live reload.
 

@@ -88,7 +88,7 @@ func upgradeNode(n *html.Node) {
 		dropClassAttr(n)
 
 	case classes["section-text"]:
-		// Drop the class, keep the tag (<p>) and its data-bionic attribute.
+		// Drop the class, keep the tag (<p>) and its data-fixation attribute.
 		setClass(n, removeClasses(n, "section-text"))
 
 	case classes["toc"]:

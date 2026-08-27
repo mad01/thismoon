@@ -15,7 +15,7 @@
 
 ### Bug Fixes
 
-* **present:** apply bionic reading to list items ([#120](https://github.com/mad01/thismoon/issues/120)) ([89c14a1](https://github.com/mad01/thismoon/commit/89c14a1f725d5d3421f35dafc676842de5a4f77c))
+* **present:** apply fixation reading to list items ([#120](https://github.com/mad01/thismoon/issues/120)) ([89c14a1](https://github.com/mad01/thismoon/commit/89c14a1f725d5d3421f35dafc676842de5a4f77c))
 * **present:** correct stale --help text, remove dead server-side render layer ([#29](https://github.com/mad01/thismoon/issues/29)) ([8abc1f7](https://github.com/mad01/thismoon/commit/8abc1f7d53763077c7da6b8b74db814ff2901fba))
 * ship MCP field descriptions via the jsonschema tag ([#178](https://github.com/mad01/thismoon/issues/178)) ([d83cfd4](https://github.com/mad01/thismoon/commit/d83cfd4e05f10c4f406f010ce0d01c18fff4afe6))
 
@@ -59,7 +59,7 @@
 
 ### Bug Fixes
 
-* **present:** apply bionic reading to list items ([#120](https://github.com/mad01/thismoon/issues/120)) ([785831a](https://github.com/mad01/thismoon/commit/785831a9d84f8d3bfa9847024be8b419c34cb215))
+* **present:** apply fixation reading to list items ([#120](https://github.com/mad01/thismoon/issues/120)) ([785831a](https://github.com/mad01/thismoon/commit/785831a9d84f8d3bfa9847024be8b419c34cb215))
 
 ## [0.1.1](https://github.com/mad01/thismoon/compare/present/v0.1.0...present/v0.1.1) (2026-07-08)
 
