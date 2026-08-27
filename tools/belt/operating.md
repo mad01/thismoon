@@ -10,9 +10,11 @@ a tool call, even by mistake.
 
 There is no daemon. Claude Code spawns `belt hook <event>` or
 `belt hint <event>` as a fresh process for every tool call it is wired to,
-feeds the payload on stdin, and reads the decision or advice as JSON on
-stdout. The process exits 0 even when it denies: the deny travels in the
-JSON, never the exit code, so a belt bug cannot break tool calls.
+feeds the payload on stdin, and reads the decision or advice on stdout —
+JSON for every event except `hint prompt`, which writes plain text because
+UserPromptSubmit reads stdout directly as context. The process exits 0 even
+when it denies: the deny travels in the JSON, never the exit code, so a
+belt bug cannot break tool calls.
 
 Because every invocation is a fresh process, changes apply on the next tool
 call: belt config edits, Claude settings deny-list edits, hook registration
@@ -58,8 +60,10 @@ and `commit-guard` are no-ops without their config sections, skip repos
 whose remote does not resolve, and a malformed block_hours window blocks
 nothing. Soft-mode rules and broken custom guards allow with a warn event
 to the events service — check there when a guard seems silent. A hard
-`commit-guard` deny names its override; `belt override set <name>` is the
-sanctioned escape hatch, not rewording the commit command.
+`commit-guard` deny names its override; `belt override set <name>` (10m by
+default, `--for` sizes it, `extend` pushes it forward) is the sanctioned
+escape hatch, not rewording the commit command. An override-suppressed
+block also leaves a warn event, and the override expires on its own.
 
 Silence from the kof-backed hints is normal when the kof service is down or
 its store is empty; the doctor kof line tells those states apart.
@@ -80,6 +84,7 @@ again.
    --content "<text>"`: dry-run the guards and print each verdict
 3. `belt config`: every setting in effect, with resolved fallbacks,
    profile-scoped allowlists, and the Claude deny patterns
-4. `belt override`: which guard overrides are active (set/clear to toggle)
+4. `belt override`: every override with its state — active with remaining
+   time, expired, legacy untimed, or malformed (set/extend/clear to manage)
 5. `belt version -o json`, when a fix does not seem to apply: confirm the
    binary is the build you expect

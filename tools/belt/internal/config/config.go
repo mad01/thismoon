@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
@@ -222,8 +223,10 @@ func RepoMatches(patterns []string, repo string) bool {
 	return false
 }
 
-// OverridesDir is where active guard overrides live: one empty file per
-// active override name, managed by `belt override set|clear`.
+// OverridesDir is where guard overrides live: one file per override name,
+// managed by `belt override set|extend|clear`. The file's content is the
+// RFC 3339 expiry the override runs until; an empty file is a legacy
+// untimed override, active until cleared.
 func OverridesDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -232,32 +235,93 @@ func OverridesDir() string {
 	return filepath.Join(home, ".config", "belt", "overrides")
 }
 
-// OverrideActive reports whether the named override file exists. A missing
-// overrides dir means no override is active.
-func OverrideActive(name string) bool {
-	dir := OverridesDir()
-	if dir == "" || name == "" {
-		return false
-	}
-	_, err := os.Stat(filepath.Join(dir, name))
-	return err == nil
+// Override is one override file's parsed state.
+type Override struct {
+	Name string
+	// Expiry is when the override stops applying. Zero for a legacy untimed
+	// file and for a malformed one.
+	Expiry time.Time
+	// Legacy marks an empty pre-timed-overrides file: active until cleared.
+	Legacy bool
+	// Malformed marks a file whose content did not parse as RFC 3339. A
+	// malformed override is inactive — the guard stays armed.
+	Malformed bool
 }
 
-// ActiveOverrides lists the override names currently set, sorted, for the
-// doctor report.
-func ActiveOverrides() []string {
+// Active reports whether the override applies at t.
+func (o Override) Active(t time.Time) bool {
+	if o.Malformed {
+		return false
+	}
+	if o.Legacy {
+		return true
+	}
+	return t.Before(o.Expiry)
+}
+
+// Remaining is how long the override still applies at t: zero when it is
+// legacy (no expiry to count down), malformed, or already expired.
+func (o Override) Remaining(t time.Time) time.Duration {
+	if o.Legacy || o.Malformed || !t.Before(o.Expiry) {
+		return 0
+	}
+	return o.Expiry.Sub(t)
+}
+
+// ReadOverride parses the named override file; ok is false when no such
+// override is set.
+func ReadOverride(name string) (Override, bool) {
+	dir := OverridesDir()
+	if dir == "" || name == "" {
+		return Override{}, false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return Override{}, false
+	}
+	return parseOverride(name, data), true
+}
+
+// parseOverride interprets one override file's bytes.
+func parseOverride(name string, data []byte) Override {
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return Override{Name: name, Legacy: true}
+	}
+	expiry, err := time.Parse(time.RFC3339, text)
+	if err != nil {
+		return Override{Name: name, Malformed: true}
+	}
+	return Override{Name: name, Expiry: expiry}
+}
+
+// OverrideActive reports whether the named override applies right now: its
+// file exists and is unexpired (or legacy untimed). A missing overrides dir
+// means no override is active.
+func OverrideActive(name string) bool {
+	o, ok := ReadOverride(name)
+	return ok && o.Active(time.Now())
+}
+
+// Overrides lists every override file, parsed and sorted by name, for the
+// doctor report and `belt override`. Expired and malformed entries are
+// included so the listing can say why a switch is not working.
+func Overrides() []Override {
 	entries, err := os.ReadDir(OverridesDir())
 	if err != nil {
 		return nil
 	}
-	var names []string
+	var out []Override
 	for _, e := range entries {
-		if !e.IsDir() {
-			names = append(names, e.Name())
+		if e.IsDir() {
+			continue
+		}
+		if o, ok := ReadOverride(e.Name()); ok {
+			out = append(out, o)
 		}
 	}
-	slices.Sort(names)
-	return names
+	slices.SortFunc(out, func(a, b Override) int { return strings.Compare(a.Name, b.Name) })
+	return out
 }
 
 // Paths lists the locations of every config surface belt reads. `belt doctor`

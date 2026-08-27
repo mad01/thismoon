@@ -57,8 +57,9 @@ git_identity:
 # Work-hours commit guard: commits to matching repos inside the local-time
 # window are blocked (hard) or warned about (soft, the default) on machines
 # carrying the rule's profile. always_allow exempts repos needed at any hour;
-# block_days defaults to mon-fri; override names a switch (belt override set
-# <name>) that disables the rule while set.
+# block_days defaults to mon-fri; override names a timed switch (belt
+# override set <name>, 10m default, --for to size it) that suppresses the
+# rule with a warn event until it expires or is cleared.
 commit_guards:
   - repos:
       - github.com/you/*

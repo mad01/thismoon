@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -85,13 +86,14 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 
 	printCustomGuards(w, cfg, customs)
 
-	fmt.Fprintln(w, "\noverrides — rules naming one stop applying while it is set (belt override set|clear <name>):")
-	if active := config.ActiveOverrides(); len(active) > 0 {
-		for _, name := range active {
-			fmt.Fprintf(w, "  %s  ACTIVE\n", name)
+	fmt.Fprintln(w, "\noverrides — rules naming one stop applying while it is active (belt override set|extend|clear <name>):")
+	if overrides := config.Overrides(); len(overrides) > 0 {
+		now := time.Now()
+		for _, o := range overrides {
+			fmt.Fprintf(w, "  %s  %s\n", o.Name, overrideStatus(o, now))
 		}
 	} else {
-		fmt.Fprintln(w, "  (none active)")
+		fmt.Fprintln(w, "  (none set)")
 	}
 
 	fmt.Fprintln(w, "\nhints:")

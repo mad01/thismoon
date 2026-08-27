@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,12 +21,7 @@ func newCommitGuardFixture(cfg config.Config, repo string, now time.Time, overri
 	f.guard.resolveRepo = func(string) string { return repo }
 	f.guard.now = func() time.Time { return now }
 	f.guard.overrideActive = func(name string) bool {
-		for _, o := range overrides {
-			if o == name {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(overrides, name)
 	}
 	f.guard.emit = func(_, _, _, message string, _ map[string]string) {
 		f.warned = append(f.warned, message)
@@ -76,7 +72,8 @@ func TestCommitGuard(t *testing.T) {
 		{"always_allow repo any time", rule, work, "github.com/mad01/dotfiles", localTime(t, time.Tuesday, 10, 0), nil, false, false},
 		{"unlisted repo allows", rule, work, "other-host.example/org/repo", localTime(t, time.Tuesday, 10, 0), nil, false, false},
 		{"personal profile never blocked", rule, personal, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, false, false},
-		{"vacation override allows", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"vacation"}, false, false},
+		{"vacation override allows with audit warn", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"vacation"}, false, true},
+		{"override outside window stays silent", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), []string{"vacation"}, false, false},
 		{"other override does not help", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"sick-day"}, true, false},
 	}
 	for _, tt := range tests {
