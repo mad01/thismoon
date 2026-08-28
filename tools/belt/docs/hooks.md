@@ -215,25 +215,45 @@ Applies the Bash deny list inside scripts, closing the "write it to a file,
 then run the file" bypass.
 
 - **Fires on** Bash commands that execute or source script content: `bash
-  x.sh`, `python x.py`, `./x.sh`, `source x.sh`, interpreter `-c` strings,
-  and heredocs piped into an interpreter. Wrappers (`sudo`, `env`, `nohup`,
-  `timeout <n>`, …) are stripped first.
+  x.sh`, `python x.py` (versioned names like `python3.12` too), `perl`,
+  `ruby`, `node`, `osascript`, `uv run`, `./x.sh`, extensionless `./deploy`
+  when the file starts with a shebang, `source x.sh`, interpreter `-c`/`-e`
+  strings, heredocs, `bash < x.sh` stdin redirects, and `cat x.sh | bash`
+  pipes. Wrappers (`sudo`, `env`, `nohup`, `timeout <n>`, …) are stripped
+  first.
+- **Indirection heads are scanned too**: the command after `eval`, `xargs`,
+  and `find -exec`/`-execdir`/`-ok` runs through the same patterns — those
+  are the routes a prefix matcher never sees.
+- **A file written and run in one command** (`echo '…' > s.sh && bash
+  s.sh`, `tee` included) gets the whole command text scanned: at check time
+  the file does not exist yet, so the command line is where its future
+  content lives.
+- **`curl | bash` is denied outright** (`wget` too): nothing can read what
+  would run. Download to a file first, then run the file.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
   `~/.claude/settings.json` and `settings.local.json`, read live on every
   invocation so the guard and the permission system cannot drift, plus
   `guards.script-deny-list.extra_patterns` for things the settings file only
-  lists under "ask" (like `rm -rf`).
+  lists under "ask" (like `rm -rf`). An extra pattern starting `re:` is
+  compiled as a case-insensitive regex — the escape hatch for flag
+  reordering and argument wildcards the literal form cannot express.
 - **Matching is** per non-comment line, case-insensitive, whole-word, and
   whitespace-normalized: `kubectl delete` matches `  kubectl   delete pod x`
   but not `kubectl deleted`, in shell lines and Python
-  `subprocess`/`os.system` strings alike.
+  `subprocess`/`os.system` strings alike. Backslash-continued lines are
+  joined before matching, and a second pass collapses quotes, commas, and
+  brackets so `kubectl "delete"` and list-form `subprocess.run(["rm",
+  "-rf", …])` match the same patterns as their plain forms.
+- **`mode: soft`** downgrades every denial to a warn event on the events
+  service and lets the command proceed — the rollout setting for tuning new
+  patterns before they block.
 - **Why it exists**: the permission system judges the literal command line.
   `bash cleanup.sh` looks harmless even when the script runs `kubectl
   delete`.
 - **Fails open**: unreadable files, files over 1 MiB, `python -m`, and paths
   under `exclude_paths` are all allowed. Known holes are documented in the
-  component CLAUDE.md (flag reordering, `curl | bash`, Python list-form
-  `subprocess.run`); the fix is adding `extra_patterns`, not a bigger parser.
+  component CLAUDE.md; the fix is adding `extra_patterns` (or a `re:`
+  pattern), not a bigger parser.
 
 ### write-internal-names
 

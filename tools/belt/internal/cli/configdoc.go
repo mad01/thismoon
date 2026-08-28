@@ -98,10 +98,17 @@ guards:
 
   script-deny-list:
     enabled: true
+    # "soft" downgrades every denial to a warn event on the events service
+    # and lets the command proceed — the rollout setting for tuning new
+    # patterns before they block. "hard" (the default) blocks.
+    mode: hard
     # Extra patterns denied inside scripts, beyond the Claude settings
     # permissions.deny Bash(...) entries (which are read live, never copied).
+    # A re: prefix compiles the rest as a case-insensitive regex, for flag
+    # reordering and wildcards the literal form cannot express.
     extra_patterns:
       - rm -rf
+      - "re:git\\s+push\\s.*--force"
     # Skip trusted script locations. A ~/ or absolute entry is matched as a
     # directory prefix; anything else as a substring of the script path.
     exclude_paths:
