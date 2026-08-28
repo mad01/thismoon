@@ -29,7 +29,8 @@ git_identity:
     mode: hard
 
 # Work-hours nudge: soft-warn on personal-repo commits during work hours on
-# machines carrying the work profile. `belt override set vacation` disables it.
+# machines carrying the work profile. `belt override set vacation --reason
+# "..."` disables it.
 commit_guards:
   - repos:
       - github.com/you/*

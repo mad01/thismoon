@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // defaultOverrideFor is how long `belt override set` holds without an
@@ -32,7 +33,9 @@ than typing it from memory.
 
 An override is timed — set holds it for 10m unless --for says otherwise,
 extend pushes the expiry forward, and an expired override deactivates on
-its own. The switch is one file under ` + config.OverridesDir() + `
+its own. Both demand a --reason saying why the guard is stood down; the
+reason is archived to the events service (events.this) when it is running.
+The switch is one file under ` + config.OverridesDir() + `
 carrying its RFC 3339 expiry (an empty file from an older belt counts as
 untimed and stays active until cleared). Permanently disabling a guard is a
 config decision, not an override: guards.<id>.enabled in the belt config.`,
@@ -47,6 +50,7 @@ config decision, not an override: guards.<id>.enabled in the belt config.`,
 
 func overrideSetCmd() *cobra.Command {
 	var holdFor time.Duration
+	var reason string
 	cmd := &cobra.Command{
 		Use:   "set <name>",
 		Short: "Activate an override for a limited time (default 10m)",
@@ -56,10 +60,21 @@ func overrideSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			why, err := overrideReason(reason)
+			if err != nil {
+				return err
+			}
 			expiry := time.Now().Add(holdFor)
 			if err := writeOverride(name, expiry); err != nil {
 				return err
 			}
+			notify.EmitEvent("belt", "warn", fmt.Sprintf("override set (%s)", name), why,
+				map[string]string{
+					"override": name,
+					"action":   "set",
+					"for":      holdFor.String(),
+					"expires":  expiry.Format(time.RFC3339),
+				})
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"override %q set for %s — rules naming it stop applying until %s "+
 					"(belt override extend %s pushes it, clear %s ends it early)\n",
@@ -69,11 +84,15 @@ func overrideSetCmd() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&holdFor, "for", defaultOverrideFor,
 		"how long the override holds before expiring on its own")
+	cmd.Flags().StringVar(&reason, "reason", "",
+		"why the guard is being stood down (required, archived to events.this)")
+	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }
 
 func overrideExtendCmd() *cobra.Command {
 	var holdFor time.Duration
+	var reason string
 	cmd := &cobra.Command{
 		Use:   "extend <name>",
 		Short: "Push an existing override's expiry forward (default +10m)",
@@ -83,9 +102,13 @@ func overrideExtendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			why, err := overrideReason(reason)
+			if err != nil {
+				return err
+			}
 			o, ok := config.ReadOverride(name)
 			if !ok {
-				return fmt.Errorf("override: %q is not set (belt override set %s)", name, name)
+				return fmt.Errorf("override: %q is not set (belt override set %s --reason \"...\")", name, name)
 			}
 			// Extend from the current expiry while it is still ahead, from now
 			// otherwise — extending an expired, legacy, or malformed override
@@ -98,6 +121,13 @@ func overrideExtendCmd() *cobra.Command {
 			if err := writeOverride(name, expiry); err != nil {
 				return err
 			}
+			notify.EmitEvent("belt", "warn", fmt.Sprintf("override extended (%s)", name), why,
+				map[string]string{
+					"override": name,
+					"action":   "extend",
+					"for":      holdFor.String(),
+					"expires":  expiry.Format(time.RFC3339),
+				})
 			fmt.Fprintf(cmd.OutOrStdout(), "override %q extended — active until %s\n",
 				name, expiry.Format("15:04"))
 			return nil
@@ -105,6 +135,9 @@ func overrideExtendCmd() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&holdFor, "for", defaultOverrideFor,
 		"how much time to add past the current expiry (or past now, when already expired)")
+	cmd.Flags().StringVar(&reason, "reason", "",
+		"why the guard stays stood down (required, archived to events.this)")
+	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }
 
@@ -167,7 +200,7 @@ func listOverrides(cmd *cobra.Command) error {
 func overrideStatus(o config.Override, now time.Time) string {
 	switch {
 	case o.Malformed:
-		return fmt.Sprintf("MALFORMED — inactive (re-set with belt override set %s)", o.Name)
+		return fmt.Sprintf("MALFORMED — inactive (re-set with belt override set %s --reason \"...\")", o.Name)
 	case o.Legacy:
 		return "ACTIVE (untimed legacy file — re-set with --for to make it expire)"
 	case o.Active(now):
@@ -186,4 +219,14 @@ func overrideName(name string) (string, error) {
 		return "", fmt.Errorf("invalid override name %q", name)
 	}
 	return name, nil
+}
+
+// overrideReason rejects blank reasons: the flag is required so every
+// stand-down is explained, and a whitespace-only value would defeat that.
+func overrideReason(reason string) (string, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return "", fmt.Errorf("override: --reason must not be blank — say why the guard is being stood down")
+	}
+	return reason, nil
 }

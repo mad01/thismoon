@@ -60,10 +60,10 @@ and `commit-guard` are no-ops without their config sections, skip repos
 whose remote does not resolve, and a malformed block_hours window blocks
 nothing. Soft-mode rules and broken custom guards allow with a warn event
 to the events service — check there when a guard seems silent. A hard
-`commit-guard` deny names its override; `belt override set <name>` (10m by
-default, `--for` sizes it, `extend` pushes it forward) is the sanctioned
-escape hatch, not rewording the commit command. An override-suppressed
-block also leaves a warn event, and the override expires on its own.
+`commit-guard` deny names its override; `belt override set <name> --reason
+"..."` (10m default, `--for` sizes it, `extend` pushes it) is the escape
+hatch, not rewording the commit command — set/extend archive the reason as
+a warn event, a suppressed block leaves one too, and it expires on its own.
 
 Silence from the kof-backed hints is normal when the kof service is down or
 its store is empty; the doctor kof line tells those states apart.

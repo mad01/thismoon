@@ -26,7 +26,7 @@ var dayNames = map[time.Weekday]string{
 // to configured repos inside a local-time window — the "no personal-repo work
 // during work hours" nudge. Rules apply only on machines carrying the rule's
 // profile; always_allow carves out repos needed at any hour, and an active
-// override (belt override set <name>, timed, 10m default) suppresses the rule
+// override (belt override set <name> --reason "...", timed, 10m default) suppresses the rule
 // with a warn event so the exception stays auditable. Unresolved repos,
 // malformed windows, and missing config all fail open.
 type CommitGuard struct {
@@ -135,7 +135,7 @@ func overrideHint(override string) string {
 	if override == "" {
 		return ""
 	}
-	return fmt.Sprintf(" (override: belt override set %s [--for 1h])", override)
+	return fmt.Sprintf(" (override: belt override set %s --reason \"...\" [--for 1h])", override)
 }
 
 // inBlockedWindow reports whether t falls inside the rule's blocked window:
