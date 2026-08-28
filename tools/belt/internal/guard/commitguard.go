@@ -24,8 +24,9 @@ var dayNames = map[time.Weekday]string{
 
 // CommitGuard blocks (or warns about, in the default soft mode) `git commit`
 // to configured repos inside a local-time window — the "no personal-repo work
-// during work hours" nudge. Rules apply only on machines carrying the rule's
-// profile; always_allow carves out repos needed at any hour, and an active
+// during work hours" nudge. A rule meant for one machine class lives in that
+// class's rendered config (docs/adr/0010);
+// always_allow carves out repos needed at any hour, and an active
 // override (belt override set <name> --reason "...", timed, 10m default) suppresses the rule
 // with a warn event so the exception stays auditable. Unresolved repos,
 // malformed windows, and missing config all fail open.
@@ -91,9 +92,6 @@ func (g *CommitGuard) Check(in Input) *Denial {
 // checkRule applies one rule to one commit's repo. nil means the rule does
 // not apply, allows this repo, or fired in soft mode (warn event emitted).
 func (g *CommitGuard) checkRule(rule config.CommitGuard, repo string) *Denial {
-	if rule.Profile != "" && !g.cfg.HasProfile(rule.Profile) {
-		return nil
-	}
 	if config.RepoMatches(rule.AlwaysAllow, repo) {
 		return nil
 	}

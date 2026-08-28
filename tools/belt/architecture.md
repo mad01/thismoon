@@ -32,8 +32,8 @@ internal/hint/      the Hint interface and the hints (prefer-csl,
                     kof-assertions, kof-consult, kof-deposit, agent-memory,
                     humanizer-check), plus csl shard lookup, search-response
                     parsing, and the per-session seen store
-internal/config/    config.Load(): the belt config plus its ralph profiles
-                    fallback and the gated Claude-settings deny list, into one Config
+internal/config/    config.Load(): the belt config plus the gated
+                    Claude-settings deny list, into one Config
 internal/notify/    best-effort event emission to the local events service
 ```
 
@@ -79,12 +79,13 @@ Every failure path around that store degrades to "not seen".
 Everything else is read-only. Config comes from four surfaces, every one
 optional (`config.Load()` never errors; a missing file yields zero values):
 
-- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `profiles`, `claude_settings`, and the `internal_names` section (legacy `config.toml` read when the YAML file is absent)
-- `~/.config/ralph/config.local.toml`: profiles fallback when the belt config sets none
+- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, and the `internal_names` section (legacy `config.toml` read when the YAML file is absent)
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation unless `claude_settings.enabled: false` turns the read off
 
-No other tool's config is read — the suspenders config in particular is not
-a fallback for anything (docs/adr/0010).
+No other tool's config is read — neither the suspenders config nor the
+ralph machine config is a fallback for anything, and belt has no
+machine-profile concept (docs/adr/0010); the provisioning layer renders one
+belt config per machine class.
 
 The hints also read the world they advise about: the csl shard
 listing in `~/.config/csl/search-index/` (prefer-csl, no csl process

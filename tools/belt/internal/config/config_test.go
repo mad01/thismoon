@@ -15,39 +15,6 @@ func writeFile(t *testing.T, dir, name, content string) string {
 	return path
 }
 
-func TestLoadProfiles(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    []string
-	}{
-		{"work profile", `profiles = ["work"]`, []string{"work"}},
-		{"multiple", `profiles = ["personal", "laptop"]`, []string{"personal", "laptop"}},
-		{"empty file", ``, nil},
-		{"malformed", `profiles = [`, nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path := writeFile(t, t.TempDir(), "config.local.toml", tt.content)
-			got := LoadProfiles(path)
-			if len(got) != len(tt.want) {
-				t.Fatalf("got %v, want %v", got, tt.want)
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("got %v, want %v", got, tt.want)
-				}
-			}
-		})
-	}
-}
-
-func TestLoadProfilesMissingFile(t *testing.T) {
-	if got := LoadProfiles(filepath.Join(t.TempDir(), "nope.toml")); got != nil {
-		t.Errorf("got %v, want nil", got)
-	}
-}
-
 func TestGuardEnabled(t *testing.T) {
 	off := false
 	on := true
@@ -239,38 +206,7 @@ func fixturePaths(dir string) Paths {
 	return Paths{
 		BeltYAML:       filepath.Join(dir, "belt.yaml"),
 		BeltTOML:       filepath.Join(dir, "belt.toml"),
-		Ralph:          filepath.Join(dir, "ralph.toml"),
 		ClaudeSettings: []string{filepath.Join(dir, "settings.json")},
-	}
-}
-
-func TestLoadFromProfilesBeltWins(t *testing.T) {
-	dir := t.TempDir()
-	p := fixturePaths(dir)
-	writeFile(t, dir, "belt.yaml", "profiles:\n  - personal\n")
-	writeFile(t, dir, "ralph.toml", `profiles = ["work"]`)
-
-	cfg := LoadFrom(p)
-	if len(cfg.Profiles) != 1 || cfg.Profiles[0] != "personal" {
-		t.Errorf("profiles = %v, want [personal]", cfg.Profiles)
-	}
-	if cfg.ProfileSource != SourceBelt {
-		t.Errorf("ProfileSource = %q, want %q", cfg.ProfileSource, SourceBelt)
-	}
-}
-
-func TestLoadFromProfilesRalphFallback(t *testing.T) {
-	dir := t.TempDir()
-	p := fixturePaths(dir)
-	writeFile(t, dir, "belt.yaml", "guards:\n  git-push-main:\n    enabled: true\n")
-	writeFile(t, dir, "ralph.toml", `profiles = ["work"]`)
-
-	cfg := LoadFrom(p)
-	if len(cfg.Profiles) != 1 || cfg.Profiles[0] != "work" {
-		t.Errorf("profiles = %v, want [work]", cfg.Profiles)
-	}
-	if cfg.ProfileSource != SourceRalph {
-		t.Errorf("ProfileSource = %q, want %q", cfg.ProfileSource, SourceRalph)
 	}
 }
 
@@ -368,15 +304,5 @@ func TestExcludesPath(t *testing.T) {
 				t.Errorf("ExcludesPath(%q) with %q = %v, want %v", tt.path, tt.excl, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestHasProfile(t *testing.T) {
-	cfg := Config{Profiles: []string{"work"}}
-	if !cfg.HasProfile("work") {
-		t.Error("expected work profile")
-	}
-	if cfg.HasProfile("personal") {
-		t.Error("did not expect personal profile")
 	}
 }

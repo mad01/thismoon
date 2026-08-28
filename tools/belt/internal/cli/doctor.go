@@ -58,7 +58,6 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 
 	fmt.Fprintln(w, "config surfaces:")
 	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
-	fmt.Fprintf(w, "  profiles     %s\n", profilesNote(cfg, p))
 	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg))
 	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
 	for _, warn := range unknownToggleWarnings(cfg) {
@@ -161,23 +160,6 @@ func beltConfigLine(p config.Paths) string {
 			err,
 		)
 	}
-}
-
-// profilesNote reports the resolved machine profiles and which config file
-// supplied them: the belt config's own profiles list, or the ralph machine
-// config it falls back to.
-func profilesNote(cfg config.Config, p config.Paths) string {
-	if len(cfg.Profiles) == 0 {
-		return fmt.Sprintf(
-			"none (belt config profiles unset, ralph fallback %s empty or missing) — git-push-main fails closed (denies every push to main)",
-			p.Ralph,
-		)
-	}
-	source := "belt config"
-	if cfg.ProfileSource == config.SourceRalph {
-		source = "ralph fallback " + p.Ralph
-	}
-	return fmt.Sprintf("%s  (from %s)", strings.Join(cfg.Profiles, ", "), source)
 }
 
 // namesNote reports the internal-name inputs. The belt config's own

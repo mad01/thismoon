@@ -156,19 +156,17 @@ Blocks `git push` to `main` or `master` before it happens.
   commands (`cd x && git push`). Bare `git push` and `HEAD` refspecs resolve
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
   directory.
-- **Allows when** the machine carries the `personal` ralph profile (the whole
-  guard steps aside — personal machines push to their own main freely), or the
-  push directory's origin remote resolves to a repo on
-  `guards.git-push-main.allow_repos`.
+- **Allows when** the push directory's origin remote resolves to a repo on
+  `guards.git-push-main.allow_repos`. A machine class where direct pushes
+  are fine (a personal machine, say) disables the guard in its rendered
+  config instead — there is no machine-profile check at runtime
+  (docs/adr/0010).
 - **Why it exists**: a session once pushed straight to master and tried to
   self-merge. The permission system sees `git push` as one more shell command;
   this guard reads the target.
-- **Fails closed.** An unresolved repo, an empty allowlist, or a machine with
-  no profiles at all each mean the push is denied. No profiles anywhere means
-  every push to main/master on the machine is denied — `belt doctor` warns
-  about that state.
-- **Note**: this guard reads `allow_repos` only. It does not consult
-  `allow_repos_by_profile`; that field belongs to `write-internal-names`.
+- **Fails closed.** An unresolved repo or an empty allowlist means the push
+  is denied — a machine with no config at all denies every push to
+  main/master.
 
 ### git-identity
 
@@ -176,9 +174,9 @@ Blocks `git commit` when the repo's effective `git config user.email` is not
 the one configured for that repo.
 
 - **Fires on** every `git commit` in the command.
-- **Decides by** the first `git_identity` rule whose optional `profile` the
-  machine carries and whose `repos` patterns match (exact `host/owner/repo`
-  or a trailing `/*` org wildcard; an empty `repos` list covers every repo).
+- **Decides by** the first `git_identity` rule whose `repos` patterns match
+  (exact `host/owner/repo` or a trailing `/*` org wildcard; an empty `repos`
+  list covers every repo).
   The rule names the expected email; a mismatch denies with the exact
   `git config user.email <expected>` fix in the reason.
 - **Why it exists**: committing with the wrong identity is painful to fix
@@ -195,7 +193,7 @@ The work-hours nudge: discourages personal-repo commits during configured
 hours.
 
 - **Fires on** every `git commit`; every `commit_guards` rule is evaluated.
-- **A rule matches when**, in order: its `profile` is carried (or unset), the
+- **A rule matches when**, in order: the
   repo is not in `always_allow`, the repo matches `repos` (an empty list here
   matches nothing — the opposite of `git_identity`), the rule's override
   switch is not set, and local time is inside `block_hours` on a `block_days`
@@ -275,7 +273,7 @@ into a public repo.
   and the git layer agree whenever their configs do — and a config file that
   enumerated internal names would itself be the leak.
 - **Exemptions**: `exclude_paths` for paths that deliberately carry internal
-  references, `allow_repos` (and `allow_repos_by_profile`, per ralph profile)
+  references, `allow_repos`
   by the target repo's canonical origin identity — remote identity, not path,
   so a second checkout of the same repo is covered too. For a single
   sanctioned compound that contains a blocked name (a private companion
@@ -362,14 +360,13 @@ config mistake:
   `commit_guards[].always_allow` — match canonical `host/owner/repo` exactly
   **or** with a trailing `/*` org wildcard: `github.com/you/*` covers every
   repo in the org.
-- **Guard allowlists** — `guards.<id>.allow_repos` and
-  `allow_repos_by_profile` — match the exact `host/owner/repo` string
-  **only**. A trailing `/*` is not a wildcard there; it just never matches.
+- **Guard allowlists** — `guards.<id>.allow_repos` — match the exact
+  `host/owner/repo` string **only**. A trailing `/*` is not a wildcard
+  there; it just never matches.
 
 Both resolve the repo from its **origin remote**, never its filesystem path,
 so a second checkout or a cached clone of the same repo behaves identically.
-`allow_repos_by_profile` is read only by `write-internal-names`;
-`git-push-main` takes plain `allow_repos`. Path-based exceptions use
+Path-based exceptions use
 `exclude_paths` (write-internal-names, script-deny-list): a `~/`- or
 `/`-prefixed entry matches as a directory prefix, anything else as a
 substring. `belt config` prints every list in effect after fallbacks, and

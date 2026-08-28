@@ -228,38 +228,6 @@ func TestWriteInternalNamesAllowRepos(t *testing.T) {
 	}
 }
 
-func TestWriteInternalNamesAllowReposByProfile(t *testing.T) {
-	newGuard := func(profiles []string) *WriteInternalNames {
-		g := NewWriteInternalNames(config.Config{
-			Names:    config.InternalNames{BlockedWords: []string{"internalco"}},
-			Profiles: profiles,
-			Guards: map[string]config.Toggle{
-				WriteInternalNamesID: {
-					AllowReposByProfile: map[string][]string{
-						"personal": {"github.com/example/memory-store"},
-					},
-				},
-			},
-		})
-		g.remoteURL = func(string) string { return "git@github.com:example/memory-store.git" }
-		return g
-	}
-	in := Input{Event: EventWrite, FilePath: "/repo/f.md", Content: "internalco"}
-
-	// A machine carrying the profile gets the allowlist entry.
-	if d := newGuard([]string{"personal"}).Check(in); d != nil {
-		t.Errorf("profile-scoped allow on a personal machine should not deny: %v", d)
-	}
-	// A machine without the profile stays fail-closed — the same config
-	// denies there, forcing the fact into the profile's dedicated store.
-	if d := newGuard([]string{"work"}).Check(in); d == nil {
-		t.Error("profile-scoped allow must not apply on a work machine")
-	}
-	if d := newGuard(nil).Check(in); d == nil {
-		t.Error("profile-scoped allow must not apply when the profile is unknown")
-	}
-}
-
 func TestWriteInternalNamesEmptyContent(t *testing.T) {
 	g := newWriteGuard(
 		t,

@@ -52,8 +52,7 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 	// even though they live on github.com — a private companion repo whose
 	// whole purpose is internal-only config. Matched by remote identity, not a
 	// fragile path substring, so both the working checkout and any cached
-	// clone (same origin) are covered. allow_repos_by_profile entries apply
-	// only on machines carrying that profile.
+	// clone (same origin) are covered.
 	if g.cfg.RepoAllowed(WriteInternalNamesID, canonicalRepo(remote)) {
 		return nil
 	}

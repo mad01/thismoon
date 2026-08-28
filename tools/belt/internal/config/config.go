@@ -1,13 +1,13 @@
 // Package config loads the config surfaces belt reads. Belt-owned settings
-// live in ~/.config/belt/config.yaml (guard and hint toggles, machine
-// profiles, the internal-name list), with a legacy config.toml fallback.
-// Two settings fall back to the tool that originated them when the belt
-// config does not set them: profiles fall back to the ralph machine config
-// (~/.config/ralph/config.local.toml) and the internal-name list falls back
-// to the guard: section of the suspenders config
-// (~/.config/suspenders/config.yaml). The Bash deny patterns always come
-// from the Claude settings (~/.claude/settings.json + settings.local.json)
-// so the script guard and the permission system share one deny list.
+// live in ~/.config/belt/config.yaml (guard and hint toggles, the
+// internal-name list, guard rules), with a legacy config.toml fallback.
+// The config is standalone (docs/adr/0010): belt reads no other tool's
+// config file and has no machine-profile concept — the provisioning layer
+// renders each machine class's values into belt's own file. The one
+// exception is the Bash deny patterns, which come from the Claude settings
+// (~/.claude/settings.json + settings.local.json) behind the
+// claude_settings gate so the script guard and the permission system share
+// one deny list.
 package config
 
 import (
@@ -23,20 +23,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Sources of a fallback-resolved setting: which config file supplied the
-// value belt runs with. doctor and config report them so a resolved setting
-// is always attributable to a file.
-const (
-	SourceBelt  = "belt"
-	SourceRalph = "ralph"
-)
-
 // Config is everything a guard or hint needs to decide.
 type Config struct {
 	Guards         map[string]Toggle
 	Hints          map[string]Toggle
-	Profiles       []string
-	ProfileSource  string // SourceBelt when the belt config sets profiles, else SourceRalph
 	Names          InternalNames
 	ClaudeSettings ClaudeSettings         // gate on reading the Claude settings files
 	ClaudeDeny     []string               // Bash deny prefixes from the Claude settings; empty when the read is disabled
@@ -46,16 +36,15 @@ type Config struct {
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
-// commits in repos matching the rule. Rules are repo-scoped rather than
-// profile-scoped because the repo decides the identity — a work machine
-// committing to a personal repo in the evening must still use the personal
-// email, whatever profile the machine carries. Profile is an optional extra
-// gate for rules that should only exist on some machines.
+// commits in repos matching the rule. Rules are repo-scoped because the
+// repo decides the identity — a work machine committing to a personal repo
+// in the evening must still use the personal email. A rule that should
+// exist only on some machines belongs in that machine class's rendered
+// config, not behind a runtime gate (docs/adr/0010).
 type GitIdentity struct {
-	Repos   []string `toml:"repos"   yaml:"repos,omitempty"`   // repo patterns (exact or trailing /*); empty = every repo
-	Profile string   `toml:"profile" yaml:"profile,omitempty"` // optional: rule active only on machines with this profile
-	Email   string   `toml:"email"   yaml:"email"`
-	Mode    string   `toml:"mode"    yaml:"mode,omitempty"` // "hard" (default) blocks, "soft" warns via events
+	Repos []string `toml:"repos" yaml:"repos,omitempty"` // repo patterns (exact or trailing /*); empty = every repo
+	Email string   `toml:"email" yaml:"email"`
+	Mode  string   `toml:"mode"  yaml:"mode,omitempty"` // "hard" (default) blocks, "soft" warns via events
 }
 
 // Soft reports whether the rule warns instead of denying. Identity mismatches
@@ -63,12 +52,12 @@ type GitIdentity struct {
 func (g GitIdentity) Soft() bool { return g.Mode == "soft" }
 
 // CommitGuard is one work-hours commit rule: commits to matching repos are
-// blocked (or warned about) inside the configured local-time window on
-// machines carrying the rule's profile.
+// blocked (or warned about) inside the configured local-time window. A rule
+// meant for one machine class lives in that class's rendered config
+// (docs/adr/0010).
 type CommitGuard struct {
 	Repos       []string `toml:"repos"        yaml:"repos"`                  // repo patterns (exact or trailing /*)
 	AlwaysAllow []string `toml:"always_allow" yaml:"always_allow,omitempty"` // repos exempt from the hours check
-	Profile     string   `toml:"profile"      yaml:"profile,omitempty"`      // rule active only on machines with this profile
 	BlockHours  string   `toml:"block_hours"  yaml:"block_hours"`            // "HH:MM-HH:MM" local time
 	BlockDays   []string `toml:"block_days"   yaml:"block_days,omitempty"`   // mon..sun; empty = weekdays
 	Mode        string   `toml:"mode"         yaml:"mode,omitempty"`         // "soft" (default) warns, "hard" blocks
@@ -104,20 +93,13 @@ func (g CustomGuard) Soft() bool { return g.Mode == "soft" }
 // The list fields are omitempty so `belt config` can print a resolved toggle
 // without three empty lists under every guard.
 type Toggle struct {
-	Enabled *bool `toml:"enabled"                yaml:"enabled"`
+	Enabled *bool `toml:"enabled"        yaml:"enabled"`
 	// Mode downgrades a guard's denials to warn events when set to "soft";
 	// "hard" (the default) blocks. Read by script-deny-list only.
-	Mode          string   `toml:"mode"                   yaml:"mode,omitempty"`
-	ExcludePaths  []string `toml:"exclude_paths"          yaml:"exclude_paths,omitempty"`
-	ExtraPatterns []string `toml:"extra_patterns"         yaml:"extra_patterns,omitempty"`
-	AllowRepos    []string `toml:"allow_repos"            yaml:"allow_repos,omitempty"`
-	// AllowReposByProfile scopes an allowlist entry to machines carrying a
-	// ralph profile: profile name -> repos allowlisted only there. Lets one
-	// fleet-shared config allow a repo on personal machines while work
-	// machines stay fail-closed (e.g. the personal agent-memory store may
-	// carry internal names on personal Macs, where no work store exists to
-	// route them to).
-	AllowReposByProfile map[string][]string `toml:"allow_repos_by_profile" yaml:"allow_repos_by_profile,omitempty"`
+	Mode          string   `toml:"mode"           yaml:"mode,omitempty"`
+	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
+	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
+	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
 }
 
 // Soft reports whether the toggle downgrades denials to warn events instead
@@ -166,8 +148,7 @@ type InternalNames struct {
 }
 
 // ClaudeSettings gates belt's read of the Claude Code settings files, the
-// one non-belt config surface belt reads besides the ralph profiles
-// (docs/adr/0010). The only thing read is the permissions.deny Bash
+// only non-belt config surface belt reads (docs/adr/0010). The only thing read is the permissions.deny Bash
 // entries, which the script-deny-list guard enforces inside scripts so the
 // guard and the permission system share one deny list.
 type ClaudeSettings struct {
@@ -207,28 +188,13 @@ func enabled(toggles map[string]Toggle, id string) bool {
 	return *t.Enabled
 }
 
-// HasProfile reports whether the resolved machine profile list contains name.
-func (c Config) HasProfile(name string) bool {
-	return slices.Contains(c.Profiles, name)
-}
-
-// RepoAllowed reports whether a guard's allowlist covers the canonical repo
-// on this machine: the flat allow_repos list, or an allow_repos_by_profile
-// bucket whose profile this machine carries. An empty repo never matches.
+// RepoAllowed reports whether a guard's allow_repos list covers the
+// canonical repo. An empty repo never matches.
 func (c Config) RepoAllowed(guardID, repo string) bool {
 	if repo == "" {
 		return false
 	}
-	t := c.Guards[guardID]
-	if slices.Contains(t.AllowRepos, repo) {
-		return true
-	}
-	for profile, repos := range t.AllowReposByProfile {
-		if c.HasProfile(profile) && slices.Contains(repos, repo) {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Guards[guardID].AllowRepos, repo)
 }
 
 // RepoMatches reports whether the canonical host/owner/repo matches any of
@@ -359,7 +325,6 @@ func Overrides() []Override {
 type Paths struct {
 	BeltYAML       string   // ~/.config/belt/config.yaml
 	BeltTOML       string   // legacy fallback, read only when the YAML file is absent
-	Ralph          string   // ~/.config/ralph/config.local.toml (profiles fallback)
 	ClaudeSettings []string // ~/.claude/settings.json + settings.local.json (claude_settings gate)
 }
 
@@ -372,7 +337,6 @@ func DefaultPaths() (Paths, error) {
 	return Paths{
 		BeltYAML: filepath.Join(home, ".config", "belt", "config.yaml"),
 		BeltTOML: filepath.Join(home, ".config", "belt", "config.toml"),
-		Ralph:    filepath.Join(home, ".config", "ralph", "config.local.toml"),
 		ClaudeSettings: []string{
 			filepath.Join(home, ".claude", "settings.json"),
 			filepath.Join(home, ".claude", "settings.local.json"),
@@ -392,10 +356,9 @@ func Load() Config {
 }
 
 // LoadFrom reads all config surfaces from the given locations, with the same
-// missing-file tolerance as Load. The belt config owns every guard setting;
-// the only non-belt surfaces read are the ralph config (profiles fallback,
-// ProfileSource records which won) and — when the claude_settings gate
-// allows it — the Claude settings deny lists (docs/adr/0010).
+// missing-file tolerance as Load. The belt config owns every setting; the
+// only non-belt surface read is the Claude settings deny lists, when the
+// claude_settings gate allows it (docs/adr/0010).
 func LoadFrom(p Paths) Config {
 	f := loadFile(p.BeltYAML, p.BeltTOML)
 	cfg := Config{
@@ -409,10 +372,6 @@ func LoadFrom(p Paths) Config {
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
-	}
-	cfg.Profiles, cfg.ProfileSource = f.Profiles, SourceBelt
-	if len(cfg.Profiles) == 0 {
-		cfg.Profiles, cfg.ProfileSource = LoadProfiles(p.Ralph), SourceRalph
 	}
 	return cfg
 }
@@ -464,7 +423,6 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 type File struct {
 	Guards         map[string]Toggle      `toml:"guards"          yaml:"guards"`
 	Hints          map[string]Toggle      `toml:"hints"           yaml:"hints"`
-	Profiles       []string               `toml:"profiles"        yaml:"profiles"`
 	InternalNames  InternalNames          `toml:"internal_names"  yaml:"internal_names"`
 	ClaudeSettings ClaudeSettings         `toml:"claude_settings" yaml:"claude_settings"`
 	GitIdentity    []GitIdentity          `toml:"git_identity"    yaml:"git_identity"`
@@ -515,17 +473,6 @@ func LoadFileTOML(path string) (File, error) {
 		return File{}, fmt.Errorf("config: parse %s: %w", path, err)
 	}
 	return f, nil
-}
-
-// LoadProfiles reads the `profiles` list from a ralph config.local.toml.
-func LoadProfiles(path string) []string {
-	var cfg struct {
-		Profiles []string `toml:"profiles"`
-	}
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return nil
-	}
-	return cfg.Profiles
 }
 
 // ExpandHome expands a leading ~ to the user's home directory.
