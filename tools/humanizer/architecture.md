@@ -20,7 +20,7 @@ internal/cli/        cobra command tree: root, detect, profile, rules, lint,
 internal/rules/      vale integration: embed.go (pack embedding + cache
                      extraction), vale.go (subprocess run + JSON parsing),
                      metadata.go (rule metadata from YAML headers),
-                     vale/styles/Humanizer/*.yml (43 rules)
+                     vale/styles/Humanizer/*.yml (48 rules)
 internal/voice/      profile.go (Compute), statistical.go
                      (DetectStatistical), diff.go (DiffProfiles)
 internal/scrub/      Layer A watermark scrub: carrier tables, Inspect (lint),
@@ -59,7 +59,8 @@ hands vale the on-disk file, so vale sees the real extension.
 Statistical detection (`detect --statistical` /
 `humanizer_detect_statistical`): `voice.DetectStatistical` runs whole-sample
 checks (sentence-length uniformity, contraction rate, type-token ratio,
-heading density, anaphora), each gated on a minimum sample size. No vale, no
+em-dash density, heading density, anaphora), each gated on a minimum sample
+size. No vale, no
 spans — findings describe the sample as a whole.
 
 Profiling: `voice.Compute` tokenizes the text and produces the metric set

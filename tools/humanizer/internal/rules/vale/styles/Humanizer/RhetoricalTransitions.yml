@@ -17,5 +17,7 @@ tokens:
   - what does (?:that|this) mean for you
   - where does (?:that|this) leave us
   - so what'?s the takeaway
-  - but here'?s the thing
+  - (?:but |and )?here'?s the thing
+  - here'?s where it gets interesting
+  - here'?s the kicker
   - so why does (?:that|this) matter

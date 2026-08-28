@@ -103,3 +103,83 @@ tokens:
   # and firing on them here would flood ordinary prose with false positives)
   - built different
   - quietly (?:became|shaping|reshaping|transforming|redefining)
+  # Excess-vocabulary study additions (Kobak et al., Science Advances 2025):
+  # inflections the list above missed plus high-excess-ratio words. "highlighting"
+  # is deliberately absent ("syntax highlighting" would flood technical docs).
+  - showcasing
+  - delving
+  - underscoring
+  - garnered
+  - bolster
+  - bolsters
+  - bolstered
+  - bolstering
+  - underpin
+  - underpins
+  - underpinning
+  - aligns with
+  - plethora
+  - myriad
+  # Full excess_words.csv diff (same study), curated for technical-doc false
+  # positives. Deliberately excluded despite being on the list: orchestrating
+  # (k8s), emulating (hardware), stemming (NLP), swift (the language),
+  # encapsulates/verifies (normal software prose), surpass/notably (benchmark
+  # docs), and corpus-normal words like however/thereby/findings/address.
+  - accentuates
+  - adept
+  - akin to
+  - amidst
+  - avenues for
+  - new avenues
+  - burgeoning
+  - commendable
+  - delineates
+  - discernible
+  - elucidate
+  - elucidates
+  - elucidating
+  - encompass
+  - encompasses
+  - endeavors
+  - endeavours
+  - exacerbating
+  - excels
+  - facilitated
+  - facilitating
+  - formidable
+  - fosters
+  - garnering
+  - grappling with
+  - harnesses
+  - harnessing
+  - illuminating
+  - impactful
+  - interconnectedness
+  - intricately
+  - juxtaposed
+  - lays? the groundwork
+  - laying the groundwork
+  - leveraging
+  - necessitate
+  - necessitates
+  - necessitating
+  - noteworthy
+  - nuances
+  - poised to
+  - realms
+  - revolutionizing
+  - scrutinize
+  - scrutinized
+  - scrutinizing
+  - showcased
+  - solidify
+  - streamlined
+  - surmount
+  - swiftly
+  - uncharted
+  - underscored
+  - unraveling
+  - unveil
+  - unveils
+  - unveiled
+  - unveiling

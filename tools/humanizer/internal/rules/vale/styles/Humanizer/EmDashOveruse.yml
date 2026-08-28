@@ -2,7 +2,7 @@
 # humanizer-name: Em-dash overuse
 # humanizer-category: style
 # humanizer-summary: Em-dash use; nearly all can be commas, periods, or parentheses.
-# humanizer-rationale: LLMs use em-dashes (—) far more than humans, mimicking punchy sales writing.
+# humanizer-rationale: LLMs use em-dashes (—) far more than humans, mimicking punchy sales writing. Gemini-family output is the exception (fewer em-dashes than humans), so absence is not evidence of human authorship.
 # humanizer-before: The term is primarily promoted by Dutch institutions—not by the people themselves.
 # humanizer-after: The term is primarily promoted by Dutch institutions, not by the people themselves.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Em_dash_overuse

@@ -17,3 +17,5 @@ tokens:
   - 'oai_citation'
   - 'sandbox:/mnt/data/'
   - 'https?://chat\.openai\.com/'
+  - 'turn\d+search\d+'
+  - 'attributableIndex'

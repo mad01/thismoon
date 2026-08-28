@@ -23,15 +23,15 @@ humanizer/
 Two independent detection paths, both backed by the same text:
 
 - Vale span rules (`humanizer_detect` / `humanizer detect`): the embedded style pack under `internal/rules/vale/styles/Humanizer/*.yml` flags a matched substring with line/column.
-- Statistical detector (`humanizer_detect_statistical` / `humanizer detect --statistical`, `internal/voice/statistical.go`): flags whole-sample properties (sentence-length stddev, contraction rate, type-token ratio, short-text em-dash, semicolon absence, heading density, anaphora) with no span, each gated on a minimum sample size.
+- Statistical detector (`humanizer_detect_statistical` / `humanizer detect --statistical`, `internal/voice/statistical.go`): flags whole-sample properties (sentence-length stddev, contraction rate, type-token ratio, short-text em-dash, long-text em-dash density, semicolon absence, heading density, anaphora) with no span, each gated on a minimum sample size.
 
 Run both for full coverage. Span rules catch specific phrasing tells; the statistical detector catches structural ones that no single sentence exhibits.
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 47 rules covering patterns from Wikipedia's "Signs of AI writing":
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 48 rules covering patterns from Wikipedia's "Signs of AI writing":
 
-AIVocabulary, AphoristicClosure, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
+AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) is parsed from `# humanizer-*` comment headers in each YAML file and served by both the CLI and the MCP tools.
 
@@ -80,7 +80,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - `humanizer_detect(text, rules?, min_severity?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message.
 - `humanizer_detect_file(path, rules?, min_severity?)` → same shape as `humanizer_detect`. Scans a file on disk instead of inline text; saves a read and lets vale use the real extension for format detection.
   - Sandbox-gated: only prose files (`.md`/`.markdown`/`.txt`) under the seatbelt profile's workspace roots, plus `/tmp` paths, are readable. A denied path returns an error pointing at `humanizer_detect` instead.
-- `humanizer_detect_statistical(text)` → `{findings[], profile, summary, engine}`. Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, semicolon absence, short-text em-dash, heading density, anaphora) that span rules can't catch. Most checks gate on a minimum sample size; 200+ words gives the most reliable verdict.
+- `humanizer_detect_statistical(text)` → `{findings[], profile, summary, engine}`. Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, semicolon absence, short-text em-dash, long-text em-dash density, heading density, anaphora) that span rules can't catch. Most checks gate on a minimum sample size; 200+ words gives the most reliable verdict.
 - `humanizer_rules_list(category?)` → `{rules[], total}`. Lists every rule (ID, name, category, default severity, summary), optionally filtered by category.
 - `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, file?}`. Full metadata for one rule.
 - `humanizer_voice_profile(text)` → the voice `Profile` (same metrics as `humanizer profile`). 500+ words gives the most reliable metrics.

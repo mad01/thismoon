@@ -45,6 +45,47 @@ func TestShortTextEmDashSkipsLongText(t *testing.T) {
 	}
 }
 
+func TestEmDashDensity(t *testing.T) {
+	// ~130 words with 4 em-dashes → density ~3 per 100 words, well over
+	// the 0.15 ceiling, and past the short-text range.
+	text := strings.Repeat(
+		"The rollout finished on Tuesday and nothing in the dashboards moved after that point in time. ",
+		8,
+	)
+	text += "The cache layer — the part we rewrote — held up fine, and the queue — always the weak spot — stayed flat."
+	fs := DetectStatistical(text)
+	if !hasRule(fs, "Humanizer.EmDashDensity") {
+		t.Fatalf("expected EmDashDensity to fire, got %+v", fs)
+	}
+}
+
+func TestEmDashDensitySkipsSparse(t *testing.T) {
+	// ~1500 words with 2 em-dashes → density ~0.13 per 100 words, under
+	// the ceiling; two dashes across a long document is human-range.
+	text := strings.Repeat(
+		"This is a perfectly ordinary sentence about the work we did today and why it went the way it did. ",
+		80,
+	)
+	text += "One aside — early on. And another — near the end."
+	fs := DetectStatistical(text)
+	if hasRule(fs, "Humanizer.EmDashDensity") {
+		t.Fatalf("EmDashDensity should not fire on sparse em-dash use")
+	}
+}
+
+func TestEmDashDensitySkipsSingleDash(t *testing.T) {
+	// A single em-dash never fires the density check regardless of length.
+	text := strings.Repeat(
+		"Here is more ordinary prose that keeps the word count over the minimum for this check to run. ",
+		7,
+	)
+	text += "Just one aside — that is all."
+	fs := DetectStatistical(text)
+	if hasRule(fs, "Humanizer.EmDashDensity") {
+		t.Fatalf("EmDashDensity should not fire on a single em-dash")
+	}
+}
+
 func TestSentenceUniformity(t *testing.T) {
 	// 12 sentences, all the same length → stddev 0.
 	s := strings.Repeat("The team built the tool and shipped it fast. ", 12)

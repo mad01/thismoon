@@ -39,6 +39,14 @@ const (
 	shortTextWordFloor = 15
 	shortTextWordCeil  = 100
 
+	// Long-text em-dash density picks up where ShortTextEmDash stops.
+	// Human prose runs 2-5 em-dashes per 10k words; LLM output runs
+	// 17-45 (Gemini-family excepted). The ceiling sits between the two,
+	// and a two-hit minimum keeps a single stylistic dash from flagging.
+	minWordsForEmDashDensity = shortTextWordCeil
+	emDashDensityCeil        = 0.15 // per 100 words = 15 per 10k
+	minEmDashCount           = 2
+
 	minWordsForHeadings = 100
 	headingsPerWords    = 100 // 1 heading per 100 words is the ceiling
 
@@ -143,6 +151,24 @@ func DetectStatistical(text string) []StatFinding {
 			Message: fmt.Sprintf(
 				"Em-dash in a %d-word passage — in short text even one em-dash is a strong AI tell; prefer a comma or period.",
 				p.WordCount,
+			),
+		})
+	}
+
+	// Em-dash density in longer text.
+	if emDashes := strings.Count(text, "—"); p.WordCount >= minWordsForEmDashDensity &&
+		emDashes >= minEmDashCount && p.EmDashDensity > emDashDensityCeil {
+		out = append(out, StatFinding{
+			RuleID:    "Humanizer.EmDashDensity",
+			Name:      "Em-dash density",
+			Category:  "style",
+			Severity:  "warning",
+			Metric:    "em_dash_density_per_100_words",
+			Value:     round2(p.EmDashDensity),
+			Threshold: emDashDensityCeil,
+			Message: fmt.Sprintf(
+				"%d em-dashes across %d words (%.2f per 100 words, ceiling %.2f) — human prose runs an order of magnitude lower; swap most for commas or periods.",
+				emDashes, p.WordCount, p.EmDashDensity, emDashDensityCeil,
 			),
 		})
 	}
