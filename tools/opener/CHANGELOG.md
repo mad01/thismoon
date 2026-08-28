@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mad01/thismoon/compare/opener/v0.1.0...opener/v0.2.0) (2026-08-28)
+
+
+### Features
+
+* **opener:** open multiple URLs per open_url call ([b729468](https://github.com/mad01/thismoon/commit/b729468f513f2a12df8fb70cdfa9e6b534547936))
+
 ## 0.1.0 (2026-08-25)
 
 
