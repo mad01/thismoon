@@ -98,7 +98,8 @@ machines ralph builds it via `recipes/t-man/` from the sources cache.
 | `list` | `ls` | List managed services (NAME / STATUS / COMMAND); `--resources` adds PID / RSS / CPU% / UPTIME |
 | `top` | | Live resource view of managed services, sorted by RSS; `--interval` (default 2s), Ctrl-C quits |
 | `remove N` | `rm`, `delete` | Unload and delete a service |
-| `start N` / `stop N` / `restart N` | | Control a running service |
+| `start N` / `stop N` | | Control a running service (launchctl start/stop) |
+| `restart N` | | Re-register the service: unload + load, not stop/start — this is what clears the launchd "spawn scheduled" EX_CONFIG wedge after a binary replacement |
 | `status N` | | Detailed info for one service |
 | `logs N` | | Tail stdout + stderr (and named extra logs) |
 | `logs sandbox [N]` | | Collect `sandbox`/`sandbox-*` extra logs across services |

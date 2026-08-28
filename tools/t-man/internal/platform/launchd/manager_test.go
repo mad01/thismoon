@@ -3,7 +3,9 @@ package launchd
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/mad01/thismoon/tools/t-man/internal/service"
@@ -424,6 +426,52 @@ func TestDeleteService_NonexistentPlist(t *testing.T) {
 	err := mgr.Delete(ctx, "nonexistent-service-xyz-12345")
 	if err == nil {
 		t.Error("Delete() should return error for nonexistent plist")
+	}
+}
+
+// TestRestartReregistersService pins the restart contract: restart must
+// re-register the job (launchctl unload then load -w on the plist), not
+// stop/start — only re-registration clears the "spawn scheduled" EX_CONFIG
+// wedge that hits KeepAlive agents after a binary replacement. The unload
+// is best-effort: a failing unload must not prevent the load.
+func TestRestartReregistersService(t *testing.T) {
+	mgr := newTestManager(t)
+	ctx := context.Background()
+
+	var calls [][]string
+	mgr.launchctl = &LaunchctlClient{
+		execCommand: func(ctx context.Context, name string, args ...string) *exec.Cmd {
+			calls = append(calls, append([]string{name}, args...))
+			if len(args) > 0 && args[0] == "unload" {
+				return exec.Command("sh", "-c", "exit 1") // unload failure is tolerated
+			}
+			return exec.Command("echo")
+		},
+	}
+
+	plistPath := writeManagedPlist(
+		t,
+		mgr,
+		&service.Definition{Name: "svc-wedged", Command: "/usr/bin/true"},
+	)
+
+	if err := mgr.Restart(ctx, "svc-wedged"); err != nil {
+		t.Fatalf("Restart() error = %v", err)
+	}
+
+	want := [][]string{
+		{"launchctl", "unload", plistPath},
+		{"launchctl", "load", "-w", plistPath},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Errorf("launchctl calls = %v, want %v", calls, want)
+	}
+}
+
+func TestRestartUnknownService(t *testing.T) {
+	mgr := newTestManager(t)
+	if err := mgr.Restart(context.Background(), "no-such-service"); err == nil {
+		t.Error("Restart() on an unknown service must error, got nil")
 	}
 }
 

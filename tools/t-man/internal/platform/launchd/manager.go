@@ -331,6 +331,25 @@ func (m *Manager) Stop(ctx context.Context, name string) error {
 	return m.launchctl.Stop(ctx, name)
 }
 
+// Restart re-registers a service: unload its plist, then load it again.
+// A stop/start pair is deliberately not enough — a KeepAlive agent whose
+// binary was replaced with a fresh signature can wedge in launchd's
+// "spawn scheduled" EX_CONFIG state, where launchd keeps scheduling and
+// the process keeps exiting 78; only re-registering the job clears it.
+// The unload is best-effort so a service launchd no longer tracks still
+// comes back up from the load.
+func (m *Manager) Restart(ctx context.Context, name string) error {
+	if _, err := m.Get(ctx, name); err != nil {
+		return err
+	}
+	plistPath, err := m.getPlistPath(name)
+	if err != nil {
+		return err
+	}
+	_ = m.launchctl.Unload(ctx, plistPath)
+	return m.launchctl.Load(ctx, plistPath)
+}
+
 // Status returns the status of a service
 func (m *Manager) Status(ctx context.Context, name string) (string, error) {
 	// Verify service exists and is managed by t-man
