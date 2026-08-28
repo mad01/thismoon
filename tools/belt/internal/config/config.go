@@ -27,23 +27,22 @@ import (
 // value belt runs with. doctor and config report them so a resolved setting
 // is always attributable to a file.
 const (
-	SourceBelt       = "belt"
-	SourceRalph      = "ralph"
-	SourceSuspenders = "suspenders"
+	SourceBelt  = "belt"
+	SourceRalph = "ralph"
 )
 
 // Config is everything a guard or hint needs to decide.
 type Config struct {
-	Guards        map[string]Toggle
-	Hints         map[string]Toggle
-	Profiles      []string
-	ProfileSource string // SourceBelt when the belt config sets profiles, else SourceRalph
-	Names         InternalNames
-	NamesSource   string                 // SourceBelt when the belt config sets internal_names, else SourceSuspenders
-	ClaudeDeny    []string               // Bash command prefixes from the Claude settings deny lists
-	GitIdentity   []GitIdentity          // git-identity rules, first matching rule wins
-	CommitGuards  []CommitGuard          // commit-guard rules, every rule is checked
-	CustomGuards  map[string]CustomGuard // external-command guards keyed by guard name
+	Guards         map[string]Toggle
+	Hints          map[string]Toggle
+	Profiles       []string
+	ProfileSource  string // SourceBelt when the belt config sets profiles, else SourceRalph
+	Names          InternalNames
+	ClaudeSettings ClaudeSettings         // gate on reading the Claude settings files
+	ClaudeDeny     []string               // Bash deny prefixes from the Claude settings; empty when the read is disabled
+	GitIdentity    []GitIdentity          // git-identity rules, first matching rule wins
+	CommitGuards   []CommitGuard          // commit-guard rules, every rule is checked
+	CustomGuards   map[string]CustomGuard // external-command guards keyed by guard name
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -150,8 +149,10 @@ func (t Toggle) ExcludesPath(path string) bool {
 // InternalNames is the name-derivation config for the write-internal-names
 // guard: where to discover internal repos, extra always-blocked words, safe
 // references to drop, and sanctioned compound phrases that may carry a
-// blocked name. Shape-compatible with the guard: section of the suspenders
-// config so the same block works in either file.
+// blocked name. Deliberately shape-compatible with the guard: section of the
+// suspenders config — the tools stay standalone and neither reads the
+// other's file (docs/adr/0010), but one authored block can be rendered into
+// both configs by the provisioning layer.
 type InternalNames struct {
 	WorkspaceDirs []string `toml:"workspace_dirs" yaml:"workspace_dirs"`
 	BlockedWords  []string `toml:"blocked_words"  yaml:"blocked_words"`
@@ -163,6 +164,21 @@ type InternalNames struct {
 	// blocked set.
 	AllowPhrases []string `toml:"allow_phrases"  yaml:"allow_phrases"`
 }
+
+// ClaudeSettings gates belt's read of the Claude Code settings files, the
+// one non-belt config surface belt reads besides the ralph profiles
+// (docs/adr/0010). The only thing read is the permissions.deny Bash
+// entries, which the script-deny-list guard enforces inside scripts so the
+// guard and the permission system share one deny list.
+type ClaudeSettings struct {
+	Enabled *bool `toml:"enabled" yaml:"enabled"`
+}
+
+// ReadEnabled reports whether belt may read the Claude settings files.
+// Defaults to true so script-deny-list keeps enforcing the deny list on
+// machines that never wrote the key; enabled: false stops belt opening the
+// Claude settings at all, leaving the guard with extra_patterns only.
+func (c ClaudeSettings) ReadEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
 // GuardEnabled reports whether a guard is enabled; guards default to on so a
 // missing or partial config file fails closed, not silent. A custom guard's
@@ -344,8 +360,7 @@ type Paths struct {
 	BeltYAML       string   // ~/.config/belt/config.yaml
 	BeltTOML       string   // legacy fallback, read only when the YAML file is absent
 	Ralph          string   // ~/.config/ralph/config.local.toml (profiles fallback)
-	Suspenders     string   // ~/.config/suspenders/config.yaml (internal-name fallback)
-	ClaudeSettings []string // ~/.claude/settings.json + settings.local.json
+	ClaudeSettings []string // ~/.claude/settings.json + settings.local.json (claude_settings gate)
 }
 
 // DefaultPaths returns the standard location of every config surface.
@@ -355,10 +370,9 @@ func DefaultPaths() (Paths, error) {
 		return Paths{}, fmt.Errorf("config: resolve home dir: %w", err)
 	}
 	return Paths{
-		BeltYAML:   filepath.Join(home, ".config", "belt", "config.yaml"),
-		BeltTOML:   filepath.Join(home, ".config", "belt", "config.toml"),
-		Ralph:      filepath.Join(home, ".config", "ralph", "config.local.toml"),
-		Suspenders: filepath.Join(home, ".config", "suspenders", "config.yaml"),
+		BeltYAML: filepath.Join(home, ".config", "belt", "config.yaml"),
+		BeltTOML: filepath.Join(home, ".config", "belt", "config.toml"),
+		Ralph:    filepath.Join(home, ".config", "ralph", "config.local.toml"),
 		ClaudeSettings: []string{
 			filepath.Join(home, ".claude", "settings.json"),
 			filepath.Join(home, ".claude", "settings.local.json"),
@@ -378,27 +392,27 @@ func Load() Config {
 }
 
 // LoadFrom reads all config surfaces from the given locations, with the same
-// missing-file tolerance as Load. Profiles and the internal-name list come
-// from the belt config when it sets them; otherwise they fall back to the
-// ralph and suspenders configs, and the Source fields record which one won.
+// missing-file tolerance as Load. The belt config owns every guard setting;
+// the only non-belt surfaces read are the ralph config (profiles fallback,
+// ProfileSource records which won) and — when the claude_settings gate
+// allows it — the Claude settings deny lists (docs/adr/0010).
 func LoadFrom(p Paths) Config {
 	f := loadFile(p.BeltYAML, p.BeltTOML)
 	cfg := Config{
-		Guards:       f.Guards,
-		Hints:        f.Hints,
-		ClaudeDeny:   LoadClaudeDenyPatterns(p.ClaudeSettings...),
-		GitIdentity:  f.GitIdentity,
-		CommitGuards: f.CommitGuards,
-		CustomGuards: f.CustomGuards,
+		Guards:         f.Guards,
+		Hints:          f.Hints,
+		Names:          f.InternalNames,
+		ClaudeSettings: f.ClaudeSettings,
+		GitIdentity:    f.GitIdentity,
+		CommitGuards:   f.CommitGuards,
+		CustomGuards:   f.CustomGuards,
+	}
+	if cfg.ClaudeSettings.ReadEnabled() {
+		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
 	}
 	cfg.Profiles, cfg.ProfileSource = f.Profiles, SourceBelt
 	if len(cfg.Profiles) == 0 {
 		cfg.Profiles, cfg.ProfileSource = LoadProfiles(p.Ralph), SourceRalph
-	}
-	if f.InternalNames != nil {
-		cfg.Names, cfg.NamesSource = *f.InternalNames, SourceBelt
-	} else {
-		cfg.Names, cfg.NamesSource = LoadSuspendersGuard(p.Suspenders), SourceSuspenders
 	}
 	return cfg
 }
@@ -444,18 +458,18 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 	return patterns
 }
 
-// File is the parsed shape of the belt config file in either format.
-// InternalNames is a pointer so an absent internal_names section (fall back
-// to the suspenders config) is distinguishable from a present-but-empty one
-// (belt owns the list, and it is empty).
+// File is the parsed shape of the belt config file in either format. An
+// absent internal_names section means an empty name set — belt reads no
+// other tool's config to fill it (docs/adr/0010).
 type File struct {
-	Guards        map[string]Toggle      `toml:"guards"         yaml:"guards"`
-	Hints         map[string]Toggle      `toml:"hints"          yaml:"hints"`
-	Profiles      []string               `toml:"profiles"       yaml:"profiles"`
-	InternalNames *InternalNames         `toml:"internal_names" yaml:"internal_names"`
-	GitIdentity   []GitIdentity          `toml:"git_identity"   yaml:"git_identity"`
-	CommitGuards  []CommitGuard          `toml:"commit_guards"  yaml:"commit_guards"`
-	CustomGuards  map[string]CustomGuard `toml:"custom_guards"  yaml:"custom_guards"`
+	Guards         map[string]Toggle      `toml:"guards"          yaml:"guards"`
+	Hints          map[string]Toggle      `toml:"hints"           yaml:"hints"`
+	Profiles       []string               `toml:"profiles"        yaml:"profiles"`
+	InternalNames  InternalNames          `toml:"internal_names"  yaml:"internal_names"`
+	ClaudeSettings ClaudeSettings         `toml:"claude_settings" yaml:"claude_settings"`
+	GitIdentity    []GitIdentity          `toml:"git_identity"    yaml:"git_identity"`
+	CommitGuards   []CommitGuard          `toml:"commit_guards"   yaml:"commit_guards"`
+	CustomGuards   map[string]CustomGuard `toml:"custom_guards"   yaml:"custom_guards"`
 }
 
 // loadFile prefers the YAML config and falls back to the legacy TOML file
@@ -512,22 +526,6 @@ func LoadProfiles(path string) []string {
 		return nil
 	}
 	return cfg.Profiles
-}
-
-// LoadSuspendersGuard reads the `guard:` section of a suspenders config.yaml
-// into the shared InternalNames shape.
-func LoadSuspendersGuard(path string) InternalNames {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return InternalNames{}
-	}
-	var cfg struct {
-		Guard InternalNames `yaml:"guard"`
-	}
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
-		return InternalNames{}
-	}
-	return cfg.Guard
 }
 
 // ExpandHome expands a leading ~ to the user's home directory.

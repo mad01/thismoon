@@ -27,7 +27,6 @@ func doctorPaths(dir string) config.Paths {
 		BeltYAML:       filepath.Join(dir, "config.yaml"),
 		BeltTOML:       filepath.Join(dir, "config.toml"),
 		Ralph:          filepath.Join(dir, "config.local.toml"),
-		Suspenders:     filepath.Join(dir, "suspenders.yaml"),
 		ClaudeSettings: []string{filepath.Join(dir, "settings.json")},
 	}
 }
@@ -59,10 +58,7 @@ guards:
     allow_repos: [github.com/mad01/dotfiles]
   script-deny-list:
     enabled: false
-`)
-	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
-	writeFile(t, dir, "suspenders.yaml", `
-guard:
+internal_names:
   workspace_dirs:
     - `+workspace+`
   blocked_words:
@@ -70,6 +66,7 @@ guard:
   allowlist:
     - grpc/grpc-go
 `)
+	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
 
 	out := runDoctorString(t, doctorPaths(dir))
 
@@ -77,7 +74,7 @@ guard:
 		"config.yaml  loaded",
 		"work  (from ralph fallback",
 		"workspace dirs: 1, blocked words: 1, allowlist: 1",
-		"(from suspenders fallback",
+		"(from belt config internal_names",
 		"blocked names (3)",
 		"acmecorp",
 		"secretorg",

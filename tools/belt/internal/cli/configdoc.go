@@ -28,11 +28,11 @@ const configReference = `# ~/.config/belt/config.yaml — every key optional; gu
 profiles:
   - personal
 
-# The internal-name list for write-internal-names, owned by belt. When this
-# whole section is unset, belt falls back to the guard: section of the
-# suspenders config (~/.config/suspenders/config.yaml); when set, it is the
-# only source. Every repo found under workspace_dirs contributes its org
-# name, repo name, and checkout dir name as separate blocked names.
+# The internal-name list for write-internal-names, owned by belt and
+# standalone: no other file is consulted, and an unset or empty section
+# means an empty name set (the guard then has nothing to match). Every repo
+# found under workspace_dirs contributes its org name, repo name, and
+# checkout dir name as separate blocked names.
 internal_names:
   workspace_dirs:
     - ~/workspace
@@ -40,6 +40,14 @@ internal_names:
     - internal-brand
   allowlist:
     - some-safe-name
+
+# The switch on belt reading the Claude settings files (~/.claude/
+# settings.json + settings.local.json), the source of the permissions.deny
+# Bash entries script-deny-list enforces inside scripts. Defaults to true;
+# false stops belt opening those files, leaving the guard with
+# extra_patterns only.
+claude_settings:
+  enabled: true
 
 # Git identity enforcement for git commit, first matching rule wins. Rules
 # are repo-scoped: the repo decides the expected email, whatever machine the
@@ -134,7 +142,7 @@ guards:
     exclude_paths:
       - ~/notes
     # The blocked-name list itself lives in the top-level internal_names
-    # section (or its suspenders fallback), not here.
+    # section, not here.
 
 hints:
   agent-memory:
@@ -198,18 +206,16 @@ func runConfigDoc(w io.Writer, p config.Paths) error {
 	}
 	fmt.Fprintf(
 		w,
-		"fallbacks:    %s  (%s — guard: section, used only when internal_names is unset here)\n",
-		p.Suspenders,
-		fallbackStatus(p.Suspenders, cfg.NamesSource == config.SourceSuspenders),
-	)
-	fmt.Fprintf(
-		w,
-		"              %s  (%s — profiles list, used only when profiles is unset here)\n",
+		"fallbacks:    %s  (%s — profiles list, used only when profiles is unset here)\n",
 		p.Ralph,
 		fallbackStatus(p.Ralph, cfg.ProfileSource == config.SourceRalph),
 	)
-	fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
-		strings.Join(p.ClaudeSettings, " + "), pathStatus(p.ClaudeSettings...))
+	if cfg.ClaudeSettings.ReadEnabled() {
+		fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
+			strings.Join(p.ClaudeSettings, " + "), pathStatus(p.ClaudeSettings...))
+	} else {
+		fmt.Fprintln(w, "also read:    nothing — claude_settings.enabled: false skips the Claude settings files")
+	}
 	for _, warn := range unknownToggleWarnings(cfg) {
 		fmt.Fprintf(w, "warning:      %s\n", warn)
 	}
@@ -231,20 +237,21 @@ func encodeYAML(w io.Writer, v any) error {
 
 // effectiveConfig is the full resolved config in the shape of
 // ~/.config/belt/config.yaml with every default and fallback made explicit:
-// profiles and internal_names carry the values belt resolved whichever file
-// supplied them (the header names the source). ClaudeDeny is the one section
-// that is not a config.yaml key — the Bash deny patterns read live from the
-// Claude settings — included because the script-deny-list guard enforces
-// them and no other command lists them.
+// profiles carry the value belt resolved whichever file supplied it (the
+// header names the source), and claude_settings prints its resolved enabled
+// state. ClaudeDeny is the one section that is not a config.yaml key — the
+// Bash deny patterns read live from the Claude settings — included because
+// the script-deny-list guard enforces them and no other command lists them.
 type effectiveConfig struct {
-	Profiles      []string                      `yaml:"profiles"`
-	InternalNames config.InternalNames          `yaml:"internal_names"`
-	GitIdentity   []config.GitIdentity          `yaml:"git_identity,omitempty"`
-	CommitGuards  []config.CommitGuard          `yaml:"commit_guards,omitempty"`
-	CustomGuards  map[string]config.CustomGuard `yaml:"custom_guards,omitempty"`
-	Guards        map[string]config.Toggle      `yaml:"guards"`
-	Hints         map[string]config.Toggle      `yaml:"hints"`
-	ClaudeDeny    []string                      `yaml:"claude_deny"`
+	Profiles       []string                      `yaml:"profiles"`
+	InternalNames  config.InternalNames          `yaml:"internal_names"`
+	ClaudeSettings config.ClaudeSettings         `yaml:"claude_settings"`
+	GitIdentity    []config.GitIdentity          `yaml:"git_identity,omitempty"`
+	CommitGuards   []config.CommitGuard          `yaml:"commit_guards,omitempty"`
+	CustomGuards   map[string]config.CustomGuard `yaml:"custom_guards,omitempty"`
+	Guards         map[string]config.Toggle      `yaml:"guards"`
+	Hints          map[string]config.Toggle      `yaml:"hints"`
+	ClaudeDeny     []string                      `yaml:"claude_deny"`
 }
 
 // resolveEffective materializes every registered guard and hint with the
@@ -253,15 +260,17 @@ type effectiveConfig struct {
 func resolveEffective(cfg config.Config) effectiveConfig {
 	guards := guard.All(cfg)
 	hints := hint.All(cfg)
+	claudeRead := cfg.ClaudeSettings.ReadEnabled()
 	e := effectiveConfig{
-		Profiles:      cfg.Profiles,
-		InternalNames: cfg.Names,
-		GitIdentity:   cfg.GitIdentity,
-		CommitGuards:  cfg.CommitGuards,
-		CustomGuards:  cfg.CustomGuards,
-		Guards:        make(map[string]config.Toggle, len(guards)),
-		Hints:         make(map[string]config.Toggle, len(hints)),
-		ClaudeDeny:    cfg.ClaudeDeny,
+		Profiles:       cfg.Profiles,
+		InternalNames:  cfg.Names,
+		ClaudeSettings: config.ClaudeSettings{Enabled: &claudeRead},
+		GitIdentity:    cfg.GitIdentity,
+		CommitGuards:   cfg.CommitGuards,
+		CustomGuards:   cfg.CustomGuards,
+		Guards:         make(map[string]config.Toggle, len(guards)),
+		Hints:          make(map[string]config.Toggle, len(hints)),
+		ClaudeDeny:     cfg.ClaudeDeny,
 	}
 	for _, g := range guards {
 		if _, ok := g.(*guard.Custom); ok {

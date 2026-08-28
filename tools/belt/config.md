@@ -10,27 +10,31 @@ yields the built-in defaults: every guard and hint enabled with no rules
 configured. This is deliberate fail-closed behavior, not a bug: a hook must
 never run on a config it half-understood.
 
-Two settings fall back to the tool that originated them when the belt config
-does not set them:
+The belt config is standalone: belt never reads another guard tool's config
+file, and the suspenders config in particular is never consulted
+(docs/adr/0010 records the decision). Exactly two non-belt surfaces are
+read, both from platform tools, both visible in `belt doctor`:
 
 - `profiles`: the belt config's `profiles` list when it is non-empty, else
   the `profiles` list from `~/.config/ralph/config.local.toml` (TOML). If
   both are empty, profile-gated guards fail closed: `git-push-main` denies
   every push to main or master, because no machine carries a "personal"
   profile to exempt it.
-- `internal_names`: the belt config's `internal_names` section when it is
-  present at all (even with empty inner lists, presence is what decides it),
-  else the `guard:` section of `~/.config/suspenders/config.yaml` (YAML). The
-  two sources are never merged field by field. Whichever file supplies the
-  section supplies all of it.
+- the Claude Code settings: the Bash deny patterns behind `script-deny-list`
+  come from the `permissions.deny` entries of `~/.claude/settings.json` and
+  `~/.claude/settings.local.json` on every invocation — read live, never
+  cached and never copied into the belt config, so the guard and the Claude
+  Code permission system can never drift apart. This read has its own
+  switch, `claude_settings.enabled` (see Keys); `belt config` shows the
+  patterns as `claude_deny` in its output, and `belt config --help` prints
+  the full annotated key reference reproduced in the Example section below.
 
-One more surface is always read live, never cached and never copied into the
-belt config: the Bash deny patterns behind `script-deny-list` come from the
-`permissions.deny` entries of `~/.claude/settings.json` and
-`~/.claude/settings.local.json` on every invocation, so the guard and the
-Claude Code permission system can never drift apart. `belt config` shows
-these as `claude_deny` in its output, and `belt config --help` prints the
-full annotated key reference reproduced in the Example section below.
+`internal_names` has no fallback: an absent or empty section means an empty
+name set, and `write-internal-names` then has nothing to match (`belt
+doctor` calls this out). The section is deliberately shape-compatible with
+the `guard:` section of the suspenders config so a provisioning layer can
+render one authored block into both files — that is where the two tools'
+name configs stay in step, not at read time.
 
 Run `belt config` to see which files loaded (or failed to) and every setting
 belt is actually running with, after every default and fallback is applied.
@@ -47,8 +51,8 @@ hints, active overrides, and the resolved blocked-name list.
 ### internal_names
 
 The name-derivation source for the `write-internal-names` guard. Belt-owned
-when this section is present at all; otherwise it falls back whole to the
-suspenders `guard:` section (see Where config lives).
+and standalone: absent or empty means an empty name set (see Where config
+lives).
 
 - `internal_names.workspace_dirs` (list of string, default: empty): directories
   to search for git repos. Every repo found contributes its origin remote's
@@ -66,6 +70,20 @@ suspenders `guard:` section (see Where config lives).
   private companion repo's own name, say — so writing the compound passes
   while the bare name anywhere else in the same content still denies.
   Unlike `allowlist`, nothing leaves the blocked set.
+
+### claude_settings
+
+The switch on belt's read of the Claude Code settings files, the one
+non-belt config surface read besides the ralph profiles fallback
+(docs/adr/0010). The only thing belt takes from those files is the
+`permissions.deny` Bash entries feeding `script-deny-list`; belt never
+writes them.
+
+- `claude_settings.enabled` (bool, default `true`): whether belt opens
+  `~/.claude/settings.json` and `~/.claude/settings.local.json` at all.
+  Disabling it leaves `script-deny-list` matching only its
+  `extra_patterns` — the guard stays on, with a smaller pattern set — and
+  both `belt doctor` and `belt config` state that the read is off.
 
 ### git_identity
 
@@ -261,6 +279,9 @@ internal_names:
     - internal-brand
   allowlist:
     - some-safe-name
+
+claude_settings:
+  enabled: true
 
 git_identity:
   - repos:

@@ -59,9 +59,8 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	fmt.Fprintln(w, "config surfaces:")
 	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
 	fmt.Fprintf(w, "  profiles     %s\n", profilesNote(cfg, p))
-	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg, p))
-	fmt.Fprintf(w, "  claude deny  %s  %d bash deny patterns (belt config lists them)\n",
-		strings.Join(p.ClaudeSettings, " + "), len(cfg.ClaudeDeny))
+	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg))
+	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
 	for _, warn := range unknownToggleWarnings(cfg) {
 		fmt.Fprintf(w, "  warning      %s\n", warn)
 	}
@@ -181,23 +180,26 @@ func profilesNote(cfg config.Config, p config.Paths) string {
 	return fmt.Sprintf("%s  (from %s)", strings.Join(cfg.Profiles, ", "), source)
 }
 
-// namesNote reports where the internal-name list came from: the belt
-// config's own internal_names section, or the suspenders guard config it
-// falls back to.
-func namesNote(cfg config.Config, p config.Paths) string {
-	source := "belt config internal_names"
-	if cfg.NamesSource == config.SourceSuspenders {
-		source = "suspenders fallback " + p.Suspenders
-		if _, err := os.Stat(p.Suspenders); err != nil {
-			return fmt.Sprintf(
-				"none (belt config internal_names unset, %s missing) — write-internal-names has no names to match",
-				p.Suspenders,
-			)
-		}
+// namesNote reports the internal-name inputs. The belt config's own
+// internal_names section is the only source (docs/adr/0010), so an empty
+// section is called out for what it means: the guard has nothing to match.
+func namesNote(cfg config.Config) string {
+	if len(cfg.Names.WorkspaceDirs)+len(cfg.Names.BlockedWords) == 0 {
+		return "none (internal_names unset or empty) — write-internal-names has no names to match"
 	}
-	return fmt.Sprintf("workspace dirs: %d, blocked words: %d, allowlist: %d  (from %s)",
-		len(cfg.Names.WorkspaceDirs), len(cfg.Names.BlockedWords), len(cfg.Names.Allowlist),
-		source)
+	return fmt.Sprintf("workspace dirs: %d, blocked words: %d, allowlist: %d  (from belt config internal_names)",
+		len(cfg.Names.WorkspaceDirs), len(cfg.Names.BlockedWords), len(cfg.Names.Allowlist))
+}
+
+// claudeDenyNote reports the Claude settings read: the files and pattern
+// count when the claude_settings gate allows it, or the disabled state and
+// what the script guard is left with.
+func claudeDenyNote(cfg config.Config, p config.Paths) string {
+	if !cfg.ClaudeSettings.ReadEnabled() {
+		return "disabled (claude_settings.enabled: false) — script-deny-list matches extra_patterns only"
+	}
+	return fmt.Sprintf("%s  %d bash deny patterns (belt config lists them)",
+		strings.Join(p.ClaudeSettings, " + "), len(cfg.ClaudeDeny))
 }
 
 // kofNote renders the kof reachability line. It exists to split the three
