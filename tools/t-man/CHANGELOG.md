@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/mad01/thismoon/compare/t-man/v0.5.0...t-man/v0.5.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **t-man:** restart re-registers the job instead of stop/start ([74d701b](https://github.com/mad01/thismoon/commit/74d701b1b902f63a95549ab8f7701ce5c63092d5))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/t-man/v0.4.0...t-man/v0.5.0) (2026-08-25)
 
 
