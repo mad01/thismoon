@@ -86,9 +86,9 @@ func (g CommitGuard) Hard() bool { return g.Mode == "hard" }
 // so a broken external never blocks work.
 type CustomGuard struct {
 	Enabled *bool    `toml:"enabled" yaml:"enabled,omitempty"`
-	Event   string   `toml:"event"   yaml:"event"`          // "bash" or "write"
-	Command []string `toml:"command" yaml:"command"`        // external tool + args
-	Mode    string   `toml:"mode"    yaml:"mode,omitempty"` // "hard" (default) blocks, "soft" warns via events
+	Event   string   `toml:"event"   yaml:"event"`           // "bash" or "write"
+	Command []string `toml:"command" yaml:"command"`         // external tool + args
+	Mode    string   `toml:"mode"    yaml:"mode,omitempty"`  // "hard" (default) blocks, "soft" warns via events
 	Match   string   `toml:"match"   yaml:"match,omitempty"` // substring gate on the command (bash) or file path (write)
 }
 
@@ -105,7 +105,10 @@ func (g CustomGuard) Soft() bool { return g.Mode == "soft" }
 // The list fields are omitempty so `belt config` can print a resolved toggle
 // without three empty lists under every guard.
 type Toggle struct {
-	Enabled       *bool    `toml:"enabled"        yaml:"enabled"`
+	Enabled *bool `toml:"enabled" yaml:"enabled"`
+	// Mode downgrades a guard's denials to warn events when set to "soft";
+	// "hard" (the default) blocks. Read by script-deny-list only.
+	Mode          string   `toml:"mode"           yaml:"mode,omitempty"`
 	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
 	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
 	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
@@ -117,6 +120,10 @@ type Toggle struct {
 	// route them to).
 	AllowReposByProfile map[string][]string `toml:"allow_repos_by_profile" yaml:"allow_repos_by_profile,omitempty"`
 }
+
+// Soft reports whether the toggle downgrades denials to warn events instead
+// of blocking.
+func (t Toggle) Soft() bool { return t.Mode == "soft" }
 
 // ExcludesPath reports whether the toggle's exclude_paths cover the given
 // file path: prefix match for absolute and ~-prefixed entries, substring

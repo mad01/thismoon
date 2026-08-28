@@ -166,10 +166,17 @@ wildcard.
     list, not under this key.
 - **script-deny-list**
   - `guards.script-deny-list.enabled` (bool, default `true`)
+  - `guards.script-deny-list.mode` (string, default `hard`): `soft`
+    downgrades every denial to a warn event on the events service and lets
+    the command proceed — the rollout setting for tuning new patterns before
+    they block.
   - `guards.script-deny-list.extra_patterns` (list of string, default:
     empty): patterns denied inside scripts beyond the live Claude-settings
     deny list, e.g. `rm -rf` (the settings file only lists bare `rm` under
-    "ask").
+    "ask"). An entry starting `re:` compiles the rest as a case-insensitive
+    regex — the escape hatch for flag reordering and argument wildcards the
+    literal form cannot express; anchor it yourself when word boundaries
+    matter.
   - `guards.script-deny-list.exclude_paths` (list of string, default:
     empty): script locations to skip. A `~/`- or `/`-prefixed entry matches
     as a directory prefix; any other entry matches as a substring of the
@@ -282,8 +289,10 @@ guards:
 
   script-deny-list:
     enabled: true
+    mode: hard
     extra_patterns:
       - rm -rf
+      - "re:git\\s+push\\s.*--force"
     exclude_paths:
       - ~/trusted/scripts
 
