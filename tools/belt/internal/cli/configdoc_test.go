@@ -68,7 +68,6 @@ guards:
 	for _, want := range []string{
 		"config file:  " + p.BeltYAML,
 		"legacy fallback " + p.BeltTOML,
-		p.Ralph + "  (missing, fallback empty — profiles list, used only when profiles is unset here)",
 		"script-deny-list:",
 		"enabled: false",
 		"rm -rf",
@@ -107,25 +106,23 @@ func TestConfigBodyIsEffectiveYAML(t *testing.T) {
 	if len(got.Hints) == 0 {
 		t.Error("hints = empty, want the registered hints")
 	}
-	for _, key := range []string{"profiles:", "internal_names:", "claude_settings:", "claude_deny:"} {
+	for _, key := range []string{"internal_names:", "claude_settings:", "claude_deny:"} {
 		if !strings.Contains(body, key) {
 			t.Errorf("body missing the %s section:\n%s", key, body)
 		}
 	}
 }
 
-// TestConfigRendersResolvedFallbacksAndClaudeDeny pins the full-render rule:
-// values belt resolved from other files (ralph profiles, the Claude deny
-// patterns) appear in the body, and the fallback header line says which file
-// was actually read.
-func TestConfigRendersResolvedFallbacksAndClaudeDeny(t *testing.T) {
+// TestConfigRendersResolvedValuesAndClaudeDeny pins the full-render rule:
+// resolved config values and the live-read Claude deny patterns all appear
+// in the body.
+func TestConfigRendersResolvedValuesAndClaudeDeny(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "config.yaml", `
 internal_names:
   blocked_words:
     - acmecorp
 `)
-	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
 	writeFile(t, dir, "settings.json", `{
   "permissions": {"deny": ["Bash(kubectl delete:*)", "WebFetch"]}
 }`)
@@ -134,8 +131,6 @@ internal_names:
 	out := runConfigDocString(t, p)
 
 	for _, want := range []string{
-		p.Ralph + "  (in use — profiles list",
-		"- work",
 		"- acmecorp",
 		"- kubectl delete",
 		"claude_deny:",

@@ -77,15 +77,11 @@ func (g *GitIdentity) Check(in Input) *Denial {
 	return nil
 }
 
-// matchRule returns the first git_identity rule covering the repo: the rule's
-// profile (when set) must be one this machine carries, and its repos list
-// (when set) must match the canonical repo. A rule with no repos list covers
-// every repo, resolved or not.
+// matchRule returns the first git_identity rule whose repos list (when set)
+// matches the canonical repo. A rule with no repos list covers every repo,
+// resolved or not.
 func (g *GitIdentity) matchRule(repo string) (config.GitIdentity, bool) {
 	for _, rule := range g.cfg.GitIdentity {
-		if rule.Profile != "" && !g.cfg.HasProfile(rule.Profile) {
-			continue
-		}
 		if len(rule.Repos) == 0 || config.RepoMatches(rule.Repos, repo) {
 			return rule, true
 		}

@@ -5,7 +5,7 @@
 An agent session executes tool calls faster than a human reviews them, and
 the permission system judges the literal command, not its effect. `bash
 cleanup.sh` looks harmless even when the script runs a deny-listed command; a
-`git push origin main` on a work-profile machine goes straight through; a
+`git push origin main` on a guarded machine goes straight through; a
 Write can drop an internal org name into a public repo long before git sees
 it. The concrete trigger is recorded in this component's CLAUDE.md: a July
 2026 session retrospective in which a session pushed straight to master and
@@ -32,9 +32,12 @@ identical lists.
 A deny travels as data, never as a failing process: belt exits 0 and puts
 the decision in `hookSpecificOutput.permissionDecision`, because a guard hook
 must not break tool calls on its own bugs. Config is read live at hook time:
-belt's own file, with the ralph machine profile as the one fallback and the
-Claude settings deny list shared with the permission system behind its own
-switch; every file is optional and a missing one yields zero values. Machine-private wiring
+belt's own file, rendered per machine class by the provisioning layer, plus
+the Claude settings deny list shared with the permission system behind its
+own switch; every file is optional and a missing one yields zero values.
+There is no machine-profile concept at runtime — a guard that should not
+exist on a machine class is simply absent (or disabled) in that class's
+rendered config. Machine-private wiring
 stays out of this repo: the recipe here builds and installs only, while hook
 registration and the config overlay with its exclude paths live in the
 consuming repo's companion recipe (docs/adr/0006). Every deny reason carries

@@ -23,12 +23,13 @@ immediately, with no restart and no new session.
 
 ## where config lives
 
-The belt-owned config is {{.StorePath}}: guard and hint toggles, profiles,
-exclude paths, extra patterns, claude_settings, and the internal_names
+The belt-owned config is {{.StorePath}}: guard and hint toggles, exclude
+paths, extra patterns, claude_settings, guard rules, and the internal_names
 section. Every config file is optional and loading never errors; a missing
-file yields defaults. The config is standalone: belt reads no other guard
-tool's file, and the internal-name list has no fallback. Profiles are the
-one setting that falls back, to the ralph machine config. The Bash deny
+file yields defaults. The config is standalone and has no machine-profile
+concept: belt reads no other tool's file, and the provisioning layer
+renders one config per machine class — a guard meant for only some
+machines is absent or disabled in the others' files. The Bash deny
 patterns are read live from the Claude settings files, so the script guard
 and the permission system share one deny list; claude_settings.enabled:
 false turns that read off, leaving the guard with extra_patterns only.
@@ -49,12 +50,12 @@ worktree path added to the guard's exclude_paths.
 
 Missing config fails in two directions, deliberately. Guards and hints
 default to enabled, and a present-but-broken config file also yields
-defaults with everything enabled. With no profiles anywhere (belt config and
-ralph fallback both empty), `git-push-main` fails closed and denies every
-push to main or master. With no internal_names section in the belt config,
-`write-internal-names` has an empty name list and allows every write: that
-one fails open. `belt doctor` reports both conditions in its
-config-surfaces section.
+defaults with everything enabled. `git-push-main` fails closed: with no
+config it denies every push to main or master, and only a rendered config
+that disables it or allowlists a repo opens the door. With no
+internal_names section in the belt config, `write-internal-names` has an
+empty name list and allows every write: that one fails open. `belt doctor`
+reports the empty-name condition in its config-surfaces section.
 
 The rule-driven commit guards fail open across the board: `git-identity`
 and `commit-guard` are no-ops without their config sections, skip repos
@@ -83,8 +84,8 @@ again.
    hint enablement, kof reachability, and the resolved blocked-name list
 2. `belt check bash "<command>"`, or `belt check write --file <path>
    --content "<text>"`: dry-run the guards and print each verdict
-3. `belt config`: every setting in effect, with resolved fallbacks,
-   profile-scoped allowlists, and the Claude deny patterns
+3. `belt config`: every setting in effect, with resolved defaults,
+   guard allowlists, and the Claude deny patterns
 4. `belt override`: every override with its state — active with remaining
    time, expired, legacy untimed, or malformed (set/extend/clear to manage)
 5. `belt version -o json`, when a fix does not seem to apply: confirm the

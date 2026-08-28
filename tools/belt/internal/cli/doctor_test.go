@@ -26,7 +26,6 @@ func doctorPaths(dir string) config.Paths {
 	return config.Paths{
 		BeltYAML:       filepath.Join(dir, "config.yaml"),
 		BeltTOML:       filepath.Join(dir, "config.toml"),
-		Ralph:          filepath.Join(dir, "config.local.toml"),
 		ClaudeSettings: []string{filepath.Join(dir, "settings.json")},
 	}
 }
@@ -66,13 +65,11 @@ internal_names:
   allowlist:
     - grpc/grpc-go
 `)
-	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
 
 	out := runDoctorString(t, doctorPaths(dir))
 
 	for _, want := range []string{
 		"config.yaml  loaded",
-		"work  (from ralph fallback",
 		"workspace dirs: 1, blocked words: 1, allowlist: 1",
 		"(from belt config internal_names",
 		"blocked names (3)",
@@ -100,7 +97,6 @@ func TestDoctorReportsMissingConfigs(t *testing.T) {
 
 	for _, want := range []string{
 		"missing — defaults, everything enabled",
-		"git-push-main fails closed",
 		"write-internal-names has no names to match",
 		"blocked names (0)",
 		"allows every write",

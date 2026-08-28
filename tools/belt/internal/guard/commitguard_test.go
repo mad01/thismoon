@@ -42,43 +42,38 @@ func TestCommitGuard(t *testing.T) {
 	rule := config.CommitGuard{
 		Repos:       []string{"github.com/mad01/*"},
 		AlwaysAllow: []string{"github.com/mad01/dotfiles"},
-		Profile:     "work",
 		BlockHours:  "09:00-17:00",
 		Override:    "vacation",
 		Mode:        "hard",
 	}
 	softRule := rule
 	softRule.Mode = ""
-	work := []string{"work"}
-	personal := []string{"personal"}
 
 	tests := []struct {
 		name      string
 		rule      config.CommitGuard
-		profiles  []string
 		repo      string
 		at        time.Time
 		overrides []string
 		wantDeny  bool
 		wantWarn  bool
 	}{
-		{"work profile weekday 10:00 hard denies", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, true, false},
-		{"soft mode warns and allows", softRule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, false, true},
-		{"evening allows", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), nil, false, false},
-		{"before window allows", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 8, 59), nil, false, false},
-		{"window end is exclusive", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 17, 0), nil, false, false},
-		{"saturday allows", rule, work, "github.com/mad01/thismoon", localTime(t, time.Saturday, 10, 0), nil, false, false},
-		{"sunday allows", rule, work, "github.com/mad01/thismoon", localTime(t, time.Sunday, 10, 0), nil, false, false},
-		{"always_allow repo any time", rule, work, "github.com/mad01/dotfiles", localTime(t, time.Tuesday, 10, 0), nil, false, false},
-		{"unlisted repo allows", rule, work, "other-host.example/org/repo", localTime(t, time.Tuesday, 10, 0), nil, false, false},
-		{"personal profile never blocked", rule, personal, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, false, false},
-		{"vacation override allows with audit warn", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"vacation"}, false, true},
-		{"override outside window stays silent", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), []string{"vacation"}, false, false},
-		{"other override does not help", rule, work, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"sick-day"}, true, false},
+		{"weekday 10:00 hard denies", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, true, false},
+		{"soft mode warns and allows", softRule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, false, true},
+		{"evening allows", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), nil, false, false},
+		{"before window allows", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 8, 59), nil, false, false},
+		{"window end is exclusive", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 17, 0), nil, false, false},
+		{"saturday allows", rule, "github.com/mad01/thismoon", localTime(t, time.Saturday, 10, 0), nil, false, false},
+		{"sunday allows", rule, "github.com/mad01/thismoon", localTime(t, time.Sunday, 10, 0), nil, false, false},
+		{"always_allow repo any time", rule, "github.com/mad01/dotfiles", localTime(t, time.Tuesday, 10, 0), nil, false, false},
+		{"unlisted repo allows", rule, "other-host.example/org/repo", localTime(t, time.Tuesday, 10, 0), nil, false, false},
+		{"vacation override allows with audit warn", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"vacation"}, false, true},
+		{"override outside window stays silent", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), []string{"vacation"}, false, false},
+		{"other override does not help", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"sick-day"}, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{Profiles: tt.profiles, CommitGuards: []config.CommitGuard{tt.rule}}
+			cfg := config.Config{CommitGuards: []config.CommitGuard{tt.rule}}
 			f := newCommitGuardFixture(cfg, tt.repo, tt.at, tt.overrides...)
 			d := f.guard.Check(Input{Event: EventBash, Command: `git commit -m "x"`, Cwd: "/tmp"})
 			if (d != nil) != tt.wantDeny {

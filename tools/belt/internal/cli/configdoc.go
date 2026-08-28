@@ -22,11 +22,11 @@ import (
 const configReference = `# ~/.config/belt/config.yaml — every key optional; guards and hints default
 # to enabled when the file or their entry is missing (fail closed, not silent).
 
-# Machine profiles for profile-gated guards (git-push-main allows pushes to
-# main on the personal profile). When unset, belt falls back to the profiles
-# list in the ralph machine config (~/.config/ralph/config.local.toml).
-profiles:
-  - personal
+# There is no machine-profile concept in this file (docs/adr/0010): the
+# provisioning layer renders a per-machine-class config, so a guard or rule
+# that should exist only on some machines simply is not present in the
+# others' files. git-push-main, for example, ships enabled and is switched
+# off in the rendered config of machines where direct pushes are fine.
 
 # The internal-name list for write-internal-names, owned by belt and
 # standalone: no other file is consulted, and an unset or empty section
@@ -52,8 +52,7 @@ claude_settings:
 # Git identity enforcement for git commit, first matching rule wins. Rules
 # are repo-scoped: the repo decides the expected email, whatever machine the
 # commit happens on. repos entries are canonical host/owner/repo, exact or
-# with a trailing /* org wildcard; an empty repos list covers every repo, and
-# profile (optional) limits a rule to machines carrying that ralph profile.
+# with a trailing /* org wildcard; an empty repos list covers every repo.
 # mode hard (default) blocks a mismatched commit; soft warns via the events
 # service and allows.
 git_identity:
@@ -63,17 +62,16 @@ git_identity:
     mode: hard
 
 # Work-hours commit guard: commits to matching repos inside the local-time
-# window are blocked (hard) or warned about (soft, the default) on machines
-# carrying the rule's profile. always_allow exempts repos needed at any hour;
-# block_days defaults to mon-fri; override names a timed switch (belt
-# override set <name> --reason "...", 10m default, --for to size it) that
-# suppresses the rule with a warn event until it expires or is cleared.
+# window are blocked (hard) or warned about (soft, the default).
+# always_allow exempts repos needed at any hour; block_days defaults to
+# mon-fri; override names a timed switch (belt override set <name> --reason
+# "...", 10m default, --for to size it) that suppresses the rule with a
+# warn event until it expires or is cleared.
 commit_guards:
   - repos:
       - github.com/you/*
     always_allow:
       - github.com/you/essential-tooling
-    profile: work
     block_hours: "09:00-17:00"
     block_days: [mon, tue, wed, thu, fri]
     mode: soft
@@ -100,7 +98,7 @@ guards:
     # Exempt whole repos from this guard by canonical host/owner/repo,
     # matched against the push working dir's origin remote. This is how one
     # repo gets to push to its default branch while every other repo stays
-    # fail-closed. Unknown profile or unresolved remote always denies.
+    # fail-closed. An unresolved remote always denies.
     allow_repos:
       - github.com/you/yourrepo
 
@@ -129,13 +127,6 @@ guards:
     # remote) — a private companion repo whose purpose is internal config.
     allow_repos:
       - github.com/you/private-companion
-    # Like allow_repos, but scoped to machines carrying a ralph profile:
-    # the entry applies only where the profile matches, so one fleet-shared
-    # config can allow a repo on personal machines while work machines stay
-    # fail-closed.
-    allow_repos_by_profile:
-      personal:
-        - github.com/you/personal-store
     # Paths where internal references are deliberate. A ~/ or absolute entry
     # is matched as a directory prefix; anything else as a substring of the
     # target file path.
@@ -168,9 +159,8 @@ the file happens to spell out.
 
 belt reads ~/.config/belt/config.yaml; a legacy config.toml beside it is read
 only when the YAML file is absent, and a present-but-broken file of either
-format means defaults rather than a fall back to the other one. Profiles and
-internal_names print with their resolved values whichever file supplied them;
-the header names the winning source. claude_deny is the one section that is
+format means defaults rather than a fall back to the other one. Every value
+prints resolved, defaults included. claude_deny is the one section that is
 not a config.yaml key: the Bash deny patterns are read live from the Claude
 settings and shown here because the script-deny-list guard enforces them.
 
@@ -204,12 +194,6 @@ func runConfigDoc(w io.Writer, p config.Paths) error {
 	} else {
 		fmt.Fprintf(w, "              (legacy fallback %s, read only when this file is absent)\n", p.BeltTOML)
 	}
-	fmt.Fprintf(
-		w,
-		"fallbacks:    %s  (%s — profiles list, used only when profiles is unset here)\n",
-		p.Ralph,
-		fallbackStatus(p.Ralph, cfg.ProfileSource == config.SourceRalph),
-	)
 	if cfg.ClaudeSettings.ReadEnabled() {
 		fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
 			strings.Join(p.ClaudeSettings, " + "), pathStatus(p.ClaudeSettings...))
@@ -236,14 +220,12 @@ func encodeYAML(w io.Writer, v any) error {
 }
 
 // effectiveConfig is the full resolved config in the shape of
-// ~/.config/belt/config.yaml with every default and fallback made explicit:
-// profiles carry the value belt resolved whichever file supplied it (the
-// header names the source), and claude_settings prints its resolved enabled
-// state. ClaudeDeny is the one section that is not a config.yaml key — the
-// Bash deny patterns read live from the Claude settings — included because
-// the script-deny-list guard enforces them and no other command lists them.
+// ~/.config/belt/config.yaml with every default made explicit:
+// claude_settings prints its resolved enabled state. ClaudeDeny is the one
+// section that is not a config.yaml key — the Bash deny patterns read live
+// from the Claude settings — included because the script-deny-list guard
+// enforces them and no other command lists them.
 type effectiveConfig struct {
-	Profiles       []string                      `yaml:"profiles"`
 	InternalNames  config.InternalNames          `yaml:"internal_names"`
 	ClaudeSettings config.ClaudeSettings         `yaml:"claude_settings"`
 	GitIdentity    []config.GitIdentity          `yaml:"git_identity,omitempty"`
@@ -262,7 +244,6 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 	hints := hint.All(cfg)
 	claudeRead := cfg.ClaudeSettings.ReadEnabled()
 	e := effectiveConfig{
-		Profiles:       cfg.Profiles,
 		InternalNames:  cfg.Names,
 		ClaudeSettings: config.ClaudeSettings{Enabled: &claudeRead},
 		GitIdentity:    cfg.GitIdentity,
@@ -388,22 +369,4 @@ func pathStatus(paths ...string) string {
 		}
 	}
 	return "missing"
-}
-
-// fallbackStatus reports a fallback file's role in the resolved config, not
-// just its presence: whether this run actually read it, and when the
-// fallback was selected but the file is absent, that the setting is empty.
-func fallbackStatus(path string, inUse bool) string {
-	_, err := os.Stat(path)
-	present := err == nil
-	switch {
-	case inUse && present:
-		return "in use"
-	case inUse:
-		return "missing, fallback empty"
-	case present:
-		return "present, unused — set in belt config"
-	default:
-		return "missing, unused — set in belt config"
-	}
 }

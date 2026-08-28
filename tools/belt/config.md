@@ -10,24 +10,23 @@ yields the built-in defaults: every guard and hint enabled with no rules
 configured. This is deliberate fail-closed behavior, not a bug: a hook must
 never run on a config it half-understood.
 
-The belt config is standalone: belt never reads another guard tool's config
-file, and the suspenders config in particular is never consulted
-(docs/adr/0010 records the decision). Exactly two non-belt surfaces are
-read, both from platform tools, both visible in `belt doctor`:
+The belt config is standalone: belt never reads another tool's config file,
+and there is no machine-profile concept in it (docs/adr/0010 records the
+decision). The provisioning layer renders one config per machine class, so
+a guard or rule that should exist only on some machines is simply absent
+(or disabled) in the other classes' files — `git-push-main`, for example,
+ships enabled and denies every push to main until a machine's rendered
+config disables it or allowlists a repo.
 
-- `profiles`: the belt config's `profiles` list when it is non-empty, else
-  the `profiles` list from `~/.config/ralph/config.local.toml` (TOML). If
-  both are empty, profile-gated guards fail closed: `git-push-main` denies
-  every push to main or master, because no machine carries a "personal"
-  profile to exempt it.
-- the Claude Code settings: the Bash deny patterns behind `script-deny-list`
-  come from the `permissions.deny` entries of `~/.claude/settings.json` and
-  `~/.claude/settings.local.json` on every invocation — read live, never
-  cached and never copied into the belt config, so the guard and the Claude
-  Code permission system can never drift apart. This read has its own
-  switch, `claude_settings.enabled` (see Keys); `belt config` shows the
-  patterns as `claude_deny` in its output, and `belt config --help` prints
-  the full annotated key reference reproduced in the Example section below.
+Exactly one non-belt surface is read, visible in `belt doctor`: the Claude
+Code settings. The Bash deny patterns behind `script-deny-list` come from
+the `permissions.deny` entries of `~/.claude/settings.json` and
+`~/.claude/settings.local.json` on every invocation — read live, never
+cached and never copied into the belt config, so the guard and the Claude
+Code permission system can never drift apart. This read has its own switch,
+`claude_settings.enabled` (see Keys); `belt config` shows the patterns as
+`claude_deny` in its output, and `belt config --help` prints the full
+annotated key reference reproduced in the Example section below.
 
 `internal_names` has no fallback: an absent or empty section means an empty
 name set, and `write-internal-names` then has nothing to match (`belt
@@ -42,11 +41,6 @@ Run `belt doctor` to see the state those settings produce: enabled guards and
 hints, active overrides, and the resolved blocked-name list.
 
 ## Keys
-
-- `profiles` (list of string, default: falls back to ralph, then empty):
-  machine profiles for profile-gated rules. `git-push-main` checks for
-  `personal` directly; `git_identity` and `commit_guards` rules can gate on
-  an arbitrary profile name via their own `profile` field.
 
 ### internal_names
 
@@ -73,9 +67,8 @@ lives).
 
 ### claude_settings
 
-The switch on belt's read of the Claude Code settings files, the one
-non-belt config surface read besides the ralph profiles fallback
-(docs/adr/0010). The only thing belt takes from those files is the
+The switch on belt's read of the Claude Code settings files, the only
+non-belt config surface belt reads (docs/adr/0010). The only thing belt takes from those files is the
 `permissions.deny` Bash entries feeding `script-deny-list`; belt never
 writes them.
 
@@ -87,14 +80,12 @@ writes them.
 
 ### git_identity
 
-A list of rules; the first rule whose `profile` and `repos` cover a commit's
-repo wins. An empty list means the `git-identity` guard is a no-op.
+A list of rules; the first rule whose `repos` cover a commit's repo wins. An
+empty list means the `git-identity` guard is a no-op.
 
 - `git_identity[].repos` (list of string, default: empty = covers every
   repo): canonical `host/owner/repo` entries, exact or with a trailing `/*`
   org wildcard.
-- `git_identity[].profile` (string, default: empty = applies on every
-  machine): restrict the rule to machines carrying this ralph profile.
 - `git_identity[].email` (string, required): the `git config user.email`
   a matching repo expects.
 - `git_identity[].mode` (string, default `"hard"`): `"hard"` denies a
@@ -113,8 +104,6 @@ wildcard).
   wildcard.
 - `commit_guards[].always_allow` (list of string, default: empty): repos
   exempt from the hours check even though they match `repos`.
-- `commit_guards[].profile` (string, default: empty = applies on every
-  machine): restrict the rule to machines carrying this ralph profile.
 - `commit_guards[].block_hours` (string `"HH:MM-HH:MM"`, required): the local
   time window. A window where the end is earlier than the start is treated as
   crossing midnight and blocks both sides of it. A malformed value fails
@@ -167,19 +156,17 @@ A map keyed by built-in guard id (`git-push-main`, `git-identity`,
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. Note that
-`allow_repos` and `allow_repos_by_profile` entries here match by exact
-`host/owner/repo` string only: unlike `git_identity[].repos` and
-`commit_guards[].repos` above, a trailing `/*` is not treated as an org
-wildcard.
+`allow_repos` entries here match by exact `host/owner/repo` string only:
+unlike `git_identity[].repos` and `commit_guards[].repos` above, a trailing
+`/*` is not treated as an org wildcard.
 
 - **git-push-main**
   - `guards.git-push-main.enabled` (bool, default `true`)
   - `guards.git-push-main.allow_repos` (list of string, default: empty):
     canonical `host/owner/repo` entries exempt from the deny, matched
-    against the push working directory's origin remote. Unlike
-    `write-internal-names` below, this guard does not read
-    `allow_repos_by_profile`. An unresolved repo, an unknown profile, and an
-    off-allowlist repo all fail closed.
+    against the push working directory's origin remote. An unresolved repo
+    and an off-allowlist repo both fail closed; a machine class where
+    direct pushes are fine disables the guard in its rendered config.
 - **git-identity**
   - `guards.git-identity.enabled` (bool, default `true`): the only field
     with effect. The rules themselves live in the top-level `git_identity`
@@ -209,12 +196,8 @@ wildcard.
   - `guards.write-internal-names.enabled` (bool, default `true`)
   - `guards.write-internal-names.allow_repos` (list of string, default:
     empty): canonical `host/owner/repo` entries exempt from the guard,
-    matched against the write target's origin remote.
-  - `guards.write-internal-names.allow_repos_by_profile` (map of profile
-    name to list of string, default: empty): like `allow_repos`, but each
-    entry applies only on machines carrying the named ralph profile, so one
-    fleet-shared config can allow a repo on personal machines while work
-    machines stay fail-closed.
+    matched against the write target's origin remote. An entry that should
+    hold on only one machine class goes in that class's rendered config.
   - `guards.write-internal-names.exclude_paths` (list of string, default:
     empty): target paths where internal references are deliberate. Same
     prefix-or-substring matching as `script-deny-list.exclude_paths`.
@@ -222,8 +205,8 @@ wildcard.
   - `guards.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom guard, used only when that guard's own
     `custom_guards.<name>.enabled` is left unset. The other toggle fields
-    (`exclude_paths`, `extra_patterns`, `allow_repos`,
-    `allow_repos_by_profile`) have no effect on custom guards and are not
+    (`exclude_paths`, `extra_patterns`, `allow_repos`) have no effect on
+    custom guards and are not
     rendered under `guards:` by `belt config` (they print under
     `custom_guards:` instead, with their full definition).
 
@@ -269,9 +252,6 @@ process environment at hook invocation time.
 # ~/.config/belt/config.yaml — every key optional; guards and hints default
 # to enabled when the file or their entry is missing.
 
-profiles:
-  - personal
-
 internal_names:
   workspace_dirs:
     - ~/workspace
@@ -294,7 +274,6 @@ commit_guards:
       - github.com/you/*
     always_allow:
       - github.com/you/essential-tooling
-    profile: work
     block_hours: "09:00-17:00"
     block_days: [mon, tue, wed, thu, fri]
     mode: soft
@@ -327,9 +306,6 @@ guards:
     enabled: true
     allow_repos:
       - github.com/you/private-companion
-    allow_repos_by_profile:
-      personal:
-        - github.com/you/personal-store
     exclude_paths:
       - ~/notes
 

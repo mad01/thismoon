@@ -13,15 +13,13 @@ git_identity:
       - github.com/mad01/*
     email: personal@example.com
     mode: hard
-  - profile: work
-    email: work@example.com
+  - email: work@example.com
 
 commit_guards:
   - repos:
       - github.com/mad01/*
     always_allow:
       - github.com/mad01/dotfiles
-    profile: work
     block_hours: "09:00-17:00"
     block_days: [mon, tue, wed, thu, fri]
     mode: soft
@@ -47,8 +45,8 @@ custom_guards:
 	if first.Email != "personal@example.com" || first.Soft() || len(first.Repos) != 1 {
 		t.Errorf("first identity rule = %+v", first)
 	}
-	if cfg.GitIdentity[1].Profile != "work" {
-		t.Errorf("second identity rule profile = %q", cfg.GitIdentity[1].Profile)
+	if cfg.GitIdentity[1].Email != "work@example.com" {
+		t.Errorf("second identity rule email = %q", cfg.GitIdentity[1].Email)
 	}
 
 	if len(cfg.CommitGuards) != 1 {

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The bash event with a work-profile push to main must emit a deny decision.
+// A push to main on a guarded machine must emit a deny decision.
 // Config.Load() reads real machine config, so hook-level tests only cover the
 // payload plumbing paths that do not depend on it: malformed payloads and
 // field mapping.

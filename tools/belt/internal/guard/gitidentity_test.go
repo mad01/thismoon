@@ -54,11 +54,6 @@ func TestGitIdentity(t *testing.T) {
 			[]config.GitIdentity{{Email: "personal@example.com"}},
 			`git commit -m "x"`, "gitlab.com/other/repo", "work@example.com", true, false,
 		},
-		{
-			"profile-gated rule skipped without profile",
-			[]config.GitIdentity{{Profile: "work", Email: "work@example.com"}},
-			`git commit -m "x"`, "github.com/mad01/thismoon", "personal@example.com", false, false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -75,18 +70,6 @@ func TestGitIdentity(t *testing.T) {
 				t.Errorf("reason missing guard id: %q", d.Reason)
 			}
 		})
-	}
-}
-
-func TestGitIdentityProfileGatedRuleApplies(t *testing.T) {
-	var warned []string
-	cfg := config.Config{
-		Profiles:    []string{"work"},
-		GitIdentity: []config.GitIdentity{{Profile: "work", Email: "work@example.com"}},
-	}
-	g := newIdentityGuard(cfg, "github.com/mad01/thismoon", "personal@example.com", &warned)
-	if d := g.Check(Input{Event: EventBash, Command: `git commit -m "x"`, Cwd: "/tmp"}); d == nil {
-		t.Error("profile-gated rule did not apply on a machine carrying the profile")
 	}
 }
 

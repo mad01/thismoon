@@ -12,10 +12,11 @@ const GitPushMainID = "git-push-main"
 
 var defaultBranches = map[string]bool{"main": true, "master": true}
 
-// GitPushMain blocks `git push` to main/master unless the machine runs the
-// personal ralph profile or the target repository is on the guard's
-// allow_repos allowlist. On the work profile (or when the profile is
-// unknown — fail closed) direct pushes to the default branch are denied.
+// GitPushMain blocks `git push` to main/master unless the target repository
+// is on the guard's allow_repos allowlist. A machine class where direct
+// pushes are fine (a personal machine, say) disables the guard in its
+// rendered config; everywhere else, and on a machine with no config at all,
+// pushes to the default branch are denied (docs/adr/0010).
 type GitPushMain struct {
 	cfg config.Config
 	// resolveBranch returns the current branch of the repo at dir, or ""
@@ -42,9 +43,6 @@ func (g *GitPushMain) Event() string { return EventBash }
 // Check scans every git push in the command (compound commands included) and
 // denies when one targets main or master.
 func (g *GitPushMain) Check(in Input) *Denial {
-	if g.cfg.HasProfile("personal") {
-		return nil
-	}
 	allow := g.cfg.Guards[GitPushMainID].AllowRepos
 	for _, push := range findGitPushes(in.Command) {
 		dir := push.dir
@@ -59,7 +57,7 @@ func (g *GitPushMain) Check(in Input) *Denial {
 			continue
 		}
 		return Reasonf(GitPushMainID,
-			"pushing to %q is blocked on this machine (work profile — direct pushes to the default branch are never allowed here). "+
+			"pushing to %q is blocked on this machine (direct pushes to the default branch are never allowed here). "+
 				"Create a feature branch and open a PR instead: git checkout -b <branch> && git push -u origin <branch>.",
 			branch)
 	}
