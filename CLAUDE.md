@@ -49,17 +49,18 @@ docs/RELEASING.md       release process (release-please, tags, artifacts, verifi
 
 ## Skills
 
-The repo ships five agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand; the paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+The repo ships six agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand; the paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
+| `commit-pipeline` | Coordinates commits when several sessions share one working tree: requesters queue commit request files under `~/.commits/`, and a single committer session processes them serially with exact staging. | nothing (guidance only; writes to `~/.commits/`) |
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
 | `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
 | `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus a headless `claude -p` pass on Haiku for holistic judgment |
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `golang-style` and `handoff` need nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+Prerequisites: `commit-pipeline`, `golang-style`, and `handoff` need nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
 
 ## Release process
 
