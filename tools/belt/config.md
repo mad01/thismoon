@@ -101,8 +101,8 @@ wildcard).
   events service and allows the commit; `"hard"` denies it.
 - `commit_guards[].override` (string, default: empty = no override switch):
   names a timed override that suppresses the rule while active (`belt
-  override set <name>`, 10 minutes by default, `--for` to size it; see
-  Example). The name is freeform — name the exception, like `vacation` —
+  override set <name> --reason "..."`, 10 minutes by default, `--for` to
+  size it; see Example). The name is freeform — name the exception, like `vacation` —
   and becomes the override's filename verbatim, so it must be a plain path
   segment (no `/`, no leading dot). Several rules may share one name; the
   rule field and the CLI argument connect by exact string match, and a set
@@ -329,8 +329,8 @@ from an older belt counts as untimed and stays active until cleared —
 re-set it with `--for` to make it expire).
 
 ```bash
-belt override set vacation --for 2h   # active for two hours
-belt override extend vacation         # push the expiry 10 more minutes
+belt override set vacation --for 2h --reason "half-day off"  # active for two hours
+belt override extend vacation --reason "still off"           # push the expiry 10 more minutes
 belt override                         # list every override with its state
 belt override clear vacation          # end it early
 ```

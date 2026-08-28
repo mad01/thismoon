@@ -29,7 +29,7 @@ func runOverride(t *testing.T, args ...string) string {
 func TestOverrideSetExtendClear(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	runOverride(t, "set", "vacation", "--for", "5m")
+	runOverride(t, "set", "vacation", "--for", "5m", "--reason", "testing the flow")
 	o, ok := config.ReadOverride("vacation")
 	if !ok {
 		t.Fatal("set did not create the override file")
@@ -42,7 +42,7 @@ func TestOverrideSetExtendClear(t *testing.T) {
 		t.Errorf("remaining after set --for 5m = %v, want ~5m", remaining)
 	}
 
-	runOverride(t, "extend", "vacation", "--for", "10m")
+	runOverride(t, "extend", "vacation", "--for", "10m", "--reason", "still testing")
 	extended, _ := config.ReadOverride("vacation")
 	if !extended.Expiry.After(o.Expiry) {
 		t.Errorf("extend did not move expiry forward: %v -> %v", o.Expiry, extended.Expiry)
@@ -67,9 +67,32 @@ func TestOverrideExtendRequiresExisting(t *testing.T) {
 	cmd := overrideCmd()
 	cmd.SetOut(new(bytes.Buffer))
 	cmd.SetErr(new(bytes.Buffer))
-	cmd.SetArgs([]string{"extend", "nope"})
+	cmd.SetArgs([]string{"extend", "nope", "--reason", "testing"})
 	if err := cmd.Execute(); err == nil {
 		t.Error("extend of an unset override should error")
+	}
+}
+
+func TestOverrideRequiresReason(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cases := [][]string{
+		{"set", "vacation"},                     // flag missing entirely
+		{"set", "vacation", "--reason", ""},     // empty
+		{"set", "vacation", "--reason", "  \t"}, // whitespace-only
+		{"extend", "vacation"},
+		{"extend", "vacation", "--reason", " "},
+	}
+	for _, args := range cases {
+		cmd := overrideCmd()
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetErr(new(bytes.Buffer))
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("override %v should error without a non-blank --reason", args)
+		}
+	}
+	if _, ok := config.ReadOverride("vacation"); ok {
+		t.Error("a rejected set still wrote the override file")
 	}
 }
 

@@ -203,8 +203,8 @@ hours.
   midnight).
 - **Then**: `mode: soft` (the default) emits a warn event and lets the commit
   through; `mode: hard` denies, naming the override switch
-  (`belt override set <name>`) in the reason so a legitimate exception is one
-  command away.
+  (`belt override set <name> --reason "..."`) in the reason so a legitimate
+  exception is one command away.
 - **Why it exists**: a soft boundary between work hours and personal projects
   that a human can consciously step over but not absent-mindedly drift over.
 - **Fails open**: unresolved repos and malformed windows block nothing.
@@ -310,10 +310,12 @@ narrowest to widest; take the lowest rung that solves your problem.
    git-push-main, the `git config user.email <expected>` line for
    git-identity, the override switch name for a hard commit-guard rule.
 2. **Flip the rule's override switch** (commit-guard rules only, today):
-   `belt override set <name>` suppresses every rule naming that override for
-   a timed window — 10 minutes by default, `--for 2h` to size it,
-   `belt override extend <name>` to push it forward, and it expires on its
-   own, so a forgotten override cannot disarm a rule for days.
+   `belt override set <name> --reason "..."` suppresses every rule naming
+   that override for a timed window — 10 minutes by default, `--for 2h` to
+   size it, `belt override extend <name>` to push it forward, and it expires
+   on its own, so a forgotten override cannot disarm a rule for days. Set
+   and extend require a non-blank `--reason`, archived to the events service
+   when it is running.
    `belt override` and `belt doctor` list every override with its state and
    remaining time. The switch is one file under
    `~/.config/belt/overrides/<name>` carrying its RFC 3339 expiry — nothing
