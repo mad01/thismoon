@@ -26,11 +26,13 @@ behave identically.
 
 ## Data flow
 
-Every verb validates first, then execs: URL parses the input and requires a
-scheme; File, With, and Reveal expand a leading ~, require the result
-absolute (the MCP server process runs from /), and stat it; App requires a
-non-empty name. Validation failures never exec. The exec maps verbs to
-flags — URL/File pass the target bare, App is `-a <name>`, With is
+Every verb validates first, then execs: URL takes one or more inputs and
+requires a scheme on each, rejecting the whole batch if any lacks one; File,
+With, and Reveal expand a leading ~, require the result absolute (the MCP
+server process runs from /), and stat it; App requires a non-empty name.
+Validation failures never exec. The exec maps verbs to flags — URL passes
+every target bare in one exec, File passes the target bare, App is
+`-a <name>`, With is
 `-a <app> <path>`, Reveal is `-R <path>` — with stderr captured onto the
 error, so "Unable to find application" surfaces verbatim. Errors cross the
 boundary wrapped by `agentdoc.Hint`, pointing at `opener docs`.
@@ -43,7 +45,7 @@ via the shared `github.com/mad01/thismoon/buildinfo` package. Every open
 command prints `opened <target>` with the resolved target.
 
 MCP: `opener mcp` starts a stdio server registering five tools —
-`open_url(url)`, `open_file(path)`, `open_app(name)`,
+`open_url(urls)` (a list, opened in one exec), `open_file(path)`, `open_app(name)`,
 `open_with(path, app)`, `reveal_in_finder(path)` — each returning
 `{opened}` with the URL, resolved path, or app name it handed to open. The
 runner inside `sysopen.Opener` is a swappable function field — the test

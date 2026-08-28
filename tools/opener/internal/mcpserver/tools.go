@@ -11,10 +11,13 @@ import (
 func registerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "open_url",
-		Description: "Open a URL in the user's default browser (macOS open). " +
+		Description: "Open one or more URLs in the user's default browser (macOS open). " +
 			"Use when the user says open this link, open in browser, or take me to that page. " +
-			"The URL must carry a scheme (https://...); non-http schemes go to their default " +
-			"handler. Returns the URL it opened.",
+			"Pass every URL in the urls list to open them all in one call (each opens as a " +
+			"browser tab) instead of calling the tool once per URL. Each URL must carry a " +
+			"scheme (https://...); non-http schemes go to their default handler. If any URL " +
+			"lacks a scheme the whole batch is rejected before anything opens. Returns the " +
+			"URLs it opened.",
 	}, handleURL)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -51,20 +54,25 @@ type openedOutput struct {
 	Opened string `json:"opened" jsonschema:"the URL, resolved path, or app name that was opened"`
 }
 
-type urlInput struct {
-	URL string `json:"url" jsonschema:"the URL to open; must carry a scheme, e.g. https://example.com"`
+type urlsInput struct {
+	URLs []string `json:"urls" jsonschema:"the URLs to open; each must carry a scheme, e.g. https://example.com. Pass many at once to open them in a single call"`
+}
+
+// openedURLsOutput confirms every URL handed to the open command, in order.
+type openedURLsOutput struct {
+	Opened []string `json:"opened" jsonschema:"the URLs that were opened, in the order given"`
 }
 
 func handleURL(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
-	in urlInput,
-) (*mcp.CallToolResult, openedOutput, error) {
-	opened, err := sysopen.New().URL(in.URL)
+	in urlsInput,
+) (*mcp.CallToolResult, openedURLsOutput, error) {
+	opened, err := sysopen.New().URLs(in.URLs)
 	if err != nil {
-		return nil, openedOutput{}, err
+		return nil, openedURLsOutput{}, err
 	}
-	return nil, openedOutput{Opened: opened}, nil
+	return nil, openedURLsOutput{Opened: opened}, nil
 }
 
 type fileInput struct {

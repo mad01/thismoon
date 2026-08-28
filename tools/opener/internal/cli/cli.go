@@ -49,14 +49,26 @@ func report(cmd *cobra.Command, opened string, err error) error {
 	return nil
 }
 
+// reportMany prints one "opened <target>" line per resolved target, the
+// multi-target form of report used by the url command.
+func reportMany(cmd *cobra.Command, opened []string, err error) error {
+	if err != nil {
+		return err
+	}
+	for _, o := range opened {
+		fmt.Fprintf(cmd.OutOrStdout(), "opened %s\n", o)
+	}
+	return nil
+}
+
 func urlCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "url <url>",
-		Short: "Open a URL with its default handler (the browser for https)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "url <url>...",
+		Short: "Open one or more URLs with their default handler (the browser for https)",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opened, err := sysopen.New().URL(args[0])
-			return report(cmd, opened, err)
+			opened, err := sysopen.New().URLs(args)
+			return reportMany(cmd, opened, err)
 		},
 	}
 }

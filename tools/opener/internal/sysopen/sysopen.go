@@ -35,17 +35,35 @@ func New() *Opener { return &Opener{run: run} }
 // URL opens raw with the default handler for its scheme — the browser for
 // http/https. It returns the URL it opened.
 func (o *Opener) URL(raw string) (string, error) {
-	u, err := url.Parse(raw)
+	opened, err := o.URLs([]string{raw})
 	if err != nil {
-		return "", fmt.Errorf("sysopen: not a URL %q: %w", raw, err)
+		return "", err
 	}
-	if u.Scheme == "" {
-		return "", fmt.Errorf(
-			"sysopen: URL %q has no scheme; prefix it (https://...), or open a local path as a file",
-			raw,
-		)
+	return opened[0], nil
+}
+
+// URLs opens each raw URL with the default handler for its scheme in a
+// single exec of open — the browser opens http/https ones as tabs. It
+// validates every URL first (all must carry a scheme), so a bad URL in the
+// batch rejects the whole call before anything launches, and returns the
+// URLs it opened in order.
+func (o *Opener) URLs(raws []string) ([]string, error) {
+	if len(raws) == 0 {
+		return nil, fmt.Errorf("sysopen: no URLs to open")
 	}
-	return raw, hint(o.run(raw))
+	for _, raw := range raws {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("sysopen: not a URL %q: %w", raw, err)
+		}
+		if u.Scheme == "" {
+			return nil, fmt.Errorf(
+				"sysopen: URL %q has no scheme; prefix it (https://...), or open a local path as a file",
+				raw,
+			)
+		}
+	}
+	return raws, hint(o.run(raws...))
 }
 
 // File opens path with its default application. It returns the absolute
