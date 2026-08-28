@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/mad01/thismoon/compare/belt/v0.20.0...belt/v1.0.0) (2026-08-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **belt:** belt override set/extend without --reason now exit with an error.
+
+### Features
+
+* **belt:** require --reason on override set and extend ([#27](https://github.com/mad01/thismoon/issues/27)) ([fc1f936](https://github.com/mad01/thismoon/commit/fc1f9362afd11ec92de788a0f0f056d2ef2a5deb))
+
 ## [0.20.0](https://github.com/mad01/thismoon/compare/belt/v0.19.0...belt/v0.20.0) (2026-08-28)
 
 
