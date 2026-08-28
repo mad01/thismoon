@@ -1,0 +1,22 @@
+# commit-pipeline — skill-only recipe. The skill has no companion binary; it
+# ships the multi-agent commit coordination procedure (SKILL.md + pipeline.md)
+# from the repo-root skills/ dir into the agent skill directories on every
+# machine.
+[recipe]
+name = "commit-pipeline"
+description = "commit-pipeline — agent skill for coordinating commits when multiple sessions share one working tree"
+
+# The skill lives in the repo-root skills/ dir (discoverable by browsing the
+# repo); link just this skill's directory into place. Relative sources resolve
+# against the recipe dir and are path-cleaned, so ../../ reaches the
+# source-checkout root.
+[dotfiles.commit_pipeline_skill]
+source = "../../skills/commit-pipeline"
+target = "~/.claude/skills/commit-pipeline"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.commit_pipeline_codex_skill]
+source = "../../skills/commit-pipeline"
+target = "~/.agents/skills/commit-pipeline"
+action = "symlink_dir"
