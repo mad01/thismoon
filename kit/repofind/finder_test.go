@@ -30,6 +30,45 @@ func TestParseRemote(t *testing.T) {
 	}
 }
 
+func TestParseHost(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"ssh", "git@github.com:org/repo.git", "github.com"},
+		{"ssh other user", "deploy@git.example.com:org/repo", "git.example.com"},
+		{"https", "https://github.com/org/repo.git", "github.com"},
+		{"https no path", "https://github.com", "github.com"},
+		{"empty", "", ""},
+		{"unrecognised", "notaurl", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseHost(tc.url)
+			if got != tc.want {
+				t.Errorf("ParseHost(%q) = %q, want %q", tc.url, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFind_populatesHost(t *testing.T) {
+	root := t.TempDir()
+	makeRepo(t, root, "org/alpha", "git@github.com:org/alpha.git")
+
+	repos, err := Find([]string{root}, nil)
+	if err != nil {
+		t.Fatalf("Find error: %v", err)
+	}
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+	if repos[0].Host != "github.com" {
+		t.Errorf("expected host github.com, got %q", repos[0].Host)
+	}
+}
+
 func TestIsRepo(t *testing.T) {
 	dir := t.TempDir()
 	if IsRepo(dir) {
