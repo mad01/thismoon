@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/events/v0.6.1...events/v0.7.0) (2026-08-28)
+
+
+### Features
+
+* **events:** paginate the web timeline with a before cursor ([#25](https://github.com/mad01/thismoon/issues/25)) ([95bacb9](https://github.com/mad01/thismoon/commit/95bacb9796a2811f4113498cd1ae25e82548e3ca))
+
 ## [0.6.1](https://github.com/mad01/thismoon/compare/events/v0.6.0...events/v0.6.1) (2026-08-27)
 
 
