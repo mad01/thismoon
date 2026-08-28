@@ -9,8 +9,10 @@
 # profiles:
 #   - personal
 
-# Name sources for the write-internal-names guard (and, via the shared shape,
-# the suspenders pre-commit guard). Every git repo found under workspace_dirs
+# Name sources for the write-internal-names guard. belt reads only this
+# file — the suspenders pre-commit guard has an identically shaped section
+# in its own config, so keep the two in step (render both from one template
+# if your dotfiles can). Every git repo found under workspace_dirs
 # contributes its org, repo, and directory names as blocked words in public
 # (github.com) repos — the list is derived, never enumerated.
 internal_names:
@@ -20,6 +22,12 @@ internal_names:
     - internal-codename
   allowlist:
     - some-safe-name
+
+# belt reads the Claude settings files (settings.json + settings.local.json)
+# for the permissions.deny Bash entries that script-deny-list enforces
+# inside scripts. Default true; set false to stop belt opening them.
+# claude_settings:
+#   enabled: true
 
 # The repo decides the commit identity, whatever machine you are on.
 git_identity:

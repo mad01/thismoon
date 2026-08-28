@@ -157,14 +157,15 @@ them. They cover the same risks at different moments:
 | Sees | only what the agent does | everything that reaches git, human edits included |
 | Reference | [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md) | [tools/suspenders/README.md](../tools/suspenders/README.md) |
 
-They deliberately share the internal-name configuration: belt falls back to
-the `guard:` section of suspenders' config, and both derive the blocked set
-from your checkouts rather than enumerating names in a file (a list of
-internal names would itself be the leak). belt is the early, agent-only
-layer; suspenders is the backstop that also covers you. Two things to know
-going in: belt's hooks do nothing until your settings register them (step 6
-above), and suspenders' internal-name guard ships disabled until you
-configure its `guard:` section. Both layers also ship a documented escape
+Each tool reads only its own config (docs/adr/0010), but the two
+internal-name sections share one shape and one derivation: both build the
+blocked set from your checkouts rather than enumerating names in a file (a
+list of internal names would itself be the leak), so identical config blocks
+produce identical block lists. belt is the early, agent-only layer;
+suspenders is the backstop that also covers you. Two things to know going
+in: belt's hooks do nothing until your settings register them (step 6
+above), and both name guards ship with nothing to match until you configure
+their sections — belt's `internal_names` and suspenders' `guard:`. Both layers also ship a documented escape
 ladder — override switches, allowlists, per-repo files, kill switches — in
 the two references above, because a guard you cannot get past when it is
 wrong teaches you to bypass the right blocks too.

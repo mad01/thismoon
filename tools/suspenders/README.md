@@ -2,7 +2,7 @@
 
 A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, runs user-defined hook scripts, and can rewrite git history to remove a secret that already made it into a commit.
 
-Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself, and reads the same internal-name config, so the two layers agree. belt only sees what an agent does — suspenders also catches what you type.
+Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config, but both derive their internal-name list the same way, so the two layers agree when their configs do. belt only sees what an agent does — suspenders also catches what you type.
 
 ## Quickstart
 
@@ -161,7 +161,7 @@ Discovery runs through the shared [`kit/repofind`](../../kit/repofind/README.md)
 - **`dirs`** answers "which repos do I manage": `hook install --all` installs hooks into every repo found here (minus `exclude` globs).
 - **`guard.workspace_dirs`** answers "which names are internal": every repo found here contributes its org segment, repo segment, and checkout directory basename as three separate blocked names — never the combined `org/repo` form.
 
-belt's `write-internal-names` guard runs the same walk over the same package (and falls back to this tool's `guard:` config section), which is what keeps the write-time and commit-time block lists identical. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
+belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section — same derivation, standalone configs (docs/adr/0010) — which is what keeps the write-time and commit-time block lists identical when the two configs carry the same values. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
 
 ## Install
 
