@@ -35,6 +35,7 @@ wk-card.ev-group{cursor:pointer}
 .day-sep{font-size:0.75rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;margin:0.75rem 0 0.1rem}
 .day-sep:first-child{margin-top:0}
 .empty{color:var(--text-3);font-size:0.9375rem;padding:2rem 0}
+#sentinel{height:1px}
 </style>
 </head>
 <body>
@@ -62,18 +63,24 @@ wk-card.ev-group{cursor:pointer}
   <div id="source-chips"></div>
 
   <div id="timeline"></div>
+  <div id="sentinel"></div>
 </main>
 
 <script src="/webkit/webkit.js"></script>
 <script>
 (function(){
-  var TAIL_MS = 7000, MAX = 1500;
+  var TAIL_MS = 7000, PAGE = 200;
   // A run of >= GROUP_MIN consecutive same-source events, each within
   // GROUP_WINDOW_MS of the previous, collapses into one expandable card.
   var GROUP_MIN = 3, GROUP_WINDOW_MS = 60000;
   var all = [], newestId = "", activeSources = {}, level = "", q = "";
   var expanded = {}; // group key (newest member id) -> true
+  // Paging state: the timeline holds PAGE events at first and appends older
+  // pages as the sentinel scrolls into view. gen invalidates in-flight
+  // responses when a filter change resets the window.
+  var loading = false, done = false, gen = 0;
   var timeline = document.getElementById('timeline');
+  var sentinel = document.getElementById('sentinel');
   var subtitle = document.getElementById('subtitle');
   var chips = document.getElementById('source-chips');
   var qInput = document.getElementById('q');
@@ -213,14 +220,9 @@ wk-card.ev-group{cursor:pointer}
     return c;
   }
 
-  function matchesText(ev){
-    if (!q) return true;
-    var hay = (ev.title + ' ' + (ev.message||'') + ' ' + ev.source + ' ' + (ev.component||''));
-    if (ev.tags) for (var k in ev.tags) hay += ' ' + k + '=' + ev.tags[k] + ' ' + k + ' ' + ev.tags[k];
-    return hay.toLowerCase().indexOf(q) !== -1;
-  }
-
   function activeSourceList(){ return Object.keys(activeSources).filter(function(k){ return activeSources[k]; }); }
+
+  function filtersActive(){ return !!(level || q || activeSourceList().length); }
 
   // buildItems collapses bursts: walk the newest-first list, and whenever a run
   // of same-source events (each within the window of the one before it) reaches
@@ -244,22 +246,18 @@ wk-card.ev-group{cursor:pointer}
     return items;
   }
 
+  // render rebuilds the timeline from the loaded window. Filtering happens
+  // server-side (see pageURLs), so everything in `all` is shown.
   function render(){
-    var picked = activeSourceList();
-    var shown = all.filter(function(ev){
-      if (level && ev.level !== level) return false;
-      if (picked.length && picked.indexOf(ev.source) === -1) return false;
-      return matchesText(ev);
-    });
     timeline.replaceChildren();
-    if (!shown.length){
+    if (!all.length){
       var e = document.createElement('div');
       e.className = 'empty';
-      e.textContent = all.length ? 'No events match these filters.' : 'No events recorded yet.';
+      e.textContent = filtersActive() ? 'No events match these filters.' : 'No events recorded yet.';
       timeline.appendChild(e);
     } else {
       var lastDay = '';
-      buildItems(shown).forEach(function(item){
+      buildItems(all).forEach(function(item){
         var newest = item.group ? item.group[0] : item.ev;
         var day = dayLabel(newest.time);
         if (day !== lastDay){
@@ -272,7 +270,7 @@ wk-card.ev-group{cursor:pointer}
         timeline.appendChild(item.group ? groupCard(item.group) : card(item.ev));
       });
     }
-    subtitle.textContent = shown.length + (shown.length === all.length ? '' : ' of ' + all.length) + ' event' + (all.length === 1 ? '' : 's');
+    subtitle.textContent = all.length + ' event' + (all.length === 1 ? '' : 's') + ' loaded' + (filtersActive() ? ' (filtered)' : '');
   }
 
   function renderChips(sources){
@@ -291,7 +289,7 @@ wk-card.ev-group{cursor:pointer}
     var p = new URLSearchParams(location.search);
     var rawQ = p.get('q') || '';
     qInput.value = rawQ;
-    q = rawQ.trim().toLowerCase();
+    q = rawQ.trim();
     var l = p.get('level') || '';
     if (l === 'info' || l === 'warn' || l === 'error') level = l;
     levelSeg.querySelectorAll('button').forEach(function(b){
@@ -325,7 +323,7 @@ wk-card.ev-group{cursor:pointer}
     activeSources[src] = !activeSources[src];
     if (activeSources[src]) pill.setAttribute('active', ''); else pill.removeAttribute('active');
     syncURL();
-    render();
+    resetAndLoad();
   });
 
   levelSeg.addEventListener('click', function(e){
@@ -334,22 +332,25 @@ wk-card.ev-group{cursor:pointer}
     level = btn.dataset.level;
     this.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', b === btn); });
     syncURL();
-    render();
+    resetAndLoad();
   });
 
+  // Debounced so a fetch fires per pause in typing, not per keystroke.
+  var qTimer = 0;
   qInput.addEventListener('input', function(){
-    q = this.value.trim().toLowerCase();
+    q = this.value.trim();
     syncURL();
-    render();
+    clearTimeout(qTimer);
+    qTimer = setTimeout(resetAndLoad, 250);
   });
 
   timeline.addEventListener('click', function(e){
     var tag = e.target.closest('.ev-tag');
     if (tag){
       qInput.value = tag.textContent;
-      q = tag.textContent.toLowerCase();
+      q = tag.textContent;
       syncURL();
-      render();
+      resetAndLoad();
       return;
     }
     var group = e.target.closest('wk-card[data-group-key]');
@@ -360,35 +361,104 @@ wk-card.ev-group{cursor:pointer}
     }
   });
 
-  function ingest(list, prepend){
-    if (!list || !list.length) return;
-    if (prepend) all = list.concat(all); else all = list;
-    if (all.length > MAX) all = all.slice(0, MAX);
-    if (all.length) newestId = all[0].id; // API returns newest-first
+  // Filters are applied server-side so matches older than the loaded window
+  // still surface. The API takes a single source=, so with several chips
+  // active one request per source goes out; the responses merge newest-first.
+  function pageURLs(param, cursor){
+    var base = '/api/events?limit=' + PAGE;
+    if (level) base += '&level=' + encodeURIComponent(level);
+    if (q) base += '&q=' + encodeURIComponent(q);
+    if (cursor) base += '&' + param + '=' + encodeURIComponent(cursor);
+    var srcs = activeSourceList();
+    if (!srcs.length) return [base];
+    return srcs.map(function(s){ return base + '&source=' + encodeURIComponent(s); });
   }
 
-  function load(){
-    fetch('/api/events?limit=' + MAX).then(function(r){ return r.json(); }).then(function(list){
-      ingest(list, false);
+  function fetchMerged(param, cursor){
+    return Promise.all(pageURLs(param, cursor).map(function(u){
+      return fetch(u).then(function(r){ return r.json(); });
+    })).then(function(lists){
+      var merged = [];
+      lists.forEach(function(l){ if (l && l.length) merged = merged.concat(l); });
+      merged.sort(function(a, b){ return a.id < b.id ? 1 : a.id > b.id ? -1 : 0; });
+      return merged;
+    });
+  }
+
+  // loadPage fetches one page older than `before` ('' = the newest page) and
+  // appends it. An empty page marks the store exhausted until the next reset.
+  function loadPage(before){
+    if (loading) return;
+    loading = true;
+    var myGen = gen;
+    fetchMerged('before', before).then(function(merged){
+      if (myGen !== gen) return;
+      loading = false;
+      // Cut multi-source merges back to one page; the discarded tail is
+      // refetched under the next page's cursor.
+      if (merged.length > PAGE) merged = merged.slice(0, PAGE);
+      if (!merged.length){
+        done = true;
+      } else {
+        all = before ? all.concat(merged) : merged;
+        newestId = all[0].id; // API returns newest-first
+      }
       render();
-    }).catch(function(){});
+      maybeLoadMore();
+    }).catch(function(){
+      if (myGen === gen) loading = false;
+    });
+  }
+
+  // maybeLoadMore keeps fetching while the sentinel sits in or near the
+  // viewport, so short pages still fill the screen.
+  function maybeLoadMore(){
+    if (loading || done || !all.length) return;
+    var r = sentinel.getBoundingClientRect();
+    if (r.top <= (window.innerHeight || document.documentElement.clientHeight) + 200){
+      loadPage(all[all.length - 1].id);
+    }
+  }
+
+  // resetAndLoad drops the scroll window and refetches page one with the
+  // current filters; the gen bump invalidates in-flight responses.
+  function resetAndLoad(){
+    gen++;
+    loading = false;
+    done = false;
+    all = [];
+    newestId = '';
+    loadPage('');
     fetch('/api/sources').then(function(r){ return r.json(); }).then(renderChips).catch(function(){});
   }
 
   function tail(){
     refreshTimes();
-    if (!newestId) return;
-    fetch('/api/events?limit=200&since=' + encodeURIComponent(newestId)).then(function(r){ return r.json(); }).then(function(list){
-      if (list && list.length){
-        ingest(list, true);
-        fetch('/api/sources').then(function(r){ return r.json(); }).then(renderChips).catch(function(){});
-        render();
-      }
+    maybeLoadMore();
+    if (!newestId){
+      // An empty (or fully filtered-out) store has no cursor to tail from;
+      // re-probe page one so the first event still shows up.
+      if (!loading && done){ done = false; loadPage(''); }
+      return;
+    }
+    var myGen = gen;
+    fetchMerged('since', newestId).then(function(list){
+      if (myGen !== gen || !list.length) return;
+      all = list.concat(all);
+      newestId = all[0].id;
+      fetch('/api/sources').then(function(r){ return r.json(); }).then(renderChips).catch(function(){});
+      render();
     }).catch(function(){});
   }
 
+  new IntersectionObserver(function(entries){
+    for (var i = 0; i < entries.length; i++){
+      if (entries[i].isIntersecting){ maybeLoadMore(); return; }
+    }
+  }, {rootMargin: '200px'}).observe(sentinel);
+
   initFromURL();
-  load();
+  resetAndLoad();
   setInterval(tail, TAIL_MS);
 })();
 </script>

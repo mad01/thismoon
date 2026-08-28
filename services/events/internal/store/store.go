@@ -47,6 +47,7 @@ type Filter struct {
 	Level  string // exact level
 	Q      string // case-insensitive substring over title+message+component+tags
 	Since  string // return only events with ID strictly greater than this (exclusive)
+	Before string // return only events with ID strictly less than this (exclusive); the backward-paging cursor
 	Limit  int    // max events returned; <=0 or > globalCap means globalCap
 }
 
@@ -268,6 +269,9 @@ func (s *Store) Query(f Filter) []event.Event {
 				continue
 			}
 			if f.Since != "" && ev.ID <= f.Since {
+				continue
+			}
+			if f.Before != "" && ev.ID >= f.Before {
 				continue
 			}
 			if f.Q != "" && !matchQ(ev, f.Q) {

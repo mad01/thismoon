@@ -85,8 +85,8 @@ make test     # go test ./...  (hermetic: t.TempDir + injected clock, never touc
 
 ## HTTP API
 
-- `GET  /`              : webkit-chromed, client-rendered timeline (newest-first; live-tailing)
-- `GET  /api/events[?source=&level=&q=&since=&limit=]` : JSON array, newest-first
+- `GET  /`              : webkit-chromed, client-rendered timeline (newest-first; live-tailing; infinite scroll)
+- `GET  /api/events[?source=&level=&q=&since=&before=&limit=]` : JSON array, newest-first (`since`/`before` are exclusive ID cursors: newer-than for tailing, older-than for paging)
 - `POST /api/events`    : emit one event (JSON body); returns `{"id":"…"}` (201)
 - `DELETE /api/events?source=<s>[&before=<id>]` : purge a source (all, or only events with id <= cursor); returns `{"purged":n}`
 - `GET  /api/sources`   : `[{"source":"…","count":n}]`
@@ -164,11 +164,14 @@ theme). Don't add those controls manually.
 
 ### Per-repo changes
 
-- The timeline is client-rendered: `index.html` fetches `/api/events` +
-  `/api/sources` and builds the DOM in JS, then live-tails with
-  `?since=<newestId>` every 7s. All event text is set via
-  `textContent`/`createElement`, never `innerHTML`; events come from
-  untrusted producers.
+- The timeline is client-rendered and paged: `index.html` fetches
+  `/api/events` in 200-event pages, appends older pages with
+  `?before=<oldestLoadedId>` as a sentinel at the bottom scrolls into view,
+  and live-tails with `?since=<newestId>` every 7s. Active filters go to the
+  API (one request per selected source chip, merged client-side) so matches
+  older than the loaded window still surface; a filter change resets the
+  window. All event text is set via `textContent`/`createElement`, never
+  `innerHTML`; events come from untrusted producers.
 - A run of 3+ consecutive same-source events within a 60s window collapses into
   one expandable burst card. Filters (`q`, `level`, active source chips) live
   in the URL, so a filtered view can be reloaded or bookmarked.

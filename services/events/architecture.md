@@ -26,10 +26,12 @@ internal/
 ```
 
 `internal/server` mounts the shared chrome with `webkit.Mount(mux)`. The
-timeline is client-rendered: `index.html` fetches `/api/events` and
-`/api/sources`, builds the DOM in the browser, and live-tails with
+timeline is client-rendered and paged: `index.html` fetches `/api/events` in
+200-event pages, loads older pages with `?before=<oldestLoadedId>` as a
+sentinel at the bottom scrolls into view, and live-tails with
 `?since=<newestId>` every 7 seconds (docs/adr/0005; events was client-side
-before that convention landed).
+before that convention landed). Active filters are passed to the API so
+matches older than the loaded window still surface.
 
 ## Data flow
 
@@ -44,9 +46,11 @@ order. The store then appends the event to that source's mutex-guarded ring
 buffer and appends one line to the source's JSONL file.
 
 Reads run the same path in reverse: `GET /api/events` filters by source,
-level, substring, and `since` cursor and returns newest first; `events_query`
-and `events list` call it over HTTP. The `since` cursor is an event ID, which
-makes polling for new activity a lexical comparison. Purge is the one
+level, substring, and `since`/`before` cursors and returns newest first;
+`events_query` and `events list` call it over HTTP. Both cursors are event
+IDs, which makes polling for new activity (`since`, exclusive lower bound)
+and paging back through history (`before`, exclusive upper bound) a lexical
+comparison. Purge is the one
 subtractive path: `DELETE /api/events?source=` drops a whole source or only
 events at or before a cursor, and it is deliberately reachable from the CLI
 and HTTP API only, never as an MCP tool.
@@ -66,7 +70,7 @@ outlive the service if it is removed.
 ## Interfaces
 
 HTTP: `GET /` (timeline), `GET /api/events` with `source`/`level`/`q`/
-`since`/`limit` filters, `POST /api/events`, `DELETE /api/events`,
+`since`/`before`/`limit` filters, `POST /api/events`, `DELETE /api/events`,
 `GET /api/sources`, `GET /healthz`, `GET /version`, `GET /webkit/`. CLI:
 `events serve`, `emit`, `list`, `purge`, `mcp`, `version`. MCP tools:
 `events_query`, `events_sources`, and `events_emit`; every response carries a

@@ -252,6 +252,40 @@ func TestQueryFilters(t *testing.T) {
 	}
 }
 
+func TestQueryBeforeCursor(t *testing.T) {
+	s := newTestStore(t, 0, 0)
+	var evs []event.Event
+	for i := 0; i < 5; i++ {
+		evs = append(evs, mustAppend(t, s, event.Event{Source: "a", Title: "e" + itoa(i)}))
+	}
+
+	// Before is exclusive: only events strictly older than the cursor, newest-first.
+	got := s.Query(Filter{Before: evs[3].ID})
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	if got[0].ID != evs[2].ID || got[2].ID != evs[0].ID {
+		t.Errorf("not newest-first below cursor: %+v", got)
+	}
+
+	// Limit pages the window: the newest page under the cursor.
+	page := s.Query(Filter{Before: evs[4].ID, Limit: 2})
+	if len(page) != 2 || page[0].ID != evs[3].ID || page[1].ID != evs[2].ID {
+		t.Errorf("before+limit page: %+v", page)
+	}
+
+	// Since and Before combine to the open interval (since, before).
+	mid := s.Query(Filter{Since: evs[0].ID, Before: evs[4].ID})
+	if len(mid) != 3 || mid[0].ID != evs[3].ID || mid[2].ID != evs[1].ID {
+		t.Errorf("since+before window: %+v", mid)
+	}
+
+	// A cursor at the oldest id yields nothing.
+	if got := s.Query(Filter{Before: evs[0].ID}); len(got) != 0 {
+		t.Errorf("cursor at oldest: len = %d, want 0", len(got))
+	}
+}
+
 func TestLoadAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	clock := incrClock(time.Date(2026, 6, 29, 9, 0, 0, 0, time.UTC))

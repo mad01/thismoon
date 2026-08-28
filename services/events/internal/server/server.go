@@ -65,6 +65,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		Level:  q.Get("level"),
 		Q:      q.Get("q"),
 		Since:  q.Get("since"),
+		Before: q.Get("before"),
 	}
 	if f.Level != "" && !validLevel(f.Level) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid level %q (want info|warn|error)", f.Level))
