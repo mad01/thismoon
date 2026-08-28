@@ -16,8 +16,8 @@ for anything else to work, and there's no lock contention.
 Producers reach it three ways: `events emit` on the CLI, the `events_emit` MCP
 tool, or a direct `POST /api/events` (what other tools in this repo use, since
 they can't import this module's internal packages). The timeline itself
-renders client-side: the page fetches `/api/events` and `/api/sources` and
-live-tails every 7s for new activity.
+renders client-side: the page fetches `/api/events` in pages as you scroll
+and live-tails every 7s for new activity.
 
 ## Install
 
@@ -72,8 +72,8 @@ API only; deletion stays human-triggered.
 
 | Path | Description |
 |------|-------------|
-| `GET /` | Client-rendered timeline (filters, day separators, burst coalescing, ~7s live tail) |
-| `GET /api/events` | JSON array, newest first (`?source=&level=&q=&since=&limit=`) |
+| `GET /` | Client-rendered timeline (filters, day separators, burst coalescing, infinite scroll, ~7s live tail) |
+| `GET /api/events` | JSON array, newest first (`?source=&level=&q=&since=&before=&limit=`) |
 | `POST /api/events` | Emit one event; returns `{"id":"…"}` (201) |
 | `DELETE /api/events?source=<s>[&before=<id>]` | Purge a source; returns `{"purged":n}` |
 | `GET /api/sources` | Sources with counts |
