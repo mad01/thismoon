@@ -6,7 +6,7 @@ argument-hint: "What will the next session focus on?"
 
 Create a handoff so work survives a context reset. The user will open a brand new Claude Code session and feed it the handoff document — that document is the only bridge. Anything not in the handoff or in durable memory is lost.
 
-Save the handoff to a durable directory, not the workspace: `~/.claude/handoffs/handoff-<project>-<YYYYMMDD-HHMM>.md` (create the directory with `mkdir -p` if needed). **Do NOT use `$TMPDIR` or `/tmp`** — macOS prunes those, so a handoff left there is gone by the time the next session needs it. Never write it into the repo.
+Save the handoff to a durable, agent-agnostic directory, not the workspace: `~/.handoff/handoff-<project>-<YYYYMMDD-HHMM>.md` (create the directory with `mkdir -p` if needed). `~/.handoff/` is shared across every coding agent, so a handoff written by one agent can be picked up by another (Claude Code, Codex, opencode, pi). **Do NOT use `$TMPDIR` or `/tmp`** — macOS prunes those, so a handoff left there is gone by the time the next session needs it. Never write it into the repo, and never write it under a single agent's private state directory (e.g. `~/.claude/`).
 
 ## Steps
 
