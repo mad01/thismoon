@@ -68,7 +68,6 @@ guards:
 	for _, want := range []string{
 		"config file:  " + p.BeltYAML,
 		"legacy fallback " + p.BeltTOML,
-		p.Suspenders + "  (missing, fallback empty — guard: section, used only when internal_names is unset here)",
 		p.Ralph + "  (missing, fallback empty — profiles list, used only when profiles is unset here)",
 		"script-deny-list:",
 		"enabled: false",
@@ -108,7 +107,7 @@ func TestConfigBodyIsEffectiveYAML(t *testing.T) {
 	if len(got.Hints) == 0 {
 		t.Error("hints = empty, want the registered hints")
 	}
-	for _, key := range []string{"profiles:", "internal_names:", "claude_deny:"} {
+	for _, key := range []string{"profiles:", "internal_names:", "claude_settings:", "claude_deny:"} {
 		if !strings.Contains(body, key) {
 			t.Errorf("body missing the %s section:\n%s", key, body)
 		}
@@ -116,21 +115,17 @@ func TestConfigBodyIsEffectiveYAML(t *testing.T) {
 }
 
 // TestConfigRendersResolvedFallbacksAndClaudeDeny pins the full-render rule:
-// values belt resolved from other files (ralph profiles, suspenders names,
-// the Claude deny patterns) appear in the body, and the fallback header lines
-// say which file was actually read.
+// values belt resolved from other files (ralph profiles, the Claude deny
+// patterns) appear in the body, and the fallback header line says which file
+// was actually read.
 func TestConfigRendersResolvedFallbacksAndClaudeDeny(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
-	writeFile(t, dir, "suspenders.yaml", `
-guard:
-  workspace_dirs:
-    - ~/workspace
+	writeFile(t, dir, "config.yaml", `
+internal_names:
   blocked_words:
     - acmecorp
-  allowlist:
-    - grpc/grpc-go
 `)
+	writeFile(t, dir, "config.local.toml", `profiles = ["work"]`)
 	writeFile(t, dir, "settings.json", `{
   "permissions": {"deny": ["Bash(kubectl delete:*)", "WebFetch"]}
 }`)
@@ -139,7 +134,6 @@ guard:
 	out := runConfigDocString(t, p)
 
 	for _, want := range []string{
-		p.Suspenders + "  (in use — guard: section",
 		p.Ralph + "  (in use — profiles list",
 		"- work",
 		"- acmecorp",
@@ -149,6 +143,26 @@ guard:
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestConfigReportsDisabledClaudeSettings pins the claude_settings gate in
+// the rendered doc (docs/adr/0010): a disabled read is stated in the header
+// and the deny list stays empty.
+func TestConfigReportsDisabledClaudeSettings(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.yaml", "claude_settings:\n  enabled: false\n")
+	writeFile(t, dir, "settings.json", `{
+  "permissions": {"deny": ["Bash(kubectl delete:*)"]}
+}`)
+
+	out := runConfigDocString(t, doctorPaths(dir))
+
+	if !strings.Contains(out, "claude_settings.enabled: false skips the Claude settings files") {
+		t.Errorf("disabled read not stated in header:\n%s", out)
+	}
+	if strings.Contains(out, "kubectl delete") {
+		t.Errorf("deny patterns rendered despite disabled read:\n%s", out)
 	}
 }
 

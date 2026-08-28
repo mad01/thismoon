@@ -48,30 +48,6 @@ func TestLoadProfilesMissingFile(t *testing.T) {
 	}
 }
 
-func TestLoadSuspendersGuard(t *testing.T) {
-	content := `
-guard:
-  enabled: true
-  workspace_dirs:
-    - ~/workspace
-  blocked_words:
-    - internalco
-  allowlist:
-    - grpc/grpc-go
-`
-	path := writeFile(t, t.TempDir(), "config.yaml", content)
-	got := LoadSuspendersGuard(path)
-	if len(got.BlockedWords) != 1 || got.BlockedWords[0] != "internalco" {
-		t.Errorf("blocked_words = %v", got.BlockedWords)
-	}
-	if len(got.WorkspaceDirs) != 1 || got.WorkspaceDirs[0] != "~/workspace" {
-		t.Errorf("workspace_dirs = %v", got.WorkspaceDirs)
-	}
-	if len(got.Allowlist) != 1 {
-		t.Errorf("allowlist = %v", got.Allowlist)
-	}
-}
-
 func TestGuardEnabled(t *testing.T) {
 	off := false
 	on := true
@@ -264,7 +240,6 @@ func fixturePaths(dir string) Paths {
 		BeltYAML:       filepath.Join(dir, "belt.yaml"),
 		BeltTOML:       filepath.Join(dir, "belt.toml"),
 		Ralph:          filepath.Join(dir, "ralph.toml"),
-		Suspenders:     filepath.Join(dir, "suspenders.yaml"),
 		ClaudeSettings: []string{filepath.Join(dir, "settings.json")},
 	}
 }
@@ -299,7 +274,7 @@ func TestLoadFromProfilesRalphFallback(t *testing.T) {
 	}
 }
 
-func TestLoadFromInternalNamesBeltWins(t *testing.T) {
+func TestLoadFromInternalNamesFromBeltConfig(t *testing.T) {
 	dir := t.TempDir()
 	p := fixturePaths(dir)
 	writeFile(t, dir, "belt.yaml", `
@@ -309,44 +284,61 @@ internal_names:
   blocked_words:
     - beltword
 `)
-	writeFile(t, dir, "suspenders.yaml", "guard:\n  blocked_words:\n    - suspword\n")
 
 	cfg := LoadFrom(p)
 	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "beltword" {
 		t.Errorf("blocked_words = %v, want [beltword]", cfg.Names.BlockedWords)
 	}
-	if cfg.NamesSource != SourceBelt {
-		t.Errorf("NamesSource = %q, want %q", cfg.NamesSource, SourceBelt)
+	if len(cfg.Names.WorkspaceDirs) != 1 {
+		t.Errorf("workspace_dirs = %v, want one entry", cfg.Names.WorkspaceDirs)
 	}
 }
 
-func TestLoadFromInternalNamesEmptySectionStillBelt(t *testing.T) {
-	dir := t.TempDir()
-	p := fixturePaths(dir)
-	writeFile(t, dir, "belt.yaml", "internal_names: {}\n")
-	writeFile(t, dir, "suspenders.yaml", "guard:\n  blocked_words:\n    - suspword\n")
-
-	cfg := LoadFrom(p)
-	if len(cfg.Names.BlockedWords) != 0 {
-		t.Errorf("blocked_words = %v, want empty — a present internal_names section owns the list", cfg.Names.BlockedWords)
-	}
-	if cfg.NamesSource != SourceBelt {
-		t.Errorf("NamesSource = %q, want %q", cfg.NamesSource, SourceBelt)
-	}
-}
-
-func TestLoadFromInternalNamesSuspendersFallback(t *testing.T) {
+// TestLoadFromInternalNamesAbsentMeansEmpty pins the standalone rule
+// (docs/adr/0010): with no internal_names section, the name set is empty —
+// belt reads no other tool's config to fill it.
+func TestLoadFromInternalNamesAbsentMeansEmpty(t *testing.T) {
 	dir := t.TempDir()
 	p := fixturePaths(dir)
 	writeFile(t, dir, "belt.yaml", "guards:\n  git-push-main:\n    enabled: true\n")
-	writeFile(t, dir, "suspenders.yaml", "guard:\n  blocked_words:\n    - suspword\n")
 
 	cfg := LoadFrom(p)
-	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "suspword" {
-		t.Errorf("blocked_words = %v, want [suspword]", cfg.Names.BlockedWords)
+	if len(cfg.Names.BlockedWords)+len(cfg.Names.WorkspaceDirs) != 0 {
+		t.Errorf("names = %+v, want empty", cfg.Names)
 	}
-	if cfg.NamesSource != SourceSuspenders {
-		t.Errorf("NamesSource = %q, want %q", cfg.NamesSource, SourceSuspenders)
+}
+
+// TestLoadFromClaudeSettingsGate pins the claude_settings gate
+// (docs/adr/0010): the deny lists are read by default and skipped entirely
+// when enabled is false.
+func TestLoadFromClaudeSettingsGate(t *testing.T) {
+	settings := `{"permissions": {"deny": ["Bash(kubectl delete:*)"]}}`
+	tests := []struct {
+		name string
+		belt string
+		want int
+	}{
+		{"default reads", "", 1},
+		{"explicit true reads", "claude_settings:\n  enabled: true\n", 1},
+		{"disabled skips", "claude_settings:\n  enabled: false\n", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := fixturePaths(dir)
+			if tt.belt != "" {
+				writeFile(t, dir, "belt.yaml", tt.belt)
+			}
+			writeFile(t, dir, "settings.json", settings)
+
+			cfg := LoadFrom(p)
+			if len(cfg.ClaudeDeny) != tt.want {
+				t.Errorf("ClaudeDeny = %v, want %d patterns", cfg.ClaudeDeny, tt.want)
+			}
+			if got, want := cfg.ClaudeSettings.ReadEnabled(), tt.want == 1; got != want {
+				t.Errorf("ReadEnabled() = %v, want %v", got, want)
+			}
+		})
 	}
 }
 

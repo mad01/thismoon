@@ -232,7 +232,9 @@ then run the file" bypass.
   would run. Download to a file first, then run the file.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
   `~/.claude/settings.json` and `settings.local.json`, read live on every
-  invocation so the guard and the permission system cannot drift, plus
+  invocation so the guard and the permission system cannot drift
+  (`claude_settings.enabled: false` in the belt config turns that read off,
+  leaving only the extra patterns), plus
   `guards.script-deny-list.extra_patterns` for things the settings file only
   lists under "ask" (like `rm -rf`). An extra pattern starting `re:` is
   compiled as a case-insensitive regex — the escape hatch for flag

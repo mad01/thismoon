@@ -22,20 +22,19 @@ with the payload on stdin and a deny decision on stdout. belt is that layer:
 suspenders holds up commits, belt holds up the session before anything
 reaches git. It stays separate from suspenders because the two run in
 different lifecycles, and each owns its own config: the write-internal-names
-guard reads the `internal_names` section of belt's own file, falling back to
-the suspenders guard section only while belt has none. What the two share is
-the derivation, not the file — both build their name list through the same
-`kit/repofind` discovery, so identical configs produce identical lists.
+guard reads the `internal_names` section of belt's own file and no other.
+What the two share is the derivation, not the file — both build their name
+list through the same `kit/repofind` discovery, so identical configs produce
+identical lists.
 
 ## Why this shape
 
 A deny travels as data, never as a failing process: belt exits 0 and puts
 the decision in `hookSpecificOutput.permissionDecision`, because a guard hook
 must not break tool calls on its own bugs. Config is read live at hook time:
-belt's own file first, with the ralph machine profile and the suspenders
-guard section as fallbacks for settings belt does not set, and the Claude
-settings deny list always shared with the permission system; every file is
-optional and a missing one yields zero values. Machine-private wiring
+belt's own file, with the ralph machine profile as the one fallback and the
+Claude settings deny list shared with the permission system behind its own
+switch; every file is optional and a missing one yields zero values. Machine-private wiring
 stays out of this repo: the recipe here builds and installs only, while hook
 registration and the config overlay with its exclude paths live in the
 consuming repo's companion recipe (docs/adr/0006). Every deny reason carries

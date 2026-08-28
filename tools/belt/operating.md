@@ -24,13 +24,14 @@ immediately, with no restart and no new session.
 ## where config lives
 
 The belt-owned config is {{.StorePath}}: guard and hint toggles, profiles,
-exclude paths, extra patterns, and the internal_names section. Every config
-file is optional and loading never errors; a missing file yields defaults.
-Two settings fall back to the tool that originated them when belt does not
-set them: profiles fall back to the ralph machine config, and the
-internal-name list falls back to the suspenders guard config. The Bash deny
-patterns are always read live from the Claude settings files, so the script
-guard and the permission system share one deny list.
+exclude paths, extra patterns, claude_settings, and the internal_names
+section. Every config file is optional and loading never errors; a missing
+file yields defaults. The config is standalone: belt reads no other guard
+tool's file, and the internal-name list has no fallback. Profiles are the
+one setting that falls back, to the ralph machine config. The Bash deny
+patterns are read live from the Claude settings files, so the script guard
+and the permission system share one deny list; claude_settings.enabled:
+false turns that read off, leaving the guard with extra_patterns only.
 
 ## failure modes
 
@@ -50,10 +51,10 @@ Missing config fails in two directions, deliberately. Guards and hints
 default to enabled, and a present-but-broken config file also yields
 defaults with everything enabled. With no profiles anywhere (belt config and
 ralph fallback both empty), `git-push-main` fails closed and denies every
-push to main or master. With no name source anywhere (no internal_names in
-the belt config and no suspenders guard section), `write-internal-names` has
-an empty name list and allows every write: that one fails open. `belt
-doctor` reports both conditions in its config-surfaces section.
+push to main or master. With no internal_names section in the belt config,
+`write-internal-names` has an empty name list and allows every write: that
+one fails open. `belt doctor` reports both conditions in its
+config-surfaces section.
 
 The rule-driven commit guards fail open across the board: `git-identity`
 and `commit-guard` are no-ops without their config sections, skip repos
