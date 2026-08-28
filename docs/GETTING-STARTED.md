@@ -237,6 +237,7 @@ you want them):
 | `events.this` | events | 7430 |
 | `kof.this` | keeper-of-facts | 7431 |
 | `present.this` | present | 7423 |
+| `prs.this` | prs | 7427 |
 | `reminder.this` | reminder | 7428 |
 | `speak.this` | speak | 7425 |
 | `status.this` | status | 7426 |

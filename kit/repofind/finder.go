@@ -32,6 +32,7 @@ type Repo struct {
 	Path   string // absolute path to repo root
 	Name   string // org/repo extracted from remote
 	Remote string // full remote URL
+	Host   string // git host extracted from remote, e.g. "github.com"; "" when there is none
 }
 
 // Find walks all dirs concurrently, returning sorted git repos that do not
@@ -127,6 +128,33 @@ func ParseRemote(url string) string {
 	return ""
 }
 
+// ParseHost extracts the hostname from SSH or HTTPS git remote URLs
+// (git@HOST:org/repo, https://HOST/org/repo). Returns "" when the URL
+// carries no recognizable host.
+func ParseHost(url string) string {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return ""
+	}
+
+	// SSH format: user@HOST:path
+	if !strings.Contains(url, "://") {
+		host, _, ok := strings.Cut(url, ":")
+		if !ok {
+			return ""
+		}
+		if at := strings.LastIndex(host, "@"); at != -1 {
+			host = host[at+1:]
+		}
+		return host
+	}
+
+	// HTTPS format: scheme://HOST/path
+	_, rest, _ := strings.Cut(url, "://")
+	host, _, _ := strings.Cut(rest, "/")
+	return host
+}
+
 // ExpandHome expands a leading ~ to the user's home directory.
 func ExpandHome(p string) string {
 	if len(p) == 0 || p[0] != '~' {
@@ -179,6 +207,7 @@ func inspect(path string) (Repo, bool) {
 		Path:   path,
 		Name:   name,
 		Remote: remote,
+		Host:   ParseHost(remote),
 	}, true
 }
 

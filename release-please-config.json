@@ -13,6 +13,7 @@
     "services/events": { "component": "events" },
     "services/keeper-of-facts": { "component": "keeper-of-facts" },
     "services/present": { "component": "present" },
+    "services/prs": { "component": "prs" },
     "services/reminder": { "component": "reminder" },
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },

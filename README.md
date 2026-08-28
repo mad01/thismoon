@@ -81,6 +81,7 @@ address, managed as launchd agents by t-man.
 | [events](services/events/README.md) | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
 | [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
 | [present](services/present/README.md) | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
+| [prs](services/prs/README.md) | Open-PR dashboard: polls the GitHub hosts of every local checkout | web · CLI · MCP | experimental |
 | [reminder](services/reminder/README.md) | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
