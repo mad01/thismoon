@@ -3,11 +3,13 @@
 # missing. Full reference: tools/belt/config.md in the thismoon repo, or
 # `belt config --help`. Verify the resolved result with `belt doctor`.
 
-# Machine profiles usually come from ~/.config/ralph/config.local.toml (belt
-# falls back to it), so a fleet-shared belt config stays per-machine-agnostic.
-# Set them here only if this config is not shared across machines:
-# profiles:
-#   - personal
+# There is no machine-profile concept in this file (thismoon
+# docs/adr/0010): render one config per machine class instead (a
+# profile-gated recipe per class, or a template), so a guard or rule that
+# should exist only on some machines is simply absent from the others'
+# files. This example is a work-machine rendering; a personal machine's
+# file would set `git-push-main: {enabled: false}` and drop the work-hours
+# rule.
 
 # Name sources for the write-internal-names guard. belt reads only this
 # file — the suspenders pre-commit guard has an identically shaped section
@@ -36,20 +38,19 @@ git_identity:
     email: you@personal.example
     mode: hard
 
-# Work-hours nudge: soft-warn on personal-repo commits during work hours on
-# machines carrying the work profile. `belt override set vacation --reason
-# "..."` disables it.
+# Work-hours nudge: soft-warn on personal-repo commits during work hours.
+# Belongs in the work machines' rendered config only. `belt override set
+# vacation --reason "..."` disables it.
 commit_guards:
   - repos:
       - github.com/you/*
-    profile: work
     block_hours: "09:00-17:00"
     mode: soft
     override: vacation
 
 guards:
   git-push-main:
-    enabled: true
+    enabled: true # personal machines render `enabled: false` instead
     allow_repos:
       - github.com/you/dotfiles # direct pushes to main allowed here only
   script-deny-list:
