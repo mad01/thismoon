@@ -15,7 +15,7 @@ flagged before text gets committed or sent.
 
 The detection engine is not homegrown: humanizer shells out to vale, an
 existing prose linter, instead of reimplementing span matching. What no
-off-the-shelf setup provided is everything around it: a style pack of 43
+off-the-shelf setup provided is everything around it: a style pack of 48
 rules covering patterns from Wikipedia's "Signs of AI writing", each with
 rationale and before/after examples, a statistical detector for
 whole-sample tells that no single sentence exhibits, voice profiling and
@@ -31,8 +31,9 @@ the same input always yields the same findings.
 
 Two independent paths cover different tells. Vale span rules match specific
 phrasing with line and column positions; the statistical checks
-(sentence-length uniformity, contraction rate, type-token ratio, heading
-density, anaphora) run on the whole sample and are size-gated so short
+(sentence-length uniformity, contraction rate, type-token ratio, em-dash
+density, heading density, anaphora) run on the whole sample and are
+size-gated so short
 snippets don't produce noise. Neither path alone gives full coverage, so
 both ship in one tool.
 

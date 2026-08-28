@@ -11,4 +11,4 @@ message: "Tacked-on participial clause '%s' — cut it or make it a fact-bearing
 level: warning
 ignorecase: true
 tokens:
-  - ',\s+(?:spanning|blending|weaving|bridging|anchoring|cementing|heralding|ushering|embodying|epitomizing|reinforcing|solidifying|propelling|driving|shaping|redefining|transforming)\b'
+  - ',\s+(?:spanning|blending|weaving|bridging|anchoring|cementing|heralding|ushering|embodying|epitomizing|reinforcing|solidifying|propelling|driving|shaping|redefining|transforming|culminating)\b'

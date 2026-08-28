@@ -17,3 +17,7 @@ tokens:
   - 'it is not just\b.{0,60}?\bit is\b'
   - 'it''?s not merely\b.{0,60}?\bit''?s\b'
   - 'it is not merely\b.{0,60}?\bit is\b'
+  - 'it''?s not about\b.{0,60}?\bit''?s about\b'
+  - 'it is not about\b.{0,60}?\bit is about\b'
+  - 'isn''?t just\b.{0,60}?\bit''?s\b'
+  - 'no \w+(?: \w+)?, no \w+(?: \w+)?[,.]? ?just \w+'

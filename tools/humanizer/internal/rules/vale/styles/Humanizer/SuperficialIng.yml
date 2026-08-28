@@ -11,4 +11,4 @@ message: "Tacked-on -ing clause: '%s' — either cut it or promote to its own se
 level: warning
 ignorecase: true
 tokens:
-  - ',\s+(?:symbolizing|reflecting|underscoring|highlighting|emphasizing|ensuring|cultivating|fostering|encompassing|showcasing|contributing to|enabling|marking|demonstrating|providing|illustrating|capturing|signaling|paving)\b'
+  - ',\s+(?:symbolizing|reflecting|underscoring|highlighting|emphasizing|ensuring|cultivating|fostering|encompassing|showcasing|contributing to|enabling|marking|demonstrating|providing|illustrating|capturing|signaling|signifying|paving)\b'
