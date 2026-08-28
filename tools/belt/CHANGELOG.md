@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0](https://github.com/mad01/thismoon/compare/belt/v1.1.0...belt/v2.0.0) (2026-08-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **belt:** the per-class rendered configs must be installed before the fleet builds this belt — the YAML parser ignores unknown keys, so a shared config still carrying profile: gates would have those rules fire on every machine, and personal machines lose the git-push-main bypass until their rendered config disables the guard.
+* **belt:** belt no longer falls back to the guard: section of the suspenders config; a machine relying on that fallback must set internal_names in the belt config or write-internal-names has nothing to match.
+
+### Features
+
+* **belt:** drop the machine-profile concept from runtime config ([0adbe13](https://github.com/mad01/thismoon/commit/0adbe13d940058991e3fc1a6f7a2d3ccc4cb5818))
+* **belt:** make the config standalone and gate the Claude settings read ([6e98d84](https://github.com/mad01/thismoon/commit/6e98d84fb27b367c6c75a6c4b804959a0ba089ad))
+
 ## [1.1.0](https://github.com/mad01/thismoon/compare/belt/v1.0.0...belt/v1.1.0) (2026-08-28)
 
 
