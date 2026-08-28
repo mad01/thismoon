@@ -34,11 +34,31 @@ func TestWriteInternalNames(t *testing.T) {
 		content  string
 		wantDeny bool
 	}{
-		{"public repo with blocked word", "git@github.com:mad01/dotfiles.git", "uses internalco tooling", true},
+		{
+			"public repo with blocked word",
+			"git@github.com:mad01/dotfiles.git",
+			"uses internalco tooling",
+			true,
+		},
 		{"public repo clean content", "git@github.com:mad01/dotfiles.git", "nothing to see", false},
-		{"public repo case-insensitive", "git@github.com:mad01/dotfiles.git", "InternalCo rocks", true},
-		{"public repo substring no match", "git@github.com:mad01/dotfiles.git", "internalcoish is fine", false},
-		{"internal host allowed", "git@git.internal.example:org/repo.git", "internalco everywhere", false},
+		{
+			"public repo case-insensitive",
+			"git@github.com:mad01/dotfiles.git",
+			"InternalCo rocks",
+			true,
+		},
+		{
+			"public repo substring no match",
+			"git@github.com:mad01/dotfiles.git",
+			"internalcoish is fine",
+			false,
+		},
+		{
+			"internal host allowed",
+			"git@git.internal.example:org/repo.git",
+			"internalco everywhere",
+			false,
+		},
 		{"no remote allowed", "", "internalco everywhere", false},
 	}
 	for _, tt := range tests {
@@ -50,6 +70,32 @@ func TestWriteInternalNames(t *testing.T) {
 			}
 			if d != nil && !strings.Contains(d.Reason, WriteInternalNamesID) {
 				t.Errorf("reason missing guard id: %q", d.Reason)
+			}
+		})
+	}
+}
+
+func TestWriteInternalNamesAllowPhrases(t *testing.T) {
+	guardCfg := config.InternalNames{
+		BlockedWords: []string{"internalco"},
+		AllowPhrases: []string{"dotfiles-internalco"},
+	}
+	tests := []struct {
+		name     string
+		content  string
+		wantDeny bool
+	}{
+		{"allowed compound passes", "see the dotfiles-internalco overlay", false},
+		{"case-insensitive compound", "the Dotfiles-InternalCo source", false},
+		{"bare name still denies", "internalco tooling", true},
+		{"compound plus bare name denies", "dotfiles-internalco wraps internalco", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := newWriteGuard(t, "git@github.com:mad01/dotfiles.git", guardCfg)
+			d := g.Check(Input{Event: EventWrite, FilePath: "/repo/file.md", Content: tt.content})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("denial = %v, wantDeny %v", d, tt.wantDeny)
 			}
 		})
 	}
@@ -139,7 +185,11 @@ func TestWriteInternalNamesExcludePaths(t *testing.T) {
 	})
 	g.remoteURL = func(dir string) string { return "git@github.com:mad01/dotfiles.git" }
 
-	excluded := Input{Event: EventWrite, FilePath: "/repo/recipes/ai-global-config/CLAUDE.md", Content: "internalco"}
+	excluded := Input{
+		Event:    EventWrite,
+		FilePath: "/repo/recipes/ai-global-config/CLAUDE.md",
+		Content:  "internalco",
+	}
 	if d := g.Check(excluded); d != nil {
 		t.Errorf("excluded path should not deny: %v", d)
 	}
@@ -211,7 +261,11 @@ func TestWriteInternalNamesAllowReposByProfile(t *testing.T) {
 }
 
 func TestWriteInternalNamesEmptyContent(t *testing.T) {
-	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.InternalNames{BlockedWords: []string{"internalco"}})
+	g := newWriteGuard(
+		t,
+		"git@github.com:mad01/public.git",
+		config.InternalNames{BlockedWords: []string{"internalco"}},
+	)
 	if d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: ""}); d != nil {
 		t.Errorf("empty content should never deny: %v", d)
 	}
@@ -242,7 +296,11 @@ func TestWriteInternalNamesNewDirectory(t *testing.T) {
 
 func TestWriteInternalNamesTruncatesHits(t *testing.T) {
 	words := []string{"aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff", "gggg"}
-	g := newWriteGuard(t, "git@github.com:mad01/public.git", config.InternalNames{BlockedWords: words})
+	g := newWriteGuard(
+		t,
+		"git@github.com:mad01/public.git",
+		config.InternalNames{BlockedWords: words},
+	)
 	d := g.Check(Input{Event: EventWrite, FilePath: "/f.md", Content: strings.Join(words, " ")})
 	if d == nil {
 		t.Fatal("expected denial")

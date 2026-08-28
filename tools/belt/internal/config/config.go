@@ -105,13 +105,13 @@ func (g CustomGuard) Soft() bool { return g.Mode == "soft" }
 // The list fields are omitempty so `belt config` can print a resolved toggle
 // without three empty lists under every guard.
 type Toggle struct {
-	Enabled *bool `toml:"enabled" yaml:"enabled"`
+	Enabled *bool `toml:"enabled"                yaml:"enabled"`
 	// Mode downgrades a guard's denials to warn events when set to "soft";
 	// "hard" (the default) blocks. Read by script-deny-list only.
-	Mode          string   `toml:"mode"           yaml:"mode,omitempty"`
-	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
-	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
-	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
+	Mode          string   `toml:"mode"                   yaml:"mode,omitempty"`
+	ExcludePaths  []string `toml:"exclude_paths"          yaml:"exclude_paths,omitempty"`
+	ExtraPatterns []string `toml:"extra_patterns"         yaml:"extra_patterns,omitempty"`
+	AllowRepos    []string `toml:"allow_repos"            yaml:"allow_repos,omitempty"`
 	// AllowReposByProfile scopes an allowlist entry to machines carrying a
 	// ralph profile: profile name -> repos allowlisted only there. Lets one
 	// fleet-shared config allow a repo on personal machines while work
@@ -148,13 +148,20 @@ func (t Toggle) ExcludesPath(path string) bool {
 }
 
 // InternalNames is the name-derivation config for the write-internal-names
-// guard: where to discover internal repos, extra always-blocked words, and
-// safe references to drop. Shape-compatible with the guard: section of the
-// suspenders config so the same block works in either file.
+// guard: where to discover internal repos, extra always-blocked words, safe
+// references to drop, and sanctioned compound phrases that may carry a
+// blocked name. Shape-compatible with the guard: section of the suspenders
+// config so the same block works in either file.
 type InternalNames struct {
 	WorkspaceDirs []string `toml:"workspace_dirs" yaml:"workspace_dirs"`
 	BlockedWords  []string `toml:"blocked_words"  yaml:"blocked_words"`
 	Allowlist     []string `toml:"allowlist"      yaml:"allowlist"`
+	// AllowPhrases are exact phrases neutralized in content before name
+	// matching, so a sanctioned compound that contains a blocked name (a
+	// private companion repo's own name, say) passes while the bare name
+	// anywhere else still denies. Unlike Allowlist, nothing leaves the
+	// blocked set.
+	AllowPhrases []string `toml:"allow_phrases"  yaml:"allow_phrases"`
 }
 
 // GuardEnabled reports whether a guard is enabled; guards default to on so a

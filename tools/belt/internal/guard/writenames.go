@@ -58,9 +58,10 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 		return nil
 	}
 	names := BlockedNames(g.cfg.Names)
+	content := stripAllowedPhrases(in.Content, g.cfg.Names.AllowPhrases)
 	var hits []string
 	for _, name := range names {
-		if matchWord(in.Content, name) {
+		if matchWord(content, name) {
 			hits = append(hits, name)
 		}
 	}
@@ -121,6 +122,23 @@ func BlockedNames(s config.InternalNames) []string {
 // to keep internal names out of github.com repos.
 func isPublicRemote(remote string) bool {
 	return strings.Contains(remote, "github.com")
+}
+
+// stripAllowedPhrases blanks case-insensitive occurrences of each allowed
+// phrase before name matching, so a sanctioned compound that contains a
+// blocked name passes while the bare name elsewhere in the same content
+// still denies. The replacement is a space, keeping word boundaries intact
+// for the surrounding text.
+func stripAllowedPhrases(content string, phrases []string) string {
+	for _, p := range phrases {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(p))
+		content = re.ReplaceAllString(content, " ")
+	}
+	return content
 }
 
 // matchWord reports a case-insensitive whole-word match of name in content.
