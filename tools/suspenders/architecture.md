@@ -75,6 +75,7 @@ json]` (the bare version token, or the four-key build metadata object shared
 across the repo's components).
 
 Config surfaces: the global YAML file, the per-repo override file, and the
-inline `suspenders:ignore` line marker. The guard section doubles as a shared
-surface: belt's write-internal-names guard reads the same file. Hook scripts
-resolve the tool by bare name through `$PATH`. There is no web or MCP surface.
+inline `suspenders:ignore` line marker. The guard section is shaped like
+belt's `internal_names` section on purpose, but neither tool reads the
+other's file (docs/adr/0010). Hook scripts resolve the tool by bare name
+through `$PATH`. There is no web or MCP surface.
