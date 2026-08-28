@@ -37,14 +37,26 @@ name set — honest emptiness over a hidden read.
 
 Reads of non-guard platform surfaces are the narrow exception, and every one
 must be explicit: named in the tool's `Paths`, switchable where a switch
-makes sense, and reported by `doctor`. belt has exactly two — the ralph
-machine config as a profiles fallback, and the Claude settings files
-(`permissions.deny` Bash entries for `script-deny-list`), now behind the
-`claude_settings.enabled` key. That key defaults to true so the script guard
-keeps enforcing the shared deny list on machines that never wrote it;
-setting it false stops belt opening the Claude settings at all, leaving the
-guard with `extra_patterns` only. Nothing else may be read: a new foreign
-surface needs a new decision here.
+makes sense, and reported by `doctor`. belt has exactly one — the Claude
+settings files (`permissions.deny` Bash entries for `script-deny-list`),
+behind the `claude_settings.enabled` key. That key defaults to true so the
+script guard keeps enforcing the shared deny list on machines that never
+wrote it; setting it false stops belt opening the Claude settings at all,
+leaving the guard with `extra_patterns` only. Nothing else may be read: a
+new foreign surface needs a new decision here.
+
+Machine profiles are a provisioning concern, not a runtime one. belt used
+to read the ralph machine config as a profiles fallback and branch on the
+profile at hook time (a literal "personal" check bypassing git-push-main,
+`profile` gates on rules, a profile-keyed allowlist only one guard read).
+All of it was provision-time filtering executed at runtime: a machine's
+class is written once when the machine is provisioned and never changes
+between hook calls. So belt has no profile vocabulary at all — the
+provisioning layer renders one belt config per machine class, and a guard
+or rule meant for only some machines is absent (or disabled) in the other
+classes' rendered files. git-push-main's personal-machine bypass becomes
+`enabled: false` in the personal rendering, which is what the profile check
+always meant.
 
 Agreement between the two name guards lives in shared code and shared
 shape, not shared files: both call the same `kit/repofind` derivation, and
@@ -60,8 +72,18 @@ moments; the divergence failure mode is a blocked commit, never a leak, and
 templating both files from one block removes the double bookkeeping. A
 machine that relied on the old fallback loses its belt name set until its
 belt config carries `internal_names` — `belt doctor` states plainly that
-the guard has nothing to match. Removing the fallback is a breaking config
-change for belt, released as a major bump. What stays open, tracked as
-follow-up to the same audit: moving the derivation and matching semantics
-both tools duplicate into one shared package so their behavior cannot drift
-apart again.
+the guard has nothing to match.
+
+Dropping the profile vocabulary constrains rollout order: the YAML parser
+ignores unknown keys, so a fleet-shared config still carrying `profile:`
+gates would have those rules silently fire on every machine class under the
+new belt. The per-class rendered configs must land in the consuming repo
+before the fleet builds this belt. The wrong-file-on-wrong-machine failure
+mode this introduces is mitigated the same way the rest of the config is
+debugged: `belt config` prints the resolved file, and the rendering recipe
+names which class it installed.
+
+All of this is a breaking config change for belt, released as one major
+bump. What stays open, tracked as follow-up to the same audit: moving the
+derivation and matching semantics both tools duplicate into one shared
+package so their behavior cannot drift apart again.
