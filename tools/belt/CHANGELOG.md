@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/mad01/thismoon/compare/belt/v0.19.0...belt/v0.20.0) (2026-08-28)
+
+
+### Features
+
+* **belt:** harden script-deny-list against script-shaped bypasses ([1ce48ed](https://github.com/mad01/thismoon/commit/1ce48ed735e91d0dded9cf82f66b1399b3e3ba4b))
+
 ## [0.19.0](https://github.com/mad01/thismoon/compare/belt/v0.18.1...belt/v0.19.0) (2026-08-27)
 
 

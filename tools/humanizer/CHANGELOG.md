@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/mad01/thismoon/compare/humanizer/v0.6.2...humanizer/v0.7.0) (2026-08-28)
+
+
+### Features
+
+* **humanizer:** expand detection with 2025-era tells and em-dash density check ([3cf1e16](https://github.com/mad01/thismoon/commit/3cf1e16796330d09b618fd66c4e745a8c0487979))
+
 ## [0.6.2](https://github.com/mad01/thismoon/compare/humanizer/v0.6.1...humanizer/v0.6.2) (2026-08-27)
 
 
