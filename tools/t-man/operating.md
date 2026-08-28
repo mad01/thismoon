@@ -48,13 +48,14 @@ of the shell profile), fixed with `add --env` / `--path`.
 A service sits in "spawn scheduled" with `last exit code = 78: EX_CONFIG`
 while its binary runs fine by hand: the macOS Background Task Management
 wedge. It hits KeepAlive agents right after their binary was replaced with
-a fresh local signature (a fleet rebuild replaces and re-signs binaries),
-and `{{.Bin}} restart` does NOT clear it — launchd keeps scheduling and the
-process keeps exiting 78. Re-register the job instead:
-`launchctl bootout gui/$(id -u)/<name>`, then
-`launchctl bootstrap gui/$(id -u) {{.StorePath}}/<name>.plist`; the service
-goes to state running immediately. Several services can wedge from one
-rebuild — check `{{.Bin}} list` for others before calling it fixed.
+a fresh local signature (a fleet rebuild replaces and re-signs binaries).
+`{{.Bin}} restart <name>` clears it — restart re-registers the job (unload
+then load) rather than stop/start, precisely because only re-registration
+clears this state. If restart itself fails, the manual equivalent is
+`launchctl bootout gui/$(id -u)/<name>` followed by
+`launchctl bootstrap gui/$(id -u) {{.StorePath}}/<name>.plist`. Several
+services can wedge from one rebuild — check `{{.Bin}} list` for others
+before calling it fixed.
 
 t-man reports the service running but its behavior is stale: launchd keeps
 the old process across a rebuild and reinstall, so the binary on disk is new
@@ -81,7 +82,7 @@ process of its own, so there is no serve-side build to compare against.
 1. `{{.Bin}} list` to confirm the service exists and read its STATUS
 2. `{{.Bin}} status <name>` for the command, workdir, env, and log paths
 3. `{{.Bin}} logs <name> --stderr` (add -f to follow a crash loop live)
-4. `{{.Bin}} restart <name>` — unless the state is "spawn scheduled" with
-   exit 78: that is the wedge above; use bootout + bootstrap instead
+4. `{{.Bin}} restart <name>` (re-registers the job, so it also clears the
+   spawn-scheduled wedge above)
 5. Verify the running build: the service's `GET /version` (or its own
    `version` command) should report the freshly installed binary

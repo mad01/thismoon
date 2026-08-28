@@ -104,14 +104,8 @@ func runRestart(cmd *cobra.Command, args []string) error {
 
 	manager := launchd.NewManager(GetVersion(), !daemonMode)
 
-	// Stop first
-	if err := manager.Stop(getContext(), serviceName); err != nil {
-		return fmt.Errorf("failed to stop service: %w", err)
-	}
-
-	// Then start
-	if err := manager.Start(getContext(), serviceName); err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
+	if err := manager.Restart(getContext(), serviceName); err != nil {
+		return fmt.Errorf("failed to restart service: %w", err)
 	}
 
 	fmt.Printf("✓ Service '%s' restarted\n", serviceName)
