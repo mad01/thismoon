@@ -275,7 +275,11 @@ into a public repo.
 - **Exemptions**: `exclude_paths` for paths that deliberately carry internal
   references, `allow_repos` (and `allow_repos_by_profile`, per ralph profile)
   by the target repo's canonical origin identity — remote identity, not path,
-  so a second checkout of the same repo is covered too.
+  so a second checkout of the same repo is covered too. For a single
+  sanctioned compound that contains a blocked name (a private companion
+  repo's own name), `internal_names.allow_phrases` neutralizes exactly that
+  phrase in the checked content before matching — the bare name elsewhere in
+  the same write still denies, so nothing leaves the blocked set.
 - **Why it exists**: internal names reached `git commit` twice before the
   pre-commit hook caught them; this guard moves the check to the moment of
   writing, where the fix is cheapest.

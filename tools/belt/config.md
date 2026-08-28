@@ -60,6 +60,12 @@ suspenders `guard:` section (see Where config lives).
   their basename) to drop from the derived set even though they would
   otherwise be discovered or listed. The final set is lowercased,
   deduplicated, and drops anything under three characters.
+- `internal_names.allow_phrases` (list of string, default: empty): exact
+  phrases (case-insensitive) neutralized in the checked content before name
+  matching. Use it when a sanctioned compound contains a blocked name — a
+  private companion repo's own name, say — so writing the compound passes
+  while the bare name anywhere else in the same content still denies.
+  Unlike `allowlist`, nothing leaves the blocked set.
 
 ### git_identity
 
