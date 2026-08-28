@@ -45,6 +45,45 @@ func TestURLRejectsMissingScheme(t *testing.T) {
 	}
 }
 
+func TestURLsOpenInOneExec(t *testing.T) {
+	var got []string
+	o := fakeOpener(&got, nil)
+	urls := []string{"https://a.example/x", "https://b.example", "mailto:me@x"}
+	opened, err := o.URLs(urls)
+	if err != nil {
+		t.Fatalf("URLs() error = %v", err)
+	}
+	if !reflect.DeepEqual(opened, urls) {
+		t.Errorf("opened = %v, want the URLs back in order", opened)
+	}
+	if !reflect.DeepEqual(got, urls) {
+		t.Errorf("args = %v, want a single exec with %v", got, urls)
+	}
+}
+
+func TestURLsRejectWholeBatchOnBadScheme(t *testing.T) {
+	var got []string
+	o := fakeOpener(&got, nil)
+	_, err := o.URLs([]string{"https://ok.example", "example.com", "https://also-ok.example"})
+	if err == nil {
+		t.Error("URLs() = nil error, want the batch rejected for a scheme-less member")
+	}
+	if got != nil {
+		t.Errorf("open ran with %v, want no exec when any URL is rejected", got)
+	}
+}
+
+func TestURLsRejectEmpty(t *testing.T) {
+	var got []string
+	o := fakeOpener(&got, nil)
+	if _, err := o.URLs(nil); err == nil {
+		t.Error("URLs(nil) = nil error, want an empty-input rejection")
+	}
+	if got != nil {
+		t.Errorf("open ran with %v, want no exec on empty input", got)
+	}
+}
+
 func TestFileResolvesAndStats(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "doc.txt")

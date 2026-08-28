@@ -21,6 +21,7 @@ make install   # builds and installs to ~/code/bin/opener
 
 ```bash
 opener url https://github.com/mad01/thismoon   # default browser
+opener url https://a.example https://b.example # many at once, one command
 opener file ~/Downloads/report.pdf             # default app for the file
 opener app Safari                              # launch or foreground
 opener with ~/notes.md "Visual Studio Code"    # a specific app

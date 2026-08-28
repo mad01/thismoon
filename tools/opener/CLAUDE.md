@@ -44,7 +44,7 @@ make test     # go test ./...
 ## Commands
 
 ```
-opener url <url>           # default handler for the scheme (browser for https)
+opener url <url>...        # default handler per scheme (browser for https); many at once
 opener file <path>         # default application for the file
 opener app <name>          # launch/foreground by name (open -a)
 opener with <path> <app>   # open the file with a specific app (open -a app path)
@@ -56,10 +56,12 @@ opener version [-o json]
 
 ## MCP tools
 
-All five return `{opened}` — the URL, resolved path, or app name handed to
-the open command — for confirmation.
+All five return `{opened}` — the URL(s), resolved path, or app name handed
+to the open command — for confirmation.
 
-- `open_url(url)`: requires a scheme; non-http schemes go to their handler.
+- `open_url(urls)`: a list; each requires a scheme, non-http schemes go to
+  their handler. Opens the whole batch in one exec, so an agent opens 5-20+
+  links in a single call; a scheme-less member rejects the batch.
 - `open_file(path)`: absolute or ~-prefixed, must exist.
 - `open_app(name)`: the name Launch Services knows ("Visual Studio Code").
 - `open_with(path, app)`: file with a specific app instead of its default.
