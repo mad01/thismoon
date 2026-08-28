@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2](https://github.com/mad01/thismoon/compare/humanizer/v0.6.1...humanizer/v0.6.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* **humanizer:** make dead vale rules fire, add dash-substitute rule, align CLI json with MCP payload ([13fd610](https://github.com/mad01/thismoon/commit/13fd6103fca45c7a0a4c90e81d1e96b3fb73a46f))
+* **humanizer:** make dead vale rules fire, add dash-substitute rule, align CLI json with MCP payload ([8ba8c73](https://github.com/mad01/thismoon/commit/8ba8c736b66d444e1f374170499841ec66f231c7))
+
 ## [0.6.1](https://github.com/mad01/thismoon/compare/humanizer/v0.6.0...humanizer/v0.6.1) (2026-08-25)
 
 

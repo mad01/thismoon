@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/mad01/thismoon/compare/events/v0.6.0...events/v0.6.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **humanizer:** make dead vale rules fire, add dash-substitute rule, align CLI json with MCP payload ([13fd610](https://github.com/mad01/thismoon/commit/13fd6103fca45c7a0a4c90e81d1e96b3fb73a46f))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/events/v0.5.1...events/v0.6.0) (2026-08-24)
 
 
