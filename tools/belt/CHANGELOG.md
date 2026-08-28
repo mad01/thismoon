@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/mad01/thismoon/compare/belt/v1.0.0...belt/v1.1.0) (2026-08-28)
+
+
+### Features
+
+* **belt:** internal_names.allow_phrases — sanctioned compounds pass the write guard ([a4689c8](https://github.com/mad01/thismoon/commit/a4689c880990190dfafc632ca7b5550ae7d47d48))
+
 ## [1.0.0](https://github.com/mad01/thismoon/compare/belt/v0.20.0...belt/v1.0.0) (2026-08-28)
 
 
