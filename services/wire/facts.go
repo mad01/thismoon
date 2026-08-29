@@ -18,11 +18,12 @@ const DefaultWorkdir = "~/.local/share/wire"
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "wire",
-		Bin:       "wire",
-		Purpose:   "message bus between agent sessions: named channels with blocking reads",
-		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath: DefaultWorkdir,
-		HasDoctor: true,
+		Name:          "wire",
+		Bin:           "wire",
+		Purpose:       "message bus between agent sessions: named channels with blocking reads",
+		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
+		StorePath:     DefaultWorkdir,
+		HasDoctor:     true,
+		MCPDoctorTool: "wire_doctor",
 	}
 }

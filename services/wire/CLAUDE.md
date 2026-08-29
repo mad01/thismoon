@@ -22,7 +22,7 @@ wire/
                          mutex-guarded store with the wait primitive (store.go),
                          JSONL scan/append (jsonl.go), id minting (id.go)
     server/            - HTTP API + SSE stream + webkit web page (embedded shell.html + app.js)
-    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 7 tools)
+    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 8 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -285,6 +285,8 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `wire_read(channel, since?, wait?, limit?)`: messages after the cursor; `wait` blocks up to 120s; reports `members`, `awaiting_reply`, `awaiting_reply_by`, and `awaiting_reply_off_roster`
 - `wire_list(include_closed?)`: channels, most recently active first
 - `wire_close(channel, note?)`: terminal close that wakes every waiter — everyone's end, unlike wire_leave
+- `wire_doctor()`: run the same checks as `wire doctor` and return the report as
+  JSON — for a client that can call a tool but has no shell
 
 Tool responses include `connect` (the connection string to hand on) and `url`
 (the human-facing `WIRE_BASE_URL`, e.g.
