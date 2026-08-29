@@ -418,7 +418,7 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 		repos = filterReposByName(repos, repoFilter)
 	}
 	if len(repos) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "no repos found in configured directories")
+		fmt.Fprintln(cmd.OutOrStdout(), cfg.EmptyResultHint())
 		return nil
 	}
 

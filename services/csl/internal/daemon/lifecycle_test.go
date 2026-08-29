@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/mad01/thismoon/services/csl"
 )
 
 // TestDefaultPaths covers both sides of the state-directory migration: a
@@ -35,7 +37,9 @@ func TestDefaultPaths(t *testing.T) {
 		t.Setenv("HOME", home)
 		t.Setenv("XDG_STATE_HOME", "")
 		legacy := filepath.Join(home, ".config", "csl")
-		if err := os.MkdirAll(legacy, 0o755); err != nil {
+		// The index is what marks the legacy directory as holding state; the
+		// directory alone is created by provisioning on every machine.
+		if err := os.MkdirAll(filepath.Join(legacy, csl.LegacyStateProbe), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		for name, fn := range paths {

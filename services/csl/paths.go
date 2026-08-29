@@ -32,11 +32,19 @@ const PortEnv = "CSL_PORT"
 const DefaultBaseURL = "http://127.0.0.1:7424"
 
 // LegacyStateDir is where csl kept its whole footprint — config file and
-// mutable state together — before the two were split. It still wins
-// whenever it exists on disk, so an install made before the split keeps its
+// mutable state together — before the two were split. It wins whenever it
+// holds LegacyStateProbe, so an install made before the split keeps its
 // indexes, socket, and queue exactly where they are: no migration step and
 // no re-index.
 const LegacyStateDir = "~/.config/" + Component
+
+// LegacyStateProbe is the artifact that proves csl actually kept state in
+// LegacyStateDir. The directory alone proves nothing: fleet provisioning
+// symlinks config.yaml into it on every machine, so treating its existence
+// as evidence would pin even a brand-new machine to the pre-split location.
+// The lexical index is the right witness — csl builds it on the first
+// search and nothing else creates it.
+const LegacyStateProbe = "search-index"
 
 // DaemonLogFile is the search server's rotated log, named here because the
 // operating doc points readers at it and package daemon (which writes it)
@@ -65,7 +73,10 @@ func ResolvedPort() int {
 // LegacyStateDir; a fresh one lands under $XDG_STATE_HOME/csl, or
 // ~/.local/state/csl when that variable is unset.
 func StateDir() (string, error) {
-	dir, err := confdir.StateDir(Component, LegacyStateDir)
+	dir, err := confdir.StateDir(Component, confdir.LegacyDir{
+		Dir:   LegacyStateDir,
+		Probe: LegacyStateProbe,
+	})
 	if err != nil {
 		return "", err
 	}

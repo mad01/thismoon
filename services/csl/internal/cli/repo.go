@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -56,8 +57,22 @@ func runRepo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	nonInteractive := repoJSONFlag || repoToonFlag || repoListFlag
+
 	if len(repos) == 0 {
-		return fmt.Errorf("no git repositories found")
+		// A machine with no config file has nothing to list yet, which is the
+		// state csl starts in rather than a failure: the machine-readable
+		// modes print their empty form and the hint goes to stderr, so a
+		// consumer parsing stdout still gets valid output. A config that IS
+		// present and still yields nothing is a misconfiguration, and stays
+		// an error.
+		if cfg.Loaded {
+			return errors.New(cfg.EmptyResultHint())
+		}
+		fmt.Fprintln(cmd.ErrOrStderr(), cfg.EmptyResultHint())
+		if !nonInteractive {
+			return nil
+		}
 	}
 
 	var query string
@@ -65,8 +80,6 @@ func runRepo(cmd *cobra.Command, args []string) error {
 		query = args[0]
 		repos = filterRepos(repos, query)
 	}
-
-	nonInteractive := repoJSONFlag || repoToonFlag || repoListFlag
 
 	if !nonInteractive && query != "" {
 		switch len(repos) {

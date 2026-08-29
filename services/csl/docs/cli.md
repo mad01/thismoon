@@ -395,7 +395,7 @@ csl doctor [--repair]
 
 | Check | What it verifies |
 |-------|------------------|
-| `config-loads` | the config file exists, parses, and sets at least one `dirs` entry |
+| `config-loads` | the config file parses and, when it exists, sets at least one `dirs` entry. No config file is not a failure: the check passes and the report leads with the path to create |
 | `state-file-loads` | `state.json` parses; with `--repair`, a corrupt file is backed up and reset |
 | `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count |
 | `index-shards-valid` | every `.zoekt` shard opens cleanly |

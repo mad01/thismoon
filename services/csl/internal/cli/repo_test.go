@@ -86,18 +86,60 @@ func TestRepoListFlag(t *testing.T) {
 	repoListFlag = false
 }
 
+// TestRepoListFlagNoConfig pins the zero-config first run: a machine with no
+// config file lists nothing and says which file to create, rather than
+// failing. The hint goes to stderr so stdout stays a clean (empty) list.
 func TestRepoListFlagNoConfig(t *testing.T) {
-	isolateConfigEnv(t, t.TempDir())
+	home := t.TempDir()
+	isolateConfigEnv(t, home)
 
-	var buf bytes.Buffer
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
+	var out, errOut bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errOut)
+	rootCmd.SetArgs([]string{"repo", "--list"})
+	repoListFlag = false
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("repo --list with no config = %v, want nil", err)
+	}
+	if got := out.String(); got != "" {
+		t.Errorf("stdout = %q, want an empty list", got)
+	}
+	wantPath := filepath.Join(home, ".config", "csl", "config.yaml")
+	if got := errOut.String(); !strings.Contains(got, wantPath) {
+		t.Errorf("stderr = %q, want it to name %q", got, wantPath)
+	}
+
+	rootCmd.SetArgs(nil)
+	rootCmd.SetOut(nil)
+	rootCmd.SetErr(nil)
+	repoListFlag = false
+}
+
+// TestRepoListFlagEmptyDirsErrors is the other half of the contract: a config
+// file that exists and still finds nothing is a misconfiguration, so it stays
+// an error naming the file.
+func TestRepoListFlagEmptyDirsErrors(t *testing.T) {
+	tmp := t.TempDir()
+	emptyDir := filepath.Join(tmp, "empty")
+	if err := os.MkdirAll(emptyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := setupTestConfig(t, "dirs:\n  - "+emptyDir+"\n")
+
+	var out, errOut bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errOut)
 	rootCmd.SetArgs([]string{"repo", "--list"})
 	repoListFlag = false
 
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Error("expected error when no config found")
+		t.Fatal("repo --list with a configured but empty dir = nil, want an error")
+	}
+	wantPath := filepath.Join(home, ".config", "csl", "config.yaml")
+	if !strings.Contains(err.Error(), wantPath) {
+		t.Errorf("error %q does not name the config file %q", err, wantPath)
 	}
 
 	rootCmd.SetArgs(nil)

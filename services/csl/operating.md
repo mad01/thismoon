@@ -26,7 +26,9 @@ csl-web agent.
 
 `config.yaml` sits in the config directory (`--config`, else CSL_CONFIG, else
 ~/.config/csl); `csl config` prints the path it resolved and the settings in
-effect. Everything csl writes sits under {{.StorePath}}:
+effect. The file is optional: with none, csl runs on defaults with no repos
+configured and every surface says which file to create. A file that exists but
+does not parse is an error. Everything csl writes sits under {{.StorePath}}:
 
 - `search-index/`: the lexical index. `state.json` records each repo's
   fingerprint; `<hash>.zoekt` shard files sit beside it.
@@ -42,9 +44,11 @@ Start with `csl doctor` (or the csl_doctor tool, same checks as JSON): one
 ok/FAIL line per check — config, state file, index freshness, shard
 integrity, and search-server responsiveness, plus two web-only checks
 (web-ui-reachable, web-ui-version-skew) that can fail while search keeps
-working. The config check fails when the file is missing, unparseable, or
-sets no `dirs`, which is the usual cause of "csl finds nothing at all".
-`--repair` resets a corrupt state file; the tool never repairs.
+working. The config check fails on a file that does not parse, or one that
+parses and sets no `dirs` — the usual cause of "csl finds nothing at all". No
+config file at all is not a failure: the check reports ok with the path to
+create beside it. `--repair` resets a corrupt state file; the tool never
+repairs.
 
 Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return

@@ -30,7 +30,7 @@ csl version
 
 ## Configuration
 
-Create `config.yaml` in the config directory — `$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset — listing the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
+csl runs without a config file — `csl web`, `csl repo --list`, and `csl doctor` all work on a fresh machine and tell you which file to create. To index anything, create `config.yaml` in the config directory — `$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset — listing the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
 
 ```yaml
 dirs:

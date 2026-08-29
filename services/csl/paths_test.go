@@ -36,7 +36,7 @@ func TestResolvedPort(t *testing.T) {
 }
 
 // TestStateDirKeepsExistingInstall is the migration contract: a machine that
-// already has ~/.config/csl keeps writing there, so upgrading costs no
+// has an index under ~/.config/csl keeps writing there, so upgrading costs no
 // re-index. A fresh machine lands under the XDG state root.
 func TestStateDirKeepsExistingInstall(t *testing.T) {
 	home := t.TempDir()
@@ -45,8 +45,8 @@ func TestStateDirKeepsExistingInstall(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 
 	legacy := filepath.Join(home, ".config", "csl")
-	if err := os.MkdirAll(legacy, 0o755); err != nil {
-		t.Fatalf("create legacy dir: %v", err)
+	if err := os.MkdirAll(filepath.Join(legacy, LegacyStateProbe), 0o755); err != nil {
+		t.Fatalf("create legacy index: %v", err)
 	}
 	got, err := StateDir()
 	if err != nil {
@@ -65,6 +65,34 @@ func TestStateDirKeepsExistingInstall(t *testing.T) {
 	}
 	if want := filepath.Join(home, ".local", "state", "csl"); got != want {
 		t.Errorf("StateDir() = %q on a fresh install, want %q", got, want)
+	}
+}
+
+// TestStateDirIgnoresProvisionedLegacyDir is the flaw the probe fixes: the
+// fleet recipe symlinks config.yaml into ~/.config/csl on every machine, so a
+// bare directory test would pin even a machine that has never indexed
+// anything to the pre-split location, and no fleet machine could ever adopt
+// the state directory.
+func TestStateDirIgnoresProvisionedLegacyDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	legacy := filepath.Join(home, ".config", "csl")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatalf("create legacy dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "config.yaml"), []byte("dirs: []\n"), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	got, err := StateDir()
+	if err != nil {
+		t.Fatalf("StateDir() error: %v", err)
+	}
+	if want := filepath.Join(home, ".local", "state", "csl"); got != want {
+		t.Errorf("StateDir() = %q with only a config file in the legacy dir, want %q", got, want)
 	}
 }
 

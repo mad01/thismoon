@@ -16,13 +16,14 @@ type doctorInput struct{}
 // doctorCheck is one check's outcome in the csl_doctor result.
 type doctorCheck struct {
 	Name   string `json:"name"             jsonschema:"the check that ran"`
-	Status string `json:"status"           jsonschema:"ok, skipped, or fail"`
+	Status string `json:"status"           jsonschema:"ok, skipped, or fail; skipped is a pass with something to report, e.g. no config file yet"`
 	Detail string `json:"detail,omitempty" jsonschema:"what failed and what to run next; empty when the check passed"`
 }
 
 // doctorOutput is the typed output of the csl_doctor tool.
 type doctorOutput struct {
-	OK     bool          `json:"ok"     jsonschema:"true when every check passed"`
+	OK     bool          `json:"ok"             jsonschema:"true when every check passed"`
+	Note   string        `json:"note,omitempty" jsonschema:"set when csl is running with no config file, naming the path to create; the checks still pass, csl just has nothing configured to index"`
 	Checks []doctorCheck `json:"checks" jsonschema:"one entry per check, in the order csl doctor runs them"`
 }
 

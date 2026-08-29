@@ -12,6 +12,8 @@ Resolved in this order:
 
 A leading `~` is expanded in both the flag and the environment variable, so they work under launchd where no shell expands them first.
 
+The file is optional. With none, csl runs on defaults — no repos configured — and every surface names the path to create rather than failing; a file that exists but cannot be parsed is an error, since that machine was configured (ADR-0011).
+
 Loaded by the CLI and the MCP server on every invocation that needs to discover repos (`search`, `count`, `read`, `repo`, `doctor`, `index`, and most `csl_*` MCP tools).
 
 `csl config` prints that path, whether it loaded, and the settings in effect once defaults are applied; `csl config --help` carries an annotated example of every key below.
