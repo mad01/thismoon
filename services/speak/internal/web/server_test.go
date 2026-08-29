@@ -156,14 +156,16 @@ func TestSpeechProxyForwardsAndAddsCORS(t *testing.T) {
 	mux := newTestMux(t, upstream.URL)
 	req := httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
 		strings.NewReader(`{"input":"hi","voice":"af_heart"}`))
+	req.Header.Set("Origin", "http://present.this")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("proxy status = %d, want 200", rec.Code)
 	}
-	if got := rec.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != "*" {
-		t.Errorf("ACAO values = %v, want exactly [*]", got)
+	if got := rec.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 ||
+		got[0] != "http://present.this" {
+		t.Errorf("ACAO values = %v, want exactly [http://present.this]", got)
 	}
 	if rec.Body.String() != "RIFFfake" {
 		t.Errorf("body = %q, want upstream audio passthrough", rec.Body.String())
@@ -199,8 +201,10 @@ func TestSpeechPreflightAnsweredLocally(t *testing.T) {
 	defer upstream.Close()
 
 	mux := newTestMux(t, upstream.URL)
+	req := httptest.NewRequest(http.MethodOptions, "/v1/audio/speech", nil)
+	req.Header.Set("Origin", "http://present.this")
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, "/v1/audio/speech", nil))
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d, want 204", rec.Code)

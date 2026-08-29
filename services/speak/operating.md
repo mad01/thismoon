@@ -25,10 +25,12 @@ two surfaces share is the engine.
 ## where state lives
 
 No documents persist: serve renders markdown per request and writes nothing.
-Playback state on disk lives under {{.StorePath}}: per-sentence WAV files in
-`audio/` (reaped after 24 hours on start) and `playback.lock` plus a `.owner`
-sidecar naming the current lock holder. The sentence queue, position, and
-pause state live only in the memory of the mcp process that started playback.
+Playback state on disk lives under the state directory (--state-dir,
+SPEAK_STATE_DIR): {{.StorePath}} on an install that already has it,
+otherwise ~/.local/state/speak. It holds per-sentence WAV files in `audio/`
+(reaped after 24 hours on start) and `playback.lock` plus a `.owner` sidecar
+naming the current lock holder. The sentence queue, position, and pause
+state live only in the memory of the mcp process that started playback.
 
 ## failure modes
 
@@ -37,7 +39,8 @@ cause. In order: tts-engine-reachable pings the engine the way serve's
 /enginez does, store-readable opens the state dir, and service-reachable plus
 version-skew probe the optional web surface at {{.BaseURL}}. The last two
 failing means only the web page is down; the MCP tools can still speak as
-long as tts-engine-reachable passes.
+long as tts-engine-reachable passes. The `speak_doctor` tool runs the same
+four checks and returns them as JSON, for a client with no shell.
 
 FAIL tts-engine-reachable: the engine sidecar is down, and nothing can
 synthesize — not the web page, not the tools. `t-man status speak-tts`, then
@@ -49,6 +52,12 @@ FAIL service-reachable: serve is not running, so the upload page and the
 speech proxy are down. t-man supervises it as speak-web: `t-man list`, then
 `t-man restart speak-web`. Playback tools are unaffected while the engine
 answers.
+
+A page fetches speech and the browser blocks it as a CORS error: serve
+answers cross-origin only for this machine's own pages — an Origin whose
+host is loopback or ends in .this. Any other origin gets no CORS headers at
+all. Open the page through its .this host or its localhost port rather than
+widening this; the allowlist has no override.
 
 Calls succeed but nothing is audible: afplay plays on the system default
 output device, so check the volume and the selected output device first. Then

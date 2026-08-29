@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/mcpserver"
 )
 
@@ -29,20 +31,25 @@ Tools exposed:
   speak_resume  Resume after pause or stop.
   speak_stop    Stop playback, saving the position.
   speak_voices  List the Kokoro voices.
-  speak_status  Report engine reachability and playback state.`,
+  speak_status  Report engine reachability and playback state.
+  speak_doctor  Run the same checks as ` + "`speak doctor`" + `, as JSON.
+
+` + agentdoc.RegistrationSnippet(speak.Facts()),
 	RunE: runMCP,
 }
 
 func init() {
-	mcpCmd.Flags().StringVar(&flagTTSURL, "tts-url", resolvedTTSURL(),
-		"base URL of the mlx-audio TTS server (env SPEAK_TTS_URL)")
 	rootCmd.AddCommand(mcpCmd)
 }
 
 func runMCP(_ *cobra.Command, _ []string) error {
 	// stdout is the MCP protocol channel; log the resolved target to stderr.
-	log.Printf("speak mcp: tts-url=%s", flagTTSURL)
-	srv, err := mcpserver.New(buildinfo.Get().Version, mcpserver.Config{TTSURL: flagTTSURL})
+	log.Printf("speak mcp: tts-url=%s state-dir=%s", flagTTSURL, flagStateDir)
+	srv, err := mcpserver.New(buildinfo.Get().Version, mcpserver.Config{
+		TTSURL:   flagTTSURL,
+		StateDir: flagStateDir,
+		Checks:   doctorChecks,
+	})
 	if err != nil {
 		return err
 	}

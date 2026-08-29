@@ -17,10 +17,7 @@ import (
 // playback replaced by instant no-ops so tests never touch the network or audio.
 func newTestEngine(t *testing.T) *Engine {
 	t.Helper()
-	dir := t.TempDir()
-	e := New(ttsclient.New("http://127.0.0.1:0"), "af_heart")
-	e.audioDir = filepath.Join(dir, "audio")
-	e.lockPath = filepath.Join(dir, "playback.lock")
+	e := New(ttsclient.New("http://127.0.0.1:0"), "af_heart", t.TempDir())
 	e.synth = func(_, _ string) ([]byte, error) { return []byte("wav"), nil }
 	e.newPlayCmd = func(_ string) *exec.Cmd { return exec.Command("true") }
 	return e

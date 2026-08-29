@@ -15,7 +15,7 @@ import (
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/buildinfo"
-	"github.com/mad01/thismoon/services/speak/internal/notify"
+	"github.com/mad01/thismoon/kit/notify"
 )
 
 // shellHTML is the static page shell (chrome only). The page body — header,
@@ -36,9 +36,9 @@ const maxUploadBytes = 5 << 20 // 5MB markdown is plenty for a local tool
 const enginezTimeout = 1500 * time.Millisecond
 
 // NewMux builds the speak HTTP handler: the markdown read-aloud page plus a
-// CORS-enabled reverse proxy in front of the mlx-audio speech endpoint, so
-// pages on other local origins (present.this etc.) can fetch speech from
-// http://speak.this. info is the build metadata linked in via ldflags, exposed
+// reverse proxy in front of the mlx-audio speech endpoint that other local
+// origins (present.this etc.) can fetch speech from, subject to the CORS
+// allowlist in cors.go. info is the build metadata linked in via ldflags, exposed
 // at GET /version (the HTTP twin of the fleet-wide `speak version -o json`
 // probe ralph uses for update detection).
 func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
@@ -117,7 +117,7 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 	})
 
 	mux.HandleFunc("/v1/audio/speech", func(w http.ResponseWriter, r *http.Request) {
-		setCORS(w)
+		setCORS(w, r)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -131,8 +131,8 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 
 	// CORS on the root probe too: <wk-read-aloud> checks GET / cross-origin
 	// before injecting any buttons.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		setCORS(w)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		setCORS(w, r)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -142,7 +142,7 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 	// warn that play buttons won't work. Any HTTP response from the upstream
 	// (even 404) counts as reachable.
 	mux.HandleFunc("GET /enginez", func(w http.ResponseWriter, r *http.Request) {
-		setCORS(w)
+		setCORS(w, r)
 		ctx, cancel := context.WithTimeout(r.Context(), enginezTimeout)
 		defer cancel()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream.String()+"/", nil)
@@ -164,14 +164,6 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 	return mux, nil
 }
 
-func setCORS(w http.ResponseWriter) {
-	h := w.Header()
-	h.Set("Access-Control-Allow-Origin", "*")
-	h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	h.Set("Access-Control-Allow-Headers", "Content-Type")
-	h.Set("Access-Control-Max-Age", "86400")
-}
-
 // readResponse is the JSON shape POST /read returns: the uploaded file name and
 // the rendered HTML body (goldmark sections). app.js mounts Content as-is and
 // shows Name as the doc label — the data the old {{DOC_NAME}}/{{CONTENT}}
@@ -189,16 +181,16 @@ func writeReadJSON(w http.ResponseWriter, docName, content string) {
 	}
 }
 
-// Serve runs the HTTP server on 127.0.0.1:<port>. The wrapper handler adds the
-// CORS header to every response so cross-origin probes and speech fetches work
-// regardless of route.
+// Serve runs the HTTP server on 127.0.0.1:<port>. The wrapper handler applies
+// the CORS allowlist to every response so cross-origin probes and speech
+// fetches from this machine's own pages work regardless of route.
 func Serve(port int, ttsURL string, info buildinfo.Info) error {
 	mux, err := NewMux(ttsURL, info)
 	if err != nil {
 		return err
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		setCORS(w)
+		setCORS(w, r)
 		mux.ServeHTTP(w, r)
 		log.Printf("%s %s", r.Method, r.URL.Path)
 	})
