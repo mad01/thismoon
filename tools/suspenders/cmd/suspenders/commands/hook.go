@@ -11,11 +11,11 @@ import (
 	"github.com/gobwas/glob"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 	"github.com/mad01/thismoon/tools/suspenders/internal/guard"
 	"github.com/mad01/thismoon/tools/suspenders/internal/hook"
-	"github.com/mad01/thismoon/tools/suspenders/internal/notify"
 	"github.com/mad01/thismoon/tools/suspenders/internal/scanner"
 )
 
@@ -98,7 +98,7 @@ func runHookInstall(cmd *cobra.Command, args []string) error {
 	// exists, and (nil, error) only when the file exists but can't be read or
 	// parsed. Propagate that error rather than swallowing it: a broken config
 	// must fail the command, not silently disable the guard and external hooks.
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 
 func runHookUpdate(cmd *cobra.Command, args []string) error {
 	mgr := hook.New()
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func runHookUpdate(cmd *cobra.Command, args []string) error {
 
 func runHookStatus(cmd *cobra.Command, args []string) error {
 	mgr := hook.New()
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func runHookRun(cmd *cobra.Command, args []string) error {
 	// A missing config yields defaults (nil error); a present-but-broken config
 	// yields an error. Fail the hook run on the latter rather than silently
 	// running with the guard and external hooks disabled.
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func runPreCommit(root string, cfg *config.Config) error {
 			fmt.Fprintf(os.Stderr, "warning: guard check failed: %v\n", err)
 		} else if len(findings) > 0 {
 			printGuardFindings(findings)
-			notify.EmitEvent("suspenders", "warn",
+			notify.EmitEventSync("suspenders", "warn",
 				fmt.Sprintf("commit blocked: %d internal reference(s)", len(findings)),
 				"", map[string]string{"repo": repoName, "check": "guard"})
 			return scanner.ErrFindingsFound
@@ -405,7 +405,7 @@ func runBuiltinScan(root string, cfg *config.Config, skips *skipCollector) error
 	}
 
 	printFindings(findings, root)
-	notify.EmitEvent("suspenders", "warn",
+	notify.EmitEventSync("suspenders", "warn",
 		fmt.Sprintf("commit blocked: %d secret finding(s)", len(findings)),
 		"", map[string]string{"repo": repoNameFromPath(root), "check": "scan"})
 	return scanner.ErrFindingsFound
@@ -509,9 +509,20 @@ func resolveRepoPath(args []string) (string, error) {
 }
 
 func discoverRepos() ([]repofind.Repo, error) {
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
+	}
+	// An empty dirs list is only reachable when the config file spells it
+	// out, and walking nothing used to end in "no repositories found",
+	// which reads as "your directories are empty" rather than "there are no
+	// directories".
+	if len(cfg.Dirs) == 0 {
+		path, pathErr := configFilePath()
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		return nil, fmt.Errorf("config sets no dirs — nothing to discover; list the directories to walk under dirs in %s", path)
 	}
 
 	expanded := make([]string, len(cfg.Dirs))

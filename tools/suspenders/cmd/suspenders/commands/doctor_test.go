@@ -5,11 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/suspenders/internal/config"
 )
 
 // xdgConfig points config.Path() at a temp XDG home, holding content as the
 // global config file when content is non-empty. Keeps a test off the real
-// user config, which the commands under test would otherwise read.
+// user config, which the commands under test would otherwise read —
+// $SUSPENDERS_CONFIG is cleared for the same reason.
 func xdgConfig(t *testing.T, content string) {
 	t.Helper()
 	xdg := t.TempDir()
@@ -23,6 +26,7 @@ func xdgConfig(t *testing.T, content string) {
 		}
 	}
 	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(config.EnvConfig, "")
 }
 
 // runDoctorString points the global config at a temp XDG home holding content,

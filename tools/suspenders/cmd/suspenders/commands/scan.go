@@ -80,7 +80,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// an error only when the file exists but can't be read or parsed. Surface
 	// that error instead of silently scanning without the configured guard,
 	// watch rules, and allowlist.
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}

@@ -2,14 +2,17 @@
 
 ## Where config lives
 
-- Global config: `~/.config/suspenders/config.yaml`, or `$XDG_CONFIG_HOME/suspenders/config.yaml` when that variable is set. YAML format. Created with defaults on first run if missing.
+- Global config: `~/.config/suspenders/config.yaml`, or `$XDG_CONFIG_HOME/suspenders/config.yaml` when that variable holds an absolute path. YAML format. `--config <path>` and `$SUSPENDERS_CONFIG` relocate the file; the flag wins over the variable, and a leading `~` expands.
+- The config file is optional and **suspenders never creates it**. With no file, the defaults documented under Keys are what suspenders runs with, held in memory. Run `suspenders config init` to write a file with those defaults when you want one to edit; it refuses to overwrite an existing file. Loading used to write this file on first run, which under a git pre-commit hook meant creating one wherever git had left the process — and persisting one machine's directory layout onto every other machine that ran the tool.
+- A config file that exists but cannot be read or parsed is an error, never a silent fallback to the defaults: `hook run`, `scan`, `doctor`, and the `hook install/update/status` commands all fail on it, so a broken file blocks the commit instead of checking it against nothing. `suspenders config` is the exception — it reports the parse error in its header and prints the defaults anyway, so the reference stays readable while the file is broken.
+- An unresolvable home directory (no `$HOME`, no `$XDG_CONFIG_HOME`) is also an error. The old behavior resolved `./.config/suspenders/config.yaml` relative to the working directory, which inside a pre-commit hook is the repository being committed to.
 - Per-repo overrides: `.suspenders.yaml` (or `.suspenders.yml`) at a repository's root. Resolved from the scan root or the enclosing git top-level. Both `scan` and the pre-commit hook read it.
 - Precedence: per-repo `allowlist`, `watch`, `guard.allowlist`, and `guard.blocked_words` entries are appended to the corresponding global lists. Per-repo `rules`, `paths`, and `patterns` are repo-only ignore mechanisms with no global equivalent. Nothing in the per-repo file replaces a global value outright.
 - `suspenders config` prints the config file path and the settings suspenders resolves to after defaults are applied, not just what the file spells out.
 
 ## Keys
 
-- `dirs` (string list, default `["~/code/src", "~/workspace"]`): directories `hook install --all` and other `--all` commands walk to discover git repositories. A leading `~` expands to the home directory.
+- `dirs` (string list, default `["~/code/src", "~/workspace"]`): directories `hook install --all` and other `--all` commands walk to discover git repositories. A leading `~` expands to the home directory. The default applies when the key is absent; an explicit `dirs: []` means "discover nothing", and the `--all` commands then fail with `config sets no dirs` rather than walking the defaults or reporting success over zero repos.
 - `exclude` (string list, default empty): repo name globs (`org/repo`) skipped by `--all` discovery and exempt from the guard when committing inside them. A matching repo's name still contributes to the blocked name list for other repos, deliberately.
 - `watch` (list of rule objects, default empty): custom secret-detection rules layered on top of the built-in rules.
   - `id` (string): rule identifier.
@@ -72,7 +75,8 @@ Layered over the global config at a repository's root. Ignore rules, paths, and 
 
 ## Environment variables
 
-- `XDG_CONFIG_HOME`: base directory for the config file. When unset, suspenders falls back to `~/.config`, so the config path is `$XDG_CONFIG_HOME/suspenders/config.yaml` or `~/.config/suspenders/config.yaml`.
+- `SUSPENDERS_CONFIG`: path to the config file, replacing the default location. `--config` wins over it.
+- `XDG_CONFIG_HOME`: base directory for the config file. When unset or relative, suspenders falls back to `~/.config`, so the config path is `$XDG_CONFIG_HOME/suspenders/config.yaml` or `~/.config/suspenders/config.yaml`.
 - `EVENTS_BASE_URL`: base URL for the local events service that a blocked commit posts a best-effort event to (default `http://127.0.0.1:7430`). Never read for anything else; the guard and scan have no environment-variable overrides.
 
 ## Example

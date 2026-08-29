@@ -64,9 +64,12 @@ defaults are applied — what the scanner and the guard run with, not what the
 file happens to spell out.
 
 The global config lives at ~/.config/suspenders/config.yaml (XDG_CONFIG_HOME
-is respected) and is created with defaults on first run. A repo can append to
-the guard lists and suppress scanner rules for itself with a .suspenders.yaml
-at its root; those per-repo overrides are not merged into the values below.
+is respected; --config and $SUSPENDERS_CONFIG relocate it). It is optional:
+with no file, the defaults below are what suspenders runs with, in memory —
+loading never creates one. Run "suspenders config init" to write a starting
+file. A repo can append to the guard lists and suppress scanner rules for
+itself with a .suspenders.yaml at its root; those per-repo overrides are not
+merged into the values below.
 
 Every setting:
 
@@ -78,8 +81,39 @@ shows which file and key changes it.`,
 	RunE: runConfigDoc,
 }
 
+var configInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Write a config file with the built-in defaults",
+	Long: `Write the built-in defaults to the config file so they can be edited.
+
+suspenders never creates this file on its own: it runs inside pre-commit
+hooks, where an automatic write lands wherever git happened to put the
+process. This command is the explicit way to get one, and it refuses to
+overwrite a file that already exists.`,
+	Args: cobra.NoArgs,
+	RunE: runConfigInit,
+}
+
 func init() {
+	configDocCmd.AddCommand(configInitCmd)
 	rootCmd.AddCommand(configDocCmd)
+}
+
+func runConfigInit(cmd *cobra.Command, _ []string) error {
+	path, err := configFilePath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s already exists — edit it, or delete it first", path)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check %s: %w", path, err)
+	}
+	if err := config.Write(path, config.DefaultConfig()); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s\n", path)
+	return nil
 }
 
 // runConfigDoc prints the config location and the settings in effect. Unlike
@@ -89,12 +123,13 @@ func init() {
 // wrong.
 func runConfigDoc(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
-	path := config.Path()
-	// Load writes a default file when none exists, so the presence check has
-	// to come first for the header to report what this run actually found.
+	path, err := configFilePath()
+	if err != nil {
+		return err
+	}
 	_, statErr := os.Stat(path)
 
-	cfg, loadErr := config.Load()
+	cfg, loadErr := loadConfig()
 	status := "loaded"
 	switch {
 	case loadErr != nil:
@@ -105,6 +140,9 @@ func runConfigDoc(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Fprintf(out, "config file: %s (%s)\n", path, status)
+	if statErr != nil && loadErr == nil {
+		fmt.Fprintln(out, "             suspenders config init writes one with these defaults")
+	}
 	fmt.Fprintln(out, "per-repo:    .suspenders.yaml (or .yml) at a repo root")
 
 	fmt.Fprintln(out)

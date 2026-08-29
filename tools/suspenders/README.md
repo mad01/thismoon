@@ -11,9 +11,10 @@ make install                   # builds and installs to ~/code/bin/suspenders
 suspenders hook install --all  # pre-commit hook in every repo under your dirs
 ```
 
-The first run creates `~/.config/suspenders/config.yaml` with defaults:
-secret scanning on, repo discovery over `~/code/src` and `~/workspace`
-(adjust `dirs` to your layout). From then on, a staged secret blocks the
+Out of the box you get the defaults without a config file: secret scanning
+on, repo discovery over `~/code/src` and `~/workspace`. Run `suspenders
+config init` to write `~/.config/suspenders/config.yaml` when you want to
+adjust `dirs` to your layout. From then on, a staged secret blocks the
 commit that would carry it.
 
 Two things the defaults do not do:
@@ -322,6 +323,7 @@ suspenders doctor /path/to/repo
 
 ```sh
 suspenders config
+suspenders config init          # write the defaults to the config file
 ```
 
 ### Print version
@@ -477,7 +479,7 @@ These fire on the file's name alone, so binary key material (PKCS#12 keystores, 
 
 ## Configuration
 
-Suspenders reads its config from `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`), creating a default config on first run.
+Suspenders reads its config from `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`); `--config <path>` and `$SUSPENDERS_CONFIG` point it somewhere else. The file is optional — with none, the defaults below apply in memory, and suspenders never creates one on its own. `suspenders config init` writes it explicitly. A file that exists but fails to parse is an error, so a broken config blocks commits rather than letting them through unchecked.
 
 ```yaml
 # Directories to scan for git repositories (used by --all)
@@ -674,7 +676,7 @@ All findings on that line are suppressed.
 
 ## Where things live
 
-- Config: `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`), created with defaults on first run
+- Config: `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`, or wherever `--config`/`$SUSPENDERS_CONFIG` points), optional and never created implicitly — `suspenders config init` writes one
 - Per-repo overrides: `.suspenders.yaml` (or `.yml`) at a repo's root, holding ignore rules, paths, patterns, allowlist, and guard overrides
 - Binary: `~/code/bin/suspenders` (via `make install`)
 - Generated hooks: `.git/hooks/pre-commit`, `.git/hooks/post-merge`, both calling `suspenders hook run <event>`
