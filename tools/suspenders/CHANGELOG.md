@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/suspenders/v0.8.0...suspenders/v0.9.0) (2026-08-29)
+
+
+### Features
+
+* **suspenders:** drop write-on-load, add config init, resolve paths via confdir ([1567746](https://github.com/mad01/thismoon/commit/1567746100ffe7356927b03e2d79acf71da5618c))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/suspenders/v0.7.0...suspenders/v0.8.0) (2026-08-22)
 
 

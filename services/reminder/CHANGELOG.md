@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/reminder/v0.5.0...reminder/v0.6.0) (2026-08-29)
+
+
+### Features
+
+* **reminder:** reminder_doctor tool, kit adoption ([75bb08b](https://github.com/mad01/thismoon/commit/75bb08b3729c9e41dca531f53b96d6f4c356b725))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/reminder/v0.4.1...reminder/v0.5.0) (2026-08-24)
 
 

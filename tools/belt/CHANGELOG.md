@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/mad01/thismoon/compare/belt/v2.0.0...belt/v2.1.0) (2026-08-29)
+
+
+### Features
+
+* **belt:** fail closed on invalid config, validate guard fields, wildcard allow_repos ([e938486](https://github.com/mad01/thismoon/commit/e93848601fa55a6fc48dc0d2ad7bf30d9deefa6f))
+
 ## [2.0.0](https://github.com/mad01/thismoon/compare/belt/v1.1.0...belt/v2.0.0) (2026-08-28)
 
 

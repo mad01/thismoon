@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/worklog/v0.8.2...worklog/v0.9.0) (2026-08-29)
+
+
+### Features
+
+* **worklog:** strict config loading, neutral scan defaults, remote.url ([903c13e](https://github.com/mad01/thismoon/commit/903c13e89e25edefa366373e5b634d7387155351))
+
 ## [0.8.2](https://github.com/mad01/thismoon/compare/worklog/v0.8.1...worklog/v0.8.2) (2026-08-27)
 
 

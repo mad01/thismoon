@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/speak/v0.7.1...speak/v0.8.0) (2026-08-29)
+
+
+### Features
+
+* **speak:** CORS allowlist, persistent flags, reachable state dir ([743fbb7](https://github.com/mad01/thismoon/commit/743fbb771c9aca5f5bd03ea987909efbc25d55b4))
+
 ## [0.7.1](https://github.com/mad01/thismoon/compare/speak/v0.7.0...speak/v0.7.1) (2026-08-27)
 
 

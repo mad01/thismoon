@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/deps/v0.8.0...deps/v0.9.0) (2026-08-29)
+
+
+### Features
+
+* **deps:** compiled exclude globs, loud pattern errors, deps_doctor tool ([205a0c5](https://github.com/mad01/thismoon/commit/205a0c58d766b1727a7810fff6cb9a5ecf14d6eb))
+* **kit:** confdir, envdefault, notify, and doctor-report packages ([f5fb0dc](https://github.com/mad01/thismoon/commit/f5fb0dc966f4b12f1ab0f7e044d2281cbcfbb1e9))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/deps/v0.7.1...deps/v0.8.0) (2026-08-24)
 
 

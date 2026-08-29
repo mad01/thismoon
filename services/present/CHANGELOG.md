@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/mad01/thismoon/compare/present/v1.0.0...present/v1.1.0) (2026-08-29)
+
+
+### Features
+
+* **present:** state-dir page store, present_doctor tool ([fd62220](https://github.com/mad01/thismoon/commit/fd62220973497bee7993d701c424de641a4fd5bf))
+
 ## [1.0.0](https://github.com/mad01/thismoon/compare/present/v0.6.0...present/v1.0.0) (2026-08-27)
 
 

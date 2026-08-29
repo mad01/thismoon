@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/mad01/thismoon/compare/csl/v0.14.3...csl/v0.15.0) (2026-08-29)
+
+
+### Features
+
+* **csl:** config overrides, state separation, effective base URL, doctor checks ([2e0531e](https://github.com/mad01/thismoon/commit/2e0531e9cd6fb388723b4c0433328bae47201f7d))
+
 ## [0.14.3](https://github.com/mad01/thismoon/compare/csl/v0.14.2...csl/v0.14.3) (2026-08-27)
 
 

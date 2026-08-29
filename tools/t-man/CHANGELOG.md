@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/mad01/thismoon/compare/t-man/v0.5.1...t-man/v0.5.2) (2026-08-29)
+
+
+### Bug Fixes
+
+* **t-man:** wire the --agent flag to mode selection ([c787305](https://github.com/mad01/thismoon/commit/c78730525478413499ca1f580c5eb222b30fd3d4))
+
 ## [0.5.1](https://github.com/mad01/thismoon/compare/t-man/v0.5.0...t-man/v0.5.1) (2026-08-28)
 
 
