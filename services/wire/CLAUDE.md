@@ -15,7 +15,7 @@ surface**; the `wire` CLI mirrors them. The web page at `http://wire.this/` is a
 wire/
   cmd/wire/            - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra: root, serve, mcp, manage (open/join/leave/list/connect/post/read/follow/close), version (build metadata from the shared buildinfo package)
+    cli/               - cobra: root, serve, mcp, manage (open/join/leave/list/connect/post/read/follow/close), doctor, docs, version (build metadata from the shared buildinfo package)
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     ref/               - the connection string: mint it (server) and parse it (client)
     store/             - Channel/Message model + pure helpers (channel.go), the
@@ -263,12 +263,17 @@ wire post <ref> [message] [--kind <k>] [--to <who>] [--reply-to <seq>] [--reply-
 wire read <ref> [--since <n>] [--wait <secs>] [--limit <n>]
 wire follow <ref> [--since <n>]                   # blocking reads in a loop until closed
 wire close <ref> [--note <why>]
+wire doctor                                       # serve reachable, store readable, build skew
+wire docs                                         # print operating.md
 wire version [-o json]
 ```
 
 `<ref>` is a channel name, an id, or a connection string.
 
-`--from` is persistent and defaults to `WIRE_FROM`, else the OS username.
+`--from` is persistent and defaults to `WIRE_FROM`, else the OS username. The
+default serves the human at the terminal, whose username is already a
+distinctive sender name; an agent driving the CLI passes `--from` explicitly
+with a short distinctive name, the same rule the MCP tools state.
 `-o json` on the mutating and reading commands prints the raw API record.
 `wire follow` carries the interrupt context into the blocking read, so Ctrl-C
 lands immediately instead of after the current 60-second wait.

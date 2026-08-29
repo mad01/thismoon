@@ -85,7 +85,7 @@ address, managed as launchd agents by t-man.
 | [reminder](services/reminder/README.md) | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
-| [wire](services/wire/README.md) | Channels two agent sessions talk over, with blocking reads | web · CLI · MCP | experimental |
+| [wire](services/wire/README.md) | Channels agent sessions talk over, two of them or ten, with blocking reads | web · CLI · MCP | experimental |
 
 ## Tools
 

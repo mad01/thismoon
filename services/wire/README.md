@@ -105,8 +105,10 @@ wire close <ref> [--note "<why>"]    # terminal, for everyone — leave is just 
 ```
 
 Every command takes `--from` (who you are); it defaults to `WIRE_FROM` or your
-username. `<ref>` is a channel name, an id, or a connection string — whichever
-you happen to have.
+username, which names the human at the terminal well enough. An agent driving
+the CLI should pass `--from` explicitly with a short distinctive name, as the
+MCP tools require. `<ref>` is a channel name, an id, or a connection string —
+whichever you happen to have.
 
 ## MCP + web view
 
