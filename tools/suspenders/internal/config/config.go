@@ -1,13 +1,30 @@
 // Package config manages the suspenders global configuration file.
+//
+// Loading never writes. suspenders runs inside git pre-commit hooks, where
+// the process environment is whatever git handed it and the working
+// directory is the repository being committed to; a load that creates files
+// puts them somewhere nobody asked for. Defaults live in memory, and
+// `suspenders config init` is the one command that puts a file on disk.
 package config
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mad01/thismoon/kit/confdir"
 )
+
+// Component is the config directory name suspenders owns under the XDG
+// config root.
+const Component = "suspenders"
+
+// EnvConfig names the config file, overriding the default location. The
+// --config flag wins over it.
+const EnvConfig = "SUSPENDERS_CONFIG"
 
 // Config holds the global suspenders configuration.
 type Config struct {
@@ -84,74 +101,114 @@ type AllowEntry struct {
 	Paths       []string `yaml:"paths"` // optional file glob restriction
 }
 
-// DefaultConfig returns a Config with sensible defaults.
+// defaultDirs are the repo-discovery roots `hook install --all` walks when
+// the config names none. They are a guess about one machine's layout, which
+// is why they stay in memory: writing them into a file makes them look like
+// a decision someone made.
+var defaultDirs = []string{"~/code/src", "~/workspace"}
+
+// DefaultConfig returns the config suspenders runs with when there is no
+// config file.
 func DefaultConfig() *Config {
-	return &Config{
-		Dirs: []string{"~/code/src", "~/workspace"},
-	}
+	return (&Config{}).WithDefaults()
 }
 
-// Path returns the path to the config file, respecting XDG_CONFIG_HOME.
-func Path() string {
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			base = filepath.Join(".", ".config")
-		} else {
-			base = filepath.Join(home, ".config")
-		}
+// WithDefaults fills the fields a config file left out and returns c.
+//
+// Nil and empty mean different things for Dirs: an absent `dirs` key takes
+// the defaults, while an explicit `dirs: []` is a machine saying it
+// discovers nothing, and the commands that need dirs report that rather than
+// quietly walking two directories the operator did not ask for.
+func (c *Config) WithDefaults() *Config {
+	if c.Dirs == nil {
+		c.Dirs = slices.Clone(defaultDirs)
 	}
-	return filepath.Join(base, "suspenders", "config.yaml")
+	return c
 }
 
-// ExpandPath expands a leading ~ to the user's home directory.
+// Path returns the default path of the config file:
+// $XDG_CONFIG_HOME/suspenders/config.yaml, else
+// ~/.config/suspenders/config.yaml. An unresolvable home directory is an
+// error, never a path relative to the working directory — under a
+// pre-commit hook that working directory is the repository being committed
+// to, so the old fallback both read a config nobody wrote and wrote one into
+// somebody's repo.
+func Path() (string, error) {
+	return confdir.Path(Component, "config.yaml")
+}
+
+// PathFor returns the config file to use: the flag value when given, else
+// $SUSPENDERS_CONFIG, else the default path.
+func PathFor(flagValue string) (string, error) {
+	override := flagValue
+	if override == "" {
+		override = os.Getenv(EnvConfig)
+	}
+	if override == "" {
+		return Path()
+	}
+	expanded, err := confdir.Expand(override)
+	if err != nil {
+		return "", fmt.Errorf("config: %w", err)
+	}
+	return expanded, nil
+}
+
+// ExpandPath expands a leading ~ to the user's home directory, returning the
+// path unchanged when the home directory cannot be resolved. Its callers
+// pass the result to repo discovery, where an unexpanded ~ finds nothing;
+// the commands that need a resolvable home fail on Path first.
 func ExpandPath(p string) string {
-	if len(p) == 0 || p[0] != '~' {
-		return p
-	}
-	home, err := os.UserHomeDir()
+	expanded, err := confdir.Expand(p)
 	if err != nil {
 		return p
 	}
-	return filepath.Join(home, p[1:])
+	return expanded
 }
 
-// Load reads the config from the default path, creating a default config file
-// if none exists.
+// Load reads the config from the default path (or the one --config and
+// $SUSPENDERS_CONFIG select, via PathFor).
 func Load() (*Config, error) {
-	p := Path()
+	p, err := Path()
+	if err != nil {
+		return nil, err
+	}
+	return LoadFrom(p)
+}
 
-	data, err := os.ReadFile(p)
+// LoadFrom reads the config from path. A missing file yields the defaults
+// with a nil error; a file that exists but cannot be read or parsed is an
+// error, which the guard entrypoints turn into a failed hook rather than a
+// commit checked against nothing.
+func LoadFrom(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		cfg := DefaultConfig()
-		if writeErr := writeDefault(p, cfg); writeErr != nil {
-			// Non-fatal: return the default even if we can't persist it.
-			return cfg, nil
-		}
-		return cfg, nil
+		return DefaultConfig(), nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read config %s: %w", p, err)
+		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", p, err)
+		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
-	return &cfg, nil
+	return cfg.WithDefaults(), nil
 }
 
-func writeDefault(p string, cfg *Config) error {
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+// Write creates path's parent directory and writes cfg to it. It is the
+// explicit counterpart to Load's read-only behavior: `suspenders config
+// init` calls it, nothing else does.
+func Write(path string, cfg *Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("marshal default config: %w", err)
+		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(p, data, 0o644); err != nil {
-		return fmt.Errorf("write default config %s: %w", p, err)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write config %s: %w", path, err)
 	}
 	return nil
 }

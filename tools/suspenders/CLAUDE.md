@@ -20,6 +20,8 @@ cmd/suspenders/
                              derived per run)
     configdoc.go             suspenders config: config path + the settings in
                              effect (annotated setting reference in --help)
+                             suspenders config init: writes a default config
+                             file — the only path that creates one
     docs.go                  suspenders docs: prints the embedded operating doc
                              (operating.md, rendered via kit/agentdoc from the
                              component root's embed.go + facts.go)
@@ -28,7 +30,9 @@ cmd/suspenders/
 
 internal/
   config/
-    config.go                Config struct (YAML), Load from XDG path, ExpandPath
+    config.go                Config struct (YAML), Load/LoadFrom, Path/PathFor
+                             (kit/confdir; --config and $SUSPENDERS_CONFIG),
+                             WithDefaults, Write, ExpandPath
                              Types: ScanConfig, GuardConfig, HistoryConfig, ExternalHook, HooksConfig
   guard/
     guard.go                 Internal-reference guard: CollectNames, Check (staged diff),
@@ -55,9 +59,6 @@ internal/
     hook.go                    Manager type: HookScript, Checksum, Install, Uninstall,
                              Update, IsInstalled, NeedsUpdate, Status
                              Event type: PreCommit, PostMerge
-  notify/
-    events.go                 EmitEvent: best-effort POST to events.this on a
-                             blocked-commit hook; never emits during go test
 
 Makefile                     part of module github.com/mad01/thismoon (no own go.mod)
 ```
@@ -65,7 +66,9 @@ Makefile                     part of module github.com/mad01/thismoon (no own go
 Repository discovery and remote parsing live in the shared
 `github.com/mad01/thismoon/kit/repofind` package (Find with 32 concurrent
 workers, IsRepo, InsideWorkTree, ParseRemote) — shared with belt so the
-pre-commit guard and the write-time firewall derive the same names.
+pre-commit guard and the write-time firewall derive the same names. Blocked-
+commit events go through `github.com/mad01/thismoon/kit/notify`
+(`EmitEventSync`; the hook process exits immediately after).
 
 ## How it works
 
@@ -87,7 +90,7 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 
 ### Conventions
 
-- Config: YAML via `gopkg.in/yaml.v3`, lives at `~/.config/suspenders/config.yaml`
+- Config: YAML via `gopkg.in/yaml.v3`, lives at `~/.config/suspenders/config.yaml` (XDG-aware via `kit/confdir`; `--config` / `$SUSPENDERS_CONFIG` relocate it). Loading never writes: a missing file yields the in-memory defaults, and only `suspenders config init` creates one. A present-but-unparseable file is an error every command propagates, so the pre-commit hook fails closed.
 - CLI: `github.com/spf13/cobra`, each command in its own file, registered via `init()`
 - Enable pattern: `*bool` field; nil means enabled (backwards compat for ScanConfig, ExternalHook)
 - Hook scripts use PATH-based binary resolution (`suspenders` not absolute path)
@@ -169,6 +172,7 @@ Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/this
 | `history clean` | Rewrite history to remove flagged strings / redact files. `--replace`, `--replace-file`, `--replace-map`, `--redact-file`, `--dry-run`, `--yes` |
 | `doctor [path]` | Explain the guard for a repo: the installed build, config in effect, per-repo overrides, exemption status, and the derived blocked-name list |
 | `config` | Print the config file location and the settings in effect; `--help` carries the annotated reference of every setting |
+| `config init` | Write a config file with the built-in defaults; refuses to overwrite an existing one |
 | `docs` | Print the embedded operating doc: hook pipeline, config locations, failure modes when a commit is blocked, first moves |
 | `version` | Print the bare version token; `-o json` prints the four-key build metadata object |
 

@@ -41,16 +41,20 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve path: %w", err)
 	}
 
+	configFile, err := configFilePath()
+	if err != nil {
+		return err
+	}
 	// Like scan and hook run, a present-but-broken config is an error, not a
 	// silent fallback to defaults — doctor's whole job is showing the truth.
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
 
 	out := cmd.OutOrStdout()
 	printBuild(out)
-	fmt.Fprintf(out, "config: %s\n", config.Path())
+	fmt.Fprintf(out, "config: %s\n", configFile)
 	fmt.Fprintf(out, "scan:  %s\n", onOff(cfg.Scan.ScanEnabled()))
 	fmt.Fprintf(out, "guard: %s\n", onOff(cfg.Guard.Enabled))
 	fmt.Fprintf(out, "  workspace dirs: %d, blocked words: %d, safe references: %d\n",

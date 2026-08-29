@@ -35,7 +35,10 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestLoadCreatesDefault(t *testing.T) {
+// TestLoadDefaultsWithoutWriting pins the no-surprise-write contract:
+// suspenders runs under git pre-commit hooks, where a load that creates a
+// file puts it wherever git happened to leave the process.
+func TestLoadDefaultsWithoutWriting(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
@@ -47,31 +50,90 @@ func TestLoadCreatesDefault(t *testing.T) {
 		t.Error("loaded config has no dirs")
 	}
 
-	// File should now exist.
-	p := Path()
-	if _, err := os.Stat(p); err != nil {
-		t.Errorf("config file not created at %s: %v", p, err)
+	p, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Errorf("Load must not create %s (stat err = %v)", p, err)
 	}
 }
 
-func TestLoadRoundtrip(t *testing.T) {
+// TestWithDefaultsFillsOmittedDirs: a config file that configures the
+// scanner but never mentions dirs still discovers repos, instead of leaving
+// `hook install --all` with nothing to walk.
+func TestWithDefaultsFillsOmittedDirs(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	// First load creates default.
-	first, err := Load()
-	if err != nil {
-		t.Fatalf("first Load() error: %v", err)
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("guard:\n  enabled: true\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	// Second load reads from file.
-	second, err := Load()
+	cfg, err := LoadFrom(path)
 	if err != nil {
-		t.Fatalf("second Load() error: %v", err)
+		t.Fatalf("LoadFrom() error: %v", err)
+	}
+	if len(cfg.Dirs) != len(defaultDirs) {
+		t.Errorf("Dirs = %v, want the defaults %v", cfg.Dirs, defaultDirs)
+	}
+}
+
+// TestExplicitEmptyDirsStaysEmpty: an explicit `dirs: []` is a machine
+// saying it discovers nothing, and must not be overwritten by the defaults.
+func TestExplicitEmptyDirsStaysEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("dirs: []\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	if len(first.Dirs) != len(second.Dirs) {
-		t.Errorf("dirs mismatch: %v vs %v", first.Dirs, second.Dirs)
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom() error: %v", err)
+	}
+	if len(cfg.Dirs) != 0 {
+		t.Errorf("Dirs = %v, want an empty list", cfg.Dirs)
+	}
+}
+
+func TestPathForPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	tests := []struct {
+		name string
+		env  string
+		flag string
+		want string
+	}{
+		{"neither set uses the default", "", "", filepath.Join(home, ".config", "suspenders", "config.yaml")},
+		{"env relocates", "/tmp/from-env.yaml", "", "/tmp/from-env.yaml"},
+		{"flag wins over env", "/tmp/from-env.yaml", "/tmp/from-flag.yaml", "/tmp/from-flag.yaml"},
+		{"tilde is expanded", "~/from-env.yaml", "", filepath.Join(home, "from-env.yaml")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvConfig, tc.env)
+			got, err := PathFor(tc.flag)
+			if err != nil {
+				t.Fatalf("PathFor() error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("PathFor(%q) = %q, want %q", tc.flag, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPathNeedsAResolvableHome: the old fallback returned "./.config/..."
+// with no HOME, which under a pre-commit hook resolves inside the repository
+// being committed to — reading a config nobody wrote, and writing one there.
+func TestPathNeedsAResolvableHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if p, err := Path(); err == nil {
+		t.Errorf("Path() = %q with no home, want an error", p)
 	}
 }
 
@@ -105,7 +167,7 @@ func TestLoadScanExcludeRules(t *testing.T) {
 // TestLoad_malformedYAMLErrors pins the contract the hook run and scan commands
 // rely on for fail-closed behavior: a present-but-unparseable config yields an
 // error and a nil config, distinct from a missing config (which yields defaults
-// with no error, covered by TestLoadCreatesDefault).
+// with no error, covered by TestLoadDefaultsWithoutWriting).
 func TestLoad_malformedYAMLErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -131,7 +193,10 @@ func TestLoad_malformedYAMLErrors(t *testing.T) {
 
 func TestPath_XDGOverride(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg")
-	p := Path()
+	p, err := Path()
+	if err != nil {
+		t.Fatalf("Path() error: %v", err)
+	}
 	want := "/tmp/xdg/suspenders/config.yaml"
 	if p != want {
 		t.Errorf("Path() = %q, want %q", p, want)

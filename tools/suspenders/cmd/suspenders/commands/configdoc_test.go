@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -41,7 +42,11 @@ func TestConfigHeaderStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			out := runConfigDocString(t, tc.content)
 
-			if !strings.Contains(out, "config file: "+config.Path()+" "+tc.want) {
+			path, err := config.Path()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "config file: "+path+" "+tc.want) {
 				t.Errorf("header missing path and %q:\n%s", tc.want, out)
 			}
 			if !strings.Contains(out, "per-repo:    .suspenders.yaml") {
@@ -107,5 +112,36 @@ func TestConfigHelpCarriesTheReference(t *testing.T) {
 		if !strings.Contains(configDocCmd.Long, want) {
 			t.Errorf("--help text missing %q", want)
 		}
+	}
+}
+
+// TestConfigInitWritesOnceAndRefusesToOverwrite pins the only path that
+// creates a config file: it is explicit, and it never clobbers an existing
+// file (the surprise-write behavior it replaced did neither).
+func TestConfigInitWritesOnceAndRefusesToOverwrite(t *testing.T) {
+	xdgConfig(t, "")
+
+	var b strings.Builder
+	configInitCmd.SetOut(&b)
+	defer configInitCmd.SetOut(nil)
+
+	if err := runConfigInit(configInitCmd, nil); err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+	path, err := config.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("config init did not write %s: %v", path, err)
+	}
+	if !strings.Contains(string(written), "dirs:") {
+		t.Errorf("written config has no dirs:\n%s", written)
+	}
+
+	err = runConfigInit(configInitCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("second config init error = %v, want an already-exists refusal", err)
 	}
 }
