@@ -15,20 +15,26 @@ import (
 // configReference documents every discovery key, shipped in the binary so a
 // repo that is scanned (or skipped) unexpectedly can be debugged from the
 // terminal.
-const configReference = `# deps discovery config — both keys optional, both glob patterns
-# (filepath.Match syntax). Each pattern is matched against the full path AND
-# against the basename, so "some-repo" and "*/archive/*" both work.
+const configReference = `# deps discovery config — both keys optional, both lists of glob patterns.
+# A pattern is matched a path segment at a time against every trailing run of
+# segments: "thismoon", then "mad01/thismoon", then
+# "github.com/mad01/thismoon", up to the absolute path. So "archive-old" names
+# a repo by basename, "mad01/*" by org/repo, and "*/archive/*" by any deeper
+# suffix — without hardcoding where this machine keeps its checkouts. "*" never
+# crosses a "/"; "**" does. A pattern that does not compile is an error naming
+# it, not a silently disabled exclusion.
 #
 # This file only TRIMS the repo set; it never adds to it. The set itself comes
 # from the catalog registry (~/.config/catalog/registry.yaml), so a newly
 # catalogued repo enrolls on its own. Edits take effect on the next scan — no
 # restart of 'deps serve'.
 
-# Skip a whole repo, matched against the repo's absolute path or its basename.
-exclude_repos = ["archive-*", "scratch-repo"]
+# Skip a whole repo: by basename, by org/repo, or by a deeper path suffix.
+exclude_repos = ["scratch-repo", "archive-*", "mad01/*", "*/archive/*"]
 
 # Skip a directory while walking a repo, matched against the repo-relative path
-# or the directory's basename. Generated trees and vendored examples belong here.
+# the same way, so "third_party" skips that directory at any depth. Generated
+# trees and vendored examples belong here.
 exclude_paths = ["third_party", "internal/gen/*"]
 
 # Git worktrees, nested checkouts, and .git/vendor/node_modules/testdata are
@@ -45,10 +51,13 @@ The config is resolved in this order, first match winning:
 
   --config <path>
   $DEPS_CONFIG
-  ~/.config/deps/config.toml   (where the recipe symlinks it)
+  $XDG_CONFIG_HOME/deps/config.toml   (when that variable holds an absolute path)
+  ~/.config/deps/config.toml          (where the recipe symlinks it)
 
 A missing file is not an error: discovery then runs with no extra exclusions.
-A leading ~ is expanded before the file is opened.
+A file that is present but malformed — bad TOML, or a pattern that does not
+compile — fails the scan naming the key and the pattern, rather than skipping
+the exclusion in silence. A leading ~ is expanded before the file is opened.
 
 Annotated example — every key deps reads:
 

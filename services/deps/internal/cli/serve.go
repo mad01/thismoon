@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/deps/internal/alert"
 	"github.com/mad01/thismoon/services/deps/internal/config"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
-	"github.com/mad01/thismoon/services/deps/internal/notify"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/registry"
 	"github.com/mad01/thismoon/services/deps/internal/scanner"
@@ -52,7 +52,7 @@ func init() {
 // discovery config (exclude_repos / exclude_paths) is read once per scan inside
 // the repo resolver, so editing it takes effect on the next cycle without a
 // restart.
-func buildEngine(st *store.Store, checker scanner.Checker, n notify.Notifier) *scanner.Engine {
+func buildEngine(st *store.Store, checker scanner.Checker, n alert.Notifier) *scanner.Engine {
 	registryPath, configPath := flagRegistry, flagConfig
 	return &scanner.Engine{
 		Prepare: func() ([]string, discover.Options, error) {
@@ -84,7 +84,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	engine := buildEngine(st, osv.New(), notify.Osascript{})
+	engine := buildEngine(st, osv.New(), alert.Osascript{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

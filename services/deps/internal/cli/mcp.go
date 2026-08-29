@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	deps "github.com/mad01/thismoon/services/deps"
 	"github.com/mad01/thismoon/services/deps/internal/mcpserver"
 )
 
@@ -23,7 +25,12 @@ serve agent first (it owns the scan store and reaches OSV).
 Tools exposed:
   deps_scan          Discover dependencies across all repos (no advisory check).
   deps_check         Discover + check against OSV; return flagged packages.
-  deps_list_flagged  Return the flagged packages from the last check.`,
+  deps_list_flagged  Return the flagged packages from the last check.
+  deps_scan_repo     Rescan a single repo against OSV and merge the result.
+  deps_resolve       Acknowledge advisories by key.
+  deps_doctor        Run the doctor checks and return the report.
+
+` + agentdoc.RegistrationSnippet(deps.Facts()),
 	RunE: runMCP,
 }
 
@@ -36,7 +43,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("deps mcp: port=%d base-url=%s", flagPort, flagBaseURL)
 	srv, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL},
+		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
 	)
 	if err != nil {
 		return err

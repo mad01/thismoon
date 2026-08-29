@@ -1,7 +1,7 @@
 // Package scanner orchestrates one scan: discover dependencies across the
 // registered repos, check each against OSV, persist the result, and (for serve)
 // notify on advisories not seen before. It is the functional core wiring
-// discover + osv + store + notify together; the CLI and serve loop call in here.
+// discover + osv + store + alert together; the CLI and serve loop call in here.
 package scanner
 
 import (
@@ -12,8 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/notify"
+	"github.com/mad01/thismoon/services/deps/internal/alert"
 	"github.com/mad01/thismoon/services/deps/internal/discover"
-	"github.com/mad01/thismoon/services/deps/internal/notify"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
@@ -71,7 +72,7 @@ type Engine struct {
 	Prepare    func() ([]string, discover.Options, error)
 	Ecosystems []discover.Ecosystem
 	Checker    Checker
-	Notifier   notify.Notifier
+	Notifier   alert.Notifier
 	Store      *store.Store
 }
 
@@ -192,7 +193,7 @@ func (e *Engine) CheckAndNotify(ctx context.Context) error {
 // (the sandbox-watch script batches denials for the same reason). A delivery
 // failure leaves the flags pending so the next cycle retries. Returns the number
 // of advisories covered by the notification (0 if nothing new).
-func Notify(st *store.Store, n notify.Notifier) (int, error) {
+func Notify(st *store.Store, n alert.Notifier) (int, error) {
 	pending := st.PendingFlags()
 	if len(pending) == 0 {
 		return 0, nil

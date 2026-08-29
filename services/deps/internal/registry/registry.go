@@ -7,13 +7,21 @@ package registry
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mad01/thismoon/kit/confdir"
 )
 
-// DefaultPath is the catalog registry symlink the catalog recipe maintains.
-const DefaultPath = "~/.config/catalog/registry.yaml"
+// FileName is the registry's name inside the catalog config directory. deps
+// reads the file catalog owns, so both resolve it the same way.
+const FileName = "registry.yaml"
+
+// DefaultPath is the compiled fallback location of the catalog registry
+// symlink the catalog recipe maintains, used when the config directory cannot
+// be resolved. Normal resolution goes through confdir.Path("catalog",
+// FileName), which honors XDG_CONFIG_HOME.
+const DefaultPath = "~/.config/catalog/" + FileName
 
 // file mirrors registry.yaml: a list of repo-root source paths.
 type file struct {
@@ -26,7 +34,11 @@ type file struct {
 // Listed paths that are not present on this machine are skipped (the registry is
 // shared across hosts; not every repo is checked out everywhere).
 func Repos(path string) ([]string, error) {
-	raw, err := os.ReadFile(expandTilde(path))
+	expanded, err := confdir.Expand(path)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(expanded)
 	if err != nil {
 		return nil, fmt.Errorf("read registry %s: %w", path, err)
 	}
@@ -36,26 +48,16 @@ func Repos(path string) ([]string, error) {
 	}
 	var repos []string
 	for _, s := range f.Sources {
-		dir := expandTilde(s.Path)
+		// Registry paths are stored with a leading ~ so the same file works
+		// across machines; a home directory that cannot be resolved fails the
+		// scan rather than silently producing a cwd-relative root.
+		dir, err := confdir.Expand(s.Path)
+		if err != nil {
+			return nil, fmt.Errorf("registry %s: source %q: %w", path, s.Path, err)
+		}
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
 			repos = append(repos, dir)
 		}
 	}
 	return repos, nil
-}
-
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory. Registry
-// paths are stored with ~ so the same file works across machines.
-func expandTilde(path string) string {
-	if path == "~" || len(path) >= 2 && path[:2] == "~/" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		if path == "~" {
-			return home
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
 }

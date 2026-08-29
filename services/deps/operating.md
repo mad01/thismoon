@@ -25,14 +25,23 @@ The store is one JSON file, `scan.json`, in the workdir, default {{.StorePath}}
 string sets keyed by `ecosystem:name@version:advisoryID`: `notified` (already
 alerted) and `resolved` (acknowledged). serve rewrites the file atomically, so
 it is always safe to read directly. The discovery config (exclude lists) is a
-separate file, default `~/.config/deps/config.toml`, and the repo set comes
-from the catalog registry.
+separate file, default `~/.config/deps/config.toml` (or under
+$XDG_CONFIG_HOME/deps when that is set), and the repo set comes from the
+catalog registry.
 
 ## failure modes
 
 Start with `deps doctor`: one command runs the reachability, store, and
 version-skew checks below and prints one line per check, FAIL lines naming the
-cause. The paragraphs here cover what each failure means and what to do next.
+cause. From an MCP client with no shell, the `deps_doctor` tool runs the same
+checks and returns the report as JSON. The paragraphs here cover what each
+failure means and what to do next.
+
+A scan cycle failing with a config parse error: a pattern in `exclude_repos` or
+`exclude_paths` does not compile. The log line names the key and the pattern.
+`deps config` prints the same error beside the resolved path. Exclusions are
+never skipped in silence, so this fails the cycle rather than scanning a repo
+the config asked to skip.
 
 Connection refused, or "deps serve not reachable": serve is not running. t-man
 typically supervises it. Run `t-man list` to see whether the deps agent

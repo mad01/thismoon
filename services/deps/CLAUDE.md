@@ -20,7 +20,8 @@ deps/
     osv/               - OSV.dev client (POST /v1/querybatch + GET /v1/vulns/{id})
     store/             - Dependency/Advisory/Flag model + atomic JSON store; notified + resolved sets
     scanner/           - Engine: discover → check → persist; CheckRepo (per-repo merge); coalesced Notify
-    notify/            - Notifier interface + osascript macOS notification
+    alert/             - Notifier interface + osascript macOS notification (the
+                         events archive is kit/notify, a different concern)
     api/               - wire DTOs shared by server+client (advisory key + resolved status)
     server/            - HTTP API + webkit web page (embedded index.html)
     client/            - HTTP client for serve (used by CLI + MCP)
@@ -47,8 +48,12 @@ no file locks.
 
 ### Discovery
 
-- Repo set = the catalog registry (`~/.config/catalog/registry.yaml`), trimmed by
-  `exclude_repos` in the deps config. New catalogued repos auto-enroll.
+- Repo set = the catalog registry (`~/.config/catalog/registry.yaml`, resolved
+  through catalog's config dir so `XDG_CONFIG_HOME` moves both together),
+  trimmed by `exclude_repos` in the deps config. Exclude patterns match every
+  trailing run of path segments, so `mad01/*` and `*/archive/*` both work; a
+  pattern that does not compile fails the scan rather than matching nothing.
+  New catalogued repos auto-enroll.
 - Each repo is walked for `go.mod` (→ `go list -m -json all`, resolved graph,
   v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3), and
   `requirements.txt` (exact `name==version` pins only — unpinned names and
@@ -152,6 +157,8 @@ The annotated key reference lives in `deps config --help`.
 - `deps_list_flagged`: flagged from the last check, no re-scan
 - `deps_scan_repo(repo)`: rescan one repo (path or basename) and merge
 - `deps_resolve(keys)`: acknowledge advisories by key
+- `deps_doctor`: run the same checks as `deps doctor` and return the report as
+  JSON — for a client that can call a tool but has no shell
 
 ## Shared UI: webkit
 

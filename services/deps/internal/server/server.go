@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/services/deps/internal/api"
-	"github.com/mad01/thismoon/services/deps/internal/notify"
 	"github.com/mad01/thismoon/services/deps/internal/scanner"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
