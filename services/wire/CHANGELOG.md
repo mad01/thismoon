@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/wire/v0.7.0...wire/v0.8.0) (2026-08-29)
+
+
+### Features
+
+* **wire:** wire_doctor tool, XDG-aware paths ([6bc442d](https://github.com/mad01/thismoon/commit/6bc442d1295640e2607d16c4c24d1839d8c7d988))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/wire/v0.6.1...wire/v0.7.0) (2026-08-24)
 
 

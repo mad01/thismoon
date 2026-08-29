@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/mad01/thismoon/compare/status/v0.5.0...status/v0.5.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **status:** persistent root flags, shared d-man routes constant ([c10662d](https://github.com/mad01/thismoon/commit/c10662d56bda1a99c1299dcc14c4287f187d45e4))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/status/v0.4.0...status/v0.5.0) (2026-08-22)
 
 

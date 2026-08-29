@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/mad01/thismoon/compare/d-man/v0.6.0...d-man/v0.6.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **d-man:** CORS allowlist, XDG-aware config cascade ([ec57f31](https://github.com/mad01/thismoon/commit/ec57f31f5e21382a499c39aa0d6225e35faf4f96))
+
 ## [0.6.0](https://github.com/mad01/thismoon/compare/d-man/v0.5.0...d-man/v0.6.0) (2026-08-22)
 
 

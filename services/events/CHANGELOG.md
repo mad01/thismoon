@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/events/v0.7.0...events/v0.8.0) (2026-08-29)
+
+
+### Features
+
+* **events:** events_doctor tool, localhost-first help ([1462f67](https://github.com/mad01/thismoon/commit/1462f67b20d21777b74e1b246cb8e4bb84697a66))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/events/v0.6.1...events/v0.7.0) (2026-08-28)
 
 

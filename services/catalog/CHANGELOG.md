@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/mad01/thismoon/compare/catalog/v0.5.0...catalog/v0.5.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **catalog:** expand --registry tilde, env fallbacks, PREFIX install ([a0d48a8](https://github.com/mad01/thismoon/commit/a0d48a84453e99cd5e8400d48314641a4adda694))
+
 ## [0.5.0](https://github.com/mad01/thismoon/compare/catalog/v0.4.0...catalog/v0.5.0) (2026-08-22)
 
 

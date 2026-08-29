@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.12.1...keeper-of-facts/v0.13.0) (2026-08-29)
+
+
+### Features
+
+* **keeper-of-facts:** kof_doctor tool and layered env fallbacks ([fc1ef87](https://github.com/mad01/thismoon/commit/fc1ef871b4d1a68017610a7c249359355ad3b3dc))
+
 ## [0.12.1](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.12.0...keeper-of-facts/v0.12.1) (2026-08-25)
 
 
