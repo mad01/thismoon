@@ -48,26 +48,62 @@ func Path(component, file string) (string, error) {
 	return filepath.Join(dir, file), nil
 }
 
+// LegacyDir describes a pre-XDG state location and the artifact that proves
+// a component actually kept state there.
+//
+// Probe exists because the directory alone proves nothing. Provisioning
+// creates these directories for unrelated reasons — a recipe symlinks a
+// config file into ~/.config/<tool>, an installer drops a virtualenv into
+// ~/.local/share/<tool> — and a component that treats "the directory is
+// there" as "my state is there" pins every machine to the legacy location
+// forever, which is the opposite of a migration seam. Name something only
+// the component itself writes: an index directory, a page store, a cache of
+// generated audio.
+//
+// An empty Probe falls back to testing the directory itself, for the rare
+// caller whose legacy directory cannot be anything but its own.
+type LegacyDir struct {
+	// Dir is the pre-XDG directory. A leading ~ is allowed and preserved in
+	// the returned path.
+	Dir string
+	// Probe is a file or directory inside Dir whose presence means the
+	// component has state there.
+	Probe string
+}
+
 // StateDir returns the directory holding component's mutable state:
 // $XDG_STATE_HOME/<component> when that variable holds an absolute path,
 // otherwise $HOME/.local/state/<component>.
 //
-// legacy names a directory an earlier release kept state in. When it
-// exists on disk it wins outright and is returned unchanged, leading ~ and
-// all: an install that already has data keeps reading and writing where
-// that data is, while a fresh install lands in the XDG location. Pass ""
-// when there is nothing to migrate from.
-func StateDir(component, legacy string) (string, error) {
-	if legacy != "" {
-		path, err := Expand(legacy)
+// legacy names a directory an earlier release kept state in. When its probe
+// is present the legacy directory wins outright and is returned unchanged,
+// leading ~ and all: an install that already has data keeps reading and
+// writing where that data is, while every other install lands in the XDG
+// location. Pass the zero LegacyDir when there is nothing to migrate from.
+func StateDir(component string, legacy LegacyDir) (string, error) {
+	if legacy.Dir != "" {
+		dir, err := Expand(legacy.Dir)
 		if err != nil {
 			return "", err
 		}
-		if info, err := os.Stat(path); err == nil && info.IsDir() {
-			return legacy, nil
+		if hasLegacyState(dir, legacy.Probe) {
+			return legacy.Dir, nil
 		}
 	}
 	return resolve(component, envStateHome, filepath.Join(".local", "state"))
+}
+
+// hasLegacyState reports whether dir holds the probe artifact. Without a
+// probe the directory itself has to exist, which is the behavior from
+// before probes and is why an empty Probe is a deliberate choice rather
+// than a default.
+func hasLegacyState(dir, probe string) bool {
+	if probe == "" {
+		info, err := os.Stat(dir)
+		return err == nil && info.IsDir()
+	}
+	_, err := os.Stat(filepath.Join(dir, probe))
+	return err == nil
 }
 
 // Expand rewrites a leading ~ or ~/ to the user's home directory and

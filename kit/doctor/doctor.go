@@ -34,6 +34,17 @@ type skip struct{ note string }
 
 func (s skip) Error() string { return s.note }
 
+// Skip returns the error a Check.Run returns when it passed vacuously and
+// wants to say why: Collect records it as StatusSkipped with note as the
+// detail, and Run prints "ok <name> (<note>)".
+//
+// It is for the states that are neither a pass worth nothing nor a failure —
+// a component that has not been configured yet, a probe with nothing to
+// compare against. Without it a component's own check can only pass silently
+// or fail, which pushes "nothing is wrong, but here is what you would do
+// next" into a channel outside the report.
+func Skip(note string) error { return skip{note} }
+
 // probeTimeout bounds each HTTP probe: a diagnostic that hangs is worse
 // than one that fails.
 const probeTimeout = 3 * time.Second
