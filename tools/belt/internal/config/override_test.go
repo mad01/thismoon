@@ -45,12 +45,29 @@ func TestParseOverride(t *testing.T) {
 	}
 }
 
-func TestOverrideFiles(t *testing.T) {
+// isolateOverrides points OverridesDir at a private temp directory and
+// returns it, created.
+//
+// Both HOME and XDG_CONFIG_HOME have to be pinned. OverridesDir resolves
+// through kit/confdir, which prefers an absolute XDG_CONFIG_HOME over HOME,
+// so setting HOME alone leaves the test reading a shared directory on any
+// machine that exports XDG_CONFIG_HOME. GitHub's Linux runners do and macOS
+// does not, which is how this passed locally while CI saw six overrides: the
+// cli package's override tests write three files of their own, and the two
+// package binaries run at the same time under `go test ./tools/belt/...`.
+func isolateOverrides(t *testing.T) string {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir := OverridesDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	return dir
+}
+
+func TestOverrideFiles(t *testing.T) {
+	dir := isolateOverrides(t)
 	writeFile := func(name, content string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
