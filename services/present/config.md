@@ -43,10 +43,15 @@ These are persistent flags shared by `present serve` and `present mcp`:
 
 The store moved out of `~/.config` — pages are state, not configuration —
 but **existing pages are never migrated**. The resolution is deliberately
-sticky: a machine that already has `~/.config/present` keeps using it for as
-long as that directory exists, so upgrading never orphans published pages or
-breaks the URLs handed out for them. Only a machine without that directory
-lands in the XDG state directory.
+sticky: a machine that has published pages keeps reading them where they
+are, so upgrading never orphans a page or breaks the URLs handed out for it.
+
+What makes a machine count as "has published pages" is a `pages/` directory
+inside `~/.config/present`, not the directory itself. Provisioning puts the
+render template and assets there on every machine, so the directory alone
+says nothing about whether anything was ever published — a machine with the
+template but no `pages/` lands in the XDG state directory like any fresh
+install.
 
 Nothing changes for a supervised install: the fleet recipe passes
 `--workdir` to `present serve` explicitly, and the MCP's seatbelt wrapper

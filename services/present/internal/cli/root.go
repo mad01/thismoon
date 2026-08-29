@@ -60,14 +60,19 @@ func Execute() error {
 }
 
 // defaultWorkdir resolves the pages directory: PRESENT_WORKDIR when set,
-// else present.LegacyWorkdir while that directory exists on disk, else the
-// XDG state directory ($XDG_STATE_HOME/present, or present.DefaultWorkdir).
+// else present.LegacyWorkdir while it still holds a pages/ directory, else
+// the XDG state directory ($XDG_STATE_HOME/present, or
+// present.DefaultWorkdir). The probe matters because provisioning creates
+// the legacy directory for the template and assets alone.
 // Pages are never migrated, so an install that has published pages keeps
 // reading the directory they are in. An unresolvable home leaves the legacy
 // path in place so --help still names one; PersistentPreRunE then reports
 // the failure as an error rather than serving an empty store.
 func defaultWorkdir() string {
-	path, err := confdir.StateDir("present", present.LegacyWorkdir)
+	path, err := confdir.StateDir("present", confdir.LegacyDir{
+		Dir:   present.LegacyWorkdir,
+		Probe: present.LegacyWorkdirProbe,
+	})
 	if err != nil {
 		path = present.LegacyWorkdir
 	}
