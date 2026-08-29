@@ -35,8 +35,7 @@ func TestHooksInstallWritesHook(t *testing.T) {
 	parent := filepath.Dir(repoDir)
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -72,8 +71,7 @@ func TestHooksInstallPrintsDeprecationNotice(t *testing.T) {
 	parent := filepath.Dir(repoDir)
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -104,8 +102,7 @@ func TestHooksInstallRespectsExclude(t *testing.T) {
 	parent := filepath.Dir(repoDir)
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n    exclude:\n      - " + repoDir + "\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -138,8 +135,7 @@ func TestHooksInstallRefusesForeignHook(t *testing.T) {
 	}
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -167,8 +163,7 @@ func TestHooksStatusJSON(t *testing.T) {
 	parent := filepath.Dir(repoDir)
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -207,8 +202,7 @@ func TestHooksUninstall(t *testing.T) {
 	}
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)

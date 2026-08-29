@@ -298,10 +298,13 @@ func TestSemanticConfigNilReceiver(t *testing.T) {
 func TestLoadFromGlobalConfig(t *testing.T) {
 	tmp := t.TempDir()
 
-	// Set HOME to tmp so Load() looks in tmp/.config/csl/
-	origHome := os.Getenv("HOME")
-	_ = os.Setenv("HOME", tmp)
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	// Point Load() at tmp/.config/csl. XDG_CONFIG_HOME is pinned as well as
+	// HOME: confdir honors it first, and GitHub's Linux runners export it,
+	// so isolating on HOME alone leaves the test reading the real config.
+	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
+	t.Setenv(PathEnv, "")
+	SetPath("")
 
 	cfgDir := filepath.Join(tmp, ".config", "csl")
 	_ = os.MkdirAll(cfgDir, 0o755)

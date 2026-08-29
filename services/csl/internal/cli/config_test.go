@@ -20,10 +20,7 @@ import (
 func runConfigCmd(t *testing.T, contents string, write bool) (header, body string) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("CSL_CONFIG", "")
-	config.SetPath("")
+	isolateConfigEnv(t, home)
 	if write {
 		dir := filepath.Join(home, ".config", "csl")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
