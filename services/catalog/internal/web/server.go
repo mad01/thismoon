@@ -58,9 +58,13 @@ func (s *Server) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	roots, err := reg.Paths()
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.cat = cat
-	s.roots = reg.Paths()
+	s.roots = roots
 	s.mu.Unlock()
 	return nil
 }

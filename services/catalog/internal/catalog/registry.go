@@ -3,10 +3,10 @@ package catalog
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mad01/thismoon/kit/confdir"
 )
 
 // Registry lists the source repositories the catalog scans for entities.
@@ -39,28 +39,17 @@ func LoadRegistry(path string) (*Registry, error) {
 }
 
 // Paths returns the source paths with '~' expanded to the home directory.
-func (r *Registry) Paths() []string {
+// Sources are written with a leading ~ so one registry works across machines;
+// a home directory that cannot be resolved is an error rather than a
+// cwd-relative path, which would scan a tree nobody registered.
+func (r *Registry) Paths() ([]string, error) {
 	out := make([]string, 0, len(r.Sources))
 	for _, s := range r.Sources {
-		out = append(out, ExpandPath(s.Path))
-	}
-	return out
-}
-
-// ExpandPath expands a leading '~' (or '~/...') to the user's home directory.
-// Paths without a leading tilde are returned unchanged. When the home
-// directory cannot be resolved, the ~ prefix is stripped so the path degrades
-// to cwd-relative instead of naming a literal "~" directory.
-func ExpandPath(p string) string {
-	if p != "~" && !strings.HasPrefix(p, "~/") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		if p == "~" {
-			return "."
+		path, err := confdir.Expand(s.Path)
+		if err != nil {
+			return nil, fmt.Errorf("registry source %q: %w", s.Path, err)
 		}
-		return p[2:]
+		out = append(out, path)
 	}
-	return filepath.Join(home, strings.TrimPrefix(p, "~"))
+	return out, nil
 }

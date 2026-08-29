@@ -1,5 +1,7 @@
-BINARY_NAME := catalog
+BINARY_NAME ?= catalog
 CMD_PATH := ./cmd/catalog
+PREFIX ?= $(HOME)/code/bin
+DEST := $(PREFIX)/$(BINARY_NAME)
 
 COMPONENT := catalog
 include ../../buildinfo.mk
@@ -13,15 +15,15 @@ test:
 	@go test -timeout 30s ./...
 
 install: build
-	@mkdir -p ~/code/bin
-	@cp $(BINARY_NAME) ~/code/bin/$(BINARY_NAME)
-	@xattr -dr com.apple.provenance ~/code/bin/$(BINARY_NAME) 2>/dev/null || true
+	@mkdir -p $(PREFIX)
+	@cp $(BINARY_NAME) $(DEST)
+	@xattr -dr com.apple.provenance $(DEST) 2>/dev/null || true
 	@if security find-identity -v -p codesigning 2>/dev/null | grep -q "mad01 Local Signing"; then \
-		codesign -f -s "mad01 Local Signing" -i com.mad01.$(BINARY_NAME) ~/code/bin/$(BINARY_NAME); \
+		codesign -f -s "mad01 Local Signing" -i com.mad01.$(BINARY_NAME) $(DEST); \
 	else \
-		codesign -fs - ~/code/bin/$(BINARY_NAME); \
+		codesign -fs - $(DEST); \
 	fi
-	@echo "installed $(BINARY_NAME) to ~/code/bin/$(BINARY_NAME)"
+	@echo "installed $(BINARY_NAME) to $(DEST)"
 
 clean:
 	@rm -f $(BINARY_NAME)

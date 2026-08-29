@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/services/catalog/internal/catalog"
 )
 
@@ -115,7 +116,11 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, roots := s.snapshot()
-	dir := catalog.ExpandPath(strings.TrimSpace(req.Dir))
+	dir, err := confdir.Expand(strings.TrimSpace(req.Dir))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if dir == "" {
 		writeError(w, http.StatusBadRequest, "dir is required")
 		return

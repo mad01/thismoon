@@ -138,7 +138,10 @@ sources:
 	if len(r.Sources) != 2 {
 		t.Fatalf("got %d sources, want 2", len(r.Sources))
 	}
-	paths := r.Paths()
+	paths, err := r.Paths()
+	if err != nil {
+		t.Fatalf("Paths: %v", err)
+	}
 	if filepath.IsAbs(paths[0]) == false {
 		t.Errorf("path[0] %q should be expanded to absolute", paths[0])
 	}
