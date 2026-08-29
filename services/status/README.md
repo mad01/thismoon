@@ -56,6 +56,9 @@ or `http://localhost:7426/` (on hosts without d-man).
 | `--workdir` | `~/.local/share/status` | History store location |
 | `--routes` | `~/.config/d-man/routes.toml` | d-man routes file for .this links |
 
+These are persistent flags on the root command, so `status doctor` takes the
+same ones and diagnoses the same target `serve` runs against.
+
 ## Endpoints
 
 | Path | Description |
