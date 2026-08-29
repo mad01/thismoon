@@ -43,8 +43,12 @@ The client reads the path and calls the JSON API: the same
 client-side-rendering approach `csl` and `events` use (see
 `docs/adr/0005-webkit-client-side-rendering.md`).
 
-Every command accepts a persistent `--registry <path>` flag (default
-`~/.config/catalog/registry.yaml`) to point at a different registry file.
+Every command accepts a persistent `--registry <path>` flag, with
+`CATALOG_REGISTRY` behind it and `$XDG_CONFIG_HOME/catalog/registry.yaml`
+(else `~/.config/catalog/registry.yaml`) as the default. A leading `~` is
+expanded in `PersistentPreRunE`, so a value that reaches the process without
+shell expansion (anything launchd starts) resolves the same as one typed in a
+terminal. `catalog web` also reads `CATALOG_PORT` behind `--port`.
 
 ### Registry
 

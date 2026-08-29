@@ -21,9 +21,11 @@ Refresh (web) or one re-run (CLI) away.
 
 Two kinds of plain files, no database:
 
-- The registry, default {{.StorePath}} (every command takes `--registry` to
-  point elsewhere): a YAML `sources` list of repo paths to scan. `catalog
-  config` prints the resolved path and whether it loads.
+- The registry, default {{.StorePath}}: a YAML `sources` list of repo paths to
+  scan. Every command takes `--registry`, or `CATALOG_REGISTRY`, to point
+  elsewhere, and an absolute `XDG_CONFIG_HOME` moves the default. A leading
+  `~` is expanded wherever it comes from, including each `sources[].path`.
+  `catalog config` prints the resolved path and whether it loads.
 - service-info.yaml files inside those repos, found by a recursive scan that
   skips .git, node_modules, vendor, .idea, dist, and build. One file can
   hold several entities separated by `---`.

@@ -42,7 +42,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return agentdoc.Hint(err, catalogroot.Facts())
 		}
-		entities, err = catalog.ScanPaths(ctx, reg.Paths())
+		roots, err := reg.Paths()
+		if err != nil {
+			return agentdoc.Hint(err, catalogroot.Facts())
+		}
+		entities, err = catalog.ScanPaths(ctx, roots)
 		if err != nil {
 			return agentdoc.Hint(err, catalogroot.Facts())
 		}

@@ -63,7 +63,9 @@ sources:
 ```
 
 Paths may use `~`; catalog expands them at load time. Point any command at a
-different registry with `catalog --registry <path> ...`.
+different registry with `catalog --registry <path> ...` or `CATALOG_REGISTRY`,
+and set `XDG_CONFIG_HOME` to move the default. `catalog web` reads
+`CATALOG_PORT` behind `--port`.
 
 `catalog config` prints which registry file was resolved and how many sources it
 lists, so you can tell an empty catalog from a registry that never loaded.

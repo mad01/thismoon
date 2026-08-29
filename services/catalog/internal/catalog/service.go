@@ -12,7 +12,11 @@ func Load(ctx context.Context, registryPath string) (*Catalog, *Registry, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	entities, err := ScanPaths(ctx, reg.Paths())
+	roots, err := reg.Paths()
+	if err != nil {
+		return nil, nil, err
+	}
+	entities, err := ScanPaths(ctx, roots)
 	if err != nil {
 		return nil, nil, err
 	}
