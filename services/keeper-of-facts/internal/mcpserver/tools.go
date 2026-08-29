@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
 )
 
@@ -14,6 +15,7 @@ import (
 type handlers struct {
 	client *client.Client
 	webURL string // where the user views assertions in a browser
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -65,6 +67,15 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Returns counts of how many were checked, how many are fresh, how many are stale, and how many flipped between the two on this run. " +
 			"A stale result means the pinned code changed and the claim needs another look — not that it is necessarily wrong.",
 	}, h.handleCheck)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "kof_doctor",
+		Description: "Diagnose kof itself: is serve reachable, is the assertion log readable, is the running build " +
+			"the installed one. Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"This is about the service, not the assertions: use `kof_check` to re-verify the claims in the store, " +
+			"and this when a kof tool errors or comes back empty and you need to know whether serve is even up.",
+	}, h.handleDoctor)
 }
 
 // out is the tool response shape for the single-assertion tools: the assertion
@@ -314,4 +325,19 @@ func (h *handlers) handleCheck(
 		Assertions: rep.Assertions,
 		URL:        h.webURL,
 	}, nil
+}
+
+// ── doctor ──
+
+type doctorInput struct{}
+
+// handleDoctor runs the same checks as `kof doctor` and returns the report.
+// A failing check is a result, not a tool error: the caller asked what is
+// wrong, and an error would hide the answer behind a transport failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ doctorInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }

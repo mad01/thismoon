@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	kof "github.com/mad01/thismoon/services/keeper-of-facts"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/mcpserver"
 )
 
@@ -25,7 +27,10 @@ Tools exposed:
   kof_query    List assertions, newest first.
   kof_get      Get one assertion by id.
   kof_retract  Withdraw an assertion with a counter-evidence note.
-  kof_check    Re-hash pins and report fresh/stale/flipped counts.`,
+  kof_check    Re-hash pins and report fresh/stale/flipped counts.
+  kof_doctor   Run the doctor checks and return the report.
+
+` + agentdoc.RegistrationSnippet(kof.Facts()),
 	RunE: runMCP,
 }
 
@@ -38,7 +43,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("kof mcp: port=%d base-url=%s", flagPort, flagBaseURL)
 	srv, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL},
+		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
 	)
 	if err != nil {
 		return err

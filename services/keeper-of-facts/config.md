@@ -36,6 +36,16 @@ fallback, checked after the `KOF_*` name, so a machine mid-way through the
   MCP client itself always calls `localhost:<port>` regardless of this
   value.
 
+A `~` that cannot be expanded — no resolvable home directory, which happens
+under a launchd agent with a stripped environment — is an error at startup.
+Earlier releases stripped the `~` and used a path relative to the working
+directory instead, which quietly served an empty store. This applies to
+`--pin`'s `repo_path` as well. An unparseable `KOF_PORT` warns once on stderr
+and falls back to the compiled-in default.
+
+To see what a given environment actually resolved to, run `kof doctor`; an
+agent with no shell gets the same report from the `kof_doctor` MCP tool.
+
 ## Environment variables
 
 - `KOF_AUTHOR` (default: the OS username, legacy env `KEEP_AUTHOR`): the
