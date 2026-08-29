@@ -27,11 +27,11 @@ later see exactly the same state.
 The store is one directory per item under `~/code/worklog/`: a CONTEXT.md
 with status frontmatter, a "Where I am" section rewritten on every
 checkpoint, an append-only log, and lazily created per-repo notes. Every
-checkpoint is a git commit, auto-pushed to a private per-profile remote
-when one is configured — the machine profile picks the remote, so a
-work machine's items land in a work-only repo and internal references
-never cross into the personal store. Plainness is deliberate: markdown
-files stay searchable and readable without the tool.
+checkpoint is a git commit, auto-pushed to a private remote when one is
+configured — each machine's config names its own upstream, so a work
+machine's items land in a work-only repo and internal references never
+cross into the personal store. Plainness is deliberate: markdown files
+stay searchable and readable without the tool.
 
 `scan` digests local session transcripts into compact JSON so past work
 can be imported without pulling raw transcripts into context, and it
@@ -39,8 +39,10 @@ enforces a ticket firewall: each session is tagged personal or internal
 from its path, and extracted ticket ids are filtered to that world so the
 two never co-mingle in one item. The firewall's machine-specific strings
 ship as a configuration overlay from the consuming repo, per the two-layer
-recipe split (docs/adr/0006); the built-in defaults carry only generic
-markers.
+recipe split (docs/adr/0006). They have no built-in values at all: a
+compiled-in guess about which prefixes and paths are personal would misfile
+another machine's sessions, so an unconfigured worklog classifies nothing
+and surfaces every reference for review instead.
 
 ## Non-goals
 

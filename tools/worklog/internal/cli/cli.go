@@ -16,7 +16,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
+	"github.com/mad01/thismoon/kit/envdefault"
 	"github.com/mad01/thismoon/tools/worklog"
 	"github.com/mad01/thismoon/tools/worklog/internal/config"
 	"github.com/mad01/thismoon/tools/worklog/internal/mcpserver"
@@ -27,50 +29,107 @@ import (
 // Execute runs the root command.
 func Execute() error { return root().Execute() }
 
+// app carries what the root command resolves once for every subcommand: where
+// the config file lives. Subcommands hang off it so nothing reads a package
+// -level flag variable.
+type app struct{ configPath string }
+
 func root() *cobra.Command {
+	a := &app{}
 	c := &cobra.Command{
 		Use:           "worklog",
 		Short:         "Resumable, ticket/topic-keyed cross-session work state",
+		Long:          rootLong(),
 		Version:       buildinfo.Get().Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	c.PersistentFlags().StringVar(&a.configPath, "config",
+		envdefault.String("WORKLOG_CONFIG", ""),
+		"config file (default "+defaultConfigPath()+")")
 	c.AddCommand(
 		versionCmd(),
 		agentcli.DocsCommand(worklog.OperatingDoc, worklog.Facts()),
-		newCmd(),
-		checkpointCmd(),
-		listCmd(),
-		showCmd(),
-		searchCmd(),
-		statusCmd(),
-		pathCmd(),
-		syncCmd(),
-		scanCmd(),
-		configCmd(),
-		mcpCmd(),
+		a.newCmd(),
+		a.checkpointCmd(),
+		a.listCmd(),
+		a.showCmd(),
+		a.searchCmd(),
+		a.statusCmd(),
+		a.pathCmd(),
+		a.syncCmd(),
+		a.scanCmd(),
+		a.configCmd(),
+		a.mcpCmd(),
 	)
 	return c
 }
 
-// newStore returns the store wired with the upstream resolved from the config
-// for this machine's profile, cloning it first when the store directory is
-// missing (fresh machine). A failed bootstrap clone degrades to the local-only
-// store with a warning — worklog must keep working offline.
-func newStore() *store.Store {
-	s := store.New("")
-	s.Remote = resolveRemote()
+// rootLong names the two directories worklog reads and writes, so `worklog
+// --help` answers "where does this keep things" without a source dive.
+func rootLong() string {
+	return fmt.Sprintf(`worklog keeps the state of a long, cross-repo task somewhere a later
+session can find it, keyed by ticket id or topic rather than by working
+directory.
+
+  store   %s (override with $WORKLOG_DIR)
+  config  %s (override with --config or $WORKLOG_CONFIG)
+
+'worklog config' prints the settings in effect; 'worklog docs' prints the
+operating doc.`, worklog.DefaultRoot, defaultConfigPath())
+}
+
+// defaultConfigPath is the compiled default for help text. A home directory
+// that will not resolve is a real error everywhere it matters, but help text
+// is not one of those places, so it falls back to the conventional spelling.
+func defaultConfigPath() string {
+	p, err := config.Path("")
+	if err != nil {
+		return "~/.config/" + config.Component + "/" + config.FileName
+	}
+	return p
+}
+
+// config loads the config file this invocation was pointed at.
+func (a *app) config() (config.Config, error) {
+	path, err := config.Path(a.configPath)
+	if err != nil {
+		return config.Config{}, err
+	}
+	return config.Load(path)
+}
+
+// store returns the store wired with the configured upstream, cloning it
+// first when the store directory is missing (fresh machine). A failed
+// bootstrap clone degrades to the local-only store with a warning — worklog
+// must keep working offline.
+func (a *app) store() (*store.Store, error) {
+	cfg, err := a.config()
+	if err != nil {
+		return nil, err
+	}
+	s, err := store.NewDefault()
+	if err != nil {
+		return nil, err
+	}
+	s.Remote = remote(cfg.Remote)
 	if err := s.EnsureCloned(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
-	return s
+	return s, nil
 }
 
-// resolveRemote maps the config's profile-keyed upstreams onto this machine.
-func resolveRemote() store.Remote {
-	rc := config.Load().Remote
-	url := rc.ResolveUpstream(config.MachineProfiles())
-	return store.Remote{URL: url, Push: url != "" && rc.PushEnabled()}
+// remote maps the config's remote section onto the store's, warning when the
+// file still keys its upstream by machine profile: that form is no longer
+// read, and the store would go local-only without saying so.
+func remote(rc config.Remote) store.Remote {
+	if rc.RetiredUpstreams() {
+		fmt.Fprintln(
+			os.Stderr,
+			"warning: remote.upstreams is no longer read; set remote.url to the upstream for this machine",
+		)
+	}
+	return store.Remote{URL: rc.URL, Push: rc.URL != "" && rc.PushEnabled()}
 }
 
 // warnPush downgrades a push failure to a stderr warning: the write and local
@@ -83,13 +142,16 @@ func warnPush(err error) error {
 	return err
 }
 
-func syncCmd() *cobra.Command {
+func (a *app) syncCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sync",
 		Short: "Pull the store's upstream (fast-forward only) and push local commits",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			if err := s.Sync(); err != nil {
 				return err
 			}
@@ -99,7 +161,7 @@ func syncCmd() *cobra.Command {
 	}
 }
 
-func scanCmd() *cobra.Command {
+func (a *app) scanCmd() *cobra.Command {
 	var since string
 	c := &cobra.Command{
 		Use:   "scan",
@@ -110,7 +172,11 @@ func scanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sessions, err := scan.Scan("", d, time.Now(), scan.Config(config.Load().Scan))
+			cfg, err := a.config()
+			if err != nil {
+				return err
+			}
+			sessions, err := scan.Scan("", d, time.Now(), scan.Config(cfg.Scan))
 			if err != nil {
 				return err
 			}
@@ -135,13 +201,21 @@ func parseSince(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
-func mcpCmd() *cobra.Command {
+func (a *app) mcpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
 		Short: "Start the worklog MCP stdio server for Claude Code",
-		Args:  cobra.NoArgs,
+		Long: `Start the worklog MCP stdio server. The process reads the same config file
+the CLI does, so --config and $WORKLOG_CONFIG apply to the registered command.
+
+` + agentdoc.RegistrationSnippet(worklog.Facts()),
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return mcpserver.New(buildinfo.Get().Version).
+			path, err := config.Path(a.configPath)
+			if err != nil {
+				return err
+			}
+			return mcpserver.New(buildinfo.Get().Version, path).
 				Run(context.Background(), &mcp.StdioTransport{})
 		},
 	}
@@ -152,14 +226,17 @@ func cwd() string {
 	return d
 }
 
-func newCmd() *cobra.Command {
+func (a *app) newCmd() *cobra.Command {
 	var ticket, topic string
 	c := &cobra.Command{
 		Use:   "new <key>",
 		Short: "Create a new work item",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			key := store.Sanitize(args[0])
 			if s.Exists(key) {
 				return fmt.Errorf("item %q already exists", key)
@@ -180,14 +257,17 @@ func newCmd() *cobra.Command {
 	return c
 }
 
-func checkpointCmd() *cobra.Command {
+func (a *app) checkpointCmd() *cobra.Command {
 	var ticket, topic, where, note, repo string
 	c := &cobra.Command{
 		Use:   "checkpoint <key>",
 		Short: "Append a checkpoint to a work item (creates it if missing)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			key := store.Sanitize(args[0])
 			if where == "" && note == "" {
 				return fmt.Errorf("nothing to record: pass --where and/or --note")
@@ -217,14 +297,17 @@ func checkpointCmd() *cobra.Command {
 	return c
 }
 
-func listCmd() *cobra.Command {
+func (a *app) listCmd() *cobra.Command {
 	var status, repo string
 	c := &cobra.Command{
 		Use:   "list",
 		Short: "List work items (newest first)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			items, err := s.List(status, repo)
 			if err != nil {
 				return err
@@ -250,14 +333,17 @@ func listCmd() *cobra.Command {
 	return c
 }
 
-func showCmd() *cobra.Command {
+func (a *app) showCmd() *cobra.Command {
 	var repo string
 	c := &cobra.Command{
 		Use:   "show <key>",
 		Short: "Print a work item's CONTEXT.md (or a repo note with --repo)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			key := store.Sanitize(args[0])
 			if repo != "" {
 				note, err := s.RepoNote(key, repo)
@@ -283,13 +369,16 @@ func showCmd() *cobra.Command {
 	return c
 }
 
-func searchCmd() *cobra.Command {
+func (a *app) searchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "search <query>",
 		Short: "Search items by key and content (active first)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			hits, err := s.Search(strings.Join(args, " "))
 			if err != nil {
 				return err
@@ -307,7 +396,7 @@ func searchCmd() *cobra.Command {
 	}
 }
 
-func statusCmd() *cobra.Command {
+func (a *app) statusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status <key> <active|paused|done>",
 		Short: "Set a work item's status",
@@ -317,7 +406,11 @@ func statusCmd() *cobra.Command {
 			if st != "active" && st != "paused" && st != "done" {
 				return fmt.Errorf("status must be active, paused, or done")
 			}
-			it, err := newStore().SetStatus(store.Sanitize(args[0]), st)
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
+			it, err := s.SetStatus(store.Sanitize(args[0]), st)
 			if err = warnPush(err); err != nil {
 				return err
 			}
@@ -327,13 +420,16 @@ func statusCmd() *cobra.Command {
 	}
 }
 
-func pathCmd() *cobra.Command {
+func (a *app) pathCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path [key]",
 		Short: "Print the store root, or an item's directory",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s := newStore()
+			s, err := a.store()
+			if err != nil {
+				return err
+			}
 			if len(args) == 0 {
 				fmt.Println(s.Root)
 				return nil

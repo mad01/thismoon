@@ -54,8 +54,8 @@ writes to the store.
 ## Storage
 
 The store root is `~/code/worklog/` (override: `$WORKLOG_DIR`), a git repo
-initialized on first write. With no `remote:` config it stays local-only;
-with one, the store clones/pushes to a per-machine private upstream (see the
+initialized on first write. With no `remote.url` it stays local-only; with
+one, the store clones from and pushes to that private upstream (see the
 config reference in `worklog config --help`). One directory per item:
 
 ```
@@ -67,8 +67,8 @@ config reference in `worklog config --help`). One directory per item:
 ```
 
 Every mutation is a git commit, so history is queryable with plain git. The
-optional config file at `~/.config/worklog/config.yaml` is read, never
-written.
+optional config file is read, never written; a missing one leaves worklog on
+defaults, while one that exists and will not parse stops the command.
 
 ## Interfaces
 
@@ -84,9 +84,9 @@ MCP: `worklog mcp` starts a stdio server registering five tools
 `worklog_checkpoint` differs from its CLI twin only in taking `cwd` as an
 argument for repo detection.
 
-Config surfaces: `$WORKLOG_DIR` (store root), `$WORKLOG_CONFIG` and
-`~/.config/worklog/config.yaml` (scan firewall strings: linear prefixes,
-path markers, checkout roots), `$CLAUDE_PROJECTS_DIR` (transcript root, used
-by tests). The machine-private firewall values ship as a config overlay from
-the consuming repo per docs/adr/0006; the built-in defaults carry only
-generic markers.
+Config surfaces: `$WORKLOG_DIR` (store root), `--config` / `$WORKLOG_CONFIG`
+/ `config.yaml` under `$XDG_CONFIG_HOME` or `~/.config` (scan firewall
+strings and the store's `remote.url`), `$CLAUDE_PROJECTS_DIR` (transcript
+root, used by tests). The machine-private firewall values ship as a config
+overlay from the consuming repo per docs/adr/0006; the classification lists
+have no built-in values, so an unconfigured worklog classifies nothing.

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/tools/worklog"
 )
 
@@ -41,20 +42,29 @@ type Store struct {
 }
 
 // DefaultRoot returns $WORKLOG_DIR, or worklog.DefaultRoot with ~ expanded.
-func DefaultRoot() string {
+// An unresolvable home directory is an error: a store rooted at a relative
+// path would scatter work items through whatever directory each caller
+// happened to start in.
+func DefaultRoot() (string, error) {
 	if d := os.Getenv("WORKLOG_DIR"); d != "" {
-		return d
+		return confdir.Expand(d)
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, strings.TrimPrefix(worklog.DefaultRoot, "~/"))
+	return confdir.Expand(worklog.DefaultRoot)
 }
 
-// New returns a Store rooted at root (DefaultRoot if empty).
+// New returns a Store rooted at root, which must name a directory. Callers
+// that want the configured store root use NewDefault.
 func New(root string) *Store {
-	if root == "" {
-		root = DefaultRoot()
-	}
 	return &Store{Root: root, Now: time.Now}
+}
+
+// NewDefault returns a Store at DefaultRoot.
+func NewDefault() (*Store, error) {
+	root, err := DefaultRoot()
+	if err != nil {
+		return nil, err
+	}
+	return New(root), nil
 }
 
 func (s *Store) now() time.Time { return s.Now().UTC().Truncate(time.Second) }

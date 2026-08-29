@@ -20,9 +20,10 @@ The store is a git repo at {{.StorePath}} (override with WORKLOG_DIR), one
 directory per work item. CONTEXT.md holds status frontmatter, the "Where I
 am" snapshot rewritten on every checkpoint, and the append-only log;
 repos/<repo>.md files hold per-repo notes, created lazily. Every write is a
-git commit under a synthetic identity. With a profile-keyed remote
-configured, the store clones from it on a fresh machine and pushes after
-every write; with no remote it is local-only.
+git commit under a synthetic identity. With remote.url set in the config
+file, the store clones from it on a fresh machine and pushes after every
+write; with no url it is local-only. `{{.Bin}} config` prints which config
+file was read and the settings in effect.
 
 ## failure modes
 
@@ -44,6 +45,13 @@ syncing; resolve that in the store repo by hand.
 working directory, so being in the repo you worked in proves nothing.
 `{{.Bin}} list` shows every item newest first; `{{.Bin}} search <word>`
 substring-matches keys and content. Try the ticket id, then a topic word.
+
+Every command fails with a config error: a config file that exists but
+cannot be read or parsed stops worklog rather than being ignored, because it
+carries the store's push remote. `{{.Bin}} config` is the exception — it
+prints the problem and the defaults. Stopped pushing after an upgrade with
+no error at all: the config still keys its upstream by machine profile
+(remote.upstreams), which is no longer read; set remote.url instead.
 
 Checkpoint recorded no repo: repo detection needs a real working directory.
 The CLI uses its own cwd; the MCP server process runs from /, so the

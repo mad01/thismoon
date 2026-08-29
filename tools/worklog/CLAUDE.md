@@ -17,7 +17,7 @@ worklog/
     cli/             cobra command tree (incl. the `mcp` subcommand)
     store/           the on-disk tree: items, per-repo notes, git, repo detection
     mcpserver/       MCP tool wiring (server.go, tools.go)
-    config/          optional ~/.config/worklog/config.yaml (ticket-firewall strings)
+    config/          optional config.yaml (ticket-firewall strings, store remote); path via kit/confdir
     scan/            reads Claude session transcripts, emits per-session JSON digests (see `scan` below)
   Makefile           package path github.com/mad01/thismoon/tools/worklog (monorepo module, no own go.mod)
 ```
@@ -52,34 +52,39 @@ personal item carries Linear `MAD-NN` (and legacy `#NN`) but never a Jira key;
 an internal item carries Jira keys but never a Linear/github personal ref. The
 firewall mirrors the global internal/external separation.
 
-The firewall strings are configurable via `~/.config/worklog/config.yaml`
-(override the path with `$WORKLOG_CONFIG`); the built-in defaults cover this
-machine layout's generic markers only:
+The firewall strings live in worklog's config file (`--config`, else
+`$WORKLOG_CONFIG`, else `config.yaml` under `$XDG_CONFIG_HOME`/`~/.config`):
 
 ```yaml
 scan:
   linear_prefixes: [MAD]                      # TEAM-NN prefixes routed to the personal (Linear) world
-  personal_path_markers: ["github.com/mad01/"]
+  personal_path_markers: ["github.com/you/"]
   internal_path_markers: ["/workspace/"]
   checkout_roots: ["/code/src/"]              # GOPATH-style roots; the next segment is read as the git host
   repo_path_markers: ["/code/", "/workspace/"] # a cwd matching none of these reports no repo
 ```
 
-GOPATH-style checkouts of non-github.com hosts count as internal (host derived
-from the path segment after a checkout root); that split is derived, never
-enumerated (same principle as belt's public/internal remote check). The
-machine-private values ship via the consuming repo's config overlay
+The three classification keys ship with **no built-in values** — they
+describe one person's machine layout, so a compiled-in guess would misfile
+another machine's sessions. Unconfigured, the firewall routes nothing: every
+session is `context: "unknown"` with all its ticket refs surfaced for review.
+Only the two path-shape keys (`checkout_roots`, `repo_path_markers`) have
+defaults. GOPATH-style checkouts of non-github.com hosts count as internal
+(host derived from the path segment after a checkout root); that split is
+derived, never enumerated (same principle as belt's public/internal remote
+check), which is why it can ship with a default when the marker lists cannot.
+The machine's values ship via the consuming repo's config overlay
 (docs/adr/0006).
 
 ## Data model & storage
 
 One directory per work item under `~/code/worklog/` (override with
-`$WORKLOG_DIR`). The store is a **git repo, local-first**: with no `remote:`
-section in the config it has no upstream at all, and with one it clones from
-and pushes to a private per-machine repo. The upstream is keyed by machine
-profile (ralph's `config.local.toml`), so a work machine's store — internal
-references included — only ever reaches that profile's own private repo,
-never the personal one. csl indexes the store for free.
+`$WORKLOG_DIR`). The store is a **git repo, local-first**: with no
+`remote.url` in the config it has no upstream at all, and with one it clones
+from and pushes to a private per-machine repo. Which machine gets which URL
+is decided when the machine is provisioned — the config overlay installs the
+right one — so a work machine's store, internal references included, only
+ever reaches its own private repo. csl indexes the store for free.
 
 ```
 ~/code/worklog/<key>/
@@ -162,15 +167,25 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
 - **Repo auto-detect needs a real cwd.** The MCP server process runs from `/`,
   so the `worklog_checkpoint` tool takes a `cwd` argument; the skill passes
   the user's working directory. The CLI uses `os.Getwd()` directly.
-- **Remote sync is config-driven and single-writer.** The `remote:` config
-  section maps machine profiles to upstream URLs; worklog auto-configures
-  `origin`, clones the upstream when the store dir is missing (fresh machine),
-  and commits+pushes after every write (`push: false` turns the push off).
-  `worklog sync` does a fast-forward pull then push. There is no merge
-  strategy: the assumption is one writer at a time, so concurrent checkpoints
-  of the same item from two machines will conflict — run `worklog sync` when
-  switching machines. A failed push degrades to a warning; the write always
-  lands locally.
+- **Remote sync is config-driven and single-writer.** `remote.url` is the
+  upstream; worklog auto-configures `origin`, clones it when the store dir is
+  missing (fresh machine), and commits+pushes after every write (`push: false`
+  turns the push off). `worklog sync` does a fast-forward pull then push.
+  There is no merge strategy: the assumption is one writer at a time, so
+  concurrent checkpoints of the same item from two machines will conflict —
+  run `worklog sync` when switching machines. A failed push degrades to a
+  warning; the write always lands locally.
+- **`remote.upstreams` is retired.** The profile-keyed upstream map, resolved
+  by reading ralph's `config.local.toml`, is gone: a machine's class is
+  written once at provisioning time and does not change between runs, so the
+  overlay installs the machine's own `url` (same conclusion as ADR-0010 for
+  the guard tools). A config still carrying `upstreams` with no `url` gets a
+  stderr warning rather than a store that quietly stopped pushing.
+- **A broken config is fatal everywhere but `worklog config`.** A missing file
+  is fine (defaults); a file that exists and will not read or parse stops the
+  command, because it decides where writes get pushed. `worklog config` prints
+  the error and the defaults instead — it is the command you run to find out
+  what broke.
 - **Version probe convention.** `worklog version -o json` returns the shared
   four-key build metadata object (`version`, `commit`, `tag`, `build_time`,
   every key present and `""` when unknown) from
@@ -186,7 +201,8 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
 - MCP registration (consuming repo): `worklog mcp` registered with the MCP
   host, unsandboxed as first-party code
 - Config overlay (consuming repo): the companion recipe ships
-  `~/.config/worklog/config.yaml` with the machine's firewall strings
+  `~/.config/worklog/config.yaml` with the machine's firewall strings and its
+  own `remote.url` — both are now machine-specific with no compiled fallback
 - Permissions + skills (consuming repo): `Bash(worklog:*)` /
   `mcp__worklog__*` permissions and the worklog + worklog-backfill Claude
   skills reference personal paths and ticket-key conventions, so they stay

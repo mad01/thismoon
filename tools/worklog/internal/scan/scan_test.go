@@ -22,6 +22,15 @@ func writeSession(t *testing.T, root, project, name string, lines []string) {
 	}
 }
 
+// configured is a machine's firewall config: the three classification lists
+// have no built-in values, so every test that exercises classification has to
+// supply them the way a real config file does.
+var configured = Config{
+	LinearPrefixes:      []string{"MAD"},
+	PersonalPathMarkers: []string{"github.com/mad01/"},
+	InternalPathMarkers: []string{"/workspace/"},
+}
+
 func TestScanDigestsAndFilters(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
@@ -37,7 +46,7 @@ func TestScanDigestsAndFilters(t *testing.T) {
 		`{"type":"user","sessionId":"S0","cwd":"/Users/x/code/old","timestamp":"2026-04-01T09:00:00.000Z","message":{"role":"user","content":"old work"}}`,
 	})
 
-	sessions, err := Scan(root, 14*24*time.Hour, now, Config{})
+	sessions, err := Scan(root, 14*24*time.Hour, now, configured)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +116,7 @@ func TestResolveTicketsFirewall(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			linear, jira, issues := newSet(), newSet(), newSet()
-			extractKeys(Config{}.WithDefaults(), tc.text, linear, jira)
+			extractKeys(configured.WithDefaults(), tc.text, linear, jira)
 			extractIssues(tc.text, issues)
 			got := resolveTickets(tc.context, linear, jira, issues)
 			if len(got) != len(tc.want) {
@@ -123,7 +132,7 @@ func TestResolveTicketsFirewall(t *testing.T) {
 }
 
 func TestClassifyCwd(t *testing.T) {
-	cfg := Config{}.WithDefaults()
+	cfg := configured.WithDefaults()
 	cases := []struct {
 		name     string
 		cwd      string
@@ -132,7 +141,12 @@ func TestClassifyCwd(t *testing.T) {
 	}{
 		{"personal checkout", "/Users/x/code/src/github.com/mad01/dotfiles", true, false},
 		{"workspace path", "/Users/x/workspace/some-service", false, true},
-		{"non-github host checkout", "/Users/x/code/src/git.internal.example/org/repo", false, true},
+		{
+			"non-github host checkout",
+			"/Users/x/code/src/git.internal.example/org/repo",
+			false,
+			true,
+		},
 		{"other github org", "/Users/x/code/src/github.com/other/repo", false, false},
 		{"tmp dir", "/tmp/scratch", false, false},
 		{"host segment without dot", "/Users/x/code/src/local/repo", false, false},
@@ -171,7 +185,47 @@ func TestConfigOverrides(t *testing.T) {
 		t.Error("configured internal marker not honored")
 	}
 	if p, _ := classifyCwd(cfg, "/Users/x/code/src/github.com/mad01/dotfiles"); p {
-		t.Error("default personal marker should be replaced by the configured one")
+		t.Error("a path matching no configured marker should not be personal")
+	}
+}
+
+// TestUnconfiguredClassificationIsInert pins the shipped defaults: with no
+// config file worklog classifies nothing, so a session comes back "unknown"
+// with every ticket reference surfaced rather than filed into somebody else's
+// idea of personal and internal.
+func TestUnconfiguredClassificationIsInert(t *testing.T) {
+	cfg := Config{}.WithDefaults()
+
+	if len(cfg.PersonalPathMarkers)+len(cfg.InternalPathMarkers)+len(cfg.LinearPrefixes) != 0 {
+		t.Fatalf("classification defaults present, want none: %+v", cfg)
+	}
+
+	personal, internal := classifyCwd(cfg, "/Users/x/code/src/github.com/mad01/dotfiles")
+	if personal || internal {
+		t.Errorf("classifyCwd = (%v, %v), want both false", personal, internal)
+	}
+	if got := ticketContext(personal, internal); got != "unknown" {
+		t.Errorf("context = %q, want unknown", got)
+	}
+
+	linear, jira, issues := newSet(), newSet(), newSet()
+	extractKeys(cfg, "MAD-1 and ABC-2 and #3", linear, jira)
+	extractIssues("MAD-1 and ABC-2 and #3", issues)
+	got := resolveTickets("unknown", linear, jira, issues)
+	want := []string{"#3", "ABC-2", "MAD-1"}
+	if len(got) != len(want) {
+		t.Fatalf("tickets = %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("tickets = %v, want %v", got, want)
+		}
+	}
+
+	// The path-shape defaults still apply: repo detection is not part of the
+	// firewall and works out of the box.
+	if repoName(cfg, "/Users/x/code/src/github.com/mad01/dotfiles") != "dotfiles" {
+		t.Error("repo detection should still work on the built-in path markers")
 	}
 }
 
@@ -197,8 +251,18 @@ func TestRepoName(t *testing.T) {
 		{"workspace checkout", def, "/Users/x/workspace/some-service", "some-service"},
 		{"tmp dir is not a repo", def, "/tmp/scratch", ""},
 		{"empty cwd", def, "", ""},
-		{"configured marker", Config{RepoPathMarkers: []string{"/repos/"}}.WithDefaults(), "/Users/x/repos/thing", "thing"},
-		{"configured marker replaces default", Config{RepoPathMarkers: []string{"/repos/"}}.WithDefaults(), "/Users/x/code/src/github.com/mad01/dotfiles", ""},
+		{
+			"configured marker",
+			Config{RepoPathMarkers: []string{"/repos/"}}.WithDefaults(),
+			"/Users/x/repos/thing",
+			"thing",
+		},
+		{
+			"configured marker replaces default",
+			Config{RepoPathMarkers: []string{"/repos/"}}.WithDefaults(),
+			"/Users/x/code/src/github.com/mad01/dotfiles",
+			"",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
