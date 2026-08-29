@@ -16,8 +16,8 @@ thin HTTP clients to the serve API. The web page is read-only.
 ```
 cmd/wire/            entrypoint, delegates to internal/cli
 internal/
-  cli/               Cobra commands: serve, mcp, open, list, post, read,
-                     follow, close, version
+  cli/               Cobra commands: serve, mcp, open, join, leave, list,
+                     connect, post, read, follow, close, doctor, docs, version
   client/            HTTP client shared by the CLI and mcpserver
   ref/               connection string: minted by the server, parsed by the
                      client, so the format has one definition
@@ -27,7 +27,7 @@ internal/
                      id minting (id.go)
   server/            HTTP API, SSE stream, webkit web page (embedded
                      shell.html + app.js)
-  mcpserver/         MCP stdio setup (server.go) and the five tools (tools.go)
+  mcpserver/         MCP stdio setup (server.go) and the eight tools (tools.go)
 ```
 
 `internal/server` mounts the shared chrome with `webkit.Mount(mux)`; the page is
@@ -47,6 +47,13 @@ port serve was started on — and that token is what one session hands to
 another. The client reduces it back to a channel name before any request goes
 out, because its slashes would otherwise escape into a path segment no route
 matches; so the server only ever mints and the client only ever parses.
+
+Join and leave: `POST /api/channels/{ref}/join` and `/leave` change the roster
+by appending ordinary `join`/`leave` messages, so membership lives in the
+transcript rather than a separate record. A join returns the joiner's briefing
+(conventions, members, cursor, open obligations) and wakes every waiter, so a
+session blocked waiting for its peer wakes the moment the peer arrives. Both
+are idempotent, and both are rejected on a closed channel.
 
 Post: `POST /api/channels/{ref}/messages` validates that the message is signed
 and non-empty, assigns the next sequence number (1-based, contiguous), appends
@@ -90,14 +97,16 @@ channels by id and by name, and the message slices the waiters read from.
 
 HTTP: `GET /` and `/app.js` (read-only web page), `GET /api/channels`,
 `POST /api/channels`, `GET /api/channels/{ref}`,
+`POST /api/channels/{ref}/join`, `POST /api/channels/{ref}/leave`,
 `POST /api/channels/{ref}/close`, `GET|POST /api/channels/{ref}/messages`,
 `GET /api/channels/{ref}/stream`, `GET /healthz`, `GET /version`,
 `GET /webkit/`. The server runs without a `WriteTimeout` because long polls and
 event streams hold connections open deliberately. CLI: `wire serve`, `mcp`,
-`open`, `list`, `post`, `read`, `follow`, `close`, `version`. MCP tools:
-`wire_open`, `wire_post`, `wire_read`, `wire_list`, and `wire_close`; responses
-include a `url` pointing at the channel's page, and `wire_read` reports whether
-the channel is closed so a waiting session knows to stop. Config surfaces are
+`open`, `join`, `leave`, `list`, `connect`, `post`, `read`, `follow`, `close`,
+`doctor`, `docs`, `version`. MCP tools: `wire_open`, `wire_join`, `wire_leave`,
+`wire_post`, `wire_read`, `wire_list`, `wire_close`, and `wire_doctor`;
+responses include a `url` pointing at the channel's page, and `wire_read`
+reports whether the channel is closed so a waiting session knows to stop. Config surfaces are
 `--port` (`WIRE_PORT`), `--workdir` (`WIRE_WORKDIR`), `--from` (`WIRE_FROM`) for
 the CLI's sender name, and `WIRE_BASE_URL` for the human-facing link. `--port`
 also fixes the endpoint in every connection string the instance mints.

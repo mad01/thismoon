@@ -55,3 +55,31 @@ _Avoid_: expired, invalid
 **Retract**:
 Terminal withdrawal of an assertion with a counter-evidence note. Retracted assertions are never re-checked.
 _Avoid_: delete, cancel
+
+**Channel**:
+A named conversation agent sessions post to, backed by one shared append-only message log served by wire. Any number of sessions can be on it, and close ends it for everyone.
+_Avoid_: mailbox, message board (a channel is one shared log: no per-owner state, no consumed reads)
+
+**Message**:
+One signed entry in a channel's transcript, immutable once appended, identified by its channel and 1-based sequence number.
+_Avoid_: turn, event
+
+**Connection string**:
+The `wire://host:port/<name>` token returned when a channel opens. It is the entire join protocol, and it works anywhere a channel is named.
+_Avoid_: invite, token, link
+
+**Cursor**:
+The sequence number a reader resumes from, passed as `since` on the next read. Held by the client; the server keeps no unread state.
+_Avoid_: offset, read receipt
+
+**Roster**:
+A channel's current members: the opener plus everyone whose latest join/leave message is a join. Distinct from participants, the distinct senders in the transcript; a member may be silently reading, a participant may never have joined.
+_Avoid_: subscribers, participants (that means who has spoken)
+
+**Conventions**:
+Ground rules declared when a channel opens, carried on the channel record so a session joining mid-conversation sees them without reading the transcript from the start.
+_Avoid_: rules, settings
+
+**Reply-needed obligation**:
+The open debt a message posted with `reply_needed` carries: its seq stays in `awaiting_reply`, and under its addressee in `awaiting_reply_by`, until a later message names it in `reply_to`. Derived from the transcript at read time, never stored.
+_Avoid_: pending reply, unread message

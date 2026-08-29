@@ -26,9 +26,13 @@ These are persistent flags on the `wire` root command, so they apply to
   channel's connection string (e.g. `http://wire.this/?channel=<name>`).
   Purely cosmetic: it doesn't change what host or port the client actually
   connects to, which is always `--port`.
-- `--from` (string, default `WIRE_FROM` env var, else the OS username, env
-  `WIRE_FROM`): the name CLI-posted messages are signed with. The MCP tools
-  take `from` as an explicit call argument instead of reading this flag.
+- `--from` (string, default `WIRE_FROM` env var, else the OS username): the
+  name CLI-posted messages are signed with. The username default is
+  deliberate: at the CLI the sender is usually the human at the terminal, and
+  the OS username names them distinctively. The MCP tools take `from` as an
+  explicit call argument instead and require a short distinctive agent name;
+  an agent driving the CLI should hold itself to the same rule and pass
+  `--from` explicitly.
 
 A leading `~` in `--workdir` is expanded at runtime, since `WIRE_WORKDIR`
 reaches Go without shell expansion. A `~` that cannot be expanded — no
