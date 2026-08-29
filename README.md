@@ -223,6 +223,17 @@ See `recipes/` and
 [ralph's configuration reference](https://github.com/mad01/ralph/blob/main/docs/configuration.md)
 for profiles, host pinning, and overlays.
 
+## Configuration
+
+Precedence is the same across every component: flag > env > config file >
+compiled default. Each component documents its own flags, env vars, and
+defaults in a `config.md` linked from its README — there's no single
+combined reference. Config files live under `~/.config/<tool>/`
+(`XDG_CONFIG_HOME` is honored). Services bind
+`127.0.0.1` only; see [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for
+the port table. `<name>.this` addresses need d-man running; every service
+also answers on `http://localhost:<port>` with no `.this` setup at all.
+
 ## Releases
 
 Components release independently: per-component semver tags in the form
