@@ -11,8 +11,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/notify"
 	present "github.com/mad01/thismoon/services/present"
-	"github.com/mad01/thismoon/services/present/internal/notify"
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
@@ -47,6 +48,7 @@ type handlers struct {
 	store   *store.Store
 	baseURL string
 	open    func(url string) error
+	checks  func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -90,6 +92,18 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"so do not call present_open again for subsequent edits. " +
 			"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
 	}, withHint(h.handleOpen))
+
+	// Not wrapped in withHint: the hint says to run `present doctor`, which is
+	// exactly what this tool already did.
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "present_doctor",
+		Description: "Diagnose present itself: is the page store readable, is serve reachable, is the running " +
+			"build the installed one. Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"The store check matters most: these tools write the page store directly, so pages can be created " +
+			"and updated with serve down — only the URLs stop resolving. " +
+			"Call this when a present tool errors or a page URL does not load.",
+	}, h.handleDoctor)
 }
 
 func (h *handlers) url(id string) string {
@@ -476,4 +490,20 @@ func (h *handlers) handleOpen(
 		return nil, openOutput{URL: url, Opened: false}, fmt.Errorf("open %s: %w", url, err)
 	}
 	return nil, openOutput{URL: url, Opened: true}, nil
+}
+
+// ── doctor ──
+
+type doctorInput struct{}
+
+// handleDoctor runs the same checks as `present doctor` and returns the
+// report. A failing check is a result, not a tool error: the caller asked
+// what is wrong, and an error would hide the answer behind a transport
+// failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ doctorInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }

@@ -6,8 +6,9 @@ present runs as two cooperating processes built from one component: `present
 serve`, a t-man launchd agent serving HTTP on port 7423 behind
 `http://present.this/`, and `present mcp`, a stdio MCP server that Claude Code
 launches per session. The MCP writes page files and never serves HTTP; serve
-reads and serves them. They share one workdir (`~/.config/present` by
-default), which is the entire coupling between them — neither calls the other,
+reads and serves them. They share one workdir (`~/.config/present` where it
+already exists, otherwise `~/.local/state/present`), which is the entire
+coupling between them — neither calls the other,
 and the MCP can run inside a no-network sandbox. Everything is localhost-only.
 
 ## Structure
@@ -20,7 +21,7 @@ internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrad
 internal/server/     HTTP handlers; embeds shell.html, index_shell.html,
                      app.js, index.js
 internal/mcpserver/  MCP wiring and the present_* tools
-internal/notify/     best-effort event emit to events.this
+kit/notify           best-effort event emit to events.this (shared)
 ```
 
 `internal/server` mounts the in-module webkit Go package with

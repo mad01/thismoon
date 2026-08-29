@@ -12,7 +12,7 @@ make install   # builds and installs ~/code/bin/present (adhoc codesigned on mac
 
 ## Usage
 
-Two cooperating processes share a working directory (`~/.config/present` by default) and a port (`7423`):
+Two cooperating processes share a working directory (`~/.config/present` where it already exists, otherwise `~/.local/state/present`) and a port (`7423`):
 
 ```bash
 present serve              # HTTP server: GET / lists pages, /p/<id> renders one
@@ -28,7 +28,7 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 
 | Flag | Env | Default |
 |------|-----|---------|
-| `--workdir` | `PRESENT_WORKDIR` | `~/.config/present` |
+| `--workdir` | `PRESENT_WORKDIR` | `~/.config/present` if present, else `~/.local/state/present` |
 | `--port` | `PRESENT_PORT` | `7423` |
 
 ## MCP
@@ -51,6 +51,7 @@ The tools write the page store directly, so they work with `present serve` down;
 | `present_update(id, title?, content?, graph?)` | Patch a page (omitted fields unchanged); bumps version → open tabs auto-reload |
 | `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source |
 | `present_open(id)` | Open a page in the browser (call once per page) |
+| `present_doctor()` | Run the `present doctor` checks and return the report |
 
 Confirm the registration with `claude mcp list`, and run `present doctor` for a full check of the store, the server, and version skew.
 

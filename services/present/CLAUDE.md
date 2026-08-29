@@ -11,7 +11,6 @@ present/
     cli/               - cobra command tree: root, serve, mcp, version (build metadata from the shared buildinfo package)
     store/             - filesystem CRUD over pages/<id>/ (id.go, store.go); Delete is web-index-only, not exposed via MCP
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
-    notify/            - best-effort event archiving to events.this (events.go)
     server/            - HTTP handlers: GET / (static index shell), /api/pages (page list as JSON), /index.js (client index renderer), /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js (embedded client renderer), /p/{id}/version, DELETE /p/{id}; embeds index_shell.html, shell.html, index.js, app.js
     mcpserver/         - MCP wiring + present_* tools
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
@@ -21,7 +20,7 @@ present/
 
 - **`present mcp`** (stdio MCP server): tools write/read pages under the workdir. Never serves HTTP.
 - **`present serve`** (HTTP server): serves the static shell + `app.js` for page views (the browser fetches `GET /api/p/{id}` and renders), and the static index shell + `index.js` for the index (the browser fetches `GET /api/pages` and renders).
-- Both share the workdir (`~/.config/present` by default) and port (`7423`), set via `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`. URLs the MCP returns point at the serve port.
+- Both share the workdir and port (`7423`), set via `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`. URLs the MCP returns point at the serve port. The workdir default is sticky: `~/.config/present` while that directory exists, else `~/.local/state/present` (`confdir.StateDir`) — pages are never migrated, so an existing store keeps being read. The recipe and the MCP sandbox wrapper both set it explicitly anyway.
 
 ## Data model & storage
 
@@ -72,6 +71,7 @@ bump or renderer change that alters emitted markup.
 - `present_update(id, title?, content?, graph?, references?)` → patch (omitted fields unchanged; empty graph clears it; empty array clears refs); bumps version. Doc/graph JSON input refreshes `doc.json`/`graph.json`; raw HTML/JS input deletes the now-stale source file
 - `present_list()` → all pages (metadata only, no content), newest first; `has_doc` flags source-editable pages
 - `present_open(id)` → macOS `open` (call once per page; updates auto-reload)
+- `present_doctor()` → the `kit/doctor` report: store readable, serve reachable, no version skew; for a client that can call a tool but has no shell
 
 ## Shared UI: webkit
 
