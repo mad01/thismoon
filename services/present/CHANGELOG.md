@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/mad01/thismoon/compare/present/v1.1.0...present/v1.1.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **present:** probe pages dir for legacy state detection ([f7d241a](https://github.com/mad01/thismoon/commit/f7d241a840f6594699b8cb012247d11cc77c6f08))
+
 ## [1.1.0](https://github.com/mad01/thismoon/compare/present/v1.0.0...present/v1.1.0) (2026-08-29)
 
 

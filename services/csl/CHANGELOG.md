@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/mad01/thismoon/compare/csl/v0.15.0...csl/v0.16.0) (2026-08-29)
+
+
+### Features
+
+* **csl:** zero-config first run, probe-based state resolution ([779bf67](https://github.com/mad01/thismoon/commit/779bf67166fca202cf35426b6a630d672c6dcc0f))
+
 ## [0.15.0](https://github.com/mad01/thismoon/compare/csl/v0.14.3...csl/v0.15.0) (2026-08-29)
 
 
