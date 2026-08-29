@@ -42,6 +42,7 @@
 (allow file-write* (literal "/dev/null"))   ;; shell/library redirects
 (allow file-write*
   (subpath (string-append (param "HOME") "/.config/present"))
+  (subpath (string-append (param "HOME") "/.local/state/present"))  ;; fresh-install page store (confdir.StateDir)
   (subpath "/private/tmp")
   (subpath "/private/var/folders"))
 
@@ -52,11 +53,14 @@
   (subpath (param "HOME")))
 (allow file-read*
   (subpath (string-append (param "HOME") "/code/bin"))            ;; present binary
-  (subpath (string-append (param "HOME") "/.config/present")))    ;; page store
+  (subpath (string-append (param "HOME") "/.config/present"))     ;; page store (legacy installs)
+  (subpath (string-append (param "HOME") "/.local/state/present")))  ;; page store (fresh installs)
 
 ;; realpath()/LookPath lstat() parent components of allowed paths; subpath
 ;; allows don't cover parents. Metadata-only (no content reads) on the spine:
 (allow file-read-metadata
   (literal (param "HOME"))
   (literal (string-append (param "HOME") "/code"))
-  (literal (string-append (param "HOME") "/.config")))
+  (literal (string-append (param "HOME") "/.config"))
+  (literal (string-append (param "HOME") "/.local"))
+  (literal (string-append (param "HOME") "/.local/state")))
