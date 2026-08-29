@@ -107,15 +107,24 @@ func TestPath(t *testing.T) {
 
 func TestStateDir(t *testing.T) {
 	// A real directory to stand in for an install that predates the XDG
-	// state location.
-	existing := t.TempDir()
+	// state location, with the artifact a component would probe for.
+	used := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(used, "search-index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A legacy directory that exists but holds no state, the case probes
+	// exist for: provisioning creates it, the component never wrote there.
+	provisioned := t.TempDir()
+	if err := os.WriteFile(filepath.Join(provisioned, "config.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name      string
 		home      string
 		xdgState  string
 		component string
-		legacy    string
+		legacy    LegacyDir
 		want      string
 		wantErr   bool
 	}{
@@ -133,39 +142,67 @@ func TestStateDir(t *testing.T) {
 			want:      "/tmp/xdg-state/wire",
 		},
 		{
-			name:      "existing legacy directory wins",
+			name:      "legacy wins when the probe is present",
 			home:      "/Users/tester",
 			xdgState:  "/tmp/xdg-state",
 			component: "csl",
-			legacy:    existing,
-			want:      existing,
+			legacy:    LegacyDir{Dir: used, Probe: "search-index"},
+			want:      used,
+		},
+		{
+			name:      "provisioned legacy directory without state falls through",
+			home:      "/Users/tester",
+			component: "csl",
+			legacy:    LegacyDir{Dir: provisioned, Probe: "search-index"},
+			want:      "/Users/tester/.local/state/csl",
+		},
+		{
+			name:      "a probe file counts, not just a directory",
+			home:      "/Users/tester",
+			component: "speak",
+			legacy:    LegacyDir{Dir: provisioned, Probe: "config.yaml"},
+			want:      provisioned,
 		},
 		{
 			name:      "missing legacy directory falls through",
 			home:      "/Users/tester",
 			component: "csl",
-			legacy:    filepath.Join(existing, "absent"),
+			legacy:    LegacyDir{Dir: filepath.Join(used, "absent"), Probe: "search-index"},
+			want:      "/Users/tester/.local/state/csl",
+		},
+		{
+			name:      "no probe keeps the directory-exists behavior",
+			home:      "/Users/tester",
+			component: "csl",
+			legacy:    LegacyDir{Dir: provisioned},
+			want:      provisioned,
+		},
+		{
+			name:      "no probe and no directory falls through",
+			home:      "/Users/tester",
+			component: "csl",
+			legacy:    LegacyDir{Dir: filepath.Join(used, "absent")},
 			want:      "/Users/tester/.local/state/csl",
 		},
 		{
 			name:      "legacy pointing at a file falls through",
 			home:      "/Users/tester",
 			component: "csl",
-			legacy:    writeFile(t, existing, "not-a-dir"),
+			legacy:    LegacyDir{Dir: writeFile(t, used, "not-a-dir")},
 			want:      "/Users/tester/.local/state/csl",
 		},
 		{
 			name:      "tilde legacy is expanded only to test it",
-			home:      existing,
+			home:      used,
 			component: "present",
-			legacy:    "~",
+			legacy:    LegacyDir{Dir: "~", Probe: "search-index"},
 			want:      "~",
 		},
 		{
 			name:      "tilde legacy without a home is an error",
 			home:      "",
 			component: "present",
-			legacy:    "~/.config/present",
+			legacy:    LegacyDir{Dir: "~/.config/present", Probe: "pages"},
 			wantErr:   true,
 		},
 	}
@@ -177,15 +214,15 @@ func TestStateDir(t *testing.T) {
 			got, err := StateDir(tc.component, tc.legacy)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("StateDir(%q, %q) = %q, want error", tc.component, tc.legacy, got)
+					t.Fatalf("StateDir(%q, %+v) = %q, want error", tc.component, tc.legacy, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("StateDir(%q, %q) error: %v", tc.component, tc.legacy, err)
+				t.Fatalf("StateDir(%q, %+v) error: %v", tc.component, tc.legacy, err)
 			}
 			if got != tc.want {
-				t.Errorf("StateDir(%q, %q) = %q, want %q", tc.component, tc.legacy, got, tc.want)
+				t.Errorf("StateDir(%q, %+v) = %q, want %q", tc.component, tc.legacy, got, tc.want)
 			}
 		})
 	}

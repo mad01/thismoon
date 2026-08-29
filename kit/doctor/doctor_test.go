@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -296,5 +297,34 @@ func TestStoreReadable(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSkip covers the exported constructor a component uses for a check that
+// passed with something to say: it has to land as StatusSkipped in a report
+// (so the MCP doctor tools carry the note) and render as an ok line with the
+// note in the CLI output.
+func TestSkip(t *testing.T) {
+	checks := []Check{
+		{Name: "unconfigured", Run: func(context.Context) error { return Skip("no config file yet") }},
+	}
+
+	report := Collect(context.Background(), checks)
+	if !report.OK {
+		t.Error("Collect().OK = false, want a skipped check to count as a pass")
+	}
+	if got := report.Checks[0].Status; got != StatusSkipped {
+		t.Errorf("status = %q, want %q", got, StatusSkipped)
+	}
+	if got := report.Checks[0].Detail; got != "no config file yet" {
+		t.Errorf("detail = %q, want the note", got)
+	}
+
+	var out bytes.Buffer
+	if err := Run(context.Background(), &out, agentdoc.Facts{Bin: "csl"}, checks); err != nil {
+		t.Fatalf("Run() = %v, want nil", err)
+	}
+	if want := "ok unconfigured (no config file yet)\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("output = %q, want it to contain %q", out.String(), want)
 	}
 }

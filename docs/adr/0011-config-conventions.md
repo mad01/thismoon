@@ -54,9 +54,15 @@ cannot be resolved is an error. A relative path is never a fallback.
 **Directory kinds.** Config, cache, and state are separate. Nothing but
 configuration belongs under `~/.config/<tool>`. State honors
 `XDG_STATE_HOME` and falls back to `~/.local/state/<component>`, and
-`confdir.StateDir` takes a legacy directory that wins when it exists on
-disk, so csl keeps its index and present keeps its page store where they
-already are while a fresh install lands in the right place.
+`confdir.StateDir` takes a legacy directory plus a probe — an artifact only
+the component itself writes — and prefers the legacy directory when that
+probe is present. csl keeps its index and present keeps its page store where
+they already are, while a fresh install lands in the right place. The probe
+is not optional detail: provisioning creates these directories on every
+machine (a config symlink under `~/.config/<tool>`, an engine virtualenv
+under `~/.local/share/<tool>`), so a bare directory test reads as "state
+lives here" on machines that have none and pins the whole fleet to the
+legacy path forever.
 
 **Parse failure.** The posture is a per-component choice about what the
 component is for, made once and written down in its `config.md`. Guard
@@ -94,10 +100,12 @@ reason above.
   inventory this ADR came from is the checklist.
 - `kit` gains three packages and is a cross-repo compatibility surface, so
   their exported signatures are additive-only from here.
-- Honoring XDG moves where a fresh install puts state. The legacy-directory
-  argument to `confdir.StateDir` is what keeps that from being a data-loss
-  event, and it is load-bearing for csl and present specifically, whose
-  state has lived under `~/.config` since before the convention existed.
+- Honoring XDG moves where a fresh install puts state. The legacy directory
+  and its probe are what keep that from being a data-loss event, and they
+  are load-bearing for csl and present specifically, whose state has lived
+  under `~/.config` since before the convention existed. Choosing the probe
+  is a judgement per component: it has to be something the component writes
+  and provisioning does not.
 - Two components send `Access-Control-Allow-Origin: *` today: speak's TTS
   proxy and d-man's proxy. They are the known deviations from the binding
   rule, not exceptions to it, and the allowlist is small (loopback plus the
