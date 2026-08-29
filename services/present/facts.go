@@ -12,13 +12,19 @@ import (
 const DefaultWorkdir = "~/.local/state/present"
 
 // LegacyWorkdir is where the page store lived before it moved to the XDG
-// state directory. An install that already has this directory keeps using
-// it — pages are not migrated, so a machine that has published pages must
-// not be pointed somewhere else. Only a machine without it lands in
-// DefaultWorkdir. The fleet recipe and the MCP's seatbelt profile both name
-// this path explicitly, so a supervised process never depends on which
-// branch the resolution takes.
+// state directory. An install that has published pages there keeps using
+// it — pages are not migrated, so a machine that has them must not be
+// pointed somewhere else. Every other machine lands in DefaultWorkdir. The
+// fleet recipe and the MCP's seatbelt profile both name this path
+// explicitly, so a supervised process never depends on which branch the
+// resolution takes.
 const LegacyWorkdir = "~/.config/present"
+
+// LegacyWorkdirProbe is the artifact that proves pages live in
+// LegacyWorkdir. The directory alone proves nothing: fleet provisioning
+// puts the render template and assets there on every machine, so its
+// existence would pin even a machine that has never published a page.
+const LegacyWorkdirProbe = "pages"
 
 // DefaultPort is the port `present serve` listens on and tool URLs point at
 // when PRESENT_PORT is unset.
