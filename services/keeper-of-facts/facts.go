@@ -18,11 +18,12 @@ const DefaultWorkdir = "~/.local/share/kof"
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "keeper-of-facts",
-		Bin:       "kof",
-		Purpose:   "assertion store for evidence-pinned claims about how systems behave",
-		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath: DefaultWorkdir,
-		HasDoctor: true,
+		Name:          "keeper-of-facts",
+		Bin:           "kof",
+		Purpose:       "assertion store for evidence-pinned claims about how systems behave",
+		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
+		StorePath:     DefaultWorkdir,
+		HasDoctor:     true,
+		MCPDoctorTool: "kof_doctor",
 	}
 }

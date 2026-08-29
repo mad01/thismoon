@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/envdefault"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/server"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/store"
 )
@@ -53,13 +54,11 @@ func runServe(_ *cobra.Command, _ []string) error {
 // created through this server: KOF_AUTHOR (or the pre-rename KEEP_AUTHOR)
 // when set, else the OS username.
 func serveAuthor() string {
-	if a := envFirst("KOF_AUTHOR", "KEEP_AUTHOR"); a != "" {
-		return a
-	}
+	name := ""
 	if u, err := user.Current(); err == nil {
-		return u.Username
+		name = u.Username
 	}
-	return ""
+	return envdefault.String("KOF_AUTHOR", envdefault.String("KEEP_AUTHOR", name))
 }
 
 // storeReloadInterval is how often serve polls the log files for changes made

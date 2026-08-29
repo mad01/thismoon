@@ -93,6 +93,7 @@ On a standalone install, register the server once: `claude mcp add --scope user 
 | `kof_recall(question)` | Ask the keeper what it knows relevant to a question — model-judged, ranked, no embeddings |
 | `kof_get(id)` | Get one assertion's full detail |
 | `kof_check(id?)` | Re-hash pins and report what flipped; one assertion or all |
+| `kof_doctor()` | Run the `kof doctor` checks and return the report |
 | `kof_retract(id, note)` | Withdraw an assertion with a counter-evidence note |
 
 Open `http://kof.this/` (or `http://localhost:7431/`) for a read-only web view:

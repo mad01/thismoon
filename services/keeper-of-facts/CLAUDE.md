@@ -21,7 +21,7 @@ keeper-of-facts/
     pin/               - Pin model + working-tree hashing (pin.go): resolve, re-hash, compare
     recall/            - one-shot `claude -p` judge that ranks the whole store against a free-form question (recall.go)
     server/            - HTTP API + webkit web page (embedded shell.html + app.js)
-    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 6 tools)
+    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 7 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -206,6 +206,9 @@ Thin client over the API above (`internal/client`), served on stdio by
 - `kof_get(id)`: one assertion, full detail
 - `kof_retract(id, note)`: terminal withdrawal with a counter-evidence note
 - `kof_check(id?)`: re-hash one assertion's pins, or all when `id` is omitted; returns the fresh/stale/flipped counts
+- `kof_doctor()`: run the same checks as `kof doctor` and return the report as
+  JSON — the service's health, not the assertions'; for a client that can call
+  a tool but has no shell
 
 Tool responses include `url` (the human-facing `KOF_BASE_URL`, e.g.
 `http://kof.this`), while the client itself calls `localhost:<KOF_PORT>`. Both

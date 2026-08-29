@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
 )
 
@@ -50,8 +51,15 @@ func parsePinFlag(s string) (client.PinRef, error) {
 		return client.PinRef{}, fmt.Errorf("invalid --pin %q: bad end line", s)
 	}
 
+	// The pin travels to serve as an absolute path, so a ~ has to resolve
+	// here — serve may not share this process's home.
+	expanded, err := confdir.Expand(repoPath)
+	if err != nil {
+		return client.PinRef{}, fmt.Errorf("invalid --pin %q: %w", s, err)
+	}
+
 	return client.PinRef{
-		RepoPath:  expandTilde(repoPath),
+		RepoPath:  expanded,
 		File:      file,
 		StartLine: start,
 		EndLine:   end,
