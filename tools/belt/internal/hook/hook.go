@@ -11,10 +11,10 @@ import (
 	"io"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
-	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // payload is the subset of the hook payload belt reads. ToolName, ToolInput,
@@ -48,21 +48,51 @@ type adviceOutput struct {
 	AdditionalContext string `json:"additionalContext"`
 }
 
+// Load resolves belt's config for one hook invocation. It is injected so
+// the caller owns where the config comes from (--config, BELT_CONFIG, the
+// default path) and the hook owns what to do when it cannot be read.
+type Load func() (config.Config, error)
+
+// ConfigDenyID labels the denial a broken config produces, in the same
+// belt[<id>] form the guards use.
+const ConfigDenyID = "config"
+
 // Run reads a payload from r, runs the guards for event, and writes a deny
 // decision to w when one fires. It never returns an error for malformed
 // payloads — a broken hook must not break tool calls.
-func Run(event string, r io.Reader, w io.Writer) {
+//
+// A config belt cannot read is the one exception: it denies. Every guard's
+// rules live in that file, so continuing would run write-internal-names with
+// no names and the commit guards with no rules while reporting nothing at
+// all. The deny is loud on purpose — a wedged session with a clear reason
+// beats a session that quietly stopped being guarded.
+func Run(event string, load Load, r io.Reader, w io.Writer) {
 	var p payload
 	if err := json.NewDecoder(r).Decode(&p); err != nil {
 		return
 	}
+	cfg, err := load()
+	if err != nil {
+		d := configDenial(err)
+		notify.EmitEventSync("belt", "error", "blocked every tool call (unreadable config)", d.Reason,
+			map[string]string{"guard": d.Guard, "event": event})
+		writeDeny(w, d)
+		return
+	}
 	in := toInput(event, p)
-	d := guard.Run(in, config.Load())
+	d := guard.Run(in, cfg)
 	if d == nil {
 		return
 	}
-	notify.EmitEvent("belt", "warn", fmt.Sprintf("blocked %s (%s)", p.ToolName, d.Guard), d.Reason,
+	notify.EmitEventSync("belt", "warn", fmt.Sprintf("blocked %s (%s)", p.ToolName, d.Guard), d.Reason,
 		map[string]string{"guard": d.Guard, "event": event})
+	writeDeny(w, d)
+}
+
+// writeDeny emits the deny decision. It travels in the JSON with exit 0: a
+// non-zero exit is a hook error, which Claude Code reports and then lets the
+// tool call through.
+func writeDeny(w io.Writer, d *guard.Denial) {
 	_ = json.NewEncoder(w).Encode(decision{
 		HookSpecificOutput: hookOutput{
 			HookEventName:            "PreToolUse",
@@ -72,29 +102,51 @@ func Run(event string, r io.Reader, w io.Writer) {
 	})
 }
 
+// configDenial explains a config belt could not load, naming the file (the
+// wrapped error carries the path) and the two ways out.
+func configDenial(err error) *guard.Denial {
+	return guard.Reasonf(ConfigDenyID,
+		"belt cannot read its config, so every guarded tool call is blocked until it is fixed: %v. "+
+			"Run `belt doctor` to see what belt resolved, then fix the file (or move it aside to fall back to the defaults).",
+		err)
+}
+
 // RunHint reads a hook payload from r, runs the hints for event, and writes
 // any advice as additionalContext. Silence is the common case: when no hint
 // fires, nothing is written at all, so the model sees no extra context. Most
 // hint events ride PostToolUse; session-start rides SessionStart, and the
 // emitted hookEventName must match the hook that invoked belt or Claude Code
 // drops the output.
-func RunHint(event string, r io.Reader, w io.Writer) {
+func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 	var p payload
 	if err := json.NewDecoder(r).Decode(&p); err != nil {
 		return
 	}
-	advice := hint.Run(toHintInput(event, p), config.Load())
+	cfg, err := load()
+	if err != nil {
+		// A hint has no denial path, so a broken config travels as advice:
+		// the guards are already blocking every tool call, and this says why
+		// on the events (a search or a prompt) they never see.
+		writeAdvice(w, event, configDenial(err).Reason)
+		return
+	}
+	advice := hint.Run(toHintInput(event, p), cfg)
 	text := hint.Render(advice)
 	if text == "" {
 		return
 	}
 	for _, a := range advice {
-		notify.EmitEvent("belt", "info", fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint), a.Text,
+		notify.EmitEventSync("belt", "info", fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint), a.Text,
 			map[string]string{"hint": a.Hint, "event": event})
 	}
-	// UserPromptSubmit adds plain stdout to context on exit 0; it is not in
-	// the hookSpecificOutput.additionalContext event family, so the JSON
-	// envelope would be dropped (or injected verbatim) there.
+	writeAdvice(w, event, text)
+}
+
+// writeAdvice emits advice in the form the invoking hook event accepts.
+// UserPromptSubmit adds plain stdout to context on exit 0; it is not in the
+// hookSpecificOutput.additionalContext event family, so the JSON envelope
+// would be dropped (or injected verbatim) there.
+func writeAdvice(w io.Writer, event, text string) {
 	if event == hint.EventPrompt {
 		fmt.Fprintln(w, text)
 		return

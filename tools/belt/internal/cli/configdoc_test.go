@@ -189,7 +189,7 @@ hints:
 }
 
 func TestConfigHelpCarriesTheReference(t *testing.T) {
-	long := configDocCmd().Long
+	long := configDocCmd(config.DefaultPaths).Long
 
 	for _, want := range []string{
 		"~/.config/belt/config.yaml",

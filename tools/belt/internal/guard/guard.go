@@ -13,10 +13,12 @@ import (
 )
 
 // Event names match `belt hook <event>` and the settings.json matcher they
-// are registered under.
+// are registered under. They are aliases of the config constants: the config
+// file names the same events for custom guards, and validating them there
+// means one source for what a legal event is.
 const (
-	EventBash  = "bash"  // matcher: Bash
-	EventWrite = "write" // matcher: Write|Edit
+	EventBash  = config.EventBash  // matcher: Bash
+	EventWrite = config.EventWrite // matcher: Write|Edit
 )
 
 // Input carries the fields extracted from a PreToolUse payload.

@@ -209,3 +209,24 @@ func TestCompilePatternsWordBoundaries(t *testing.T) {
 		}
 	}
 }
+
+// TestSoftModeGuardsMatchesTheGuardsThatReadAMode keeps the config
+// validation list in step with the code: config rejects `mode: soft` on any
+// guard outside config.SoftModeGuards, so a guard that starts reading a mode
+// without being added there would have its own config rejected.
+func TestSoftModeGuardsMatchesTheGuardsThatReadAMode(t *testing.T) {
+	soft := "soft"
+	cfg := config.Config{Guards: map[string]config.Toggle{}}
+	for _, g := range All(cfg) {
+		cfg.Guards[g.ID()] = config.Toggle{Mode: soft}
+	}
+	// script-deny-list is the only guard whose denial path consults the
+	// toggle mode; the rest carry a mode on their own rule entries instead.
+	want := []string{ScriptDenyListID}
+	if len(config.SoftModeGuards) != len(want) || config.SoftModeGuards[0] != want[0] {
+		t.Errorf("config.SoftModeGuards = %v, want %v", config.SoftModeGuards, want)
+	}
+	if !cfg.Guards[ScriptDenyListID].Soft() {
+		t.Error("script-deny-list must read the toggle mode")
+	}
+}

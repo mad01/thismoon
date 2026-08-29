@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // customTimeout bounds one external guard run. A slow external allows with a
@@ -37,7 +37,7 @@ type Custom struct {
 
 // NewCustom builds one named external guard from its config entry.
 func NewCustom(id string, cfg config.CustomGuard) *Custom {
-	return &Custom{id: id, cfg: cfg, timeout: customTimeout, emit: notify.EmitEvent}
+	return &Custom{id: id, cfg: cfg, timeout: customTimeout, emit: notify.EmitEventSync}
 }
 
 func (c *Custom) ID() string    { return c.id }

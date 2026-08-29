@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -80,9 +81,31 @@ func TestLoadClaudeDenyPatternsMalformed(t *testing.T) {
 }
 
 // missingYAML returns a config.yaml path that does not exist in dir, so
-// loadFile exercises its legacy-TOML fallback.
+// ReadFile exercises its legacy-TOML fallback.
 func missingYAML(dir string) string {
 	return filepath.Join(dir, "config.yaml")
+}
+
+// readOK reads the config file the paths point at and fails the test when it
+// does not load, for the cases about what a valid file decodes to.
+func readOK(t *testing.T, p Paths) File {
+	t.Helper()
+	f, src := ReadFile(p)
+	if src.Err != nil {
+		t.Fatalf("ReadFile(%s): %v", src.Path, src.Err)
+	}
+	return f
+}
+
+// mustLoad loads every surface and fails the test on a config error, for the
+// cases about what a valid config resolves to.
+func mustLoad(t *testing.T, p Paths) Config {
+	t.Helper()
+	cfg, err := LoadFrom(p)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	return cfg
 }
 
 func TestLoadTogglesExtraPatterns(t *testing.T) {
@@ -93,7 +116,7 @@ extra_patterns = ["rm -rf", "rm -fr"]
 `
 	dir := t.TempDir()
 	path := writeFile(t, dir, "config.toml", content)
-	f := loadFile(missingYAML(dir), path)
+	f := readOK(t, Paths{BeltYAML: missingYAML(dir), BeltTOML: path})
 	patterns := f.Guards["script-deny-list"].ExtraPatterns
 	if len(patterns) != 2 || patterns[0] != "rm -rf" || patterns[1] != "rm -fr" {
 		t.Errorf("extra_patterns = %v", patterns)
@@ -107,7 +130,7 @@ allow_repos = ["github.com/mad01/dotfiles"]
 `
 	dir := t.TempDir()
 	path := writeFile(t, dir, "config.toml", content)
-	f := loadFile(missingYAML(dir), path)
+	f := readOK(t, Paths{BeltYAML: missingYAML(dir), BeltTOML: path})
 	repos := f.Guards["git-push-main"].AllowRepos
 	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
 		t.Errorf("allow_repos = %v", repos)
@@ -124,7 +147,7 @@ enabled = false
 `
 	dir := t.TempDir()
 	path := writeFile(t, dir, "config.toml", content)
-	f := loadFile(missingYAML(dir), path)
+	f := readOK(t, Paths{BeltYAML: missingYAML(dir), BeltTOML: path})
 	guards, hints := f.Guards, f.Hints
 	if guards["git-push-main"].Enabled == nil || !*guards["git-push-main"].Enabled {
 		t.Error("guards section did not survive adding hints")
@@ -150,7 +173,7 @@ hints:
 `
 	dir := t.TempDir()
 	yamlPath := writeFile(t, dir, "config.yaml", content)
-	f := loadFile(yamlPath, missingYAML(dir))
+	f := readOK(t, Paths{BeltYAML: yamlPath, BeltTOML: missingYAML(dir)})
 	guards, hints := f.Guards, f.Hints
 	repos := guards["git-push-main"].AllowRepos
 	if len(repos) != 1 || repos[0] != "github.com/mad01/dotfiles" {
@@ -169,19 +192,107 @@ func TestLoadTogglesYAMLWinsOverTOML(t *testing.T) {
 	dir := t.TempDir()
 	yamlPath := writeFile(t, dir, "config.yaml", "guards:\n  git-push-main:\n    enabled: false\n")
 	tomlPath := writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = true\n")
-	f := loadFile(yamlPath, tomlPath)
+	f := readOK(t, Paths{BeltYAML: yamlPath, BeltTOML: tomlPath})
 	if f.Guards["git-push-main"].Enabled == nil || *f.Guards["git-push-main"].Enabled {
 		t.Error("YAML config should win when both files exist")
 	}
 }
 
-func TestLoadTogglesBrokenYAMLYieldsDefaultsNotTOML(t *testing.T) {
+// TestBrokenYAMLIsAnErrorNotDefaults pins the fail-closed posture: an
+// unparseable config is reported, never quietly replaced by the defaults or
+// by the stale TOML beside it. Belt is a guard; running it with "no rules"
+// when the rules failed to load is how a typo silently disarms it.
+func TestBrokenYAMLIsAnErrorNotDefaults(t *testing.T) {
 	dir := t.TempDir()
 	yamlPath := writeFile(t, dir, "config.yaml", "guards: [broken")
 	tomlPath := writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = false\n")
-	f := loadFile(yamlPath, tomlPath)
+	p := Paths{BeltYAML: yamlPath, BeltTOML: tomlPath}
+
+	f, src := ReadFile(p)
+	if !src.Broken() {
+		t.Fatalf("broken YAML must report an error, got %v", src.Err)
+	}
+	if src.Path != yamlPath {
+		t.Errorf("Source.Path = %q, want the broken file %q", src.Path, yamlPath)
+	}
+	if !strings.Contains(src.Err.Error(), yamlPath) {
+		t.Errorf("error %v does not name the file to fix", src.Err)
+	}
 	if f.Guards != nil || f.Hints != nil {
-		t.Errorf("broken YAML must yield defaults, not the stale TOML: guards=%v hints=%v", f.Guards, f.Hints)
+		t.Errorf("broken YAML must not yield the stale TOML: guards=%v hints=%v", f.Guards, f.Hints)
+	}
+
+	if _, err := LoadFrom(p); err == nil {
+		t.Error("LoadFrom must surface the parse failure so the hook can deny")
+	}
+}
+
+// TestMissingConfigIsNotAnError pins the other half: a machine that never
+// wrote a config still gets the armed defaults, without an error.
+func TestMissingConfigIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := LoadFrom(Paths{BeltYAML: missingYAML(dir), BeltTOML: filepath.Join(dir, "config.toml")})
+	if err != nil {
+		t.Fatalf("missing config must load the defaults, got %v", err)
+	}
+	if !cfg.GuardEnabled("git-push-main") {
+		t.Error("guards must default to enabled with no config file")
+	}
+}
+
+func TestValidateRejectsUnusableValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			"custom guard event typo",
+			"custom_guards:\n  branch-lint:\n    event: Write\n    command: [lint]\n",
+			`custom_guards.branch-lint.event is "Write"`,
+		},
+		{
+			"custom guard without an event",
+			"custom_guards:\n  branch-lint:\n    command: [lint]\n",
+			`custom_guards.branch-lint.event is ""`,
+		},
+		{
+			"soft mode on a guard that ignores it",
+			"guards:\n  git-push-main:\n    mode: soft\n",
+			"guards.git-push-main: mode: soft has no effect",
+		},
+		{
+			"unknown mode",
+			"git_identity:\n  - email: a@b.c\n    mode: warn\n",
+			`git_identity[0].mode is "warn"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", tt.content)}
+			_, err := LoadFrom(p)
+			if err == nil {
+				t.Fatal("want a validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error %v does not mention %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestValidateAcceptsTheSupportedSoftGuard keeps the rejection above from
+// widening onto the one guard that does read a mode.
+func TestValidateAcceptsTheSupportedSoftGuard(t *testing.T) {
+	dir := t.TempDir()
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", "guards:\n  script-deny-list:\n    mode: soft\n")}
+	cfg, err := LoadFrom(p)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if !cfg.Guards["script-deny-list"].Soft() {
+		t.Error("script-deny-list should have decoded as soft")
 	}
 }
 
@@ -221,7 +332,7 @@ internal_names:
     - beltword
 `)
 
-	cfg := LoadFrom(p)
+	cfg := mustLoad(t, p)
 	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "beltword" {
 		t.Errorf("blocked_words = %v, want [beltword]", cfg.Names.BlockedWords)
 	}
@@ -238,7 +349,7 @@ func TestLoadFromInternalNamesAbsentMeansEmpty(t *testing.T) {
 	p := fixturePaths(dir)
 	writeFile(t, dir, "belt.yaml", "guards:\n  git-push-main:\n    enabled: true\n")
 
-	cfg := LoadFrom(p)
+	cfg := mustLoad(t, p)
 	if len(cfg.Names.BlockedWords)+len(cfg.Names.WorkspaceDirs) != 0 {
 		t.Errorf("names = %+v, want empty", cfg.Names)
 	}
@@ -267,7 +378,7 @@ func TestLoadFromClaudeSettingsGate(t *testing.T) {
 			}
 			writeFile(t, dir, "settings.json", settings)
 
-			cfg := LoadFrom(p)
+			cfg := mustLoad(t, p)
 			if len(cfg.ClaudeDeny) != tt.want {
 				t.Errorf("ClaudeDeny = %v, want %d patterns", cfg.ClaudeDeny, tt.want)
 			}
@@ -304,5 +415,104 @@ func TestExcludesPath(t *testing.T) {
 				t.Errorf("ExcludesPath(%q) with %q = %v, want %v", tt.path, tt.excl, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPathsForPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	defaultPath := filepath.Join(home, ".config", "belt", "config.yaml")
+	envPath := filepath.Join(home, "from-env.yaml")
+	flagPath := filepath.Join(home, "from-flag.yaml")
+
+	tests := []struct {
+		name string
+		env  string
+		flag string
+		want string
+	}{
+		{"neither set uses the default", "", "", defaultPath},
+		{"env relocates", envPath, "", envPath},
+		{"flag wins over env", envPath, flagPath, flagPath},
+		{"tilde is expanded", "~/from-env.yaml", "", envPath},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvConfig, tt.env)
+			p, err := PathsFor(tt.flag)
+			if err != nil {
+				t.Fatalf("PathsFor: %v", err)
+			}
+			if p.BeltYAML != tt.want {
+				t.Errorf("BeltYAML = %q, want %q", p.BeltYAML, tt.want)
+			}
+		})
+	}
+}
+
+// TestPathsForXDG pins the wave-1 confdir behavior: an absolute
+// XDG_CONFIG_HOME moves belt's config directory, a relative one is ignored.
+func TestPathsForXDG(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(EnvConfig, "")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	p, err := PathsFor("")
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	if want := filepath.Join(xdg, "belt", "config.yaml"); p.BeltYAML != want {
+		t.Errorf("BeltYAML = %q, want %q", p.BeltYAML, want)
+	}
+	// The Claude settings belong to Claude Code, which reads them from
+	// ~/.claude whatever XDG says.
+	if want := filepath.Join(home, ".claude", "settings.json"); p.ClaudeSettings[0] != want {
+		t.Errorf("ClaudeSettings[0] = %q, want %q", p.ClaudeSettings[0], want)
+	}
+}
+
+// TestPathsForRelocatedSkipsLegacyTOML: the TOML fallback exists for installs
+// that still have the old file at the default location, not for a path
+// someone points belt at today.
+func TestPathsForRelocatedSkipsLegacyTOML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv(EnvConfig, "")
+	writeFile(t, dir, "config.toml", "[guards.git-push-main]\nenabled = false\n")
+
+	p, err := PathsFor(filepath.Join(dir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("PathsFor: %v", err)
+	}
+	cfg, err := LoadFrom(p)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if !cfg.GuardEnabled("git-push-main") {
+		t.Error("a relocated config must not pick up the legacy TOML beside it")
+	}
+}
+
+// TestOverridesSkipsDotfiles: the overrides dir is a plain directory in
+// ~/.config, so Finder and friends leave files in it. Reading .DS_Store as a
+// malformed override put a permanent warning in `belt override`.
+func TestOverridesSkipsDotfiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	dir := filepath.Join(home, ".config", "belt", "overrides")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, ".DS_Store", "\x00\x00binary junk")
+	writeFile(t, dir, "vacation", "")
+
+	got := Overrides()
+	if len(got) != 1 || got[0].Name != "vacation" {
+		t.Fatalf("Overrides() = %+v, want only vacation", got)
 	}
 }

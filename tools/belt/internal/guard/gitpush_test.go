@@ -100,6 +100,11 @@ func TestGitPushMainAllowRepos(t *testing.T) {
 		{"non-allowlisted repo denied", "git push origin main", "feature", "github.com/mad01/thismoon", allow, true},
 		{"unresolved repo denied", "git push origin main", "feature", "", allow, true},
 		{"empty allowlist denied", "git push origin main", "feature", dotfiles, nil, true},
+		// allow_repos takes the same patterns as git_identity[].repos and
+		// commit_guards[].repos, so one spelling works file-wide.
+		{"org wildcard allowed", "git push origin main", "feature", dotfiles, []string{"github.com/mad01/*"}, false},
+		{"org wildcard denies other orgs", "git push origin main", "feature", dotfiles, []string{"github.com/other/*"}, true},
+		{"org wildcard needs a repo under it", "git push origin main", "feature", "github.com/mad01", []string{"github.com/mad01/*"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

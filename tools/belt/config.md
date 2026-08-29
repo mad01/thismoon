@@ -2,13 +2,43 @@
 
 ## Where config lives
 
-belt's own settings live in `~/.config/belt/config.yaml` (YAML). A legacy
-`~/.config/belt/config.toml` beside it is read only when the YAML file does
-not exist at all; if the YAML file exists but fails to parse, belt does not
-fall back to the TOML file. A present-but-broken config of either format
-yields the built-in defaults: every guard and hint enabled with no rules
-configured. This is deliberate fail-closed behavior, not a bug: a hook must
-never run on a config it half-understood.
+belt's own settings live in `~/.config/belt/config.yaml` (YAML), or
+`$XDG_CONFIG_HOME/belt/config.yaml` when that variable holds an absolute
+path. `--config <path>` and `$BELT_CONFIG` relocate the file; the flag wins
+over the variable, and a leading `~` is expanded. A relocated file is read as
+YAML with no legacy fallback.
+
+A legacy `~/.config/belt/config.toml` beside the default YAML file is read
+only when the YAML file does not exist at all; if the YAML file exists but
+fails to parse, belt does not fall back to the TOML file.
+
+**Absent and invalid are different answers.** No config file means the
+built-in defaults: every guard and hint enabled, no rules configured. A
+config file that is present but fails to parse or validate is an error, and
+every `belt hook` invocation then denies with the reason
+`belt[config]: belt cannot read its config …` naming the file. Belt is a
+guard: it cannot tell "no rules configured" from "the rules did not load",
+and treating the second as the first is how one typo silently disarms
+`write-internal-names` and every commit rule at once. The way out is to fix
+the file — or move it aside, which is the explicit way to ask for the
+defaults. `belt doctor` and `belt config` keep working in that state and
+print the built-in defaults, with a line saying those defaults are not what
+is being enforced.
+
+Validation rejects the values that parse as YAML and then quietly do
+nothing:
+
+- a `custom_guards.<name>.event` that is not `bash` or `write` (including a
+  missing one) — the guard would register on an event that never fires;
+- a `mode:` anywhere other than `hard` or `soft`;
+- `mode: soft` under `guards:` or `hints:` on any id except
+  `script-deny-list`, the only one that reads a toggle mode. Use
+  `enabled: false` to switch a different guard off.
+
+Overrides stay in `~/.config/belt/overrides/` (or the `XDG_CONFIG_HOME`
+equivalent) whatever `--config` points at: an override is machine state set
+from the CLI, not part of a rendered config. Files beginning with a dot in
+that directory are ignored rather than read as malformed overrides.
 
 The belt config is standalone: belt never reads another tool's config file,
 and there is no machine-profile concept in it (docs/adr/0010 records the
@@ -137,7 +167,10 @@ or absent `command` makes the entry a no-op.
   itself defaults to enabled). The custom guard's own `enabled` is the
   intended switch since the entry is where the guard is defined.
 - `custom_guards.<name>.event` (string, required): `"bash"` or `"write"`,
-  which hook event the guard runs on.
+  which hook event the guard runs on. Validated at load — a missing or
+  misspelled event (`Write`) is a config error, because the guard would
+  otherwise register on an event that never fires and look healthy in
+  `belt doctor`.
 - `custom_guards.<name>.command` (list of string, required): the external
   program and its arguments. Runs with the invoking user's full environment.
 - `custom_guards.<name>.mode` (string, default `"hard"`): `"hard"` denies on
@@ -155,18 +188,19 @@ A map keyed by built-in guard id (`git-push-main`, `git-identity`,
 `commit-guard`, `script-deny-list`, `write-internal-names`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
-guards, but which fields have an effect depends on the guard. Note that
-`allow_repos` entries here match by exact `host/owner/repo` string only:
-unlike `git_identity[].repos` and `commit_guards[].repos` above, a trailing
-`/*` is not treated as an org wildcard.
+guards, but which fields have an effect depends on the guard. `allow_repos`
+entries match the same way as `git_identity[].repos` and
+`commit_guards[].repos` above: an exact `host/owner/repo`, or a trailing
+`/*` org wildcard.
 
 - **git-push-main**
   - `guards.git-push-main.enabled` (bool, default `true`)
   - `guards.git-push-main.allow_repos` (list of string, default: empty):
-    canonical `host/owner/repo` entries exempt from the deny, matched
-    against the push working directory's origin remote. An unresolved repo
-    and an off-allowlist repo both fail closed; a machine class where
-    direct pushes are fine disables the guard in its rendered config.
+    canonical `host/owner/repo` entries exempt from the deny (or a trailing
+    `/*` org wildcard), matched against the push working directory's origin
+    remote. An unresolved repo and an off-allowlist repo both fail closed; a
+    machine class where direct pushes are fine disables the guard in its
+    rendered config.
 - **git-identity**
   - `guards.git-identity.enabled` (bool, default `true`): the only field
     with effect. The rules themselves live in the top-level `git_identity`
@@ -195,9 +229,10 @@ unlike `git_identity[].repos` and `commit_guards[].repos` above, a trailing
 - **write-internal-names**
   - `guards.write-internal-names.enabled` (bool, default `true`)
   - `guards.write-internal-names.allow_repos` (list of string, default:
-    empty): canonical `host/owner/repo` entries exempt from the guard,
-    matched against the write target's origin remote. An entry that should
-    hold on only one machine class goes in that class's rendered config.
+    empty): canonical `host/owner/repo` entries exempt from the guard (or a
+    trailing `/*` org wildcard), matched against the write target's origin
+    remote. An entry that should hold on only one machine class goes in that
+    class's rendered config.
   - `guards.write-internal-names.exclude_paths` (list of string, default:
     empty): target paths where internal references are deliberate. Same
     prefix-or-substring matching as `script-deny-list.exclude_paths`.
@@ -235,9 +270,15 @@ though the config shape technically permits them.
 
 ## Environment variables
 
-Neither variable is a `config.yaml` key; both are read directly from the
-process environment at hook invocation time.
+None of these is a `config.yaml` key; all are read directly from the process
+environment at hook invocation time.
 
+- `BELT_CONFIG` (default: unset): path to the belt config file, replacing
+  `~/.config/belt/config.yaml`. `--config` wins over it. A relocated file
+  has no legacy TOML fallback.
+- `XDG_CONFIG_HOME` (default: unset, meaning `~/.config`): when it holds an
+  absolute path, belt's config directory is `$XDG_CONFIG_HOME/belt` — config
+  file and overrides both. A relative value is ignored, per the XDG spec.
 - `EVENTS_BASE_URL` (default `http://127.0.0.1:7430`): base URL of the local
   events service that guard denials and soft-mode/fail-open warnings POST
   to. A POST failure (service down) is silently dropped.

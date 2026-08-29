@@ -1,8 +1,8 @@
 package guard
 
 import (
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // GitIdentityID identifies the git-user-email guard.
@@ -35,7 +35,7 @@ func NewGitIdentity(cfg config.Config) *GitIdentity {
 		cfg:          cfg,
 		resolveRepo:  func(dir string) string { return canonicalRepo(gitRemoteURL(dir)) },
 		resolveEmail: gitUserEmail,
-		emit:         notify.EmitEvent,
+		emit:         notify.EmitEventSync,
 	}
 }
 
