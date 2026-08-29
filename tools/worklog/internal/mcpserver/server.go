@@ -11,12 +11,14 @@ import (
 
 const Name = "worklog"
 
-// New builds the worklog MCP server with all tools registered.
-func New(version string) *mcp.Server {
+// New builds the worklog MCP server with all tools registered. configPath is
+// the config file the CLI resolved for this invocation, so a server started
+// with --config or $WORKLOG_CONFIG reads the same file its CLI sibling does.
+func New(version, configPath string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    Name,
 		Version: version,
 	}, &mcp.ServerOptions{Instructions: agentdoc.Instructions(worklog.Facts())})
-	registerTools(s)
+	registerTools(s, &handlers{configPath: configPath})
 	return s
 }

@@ -24,21 +24,20 @@ git repo you create once, empty:
 
 ```yaml
 remote:
+  url: git@github.com:you/worklog-store.git
   push: true
-  upstreams:
-    personal: git@github.com:you/worklog-store.git
 ```
 
-Upstreams are keyed by machine profile (from ralph's `config.local.toml`;
-the machine's first profile with an entry wins), so one shared config can
-send different machines to different stores. With a single store, key it
-under the one profile all your machines carry. From then on every
-checkpoint commits and pushes automatically (a failed push degrades to a
-warning; the write always lands locally), a fresh machine clones the store
-on first use, and `worklog sync` fast-forward pulls then pushes when you
-switch machines. One writer at a time is the assumption: sync before
-switching, there is no merge strategy. Full reference:
-[config.md](config.md).
+From then on every checkpoint commits and pushes automatically (a failed
+push degrades to a warning; the write always lands locally), a fresh machine
+clones the store on first use, and `worklog sync` fast-forward pulls then
+pushes when you switch machines. One writer at a time is the assumption:
+sync before switching, there is no merge strategy.
+
+Machines that must not share a store — a personal one and a work one, say —
+each get their own `url`. Which machine gets which is decided when the
+machine is provisioned, not at runtime: worklog no longer resolves an
+upstream from a profile label. Full reference: [config.md](config.md).
 
 ## Install
 

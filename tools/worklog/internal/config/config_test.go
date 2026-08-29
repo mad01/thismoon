@@ -3,12 +3,15 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestLoadMissingFileIsZero(t *testing.T) {
-	t.Setenv("WORKLOG_CONFIG", filepath.Join(t.TempDir(), "nope.yaml"))
-	c := Load()
+	c, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
+	if err != nil {
+		t.Fatalf("Load(missing) = %v, want nil error", err)
+	}
 	if len(c.Scan.LinearPrefixes) != 0 {
 		t.Errorf("expected zero config, got %+v", c)
 	}
@@ -20,12 +23,15 @@ func TestLoadReadsScanSection(t *testing.T) {
 	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("WORKLOG_CONFIG", p)
-	c := Load()
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(c.Scan.LinearPrefixes) != 1 || c.Scan.LinearPrefixes[0] != "XYZ" {
 		t.Errorf("linear_prefixes = %v", c.Scan.LinearPrefixes)
 	}
-	if len(c.Scan.PersonalPathMarkers) != 1 || c.Scan.PersonalPathMarkers[0] != "github.com/someone/" {
+	if len(c.Scan.PersonalPathMarkers) != 1 ||
+		c.Scan.PersonalPathMarkers[0] != "github.com/someone/" {
 		t.Errorf("personal_path_markers = %v", c.Scan.PersonalPathMarkers)
 	}
 	if len(c.Scan.InternalPathMarkers) != 1 || c.Scan.InternalPathMarkers[0] != "/dayjob/" {
@@ -39,43 +45,95 @@ func TestLoadReadsScanSection(t *testing.T) {
 	}
 }
 
-func TestLoadMalformedFileIsZero(t *testing.T) {
+func TestLoadMalformedFileErrors(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(p, []byte("scan: ["), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("WORKLOG_CONFIG", p)
-	c := Load()
-	if len(c.Scan.LinearPrefixes) != 0 {
-		t.Errorf("expected zero config for malformed yaml, got %+v", c)
+	if _, err := Load(p); err == nil {
+		t.Error("Load(malformed) = nil error, want the parse failure reported")
 	}
 }
 
-func TestRemoteResolveUpstream(t *testing.T) {
-	r := Remote{Upstreams: map[string]string{
-		"personal": "git@example.com:me/personal.git",
-		"work":     "git@example.com:me/work.git",
-	}}
-	tests := []struct {
-		name     string
-		profiles []string
-		want     string
-	}{
-		{"first profile wins", []string{"work", "personal"}, "git@example.com:me/work.git"},
-		{"personal machine", []string{"personal"}, "git@example.com:me/personal.git"},
-		{"unknown profile", []string{"lab"}, ""},
-		{"no profiles", nil, ""},
+// TestLoadUnreadableFileErrors covers the case the old Load swallowed: a file
+// that is there and cannot be read is not the same as no file, and treating
+// it as one drops the machine's firewall strings and push remote in silence.
+func TestLoadUnreadableFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(p, []byte("scan:\n"), 0o000); err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := r.ResolveUpstream(tt.profiles); got != tt.want {
-				t.Errorf("ResolveUpstream(%v) = %q, want %q", tt.profiles, got, tt.want)
-			}
-		})
+	if os.Geteuid() == 0 {
+		t.Skip("root reads unreadable files")
 	}
-	if got := (Remote{}).ResolveUpstream([]string{"personal"}); got != "" {
-		t.Errorf("no upstreams: got %q, want empty", got)
+	if _, err := Load(p); err == nil {
+		t.Error("Load(unreadable) = nil error, want the read failure reported")
 	}
+}
+
+func TestPath(t *testing.T) {
+	t.Run("override wins", func(t *testing.T) {
+		got, err := Path("/tmp/elsewhere.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "/tmp/elsewhere.yaml" {
+			t.Errorf("Path(override) = %q", got)
+		}
+	})
+
+	t.Run("override expands ~", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		got, err := Path("~/wl.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := filepath.Join(home, "wl.yaml"); got != want {
+			t.Errorf("Path(~) = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("default honors XDG_CONFIG_HOME", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", dir)
+		got, err := Path("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := filepath.Join(dir, Component, FileName); got != want {
+			t.Errorf("Path(\"\") = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("default falls back to ~/.config", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", home)
+		got, err := Path("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := filepath.Join(home, ".config", Component, FileName); got != want {
+			t.Errorf("Path(\"\") = %q, want %q", got, want)
+		}
+	})
+
+	// The bug this replaced: an unresolvable home used to join into a
+	// cwd-relative ".config/worklog/config.yaml", so a process started
+	// anywhere read a config nobody wrote.
+	t.Run("unresolvable home errors", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+		got, err := Path("")
+		if err == nil {
+			t.Fatalf("Path(\"\") = %q, want an error with no home directory", got)
+		}
+		if strings.HasPrefix(got, ".config") {
+			t.Errorf("Path(\"\") = %q, want no relative fallback", got)
+		}
+	})
 }
 
 func TestRemotePushEnabled(t *testing.T) {
@@ -91,17 +149,16 @@ func TestRemotePushEnabled(t *testing.T) {
 	}
 }
 
-func TestMachineProfiles(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "config.local.toml")
-	t.Setenv("WORKLOG_RALPH_CONFIG", p)
-	if got := MachineProfiles(); got != nil {
-		t.Errorf("missing file: got %v, want nil", got)
+func TestRemoteRetiredUpstreams(t *testing.T) {
+	profileKeyed := Remote{Upstreams: map[string]string{"personal": "git@example.com:me/p.git"}}
+	if !profileKeyed.RetiredUpstreams() {
+		t.Error("a config with only upstreams should report the retired shape")
 	}
-	if err := os.WriteFile(p, []byte("profiles = [\"work\", \"lab\"]\n"), 0o644); err != nil {
-		t.Fatal(err)
+	migrated := Remote{URL: "git@example.com:me/p.git", Upstreams: profileKeyed.Upstreams}
+	if migrated.RetiredUpstreams() {
+		t.Error("a config with a url should not warn about a leftover upstreams key")
 	}
-	got := MachineProfiles()
-	if len(got) != 2 || got[0] != "work" || got[1] != "lab" {
-		t.Errorf("MachineProfiles() = %v, want [work lab]", got)
+	if (Remote{}).RetiredUpstreams() {
+		t.Error("a local-only config has nothing to warn about")
 	}
 }

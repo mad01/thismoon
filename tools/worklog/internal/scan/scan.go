@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mad01/thismoon/kit/confdir"
 )
 
 // Session is the compact digest of one transcript file.
@@ -46,10 +48,10 @@ var (
 	issueHashRe = regexp.MustCompile(`(?:^|\s)#(\d+)\b`)
 )
 
-// Config carries the ticket-firewall strings. Zero-value fields fall back to
-// the built-in defaults below, so scanning works with no config file present.
-// The machine's real values ship via the consuming repo's config overlay
-// (~/.config/worklog/config.yaml).
+// Config carries the ticket-firewall strings. The machine's real values ship
+// via the consuming repo's config overlay (worklog's config.yaml); the three
+// classification lists have no compiled-in values at all, so an unconfigured
+// scan classifies nothing rather than guessing with another machine's markers.
 type Config struct {
 	LinearPrefixes      []string
 	PersonalPathMarkers []string
@@ -58,27 +60,24 @@ type Config struct {
 	RepoPathMarkers     []string
 }
 
+// defaultConfig holds only the path shapes that describe a checkout layout
+// rather than a person: where GOPATH-style trees are rooted and which path
+// fragments mean "this is a repo". Which key prefixes and which directories
+// belong to the personal or internal world is machine-specific by nature and
+// is left empty on purpose — see WithDefaults.
 var defaultConfig = Config{
-	LinearPrefixes:      []string{"MAD"},
-	PersonalPathMarkers: []string{"github.com/mad01/"},
-	InternalPathMarkers: []string{"/workspace/"},
-	CheckoutRoots:       []string{"/code/src/"},
-	RepoPathMarkers:     []string{"/code/", "/workspace/"},
+	CheckoutRoots:   []string{"/code/src/"},
+	RepoPathMarkers: []string{"/code/", "/workspace/"},
 }
 
-// WithDefaults returns c with every empty field filled from the built-in
-// defaults. Scan applies it before scanning; `worklog config` applies it to
-// print the settings actually in effect.
+// WithDefaults returns c with the two path-shape fields filled from the
+// built-in defaults when they are empty. The classification lists pass
+// through as written, empty included: with none of them set the firewall has
+// nothing to route by, so every session comes back as "unknown" context with
+// all of its ticket references surfaced for human review. Scan applies this
+// before scanning; `worklog config` applies it to print the settings in
+// effect.
 func (c Config) WithDefaults() Config {
-	if len(c.LinearPrefixes) == 0 {
-		c.LinearPrefixes = defaultConfig.LinearPrefixes
-	}
-	if len(c.PersonalPathMarkers) == 0 {
-		c.PersonalPathMarkers = defaultConfig.PersonalPathMarkers
-	}
-	if len(c.InternalPathMarkers) == 0 {
-		c.InternalPathMarkers = defaultConfig.InternalPathMarkers
-	}
 	if len(c.CheckoutRoots) == 0 {
 		c.CheckoutRoots = defaultConfig.CheckoutRoots
 	}
@@ -199,13 +198,18 @@ func sortedUnion(sets ...*set) []string {
 	return out.sorted()
 }
 
-// ProjectsDir is ~/.claude/projects, overridable via $CLAUDE_PROJECTS_DIR.
-func ProjectsDir() string {
+// DefaultProjectsDir is the transcript root when $CLAUDE_PROJECTS_DIR is
+// unset. The leading ~ is expanded at runtime, never at build time.
+const DefaultProjectsDir = "~/.claude/projects"
+
+// ProjectsDir returns $CLAUDE_PROJECTS_DIR, or DefaultProjectsDir expanded.
+// An unresolvable home directory is an error rather than a directory relative
+// to wherever the process started.
+func ProjectsDir() (string, error) {
 	if d := os.Getenv("CLAUDE_PROJECTS_DIR"); d != "" {
-		return d
+		return confdir.Expand(d)
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".claude", "projects")
+	return confdir.Expand(DefaultProjectsDir)
 }
 
 // Scan returns digests of every session whose last activity is within the
@@ -213,7 +217,11 @@ func ProjectsDir() string {
 // built-in defaults.
 func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Session, error) {
 	if root == "" {
-		root = ProjectsDir()
+		d, err := ProjectsDir()
+		if err != nil {
+			return nil, err
+		}
+		root = d
 	}
 	cfg = cfg.WithDefaults()
 	cutoff := now.Add(-since)

@@ -21,17 +21,35 @@ type itemView struct {
 	Warning string   `json:"warning,omitempty"`
 }
 
-// newStore mirrors the CLI's store construction: remote resolved from the
-// config for this machine's profile, with a bootstrap clone when the store
-// directory is missing. A failed clone degrades to the local-only store — a
-// tool call must not break because the network is away.
-func newStore() *store.Store {
-	s := store.New("")
-	rc := config.Load().Remote
-	url := rc.ResolveUpstream(config.MachineProfiles())
-	s.Remote = store.Remote{URL: url, Push: url != "" && rc.PushEnabled()}
+// handlers holds what every tool call needs: the config file this server was
+// started against. The tools are methods on it rather than package functions
+// so the path travels with the server instead of through package state.
+type handlers struct{ configPath string }
+
+// store mirrors the CLI's store construction: remote resolved from the config,
+// with a bootstrap clone when the store directory is missing. A failed clone
+// degrades to the local-only store — a tool call must not break because the
+// network is away. A config that exists but cannot be read is a different
+// matter and is returned, since it decides where writes get pushed.
+func (h *handlers) store() (*store.Store, error) {
+	path, err := config.Path(h.configPath)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	s, err := store.NewDefault()
+	if err != nil {
+		return nil, err
+	}
+	s.Remote = store.Remote{
+		URL:  cfg.Remote.URL,
+		Push: cfg.Remote.URL != "" && cfg.Remote.PushEnabled(),
+	}
 	_ = s.EnsureCloned()
-	return s
+	return s, nil
 }
 
 func view(it *store.Item) itemView {
@@ -41,7 +59,7 @@ func view(it *store.Item) itemView {
 	}
 }
 
-func registerTools(s *mcp.Server) {
+func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_checkpoint",
 		Description: "Save resumable work state for a long, cross-repo task so a later session can pick it up. " +
@@ -53,20 +71,20 @@ func registerTools(s *mcp.Server) {
 			"conclusions reached and WHY, working tool/query examples with exact parameters, " +
 			"anti-patterns that waste time, links to tickets/docs/PRs, decisions made and their reasoning, " +
 			"and concrete next steps. A thin checkpoint forces the next session to re-discover everything.",
-	}, handleCheckpoint)
+	}, h.handleCheckpoint)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_list",
 		Description: "List work items, newest first. Filter by status (active|paused|done) or repo. " +
 			"Use to answer 'what was I working on' or to find an item to resume. " +
 			"On zero results the response carries zero_result_hint (how many items the store holds) — read it to tell a filter miss from an empty or unclonable store.",
-	}, handleList)
+	}, h.handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_search",
 		Description: "Search work items by key and content (active items first). Use to find a past task by ticket, topic, or keyword. " +
 			"On zero results the response carries zero_result_hint (how many items the store holds) — read it to tell a query miss from an empty or unclonable store.",
-	}, handleSearch)
+	}, h.handleSearch)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_show",
@@ -74,12 +92,12 @@ func registerTools(s *mcp.Server) {
 			"Use when resuming to restore context before continuing. " +
 			"Only explicitly checkpointed tasks have items — unless a prior call already confirmed the key exists, " +
 			"run worklog_search first instead of assuming a ticket was checkpointed.",
-	}, handleShow)
+	}, h.handleShow)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "worklog_status",
 		Description: "Set a work item's status to active, paused, or done.",
-	}, handleStatus)
+	}, h.handleStatus)
 }
 
 type checkpointInput struct {
@@ -92,7 +110,7 @@ type checkpointInput struct {
 	Cwd    string `json:"cwd,omitempty"    jsonschema:"the user's working directory, used to detect the repo and record last_cwd"`
 }
 
-func handleCheckpoint(
+func (h *handlers) handleCheckpoint(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in checkpointInput,
@@ -104,7 +122,11 @@ func handleCheckpoint(
 	if repo == "" {
 		repo = store.DetectRepo(in.Cwd)
 	}
-	it, err := newStore().Checkpoint(store.Sanitize(in.Key), store.CheckpointInput{
+	s, err := h.store()
+	if err != nil {
+		return nil, itemView{}, err
+	}
+	it, err := s.Checkpoint(store.Sanitize(in.Key), store.CheckpointInput{
 		Ticket: in.Ticket, Topic: in.Topic, Where: in.Where, Note: in.Note, Repo: repo, Cwd: in.Cwd,
 	})
 	if errors.Is(err, store.ErrPush) {
@@ -158,12 +180,15 @@ func buildZeroHint(s *store.Store, filteredNote string) *listZeroHint {
 	return hint
 }
 
-func handleList(
+func (h *handlers) handleList(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in listInput,
 ) (*mcp.CallToolResult, listOutput, error) {
-	s := newStore()
+	s, err := h.store()
+	if err != nil {
+		return nil, listOutput{}, err
+	}
 	items, err := s.List(in.Status, in.Repo)
 	if err != nil {
 		return nil, listOutput{}, err
@@ -179,12 +204,15 @@ type searchInput struct {
 	Query string `json:"query" jsonschema:"substring to match against keys and content"`
 }
 
-func handleSearch(
+func (h *handlers) handleSearch(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, listOutput, error) {
-	s := newStore()
+	s, err := h.store()
+	if err != nil {
+		return nil, listOutput{}, err
+	}
 	hits, err := s.Search(in.Query)
 	if err != nil {
 		return nil, listOutput{}, err
@@ -205,12 +233,15 @@ type showOutput struct {
 	Markdown string `json:"markdown"`
 }
 
-func handleShow(
+func (h *handlers) handleShow(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in showInput,
 ) (*mcp.CallToolResult, showOutput, error) {
-	s := newStore()
+	s, err := h.store()
+	if err != nil {
+		return nil, showOutput{}, err
+	}
 	key := store.Sanitize(in.Key)
 	if in.Repo != "" {
 		note, err := s.RepoNote(key, in.Repo)
@@ -223,7 +254,8 @@ func handleShow(
 	if err != nil {
 		return nil, showOutput{}, fmt.Errorf(
 			"no item %q — only explicitly checkpointed tasks have worklog items; run worklog_search(query: %q) to check what exists before assuming saved state",
-			key, key,
+			key,
+			key,
 		)
 	}
 	b, err := it.Render()
@@ -238,7 +270,7 @@ type statusInput struct {
 	Status string `json:"status" jsonschema:"active, paused, or done"`
 }
 
-func handleStatus(
+func (h *handlers) handleStatus(
 	_ context.Context,
 	_ *mcp.CallToolRequest,
 	in statusInput,
@@ -246,7 +278,11 @@ func handleStatus(
 	if in.Status != "active" && in.Status != "paused" && in.Status != "done" {
 		return nil, itemView{}, fmt.Errorf("status must be active, paused, or done")
 	}
-	it, err := newStore().SetStatus(store.Sanitize(in.Key), in.Status)
+	s, err := h.store()
+	if err != nil {
+		return nil, itemView{}, err
+	}
+	it, err := s.SetStatus(store.Sanitize(in.Key), in.Status)
 	if errors.Is(err, store.ErrPush) {
 		v := view(it)
 		v.Warning = err.Error()
