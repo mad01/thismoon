@@ -247,6 +247,14 @@ The names are whatever your `routes.toml` says; each recipe fixes its
 service's port. The CLI tools (belt, humanizer, suspenders, t-man, toss-bin,
 worklog) sit in `~/code/bin`.
 
+A `<name>.this` address needs d-man running; every service in the table
+above also answers on plain `http://localhost:<port>` with no d-man setup
+at all. Beyond ports, each component resolves its own flags, env vars, and
+config file the same way: flag > env > config file > compiled default, with
+config files under `~/.config/<tool>/`. See
+[Configuration](../README.md#configuration) in the README, and the
+component's own `config.md` for its specific keys.
+
 ## What the fleet adds
 
 ```
@@ -309,11 +317,11 @@ the settings block that turns belt's guards and hints on (explained hook by
 hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)), and
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) for the
 instruction file that teaches the agent when to reach for which tool. The
-five skills under `skills/` need no registration — their recipes symlink
+six skills under `skills/` need no registration — their recipes symlink
 them into `~/.claude/skills`, and they load when invoked by name
-(`/golang-style`, `/handoff`, `/humanizer`, `/present`, `/worklog`) or when
-a task matches; the MCP-backed ones assume their server from this section is
-registered.
+(`/commit-pipeline`, `/golang-style`, `/handoff`, `/humanizer`, `/present`,
+`/worklog`) or when a task matches; the MCP-backed ones assume their server
+from this section is registered.
 
 ## Updating
 
