@@ -12,17 +12,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/mad01/thismoon/services/csl"
 )
 
 const fileName = "reindex.queue"
 
-// DefaultPath returns ~/.config/csl/reindex.queue.
+// DefaultPath returns the reindex queue inside csl's state directory.
 func DefaultPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("home dir: %w", err)
-	}
-	return filepath.Join(home, ".config", "csl", fileName), nil
+	return csl.StatePath(fileName)
 }
 
 // Enqueue appends repoPath to the queue file.

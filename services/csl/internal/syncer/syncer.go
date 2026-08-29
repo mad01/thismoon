@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mad01/thismoon/services/csl/internal/notify"
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/csl/internal/queue"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
@@ -271,7 +271,7 @@ func emitSyncEvent(start time.Time, counts map[string]int, total, indexed int) {
 	if counts["fail"] > 0 {
 		level = "warn"
 	}
-	notify.EmitEvent("csl", level,
+	notify.EmitEventSync("csl", level,
 		fmt.Sprintf("sync complete: %d repos, %d updated, %d indexed", total, counts["updated"], indexed),
 		syncSummary(counts),
 		map[string]string{

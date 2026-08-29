@@ -29,7 +29,7 @@ csl version
 
 ## 2. Configure
 
-Create `~/.config/csl/config.yaml` and list the directories that contain your git checkouts. One entry per root. `csl` walks each concurrently.
+Create `config.yaml` in the config directory (`$XDG_CONFIG_HOME/csl`, else `~/.config/csl`) and list the directories that contain your git checkouts. One entry per root. `csl` walks each concurrently.
 
 ```yaml
 dirs:
@@ -181,6 +181,6 @@ The first build embeds every repo and takes a while; later runs only re-embed ch
 ## Next
 
 - [CLI reference](cli.md) — every subcommand and flag.
-- [Configuration reference](configuration.md) — every file under `~/.config/csl/`.
+- [Configuration reference](configuration.md) — every file csl reads or writes, and where.
 - [Semantic search](semantic.md) — lexical vs semantic, the vector index, embedding models.
 - [Architecture](architecture.md) — how the daemon, index, and MCP server fit together.

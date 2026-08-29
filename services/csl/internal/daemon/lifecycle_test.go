@@ -4,29 +4,47 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 )
 
-func TestDefaultSocketPath(t *testing.T) {
-	p := DefaultSocketPath()
-	if !strings.HasSuffix(p, filepath.Join(".config", "csl", "search-daemon.sock")) {
-		t.Fatalf("unexpected socket path: %s", p)
+// TestDefaultPaths covers both sides of the state-directory migration: a
+// fresh machine puts the socket, PID file, and log under the XDG state
+// root, while a machine that already has ~/.config/csl keeps them there so
+// a running daemon and an upgraded binary still agree on the socket.
+func TestDefaultPaths(t *testing.T) {
+	paths := map[string]func() string{
+		"search-daemon.sock": DefaultSocketPath,
+		"search-daemon.pid":  DefaultPIDPath,
+		"search-daemon.log":  DefaultLogPath,
 	}
-}
 
-func TestDefaultPIDPath(t *testing.T) {
-	p := DefaultPIDPath()
-	if !strings.HasSuffix(p, filepath.Join(".config", "csl", "search-daemon.pid")) {
-		t.Fatalf("unexpected pid path: %s", p)
-	}
-}
+	t.Run("fresh install", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_STATE_HOME", "")
+		for name, fn := range paths {
+			want := filepath.Join(home, ".local", "state", "csl", name)
+			if got := fn(); got != want {
+				t.Errorf("%s = %q, want %q", name, got, want)
+			}
+		}
+	})
 
-func TestDefaultLogPath(t *testing.T) {
-	p := DefaultLogPath()
-	if !strings.HasSuffix(p, filepath.Join(".config", "csl", "search-daemon.log")) {
-		t.Fatalf("unexpected log path: %s", p)
-	}
+	t.Run("legacy directory wins", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_STATE_HOME", "")
+		legacy := filepath.Join(home, ".config", "csl")
+		if err := os.MkdirAll(legacy, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, fn := range paths {
+			want := filepath.Join(legacy, name)
+			if got := fn(); got != want {
+				t.Errorf("%s = %q, want the pre-split %q", name, got, want)
+			}
+		}
+	})
 }
 
 func TestWriteReadPID(t *testing.T) {

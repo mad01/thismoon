@@ -30,7 +30,7 @@ csl version
 
 ## Configuration
 
-Create `~/.config/csl/config.yaml` listing the directories that contain your git checkouts:
+Create `config.yaml` in the config directory — `$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset — listing the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
 
 ```yaml
 dirs:
@@ -70,6 +70,8 @@ daemon:
 
 `hooks.post_merge.enabled` also gates the deprecated `csl hooks install` (see Usage); leave it unset unless you're deliberately using the legacy hook installer.
 
+Moving the web UI off port 7424 for good takes `CSL_PORT` in the environment, or a `web.base_url` in the config file — not just `csl web --port`. The flag binds one process, while the MCP server builds `csl_show_file` links from a different one and can only see those two settings. Full reference: [config.md](config.md).
+
 ## Usage
 
 ```sh
@@ -92,7 +94,7 @@ First search in a fresh checkout triggers an initial index build. The daemon ser
 For a browser UI instead of the CLI:
 
 ```sh
-csl web --port 7424     # serve the search UI on http://localhost:7424 (loopback only)
+csl web --port 7424     # serve the search UI on http://localhost:7424 (loopback only; csl.this with d-man)
 ```
 
 A localhost web UI over the same index: a search box (lexical/semantic/hybrid) with example queries, an Examples tab with more, and results grouped by repo and file. Each hit links to the file on its git host and can be expanded inline. To run it as a background service, register it with a process manager, e.g. `t-man add --name csl-web -- csl web --port 7424`.
@@ -118,14 +120,15 @@ claude mcp add --scope user csl -- csl mcp
 claude mcp list   # expect: csl: csl mcp - ✓ Connected
 ```
 
-On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root). Nothing needs to be running first: the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in `~/.config/csl/config.yaml` (see Configuration) — without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
+On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root). Nothing needs to be running first: the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration) — without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
 
-The MCP server exposes twelve `csl_*` tools:
+The MCP server exposes fifteen `csl_*` tools:
 
-- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`
+- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
 - **Search:** `csl_search`, `csl_count`, `csl_query_validate`
 - **Semantic and hybrid:** `csl_semantic_search`, `csl_hybrid_search`
-- **Read and info:** `csl_read`, `csl_ls`, `csl_index_info`
+- **Read and info:** `csl_read`, `csl_ls`, `csl_show_file`, `csl_index_info`
+- **Diagnosis:** `csl_doctor` — the `csl doctor` checks as JSON, for a client with no shell
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults).
 
@@ -180,15 +183,16 @@ When switching working directory to a different git repo, read that repo's `CLAU
 
 ## Where things live
 
-Everything lives under `~/.config/csl/`:
+`config.yaml` lives in the config directory (see Configuration). Everything csl writes lives in the state directory — `$XDG_STATE_HOME/csl`, or `~/.local/state/csl` when that variable is unset:
 
-- `config.yaml`: see Configuration.
 - `search-index/`: lexical index (`state.json` per-repo fingerprint/branch/dirty/indexed-at, plus `<shard-hash>.zoekt` shard files).
 - `semantic-index/`: per-repo vector stores (embeddings come from Ollama; no model files live here).
 - `search-daemon.sock`, `search-daemon.pid`, `search-daemon.log`: the search daemon's socket, PID file, and rotated log.
 - `reindex.queue`: repo paths queued by the suspenders `csl-reindex` post-merge hook; drained by `csl sync` / `csl index --drain`.
 
-`make install` puts the binary at `~/code/bin/csl`.
+An install made before config and state were split keeps using `~/.config/csl` for both: when that directory exists it stays the state directory, so upgrading moves nothing and re-indexes nothing.
+
+`make install` puts the binary at `~/code/bin/csl`; `make install PREFIX=/somewhere/else` puts it there instead.
 
 ## Develop
 

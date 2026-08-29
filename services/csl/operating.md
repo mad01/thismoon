@@ -24,10 +24,10 @@ csl-web agent.
 
 ## where state lives
 
-Everything sits under {{.StorePath}}:
+`config.yaml` sits in the config directory (`--config`, else CSL_CONFIG, else
+~/.config/csl); `csl config` prints the path it resolved and the settings in
+effect. Everything csl writes sits under {{.StorePath}}:
 
-- `config.yaml`: directories to index, host allowlist, semantic settings.
-  `csl config` prints the path and the settings in effect.
 - `search-index/`: the lexical index. `state.json` records each repo's
   fingerprint; `<hash>.zoekt` shard files sit beside it.
 - `semantic-index/`: per-repo vector stores, present only after a
@@ -38,10 +38,13 @@ Everything sits under {{.StorePath}}:
 
 ## failure modes
 
-Start with `csl doctor`: one ok/FAIL line per check — config, state file,
-index freshness, shard integrity, and search-server responsiveness, plus two
-web-only checks (web-ui-reachable, web-ui-version-skew) that can fail while
-search keeps working. `--repair` resets a corrupt state file.
+Start with `csl doctor` (or the csl_doctor tool, same checks as JSON): one
+ok/FAIL line per check — config, state file, index freshness, shard
+integrity, and search-server responsiveness, plus two web-only checks
+(web-ui-reachable, web-ui-version-skew) that can fail while search keeps
+working. The config check fails when the file is missing, unparseable, or
+sets no `dirs`, which is the usual cause of "csl finds nothing at all".
+`--repair` resets a corrupt state file; the tool never repairs.
 
 Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return

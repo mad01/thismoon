@@ -8,24 +8,39 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/mad01/thismoon/services/csl"
 )
 
-// DefaultSocketPath returns ~/.config/csl/search-daemon.sock
+// DefaultSocketPath returns the search server's Unix socket inside csl's
+// state directory.
 func DefaultSocketPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "csl", "search-daemon.sock")
+	return statePath("search-daemon.sock")
 }
 
-// DefaultPIDPath returns ~/.config/csl/search-daemon.pid
+// DefaultPIDPath returns the search server's PID file inside csl's state
+// directory.
 func DefaultPIDPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "csl", "search-daemon.pid")
+	return statePath("search-daemon.pid")
 }
 
-// DefaultLogPath returns ~/.config/csl/search-daemon.log
+// DefaultLogPath returns the search server's rotated log inside csl's state
+// directory.
 func DefaultLogPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "csl", "search-daemon.log")
+	return statePath(csl.DaemonLogFile)
+}
+
+// statePath resolves name under csl's state directory. These three paths are
+// consumed as plain strings by a dozen call sites, so an unresolvable state
+// directory yields "" rather than a signature change: opening an empty path
+// fails, which is the same outcome as the missing directory would have been,
+// and never writes a socket or PID file into the working directory.
+func statePath(name string) string {
+	path, err := csl.StatePath(name)
+	if err != nil {
+		return ""
+	}
+	return path
 }
 
 // WritePID writes the current process ID to the PID file.

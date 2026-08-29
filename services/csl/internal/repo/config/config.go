@@ -3,12 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/envdefault"
 	"github.com/mad01/thismoon/kit/repofind"
 	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
@@ -16,18 +17,13 @@ import (
 
 const configFileName = "config.yaml"
 
-// Layout constants for session window arrangement.
-const (
-	LayoutSplit = "split"
-	LayoutTab   = "tab"
-)
+// PathEnv names the environment variable that relocates config.yaml. The
+// --config flag wins over it; both beat the default location.
+const PathEnv = "CSL_CONFIG"
 
 // Config holds the repo finder configuration.
 type Config struct {
 	Dirs     []string       `yaml:"dirs"`
-	Layout   string         `yaml:"layout"`
-	Summary  bool           `yaml:"summary"`
-	TmpDir   string         `yaml:"tmpdir"`
 	Hooks    HooksConfig    `yaml:"hooks"`
 	Sync     SyncConfig     `yaml:"sync"`
 	Index    IndexConfig    `yaml:"index"`
@@ -53,8 +49,9 @@ type RefreshConfig struct {
 // WebConfig tells the other csl surfaces where the web UI is reachable.
 type WebConfig struct {
 	// BaseURL is the web UI's base URL, used by csl_show_file to build the
-	// links it opens. Empty means http://127.0.0.1:7424 (the `csl web` default
-	// port); set it to http://csl.this when the UI is fronted by d-man.
+	// links it opens. Empty derives it from the port csl resolves (CSL_PORT,
+	// else 7424); set it to http://csl.this when the UI is fronted by d-man,
+	// which no local port can describe.
 	BaseURL string `yaml:"base_url"`
 }
 
@@ -90,9 +87,10 @@ type SemanticConfig struct {
 	// Changing the model (or its dimensionality) triggers a full re-embed of
 	// every store on the next index run.
 	EmbedModel string `yaml:"embed_model"`
-	// Dim is the embedding dimensionality of EmbedModel. Zero means 1024 (the
-	// default model). Must match the model — stores are compared
-	// against it to detect model swaps.
+	// Dim is the embedding dimensionality of EmbedModel. Zero means 768, the
+	// width of the default model (jina-code-v2); any other model needs its
+	// own width set here. Stores record the dimensionality they were built
+	// with, so a mismatch is detected as a model swap and re-embeds.
 	Dim int `yaml:"dim"`
 }
 
@@ -126,8 +124,8 @@ type HooksConfig struct {
 // PostMergeHook configures the legacy post-merge hook installer.
 //
 // DEPRECATED: csl no longer manages post-merge hooks — suspenders is now the
-// single git-hook manager and feeds ~/.config/csl/reindex.queue via a
-// `csl-reindex` post_merge entry. csl still owns draining/indexing that queue.
+// single git-hook manager and feeds csl's reindex queue via a `csl-reindex`
+// post_merge entry. csl still owns draining/indexing that queue.
 // Enabled defaults to false (the zero value) for new configs; `csl hooks
 // install` is retained only for backwards compatibility and prints a
 // deprecation notice. Use `csl hooks uninstall` to remove any existing hooks.
@@ -185,14 +183,16 @@ func (c *Config) SemanticSyncEnabled() bool {
 	return c != nil && c.Semantic.Sync
 }
 
-// EffectiveWebBaseURL returns the web UI base URL without a trailing slash,
-// defaulting to the `csl web` default port on loopback. Safe to call on a nil
+// EffectiveWebBaseURL returns the web UI base URL without a trailing slash.
+// An explicit web.base_url always wins; otherwise the URL is derived from
+// the port csl resolves (CSL_PORT, else the default), so moving the UI off
+// 7424 also moves the links csl_show_file hands out. Safe to call on a nil
 // receiver.
 func (c *Config) EffectiveWebBaseURL() string {
 	if c != nil && c.Web.BaseURL != "" {
 		return strings.TrimRight(c.Web.BaseURL, "/")
 	}
-	return csl.DefaultBaseURL
+	return csl.BaseURLForPort(csl.ResolvedPort())
 }
 
 // RefreshEnabled reports whether `csl web` should run the periodic background
@@ -223,42 +223,32 @@ func (c *Config) DaemonIdleTimeout() time.Duration {
 	return 10 * time.Minute
 }
 
-// SummaryEnabled returns true when the summary tab should be created.
-// Requires summary: true AND layout: tab.
-func (c *Config) SummaryEnabled() bool {
-	return c != nil && c.Summary && c.EffectiveLayout() == LayoutTab
-}
+// pinnedPath is the config file Load reads, when something pinned one.
+// Empty means "resolve from the environment". The cobra root sets it from
+// --config before any subcommand runs, so every surface in the process —
+// CLI, MCP server, search daemon — reads the same file.
+var pinnedPath string
 
-// EffectiveTmpDir returns the configured tmpdir for scratch sessions.
-// Returns empty string when unset, meaning os.MkdirTemp default should be used.
-func (c *Config) EffectiveTmpDir() string {
-	if c != nil && c.TmpDir != "" {
-		return repofind.ExpandHome(c.TmpDir)
-	}
-	return ""
-}
+// SetPath pins the config file Load reads, overriding CSL_CONFIG and the
+// default location. Passing "" restores the resolved default.
+func SetPath(path string) { pinnedPath = path }
 
-// EffectiveLayout returns the configured layout, defaulting to split.
-// Safe to call on a nil receiver.
-func (c *Config) EffectiveLayout() string {
-	if c != nil && c.Layout == LayoutTab {
-		return LayoutTab
-	}
-	return LayoutSplit
-}
-
-// Path returns the config file location, ~/.config/csl/config.yaml. It is the
-// only path Load reads; `csl config` prints it so a diagnosis names the file
-// it is talking about.
+// Path returns the config file location: the path pinned by --config, else
+// CSL_CONFIG, else config.yaml under the XDG config directory
+// ($XDG_CONFIG_HOME/csl, or ~/.config/csl when that variable is unset). It
+// is the only file Load reads; `csl config` prints it so a diagnosis names
+// the file it is talking about.
 func Path() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	if pinnedPath != "" {
+		return confdir.Expand(pinnedPath)
 	}
-	return filepath.Join(home, ".config", "csl", configFileName), nil
+	if p := envdefault.String(PathEnv, ""); p != "" {
+		return confdir.Expand(p)
+	}
+	return confdir.Path(csl.Component, configFileName)
 }
 
-// Load reads config.yaml from ~/.config/csl/config.yaml.
+// Load reads the config file Path resolves.
 func Load() (*Config, error) {
 	globalPath, err := Path()
 	if err != nil {
@@ -287,14 +277,27 @@ func loadFrom(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
-	// Expand tildes in directory paths
-	for i, d := range cfg.Dirs {
-		cfg.Dirs[i] = repofind.ExpandHome(d)
+	// Expand tildes once, here at the boundary, so everything downstream
+	// works with real paths. An unresolvable home is an error rather than a
+	// path relative to whatever directory csl happened to start in.
+	if err := expandAll(cfg.Dirs); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	cfg.TmpDir = repofind.ExpandHome(cfg.TmpDir)
-	for i, e := range cfg.Hooks.PostMerge.Exclude {
-		cfg.Hooks.PostMerge.Exclude[i] = repofind.ExpandHome(e)
+	if err := expandAll(cfg.Hooks.PostMerge.Exclude); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
 	return &cfg, nil
+}
+
+// expandAll expands a leading ~ in every entry of paths, in place.
+func expandAll(paths []string) error {
+	for i, p := range paths {
+		expanded, err := confdir.Expand(p)
+		if err != nil {
+			return err
+		}
+		paths[i] = expanded
+	}
+	return nil
 }

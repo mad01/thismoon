@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
@@ -77,172 +78,92 @@ func TestLoadFromInvalidYAML(t *testing.T) {
 	}
 }
 
-func TestEffectiveLayoutDefault(t *testing.T) {
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.yaml")
-
-	content := []byte("dirs:\n  - /tmp/repos\n")
+// TestLoadFromIgnoresRetiredKeys pins the compatibility promise made when
+// layout/summary/tmpdir were dropped: a config file that still sets them
+// loads unchanged, because the decoder is not in strict mode.
+func TestLoadFromIgnoresRetiredKeys(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	content := []byte("dirs:\n  - /tmp/repos\nlayout: tab\nsummary: true\ntmpdir: /tmp/scratch\n")
 	if err := os.WriteFile(cfgPath, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	cfg, err := LoadFrom(cfgPath)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("LoadFrom() with retired keys = %v, want nil", err)
 	}
-
-	if got := cfg.EffectiveLayout(); got != LayoutSplit {
-		t.Errorf("expected %q, got %q", LayoutSplit, got)
-	}
-}
-
-func TestEffectiveLayoutTab(t *testing.T) {
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.yaml")
-
-	content := []byte("dirs:\n  - /tmp/repos\nlayout: tab\n")
-	if err := os.WriteFile(cfgPath, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadFrom(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := cfg.EffectiveLayout(); got != LayoutTab {
-		t.Errorf("expected %q, got %q", LayoutTab, got)
+	if len(cfg.Dirs) != 1 || cfg.Dirs[0] != "/tmp/repos" {
+		t.Errorf("dirs = %v, want the live key to survive the retired ones", cfg.Dirs)
 	}
 }
 
-func TestEffectiveLayoutInvalid(t *testing.T) {
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.yaml")
+func TestPathPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Cleanup(func() { SetPath("") })
 
-	content := []byte("dirs:\n  - /tmp/repos\nlayout: invalid\n")
-	if err := os.WriteFile(cfgPath, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	t.Run("default location", func(t *testing.T) {
+		SetPath("")
+		t.Setenv(PathEnv, "")
+		got, err := Path()
+		if err != nil {
+			t.Fatalf("Path() error: %v", err)
+		}
+		if want := filepath.Join(home, ".config", "csl", "config.yaml"); got != want {
+			t.Errorf("Path() = %q, want %q", got, want)
+		}
+	})
 
-	cfg, err := LoadFrom(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Run("env moves it", func(t *testing.T) {
+		SetPath("")
+		t.Setenv(PathEnv, "~/elsewhere.yaml")
+		got, err := Path()
+		if err != nil {
+			t.Fatalf("Path() error: %v", err)
+		}
+		if want := filepath.Join(home, "elsewhere.yaml"); got != want {
+			t.Errorf("Path() = %q, want the expanded %q", got, want)
+		}
+	})
 
-	if got := cfg.EffectiveLayout(); got != LayoutSplit {
-		t.Errorf("expected %q for invalid layout, got %q", LayoutSplit, got)
-	}
+	t.Run("pinned path beats env", func(t *testing.T) {
+		t.Setenv(PathEnv, "/from/env.yaml")
+		SetPath("/from/flag.yaml")
+		got, err := Path()
+		if err != nil {
+			t.Fatalf("Path() error: %v", err)
+		}
+		if got != "/from/flag.yaml" {
+			t.Errorf("Path() = %q, want the pinned path", got)
+		}
+	})
 }
 
-func TestEffectiveLayoutNilConfig(t *testing.T) {
-	var cfg *Config
-	if got := cfg.EffectiveLayout(); got != LayoutSplit {
-		t.Errorf("expected %q for nil config, got %q", LayoutSplit, got)
-	}
-}
+func TestEffectiveWebBaseURL(t *testing.T) {
+	t.Run("configured value wins", func(t *testing.T) {
+		t.Setenv("CSL_PORT", "9424")
+		cfg := &Config{Web: WebConfig{BaseURL: "http://csl.this/"}}
+		if got, want := cfg.EffectiveWebBaseURL(), "http://csl.this"; got != want {
+			t.Errorf("EffectiveWebBaseURL() = %q, want %q", got, want)
+		}
+	})
 
-func TestSummaryEnabled(t *testing.T) {
-	tests := []struct {
-		name     string
-		yaml     string
-		expected bool
-	}{
-		{"default (no summary)", "dirs:\n  - /tmp\n", false},
-		{"summary false", "dirs:\n  - /tmp\nsummary: false\n", false},
-		{"summary true split layout", "dirs:\n  - /tmp\nsummary: true\n", false},
-		{"summary true tab layout", "dirs:\n  - /tmp\nlayout: tab\nsummary: true\n", true},
-		{"summary false tab layout", "dirs:\n  - /tmp\nlayout: tab\nsummary: false\n", false},
-	}
+	t.Run("unset follows the port", func(t *testing.T) {
+		t.Setenv("CSL_PORT", "9424")
+		cfg := &Config{}
+		if got, want := cfg.EffectiveWebBaseURL(), "http://127.0.0.1:9424"; got != want {
+			t.Errorf("EffectiveWebBaseURL() = %q, want %q", got, want)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmp := t.TempDir()
-			cfgPath := filepath.Join(tmp, "config.yaml")
-			if err := os.WriteFile(cfgPath, []byte(tt.yaml), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			cfg, err := LoadFrom(cfgPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := cfg.SummaryEnabled(); got != tt.expected {
-				t.Errorf("SummaryEnabled() = %v, want %v", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestEffectiveTmpDirDefault(t *testing.T) {
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.yaml")
-
-	content := []byte("dirs:\n  - /tmp/repos\n")
-	if err := os.WriteFile(cfgPath, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadFrom(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := cfg.EffectiveTmpDir(); got != "" {
-		t.Errorf("expected empty string for default tmpdir, got %q", got)
-	}
-}
-
-func TestEffectiveTmpDirCustom(t *testing.T) {
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.yaml")
-
-	content := []byte("dirs:\n  - /tmp/repos\ntmpdir: /custom/workspaces\n")
-	if err := os.WriteFile(cfgPath, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadFrom(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got := cfg.EffectiveTmpDir(); got != "/custom/workspaces" {
-		t.Errorf("expected /custom/workspaces, got %q", got)
-	}
-}
-
-func TestEffectiveTmpDirTilde(t *testing.T) {
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.yaml")
-
-	content := []byte("dirs:\n  - /tmp/repos\ntmpdir: ~/.config/csl/workspaces\n")
-	if err := os.WriteFile(cfgPath, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := LoadFrom(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	home, _ := os.UserHomeDir()
-	expected := filepath.Join(home, ".config/csl/workspaces")
-	if got := cfg.EffectiveTmpDir(); got != expected {
-		t.Errorf("expected %s, got %s", expected, got)
-	}
-}
-
-func TestEffectiveTmpDirNilConfig(t *testing.T) {
-	var cfg *Config
-	if got := cfg.EffectiveTmpDir(); got != "" {
-		t.Errorf("expected empty string for nil config, got %q", got)
-	}
-}
-
-func TestSummaryEnabledNilConfig(t *testing.T) {
-	var cfg *Config
-	if cfg.SummaryEnabled() {
-		t.Error("expected SummaryEnabled() = false for nil config")
-	}
+	t.Run("nil config falls back to the default port", func(t *testing.T) {
+		t.Setenv("CSL_PORT", "")
+		var cfg *Config
+		if got, want := cfg.EffectiveWebBaseURL(), csl.DefaultBaseURL; got != want {
+			t.Errorf("EffectiveWebBaseURL() = %q, want %q", got, want)
+		}
+	})
 }
 
 func TestPostMergeHookExclude(t *testing.T) {

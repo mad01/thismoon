@@ -11,10 +11,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
 const stateFileName = "state.json"
+
+// indexDirName is the lexical index's directory inside csl's state
+// directory, holding stateFileName and the zoekt shards.
+const indexDirName = "search-index"
 
 // RepoState tracks the indexed state of a single repository.
 type RepoState struct {
@@ -250,13 +255,10 @@ func gitOutput(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// DefaultIndexDir returns the default index directory path.
+// DefaultIndexDir returns the lexical index directory under csl's state
+// directory.
 func DefaultIndexDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, ".config", "csl", "search-index"), nil
+	return csl.StatePath(indexDirName)
 }
 
 // IndexDirSize returns the total size of files in the index directory.

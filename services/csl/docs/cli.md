@@ -2,7 +2,7 @@
 
 Every `csl` subcommand, grouped by purpose. Flags use long form unless a short flag exists. Required flags are marked in the table.
 
-Every command that reads repos loads `~/.config/csl/config.yaml` and walks the configured `dirs`. See [configuration](configuration.md) for the schema.
+Every command that reads repos loads the config file — `--config`, else `$CSL_CONFIG`, else `config.yaml` in the XDG config directory — and walks the configured `dirs`. See [configuration](configuration.md) for the schema.
 
 ## Index summary
 
@@ -315,7 +315,7 @@ By default, `csl index` diffs the current repo fingerprints against `state.json`
 | `--all` | `false` | Re-index every repo, regardless of fingerprint |
 | `--repo <path>` | `""` | Re-index a single repo by absolute path. Skips the global staleness check; updates that repo's `state.json` entry. Used by the `post-merge` git hook |
 | `--status` | `false` | Print a status table instead of indexing |
-| `--clean` | `false` | Remove `~/.config/csl/search-index/` entirely |
+| `--clean` | `false` | Remove `search-index/` from the state directory entirely |
 | `--repair` | `false` | Validate shards, remove corrupted ones |
 | `--json` | `false` | JSON output for `--status` and `--repair` |
 
@@ -371,7 +371,7 @@ csl hooks status                # report per-repo hook state
 
 ### Description
 
-Off by default. Enable via `hooks.post_merge.enabled: true` in `~/.config/csl/config.yaml`, then run `csl hooks install`. The installer writes the same hook script into every repo discovered through `dirs`, applying `hooks.post_merge.exclude`. Re-running is idempotent — identical files are skipped — so it is safe to wire into `ralph apply`.
+Off by default. Enable via `hooks.post_merge.enabled: true` in the config file, then run `csl hooks install`. The installer writes the same hook script into every repo discovered through `dirs`, applying `hooks.post_merge.exclude`. Re-running is idempotent — identical files are skipped — so it is safe to wire into `ralph apply`.
 
 The hook calls `csl index --repo <path>` in the background after each pull, keeping the search index in sync without blocking the pull.
 
@@ -395,13 +395,15 @@ csl doctor [--repair]
 
 | Check | What it verifies |
 |-------|------------------|
-| `config-loads` | `~/.config/csl/config.yaml` exists and parses |
+| `config-loads` | the config file exists, parses, and sets at least one `dirs` entry |
 | `state-file-loads` | `state.json` parses; with `--repair`, a corrupt file is backed up and reset |
 | `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count |
 | `index-shards-valid` | every `.zoekt` shard opens cleanly |
 | `search-server-responsive` | a running search server answers on its socket (a stopped server passes — it auto-starts) |
-| `web-ui-reachable` | the `csl web` process answers on its base URL (web-only; search works without it) |
+| `web-ui-reachable` | the `csl web` process answers on its effective base URL — `web.base_url`, else `http://127.0.0.1:$CSL_PORT` (web-only; search works without it) |
 | `web-ui-version-skew` | the running web process was built from the same commit as this binary (web-only) |
+
+The same checks are available to an agent with no shell as the `csl_doctor` MCP tool, which returns the report as JSON and never repairs.
 
 A stale-index FAIL self-heals: searches answer from the old shards and reindex in the background, or `csl index` does it synchronously. On a clean pass the last line points at `csl docs`, the embedded operating doc.
 
@@ -442,9 +444,6 @@ config file: /Users/you/.config/csl/config.yaml (loaded)
 
 dirs:
     - /Users/you/code/src
-layout: split
-summary: false
-tmpdir: ""
 hooks:
     post_merge:
         enabled: false
@@ -462,9 +461,11 @@ semantic:
     dim: 768
 daemon:
     idle_timeout_minutes: 10
+web:
+    base_url: http://127.0.0.1:7424
 ```
 
-`layout`, `summary`, and `tmpdir` are inert, carried over from csl's origin as a session launcher. They print so a config that sets them is not silently misreported.
+The printed `web.base_url` is the effective one: with the key unset it is derived from `CSL_PORT`, so this line also tells you where the other surfaces think the UI is.
 
 ---
 

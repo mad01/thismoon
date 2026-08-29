@@ -34,6 +34,7 @@ func New(version string) *mcp.Server {
 	registerReadTools(s)
 	registerShowTools(s)
 	registerInfoTools(s)
+	registerDoctorTools(s)
 
 	return s
 }
