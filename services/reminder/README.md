@@ -82,6 +82,7 @@ the tools below.
 | `reminder_cancel(id)` | Soft-cancel (keeps the record) |
 | `reminder_test(id?)` | Fire a notification now to verify it works; with `id` sends that reminder's notification (no state change), without sends a generic test |
 | `reminder_fire(id)` | Fire a reminder for real right now (advances recurring/one-shot state) |
+| `reminder_doctor()` | Run the `reminder doctor` checks and return the report |
 
 To check notifications actually work on a machine, ask Claude to "send a test
 notification" (`reminder_test` with no id) or "test the standup reminder"

@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/reminder"
 	"github.com/mad01/thismoon/services/reminder/internal/mcpserver"
 )
 
@@ -25,7 +27,10 @@ Tools exposed:
   reminder_list    List reminders, soonest due first.
   reminder_get     Get one reminder by id.
   reminder_edit    Edit a reminder by id.
-  reminder_cancel  Soft-cancel a reminder by id.`,
+  reminder_cancel  Soft-cancel a reminder by id.
+  reminder_doctor  Run the doctor checks and return the report.
+
+` + agentdoc.RegistrationSnippet(reminder.Facts()),
 	RunE: runMCP,
 }
 
@@ -38,7 +43,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("reminder mcp: port=%d base-url=%s", flagPort, flagBaseURL)
 	srv, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL},
+		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
 	)
 	if err != nil {
 		return err

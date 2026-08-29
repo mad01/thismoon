@@ -29,11 +29,23 @@ serve`.
   door routes to the service). This is display-only: the MCP client itself
   always calls `localhost:<port>` regardless of this value.
 
+A `~` that cannot be expanded — no resolvable home directory, which happens
+under a launchd agent with a stripped environment — is an error at startup.
+Earlier releases stripped the `~` and used a path relative to the working
+directory instead, which quietly served an empty store. An unparseable
+`REMINDER_PORT` warns once on stderr and falls back to the compiled-in
+default.
+
+To see what a given environment actually resolved to, run `reminder doctor`;
+an agent with no shell gets the same report from the `reminder_doctor` MCP
+tool. Neither sends a notification — use `reminder test` for that.
+
 ## Environment variables
 
 - `EVENTS_BASE_URL` (default `http://127.0.0.1:7430`): base URL of the local
   events service that `reminder serve` best-effort archives fired
-  notifications to. Read only by the notify package, not exposed as a flag.
+  notifications to. Read only by the shared `kit/notify` package, not exposed
+  as a flag.
   If the events service is down or this points nowhere, archiving is
   silently skipped: reminder still fires its own macOS notification either
   way, since this is an archive, not the delivery path.

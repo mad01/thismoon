@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
-	"github.com/mad01/thismoon/webkit"
-
+	kitnotify "github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/reminder/internal/notify"
 	"github.com/mad01/thismoon/services/reminder/internal/store"
+	"github.com/mad01/thismoon/webkit"
 )
 
 // shellHTML is the static page shell (chrome only). The reminder list is
@@ -142,7 +142,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if rem.Repeat != "" {
 		tags["repeat"] = rem.Repeat
 	}
-	notify.EmitEvent("reminder", "info", "reminder created: "+rem.Title, rem.Body, tags)
+	kitnotify.EmitEvent("reminder", "info", "reminder created: "+rem.Title, rem.Body, tags)
 	writeJSON(w, http.StatusCreated, s.toAPI(rem))
 }
 
@@ -223,7 +223,7 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	notify.EmitEvent("reminder", "info", "reminder cancelled: "+rem.Title, "",
+	kitnotify.EmitEvent("reminder", "info", "reminder cancelled: "+rem.Title, "",
 		map[string]string{"id": rem.ID})
 	writeJSON(w, http.StatusOK, s.toAPI(rem))
 }
@@ -259,7 +259,7 @@ func (s *Server) handleFire(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, fmt.Errorf("notify failed: %w", err))
 		return
 	}
-	notify.EmitEvent("reminder", "info", "reminder fired: "+rem.Title, rem.Body,
+	kitnotify.EmitEvent("reminder", "info", "reminder fired: "+rem.Title, rem.Body,
 		map[string]string{"id": rem.ID})
 	fired, err := s.store.Trigger(rem.ID, s.now())
 	if err != nil {
