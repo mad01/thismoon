@@ -90,6 +90,7 @@ tools:
 - `events_query`: query the log, newest-first; filter by source, level, text, or since; the primary tool for debugging what happened
 - `events_sources`: list sources with their event counts
 - `events_emit`: record a single event (`source` and `title` required)
+- `events_doctor`: run the `events doctor` checks and return the report
 
 Purge has no MCP tool; deletion stays CLI + API only, human-triggered.
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/events/internal/client"
 	"github.com/mad01/thismoon/services/events/internal/event"
 )
@@ -16,6 +17,7 @@ import (
 type handlers struct {
 	client *client.Client
 	webURL string // where the user views the event timeline in a browser
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -40,6 +42,15 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Optional `level` ('info' default | 'warn' | 'error'), `component` (sub-area within the source), " +
 			"`message` (longer detail), and `tags` (a flat object of string key/values). Returns the new event id.",
 	}, h.handleEmit)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "events_doctor",
+		Description: "Diagnose events itself: is serve reachable, is the JSONL store readable, is the running " +
+			"build the installed one. Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"Call this when events_query comes back empty or events_emit errors: it separates a serve that is " +
+			"down or on a different port from a log that genuinely has nothing in it.",
+	}, h.handleDoctor)
 }
 
 // ── query ──
@@ -223,4 +234,20 @@ func (h *handlers) handleEmit(
 		return nil, emitOutput{}, err
 	}
 	return nil, emitOutput{ID: id, URL: h.webURL}, nil
+}
+
+// ── doctor ──
+
+type doctorInput struct{}
+
+// handleDoctor runs the same checks as `events doctor` and returns the
+// report. A failing check is a result, not a tool error: the caller asked
+// what is wrong, and an error would hide the answer behind a transport
+// failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ doctorInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }
