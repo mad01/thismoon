@@ -66,10 +66,14 @@ func webBaseURL() string {
 	return cfg.EffectiveWebBaseURL()
 }
 
-// configLoads verifies config.yaml parses and names at least one directory
-// to walk. A missing file fails too, and so does an empty dirs list: both
-// leave csl with nothing to index, which is the "why does the UI show no
-// repos" failure.
+// configLoads verifies the config file parses and names at least one
+// directory to walk.
+//
+// The two empty states are not the same. No config file at all is a machine
+// that has not been set up yet, which is a state csl runs in deliberately, so
+// the check skips with the path to create rather than failing. A file that
+// exists and sets no dirs is someone's unfinished configuration, and stays a
+// failure naming the file: that is the "why does the UI show no repos" case.
 func configLoads() doctor.Check {
 	return doctor.Check{
 		Name: "config-loads",
@@ -78,12 +82,11 @@ func configLoads() doctor.Check {
 			if err != nil {
 				return err
 			}
+			if !cfg.Loaded {
+				return doctor.Skip("csl is running on defaults — " + cfg.EmptyResultHint())
+			}
 			if len(cfg.Dirs) == 0 {
-				path, pathErr := config.Path()
-				if pathErr != nil {
-					return errors.New("config sets no dirs — nothing will be indexed")
-				}
-				return fmt.Errorf("%s sets no dirs — nothing will be indexed", path)
+				return fmt.Errorf("%s sets no dirs — nothing will be indexed", cfg.Path)
 			}
 			return nil
 		},
@@ -128,6 +131,12 @@ func indexFreshness(indexDir string) doctor.Check {
 			repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
 			if err != nil {
 				return err
+			}
+			if len(cfg.Dirs) == 0 {
+				// Nothing configured to walk. configLoads has already
+				// decided whether that is a fresh machine or an unfinished
+				// config; either way there is no freshness to report.
+				return nil
 			}
 			if len(repos) == 0 {
 				return errors.New("no git repos found under the configured dirs; check 'csl config'")

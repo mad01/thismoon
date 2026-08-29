@@ -578,7 +578,7 @@ Run csl's self-checks and return the report as JSON: config, state file, index f
 }
 ```
 
-Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
 
 ## Troubleshooting
 

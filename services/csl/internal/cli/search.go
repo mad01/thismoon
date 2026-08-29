@@ -133,10 +133,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf(
-			"failed to load config: %w\n\nHint: create the file above with a 'dirs' list ('csl config' prints the path csl reads)",
-			err,
-		)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
@@ -146,9 +143,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	repos = cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	if len(repos) == 0 {
-		return fmt.Errorf(
-			"no repos found in configured directories\n\nHint: add directories to 'dirs' in the config file 'csl config' prints",
-		)
+		// Nothing to search is a result, not a failure, on a machine that has
+		// not been configured yet. The hint names the file to create; a
+		// configured machine that finds nothing keeps its error.
+		if !cfg.Loaded {
+			fmt.Fprintln(cmd.ErrOrStderr(), cfg.EmptyResultHint())
+			return nil
+		}
+		return errors.New(cfg.EmptyResultHint())
 	}
 
 	// Build repo name → path map for search.

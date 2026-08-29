@@ -84,10 +84,14 @@ query` shows the parsed tree whenever a query returns unexpected results.
 `config.yaml` lives in the config directory (see Configuration). Everything
 csl writes lives in the state directory, resolved by `csl.StateDir()`
 (`services/csl/paths.go`): `$XDG_STATE_HOME/csl`, or `~/.local/state/csl`
-when that is unset. **An install where `~/.config/csl` already exists keeps
-using it for state** — the legacy directory wins whenever it is on disk, so
-upgrading moves no files and re-indexes nothing. Every state path goes
-through that one resolver; do not join `.config/csl` by hand.
+when that is unset. **An install whose `~/.config/csl` holds a
+`search-index/` keeps using it for state** — that directory is the probe
+`confdir.StateDir` tests (`LegacyStateProbe`), so upgrading moves no files
+and re-indexes nothing. The probe is deliberate: the fleet recipe symlinks
+config.yaml into `~/.config/csl` everywhere, so testing for the directory
+itself would strand every provisioned machine on the pre-split path. Every
+state path goes through that one resolver; do not join `.config/csl` by
+hand.
 
 - **`search-index/`**: the lexical index. `state.json` holds each repo's fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more `<shard-hash>.zoekt` shard files sit alongside it per repo. `search-index/.csl-sync.lock` is the cross-process sync lock: `csl sync` and the `csl web` background refresh take it for the whole pull + index phase, and the ad-hoc index writers (`csl search`'s foreground and background reindex, the web fallback's first build, `csl index --repo`) hold it or step aside, so no two writers ever overlap on shards or `state.json`.
 - **`semantic-index/`**: per-repo vector stores. Embeddings come from a local Ollama server (jina-code-v2 by default, overridable via `semantic.embed_model`/`semantic.dim`/`semantic.ollama_url`); no model files live on disk here.
@@ -122,7 +126,18 @@ Config resolution: `--config` (a persistent flag), else `CSL_CONFIG`, else
 search daemon started from a process all read the same file — a subcommand
 that adds its own `PersistentPreRunE` would silently break that. `csl config`
 prints the path, whether it loaded, and the settings in effect. Full
-reference: `config.md`. Key sections:
+reference: `config.md`.
+
+**Zero-config first run.** `Load` returns defaults for a missing file
+(`Loaded` false, `Path` set) and an error only for one that exists and cannot
+be parsed, so no command needs its own missing-file branch. Commands report
+the resulting empty repo list through `cfg.EmptyResultHint()`, which names the
+file to create; when a config IS loaded and still yields nothing, that stays an
+error. In `csl doctor` the same case is a `doctor.Skip`, so it renders as
+`ok config-loads (...)` and reaches the `csl_doctor` tool as a `skipped`
+check carrying the path.
+
+Key sections:
 
 - **`dirs`**: directories to walk for git repos.
 - **`index.hosts`**: allowlist of git remote hosts. Only repos whose origin remote matches a listed host are indexed. Omit to index all repos.
@@ -172,7 +187,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl query <pattern>`**: validate and parse a zoekt query without running a search. `--json`.
 - **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
 - **`csl repo [query]`**: interactive fuzzy-finder over discovered repos. With a query, prints the single matching repo's path (case-insensitive substring on org/repo; errors on zero or multiple matches); a query also filters `--list` output. `--list` (non-interactive), `--json`/`--toon` (imply `--list`).
-- **`csl doctor`**: run the self-checks, one ok/FAIL line per check — config (parses AND sets at least one dir), state file, index freshness, shard integrity, search-server responsiveness, plus web-only reachability and version-skew probes against the effective web base URL (search works with both failing). `--repair` (reset a corrupt state file). The list lives in `internal/selfcheck` and is also served as the `csl_doctor` MCP tool.
+- **`csl doctor`**: run the self-checks, one ok/FAIL line per check — config (parses, and sets at least one dir when the file exists; no file at all passes with a note naming the path to create), state file, index freshness, shard integrity, search-server responsiveness, plus web-only reachability and version-skew probes against the effective web base URL (search works with both failing). `--repair` (reset a corrupt state file). The list lives in `internal/selfcheck` and is also served as the `csl_doctor` MCP tool.
 - **`csl config`**: print which config file csl reads, whether it loaded, and the settings in effect once defaults are applied. `--help` carries an annotated reference of every key and of the `CSL_*` environment variables.
 - **`csl index`**: manage the search index; by default re-indexes only stale repos. `--all` (full lexical + semantic), `--lexical-all`, `--semantic` (also build the semantic index), `--semantic-all` (semantic-only rebuild; needs Ollama running with the model pulled), `--status`, `--repair` (validate shards, drop corrupted ones), `--clean` (delete the index dir), `--drain` (batch-index repos from `reindex.queue`), `--repo <path>` (single repo), `--json`.
 - **`csl semantic <query>`**: search by meaning via vector embeddings. `--repo`, `--lang`, `--k` (10), `--expand`, `--json`. Requires `csl index --semantic-all` first.
@@ -208,7 +223,7 @@ path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 - `csl_read(repo, file, start_line?, end_line?)` → `{repo, path, lines[], total_lines, truncated}`. Reads a file by repo name and relative path; caps output at 500 lines unless the caller sets a range.
 - `csl_show_file(repo, file, start_line?, end_line?, no_open?)` → `{url, repo, file, local_path, opened, warning?}`. Shows a file section to the USER: builds a `/file` deep link into the csl web UI and opens it in the browser (`no_open=true` to just get the URL). The page renders the section like a search match with expand-to-full-file and copy-path controls, reading live from disk — `csl web` must be running. For reading content yourself, use `csl_read`.
 - `csl_ls(repo, path?, glob?, recursive?)` → `{repo, path, entries[], total, truncated, total_available?}`. Lists files/dirs in a repo (glob matches base names; `recursive` returns files only, no dirs); caps at 500 entries.
-- `csl_doctor()` → `{ok, checks: [{name, status, detail?}]}`. Runs the same checks as `csl doctor` (config, state file, index freshness, shard integrity, search server, web reachability and version skew) and returns them as JSON, for a client that can call a tool but has no shell. Read-only: never repairs. Distinct from `csl_repo_health`, which is about the indexed repos rather than csl itself.
+- `csl_doctor()` → `{ok, checks: [{name, status, detail?}]}`. Runs the same checks as `csl doctor` (config, state file, index freshness, shard integrity, search server, web reachability and version skew) and returns them as JSON, for a client that can call a tool but has no shell. A machine with no config file reports `config-loads` as `skipped` with the path to create in `detail` — a pass with something to say, not a failure. Read-only: never repairs. Distinct from `csl_repo_health`, which is about the indexed repos rather than csl itself.
 - `csl_index_info()` → `{repos_indexed, dirty_repos, shards, corrupt_shards, index_size_bytes, newest_indexed_at?, oldest_indexed_at?, daemon_running, semantic: {built, stores, chunks, model_present}}`. Index-wide health in one call; reads state from disk and pings the daemon (no repo scan, sub-second).
 
 ## Shared UI: webkit

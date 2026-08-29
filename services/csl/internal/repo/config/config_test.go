@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +95,61 @@ func TestLoadFromIgnoresRetiredKeys(t *testing.T) {
 	}
 	if len(cfg.Dirs) != 1 || cfg.Dirs[0] != "/tmp/repos" {
 		t.Errorf("dirs = %v, want the live key to survive the retired ones", cfg.Dirs)
+	}
+}
+
+// TestLoadMissingFileIsDefaults pins the zero-config contract: no file means
+// defaults, reported as such, not an error. A present-but-broken file still
+// errors, since that machine was configured and the mistake should surface.
+func TestLoadMissingFileIsDefaults(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv(PathEnv, "")
+	t.Cleanup(func() { SetPath("") })
+	SetPath("")
+
+	wantPath := filepath.Join(home, ".config", "csl", "config.yaml")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with no config file = %v, want nil", err)
+	}
+	if cfg.Loaded {
+		t.Error("Loaded = true, want false when no file exists")
+	}
+	if cfg.Path != wantPath {
+		t.Errorf("Path = %q, want %q", cfg.Path, wantPath)
+	}
+	if len(cfg.Dirs) != 0 {
+		t.Errorf("Dirs = %v, want empty", cfg.Dirs)
+	}
+	if hint := cfg.EmptyResultHint(); !strings.Contains(hint, wantPath) {
+		t.Errorf("EmptyResultHint() = %q, want it to name %q", hint, wantPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(wantPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wantPath, []byte("dirs: ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err == nil {
+		t.Error("Load() with a malformed config = nil, want a parse error")
+	}
+
+	if err := os.WriteFile(wantPath, []byte("dirs:\n  - /tmp/repos\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() with a valid config = %v, want nil", err)
+	}
+	if !cfg.Loaded || cfg.Path != wantPath {
+		t.Errorf("Loaded/Path = %v/%q, want true/%q", cfg.Loaded, cfg.Path, wantPath)
+	}
+	if hint := cfg.EmptyResultHint(); !strings.Contains(hint, "no git repos found") {
+		t.Errorf("EmptyResultHint() = %q, want the configured-machine wording", hint)
 	}
 }
 

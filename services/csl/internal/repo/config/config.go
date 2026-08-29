@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -22,6 +24,13 @@ const configFileName = "config.yaml"
 const PathEnv = "CSL_CONFIG"
 
 // Config holds the repo finder configuration.
+//
+// Loaded and Path describe where the values came from rather than being
+// values themselves, so they carry no YAML tag and never appear in the
+// config echo. Callers need them to tell the two empty states apart: a
+// machine with no config file yet, which is csl's starting state and not an
+// error, and a config file that configures nothing, which is a mistake worth
+// reporting.
 type Config struct {
 	Dirs     []string       `yaml:"dirs"`
 	Hooks    HooksConfig    `yaml:"hooks"`
@@ -31,6 +40,13 @@ type Config struct {
 	Daemon   DaemonConfig   `yaml:"daemon"`
 	Web      WebConfig      `yaml:"web"`
 	Refresh  RefreshConfig  `yaml:"refresh"`
+
+	// Loaded reports whether a config file was read. False means csl is
+	// running on defaults because no file exists at Path.
+	Loaded bool `yaml:"-"`
+	// Path is the file Load resolved, present or not, so a message can name
+	// the file to create or edit.
+	Path string `yaml:"-"`
 }
 
 // RefreshConfig controls the background index refresh loop that `csl web`
@@ -171,6 +187,23 @@ func (h *PostMergeHook) FilterExcluded(repos []finder.Repo) []finder.Repo {
 	return out
 }
 
+// EmptyResultHint explains an empty repo list in terms of the config file:
+// which file to create on a machine that has none, which file to fix on one
+// that does. Callers print it beside the empty result rather than instead of
+// it — the empty answer is correct, the hint says how to get a fuller one.
+// Safe to call on a nil receiver.
+func (c *Config) EmptyResultHint() string {
+	path := "the config file ('csl config' prints its path)"
+	if c != nil && c.Path != "" {
+		path = c.Path
+	}
+	if c == nil || !c.Loaded {
+		return "no config file yet: create " + path +
+			" with a 'dirs' list naming the directories that hold your checkouts"
+	}
+	return "no git repos found under the dirs in " + path
+}
+
 // SemanticEnabled reports whether the daemon should load the semantic index and
 // embedding model. Safe to call on a nil receiver (returns false).
 func (c *Config) SemanticEnabled() bool {
@@ -249,14 +282,27 @@ func Path() (string, error) {
 }
 
 // Load reads the config file Path resolves.
+//
+// A missing file is not an error: csl has a working set of defaults and a
+// first run is expected to happen before anyone writes a config, so callers
+// get an empty Config with Loaded false and Path set. What every caller then
+// has is an empty repo list, which they report as the empty result it is,
+// naming Path so the reader knows which file to create.
+//
+// A file that exists but cannot be read or parsed is still an error. That is
+// a machine someone configured, and quietly running on defaults there would
+// hide the mistake (ADR-0011).
 func Load() (*Config, error) {
-	globalPath, err := Path()
+	path, err := Path()
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := loadFrom(globalPath)
-	if err != nil {
-		return nil, fmt.Errorf("no config found (checked %s): %w", globalPath, err)
+	cfg, err := loadFrom(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return &Config{Path: path}, nil
+	case err != nil:
+		return nil, err
 	}
 	return cfg, nil
 }
@@ -272,7 +318,7 @@ func loadFrom(path string) (*Config, error) {
 		return nil, err
 	}
 
-	var cfg Config
+	cfg := Config{Loaded: true, Path: path}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -138,6 +139,36 @@ func TestSearchServerResponsive(t *testing.T) {
 			t.Fatal("Run() = nil, want error for live pid with unresponsive socket")
 		}
 	})
+}
+
+// TestNoConfigPasses is the zero-config contract on the doctor side: a
+// machine with no config file has nothing configured to index, which is a
+// starting state rather than a fault, so the config and freshness checks pass
+// and the path to create arrives as a note instead.
+func TestNoConfigPasses(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
+	t.Setenv("CSL_CONFIG", "")
+	config.SetPath("")
+
+	// The check skips rather than passing silently or failing: a report an
+	// agent reads has to say why there is nothing to index.
+	report := doctor.Collect(context.Background(), []doctor.Check{configLoads()})
+	if !report.OK {
+		t.Errorf("Collect().OK = false, want a skip to count as a pass")
+	}
+	if got := report.Checks[0].Status; got != doctor.StatusSkipped {
+		t.Errorf("config-loads status = %q, want %q", got, doctor.StatusSkipped)
+	}
+	wantPath := filepath.Join(home, ".config", "csl", "config.yaml")
+	if got := report.Checks[0].Detail; !strings.Contains(got, wantPath) {
+		t.Errorf("config-loads detail = %q, want it to name %q", got, wantPath)
+	}
+	if err := indexFreshness(filepath.Join(home, "index")).Run(context.Background()); err != nil {
+		t.Errorf("index-freshness with no config file = %v, want nil", err)
+	}
 }
 
 // TestWebBaseURLFollowsPort pins the fix for links that outlived a port

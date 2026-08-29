@@ -11,10 +11,20 @@
 
 A leading `~` is expanded in the flag and the environment variable, so both
 work under launchd, where no shell expands them first. There is no per-repo
-or per-directory override. The file is YAML, and every key in it is
-optional — a missing file leaves `csl` on its defaults with no directories
-configured, and `csl config` reports the file as "missing, defaults in use"
-rather than failing.
+or per-directory override.
+
+**The file is optional and so is every key in it.** A machine with no config
+file runs on defaults: `csl web` serves an empty UI, `csl repo --list` prints
+an empty list, `csl doctor` passes, and each of them names the file to create.
+Nothing has to exist before csl starts. What is not tolerated is a file that
+exists and cannot be parsed — that machine was configured, and running on
+defaults there would hide the mistake, so those commands fail naming the file
+(ADR-0011).
+
+The same distinction runs through the empty-result messages: with no config
+file you are told which file to create, while a config that is present and
+still discovers no repos is reported as an error, because a configured
+machine finding nothing is a misconfiguration rather than a starting state.
 
 `csl config` prints the resolved path, whether the file loaded, and the
 effective settings after defaults are applied. `csl config --help` carries
@@ -35,9 +45,16 @@ The config file is the only thing under the config directory. Everything
 `~/.local/state/csl` when that variable is unset.
 
 Installs made before the split are the exception, and deliberately so: when
-`~/.config/csl` already exists on disk it stays the state directory, so an
-upgrade moves no files and re-indexes nothing. `csl doctor` and the
-`operating.md` doc (`csl docs`) both name the directory in effect.
+`~/.config/csl` holds a `search-index/` directory it stays the state
+directory, so an upgrade moves no files and re-indexes nothing. `csl doctor`
+and the `operating.md` doc (`csl docs`) both name the directory in effect.
+
+The index is what settles it, not the directory. The fleet recipe symlinks
+`config.yaml` into `~/.config/csl` on every machine, so the directory exists
+even where csl has never indexed anything; treating that as evidence would
+leave every provisioned machine on the pre-split path forever. A machine with
+the config symlink and no index lands in the state directory like any fresh
+install.
 
 ## Keys
 

@@ -2,11 +2,9 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -88,25 +86,19 @@ func runWeb(_ *cobra.Command, _ []string) error {
 	return http.ListenAndServe(addr, handler)
 }
 
-// webConfig loads the csl config for the web server. A missing config file is
-// not fatal: the server starts with no configured dirs so a fresh install gets
-// a working UI instead of a crash loop under a keep_alive service manager.
-// Any other load failure (unreadable file, bad YAML) stays a hard error.
+// webConfig loads the csl config for the web server and says so when there is
+// none. Load already treats a missing file as defaults, which is what keeps a
+// fresh install from crash-looping under a keep_alive service manager; the log
+// line is the "and then must say so" half of that (ADR-0011), since a server
+// serving zero repos otherwise looks broken rather than unconfigured. A file
+// that exists but does not parse stays a hard error.
 func webConfig() (*config.Config, error) {
 	cfg, err := config.Load()
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		path, pathErr := config.Path()
-		if pathErr != nil {
-			path = "the config file"
-		}
-		log.Printf(
-			"csl web: no config found; serving with no repos (create %s with a 'dirs' list, then restart)",
-			path,
-		)
-		return &config.Config{}, nil
-	case err != nil:
+	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	if !cfg.Loaded {
+		log.Printf("csl web: serving with no repos — %s, then restart", cfg.EmptyResultHint())
 	}
 	return cfg, nil
 }
