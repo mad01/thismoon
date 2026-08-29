@@ -22,8 +22,10 @@ internal/cli/              cobra commands: parse flags, build a Definition
 internal/reconcile/        read-compare-apply: decide create/update/delete/none
 internal/service/          the Definition struct, its Hash(), the Manager interface
 internal/platform/launchd/ plist rendering (howett.net/plist) and the launchctl wrapper
-internal/notify/           best-effort event emission to the local events service
 ```
+
+The reconciler's best-effort event emission to the local events service goes
+through the shared `kit/notify` package rather than a per-tool copy.
 
 The CLI layer never calls launchctl directly. `Manager` is an interface and
 the launchctl client takes an injectable command runner, which keeps the core

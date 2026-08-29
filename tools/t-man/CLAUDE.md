@@ -27,8 +27,7 @@ internal/cli/                cobra commands (root, add, list, top, remove, contr
 internal/service/            Definition struct, Hash(), Manager interface
 internal/platform/launchd/   plist generation, launchctl wrapper, the launchd Manager
 internal/procstat/           PID → RSS/CPU%/uptime via one ps call (launchd-agnostic)
-internal/reconcile/          read-compare-apply reconciler + state comparison
-internal/notify/             EmitEvent: best-effort POST to events.this from the reconciler (fire-and-forget goroutine)
+internal/reconcile/          read-compare-apply reconciler + state comparison; emits events via the shared kit/notify
 Makefile                     part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -107,7 +106,10 @@ machines ralph builds it via `recipes/t-man/` from the sources cache.
 | `version [-o json]` | | Print the build SHA, or the full build metadata object |
 
 Global persistent flags (all commands): `--agent` (default true), `--daemon`
-(requires root, mutually exclusive with `--agent`), `--dryrun`.
+(requires root), `--dryrun`. `--agent` and `--daemon` are one choice spelled
+two ways — `internal/cli/root.go` collapses them into `daemonMode` in
+`PersistentPreRunE`, so `--agent=false` means daemon and a pair asserting the
+same value (`--agent --daemon`) is an error.
 
 `add` flags: `--name` (required), `--desc`, `--workdir`, `--env KEY=VALUE`
 (repeatable), `--path` (colon-separated PATH additions), `--logs DIR`,

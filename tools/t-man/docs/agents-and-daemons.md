@@ -16,8 +16,10 @@ need root.
 | Needs sudo | no | yes |
 | Lifecycle | runs while you are logged in | runs at boot, before login |
 
-`--agent` is the default and is implied if you pass nothing. `--daemon` and
-`--agent` are mutually exclusive.
+`--agent` is the default and is implied if you pass nothing. The two flags
+name one choice, so `--agent=false` selects daemon mode just as `--daemon`
+does, and passing both is fine when they agree (`--agent=false --daemon`).
+Passing both saying the same thing twice — `--agent --daemon` — is an error.
 
 ## When to use which
 
