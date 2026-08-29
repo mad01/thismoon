@@ -29,11 +29,12 @@ const DefaultWorkdir = "~/.local/share/events"
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "events",
-		Bin:       "events",
-		Purpose:   "local event/audit log producers post to and agents query",
-		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath: DefaultWorkdir,
-		HasDoctor: true,
+		Name:          "events",
+		Bin:           "events",
+		Purpose:       "local event/audit log producers post to and agents query",
+		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
+		StorePath:     DefaultWorkdir,
+		HasDoctor:     true,
+		MCPDoctorTool: "events_doctor",
 	}
 }

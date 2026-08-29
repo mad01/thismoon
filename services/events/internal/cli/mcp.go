@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/services/events"
 	"github.com/mad01/thismoon/services/events/internal/mcpserver"
 )
 
@@ -23,7 +25,10 @@ serve agent first (it owns the store).
 Tools exposed:
   events_query    Query the event log, newest first.
   events_sources  List event sources with counts.
-  events_emit     Record a single event.`,
+  events_emit     Record a single event.
+  events_doctor   Run the doctor checks and return the report.
+
+` + agentdoc.RegistrationSnippet(events.Facts()),
 	RunE: runMCP,
 }
 
@@ -36,7 +41,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("events mcp: port=%d base-url=%s", flagPort, flagBaseURL)
 	srv, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL},
+		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
 	)
 	if err != nil {
 		return err

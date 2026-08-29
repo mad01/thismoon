@@ -30,9 +30,17 @@ Flags accepted only by `events serve`:
 ## Environment variables
 
 - `EVENTS_WORKDIR`: fallback for `--workdir`.
-- `EVENTS_PORT`: fallback for `--port`. Ignored if it does not parse as an
-  integer.
+- `EVENTS_PORT`: fallback for `--port`. A value that does not parse as an
+  integer warns once on stderr and falls back to the compiled-in default.
 - `EVENTS_BASE_URL`: fallback for `--base-url`.
+
+A `~` that cannot be expanded — no resolvable home directory, which happens
+under a launchd agent with a stripped environment — is an error at startup.
+Earlier releases stripped the `~` and used a path relative to the working
+directory instead, which quietly served an empty store.
+
+To see what a given environment actually resolved to, run `events doctor`; an
+agent with no shell gets the same report from the `events_doctor` MCP tool.
 
 ## Example
 

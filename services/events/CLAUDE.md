@@ -126,6 +126,9 @@ leaked before the `testing.Testing()` guards existed). `events purge --source X
   its current event count, sorted by name.
 - `events_emit(source, title, level?, component?, message?, tags?)` →
   `{id, url}`: records an event; `source` and `title` are required.
+- `events_doctor()` → the `kit/doctor` report: run the same checks as `events
+  doctor` (serve reachable, store readable, no version skew) and return them as
+  JSON, for a client that can call a tool but has no shell.
 - No `events_purge` tool. Purge is deliberately CLI + API only, so deletion
   stays human-triggered.
 
