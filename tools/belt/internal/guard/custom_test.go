@@ -19,11 +19,16 @@ func writeGuardScript(t *testing.T, dir, name, body string) string {
 	return writeScript(t, dir, name, "#!/bin/sh\n"+body)
 }
 
-// newCustomGuard builds the guard with a short timeout and a warning
-// recorder.
+// newCustomGuard builds the guard with a warning recorder, keeping the
+// production exec budget.
+//
+// Only the timeout test may shorten that budget. This helper used to set it
+// to 500ms for every case, which made each test race /bin/sh startup: under
+// a full-repo `go test ./...` the exec could outlast the budget, and the
+// affected case took the timeout-allow path and reported a missing denial.
+// A test that is not about the timeout must not be able to hit it.
 func newCustomGuard(cfg config.CustomGuard, warned *[]string) *Custom {
 	c := NewCustom("test-guard", cfg)
-	c.timeout = 500 * time.Millisecond
 	c.emit = func(_, _, _, message string, _ map[string]string) {
 		*warned = append(*warned, message)
 	}
@@ -70,10 +75,16 @@ func TestCustomGuardExitCodes(t *testing.T) {
 	}
 }
 
+// TestCustomGuardTimeout pins the fail-open timeout path. It is the one
+// place that shortens the budget, and it pairs a tiny one with an external
+// that sleeps far past it, so the verdict cannot depend on machine speed in
+// either direction: the script always outlasts the budget, and a denial
+// (exit 1) would mean the timeout did not fire.
 func TestCustomGuardTimeout(t *testing.T) {
 	slow := writeGuardScript(t, t.TempDir(), "slow.sh", "sleep 5\nexit 1")
 	var warned []string
 	g := newCustomGuard(config.CustomGuard{Event: EventBash, Command: []string{slow}}, &warned)
+	g.timeout = 50 * time.Millisecond
 	if d := g.Check(Input{Event: EventBash, Command: "git commit", Cwd: "/tmp"}); d != nil {
 		t.Errorf("timeout should fail open, got %v", d)
 	}
