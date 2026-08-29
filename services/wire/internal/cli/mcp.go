@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	wire "github.com/mad01/thismoon/services/wire"
 	"github.com/mad01/thismoon/services/wire/internal/mcpserver"
 )
 
@@ -25,7 +27,10 @@ Tools exposed:
   wire_post   Post a message to a channel.
   wire_read   Read after a cursor, optionally blocking for the next message.
   wire_list   List channels, most recently active first.
-  wire_close  End a conversation and wake everyone waiting on it.`,
+  wire_close  End a conversation and wake everyone waiting on it.
+  wire_doctor Run the doctor checks and return the report.
+
+` + agentdoc.RegistrationSnippet(wire.Facts()),
 	RunE: runMCP,
 }
 
@@ -38,7 +43,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("wire mcp: port=%d base-url=%s", flagPort, flagBaseURL)
 	srv, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL},
+		mcpserver.Config{Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
 	)
 	if err != nil {
 		return err

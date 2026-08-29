@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/wire/internal/client"
 	"github.com/mad01/thismoon/services/wire/internal/ref"
 )
@@ -19,6 +20,7 @@ type handlers struct {
 	client *client.Client
 	webURL string // where the user watches a channel in a browser
 	port   int    // the serve port, for minting connection strings
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -90,6 +92,15 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Closing is terminal: no further messages, and every session waiting on the channel wakes immediately instead of blocking for a reply that will never come. " +
 			"Give a `note` saying how it ended. The transcript stays readable afterwards.",
 	}, h.handleClose)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "wire_doctor",
+		Description: "Diagnose wire itself: is serve reachable, is the JSONL store readable, is the running build " +
+			"the installed one. Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"Call this when another wire tool errors: it separates a serve that is down or on a different port " +
+			"from a channel that genuinely has nothing new.",
+	}, h.handleDoctor)
 }
 
 // channelOut is the response shape for the channel-returning tools: the
@@ -301,4 +312,19 @@ func (h *handlers) handleClose(
 		return nil, channelOut{}, err
 	}
 	return nil, h.channel(c), nil
+}
+
+// ── doctor ──
+
+type doctorInput struct{}
+
+// handleDoctor runs the same checks as `wire doctor` and returns the report.
+// A failing check is a result, not a tool error: the caller asked what is
+// wrong, and an error would hide the answer behind a transport failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ doctorInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }

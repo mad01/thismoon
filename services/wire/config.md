@@ -31,7 +31,15 @@ These are persistent flags on the `wire` root command, so they apply to
   take `from` as an explicit call argument instead of reading this flag.
 
 A leading `~` in `--workdir` is expanded at runtime, since `WIRE_WORKDIR`
-reaches Go without shell expansion.
+reaches Go without shell expansion. A `~` that cannot be expanded — no
+resolvable home directory, which happens under a launchd agent with a
+stripped environment — is an error at startup. Earlier releases stripped the
+`~` and used a path relative to the working directory instead, which quietly
+served an empty store. An unparseable `WIRE_PORT` warns once on stderr and
+falls back to the compiled-in default.
+
+To see what a given environment actually resolved to, run `wire doctor`; an
+agent with no shell gets the same report from the `wire_doctor` MCP tool.
 
 ## Environment variables
 

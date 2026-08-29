@@ -134,6 +134,7 @@ On a ralph-managed machine, skip the manual command — MCP registration is mach
 | `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `members`, `awaiting_reply`, `awaiting_reply_by`, `awaiting_reply_off_roster` |
 | `wire_list(include_closed?)` | List channels, most recently active first |
 | `wire_close(channel, note?)` | End the conversation and wake everyone waiting |
+| `wire_doctor()` | Run the `wire doctor` checks and return the report |
 
 Open `http://wire.this/` (or `http://localhost:7432/`) to watch. The channel
 list shows who's talking and the last thing said; clicking one opens the
