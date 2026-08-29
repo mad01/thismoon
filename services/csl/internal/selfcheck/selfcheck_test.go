@@ -13,7 +13,11 @@ import (
 )
 
 func TestCheckNamesAndOrder(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
+	t.Setenv("CSL_CONFIG", "")
 	want := []string{
 		"config-loads",
 		"state-file-loads",

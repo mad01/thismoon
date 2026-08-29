@@ -11,6 +11,25 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
+// isolateOverrides points config.OverridesDir at a private temp directory
+// and returns it, created.
+//
+// Pinning HOME is not enough: OverridesDir resolves through kit/confdir,
+// which prefers an absolute XDG_CONFIG_HOME, so on a machine that exports
+// one (GitHub's Linux runners do, macOS does not) these tests and the config
+// package's own override tests write into the same real directory while both
+// package binaries run concurrently.
+func isolateOverrides(t *testing.T) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := config.OverridesDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // runOverride executes `belt override <args...>` against a fresh command
 // tree and returns its stdout.
 func runOverride(t *testing.T, args ...string) string {
@@ -27,7 +46,7 @@ func runOverride(t *testing.T, args ...string) string {
 }
 
 func TestOverrideSetExtendClear(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateOverrides(t)
 
 	runOverride(t, "set", "vacation", "--for", "5m", "--reason", "testing the flow")
 	o, ok := config.ReadOverride("vacation")
@@ -63,7 +82,7 @@ func TestOverrideSetExtendClear(t *testing.T) {
 }
 
 func TestOverrideExtendRequiresExisting(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateOverrides(t)
 	cmd := overrideCmd()
 	cmd.SetOut(new(bytes.Buffer))
 	cmd.SetErr(new(bytes.Buffer))
@@ -74,7 +93,7 @@ func TestOverrideExtendRequiresExisting(t *testing.T) {
 }
 
 func TestOverrideRequiresReason(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateOverrides(t)
 	cases := [][]string{
 		{"set", "vacation"},                     // flag missing entirely
 		{"set", "vacation", "--reason", ""},     // empty
@@ -97,11 +116,7 @@ func TestOverrideRequiresReason(t *testing.T) {
 }
 
 func TestOverrideListStates(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	dir := config.OverridesDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	dir := isolateOverrides(t)
 	write := func(name, content string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

@@ -16,21 +16,19 @@ import (
 //	internal/a.go
 //	internal/b.txt
 //	internal/deep/c.go
-func setupLsTestRepo(t *testing.T) func() {
+func setupLsTestRepo(t *testing.T) {
 	t.Helper()
-	cleanup := setupReadTestRepo(t, "main.go", 3)
+	setupReadTestRepo(t, "main.go", 3)
 	repoDir := filepath.Join(os.Getenv("HOME"), "workspace", "org", "testrepo")
 	for _, f := range []string{"docs/readme.md", "internal/a.go", "internal/b.txt", "internal/deep/c.go"} {
 		p := filepath.Join(repoDir, f)
 		_ = os.MkdirAll(filepath.Dir(p), 0o755)
 		_ = os.WriteFile(p, []byte("x\n"), 0o644)
 	}
-	return cleanup
 }
 
 func TestHandleLs_SingleLevelRoot(t *testing.T) {
-	cleanup := setupLsTestRepo(t)
-	defer cleanup()
+	setupLsTestRepo(t)
 
 	_, out, err := handleLs(context.Background(), nil, lsInput{Repo: "testrepo"})
 	if err != nil {
@@ -52,8 +50,7 @@ func TestHandleLs_SingleLevelRoot(t *testing.T) {
 }
 
 func TestHandleLs_SubdirAndGlob(t *testing.T) {
-	cleanup := setupLsTestRepo(t)
-	defer cleanup()
+	setupLsTestRepo(t)
 
 	_, out, err := handleLs(context.Background(), nil, lsInput{
 		Repo: "testrepo",
@@ -70,8 +67,7 @@ func TestHandleLs_SubdirAndGlob(t *testing.T) {
 }
 
 func TestHandleLs_RecursiveFilesOnly(t *testing.T) {
-	cleanup := setupLsTestRepo(t)
-	defer cleanup()
+	setupLsTestRepo(t)
 
 	_, out, err := handleLs(context.Background(), nil, lsInput{
 		Repo:      "testrepo",
@@ -100,8 +96,7 @@ func TestHandleLs_RecursiveFilesOnly(t *testing.T) {
 }
 
 func TestHandleLs_RejectsEscapingPath(t *testing.T) {
-	cleanup := setupLsTestRepo(t)
-	defer cleanup()
+	setupLsTestRepo(t)
 
 	for _, p := range []string{"..", "../other", "/etc", "internal/../.."} {
 		_, _, err := handleLs(context.Background(), nil, lsInput{Repo: "testrepo", Path: p})
@@ -112,8 +107,7 @@ func TestHandleLs_RejectsEscapingPath(t *testing.T) {
 }
 
 func TestHandleLs_TruncatesAtCap(t *testing.T) {
-	cleanup := setupLsTestRepo(t)
-	defer cleanup()
+	setupLsTestRepo(t)
 
 	repoDir := filepath.Join(os.Getenv("HOME"), "workspace", "org", "testrepo")
 	bulk := filepath.Join(repoDir, "bulk")
@@ -138,8 +132,7 @@ func TestHandleLs_TruncatesAtCap(t *testing.T) {
 }
 
 func TestHandleIndexInfo_EmptyStateNoError(t *testing.T) {
-	cleanup := setupLsTestRepo(t)
-	defer cleanup()
+	setupLsTestRepo(t)
 
 	_, out, err := handleIndexInfo(context.Background(), nil, indexInfoInput{})
 	if err != nil {

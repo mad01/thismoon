@@ -7,9 +7,30 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
 
-func setupReadTestRepo(t *testing.T, fileName string, lineCount int) func() {
+// isolateConfigEnv points every path csl resolves inside home for the rest
+// of the test: the config file, the state directory, and anything derived
+// from them.
+//
+// Faking HOME alone is not enough. confdir honors XDG_CONFIG_HOME and
+// XDG_STATE_HOME ahead of HOME, and GitHub's Linux runners export
+// XDG_CONFIG_HOME while macOS does not — which is why a suite that isolates
+// on HOME alone passes on a laptop and reads the runner's real config in
+// CI. Both variables are pinned under home rather than emptied, so the
+// fixture is found whichever branch confdir takes.
+func isolateConfigEnv(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
+	t.Setenv("CSL_CONFIG", "")
+	config.SetPath("")
+}
+
+func setupReadTestRepo(t *testing.T, fileName string, lineCount int) {
 	t.Helper()
 	tmp := t.TempDir()
 	reposRoot := filepath.Join(tmp, "workspace")
@@ -33,14 +54,11 @@ func setupReadTestRepo(t *testing.T, fileName string, lineCount int) func() {
 	cslCfg := "dirs:\n  - " + reposRoot + "\n"
 	_ = os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cslCfg), 0o644)
 
-	origHome := os.Getenv("HOME")
-	_ = os.Setenv("HOME", tmp)
-	return func() { _ = os.Setenv("HOME", origHome) }
+	isolateConfigEnv(t, tmp)
 }
 
 func TestHandleRead_RepoMatchIsCaseInsensitiveRegex(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "small.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "small.go", 5)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo: "TESTREPO$",
@@ -55,8 +73,7 @@ func TestHandleRead_RepoMatchIsCaseInsensitiveRegex(t *testing.T) {
 }
 
 func TestHandleRead_AmbiguousRepoErrors(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "small.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "small.go", 5)
 
 	// Add a second repo that also matches "testrepo".
 	reposRoot := filepath.Join(os.Getenv("HOME"), "workspace")
@@ -90,8 +107,7 @@ func TestHandleRead_AmbiguousRepoErrors(t *testing.T) {
 }
 
 func TestHandleRead_SmallFileNotTruncated(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "small.go", 50)
-	defer cleanup()
+	setupReadTestRepo(t, "small.go", 50)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo: "testrepo",
@@ -112,8 +128,7 @@ func TestHandleRead_SmallFileNotTruncated(t *testing.T) {
 }
 
 func TestHandleRead_LargeFileTruncatedByDefault(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "large.go", 1000)
-	defer cleanup()
+	setupReadTestRepo(t, "large.go", 1000)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo: "testrepo",
@@ -134,8 +149,7 @@ func TestHandleRead_LargeFileTruncatedByDefault(t *testing.T) {
 }
 
 func TestHandleRead_ExplicitRangeBypassesCap(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "big.go", 1000)
-	defer cleanup()
+	setupReadTestRepo(t, "big.go", 1000)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo:      "testrepo",
@@ -158,8 +172,7 @@ func TestHandleRead_ExplicitRangeBypassesCap(t *testing.T) {
 }
 
 func TestHandleRead_StartLineOnlyNoTruncation(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "medium.go", 200)
-	defer cleanup()
+	setupReadTestRepo(t, "medium.go", 200)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo:      "testrepo",
@@ -180,8 +193,7 @@ func TestHandleRead_StartLineOnlyNoTruncation(t *testing.T) {
 }
 
 func TestHandleRead_ExactlyAtCapNotTruncated(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "exact.go", 500)
-	defer cleanup()
+	setupReadTestRepo(t, "exact.go", 500)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo: "testrepo",
@@ -199,8 +211,7 @@ func TestHandleRead_ExactlyAtCapNotTruncated(t *testing.T) {
 }
 
 func TestHandleRead_LineNumbersCorrect(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "numbered.go", 100)
-	defer cleanup()
+	setupReadTestRepo(t, "numbered.go", 100)
 
 	_, out, err := handleRead(context.Background(), nil, readInput{
 		Repo:      "testrepo",

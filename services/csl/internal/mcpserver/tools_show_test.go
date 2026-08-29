@@ -21,8 +21,7 @@ func stubOpenURL(t *testing.T, err error) *string {
 }
 
 func TestHandleShowFile_BuildsURLAndOpens(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "main.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "main.go", 5)
 	opened := stubOpenURL(t, nil)
 
 	_, out, err := handleShowFile(context.Background(), nil, showFileInput{
@@ -54,8 +53,7 @@ func TestHandleShowFile_BuildsURLAndOpens(t *testing.T) {
 }
 
 func TestHandleShowFile_StartLineOnlyDefaultsEnd(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "main.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "main.go", 5)
 	stubOpenURL(t, nil)
 
 	_, out, err := handleShowFile(context.Background(), nil, showFileInput{
@@ -70,8 +68,7 @@ func TestHandleShowFile_StartLineOnlyDefaultsEnd(t *testing.T) {
 }
 
 func TestHandleShowFile_NoOpen(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "main.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "main.go", 5)
 	opened := stubOpenURL(t, nil)
 
 	_, out, err := handleShowFile(context.Background(), nil, showFileInput{
@@ -86,8 +83,7 @@ func TestHandleShowFile_NoOpen(t *testing.T) {
 }
 
 func TestHandleShowFile_OpenFailureWarnsInsteadOfErroring(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "main.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "main.go", 5)
 	stubOpenURL(t, fmt.Errorf("no display"))
 
 	_, out, err := handleShowFile(context.Background(), nil, showFileInput{
@@ -105,8 +101,7 @@ func TestHandleShowFile_OpenFailureWarnsInsteadOfErroring(t *testing.T) {
 }
 
 func TestHandleShowFile_Errors(t *testing.T) {
-	cleanup := setupReadTestRepo(t, "main.go", 5)
-	defer cleanup()
+	setupReadTestRepo(t, "main.go", 5)
 	stubOpenURL(t, nil)
 
 	tests := []struct {

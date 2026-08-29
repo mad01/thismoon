@@ -7,7 +7,7 @@ import (
 )
 
 func TestWebConfigMissingFile(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateConfigEnv(t, t.TempDir())
 
 	cfg, err := webConfig()
 	if err != nil {
@@ -20,7 +20,7 @@ func TestWebConfigMissingFile(t *testing.T) {
 
 func TestWebConfigMalformedFile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	isolateConfigEnv(t, home)
 
 	dir := filepath.Join(home, ".config", "csl")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
