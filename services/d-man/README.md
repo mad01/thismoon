@@ -74,7 +74,7 @@ d-man version [-o json]    # build sha; -o json adds commit, tag, build time
 
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
-| `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml`, then `/etc/d-man/routes.toml` | Path to the routes file, first existing path wins. |
+| `--config` | `DMAN_CONFIG` | `~/.config/d-man/routes.toml`, then `/etc/d-man/routes.toml` | Path to the routes file, first existing path wins. `XDG_CONFIG_HOME` relocates the per-user path. |
 | `--hosts-file` | _(none)_ | `/etc/hosts` | Hosts file to sync into; point at a temp file to dry-run. |
 | `--port` (serve) | _(none)_ | `80` | Port the proxy listens on (loopback only). |
 | `--tls-port` (serve) | _(none)_ | `443` | Port the block-page TLS listener uses (loopback only). |
@@ -94,7 +94,9 @@ See [`docs/commands.md`](docs/commands.md) for every subcommand in detail.
   picker, live-filtered to backends currently responding (any host; answered
   by d-man itself, not proxied). If a running site is missing from the list,
   confirm its backend is actually up on the declared port: a dead backend is
-  dropped, not shown as down.
+  dropped, not shown as down. Cross-origin, it answers only pages on this
+  machine — an `Origin` on loopback or under `.this` (see
+  [config.md](config.md)).
 - Everything else: proxied to the matching route's backend by `Host` header.
   A `502` means the backend isn't running, or the port in `routes.toml`
   doesn't match the backend's listen port; check with
@@ -176,13 +178,14 @@ sudo d-man ca install      # generate the CA if needed and trust it
 ## Where things live
 
 - Binary: `~/code/bin/d-man`
-- Routes config: `~/.config/d-man/routes.toml`, falling back to
-  `/etc/d-man/routes.toml` for root daemons with no useful HOME (or
-  `--config`/`DMAN_CONFIG`)
+- Routes config: `~/.config/d-man/routes.toml` (or `$XDG_CONFIG_HOME/d-man/`),
+  falling back to `/etc/d-man/routes.toml` for root daemons with no useful
+  HOME (or `--config`/`DMAN_CONFIG`)
 - Managed block: inside `/etc/hosts`, between the `# >>> d-man managed >>>` /
   `# <<< d-man managed <<<` markers; every other line stays untouched
 - Backup: `/etc/hosts.d-man.bak`, written before each change
-- Block-page CA: `~/.config/d-man/ca/` (`ca.pem` + `ca-key.pem`), or `--ca-dir`
+- Block-page CA: a `ca/` directory beside the routes config (`ca.pem` +
+  `ca-key.pem`), or `--ca-dir`
 - Daemon logs: `/var/log/d-man/` (the root launchd daemon registered by t-man)
 
 ## Develop

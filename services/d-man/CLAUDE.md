@@ -18,7 +18,9 @@ d-man/
     main.go              entrypoint, delegates to internal/cli.Execute
   internal/
     cli/                 cobra command tree: root, serve, sync, list, config, version, ca, docs
-      root.go              flags (--config/DMAN_CONFIG, --hosts-file)
+      root.go              flags (--config/DMAN_CONFIG, --hosts-file); the routes-file
+                           cascade, whose ~/.config leg resolves through kit/confdir
+                           (so XDG_CONFIG_HOME relocates it)
       serve.go             the daemon: reload loop, fsnotify watch, binary self-watch,
                            :80 proxy + :443 block-page TLS listener
       sync.go              one-shot managed-block write
@@ -33,13 +35,13 @@ d-man/
     hosts/                pure Validate/Render/Splice + the Sync shell (+ hosts_test.go);
                            the fail-safe hosts-file writer
     proxy/                one httputil.ReverseProxy; Host-header routing + the
-                           sites.json endpoint + block-page interception (+ proxy_test.go)
+                           sites.json endpoint + block-page interception (+ proxy_test.go);
+                           cors.go is the sites.json cross-origin allowlist
     tlsca/                local CA: persist + mint per-SNI leaf certs (+ tlsca_test.go)
     blockpage/            embedded retro arcade served on blocked hosts, random
                            pick per visit; more games load as plugins from the
                            optional games_dir config key (go:embed assets/ +
                            blockpage_test.go)
-    notify/               events.this emit, best-effort (per-tool copy, see Gotchas)
   Makefile               - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -87,7 +89,11 @@ proxied — the check sits at the top of
 `ModifyResponse` rewrites a backend self-redirect `Location` back to the
 client's hostname so redirects don't leak `127.0.0.1:<port>`. The proxy also
 answers `GET /__this/sites.json` itself (any host) for the webkit ⌘K site
-picker. The list is live-filtered: each fetch probes every port-backed
+picker. Pages behind d-man reach it same-origin; a page on a localhost port
+gets it cross-origin only when its `Origin` is loopback or ends in `.this`
+(`internal/proxy/cors.go`, reflected with `Vary: Origin`). **Never widen that
+to `*`** — the response enumerates the local services running on this
+machine. The list is live-filtered: each fetch probes every port-backed
 route's backend (`GET /`, anything `<500` = up) and lists only the ones
 responding, so a service gated off or not running on a host never shows up.
 The probe result is cached `sitesTTL` (30s) and a mutex makes a burst of
@@ -151,16 +157,15 @@ d-man docs                                # print the embedded operating doc: fa
   a throwaway `--ca-dir <temp>` to avoid root.
 - **The CA files are root-owned** (`ca-key.pem` is `0600`). The root daemon (or
   `sudo d-man ca install`) creates them, so even though they live under the
-  user's `~/.config/d-man/ca/`, a non-root process cannot read the key — that is
-  the point: the key mints system-trusted certs, so only root should hold it. A
-  non-root `serve` for testing must therefore use its own `--ca-dir`.
+  user's config directory (`~/.config/d-man/ca/`, or under `XDG_CONFIG_HOME`),
+  a non-root process cannot read the key — that is the point: the key mints
+  system-trusted certs, so only root should hold it. A non-root `serve` for
+  testing must therefore use its own `--ca-dir`.
 - **`httputil.ReverseProxy` handles WebSocket upgrades natively**, so no
   custom Upgrade handling is needed.
-- **`internal/notify` is a deliberate per-tool copy** of the same ~25-line
-  events.this emit helper carried by reminder, deps, t-man, status, present,
-  and speak. The tools are separate Go modules (and t-man is a separate repo),
-  so a shared package would need require+replace coupling across module
-  boundaries; the copy is cheaper.
+- **Events go through `kit/notify`** (async emit; the per-tool
+  `internal/notify` copy is gone, and so is the module-boundary argument that
+  justified it — everything here is one module now).
 - **Version probe.** `d-man version -o json` returns the shared four-key
   build metadata object (`version`, `commit`, `tag`, `build_time`, every key
   present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`,

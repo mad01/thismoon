@@ -13,10 +13,16 @@ The routes file is TOML. It is resolved in this order, first match wins:
 4. `/etc/d-man/routes.toml`, if it exists (the fallback for the root launchd
    daemon, whose `HOME` points nowhere useful)
 
-With none of those present, the per-user path (`~/.config/d-man/routes.toml`)
-is reported as missing and d-man runs on built-in defaults: no routes, no
-block list, suffix `this`. A leading `~` in any resolved path is expanded
-before the file is opened.
+Step 3 honors `XDG_CONFIG_HOME`: when that variable holds an absolute path,
+the per-user routes file is `$XDG_CONFIG_HOME/d-man/routes.toml` instead.
+Everything else about the order is unchanged.
+
+With none of those present, the per-user path is reported as missing and
+d-man runs on built-in defaults: no routes, no block list, suffix `this`. A
+leading `~` in any resolved path is expanded before the file is opened; a
+home directory that cannot be resolved at all is an error rather than a path
+relative to the working directory, and the `--config` default falls back to
+`/etc/d-man/routes.toml`.
 
 `d-man serve` watches the resolved file with `fsnotify` and reloads on
 content change or `SIGHUP`. The watch resolves symlinks once at startup and
@@ -88,6 +94,25 @@ both, or neither, is a validation error.
 ## Environment variables
 
 - `DMAN_CONFIG`: overrides the routes file path; see resolution order above.
+- `XDG_CONFIG_HOME`: relocates the per-user config directory (step 3 above)
+  and, with it, the default `--ca-dir`.
+- `EVENTS_BASE_URL`: where route-reload events are archived (default
+  `http://127.0.0.1:7430`). Emitting is best effort: an unreachable events
+  service drops the event and never affects a reload.
+
+## Cross-origin access
+
+`GET /__this/sites.json` is the one path d-man answers itself, on every
+configured host. Pages behind the front door fetch it same-origin and need
+no CORS header at all. For the localhost-port case (a page opened at
+`http://127.0.0.1:<port>` rather than through `<name>.this`), d-man reflects
+the request `Origin` in `Access-Control-Allow-Origin` alongside
+`Vary: Origin`, but only when that origin is an `http`/`https` URL whose
+host is loopback (`localhost`, `127.0.0.0/8`, `::1`, on any port) or ends in
+`.this`. Any other origin gets no CORS headers, so a page from the internet
+cannot read the list of services running on this machine.
+
+The allowlist is fixed: no config key or flag widens it.
 
 ## Example
 

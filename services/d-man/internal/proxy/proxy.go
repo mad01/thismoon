@@ -125,11 +125,12 @@ func New(routeMap map[string]string, sites []config.Site, blocked []string, game
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// d-man owns SitesPath on every host — serve the site list instead of
-	// proxying. Same-origin from the page's perspective; CORS lets a page not
-	// behind d-man (localhost dev) use it as a cross-origin fallback.
+	// proxying. Same-origin from the page's perspective; the CORS allowlist in
+	// cors.go lets a page not behind d-man (localhost dev) use it as a
+	// cross-origin fallback, and no one else.
 	if r.URL.Path == SitesPath {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		setSitesCORS(w, r)
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(h.sitesBody())
 		return

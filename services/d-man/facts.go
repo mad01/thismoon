@@ -6,9 +6,14 @@ package dman
 
 import "github.com/mad01/thismoon/kit/agentdoc"
 
+// Component is the name d-man registers under in the shared config directory
+// (kit/confdir); Facts reports the same name.
+const Component = "d-man"
+
 // DefaultRoutesPath is the per-user routes file when --config and DMAN_CONFIG
-// are unset. The leading ~ is expanded at runtime by the CLI, never at build
-// time.
+// are unset, and what the operating doc names. Setting XDG_CONFIG_HOME moves
+// the directory; the CLI resolves it through kit/confdir. The leading ~ is
+// expanded at runtime, never at build time.
 const DefaultRoutesPath = "~/.config/d-man/routes.toml"
 
 // SystemRoutesPath is the root-context routes file. A root launchd daemon has
@@ -22,8 +27,8 @@ const SystemRoutesPath = "/etc/d-man/routes.toml"
 // has no address of its own.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "d-man",
-		Bin:       "d-man",
+		Name:      Component,
+		Bin:       Component,
 		Purpose:   "local domain front door routing *.this hostnames to localhost services",
 		StorePath: DefaultRoutesPath,
 		HasDoctor: true,

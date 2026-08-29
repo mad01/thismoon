@@ -56,6 +56,7 @@ func TestServesSitesJSON(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "http://csl.this"+SitesPath, nil)
 	req.Host = "csl.this"
+	req.Header.Set("Origin", "http://localhost:7424")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -65,8 +66,8 @@ func TestServesSitesJSON(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "json") {
 		t.Errorf("Content-Type = %q, want json", ct)
 	}
-	if acao := rec.Header().Get("Access-Control-Allow-Origin"); acao != "*" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want *", acao)
+	if acao := rec.Header().Get("Access-Control-Allow-Origin"); acao != "http://localhost:7424" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want the origin reflected", acao)
 	}
 	if !strings.Contains(rec.Body.String(), `"csl.this"`) {
 		t.Errorf("body = %q, want the site list", rec.Body.String())

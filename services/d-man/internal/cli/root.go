@@ -1,13 +1,13 @@
 package cli
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/kit/confdir"
 	dman "github.com/mad01/thismoon/services/d-man"
 	"github.com/mad01/thismoon/services/d-man/internal/config"
 )
@@ -19,6 +19,9 @@ var (
 
 // defaultHostsFile is the system hosts file; overridable for tests/dry-runs.
 const defaultHostsFile = "/etc/hosts"
+
+// routesFile is the routes file's name inside the config directory.
+const routesFile = "routes.toml"
 
 var rootCmd = &cobra.Command{
 	Use:   "d-man",
@@ -52,7 +55,11 @@ func init() {
 	// daemon plist passes $HOME/.config/...); left unexpanded the file open
 	// fails.
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
-		flagConfig = expandTilde(flagConfig)
+		expanded, err := confdir.Expand(flagConfig)
+		if err != nil {
+			return err
+		}
+		flagConfig = expanded
 		return nil
 	}
 }
@@ -62,29 +69,40 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// defaultConfig resolves the routes file, honoring DMAN_CONFIG and falling
-// back to the first existing path.
+// defaultConfig resolves the routes file for the --config default, honoring
+// DMAN_CONFIG. A home directory that cannot be resolved leaves only the
+// system path — never a cwd-relative one, which would read a routes file
+// nobody wrote. The root launchd daemon reaches the same system path the
+// ordinary way, by having no routes file under root's home.
 func defaultConfig() string {
-	return resolveConfig(os.Getenv("DMAN_CONFIG"), fileExists)
+	path, err := resolveConfig(os.Getenv("DMAN_CONFIG"), fileExists)
+	if err != nil {
+		return dman.SystemRoutesPath
+	}
+	return path
 }
 
 // resolveConfig picks the routes file: DMAN_CONFIG when set, then the
-// per-user ~/.config path when the file exists, then the system /etc path
-// when that file exists, else the per-user path so error messages name the
-// place most users should create it. The paths are the component-root
-// constants so the operating doc names the same files.
-func resolveConfig(env string, exists func(string) bool) string {
+// per-user config path when the file exists, then the system /etc path when
+// that file exists, else the per-user path so error messages name the place
+// most users should create it. The per-user directory comes from kit/confdir,
+// so XDG_CONFIG_HOME relocates it and the plain ~/.config default is
+// unchanged.
+func resolveConfig(env string, exists func(string) bool) (string, error) {
 	if env != "" {
-		return env
+		return env, nil
 	}
-	userPath := expandTilde(dman.DefaultRoutesPath)
+	userPath, err := confdir.Path(dman.Component, routesFile)
+	if err != nil {
+		return "", fmt.Errorf("resolve routes file: %w", err)
+	}
 	if exists(userPath) {
-		return userPath
+		return userPath, nil
 	}
 	if exists(dman.SystemRoutesPath) {
-		return dman.SystemRoutesPath
+		return dman.SystemRoutesPath, nil
 	}
-	return userPath
+	return userPath, nil
 }
 
 // loadRoutes loads and validates the routes file every subcommand works from,
@@ -100,25 +118,4 @@ func loadRoutes() (*config.Config, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory. Other
-// paths (absolute or already-expanded) are returned unchanged. When the home
-// directory cannot be resolved, the ~ prefix is stripped so the path degrades
-// to cwd-relative instead of naming a literal "~" directory.
-func expandTilde(path string) string {
-	if path != "~" && !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		if path == "~" {
-			return "."
-		}
-		return path[2:]
-	}
-	if path == "~" {
-		return home
-	}
-	return filepath.Join(home, path[2:])
 }

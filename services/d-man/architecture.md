@@ -15,13 +15,14 @@ no `.this` address of its own — every `.this` request passes through it.
 
 ```
 cmd/d-man/           entrypoint, delegates to internal/cli.Execute
-internal/cli/        cobra command tree: serve, sync, list, ca, version
+internal/cli/        cobra command tree: serve, sync, list, config, ca,
+                     doctor, docs, version
 internal/config/     pure routes.toml model: parse, validate, resolve cname chains
 internal/hosts/      pure Validate/Render/Splice plus the fail-safe Sync writer
-internal/proxy/      one httputil.ReverseProxy: Host routing, blocklist, sites.json
+internal/proxy/      one httputil.ReverseProxy: Host routing, blocklist,
+                     sites.json + its cross-origin allowlist (cors.go)
 internal/tlsca/      local CA: persist the root, mint per-SNI leaf certs
 internal/blockpage/  embedded retro arcade served on blocked hosts (go:embed)
-internal/notify/     best-effort event emit to events.this
 ```
 
 d-man is not a webkit consumer: it serves no webkit-chromed page of its own.
@@ -43,7 +44,8 @@ case, trailing dot, and port; a blocklisted host is answered directly with the
 embedded block page from `internal/blockpage` (one game per visit, plus
 optional plugin games read per request from `games_dir`); d-man answers
 `/__this/sites.json` itself, live-filtered by probing each port-backed backend
-(30 s cache, shared probe round); everything else goes through the
+(30 s cache, shared probe round) and reflecting only a loopback or `.this`
+`Origin` back as `Access-Control-Allow-Origin`; everything else goes through the
 `ReverseProxy` `Rewrite` to the backend resolved from the `Host` header (502
 on miss), with `ModifyResponse` rewriting backend self-redirects back to the
 `.this` hostname. The `:443` listener shares the same handler and mints a
@@ -61,7 +63,8 @@ need no sudo.
 - `/etc/hosts.d-man.bak`: backup written before each change.
 - `~/.config/d-man/ca/`: block-page CA (`ca.pem`, root-owned `ca-key.pem`),
   created by `d-man ca install` or the root process; override with `--ca-dir`.
-- `~/.config/d-man/routes.toml`: read, never written.
+- `~/.config/d-man/routes.toml`: read, never written. The config directory
+  comes from `kit/confdir`, so `XDG_CONFIG_HOME` relocates both paths.
 - `/var/log/d-man/`: logs of the root LaunchDaemon registered by t-man.
 
 ## Interfaces

@@ -23,8 +23,9 @@ relaunches the new build. Logs land in /var/log/d-man/.
 ## config and reload
 
 The routes file resolves in order: --config, DMAN_CONFIG, {{.StorePath}} when
-it exists, then /etc/d-man/routes.toml (the fallback for the root daemon,
-whose HOME points nowhere useful). Which routes exist is machine-private
+it exists (XDG_CONFIG_HOME relocates that directory), then
+/etc/d-man/routes.toml (the fallback for the root daemon, whose HOME points
+nowhere useful). Which routes exist is machine-private
 overlay config: a freshly installed service has no route until this machine's
 overlay adds one. serve watches the file with fsnotify and reloads on content
 change or SIGHUP. Two sharp edges:
@@ -57,6 +58,13 @@ backend is down, so restart the backend, not d-man.
 Every host fails at once: serve is not running, or something else holds :80.
 A proxy-answers FAIL with connection refused means serve is down; an answer
 that is not the sites list means another process holds the port.
+
+The command-K site picker is empty on a page not behind d-man: the picker
+falls back to fetching /__this/sites.json cross-origin, and d-man answers
+that only for this machine's own origins — a page whose Origin is loopback
+or ends in .this. Any other origin gets no CORS headers and the browser
+drops the response. Open the page through its .this host or its localhost
+port; there is no setting that widens this.
 
 A blocked host still loads over https: the block-page CA is not trusted yet.
 `sudo d-man ca install` fixes it once. The CA key is root-owned by design; a
