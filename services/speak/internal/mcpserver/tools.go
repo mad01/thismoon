@@ -5,12 +5,15 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/speak/internal/playback"
 )
 
-// handlers carries the playback engine shared by all speak tools.
+// handlers carries the playback engine shared by all speak tools, plus the
+// check list speak_doctor runs.
 type handlers struct {
 	engine *playback.Engine
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -54,6 +57,16 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name:        "speak_status",
 		Description: "Report whether the TTS engine is reachable and the current playback state (session, playing/paused/stopped/idle, position, lock holder).",
 	}, h.handleStatus)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "speak_doctor",
+		Description: "Diagnose speak itself: is the TTS engine reachable, is the playback state directory readable, " +
+			"is the optional `speak serve` web surface up and running the installed build. " +
+			"Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"Call this when another speak tool errors: tts-engine-reachable is the check that gates every tool here, " +
+			"while service-reachable and version-skew describe `speak serve`, which playback does not need.",
+	}, h.handleDoctor)
 }
 
 // ── text ──
@@ -135,6 +148,18 @@ func (h *handlers) handleStatus(
 	_ emptyInput,
 ) (*mcp.CallToolResult, playback.Result, error) {
 	return reply(h.engine.Status())
+}
+
+// ── doctor ──
+
+// handleDoctor runs the same checks as `speak doctor` and returns the report
+// as structured output, for a client that can call a tool but has no shell.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ emptyInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }
 
 // reply returns the engine result as both a text content block (the message)

@@ -2,9 +2,9 @@
 // tools. It fetches per-sentence WAV audio from the local TTS engine and plays
 // it on the machine's speakers with afplay, controlling pause/resume by sending
 // SIGSTOP/SIGCONT to the afplay child. A single afplay session runs at a time,
-// serialised across processes by an flock on ~/.local/share/speak/playback.lock
-// so two agents can't talk over each other. This is a faithful port of the
-// Python speak_mcp.py playback worker.
+// serialised across processes by an flock on playback.lock in the state
+// directory, so two agents can't talk over each other. This is a faithful port
+// of the Python speak_mcp.py playback worker.
 package playback
 
 import (
@@ -23,7 +23,6 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 
-	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
@@ -76,10 +75,11 @@ type Engine struct {
 	lastResult string
 }
 
-// New builds an Engine that fetches audio from tts and speaks it aloud. It
-// reaps stale WAV files left by earlier runs.
-func New(tts *ttsclient.Client, defaultVoice string) *Engine {
-	base := expandUser(speak.DefaultStateDir)
+// New builds an Engine that fetches audio from tts and speaks it aloud,
+// keeping its audio cache and lock under stateDir (the resolved
+// --state-dir). It reaps stale WAV files left by earlier runs.
+func New(tts *ttsclient.Client, defaultVoice, stateDir string) *Engine {
+	base := expandUser(stateDir)
 	e := &Engine{
 		tts:          tts,
 		defaultVoice: defaultVoice,

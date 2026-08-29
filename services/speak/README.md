@@ -85,8 +85,8 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 | `GET /` | Upload form |
 | `GET /app.js` | Client-side renderer |
 | `POST /read` | Render and split a markdown file for playback |
-| `POST /v1/audio/speech` | Proxy to the Kokoro engine (adds CORS) |
-| `GET /healthz` | 204, CORS'd; reachability probe for this page |
+| `POST /v1/audio/speech` | Proxy to the Kokoro engine (CORS allowlist: loopback and `.this` origins) |
+| `GET /healthz` | 204; reachability probe for this page |
 | `GET /enginez` | 204/502; reachability probe for the TTS engine behind the proxy |
 | `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-repo `webkit` package |
@@ -116,7 +116,7 @@ claude mcp add --scope user speak -- speak mcp
 On a ralph-managed machine, skip the manual command above — registering the server with a client is machine-private wiring that ships from the consuming repo's companion recipe (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
 
 Only one server-side session plays at a time; playback is serialised across
-processes by an `flock` on `~/.local/share/speak/playback.lock`, so a second
+processes by an `flock` on `playback.lock` in the state directory, so a second
 caller gets a `BUSY | …` reply instead of talking over the first.
 
 | Tool | What it does |
@@ -128,15 +128,23 @@ caller gets a `BUSY | …` reply instead of talking over the first.
 | `speak_stop` | Stop playback; the position is saved for `speak_resume`. |
 | `speak_voices` | List the Kokoro voices. |
 | `speak_status` | Report engine reachability and playback state (session, playing/paused/stopped/idle, position, lock holder). |
+| `speak_doctor` | Run the same checks as `speak doctor` and return the report as JSON. |
 
 Confirm the registration with `claude mcp list`, and run `speak doctor` to check the TTS engine, the store, the web surface, and version skew in one pass.
 
 ## Configuration
 
+All three are root flags: `serve`, `mcp`, and `doctor` resolve them the same way.
+
 | Flag | Env | Default |
 |------|-----|---------|
 | `--port` | `SPEAK_PORT` | `7425` |
 | `--tts-url` | `SPEAK_TTS_URL` | `http://127.0.0.1:8765` |
+| `--state-dir` | `SPEAK_STATE_DIR` | `~/.local/share/speak` where it exists, else `~/.local/state/speak` |
+
+`speak serve` answers cross-origin requests only from this machine's own
+pages: an `Origin` on loopback or under `.this` is reflected back, anything
+else gets no CORS headers. See [config.md](config.md) for the full surface.
 
 ## Where things live
 

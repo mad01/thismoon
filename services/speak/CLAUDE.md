@@ -3,8 +3,9 @@
 Go CLI serving a local page where you upload a markdown file, see it rendered
 inline, and play it section by section with the shared `<wk-read-aloud>` webkit
 component. The same process reverse-proxies `/v1/audio/speech` to the local
-Kokoro TTS engine (mlx-audio) with CORS headers, so pages on other local
-origins (present.this) can fetch speech from `http://speak.this` too.
+Kokoro TTS engine (mlx-audio) behind a CORS allowlist, so pages on this
+machine's other local origins (present.this, localhost) can fetch speech from
+it too, and pages from anywhere else cannot.
 
 ## Module layout
 
@@ -12,34 +13,41 @@ origins (present.this) can fetch speech from `http://speak.this` too.
 services/speak/
   cmd/speak/           # entrypoint (delegates to internal/cli)
   internal/
-    cli/               # cobra: serve, mcp, docs, version (build metadata from the shared buildinfo package)
-    web/               # server.go (mux, CORS, TTS proxy, HTTP API), markdown.go
+    cli/               # cobra: root flags (--port/--tts-url/--state-dir), serve,
+                        # mcp, doctor, docs, version (build metadata from the
+                        # shared buildinfo package)
+    web/               # server.go (mux, TTS proxy, HTTP API), cors.go (the
+                        # cross-origin allowlist), markdown.go
                         # (goldmark render + section split), assets/shell.html
                         # (chrome-only shell) + assets/app.js (client render)
     ttsclient/         # HTTP client for the Kokoro engine (WAV over /v1/audio/speech)
     playback/          # server-side afplay engine: sessions, pause/resume via
                         # SIGSTOP/SIGCONT, flock, sentence split, md text extract
-    mcpserver/         # go-sdk MCP server: 7 speak_* tools over the playback engine
-    notify/            # events.go (best-effort EmitEvent to events.this on
-                        # TTS proxy failures)
+    mcpserver/         # go-sdk MCP server: 8 speak_* tools over the playback engine
   Makefile             # part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
 ## How it works
 
 - `speak serve --port 7425 --tts-url http://127.0.0.1:8765` (envs `SPEAK_PORT`,
-  `SPEAK_TTS_URL`).
+  `SPEAK_TTS_URL`). Those two plus `--state-dir`/`SPEAK_STATE_DIR` are
+  persistent root flags, so serve, mcp, and doctor cannot resolve different
+  engines or state directories. Full surface in `config.md`.
 - `POST /read` (multipart field `doc`, max 5MB) renders markdown via goldmark
   (GFM) and splits it into `<section class="doc-section">` blocks at every
   h1/h2; those blocks are the per-button play units of
   `<wk-read-aloud targets=".doc-section" endpoint="">` (empty endpoint = same
   origin). No storage; render per request.
-- `POST /v1/audio/speech` reverse-proxies to the mlx-audio engine, adding
-  `Access-Control-Allow-Origin: *` and answering `OPTIONS` preflight locally
-  (the engine doesn't do CORS). Every response carries the CORS header so the
-  component's cross-origin `GET /` reachability probe works.
+- `POST /v1/audio/speech` reverse-proxies to the mlx-audio engine and answers
+  `OPTIONS` preflight locally (the engine doesn't do CORS). `internal/web/cors.go`
+  is the allowlist: an `Origin` that is an http/https URL on loopback or under
+  `.this` is reflected back with `Vary: Origin`; anything else gets no CORS
+  headers. The wrapper handler applies it to every response, so the
+  component's cross-origin `GET /` reachability probe works from the sibling
+  `.this` pages. **Never widen this to `*`** — the endpoint drives the
+  machine's TTS engine, so `*` lets any page the user is browsing use it.
 - When the proxied request fails or the engine answers with a 4xx/5xx, the
-  server emits an `error` event to events.this via `internal/notify`: a
+  server emits an `error` event to events.this via `kit/notify`: a
   fire-and-forget POST that never blocks the response. Successful synthesis is
   intentionally not logged, since read-aloud fans out one request per sentence
   and would flood the event log.
@@ -91,8 +99,8 @@ make test     # go test ./...
 | `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
 | `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
 | `POST /read` | Render and split a markdown file for playback; returns `{name, content}` JSON |
-| `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (adds CORS, strips the upstream's own CORS headers) |
-| `GET /healthz` | CORS'd 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets the same header from the wrapper handler, which sets CORS on every response |
+| `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (reflects an allowlisted origin, strips the upstream's own CORS headers) |
+| `GET /healthz` | 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets its CORS header from the wrapper handler, which applies the allowlist to every response |
 | `GET /enginez` | Pings the TTS engine's `GET /` with a 1.5s timeout; 204 if reachable, 502 otherwise. `app.js` polls this to warn when play buttons won't work; distinct from `/healthz`, which only proves this page is up |
 | `GET /version` | The four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the HTTP twin of `speak version -o json`, which ralph uses for update detection |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
@@ -145,6 +153,8 @@ WAV and plays it there); mcp plays audio **on the machine's speakers** via
   session; stop saves the sentence index so a later resume restarts there.
 - `speak_voices`: list the engine's available voices.
 - `speak_status`: report the playback state and current session.
+- `speak_doctor`: run the same checks as `speak doctor` and return the report
+  as JSON, for a client that can call a tool but has no shell.
 
 Names and behaviour are ported from the Python `speak_mcp.py` server so agent
 muscle memory carries over. Implementation notes:
@@ -156,13 +166,15 @@ muscle memory carries over. Implementation notes:
   serialised by an `flock`, not a JSON store, so there is no single-writer
   file to funnel through.
 - `internal/playback` runs a worker goroutine over the sentence list: fetch WAV
-  from `internal/ttsclient`, write it under `~/.local/share/speak/audio/`,
+  from `internal/ttsclient`, write it under the state directory's `audio/`,
   `afplay` it, `Wait`. Pause = `SIGSTOP` the afplay child + release the lock;
   resume = re-acquire the lock + `SIGCONT`.
-- **One session at a time, cross-process.** An `flock` on
-  `~/.local/share/speak/playback.lock` (with a `.owner` sidecar naming the
-  holder) means a second `speak mcp` gets a `BUSY | …` reply. Old WAVs are
-  reaped after 24h on start.
+- **One session at a time, cross-process.** An `flock` on `playback.lock` in
+  the state directory (with a `.owner` sidecar naming the holder) means a
+  second `speak mcp` gets a `BUSY | …` reply. Old WAVs are reaped after 24h
+  on start. The engine takes the directory from `--state-dir`, so two
+  processes only serialize against each other when they resolve the same one
+  — which is why the flag is a persistent root flag, not a per-command one.
 - **Go `regexp` has no lookbehind** — the sentence splitter
   (`playback.SplitSentences`) is hand-rolled, not a translation of the Python
   `re.split(r'(?<=[.!?])\s+')`.

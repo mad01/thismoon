@@ -6,9 +6,13 @@
 package mcpserver
 
 import (
+	"context"
+	"errors"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/kit/agentdoc"
+	"github.com/mad01/thismoon/kit/doctor"
 	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/playback"
 	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
@@ -20,18 +24,30 @@ const Name = "speak-aloud"
 // DefaultVoice is the Kokoro voice used when a tool omits one.
 const DefaultVoice = "af_heart"
 
-// Config locates the TTS engine the playback tools synthesize against.
+// Config locates what the tools need: the TTS engine they synthesize
+// against and the directory playback writes its audio and lock to.
 type Config struct {
-	TTSURL string // base URL of the mlx-audio engine (e.g. http://127.0.0.1:8765)
+	TTSURL   string // base URL of the mlx-audio engine (e.g. http://127.0.0.1:8765)
+	StateDir string // playback state: per-sentence WAV files and playback.lock
+
+	// Checks builds the diagnostics behind the speak_doctor tool, against
+	// the same resolved flags the rest of the CLI uses. It is required: the
+	// instructions block advertises speak_doctor to every client, so a
+	// server that could not register it must not start.
+	Checks func(ctx context.Context) []doctor.Check
 }
 
 // New builds the speak MCP server with a fresh playback engine.
 func New(version string, cfg Config) (*mcp.Server, error) {
-	engine := playback.New(ttsclient.New(cfg.TTSURL), DefaultVoice)
+	if cfg.Checks == nil {
+		return nil, errors.New(
+			"mcpserver: no doctor checks; speak_doctor is advertised to clients and must be registered")
+	}
+	engine := playback.New(ttsclient.New(cfg.TTSURL), DefaultVoice, cfg.StateDir)
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Version: version},
 		&mcp.ServerOptions{Instructions: agentdoc.Instructions(speak.Facts())},
 	)
-	registerTools(s, &handlers{engine: engine})
+	registerTools(s, &handlers{engine: engine, checks: cfg.Checks})
 	return s, nil
 }

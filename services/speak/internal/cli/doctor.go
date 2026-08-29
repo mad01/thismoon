@@ -16,24 +16,24 @@ import (
 const engineProbeTimeout = 1500 * time.Millisecond
 
 func init() {
-	// Checks build at run time so they probe the resolved --port/--tts-url
-	// (env vars included), not the compile-time defaults. The engine check
-	// leads: the MCP tools speak through the engine alone, so the web
-	// surface's checks failing still leaves the tools able to talk.
-	doctorCmd := agentcli.DoctorCommand(speak.Facts(), func(context.Context) []doctor.Check {
-		baseURL := fmt.Sprintf("http://localhost:%d", flagPort)
-		return []doctor.Check{
-			engineReachable(flagTTSURL),
-			doctor.StoreReadable(speak.DefaultStateDir),
-			doctor.ServiceReachable(baseURL),
-			doctor.VersionSkew(baseURL),
-		}
-	})
-	doctorCmd.Flags().IntVar(&flagPort, "port", resolvedDefaultPort(),
-		"port the speak serve web surface listens on (env SPEAK_PORT)")
-	doctorCmd.Flags().StringVar(&flagTTSURL, "tts-url", resolvedTTSURL(),
-		"base URL of the mlx-audio TTS server (env SPEAK_TTS_URL)")
-	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(agentcli.DoctorCommand(speak.Facts(), doctorChecks))
+}
+
+// doctorChecks builds the check list at run time, so it probes the resolved
+// --port/--tts-url/--state-dir (env vars included) rather than the
+// compile-time defaults. `speak doctor` and the speak_doctor MCP tool both
+// run it, so a shell and an agent see the same diagnosis.
+//
+// The engine check leads: the MCP tools speak through the engine alone, so
+// the web surface's checks failing still leaves the tools able to talk.
+func doctorChecks(context.Context) []doctor.Check {
+	baseURL := serveBaseURL()
+	return []doctor.Check{
+		engineReachable(flagTTSURL),
+		doctor.StoreReadable(flagStateDir),
+		doctor.ServiceReachable(baseURL),
+		doctor.VersionSkew(baseURL),
+	}
 }
 
 // engineReachable probes the TTS engine the way serve's /enginez handler
