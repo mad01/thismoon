@@ -2,11 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/mad01/thismoon/kit/agentdoc/agentcli"
+	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/kit/doctor"
 	speak "github.com/mad01/thismoon/services/speak"
 )
@@ -30,10 +34,35 @@ func doctorChecks(context.Context) []doctor.Check {
 	baseURL := serveBaseURL()
 	return []doctor.Check{
 		engineReachable(flagTTSURL),
-		doctor.StoreReadable(flagStateDir),
+		stateDirReadable(flagStateDir),
 		doctor.ServiceReachable(baseURL),
 		doctor.VersionSkew(baseURL),
 	}
+}
+
+// stateDirReadable is doctor.StoreReadable with one case carved out: the
+// playback engine creates the state directory the first time it synthesizes
+// audio, so on an install that has never played anything the directory is
+// simply not there yet. That is not a fault to report — the shared check
+// would call it "store not readable", which reads like a permissions or
+// disk problem — so it skips with the path instead. Anything else that
+// makes the directory unopenable still fails.
+func stateDirReadable(path string) doctor.Check {
+	check := doctor.StoreReadable(path)
+	inner := check.Run
+	check.Run = func(ctx context.Context) error {
+		if path != "" {
+			expanded, err := confdir.Expand(path)
+			if err == nil {
+				if _, statErr := os.Stat(expanded); errors.Is(statErr, fs.ErrNotExist) {
+					return doctor.Skip("no playback state yet at " + expanded +
+						"; created on the first speak_text or speak_file call")
+				}
+			}
+		}
+		return inner(ctx)
+	}
+	return check
 }
 
 // engineReachable probes the TTS engine the way serve's /enginez handler

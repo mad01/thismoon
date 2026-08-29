@@ -79,18 +79,24 @@ func serveBaseURL() string {
 }
 
 // defaultStateDir resolves where playback state lives: SPEAK_STATE_DIR when
-// set, otherwise the XDG state directory — except that an install which
-// already has speak.DefaultStateDir on disk keeps using it, so an upgrade
-// does not strand its lock and audio cache. A home directory that cannot be
-// resolved leaves the ~-prefixed default here; PersistentPreRunE then fails
-// with that as the cause instead of writing somewhere cwd-relative.
+// set, otherwise the XDG state directory — except that an install which has
+// played audio into speak.LegacyStateDir keeps using it, so an upgrade does
+// not strand its lock and audio cache. The probe is what makes that check
+// mean "state is here" rather than "some directory is here": the TTS
+// engine's virtualenv shares the legacy path. A home directory that cannot
+// be resolved leaves the ~-prefixed legacy path here; PersistentPreRunE
+// then fails with that as the cause instead of writing somewhere
+// cwd-relative.
 func defaultStateDir() string {
 	if v := envdefault.String("SPEAK_STATE_DIR", ""); v != "" {
 		return v
 	}
-	dir, err := confdir.StateDir(speak.Component, speak.DefaultStateDir)
+	dir, err := confdir.StateDir(speak.Component, confdir.LegacyDir{
+		Dir:   speak.LegacyStateDir,
+		Probe: speak.LegacyStateProbe,
+	})
 	if err != nil {
-		return speak.DefaultStateDir
+		return speak.LegacyStateDir
 	}
 	return dir
 }

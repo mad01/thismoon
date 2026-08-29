@@ -19,13 +19,21 @@ const DefaultPort = 7425
 // separate process (the t-man agent speak-tts), not part of this binary.
 const DefaultTTSURL = "http://127.0.0.1:8765"
 
-// DefaultStateDir is where the playback engine keeps its on-disk state:
-// per-sentence WAV files under audio/ and the cross-process playback.lock.
-// It is the pre-XDG location: an install that already has this directory
-// keeps using it, while a fresh one lands in the XDG state directory
+// LegacyStateDir is the pre-XDG location of the playback engine's on-disk
+// state: per-sentence WAV files under audio/ and the cross-process
+// playback.lock. An install that has played audio there keeps using it,
+// while every other install lands in the XDG state directory
 // (~/.local/state/speak). The leading ~ is expanded at runtime, never at
 // build time.
-const DefaultStateDir = "~/.local/share/speak"
+const LegacyStateDir = "~/.local/share/speak"
+
+// LegacyStateProbe is the artifact that proves playback state lives in
+// LegacyStateDir. The directory alone proves nothing: the mlx-audio engine
+// this binary talks to installs its virtualenv and logs there, so on a
+// machine that has the TTS engine but has never played anything, the
+// directory exists while the state does not. The generated-audio cache is
+// what playback itself creates.
+const LegacyStateProbe = "audio"
 
 // Facts returns the mechanical facts rendered into OperatingDoc, the MCP
 // instructions block, and error hints.
@@ -35,7 +43,7 @@ func Facts() agentdoc.Facts {
 		Bin:           Component,
 		Purpose:       "local text-to-speech that reads text and markdown aloud on this machine's speakers",
 		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath:     DefaultStateDir,
+		StorePath:     LegacyStateDir,
 		HasDoctor:     true,
 		MCPNote:       "Tools play audio in this process via the local TTS engine (t-man agent speak-tts); the speak web service is separate and not required.",
 		MCPDoctorTool: "speak_doctor",
