@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -81,6 +82,78 @@ func TestRun(t *testing.T) {
 				t.Errorf("Run() error = %v, want %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestCollect(t *testing.T) {
+	skipped := Check{Name: "gamma", Run: func(context.Context) error {
+		return skip{"skipped: no store path configured"}
+	}}
+
+	tests := []struct {
+		name   string
+		checks []Check
+		want   Report
+	}{
+		{
+			name:   "no checks is a pass",
+			checks: nil,
+			want:   Report{OK: true, Checks: []Result{}},
+		},
+		{
+			name:   "all pass",
+			checks: []Check{pass("alpha"), pass("beta")},
+			want: Report{OK: true, Checks: []Result{
+				{Name: "alpha", Status: StatusOK},
+				{Name: "beta", Status: StatusOK},
+			}},
+		},
+		{
+			name:   "skip counts as a pass and keeps its note",
+			checks: []Check{pass("alpha"), skipped},
+			want: Report{OK: true, Checks: []Result{
+				{Name: "alpha", Status: StatusOK},
+				{Name: "gamma", Status: StatusSkipped, Detail: "skipped: no store path configured"},
+			}},
+		},
+		{
+			name:   "one failure sinks the report",
+			checks: []Check{pass("alpha"), fail("beta", "boom"), skipped},
+			want: Report{OK: false, Checks: []Result{
+				{Name: "alpha", Status: StatusOK},
+				{Name: "beta", Status: StatusFail, Detail: "boom"},
+				{Name: "gamma", Status: StatusSkipped, Detail: "skipped: no store path configured"},
+			}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Collect(context.Background(), tc.checks)
+			if got.OK != tc.want.OK {
+				t.Errorf("Collect().OK = %v, want %v", got.OK, tc.want.OK)
+			}
+			if len(got.Checks) != len(tc.want.Checks) {
+				t.Fatalf("Collect() = %+v, want %+v", got.Checks, tc.want.Checks)
+			}
+			for i, c := range got.Checks {
+				if c != tc.want.Checks[i] {
+					t.Errorf("Collect().Checks[%d] = %+v, want %+v", i, c, tc.want.Checks[i])
+				}
+			}
+		})
+	}
+}
+
+func TestReportMarshalsToJSON(t *testing.T) {
+	report := Collect(context.Background(), []Check{pass("alpha"), fail("beta", "boom")})
+	got, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("Marshal(Report) error: %v", err)
+	}
+	want := `{"ok":false,"checks":[{"name":"alpha","status":"ok"},` +
+		`{"name":"beta","status":"fail","detail":"boom"}]}`
+	if string(got) != want {
+		t.Errorf("Marshal(Report) = %s, want %s", got, want)
 	}
 }
 

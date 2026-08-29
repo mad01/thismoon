@@ -1,0 +1,80 @@
+package envdefault
+
+import (
+	"strings"
+	"testing"
+)
+
+const varName = "THISMOON_TEST_VALUE"
+
+func TestString(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      bool
+		value    string
+		fallback string
+		want     string
+	}{
+		{name: "unset falls back", fallback: "7423", want: "7423"},
+		{name: "set wins", set: true, value: "http://csl.this", fallback: "x", want: "http://csl.this"},
+		{name: "empty falls back", set: true, value: "", fallback: "x", want: "x"},
+		{name: "whitespace is a value", set: true, value: " ", fallback: "x", want: " "},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(varName, tc.value)
+			}
+			if got := String(varName, tc.fallback); got != tc.want {
+				t.Errorf("String(%q, %q) = %q, want %q", varName, tc.fallback, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInt(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      bool
+		value    string
+		fallback int
+		want     int
+		wantWarn string
+	}{
+		{name: "unset falls back", fallback: 7423, want: 7423},
+		{name: "set wins", set: true, value: "9999", fallback: 7423, want: 9999},
+		{name: "empty falls back", set: true, value: "", fallback: 7423, want: 7423},
+		{name: "negative parses", set: true, value: "-1", fallback: 7423, want: -1},
+		{
+			name: "unparseable warns and falls back", set: true, value: "nope", fallback: 7423,
+			want:     7423,
+			wantWarn: `THISMOON_TEST_VALUE: unparseable value "nope", using default 7423`,
+		},
+		{
+			name: "float warns and falls back", set: true, value: "74.23", fallback: 7423,
+			want:     7423,
+			wantWarn: `THISMOON_TEST_VALUE: unparseable value "74.23", using default 7423`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(varName, tc.value)
+			}
+			var warn strings.Builder
+			got := intFrom(&warn, varName, tc.fallback)
+			if got != tc.want {
+				t.Errorf("Int(%q, %d) = %d, want %d", varName, tc.fallback, got, tc.want)
+			}
+			if tc.wantWarn == "" {
+				if warn.Len() != 0 {
+					t.Errorf("Int(%q, %d) warned %q, want silence", varName, tc.fallback, warn.String())
+				}
+				return
+			}
+			if want := tc.wantWarn + "\n"; warn.String() != want {
+				t.Errorf("warning = %q, want %q", warn.String(), want)
+			}
+		})
+	}
+}
