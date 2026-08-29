@@ -23,12 +23,23 @@ anything beyond talking to a running `prs serve`.
   `PRS_BASE_URL`): the human-facing URL the MCP server returns in tool
   responses (for example `http://prs.this`). Display-only: the MCP client
   itself always calls `localhost:<port>`.
-- `--config` (string, default `~/.config/prs/config.yaml`, env
-  `PRS_CONFIG`): the YAML config path.
+- `--config` (string, default `$XDG_CONFIG_HOME/prs/config.yaml` when that
+  variable holds an absolute path, otherwise `~/.config/prs/config.yaml`,
+  env `PRS_CONFIG`): the YAML config path.
+
+A `~` that cannot be expanded — no resolvable home directory, which happens
+under a launchd agent with a stripped environment — is an error at startup.
+Earlier releases stripped the `~` and read a path relative to the working
+directory instead, which silently found no config. An unparseable `PRS_PORT`
+warns once on stderr and falls back to the compiled-in default.
+
+To see what a given environment actually resolved to, run `prs doctor`; an
+agent with no shell gets the same report from the `prs_doctor` MCP tool.
 
 ## Config file
 
-`~/.config/prs/config.yaml`. A missing file is not an error — serve runs
+`~/.config/prs/config.yaml` (or the XDG path above). A missing file is not
+an error — serve runs
 with defaults and polls nothing until `dirs` is set. An invalid file
 (unparseable YAML, bad glob, bad interval) fails at startup rather than
 being silently ignored.

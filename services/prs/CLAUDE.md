@@ -27,7 +27,7 @@ prs/
     store/             - PR/RepoState model, filtering (store.go), JSONL
                          scan/append/compact (jsonl.go)
     server/            - HTTP API + webkit web page (embedded shell.html + app.js)
-    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 3 tools)
+    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 4 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -168,6 +168,8 @@ Thin client over the API above (`internal/client`), served on stdio by
   and the cache status including per-repo fetch errors
 - `prs_refresh()`: force one synchronous poll cycle; returns repo/PR/error counts
 - `prs_status()`: cache freshness, per-repo errors, and the config in effect
+- `prs_doctor()`: run the same checks as `prs doctor` and return the report as
+  JSON — for a client that can call a tool but has no shell
 
 Tool responses include `url` (the human-facing `PRS_BASE_URL`, e.g.
 `http://prs.this`), while the client itself calls `localhost:<PRS_PORT>`.
