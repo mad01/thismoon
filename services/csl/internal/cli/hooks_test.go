@@ -202,7 +202,7 @@ func TestHooksUninstall(t *testing.T) {
 	parent := filepath.Dir(repoDir)
 
 	hookPath := filepath.Join(repoDir, ".git", "hooks", "post-merge")
-	if err := os.WriteFile(hookPath, []byte(hookScript), 0o755); err != nil {
+	if err := os.WriteFile(hookPath, []byte(hookScript("/tmp/csl-test/reindex.queue")), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

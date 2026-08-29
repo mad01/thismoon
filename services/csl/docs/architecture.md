@@ -21,7 +21,7 @@ How `csl` fits together: what spawns what, where state lives, and how a query re
                  │                                 │
                  ▼                                 ▼
          ┌──────────────────────────┐       ┌──────────────┐
-         │ ~/.config/csl/           │       │ mmap'd zoekt │
+         │ <state dir>/             │       │ mmap'd zoekt │
          │   search-index/*.zoekt   │       │ shards       │
          └──────────────────────────┘       └──────────────┘
 ```
@@ -34,8 +34,9 @@ The CLI and the MCP server are both thin shells over the same internal packages.
 |---|---|
 | `cmd/csl` | `main.go`; calls `internal/cli.Execute()` |
 | `internal/cli` | One file per cobra subcommand. Mostly argument parsing and dispatch into the other packages |
-| `internal/repo/config` | Loads and parses `~/.config/csl/config.yaml` |
+| `internal/repo/config` | Resolves the config path (`--config`, `CSL_CONFIG`, XDG config dir) and parses `config.yaml` |
 | `internal/repo/finder` | Concurrent filesystem walk that discovers git repos and parses `[remote "origin"]` URLs |
+| `internal/selfcheck` | The doctor check list, served by both `csl doctor` and the `csl_doctor` MCP tool |
 | `internal/search` | Indexing (`IndexRepo`, `IndexRepos`), searching (`Search`, `SearchWith`), counting, query validation, shard integrity |
 | `internal/semantic` | Vector search: tree-sitter chunking, embedding via Ollama (`OllamaEmbedder`), per-repo vector stores, cosine ranking |
 | `internal/hybrid` | Reciprocal Rank Fusion of the lexical and semantic result lists |
@@ -58,7 +59,7 @@ Index freshness is checked once per CLI call via `search.CheckStaleness()`. Stal
 ### `csl mcp` → Claude Code tool call
 
 1. Claude Code spawns `csl mcp` as a subprocess and sends an `initialize` JSON-RPC message over stdin.
-2. `internal/mcpserver.New()` registers twelve `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
+2. `internal/mcpserver.New()` registers fifteen `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
 3. A `tools/call` for `csl_search` lands in `handleSearch`, which follows the same daemon-first-then-fallback pattern as the CLI (minus the stderr progress output).
 4. When Claude Code closes the session, stdin EOF causes the server loop to return. The process exits.
 
@@ -78,7 +79,7 @@ Like the MCP server, `csl web` starts no daemon of its own — it reuses the sha
 ### Lifecycle
 
 - **Start:** `daemon.StartBackground()` resolves its own executable via `os.Executable()` and launches `csl search --serve` as a detached child (`Setpgid: true`), with stdout/stderr redirected to the log file. The parent does not wait on the child; it returns as soon as `Start` succeeds.
-- **Listen:** `Serve()` opens `zoektsearch.NewDirectorySearcher(indexDir)` once, binds a Unix socket at `~/.config/csl/search-daemon.sock`, writes its PID to `search-daemon.pid`.
+- **Listen:** `Serve()` opens `zoektsearch.NewDirectorySearcher(indexDir)` once, binds a Unix socket at `<state dir>/search-daemon.sock`, writes its PID to `search-daemon.pid`.
 - **Serve:** The gRPC server handles `Search`, `Count`, `Validate`, `Ping`, `Shutdown`. Every handler calls `resetIdle()` to reset a 10-minute idle timer.
 - **Shut down:** Triggered by `SIGINT`, `SIGTERM`, an RPC `Shutdown`, or the idle timer firing. `grpcServer.GracefulStop()` then the searcher is closed and the socket and PID files are removed.
 
@@ -92,8 +93,14 @@ The daemon's log writer is [`lumberjack.Logger`](https://pkg.go.dev/gopkg.in/nat
 
 ## Index layout
 
+`<state dir>` is `$XDG_STATE_HOME/csl`, or `~/.local/state/csl` when that
+variable is unset — except on installs that predate the config/state split,
+where an existing `~/.config/csl` keeps the role. `csl.StateDir()` in
+`services/csl/paths.go` is the one place that decides; see
+[configuration](configuration.md#state-paths).
+
 ```
-~/.config/csl/search-index/
+<state dir>/search-index/
 ├── state.json                       # per-repo fingerprints
 ├── <shard-hash>.zoekt               # zoekt shards — one or more per repo
 └── ...
@@ -150,7 +157,7 @@ That string is parsed by `zoekt/query.Parse`, simplified, and passed to the sear
 The vector index lives beside the lexical one:
 
 ```
-~/.config/csl/semantic-index/
+<state dir>/semantic-index/
 └── <org>_<repo>.gob      # one store per repo: chunk vectors + metadata
 ```
 

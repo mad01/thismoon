@@ -11,10 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
+
+// indexDirName is the semantic index's directory inside csl's state
+// directory, holding one vector store per repo.
+const indexDirName = "semantic-index"
 
 // maxFileSize caps the per-file size considered for semantic indexing (1MB).
 const maxFileSize = 1 << 20
@@ -49,14 +54,10 @@ func WithProgress(fn func(IndexProgress)) IndexOption {
 	return func(o *indexOpts) { o.onProgress = fn }
 }
 
-// DefaultSemanticIndexDir returns the default semantic index directory,
-// mirroring search.DefaultIndexDir's layout.
+// DefaultSemanticIndexDir returns the semantic index directory under csl's
+// state directory, beside the lexical one search.DefaultIndexDir resolves.
 func DefaultSemanticIndexDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
-	}
-	return filepath.Join(home, ".config", "csl", "semantic-index"), nil
+	return csl.StatePath(indexDirName)
 }
 
 // StorePathForRepo returns the per-repo store file path under indexDir. The

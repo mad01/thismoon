@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/refresh"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/web"
@@ -33,14 +34,22 @@ host, and can be expanded inline. A JSON API backs the UI:
   GET /healthz
 
 The server binds to 127.0.0.1 only and uses the same index as ` + "`csl search`" + `.
+It serves http://localhost:7424 by default (http://csl.this when d-man fronts
+it with that alias).
 
 Typically run as a background service:
-  t-man add --name csl-web -- csl web --port 7424`,
+  t-man add --name csl-web -- csl web --port 7424
+
+Moving the UI off the default port: --port changes this process only. Other
+csl processes — the MCP server building csl_show_file links, ` + "`csl doctor`" + `
+probing the UI — learn the new port from CSL_PORT, or from web.base_url in
+config.yaml when the UI is fronted by a proxy.`,
 	RunE: runWeb,
 }
 
 func init() {
-	webCmd.Flags().IntVar(&webPortFlag, "port", 7424, "port to listen on (loopback only)")
+	webCmd.Flags().IntVar(&webPortFlag, "port", csl.ResolvedPort(),
+		"port to listen on, loopback only (env CSL_PORT)")
 	rootCmd.AddCommand(webCmd)
 }
 
@@ -48,6 +57,12 @@ func runWeb(_ *cobra.Command, _ []string) error {
 	cfg, err := webConfig()
 	if err != nil {
 		return err
+	}
+	// Everything in this process that links to the UI should link to the port
+	// it actually bound. An explicit web.base_url still wins: it names a front
+	// (http://csl.this) that no local port can describe.
+	if cfg.Web.BaseURL == "" {
+		cfg.Web.BaseURL = csl.BaseURLForPort(webPortFlag)
 	}
 
 	svc, err := web.NewService(cfg)
@@ -81,8 +96,13 @@ func webConfig() (*config.Config, error) {
 	cfg, err := config.Load()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
+		path, pathErr := config.Path()
+		if pathErr != nil {
+			path = "the config file"
+		}
 		log.Printf(
-			"csl web: no config found; serving with no repos (create ~/.config/csl/config.yaml with a 'dirs' list, then restart)",
+			"csl web: no config found; serving with no repos (create %s with a 'dirs' list, then restart)",
+			path,
 		)
 		return &config.Config{}, nil
 	case err != nil:

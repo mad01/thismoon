@@ -21,7 +21,7 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Fourteen tools are registered, grouped into three areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, and `csl_read` / `csl_ls` / `csl_show_file` / `csl_index_info` for file reads and info.
+Fifteen tools are registered, grouped into four areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself.
 
 | Tool | Purpose |
 |---|---|
@@ -39,6 +39,7 @@ Fourteen tools are registered, grouped into three areas: `csl_repo_*` for repo m
 | [`csl_show_file`](#csl_show_file) | Open a file section in the web UI for the user to look at |
 | `csl_index_info` | Index-wide health in one call (contract in the service CLAUDE.md) |
 | [`csl_query_validate`](#csl_query_validate) | Validate a zoekt query and return its parsed tree |
+| [`csl_doctor`](#csl_doctor) | Run the `csl doctor` checks and return the report as JSON |
 
 ### `csl_repo_lookup`
 
@@ -551,6 +552,34 @@ Validate a zoekt query and return its parsed tree, or a parse error with a fixin
 }
 ```
 
+### `csl_doctor`
+
+Run csl's self-checks and return the report as JSON: config, state file, index freshness, shard integrity, the search server, and two web-UI probes.
+
+**When to call:** when a csl tool errors or comes back empty and you have no shell to run `csl doctor` in. It is the first thing to try before concluding that a repo or a query is at fault.
+
+**Input:** none.
+
+**Output:**
+
+```json
+{
+  "ok": false,
+  "checks": [
+    {"name": "config-loads", "status": "ok"},
+    {"name": "state-file-loads", "status": "ok"},
+    {"name": "index-freshness", "status": "fail",
+     "detail": "2 of 41 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now"},
+    {"name": "index-shards-valid", "status": "ok"},
+    {"name": "search-server-responsive", "status": "ok"},
+    {"name": "web-ui-reachable", "status": "ok"},
+    {"name": "web-ui-version-skew", "status": "ok"}
+  ]
+}
+```
+
+Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+
 ## Troubleshooting
 
 **`claude mcp list` shows `csl: csl mcp - ✗ Failed to connect`**
@@ -563,4 +592,4 @@ The first call after a clean install triggers an initial zoekt index build. Subs
 Run `csl doctor` and check the index state. If a repo is missing or stale, run `csl index --all` or call [`csl_repo_reindex`](#csl_repo_reindex) for the specific repo. Validate the query with [`csl_query_validate`](#csl_query_validate) to rule out a syntax error.
 
 **`csl_repo_lookup` returns empty for a repo that exists**
-The checkout is not under any directory listed in `~/.config/csl/config.yaml` `dirs`. Either clone it there or add the parent directory.
+The checkout is not under any directory listed in the config file's `dirs`. Either clone it there or add the parent directory.

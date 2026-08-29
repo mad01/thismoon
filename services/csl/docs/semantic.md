@@ -88,7 +88,7 @@ under a path; `--skipped` shows what was filtered and why, including
    neither truncated nor crash the runner, and bulk runs unload the model
    when they finish so it doesn't squat in memory.
 3. **Storing.** Vectors land in one gob file per repo under
-   `~/.config/csl/semantic-index/`, alongside each file's content hash, the
+   `semantic-index/` in csl's state directory, alongside each file's content hash, the
    chunker version, and the vector dimensionality.
 
 Re-runs are incremental: a file whose content hash is unchanged is skipped

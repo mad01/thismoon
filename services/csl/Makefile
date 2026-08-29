@@ -1,30 +1,37 @@
-BINARY_NAME := csl
+BIN      ?= csl
+PREFIX   ?= $(HOME)/code/bin
+DEST     := $(PREFIX)/$(BIN)
 CMD_PATH := ./cmd/csl
 
 COMPONENT := csl
 include ../../buildinfo.mk
 
-.PHONY: build test install clean fmt lint
+.PHONY: build test install resign clean fmt lint
 
 build:
-	@go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BINARY_NAME) $(CMD_PATH)
+	@go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) $(CMD_PATH)
 
 test:
 	@go test -timeout 120s ./...
 
 install: build
-	@mkdir -p ~/code/bin
-	@cp $(BINARY_NAME) ~/code/bin/$(BINARY_NAME)
-	@xattr -dr com.apple.provenance ~/code/bin/$(BINARY_NAME) 2>/dev/null || true
-	@if security find-identity -v -p codesigning 2>/dev/null | grep -q "mad01 Local Signing"; then \
-		codesign -f -s "mad01 Local Signing" -i com.mad01.$(BINARY_NAME) ~/code/bin/$(BINARY_NAME); \
-	else \
-		codesign -fs - ~/code/bin/$(BINARY_NAME); \
+	@mkdir -p $(PREFIX)
+	@cp $(BIN) $(DEST)
+	@$(MAKE) resign BIN=$(DEST)
+	@echo "installed $(BIN) to $(DEST)"
+
+resign:
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		xattr -dr com.apple.provenance $(BIN) 2>/dev/null || true; \
+		if security find-identity -v -p codesigning 2>/dev/null | grep -q "mad01 Local Signing"; then \
+			codesign --force --sign "mad01 Local Signing" -i com.mad01.$(notdir $(BIN)) $(BIN); \
+		else \
+			codesign --force --sign - $(BIN); \
+		fi; \
 	fi
-	@echo "installed $(BINARY_NAME) to ~/code/bin/$(BINARY_NAME)"
 
 clean:
-	@rm -f $(BINARY_NAME)
+	@rm -f $(BIN)
 
 fmt:
 	@golines -m 100 --base-formatter=gofumpt -w .

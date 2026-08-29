@@ -1,10 +1,16 @@
 # Configuration
 
-All `csl` state lives under `~/.config/csl/`. This page documents every file the tool reads or writes.
+`csl` keeps its config file and its state in two different places. This page documents every file the tool reads or writes.
 
 ## Config file
 
-Path: `~/.config/csl/config.yaml`.
+Resolved in this order:
+
+1. `--config <path>` — a persistent flag, available on every subcommand.
+2. `$CSL_CONFIG`.
+3. `config.yaml` in the XDG config directory: `$XDG_CONFIG_HOME/csl` when that variable holds an absolute path, otherwise `~/.config/csl`.
+
+A leading `~` is expanded in both the flag and the environment variable, so they work under launchd where no shell expands them first.
 
 Loaded by the CLI and the MCP server on every invocation that needs to discover repos (`search`, `count`, `read`, `repo`, `doctor`, `index`, and most `csl_*` MCP tools).
 
@@ -27,7 +33,9 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `daemon.idle_timeout_minutes` | int | no (default `10`) | How long the search daemon stays alive with no queries. Higher values keep the zoekt shards and semantic stores warm at the cost of resident memory. |
 | `refresh.enabled` | bool | no (default `true`) | Whether `csl web` runs the periodic background refresh (pull + reindex changed repos). Manual refresh from the web UI works either way. |
 | `refresh.interval_minutes` | int | no (default `15`) | How often the background refresh runs. Every cycle contacts every repo's remote, so keep it conservative. |
-| `web.base_url` | string | no (default `http://127.0.0.1:7424`) | Where the csl web UI is reachable, used by `csl_show_file` to build the links it opens. Set to `http://csl.this` when the UI is fronted by d-man. |
+| `web.base_url` | string | no (derived from the port) | Where the csl web UI is reachable, used by `csl_show_file` to build the links it opens. Unset means `http://127.0.0.1:<port>`, where the port is `CSL_PORT` or 7424. Set to `http://csl.this` when the UI is fronted by d-man; an explicit value always wins. |
+
+`layout`, `summary`, and `tmpdir` were carried over from csl's origin as a session launcher and have been removed — nothing read them. A file that still sets them loads unchanged, since unknown keys are ignored.
 
 Every key with its default, in one place:
 
@@ -131,11 +139,14 @@ semantic:
 
 ## State paths
 
-All paths below are relative to `~/.config/csl/`.
+State lives in the state directory: `$XDG_STATE_HOME/csl` when that variable holds an absolute path, otherwise `~/.local/state/csl`. The config file is not part of it.
+
+**Installs made before the split keep their data in place.** When `~/.config/csl` exists on disk it stays the state directory, so upgrading a machine that has been running csl moves no files and re-indexes nothing. Fresh installs land in the state directory above. `csl docs` names the directory in effect.
+
+All paths below are relative to that directory.
 
 | Path | Purpose |
 |---|---|
-| `config.yaml` | The config file above. |
 | `search-index/` | Zoekt index directory. Contains `*.zoekt` shard files and `state.json`. |
 | `search-index/state.json` | Per-repo fingerprints used to decide which repos need re-indexing. |
 | `search-index/.csl-sync.lock` | Lock file coordinating index writers across processes: a manual `csl sync` and the background refresh in `csl web` take it before pulling or indexing, and the ad-hoc builds (`csl search` reindex, the web fallback's first build) hold it or skip, so no two writers race each other on working trees, shards, or `state.json`. |
@@ -179,15 +190,14 @@ See [architecture](architecture.md#search-daemon) for the full lifecycle.
 
 ## Environment
 
-`csl` reads three environment variables:
-
 | Variable | Description |
 |---|---|
-| `HOME` | Root of config/state paths. Used to build `~/.config/csl/...`. |
+| `CSL_CONFIG` | Path to the config file, overriding the default location. `--config` beats it. A leading `~` is expanded. |
+| `CSL_PORT` | Port the web UI listens on (default 7424). `csl web` binds it, and every other surface assumes the UI is there when `web.base_url` is unset. `csl web --port` overrides it for that one process, but other processes cannot see the flag. |
+| `XDG_CONFIG_HOME`, `XDG_STATE_HOME` | Roots of the config and state directories when set to an absolute path. Relative values are ignored, per the XDG spec. |
+| `HOME` | Root of both directories when the XDG variables are unset. An unresolvable home is an error, never a path relative to the working directory. |
 | `PATH` | The `EnsureDaemon` helper shells out to `csl search --serve` via `os.Executable()` rather than `PATH`, so daemon start works from any cwd. `git` is looked up on `PATH` for pull/fingerprint operations. |
 | `EVENTS_BASE_URL` | Where the events service listens for best-effort telemetry events (default `http://127.0.0.1:7430`). Events are fire-and-forget; an unreachable events service never fails a csl operation. |
-
-There are no `CSL_*` environment overrides. File issues if you need one.
 
 ## Reset
 
@@ -195,8 +205,8 @@ To fully reset indexing state:
 
 ```sh
 csl search --stop           # stop the daemon first
-csl index --clean           # removes ~/.config/csl/search-index/
+csl index --clean           # removes search-index/ from the state directory
 csl search "anything"       # rebuilds the index on next search
 ```
 
-`--clean` removes both the shards and `state.json`, so the next search re-indexes every configured repo. The config file is not touched, and neither is the semantic index — to reset that too, remove `~/.config/csl/semantic-index/` and rebuild with `csl index --semantic-all` (or just rebuild: a model/dim/chunker change re-embeds automatically without the manual delete).
+`--clean` removes both the shards and `state.json`, so the next search re-indexes every configured repo. The config file is not touched, and neither is the semantic index — to reset that too, remove `semantic-index/` from the state directory and rebuild with `csl index --semantic-all` (or just rebuild: a model/dim/chunker change re-embeds automatically without the manual delete).

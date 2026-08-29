@@ -85,8 +85,8 @@ func NewOllamaEmbedder(endpoint, model string, dim int) *OllamaEmbedder {
 	}
 }
 
-// NewDefaultEmbedder builds an OllamaEmbedder from ~/.config/csl/config.yaml's
-// semantic section. A missing or unreadable config yields the package defaults,
+// NewDefaultEmbedder builds an OllamaEmbedder from the semantic section of
+// the config file csl resolves. A missing or unreadable config yields the package defaults,
 // so every caller degrades the same way.
 func NewDefaultEmbedder() *OllamaEmbedder {
 	cfg, err := config.Load()

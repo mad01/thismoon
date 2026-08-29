@@ -271,7 +271,7 @@ hammer remotes.
 The same safety rules as `csl sync` apply: repos on non-default branches, in
 detached HEAD, with uncommitted tracked changes, or without a remote are
 skipped, and both entry points take the shared sync lock
-(`~/.config/csl/search-index/.csl-sync.lock`) before touching anything — a
+(`search-index/.csl-sync.lock` in the state directory) before touching anything — a
 manual sync fails fast while a refresh runs, and a refresh cycle steps aside
 while a manual sync runs. Disable the loop with `refresh.enabled: false`; the
 manual buttons on the `/refresh` page keep working.

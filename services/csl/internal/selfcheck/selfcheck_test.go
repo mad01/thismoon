@@ -1,4 +1,4 @@
-package cli
+package selfcheck
 
 import (
 	"context"
@@ -8,10 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
-func TestDoctorCheckNamesAndOrder(t *testing.T) {
+func TestCheckNamesAndOrder(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	want := []string{
 		"config-loads",
 		"state-file-loads",
@@ -21,9 +23,9 @@ func TestDoctorCheckNamesAndOrder(t *testing.T) {
 		"web-ui-reachable",
 		"web-ui-version-skew",
 	}
-	checks := doctorChecks(false)
+	checks := Checks(false)
 	if len(checks) != len(want) {
-		t.Fatalf("doctorChecks returned %d checks, want %d", len(checks), len(want))
+		t.Fatalf("Checks returned %d checks, want %d", len(checks), len(want))
 	}
 	for i, c := range checks {
 		if c.Name != want[i] {
@@ -32,9 +34,43 @@ func TestDoctorCheckNamesAndOrder(t *testing.T) {
 	}
 }
 
+// TestConfigLoads covers the "why is the UI empty" case: a config that parses
+// but configures nothing to walk has to fail, naming the file to edit.
+func TestConfigLoads(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{name: "dirs set passes", yaml: "dirs:\n  - /tmp\n"},
+		{name: "empty dirs fails", yaml: "index:\n  hosts: []\n", wantErr: "sets no dirs"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			writeFile(t, path, tc.yaml)
+			config.SetPath(path)
+			t.Cleanup(func() { config.SetPath("") })
+
+			err := configLoads().Run(context.Background())
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Fatalf("Run() = %v, want nil", err)
+			case tc.wantErr == "":
+			case err == nil:
+				t.Fatalf("Run() = nil, want an error mentioning %q", tc.wantErr)
+			case !strings.Contains(err.Error(), tc.wantErr):
+				t.Errorf("error %q does not mention %q", err, tc.wantErr)
+			case !strings.Contains(err.Error(), path):
+				t.Errorf("error %q does not name the config file %q", err, path)
+			}
+		})
+	}
+}
+
 func TestStateFileLoads_CorruptWithoutRepair(t *testing.T) {
 	dir := t.TempDir()
-	writeDoctorFile(t, filepath.Join(dir, "state.json"), "{not json")
+	writeFile(t, filepath.Join(dir, "state.json"), "{not json")
 
 	err := stateFileLoads(dir, false).Run(context.Background())
 	if err == nil {
@@ -47,7 +83,7 @@ func TestStateFileLoads_CorruptWithoutRepair(t *testing.T) {
 
 func TestStateFileLoads_RepairResets(t *testing.T) {
 	dir := t.TempDir()
-	writeDoctorFile(t, filepath.Join(dir, "state.json"), "{not json")
+	writeFile(t, filepath.Join(dir, "state.json"), "{not json")
 
 	if err := stateFileLoads(dir, true).Run(context.Background()); err != nil {
 		t.Fatalf("stateFileLoads with repair = %v, want nil", err)
@@ -69,7 +105,7 @@ func TestIndexShardsValid(t *testing.T) {
 
 	t.Run("corrupt shard fails with repair hint", func(t *testing.T) {
 		dir := t.TempDir()
-		writeDoctorFile(t, filepath.Join(dir, "bad.zoekt"), "not a shard")
+		writeFile(t, filepath.Join(dir, "bad.zoekt"), "not a shard")
 		err := indexShardsValid(dir).Run(context.Background())
 		if err == nil {
 			t.Fatal("Run() = nil, want error for corrupt shard")
@@ -92,7 +128,7 @@ func TestSearchServerResponsive(t *testing.T) {
 	})
 
 	t.Run("alive pid with dead socket fails", func(t *testing.T) {
-		writeDoctorFile(t, pidPath, strconv.Itoa(os.Getpid()))
+		writeFile(t, pidPath, strconv.Itoa(os.Getpid()))
 		err := searchServerResponsive(pidPath, socketPath).Run(context.Background())
 		if err == nil {
 			t.Fatal("Run() = nil, want error for live pid with unresponsive socket")
@@ -100,7 +136,19 @@ func TestSearchServerResponsive(t *testing.T) {
 	})
 }
 
-func writeDoctorFile(t *testing.T, path, content string) {
+// TestWebBaseURLFollowsPort pins the fix for links that outlived a port
+// change: with no web.base_url configured, the probes follow CSL_PORT.
+func TestWebBaseURLFollowsPort(t *testing.T) {
+	config.SetPath(filepath.Join(t.TempDir(), "absent.yaml"))
+	t.Cleanup(func() { config.SetPath("") })
+	t.Setenv("CSL_PORT", "9424")
+
+	if got, want := webBaseURL(), "http://127.0.0.1:9424"; got != want {
+		t.Errorf("webBaseURL() = %q, want %q", got, want)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)

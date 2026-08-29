@@ -2,11 +2,19 @@
 
 ## Where config lives
 
-`csl` reads exactly one file: `~/.config/csl/config.yaml`. There is no
-per-repo or per-directory override and no environment variable that moves
-the path. The file is YAML, and every key in it is optional — a missing file
-leaves `csl` on its defaults with no directories configured, and `csl config`
-reports the file as "missing, defaults in use" rather than failing.
+`csl` reads exactly one file per run, resolved in this order:
+
+1. `--config <path>`, a persistent flag on every subcommand.
+2. `$CSL_CONFIG`.
+3. `config.yaml` in the XDG config directory: `$XDG_CONFIG_HOME/csl` when
+   that variable holds an absolute path, otherwise `~/.config/csl`.
+
+A leading `~` is expanded in the flag and the environment variable, so both
+work under launchd, where no shell expands them first. There is no per-repo
+or per-directory override. The file is YAML, and every key in it is
+optional — a missing file leaves `csl` on its defaults with no directories
+configured, and `csl config` reports the file as "missing, defaults in use"
+rather than failing.
 
 `csl config` prints the resolved path, whether the file loaded, and the
 effective settings after defaults are applied. `csl config --help` carries
@@ -18,20 +26,30 @@ fill every unset key, and a small number of CLI flags override specific
 config values for a single invocation (`csl sync --concurrency`, `csl web
 --port`). Flags never persist back to the file.
 
+## Where state lives
+
+The config file is the only thing under the config directory. Everything
+`csl` writes — the lexical index (`search-index/`), the vector stores
+(`semantic-index/`), the search server's socket, PID file and log, and
+`reindex.queue` — lives in the state directory: `$XDG_STATE_HOME/csl`, or
+`~/.local/state/csl` when that variable is unset.
+
+Installs made before the split are the exception, and deliberately so: when
+`~/.config/csl` already exists on disk it stays the state directory, so an
+upgrade moves no files and re-indexes nothing. `csl doctor` and the
+`operating.md` doc (`csl docs`) both name the directory in effect.
+
 ## Keys
 
 - `dirs` (list of strings, default empty): root directories `csl` walks for
   git repos. Each entry is expanded for a leading `~`. The walker records
   every directory whose immediate child is `.git` and does not descend into
   nested repos once it finds one.
-- `layout` (string, default `split`): inert, carried over from `csl`'s
-  origin as a session launcher. Nothing in the current code reads it; it is
-  printed by `csl config` so a config that sets it is not silently
-  misreported. Accepted values are `split` and `tab`.
-- `summary` (bool, default `false`): inert, same origin as `layout`. Only
-  takes effect (were anything to read it) when `layout: tab` is also set.
-- `tmpdir` (string, default empty): inert, same origin. Empty means the OS
-  temp directory.
+
+`layout`, `summary`, and `tmpdir` were carried over from `csl`'s origin as a
+session launcher and have been removed: nothing read them. A config file
+that still sets them loads unchanged — unknown keys are ignored — but
+`csl config` no longer echoes them back.
 
 ### `index`
 
@@ -45,9 +63,10 @@ config values for a single invocation (`csl sync --concurrency`, `csl web
 
 - `hooks.post_merge.enabled` (bool, default `false`): gates the deprecated
   `csl hooks install` post-merge hook installer. suspenders now owns git
-  hooks and feeds `~/.config/csl/reindex.queue`, which `csl` still drains
-  (`csl sync` / `csl index --drain`). Only `csl hooks install` reads this
-  flag.
+  hooks and feeds `reindex.queue` in the state directory, which `csl` still
+  drains (`csl sync` / `csl index --drain`). Only `csl hooks install` reads
+  this flag; the hook it writes has the resolved queue path baked in, since
+  a git hook cannot ask `csl` where the queue is.
 - `hooks.post_merge.exclude` (list of strings, default empty): repos to skip
   during indexing and `csl sync`, matched against the repo's absolute path
   or its `org/repo` name (exact match, no globs; `~` is expanded). This list
@@ -105,15 +124,31 @@ zoekt index, which has no disable switch. Embedding goes through a local
 
 ### `web`
 
-- `web.base_url` (string, default `http://127.0.0.1:7424`): where the csl
-  web UI is reachable. Used by `csl_show_file` to build the links it opens.
-  Set to `http://csl.this` when the UI is fronted by d-man. `csl web --port`
-  changes which port the process binds for a single run; it does not update
-  this key.
+- `web.base_url` (string, default derived from the port): where the csl web
+  UI is reachable. Used by `csl_show_file` to build the links it opens. When
+  unset it is `http://127.0.0.1:<port>`, where the port is `CSL_PORT` or
+  7424 — so exporting `CSL_PORT` moves the UI and its links together. Set
+  this key to `http://csl.this` when the UI is fronted by d-man; an explicit
+  value always wins.
+
+  `csl web --port` binds a different port for that one process. Inside it
+  the links follow the flag, but other processes (the MCP server, `csl
+  doctor` in another shell) only see `CSL_PORT` and this key, so pin one of
+  those when the UI permanently moves.
 
 ## Environment variables
 
-- `HOME`: root of the config and state paths (`~/.config/csl/...`).
+- `CSL_CONFIG`: path to the config file, overriding the default location.
+  `--config` beats it. A leading `~` is expanded.
+- `CSL_PORT` (default `7424`): the port the web UI listens on. `csl web`
+  binds it (`--port` overrides for that process), and every other surface
+  assumes the UI is there when `web.base_url` is unset.
+- `XDG_CONFIG_HOME` / `XDG_STATE_HOME`: roots of the config and state
+  directories when set to an absolute path. Relative values are ignored,
+  per the XDG spec.
+- `HOME`: root of both directories when the XDG variables are unset. An
+  unresolvable home is an error, not a path relative to the working
+  directory.
 - `PATH`: `git` is looked up on `PATH` for pull and fingerprint operations.
   The daemon-start helper shells out to the running binary via
   `os.Executable()` rather than `PATH`, so daemon start works from any
@@ -125,12 +160,10 @@ zoekt index, which has no disable switch. Embedding goes through a local
   the event is simply dropped and the command still succeeds. Never set
   during `go test` — test runs skip the call entirely.
 
-There are no `CSL_*` configuration overrides.
-
 ## Example
 
 ```yaml
-# ~/.config/csl/config.yaml
+# $XDG_CONFIG_HOME/csl/config.yaml (or ~/.config/csl/config.yaml)
 
 dirs:
   - ~/code/src/github.com

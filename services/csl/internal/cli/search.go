@@ -134,7 +134,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf(
-			"failed to load config: %w\n\nHint: create ~/.config/csl/config.yaml with a 'dirs' list",
+			"failed to load config: %w\n\nHint: create the file above with a 'dirs' list ('csl config' prints the path csl reads)",
 			err,
 		)
 	}
@@ -147,7 +147,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 
 	if len(repos) == 0 {
 		return fmt.Errorf(
-			"no repos found in configured directories\n\nHint: add directories to 'dirs' in ~/.config/csl/config.yaml",
+			"no repos found in configured directories\n\nHint: add directories to 'dirs' in the config file 'csl config' prints",
 		)
 	}
 

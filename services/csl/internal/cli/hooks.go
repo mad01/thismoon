@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/services/csl/internal/queue"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
@@ -20,19 +21,26 @@ const hookMarkerPrefix = "# csl-managed-hook:"
 // `csl hooks install` recognize and overwrite older managed hooks.
 const hookMarker = hookMarkerPrefix + " post-merge v2"
 
-// hookScript appends the repo path to a queue file instead of indexing
-// directly. A subsequent `csl index --drain` or `csl sync` batch-indexes
-// all queued repos in a single process, avoiding concurrent state.json writes.
-const hookScript = `#!/usr/bin/env sh
+// hookScript renders the post-merge hook, which appends the repo path to the
+// queue file instead of indexing directly. A subsequent `csl index --drain`
+// or `csl sync` batch-indexes all queued repos in a single process, avoiding
+// concurrent state.json writes.
+//
+// queuePath is baked in at install time rather than derived in the script:
+// the hook runs in a bare git environment where csl may not be on PATH, so it
+// cannot ask csl where the queue lives.
+func hookScript(queuePath string) string {
+	return `#!/usr/bin/env sh
 ` + hookMarker + `
-# Edit csl config (~/.config/csl/config.yaml), not this file —
-# ` + "`csl hooks install`" + ` will overwrite it.
+# Edit csl config (` + "`csl config`" + ` prints the file it reads), not this
+# file — ` + "`csl hooks install`" + ` will overwrite it.
 # csl sync suppresses hooks via core.hooksPath=/dev/null, so this only
 # fires on direct git pull (outside csl sync).
-mkdir -p "${HOME}/.config/csl" && \
-  printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
+mkdir -p "` + filepath.Dir(queuePath) + `" && \
+  printf '%s\n' "$(git rev-parse --show-toplevel)" >> "` + queuePath + `"
 exit 0
 `
+}
 
 var (
 	hooksDryRunFlag bool
@@ -47,9 +55,10 @@ var (
 const deprecationNotice = `DEPRECATED: csl no longer manages post-merge hooks.
 
 suspenders is now the single git-hook manager. Configure a ` + "`csl-reindex`" + ` entry
-under suspenders' post_merge config; it writes each merged repo path to
-~/.config/csl/reindex.queue. csl still OWNS draining that queue and indexing —
-run ` + "`csl sync`" + ` or ` + "`csl index --drain`" + ` as before.
+under suspenders' post_merge config; it writes each merged repo path to csl's
+reindex queue (` + "`csl doctor`" + ` and ` + "`csl config`" + ` name the state
+directory holding it). csl still OWNS draining that queue and indexing — run
+` + "`csl sync`" + ` or ` + "`csl index --drain`" + ` as before.
 
 To migrate:
   1. Run ` + "`csl hooks uninstall`" + ` to remove any csl-managed post-merge hooks.
@@ -64,10 +73,10 @@ var hooksCmd = &cobra.Command{
 
 Historical behaviour (kept only so existing managed hooks can be removed):
 
-When the post_merge hook is enabled in ~/.config/csl/config.yaml, ` + "`csl hooks install`" + `
+When the post_merge hook is enabled in config.yaml, ` + "`csl hooks install`" + `
 writes a .git/hooks/post-merge script into every discovered repo (except those
-in hooks.post_merge.exclude). The hook appends the repo path to
-~/.config/csl/reindex.queue after each git pull.
+in hooks.post_merge.exclude). The hook appends the repo path to the reindex
+queue after each git pull, with the queue path baked in at install time.
 
 ` + "`csl hooks uninstall`" + ` and ` + "`csl hooks status`" + ` remain fully functional so you
 can remove csl-managed hooks and hand hook management over to suspenders.`,
@@ -161,6 +170,12 @@ func runHooksInstall(cmd *cobra.Command, args []string) error {
 		)
 	}
 
+	queuePath, err := queue.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("resolve reindex queue: %w", err)
+	}
+	script := hookScript(queuePath)
+
 	w := cmd.OutOrStdout()
 	var changed, skipped, foreign, errored int
 
@@ -190,7 +205,7 @@ func runHooksInstall(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		if string(existing) == hookScript {
+		if string(existing) == script {
 			continue
 		}
 
@@ -205,7 +220,7 @@ func runHooksInstall(cmd *cobra.Command, args []string) error {
 			errored++
 			continue
 		}
-		if err := os.WriteFile(hookPath, []byte(hookScript), 0o755); err != nil {
+		if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
 			fmt.Fprintf(w, "  ERR  %s — write: %v\n", repo.Name, err)
 			errored++
 			continue

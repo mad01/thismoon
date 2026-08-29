@@ -6,7 +6,7 @@
 
 The reindex flow is split in two:
 
-- **suspenders writes the queue.** suspenders manages each repo's `post-merge` hook. Add a `csl-reindex` entry to suspenders' `post_merge` config; on every `git pull` it appends the merged repo's root path to `~/.config/csl/reindex.queue`.
+- **suspenders writes the queue.** suspenders manages each repo's `post-merge` hook. Add a `csl-reindex` entry to suspenders' `post_merge` config; on every `git pull` it appends the merged repo's root path to csl's `reindex.queue`.
 - **csl drains the queue.** csl still owns reading that queue and indexing. Run `csl sync` or `csl index --drain` to batch-index every queued repo in a single process. This contract is unchanged from the old csl-managed hooks.
 
 Configure `csl-reindex` under suspenders' `post_merge` (see the [suspenders docs](https://github.com/mad01/suspenders)); a hook entry of that name writes:
@@ -14,6 +14,8 @@ Configure `csl-reindex` under suspenders' `post_merge` (see the [suspenders docs
 ```sh
 printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
 ```
+
+**Check that path against your install.** The queue lives in csl's state directory, which is `~/.config/csl` on every machine that ran csl before config and state were split, and `$XDG_STATE_HOME/csl` (else `~/.local/state/csl`) on a fresh one. `csl docs` prints the directory in effect. On a fresh install the line above has to be repointed, or suspenders will fill a queue csl never drains — a silently stale index, since indexing still happens on the next search, just later than intended.
 
 ### Migrating off csl-managed hooks
 
@@ -25,13 +27,13 @@ printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex
 
 The rest of this page documents the **deprecated** `csl hooks install` path. It is retained only so existing managed hooks can be inspected and removed.
 
-`csl hooks install` wrote a `post-merge` git hook into every repo `csl` discovers, so the search index was refreshed automatically after each `git pull`. The hook appended the repo path to `~/.config/csl/reindex.queue`, which `csl sync` / `csl index --drain` then drained.
+`csl hooks install` wrote a `post-merge` git hook into every repo `csl` discovers, so the search index was refreshed automatically after each `git pull`. The hook appended the repo path to csl's `reindex.queue`, which `csl sync` / `csl index --drain` then drained.
 
 ## Configure
 
 > This section applies to the deprecated `csl hooks install` path. New setups should use suspenders (see [Ownership](#ownership-who-writes-the-queue-vs-who-drains-it)).
 
-Hooks are configured in `~/.config/csl/config.yaml` under a `hooks` block. The block is optional and defaults to disabled; if it is missing or `enabled: false`, `csl hooks install` refuses to run with `hooks.post_merge.enabled is false in config — nothing to install (csl post-merge hooks are deprecated; use suspenders)`.
+Hooks are configured in the csl config file under a `hooks` block. The block is optional and defaults to disabled; if it is missing or `enabled: false`, `csl hooks install` refuses to run with `hooks.post_merge.enabled is false in config — nothing to install (csl post-merge hooks are deprecated; use suspenders)`.
 
 ### Schema
 
@@ -212,18 +214,20 @@ Every csl-managed `post-merge` hook is exactly this:
 ```sh
 #!/usr/bin/env sh
 # csl-managed-hook: post-merge v2
-# Edit csl config (~/.config/csl/config.yaml), not this file —
-# `csl hooks install` will overwrite it.
+# Edit csl config (`csl config` prints the file it reads), not this
+# file — `csl hooks install` will overwrite it.
 # csl sync suppresses hooks via core.hooksPath=/dev/null, so this only
 # fires on direct git pull (outside csl sync).
-mkdir -p "${HOME}/.config/csl" && \
-  printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
+mkdir -p "<state dir>" && \
+  printf '%s\n' "$(git rev-parse --show-toplevel)" >> "<state dir>/reindex.queue"
 exit 0
 ```
 
+`<state dir>` is not a placeholder in the written file: `csl hooks install` bakes the resolved path in, because a git hook runs in a bare environment where `csl` may not be on `PATH` and cannot ask.
+
 A few notes on the choices:
 
-- The hook only enqueues; it does not index inline. A later `csl sync` or `csl index --drain` drains `~/.config/csl/reindex.queue` and batch-indexes every queued repo in one process, avoiding concurrent `state.json` writes.
+- The hook only enqueues; it does not index inline. A later `csl sync` or `csl index --drain` drains `reindex.queue` and batch-indexes every queued repo in one process, avoiding concurrent `state.json` writes.
 - `git rev-parse --show-toplevel` resolves the repo root from inside the hook regardless of where in the worktree the merge ran.
 - The marker line is the contract. Bumping the version (`v2`) is how a csl release forces a rewrite of older managed hooks.
 

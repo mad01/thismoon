@@ -9,7 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mad01/thismoon/services/csl/internal/notify"
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
@@ -422,7 +422,7 @@ func handleRepoReindex(
 		}
 	}
 
-	notify.EmitEvent("csl", "info",
+	notify.EmitEventSync("csl", "info",
 		"reindexed "+repo.Name, "",
 		map[string]string{
 			"repo":     repo.Name,

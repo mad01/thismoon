@@ -15,7 +15,7 @@ import (
 
 // configReference documents every setting csl reads, shipped in the binary so
 // a fresh machine can be configured from the terminal without the repo.
-const configReference = `# ~/.config/csl/config.yaml — every key optional.
+const configReference = `# config.yaml — every key optional.
 
 dirs:                        # directories walked for git repos; every repo
   - ~/code/src               # found under one of them is a candidate for the
@@ -63,27 +63,25 @@ refresh:
 
 web:
   base_url: ""               # where the csl web UI is reachable, for the links
-                             # csl_show_file opens; empty means
-                             # http://127.0.0.1:7424. Set http://csl.this when
-                             # fronted by d-man.
+                             # csl_show_file opens; empty derives it from the
+                             # port (CSL_PORT, else 7424). Set http://csl.this
+                             # when fronted by d-man.
 
 hooks:
   post_merge:                # DEPRECATED installer — suspenders owns git hooks
-    enabled: false           # now and feeds ~/.config/csl/reindex.queue, which
-                             # csl still drains. Only 'csl hooks install' reads
-                             # this flag.
+    enabled: false           # now and feeds the reindex queue, which csl still
+                             # drains. Only 'csl hooks install' reads this flag.
     exclude:                 # still live, and shared with every index and sync
       - you/huge-repo        # path: an excluded repo never enters the index.
       - ~/code/src/scratch   # Matched against the repo's absolute path or its
                              # org/repo name — exact, no globs.
 
-# Inert keys, carried over from csl's origin as a session launcher. Nothing
-# reads them today; they are printed above so a config that sets them is not
-# silently misreported:
-layout: split                # split | tab
-summary: false               # needs layout: tab
-tmpdir: ""                   # scratch directory; empty means the OS temp dir
-
+# Environment (no YAML key of their own):
+#   CSL_CONFIG   moves this file; --config beats it.
+#   CSL_PORT     the port csl assumes the web UI listens on: 'csl web' binds
+#                it and every other surface links to it. web.base_url wins.
+#   EVENTS_BASE_URL  the events service sync runs archive to; best-effort.
+#
 # A repo can also carry a .cslignore at its root — one glob per line — which
 # filters both indexes. That file is per-repo, not part of this config.`
 
@@ -93,8 +91,9 @@ var configCmd = &cobra.Command{
 	Long: `Print which config file csl reads and the settings in effect after defaults
 are applied.
 
-csl reads exactly one file, ~/.config/csl/config.yaml; there is no per-repo or
-per-directory override and no environment variable that moves it. The file is
+csl reads exactly one file per run: --config when given, else CSL_CONFIG, else
+config.yaml in the XDG config directory ($XDG_CONFIG_HOME/csl, or ~/.config/csl
+when that is unset). There is no per-repo or per-directory override. The file is
 optional and so is every key in it — a missing file leaves csl on its defaults
 with no repos configured, and the header line above the output says whether the
 file was loaded, absent, or unparseable.
@@ -138,9 +137,6 @@ func runConfig(cmd *cobra.Command, args []string) error {
 // values csl runs on rather than the blanks the file left behind.
 func effectiveConfig(cfg *config.Config) config.Config {
 	eff := *cfg
-	eff.Layout = cfg.EffectiveLayout()
-	eff.Summary = cfg.SummaryEnabled()
-	eff.TmpDir = cfg.EffectiveTmpDir()
 	eff.Sync.Concurrency = cfg.Sync.EffectiveConcurrency()
 	eff.Daemon.IdleTimeoutMinutes = int(cfg.DaemonIdleTimeout() / time.Minute)
 	enabled := cfg.RefreshEnabled()

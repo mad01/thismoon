@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
 
@@ -20,6 +21,9 @@ func runConfigCmd(t *testing.T, contents string, write bool) (header, body strin
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("CSL_CONFIG", "")
+	config.SetPath("")
 	if write {
 		dir := filepath.Join(home, ".config", "csl")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -89,8 +93,8 @@ func TestConfigLoadedFile(t *testing.T) {
 	if got.Sync.Concurrency != 3 {
 		t.Errorf("sync.concurrency = %d, want the configured 3", got.Sync.Concurrency)
 	}
-	if got.Layout != config.LayoutSplit {
-		t.Errorf("layout = %q, want the default %q", got.Layout, config.LayoutSplit)
+	if got.Web.BaseURL != csl.DefaultBaseURL {
+		t.Errorf("web.base_url = %q, want the resolved default %q", got.Web.BaseURL, csl.DefaultBaseURL)
 	}
 }
 
@@ -114,15 +118,18 @@ func TestConfigMalformedFile(t *testing.T) {
 func TestConfigLongDocumentsEveryKey(t *testing.T) {
 	keys := []string{
 		"dirs:",
-		"layout:",
-		"summary:",
-		"tmpdir:",
 		"hooks:",
 		"post_merge:",
 		"sync:",
 		"index:",
 		"semantic:",
 		"daemon:",
+		"refresh:",
+		"web:",
+		// The settings with no YAML key of their own still have to be findable
+		// here: the reference is what a fresh machine is configured from.
+		"CSL_CONFIG",
+		"CSL_PORT",
 	}
 	for _, k := range keys {
 		if !strings.Contains(configCmd.Long, k) {
