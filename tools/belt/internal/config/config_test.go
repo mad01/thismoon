@@ -501,13 +501,7 @@ func TestPathsForRelocatedSkipsLegacyTOML(t *testing.T) {
 // ~/.config, so Finder and friends leave files in it. Reading .DS_Store as a
 // malformed override put a permanent warning in `belt override`.
 func TestOverridesSkipsDotfiles(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", "")
-	dir := filepath.Join(home, ".config", "belt", "overrides")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	dir := isolateOverrides(t)
 	writeFile(t, dir, ".DS_Store", "\x00\x00binary junk")
 	writeFile(t, dir, "vacation", "")
 
