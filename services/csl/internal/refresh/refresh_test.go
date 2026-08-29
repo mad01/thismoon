@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -117,9 +118,9 @@ func TestCycleFailureBacksOffExponentially(t *testing.T) {
 func TestDue(t *testing.T) {
 	now := fixedNow()
 	tests := []struct {
-		name    string
-		mutate  func(r *Refresher)
-		want    bool
+		name   string
+		mutate func(r *Refresher)
+		want   bool
 	}{
 		{"never ran", func(r *Refresher) {}, true},
 		{"fresh", func(r *Refresher) { r.lastRun = now.Add(-time.Minute) }, false},
@@ -158,7 +159,9 @@ func TestKickBusy(t *testing.T) {
 }
 
 func TestStatusReportsLoopState(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	r := testRefresher(nil, fixedNow)
 	r.lastRun = fixedNow().Add(-5 * time.Minute)
 	r.lastErr = "boom"

@@ -23,9 +23,8 @@ func makeFakeRepo(t *testing.T, root, org, repoName string) string {
 }
 
 // setupRepoEnv builds a fake HOME with a csl config pointing at a temp root
-// containing the given repos (one per "org/name" pair). Returns the temp root
-// and a cleanup that restores HOME.
-func setupRepoEnv(t *testing.T, repos []struct{ Org, Name string }) (string, func()) {
+// containing the given repos (one per "org/name" pair). Returns the temp root.
+func setupRepoEnv(t *testing.T, repos []struct{ Org, Name string }) string {
 	t.Helper()
 	tmp := t.TempDir()
 	reposRoot := filepath.Join(tmp, "workspace")
@@ -45,9 +44,8 @@ func setupRepoEnv(t *testing.T, repos []struct{ Org, Name string }) (string, fun
 		t.Fatalf("write config: %v", err)
 	}
 
-	origHome := os.Getenv("HOME")
-	_ = os.Setenv("HOME", tmp)
-	return reposRoot, func() { _ = os.Setenv("HOME", origHome) }
+	isolateConfigEnv(t, tmp)
+	return reposRoot
 }
 
 // TestResolveRepoWhitespace covers the whitespace normalization bug:
@@ -55,12 +53,11 @@ func setupRepoEnv(t *testing.T, repos []struct{ Org, Name string }) (string, fun
 // including exotic Unicode spaces (NBSP, narrow no-break space, zero-width
 // no-break space). Matching must tolerate all of these.
 func TestResolveRepoWhitespace(t *testing.T) {
-	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
+	setupRepoEnv(t, []struct{ Org, Name string }{
 		{"mad01", "octo"},
 		{"mad01", "other-repo"},
 		{"someone", "unrelated"},
 	})
-	defer cleanup()
 
 	tests := []struct {
 		name    string
@@ -104,11 +101,10 @@ func TestResolveRepoWhitespace(t *testing.T) {
 // TestResolveRepoExactDisambiguation checks that trailing whitespace does not
 // defeat the exact-match tiebreaker when multiple repos fuzzy-match.
 func TestResolveRepoExactDisambiguation(t *testing.T) {
-	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
+	setupRepoEnv(t, []struct{ Org, Name string }{
 		{"mad01", "octo"},
 		{"mad01", "octopus"},
 	})
-	defer cleanup()
 
 	// Query "octo" fuzzy-matches both; the exact-match tiebreaker should
 	// still pick "mad01/octo" even when the query has trailing whitespace.
@@ -124,11 +120,10 @@ func TestResolveRepoExactDisambiguation(t *testing.T) {
 // TestHandleRepoLookupWhitespace verifies the MCP tool layer handles
 // whitespace-padded names gracefully.
 func TestHandleRepoLookupWhitespace(t *testing.T) {
-	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
+	setupRepoEnv(t, []struct{ Org, Name string }{
 		{"mad01", "octo"},
 		{"someone", "unrelated"},
 	})
-	defer cleanup()
 
 	queries := []string{"octo", "octo ", " octo", "octo ", "OCTO\t"}
 	for _, q := range queries {
@@ -157,10 +152,9 @@ func TestHandleRepoLookupWhitespace(t *testing.T) {
 // TestHandleRepoLookupRejectsEmpty ensures whitespace-only names are rejected
 // the same way empty names are.
 func TestHandleRepoLookupRejectsEmpty(t *testing.T) {
-	_, cleanup := setupRepoEnv(t, []struct{ Org, Name string }{
+	setupRepoEnv(t, []struct{ Org, Name string }{
 		{"mad01", "octo"},
 	})
-	defer cleanup()
 
 	for _, q := range []string{"", " ", "\t\n", " "} {
 		_, _, err := handleRepoLookup(context.Background(), nil, repoLookupInput{Name: q})

@@ -54,8 +54,7 @@ func TestSyncDryRunE2E(t *testing.T) {
 	parent := filepath.Dir(dir)
 
 	cfg := "dirs:\n  - " + parent + "\nhooks:\n  post_merge:\n    enabled: true\n"
-	_, cleanup := setupTestConfig(t, cfg)
-	defer cleanup()
+	setupTestConfig(t, cfg)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
