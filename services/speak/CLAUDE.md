@@ -200,6 +200,12 @@ muscle memory carries over. Implementation notes:
   needs the recipe-managed Kokoro sidecar running on `:8765`; without it the
   page loads and the speech endpoints return errors. CI builds and releases
   never ship the engine.
+- **The venv shares the legacy state path.** `~/.local/share/speak` holds
+  both the engine's venv/logs (recipe-created, on every machine with the
+  engine) and, on pre-XDG installs, the playback `audio/` cache and lock.
+  That is why `defaultStateDir` probes for `audio/` rather than the
+  directory: without the probe every machine with the engine installed would
+  be pinned to the legacy path and none could adopt `~/.local/state/speak`.
 - **The venv lives at `~/.local/share/speak/venv`,** created by the
   `speak-tts` recipe's install script (see TTS engine gotchas above for the
   pinned versions). Rebuild it with:

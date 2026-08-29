@@ -34,8 +34,12 @@ subcommands.
 ### Where `--state-dir` defaults to
 
 1. `SPEAK_STATE_DIR`, when set.
-2. `~/.local/share/speak`, when that directory already exists, so an install
-   that has playback state keeps using it across upgrades.
+2. `~/.local/share/speak`, when it holds an `audio/` directory, so an install
+   that has actually played something keeps its cache and lock across
+   upgrades. The generated-audio cache is what settles it, not the directory:
+   the mlx-audio engine installs its virtualenv and logs under the same path,
+   so on a machine with the TTS engine but no playback history the directory
+   exists while the state does not, and that machine lands in (3).
 3. `$XDG_STATE_HOME/speak` when `XDG_STATE_HOME` holds an absolute path,
    otherwise `~/.local/state/speak`. This is where a fresh install lands.
 
