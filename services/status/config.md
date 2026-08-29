@@ -2,10 +2,10 @@
 
 ## Where config lives
 
-status has no config file. The whole surface is command-line flags to
-`status serve`, each with an environment-variable fallback for the two that
-matter to a launchd agent (port and store location). Precedence is flag,
-then environment variable, then built-in default.
+status has no config file. The whole surface is persistent command-line
+flags on the `status` command, each with an environment-variable fallback for
+the two that matter to a launchd agent (port and store location). Precedence
+is flag, then environment variable, then built-in default.
 
 The list of services status checks is not configuration at all: every cycle
 it scans `~/Library/LaunchAgents` and `/Library/LaunchDaemons` for plists
@@ -15,7 +15,13 @@ env var to point the scan at different directories.
 
 ## Flags
 
-All flags belong to `status serve`.
+These are persistent flags on the root command, so `serve`, `doctor`, `docs`,
+and `version` all accept them and resolve them identically. That matters for
+`doctor`: it probes the port and reads the workdir, so it has to be told the
+same values `serve` was. They were `serve`-only in earlier releases, where
+`status --port 9999 doctor` was rejected as an unknown flag and a bare
+`doctor` diagnosed the compiled-in port no matter which one serve listened
+on.
 
 - `--port` (int, default `7426`, env `STATUS_PORT`): port the HTTP server
   listens on.
@@ -25,14 +31,25 @@ All flags belong to `status serve`.
   discovered service.
 - `--routes` (string, default `~/.config/d-man/routes.toml`): the d-man
   routes file used to map a service's port to its `.this` link on the
-  dashboard. No env var; `--routes` is the only override.
+  dashboard. The default comes from d-man's own `DefaultRoutesPath`
+  constant, so the two cannot drift. No env var; `--routes` is the only
+  override.
 - `--restart-window` (duration, default `1h`): the window over which
   launchd respawns are counted per service for crash-loop detection.
 - `--restart-threshold` (int, default `50`): respawns within
   `--restart-window` that trigger a crash-loop alert.
 
 A leading `~` in `--workdir` or `--routes` is expanded at runtime (launchd
-agents don't run through a shell, so nothing else expands it).
+agents don't run through a shell, so nothing else expands it). A `~` that
+cannot be expanded — no resolvable home directory, which a stripped launchd
+environment produces — is an error at startup. Earlier releases stripped the
+`~` and used a path relative to the working directory instead, which quietly
+wrote uptime history nobody reads. An unparseable `STATUS_PORT` warns once on
+stderr and falls back to the compiled-in default.
+
+To see what a given environment actually resolved to, run `status doctor` —
+with the same flags you would give `serve`, now that they are accepted
+there.
 
 ### Fixed values (not configurable)
 
@@ -56,7 +73,8 @@ wires to a flag; callers only ever see their built-in defaults:
   events service that status posts `warn`/`info` events to for stale-binary
   and crash-loop detection. The post is best-effort and fire-and-forget: if
   the events service is down or `EVENTS_BASE_URL` points nowhere, the event
-  is dropped silently and status keeps running.
+  is dropped silently and status keeps running. Read by the shared
+  `kit/notify` package, not exposed as a flag.
 
 ## Example
 

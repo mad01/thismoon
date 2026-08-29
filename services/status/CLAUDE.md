@@ -16,7 +16,8 @@ status/
     check/             HTTP and launchctl PID probes
     crashloop/         restart-counter tracker behind crash-loop alerts
     history/           day-bucketed JSON uptime store
-    notify/            events.this emit + macOS banner (best-effort, per-tool copy)
+    notify/            macOS banner (best-effort); events.this emit comes from
+                       the shared kit/notify package
     server/            Monitor (poller), handlers, embedded shell.html + app.js
   Makefile             part of module github.com/mad01/thismoon (no own go.mod)
 ```
@@ -41,7 +42,8 @@ root) and looking for a `pid =` line.
 
 d-man's `~/.config/d-man/routes.toml` maps backend port to route name, so
 each web service's name links to its `.this` page (`--routes` flag to
-override).
+override). The default path is d-man's exported `DefaultRoutesPath`, not a
+copied literal.
 
 ### Metadata
 

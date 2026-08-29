@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
+	kitnotify "github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/status/internal/check"
 	"github.com/mad01/thismoon/services/status/internal/crashloop"
 	"github.com/mad01/thismoon/services/status/internal/discover"
@@ -251,7 +252,7 @@ func (m *Monitor) detectCrashLoops(
 	lines := make([]string, len(alerts))
 	for i, a := range alerts {
 		lines[i] = fmt.Sprintf("%s: %d restarts in the last %s", a.Label, a.Restarts, a.Window)
-		notify.EmitEvent("status", "error", a.Label+" crash-looping", lines[i],
+		kitnotify.EmitEvent("status", "error", a.Label+" crash-looping", lines[i],
 			map[string]string{
 				"service":  a.Label,
 				"restarts": strconv.Itoa(a.Restarts),
@@ -269,10 +270,10 @@ func emitTransitions(statuses []ServiceStatus, prevUp map[string]bool) {
 			continue
 		}
 		if st.Up {
-			notify.EmitEvent("status", "info", st.Label+" recovered", "",
+			kitnotify.EmitEvent("status", "info", st.Label+" recovered", "",
 				map[string]string{"service": st.Label})
 		} else {
-			notify.EmitEvent("status", "warn", st.Label+" down", st.Detail,
+			kitnotify.EmitEvent("status", "warn", st.Label+" down", st.Detail,
 				map[string]string{"service": st.Label})
 		}
 	}
@@ -292,14 +293,14 @@ func emitDriftTransitions(statuses []ServiceStatus, prevDrift map[string]bool) {
 		if st.Drift {
 			line := fmt.Sprintf("%s: running %s, installed %s", st.Label, st.Version, st.Installed)
 			lines = append(lines, line)
-			notify.EmitEvent("status", "warn", st.Label+" running stale binary", line,
+			kitnotify.EmitEvent("status", "warn", st.Label+" running stale binary", line,
 				map[string]string{
 					"service":   st.Label,
 					"running":   st.Version,
 					"installed": st.Installed,
 				})
 		} else {
-			notify.EmitEvent("status", "info", st.Label+" binary current", "",
+			kitnotify.EmitEvent("status", "info", st.Label+" binary current", "",
 				map[string]string{"service": st.Label})
 		}
 	}
