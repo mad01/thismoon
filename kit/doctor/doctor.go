@@ -38,26 +38,77 @@ func (s skip) Error() string { return s.note }
 // than one that fails.
 const probeTimeout = 3 * time.Second
 
-// Run executes checks in order, printing one line per check to w
-// ("ok <name>" / "FAIL <name>: <err>"), and returns an error when any
-// check failed. On a clean pass the last line points at the operating doc.
-func Run(ctx context.Context, w io.Writer, f agentdoc.Facts, checks []Check) error {
-	failed := 0
+// Check outcomes, as they serialize in a Report.
+const (
+	StatusOK      = "ok"      // the check passed
+	StatusSkipped = "skipped" // the check had nothing to examine; counts as a pass
+	StatusFail    = "fail"    // the check failed; Detail carries the cause
+)
+
+// Result is one check's outcome.
+type Result struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// Report is a doctor run in machine-readable form, for the MCP doctor tool
+// an agent reaches for when it has no shell to run `<bin> doctor` in.
+type Report struct {
+	OK     bool     `json:"ok"`
+	Checks []Result `json:"checks"`
+}
+
+// Collect runs checks in order and returns their outcomes. A skipped check
+// counts as a pass, the same way Run prints it.
+func Collect(ctx context.Context, checks []Check) Report {
+	report := Report{OK: true, Checks: make([]Result, 0, len(checks))}
 	for _, c := range checks {
 		err := c.Run(ctx)
 		var s skip
 		switch {
 		case err == nil:
-			fmt.Fprintf(w, "ok %s\n", c.Name)
+			report.Checks = append(report.Checks, Result{Name: c.Name, Status: StatusOK})
 		case errors.As(err, &s):
-			fmt.Fprintf(w, "ok %s (%s)\n", c.Name, s.note)
+			report.Checks = append(report.Checks,
+				Result{Name: c.Name, Status: StatusSkipped, Detail: s.note})
 		default:
-			failed++
-			fmt.Fprintf(w, "FAIL %s: %v\n", c.Name, err)
+			report.OK = false
+			report.Checks = append(report.Checks,
+				Result{Name: c.Name, Status: StatusFail, Detail: err.Error()})
 		}
 	}
-	if failed > 0 {
-		return fmt.Errorf("doctor: %d of %d checks failed", failed, len(checks))
+	return report
+}
+
+// failed counts the checks that did not pass.
+func (r Report) failed() int {
+	n := 0
+	for _, c := range r.Checks {
+		if c.Status == StatusFail {
+			n++
+		}
+	}
+	return n
+}
+
+// Run executes checks in order, printing one line per check to w
+// ("ok <name>" / "FAIL <name>: <err>"), and returns an error when any
+// check failed. On a clean pass the last line points at the operating doc.
+func Run(ctx context.Context, w io.Writer, f agentdoc.Facts, checks []Check) error {
+	report := Collect(ctx, checks)
+	for _, c := range report.Checks {
+		switch c.Status {
+		case StatusOK:
+			fmt.Fprintf(w, "ok %s\n", c.Name)
+		case StatusSkipped:
+			fmt.Fprintf(w, "ok %s (%s)\n", c.Name, c.Detail)
+		default:
+			fmt.Fprintf(w, "FAIL %s: %s\n", c.Name, c.Detail)
+		}
+	}
+	if !report.OK {
+		return fmt.Errorf("doctor: %d of %d checks failed", report.failed(), len(checks))
 	}
 	fmt.Fprintf(w, "all checks passed; for semantics and gotchas run '%s docs'\n", f.Bin)
 	return nil

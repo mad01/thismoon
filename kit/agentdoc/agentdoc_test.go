@@ -113,6 +113,26 @@ func TestInstructions(t *testing.T) {
 			want: "toss: file sharing helper.\n" +
 				"On any tool error or unexpected empty result: see 'toss docs'.",
 		},
+		{
+			name: "doctor tool leads the recovery line",
+			facts: Facts{
+				Name: "keeper-of-facts", Bin: "kof",
+				Purpose: "evidence-pinned assertion store", BaseURL: "http://kof.this",
+				HasDoctor: true, MCPDoctorTool: "kof_doctor",
+			},
+			want: "kof: evidence-pinned assertion store.\n" +
+				"Tools call the local keeper-of-facts service (default http://kof.this) via this stdio shim; the service must be running.\n" +
+				"On any tool error or unexpected empty result: call 'kof_doctor' or run 'kof doctor'. Full doc: 'kof docs'.",
+		},
+		{
+			name: "doctor tool without a doctor subcommand",
+			facts: Facts{
+				Name: "worklog", Bin: "worklog",
+				Purpose: "resumable cross-session work state", MCPDoctorTool: "worklog_doctor",
+			},
+			want: "worklog: resumable cross-session work state.\n" +
+				"On any tool error or unexpected empty result: call 'worklog_doctor'. Full doc: 'worklog docs'.",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,10 +182,49 @@ func TestHint(t *testing.T) {
 	})
 }
 
+func TestInstructionsStayThreeLines(t *testing.T) {
+	// Ten servers inject this into every session whether or not anything
+	// fails, so the block is hard-capped at three lines (ADR-0009).
+	facts := []Facts{
+		kofFacts,
+		{Name: "toss", Bin: "toss", Purpose: "file sharing helper"},
+		{Name: "csl", Bin: "csl", Purpose: "local code search", MCPNote: "Nothing must be running."},
+		{
+			Name: "kof", Bin: "kof", Purpose: "assertion store", BaseURL: "http://kof.this",
+			HasDoctor: true, MCPDoctorTool: "kof_doctor",
+		},
+	}
+	for _, f := range facts {
+		got := Instructions(f)
+		if n := len(strings.Split(got, "\n")); n > 3 {
+			t.Errorf("Instructions(%s) has %d lines, want at most 3:\n%s", f.Bin, n, got)
+		}
+	}
+}
+
+func TestRegistrationSnippet(t *testing.T) {
+	got := RegistrationSnippet(kofFacts)
+	for _, want := range []string{
+		"claude mcp add kof -- kof mcp",
+		"[mcp_servers.kof]",
+		`command = "kof"`,
+		`args = ["mcp"]`,
+		"~/.codex/config.toml",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("RegistrationSnippet() missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "keeper-of-facts") {
+		t.Errorf("RegistrationSnippet() names the component, want the binary:\n%s", got)
+	}
+}
+
 func TestOutputIsASCII(t *testing.T) {
 	outputs := []string{
 		Instructions(kofFacts),
 		Hint(errors.New("boom"), kofFacts).Error(),
+		RegistrationSnippet(kofFacts),
 	}
 	for _, s := range outputs {
 		for _, r := range s {
