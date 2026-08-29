@@ -12,7 +12,7 @@ Three surfaces over one cache:
   with a repo filter, an author filter, newest/oldest sorting, and a reset
   button. Every row links to the PR on GitHub.
 - **CLI**: `prs list`, `prs refresh`, `prs status`.
-- **MCP**: `prs_list`, `prs_refresh`, `prs_status` for agent sessions.
+- **MCP**: `prs_list`, `prs_refresh`, `prs_status`, `prs_doctor` for agent sessions.
 
 ## Install
 

@@ -22,11 +22,12 @@ const DefaultConfigPath = "~/.config/prs/config.yaml"
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "prs",
-		Bin:       "prs",
-		Purpose:   "open pull requests across every locally checked-out repo, polled from their GitHub hosts",
-		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath: DefaultWorkdir,
-		HasDoctor: true,
+		Name:          "prs",
+		Bin:           "prs",
+		Purpose:       "open pull requests across every locally checked-out repo, polled from their GitHub hosts",
+		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
+		StorePath:     DefaultWorkdir,
+		HasDoctor:     true,
+		MCPDoctorTool: "prs_doctor",
 	}
 }

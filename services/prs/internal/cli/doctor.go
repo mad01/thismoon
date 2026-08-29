@@ -12,19 +12,22 @@ import (
 )
 
 func init() {
-	// Checks build at run time so they probe the resolved
-	// --port/--workdir/--config (env vars included), not the compile-time
-	// defaults.
-	rootCmd.AddCommand(agentcli.DoctorCommand(prs.Facts(), func(context.Context) []doctor.Check {
-		baseURL := fmt.Sprintf("http://localhost:%d", flagPort)
-		return []doctor.Check{
-			doctor.ServiceReachable(baseURL),
-			doctor.StoreReadable(flagWorkdir),
-			doctor.VersionSkew(baseURL),
-			configValid(flagConfig),
-			ghAvailable(),
-		}
-	}))
+	rootCmd.AddCommand(agentcli.DoctorCommand(prs.Facts(), doctorChecks))
+}
+
+// doctorChecks builds the diagnostics at run time so they probe the resolved
+// --port/--workdir/--config (env vars included), not the compile-time
+// defaults. The `doctor` command and the prs_doctor MCP tool share this one
+// set, so an agent with no shell gets the same diagnosis a human does.
+func doctorChecks(context.Context) []doctor.Check {
+	baseURL := fmt.Sprintf("http://localhost:%d", flagPort)
+	return []doctor.Check{
+		doctor.ServiceReachable(baseURL),
+		doctor.StoreReadable(flagWorkdir),
+		doctor.VersionSkew(baseURL),
+		configValid(flagConfig),
+		ghAvailable(),
+	}
 }
 
 // configValid checks the YAML config parses and names at least one dir to

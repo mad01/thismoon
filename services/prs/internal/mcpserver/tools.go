@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/prs/internal/client"
 	"github.com/mad01/thismoon/services/prs/internal/store"
 )
@@ -13,6 +14,7 @@ import (
 type handlers struct {
 	client *client.Client
 	webURL string // where the user views the PR list in a browser
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -46,6 +48,16 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"The first stop when prs_list looks wrong — a missing repo is usually an exclude, a host allowlist, " +
 			"or a fetch error visible here.",
 	}, h.handleStatus)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "prs_doctor",
+		Description: "Diagnose prs itself: is serve reachable, is the cache readable, is the running build the " +
+			"installed one, does the config parse and name directories to scan, is the gh CLI available. " +
+			"Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"Call this when another prs tool errors or returns an empty list: it answers whether the fault is " +
+			"the service, the config, or genuinely no open PRs.",
+	}, h.handleDoctor)
 }
 
 // ── list ──
@@ -128,4 +140,19 @@ func (h *handlers) handleStatus(
 		return nil, statusOutput{}, err
 	}
 	return nil, statusOutput{ServiceStatus: st, URL: h.webURL}, nil
+}
+
+// ── doctor ──
+
+type doctorInput struct{}
+
+// handleDoctor runs the same checks as `prs doctor` and returns the report.
+// A failing check is a result, not a tool error: the caller asked what is
+// wrong, and an error would hide the answer behind a transport failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ doctorInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }
