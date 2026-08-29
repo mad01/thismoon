@@ -99,19 +99,23 @@ Ask in plain language: "scan for vulnerable dependencies", "what's flagged",
 - `deps_list_flagged`: re-read the last findings without re-scanning
 - `deps_scan_repo`: rescan one repo (by path or basename) and merge the result
 - `deps_resolve`: acknowledge advisories by their key
+- `deps_doctor`: run the same checks as `deps doctor` and return the report
 
 On a standalone install, register the server once: `claude mcp add --scope user deps -- deps mcp`. On a ralph-managed machine, skip the manual command — registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `deps serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for deps yet, so start it directly (`deps serve`) or under a process supervisor. Confirm with `claude mcp list`, then `deps doctor` if a tool call fails.
 
 ## Configuration
 
-The discovery config is at `~/.config/deps/config.toml` (symlinked from
-`recipes/deps/config.toml`). The repo set comes from the catalog registry; this
-file trims it. Both lists are glob patterns matched against the full path and the
-basename. Edits take effect on the next scan without a restart.
+The discovery config is at `~/.config/deps/config.toml` (or under
+`$XDG_CONFIG_HOME/deps/`, symlinked from `recipes/deps/config.toml`). The repo
+set comes from the catalog registry; this file trims it. Both lists are glob
+patterns, matched a segment at a time against every trailing run of path
+segments — so a pattern can name a repo by basename, by org/repo, or by a
+deeper suffix. Edits take effect on the next scan without a restart; a pattern
+that does not compile fails the scan naming it.
 
 ```toml
-exclude_repos = ["archive-*"]      # skip whole repos
-exclude_paths = ["third_party"]    # skip sub-directories while walking a repo
+exclude_repos = ["archive-*", "mad01/*"]   # skip whole repos
+exclude_paths = ["third_party"]            # skip sub-directories while walking a repo
 ```
 
 `deps config` prints which file was picked up (`--config`, `$DEPS_CONFIG`, or the

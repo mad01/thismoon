@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/client"
 )
@@ -15,6 +16,7 @@ import (
 type handlers struct {
 	client *client.Client
 	webURL string // where the user views findings in a browser
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -49,6 +51,16 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"A resolved advisory stops alerting and drops out of the active findings until the package version changes or a NEW advisory appears on it. " +
 			"Use when the user has accepted a risk or will fix later.",
 	}, h.handleResolve)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "deps_doctor",
+		Description: "Diagnose deps itself: is `deps serve` reachable, is the scan store readable, and was the " +
+			"running service built from the same commit as the installed binary. " +
+			"Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing. " +
+			"Call this when another deps tool errors or comes back empty: it answers whether the fault is the " +
+			"service, the store, or a genuinely clean scan.",
+	}, h.handleDoctor)
 }
 
 // scanOut is the deps_scan response.
@@ -173,4 +185,15 @@ func (h *handlers) handleResolve(
 		return nil, resolveOut{}, err
 	}
 	return nil, resolveOut{Resolved: res.Resolved, URL: h.webURL}, nil
+}
+
+// handleDoctor runs the same checks as `deps doctor` and returns the report.
+// A failing check is a result, not a tool error: the caller asked what is
+// wrong, and an error would hide the answer behind a transport failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ struct{},
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }

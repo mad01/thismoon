@@ -18,11 +18,12 @@ const DefaultWorkdir = "~/.local/share/deps"
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "deps",
-		Bin:       "deps",
-		Purpose:   "supply-chain scanner checking every catalog repo's pinned dependencies against OSV advisories",
-		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath: DefaultWorkdir,
-		HasDoctor: true,
+		Name:          "deps",
+		Bin:           "deps",
+		Purpose:       "supply-chain scanner checking every catalog repo's pinned dependencies against OSV advisories",
+		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
+		StorePath:     DefaultWorkdir,
+		HasDoctor:     true,
+		MCPDoctorTool: "deps_doctor",
 	}
 }

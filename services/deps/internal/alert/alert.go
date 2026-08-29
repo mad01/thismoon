@@ -1,8 +1,11 @@
-// Package notify delivers a flagged dependency as a native macOS notification —
+// Package alert delivers a flagged dependency as a native macOS notification —
 // the same osascript mechanism the reminder tool and the sandbox-watch script
 // use. The Notifier interface keeps the side effect at the edge so the scanner
 // can be tested against a fake.
-package notify
+//
+// It is deliberately not called "notify": archiving an event to the events
+// service is kit/notify's job, and the scanner does both in the same file.
+package alert
 
 import (
 	"os/exec"

@@ -10,14 +10,18 @@ import (
 )
 
 func init() {
-	// Checks build at run time so they probe the resolved --port/--workdir
-	// (env vars included), not the compile-time defaults.
-	rootCmd.AddCommand(agentcli.DoctorCommand(deps.Facts(), func(context.Context) []doctor.Check {
-		baseURL := fmt.Sprintf("http://localhost:%d", flagPort)
-		return []doctor.Check{
-			doctor.ServiceReachable(baseURL),
-			doctor.StoreReadable(flagWorkdir),
-			doctor.VersionSkew(baseURL),
-		}
-	}))
+	rootCmd.AddCommand(agentcli.DoctorCommand(deps.Facts(), doctorChecks))
+}
+
+// doctorChecks builds the diagnostics at run time so they probe the resolved
+// --port/--workdir (env vars included), not the compile-time defaults. The
+// `doctor` command and the deps_doctor MCP tool share this one set, so an
+// agent with no shell gets the same diagnosis a human does.
+func doctorChecks(context.Context) []doctor.Check {
+	baseURL := fmt.Sprintf("http://localhost:%d", flagPort)
+	return []doctor.Check{
+		doctor.ServiceReachable(baseURL),
+		doctor.StoreReadable(flagWorkdir),
+		doctor.VersionSkew(baseURL),
+	}
 }
