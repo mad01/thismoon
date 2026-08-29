@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // ScriptDenyListID identifies the deep deny inspection guard: it applies the
@@ -94,7 +94,7 @@ type ScriptDenyList struct {
 
 // NewScriptDenyList builds the guard with the real events backend.
 func NewScriptDenyList(cfg config.Config) *ScriptDenyList {
-	return &ScriptDenyList{cfg: cfg, emit: notify.EmitEvent}
+	return &ScriptDenyList{cfg: cfg, emit: notify.EmitEventSync}
 }
 
 func (g *ScriptDenyList) ID() string    { return ScriptDenyListID }

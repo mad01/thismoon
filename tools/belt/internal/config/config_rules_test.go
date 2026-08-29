@@ -33,7 +33,7 @@ custom_guards:
     match: git commit
     mode: soft
 `)
-	cfg := LoadFrom(Paths{
+	cfg := mustLoad(t, Paths{
 		BeltYAML: filepath.Join(dir, "config.yaml"),
 		BeltTOML: filepath.Join(dir, "config.toml"),
 	})

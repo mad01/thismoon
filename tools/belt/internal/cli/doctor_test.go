@@ -256,12 +256,28 @@ func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 		}
 	})
 
+	// A broken config is the state where the rest of the report describes
+	// something belt is not enforcing, so doctor has to say both things: the
+	// file is broken, and the hooks are denying because of it.
 	t.Run("broken yaml", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, dir, "config.yaml", "guards: [broken")
 		out := runDoctorString(t, doctorPaths(dir))
-		if !strings.Contains(out, "PARSE ERROR") {
-			t.Errorf("broken YAML not flagged:\n%s", out)
+		for _, want := range []string{"BROKEN", "DENIES every guarded tool call"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("broken YAML report missing %q:\n%s", want, out)
+			}
+		}
+	})
+
+	// An invalid-but-parseable config lands in the same state: doctor is
+	// where the key that failed validation gets named.
+	t.Run("invalid custom guard event", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "config.yaml", "custom_guards:\n  lint:\n    event: Write\n    command: [lint]\n")
+		out := runDoctorString(t, doctorPaths(dir))
+		if !strings.Contains(out, "custom_guards.lint.event") {
+			t.Errorf("invalid custom guard event not named:\n%s", out)
 		}
 	})
 }

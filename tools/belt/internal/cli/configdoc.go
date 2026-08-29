@@ -21,6 +21,8 @@ import (
 // changes it) without hunting for repo docs.
 const configReference = `# ~/.config/belt/config.yaml — every key optional; guards and hints default
 # to enabled when the file or their entry is missing (fail closed, not silent).
+# Absent and invalid differ: no file means these defaults, while a file that
+# fails to parse or validate makes every belt hook call deny until it is fixed.
 
 # There is no machine-profile concept in this file (docs/adr/0010): the
 # provisioning layer renders a per-machine-class config, so a guard or rule
@@ -83,7 +85,9 @@ commit_guards:
 # reason (soft mode downgrades it to a warn event); exit 2+, a timeout (5s),
 # or a start failure allow with a warn event — a broken external fails open.
 # match gates when the external is exec'd at all: a substring of the bash
-# command (bash event) or target file path (write event).
+# command (bash event) or target file path (write event). event is required
+# and must be bash or write — a misspelled one is a config error, since the
+# guard would register on an event that never fires.
 custom_guards:
   check-branch-naming:
     enabled: true
@@ -95,10 +99,11 @@ custom_guards:
 guards:
   git-push-main:
     enabled: true
-    # Exempt whole repos from this guard by canonical host/owner/repo,
-    # matched against the push working dir's origin remote. This is how one
-    # repo gets to push to its default branch while every other repo stays
-    # fail-closed. An unresolved remote always denies.
+    # Exempt whole repos from this guard by canonical host/owner/repo (or a
+    # trailing /* org wildcard), matched against the push working dir's
+    # origin remote. This is how one repo gets to push to its default branch
+    # while every other repo stays fail-closed. An unresolved remote always
+    # denies.
     allow_repos:
       - github.com/you/yourrepo
 
@@ -106,7 +111,8 @@ guards:
     enabled: true
     # "soft" downgrades every denial to a warn event on the events service
     # and lets the command proceed — the rollout setting for tuning new
-    # patterns before they block. "hard" (the default) blocks.
+    # patterns before they block. "hard" (the default) blocks. This is the
+    # only guard that reads a mode here; setting it elsewhere is an error.
     mode: hard
     # Extra patterns denied inside scripts, beyond the Claude settings
     # permissions.deny Bash(...) entries (which are read live, never copied).
@@ -149,7 +155,7 @@ hints:
   humanizer-check:
     enabled: true`
 
-func configDocCmd() *cobra.Command {
+func configDocCmd(paths pathsFunc) *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
 		Short: "Show the current effective config",
@@ -157,12 +163,16 @@ func configDocCmd() *cobra.Command {
 defaults and fallbacks are applied — what this binary runs with, not what
 the file happens to spell out.
 
-belt reads ~/.config/belt/config.yaml; a legacy config.toml beside it is read
-only when the YAML file is absent, and a present-but-broken file of either
-format means defaults rather than a fall back to the other one. Every value
-prints resolved, defaults included. claude_deny is the one section that is
-not a config.yaml key: the Bash deny patterns are read live from the Claude
-settings and shown here because the script-deny-list guard enforces them.
+belt reads ~/.config/belt/config.yaml (or $XDG_CONFIG_HOME/belt/config.yaml);
+--config and $BELT_CONFIG relocate it. A legacy config.toml beside the default
+file is read only when the YAML file is absent. A present-but-broken file of
+either format does not fall back to the other one and does not fall back to
+the defaults either: the hooks deny every guarded tool call until it parses,
+and this command prints the defaults only so the reference stays readable
+while the file is broken. Every value prints resolved, defaults included.
+claude_deny is the one section that is not a config.yaml key: the Bash deny
+patterns are read live from the Claude settings and shown here because the
+script-deny-list guard enforces them.
 
 Every setting:
 
@@ -172,7 +182,7 @@ Pair it with doctor: doctor shows the state belt resolved, config shows which
 file and key to change.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, err := config.DefaultPaths()
+			p, err := paths()
 			if err != nil {
 				return err
 			}
@@ -183,16 +193,26 @@ file and key to change.`,
 
 // runConfigDoc prints where belt's config surfaces live and the settings in
 // effect. A broken config file is reported in the header status and still
-// prints the defaults belt fell back to: the command has to stay useful when
-// the file it describes is the thing that is wrong.
+// prints the built-in defaults: the command has to stay useful when the file
+// it describes is the thing that is wrong. Those defaults are not what belt
+// is enforcing in that state — the hooks are denying everything — so the
+// header says so.
 func runConfigDoc(w io.Writer, p config.Paths) error {
-	cfg := config.LoadFrom(p)
-	path, legacy, loadErr := resolveBeltConfig(p)
-	fmt.Fprintf(w, "config file:  %s (%s)\n", path, loadStatus(loadErr))
-	if legacy {
+	cfg, _ := config.LoadFrom(p)
+	_, src := config.ReadFile(p)
+	fmt.Fprintf(w, "config file:  %s (%s)\n", src.Path, loadStatus(src.Err))
+	switch {
+	case src.Legacy:
 		fmt.Fprintf(w, "              (legacy TOML format — rename it to %s)\n", p.BeltYAML)
-	} else {
+	case p.BeltTOML != "":
 		fmt.Fprintf(w, "              (legacy fallback %s, read only when this file is absent)\n", p.BeltTOML)
+	default:
+		fmt.Fprintln(w, "              (relocated by --config or $"+config.EnvConfig+
+			"; no legacy TOML fallback applies)")
+	}
+	if src.Broken() {
+		fmt.Fprintln(w, "              belt hook DENIES every guarded tool call until this parses;"+
+			" the values below are the defaults, not what is being enforced")
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
@@ -323,28 +343,6 @@ func unknownKeys[T any](
 func withEnabled(t config.Toggle, on bool) config.Toggle {
 	t.Enabled = &on
 	return t
-}
-
-// resolveBeltConfig reports which belt config file is in effect and what
-// happened reading it, mirroring the YAML-first, legacy-TOML-fallback order of
-// config.LoadFrom: a nil error means the file loaded, an os.IsNotExist error
-// means no config file exists at all, and anything else is a parse failure
-// that leaves belt running on defaults.
-func resolveBeltConfig(p config.Paths) (path string, legacy bool, err error) {
-	if _, err := config.LoadFileYAML(p.BeltYAML); err == nil {
-		return p.BeltYAML, false, nil
-	} else if !os.IsNotExist(err) {
-		return p.BeltYAML, false, err
-	}
-	_, err = config.LoadFileTOML(p.BeltTOML)
-	switch {
-	case err == nil:
-		return p.BeltTOML, true, nil
-	case os.IsNotExist(err):
-		return p.BeltYAML, false, os.ErrNotExist
-	default:
-		return p.BeltTOML, true, err
-	}
 }
 
 // loadStatus renders what happened when the config file was read, in the

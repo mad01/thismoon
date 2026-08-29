@@ -25,14 +25,24 @@ immediately, with no restart and no new session.
 
 The belt-owned config is {{.StorePath}}: guard and hint toggles, exclude
 paths, extra patterns, claude_settings, guard rules, and the internal_names
-section. Every config file is optional and loading never errors; a missing
-file yields defaults. The config is standalone and has no machine-profile
-concept: belt reads no other tool's file, and the provisioning layer
-renders one config per machine class — a guard meant for only some
-machines is absent or disabled in the others' files. The Bash deny
+section. `$XDG_CONFIG_HOME/belt/config.yaml` wins when that variable is set,
+and `--config` or `$BELT_CONFIG` relocates the file outright (a relocated
+file gets no legacy TOML fallback). The config is standalone and has no
+machine-profile concept: belt reads no other tool's file, and the
+provisioning layer renders one config per machine class — a guard meant for
+only some machines is absent or disabled in the others' files. The Bash deny
 patterns are read live from the Claude settings files, so the script guard
 and the permission system share one deny list; claude_settings.enabled:
 false turns that read off, leaving the guard with extra_patterns only.
+
+The config file is optional, but a broken one is not tolerated. No file at
+all means the built-in defaults. A file that is present and fails to parse
+or validate makes every `belt hook` invocation deny with
+`belt[config]: belt cannot read its config …` — belt cannot tell "no rules
+configured" from "the rules did not load", and guessing the permissive one
+would silently disarm every guard. Validation covers the values that parse
+and then do nothing: a `custom_guards.<name>.event` outside bash/write, and
+`mode:` values other than hard/soft or set on a guard that ignores them.
 
 ## failure modes
 
@@ -49,13 +59,14 @@ denied in the worktree. Make the edit in the canonical checkout, or have the
 worktree path added to the guard's exclude_paths.
 
 Missing config fails in two directions, deliberately. Guards and hints
-default to enabled, and a present-but-broken config file also yields
-defaults with everything enabled. `git-push-main` fails closed: with no
-config it denies every push to main or master, and only a rendered config
-that disables it or allowlists a repo opens the door. With no
-internal_names section in the belt config, `write-internal-names` has an
-empty name list and allows every write: that one fails open. `belt doctor`
-reports the empty-name condition in its config-surfaces section.
+default to enabled. `git-push-main` fails closed: with no config it denies
+every push to main or master, and only a rendered config that disables it or
+allowlists a repo opens the door. With no internal_names section in the belt
+config, `write-internal-names` has an empty name list and allows every
+write: that one fails open. `belt doctor` reports the empty-name condition
+in its config-surfaces section, and flags a broken config file there too —
+when it does, the guard and hint state below that line is the defaults, not
+what belt is enforcing.
 
 The rule-driven commit guards fail open across the board: `git-identity`
 and `commit-guard` are no-ops without their config sections, skip repos

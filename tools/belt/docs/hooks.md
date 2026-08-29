@@ -105,6 +105,13 @@ Three wiring rules that are easy to get wrong:
 - **An unknown subcommand fails loud on purpose.** `belt hook searchh` errors
   at argument parsing instead of running zero guards, so a typo in a settings
   entry does not impersonate a healthy no-op.
+- **An unreadable config denies, for the same reason.** A `config.yaml` that
+  is present and fails to parse or validate makes every `belt hook` call
+  return a `belt[config]:` deny naming the file. Running with "no rules"
+  would look exactly like a healthy belt while every guard is disarmed. A
+  config file that is simply absent is fine — that is the defaults, with
+  every guard enabled. `belt hint` cannot deny, so it delivers the same
+  message as advice instead.
 - **The `external-text` matcher is yours to choose.** belt cannot know which
   MCP servers on your machine publish text to places other people read (issue
   trackers, chat, code review). Pick the send/create/comment tools of those
@@ -157,10 +164,11 @@ Blocks `git push` to `main` or `master` before it happens.
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
   directory.
 - **Allows when** the push directory's origin remote resolves to a repo on
-  `guards.git-push-main.allow_repos`. A machine class where direct pushes
-  are fine (a personal machine, say) disables the guard in its rendered
-  config instead — there is no machine-profile check at runtime
-  (docs/adr/0010).
+  `guards.git-push-main.allow_repos` — an exact `host/owner/repo` or a
+  trailing `/*` org wildcard, the same patterns `git_identity[].repos` takes.
+  A machine class where direct pushes are fine (a personal machine, say)
+  disables the guard in its rendered config instead — there is no
+  machine-profile check at runtime (docs/adr/0010).
 - **Why it exists**: a session once pushed straight to master and tried to
   self-merge. The permission system sees `git push` as one more shell command;
   this guard reads the target.
@@ -300,8 +308,11 @@ external command, no Go required.
   must not fail silently.
 - An optional `match` substring gates when the external runs at all;
   `mode: soft` downgrades denials to warn events. `belt doctor` lists each
-  custom guard with a PATH reachability check, because an unreachable command
-  means the guard warns-and-allows on every call — it checks nothing.
+  custom guard with its event, mode, and a PATH reachability check, because
+  an unreachable command means the guard warns-and-allows on every call — it
+  checks nothing.
+- `event` is required and must be `bash` or `write`. A missing or misspelled
+  one is a config error rather than a guard that registers and never fires.
 
 ## Overriding, allowing, and disabling
 
@@ -353,16 +364,12 @@ rather than denying, so "it allowed something odd" is answered there.
 
 ### Scoping a guard to repos
 
-Two different matching dialects exist, and mixing them up is the most common
-config mistake:
-
-- **Rule lists** — `git_identity[].repos`, `commit_guards[].repos`, and
-  `commit_guards[].always_allow` — match canonical `host/owner/repo` exactly
-  **or** with a trailing `/*` org wildcard: `github.com/you/*` covers every
-  repo in the org.
-- **Guard allowlists** — `guards.<id>.allow_repos` — match the exact
-  `host/owner/repo` string **only**. A trailing `/*` is not a wildcard
-  there; it just never matches.
+Every repo list in the config — `git_identity[].repos`,
+`commit_guards[].repos`, `commit_guards[].always_allow`, and
+`guards.<id>.allow_repos` — matches a canonical `host/owner/repo` exactly
+**or** with a trailing `/*` org wildcard: `github.com/you/*` covers every
+repo in the org. (Until belt v2, `allow_repos` was the exception and matched
+exact strings only, so a `/*` entry there silently never matched.)
 
 Both resolve the repo from its **origin remote**, never its filesystem path,
 so a second checkout or a cached clone of the same repo behaves identically.

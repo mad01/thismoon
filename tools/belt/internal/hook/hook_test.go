@@ -3,22 +3,69 @@ package hook
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
-// A push to main on a guarded machine must emit a deny decision.
-// Config.Load() reads real machine config, so hook-level tests only cover the
-// payload plumbing paths that do not depend on it: malformed payloads and
-// field mapping.
+// The config load is injected, so hook-level tests cover the payload
+// plumbing (malformed payloads, field mapping) and the two config outcomes
+// the entrypoint owns: defaults run the guards, an unreadable file denies.
+
+// defaults is the load a machine with no config file gets.
+func defaults() (config.Config, error) { return config.Config{}, nil }
+
+// failing is the load a machine with a broken config file gets.
+func failing() (config.Config, error) {
+	return config.Config{}, errors.New("config: parse /tmp/config.yaml: yaml: line 2: did not find expected key")
+}
 
 func TestRunMalformedPayload(t *testing.T) {
 	var out bytes.Buffer
-	Run("bash", strings.NewReader("not json"), &out)
+	Run("bash", defaults, strings.NewReader("not json"), &out)
 	if out.Len() != 0 {
 		t.Errorf("malformed payload must not produce a decision, got %q", out.String())
+	}
+}
+
+// TestRunDeniesOnUnreadableConfig pins the fail-closed entrypoint: belt
+// cannot tell "no rules" from "the rules did not load", so it blocks and says
+// which file to fix rather than letting the call through unguarded.
+func TestRunDeniesOnUnreadableConfig(t *testing.T) {
+	var out bytes.Buffer
+	Run("bash", failing, strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`), &out)
+
+	var d decision
+	if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+		t.Fatalf("decode decision from %q: %v", out.String(), err)
+	}
+	if d.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Errorf("permissionDecision = %q, want deny", d.HookSpecificOutput.PermissionDecision)
+	}
+	reason := d.HookSpecificOutput.PermissionDecisionReason
+	for _, want := range []string{"belt[config]:", "/tmp/config.yaml", "belt doctor"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("deny reason %q does not mention %q", reason, want)
+		}
+	}
+}
+
+// TestRunHintAdvisesOnUnreadableConfig: a hint has no denial path, so the
+// same failure has to arrive as advice on the events guards never see.
+func TestRunHintAdvisesOnUnreadableConfig(t *testing.T) {
+	var out bytes.Buffer
+	RunHint("search", failing, strings.NewReader(`{"tool_name":"mcp__csl__csl_search"}`), &out)
+
+	var a adviceDecision
+	if err := json.Unmarshal(out.Bytes(), &a); err != nil {
+		t.Fatalf("decode advice from %q: %v", out.String(), err)
+	}
+	if !strings.Contains(a.HookSpecificOutput.AdditionalContext, "belt[config]:") {
+		t.Errorf("advice = %q, want the config failure", a.HookSpecificOutput.AdditionalContext)
 	}
 }
 
@@ -95,7 +142,7 @@ func TestRunHintPromptEmitsPlainText(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	RunHint("prompt", bytes.NewReader(p), &out)
+	RunHint("prompt", defaults, bytes.NewReader(p), &out)
 	got := out.String()
 	if !strings.HasPrefix(got, "belt[kof-deposit]:") {
 		t.Fatalf("prompt advice = %q, want plain text starting with belt[kof-deposit]:", got)

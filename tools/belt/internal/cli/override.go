@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // defaultOverrideFor is how long `belt override set` holds without an
@@ -68,7 +68,7 @@ func overrideSetCmd() *cobra.Command {
 			if err := writeOverride(name, expiry); err != nil {
 				return err
 			}
-			notify.EmitEvent("belt", "warn", fmt.Sprintf("override set (%s)", name), why,
+			notify.EmitEventSync("belt", "warn", fmt.Sprintf("override set (%s)", name), why,
 				map[string]string{
 					"override": name,
 					"action":   "set",
@@ -121,7 +121,7 @@ func overrideExtendCmd() *cobra.Command {
 			if err := writeOverride(name, expiry); err != nil {
 				return err
 			}
-			notify.EmitEvent("belt", "warn", fmt.Sprintf("override extended (%s)", name), why,
+			notify.EmitEventSync("belt", "warn", fmt.Sprintf("override extended (%s)", name), why,
 				map[string]string{
 					"override": name,
 					"action":   "extend",

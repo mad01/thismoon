@@ -31,18 +31,40 @@ func Execute() {
 }
 
 func rootCmd() *cobra.Command {
+	var configPath string
 	root := &cobra.Command{
 		Use:           "belt",
 		Short:         "Claude Code guard and hint hooks (pairs with suspenders)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(hookCmd(), hintCmd(), checkCmd(), doctorCmd(), configDocCmd(), overrideCmd(),
-		agentcli.DocsCommand(belt.OperatingDoc, belt.Facts()), versionCmd())
+	root.PersistentFlags().StringVar(&configPath, "config", "",
+		"belt config file (default ~/.config/belt/config.yaml; overrides $"+config.EnvConfig+")")
+	paths := func() (config.Paths, error) { return config.PathsFor(configPath) }
+	root.AddCommand(hookCmd(paths), hintCmd(paths), checkCmd(paths), doctorCmd(paths), configDocCmd(paths),
+		overrideCmd(), agentcli.DocsCommand(belt.OperatingDoc, belt.Facts()), versionCmd())
 	return root
 }
 
-func hintCmd() *cobra.Command {
+// pathsFunc resolves the config surfaces for one invocation, applying the
+// --config flag and $BELT_CONFIG. Commands take it rather than calling
+// config.PathsFor themselves so every command answers to the same override.
+type pathsFunc func() (config.Paths, error)
+
+// loader turns resolved paths into the config load the hook entrypoints
+// take. Resolution and parse failures arrive as one error, because the hook
+// path treats them the same way: it has no config, so it denies.
+func loader(paths pathsFunc) hook.Load {
+	return func() (config.Config, error) {
+		p, err := paths()
+		if err != nil {
+			return config.Config{}, err
+		}
+		return config.LoadFrom(p)
+	}
+}
+
+func hintCmd(paths pathsFunc) *cobra.Command {
 	return &cobra.Command{
 		Use:   "hint <event>",
 		Short: "Run as a Claude Code PostToolUse hint hook (payload on stdin, advice JSON on stdout)",
@@ -78,7 +100,7 @@ stdout as plain text, the form that event adds to context). Wire them in
   }`,
 		Args: validHintEventArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hook.RunHint(strings.ToLower(args[0]), cmd.InOrStdin(), cmd.OutOrStdout())
+			hook.RunHint(strings.ToLower(args[0]), loader(paths), cmd.InOrStdin(), cmd.OutOrStdout())
 			return nil // always exit 0: advice travels in the JSON, not the exit code
 		},
 	}
@@ -97,13 +119,17 @@ func validHintEventArg(cmd *cobra.Command, args []string) error {
 	return fmt.Errorf("unknown hint event %q (valid: %s)", args[0], strings.Join(hint.Events(), ", "))
 }
 
-func hookCmd() *cobra.Command {
+func hookCmd(paths pathsFunc) *cobra.Command {
 	return &cobra.Command{
 		Use:   "hook <event>",
 		Short: "Run as a Claude Code PreToolUse hook (payload on stdin, deny JSON on stdout)",
 		Long: `Run as a Claude Code PreToolUse hook. Reads the tool-call payload on stdin
 and writes any deny decision as JSON on stdout; a valid event always exits 0
 (the deny travels in the JSON, not the exit code).
+
+A config file belt cannot parse denies every tool call with that as the
+reason. Belt is a guard: it cannot tell "no rules configured" from "the rules
+did not load", so it blocks instead of guessing the permissive one.
 
 The event argument is belt's guard event, not the Claude Code tool name:
 bash guards Bash commands, write guards Write and Edit. Wire both in
@@ -119,7 +145,7 @@ bash guards Bash commands, write guards Write and Edit. Wire both in
   }`,
 		Args: validEventArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hook.Run(strings.ToLower(args[0]), cmd.InOrStdin(), cmd.OutOrStdout())
+			hook.Run(strings.ToLower(args[0]), loader(paths), cmd.InOrStdin(), cmd.OutOrStdout())
 			return nil // always exit 0 for a valid event: the deny travels in the JSON
 		},
 	}
@@ -140,7 +166,7 @@ func validEventArg(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func checkCmd() *cobra.Command {
+func checkCmd(paths pathsFunc) *cobra.Command {
 	var cwd, file, content string
 	cmd := &cobra.Command{
 		Use:   "check <event> [command]",
@@ -154,7 +180,16 @@ func checkCmd() *cobra.Command {
 			if len(args) == 2 {
 				in.Command = args[1]
 			}
-			cfg := config.Load()
+			p, err := paths()
+			if err != nil {
+				return err
+			}
+			// A dry-run reports the config failure as an error: nothing is
+			// being guarded here, so there is no call to fail closed on.
+			cfg, err := config.LoadFrom(p)
+			if err != nil {
+				return err
+			}
 			guards := guard.ForEvent(in.Event, cfg)
 			if len(guards) == 0 {
 				return fmt.Errorf("no guards for event %q (valid: %s, %s)", in.Event, guard.EventBash, guard.EventWrite)

@@ -31,8 +31,11 @@ func TestOperatingDocMentionsDefaults(t *testing.T) {
 }
 
 // TestDefaultConfigPathMatchesConfig pins the doc's config path to the one
-// internal/config actually loads, so the two cannot drift.
+// internal/config actually loads, so the two cannot drift. XDG_CONFIG_HOME
+// is cleared for the comparison: the documented path is the ~/.config one,
+// and an XDG root (or --config) relocates it by design.
 func TestDefaultConfigPathMatchesConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	p, err := config.DefaultPaths()
 	if err != nil {
 		t.Fatalf("DefaultPaths() error = %v", err)

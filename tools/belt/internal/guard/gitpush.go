@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -66,16 +65,14 @@ func (g *GitPushMain) Check(in Input) *Denial {
 
 // repoAllowed reports whether the repo at dir is on the allowlist. An empty
 // allowlist or an unresolved repo fails closed: only an explicit,
-// successfully-resolved match exempts a push to the default branch.
+// successfully-resolved match exempts a push to the default branch. Patterns
+// match as they do everywhere else in the config — exactly, or by trailing
+// "/*" org wildcard.
 func (g *GitPushMain) repoAllowed(dir string, allow []string) bool {
 	if len(allow) == 0 {
 		return false
 	}
-	repo := g.resolveRepo(dir)
-	if repo == "" {
-		return false
-	}
-	return slices.Contains(allow, repo)
+	return config.RepoMatches(allow, g.resolveRepo(dir))
 }
 
 // gitPush is one parsed `git push` invocation.

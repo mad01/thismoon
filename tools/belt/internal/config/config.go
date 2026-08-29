@@ -8,11 +8,20 @@
 // (~/.claude/settings.json + settings.local.json) behind the
 // claude_settings gate so the script guard and the permission system share
 // one deny list.
+//
+// Absent and invalid are different answers here. A missing config file
+// means the built-in defaults (every guard armed, no rules), because a
+// machine that never wrote one still gets the guardrails. A config file
+// that is present but unparseable or invalid is an error every caller must
+// surface: belt is a guard, and a guard that cannot read its own rules must
+// not decide it has none.
 package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,7 +30,40 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
+
+	"github.com/mad01/thismoon/kit/confdir"
 )
+
+// Component is belt's config directory name under the XDG config root.
+const Component = "belt"
+
+// EnvConfig names the config file, overriding the default location. The
+// --config flag wins over it.
+const EnvConfig = "BELT_CONFIG"
+
+// Guard event names. They live here rather than in the guard package
+// because the config file names them (custom_guards.<name>.event) and this
+// package validates what it reads; internal/guard aliases these constants.
+const (
+	EventBash  = "bash"  // matcher: Bash
+	EventWrite = "write" // matcher: Write|Edit
+)
+
+// Guard and rule modes. "hard" denies, "soft" downgrades the denial to a
+// warn event on the events service; which one is the default depends on the
+// rule (identity mismatches default to hard, work-hours nudges to soft).
+const (
+	ModeHard = "hard"
+	ModeSoft = "soft"
+)
+
+// SoftModeGuards lists the built-in guards that read a `mode:` toggle.
+// Every other guard ignores it, so setting mode: soft on one of them is a
+// config error rather than a quietly ignored key — the shape that lets an
+// operator believe a guard was downgraded while it still blocks (or, worse,
+// believe it blocks while they meant to soften it). A guard package test
+// pins this list to the ids that actually call Toggle.Soft.
+var SoftModeGuards = []string{"script-deny-list"}
 
 // Config is everything a guard or hint needs to decide.
 type Config struct {
@@ -74,7 +116,7 @@ func (g CommitGuard) Hard() bool { return g.Mode == "hard" }
 // so a broken external never blocks work.
 type CustomGuard struct {
 	Enabled *bool    `toml:"enabled" yaml:"enabled,omitempty"`
-	Event   string   `toml:"event"   yaml:"event"`           // "bash" or "write"
+	Event   string   `toml:"event"   yaml:"event"`           // "bash" or "write"; required, validated at load
 	Command []string `toml:"command" yaml:"command"`         // external tool + args
 	Mode    string   `toml:"mode"    yaml:"mode,omitempty"`  // "hard" (default) blocks, "soft" warns via events
 	Match   string   `toml:"match"   yaml:"match,omitempty"` // substring gate on the command (bash) or file path (write)
@@ -95,7 +137,9 @@ func (g CustomGuard) Soft() bool { return g.Mode == "soft" }
 type Toggle struct {
 	Enabled *bool `toml:"enabled"        yaml:"enabled"`
 	// Mode downgrades a guard's denials to warn events when set to "soft";
-	// "hard" (the default) blocks. Read by script-deny-list only.
+	// "hard" (the default) blocks. Read by the guards in SoftModeGuards
+	// only, and setting it on any other id is a config error rather than a
+	// key that quietly does nothing.
 	Mode          string   `toml:"mode"           yaml:"mode,omitempty"`
 	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
 	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
@@ -189,12 +233,12 @@ func enabled(toggles map[string]Toggle, id string) bool {
 }
 
 // RepoAllowed reports whether a guard's allow_repos list covers the
-// canonical repo. An empty repo never matches.
+// canonical repo. Patterns match the same way as git_identity[].repos and
+// commit_guards[].repos — exactly, or by trailing "/*" org wildcard — so one
+// spelling of a repo pattern works everywhere in the file. An empty repo
+// never matches.
 func (c Config) RepoAllowed(guardID, repo string) bool {
-	if repo == "" {
-		return false
-	}
-	return slices.Contains(c.Guards[guardID].AllowRepos, repo)
+	return RepoMatches(c.Guards[guardID].AllowRepos, repo)
 }
 
 // RepoMatches reports whether the canonical host/owner/repo matches any of
@@ -223,12 +267,17 @@ func RepoMatches(patterns []string, repo string) bool {
 // managed by `belt override set|extend|clear`. The file's content is the
 // RFC 3339 expiry the override runs until; an empty file is a legacy
 // untimed override, active until cleared.
+//
+// Overrides always sit in belt's config directory, even when --config or
+// BELT_CONFIG points the config file somewhere else: an override is machine
+// state a person sets from the CLI, not part of the rendered config, and
+// following a relocated file would hide the overrides already set.
 func OverridesDir() string {
-	home, err := os.UserHomeDir()
+	dir, err := confdir.Dir(Component)
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "belt", "overrides")
+	return filepath.Join(dir, "overrides")
 }
 
 // Override is one override file's parsed state.
@@ -309,7 +358,10 @@ func Overrides() []Override {
 	}
 	var out []Override
 	for _, e := range entries {
-		if e.IsDir() {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			// Dotfiles are never overrides: `belt override set` refuses a
+			// leading dot, so anything with one belongs to something else
+			// (.DS_Store) and would otherwise list as a malformed override.
 			continue
 		}
 		if o, ok := ReadOverride(e.Name()); ok {
@@ -328,15 +380,21 @@ type Paths struct {
 	ClaudeSettings []string // ~/.claude/settings.json + settings.local.json (claude_settings gate)
 }
 
-// DefaultPaths returns the standard location of every config surface.
+// DefaultPaths returns the standard location of every config surface,
+// honoring XDG_CONFIG_HOME for belt's own files. The Claude settings stay
+// under ~/.claude: they belong to Claude Code, which looks for them there.
 func DefaultPaths() (Paths, error) {
-	home, err := os.UserHomeDir()
+	dir, err := confdir.Dir(Component)
+	if err != nil {
+		return Paths{}, fmt.Errorf("config: resolve config dir: %w", err)
+	}
+	home, err := confdir.Expand("~")
 	if err != nil {
 		return Paths{}, fmt.Errorf("config: resolve home dir: %w", err)
 	}
 	return Paths{
-		BeltYAML: filepath.Join(home, ".config", "belt", "config.yaml"),
-		BeltTOML: filepath.Join(home, ".config", "belt", "config.toml"),
+		BeltYAML: filepath.Join(dir, "config.yaml"),
+		BeltTOML: filepath.Join(dir, "config.toml"),
 		ClaudeSettings: []string{
 			filepath.Join(home, ".claude", "settings.json"),
 			filepath.Join(home, ".claude", "settings.local.json"),
@@ -344,23 +402,48 @@ func DefaultPaths() (Paths, error) {
 	}, nil
 }
 
-// Load reads all config surfaces from their default locations. Every file is
-// optional: a missing file yields zero values, never an error — a hook must
-// not break tool calls because a config is absent.
-func Load() Config {
+// PathsFor returns the config surfaces with belt's own config file
+// relocated: the flag value when given, else $BELT_CONFIG, else the default
+// path. A relocated file is read as YAML with no legacy TOML fallback — the
+// fallback exists for installs that still have the old file at the default
+// location, not for a path someone chose today.
+func PathsFor(flagValue string) (Paths, error) {
 	p, err := DefaultPaths()
 	if err != nil {
-		return Config{}
+		return Paths{}, err
+	}
+	override := flagValue
+	if override == "" {
+		override = os.Getenv(EnvConfig)
+	}
+	if override == "" {
+		return p, nil
+	}
+	expanded, err := confdir.Expand(override)
+	if err != nil {
+		return Paths{}, fmt.Errorf("config: %w", err)
+	}
+	p.BeltYAML, p.BeltTOML = expanded, ""
+	return p, nil
+}
+
+// Load reads all config surfaces from their default locations.
+func Load() (Config, error) {
+	p, err := DefaultPaths()
+	if err != nil {
+		return Config{}, err
 	}
 	return LoadFrom(p)
 }
 
-// LoadFrom reads all config surfaces from the given locations, with the same
-// missing-file tolerance as Load. The belt config owns every setting; the
-// only non-belt surface read is the Claude settings deny lists, when the
-// claude_settings gate allows it (docs/adr/0010).
-func LoadFrom(p Paths) Config {
-	f := loadFile(p.BeltYAML, p.BeltTOML)
+// LoadFrom reads all config surfaces from the given locations. A missing
+// belt config yields the defaults with a nil error; a present one that fails
+// to parse or validate yields an error, and callers that keep going anyway
+// (doctor, config) get the same defaults alongside it. The belt config owns
+// every setting; the only non-belt surface read is the Claude settings deny
+// lists, when the claude_settings gate allows it (docs/adr/0010).
+func LoadFrom(p Paths) (Config, error) {
+	f, src := ReadFile(p)
 	cfg := Config{
 		Guards:         f.Guards,
 		Hints:          f.Hints,
@@ -373,7 +456,10 @@ func LoadFrom(p Paths) Config {
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
 	}
-	return cfg
+	if src.Broken() {
+		return cfg, src.Err
+	}
+	return cfg, nil
 }
 
 // LoadClaudeDenyPatterns extracts Bash command prefixes from the
@@ -430,21 +516,120 @@ type File struct {
 	CustomGuards   map[string]CustomGuard `toml:"custom_guards"   yaml:"custom_guards"`
 }
 
-// loadFile prefers the YAML config and falls back to the legacy TOML file
-// only when the YAML file does not exist. A present-but-broken file yields
-// defaults (everything enabled) rather than silently reading the other
-// format: fail closed, not stale.
-func loadFile(yamlPath, tomlPath string) File {
-	f, err := LoadFileYAML(yamlPath)
-	if err == nil {
-		return f
+// Source reports which belt config file was read and what happened.
+type Source struct {
+	// Path is the file belt read, or the one it looked for when none exists.
+	Path string
+	// Legacy marks the deprecated TOML file as the one that loaded.
+	Legacy bool
+	// Err is nil when the file loaded and validated, an os.IsNotExist error
+	// when no config file exists at all (the defaults case), and a parse or
+	// validation failure otherwise.
+	Err error
+}
+
+// Broken reports whether the config file exists but cannot be used. It is
+// the state every guard entrypoint has to fail closed on: belt cannot tell
+// an empty rule set from an unreadable one, and guessing "no rules" would
+// turn a typo into a silently disarmed guard.
+func (s Source) Broken() bool { return s.Err != nil && !os.IsNotExist(s.Err) }
+
+// ReadFile reads the belt config file, preferring the YAML config and
+// falling back to the legacy TOML file only when the YAML file does not
+// exist. A present-but-broken file of either format is reported as an error
+// rather than silently read from the other one: fail closed, not stale.
+func ReadFile(p Paths) (File, Source) {
+	f, err := LoadFileYAML(p.BeltYAML)
+	switch {
+	case err == nil:
+		return validated(f, Source{Path: p.BeltYAML})
+	case !os.IsNotExist(err):
+		return File{}, Source{Path: p.BeltYAML, Err: err}
+	case p.BeltTOML == "":
+		return File{}, Source{Path: p.BeltYAML, Err: os.ErrNotExist}
 	}
-	if os.IsNotExist(err) {
-		if f, tomlErr := LoadFileTOML(tomlPath); tomlErr == nil {
-			return f
+	f, err = LoadFileTOML(p.BeltTOML)
+	switch {
+	case err == nil:
+		return validated(f, Source{Path: p.BeltTOML, Legacy: true})
+	case os.IsNotExist(err):
+		// Neither file exists: report the YAML path, the one to create.
+		return File{}, Source{Path: p.BeltYAML, Err: os.ErrNotExist}
+	default:
+		return File{}, Source{Path: p.BeltTOML, Legacy: true, Err: err}
+	}
+}
+
+// validated runs the file's own checks and drops the parsed values when they
+// fail, so no caller can accidentally use a half-understood config.
+func validated(f File, src Source) (File, Source) {
+	if err := f.validate(); err != nil {
+		return File{}, Source{Path: src.Path, Legacy: src.Legacy, Err: fmt.Errorf("config: %s: %w", src.Path, err)}
+	}
+	return f, src
+}
+
+// validate checks the values belt cannot interpret at use time. Every rule
+// here covers a key that parses as valid YAML and then does nothing: a
+// custom guard registered on a misspelled event never fires, and a mode:
+// soft on a guard that ignores modes keeps blocking. Both look like a
+// working config from the outside, which is exactly what a guard tool must
+// not ship.
+func (f File) validate() error {
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(f.CustomGuards)) {
+		cg := f.CustomGuards[name]
+		if cg.Event != EventBash && cg.Event != EventWrite {
+			errs = append(errs, fmt.Errorf(
+				"custom_guards.%s.event is %q (must be %q or %q)", name, cg.Event, EventBash, EventWrite))
+		}
+		if err := validMode(cg.Mode); err != nil {
+			errs = append(errs, fmt.Errorf("custom_guards.%s.%w", name, err))
 		}
 	}
-	return File{}
+	errs = append(errs, toggleModeErrors("guards", f.Guards)...)
+	errs = append(errs, toggleModeErrors("hints", f.Hints)...)
+	for i, r := range f.GitIdentity {
+		if err := validMode(r.Mode); err != nil {
+			errs = append(errs, fmt.Errorf("git_identity[%d].%w", i, err))
+		}
+	}
+	for i, r := range f.CommitGuards {
+		if err := validMode(r.Mode); err != nil {
+			errs = append(errs, fmt.Errorf("commit_guards[%d].%w", i, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// toggleModeErrors reports guard and hint toggles carrying a mode the guard
+// does not read. Only the guards in SoftModeGuards act on one; everywhere
+// else the key is a belief about behavior that is not happening.
+func toggleModeErrors(kind string, toggles map[string]Toggle) []error {
+	var errs []error
+	for _, id := range slices.Sorted(maps.Keys(toggles)) {
+		mode := toggles[id].Mode
+		if err := validMode(mode); err != nil {
+			errs = append(errs, fmt.Errorf("%s.%s.%w", kind, id, err))
+			continue
+		}
+		if mode == ModeSoft && !slices.Contains(SoftModeGuards, id) {
+			errs = append(errs, fmt.Errorf(
+				"%s.%s: mode: soft has no effect (only %s reads a mode; use enabled: false to switch this one off)",
+				kind, id, strings.Join(SoftModeGuards, ", ")))
+		}
+	}
+	return errs
+}
+
+// validMode rejects anything but the two modes and the empty per-rule
+// default. A typo'd mode reads as the default, which is the opposite of the
+// intent half the time.
+func validMode(mode string) error {
+	if mode == "" || mode == ModeHard || mode == ModeSoft {
+		return nil
+	}
+	return fmt.Errorf("mode is %q (must be %q or %q)", mode, ModeHard, ModeSoft)
 }
 
 // LoadFileYAML reads the belt config from a YAML file. The error
@@ -475,14 +660,16 @@ func LoadFileTOML(path string) (File, error) {
 	return f, nil
 }
 
-// ExpandHome expands a leading ~ to the user's home directory.
+// ExpandHome expands a leading ~ to the user's home directory, leaving the
+// path untouched when the home directory cannot be resolved. Its callers
+// match paths (exclude_paths prefixes, script locations) rather than open a
+// config, and an unexpanded ~ simply fails to match — the guard stays armed.
+// Belt cannot get this far with an unresolvable home anyway: config loading
+// resolves one first and fails closed when it cannot.
 func ExpandHome(path string) string {
-	if !strings.HasPrefix(path, "~") {
-		return path
-	}
-	home, err := os.UserHomeDir()
+	expanded, err := confdir.Expand(path)
 	if err != nil {
 		return path
 	}
-	return filepath.Join(home, strings.TrimPrefix(path, "~"))
+	return expanded
 }

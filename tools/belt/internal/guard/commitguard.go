@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
-	"github.com/mad01/thismoon/tools/belt/internal/notify"
 )
 
 // CommitGuardID identifies the work-hours commit guard.
@@ -53,7 +53,7 @@ func NewCommitGuard(cfg config.Config) *CommitGuard {
 		resolveRepo:    func(dir string) string { return canonicalRepo(gitRemoteURL(dir)) },
 		now:            time.Now,
 		overrideActive: config.OverrideActive,
-		emit:           notify.EmitEvent,
+		emit:           notify.EmitEventSync,
 	}
 }
 

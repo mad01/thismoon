@@ -17,7 +17,7 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
 )
 
-func doctorCmd() *cobra.Command {
+func doctorCmd(paths pathsFunc) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names",
@@ -29,7 +29,7 @@ against. Use it to answer "why did that check fire" — a deny names the
 guard, doctor names the build and the config behind it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, err := config.DefaultPaths()
+			p, err := paths()
 			if err != nil {
 				return err
 			}
@@ -52,7 +52,10 @@ func liveKofProbe() (string, int, error) {
 }
 
 func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
-	cfg := config.LoadFrom(p)
+	// The load error is reported in the config-surfaces section rather than
+	// aborting: doctor is what someone runs to find out why belt is denying
+	// everything, so it has to survive the config that caused it.
+	cfg, _ := config.LoadFrom(p)
 
 	printBuild(w)
 
@@ -143,21 +146,25 @@ func orUnknown(s string) string {
 }
 
 // beltConfigLine reports which belt config file is in effect, spelling out
-// what `belt config` puts in its header status.
+// what `belt config` puts in its header status. A broken file is the loudest
+// line doctor prints: the hooks are denying every tool call while it stands,
+// and the rest of this report describes the defaults, not what belt is
+// enforcing.
 func beltConfigLine(p config.Paths) string {
-	path, legacy, err := resolveBeltConfig(p)
+	_, src := config.ReadFile(p)
 	switch {
-	case err == nil && legacy:
-		return path + "  loaded (legacy TOML — rename to config.yaml)"
-	case err == nil:
-		return path + "  loaded"
-	case os.IsNotExist(err):
-		return path + "  missing — defaults, everything enabled"
+	case src.Err == nil && src.Legacy:
+		return src.Path + "  loaded (legacy TOML — rename to config.yaml)"
+	case src.Err == nil:
+		return src.Path + "  loaded"
+	case os.IsNotExist(src.Err):
+		return src.Path + "  missing — defaults, everything enabled"
 	default:
 		return fmt.Sprintf(
-			"%s  PARSE ERROR (%v) — running with defaults, everything enabled",
-			path,
-			err,
+			"%s\n               BROKEN (%v)\n               belt hook DENIES every guarded tool call until this parses;"+
+				" the state below is the defaults, not what is being enforced",
+			src.Path,
+			src.Err,
 		)
 	}
 }
@@ -229,12 +236,14 @@ func printCustomGuards(w io.Writer, cfg config.Config, customs []*guard.Custom) 
 	}
 	for _, c := range customs {
 		cg := c.Config()
-		mode := "hard"
+		mode := config.ModeHard
 		if cg.Soft() {
-			mode = "soft"
+			mode = config.ModeSoft
 		}
+		// c.Event() rather than cg.Event: the event the guard registered
+		// under is what decides whether it ever runs.
 		fmt.Fprintf(w, "  %-22s %-7s %-5s %-9s command: %s%s%s\n",
-			c.ID(), cg.Event, mode, enabledWord(cfg.GuardEnabled(c.ID())),
+			c.ID(), c.Event(), mode, enabledWord(cfg.GuardEnabled(c.ID())),
 			strings.Join(cg.Command, " "), matchNote(cg.Match), reachabilityNote(cg.Command))
 	}
 }
