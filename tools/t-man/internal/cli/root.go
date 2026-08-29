@@ -36,7 +36,44 @@ func init() {
 		BoolVar(&daemonMode, "daemon", false, "Run as system daemon (LaunchDaemon) - requires sudo")
 	rootCmd.PersistentFlags().
 		BoolVar(&dryRun, "dryrun", false, "Dry run mode - show what would be done without applying changes")
-	rootCmd.MarkFlagsMutuallyExclusive("agent", "daemon")
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		daemon, err := modeFlags{
+			agent:     agentMode,
+			daemon:    daemonMode,
+			agentSet:  cmd.Flags().Changed("agent"),
+			daemonSet: cmd.Flags().Changed("daemon"),
+		}.daemonSelected()
+		if err != nil {
+			return err
+		}
+		daemonMode, agentMode = daemon, !daemon
+		return nil
+	}
+}
+
+// modeFlags is the --agent/--daemon pair as parsed, carrying whether each was
+// spelled out on the command line.
+type modeFlags struct {
+	agent, daemon       bool
+	agentSet, daemonSet bool
+}
+
+// daemonSelected collapses the pair into the single value every command reads.
+// --agent and --daemon are one choice spelled two ways — t-man keeps --agent
+// for serviceman compatibility — so --agent=false selects daemon mode, and a
+// pair that agrees on the same value contradicts itself.
+func (m modeFlags) daemonSelected() (bool, error) {
+	switch {
+	case m.agentSet && m.daemonSet && m.agent == m.daemon:
+		return false, fmt.Errorf(
+			"--agent=%t and --daemon=%t contradict each other: pass one of them",
+			m.agent, m.daemon,
+		)
+	case m.agentSet && !m.daemonSet:
+		return !m.agent, nil
+	default:
+		return m.daemon, nil
+	}
 }
 
 // Execute runs the root command

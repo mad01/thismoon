@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/mad01/thismoon/tools/t-man/internal/notify"
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/t-man/internal/service"
 )
 

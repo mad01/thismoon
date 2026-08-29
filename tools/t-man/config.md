@@ -33,10 +33,18 @@ service definition and the record of what was last applied.
 
 - `--agent` (bool, default `true`): operate on per-user LaunchAgents in
   `~/Library/LaunchAgents`. This is the default mode and needs no elevated
-  privileges.
+  privileges. The flag exists for serviceman compatibility; `--agent=false`
+  is another way of asking for daemon mode.
 - `--daemon` (bool, default `false`): operate on system LaunchDaemons in
   `/Library/LaunchDaemons` instead. Every command needs `sudo` in this mode,
-  not just `add`. Mutually exclusive with `--agent`.
+  not just `add`.
+
+`--agent` and `--daemon` are one choice spelled two ways, so t-man resolves
+them together rather than treating them as unrelated switches: passing
+either one alone picks the mode it names, and passing both is fine as long
+as they agree (`--agent=false --daemon`). A pair that says the same thing twice
+(`--agent --daemon`, or `--agent=false --daemon=false`) is rejected with an
+error naming both values.
 - `--dryrun` (bool, default `false`): print what `add` would do without
   writing a plist or calling `launchctl`.
 

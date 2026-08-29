@@ -135,6 +135,10 @@ t-man remove myapp
 - `--daemon`: Run as system daemon (LaunchDaemon) - requires sudo
 - `--dryrun`: Show what would be done without applying changes
 
+`--agent` and `--daemon` are the same choice spelled two ways, so
+`--agent=false` also selects daemon mode. Passing both is allowed when they
+agree; a pair that says the same thing twice is an error.
+
 ### Add or update a service
 
 The `add` command creates or updates a service. It's idempotent - running it twice with the same configuration shows "No changes needed".
