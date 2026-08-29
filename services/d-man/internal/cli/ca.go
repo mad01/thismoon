@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/services/d-man/internal/tlsca"
 )
 
@@ -56,16 +57,22 @@ func init() {
 }
 
 // resolveCADir returns the CA directory: the --ca-dir flag if set, else a "ca"
-// directory beside the routes config so the CA travels with the config.
-func resolveCADir() string {
+// directory beside the routes config so the CA travels with the config. A
+// ~-prefixed --ca-dir that cannot be expanded is an error rather than a
+// directory relative to the working directory — the CA key minted there
+// signs certificates the whole system trusts.
+func resolveCADir() (string, error) {
 	if flagCADir != "" {
-		return expandTilde(flagCADir)
+		return confdir.Expand(flagCADir)
 	}
-	return filepath.Join(filepath.Dir(flagConfig), "ca")
+	return filepath.Join(filepath.Dir(flagConfig), "ca"), nil
 }
 
 func runCAInstall(cmd *cobra.Command, _ []string) error {
-	dir := resolveCADir()
+	dir, err := resolveCADir()
+	if err != nil {
+		return err
+	}
 	if _, err := tlsca.EnsureCA(dir); err != nil {
 		return err
 	}
@@ -99,6 +106,10 @@ func runCAUninstall(cmd *cobra.Command, _ []string) error {
 }
 
 func runCAPath(cmd *cobra.Command, _ []string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), resolveCADir())
+	dir, err := resolveCADir()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), dir)
 	return nil
 }

@@ -18,8 +18,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/d-man/internal/hosts"
-	"github.com/mad01/thismoon/services/d-man/internal/notify"
 	"github.com/mad01/thismoon/services/d-man/internal/proxy"
 	"github.com/mad01/thismoon/services/d-man/internal/tlsca"
 )
@@ -70,7 +71,11 @@ func runServe(_ *cobra.Command, _ []string) error {
 
 	// The TLS listener mints a leaf per SNI from this CA; auto-generate it if
 	// absent so serve works before "d-man ca install" trusts it.
-	ca, err := tlsca.EnsureCA(resolveCADir())
+	caDir, err := resolveCADir()
+	if err != nil {
+		return err
+	}
+	ca, err := tlsca.EnsureCA(caDir)
 	if err != nil {
 		return fmt.Errorf("prepare local CA: %w", err)
 	}
@@ -169,7 +174,11 @@ func reloadOnce(rh *reloadableHandler) error {
 			strings.Join(hostNames, ", "),
 			map[string]string{"hosts": fmt.Sprintf("%d", len(hostNames))})
 	}
-	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts(), expandTilde(cfg.GamesDir))
+	gamesDir, err := confdir.Expand(cfg.GamesDir)
+	if err != nil {
+		return err
+	}
+	h, err := proxy.New(cfg.RouteMap(), cfg.Sites(), cfg.BlockedHosts(), gamesDir)
 	if err != nil {
 		return err
 	}
