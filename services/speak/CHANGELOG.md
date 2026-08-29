@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/mad01/thismoon/compare/speak/v0.8.0...speak/v0.8.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **speak:** probe audio dir for legacy state, skip absent state dir in doctor ([d6a698c](https://github.com/mad01/thismoon/commit/d6a698caa891e95031fe8d8257202055208d16c1))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/speak/v0.7.1...speak/v0.8.0) (2026-08-29)
 
 
