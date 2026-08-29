@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/envdefault"
 	present "github.com/mad01/thismoon/services/present"
 )
 
@@ -37,16 +34,22 @@ Subcommands:
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagWorkdir, "workdir", defaultWorkdir(),
 		"directory holding pages/ (env PRESENT_WORKDIR)")
-	rootCmd.PersistentFlags().IntVar(&flagPort, "port", resolvedDefaultPort(),
+	rootCmd.PersistentFlags().IntVar(&flagPort, "port",
+		envdefault.Int("PRESENT_PORT", present.DefaultPort),
 		"port the HTTP server listens on / URLs point at (env PRESENT_PORT)")
-	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", os.Getenv("PRESENT_BASE_URL"),
+	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url",
+		envdefault.String("PRESENT_BASE_URL", ""),
 		"base URL for page links (env PRESENT_BASE_URL); defaults to http://localhost:<port>")
 	// Expand a leading ~ in the workdir before any subcommand runs. A literal
 	// "~/..." reaches Go from PRESENT_WORKDIR or --workdir without shell
 	// expansion; left unexpanded the MCP and serve processes resolve different
 	// directories and updates land where nothing serves them.
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
-		flagWorkdir = expandTilde(flagWorkdir)
+		workdir, err := confdir.Expand(flagWorkdir)
+		if err != nil {
+			return err
+		}
+		flagWorkdir = workdir
 		return nil
 	}
 }
@@ -56,43 +59,17 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// defaultWorkdir resolves the pages directory, honoring PRESENT_WORKDIR and
-// falling back to present.DefaultWorkdir — the same constant the operating
-// doc renders, so the two cannot drift. The leading ~ expands in
-// PersistentPreRunE.
+// defaultWorkdir resolves the pages directory: PRESENT_WORKDIR when set,
+// else present.LegacyWorkdir while that directory exists on disk, else the
+// XDG state directory ($XDG_STATE_HOME/present, or present.DefaultWorkdir).
+// Pages are never migrated, so an install that has published pages keeps
+// reading the directory they are in. An unresolvable home leaves the legacy
+// path in place so --help still names one; PersistentPreRunE then reports
+// the failure as an error rather than serving an empty store.
 func defaultWorkdir() string {
-	if v := os.Getenv("PRESENT_WORKDIR"); v != "" {
-		return v
-	}
-	return present.DefaultWorkdir
-}
-
-// expandTilde rewrites a leading ~ or ~/ to the user's home directory. Other
-// paths (absolute or already-expanded) are returned unchanged. When the home
-// directory cannot be resolved, the ~ prefix is stripped so the path degrades
-// to cwd-relative instead of creating a literal "~" directory.
-func expandTilde(path string) string {
-	if path != "~" && !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
+	path, err := confdir.StateDir("present", present.LegacyWorkdir)
 	if err != nil {
-		if path == "~" {
-			return "."
-		}
-		return path[2:]
+		path = present.LegacyWorkdir
 	}
-	if path == "~" {
-		return home
-	}
-	return filepath.Join(home, path[2:])
-}
-
-func resolvedDefaultPort() int {
-	if v := os.Getenv("PRESENT_PORT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return present.DefaultPort
+	return envdefault.String("PRESENT_WORKDIR", path)
 }

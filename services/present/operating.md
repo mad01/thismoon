@@ -21,7 +21,10 @@ answers but the .this host does not, blame the router, not this service.
 
 ## where state lives
 
-Pages live under {{.StorePath}}/pages/<id>/: meta.json, content.html (the
+Pages live under the workdir's pages/<id>/ — {{.StorePath}} on a fresh
+install, ~/.config/present on one that already had that directory (pages are
+never migrated), and whatever --workdir/PRESENT_WORKDIR say when set. Each
+page directory holds meta.json, content.html (the
 rendered HTML fragment), doc.json (canonical Doc source when the page was
 authored as Doc JSON), graph.js plus graph.json for graphs, refs.json for
 references. doc.json and graph.json are the editable sources: present_source

@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/agentdoc"
+	present "github.com/mad01/thismoon/services/present"
 	"github.com/mad01/thismoon/services/present/internal/mcpserver"
 )
 
@@ -23,9 +25,9 @@ Tools exposed:
   present_update  Update a page by id (auto-reloads open tabs).
   present_list    List all pages.
   present_open    Open a page in the browser (once per page).
+  present_doctor  Run the doctor checks and return the report.
 
-Register with Claude Code:
-  claude mcp add --scope user present -- present mcp`,
+` + agentdoc.RegistrationSnippet(present.Facts()),
 	RunE: runMCP,
 }
 
@@ -40,7 +42,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("present mcp: workdir=%s port=%d base-url=%s", flagWorkdir, flagPort, flagBaseURL)
 	server, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Workdir: flagWorkdir, Port: flagPort, BaseURL: flagBaseURL},
+		mcpserver.Config{Workdir: flagWorkdir, Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
 	)
 	if err != nil {
 		return err
