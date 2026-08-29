@@ -40,7 +40,7 @@ pre_uninstall = [
   "if command -v t-man >/dev/null; then t-man remove csl-web 2>/dev/null; fi || true",
 ]
 # Remove the indexes and daemon state that csl creates at runtime.
-post_uninstall = ["rm -rf ~/.config/csl/search-index ~/.config/csl/semantic-index ~/.config/csl/search-daemon.log ~/.config/csl/search-daemon.pid ~/.config/csl/search-daemon.sock ~/.config/csl/reindex.queue 2>/dev/null || true"]
+post_uninstall = ["rm -rf ~/.config/csl/search-index ~/.config/csl/semantic-index ~/.config/csl/search-daemon.log ~/.config/csl/search-daemon.pid ~/.config/csl/search-daemon.sock ~/.config/csl/reindex.queue ~/.local/state/csl/search-index ~/.local/state/csl/semantic-index ~/.local/state/csl/search-daemon.log ~/.local/state/csl/search-daemon.pid ~/.local/state/csl/search-daemon.sock ~/.local/state/csl/reindex.queue 2>/dev/null || true"]
 
 # Register `csl web` as a long-running t-man user agent so the search UI is
 # always reachable on http://localhost:7424 (http://csl.this/ via d-man).
