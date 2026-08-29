@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	kitnotify "github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/reminder/internal/notify"
 	"github.com/mad01/thismoon/services/reminder/internal/store"
 )
@@ -49,7 +50,7 @@ func Cycle(st Store, n notify.Notifier, now func() time.Time) {
 			log.Printf("reminder: notify %s (%q) failed, will retry: %v", r.ID, r.Title, err)
 			continue
 		}
-		notify.EmitEvent("reminder", "info", "reminder fired: "+r.Title, r.Body,
+		kitnotify.EmitEvent("reminder", "info", "reminder fired: "+r.Title, r.Body,
 			map[string]string{"id": r.ID})
 		if _, err := st.Trigger(r.ID, now()); err != nil {
 			log.Printf("reminder: trigger %s failed: %v", r.ID, err)

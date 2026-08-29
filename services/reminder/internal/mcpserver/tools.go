@@ -6,6 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/reminder/internal/client"
 )
 
@@ -13,6 +14,7 @@ import (
 type handlers struct {
 	client *client.Client
 	webURL string // where the user views reminders in a browser
+	checks func(ctx context.Context) []doctor.Check
 }
 
 func registerTools(s *mcp.Server, h *handlers) {
@@ -59,6 +61,15 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Fire a reminder for REAL right now (the `id` is REQUIRED), exactly as if it had just come due: it sends the notification, records the event, and advances state — a recurring reminder reschedules to its next occurrence, a one-shot becomes 'fired'. " +
 			"This is not a dry run; use reminder_test to only verify notifications without changing state.",
 	}, h.handleFire)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "reminder_doctor",
+		Description: "Diagnose reminder itself: is serve reachable, is the store readable, is the running build " +
+			"the installed one. Returns one result per check with `ok` false if any failed. " +
+			"Read-only — it probes, it changes nothing, and it sends no notification. " +
+			"Call this when another reminder tool errors; use `reminder_test` instead to check that macOS " +
+			"notifications actually reach the user.",
+	}, h.handleDoctor)
 }
 
 // out is the tool response shape: the reminder plus the web URL to view it.
@@ -223,4 +234,20 @@ func (h *handlers) handleFire(
 		return nil, out{}, err
 	}
 	return nil, h.one(r), nil
+}
+
+// ── doctor ──
+
+type doctorInput struct{}
+
+// handleDoctor runs the same checks as `reminder doctor` and returns the
+// report. A failing check is a result, not a tool error: the caller asked
+// what is wrong, and an error would hide the answer behind a transport
+// failure.
+func (h *handlers) handleDoctor(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ doctorInput,
+) (*mcp.CallToolResult, doctor.Report, error) {
+	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
 }

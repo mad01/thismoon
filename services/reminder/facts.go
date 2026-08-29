@@ -18,11 +18,12 @@ const DefaultWorkdir = "~/.local/share/reminder"
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {
 	return agentdoc.Facts{
-		Name:      "reminder",
-		Bin:       "reminder",
-		Purpose:   "time-based reminders that fire a native macOS notification at their due time",
-		BaseURL:   fmt.Sprintf("http://localhost:%d", DefaultPort),
-		StorePath: DefaultWorkdir,
-		HasDoctor: true,
+		Name:          "reminder",
+		Bin:           "reminder",
+		Purpose:       "time-based reminders that fire a native macOS notification at their due time",
+		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
+		StorePath:     DefaultWorkdir,
+		HasDoctor:     true,
+		MCPDoctorTool: "reminder_doctor",
 	}
 }

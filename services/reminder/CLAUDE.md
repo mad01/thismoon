@@ -17,11 +17,12 @@ reminder/
     client/            - HTTP client shared by the CLI and mcpserver (client.go)
     store/             - Reminder model + pure helpers (reminder.go) and the
                          mutex-guarded JSON store (store.go, id.go)
-    notify/            - Notifier interface + osascript macOS notification (notify.go),
-                         best-effort event archiving to events.this (events.go)
+    notify/            - Notifier interface + osascript macOS notification (notify.go);
+                         event archiving to events.this comes from the shared
+                         kit/notify package
     ticker/            - firing loop: scan due → notify → Trigger (reschedule/mark)
     server/            - HTTP API + webkit web page (embedded shell.html + app.js)
-    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 7 tools)
+    mcpserver/         - MCP tools (server.go = MCP server setup, tools.go = 8 tools)
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -126,6 +127,9 @@ Thin client over the API above (`internal/client`):
 - `reminder_cancel(id)`: soft cancel
 - `reminder_test(id?)`: fire a notification now to verify notifications work; with `id` sends that reminder's notification (no state change), without `id` sends a generic test
 - `reminder_fire(id)`: fire a reminder for real now (advances recurring/one-shot state)
+- `reminder_doctor()`: run the same checks as `reminder doctor` and return the
+  report as JSON — the service's health, not a notification test; for a client
+  that can call a tool but has no shell
 
 Tool responses include `url` (the human-facing `REMINDER_BASE_URL`, e.g.
 `http://reminder.this`), while the client itself calls `localhost:<REMINDER_PORT>`.
