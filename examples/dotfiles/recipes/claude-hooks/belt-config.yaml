@@ -51,8 +51,9 @@ commit_guards:
 guards:
   git-push-main:
     enabled: true
-    allow_repos:
-      - github.com/you/dotfiles # direct pushes to main allowed here only
+    # allow_repos remains as the escape hatch for a push exemption that is
+    # not the direct-main workflow (rare); direct-main repos belong on
+    # direct_main_repos above, which exempts this guard too.
   script-deny-list:
     enabled: true
     extra_patterns:
@@ -62,11 +63,18 @@ guards:
     exclude_paths:
       - ~/notes # internal references are deliberate here
 
+# The one shared repo list, named for the workflow fact it states: these
+# repos' workflow is direct-to-main. Read by exactly git-push-main (push
+# allowed) and the commit-policy hint (advice silenced) — nothing else, so
+# editing it cannot disarm an unrelated guard (thismoon docs/adr/0013).
+direct_main_repos:
+  - github.com/you/dotfiles
+
 hints:
-  # The post-commit half of the git-push-main pair: a commit landing on
-  # main/master in any repo not opted out here draws the branch + PR advice.
-  # Keep the list in step with guards.git-push-main.allow_repos (hints opt
-  # repos out with exclude_repos; allow_repos belongs to guards).
+  # Per-hint opt-outs (hints opt repos out with exclude_repos; allow_repos
+  # belongs to guards). The commit-policy hint is the post-commit half of
+  # the git-push-main pair: a commit landing on main/master in a repo on
+  # neither direct_main_repos nor this list draws the branch + PR advice.
   commit-policy:
     exclude_repos:
-      - github.com/you/dotfiles
+      - github.com/you/experiments

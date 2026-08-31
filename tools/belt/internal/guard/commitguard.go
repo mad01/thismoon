@@ -50,7 +50,7 @@ type CommitGuard struct {
 func NewCommitGuard(cfg config.Config) *CommitGuard {
 	return &CommitGuard{
 		cfg:            cfg,
-		resolveRepo:    func(dir string) string { return canonicalRepo(gitRemoteURL(dir)) },
+		resolveRepo:    CanonicalRepoAt,
 		now:            time.Now,
 		overrideActive: config.OverrideActive,
 		emit:           notify.EmitEventSync,

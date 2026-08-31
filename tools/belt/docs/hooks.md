@@ -365,11 +365,21 @@ rather than denying, so "it allowed something odd" is answered there.
 ### Scoping a guard to repos
 
 Every repo list in the config — `git_identity[].repos`,
-`commit_guards[].repos`, `commit_guards[].always_allow`, and
-`guards.<id>.allow_repos` — matches a canonical `host/owner/repo` exactly
+`commit_guards[].repos`, `commit_guards[].always_allow`,
+`guards.<id>.allow_repos`, `hints.<id>.exclude_repos`, and the top-level
+`direct_main_repos` — matches a canonical `host/owner/repo` exactly
 **or** with a trailing `/*` org wildcard: `github.com/you/*` covers every
 repo in the org. (Until belt v2, `allow_repos` was the exception and matched
 exact strings only, so a `/*` entry there silently never matched.)
+
+`direct_main_repos` is the one shared list, named for the workflow fact it
+states — these repos' workflow is direct-to-main — and read by exactly the
+two checks whose subject is that workflow: `git-push-main` (push allowed)
+and the `commit-policy` hint (advice silenced). It deliberately reaches
+nothing else: a shared list gets edited for the cheap reason (quiet a
+nudge) and must not silently grant the expensive one (disarm the
+internal-name firewall or identity enforcement). See docs/adr/0013 for the
+reversibility criterion behind that line.
 
 Both resolve the repo from its **origin remote**, never its filesystem path,
 so a second checkout or a cached clone of the same repo behaves identically.
@@ -387,10 +397,12 @@ the moment it mattered; a hook fires deterministically where prose gets
 skimmed.
 
 Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
-the belt config, default on. The exception is `commit-policy`, which also
-reads an `exclude_repos` list (hints opt repos out with `exclude_repos`;
-`allow_repos` belongs to guards, and each key on the wrong kind is a
-validation error). Everything else about hint behavior is fixed
+the belt config, default on. The repo-aware hints (commit-policy,
+prefer-csl, kof-assertions, kof-consult) also read an `exclude_repos` list
+(hints opt repos out with `exclude_repos`; `allow_repos` belongs to guards,
+and each key on the wrong kind is a validation error), and commit-policy
+additionally honors the shared `direct_main_repos` list. Everything else
+about hint behavior is fixed
 (see Fixed constants below). The guards carry the richer per-guard keys —
 each guard section above names its own, and [config.md](../config.md)
 specifies them all.
@@ -469,19 +481,21 @@ origin/main` drops the local default branch back onto the remote.
 
 - **Fires when** a commit in the command (compound commands and `git -C`
   included) ran with the repo's current branch on main or master, and the
-  repo's canonical origin identity is not on
-  `hints.commit-policy.exclude_repos` (same `host/owner/repo` patterns as
-  the git-push-main guard's `allow_repos` — keep the two lists in step).
-- **Deliberately silent** on feature branches, excluded repos, detached
+  repo's canonical origin identity is on neither the shared
+  `direct_main_repos` list (this hint is one of its two readers,
+  docs/adr/0013) nor `hints.commit-policy.exclude_repos`.
+- **Deliberately silent** on feature branches, opted-out repos, detached
   HEAD, and repos with no resolvable origin remote — a scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
   protect.
 - **Repo-local overlay**: a `.belt.yaml` at the repo root lets the repo
   version its own policy (docs/adr/0012) —
   `hints.commit-policy.exclude` opts the repo out or back in over the
-  machine's `exclude_repos`, `protected_branches` replaces the default
+  machine's lists, `protected_branches` replaces the default
   `main`/`master` set (exact names or trailing-`*` prefixes like
-  `release/*`), and `message` appends a repo-authored line to the advice.
+  `release/*`; a replacement set that matches nothing also silences the
+  hint, so `exclude: false` opts back in only for the branches the set
+  names), and `message` appends a repo-authored line to the advice.
   Hints-only by construction (the loader lives in `internal/hint`, which
   guards cannot import), and never denying: a broken file draws one line
   of advisory text per commit until fixed, a foreign or empty file is a

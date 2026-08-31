@@ -269,12 +269,22 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 		{
 			"allow_repos on a hint",
 			"hints:\n  commit-policy:\n    allow_repos:\n      - github.com/mad01/dotfiles\n",
-			"hints.commit-policy: allow_repos has no effect on hints",
+			"hints.commit-policy: allow_repos has no effect (commit-policy reads: exclude_repos)",
 		},
 		{
 			"exclude_repos on a guard",
 			"guards:\n  git-push-main:\n    exclude_repos:\n      - github.com/mad01/dotfiles\n",
-			"guards.git-push-main: exclude_repos has no effect on guards",
+			"guards.git-push-main: exclude_repos has no effect (git-push-main reads: allow_repos)",
+		},
+		{
+			"exclude_repos on a repo-less hint",
+			"hints:\n  kof-deposit:\n    exclude_repos:\n      - github.com/mad01/dotfiles\n",
+			"hints.kof-deposit: exclude_repos has no effect (kof-deposit reads: only enabled)",
+		},
+		{
+			"exclude_paths on a guard that ignores it",
+			"guards:\n  git-push-main:\n    exclude_paths:\n      - ~/notes\n",
+			"guards.git-push-main: exclude_paths has no effect",
 		},
 	}
 	for _, tt := range tests {
@@ -289,6 +299,67 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 				t.Errorf("error %v does not mention %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestRepoTailMatches pins the index-side matching rule: the host segment
+// of each canonical pattern is dropped and matching is case-insensitive, so
+// one spelling of a repo pattern still works for the hint that only knows
+// org/name.
+func TestRepoTailMatches(t *testing.T) {
+	patterns := []string{"github.com/mad01/dotfiles", "github.com/other/*"}
+	tests := []struct {
+		orgName string
+		want    bool
+	}{
+		{"mad01/dotfiles", true},
+		{"Mad01/DotFiles", true},
+		{"other/anything", true},
+		{"mad01/thismoon", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := RepoTailMatches(patterns, tt.orgName); got != tt.want {
+			t.Errorf("RepoTailMatches(%q) = %v, want %v", tt.orgName, got, tt.want)
+		}
+	}
+}
+
+// TestRepoScopingHelpers pins the reach of each repo-scoping surface:
+// per-hint exclude_repos stands alone, and direct_main_repos is a separate
+// list its two readers consult explicitly (docs/adr/0013).
+func TestRepoScopingHelpers(t *testing.T) {
+	cfg := Config{
+		DirectMainRepos: []string{"github.com/mad01/dotfiles"},
+		Hints: map[string]Toggle{
+			"commit-policy": {ExcludeRepos: []string{"github.com/mad01/scratch"}},
+		},
+	}
+	if !cfg.HintRepoExcluded("commit-policy", "github.com/mad01/scratch") {
+		t.Error("per-hint list should exclude via HintRepoExcluded")
+	}
+	if cfg.HintRepoExcluded("commit-policy", "github.com/mad01/dotfiles") {
+		t.Error("direct_main_repos must not leak into HintRepoExcluded")
+	}
+	if !cfg.DirectMain("github.com/mad01/dotfiles") {
+		t.Error("DirectMain should match the direct_main_repos list")
+	}
+	if cfg.DirectMain("github.com/mad01/thismoon") {
+		t.Error("unlisted repo should not be direct-main")
+	}
+}
+
+// TestValidateUnknownIdsStayLax pins the forward-compat rule: ids missing
+// from the field tables (custom guards, or hints a newer belt defines)
+// accept any keys without erroring, so config/binary rollout skew cannot
+// turn into a machine-wide deny.
+func TestValidateUnknownIdsStayLax(t *testing.T) {
+	dir := t.TempDir()
+	content := "guards:\n  branch-lint:\n    enabled: false\n" +
+		"hints:\n  future-hint:\n    exclude_repos:\n      - github.com/mad01/dotfiles\n"
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", content)}
+	if _, err := LoadFrom(p); err != nil {
+		t.Fatalf("unknown ids should stay lax, got %v", err)
 	}
 }
 

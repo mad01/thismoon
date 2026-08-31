@@ -42,7 +42,6 @@ func (g *GitPushMain) Event() string { return EventBash }
 // Check scans every git push in the command (compound commands included) and
 // denies when one targets main or master.
 func (g *GitPushMain) Check(in Input) *Denial {
-	allow := g.cfg.Guards[GitPushMainID].AllowRepos
 	for _, push := range findGitPushes(in.Command) {
 		dir := push.dir
 		if dir == "" {
@@ -52,7 +51,7 @@ func (g *GitPushMain) Check(in Input) *Denial {
 		if !defaultBranches[branch] {
 			continue
 		}
-		if g.repoAllowed(dir, allow) {
+		if g.pushExempt(dir) {
 			continue
 		}
 		return Reasonf(GitPushMainID,
@@ -63,16 +62,19 @@ func (g *GitPushMain) Check(in Input) *Denial {
 	return nil
 }
 
-// repoAllowed reports whether the repo at dir is on the allowlist. An empty
-// allowlist or an unresolved repo fails closed: only an explicit,
-// successfully-resolved match exempts a push to the default branch. Patterns
-// match as they do everywhere else in the config — exactly, or by trailing
-// "/*" org wildcard.
-func (g *GitPushMain) repoAllowed(dir string, allow []string) bool {
-	if len(allow) == 0 {
+// pushExempt reports whether the repo at dir may take a direct default-
+// branch push: the shared direct_main_repos list (this guard is one of its
+// two readers, docs/adr/0013) or the guard's own allow_repos. Empty lists
+// and unresolved repos fail closed: only an explicit, successfully-resolved
+// match exempts a push. Patterns match as they do everywhere else in the
+// config — exactly, or by trailing "/*" org wildcard.
+func (g *GitPushMain) pushExempt(dir string) bool {
+	repo := g.resolveRepo(dir)
+	if repo == "" {
 		return false
 	}
-	return config.RepoMatches(allow, g.resolveRepo(dir))
+	return g.cfg.DirectMain(repo) ||
+		config.RepoMatches(g.cfg.Guards[GitPushMainID].AllowRepos, repo)
 }
 
 // gitPush is one parsed `git push` invocation.

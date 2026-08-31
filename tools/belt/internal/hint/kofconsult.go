@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
 // maxConsultAssertions caps the session-start block. It is looser than the
@@ -25,18 +26,30 @@ type KofConsult struct {
 	// originURL resolves a directory to its git origin remote URL;
 	// overridable for tests.
 	originURL func(dir string) string
+	// resolveRepo resolves a directory to its canonical host/owner/repo
+	// identity for exclude_repos matching; overridable for tests.
+	resolveRepo func(dir string) string
 }
 
 func NewKofConsult(cfg config.Config) *KofConsult {
-	return &KofConsult{cfg: cfg, base: kofBaseURL(), originURL: gitOriginURL}
+	return &KofConsult{
+		cfg:         cfg,
+		base:        kofBaseURL(),
+		originURL:   gitOriginURL,
+		resolveRepo: guard.CanonicalRepoAt,
+	}
 }
 
 func (h *KofConsult) ID() string    { return "kof-consult" }
 func (h *KofConsult) Event() string { return EventSessionStart }
 
 func (h *KofConsult) Check(in Input) *Advice {
-	repo := repoFromOrigin(h.originURL(nearestDir(in.Cwd)))
+	dir := nearestDir(in.Cwd)
+	repo := repoFromOrigin(h.originURL(dir))
 	if repo == "" {
+		return nil
+	}
+	if h.cfg.HintRepoExcluded(h.ID(), h.resolveRepo(dir)) {
 		return nil
 	}
 	found := matchRepo(repo, queryKof(h.base, "repo:"+repo))

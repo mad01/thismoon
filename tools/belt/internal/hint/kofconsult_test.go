@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
 func gitCommand(dir string, args ...string) *exec.Cmd {
@@ -74,9 +76,10 @@ func consultServer(t *testing.T, as []assertion) *httptest.Server {
 // the real ~/.cache/belt.
 func consultHint(base string, origin string) *KofConsult {
 	return &KofConsult{
-		cfg:       testConfig(),
-		base:      base,
-		originURL: func(string) string { return origin },
+		cfg:         testConfig(),
+		base:        base,
+		originURL:   func(string) string { return origin },
+		resolveRepo: func(string) string { return "" },
 	}
 }
 
@@ -158,5 +161,20 @@ func TestGitOriginURLReadsTheRealRemote(t *testing.T) {
 	}
 	if got := gitOriginURL(t.TempDir()); got != "" {
 		t.Errorf("gitOriginURL outside a repo = %q, want empty", got)
+	}
+}
+
+// TestKofConsultRepoExcluded pins that an excluded repo is silent before any
+// kof query happens — no server is stubbed here, so reaching the query would
+// hang or error rather than pass. Exclusion matches the canonical identity,
+// not the org/name kof subjects use.
+func TestKofConsultRepoExcluded(t *testing.T) {
+	h := NewKofConsult(config.Config{
+		Hints: map[string]config.Toggle{"kof-consult": {ExcludeRepos: []string{"github.com/mad01/thismoon"}}},
+	})
+	h.originURL = func(string) string { return "git@github.com:mad01/thismoon.git" }
+	h.resolveRepo = func(string) string { return "github.com/mad01/thismoon" }
+	if a := h.Check(Input{Event: EventSessionStart, Cwd: "/", SessionID: "s"}); a != nil {
+		t.Errorf("excluded repo should be silent, got %+v", a)
 	}
 }

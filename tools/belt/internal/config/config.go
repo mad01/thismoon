@@ -67,14 +67,23 @@ var SoftModeGuards = []string{"script-deny-list"}
 
 // Config is everything a guard or hint needs to decide.
 type Config struct {
-	Guards         map[string]Toggle
-	Hints          map[string]Toggle
-	Names          InternalNames
-	ClaudeSettings ClaudeSettings         // gate on reading the Claude settings files
-	ClaudeDeny     []string               // Bash deny prefixes from the Claude settings; empty when the read is disabled
-	GitIdentity    []GitIdentity          // git-identity rules, first matching rule wins
-	CommitGuards   []CommitGuard          // commit-guard rules, every rule is checked
-	CustomGuards   map[string]CustomGuard // external-command guards keyed by guard name
+	Guards map[string]Toggle
+	Hints  map[string]Toggle
+	// DirectMainRepos names the repos whose workflow is direct-to-main:
+	// single-writer store clones and config repos that never take PRs.
+	// Read by exactly the two checks whose subject is that workflow —
+	// git-push-main (the push is allowed) and the commit-policy hint (the
+	// branch + PR advice is silenced). Purpose-named on the reversibility
+	// criterion (docs/adr/0013): a generic "exclude" list gets edited to
+	// quiet an advisory and silently disarms a guard; a list that states a
+	// workflow fact cannot reach checks the fact is irrelevant to.
+	DirectMainRepos []string
+	Names           InternalNames
+	ClaudeSettings  ClaudeSettings         // gate on reading the Claude settings files
+	ClaudeDeny      []string               // Bash deny prefixes from the Claude settings; empty when the read is disabled
+	GitIdentity     []GitIdentity          // git-identity rules, first matching rule wins
+	CommitGuards    []CommitGuard          // commit-guard rules, every rule is checked
+	CustomGuards    map[string]CustomGuard // external-command guards keyed by guard name
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -146,9 +155,10 @@ type Toggle struct {
 	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
 	// ExcludeRepos opts repos out of a hint (same canonical host/owner/repo
 	// patterns as AllowRepos). The two fields are kind-scoped: guards exempt
-	// repos with allow_repos, hints opt them out with exclude_repos, and
-	// validate() rejects each on the wrong kind — an allowlist on an
-	// advisory reads backwards.
+	// repos with allow_repos ("the guarded action is allowed there"), hints
+	// opt them out with exclude_repos, and validate() rejects each on the
+	// wrong kind — the panel review found exclude-on-a-deny-guard reads
+	// inverted, so the split stays (docs/adr/0013).
 	ExcludeRepos []string `toml:"exclude_repos"  yaml:"exclude_repos,omitempty"`
 }
 
@@ -247,11 +257,30 @@ func (c Config) RepoAllowed(guardID, repo string) bool {
 	return RepoMatches(c.Guards[guardID].AllowRepos, repo)
 }
 
-// HintRepoExcluded reports whether a hint's exclude_repos list opts the
-// canonical repo out of that hint. Same patterns as RepoAllowed; an empty
-// repo is never excluded.
+// HintRepoExcluded reports whether the canonical repo is opted out of a
+// hint by that hint's own exclude_repos list. Same patterns as RepoAllowed;
+// an empty repo is never excluded. The shared direct_main_repos list is
+// deliberately not consulted here — only commit-policy reads it, via
+// DirectMain, because the workflow fact it states is about commits and
+// pushes, not about the other hints.
 func (c Config) HintRepoExcluded(hintID, repo string) bool {
 	return RepoMatches(c.Hints[hintID].ExcludeRepos, repo)
+}
+
+// HintRepoExcludedTail is HintRepoExcluded for the one hint that knows a
+// repo only as org/name (kof-assertions works on index-side search results
+// with no filesystem path to resolve): the host segment of each canonical
+// pattern is ignored and the tail matched, case-insensitively. Every hint
+// that can reach the working tree resolves the canonical identity instead.
+func (c Config) HintRepoExcludedTail(hintID, orgName string) bool {
+	return RepoTailMatches(c.Hints[hintID].ExcludeRepos, orgName)
+}
+
+// DirectMain reports whether the canonical repo is on the top-level
+// direct_main_repos list. Read by git-push-main and the commit-policy hint
+// only (see the Config field comment and docs/adr/0013).
+func (c Config) DirectMain(repo string) bool {
+	return RepoMatches(c.DirectMainRepos, repo)
 }
 
 // RepoMatches reports whether the canonical host/owner/repo matches any of
@@ -274,6 +303,21 @@ func RepoMatches(patterns []string, repo string) bool {
 		}
 	}
 	return false
+}
+
+// RepoTailMatches matches the owner/name tail of canonical patterns against
+// an org/name identity, case-insensitively (kof lowercases its identities).
+// Dropping the host erases the public-vs-internal axis, so this is reserved
+// for per-hint lists on hints with no path to resolve (kof-assertions) —
+// never for guard exemption or the direct_main_repos list.
+func RepoTailMatches(patterns []string, orgName string) bool {
+	var tails []string
+	for _, p := range patterns {
+		if _, tail, ok := strings.Cut(p, "/"); ok && tail != "" {
+			tails = append(tails, strings.ToLower(tail))
+		}
+	}
+	return RepoMatches(tails, strings.ToLower(orgName))
 }
 
 // OverridesDir is where guard overrides live: one file per override name,
@@ -458,13 +502,14 @@ func Load() (Config, error) {
 func LoadFrom(p Paths) (Config, error) {
 	f, src := ReadFile(p)
 	cfg := Config{
-		Guards:         f.Guards,
-		Hints:          f.Hints,
-		Names:          f.InternalNames,
-		ClaudeSettings: f.ClaudeSettings,
-		GitIdentity:    f.GitIdentity,
-		CommitGuards:   f.CommitGuards,
-		CustomGuards:   f.CustomGuards,
+		Guards:          f.Guards,
+		Hints:           f.Hints,
+		DirectMainRepos: f.DirectMainRepos,
+		Names:           f.InternalNames,
+		ClaudeSettings:  f.ClaudeSettings,
+		GitIdentity:     f.GitIdentity,
+		CommitGuards:    f.CommitGuards,
+		CustomGuards:    f.CustomGuards,
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
@@ -520,13 +565,14 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 // absent internal_names section means an empty name set — belt reads no
 // other tool's config to fill it (docs/adr/0010).
 type File struct {
-	Guards         map[string]Toggle      `toml:"guards"          yaml:"guards"`
-	Hints          map[string]Toggle      `toml:"hints"           yaml:"hints"`
-	InternalNames  InternalNames          `toml:"internal_names"  yaml:"internal_names"`
-	ClaudeSettings ClaudeSettings         `toml:"claude_settings" yaml:"claude_settings"`
-	GitIdentity    []GitIdentity          `toml:"git_identity"    yaml:"git_identity"`
-	CommitGuards   []CommitGuard          `toml:"commit_guards"   yaml:"commit_guards"`
-	CustomGuards   map[string]CustomGuard `toml:"custom_guards"   yaml:"custom_guards"`
+	Guards          map[string]Toggle      `toml:"guards"          yaml:"guards"`
+	Hints           map[string]Toggle      `toml:"hints"           yaml:"hints"`
+	DirectMainRepos []string               `toml:"direct_main_repos" yaml:"direct_main_repos"`
+	InternalNames   InternalNames          `toml:"internal_names"  yaml:"internal_names"`
+	ClaudeSettings  ClaudeSettings         `toml:"claude_settings" yaml:"claude_settings"`
+	GitIdentity     []GitIdentity          `toml:"git_identity"    yaml:"git_identity"`
+	CommitGuards    []CommitGuard          `toml:"commit_guards"   yaml:"commit_guards"`
+	CustomGuards    map[string]CustomGuard `toml:"custom_guards"   yaml:"custom_guards"`
 }
 
 // Source reports which belt config file was read and what happened.
@@ -602,18 +648,8 @@ func (f File) validate() error {
 	}
 	errs = append(errs, toggleModeErrors("guards", f.Guards)...)
 	errs = append(errs, toggleModeErrors("hints", f.Hints)...)
-	for _, id := range slices.Sorted(maps.Keys(f.Hints)) {
-		if len(f.Hints[id].AllowRepos) > 0 {
-			errs = append(errs, fmt.Errorf(
-				"hints.%s: allow_repos has no effect on hints — repos are opted out of a hint with exclude_repos", id))
-		}
-	}
-	for _, id := range slices.Sorted(maps.Keys(f.Guards)) {
-		if len(f.Guards[id].ExcludeRepos) > 0 {
-			errs = append(errs, fmt.Errorf(
-				"guards.%s: exclude_repos has no effect on guards — repos are exempted from a guard with allow_repos", id))
-		}
-	}
+	errs = append(errs, toggleFieldErrors("guards", f.Guards, GuardFields)...)
+	errs = append(errs, toggleFieldErrors("hints", f.Hints, HintFields)...)
 	for i, r := range f.GitIdentity {
 		if err := validMode(r.Mode); err != nil {
 			errs = append(errs, fmt.Errorf("git_identity[%d].%w", i, err))
@@ -625,6 +661,64 @@ func (f File) validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// GuardFields and HintFields declare which optional Toggle keys each
+// built-in id reads (`enabled` is universal, `mode` is owned by
+// SoftModeGuards). validate() rejects a set key missing from the id's row —
+// the key would parse and then do nothing. Ids absent from the tables stay
+// lax on purpose: custom guard names are user-defined, and a rendered
+// config may target a newer belt than this binary (config and binary ship
+// from different repos), so rejecting keys this binary does not know would
+// turn ordinary rollout skew into a machine-wide deny.
+var (
+	GuardFields = map[string][]string{
+		"git-push-main":        {"allow_repos"},
+		"git-identity":         {},
+		"commit-guard":         {},
+		"script-deny-list":     {"extra_patterns", "exclude_paths"},
+		"write-internal-names": {"allow_repos", "exclude_paths"},
+	}
+	HintFields = map[string][]string{
+		"agent-memory":    {},
+		"commit-policy":   {"exclude_repos"},
+		"kof-assertions":  {"exclude_repos"},
+		"kof-consult":     {"exclude_repos"},
+		"kof-deposit":     {},
+		"prefer-csl":      {"exclude_repos"},
+		"humanizer-check": {},
+	}
+)
+
+// toggleFieldErrors reports toggles on known ids carrying a list key the id
+// does not read, naming the keys it does read so the fix is in the message.
+func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string][]string) []error {
+	var errs []error
+	for _, id := range slices.Sorted(maps.Keys(toggles)) {
+		allowed, known := schema[id]
+		if !known {
+			continue
+		}
+		t := toggles[id]
+		set := map[string]bool{
+			"exclude_paths":  len(t.ExcludePaths) > 0,
+			"extra_patterns": len(t.ExtraPatterns) > 0,
+			"allow_repos":    len(t.AllowRepos) > 0,
+			"exclude_repos":  len(t.ExcludeRepos) > 0,
+		}
+		for _, field := range []string{"exclude_paths", "extra_patterns", "allow_repos", "exclude_repos"} {
+			if !set[field] || slices.Contains(allowed, field) {
+				continue
+			}
+			reads := "only enabled"
+			if len(allowed) > 0 {
+				reads = strings.Join(allowed, ", ")
+			}
+			errs = append(errs, fmt.Errorf(
+				"%s.%s: %s has no effect (%s reads: %s)", kind, id, field, id, reads))
+		}
+	}
+	return errs
 }
 
 // toggleModeErrors reports guard and hint toggles carrying a mode the guard
