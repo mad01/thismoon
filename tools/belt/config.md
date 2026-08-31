@@ -273,6 +273,14 @@ guards exempt repos with `allow_repos`, hints opt them out with
     canonical `host/owner/repo` or a trailing `/*` org wildcard against the
     commit repo's origin remote. Keep the two lists in step: a repo whose
     main is pushed to directly belongs on both.
+  - Repo-local overlay: a `.belt.yaml` at the commit repo's root can carry
+    `hints.commit-policy` with `exclude` (bool, overriding this machine
+    list in either direction), `protected_branches` (replacing the default
+    `main`/`master` set; exact names or trailing-`*` prefixes), and
+    `message` (one line appended to the advice). The overlay is hints-only
+    and can never deny — a broken file degrades to one line of advisory
+    text, unknown ids and keys are ignored (docs/adr/0012). It is not part
+    of this machine config file.
 - `hints.kof-assertions.enabled` (bool, default `true`): PostToolUse
   (search), surfaces kof assertions about code a search just hit.
 - `hints.kof-consult.enabled` (bool, default `true`): SessionStart, surfaces

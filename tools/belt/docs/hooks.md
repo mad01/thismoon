@@ -476,6 +476,16 @@ origin/main` drops the local default branch back onto the remote.
   HEAD, and repos with no resolvable origin remote — a scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
   protect.
+- **Repo-local overlay**: a `.belt.yaml` at the repo root lets the repo
+  version its own policy (docs/adr/0012) —
+  `hints.commit-policy.exclude` opts the repo out or back in over the
+  machine's `exclude_repos`, `protected_branches` replaces the default
+  `main`/`master` set (exact names or trailing-`*` prefixes like
+  `release/*`), and `message` appends a repo-authored line to the advice.
+  Hints-only by construction (the loader lives in `internal/hint`, which
+  guards cannot import), and never denying: a broken file draws one line
+  of advisory text per commit until fixed, a foreign or empty file is a
+  no-op.
 - **Why**: the git-push-main guard denies at the push, which is late — the
   commit is already tangled into local main. This hint fires right after the
   commit, while moving it is still a two-command fix, and it names the exact
