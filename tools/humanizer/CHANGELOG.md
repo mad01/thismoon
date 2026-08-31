@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/mad01/thismoon/compare/humanizer/v0.7.0...humanizer/v0.8.0) (2026-08-31)
+
+
+### Features
+
+* **humanizer:** add StoryScope narrative rubric and fiction span rules ([45f3dd8](https://github.com/mad01/thismoon/commit/45f3dd89356f870ca23a0e5b8a4b7335f35d6a7f))
+
 ## [0.7.0](https://github.com/mad01/thismoon/compare/humanizer/v0.6.2...humanizer/v0.7.0) (2026-08-28)
 
 
