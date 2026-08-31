@@ -78,3 +78,9 @@ hints:
   commit-policy:
     exclude_repos:
       - github.com/you/experiments
+  # lint-policy relays a repo's own declared fmt/lint commands after a
+  # commit there, once per session per repo. The message lives in each
+  # repo's root .belt.yaml (hints.lint-policy.message); this file only
+  # enables the hint or opts repos out.
+  lint-policy:
+    enabled: true

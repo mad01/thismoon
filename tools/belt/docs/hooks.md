@@ -130,7 +130,7 @@ session if you want proof the wiring is live.
 belt is not Claude-Code-exclusive: any harness that execs a command per tool
 event and reads its stdout can run it. What to expect per harness:
 
-- **Claude Code** — the full set: both guard events and all seven hints, wired
+- **Claude Code** — the full set: both guard events and all eight hints, wired
   as shown above.
 - **Codex** — reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
@@ -398,7 +398,8 @@ skimmed.
 
 Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
 the belt config, default on. The repo-aware hints (commit-policy,
-prefer-csl, kof-assertions, kof-consult) also read an `exclude_repos` list
+lint-policy, prefer-csl, kof-assertions, kof-consult) also read an
+`exclude_repos` list
 (hints opt repos out with `exclude_repos`; `allow_repos` belongs to guards,
 and each key on the wrong kind is a validation error), and commit-policy
 additionally honors the shared `direct_main_repos` list. Everything else
@@ -505,6 +506,36 @@ origin/main` drops the local default branch back onto the remote.
   commit, while moving it is still a two-command fix, and it names the exact
   commands so the model acts instead of guessing.
 
+### lint-policy (bash)
+
+After a `git commit` in a repo that declares a lint/format policy, relays
+that policy, once per session per repo, while the commit is still
+unpushed.
+
+- **Fires when** a commit in the command (compound commands and `git -C`
+  included) ran in a repo whose root `.belt.yaml` carries a
+  `hints.lint-policy.message` line. The message is the whole advice: belt
+  ships no language→linter table and executes nothing — the repo states its
+  own toolchain (`run make fmt && make lint per component`, say) and belt
+  only picks the moment.
+- **Deliberately silent** when the trigger command itself names the
+  toolchain outside quoted strings (`make lint && git commit` has nothing
+  to be reminded of; a suppressed trigger does not spend the session's
+  nudge, so a later bare commit still draws it), when the repo declares no
+  message, on opted-out repos (overlay `exclude` or
+  `hints.lint-policy.exclude_repos`), on repos with no resolvable origin,
+  and in sessions without a session id — no id means the once-per-session
+  cap cannot hold, and advice on every commit is worse than none.
+- **Repo-local overlay**: the same `.belt.yaml` mechanics as commit-policy
+  (docs/adr/0012) — `message` declares the policy and is required for the
+  hint to speak at all; `exclude` opts the repo out or back in over the
+  machine's `exclude_repos`. A broken file draws one line of advisory text
+  per commit until fixed.
+- **Why**: "run the formatter and linter before committing" as CLAUDE.md
+  prose gets skimmed mid-session. Right after a commit is the last cheap
+  moment — the fix is still an amend away — and the repo's own words beat a
+  generic reminder.
+
 ### kof-deposit (prompt)
 
 Once per session, nudges a session that did substantial work to record what
@@ -606,5 +637,5 @@ In symptom order:
    and how many assertions it stores — the hint renders "service down" and
    "store empty" identically.
 5. **A hint fired once and never again.** That is the once-per-session
-   contract (kof-deposit, humanizer-check) or the per-session dedupe
-   (kof-assertions, kof-consult). A new session resets both.
+   contract (kof-deposit, humanizer-check, lint-policy) or the per-session
+   dedupe (kof-assertions, kof-consult). A new session resets both.
