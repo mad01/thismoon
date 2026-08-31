@@ -7,15 +7,36 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
 // PreferCSL advises using csl_search after a bash command did a multi-file
 // search inside a repo csl already indexes. It fires after the fact: the grep
 // has run and its output stands, so the cost of a false positive is one line
 // of ignored advice rather than a stalled session (docs/adr/0008).
-type PreferCSL struct{ cfg config.Config }
+type PreferCSL struct {
+	cfg config.Config
+	// resolveRepo maps a swept path to its canonical host/owner/repo
+	// identity via the working tree's origin remote, for exclude_repos
+	// matching — the filesystem-derived shard name is not an identity (a
+	// worktree under any parent dir would dodge a path-based match).
+	// Injectable for tests.
+	resolveRepo func(target string) string
+}
 
-func NewPreferCSL(cfg config.Config) *PreferCSL { return &PreferCSL{cfg: cfg} }
+func NewPreferCSL(cfg config.Config) *PreferCSL {
+	return &PreferCSL{cfg: cfg, resolveRepo: repoIdentityForPath}
+}
+
+// repoIdentityForPath resolves a swept path (file, dir, or unexpanded glob)
+// to the canonical identity of the repo it sits in; "" outside a repo.
+func repoIdentityForPath(target string) string {
+	dir := target
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		dir = filepath.Dir(dir)
+	}
+	return guard.CanonicalRepoAt(dir)
+}
 
 func (h *PreferCSL) ID() string    { return "prefer-csl" }
 func (h *PreferCSL) Event() string { return EventBash }
@@ -39,6 +60,9 @@ func (h *PreferCSL) Check(in Input) *Advice {
 		}
 		repo, ok := isIndexed(sw.target, repos)
 		if !ok {
+			continue
+		}
+		if h.cfg.HintRepoExcluded(h.ID(), h.resolveRepo(sw.target)) {
 			continue
 		}
 		return &Advice{Hint: h.ID(), Text: sw.advice(repo)}

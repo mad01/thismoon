@@ -63,6 +63,9 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
 	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg))
 	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
+	if n := len(cfg.DirectMainRepos); n > 0 {
+		fmt.Fprintf(w, "  global       direct_main_repos: %d  (read by git-push-main + commit-policy only)\n", n)
+	}
 	for _, warn := range unknownToggleWarnings(cfg) {
 		fmt.Fprintf(w, "  warning      %s\n", warn)
 	}
@@ -280,6 +283,9 @@ func toggleNote(t config.Toggle) string {
 	var parts []string
 	if n := len(t.AllowRepos); n > 0 {
 		parts = append(parts, fmt.Sprintf("allow_repos: %d", n))
+	}
+	if n := len(t.ExcludeRepos); n > 0 {
+		parts = append(parts, fmt.Sprintf("exclude_repos: %d", n))
 	}
 	if n := len(t.ExcludePaths); n > 0 {
 		parts = append(parts, fmt.Sprintf("exclude_paths: %d", n))

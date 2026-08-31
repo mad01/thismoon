@@ -27,8 +27,15 @@ const configReference = `# ~/.config/belt/config.yaml — every key optional; gu
 # There is no machine-profile concept in this file (docs/adr/0010): the
 # provisioning layer renders a per-machine-class config, so a guard or rule
 # that should exist only on some machines simply is not present in the
-# others' files. git-push-main, for example, ships enabled and is switched
-# off in the rendered config of machines where direct pushes are fine.
+# others' files. git-push-main, for example, ships enabled everywhere and
+# each class renders its own allow_repos list.
+
+# The one shared repo list, named for the workflow fact it states: these
+# repos' workflow is direct-to-main. Read by exactly git-push-main (push
+# allowed) and the commit-policy hint (advice silenced) — nothing else, so
+# editing it cannot disarm an unrelated guard (docs/adr/0013).
+direct_main_repos:
+  - github.com/you/dotfiles
 
 # The internal-name list for write-internal-names, owned by belt and
 # standalone: no other file is consulted, and an unset or empty section
@@ -148,13 +155,12 @@ hints:
     enabled: true
   commit-policy:
     enabled: true
-    # Repos opted out because committing straight to main is their norm;
-    # everywhere else a commit on main/master draws the branch + PR advice.
-    # Same patterns as guards.git-push-main.allow_repos — keep the two
-    # lists in step. (allow_repos under hints: is a validation error; the
+    # Opt-outs for this hint only; a repo whose main is committed to
+    # directly by design belongs on the top-level direct_main_repos list
+    # instead. (allow_repos under hints: is a validation error; the
     # exempt-vs-opt-out key is scoped per kind.)
     exclude_repos:
-      - github.com/you/dotfiles
+      - github.com/you/experiments
   kof-assertions:
     enabled: true
   kof-consult:

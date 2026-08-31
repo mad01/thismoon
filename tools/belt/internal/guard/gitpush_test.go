@@ -121,6 +121,35 @@ func TestGitPushMainAllowRepos(t *testing.T) {
 	}
 }
 
+// TestGitPushMainDirectMainRepos pins that the shared direct_main_repos
+// list exempts this guard (one of its two readers, docs/adr/0013), with the
+// same fail-closed rules as allow_repos for unresolved repos.
+func TestGitPushMainDirectMainRepos(t *testing.T) {
+	const dotfiles = "github.com/mad01/dotfiles"
+	tests := []struct {
+		name     string
+		repo     string
+		global   []string
+		wantDeny bool
+	}{
+		{"direct-main repo allowed", dotfiles, []string{dotfiles}, false},
+		{"wildcard allowed", dotfiles, []string{"github.com/mad01/*"}, false},
+		{"repo off the list denied", "github.com/mad01/thismoon", []string{dotfiles}, true},
+		{"unresolved repo still denied", "", []string{dotfiles}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGitPushMain(config.Config{DirectMainRepos: tt.global})
+			g.resolveBranch = func(string) string { return "main" }
+			g.resolveRepo = func(string) string { return tt.repo }
+			d := g.Check(Input{Event: EventBash, Command: "git push", Cwd: "/tmp"})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("denial = %v, wantDeny %v", d, tt.wantDeny)
+			}
+		})
+	}
+}
+
 func TestCanonicalRepo(t *testing.T) {
 	tests := []struct {
 		in, want string

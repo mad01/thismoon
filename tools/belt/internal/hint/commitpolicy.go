@@ -88,7 +88,10 @@ func (h *CommitPolicy) Check(in Input) *Advice {
 			if *local.Exclude {
 				continue
 			}
-		} else if h.cfg.HintRepoExcluded(CommitPolicyID, repo) {
+		} else if h.cfg.DirectMain(repo) || h.cfg.HintRepoExcluded(CommitPolicyID, repo) {
+			// direct_main_repos states the workflow this hint advises
+			// about, so it silences the advice; commit-policy is the
+			// list's only hint-side reader (docs/adr/0013).
 			continue
 		}
 		return &Advice{Hint: CommitPolicyID, Text: commitAdvice(repo, branch, local.Message)}
@@ -105,8 +108,8 @@ func commitAdvice(repo, branch, message string) string {
 		"this commit landed on %s of %s, and %s is not opted out of the commit policy — "+
 			"changes there go feature branch + PR. Move it before pushing: "+
 			"git switch -c <branch> (the commit comes along), then git branch -f %s origin/%s. "+
-			"If direct commits are actually the norm in this repo, add it to "+
-			"hints.commit-policy.exclude_repos instead.",
+			"If direct commits are actually this repo's workflow, add it to "+
+			"the top-level direct_main_repos list instead.",
 		branch, repo, repo, branch, branch)
 	if message != "" {
 		s += " Repo policy: " + message

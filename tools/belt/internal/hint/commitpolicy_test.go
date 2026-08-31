@@ -152,6 +152,31 @@ func TestCommitPolicyOverlay(t *testing.T) {
 	}
 }
 
+// TestCommitPolicyDirectMainRepos pins that the shared direct_main_repos
+// list silences the hint (its only hint-side reader, docs/adr/0013), and
+// that a repo-file opt-in still wins over it (local overrides global,
+// docs/adr/0012).
+func TestCommitPolicyDirectMainRepos(t *testing.T) {
+	const dotfiles = "github.com/mad01/dotfiles"
+	newHint := func() *CommitPolicy {
+		h := NewCommitPolicy(config.Config{DirectMainRepos: []string{dotfiles}})
+		h.resolveBranch = func(string) string { return "main" }
+		h.resolveRepo = func(string) string { return dotfiles }
+		h.resolveRoot = func(string) string { return "" }
+		return h
+	}
+	in := Input{Event: EventBash, Command: "git commit -m 'x'", Cwd: "/some/repo"}
+
+	if a := newHint().Check(in); a != nil {
+		t.Errorf("direct-main repo should be silent, got %+v", a)
+	}
+	h := newHint()
+	withOverlay(t, h, "hints:\n  commit-policy:\n    exclude: false\n")
+	if a := h.Check(in); a == nil {
+		t.Error("overlay opt-in should override the direct-main silencing")
+	}
+}
+
 // TestCommitPolicyDirResolution pins which directory the resolvers see: the
 // `git -C` dir when one is given, the session cwd otherwise.
 func TestCommitPolicyDirResolution(t *testing.T) {

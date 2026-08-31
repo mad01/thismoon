@@ -69,6 +69,9 @@ func (h *KofAssertions) Check(in Input) *Advice {
 	if subject == "" {
 		return nil
 	}
+	if h.cfg.HintRepoExcludedTail(h.ID(), strings.ToLower(strings.TrimSpace(in.Repo))) {
+		return nil
+	}
 	found := queryKof(h.base, repoPrefix(subject))
 	relevant := rank(subject, found)
 	if len(relevant) == 0 {

@@ -89,6 +89,26 @@ func TestCommitGuard(t *testing.T) {
 	}
 }
 
+// TestCommitGuardIgnoresDirectMainRepos pins the narrow reach of the shared
+// list (docs/adr/0013): direct_main_repos is about push/commit-policy
+// workflow, not work-hours discipline, so a listed repo still hits the
+// hours rule. Its own carve-out stays commit_guards[].always_allow.
+func TestCommitGuardIgnoresDirectMainRepos(t *testing.T) {
+	rule := config.CommitGuard{
+		Repos:      []string{"github.com/mad01/*"},
+		BlockHours: "09:00-17:00",
+		Mode:       "hard",
+	}
+	cfg := config.Config{
+		CommitGuards:    []config.CommitGuard{rule},
+		DirectMainRepos: []string{"github.com/mad01/dotfiles"},
+	}
+	f := newCommitGuardFixture(cfg, "github.com/mad01/dotfiles", localTime(t, time.Tuesday, 10, 0))
+	if d := f.guard.Check(Input{Event: EventBash, Command: "git commit -m x", Cwd: "/tmp"}); d == nil {
+		t.Error("direct_main_repos must not exempt commit-guard — want a denial")
+	}
+}
+
 func TestCommitGuardExplicitBlockDays(t *testing.T) {
 	rule := config.CommitGuard{
 		Repos:      []string{"github.com/mad01/*"},

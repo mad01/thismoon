@@ -34,9 +34,14 @@ nothing:
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list`, the only one that reads a toggle mode. Use
   `enabled: false` to switch a different guard off;
-- `allow_repos` under `hints:` and `exclude_repos` under `guards:` — the
-  repo-scoping key is kind-scoped: guards exempt repos with `allow_repos`,
-  hints opt them out with `exclude_repos`.
+- any list key on a built-in id that does not read it — each id declares
+  the toggle fields it reads (the `GuardFields`/`HintFields` tables in the
+  config package), and the error names the fields that do work there.
+  Guards exempt repos with `allow_repos`, hints opt them out with
+  `exclude_repos`, so each key on the other kind is always rejected. Ids
+  the binary does not know (custom guards, or a config targeting a newer
+  belt) stay lax on purpose: rejecting unknown keys would turn ordinary
+  config/binary rollout skew into a machine-wide deny.
 
 Overrides stay in `~/.config/belt/overrides/` (or the `XDG_CONFIG_HOME`
 equivalent) whatever `--config` points at: an override is machine state set
@@ -74,6 +79,19 @@ Run `belt doctor` to see the state those settings produce: enabled guards and
 hints, active overrides, and the resolved blocked-name list.
 
 ## Keys
+
+### direct_main_repos (top-level)
+
+The one shared repo list, named for the workflow fact it states: repos
+whose workflow is direct-to-main (single-writer store clones, config repos
+that never take PRs). Patterns are canonical `host/owner/repo` or a
+trailing `/*` org wildcard. Exactly two checks read it — the two whose
+subject is that workflow: `git-push-main` (the push is allowed there) and
+the `commit-policy` hint (the branch + PR advice is silenced there). No
+other check consults it, so editing this list can never disarm an
+unrelated guard; a repo that needs an exemption from anything else uses
+that check's own `allow_repos`/`exclude_repos` (docs/adr/0013 records the
+reversibility criterion behind this).
 
 ### internal_names
 
@@ -251,40 +269,50 @@ entries match the same way as `git_identity[].repos` and
 ### hints
 
 A map keyed by hint id. All seven hints default to enabled when the file or
-their entry is missing. `enabled` is the only field with effect everywhere
-except `commit-policy`, which also reads `exclude_repos`; no hint reads
-`exclude_paths` or `extra_patterns` even though the config shape technically
-permits them, and `allow_repos` under `hints:` is a validation error —
-guards exempt repos with `allow_repos`, hints opt them out with
-`exclude_repos` (and `exclude_repos` under `guards:` errors the same way).
+their entry is missing. The repo-aware hints (`commit-policy`,
+`prefer-csl`, `kof-assertions`, `kof-consult`) also read `exclude_repos`;
+the rest take only `enabled`, and any other key on a known id is a
+validation error (guards exempt repos with `allow_repos`, hints opt them
+out with `exclude_repos` — each key on the wrong kind is rejected).
+Exclusion matches the canonical `host/owner/repo` identity resolved from
+the repo's origin remote everywhere a working tree is reachable; only
+`kof-assertions`, which sees index-side results with no path, matches the
+pattern tail (host dropped, case-insensitive).
 
 - `hints.agent-memory.enabled` (bool, default `true`): SessionStart, injects
   the agent memory index files.
 - `hints.prefer-csl.enabled` (bool, default `true`): PostToolUse (bash),
   suggests `csl_search` in place of a filesystem sweep inside an indexed
-  repo.
+  repo. `exclude_repos` silences it for the listed repos, matched against
+  the swept repo's origin remote — not its checkout path, so a worktree
+  under a different parent directory is still covered.
 - **commit-policy**
   - `hints.commit-policy.enabled` (bool, default `true`): PostToolUse
     (bash), states the branch + PR commit policy after a `git commit` lands
     on main or master.
   - `hints.commit-policy.exclude_repos` (list of string, default: empty):
-    repos opted out because committing straight to the default branch is
-    their norm, matched exactly like `guards.git-push-main.allow_repos` —
-    canonical `host/owner/repo` or a trailing `/*` org wildcard against the
-    commit repo's origin remote. Keep the two lists in step: a repo whose
-    main is pushed to directly belongs on both.
+    repos opted out of this hint only. A repo whose main is committed to
+    directly by design belongs on the top-level `direct_main_repos` list
+    instead, which silences this hint and exempts git-push-main in one
+    entry.
   - Repo-local overlay: a `.belt.yaml` at the commit repo's root can carry
-    `hints.commit-policy` with `exclude` (bool, overriding this machine
-    list in either direction), `protected_branches` (replacing the default
-    `main`/`master` set; exact names or trailing-`*` prefixes), and
+    `hints.commit-policy` with `exclude` (bool, overriding the machine
+    lists in either direction), `protected_branches` (replacing the default
+    `main`/`master` set; exact names or trailing-`*` prefixes — note a
+    replacement set that matches nothing also silences the hint, so
+    `exclude: false` is an opt-in only for the branches the set names), and
     `message` (one line appended to the advice). The overlay is hints-only
     and can never deny — a broken file degrades to one line of advisory
     text, unknown ids and keys are ignored (docs/adr/0012). It is not part
     of this machine config file.
 - `hints.kof-assertions.enabled` (bool, default `true`): PostToolUse
   (search), surfaces kof assertions about code a search just hit.
+  `exclude_repos` silences it for the listed repos (pattern tail matched —
+  the search results carry no path to resolve a host from).
 - `hints.kof-consult.enabled` (bool, default `true`): SessionStart, surfaces
   the cwd repo's kof assertions before any searching happens.
+  `exclude_repos` silences it for the listed repos, matched against the cwd
+  repo's origin remote.
 - `hints.kof-deposit.enabled` (bool, default `true`): UserPromptSubmit,
   nudges a session that did substantial work but never deposited a kof
   assertion.

@@ -169,3 +169,15 @@ func TestSeenFilterWithoutSessionID(t *testing.T) {
 		t.Error("with no session id, dedupe is impossible and advice should still flow")
 	}
 }
+
+// TestKofAssertionsRepoExcluded pins that an excluded repo is silent before
+// any kof query happens.
+func TestKofAssertionsRepoExcluded(t *testing.T) {
+	h := NewKofAssertions(config.Config{
+		Hints: map[string]config.Toggle{"kof-assertions": {ExcludeRepos: []string{"github.com/mad01/thismoon"}}},
+	})
+	in := Input{Event: EventSearch, Repo: "mad01/thismoon", Paths: []string{"services/csl/a.go"}, SessionID: "s"}
+	if a := h.Check(in); a != nil {
+		t.Errorf("excluded repo should be silent, got %+v", a)
+	}
+}
