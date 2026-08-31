@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.0](https://github.com/mad01/thismoon/compare/belt/v2.1.0...belt/v2.2.0) (2026-08-31)
+
+
+### Features
+
+* **belt:** add commit-policy hint for commits landing on the default branch ([#46](https://github.com/mad01/thismoon/issues/46)) ([16e7d2b](https://github.com/mad01/thismoon/commit/16e7d2b6bae176951904c599e63a90b314be53f8))
+* **belt:** add lint-policy hint relaying repo-declared fmt/lint policy ([#50](https://github.com/mad01/thismoon/issues/50)) ([6728b46](https://github.com/mad01/thismoon/commit/6728b4632d29244b7e228b6a641fc9c43e8213bf))
+* **belt:** purpose-named direct_main_repos list and per-id config schema ([#49](https://github.com/mad01/thismoon/issues/49)) ([2626ed0](https://github.com/mad01/thismoon/commit/2626ed05de502c90df4ae125fcb3418ca585acab))
+* **belt:** repo-local .belt.yaml overlay for hints, never guards ([#48](https://github.com/mad01/thismoon/issues/48)) ([6910435](https://github.com/mad01/thismoon/commit/6910435104c7495e01976fe19d20a303e569394a))
+
 ## [2.1.0](https://github.com/mad01/thismoon/compare/belt/v2.0.0...belt/v2.1.0) (2026-08-29)
 
 
