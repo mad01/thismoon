@@ -33,7 +33,10 @@ nothing:
 - a `mode:` anywhere other than `hard` or `soft`;
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list`, the only one that reads a toggle mode. Use
-  `enabled: false` to switch a different guard off.
+  `enabled: false` to switch a different guard off;
+- `allow_repos` under `hints:` and `exclude_repos` under `guards:` — the
+  repo-scoping key is kind-scoped: guards exempt repos with `allow_repos`,
+  hints opt them out with `exclude_repos`.
 
 Overrides stay in `~/.config/belt/overrides/` (or the `XDG_CONFIG_HOME`
 equivalent) whatever `--config` points at: an override is machine state set
@@ -249,9 +252,11 @@ entries match the same way as `git_identity[].repos` and
 
 A map keyed by hint id. All seven hints default to enabled when the file or
 their entry is missing. `enabled` is the only field with effect everywhere
-except `commit-policy`, which also reads `allow_repos`; no hint reads
+except `commit-policy`, which also reads `exclude_repos`; no hint reads
 `exclude_paths` or `extra_patterns` even though the config shape technically
-permits them.
+permits them, and `allow_repos` under `hints:` is a validation error —
+guards exempt repos with `allow_repos`, hints opt them out with
+`exclude_repos` (and `exclude_repos` under `guards:` errors the same way).
 
 - `hints.agent-memory.enabled` (bool, default `true`): SessionStart, injects
   the agent memory index files.
@@ -262,12 +267,12 @@ permits them.
   - `hints.commit-policy.enabled` (bool, default `true`): PostToolUse
     (bash), states the branch + PR commit policy after a `git commit` lands
     on main or master.
-  - `hints.commit-policy.allow_repos` (list of string, default: empty):
-    repos where committing straight to the default branch is the norm,
-    matched exactly like `guards.git-push-main.allow_repos` — canonical
-    `host/owner/repo` or a trailing `/*` org wildcard against the commit
-    repo's origin remote. Keep the two lists in step: a repo whose main is
-    pushed to directly belongs on both.
+  - `hints.commit-policy.exclude_repos` (list of string, default: empty):
+    repos opted out because committing straight to the default branch is
+    their norm, matched exactly like `guards.git-push-main.allow_repos` —
+    canonical `host/owner/repo` or a trailing `/*` org wildcard against the
+    commit repo's origin remote. Keep the two lists in step: a repo whose
+    main is pushed to directly belongs on both.
 - `hints.kof-assertions.enabled` (bool, default `true`): PostToolUse
   (search), surfaces kof assertions about code a search just hit.
 - `hints.kof-consult.enabled` (bool, default `true`): SessionStart, surfaces

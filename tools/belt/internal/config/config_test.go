@@ -266,6 +266,16 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 			"git_identity:\n  - email: a@b.c\n    mode: warn\n",
 			`git_identity[0].mode is "warn"`,
 		},
+		{
+			"allow_repos on a hint",
+			"hints:\n  commit-policy:\n    allow_repos:\n      - github.com/mad01/dotfiles\n",
+			"hints.commit-policy: allow_repos has no effect on hints",
+		},
+		{
+			"exclude_repos on a guard",
+			"guards:\n  git-push-main:\n    exclude_repos:\n      - github.com/mad01/dotfiles\n",
+			"guards.git-push-main: exclude_repos has no effect on guards",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

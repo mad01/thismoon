@@ -64,8 +64,9 @@ guards:
 
 hints:
   # The post-commit half of the git-push-main pair: a commit landing on
-  # main/master in any repo off this list draws the branch + PR advice.
-  # Keep the list in step with guards.git-push-main.allow_repos.
+  # main/master in any repo not opted out here draws the branch + PR advice.
+  # Keep the list in step with guards.git-push-main.allow_repos (hints opt
+  # repos out with exclude_repos; allow_repos belongs to guards).
   commit-policy:
-    allow_repos:
+    exclude_repos:
       - github.com/you/dotfiles

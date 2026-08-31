@@ -19,8 +19,8 @@ var mainBranches = map[string]bool{"main": true, "master": true}
 // guard denies the push, this hint catches the mistake earlier — right after
 // the commit, while moving it to a branch is still a two-command fix. Repos
 // where committing straight to main is the norm (a dotfiles repo, say) are
-// exempted via hints.commit-policy.allow_repos, the same canonical
-// host/owner/repo patterns the guard reads.
+// opted out via hints.commit-policy.exclude_repos, the same canonical
+// host/owner/repo patterns the guard's allow_repos reads.
 type CommitPolicy struct {
 	cfg config.Config
 	// resolveBranch returns the current branch of the repo at dir, or ""
@@ -45,14 +45,13 @@ func (h *CommitPolicy) ID() string    { return CommitPolicyID }
 func (h *CommitPolicy) Event() string { return EventBash }
 
 // Check fires when a commit in the command ran on main or master of a repo
-// that is not allowlisted. A repo with no resolvable origin stays silent —
+// that is not opted out. A repo with no resolvable origin stays silent —
 // unlike the push guard there is nothing upstream to protect, and a scratch
 // `git init` repo lives its whole life on its default branch.
 func (h *CommitPolicy) Check(in Input) *Advice {
 	if in.Command == "" {
 		return nil
 	}
-	allow := h.cfg.Hints[CommitPolicyID].AllowRepos
 	for _, dir := range guard.GitCommitDirs(in.Command) {
 		if dir == "" {
 			dir = in.Cwd
@@ -65,7 +64,7 @@ func (h *CommitPolicy) Check(in Input) *Advice {
 		if repo == "" {
 			continue
 		}
-		if config.RepoMatches(allow, repo) {
+		if h.cfg.HintRepoExcluded(CommitPolicyID, repo) {
 			continue
 		}
 		return &Advice{Hint: CommitPolicyID, Text: commitAdvice(repo, branch)}
@@ -78,12 +77,12 @@ func (h *CommitPolicy) Check(in Input) *Advice {
 // and the branch -f drops the local default branch back onto the remote.
 func commitAdvice(repo, branch string) string {
 	return fmt.Sprintf(
-		"this commit landed on %s of %s, and %s is not on the direct-%s allowlist — "+
-			"the commit policy there is feature branch + PR. Move it before pushing: "+
+		"this commit landed on %s of %s, and %s is not opted out of the commit policy — "+
+			"changes there go feature branch + PR. Move it before pushing: "+
 			"git switch -c <branch> (the commit comes along), then git branch -f %s origin/%s. "+
 			"If direct commits are actually the norm in this repo, add it to "+
-			"hints.commit-policy.allow_repos instead.",
-		branch, repo, repo, branch, branch, branch)
+			"hints.commit-policy.exclude_repos instead.",
+		branch, repo, repo, branch, branch)
 }
 
 // gitCurrentBranch shells out to git; "" when dir is empty, not a repo, or

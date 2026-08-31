@@ -7,9 +7,9 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
 
-func newCommitPolicyHint(branch, repo string, allow []string) *CommitPolicy {
+func newCommitPolicyHint(branch, repo string, exclude []string) *CommitPolicy {
 	h := NewCommitPolicy(config.Config{
-		Hints: map[string]config.Toggle{CommitPolicyID: {AllowRepos: allow}},
+		Hints: map[string]config.Toggle{CommitPolicyID: {ExcludeRepos: exclude}},
 	})
 	h.resolveBranch = func(string) string { return branch }
 	h.resolveRepo = func(string) string { return repo }
@@ -19,33 +19,33 @@ func newCommitPolicyHint(branch, repo string, allow []string) *CommitPolicy {
 func TestCommitPolicy(t *testing.T) {
 	const thismoon = "github.com/mad01/thismoon"
 	const dotfiles = "github.com/mad01/dotfiles"
-	allow := []string{dotfiles}
+	exclude := []string{dotfiles}
 
 	tests := []struct {
 		name    string
 		command string
 		branch  string
 		repo    string
-		allow   []string
+		exclude []string
 		fires   bool
 	}{
-		{"commit on main", "git commit -m 'x'", "main", thismoon, allow, true},
-		{"commit on master", "git commit -m 'x'", "master", thismoon, allow, true},
-		{"commit on feature branch", "git commit -m 'x'", "feat/x", thismoon, allow, false},
-		{"detached HEAD", "git commit -m 'x'", "HEAD", thismoon, allow, false},
-		{"allowlisted repo", "git commit -m 'x'", "main", dotfiles, allow, false},
-		{"org wildcard allows", "git commit -m 'x'", "main", thismoon, []string{"github.com/mad01/*"}, false},
-		{"empty allowlist fires", "git commit -m 'x'", "main", thismoon, nil, true},
-		{"unresolved repo silent", "git commit -m 'x'", "main", "", allow, false},
-		{"non-commit git", "git status", "main", thismoon, allow, false},
-		{"quoted mention not a commit", `echo "git commit -m x"`, "main", thismoon, allow, false},
-		{"compound command", "git add -A && git commit -m 'x'", "main", thismoon, allow, true},
-		{"commit then push", "git commit -m 'x'; git push", "main", thismoon, allow, true},
-		{"empty command", "", "main", thismoon, allow, false},
+		{"commit on main", "git commit -m 'x'", "main", thismoon, exclude, true},
+		{"commit on master", "git commit -m 'x'", "master", thismoon, exclude, true},
+		{"commit on feature branch", "git commit -m 'x'", "feat/x", thismoon, exclude, false},
+		{"detached HEAD", "git commit -m 'x'", "HEAD", thismoon, exclude, false},
+		{"excluded repo", "git commit -m 'x'", "main", dotfiles, exclude, false},
+		{"org wildcard excludes", "git commit -m 'x'", "main", thismoon, []string{"github.com/mad01/*"}, false},
+		{"no exclusions fires", "git commit -m 'x'", "main", thismoon, nil, true},
+		{"unresolved repo silent", "git commit -m 'x'", "main", "", exclude, false},
+		{"non-commit git", "git status", "main", thismoon, exclude, false},
+		{"quoted mention not a commit", `echo "git commit -m x"`, "main", thismoon, exclude, false},
+		{"compound command", "git add -A && git commit -m 'x'", "main", thismoon, exclude, true},
+		{"commit then push", "git commit -m 'x'; git push", "main", thismoon, exclude, true},
+		{"empty command", "", "main", thismoon, exclude, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newCommitPolicyHint(tt.branch, tt.repo, tt.allow)
+			h := newCommitPolicyHint(tt.branch, tt.repo, tt.exclude)
 			a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/some/repo"})
 			if got := a != nil; got != tt.fires {
 				t.Fatalf("Check(%q) fired = %v, want %v (advice: %+v)", tt.command, got, tt.fires, a)

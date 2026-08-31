@@ -388,7 +388,9 @@ skimmed.
 
 Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
 the belt config, default on. The exception is `commit-policy`, which also
-reads an `allow_repos` list. Everything else about hint behavior is fixed
+reads an `exclude_repos` list (hints opt repos out with `exclude_repos`;
+`allow_repos` belongs to guards, and each key on the wrong kind is a
+validation error). Everything else about hint behavior is fixed
 (see Fixed constants below). The guards carry the richer per-guard keys —
 each guard section above names its own, and [config.md](../config.md)
 specifies them all.
@@ -460,17 +462,17 @@ hands back the equivalent `csl_search` call.
 
 ### commit-policy (bash)
 
-After a `git commit` lands on main or master of a repo that is not
-allowlisted, states the branch + PR commit policy and hands back the
-recovery: `git switch -c <branch>` carries the commit along, `git branch -f
-main origin/main` drops the local default branch back onto the remote.
+After a `git commit` lands on main or master of a repo that is not opted
+out, states the branch + PR commit policy and hands back the recovery: `git
+switch -c <branch>` carries the commit along, `git branch -f main
+origin/main` drops the local default branch back onto the remote.
 
 - **Fires when** a commit in the command (compound commands and `git -C`
   included) ran with the repo's current branch on main or master, and the
   repo's canonical origin identity is not on
-  `hints.commit-policy.allow_repos` (same `host/owner/repo` patterns as the
-  git-push-main guard — keep the two lists in step).
-- **Deliberately silent** on feature branches, allowlisted repos, detached
+  `hints.commit-policy.exclude_repos` (same `host/owner/repo` patterns as
+  the git-push-main guard's `allow_repos` — keep the two lists in step).
+- **Deliberately silent** on feature branches, excluded repos, detached
   HEAD, and repos with no resolvable origin remote — a scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
   protect.
