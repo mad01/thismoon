@@ -15,12 +15,15 @@ at all.
 
 ```
 cmd/humanizer/       entrypoint; delegates to internal/cli
-internal/cli/        cobra command tree: root, detect, profile, rules, lint,
-                     fix, rewrite, mcp, version
+internal/cli/        cobra command tree: root, detect, profile, rules,
+                     narrative, lint, fix, rewrite, mcp, docs, version
 internal/rules/      vale integration: embed.go (pack embedding + cache
                      extraction), vale.go (subprocess run + JSON parsing),
                      metadata.go (rule metadata from YAML headers),
-                     vale/styles/Humanizer/*.yml (48 rules)
+                     vale/styles/Humanizer/*.yml (52 rules)
+internal/narrative/  StoryScope narrative rubric: 30 discourse-level fiction
+                     features plus a rendered LLM judge prompt — static data,
+                     no detection engine
 internal/voice/      profile.go (Compute), statistical.go
                      (DetectStatistical), diff.go (DiffProfiles)
 internal/scrub/      Layer A watermark scrub: carrier tables, Inspect (lint),
@@ -72,6 +75,12 @@ Rule metadata: `metadata.go` parses the `# humanizer-*` comment headers of
 every embedded YAML once and serves them to `rules list` / `rules explain`
 and the matching MCP tools.
 
+Narrative rubric (`narrative` / `humanizer_narrative_rubric`): the
+`narrative` package holds the 30 StoryScope core features as static data and
+renders them into a judge prompt. Nothing here scores text — the features
+need a reader's judgment, so the surfaces only serve the rubric and the
+calling agent runs the LLM pass.
+
 ## Storage
 
 The embedded style pack extracts to `~/.cache/humanizer/vale` on first use
@@ -83,17 +92,19 @@ else it reads (input files, temp files for vale) is transient.
 
 CLI: `detect [file]` (flags `--min-severity`, `--rule`, `--statistical`,
 `--json`), `profile [file]` (`--diff`, `--json`), `rules list`
-(`--category`, `--json`), `rules explain <rule_id>`, `mcp`, and `version
-[-o json]` (the bare version token, or the four-key build metadata object
-shared across the repo's components). All text commands read stdin when the
-file argument is omitted or `-`.
+(`--category`, `--json`), `rules explain <rule_id>`, `narrative`
+(`--prompt`, `--json`), `lint`, `fix`, `rewrite`, `docs`, `mcp`, and
+`version [-o json]` (the bare version token, or the four-key build
+metadata object shared across the repo's components). All text commands
+read stdin when the file argument is omitted or `-`.
 
-MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing eight
+MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing twelve
 tools: `humanizer_status`, `humanizer_detect`, `humanizer_detect_file`,
 `humanizer_detect_statistical`, `humanizer_rules_list`,
-`humanizer_rules_explain`, `humanizer_voice_profile`,
-`humanizer_voice_diff`. Handlers call the same `rules` and `voice` functions
-as the CLI. When the consuming repo registers the server it runs under a
+`humanizer_rules_explain`, `humanizer_narrative_rubric`,
+`humanizer_voice_profile`, `humanizer_voice_diff`, `humanizer_lint`,
+`humanizer_fix`, `humanizer_rewrite`. Handlers call the same internal
+functions as the CLI. When the consuming repo registers the server it runs under a
 seatbelt sandbox: no network, and `humanizer_detect_file` reads only prose
 files under the profile's workspace roots — the sandbox is the consuming
 repo's wiring (docs/adr/0006), not this code.

@@ -1,13 +1,15 @@
 ---
 name: humanizer
-version: 2.10.0
+version: 2.11.0
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
   comprehensive "Signs of AI writing" guide. Detects and fixes patterns including:
   inflated symbolism, promotional language, superficial -ing analyses, vague
   attributions, em dash overuse, rule of three, AI vocabulary words, passive
-  voice, negative parallelisms, and filler phrases. Backed by the local
+  voice, negative parallelisms, and filler phrases. For fiction and long-form
+  narrative prose, adds a StoryScope narrative-level pass (thematic
+  over-explanation, plot linearity, embodied emotion). Backed by the local
   humanizer MCP for deterministic detection and voice profiling, plus a
   headless `claude -p` pass for holistic whole-passage AI/human judgment.
 license: MIT
@@ -58,6 +60,24 @@ printf '%s\n' "$LABELED_SECTIONS" | claude -p --model haiku \
 
 Use the verdicts as rewrite targets: any section flagged AI with high confidence gets priority alongside the MCP findings. On the final pass, re-run the same call on your rewrite — a HUMAN verdict across sections is the exit signal.
 
+## Narrative pass for fiction and long-form prose
+
+Surface style is only half the fingerprint. StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136), COLM 2026) showed that narrative choices alone separate human from AI fiction: the 30-feature core rubric this pass uses scores 84.8% macro-F1 (the paper's full 257-feature model reaches 93.2%), and editing out surface artifacts barely moves narrative detection (95.5% → 93.9% after span-level rewriting). The structural tells: AI over-explains its themes (stating the lesson outright 77% vs 52% for humans), keeps one tidy linear plot with no subplots, resolves through quiet internal acceptance, renders emotion through the body instead of naming it, over-uses smell imagery, avoids naming real works/brands/places, and rarely addresses the reader (7% vs 28%).
+
+**When the input is fiction, memoir, or story-shaped long-form prose:**
+
+1. Call `humanizer_narrative_rubric` — it returns the 30-feature rubric plus a ready-made judge prompt. CLI: `humanizer narrative --prompt` prints just the judge prompt; `--json` is the full equivalent of the MCP tool.
+2. Run the judge prompt with the passage on stdin, using Sonnet or better — narrative judgment needs more reading comprehension than the per-passage style verdict:
+
+   ```bash
+   printf '%s\n' "$PASSAGE" | claude -p --model sonnet "$(humanizer narrative --prompt)"
+   ```
+
+   The prompt already carries the output contract (a final `VERDICT|confidence|features` line) and the short-text rule. Feed it a complete story or a 1,000+ word section: on short excerpts most features are simply absent, and absence must not be read as AI evidence.
+3. Treat AI-leaning answers as rewrite targets at the structural level, not the sentence level: cut narrator moralizing and let events carry the theme, let a loose end survive, name a real book/band/place where the text gestures vaguely, replace one "chest tightened" with a named feeling or a behavior, break strict chronology if the story allows a flashback.
+
+The four fiction span rules (`EmbodiedEmotionCliche`, `NarratorMoralizing`, `QuietAcceptanceEnding`, `StockSensoryImagery`) fire in `humanizer_detect` automatically — they catch the sentence-level residue of the same habits. The rubric pass is for what no span can see. Skip this section entirely for technical docs, PR descriptions, and Slack drafts.
+
 ## Your Task
 
 When given text to humanize:
@@ -65,6 +85,7 @@ When given text to humanize:
 1. **Call `humanizer_detect`** on the input. Note every finding.
 2. **Call `humanizer_detect_statistical`** on the input. Note the whole-sample signals (uniformity, contractions, short-text em-dash, anaphora).
 3. **Run the holistic `claude -p` pass** (see the section above) when the `claude` CLI is available. Add any section it flags AI with high confidence to your rewrite targets.
+   - For fiction, memoir, or story-shaped prose, also run the **narrative pass**: `humanizer_narrative_rubric` → judge prompt → `claude -p` (see the section above).
 4. **Call `humanizer_voice_diff`** when a voice sample is available; capture the metric deltas.
 5. **Rewrite problematic sections** - Replace AI-isms with natural alternatives informed by the findings.
 6. **Preserve meaning** - Keep the core message intact

@@ -8,9 +8,10 @@ Go CLI + MCP server. Detects AI-writing patterns by shelling out to `vale` again
 humanizer/
   cmd/humanizer/     - entrypoint (delegates to internal/cli)
   internal/
-    cli/             - cobra command tree (root, detect, profile, rules, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
-    mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
+    cli/             - cobra command tree (root, detect, profile, rules, narrative, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
+    mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_narrative.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
     rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
+    narrative/       - StoryScope narrative rubric: 30 discourse-level fiction features + judge prompt (static data, no detection engine)
     voice/           - voice profiler, statistical detector, and diff logic (profile.go, statistical.go, diff.go)
     scrub/           - Layer A watermark scrub: invisible-Unicode/homoglyph carrier tables, Inspect (lint) and Clean (fix)
     rewrite/         - Layer B watermark rewrite: prompt builder, candidate selection, hardened HTTP backends (ported from watermarks-remover, MIT)
@@ -29,9 +30,9 @@ Run both for full coverage. Span rules catch specific phrasing tells; the statis
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 48 rules covering patterns from Wikipedia's "Signs of AI writing":
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 52 rules covering patterns from Wikipedia's "Signs of AI writing" plus the fiction-prose tells surfaced by StoryScope (arXiv:2604.03136):
 
-AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
+AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmbodiedEmotionCliche, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NarratorMoralizing, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, QuietAcceptanceEnding, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, StockSensoryImagery, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) is parsed from `# humanizer-*` comment headers in each YAML file and served by both the CLI and the MCP tools.
 
@@ -65,6 +66,7 @@ The test suite includes metadata validation for every YAML header, a gate assert
 - `humanizer profile [file]`: compute a quantitative voice profile: word/sentence/paragraph counts, type-token ratio, sentence length (mean/stddev/p50/p90), punctuation densities per 100 words (em-dash, semicolon, colon, paren, comma, hyphenated-pair, bold), contraction rate, Flesch reading ease, top bigrams/trigrams. Flags: `--diff <file>` (also print a metric-by-metric delta against a reference sample), `--json`.
 - `humanizer rules list`: list every bundled rule (ID, category, default severity, summary). Flags: `--category` (`content`|`language`|`style`|`communication`), `--json`.
 - `humanizer rules explain <rule_id>`: print full metadata for one rule: ID, name, category, severity, summary, rationale, before/after examples, reference link.
+- `humanizer narrative`: print the StoryScope narrative rubric — 30 discourse-level features separating human from AI fiction. Flags: `--prompt` (only the LLM judge prompt), `--json` (features, themes, prompt, source). Serving only; scoring a passage is the calling agent's job.
 - `humanizer lint [file]`: report invisible-Unicode / space-homoglyph watermark carriers (Layer A `scrub.Inspect`). Reports only; exits non-zero when any carrier is found. Flags: `--aggressive` (flag confusables), `--strip-emoji-glue` (paranoid), `--json`.
 - `humanizer fix [file]`: apply the Layer A scrub (`scrub.Clean`). Cleaned text to stdout / `-o` / `--in-place` (writes `.bak`); stats to stderr. Non-intrusive by default (strip invisibles, normalize spaces); risky flags `--nfkc`, `--aggressive-homoglyphs`, `--strip-emoji-glue` alter visible characters. `--no-normalize-spaces` opts out of the default space fold.
 - `humanizer rewrite [file]`: Layer B rewrite for statistical marks. `--backend print-prompt` (default, offline) returns the prompt; `ollama`/`openai-compatible` run a model. Flags: `--strength`, `--model`, `--base-url`, `--allow-remote`, `--candidates`, `--temperature`, `--no-layer-a-after`, `-o`, `--json-stats`. API key via `WATERMARKS_REWRITE_API_KEY` only.
@@ -74,7 +76,7 @@ The test suite includes metadata validation for every YAML header, a gate assert
 
 ## MCP tools
 
-The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing eleven tools:
+The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing twelve tools:
 
 - `humanizer_status()` → `{installed, binary, version, cache_dir, rule_count, style_pack, error?, install_hint?}`. Health check: is vale installed, its version, the cache dir, bundled rule count. Call first when `humanizer_detect` fails unexpectedly.
 - `humanizer_detect(text, rules?, min_severity?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message.
@@ -83,6 +85,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
 - `humanizer_detect_statistical(text)` → `{findings[], profile, summary, engine}`. Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, semicolon absence, short-text em-dash, long-text em-dash density, heading density, anaphora) that span rules can't catch. Most checks gate on a minimum sample size; 200+ words gives the most reliable verdict.
 - `humanizer_rules_list(category?)` → `{rules[], total}`. Lists every rule (ID, name, category, default severity, summary), optionally filtered by category.
 - `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, file?}`. Full metadata for one rule.
+- `humanizer_narrative_rubric()` → `{features[], total, themes[], prompt, source}` (the `narrative.Rubric` payload, shared with `humanizer narrative --json`). The StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human from AI fiction — 84.8% macro-F1 for this core set in the paper, and the narrative signal survives style editing. Serves data only — feed `prompt` plus the passage to an LLM judge (the skill's `claude -p` pass) for fiction and story-shaped prose.
 - `humanizer_voice_profile(text)` → the voice `Profile` (same metrics as `humanizer profile`). 500+ words gives the most reliable metrics.
 - `humanizer_voice_diff(draft, sample)` → `{draft_profile, sample_profile, diff}`. Profiles both texts and returns a metric-by-metric delta sorted by magnitude. Use when the user supplies their own writing as a voice reference.
 - `humanizer_lint(text, aggressive?, strip_emoji_glue?)` → the `scrub.Report` (hits with codepoint, kind, confidence, count, sample offsets). Offline, deterministic. Reports invisible-Unicode / space-homoglyph carriers without changing anything.

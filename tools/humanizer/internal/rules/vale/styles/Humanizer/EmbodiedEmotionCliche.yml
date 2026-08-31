@@ -1,0 +1,24 @@
+# humanizer-id: Humanizer.EmbodiedEmotionCliche
+# humanizer-name: Embodied-emotion cliché
+# humanizer-category: content
+# humanizer-summary: Stock bodily renderings of emotion ("chest tightened", "a breath she didn't know she'd been holding").
+# humanizer-rationale: StoryScope (COLM 2026) found AI fiction conveys emotion through bodily sensation 81% of the time versus 38% for humans; these stock phrasings are the surface residue of that habit. Name the feeling, show a behavior, or cut it.
+# humanizer-before: She let out a breath she didn't know she'd been holding, her chest tightening, her heart hammering against her ribs.
+# humanizer-after: She was relieved, and surprised at how relieved she was.
+# humanizer-reference: https://arxiv.org/abs/2604.03136
+extends: existence
+message: "Embodied-emotion cliché '%s' — name the feeling or show a behavior instead of the stock body response."
+level: warning
+ignorecase: true
+tokens:
+  - breath (?:s?he|they) (?:didn['’]?t|did not|hadn['’]?t) (?:know|known|realized?) (?:s?he|they)(?:['’]d| had) been holding
+  - (?:his|her|their) chest tighten(?:ed|s|ing)
+  - tightness in (?:his|her|their) chest
+  - (?:his|her|their) heart hammer(?:ed|ing|s)
+  - heart pound(?:ed|ing|s) against (?:his|her|their) ribs
+  - (?:his|her|their) stomach (?:dropped|twisted|knotted|churned)
+  - (?:his|her|their) blood ran cold
+  - (?:his|her|their) breath (?:caught|hitched)
+  - (?:shivers?|chills?) ran (?:down|up) (?:his|her|their) spine
+  - (?:his|her|their) knuckles whiten(?:ed|ing)
+  - bile rose in (?:his|her|their) throat

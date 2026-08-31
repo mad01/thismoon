@@ -17,9 +17,9 @@ The watermark side (`lint`, `fix`, `rewrite`) is separate from the AI-writing de
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 48 rules covering patterns from Wikipedia's "Signs of AI writing":
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 52 rules covering patterns from Wikipedia's "Signs of AI writing" plus the fiction-prose tells surfaced by StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136)):
 
-AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
+AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmbodiedEmotionCliche, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NarratorMoralizing, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, QuietAcceptanceEnding, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, StockSensoryImagery, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) comes from `# humanizer-*` comment headers in each YAML file, served by both the CLI (`rules explain`) and the MCP tools.
 
@@ -113,6 +113,25 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 `rules explain` prints the rule ID, name, category, severity, summary, rationale, before/after examples, and reference link.
 
+### narrative
+
+For fiction and story-shaped prose only — skip it for docs, PR descriptions, and Slack drafts. Print the StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human-written from AI-generated fiction; in the paper this narrative signal also survives span-level style editing. These features need a reader's judgment, not a regex, so the command only serves the rubric — score a passage by running the judge prompt with the passage on stdin:
+
+```sh
+# human-readable rubric, grouped by theme
+humanizer narrative
+
+# score a story: judge prompt as the instruction, passage on stdin
+cat story.md | claude -p --model sonnet "$(humanizer narrative --prompt)"
+```
+
+The judge prompt ends with an output contract (a final `VERDICT|confidence|features` line) and works best on a complete story or a 1,000+ word section.
+
+| Flag | Description |
+|---|---|
+| `--prompt` | Print only the judge prompt |
+| `--json` | Emit features, themes, prompt, and source as JSON (same shape as the `humanizer_narrative_rubric` MCP tool) |
+
 ### lint
 
 Report invisible-Unicode and space-homoglyph watermark carriers. Reports only — it changes nothing.
@@ -205,7 +224,7 @@ claude mcp add --scope user humanizer -- humanizer mcp
 
 On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root).
 
-The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes eleven tools:
+The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes twelve tools:
 
 | Tool | Description |
 |---|---|
@@ -215,6 +234,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |
 | `humanizer_rules_list` | List all detection rules |
 | `humanizer_rules_explain` | Full metadata and examples for one rule |
+| `humanizer_narrative_rubric` | StoryScope narrative rubric and judge prompt for LLM-judged fiction detection |
 | `humanizer_voice_profile` | Quantitative voice profile of a text sample |
 | `humanizer_voice_diff` | Metric-by-metric delta between two samples |
 | `humanizer_lint` | Report invisible-Unicode / space-homoglyph watermark carriers (offline) |

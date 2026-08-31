@@ -1,0 +1,19 @@
+# humanizer-id: Humanizer.StockSensoryImagery
+# humanizer-name: Stock sensory imagery
+# humanizer-category: content
+# humanizer-summary: Stock sensory pairings ("smelled of ozone", "tasted of copper", "metallic tang").
+# humanizer-rationale: StoryScope (COLM 2026) found AI fiction over-engages smell (82% versus 57% for humans) and piles on sensory description; a handful of stock pairings carry most of it. Use a specific, situated detail or drop the sense entirely. Tokens name the stock pairings only — a bare "the air smelled of" frame followed by a specific detail is exactly what the fix recommends, so the frame itself is not flagged.
+# humanizer-before: The room smelled of ozone and old paper, and fear tasted of copper on her tongue.
+# humanizer-after: The server room had that burnt-dust smell it got after a long weekend.
+# humanizer-reference: https://arxiv.org/abs/2604.03136
+extends: existence
+message: "Stock sensory pairing '%s' — swap in a specific, situated detail or drop the sense."
+level: suggestion
+ignorecase: true
+tokens:
+  - smell(?:ed|s|t|ing)? of ozone
+  - smell(?:ed|s|t|ing)? of old (?:books|paper)
+  - tasted? (?:of )?copper
+  - coppery (?:taste|tang)
+  - metallic tang
+  - the scent of (?:ozone|antiseptic)

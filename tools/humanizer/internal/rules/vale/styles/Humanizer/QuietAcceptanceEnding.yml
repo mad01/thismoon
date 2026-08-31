@@ -1,0 +1,20 @@
+# humanizer-id: Humanizer.QuietAcceptanceEnding
+# humanizer-name: Quiet-acceptance ending
+# humanizer-category: content
+# humanizer-summary: Internal-acceptance closers ("and that was enough", "maybe, just maybe", "a sense of peace").
+# humanizer-rationale: StoryScope (COLM 2026) found AI stories resolve through internal understanding or acceptance 47% of the time versus 27% for humans, and Claude in particular favors quiet endings — these closers are how that sounds. End on an action, an image, or a loose end instead. Genre-ambiguous phrasings common in changelogs and casual prose ("for the first time in months", "and that was okay") are deliberately excluded.
+# humanizer-before: She felt a sense of peace settle over her. It wasn't everything. But it was enough.
+# humanizer-after: She locked the office and left the key under the mat for whoever came next.
+# humanizer-reference: https://arxiv.org/abs/2604.03136
+extends: existence
+message: "Quiet-acceptance closer '%s' — end on an action, an image, or a loose end, not stated acceptance."
+level: warning
+ignorecase: true
+nonword: true
+tokens:
+  - \band (?:that|it) was enough[.!…]
+  - \b(?:somehow|for now),? (?:that|it) was enough\b
+  - \bbut it was enough[.!…]
+  - \bmaybe, just maybe\b
+  - \ba sense of peace\b
+  - \b(?:s?he|they) (?:was|were) finally (?:home|free|at peace)\b

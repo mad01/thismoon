@@ -26,6 +26,7 @@ func New(version string) *mcp.Server {
 	registerDetectTools(s)
 	registerStatisticalTools(s)
 	registerRulesTools(s)
+	registerNarrativeTools(s)
 	registerVoiceTools(s)
 	registerScrubTools(s)
 	registerRewriteTools(s)

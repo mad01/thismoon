@@ -1,0 +1,18 @@
+# humanizer-id: Humanizer.NarratorMoralizing
+# humanizer-name: Narrator moralizing
+# humanizer-category: content
+# humanizer-summary: Narrator states the lesson ("in that moment she realized", "the lesson was clear").
+# humanizer-rationale: StoryScope (COLM 2026) found AI narrators state the story's theme outright 77% of the time versus 52% for humans — the moral gets spelled out instead of trusted to the reader. Cut the lesson sentence and let the events carry it. Tokens are limited to narrative-voice framings; generic lesson phrasing that is normal in retros and postmortems ("taught them that", "it was a reminder that") is deliberately excluded.
+# humanizer-before: In that moment, she realized that the real treasure had been the friends they made along the way.
+# humanizer-after: She pocketed the map. Maybe the others would want to see it, maybe not.
+# humanizer-reference: https://arxiv.org/abs/2604.03136
+extends: existence
+message: "Narrator moralizing '%s' — cut the stated lesson and trust the reader to infer it."
+level: warning
+ignorecase: true
+tokens:
+  - in that moment,? (?:s?he|they) (?:realized|understood|knew)
+  - (?:s?he|they) finally understood (?:that|what|why)
+  - the lesson was (?:clear|simple)
+  - (?:s?he|they) realized (?:that )?sometimes
+  - a lesson (?:s?he|they) would (?:never forget|carry)
