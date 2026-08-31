@@ -25,9 +25,10 @@ Beyond the built-ins, a `custom_guards` config section registers named guards th
 
 ## Hints
 
-Six hints add advisory context the agent reads next to a tool result or at session boundaries:
+Seven hints add advisory context the agent reads next to a tool result or at session boundaries:
 
 - **prefer-csl**: after a bash command sweeps multiple files inside a repo csl already indexes, hands back the equivalent `csl_search` call with the pattern translated to zoekt syntax. Pipe filters (`cmd | grep x`) and single-file greps do not fire — they are not what csl replaces.
+- **commit-policy**: after a `git commit` lands on main or master of a repo not opted out via `exclude_repos`, states the branch + PR commit policy and hands back the two commands that move the commit onto a branch. The post-commit half of the branch-discipline pair: the git-push-main guard denies the push, this hint catches the mistake while it is still a cheap fix. Repos with no origin remote stay silent.
 - **kof-assertions**: after a csl search, surfaces stored kof assertions about the code the search hit, so prior conclusions get read instead of re-derived. Caps at three, marks stale ones, and repeats nothing within a session.
 - **kof-consult**: when a session opens inside a git repo, surfaces that repo's kof assertions before any searching happens, so the session starts from what earlier sessions concluded. Caps at five; outside a repo, or with kof down, it stays silent.
 - **agent-memory**: when a session opens, injects the agent memory indexes (`~/.config/agent-memory/MEMORY.md`, plus `~/.config/agent-memory-work/MEMORY.md` on machines that have one) so cross-agent facts arrive as context instead of relying on instruction prose to prompt a read. A missing store is silence, so the work index never appears on personal machines.

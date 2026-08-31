@@ -146,6 +146,15 @@ hints:
     enabled: true
   prefer-csl:
     enabled: true
+  commit-policy:
+    enabled: true
+    # Repos opted out because committing straight to main is their norm;
+    # everywhere else a commit on main/master draws the branch + PR advice.
+    # Same patterns as guards.git-push-main.allow_repos — keep the two
+    # lists in step. (allow_repos under hints: is a validation error; the
+    # exempt-vs-opt-out key is scoped per kind.)
+    exclude_repos:
+      - github.com/you/dotfiles
   kof-assertions:
     enabled: true
   kof-consult:

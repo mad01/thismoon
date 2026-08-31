@@ -32,7 +32,7 @@ func NewGitPushMain(cfg config.Config) *GitPushMain {
 	return &GitPushMain{
 		cfg:           cfg,
 		resolveBranch: gitCurrentBranch,
-		resolveRepo:   func(dir string) string { return canonicalRepo(gitRemoteURL(dir)) },
+		resolveRepo:   CanonicalRepoAt,
 	}
 }
 

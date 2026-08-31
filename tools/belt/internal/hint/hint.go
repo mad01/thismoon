@@ -67,6 +67,7 @@ type Hint interface {
 func All(cfg config.Config) []Hint {
 	return []Hint{
 		NewAgentMemory(cfg),
+		NewCommitPolicy(cfg),
 		NewKofAssertions(cfg),
 		NewKofConsult(cfg),
 		NewKofDeposit(cfg),

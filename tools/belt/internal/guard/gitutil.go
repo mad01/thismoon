@@ -129,3 +129,22 @@ func gitOutput(dir string, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// GitCommitDirs returns the `git -C` directory of every `git commit` in a
+// shell command, "" for invocations that run in the caller's cwd. Exported
+// for the commit-policy hint, which watches the same invocations the commit
+// guards check.
+func GitCommitDirs(command string) []string {
+	var dirs []string
+	for _, c := range findGitCommands(command, "commit") {
+		dirs = append(dirs, c.dir)
+	}
+	return dirs
+}
+
+// CanonicalRepoAt resolves the repo at dir to the canonical host/owner/repo
+// identity allow_repos patterns match, or "" when there is no resolvable
+// origin remote.
+func CanonicalRepoAt(dir string) string {
+	return canonicalRepo(gitRemoteURL(dir))
+}

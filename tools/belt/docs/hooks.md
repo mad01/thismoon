@@ -130,7 +130,7 @@ session if you want proof the wiring is live.
 belt is not Claude-Code-exclusive: any harness that execs a command per tool
 event and reads its stdout can run it. What to expect per harness:
 
-- **Claude Code** — the full set: both guard events and all six hints, wired
+- **Claude Code** — the full set: both guard events and all seven hints, wired
   as shown above.
 - **Codex** — reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
@@ -386,11 +386,14 @@ Each exists because an instruction in a CLAUDE.md file proved unreliable at
 the moment it mattered; a hook fires deterministically where prose gets
 skimmed.
 
-Configuration-wise every hint is one switch: `hints.<id>.enabled` in the
-belt config, default on. Everything else about hint behavior is fixed (see
-Fixed constants below). The guards carry the richer per-guard keys — each
-guard section above names its own, and [config.md](../config.md) specifies
-them all.
+Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
+the belt config, default on. The exception is `commit-policy`, which also
+reads an `exclude_repos` list (hints opt repos out with `exclude_repos`;
+`allow_repos` belongs to guards, and each key on the wrong kind is a
+validation error). Everything else about hint behavior is fixed
+(see Fixed constants below). The guards carry the richer per-guard keys —
+each guard section above names its own, and [config.md](../config.md)
+specifies them all.
 
 ### agent-memory (session-start)
 
@@ -456,6 +459,27 @@ hands back the equivalent `csl_search` call.
 - **Why**: a transcript audit found 97% of recursive greps ran inside indexed
   repos. Habit, not ignorance — so the fix is a well-timed reminder with the
   exact replacement, not a deny.
+
+### commit-policy (bash)
+
+After a `git commit` lands on main or master of a repo that is not opted
+out, states the branch + PR commit policy and hands back the recovery: `git
+switch -c <branch>` carries the commit along, `git branch -f main
+origin/main` drops the local default branch back onto the remote.
+
+- **Fires when** a commit in the command (compound commands and `git -C`
+  included) ran with the repo's current branch on main or master, and the
+  repo's canonical origin identity is not on
+  `hints.commit-policy.exclude_repos` (same `host/owner/repo` patterns as
+  the git-push-main guard's `allow_repos` — keep the two lists in step).
+- **Deliberately silent** on feature branches, excluded repos, detached
+  HEAD, and repos with no resolvable origin remote — a scratch `git init`
+  repo lives its whole life on its default branch and has no upstream to
+  protect.
+- **Why**: the git-push-main guard denies at the push, which is late — the
+  commit is already tangled into local main. This hint fires right after the
+  commit, while moving it is still a two-command fix, and it names the exact
+  commands so the model acts instead of guessing.
 
 ### kof-deposit (prompt)
 

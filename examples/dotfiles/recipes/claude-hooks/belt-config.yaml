@@ -8,8 +8,8 @@
 # profile-gated recipe per class, or a template), so a guard or rule that
 # should exist only on some machines is simply absent from the others'
 # files. This example is a work-machine rendering; a personal machine's
-# file would set `git-push-main: {enabled: false}` and drop the work-hours
-# rule.
+# file would drop the work-hours rule and carry its own git-push-main
+# allow_repos list.
 
 # Name sources for the write-internal-names guard. belt reads only this
 # file — the suspenders pre-commit guard has an identically shaped section
@@ -50,7 +50,7 @@ commit_guards:
 
 guards:
   git-push-main:
-    enabled: true # personal machines render `enabled: false` instead
+    enabled: true
     allow_repos:
       - github.com/you/dotfiles # direct pushes to main allowed here only
   script-deny-list:
@@ -61,3 +61,12 @@ guards:
     enabled: true
     exclude_paths:
       - ~/notes # internal references are deliberate here
+
+hints:
+  # The post-commit half of the git-push-main pair: a commit landing on
+  # main/master in any repo not opted out here draws the branch + PR advice.
+  # Keep the list in step with guards.git-push-main.allow_repos (hints opt
+  # repos out with exclude_repos; allow_repos belongs to guards).
+  commit-policy:
+    exclude_repos:
+      - github.com/you/dotfiles

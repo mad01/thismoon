@@ -144,6 +144,12 @@ type Toggle struct {
 	ExcludePaths  []string `toml:"exclude_paths"  yaml:"exclude_paths,omitempty"`
 	ExtraPatterns []string `toml:"extra_patterns" yaml:"extra_patterns,omitempty"`
 	AllowRepos    []string `toml:"allow_repos"    yaml:"allow_repos,omitempty"`
+	// ExcludeRepos opts repos out of a hint (same canonical host/owner/repo
+	// patterns as AllowRepos). The two fields are kind-scoped: guards exempt
+	// repos with allow_repos, hints opt them out with exclude_repos, and
+	// validate() rejects each on the wrong kind — an allowlist on an
+	// advisory reads backwards.
+	ExcludeRepos []string `toml:"exclude_repos"  yaml:"exclude_repos,omitempty"`
 }
 
 // Soft reports whether the toggle downgrades denials to warn events instead
@@ -239,6 +245,13 @@ func enabled(toggles map[string]Toggle, id string) bool {
 // never matches.
 func (c Config) RepoAllowed(guardID, repo string) bool {
 	return RepoMatches(c.Guards[guardID].AllowRepos, repo)
+}
+
+// HintRepoExcluded reports whether a hint's exclude_repos list opts the
+// canonical repo out of that hint. Same patterns as RepoAllowed; an empty
+// repo is never excluded.
+func (c Config) HintRepoExcluded(hintID, repo string) bool {
+	return RepoMatches(c.Hints[hintID].ExcludeRepos, repo)
 }
 
 // RepoMatches reports whether the canonical host/owner/repo matches any of
@@ -589,6 +602,18 @@ func (f File) validate() error {
 	}
 	errs = append(errs, toggleModeErrors("guards", f.Guards)...)
 	errs = append(errs, toggleModeErrors("hints", f.Hints)...)
+	for _, id := range slices.Sorted(maps.Keys(f.Hints)) {
+		if len(f.Hints[id].AllowRepos) > 0 {
+			errs = append(errs, fmt.Errorf(
+				"hints.%s: allow_repos has no effect on hints — repos are opted out of a hint with exclude_repos", id))
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(f.Guards)) {
+		if len(f.Guards[id].ExcludeRepos) > 0 {
+			errs = append(errs, fmt.Errorf(
+				"guards.%s: exclude_repos has no effect on guards — repos are exempted from a guard with allow_repos", id))
+		}
+	}
 	for i, r := range f.GitIdentity {
 		if err := validMode(r.Mode); err != nil {
 			errs = append(errs, fmt.Errorf("git_identity[%d].%w", i, err))

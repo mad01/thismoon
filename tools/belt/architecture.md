@@ -29,9 +29,9 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     script-deny-list, write-internal-names), and the Custom
                     guard that execs config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
-                    kof-assertions, kof-consult, kof-deposit, agent-memory,
-                    humanizer-check), plus csl shard lookup, search-response
-                    parsing, and the per-session seen store
+                    commit-policy, kof-assertions, kof-consult, kof-deposit,
+                    agent-memory, humanizer-check), plus csl shard lookup,
+                    search-response parsing, and the per-session seen store
 internal/config/    config.Load(): the belt config plus the gated
                     Claude-settings deny list, into one Config
 internal/notify/    best-effort event emission to the local events service
@@ -91,8 +91,9 @@ The hints also read the world they advise about: the csl shard
 listing in `~/.config/csl/search-index/` (prefer-csl, no csl process
 launched), the agent-memory index files in `~/.config/agent-memory[-work]/`
 (agent-memory), the session transcript file named in the payload (kof-deposit,
-humanizer-check), and the local kof serve API on `KOF_PORT` with a 400 ms
-budget (kof-consult, kof-assertions).
+humanizer-check), the git repo a commit ran in — branch and origin remote,
+via git execs (commit-policy) — and the local kof serve API on `KOF_PORT`
+with a 400 ms budget (kof-consult, kof-assertions).
 
 Denials and hints are recorded remotely: a POST to the local events service
 (`http://127.0.0.1:7430/api/events`, overridable via `EVENTS_BASE_URL`).
