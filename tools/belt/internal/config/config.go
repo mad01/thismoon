@@ -685,6 +685,7 @@ var (
 		"kof-assertions":  {"exclude_repos"},
 		"kof-consult":     {"exclude_repos"},
 		"kof-deposit":     {},
+		"lint-policy":     {"exclude_repos"},
 		"prefer-csl":      {"exclude_repos"},
 		"humanizer-check": {},
 	}

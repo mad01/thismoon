@@ -68,6 +68,7 @@ func All(cfg config.Config) []Hint {
 	return []Hint{
 		NewAgentMemory(cfg),
 		NewCommitPolicy(cfg),
+		NewLintPolicy(cfg),
 		NewKofAssertions(cfg),
 		NewKofConsult(cfg),
 		NewKofDeposit(cfg),

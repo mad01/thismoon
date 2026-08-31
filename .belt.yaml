@@ -1,8 +1,13 @@
 # Repo-local belt overlay (hints-only; guards never read this file — see
-# docs/adr/0012). Read by the commit-policy hint after a `git commit` here.
+# docs/adr/0012). Read by the commit-policy and lint-policy hints after a
+# `git commit` here.
 hints:
   commit-policy:
     message: >-
       thismoon main is PR-only, enforced by a GitHub ruleset — a direct push
       would be rejected server-side anyway. Multi-package release PRs merge
       via merge or rebase, never squash.
+  lint-policy:
+    message: >-
+      run make fmt && make lint in each touched component directory before
+      pushing (every component Makefile has both targets).

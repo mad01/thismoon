@@ -268,9 +268,10 @@ entries match the same way as `git_identity[].repos` and
 
 ### hints
 
-A map keyed by hint id. All seven hints default to enabled when the file or
+A map keyed by hint id. All eight hints default to enabled when the file or
 their entry is missing. The repo-aware hints (`commit-policy`,
-`prefer-csl`, `kof-assertions`, `kof-consult`) also read `exclude_repos`;
+`lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`) also read
+`exclude_repos`;
 the rest take only `enabled`, and any other key on a known id is a
 validation error (guards exempt repos with `allow_repos`, hints opt them
 out with `exclude_repos` — each key on the wrong kind is rejected).
@@ -305,6 +306,19 @@ pattern tail (host dropped, case-insensitive).
     and can never deny — a broken file degrades to one line of advisory
     text, unknown ids and keys are ignored (docs/adr/0012). It is not part
     of this machine config file.
+- **lint-policy**
+  - `hints.lint-policy.enabled` (bool, default `true`): PostToolUse (bash),
+    relays the commit repo's declared lint/format policy after a `git
+    commit`, once per session per repo. A trigger command that itself names
+    the fmt/lint toolchain outside quotes is skipped without spending the
+    session's nudge.
+  - `hints.lint-policy.exclude_repos` (list of string, default: empty):
+    repos opted out of this hint.
+  - Repo-local overlay: the hint speaks only for repos whose root
+    `.belt.yaml` carries `hints.lint-policy.message` — that message is the
+    whole advice (the repo names its own fmt/lint commands; belt ships no
+    language table and executes nothing). `exclude` opts the repo out or
+    back in over the machine list (docs/adr/0012).
 - `hints.kof-assertions.enabled` (bool, default `true`): PostToolUse
   (search), surfaces kof assertions about code a search just hit.
   `exclude_repos` silences it for the listed repos (pattern tail matched —
@@ -404,6 +418,10 @@ guards:
 
 hints:
   agent-memory:
+    enabled: true
+  commit-policy:
+    enabled: true
+  lint-policy:
     enabled: true
   prefer-csl:
     enabled: true

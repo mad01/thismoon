@@ -161,6 +161,11 @@ hints:
     # exempt-vs-opt-out key is scoped per kind.)
     exclude_repos:
       - github.com/you/experiments
+  lint-policy:
+    enabled: true
+    # Speaks only for repos whose root .belt.yaml declares a
+    # hints.lint-policy.message — that message is the whole advice, relayed
+    # once per session per repo after a git commit there.
   kof-assertions:
     enabled: true
   kof-consult:
