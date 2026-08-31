@@ -1,6 +1,8 @@
 package hint
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,7 +15,21 @@ func newCommitPolicyHint(branch, repo string, exclude []string) *CommitPolicy {
 	})
 	h.resolveBranch = func(string) string { return branch }
 	h.resolveRepo = func(string) string { return repo }
+	h.resolveRoot = func(string) string { return "" } // no overlay unless a test sets one
 	return h
+}
+
+// withOverlay points the hint's overlay lookup at a temp repo root holding
+// the given .belt.yaml content, or an empty root when content is empty.
+func withOverlay(t *testing.T, h *CommitPolicy, content string) {
+	t.Helper()
+	root := t.TempDir()
+	if content != "" {
+		if err := os.WriteFile(filepath.Join(root, OverlayFileName), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.resolveRoot = func(string) string { return root }
 }
 
 func TestCommitPolicy(t *testing.T) {
@@ -60,6 +76,77 @@ func TestCommitPolicy(t *testing.T) {
 				if !strings.Contains(a.Text, want) {
 					t.Errorf("advice %q does not mention %q", a.Text, want)
 				}
+			}
+		})
+	}
+}
+
+// TestCommitPolicyOverlay pins the repo-local .belt.yaml semantics
+// (docs/adr/0012): local overrides the machine lists in both directions,
+// protected_branches replaces the default set, message is appended, a
+// foreign file is a no-op, and a broken file degrades to advisory text.
+func TestCommitPolicyOverlay(t *testing.T) {
+	const thismoon = "github.com/mad01/thismoon"
+
+	tests := []struct {
+		name     string
+		overlay  string
+		branch   string
+		exclude  []string // machine exclude_repos
+		fires    bool
+		wantText string // required substring when it fires
+	}{
+		{
+			"exclude true silences",
+			"hints:\n  commit-policy:\n    exclude: true\n",
+			"main", nil, false, "",
+		},
+		{
+			"exclude false overrides machine exclusion",
+			"hints:\n  commit-policy:\n    exclude: false\n",
+			"main", []string{thismoon}, true, "feature branch + PR",
+		},
+		{
+			"protected_branches replaces the default set",
+			"hints:\n  commit-policy:\n    protected_branches: [\"release/*\"]\n",
+			"release/1.2", nil, true, "release/1.2",
+		},
+		{
+			"replaced set drops main",
+			"hints:\n  commit-policy:\n    protected_branches: [\"release/*\"]\n",
+			"main", nil, false, "",
+		},
+		{
+			"message is appended",
+			"hints:\n  commit-policy:\n    message: main is PR-only here.\n",
+			"main", nil, true, "Repo policy: main is PR-only here.",
+		},
+		{
+			"foreign file is a no-op",
+			"tool: something-else\n",
+			"main", nil, true, "feature branch + PR",
+		},
+		{
+			"missing file keeps defaults",
+			"",
+			"main", nil, true, "feature branch + PR",
+		},
+		{
+			"broken file degrades to advisory",
+			"hints: [not a map\n",
+			"feat/x", nil, true, "could not evaluate this repo's commit policy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newCommitPolicyHint(tt.branch, thismoon, tt.exclude)
+			withOverlay(t, h, tt.overlay)
+			a := h.Check(Input{Event: EventBash, Command: "git commit -m 'x'", Cwd: "/some/repo"})
+			if got := a != nil; got != tt.fires {
+				t.Fatalf("fired = %v, want %v (advice: %+v)", got, tt.fires, a)
+			}
+			if a != nil && !strings.Contains(a.Text, tt.wantText) {
+				t.Errorf("advice %q does not mention %q", a.Text, tt.wantText)
 			}
 		})
 	}

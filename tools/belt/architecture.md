@@ -91,9 +91,10 @@ The hints also read the world they advise about: the csl shard
 listing in `~/.config/csl/search-index/` (prefer-csl, no csl process
 launched), the agent-memory index files in `~/.config/agent-memory[-work]/`
 (agent-memory), the session transcript file named in the payload (kof-deposit,
-humanizer-check), the git repo a commit ran in — branch and origin remote,
-via git execs (commit-policy) — and the local kof serve API on `KOF_PORT`
-with a 400 ms budget (kof-consult, kof-assertions).
+humanizer-check), the git repo a commit ran in — branch, origin remote, and
+an optional repo-root `.belt.yaml` overlay, via git execs (commit-policy;
+overlay is hints-only and never denies, docs/adr/0012) — and the local kof
+serve API on `KOF_PORT` with a 400 ms budget (kof-consult, kof-assertions).
 
 Denials and hints are recorded remotely: a POST to the local events service
 (`http://127.0.0.1:7430/api/events`, overridable via `EVENTS_BASE_URL`).
