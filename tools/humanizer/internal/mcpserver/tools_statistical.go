@@ -37,7 +37,7 @@ func registerStatisticalTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "humanizer_detect_statistical",
 		Description: "Scan text for statistical AI-writing signals that span-based rules miss: robotically uniform sentence length, low contraction rate, missing semicolons in long text, low type-token ratio, any em-dash in short text, heading-heavy outline scaffolding, and anaphora (3+ consecutive sentences with the same opening word). " +
-			"Complements humanizer_detect (Vale span rules) — run both for full coverage. " +
+			"Complements humanizer_detect (Vale span rules). Run both for full coverage. " +
 			"Returns findings (rule_id, severity, metric, value, threshold, message) plus the full voice profile the checks were computed from. " +
 			"Most checks gate on a minimum sample size, so very short snippets return few or no findings.",
 	}, handleDetectStatistical)

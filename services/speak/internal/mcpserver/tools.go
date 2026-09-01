@@ -21,7 +21,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "speak_text",
 		Description: "Speak the given text aloud on this machine's speakers using local TTS. " +
 			"Returns immediately; audio plays in the background. The text is split into sentences and played in order. " +
-			"Keep the returned session id — it is the handle for speak_pause / speak_resume / speak_stop.",
+			"Keep the returned session id: it is the handle for speak_pause / speak_resume / speak_stop.",
 	}, h.handleText)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -63,9 +63,9 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Diagnose speak itself: is the TTS engine reachable, is the playback state directory readable, " +
 			"is the optional `speak serve` web surface up and running the installed build. " +
 			"Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"Call this when another speak tool errors: tts-engine-reachable is the check that gates every tool here, " +
-			"while service-reachable and version-skew describe `speak serve`, which playback does not need.",
+			"while service-reachable and version-skew describe `speak serve`, which playback doesn't need.",
 	}, h.handleDoctor)
 }
 

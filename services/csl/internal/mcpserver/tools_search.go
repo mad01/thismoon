@@ -24,7 +24,7 @@ const (
 
 // searchInput is the typed input for the csl_search tool.
 type searchInput struct {
-	Query         string `json:"query"                    jsonschema:"zoekt query — literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / repo: / file: / lang: / case:yes"`
+	Query         string `json:"query"                    jsonschema:"zoekt query: literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / repo: / file: / lang: / case:yes"`
 	Repo          string `json:"repo,omitempty"           jsonschema:"restrict to repo names matching this case-insensitive regex (a plain substring also works)"`
 	Lang          string `json:"lang,omitempty"           jsonschema:"restrict to files of this language (e.g. go, swift, python)"`
 	File          string `json:"file,omitempty"           jsonschema:"restrict to file paths matching this regex (e.g. paths ending in .go)"`
@@ -58,21 +58,21 @@ type searchOutput struct {
 	Files          []searchMatchFile `json:"files,omitempty"            jsonschema:"unique file paths that matched; set when output_mode is files_with_matches"`
 	Lines          []searchMatchLine `json:"lines,omitempty"            jsonschema:"matching lines; set when output_mode is content"`
 	Total          int               `json:"total"                      jsonschema:"total number of match records returned (files or lines)"`
-	Truncated      bool              `json:"truncated"                  jsonschema:"true if results were capped by limit; more matches exist — refine your query or increase limit"`
+	Truncated      bool              `json:"truncated"                  jsonschema:"true if limit capped the results; more matches exist, so refine your query or increase limit"`
 	TotalAvailable int               `json:"total_available,omitempty"  jsonschema:"total matches available before truncation (only set when truncated is true)"`
-	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, how many repos the filters covered, and index age — read it before assuming the code does not exist"`
+	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
 }
 
 // searchZeroHint explains a zero-hit search so an agent can tell a genuinely
 // empty result from a malformed query or a stale index. Additive: it appears
 // only when the search returned nothing, and never changes non-empty output.
 type searchZeroHint struct {
-	ParsedQuery     string   `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it — check that terms and operators mean what you intended"`
+	ParsedQuery     string   `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it; check that terms and operators mean what you intended"`
 	ReposSearched   int      `json:"repos_searched"              jsonschema:"repos the repo filter matched that are also present in the search index (only indexed repos can produce hits); 0 means the filter or index coverage is the problem, not the query"`
 	ReposDiscovered int      `json:"repos_discovered"            jsonschema:"git repos discovered under the configured dirs"`
 	ReposIndexed    int      `json:"repos_indexed,omitempty"     jsonschema:"repos present in the search index; a repo discovered but not indexed is invisible to search until indexed"`
 	NewestIndexedAt string   `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
-	OldestIndexedAt string   `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339) — very old means some repo's index is stale"`
+	OldestIndexedAt string   `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); very old means some repo's index is stale"`
 	Notes           []string `json:"notes,omitempty"             jsonschema:"targeted suggestions for this query (known syntax traps, filter mismatches)"`
 }
 
@@ -93,7 +93,7 @@ type countGroup struct {
 // countOutput is the typed output of the csl_count tool.
 type countOutput struct {
 	Total  int          `json:"total"            jsonschema:"total match count across all groups"`
-	Groups []countGroup `json:"groups,omitempty" jsonschema:"per-group counts; empty when group_by is not set"`
+	Groups []countGroup `json:"groups,omitempty" jsonschema:"per-group counts; empty when group_by isn't set"`
 }
 
 // queryValidateInput is the typed input for the csl_query_validate tool.
@@ -113,14 +113,14 @@ func registerSearchTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "csl_search",
 		Description: "Search code across locally checked-out git repos using zoekt query syntax. " +
-			"Use whenever the task involves finding where a symbol, function, pattern, or string is used — 'where is X defined', 'find all Y', 'does any of my projects use Z', 'show me every TODO in the Go code'. " +
+			"Use whenever the task involves finding where a symbol, function, pattern, or string is used: 'where is X defined', 'find all Y', 'does any of my projects use Z', 'show me every TODO in the Go code'. " +
 			"Defaults to returning unique matching file paths (files_with_matches); set output_mode to 'content' to get matching lines with optional context. " +
 			"Query syntax: literal substring, regex, \"quoted phrase\", AND (space), OR (|), NOT (-), repo:name, f:\\.go$, lang:go, case:yes. " +
 			"AND is strict: all terms must appear in the SAME FILE. Use 1-2 terms and narrow with repo:/f:/lang: filters, not 3+ chained terms. " +
-			"Use | or lowercase 'or' for OR — uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
-			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax — the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
-			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call — when capped, truncated=true and total_available says how many matched, so narrow the query or paginate with filters. " +
-			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps) — read it before retrying or concluding the code does not exist. " +
+			"Use | or lowercase 'or' for OR; uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
+			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax: the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
+			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call. When capped, truncated=true and total_available says how many matched, so narrow the query or paginate with filters. " +
+			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps); read it before retrying or concluding the code doesn't exist. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session.",
 	}, handleSearch)
 
@@ -135,7 +135,7 @@ func registerSearchTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "csl_query_validate",
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
-			"Use whenever a query returns zero results or behaves unexpectedly — the parsed tree shows exactly how zoekt interpreted your terms. " +
+			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms. " +
 			"Also useful for debugging regex escaping like \\.go$.",
 	}, handleQueryValidate)
 }

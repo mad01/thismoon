@@ -30,7 +30,7 @@ type repoMatch struct {
 
 // repoLookupOutput is the structured output of the csl_repo_lookup tool.
 type repoLookupOutput struct {
-	Matches []repoMatch `json:"matches" jsonschema:"matching repos; empty if no local checkout was found"`
+	Matches []repoMatch `json:"matches" jsonschema:"matching repos; empty when csl found no local checkout"`
 }
 
 func registerRepoTools(s *mcp.Server) {
@@ -39,7 +39,7 @@ func registerRepoTools(s *mcp.Server) {
 		Description: "Resolve a git repo name to its local checkout path. " +
 			"Use when the user mentions a repo by name and you need its absolute path before cd-ing, reading, or grepping inside it. " +
 			"Matching is case-insensitive regex / substring against the org/repo name. " +
-			"Returns an empty matches array if the repo is not checked out locally — in that case, tell the user the repo is not present locally; do not guess a path under ~/code/src/... or elsewhere.",
+			"Returns an empty matches array if the repo isn't checked out locally. In that case, tell the user the repo isn't present locally; don't guess a path under ~/code/src/... or elsewhere.",
 	}, handleRepoLookup)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -75,7 +75,7 @@ func registerRepoTools(s *mcp.Server) {
 		Description: "Reindex a specific repo in the local zoekt search index. " +
 			"Use after making significant changes to ensure csl_search results are current, " +
 			"or when csl_repo_info reports needs_reindex. " +
-			"The call blocks until indexing finishes and returns the measured duration — typically sub-second for small repos, a few seconds for large ones.",
+			"The call blocks until indexing finishes and returns the measured duration: typically sub-second for small repos, a few seconds for large ones.",
 	}, handleRepoReindex)
 }
 
@@ -127,7 +127,7 @@ type repoInfoMatch struct {
 	Dirty          bool   `json:"dirty"            jsonschema:"working tree has uncommitted changes"`
 	ModifiedFiles  int    `json:"modified_files"   jsonschema:"count of modified tracked files"`
 	UntrackedFiles int    `json:"untracked_files"  jsonschema:"count of untracked files"`
-	IndexStale     bool   `json:"index_stale"      jsonschema:"zoekt index does not reflect current state"`
+	IndexStale     bool   `json:"index_stale"      jsonschema:"zoekt index doesn't reflect current state"`
 	IndexedAt      string `json:"indexed_at"       jsonschema:"when last indexed (RFC3339 or never)"`
 	Action         string `json:"action"           jsonschema:"suggested action: ready, commit_or_stash, pull_recommended, needs_reindex"`
 }

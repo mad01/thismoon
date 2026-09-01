@@ -20,11 +20,11 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "prs_list",
-		Description: "List the open pull requests across every locally checked-out repo, from the local cache — " +
+		Description: "List the open pull requests across every locally checked-out repo, from the local cache, " +
 			"the way to see what needs attention without calling GitHub yourself. " +
 			"Only open, non-draft PRs are tracked; closed, merged, and draft PRs never appear. " +
 			"Filter by `repo` (exact org/name), `author` (exact login), and/or `review` " +
-			"(EXACTLY APPROVED or CHANGES_REQUESTED — a PR with no standing review matches neither). " +
+			"(EXACTLY APPROVED or CHANGES_REQUESTED; a PR with no standing review matches neither). " +
 			"`sort` is newest (default) or oldest by the PR's created time. " +
 			"The response also carries the distinct repos and authors in the cache (the valid filter values) " +
 			"and the cache status including per-repo fetch errors. " +
@@ -36,7 +36,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Force one synchronous poll cycle: re-discover the locally checked-out repos, fetch every repo's " +
 			"open PRs from its GitHub host, and update the cache. Returns how many repos were polled, how many " +
 			"open PRs were found, and how many repos failed to fetch. " +
-			"Takes seconds to a minute depending on repo count — use it before prs_list when staleness matters, " +
+			"Takes seconds to a minute depending on repo count. Use it before prs_list when staleness matters, " +
 			"not on every call.",
 	}, h.handleRefresh)
 
@@ -45,7 +45,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Report the service status: when the cache was last polled, how many repos and open PRs it holds, " +
 			"which hosts they came from, every repo whose last fetch failed (with the error), and the config in " +
 			"effect (scan dirs, excludes, host allowlist, poll interval). " +
-			"The first stop when prs_list looks wrong — a missing repo is usually an exclude, a host allowlist, " +
+			"The first stop when prs_list looks wrong: a missing repo is usually an exclude, a host allowlist, " +
 			"or a fetch error visible here.",
 	}, h.handleStatus)
 
@@ -54,7 +54,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Diagnose prs itself: is serve reachable, is the cache readable, is the running build the " +
 			"installed one, does the config parse and name directories to scan, is the gh CLI available. " +
 			"Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"Call this when another prs tool errors or returns an empty list: it answers whether the fault is " +
 			"the service, the config, or genuinely no open PRs.",
 	}, h.handleDoctor)
@@ -71,8 +71,8 @@ type listInput struct {
 
 type listOutput struct {
 	PRs     []store.PR   `json:"prs"`
-	Repos   []string     `json:"repos"   jsonschema:"distinct repos with open PRs — the valid repo filter values"`
-	Authors []string     `json:"authors" jsonschema:"distinct PR authors — the valid author filter values"`
+	Repos   []string     `json:"repos"   jsonschema:"distinct repos with open PRs (the valid repo filter values)"`
+	Authors []string     `json:"authors" jsonschema:"distinct PR authors (the valid author filter values)"`
 	Status  store.Status `json:"status"`
 	URL     string       `json:"url"     jsonschema:"web page where the user can view the PR list"`
 }

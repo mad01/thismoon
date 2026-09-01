@@ -36,7 +36,7 @@ type indexInfoOutput struct {
 	CorruptShards   int          `json:"corrupt_shards"             jsonschema:"shards that failed validation; run csl doctor to repair"`
 	IndexSizeBytes  int64        `json:"index_size_bytes"           jsonschema:"total size of all zoekt shards"`
 	NewestIndexedAt string       `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
-	OldestIndexedAt string       `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339) — a very old value means some repo is not being reindexed"`
+	OldestIndexedAt string       `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); a very old value means some repo isn't being reindexed"`
 	DaemonRunning   bool         `json:"daemon_running"             jsonschema:"true when the search daemon answered a ping; false means the next query pays daemon startup"`
 	Semantic        semanticInfo `json:"semantic"`
 }
@@ -72,7 +72,7 @@ func registerInfoTools(s *mcp.Server) {
 		Description: "Global health of the csl search index in one call: repo count, shard count and size, corrupt shards, " +
 			"newest/oldest per-repo index times, whether the search daemon is running, and semantic index status (stores, chunks, model presence). " +
 			"Use to answer 'is the index healthy', 'is semantic search ready', or 'why is search slow' before falling back to per-repo csl_repo_info calls. " +
-			"Reads state from disk and pings the daemon; it does not scan repos, so it returns in well under a second.",
+			"Reads state from disk and pings the daemon; it doesn't scan repos, so it returns in well under a second.",
 	}, handleIndexInfo)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -81,7 +81,7 @@ func registerInfoTools(s *mcp.Server) {
 			"Use to answer 'what files are in internal/web/' without shelling out to ls or find. " +
 			"Lists one directory level by default; set recursive=true to walk the whole subtree (files only). " +
 			"Filter with glob (matched against base names, e.g. '*.go'). " +
-			"Reads the filesystem directly (always current, .git excluded) and caps output at 500 entries — truncated=true with total_available when capped.",
+			"Reads the filesystem directly (always current, .git excluded) and caps output at 500 entries; truncated=true with total_available when capped.",
 	}, handleLs)
 }
 

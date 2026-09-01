@@ -55,9 +55,9 @@ func registerDetectTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "humanizer_detect_file",
-		Description: "Scan a file on disk for AI-writing patterns. Use instead of humanizer_detect when the text is already in a file — saves a read and lets vale use the real extension for format detection. " +
-			"Takes an absolute path. Under the MCP sandbox only prose files (.md/.markdown/.txt) beneath the sandbox profile's workspace roots, plus /tmp paths, are readable — " +
-			"for anything else pass the text via humanizer_detect. Returns the same findings shape as humanizer_detect.",
+		Description: "Scan a file on disk for AI-writing patterns. Use instead of humanizer_detect when the text is already in a file: saves a read and lets vale use the real extension for format detection. " +
+			"Takes an absolute path. Under the MCP sandbox only prose files (.md/.markdown/.txt) beneath the sandbox profile's workspace roots, plus /tmp paths, are readable. " +
+			"For anything else pass the text via humanizer_detect. Returns the same findings shape as humanizer_detect.",
 	}, handleDetectFile)
 }
 

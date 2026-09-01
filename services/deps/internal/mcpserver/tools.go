@@ -23,7 +23,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan",
 		Description: "Discover every external dependency across the registered tool repos (Go modules, npm) and persist the inventory, WITHOUT checking advisories. " +
-			"Returns a per-ecosystem count. Use deps_check to additionally check versions against OSV.",
+			"Returns a per-ecosystem count. Use deps_check to also check versions against OSV.",
 	}, h.handleScan)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -57,7 +57,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Diagnose deps itself: is `deps serve` reachable, is the scan store readable, and was the " +
 			"running service built from the same commit as the installed binary. " +
 			"Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"Call this when another deps tool errors or comes back empty: it answers whether the fault is the " +
 			"service, the store, or a genuinely clean scan.",
 	}, h.handleDoctor)

@@ -33,7 +33,7 @@ func registerScrubTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "humanizer_lint",
 		Description: "Report deterministic \"Layer A\" watermark carriers in a block of text: invisible/format Unicode (zero-width, bidi overrides, tag characters, variation selectors) and exotic space homoglyphs. " +
-			"Reports what it finds without changing anything — use humanizer_fix to apply the scrub. " +
+			"Reports what it finds without changing anything; use humanizer_fix to apply the scrub. " +
 			"Load-bearing invisibles (emoji ZWJ/variation selectors after an emoji base, script joiners inside complex scripts, flag tags, orthographic Arabic/Syriac marks) are preserved and not flagged unless strip_emoji_glue is set. " +
 			"Each hit carries a codepoint, kind, confidence (probable for edit-carriers, informational for spaces), count, and sample offsets. Offline and deterministic.",
 	}, handleLint)
@@ -41,7 +41,7 @@ func registerScrubTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "humanizer_fix",
 		Description: "Apply the deterministic \"Layer A\" scrub and return the cleaned text plus stats. " +
-			"Default (non-intrusive): strip zero-width/format controls, bidi overrides, tag characters and variation selectors, and normalize exotic spaces to U+0020 — none of which changes visible meaning. " +
+			"Default (non-intrusive): strip zero-width/format controls, bidi overrides, tag characters and variation selectors, and normalize exotic spaces to U+0020, none of which changes visible meaning. " +
 			"Risky, visibly-altering transforms are opt-in: nfkc (Unicode NFKC), aggressive_homoglyphs (map confusable letters to ASCII), strip_emoji_glue (strip load-bearing invisibles). " +
 			"Returns cleaned_text and stats; the caller writes the result. Offline and deterministic.",
 	}, handleFix)
