@@ -21,9 +21,9 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_create",
 		Description: "Create a reminder that fires a macOS notification at its due time. " +
-			"Set the time ONE of two ways: `due` as an absolute RFC3339 timestamp (you know today's date — convert natural language like 'tomorrow 9am' or 'next monday' to RFC3339 yourself, in the user's local timezone), OR `in` as a Go duration ('2h30m', '45m', '90s') for a relative offset from now. " +
+			"Set the time ONE of two ways: `due` as an absolute RFC3339 timestamp (you know today's date; convert natural language like 'tomorrow 9am' or 'next monday' to RFC3339 yourself, in the user's local timezone), OR `in` as a Go duration ('2h30m', '45m', '90s') for a relative offset from now. " +
 			"Optional `repeat` makes it recurring: 'daily', 'weekly', or a Go duration like '24h'; omit for a one-shot. " +
-			"Keep the returned id — it is the handle for reminder_get / reminder_edit / reminder_cancel.",
+			"Keep the returned id: it is the handle for reminder_get / reminder_edit / reminder_cancel.",
 	}, h.handleCreate)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -45,28 +45,28 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_cancel",
-		Description: "Cancel a reminder by id — a soft stop that keeps the record (status becomes 'cancelled') and prevents it from firing. " +
+		Description: "Cancel a reminder by id, a soft stop that keeps the record (status becomes 'cancelled') and prevents it from firing. " +
 			"To remove a reminder permanently, delete it from the web page.",
 	}, h.handleCancel)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_test",
-		Description: "Fire a notification NOW to verify macOS notifications actually work on this machine — use this to confirm the notification path before trusting a real reminder. " +
-			"It is a dry run: it does NOT change any reminder's state (no one-shot consumed, no recurring schedule advanced) and is not recorded in the event log. " +
+		Description: "Fire a notification NOW to verify macOS notifications actually work on this machine. Use this to confirm the notification path before trusting a real reminder. " +
+			"It is a dry run: it doesn't change any reminder's state (no one-shot consumed, no recurring schedule advanced) and isn't recorded in the event log. " +
 			"Pass `id` to send that reminder's exact notification (same title/body it would show when due), or omit `id` for a generic 'notifications are working' test (good right after setup).",
 	}, h.handleTest)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_fire",
-		Description: "Fire a reminder for REAL right now (the `id` is REQUIRED), exactly as if it had just come due: it sends the notification, records the event, and advances state — a recurring reminder reschedules to its next occurrence, a one-shot becomes 'fired'. " +
-			"This is not a dry run; use reminder_test to only verify notifications without changing state.",
+		Description: "Fire a reminder for REAL right now (the `id` is REQUIRED), exactly as if it had just come due: it sends the notification, records the event, and advances state. A recurring reminder reschedules to its next occurrence, a one-shot becomes 'fired'. " +
+			"This isn't a dry run; use reminder_test to only verify notifications without changing state.",
 	}, h.handleFire)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_doctor",
 		Description: "Diagnose reminder itself: is serve reachable, is the store readable, is the running build " +
 			"the installed one. Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing, and it sends no notification. " +
+			"Read-only: it probes, it changes nothing, and it sends no notification. " +
 			"Call this when another reminder tool errors; use `reminder_test` instead to check that macOS " +
 			"notifications actually reach the user.",
 	}, h.handleDoctor)

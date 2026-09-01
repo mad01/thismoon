@@ -26,24 +26,24 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "wire_open",
-		Description: "Open a channel so this session can talk to other sessions — two of them or ten. " +
-			"Use it when work has to continue somewhere else — handing a task to another agent, or having a separate session exercise and report back on something you just changed — and you need to exchange messages rather than guess. " +
+		Description: "Open a channel so this session can talk to other sessions, two of them or ten. " +
+			"Use it when work has to continue somewhere else (handing a task to another agent, or having a separate session exercise and report back on something you just changed) and you need to exchange messages rather than guess. " +
 			"Pass a `name` describing the work (e.g. refactor-auth); omit it and one is generated. Names are lowercase letters, digits, dots, and dashes. " +
 			"**Give the returned `connect` string to the other sessions verbatim** (e.g. wire://localhost:7432/refactor-auth). It is the entire join protocol: there are no invites or tokens, and it works as the `channel` argument of every other wire tool. " +
 			"Show it to the user so they can paste it wherever the other sessions are. " +
-			"`from` names you and puts you on the roster; every message you post must be signed the same way. Give yourself a real name — short and distinctive (planner, quill), never a generic placeholder like agent — because `to` addressing and the obligation ledger key on it. Everyone else arrives via wire_join. " +
-			"Set `conventions` to the conversation's ground rules — they ride on the channel itself, so a session joining mid-conversation sees them without reading from the start. " +
+			"`from` names you and puts you on the roster; sign every message you post the same way. Give yourself a real name: short and distinctive (planner, quill), never a generic placeholder like agent, because `to` addressing and the obligation ledger key on it. Everyone else arrives via wire_join. " +
+			"Set `conventions` to the conversation's ground rules. They ride on the channel itself, so a session joining mid-conversation sees them without reading from the start. " +
 			"A convention set that holds up: \"one question per message; answer with reply_to; address questions with to; reply_needed only when blocked\".",
 	}, h.handleOpen)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "wire_join",
-		Description: "Join a channel another session opened — call this FIRST, before posting or reading, whenever you were handed a connection string. " +
-			"`from` is the name you are joining as; every message you post must be signed with it, and messages addressed `to` that name are yours to answer. " +
-			"Pick the name yourself unless the briefing assigns you one: short and distinctive (quill, forge, mapper), never a generic placeholder like agent or assistant — addressing and the obligation ledger key on it, and two sessions both called agent are indistinguishable. " +
-			"One call returns the full briefing: `channel.conventions` (the ground rules — follow them), `members` (who is on the channel), `cursor` (pass it to wire_read as since to read the backlog, or read from 0 for the full transcript), `awaiting_reply_by` (open obligations by addressee — check your name), and `awaiting_reply_off_roster` (obligation addressees nobody on the roster matches — check it for near-misses of your name; a misaddressed question will not appear under yours). " +
+		Description: "Join a channel another session opened. Call this FIRST, before posting or reading, whenever you were handed a connection string. " +
+			"`from` is the name you are joining as; sign every message you post with it, and messages addressed `to` that name are yours to answer. " +
+			"Pick the name yourself unless the briefing assigns you one: short and distinctive (quill, forge, mapper), never a generic placeholder like agent or assistant, because addressing and the obligation ledger key on it, and two sessions both called agent are indistinguishable. " +
+			"One call returns the full briefing: `channel.conventions` (the ground rules; follow them), `members` (who is on the channel), `cursor` (pass it to wire_read as since to read the backlog, or read from 0 for the full transcript), `awaiting_reply_by` (open obligations by addressee; check your name), and `awaiting_reply_off_roster` (obligation addressees nobody on the roster matches; check it for near-misses of your name, since a misaddressed question won't appear under yours). " +
 			"Your join lands in the transcript, so sessions blocked waiting for you wake immediately. " +
-			"Set `note` to say what you are joining as or ready for — it becomes the join message's body. Joining a channel you are already on is a no-op that still returns the briefing.",
+			"Set `note` to say what you are joining as or ready for; it becomes the join message's body. Joining a channel you are already on is a no-op that still returns the briefing.",
 	}, h.handleJoin)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -51,32 +51,32 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Leave a channel: take yourself off the roster when your part is done but the conversation continues without you. " +
 			"Other sessions see the leave in the transcript and stop addressing messages to you. " +
 			"Set `note` to say why you are going and where your work landed. " +
-			"Do not confuse this with wire_close — close ends the conversation for everyone; leave is just your exit.",
+			"Don't confuse this with wire_close: close ends the conversation for everyone, leave is just your exit.",
 	}, h.handleLeave)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "wire_post",
 		Description: "Post a message to a channel, addressed by its name, its id, or the connection string you were given. " +
-			"`from` is REQUIRED — in a channel several sessions write to, an unsigned message cannot be answered. " +
+			"`from` is REQUIRED: in a channel several sessions write to, nobody can answer an unsigned message. " +
 			"Say what the readers need (what you did, what you need back, what you are blocked on); the transcript is the only context they get. " +
-			"Use the protocol fields instead of prose sentinels: `kind` classifies intent — task, result, question, answer, ack, or note (note is for intros, status, and findings: substance that answers nothing and demands nothing). " +
-			"`to` addresses the message to one agent by roster name — set it on every question and task when more than two agents share the channel, or the obligation belongs to nobody. " +
-			"`reply_to` names the seq you are answering; set it on every response so an interleaved transcript stays followable. One reply_to per obligation: answer each question with its own message, and never bundle two questions into one seq — a single reply clears the whole seq from awaiting_reply whether or not it covered everything. " +
-			"`reply_needed: true` says you are blocked until someone answers; it keeps the seq in awaiting_reply (and under the addressee's name in awaiting_reply_by) until a reply names it. It does not speed anything up — its value is that the debt survives in the record. " +
+			"Use the protocol fields instead of prose sentinels: `kind` classifies intent as task, result, question, answer, ack, or note (note is for intros, status, and findings: substance that answers nothing and demands nothing). " +
+			"`to` addresses the message to one agent by roster name; set it on every question and task when more than two agents share the channel, or the obligation belongs to nobody. " +
+			"`reply_to` names the seq you are answering; set it on every response so an interleaved transcript stays followable. One reply_to per obligation: answer each question with its own message, and never bundle two questions into one seq, because a single reply clears the whole seq from awaiting_reply whether or not it covered everything. " +
+			"`reply_needed: true` says you are blocked until someone answers; it keeps the seq in awaiting_reply (and under the addressee's name in awaiting_reply_by) until a reply names it. It doesn't speed anything up; its value is that the debt survives in the record. " +
 			"Returns the message's `seq`, which is the cursor the next reader resumes from and the id other messages reference in `reply_to`. Posting to a closed channel is an error.",
 	}, h.handlePost)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "wire_read",
 		Description: "Read the messages on a channel after a cursor, optionally waiting for the next one to arrive. " +
-			"`channel` takes a name, an id, or a wire:// connection string — if another session handed you one, pass it straight through. " +
+			"`channel` takes a name, an id, or a wire:// connection string. If another session handed you one, pass it straight through. " +
 			"Pass `since` with the `cursor` from your last read to get only what is new; omit it to read the conversation from the start. " +
-			"Set `wait` to a number of seconds (up to 120) to block until a message lands — that is how you wait for the other session's reply in one call instead of polling in a loop. " +
+			"Set `wait` to a number of seconds (up to 120) to block until a message lands. That is how you wait for the other session's reply in one call instead of polling in a loop. " +
 			"A wait that expires returns an empty list, not an error: read again, or give up. " +
-			"Always keep the returned `cursor` for your next read, and check `channel.closed_at` — a closed channel will never produce another message, so stop waiting on it. " +
-			"`awaiting_reply_by` maps roster names to the seqs each one owes an answer — **look up your own name and settle those before posting anything new**. `awaiting_reply` is every open obligation including unaddressed ones, which belong to whoever picks them up. " +
-			"Do not trust `awaiting_reply_by` alone: `awaiting_reply_off_roster` lists the addressees on that map who are not on the roster, and a question misaddressed to you (a typo of your name, or sent after someone left) sits under a key you would never check. When it is non-empty, read the seqs under those names and judge which are yours — the server cannot tell a typo from a handoff to an agent that has not joined yet. " +
-			"`members` is the current roster; `channel.conventions` carries the ground rules the opener declared — follow them.",
+			"Always keep the returned `cursor` for your next read, and check `channel.closed_at`: a closed channel will never produce another message, so stop waiting on it. " +
+			"`awaiting_reply_by` maps roster names to the seqs each one owes an answer. **Look up your own name and settle those before posting anything new**. `awaiting_reply` is every open obligation including unaddressed ones, which belong to whoever picks them up. " +
+			"Don't trust `awaiting_reply_by` alone: `awaiting_reply_off_roster` lists the addressees on that map who aren't on the roster, and a question misaddressed to you (a typo of your name, or sent after someone left) sits under a key you would never check. When it is non-empty, read the seqs under those names and judge which are yours; the server can't tell a typo from a handoff to an agent that hasn't joined yet. " +
+			"`members` is the current roster; `channel.conventions` carries the ground rules the opener declared, so follow them.",
 	}, h.handleRead)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -97,7 +97,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "wire_doctor",
 		Description: "Diagnose wire itself: is serve reachable, is the JSONL store readable, is the running build " +
 			"the installed one. Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"Call this when another wire tool errors: it separates a serve that is down or on a different port " +
 			"from a channel that genuinely has nothing new.",
 	}, h.handleDoctor)
@@ -126,7 +126,7 @@ func (h *handlers) channelURL(ref string) string {
 type openInput struct {
 	Name        string `json:"name,omitempty"        jsonschema:"channel name to open, lowercase letters/digits/dots/dashes, e.g. refactor-auth; omit to have one generated"`
 	Topic       string `json:"topic,omitempty"       jsonschema:"optional one-line description of what this conversation is for"`
-	From        string `json:"from"                  jsonschema:"the name you give yourself for this conversation — short and distinctive (planner, quill), not a generic placeholder like agent; your messages are signed with it and replies are addressed to it"`
+	From        string `json:"from"                  jsonschema:"the name you give yourself for this conversation: short and distinctive (planner, quill), not a generic placeholder like agent; your messages are signed with it and replies are addressed to it"`
 	Conventions string `json:"conventions,omitempty" jsonschema:"ground rules for the conversation (tag vocabulary, expected message shapes); carried on the channel so a late joiner sees them without reading from the start"`
 }
 
@@ -151,7 +151,7 @@ func (h *handlers) handleOpen(
 
 type joinInput struct {
 	Channel string `json:"channel"        jsonschema:"channel name, id, or connection string to join"`
-	From    string `json:"from"           jsonschema:"the name you join as — pick it yourself, short and distinctive (quill, forge), not a generic placeholder like agent; sign every later post with it, and answer messages addressed to it"`
+	From    string `json:"from"           jsonschema:"the name you join as: pick it yourself, short and distinctive (quill, forge), not a generic placeholder like agent; sign every later post with it, and answer messages addressed to it"`
 	Note    string `json:"note,omitempty" jsonschema:"optional intro: what you are joining as or ready for; becomes the join message's body"`
 }
 
@@ -193,7 +193,7 @@ type postInput struct {
 	To          string `json:"to,omitempty"           jsonschema:"roster name this message is addressed to; set it on questions and tasks whenever more than two agents share the channel"`
 	Body        string `json:"body"                   jsonschema:"the message (required)"`
 	Kind        string `json:"kind,omitempty"         jsonschema:"intent of the message: task, result, question, answer, ack, or note; omit for a plain message"`
-	ReplyTo     int64  `json:"reply_to,omitempty"     jsonschema:"seq of the message this answers — set it on every response, one reply_to per obligation"`
+	ReplyTo     int64  `json:"reply_to,omitempty"     jsonschema:"seq of the message this answers; set it on every response, one reply_to per obligation"`
 	ReplyNeeded bool   `json:"reply_needed,omitempty" jsonschema:"true when you are blocked until someone answers; the message stays in awaiting_reply until another message names it in reply_to"`
 }
 
@@ -238,8 +238,8 @@ type readOutput struct {
 	Cursor                 int64              `json:"cursor"                              jsonschema:"pass this as the since argument on your next read"`
 	Members                []string           `json:"members,omitempty"                   jsonschema:"the roster: everyone currently on the channel"`
 	AwaitingReply          []int64            `json:"awaiting_reply,omitempty"            jsonschema:"every seq posted with reply_needed that nothing has answered yet"`
-	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"         jsonschema:"open obligations grouped by the roster name they are addressed to — settle the ones under your name before posting anything new"`
-	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty" jsonschema:"addressees in awaiting_reply_by who are not on the roster — a typo'd name, a departed member, or an agent yet to join. When non-empty, read the seqs under those names: a question misaddressed to you sits under a key you would never check, so awaiting_reply_by alone can mislead"`
+	AwaitingReplyBy        map[string][]int64 `json:"awaiting_reply_by,omitempty"         jsonschema:"open obligations grouped by the roster name they are addressed to; settle the ones under your name before posting anything new"`
+	AwaitingReplyOffRoster []string           `json:"awaiting_reply_off_roster,omitempty" jsonschema:"addressees in awaiting_reply_by who aren't on the roster: a typo'd name, a departed member, or an agent yet to join. When non-empty, read the seqs under those names: a question misaddressed to you sits under a key you would never check, so awaiting_reply_by alone can mislead"`
 	Closed                 bool               `json:"closed"                              jsonschema:"true when the channel is finished and will never produce another message"`
 	URL                    string             `json:"url"`
 }

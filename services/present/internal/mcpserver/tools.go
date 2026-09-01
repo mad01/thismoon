@@ -55,29 +55,29 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_create",
 		Description: "Create a new presentation page and return its id and URL. " +
-			"Provide a Doc JSON object as `content` — the server renders it to HTML with the correct CSS classes and structure. " +
+			"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
 			"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
 			"Keep the returned id; it is the handle for present_update/present_read/present_open.",
 	}, withHint(h.handleCreate))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "present_read",
-		Description: "Read a presentation's current title, rendered HTML content, graph JS, version, and URL by id. For editing, prefer present_source — it returns the structured source in the format present_update accepts.",
+		Description: "Read a presentation's current title, rendered HTML content, graph JS, version, and URL by id. For editing, prefer present_source: it returns the structured source in the format present_update accepts.",
 	}, withHint(h.handleRead))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_source",
 		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc) and the structured graph JSON (graph_format=json), plus references. " +
-			"Both come back in exactly the format present_update accepts, so you can modify them and pass them straight back — use this to mutate a page from a new or restored session. " +
+			"Both come back in exactly the format present_update accepts, so you can modify them and pass them straight back. Use this to mutate a page from a new or restored session. " +
 			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form.",
 	}, withHint(h.handleSource))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_update",
-		Description: "Update an existing presentation. The `id` parameter is REQUIRED — it is the page id returned by present_create. " +
+		Description: "Update an existing presentation. The `id` parameter is REQUIRED: it is the page id returned by present_create. " +
 			"Provide a Doc JSON object as `content` and/or a Graph JSON object as `graph`. " +
 			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph. " +
-			"Bumps the page version so any open browser tab auto-reloads — you do NOT need to call present_open again after an update.",
+			"Bumps the page version so any open browser tab auto-reloads, so you don't need to call present_open again after an update.",
 	}, withHint(h.handleUpdate))
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -88,8 +88,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_open",
 		Description: "Open a presentation in the default browser (macOS `open`). " +
-			"Call this AT MOST ONCE per presentation — after the tab is open, present_update triggers an automatic reload, " +
-			"so do not call present_open again for subsequent edits. " +
+			"Call this AT MOST ONCE per presentation: after the tab is open, present_update triggers an automatic reload, " +
+			"so don't call present_open again for subsequent edits. " +
 			"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
 	}, withHint(h.handleOpen))
 
@@ -99,10 +99,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "present_doctor",
 		Description: "Diagnose present itself: is the page store readable, is serve reachable, is the running " +
 			"build the installed one. Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"The store check matters most: these tools write the page store directly, so pages can be created " +
-			"and updated with serve down — only the URLs stop resolving. " +
-			"Call this when a present tool errors or a page URL does not load.",
+			"and updated with serve down; only the URLs stop resolving. " +
+			"Call this when a present tool errors or a page URL doesn't load.",
 	}, h.handleDoctor)
 }
 
@@ -177,14 +177,14 @@ func parseGraphAndRender(data []byte) (js string, srcJSON []byte, err error) {
 
 type refInput struct {
 	Title string `json:"title" jsonschema:"display label for the link"`
-	URL   string `json:"url"   jsonschema:"full URL (https://...) — repos, docs, PRs, or any external material cited in the brief"`
+	URL   string `json:"url"   jsonschema:"full URL (https://...) pointing at repos, docs, PRs, or any external material cited in the brief"`
 }
 
 type createInput struct {
 	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content"              jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string. Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|area|sparkline, title?, unit?, series:[{name?, color?, points:[{x,y}]}] — inline metric chart, many per page), code (text + lang?, verbatim code block with copy button — no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
+	Content    string     `json:"content"              jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string. Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|area|sparkline, title?, unit?, series:[{name?, color?, points:[{x,y}]}]; inline metric chart, many per page), code (text + lang?, verbatim code block with copy button, no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
 	Graph      string     `json:"graph,omitempty"      jsonschema:"optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?}], edges:[{from,to,type?,label?}], layout?, direction?} or a legacy JS string. Node types: center, module, leaf, registry. Edge types: consumes (solid), publishes (dashed). Layouts: dagre (default, layered DAG), cose (no hierarchy). Direction (dagre): TB or LR; omit for auto (LR when the graph has few nodes)."`
-	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page — repos, docs, PRs consulted while writing the brief"`
+	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
 }
 
 type pageOutput struct {
@@ -438,7 +438,7 @@ type listItem struct {
 	URL       string `json:"url"`
 	Version   int    `json:"version"`
 	UpdatedAt string `json:"updated_at"`
-	HasDoc    bool   `json:"has_doc"    jsonschema:"true when the page has a persisted Doc source — present_source returns it ready for editing"`
+	HasDoc    bool   `json:"has_doc"    jsonschema:"true when the page has a persisted Doc source; present_source returns it ready for editing"`
 }
 
 type listOutput struct {

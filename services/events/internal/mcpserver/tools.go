@@ -23,12 +23,12 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "events_query",
-		Description: "Query the local event/audit log, newest first — the primary tool for debugging what happened. " +
+		Description: "Query the local event/audit log, newest first, the primary tool for debugging what happened. " +
 			"Optional filters: `source` (e.g. 'deps', 'reminder'), `level` ('info'|'warn'|'error'), " +
 			"`q` (case-insensitive substring over title, message, component, and tags), " +
-			"`since` (an event id; returns only events newer than it — use it to poll for new activity), " +
+			"`since` (an event id; returns only events newer than it, so use it to poll for new activity), " +
 			"and `limit` (max events, defaults to the global cap). Use events_sources first to see which sources exist. " +
-			"On zero results the response carries zero_result_hint (whether the source filter names a real source, the known sources, the time the since cursor decodes to) — read it before assuming nothing happened.",
+			"On zero results the response carries zero_result_hint (whether the source filter names a real source, the known sources, the time the since cursor decodes to). Read it before assuming nothing happened.",
 	}, h.handleQuery)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -47,7 +47,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "events_doctor",
 		Description: "Diagnose events itself: is serve reachable, is the JSONL store readable, is the running " +
 			"build the installed one. Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"Call this when events_query comes back empty or events_emit errors: it separates a serve that is " +
 			"down or on a different port from a log that genuinely has nothing in it.",
 	}, h.handleDoctor)
@@ -73,7 +73,7 @@ type queryOutput struct {
 // happened" from "the source filter names no real source" or "the since
 // cursor excluded everything". Additive: it appears only on zero results.
 type queryZeroHint struct {
-	SourceFilter string   `json:"source_filter,omitempty" jsonschema:"the source filter that was applied"`
+	SourceFilter string   `json:"source_filter,omitempty" jsonschema:"the source filter this query applied"`
 	SourceExists bool     `json:"source_exists"           jsonschema:"whether the source filter names a source that exists; only meaningful when source_filter is set"`
 	KnownSources []string `json:"known_sources,omitempty" jsonschema:"every source that exists, from events_sources"`
 	SinceTime    string   `json:"since_time,omitempty"    jsonschema:"the timestamp the since cursor decodes to (RFC3339); only events newer than this were considered"`

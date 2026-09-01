@@ -77,20 +77,20 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "worklog_list",
 		Description: "List work items, newest first. Filter by status (active|paused|done) or repo. " +
 			"Use to answer 'what was I working on' or to find an item to resume. " +
-			"On zero results the response carries zero_result_hint (how many items the store holds) — read it to tell a filter miss from an empty or unclonable store.",
+			"On zero results the response carries zero_result_hint (how many items the store holds). Read it to tell a filter miss from an empty or unclonable store.",
 	}, h.handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_search",
 		Description: "Search work items by key and content (active items first). Use to find a past task by ticket, topic, or keyword. " +
-			"On zero results the response carries zero_result_hint (how many items the store holds) — read it to tell a query miss from an empty or unclonable store.",
+			"On zero results the response carries zero_result_hint (how many items the store holds). Read it to tell a query miss from an empty or unclonable store.",
 	}, h.handleSearch)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_show",
 		Description: "Read a work item's full CONTEXT.md (goal, where-I-am, log), or a per-repo note with `repo`. " +
 			"Use when resuming to restore context before continuing. " +
-			"Only explicitly checkpointed tasks have items — unless a prior call already confirmed the key exists, " +
+			"Only explicitly checkpointed tasks have items. Unless a prior call already confirmed the key exists, " +
 			"run worklog_search first instead of assuming a ticket was checkpointed.",
 	}, h.handleShow)
 

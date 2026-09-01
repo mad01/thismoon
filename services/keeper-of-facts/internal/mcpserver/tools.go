@@ -22,30 +22,30 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "kof_assert",
 		Description: "Record a one-sentence assertion about how a system behaves and ground it in evidence pins. " +
-			"An assertion is a durable, checkable claim you derived this session — how some code acts, an approach that failed, a settled decision — so a later session can trust it without re-deriving it. " +
+			"An assertion is a durable, checkable claim you derived this session (how some code acts, an approach that failed, a settled decision) so a later session can trust it without re-deriving it. " +
 			"Each pin captures a line range in a repo working tree, hashed the moment you assert; `kof_check` re-hashes them later and flips the assertion stale if the pinned code changed. " +
-			"At least one pin is REQUIRED — pins are what let kof tell whether the claim still holds, so an assertion with no pin is rejected. " +
-			"`kind` must be EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread — write \"code-behavior\", not \"behavior\". " +
-			"`confidence` must be EXACTLY one of: verified | derived | hint — not high/medium/low. Any other value in either field is rejected. " +
-			"Keep the returned id — it is the handle for kof_get / kof_retract / kof_check.",
+			"At least one pin is REQUIRED: pins are what let kof tell whether the claim still holds, so an assertion with no pin is rejected. " +
+			"`kind` must be EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread. Write \"code-behavior\", not \"behavior\". " +
+			"`confidence` must be EXACTLY one of: verified | derived | hint, not high/medium/low. Any other value in either field is rejected. " +
+			"Keep the returned id; it is the handle for kof_get / kof_retract / kof_check.",
 	}, h.handleAssert)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "kof_query",
 		Description: "List assertions, newest first, to see what past sessions already established before deriving it again. " +
 			"Filter by `subject` (prefix match on the namespaced key), `kind`, and/or `status` (fresh | stale | retracted); omit all to list everything. " +
-			"Returns each assertion's id, statement, kind, confidence, and status — follow up with kof_get for the full record including pins. " +
-			"On zero results the response carries zero_result_hint (how many stored subjects the prefix matched, whether other filters excluded everything) — read it before assuming nothing is stored.",
+			"Returns each assertion's id, statement, kind, confidence, and status. Follow up with kof_get for the full record including pins. " +
+			"On zero results the response carries zero_result_hint (how many stored subjects the prefix matched, whether other filters excluded everything); read it before assuming nothing is stored.",
 	}, h.handleQuery)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "kof_recall",
 		Description: "Ask the keeper what it knows relevant to a free-form question. " +
-			"A one-shot model judge ranks the whole store against the question and returns the relevant assertions in rank order — " +
-			"use this when you don't know the subject key: \"why does the store not lose writes\" finds the single-writer assertion even though no word matches. " +
+			"A one-shot model judge ranks the whole store against the question and returns the relevant assertions in rank order. " +
+			"Use this when you don't know the subject key: \"why does the store not lose writes\" finds the single-writer assertion even though no word matches. " +
 			"Stale assertions are included and marked (treat them as needing re-verification); retracted ones never appear. " +
-			"`question` is the ONLY parameter — there is no subject/kind/status filtering here; those params belong to kof_query. " +
-			"Takes a few seconds. If the judge is unavailable the error says so — fall back to kof_query.",
+			"`question` is the ONLY parameter: there is no subject/kind/status filtering here; those params belong to kof_query. " +
+			"Takes a few seconds. If the judge is unavailable the error says so; fall back to kof_query.",
 	}, h.handleRecall)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -55,7 +55,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "kof_retract",
-		Description: "Withdraw an assertion by id — a terminal action that records the claim as no longer holding. " +
+		Description: "Withdraw an assertion by id, a terminal action that records the claim as no longer holding. " +
 			"`note` is REQUIRED: give the reason or the counter-evidence, since the retracted record stays in the store as the explanation of why the claim was dropped. " +
 			"Use this instead of leaving a wrong assertion to go stale when you have direct evidence it is false.",
 	}, h.handleRetract)
@@ -65,14 +65,14 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Re-hash an assertion's evidence pins against the current working tree and report whether it still holds. " +
 			"Pass `id` to check one assertion, or omit `id` to re-check every non-retracted assertion. " +
 			"Returns counts of how many were checked, how many are fresh, how many are stale, and how many flipped between the two on this run. " +
-			"A stale result means the pinned code changed and the claim needs another look — not that it is necessarily wrong.",
+			"A stale result means the pinned code changed and the claim needs another look, not that it is necessarily wrong.",
 	}, h.handleCheck)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "kof_doctor",
 		Description: "Diagnose kof itself: is serve reachable, is the assertion log readable, is the running build " +
 			"the installed one. Returns one result per check with `ok` false if any failed. " +
-			"Read-only — it probes, it changes nothing. " +
+			"Read-only: it probes, it changes nothing. " +
 			"This is about the service, not the assertions: use `kof_check` to re-verify the claims in the store, " +
 			"and this when a kof tool errors or comes back empty and you need to know whether serve is even up.",
 	}, h.handleDoctor)
@@ -97,10 +97,10 @@ type pinInput struct {
 }
 
 type assertInput struct {
-	Kind       string     `json:"kind"                  jsonschema:"EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread. Meanings: code-behavior (how code acts — write code-behavior, not behavior), dead-end (an approach that failed), preference (a stated way of working), decision (a settled choice), machine-state (a fact about the local machine), open-thread (unfinished work worth resuming)"`
+	Kind       string     `json:"kind"                  jsonschema:"EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread. Meanings: code-behavior (how code acts; write code-behavior, not behavior), dead-end (an approach that failed), preference (a stated way of working), decision (a settled choice), machine-state (a fact about the local machine), open-thread (unfinished work worth resuming)"`
 	Subject    string     `json:"subject"               jsonschema:"namespaced key the claim is about, e.g. repo:mad01/thismoon/services/events"`
 	Statement  string     `json:"statement"             jsonschema:"the claim in one sentence"`
-	Confidence string     `json:"confidence"            jsonschema:"EXACTLY one of: verified | derived | hint — not high/medium/low. Meanings: verified (checked against a primary source), derived (reasoned from evidence), hint (a weak signal)"`
+	Confidence string     `json:"confidence"            jsonschema:"EXACTLY one of: verified | derived | hint, not high/medium/low. Meanings: verified (checked against a primary source), derived (reasoned from evidence), hint (a weak signal)"`
 	SessionID  string     `json:"session_id"            jsonschema:"identifier of the session deriving this assertion"`
 	CostTokens int        `json:"cost_tokens,omitempty" jsonschema:"optional token cost of deriving the assertion"`
 	Links      []string   `json:"links,omitempty"       jsonschema:"optional related URLs (tickets, PRs, docs)"`
