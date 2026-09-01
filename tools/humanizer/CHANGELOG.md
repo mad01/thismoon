@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/mad01/thismoon/compare/humanizer/v0.9.0...humanizer/v0.10.0) (2026-09-01)
+
+
+### Features
+
+* **humanizer:** add humanizer_scan_go MCP tool (MAD-336) ([#63](https://github.com/mad01/thismoon/issues/63)) ([ec488ba](https://github.com/mad01/thismoon/commit/ec488ba3e941e9bf5bba564f01adcde2cccbc873))
+* **humanizer:** add scan --go for Go AST prose extraction (MAD-335) ([#60](https://github.com/mad01/thismoon/issues/60)) ([f13e7c7](https://github.com/mad01/thismoon/commit/f13e7c7343920033b889caee47c3cec36552cf39))
+
+
+### Bug Fixes
+
+* **humanizer:** calibrate judge rubric for confidence spread (MAD-348) ([#62](https://github.com/mad01/thismoon/issues/62)) ([03e931f](https://github.com/mad01/thismoon/commit/03e931f63acaa48a4de382ad8608bd50e5b551ea))
+* **humanizer:** exclude fenced code and double hyphens from em-dash density (MAD-347) ([#59](https://github.com/mad01/thismoon/issues/59)) ([f211ef7](https://github.com/mad01/thismoon/commit/f211ef7c8145a6e9f8a3a34f335e7aa1dfad6996))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/humanizer/v0.8.0...humanizer/v0.9.0) (2026-09-01)
 
 
