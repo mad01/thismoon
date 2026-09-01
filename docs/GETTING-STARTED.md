@@ -319,7 +319,7 @@ hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)), and
 instruction file that teaches the agent when to reach for which tool. The
 six skills under `skills/` need no registration — their recipes symlink
 them into `~/.claude/skills`, and they load when invoked by name
-(`/commit-pipeline`, `/golang-style`, `/handoff`, `/humanizer`, `/present`,
+(`/golang-style`, `/handoff`, `/humanizer`, `/loom`, `/present`,
 `/worklog`) or when a task matches; the MCP-backed ones assume their server
 from this section is registered.
 

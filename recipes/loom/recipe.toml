@@ -1,0 +1,22 @@
+# loom — skill-only recipe. The skill has no companion binary; it ships the
+# worktree-based multi-session coordination procedure (SKILL.md + loom.md)
+# from the repo-root skills/ dir into the agent skill directories on every
+# machine.
+[recipe]
+name = "loom"
+description = "loom — agent skill for coordinating parallel sessions with git worktrees, one weaver for the merges"
+
+# The skill lives in the repo-root skills/ dir (discoverable by browsing the
+# repo); link just this skill's directory into place. Relative sources resolve
+# against the recipe dir and are path-cleaned, so ../../ reaches the
+# source-checkout root.
+[dotfiles.loom_skill]
+source = "../../skills/loom"
+target = "~/.claude/skills/loom"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.loom_codex_skill]
+source = "../../skills/loom"
+target = "~/.agents/skills/loom"
+action = "symlink_dir"

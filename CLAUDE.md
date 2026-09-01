@@ -53,14 +53,14 @@ The repo ships six agent skills under `skills/`, one directory per skill. Each i
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
-| `commit-pipeline` | Coordinates commits when several sessions share one working tree: requesters queue commit request files under `~/.commits/`, and a single committer session processes them serially with exact staging. | nothing (guidance only; writes to `~/.commits/`) |
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
 | `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
 | `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus a headless `claude -p` pass on Haiku for holistic judgment |
+| `loom` | Coordinates parallel sessions on one repo with git worktrees: each session claims its own worktree under `~/.worktrees/` and commits there, and a single weaver session rebases the finished branches and lands them in order. | nothing (guidance only; creates worktrees under `~/.worktrees/`) |
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `commit-pipeline`, `golang-style`, and `handoff` need nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+Prerequisites: `golang-style`, `handoff`, and `loom` need nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
 
 ## Release process
 
