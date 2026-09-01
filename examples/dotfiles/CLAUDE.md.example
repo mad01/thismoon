@@ -17,7 +17,7 @@ Two more pieces this file leans on are not MCP servers: **belt**
 its guards and hints fire without any instruction here (see the
 `claude-hooks` recipe in this example repo) — and the repo's **skills**
 (`skills/` at the repo root: `/golang-style`, `/handoff`, `/humanizer`,
-`/present`, `/worklog`) load on demand when invoked by name or when a task
+`/loom`, `/present`, `/worklog`) load on demand when invoked by name or when a task
 matches their description; their recipes symlink them into
 `~/.claude/skills`. Other skill references you might carry (like
 `/simplify`) are your own.

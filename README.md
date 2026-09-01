@@ -118,10 +118,10 @@ ralph, symlink the skill directory there yourself.
 
 | Skill | Use it when | Backed by |
 |-------|-------------|-----------|
-| [commit-pipeline](skills/commit-pipeline/SKILL.md) | several agent sessions share one working tree and commits need a single owner: requesters queue request files in `~/.commits/`, one committer session lands them | nothing — guidance only |
 | [golang-style](skills/golang-style/SKILL.md) | writing or reviewing Go: naming, package layout, error handling, the HTTP/CLI/store patterns this codebase uses | nothing — guidance only |
 | [handoff](skills/handoff/SKILL.md) | a session is ending mid-task and the next one must continue from a cold start | nothing — guidance only |
 | [humanizer](skills/humanizer/SKILL.md) | prose is headed for docs, PR descriptions, or commit bodies and should not read as AI-written | the humanizer MCP |
+| [loom](skills/loom/SKILL.md) | several agent sessions work one repo in parallel: each claims its own git worktree and commits there, one weaver session lands the branches in order | nothing — guidance only |
 | [present](skills/present/SKILL.md) | a work summary or research result deserves a scrollable briefing page with graphs and charts | the present service |
 | [worklog](skills/worklog/SKILL.md) | a long task spans sessions and repos and needs to be resumable by ticket or topic | the worklog MCP |
 
