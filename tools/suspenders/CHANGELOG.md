@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/mad01/thismoon/compare/suspenders/v0.9.0...suspenders/v0.10.0) (2026-09-01)
+
+
+### Features
+
+* **suspenders:** block OpenRouter API keys (sk-or-v1-) ([8459064](https://github.com/mad01/thismoon/commit/8459064cb188617bfab09da36b46db2fb8417da8))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/suspenders/v0.8.0...suspenders/v0.9.0) (2026-08-29)
 
 

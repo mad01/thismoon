@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/humanizer/v0.8.0...humanizer/v0.9.0) (2026-09-01)
+
+
+### Features
+
+* **humanizer:** add LLM judge with pluggable OpenRouter backend (MAD-342) ([4b72402](https://github.com/mad01/thismoon/commit/4b72402cbf3dad154cca89af07fce566af515fd3))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/humanizer/v0.7.0...humanizer/v0.8.0) (2026-08-31)
 
 
