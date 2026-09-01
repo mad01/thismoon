@@ -534,6 +534,26 @@ func TestDefaultRulesDetection(t *testing.T) {
 			wantMatch: false,
 		},
 
+		// OpenRouter API key
+		{
+			name:      "openrouter-api-key matches",
+			ruleID:    "openrouter-api-key",
+			input:     "sk-or-v1-" + strings.Repeat("a1f9", 16),
+			wantMatch: true,
+		},
+		{
+			name:      "openrouter-api-key no match on short hex",
+			ruleID:    "openrouter-api-key",
+			input:     "sk-or-v1-" + strings.Repeat("a1f9", 8),
+			wantMatch: false,
+		},
+		{
+			name:      "openrouter-api-key no match on non-hex body",
+			ruleID:    "openrouter-api-key",
+			input:     "sk-or-v1-" + strings.Repeat("Z", 64),
+			wantMatch: false,
+		},
+
 		// HuggingFace token
 		{
 			name:      "huggingface-token matches",
