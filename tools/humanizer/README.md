@@ -89,7 +89,7 @@ The backend comes from the environment. `HUMANIZER_BACKEND` forces one; otherwis
 | `--model` | Override the backend's default model id (also settable via `HUMANIZER_MODEL`) |
 | `--json` | Emit the verdict as JSON (same shape as the `humanizer_judge` MCP tool) |
 
-The verdict is `likely_ai`, `likely_human`, or `mixed`, with a confidence score, concrete signals, and a one-line summary. Verdicts are advisory: treat flagged sections as rewrite targets alongside detect findings, not as ground truth.
+The verdict is `likely_ai`, `likely_human`, or `mixed`, with a confidence score, concrete signals, and a one-line summary. Confidence is a 0-1 fraction reporting how sure the judge is of the verdict it gave, not how machine-written the text is: a terse changelog can be confidently human at 0.5 because the genre explains everything the judge could point at. The rubric makes the model derive that number from the signals it listed, so short or genre-bound passages score lower than long ones full of quotable evidence. Verdicts are advisory: treat flagged sections as rewrite targets alongside detect findings, not as ground truth.
 
 ### scan
 
