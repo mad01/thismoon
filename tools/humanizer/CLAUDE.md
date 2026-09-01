@@ -8,7 +8,8 @@ Go CLI + MCP server. Detects AI-writing patterns by shelling out to `vale` again
 humanizer/
   cmd/humanizer/     - entrypoint (delegates to internal/cli)
   internal/
-    cli/             - cobra command tree (root, detect, judge, profile, rules, narrative, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
+    cli/             - cobra command tree (root, detect, judge, scan, profile, rules, narrative, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
+    goscan/          - Go source prose extraction (goscan.go walk + file filters, extract.go go/ast visitors, document.go blocks-to-document plus the line map back to source); importable so an MCP tool can wrap the same extraction
     mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_narrative.go, tools_judge.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
     rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
     narrative/       - StoryScope narrative rubric: 30 discourse-level fiction features + judge prompt (static data, no detection engine)
@@ -66,6 +67,7 @@ The test suite includes metadata validation for every YAML header, a gate assert
 
 - `humanizer detect [file]`: scan text (stdin, `-`, or a file argument) for AI-writing patterns via the vale span rules. Flags: `--min-severity` (`suggestion`|`warning`|`error`), `--rule` (repeatable rule ID filter), `--statistical` (run the statistical detector instead of vale), `--json` (same shape as `humanizer_detect`).
 - `humanizer judge [file]`: whole-passage LLM verdict (`likely_ai`|`likely_human`|`mixed` with confidence, signals, summary) through the configured backend — `OPENROUTER_API_KEY` → OpenRouter on `anthropic/claude-haiku-4.5`. Flags: `--backend` (force one), `--model` (or `HUMANIZER_MODEL`), `--json`. Fails without a configured backend; every other command stays offline.
+- `humanizer scan [path]`: extract the prose from Go source (doc comments, cobra `Use`/`Short`/`Long`/`Example`, MCP tool `Description` strings, the message arguments of `fmt.Errorf`/`errors.New`/`http.Error`, and `jsonschema` tag text) and print it as `file:line`-tagged blocks that pipe into `humanizer detect`. Flags: `--go` (required, selects the Go extractor), `--detect` (run the vale span rules, findings reported against the Go source line), `--holistic` (LLM judge per file; skipped with a note when no backend is configured), `--kind` (repeatable: `doc`|`cobra`|`mcp`|`error`|`schema`). A directory is walked recursively, skipping dot-directories, `vendor`, `node_modules`, `testdata`, and generated files; test files are included.
 - `humanizer profile [file]`: compute a quantitative voice profile: word/sentence/paragraph counts, type-token ratio, sentence length (mean/stddev/p50/p90), punctuation densities per 100 words (em-dash, semicolon, colon, paren, comma, hyphenated-pair, bold), contraction rate, Flesch reading ease, top bigrams/trigrams. Flags: `--diff <file>` (also print a metric-by-metric delta against a reference sample), `--json`.
 - `humanizer rules list`: list every bundled rule (ID, category, default severity, summary). Flags: `--category` (`content`|`language`|`style`|`communication`), `--json`.
 - `humanizer rules explain <rule_id>`: print full metadata for one rule: ID, name, category, severity, summary, rationale, before/after examples, reference link.

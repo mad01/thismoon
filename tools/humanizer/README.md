@@ -91,6 +91,25 @@ The backend comes from the environment. `HUMANIZER_BACKEND` forces one; otherwis
 
 The verdict is `likely_ai`, `likely_human`, or `mixed`, with a confidence score, concrete signals, and a one-line summary. Verdicts are advisory: treat flagged sections as rewrite targets alongside detect findings, not as ground truth.
 
+### scan
+
+Pull the prose out of Go source and scan it. Doc comments, cobra command fields, MCP tool descriptions, error messages, and `jsonschema` struct tags are text a reader meets in help output, tool listings, and errors, and none of it sits in a Markdown file where `detect` would find it.
+
+```sh
+humanizer scan --go internal/cli/detect.go
+humanizer scan --go ./services/ | humanizer detect
+humanizer scan --go --detect ./services/wire/
+```
+
+| Flag | Description |
+|---|---|
+| `--go` | Extract from Go source (the only extractor so far) |
+| `--detect` | Run the vale span rules over the extracted prose |
+| `--holistic` | Send each file's prose to the LLM judge; skipped with a note when no backend is configured |
+| `--kind` | Restrict extraction to one kind: `doc`, `cobra`, `mcp`, `error`, `schema` (repeatable) |
+
+Without `--detect` or `--holistic` the command prints the blocks, each behind a `file:line` header, so the output pipes into `humanizer detect`. A directory argument is walked recursively: dot-directories, `vendor`, `node_modules`, and `testdata` are skipped, as are generated files (a `.pb.go` name or a `DO NOT EDIT.` header), while test files are read like any other source. Under `--detect`, vale runs once per file over that file's blocks and every finding is reported against the line of Go source it came from.
+
 ### profile
 
 Compute a quantitative voice profile of a text sample.
@@ -289,6 +308,7 @@ The style pack extracts to `~/.cache/humanizer/vale` on first use. To override t
 | `internal/rules/embed.go` | Embeds the `vale/` tree into the binary; extracts to `~/.cache/humanizer/vale` on first use. |
 | `internal/rules/vale.go` | Runs the `vale` subprocess against extracted rules, parses JSON output. |
 | `internal/rules/metadata.go` | Parses `# humanizer-*` headers from each YAML for `rules list`/`explain`. |
+| `internal/goscan/` | Go source prose extraction: `Scan`/`ScanSource` return the blocks, `Render` joins one file's blocks into a document plus the line map back to source. |
 | `internal/voice/profile.go` | Sentence stats, punctuation densities, contraction rate, Flesch ease. |
 | `internal/voice/statistical.go` | Statistical AI-signal detectors (size-gated). |
 | `internal/voice/diff.go` | Metric-by-metric diff between two profiles. |

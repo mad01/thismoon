@@ -41,6 +41,18 @@ from the embedded copy, so deleting it is always safe.
 - `--json` (bool, default `false`): emit findings as JSON, the same shape
   `humanizer_detect` returns over MCP.
 
+### `scan`
+
+- `--go` (bool, default `false`): extract from Go source. Required today:
+  it selects the only extractor there is.
+- `--detect` (bool, default `false`): run the vale span rules over the
+  extracted prose and report findings against their Go source lines.
+- `--holistic` (bool, default `false`): send each file's prose to the LLM
+  judge. With no backend configured it prints a note on stderr and the scan
+  continues.
+- `--kind` (string list, default none, repeatable): restrict extraction to
+  these kinds (`doc`, `cobra`, `mcp`, `error`, `schema`).
+
 ### `profile`
 
 - `--diff` (string, default `""`): path to a sample file; also prints a
