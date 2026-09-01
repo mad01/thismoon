@@ -19,21 +19,21 @@ import (
 // file. Shipped in the binary so an agent (or human) staring at a deny can go
 // from `belt doctor` (what is the state) to `belt config --help` (which key
 // changes it) without hunting for repo docs.
-const configReference = `# ~/.config/belt/config.yaml — every key optional; guards and hints default
+const configReference = `# ~/.config/belt/config.yaml: every key optional; guards and hints default
 # to enabled when the file or their entry is missing (fail closed, not silent).
 # Absent and invalid differ: no file means these defaults, while a file that
 # fails to parse or validate makes every belt hook call deny until it is fixed.
 
 # There is no machine-profile concept in this file (docs/adr/0010): the
 # provisioning layer renders a per-machine-class config, so a guard or rule
-# that should exist only on some machines simply is not present in the
+# that should exist only on some machines simply isn't present in the
 # others' files. git-push-main, for example, ships enabled everywhere and
 # each class renders its own allow_repos list.
 
 # The one shared repo list, named for the workflow fact it states: these
 # repos' workflow is direct-to-main. Read by exactly git-push-main (push
-# allowed) and the commit-policy hint (advice silenced) — nothing else, so
-# editing it cannot disarm an unrelated guard (docs/adr/0013).
+# allowed) and the commit-policy hint (advice silenced), nothing else, so
+# editing it can't disarm an unrelated guard (docs/adr/0013).
 direct_main_repos:
   - github.com/you/dotfiles
 
@@ -90,10 +90,10 @@ commit_guards:
 # JSON on stdin ({"command","cwd"} for bash, {"file_path","content","cwd"}
 # for write). Exit 0 allows; exit 1 denies with stdout line one as the
 # reason (soft mode downgrades it to a warn event); exit 2+, a timeout (5s),
-# or a start failure allow with a warn event — a broken external fails open.
+# or a start failure allow with a warn event: a broken external fails open.
 # match gates when the external is exec'd at all: a substring of the bash
 # command (bash event) or target file path (write event). event is required
-# and must be bash or write — a misspelled one is a config error, since the
+# and must be bash or write. A misspelled one is a config error, since the
 # guard would register on an event that never fires.
 custom_guards:
   check-branch-naming:
@@ -117,8 +117,8 @@ guards:
   script-deny-list:
     enabled: true
     # "soft" downgrades every denial to a warn event on the events service
-    # and lets the command proceed — the rollout setting for tuning new
-    # patterns before they block. "hard" (the default) blocks. This is the
+    # and lets the command proceed (the rollout setting for tuning new
+    # patterns before they block). "hard" (the default) blocks. This is the
     # only guard that reads a mode here; setting it elsewhere is an error.
     mode: hard
     # Extra patterns denied inside scripts, beyond the Claude settings
@@ -137,7 +137,7 @@ guards:
     enabled: true
     # Repos allowed to carry internal names despite a github.com remote
     # (canonical host/owner/repo, matched against the target file's origin
-    # remote) — a private companion repo whose purpose is internal config.
+    # remote): a private companion repo whose purpose is internal config.
     allow_repos:
       - github.com/you/private-companion
     # Paths where internal references are deliberate. A ~/ or absolute entry
@@ -164,7 +164,7 @@ hints:
   lint-policy:
     enabled: true
     # Speaks only for repos whose root .belt.yaml declares a
-    # hints.lint-policy.message — that message is the whole advice, relayed
+    # hints.lint-policy.message: that message is the whole advice, relayed
     # once per session per repo after a git commit there.
   kof-assertions:
     enabled: true
@@ -180,17 +180,17 @@ func configDocCmd(paths pathsFunc) *cobra.Command {
 		Use:   "config",
 		Short: "Show the current effective config",
 		Long: `Show which config file belt loaded and every setting in effect after
-defaults and fallbacks are applied — what this binary runs with, not what
+defaults and fallbacks are applied: what this binary runs with, not what
 the file happens to spell out.
 
 belt reads ~/.config/belt/config.yaml (or $XDG_CONFIG_HOME/belt/config.yaml);
 --config and $BELT_CONFIG relocate it. A legacy config.toml beside the default
 file is read only when the YAML file is absent. A present-but-broken file of
-either format does not fall back to the other one and does not fall back to
+either format doesn't fall back to the other one and doesn't fall back to
 the defaults either: the hooks deny every guarded tool call until it parses,
 and this command prints the defaults only so the reference stays readable
 while the file is broken. Every value prints resolved, defaults included.
-claude_deny is the one section that is not a config.yaml key: the Bash deny
+claude_deny is the one section that isn't a config.yaml key: the Bash deny
 patterns are read live from the Claude settings and shown here because the
 script-deny-list guard enforces them.
 

@@ -15,7 +15,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print csl version",
 	Long: `Print the csl version (the git commit it was built from).
 
-Plain output is the bare version token — the cross-tool convention sibling
+Plain output is the bare version token: the cross-tool convention sibling
 tools follow so a single probe can ask any of them what build it is. With
 -o json, prints the full build metadata object: version, commit, tag,
 build_time, with every key present and "" for anything unknown.`,

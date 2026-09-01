@@ -92,7 +92,7 @@ var purgeCmd = &cobra.Command{
 	Long: "Delete events from one source. Without --before the source is removed\n" +
 		"entirely (memory + JSONL file); with --before <id> only events with\n" +
 		"id <= that cursor are dropped. Meant for cleaning junk (e.g. leaked test\n" +
-		"events) out of the timeline — the log is otherwise append-only.",
+		"events) out of the timeline: the log is otherwise append-only.",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		n, err := apiClient().Purge(purgeSource, purgeBefore)
 		if err != nil {

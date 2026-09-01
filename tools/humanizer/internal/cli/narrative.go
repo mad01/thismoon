@@ -20,7 +20,7 @@ var narrativeCmd = &cobra.Command{
 	Long: `Print the StoryScope rubric: 30 discourse-level narrative features
 (thematic over-explanation, plot linearity, embodied emotion, intertextual
 reference) that separate human-written from AI-generated fiction. These
-features need a reader's judgment, not a regex — the command only serves
+features need a reader's judgment, not a regex: the command only serves
 the rubric. To score a passage, run the --prompt output through an LLM
 with the passage on stdin:
 

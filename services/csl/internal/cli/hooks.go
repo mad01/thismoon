@@ -57,7 +57,7 @@ const deprecationNotice = `DEPRECATED: csl no longer manages post-merge hooks.
 suspenders is now the single git-hook manager. Configure a ` + "`csl-reindex`" + ` entry
 under suspenders' post_merge config; it writes each merged repo path to csl's
 reindex queue (` + "`csl doctor`" + ` and ` + "`csl config`" + ` name the state
-directory holding it). csl still OWNS draining that queue and indexing — run
+directory holding it). csl still OWNS draining that queue and indexing: run
 ` + "`csl sync`" + ` or ` + "`csl index --drain`" + ` as before.
 
 To migrate:

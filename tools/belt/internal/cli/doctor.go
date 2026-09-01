@@ -25,7 +25,7 @@ func doctorCmd(paths pathsFunc) *cobra.Command {
 config surface loaded (or didn't), which guards and hints are enabled,
 whether the kof serve instance the kof-* hints query is reachable, and
 the resolved blocked-name set the write-internal-names guard matches
-against. Use it to answer "why did that check fire" — a deny names the
+against. Use it to answer "why did that check fire": a deny names the
 guard, doctor names the build and the config behind it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

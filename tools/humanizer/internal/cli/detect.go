@@ -30,7 +30,7 @@ Vale Humanizer style pack. Prints findings grouped by severity.
 With --json, emits the same payload humanizer_detect would return over MCP.
 With --statistical, runs the size-gated statistical checks (sentence-length
 uniformity, contraction rate, lexical diversity, anaphora, ...) instead of
-the Vale span rules — the humanizer_detect_statistical payload.`,
+the Vale span rules: the humanizer_detect_statistical payload.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runDetect,
 }

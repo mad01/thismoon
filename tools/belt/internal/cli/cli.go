@@ -77,7 +77,7 @@ The event argument is belt's hint event, not the Claude Code tool name:
 search hints on the csl search tools, bash hints on Bash commands,
 external-text hints on the MCP tools that publish text off this machine,
 session-start hints once when a session opens (a SessionStart hook), and
-prompt hints on each user prompt (a UserPromptSubmit hook — advice goes to
+prompt hints on each user prompt (a UserPromptSubmit hook: advice goes to
 stdout as plain text, the form that event adds to context). Wire them in
 ~/.claude/settings.json:
 
@@ -127,9 +127,9 @@ func hookCmd(paths pathsFunc) *cobra.Command {
 and writes any deny decision as JSON on stdout; a valid event always exits 0
 (the deny travels in the JSON, not the exit code).
 
-A config file belt cannot parse denies every tool call with that as the
-reason. Belt is a guard: it cannot tell "no rules configured" from "the rules
-did not load", so it blocks instead of guessing the permissive one.
+A config file belt can't parse denies every tool call with that as the
+reason. Belt is a guard: it can't tell "no rules configured" from "the rules
+didn't load", so it blocks instead of guessing the permissive one.
 
 The event argument is belt's guard event, not the Claude Code tool name:
 bash guards Bash commands, write guards Write and Edit. Wire both in
@@ -222,7 +222,7 @@ func versionCmd() *cobra.Command {
 		Short: "Print the belt version",
 		Long: `Print the belt version (the git commit it was built from).
 
-Plain output is the bare version token — the cross-tool convention sibling
+Plain output is the bare version token: the cross-tool convention sibling
 tools follow so ralph and status can probe any of them for the build they are
 running. With -o json, prints the full build metadata object: version, commit,
 tag, build_time, with every key present and "" for anything unknown.`,

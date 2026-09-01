@@ -39,8 +39,8 @@ Typically run as a background service:
   t-man add --name csl-web -- csl web --port 7424
 
 Moving the UI off the default port: --port changes this process only. Other
-csl processes — the MCP server building csl_show_file links, ` + "`csl doctor`" + `
-probing the UI — learn the new port from CSL_PORT, or from web.base_url in
+csl processes (the MCP server building csl_show_file links, ` + "`csl doctor`" + `
+probing the UI) learn the new port from CSL_PORT, or from web.base_url in
 config.yaml when the UI is fronted by a proxy.`,
 	RunE: runWeb,
 }

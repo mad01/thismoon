@@ -15,7 +15,7 @@ import (
 
 // configReference documents every setting csl reads, shipped in the binary so
 // a fresh machine can be configured from the terminal without the repo.
-const configReference = `# config.yaml — every key optional.
+const configReference = `# config.yaml: every key optional.
 
 dirs:                        # directories walked for git repos; every repo
   - ~/code/src               # found under one of them is a candidate for the
@@ -43,7 +43,7 @@ semantic:                    # optional vector search, independent of the
   embed_model: ""            # embedding model; empty means the compiled-in
                              # default (jina-code-v2)
   dim: 0                     # the model's embedding width; 0 means the default
-                             # model's. Must match the model — changing either
+                             # model's. Must match the model: changing either
                              # re-embeds every store on the next index run.
 
 daemon:
@@ -58,7 +58,7 @@ refresh:
                              # means enabled; manual refresh from the web UI
                              # works either way.
   interval_minutes: 15       # how often the background refresh runs; 0 or
-                             # negative means 15. Keep it conservative — every
+                             # negative means 15. Keep it conservative: every
                              # cycle contacts every repo's remote.
 
 web:
@@ -68,13 +68,13 @@ web:
                              # when fronted by d-man.
 
 hooks:
-  post_merge:                # DEPRECATED installer — suspenders owns git hooks
+  post_merge:                # DEPRECATED installer: suspenders owns git hooks
     enabled: false           # now and feeds the reindex queue, which csl still
                              # drains. Only 'csl hooks install' reads this flag.
     exclude:                 # still live, and shared with every index and sync
       - you/huge-repo        # path: an excluded repo never enters the index.
       - ~/code/src/scratch   # Matched against the repo's absolute path or its
-                             # org/repo name — exact, no globs.
+                             # org/repo name: exact, no globs.
 
 # Environment (no YAML key of their own):
 #   CSL_CONFIG   moves this file; --config beats it.
@@ -82,7 +82,7 @@ hooks:
 #                it and every other surface links to it. web.base_url wins.
 #   EVENTS_BASE_URL  the events service sync runs archive to; best-effort.
 #
-# A repo can also carry a .cslignore at its root — one glob per line — which
+# A repo can also carry a .cslignore at its root (one glob per line) which
 # filters both indexes. That file is per-repo, not part of this config.`
 
 var configCmd = &cobra.Command{
@@ -94,7 +94,7 @@ are applied.
 csl reads exactly one file per run: --config when given, else CSL_CONFIG, else
 config.yaml in the XDG config directory ($XDG_CONFIG_HOME/csl, or ~/.config/csl
 when that is unset). There is no per-repo or per-directory override. The file is
-optional and so is every key in it — a missing file leaves csl on its defaults
+optional and so is every key in it: a missing file leaves csl on its defaults
 with no repos configured, and the header line above the output says whether the
 file was loaded, absent, or unparseable.
 

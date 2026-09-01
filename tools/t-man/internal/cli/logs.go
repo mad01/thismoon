@@ -54,7 +54,7 @@ var logsSandboxCmd = &cobra.Command{
 	Short: "View sandbox logs",
 	Long: `View sandbox logs registered as extra logs.
 
-Collects extra log sources named "sandbox" or "sandbox-*" — by convention the
+Collects extra log sources named "sandbox" or "sandbox-*", by convention the
 seatbelt denial ledger and notification mirror written by a sandbox watcher.
 With a service name only that service's sandbox sources are shown; without
 one, sandbox sources from all managed services are combined, and duplicate

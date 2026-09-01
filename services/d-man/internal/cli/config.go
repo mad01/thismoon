@@ -14,7 +14,7 @@ import (
 
 // configReference documents every routes.toml key, shipped in the binary so a
 // host that is not resolving can be debugged from the terminal.
-const configReference = `# routes.toml — every key is optional; a file with no routes is valid.
+const configReference = `# routes.toml: every key is optional; a file with no routes is valid.
 
 suffix = "this"           # label appended to every route name: name "csl" plus
                           # suffix "this" gives csl.this. Defaults to "this".
@@ -50,7 +50,7 @@ var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Show the current effective config",
 	Long: `Print which routes file d-man loaded and the effective configuration it
-produced — the file's own values with the built-in defaults applied.
+produced: the file's own values with the built-in defaults applied.
 
 The routes file is resolved in this order, first match winning:
 
@@ -62,7 +62,7 @@ The routes file is resolved in this order, first match winning:
 With none of them present the per-user path is reported as missing and d-man
 runs on defaults alone. A leading ~ is expanded before the file is opened.
 
-Annotated example — every key d-man reads:
+Annotated example, every key d-man reads:
 
 ` + configReference + `
 Pair it with doctor: doctor shows the state d-man resolved, config shows which

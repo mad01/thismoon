@@ -20,7 +20,7 @@ Writing /etc/hosts needs root, so run it with sudo:
   sudo d-man sync
 
 Note: when the d-man daemon is running it syncs automatically on every
-routes.toml change — sync is only needed as a manual / diagnostic one-shot.`,
+routes.toml change: sync is only needed as a manual / diagnostic one-shot.`,
 	RunE: runSync,
 }
 

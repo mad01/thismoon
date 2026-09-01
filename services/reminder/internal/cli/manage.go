@@ -168,7 +168,7 @@ var testCmd = &cobra.Command{
 	Short: "Send a test notification now to verify notifications work (no id = generic test)",
 	Long: `Fire a notification immediately to confirm macOS notifications work on this
 machine. With an id, it sends that reminder's exact notification without
-changing its state (a dry run — no one-shot consumed, no schedule advanced).
+changing its state (a dry run, no one-shot consumed, no schedule advanced).
 With no id, it sends a generic "notifications are working" test.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

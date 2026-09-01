@@ -25,7 +25,7 @@ var fixCmd = &cobra.Command{
 	Short: "Strip invisible Unicode and normalize space homoglyphs (Layer A scrub)",
 	Long: `Apply the deterministic "Layer A" scrub: remove zero-width/format controls,
 bidi overrides, tag characters, and variation selectors, and rewrite exotic
-space homoglyphs to a plain ASCII space. This is non-intrusive — it does not
+space homoglyphs to a plain ASCII space. This is non-intrusive: it doesn't
 change visible characters.
 
 The cleaned text goes to stdout by default, to a path with -o, or overwrites the

@@ -34,7 +34,7 @@ var rootCmd = &cobra.Command{
 
 It does two things, driven by a single routes config:
   1. syncs a managed block into /etc/hosts so <name>.<suffix> resolves to
-     127.0.0.1 in every client (Safari, Chrome, curl) — this works on macOS 26
+     127.0.0.1 in every client (Safari, Chrome, curl): this works on macOS 26
      where /etc/resolver custom-TLD DNS is broken;
   2. runs a reverse proxy on 127.0.0.1:80 that routes by Host header to each
      service's real port.

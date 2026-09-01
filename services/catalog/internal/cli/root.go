@@ -7,7 +7,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "catalog",
 	Short: "Backstage-style systems & components catalog",
-	Long: `catalog — a minimal systems catalog for your tools.
+	Long: `catalog: a minimal systems catalog for your tools.
 
 Reads Backstage-aligned service-info.yaml files from the repos listed in your
 registry, builds an in-memory catalog of Systems and Components, and serves a

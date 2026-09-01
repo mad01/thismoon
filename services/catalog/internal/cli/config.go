@@ -23,8 +23,8 @@ The registry is resolved in this order, first match winning:
   $XDG_CONFIG_HOME/catalog/registry.yaml   (when that variable is an absolute path)
   ~/.config/catalog/registry.yaml
 
-A leading ~ is expanded wherever it comes from — the flag, the environment
-variable, the default, and each sources[].path below — so a value handed over
+A leading ~ is expanded wherever it comes from: the flag, the environment
+variable, the default, and each sources[].path below, so a value handed over
 by a launchd agent, which never runs through a shell, resolves the same as one
 typed in a terminal.
 
@@ -37,8 +37,8 @@ roots, one per repo, that every command walks for service-info.yaml files.
 
 Each source root is walked recursively for files named service-info.yaml
 (.git, node_modules, vendor, .idea, dist and build are never descended into).
-Every such file holds one or more entities — a System for the repo, a Component
-per tool, several separated by --- in one file. A source that is not checked out
+Every such file holds one or more entities: a System for the repo, a Component
+per tool, several separated by --- in one file. A source that isn't checked out
 is skipped without complaint, so a registry may list more repos than a machine
 has. Nothing is cached: each run rescans from disk.
 

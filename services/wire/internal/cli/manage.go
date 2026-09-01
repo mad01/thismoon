@@ -205,7 +205,7 @@ func follow(ctx context.Context, w io.Writer, ref string, since int64) error {
 var joinCmd = &cobra.Command{
 	Use:   "join <channel|connection-string>",
 	Short: "Join a channel's roster and print the briefing",
-	Long: `Join a channel: put your name on the roster and get the briefing back —
+	Long: `Join a channel: put your name on the roster and get the briefing back:
 conventions, members, cursor, and the open obligations by addressee. Joining a
 channel you are already on is a no-op that still prints the briefing.`,
 	Args: cobra.ExactArgs(1),

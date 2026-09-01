@@ -22,7 +22,7 @@ var lintCmd = &cobra.Command{
 	Long: `Scan text (from a file or stdin) for the deterministic "Layer A" watermark
 carriers: zero-width and format controls, bidi overrides, tag characters,
 variation selectors, and exotic space homoglyphs. Reports what it finds without
-changing anything — use "humanizer fix" to apply the scrub.
+changing anything: use "humanizer fix" to apply the scrub.
 
 Load-bearing invisibles (emoji ZWJ/variation selectors after an emoji base,
 script joiners inside complex scripts, flag tag characters, orthographic

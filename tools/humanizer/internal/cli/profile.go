@@ -23,7 +23,7 @@ punctuation density, contraction rate, hyphenated-pair rate, type-token ratio,
 Flesch reading ease, and top bigrams/trigrams.
 
 With --diff=<sample-file>, also prints a metric-by-metric delta between
-the input and the sample — useful for matching a user's voice.`,
+the input and the sample: useful for matching a user's voice.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runProfile,
 }

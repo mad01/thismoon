@@ -46,8 +46,8 @@ all need root):
   sudo t-man --daemon add --name d-man -- d-man serve --config ~/.config/d-man/routes.toml
 
 It also watches its own binary and exits cleanly when the file changes, so a
-ralph rebuild is picked up by launchd's KeepAlive relaunch — no manual restart,
-no sudo.`,
+ralph rebuild is picked up by launchd's KeepAlive relaunch: no manual restart
+or sudo required.`,
 	RunE: runServe,
 }
 

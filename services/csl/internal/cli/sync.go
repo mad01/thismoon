@@ -28,12 +28,12 @@ queued by earlier ad-hoc git pulls are also drained and indexed.
 
 Repos on non-default branches, in detached HEAD, with dirty working trees
 (tracked uncommitted changes), or without a remote are skipped. Untracked
-files do not count as dirty. Repos in hooks.post_merge.exclude are also
+files don't count as dirty. Repos in hooks.post_merge.exclude are also
 skipped.
 
 The run takes the sync lock shared with the background refresher in ` + "`csl web`" + `;
 if another sync or refresh is already running the command fails instead of
-racing it — retry when it finishes.
+racing it: retry when it finishes.
 
 Use --concurrency to control parallel pulls (default: from config, fallback 8).
 Use --dry-run to preview what would happen without pulling or indexing.`,

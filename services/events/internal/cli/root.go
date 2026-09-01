@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 	Short: "Record, browse, and query a local event/audit log over localhost",
 	Long: fmt.Sprintf(`events is a local event/audit log: producers emit events, and you browse
 the timeline at http://localhost:%d (events.this with d-man) or query it from
-Claude. It is archive-only — events are recorded, never fired.
+Claude. It is archive-only: events are recorded, never fired.
 
 Subcommands:
   serve   Run the HTTP server (web timeline + JSON API) over the JSONL store.

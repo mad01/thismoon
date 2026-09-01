@@ -46,13 +46,13 @@ var hybridCmd = &cobra.Command{
 	Long: `Hybrid search: run both lexical (zoekt) and semantic (vector) search for the
 same query and fuse the two rankings with Reciprocal Rank Fusion (RRF).
 
-A file that ranks well in BOTH backends rises above a file that only tops one —
+A file that ranks well in BOTH backends rises above a file that only tops one:
 this catches exact-match cases that pure semantic misses and meaning-based
 matches that pure lexical misses. Build the semantic index first with:
 
   csl index --semantic-all
 
-If the semantic index is not built, results degrade to lexical-only (a note is
+If the semantic index isn't built, results degrade to lexical-only (a note is
 printed to stderr).
 
 Examples:
