@@ -18,8 +18,8 @@ var serveCmd = &cobra.Command{
 	Long: `Serve channels over HTTP on localhost: the web page at /, the JSON API the
 MCP and CLI call, and the event stream a live transcript follows.
 
-serve is also where a blocking read parks — a session waiting for another
-session's reply is a goroutine in this process — so it has to be running for
+serve is also where a blocking read parks (a session waiting for another
+session's reply is a goroutine in this process) so it has to be running for
 any of the other surfaces to work.
 
 Typically run as a background service:

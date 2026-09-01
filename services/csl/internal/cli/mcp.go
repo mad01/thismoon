@@ -21,7 +21,7 @@ var mcpCmd = &cobra.Command{
 functionality as native tools for Claude Code and other MCP clients.
 
 The server reads JSON-RPC requests from stdin and writes responses to stdout,
-then exits when the client closes stdin. No daemon, no port — just subprocess
+then exits when the client closes stdin. No daemon, no port, just subprocess
 IPC spawned per session by the MCP client.
 
 Tools exposed:

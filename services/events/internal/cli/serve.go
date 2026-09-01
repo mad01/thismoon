@@ -22,7 +22,7 @@ var serveCmd = &cobra.Command{
 	Short: "Run the events HTTP server (web timeline + JSON API)",
 	Long: `Serve the event log over HTTP on localhost: the web timeline at /, and the
 JSON API the MCP and CLI call. serve is the single writer of the JSONL store.
-It is archive-only — there is no ticker and nothing fires.
+It is archive-only: there is no ticker and nothing fires.
 
 Typically run as a background service:
   t-man add --name events -- events serve --port 7430`,

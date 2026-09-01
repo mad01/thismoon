@@ -19,7 +19,7 @@ var mcpCmd = &cobra.Command{
 	Long: `Start an MCP (Model Context Protocol) stdio server exposing wire's channels
 as native tools for Claude Code.
 
-The tools are a thin client over a running ` + "`wire serve`" + ` — start the serve
+The tools are a thin client over a running ` + "`wire serve`" + `: start the serve
 agent first (it owns the store and is where a blocking read waits).
 
 Tools exposed:

@@ -23,8 +23,8 @@ var rootCmd = &cobra.Command{
 	Short: "Talk between sessions over named channels",
 	Long: fmt.Sprintf(`wire is a message bus for agent sessions, served at
 http://localhost:%d (wire.this with d-man). One session opens a channel and
-hands the name to another session — a second agent, a parallel run, a human at
-a terminal — and from then on both post to it and read from it. A read can
+hands the name to another session (a second agent, a parallel run, a human at
+a terminal) and from then on both post to it and read from it. A read can
 block until the other side answers, so waiting for a reply costs one call
 instead of a polling loop.
 

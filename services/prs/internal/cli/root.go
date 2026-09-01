@@ -24,8 +24,8 @@ var rootCmd = &cobra.Command{
 	Long: fmt.Sprintf(`prs is a local open-PR dashboard, served at http://localhost:%d
 (prs.this with d-man). It discovers every git repo under the configured
 directories (the same discovery csl-style tools use), polls each repo's GitHub
-host for open pull requests — github.com and GitHub Enterprise alike,
-authenticated through your existing gh logins — and answers "is there anything
+host for open pull requests (github.com and GitHub Enterprise alike,
+authenticated through your existing gh logins) and answers "is there anything
 I need to act on?" in one place.
 
 serve owns the cache and the polling; the MCP and CLI commands are thin HTTP

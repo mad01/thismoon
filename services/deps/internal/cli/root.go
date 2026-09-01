@@ -35,7 +35,7 @@ Subcommands:
   notify  Fire notifications for any flagged packages not yet notified.
   mcp     Run the MCP stdio server exposing deps_* tools to Claude Code.
 
-scan/check/notify and the MCP are thin clients to a running 'deps serve' — start
+scan/check/notify and the MCP are thin clients to a running 'deps serve': start
 that agent first (it owns the scan store).`, deps.DefaultPort),
 	// An error from a subcommand is a diagnosis, not a usage mistake; main
 	// prints it once.

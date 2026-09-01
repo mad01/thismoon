@@ -31,18 +31,18 @@ var rewriteCmd = &cobra.Command{
 	Use:   "rewrite [file]",
 	Short: "Layer B: build (or run) a rewrite prompt against statistical watermarks",
 	Long: `Best-effort pass at statistical (token-sampling) watermarks that the Layer A
-scrub cannot touch. The default backend, print-prompt, returns the rewrite
-prompt and calls no model — offline and safe to run anywhere; you (or the
+scrub can't touch. The default backend, print-prompt, returns the rewrite
+prompt and calls no model: offline and safe to run anywhere; you (or the
 calling agent) then produce the rewrite.
 
 The ollama and openai-compatible backends run a chat model directly. They send
 text off-process, so they are refused for non-loopback hosts unless
 --allow-remote (or WATERMARKS_REWRITE_ALLOW_REMOTE=1) is set. API keys are read
-from WATERMARKS_REWRITE_API_KEY only — never a flag.
+from WATERMARKS_REWRITE_API_KEY only, never a flag.
 
 Prefer a rewrite model different from the suspected origin model; rewriting with
 the origin model can re-stamp the text. Residual risk is lower for short,
-predictable text and higher for long, high-entropy prose — no tool can certify a
+predictable text and higher for long, high-entropy prose: no tool can certify a
 vendor detector will fail.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runRewrite,

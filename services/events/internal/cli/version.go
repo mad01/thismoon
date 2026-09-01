@@ -15,7 +15,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print events version",
 	Long: `Print the events version (the git commit it was built from).
 
-Plain output is the bare version token — the cross-tool convention sibling
+Plain output is the bare version token: the cross-tool convention sibling
 tools follow so ralph and status can probe any of them for the build they are
 running. With -o json, prints the full build metadata object: version, commit,
 tag, build_time, with every key present and "" for anything unknown.`,

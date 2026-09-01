@@ -12,8 +12,8 @@ import (
 
 // configReference documents every setting worklog reads, shipped in the binary
 // so a machine with no config file still explains what one would contain.
-const configReference = `# worklog config.yaml — every key optional.
-# A set list REPLACES the default shown beside it; it does not extend it.
+const configReference = `# worklog config.yaml: every key optional.
+# A set list REPLACES the default shown beside it; it doesn't extend it.
 
 scan:                        # ticket-firewall strings for 'worklog scan',
                              # which classifies each session as personal or
@@ -31,7 +31,7 @@ scan:                        # ticket-firewall strings for 'worklog scan',
     - /workspace/            # internal
   checkout_roots:            # GOPATH-style checkout roots. The path segment
     - /code/src/             # right after a root is read as the git host, and
-                             # a non-github.com host counts as internal — the
+                             # a non-github.com host counts as internal: the
                              # split is derived, never enumerated.
   repo_path_markers:         # a cwd matching none of these reports no repo
     - /code/                 # (a tmp dir, say)
@@ -57,7 +57,7 @@ The file is --config when that flag is passed, $WORKLOG_CONFIG when that
 variable is set, otherwise config.yaml in worklog's directory under
 $XDG_CONFIG_HOME or ~/.config. It is optional and so is every key in it: with
 no file at all worklog runs on the defaults, and the header line above the
-output says so. A file that exists but cannot be read or parsed is an error
+output says so. A file that exists but can't be read or parsed is an error
 everywhere else in worklog; this command names the problem instead and prints
 the defaults, since explaining a broken config is what it is for.
 

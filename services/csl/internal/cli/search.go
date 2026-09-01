@@ -42,9 +42,9 @@ Query syntax:
   literal         Exact substring match (case-insensitive by default)
   foo.*bar        Regular expression
   "exact phrase"  Quoted exact match
-  foo bar         AND — both terms must appear
-  foo|bar         OR — either term matches
-  -test           NOT — exclude matches
+  foo bar         AND: both terms must appear
+  foo|bar         OR: either term matches
+  -test           NOT: exclude matches
   repo:name       Restrict to repos matching regex
   file:\.go$      Restrict to files matching regex
   lang:go         Restrict to a specific language
@@ -59,7 +59,7 @@ Examples:
 
 Indexing behavior:
   On first run, all configured repos are indexed (this may take a moment).
-  Subsequent searches check for staleness — repos with new commits or
+  Subsequent searches check for staleness: repos with new commits or
   dirty working trees are re-indexed in the background after results are
   returned. Use --reindex to force a synchronous re-index before searching.`,
 	Args: cobra.MaximumNArgs(1),

@@ -19,7 +19,7 @@ var mcpCmd = &cobra.Command{
 	Long: `Start an MCP (Model Context Protocol) stdio server exposing the event log
 as native tools for Claude Code.
 
-The tools are a thin client over a running ` + "`events serve`" + ` — start the
+The tools are a thin client over a running ` + "`events serve`" + `: start the
 serve agent first (it owns the store).
 
 Tools exposed:

@@ -23,7 +23,7 @@ name must be unique across all Systems and Components combined.
 
 With no arguments, validation runs over the repos in the registry. With one or
 more path arguments (directories or service-info.yaml files), only those are
-validated — this is the mode the catalog repo's PR check uses.`,
+validated: this is the mode the catalog repo's PR check uses.`,
 	RunE: runValidate,
 }
 

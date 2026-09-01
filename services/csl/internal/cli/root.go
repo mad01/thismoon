@@ -13,7 +13,7 @@ var configFlag string
 var rootCmd = &cobra.Command{
 	Use:   "csl",
 	Short: "Local code search + MCP server (zoekt)",
-	Long: `csl — local code search daemon and MCP server.
+	Long: `csl: local code search daemon and MCP server.
 
 Indexes your local git repositories with zoekt and exposes them as an MCP
 stdio server (for Claude Code and other MCP clients) plus a CLI for direct

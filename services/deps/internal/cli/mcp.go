@@ -19,7 +19,7 @@ var mcpCmd = &cobra.Command{
 	Long: `Start an MCP (Model Context Protocol) stdio server exposing dependency
 scanning as native tools for Claude Code.
 
-The tools are a thin client over a running ` + "`deps serve`" + ` — start the
+The tools are a thin client over a running ` + "`deps serve`" + `: start the
 serve agent first (it owns the scan store and reaches OSV).
 
 Tools exposed:

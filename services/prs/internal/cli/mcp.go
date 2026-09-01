@@ -19,7 +19,7 @@ var mcpCmd = &cobra.Command{
 	Long: `Start an MCP (Model Context Protocol) stdio server exposing the PR
 dashboard as native tools for Claude Code.
 
-The tools are a thin client over a running ` + "`prs serve`" + ` — start the serve
+The tools are a thin client over a running ` + "`prs serve`" + `: start the serve
 agent first (it owns the cache and the GitHub polling).
 
 Tools exposed:

@@ -24,14 +24,14 @@ func overrideCmd() *cobra.Command {
 		Short: "List, set, extend, or clear timed guard overrides",
 		Long: `Guard overrides are named switches a config rule can point at: a
 commit_guards rule with override: vacation stops applying while the vacation
-override is active. The name is yours to invent — name the exception
-(vacation, release-night), not the rule — and several rules may share one
+override is active. The name is yours to invent, name the exception
+(vacation, release-night), not the rule, and several rules may share one
 name so a single set stands them all down. The two sides connect by exact
 string match and nothing cross-checks them: setting a name no rule
 references is a silent no-op, so copy the name from the deny reason rather
 than typing it from memory.
 
-An override is timed — set holds it for 10m unless --for says otherwise,
+An override is timed: set holds it for 10m unless --for says otherwise,
 extend pushes the expiry forward, and an expired override deactivates on
 its own. Both demand a --reason saying why the guard is stood down; the
 reason is archived to the events service (events.this) when it is running.
