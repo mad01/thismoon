@@ -112,16 +112,16 @@ takes a path rather than stdin, defaulting to the current directory),
 metadata object shared across the repo's components). All text commands
 read stdin when the file argument is omitted or `-`.
 
-MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing twelve
+MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing thirteen
 tools: `humanizer_status`, `humanizer_detect`, `humanizer_detect_file`,
-`humanizer_detect_statistical`, `humanizer_rules_list`,
+`humanizer_scan_go`, `humanizer_detect_statistical`, `humanizer_rules_list`,
 `humanizer_rules_explain`, `humanizer_narrative_rubric`,
 `humanizer_voice_profile`, `humanizer_voice_diff`, `humanizer_lint`,
 `humanizer_fix`, `humanizer_rewrite`. Handlers call the same internal
 functions as the CLI. When the consuming repo registers the server it runs under a
-seatbelt sandbox: no network, and `humanizer_detect_file` reads only prose
-files under the profile's workspace roots — the sandbox is the consuming
-repo's wiring (docs/adr/0006), not this code.
+seatbelt sandbox: no network, and `humanizer_detect_file`/`humanizer_scan_go`
+read only prose and Go files under the profile's workspace roots — the
+sandbox is the consuming repo's wiring (docs/adr/0006), not this code.
 
 Runtime dependency: `vale` must be on `$PATH` for span detection;
 `humanizer_status` reports whether it is installed. The statistical, voice,

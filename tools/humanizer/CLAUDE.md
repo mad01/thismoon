@@ -10,7 +10,7 @@ humanizer/
   internal/
     cli/             - cobra command tree (root, detect, judge, scan, profile, rules, narrative, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
     goscan/          - Go source prose extraction (goscan.go walk + file filters, extract.go go/ast visitors, document.go blocks-to-document plus the line map back to source); importable so an MCP tool can wrap the same extraction
-    mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_statistical.go, tools_rules.go, tools_narrative.go, tools_judge.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
+    mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_scan.go, tools_statistical.go, tools_rules.go, tools_narrative.go, tools_judge.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
     rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
     narrative/       - StoryScope narrative rubric: 30 discourse-level fiction features + judge prompt (static data, no detection engine)
     backend/         - LLM provider behind the judge pass (MAD-342): env-driven selection (backend.go) + OpenRouter client (openrouter.go); vertex/anthropic planned
@@ -83,12 +83,14 @@ The test suite includes metadata validation for every YAML header, a gate assert
 
 ## MCP tools
 
-The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing thirteen tools:
+The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing fourteen tools:
 
 - `humanizer_status()` → `{installed, binary, version, cache_dir, rule_count, style_pack, error?, install_hint?}`. Health check: is vale installed, its version, the cache dir, bundled rule count. Call first when `humanizer_detect` fails unexpectedly.
 - `humanizer_detect(text, rules?, min_severity?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message.
 - `humanizer_detect_file(path, rules?, min_severity?)` → same shape as `humanizer_detect`. Scans a file on disk instead of inline text; saves a read and lets vale use the real extension for format detection.
-  - Sandbox-gated: only prose files (`.md`/`.markdown`/`.txt`) under the seatbelt profile's workspace roots, plus `/tmp` paths, are readable. A denied path returns an error pointing at `humanizer_detect` instead.
+  - Sandbox-gated: only prose files (`.md`/`.markdown`/`.txt`) and Go sources (`.go`) under the seatbelt profile's workspace roots, plus `/tmp` paths, are readable. A denied path returns an error pointing at `humanizer_detect` instead. Still a prose tool — use `humanizer_scan_go` to extract and scan Go source.
+- `humanizer_scan_go(path, detect?, recursive?)` → `{files[]{path, blocks[]{file, line, kind, label, text}, detection?}, total_files}`. Extracts prose from Go source (doc comments, cobra `Use`/`Short`/`Long`/`Example`, MCP tool `Description` strings, `fmt.Errorf`/`errors.New`/`http.Error` messages, `jsonschema` tag text) and, when `detect` is true (the default), runs the vale span rules over each file's prose. Each file's `detection` field is a `humanizer_detect`-shaped result (`findings[]`, `summary`, `engine`), with finding lines mapped back to the Go source line they came from. `recursive` (default true) walks a directory into subdirectories; false scans only its direct children. Wraps the same `internal/goscan` extraction the `scan --go` CLI command uses.
+  - Sandbox-gated like `humanizer_detect_file`, for `.go` files. No MCP fallback for a denied path (extraction needs real file access); run `humanizer scan --go` instead, which is unsandboxed.
 - `humanizer_detect_statistical(text)` → `{findings[], profile, summary, engine}`. Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, semicolon absence, short-text em-dash, long-text em-dash density, heading density, anaphora) that span rules can't catch. Most checks gate on a minimum sample size; 200+ words gives the most reliable verdict.
 - `humanizer_rules_list(category?)` → `{rules[], total}`. Lists every rule (ID, name, category, default severity, summary), optionally filtered by category.
 - `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, file?}`. Full metadata for one rule.
