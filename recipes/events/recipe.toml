@@ -1,6 +1,6 @@
 [recipe]
 name = "events"
-description = "events — CLI + MCP + web service for a local event/audit log (events.this) that the tool fleet feeds into"
+description = "events: CLI + MCP + web service for a local event/audit log (events.this) that the tool fleet feeds into"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

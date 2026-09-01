@@ -1,6 +1,6 @@
 [recipe]
 name = "present"
-description = "present — CLI + MCP server that serves single-page HTML briefings over localhost"
+description = "present: CLI + MCP server that serves single-page HTML briefings over localhost"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

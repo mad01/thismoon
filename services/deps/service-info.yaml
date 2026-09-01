@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: deps
-  description: Supply-chain dependency scanner — CLI + MCP + webkit web page, checks OSV.dev, notifies on flagged packages
+  description: Supply-chain dependency scanner, CLI + MCP + webkit web page, checks OSV.dev and notifies on flagged packages
   tags: [go, cli, mcp, security]
 spec:
   type: cli

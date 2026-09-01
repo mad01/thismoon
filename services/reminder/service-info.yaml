@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: reminder
-  description: Local reminder service — CLI + MCP + webkit web page, fires macOS notifications
+  description: Local reminder service, CLI + MCP + webkit web page, fires macOS notifications
   tags: [go, cli, mcp]
 spec:
   type: cli

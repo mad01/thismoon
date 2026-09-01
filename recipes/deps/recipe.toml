@@ -1,6 +1,6 @@
 [recipe]
 name = "deps"
-description = "deps — supply-chain dependency scanner: discovers deps across the tool repos, checks OSV.dev, notifies on flagged packages"
+description = "deps, supply-chain dependency scanner: discovers deps across the tool repos, checks OSV.dev, notifies on flagged packages"
 wave = 0
 profiles = ["personal"]  # depends on d-man + scans personal repos; personal Mac only
 

@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: events
-  description: Local event/audit log service — CLI + MCP + webkit timeline, archive-only JSONL store
+  description: Local event/audit log service, CLI + MCP + webkit timeline, archive-only JSONL store
   tags: [go, cli, mcp]
 spec:
   type: cli

@@ -1,6 +1,6 @@
 [recipe]
 name = "speak"
-description = "speak — the Go speak-web front-end for http://speak.this + the sandbox-watch seatbelt-denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
+description = "speak: the Go speak-web front-end for http://speak.this + the sandbox-watch seatbelt-denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

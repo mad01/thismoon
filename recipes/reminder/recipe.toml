@@ -1,6 +1,6 @@
 [recipe]
 name = "reminder"
-description = "reminder — CLI + MCP + web service for time-based reminders that fire macOS notifications"
+description = "reminder: CLI + MCP + web service for time-based reminders that fire macOS notifications"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

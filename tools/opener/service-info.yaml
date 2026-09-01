@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: opener
-  description: macOS open bridge for URLs, files, apps, and Finder reveal (CLI + MCP)
+  description: macOS open bridge for URLs + files + apps + Finder reveal (CLI + MCP)
   tags: [go, cli, mcp]
 spec:
   type: cli

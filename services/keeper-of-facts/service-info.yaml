@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: keeper-of-facts
-  description: Local assertion store (kof) — evidence-pinned world model, CLI + MCP + webkit web page
+  description: Local assertion store (kof), evidence-pinned world model, CLI + MCP + webkit web page
   tags: [go, cli, mcp]
 spec:
   type: cli

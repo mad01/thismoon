@@ -1,6 +1,6 @@
 [recipe]
 name = "status"
-description = "status — status page for t-man-managed services with 30-day uptime history"
+description = "status: status page for t-man-managed services with 30-day uptime history"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

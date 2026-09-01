@@ -1,6 +1,6 @@
 [recipe]
 name = "keeper-of-facts"
-description = "keeper-of-facts (kof) — local assertion store with evidence pins; CLI + MCP + web view for an agent's world model"
+description = "keeper-of-facts (kof): local assertion store with evidence pins; CLI + MCP + web view for an agent's world model"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
