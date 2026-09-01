@@ -72,6 +72,25 @@ Output groups findings by file position with a severity badge (`ERR`, `WARN`, `I
 
 **Statistical mode** (`--statistical`) runs size-gated whole-sample checks (sentence-length uniformity, contraction rate, lexical diversity, anaphora, heading density) rather than span-level pattern matching. Run both modes for full coverage; very short snippets return few or no statistical findings.
 
+### judge
+
+Send text to an LLM for a whole-passage AI/human verdict. This is the fuzzy complement to `detect`: span rules and statistics catch mechanical tells, while the judge reads the passage the way a human reader does.
+
+```sh
+humanizer judge draft.md
+cat draft.md | humanizer judge --json
+```
+
+The backend comes from the environment. `HUMANIZER_BACKEND` forces one; otherwise the first configured provider wins (`OPENROUTER_API_KEY` selects OpenRouter, model `anthropic/claude-haiku-4.5`). Without a provider the command fails, and everything else in humanizer keeps working offline.
+
+| Flag | Description |
+|---|---|
+| `--backend` | Force an LLM backend (`openrouter`); default auto-detects from env |
+| `--model` | Override the backend's default model id (also settable via `HUMANIZER_MODEL`) |
+| `--json` | Emit the verdict as JSON (same shape as the `humanizer_judge` MCP tool) |
+
+The verdict is `likely_ai`, `likely_human`, or `mixed`, with a confidence score, concrete signals, and a one-line summary. Verdicts are advisory: treat flagged sections as rewrite targets alongside detect findings, not as ground truth.
+
 ### profile
 
 Compute a quantitative voice profile of a text sample.
@@ -224,7 +243,7 @@ claude mcp add --scope user humanizer -- humanizer mcp
 
 On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root).
 
-The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes twelve tools:
+The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes thirteen tools:
 
 | Tool | Description |
 |---|---|
@@ -235,6 +254,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | `humanizer_rules_list` | List all detection rules |
 | `humanizer_rules_explain` | Full metadata and examples for one rule |
 | `humanizer_narrative_rubric` | StoryScope narrative rubric and judge prompt for LLM-judged fiction detection |
+| `humanizer_judge` | Whole-passage LLM verdict via the configured backend (needs a key and network egress) |
 | `humanizer_voice_profile` | Quantitative voice profile of a text sample |
 | `humanizer_voice_diff` | Metric-by-metric delta between two samples |
 | `humanizer_lint` | Report invisible-Unicode / space-homoglyph watermark carriers (offline) |
@@ -249,7 +269,7 @@ The consuming repo's registration wrapper runs the MCP server under macOS `sandb
 
 What the sandbox denies:
 
-- All network: vale runs fully offline, so no traffic is needed.
+- Network, except outbound TLS for `humanizer_judge`'s backend call. Detection itself runs fully offline; the profile allows no listener and no plain HTTP.
 - All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt` files under the profile's workspace roots (for `humanizer_detect_file`).
 - All `$HOME` writes, restricted to `~/.cache/humanizer` and system temp.
 

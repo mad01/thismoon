@@ -13,3 +13,9 @@ paths:
   - "**/tools/suspenders/**/rules.go"
   - "**/tools/suspenders/tests/integration/**"
   - "**/tools/suspenders/README.md"
+
+# Go struct literals like `apiKey: cfg.APIKey` read as YAML-style secret
+# assignments to the unquoted-secret-assignment rule; the right-hand side is
+# a field reference, not a value. Patterns are literal substrings.
+patterns:
+  - cfg.APIKey

@@ -1,6 +1,6 @@
 ---
 name: humanizer
-version: 2.11.0
+version: 2.12.0
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
@@ -10,8 +10,9 @@ description: |
   voice, negative parallelisms, and filler phrases. For fiction and long-form
   narrative prose, adds a StoryScope narrative-level pass (thematic
   over-explanation, plot linearity, embodied emotion). Backed by the local
-  humanizer MCP for deterministic detection and voice profiling, plus a
-  headless `claude -p` pass for holistic whole-passage AI/human judgment.
+  humanizer MCP for deterministic detection and voice profiling, plus the
+  humanizer_judge LLM pass (OpenRouter, Haiku 4.5) for holistic whole-passage
+  AI/human judgment.
 license: MIT
 compatibility: claude-code opencode
 allowed-tools:
@@ -40,25 +41,26 @@ Always start by calling the local `humanizer` MCP tools — they do the pattern 
 
 The MCP never rewrites prose — it finds, measures, and (for `humanizer_fix`) deterministically strips invisible carriers. **You still do the prose rewrite.** Use the findings as a checklist; use the voice diff as the target.
 
-## Holistic judgment via `claude -p`
+## Holistic judgment via `humanizer_judge`
 
-The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: a **headless `claude -p` call on Haiku** that judges the full text for the gestalt "does this read as machine-written" — buzzword density, generic structure, hedging, tidy-but-soulless rhythm. Piping text in and reading a verdict back in one shell call is simpler than managing a subagent's lifecycle.
+The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: the **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (OpenRouter on `anthropic/claude-haiku-4.5` by default) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
 
 This is the fuzzy complement to the deterministic layer; the two cover disjoint failure modes, so run both. Two rules earned from testing:
 
 - **Whole-passage framing, never per-word.** Asked "is this flagged word a tell?", models defend every common word as fine (local 3B/9B scored 0/4 on real tells this way). Asked "is this passage AI-written?", they judge well. Feed sections or paragraphs, not isolated words.
 - **Haiku, not a local model.** Small local models (llama3.2:3b, gemma2:9b) false-positive on terse technical prose — they read a concrete debugging story as AI. Haiku got that case right. Still treat every verdict as advisory, not authoritative.
 
-**When:** the `claude` CLI is on PATH. Skip if it is not — the deterministic MCP layer already stands on its own.
-
-**How:** pipe the labeled sections into `claude -p` on Haiku. The prompt goes as the argument; the passages arrive on stdin and get appended to it:
+**When:** an LLM backend is configured (`OPENROUTER_API_KEY` in the MCP server's environment). If the tool errors — no backend configured, or the sandbox denies egress — fall back to the CLI, which reads the key from your shell env:
 
 ```bash
-printf '%s\n' "$LABELED_SECTIONS" | claude -p --model haiku \
-  "You are an AI-writing detector. Read each passage holistically — word-choice density, rhythm, hedging, buzzword stacking, generic vs specific detail, structure. For EACH labeled passage output exactly one line: LABEL|VERDICT|confidence|reason(<=12 words) where VERDICT is AI or HUMAN and confidence is 0-100. Judge from your own reading; do not use any tools. The labeled passages follow on stdin."
+humanizer judge --json section.md      # or: printf '%s\n' "$SECTION" | humanizer judge --json -
 ```
 
-Use the verdicts as rewrite targets: any section flagged AI with high confidence gets priority alongside the MCP findings. On the final pass, re-run the same call on your rewrite — a HUMAN verdict across sections is the exit signal.
+Skip the pass entirely when neither path works; the deterministic MCP layer already stands on its own.
+
+**How:** call `humanizer_judge(text)` once per section or logical passage (50-2000 words works best) rather than one call for a whole long document, so verdicts map to rewrite targets. Signals come back with severity and a quoted excerpt.
+
+Use the verdicts as rewrite targets: any section flagged `likely_ai` with high confidence gets priority alongside the MCP findings. On the final pass, re-run the judge on your rewrite — `likely_human` across sections is the exit signal.
 
 ## Narrative pass for fiction and long-form prose
 
@@ -84,14 +86,14 @@ When given text to humanize:
 
 1. **Call `humanizer_detect`** on the input. Note every finding.
 2. **Call `humanizer_detect_statistical`** on the input. Note the whole-sample signals (uniformity, contractions, short-text em-dash, anaphora).
-3. **Run the holistic `claude -p` pass** (see the section above) when the `claude` CLI is available. Add any section it flags AI with high confidence to your rewrite targets.
+3. **Run the holistic `humanizer_judge` pass** (see the section above) when a backend is configured; fall back to the `humanizer judge` CLI on sandbox or backend errors. Add any section it flags `likely_ai` with high confidence to your rewrite targets.
    - For fiction, memoir, or story-shaped prose, also run the **narrative pass**: `humanizer_narrative_rubric` → judge prompt → `claude -p` (see the section above).
 4. **Call `humanizer_voice_diff`** when a voice sample is available; capture the metric deltas.
 5. **Rewrite problematic sections** - Replace AI-isms with natural alternatives informed by the findings.
 6. **Preserve meaning** - Keep the core message intact
 7. **Maintain voice** - Match the intended tone; when a sample is present, close the biggest voice-diff deltas.
 8. **Add soul** - Don't just remove bad patterns; inject actual personality
-9. **Do a final anti-AI pass** — Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run the `claude -p` pass if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
+9. **Do a final anti-AI pass** — Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run `humanizer_judge` if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
 
 
 ## Voice Calibration (Optional)
