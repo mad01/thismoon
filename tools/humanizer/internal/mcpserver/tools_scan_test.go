@@ -66,12 +66,19 @@ func TestHandleScanGoMissingPath(t *testing.T) {
 	}
 }
 
+// TestHandleScanGoRecursive exercises directory walking only, not
+// detection, so it never touches vale: CI runners don't have it on PATH
+// (see TestHandleScanGoDetect for the gated detect=true coverage).
 func TestHandleScanGoRecursive(t *testing.T) {
 	dir := sampleDir(t)
 	no := false
 
 	t.Run("default walks subdirectories", func(t *testing.T) {
-		_, out, err := handleScanGo(context.Background(), nil, scanGoInput{Path: dir})
+		_, out, err := handleScanGo(
+			context.Background(),
+			nil,
+			scanGoInput{Path: dir, Detect: &no},
+		)
 		if err != nil {
 			t.Fatalf("handleScanGo() error = %v", err)
 		}
@@ -84,7 +91,7 @@ func TestHandleScanGoRecursive(t *testing.T) {
 		_, out, err := handleScanGo(
 			context.Background(),
 			nil,
-			scanGoInput{Path: dir, Recursive: &no},
+			scanGoInput{Path: dir, Recursive: &no, Detect: &no},
 		)
 		if err != nil {
 			t.Fatalf("handleScanGo() error = %v", err)
