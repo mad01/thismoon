@@ -50,9 +50,12 @@ endpoint (loopback only unless `--allow-remote`). The default print-prompt
 backend and the MCP `humanizer_rewrite` tool build the prompt offline and
 are unaffected.
 
-`humanizer_detect_file` refuses a path: the MCP server runs sandboxed and
-reads only .md/.markdown/.txt files under the sandbox profile's workspace
-roots, plus /tmp paths. Pass the text inline via `humanizer_detect` instead.
+`humanizer_detect_file` or `humanizer_scan_go` refuses a path: the MCP
+server runs sandboxed and reads only .md/.markdown/.txt/.go files under the
+sandbox profile's workspace roots, plus /tmp paths. For `humanizer_detect_file`
+pass the text inline via `humanizer_detect` instead; `humanizer_scan_go` has
+no inline fallback, so run `humanizer scan --go` from a shell, which is
+unsandboxed.
 
 ## version skew
 

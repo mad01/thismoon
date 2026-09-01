@@ -203,6 +203,29 @@ func TestScanKindFilter(t *testing.T) {
 	}
 }
 
+// TestScanRecursiveFalse pins the opt-out: a false Recursive option limits
+// the walk to the directory's direct children, matching the behavior an
+// agent-facing recursive=false param needs.
+func TestScanRecursiveFalse(t *testing.T) {
+	no := false
+	files, err := Scan(filepath.Join("testdata", "sample"), Options{Recursive: &no})
+	if err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	var paths []string
+	for _, f := range files {
+		paths = append(paths, filepath.ToSlash(f.Path))
+	}
+	for _, want := range []string{"testdata/sample/cmd.go", "testdata/sample/tools.go"} {
+		if !slices.Contains(paths, want) {
+			t.Errorf("non-recursive walk missed top-level file %s; got %v", want, paths)
+		}
+	}
+	if slices.Contains(paths, "testdata/sample/nested/deep.go") {
+		t.Errorf("non-recursive walk should not have descended into nested/, got %v", paths)
+	}
+}
+
 // TestScanMissingPath reports the path in the error, since the CLI prints
 // it straight to the user.
 func TestScanMissingPath(t *testing.T) {

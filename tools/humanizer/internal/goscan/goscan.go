@@ -71,17 +71,28 @@ type File struct {
 type Options struct {
 	// Kinds restricts extraction to these kinds. Empty means every kind.
 	Kinds []Kind
+	// Recursive controls whether a directory path descends into
+	// subdirectories. Nil or true walks recursively, the existing
+	// default; false scans only the direct children of the given
+	// directory. Ignored when path is a single file.
+	Recursive *bool
 }
 
 func (o Options) wants(k Kind) bool {
 	return len(o.Kinds) == 0 || slices.Contains(o.Kinds, k)
 }
 
+func (o Options) recursive() bool {
+	return o.Recursive == nil || *o.Recursive
+}
+
 // Scan extracts prose from path, either a single Go file or a directory
-// walked recursively. Directories named vendor, node_modules, or testdata
-// and dot-directories are skipped, as are generated files (a .pb.go name or
-// a "Code generated ... DO NOT EDIT." header). Test files are included:
-// they carry prose too. Files with no prose are left out of the result.
+// walked recursively (Options.Recursive set to false limits the walk to the
+// directory's direct children). Directories named vendor, node_modules, or
+// testdata and dot-directories are skipped, as are generated files (a
+// .pb.go name or a "Code generated ... DO NOT EDIT." header). Test files
+// are included: they carry prose too. Files with no prose are left out of
+// the result.
 func Scan(path string, opts Options) ([]File, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -104,6 +115,9 @@ func Scan(path string, opts Options) ([]File, error) {
 		}
 		if d.IsDir() {
 			if p != path && skipDir(d.Name()) {
+				return fs.SkipDir
+			}
+			if p != path && !opts.recursive() {
 				return fs.SkipDir
 			}
 			return nil

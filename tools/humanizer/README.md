@@ -262,13 +262,14 @@ claude mcp add --scope user humanizer -- humanizer mcp
 
 On a ralph-managed machine, skip the manual command: MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root).
 
-The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes thirteen tools:
+The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes fourteen tools:
 
 | Tool | Description |
 |---|---|
 | `humanizer_status` | Health check: vale installed, version, cache dir, rule count |
 | `humanizer_detect` | Scan text for AI-writing patterns (vale span rules) |
-| `humanizer_detect_file` | Scan a file on disk (sandbox: prose files under the profile's workspace roots only) |
+| `humanizer_detect_file` | Scan a file on disk (sandbox: prose and Go files under the profile's workspace roots only) |
+| `humanizer_scan_go` | Extract prose from Go source and scan it; findings map back to Go source lines |
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |
 | `humanizer_rules_list` | List all detection rules |
 | `humanizer_rules_explain` | Full metadata and examples for one rule |
@@ -289,10 +290,10 @@ The consuming repo's registration wrapper runs the MCP server under macOS `sandb
 What the sandbox denies:
 
 - Network, except outbound TLS for `humanizer_judge`'s backend call. Detection itself runs fully offline; the profile allows no listener and no plain HTTP.
-- All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt` files under the profile's workspace roots (for `humanizer_detect_file`).
+- All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt`/`.go` files under the profile's workspace roots (for `humanizer_detect_file` and `humanizer_scan_go`).
 - All `$HOME` writes, restricted to `~/.cache/humanizer` and system temp.
 
-This means `humanizer_detect_file` works only on prose files under the workspace roots the profile grants. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead.
+This means `humanizer_detect_file` and `humanizer_scan_go` work only on files under the workspace roots the profile grants. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead; `humanizer_scan_go` has no such fallback, so use the CLI's `scan --go`, which runs unsandboxed.
 
 If you add a runtime file or network need, update the consuming repo's seatbelt profile; a code change alone isn't enough.
 
