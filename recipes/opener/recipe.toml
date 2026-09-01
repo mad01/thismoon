@@ -2,7 +2,7 @@
 # consuming repo's companion recipe — machine-private wiring (docs/adr/0006).
 [recipe]
 name = "opener"
-description = "opener — macOS open bridge for URLs, files, apps, and Finder reveal (CLI + MCP)"
+description = "opener: macOS open bridge for URLs + files + apps + Finder reveal (CLI + MCP)"
 # wave 0: builds the binary before the consuming repo's MCP registration
 # recipe (wave 1) registers `opener mcp`.
 wave = 0

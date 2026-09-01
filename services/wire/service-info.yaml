@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: wire
-  description: Session-to-session message bus — named channels agents talk over, CLI + MCP + webkit web page
+  description: Session-to-session message bus, named channels agents talk over, CLI + MCP + webkit web page
   tags: [go, cli, mcp]
 spec:
   type: cli

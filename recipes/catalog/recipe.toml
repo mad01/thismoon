@@ -1,6 +1,6 @@
 [recipe]
 name = "catalog"
-description = "catalog — systems & components catalog UI for the mad01 fleet (services/catalog)"
+description = "catalog: systems & components catalog UI for the mad01 fleet (services/catalog)"
 wave = 0
 # Personal machines only: the catalog renders the personal repo registry, a
 # service property — the registry rows are personal checkouts that only exist

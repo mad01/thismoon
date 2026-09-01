@@ -2,7 +2,7 @@
 # on packages.t_man (allowed for foundations, see docs/adr/0006).
 [recipe]
 name = "t-man"
-description = "t-man — idempotent macOS launchd service manager (agents + daemons)"
+description = "t-man: idempotent macOS launchd service manager (agents + daemons)"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

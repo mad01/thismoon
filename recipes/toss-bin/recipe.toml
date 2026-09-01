@@ -3,7 +3,7 @@
 # (docs/adr/0006): no config file, no MCP registration, no service.
 [recipe]
 name = "toss-bin"
-description = "toss-bin — safe rm replacement, trashes to dated ~/.Trash folders (binary build/install + rm shell function)"
+description = "toss-bin: safe rm replacement, trashes to dated ~/.Trash folders (binary build/install + rm shell function)"
 
 # Consumed as a remote recipe: machines point at this repo with a
 # [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout

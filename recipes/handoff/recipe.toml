@@ -3,7 +3,7 @@
 # agent skill directories on every machine.
 [recipe]
 name = "handoff"
-description = "handoff — agent skill for writing a cold-start handoff doc and persisting session learnings"
+description = "handoff: agent skill for writing a cold-start handoff doc and persisting session learnings"
 
 # The skill lives in the repo-root skills/ dir (discoverable by browsing the
 # repo); link just this skill's directory into place. Relative sources resolve

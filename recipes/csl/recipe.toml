@@ -1,6 +1,6 @@
 [recipe]
 name = "csl"
-description = "csl — local code search daemon, web UI, and MCP stdio server (services/csl)"
+description = "csl: local code search daemon + web UI + MCP stdio server (services/csl)"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

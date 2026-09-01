@@ -2,7 +2,7 @@
 # other recipes is allowed for foundations (see docs/adr/0006).
 [recipe]
 name = "d-man"
-description = "d-man — local domain front door: *.this names resolve to localhost services via /etc/hosts + a :80 reverse proxy"
+description = "d-man, local domain front door: *.this names resolve to localhost services via /etc/hosts + a :80 reverse proxy"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a

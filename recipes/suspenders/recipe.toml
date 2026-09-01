@@ -4,7 +4,7 @@
 # wiring stay in the consuming repo's companion recipe (docs/adr/0006).
 [recipe]
 name = "suspenders"
-description = "suspenders — offline git secret scanner + pre-commit/post-merge hook orchestrator (binary build/install)"
+description = "suspenders: offline git secret scanner + pre-commit/post-merge hook orchestrator (binary build/install)"
 # wave 0: the binary must exist before consuming-repo recipes whose hooks run
 # `suspenders hook install --all` against it.
 wave = 0

@@ -1,6 +1,6 @@
 [recipe]
 name = "prs"
-description = "prs — open-PR dashboard over local checkouts; CLI + MCP + web view polling every repo's GitHub host"
+description = "prs: open-PR dashboard over local checkouts; CLI + MCP + web view polling every repo's GitHub host"
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
