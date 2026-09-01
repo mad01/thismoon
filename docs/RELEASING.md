@@ -30,7 +30,7 @@ hand, release-please owns it.
 4. The `artifacts` job fans out over every path released in that run and
    uploads the tarballs.
 
-Release PRs pile up harmlessly — merge them when you want the release, not
+Release PRs pile up harmlessly; merge them when you want the release, not
 before.
 
 ## Artifacts
@@ -62,7 +62,7 @@ The ldflags set four variables in the shared
 | `BuildTime` | UTC, RFC 3339 |
 
 A released binary reports all four with `<name> version -o json`, and services
-serve the same object from `GET /version` — so you can ask a downloaded or
+serve the same object from `GET /version`, so you can ask a downloaded or
 deployed binary which release it came from. Plain `<name> version` stays the
 bare version token that status and ralph parse.
 
@@ -102,7 +102,7 @@ Two pieces of repo configuration the workflow depends on:
 
 - **GitHub App token**: release-please authenticates with a token minted
   per run by a GitHub App (`actions/create-github-app-token`), not the
-  default `GITHUB_TOKEN` — the default may not create PRs without a repo-wide
+  default `GITHUB_TOKEN`. The default may not create PRs without a repo-wide
   Actions toggle (too broad a grant for a public repo), and PRs it opens
   never trigger `ci.yml` checks. The App token expires within the hour, so
   there is no long-lived secret to rotate. Symptom of a missing or misscoped
@@ -126,7 +126,7 @@ Two pieces of repo configuration the workflow depends on:
      `BEGIN`/`END` lines).
 
   The `release.yml` `create-github-app-token` step exchanges these for a
-  short-lived installation token each run. The private key itself does not
+  short-lived installation token each run. The private key itself doesn't
   expire, but it can be regenerated from the App's settings without touching
   the workflow.
 - **Concurrency group `release`**: two merges to main racing release-please

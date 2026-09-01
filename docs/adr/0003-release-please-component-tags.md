@@ -4,4 +4,4 @@ Components release independently on merge to main: release-please in manifest mo
 
 ## Considered Options
 
-goreleaser's monorepo support was rejected — it is a Pro (paid) feature. A hand-rolled matrix job over `go build` covers the three target platforms without the license cost.
+goreleaser's monorepo support was rejected because it is a Pro (paid) feature. A hand-rolled matrix job over `go build` covers the three target platforms without the license cost.

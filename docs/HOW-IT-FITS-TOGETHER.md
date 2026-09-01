@@ -19,15 +19,15 @@ A concrete session on a fully wired machine:
 1. You open Claude Code in a repo. Before you type anything, belt's
    SessionStart hooks inject two things: the shared agent-memory index (facts
    you told any agent to remember, on any machine) and the repo's stored
-   keeper-of-facts (kof) assertions — conclusions previous sessions derived
+   keeper-of-facts (kof) assertions: conclusions previous sessions derived
    about this code, each pinned to the lines that prove it.
 2. The agent searches with `csl_search`, the same zoekt index you query in
    the browser at `csl.this`. belt's search hint surfaces any kof assertions
    about the code the search just hit, and marks the ones whose pinned lines
    have changed since they were written.
 3. The agent slips into habit and runs a recursive grep instead. belt hands
-   back the equivalent `csl_search` call with the pattern already translated
-   — not a lecture, a replacement.
+   back the equivalent `csl_search` call with the pattern already
+   translated. Not a lecture, a replacement.
 4. The agent tries `git push origin main`. Denied, with the
    branch-and-push-upstream fix in the denial reason. It writes a doc that
    mentions an internal hostname into a public repo. Denied at the Write
@@ -36,7 +36,7 @@ A concrete session on a fully wired machine:
 5. The agent posts a PR comment through an MCP server. belt nudges it once:
    run `humanizer_detect` before more text leaves the machine.
 6. Thirty tool calls in, belt asks the session to deposit what it derived as
-   a kof assertion — so the next session starts where this one ended instead
+   a kof assertion, so the next session starts where this one ended instead
    of re-deriving it.
 7. Every deny and every hint landed in the events timeline (`events.this`),
    so you can see what the guardrails actually did this week. `status.this`
@@ -62,7 +62,7 @@ your config repo       machine-private wiring: secrets, hosts, hooks, overlays
 
 The split between the bottom two layers is a rule, not a habit
 ([ADR-0006](adr/0006-recipe-layering-and-platform-deps.md)): thismoon's
-recipes carry only what is portable — build, install, service registration.
+recipes carry only what is portable: build, install, service registration.
 Anything that names your machines, your internal checkouts, your MCP set, or
 your agent settings lives in your own private repo as small companion
 recipes layered on top. That is why the repo can be public while the setup
@@ -81,32 +81,32 @@ model; ralph's own docs
 [recipes](https://github.com/mad01/ralph/blob/main/docs/recipes.md)) have the
 detail.
 
-- **Recipe** — a `recipe.toml` declaring items to converge: packages to
+- **Recipe**: a `recipe.toml` declaring items to converge, packages to
   build, directories to create, files to symlink, hooks to run. thismoon
   ships one per component under `recipes/`.
-- **Recipe source** — a `[[recipe_sources]]` stanza in your ralph config
+- **Recipe source**: a `[[recipe_sources]]` stanza in your ralph config
   pointing at a git repo of recipes. ralph clones it to
   `~/.config/ralph/sources/<name>` and merges each recipe under the identity
   `<source>/<recipe>` (so this repo's belt recipe becomes `thismoon/belt`).
   With `ref = "main"` and `update = true`, merging to main is the deploy.
-- **Item key** — the name of one item (`packages.belt`,
+- **Item key**: the name of one item (`packages.belt`,
   `builds.csl_register`). Keys are global across all loaded sources, which
   is what lets your private recipe declare
   `depends_on = ["packages.suspenders"]` on a package the public source
   defines.
-- **Wave** — coarse ordering: lower waves complete before higher ones start.
+- **Wave**: coarse ordering. Lower waves complete before higher ones start.
   thismoon's recipes are all wave 0 so every binary exists before your
   wave-1 companion recipes wire things up to them; within a wave,
   `depends_on` orders items. The wave is the only ordering primitive that
   works across the public/private boundary, since cross-source `depends_on`
   is reserved for the foundations.
-- **Profile** — a freeform label (`personal`, `work`) a machine declares in
+- **Profile**: a freeform label (`personal`, `work`) a machine declares in
   its git-ignored `~/.config/ralph/config.local.toml`, set with
   `ralph profile set`. A recipe or source listing profiles applies only on
   machines that carry one of them. Profiles answer "what kind of machine is
-  this" — and not only for ralph: belt reads the same file at runtime, so
+  this", and not only for ralph: belt reads the same file at runtime, so
   its `git-push-main` guard steps aside on `personal` machines and blocks on
-  everything else. **Set profiles before the first `ralph up`** — a machine
+  everything else. **Set profiles before the first `ralph up`**: a machine
   with none silently skips every profile-gated recipe, and `ralph doctor` is
   the only thing that will tell you.
 
@@ -119,12 +119,12 @@ order is written down somewhere.
    ([GETTING-STARTED.md](GETTING-STARTED.md), "The fleet with ralph").
 2. **Create your private config repo** and point `ralph init`'s
    `dotfiles_repo_path` at it. Start from
-   [`examples/dotfiles/`](../examples/dotfiles/) — it is a working layout,
+   [`examples/dotfiles/`](../examples/dotfiles/); it is a working layout,
    not a sketch.
 3. **Declare your profiles**: `ralph profile set personal` (or `work`, or
    both). This writes `config.local.toml`, which stays out of git.
-4. **Add the thismoon source** — the `[[recipe_sources]]` stanza in your
-   `config.toml` — and run **`ralph up`**. Everything builds from source
+4. **Add the thismoon source** (the `[[recipe_sources]]` stanza in your
+   `config.toml`) and run **`ralph up`**. Everything builds from source
    into `~/code/bin`; services register with t-man.
 5. **The one sudo step**: write your `routes.toml` and register the d-man
    daemon ([GETTING-STARTED.md](GETTING-STARTED.md), step 5). Verify with
@@ -132,17 +132,17 @@ order is written down somewhere.
 6. **Layer your companion recipes**, one pattern at a time, each with a
    worked example in `examples/dotfiles/recipes/`: MCP registration (which
    servers your agent sees), the belt config plus the Claude Code hooks
-   block (`claude-hooks/` — this is what turns the guards and hints on),
+   block (`claude-hooks/`, which is what turns the guards and hints on),
    per-service config overlays, and secrets.
 7. **Give the agent its instructions**: adapt
    [`examples/dotfiles/CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example)
    into your `~/.claude/CLAUDE.md`. It is an anonymized version of a real
-   daily-driven file — the instruction-layer counterpart of everything
+   daily-driven file, the instruction-layer counterpart of everything
    above.
 
 From then on: a change merges to thismoon's main, the next `ralph up`
 rebuilds it, t-man restarts the service. Verify with the component's
-`/version` endpoint — ralph can report ok while an old binary keeps running.
+`/version` endpoint; ralph can report ok while an old binary keeps running.
 
 ## The guardrail pair: belt and suspenders
 
@@ -165,27 +165,28 @@ produce identical block lists. belt is the early, agent-only layer;
 suspenders is the backstop that also covers you. Two things to know going
 in: belt's hooks do nothing until your settings register them (step 6
 above), and both name guards ship with nothing to match until you configure
-their sections — belt's `internal_names` and suspenders' `guard:`. Both layers also ship a documented escape
-ladder — override switches, allowlists, per-repo files, kill switches — in
-the two references above, because a guard you cannot get past when it is
-wrong teaches you to bypass the right blocks too.
+their sections: belt's `internal_names` and suspenders' `guard:`. Both
+layers also ship a documented escape ladder (override switches, allowlists,
+per-repo files, kill switches) in the two references above, because a guard
+you cannot get past when it is wrong teaches you to bypass the right blocks
+too.
 
 ## The memory stack
 
 Four stores, one question each. Hooks prompt every one of them; none depend
 on remembering to use them.
 
-- **agent-memory** — durable facts about *you*, portable across agents and
+- **agent-memory**: durable facts about *you*, portable across agents and
   machines (a git repo of one-fact files). belt injects its index at session
   start.
-- **keeper-of-facts (kof)** — claims about *code*, each pinned to file
-  lines. The pins let `kof check` flip a claim stale when the code moves —
-  memory that decays detectably instead of silently going wrong. belt
+- **keeper-of-facts (kof)**: claims about *code*, each pinned to file
+  lines. The pins let `kof check` flip a claim stale when the code moves, so
+  the memory decays detectably instead of silently going wrong. belt
   surfaces assertions at session start and after searches, and nudges
   deposits.
-- **worklog** — where a *task* stands, keyed by ticket or topic rather than
+- **worklog**: where a *task* stands, keyed by ticket or topic rather than
   directory, so a fresh session can resume mid-task.
-- **events** — what actually *happened*: every guard deny, every hint, every
+- **events**: what actually *happened*. Every guard deny, every hint, every
   service's audit trail, queryable on one timeline.
 
 ## Skills
@@ -207,19 +208,19 @@ a task matches its description.
 | `worklog` | a long task needs checkpointing across sessions | the worklog MCP registered |
 
 The skill is the workflow; the MCP server is its hands. Without the backing
-MCP a skill still loads, but its tool-backed steps have nothing to call —
+MCP a skill still loads, but its tool-backed steps have nothing to call;
 MCP registration is machine-private wiring (step 6 above).
 
 ## Where to go next
 
-- [GETTING-STARTED.md](GETTING-STARTED.md) — the install walkthrough both
+- [GETTING-STARTED.md](GETTING-STARTED.md): the install walkthrough both
   for one tool and for the fleet.
-- [`examples/dotfiles/`](../examples/dotfiles/) — the private-repo layout,
+- [`examples/dotfiles/`](../examples/dotfiles/): the private-repo layout,
   every overlay pattern worked, and the example global CLAUDE.md.
-- [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md) — every guard and
+- [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md): every guard and
   hint in depth.
-- [ADR-0006](adr/0006-recipe-layering-and-platform-deps.md) — why the
-  public/private split is a rule; [ADR-0008](adr/0008-belt-hints-alongside-guards.md)
-  — why hints advise instead of deny.
-- [RELEASING.md](RELEASING.md) — per-component releases, for the
+- [ADR-0006](adr/0006-recipe-layering-and-platform-deps.md): why the
+  public/private split is a rule; [ADR-0008](adr/0008-belt-hints-alongside-guards.md):
+  why hints advise instead of deny.
+- [RELEASING.md](RELEASING.md): per-component releases, for the
   non-fleet path.
