@@ -14,6 +14,15 @@ func hasRule(fs []StatFinding, id string) bool {
 	return false
 }
 
+func findRule(fs []StatFinding, id string) (StatFinding, bool) {
+	for _, f := range fs {
+		if f.RuleID == id {
+			return f, true
+		}
+	}
+	return StatFinding{}, false
+}
+
 func TestStatisticalEmpty(t *testing.T) {
 	if got := DetectStatistical(""); len(got) != 0 {
 		t.Fatalf("expected no findings on empty text, got %d", len(got))
@@ -83,6 +92,60 @@ func TestEmDashDensitySkipsSingleDash(t *testing.T) {
 	fs := DetectStatistical(text)
 	if hasRule(fs, "Humanizer.EmDashDensity") {
 		t.Fatalf("EmDashDensity should not fire on a single em-dash")
+	}
+}
+
+func TestEmDashDensityExcludesFencedCode(t *testing.T) {
+	// Prose: 20 reps of a 9-word sentence (180 words), with 3 em-dashes
+	// inserted as standalone tokens so word count is unaffected.
+	sentence := "The rollout finished on Tuesday and nothing broke overnight. "
+	prose := strings.Repeat(sentence, 20)
+	prose = strings.Replace(prose, " and ", " — and ", 3)
+
+	// A fenced code block (git-log-style output) with its own em-dashes
+	// and words that must not leak into the prose counts.
+	fenced := "```\n" + strings.Repeat("alpha beta — gamma delta\n", 10) + "```\n"
+
+	text := prose + "\n\n" + fenced
+	fs := DetectStatistical(text)
+
+	finding, ok := findRule(fs, "Humanizer.EmDashDensity")
+	if !ok {
+		t.Fatalf("expected EmDashDensity to fire on the prose alone, got %+v", fs)
+	}
+
+	wantWords := len(tokenizeWords(prose))
+	wantEmDashes := strings.Count(prose, "—")
+	wantDensity := round2(float64(wantEmDashes) * 100 / float64(wantWords))
+
+	if finding.Value != wantDensity {
+		t.Fatalf("density = %v, want %v (fenced code must not inflate the count or the word total)",
+			finding.Value, wantDensity)
+	}
+}
+
+func TestEmDashDensityIgnoresDoubleHyphens(t *testing.T) {
+	// CLI-flag-style "--" tokens (as in a tool's README) must not count as
+	// em-dashes. Two real em-dashes are mixed in so the density check's
+	// minimum-count gate still trips.
+	line := "Run the scan with --branch origin/main and --fail-on-findings enabled for a strict check. "
+	prose := strings.Repeat(line, 15)
+	prose = strings.Replace(prose, " for a ", " — for a ", 2)
+
+	fs := DetectStatistical(prose)
+
+	finding, ok := findRule(fs, "Humanizer.EmDashDensity")
+	if !ok {
+		t.Fatalf("expected EmDashDensity to fire, got %+v", fs)
+	}
+
+	wantWords := len(tokenizeWords(prose))
+	wantEmDashes := strings.Count(prose, "—")
+	wantDensity := round2(float64(wantEmDashes) * 100 / float64(wantWords))
+
+	if finding.Value != wantDensity {
+		t.Fatalf("density = %v, want %v (double hyphens must not count as em-dashes)",
+			finding.Value, wantDensity)
 	}
 }
 
