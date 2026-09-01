@@ -11,9 +11,9 @@ http://p.this/         ->  alias of present.this
 
 It does two things, both driven by one routes file:
 
-1. **hosts sync**: writes a managed block into `/etc/hosts` so `<name>.<suffix>`
+1. hosts sync: writes a managed block into `/etc/hosts` so `<name>.<suffix>`
    resolves to `127.0.0.1`.
-2. **reverse proxy**: listens on `127.0.0.1:80` and routes each request to the
+2. reverse proxy: listens on `127.0.0.1:80` and routes each request to the
    right backend port by its `Host` header.
 
 ## How it works
@@ -40,7 +40,7 @@ walkthrough, install to first request.
 ## Usage
 
 `d-man serve` is the long-running daemon. Binding `:80` and writing `/etc/hosts`
-both need root, so it runs as a **root launchd daemon** via t-man. This is a
+both need root, so it runs as a root launchd daemon via t-man. This is a
 one-time, explicit step (see [`recipes/d-man/SETUP.md`](../../recipes/d-man/SETUP.md)):
 
 ```bash
@@ -48,19 +48,20 @@ sudo t-man --daemon add --name d-man -- \
   $HOME/code/bin/d-man serve --config $HOME/.config/d-man/routes.toml
 ```
 
-That is the **only** time you need `sudo`. After it:
+That is the **only** time you need `sudo`.
 
-- **Edit routes:** change `routes.toml`; the daemon watches it (fsnotify) and
-  re-syncs `/etc/hosts` plus reloads the proxy automatically. No sudo, no
-  restart. If an edit is invalid (bad hostname, unknown `cname` target, a
-  `cname` cycle), it's logged and ignored, and the previous good routes stay
-  live; check `t-man logs d-man` for the validation error, and confirm the
-  daemon is watching the file you edited (`t-man logs d-man` shows
-  `config=…` on start).
-- **Upgrade the binary:** run `make install` (or `ralph up`); the daemon
-  notices its binary changed, exits, and launchd's `KeepAlive` relaunches the
-  new build. If it doesn't take effect, check `t-man status d-man` and
-  launchd directly: `launchctl print system/d-man`.
+After that, changing routes is just editing `routes.toml`: the daemon watches it
+(fsnotify) and re-syncs `/etc/hosts` plus reloads the proxy automatically, so
+you need neither sudo nor a restart. If an edit is invalid (bad hostname,
+unknown `cname` target, a `cname` cycle), it's logged and ignored, and the
+previous good routes stay live; check `t-man logs d-man` for the validation
+error, and confirm the daemon is watching the file you edited
+(`t-man logs d-man` shows `config=…` on start).
+
+To upgrade the binary, run `make install` (or `ralph up`); the daemon notices its
+binary changed, exits, and launchd's `KeepAlive` relaunches the new build. If it
+doesn't take effect, check `t-man status d-man` and launchd directly:
+`launchctl print system/d-man`.
 
 Other subcommands:
 
@@ -95,7 +96,7 @@ See [`docs/commands.md`](docs/commands.md) for every subcommand in detail.
   by d-man itself, not proxied). If a running site is missing from the list,
   confirm its backend is actually up on the declared port: a dead backend is
   dropped, not shown as down. Cross-origin, it answers only pages on this
-  machine — an `Origin` on loopback or under `.this` (see
+  machine: an `Origin` on loopback or under `.this` (see
   [config.md](config.md)).
 - Everything else: proxied to the matching route's backend by `Host` header.
   A `502` means the backend isn't running, or the port in `routes.toml`
@@ -148,7 +149,7 @@ so a redirect never bounces you to `127.0.0.1:<port>`.
 tables, like `suffix`). Each listed host is pinned to `127.0.0.1` in
 `/etc/hosts` and served a local "you're blocked" page hosting a small
 dependency-free retro arcade, rather than being proxied. List `www.` and the
-bare domain separately — there is no wildcard matching.
+bare domain separately; there is no wildcard matching.
 
 The arcade picks one game at random per visit (`n` switches). More games can be
 added as plugins with the optional top-level `games_dir` key:
@@ -159,7 +160,7 @@ games_dir = "~/.config/d-man/games"
 
 Any flat `<name>.js` file in that directory (lowercase letters, digits, `-`,
 `_`) is loaded into the page after the built-in games and joins the rotation by
-calling `ARCADE.register(name, factory)` — the same one-file contract the
+calling `ARCADE.register(name, factory)`, the same one-file contract the
 bundled games use (see `internal/blockpage/assets/smash.js` for a complete
 example). The directory is read per request, so dropping a file in takes effect
 on the next page load; a missing directory simply means no extra games.

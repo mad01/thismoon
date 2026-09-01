@@ -34,7 +34,7 @@ clones the store on first use, and `worklog sync` fast-forward pulls then
 pushes when you switch machines. One writer at a time is the assumption:
 sync before switching, there is no merge strategy.
 
-Machines that must not share a store — a personal one and a work one, say —
+Machines that must not share a store (a personal one and a work one, say)
 each get their own `url`. Which machine gets which is decided when the
 machine is provisioned, not at runtime: worklog no longer resolves an
 upstream from a profile label. Full reference: [config.md](config.md).
@@ -78,7 +78,7 @@ On a standalone install, register it once:
 claude mcp add --scope user worklog -- worklog mcp
 ```
 
-On a ralph-managed machine, skip the manual command — registration is
+On a ralph-managed machine, skip the manual command: registration is
 machine-private wiring that ships from the consuming repo's companion
 recipe, unsandboxed as first-party code (`docs/adr/0006` at the repo root).
 See [`CLAUDE.md`](CLAUDE.md) for the two-layer build/install vs. wiring
@@ -87,7 +87,7 @@ split.
 No backing service has to be running: the MCP process reads and writes
 `~/code/worklog` directly, the same store the CLI uses. Confirm the server
 is registered with `claude mcp list`, which should list `worklog` among the
-connected servers. There is no `worklog doctor` — `worklog docs` prints the
+connected servers. There is no `worklog doctor`; `worklog docs` prints the
 embedded operating doc (runtime behavior, failure modes, first moves)
 instead.
 

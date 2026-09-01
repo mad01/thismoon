@@ -20,7 +20,7 @@ cd thismoon/services/csl
 make install   # builds with version embedded, copies to ~/code/bin/csl, codesigns
 ```
 
-Requires the Go toolchain pinned in the repo's `go.mod` (1.26.2) and `git` on `PATH`. Semantic search additionally needs a running [Ollama](https://ollama.com) with the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`); lexical search works without it.
+Requires the Go toolchain pinned in the repo's `go.mod` (1.26.2) and `git` on `PATH`. Semantic search needs a running [Ollama](https://ollama.com) with the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`); lexical search works without it.
 
 Verify:
 
@@ -30,7 +30,7 @@ csl version
 
 ## Configuration
 
-csl runs without a config file — `csl web`, `csl repo --list`, and `csl doctor` all work on a fresh machine and tell you which file to create. To index anything, create `config.yaml` in the config directory — `$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset — listing the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
+csl runs without a config file. `csl web`, `csl repo --list`, and `csl doctor` all work on a fresh machine and tell you which file to create. To index anything, create `config.yaml` in the config directory (`$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset), listing the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
 
 ```yaml
 dirs:
@@ -70,7 +70,7 @@ daemon:
 
 `hooks.post_merge.enabled` also gates the deprecated `csl hooks install` (see Usage); leave it unset unless you're deliberately using the legacy hook installer.
 
-Moving the web UI off port 7424 for good takes `CSL_PORT` in the environment, or a `web.base_url` in the config file — not just `csl web --port`. The flag binds one process, while the MCP server builds `csl_show_file` links from a different one and can only see those two settings. Full reference: [config.md](config.md).
+Moving the web UI off port 7424 for good takes `CSL_PORT` in the environment, or a `web.base_url` in the config file, not just `csl web --port`. The flag binds one process, while the MCP server builds `csl_show_file` links from a different one and can only see those two settings. Full reference: [config.md](config.md).
 
 ## Usage
 
@@ -120,15 +120,15 @@ claude mcp add --scope user csl -- csl mcp
 claude mcp list   # expect: csl: csl mcp - ✓ Connected
 ```
 
-On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root). Nothing needs to be running first: the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration) — without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
+On a ralph-managed machine, skip the manual command: MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root). Nothing needs to be running first, since the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration). Without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
 
 The MCP server exposes fifteen `csl_*` tools:
 
-- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
-- **Search:** `csl_search`, `csl_count`, `csl_query_validate`
-- **Semantic and hybrid:** `csl_semantic_search`, `csl_hybrid_search`
-- **Read and info:** `csl_read`, `csl_ls`, `csl_show_file`, `csl_index_info`
-- **Diagnosis:** `csl_doctor` — the `csl doctor` checks as JSON, for a client with no shell
+- Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
+- Search: `csl_search`, `csl_count`, `csl_query_validate`
+- Semantic and hybrid: `csl_semantic_search`, `csl_hybrid_search`
+- Read and info: `csl_read`, `csl_ls`, `csl_show_file`, `csl_index_info`
+- Diagnosis: `csl_doctor`, the `csl doctor` checks as JSON, for a client with no shell
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults).
 
@@ -144,9 +144,9 @@ Registering the MCP server makes the tools available, but Claude will still reac
 Always use the `csl_*` MCP tools for repo discovery, code search, and file reads across local checkouts. Do not use the `csl` CLI directly: the MCP tools and CLI share the same foundation, so if one is down the other will be too.
 
 Available tools:
-- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`
-- **Search:** `csl_search`, `csl_semantic_search`, `csl_hybrid_search`, `csl_count`, `csl_read`, `csl_query_validate`
-- **Other:** `csl_ls`, `csl_index_info`
+- Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`
+- Search: `csl_search`, `csl_semantic_search`, `csl_hybrid_search`, `csl_count`, `csl_read`, `csl_query_validate`
+- Other: `csl_ls`, `csl_index_info`
 
 ### Repo discovery
 - Use `csl_repo_lookup` or `csl_repo_info` to find repos. Do not use `find`, `ls`, `Glob`, or shell to manually search for repo directories.
@@ -160,12 +160,12 @@ Available tools:
 
 zoekt queries look like grep but have important differences:
 
-- **AND is strict:** space-separated terms must ALL appear in the SAME file. Use 1-2 terms and narrow with filters, not 3+ chained terms.
-- **OR:** use `|` with no spaces (`foo|bar`) or lowercase `or`. Uppercase `OR` is a literal string. Spaces around `|` break it.
-- **Filters:** `repo:name` (not `r:`), `f:\.go$` (not `file:`), `lang:go`, `-term` (NOT).
-- **File filters are regex**, not glob: `f:.*\.go$` not `f:*.go`.
-- **Exact phrase:** `"foo bar"` requires that exact string on one line. For proximity, use regex: `foo.*bar`.
-- **Validate:** call `csl_query_validate` to see how zoekt parsed your query. This is especially useful when you get zero results.
+- AND is strict: space-separated terms must ALL appear in the SAME file. Use 1-2 terms and narrow with filters, not 3+ chained terms.
+- OR: use `|` with no spaces (`foo|bar`) or lowercase `or`. Uppercase `OR` is a literal string. Spaces around `|` break it.
+- Filters: `repo:name` (not `r:`), `f:\.go$` (not `file:`), `lang:go`, `-term` (NOT).
+- File filters are regex, not glob: `f:.*\.go$` not `f:*.go`.
+- Exact phrase: `"foo bar"` requires that exact string on one line. For proximity, use regex: `foo.*bar`.
+- Validate: call `csl_query_validate` to see how zoekt parsed your query. This is especially useful when you get zero results.
 
 Common grep-to-zoekt translations:
 
@@ -183,7 +183,7 @@ When switching working directory to a different git repo, read that repo's `CLAU
 
 ## Where things live
 
-`config.yaml` lives in the config directory (see Configuration). Everything csl writes lives in the state directory — `$XDG_STATE_HOME/csl`, or `~/.local/state/csl` when that variable is unset:
+`config.yaml` lives in the config directory (see Configuration). Everything csl writes lives in the state directory (`$XDG_STATE_HOME/csl`, or `~/.local/state/csl` when that variable is unset):
 
 - `search-index/`: lexical index (`state.json` per-repo fingerprint/branch/dirty/indexed-at, plus `<shard-hash>.zoekt` shard files).
 - `semantic-index/`: per-repo vector stores (embeddings come from Ollama; no model files live here).

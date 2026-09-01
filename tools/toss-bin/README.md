@@ -18,7 +18,7 @@ Builds a release binary (`swift build --configuration=release`) and installs it 
 
 Fleet machines get it through ralph: the `recipes/toss-bin` recipe builds from the thismoon sources cache, installs the binary, and defines the `rm` shell function.
 
-**Requirements:** macOS 10.15 or later, Swift toolchain on `$PATH`.
+Requires macOS 10.15 or later and a Swift toolchain on `$PATH`.
 
 ## Usage
 
@@ -39,11 +39,11 @@ toss-bin [flags] <path> [...]
 | `--help`, `-h` | Show usage (`-h` only when it is the sole argument) |
 | `--version`, `-v` | Show version (`-v` only when it is the sole argument) |
 
-Combined short flags work: `-rf` expands to `-r -f`. Unknown flags are silently ignored so the `rm` function passes through normal `rm` flags without errors. That includes `-h` and `-v` when mixed with paths — `rm -v file` means verbose remove, so the short forms only act as help/version on their own.
+Combined short flags work: `-rf` expands to `-r -f`. Unknown flags are silently ignored so the `rm` function passes through normal `rm` flags without errors. That includes `-h` and `-v` when mixed with paths: `rm -v file` means verbose remove, so the short forms only act as help/version on their own.
 
 ### rm-compatible behavior
 
-- `.` and `..` are refused, same as `rm` — trashing them would move the shell's working directory out from under it.
+- `.` and `..` are refused, same as `rm`. Trashing them would move the shell's working directory out from under it.
 - Symlinks are trashed as links: the link itself moves to trash, the target is never touched. This includes broken symlinks, and a symlink to a directory needs no `-r`.
 - Safe-mode validates a symlink by where the link lives, not what it points at. A link in `~/code` pointing at `~/Documents` is trashable (only the link moves); the deny-listed paths that are themselves symlinks (`/var`, `/etc`, `/tmp`) stay blocked by their own path.
 
@@ -67,16 +67,16 @@ toss-bin -r ./old-build
 
 When `--safe-mode` is active, the following paths are blocked. Files *inside* a protected directory are still allowed (e.g. `~/Documents/myfile.txt` passes).
 
-**System paths (exact match — blocked):**
+System paths (blocked on exact match):
 `/`, `/Library`, `/Applications`, `/Users`, `/Volumes`, `/etc`, `/var`, `/tmp`, `/opt`, `/Developer`
 
-**System subtrees (entire tree blocked):**
+System subtrees (entire tree blocked):
 `/System`, `/bin`, `/sbin`, `/usr`, `/private`, `/cores`, and several macOS metadata paths (`.Spotlight-V100`, `.fseventsd`, etc.)
 
-**Exempt from tree block:**
+Exempt from tree block:
 `/usr/local` (Homebrew) is allowed even though `/usr` is blocked.
 
-**Home directory paths (exact match — blocked):**
+Home directory paths (blocked on exact match):
 `~` (home itself), `~/.Trash`, `~/Library`, `~/Documents`, `~/Desktop`, `~/Downloads`, `~/Pictures`, `~/Music`, `~/Movies`, `~/Applications`, `~/Public`
 
 ## Configuration
@@ -100,26 +100,26 @@ The config can only extend the deny-list, never shrink it: there is no way to un
 
 ## Develop
 
-**Key files:**
+Key files:
 
 | File | What it does |
 |---|---|
-| `Sources/TossBinCore/Safety.swift` | `PathSafety` — the deny-list and `validate()` function. Edit built-in protected paths here. |
-| `Sources/TossBinCore/Config.swift` | `TossConfig` + `ConfigLoader` — the optional YAML config with deny-list additions. |
+| `Sources/TossBinCore/Safety.swift` | `PathSafety`: the deny-list and `validate()` function. Edit built-in protected paths here. |
+| `Sources/TossBinCore/Config.swift` | `TossConfig` + `ConfigLoader`: the optional YAML config with deny-list additions. |
 | `Sources/toss-bin/main.swift` | Argument parsing, `toss()`, `validatePaths()`, and the main dispatch. |
 | `Sources/toss-bin/Utilities.swift` | CLI helpers: arguments, sudo revert, stderr printing. |
 | `Tests/TossBinTests/SafetyTests.swift` | XCTest suite for `PathSafety`. |
 | `Package.swift` | swift-tools-version 5.9, macOS 10.15+. |
 | `test` | Shell test suite that runs `--validate` against known-blocked and known-allowed paths. |
 
-**Run the tests before touching the deny-list** — the shell suite builds a fresh binary and exercises every blocked and allowed path:
+**Run the tests before touching the deny-list.** The shell suite builds a fresh binary and exercises every blocked and allowed path:
 
 ```sh
 make test               # XCTest unit suite
 make test-integration   # shell suite (./test)
 ```
 
-**Change-and-see loop:**
+Change-and-see loop:
 
 ```sh
 # 1. Edit Sources/TossBinCore/Safety.swift (deny-list) or Sources/toss-bin/main.swift

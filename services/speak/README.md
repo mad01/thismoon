@@ -97,8 +97,8 @@ The `<wk-read-aloud>` webkit component on the rendered page calls
 
 ## MCP server
 
-`speak serve` plays audio in the **browser** — the person at the page hears it.
-`speak mcp` plays audio on the **machine's speakers** with `afplay`, so an agent
+`speak serve` plays audio in the browser: the person at the page hears it.
+`speak mcp` plays audio on the machine's speakers with `afplay`, so an agent
 can make the machine talk. The two are independent: they share only the TTS
 engine, and the MCP server needs the `speak-tts` engine reachable but does **not**
 need `speak serve` running.
@@ -113,7 +113,7 @@ On a standalone install, register it once:
 claude mcp add --scope user speak -- speak mcp
 ```
 
-On a ralph-managed machine, skip the manual command above — registering the server with a client is machine-private wiring that ships from the consuming repo's companion recipe (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+On a ralph-managed machine, skip the manual command above. Registering the server with a client is machine-private wiring that ships from the consuming repo's companion recipe (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
 
 Only one server-side session plays at a time; playback is serialised across
 processes by an `flock` on `playback.lock` in the state directory, so a second
