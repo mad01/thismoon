@@ -2,7 +2,7 @@
 
 A small CLI + MCP server for serving single-page HTML briefing pages over localhost.
 
-Presentations are managed as **create / read / update / list**; there is no delete, so pages stick around. Each page stores only its HTML body; a shared **core template** supplies the chrome (styling, controls, scripts) and is injected when the page is served. Editing the template re-renders every page, old and new. An injected live-reload script refreshes any open browser tab after an update, so you open the page once and edits stream in.
+Presentations are managed as create / read / update / list; there is no delete, so pages stick around. Each page stores only its HTML body; a shared **core template** supplies the chrome (styling, controls, scripts) and is injected when the page is served. Editing the template re-renders every page, old and new. An injected live-reload script refreshes any open browser tab after an update, so you open the page once and edits stream in.
 
 ## Install
 
@@ -39,7 +39,7 @@ On a standalone install, register it once:
 claude mcp add --scope user present -- present mcp
 ```
 
-On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+On a ralph-managed machine, skip the manual command. MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
 
 The tools write the page store directly, so they work with `present serve` down; only the `url` a tool returns needs the server running to actually open in a browser.
 
@@ -79,20 +79,20 @@ make build   # ./present
 make tidy    # go mod tidy
 ```
 
-**Chrome.** Pages render client-side: `present serve` serves an embedded
+Chrome. Pages render client-side: `present serve` serves an embedded
 chrome-only shell and the browser fetches each page as JSON and builds the DOM.
 There is no on-disk template to edit.
 
 Chrome (header, theme toggle, font/size/fixation controls) comes from the
-in-module `webkit` package (served at `GET /webkit/`). Do not re-add those
+in-module `webkit` package (served at `GET /webkit/`). Don't re-add those
 controls locally. A webkit change ships at the next build; run
 `present rerender` afterwards to re-render all pages through the updated
 renderer.
 
-**MCP + sandbox.** The MCP server runs inside a seatbelt profile
+MCP + sandbox. The MCP server runs inside a seatbelt profile
 (`recipes/present/present.sb`): no network at all, `$HOME` reads
 default-denied except `~/code/bin` and `~/.config/present`. Writes are
-confined to `~/.config/present` and temp. The sandbox should not affect
+confined to `~/.config/present` and temp. The sandbox shouldn't affect
 normal page operations; if an MCP tool fails, check sandbox denials:
 
 ```bash
@@ -101,11 +101,11 @@ t-man logs sandbox
 
 See `recipes/speak/CLAUDE.md` → "Triaging a denial" for the triage steps.
 
-**Codesign.** macOS kills adhoc-signed binaries with stale provenance xattrs.
+Codesign. macOS kills adhoc-signed binaries with stale provenance xattrs.
 After a manual copy: `make resign BIN=~/code/bin/present`. `make install`
 handles this automatically.
 
-**Debugging.** Both processes log their resolved `workdir=… port=…` at
+Debugging. Both processes log their resolved `workdir=… port=…` at
 startup. If updates don't appear, compare those values first:
 
 ```bash

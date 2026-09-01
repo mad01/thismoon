@@ -2,7 +2,7 @@
 
 macOS open bridge: a CLI and MCP server over the system `open` command.
 
-Opening things out of an agent session used to mean a shell call — a
+Opening things out of an agent session used to mean a shell call: a
 permission prompt and hand-quoted paths for something as small as "open
 this link." opener makes the open command a first-class tool: URLs, files,
 apps, and Finder reveal as structured operations that validate before they
@@ -44,7 +44,7 @@ On a standalone install, register it once:
 claude mcp add --scope user opener -- opener mcp
 ```
 
-On a ralph-managed machine, skip the manual command — registration is
+On a ralph-managed machine, skip the manual command: registration is
 machine-private wiring that ships from the consuming repo's companion
 recipe (`docs/adr/0006` at the repo root). See [`CLAUDE.md`](CLAUDE.md) for
 the two-layer build/install vs. wiring split.
@@ -52,7 +52,7 @@ the two-layer build/install vs. wiring split.
 No backing service has to be running: the tools exec `/usr/bin/open`
 in-process, macOS only. Confirm the server is registered with
 `claude mcp list`, which should list `opener` among the connected servers.
-There is no `opener doctor` — `opener docs` prints the embedded operating
+There is no `opener doctor`; `opener docs` prints the embedded operating
 doc (path and app-name failure modes, the silent-success case) instead.
 
 ## Develop

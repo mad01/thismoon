@@ -13,8 +13,8 @@ It also catches stale binaries: for each web service it compares the running
 process's `/version` sha with the sha the binary on disk reports (`<binary>
 version`). When they disagree for two consecutive cycles the service shows
 "Stale binary" on the dashboard, fires a macOS banner, and records a `warn`
-event — the "ralph reported ok but the old binary kept running" failure made
-visible.
+event. That makes the "ralph reported ok but the old binary kept running"
+failure visible.
 
 Each service card also shows the release tag and build time of the running
 build, when the service reports them on `/version`. Services that only serve

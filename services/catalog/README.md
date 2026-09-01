@@ -11,7 +11,7 @@ familiarly. It's not Backstage.
 
 catalog walks the repos listed in your registry, reads each
 `service-info.yaml`, and rebuilds an in-memory index of Systems and Components
-on every `list`/`validate`/`web` run (or **Refresh** in the UI /
+on every `list`/`validate`/`web` run (or Refresh in the UI /
 `POST /api/refresh`). Nothing is cached to disk between runs. See
 [`CLAUDE.md`](CLAUDE.md) for the entity model and the full sync workflow.
 
@@ -35,8 +35,8 @@ catalog config              # print the registry file in use and how many source
 ```
 
 The web UI lists Systems and Components, searches by name/owner, and has detail
-pages showing full metadata. **Refresh** re-scans the source repos; **Add**
-writes a new `service-info.yaml` into a registered repo (writes are restricted
+pages showing full metadata. Refresh re-scans the source repos; Add writes a
+new `service-info.yaml` into a registered repo (writes are restricted
 to directories inside a registered source). Light/dark toggle, light by default.
 
 ## Endpoints
@@ -91,7 +91,7 @@ parsing, scanning, indexing, querying, rendering and the uniqueness rule. All
 I/O lives in `internal/cli` and `internal/web`. The web frontend is hand-written
 vanilla HTML/CSS/JS embedded with `//go:embed`; it needs no build toolchain.
 
-The only third-party JavaScript is **Cytoscape.js**, used for the dependency
+The only third-party JavaScript is Cytoscape.js, used for the dependency
 graph on System pages. It is vendored at a pinned version,
 `internal/web/assets/static/cytoscape-3.31.0.min.js` (same version as `present`),
 and embedded into the binary instead of loaded from a CDN. To bump it, replace
@@ -99,7 +99,7 @@ that file and update the `<script>` tag in `assets/index.html`.
 
 `.github/workflows/ci.yml` runs `go test` and `go vet` on every pull request
 (per changed component, plus a repo-wide pass). Schema and global-uniqueness
-checks are not wired into CI: run `catalog validate` locally before merging to
+checks aren't wired into CI: run `catalog validate` locally before merging to
 catch a duplicate name or a malformed entity.
 
 See [`CLAUDE.md`](CLAUDE.md) for the domain model (System vs Component, global

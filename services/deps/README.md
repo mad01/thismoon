@@ -72,12 +72,12 @@ deps config                        # print the discovery config in use and its e
 The CLI and MCP tools both need `deps serve` running: they're HTTP clients to
 it.
 
-**Web UI.** Open `http://deps.this/`. It shows the per-ecosystem counts, the
+The web page at `http://deps.this/` shows the counts per package manager, the
 active findings, and an acknowledged section. From here you can:
 
-- **Rescan all**: run a full check now
-- **Rescan** one repo: the ↻ button on each repo chip
-- **Resolve** a finding: acknowledge it so it drops to the acknowledged section
+- Rescan all: run a full check now
+- Rescan one repo: the ↻ button on each repo chip
+- Resolve a finding: acknowledge it so it drops to the acknowledged section
 
 ## Endpoints
 
@@ -101,7 +101,7 @@ Ask in plain language: "scan for vulnerable dependencies", "what's flagged",
 - `deps_resolve`: acknowledge advisories by their key
 - `deps_doctor`: run the same checks as `deps doctor` and return the report
 
-On a standalone install, register the server once: `claude mcp add --scope user deps -- deps mcp`. On a ralph-managed machine, skip the manual command — registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `deps serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for deps yet, so start it directly (`deps serve`) or under a process supervisor. Confirm with `claude mcp list`, then `deps doctor` if a tool call fails.
+On a standalone install, register the server once: `claude mcp add --scope user deps -- deps mcp`. On a ralph-managed machine, skip the manual command. Registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `deps serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for deps yet, so start it directly (`deps serve`) or under a process supervisor. Confirm with `claude mcp list`, then `deps doctor` if a tool call fails.
 
 ## Configuration
 
@@ -109,9 +109,9 @@ The discovery config is at `~/.config/deps/config.toml` (or under
 `$XDG_CONFIG_HOME/deps/`, symlinked from `recipes/deps/config.toml`). The repo
 set comes from the catalog registry; this file trims it. Both lists are glob
 patterns, matched a segment at a time against every trailing run of path
-segments — so a pattern can name a repo by basename, by org/repo, or by a
+segments, so a pattern can name a repo by basename, by org/repo, or by a
 deeper suffix. Edits take effect on the next scan without a restart; a pattern
-that does not compile fails the scan naming it.
+that doesn't compile fails the scan naming it.
 
 ```toml
 exclude_repos = ["archive-*", "mad01/*"]   # skip whole repos

@@ -1,15 +1,15 @@
 # wire
 
-A place for sessions to talk — two of them or a whole crew. One agent opens a
+A place for sessions to talk, two of them or a whole crew. One agent opens a
 channel and gives you a connection string; paste that into the other agents
 and they can all talk to each other.
 
-Work often outgrows one session, usually one of two ways. You **hand off** —
-start a refactor in one place, finish it somewhere else, or split a problem
-between two agents who then each have to guess what the other did. Or you want
-a **second session to test** what the first one built, without inheriting the
-assumptions that produced the bug. Both need the same thing: the two sessions
-have to be able to ask each other questions while the work is happening.
+Work often outgrows one session, usually one of two ways. You hand off: start a
+refactor in one place, finish it somewhere else, or split a problem between two
+agents who then each have to guess what the other did. Or you want a second
+session to test what the first one built, without inheriting the assumptions
+that produced the bug. Both need the same thing: the two sessions have to be
+able to ask each other questions while the work is happening.
 
 wire gives them a **channel**: a named conversation with an append-only
 transcript. A read can block until the other side answers, so waiting for a
@@ -19,34 +19,34 @@ reply is one call, not a polling loop.
 
 - a **channel** is a named conversation. Opening one gives you a **connection
   string** like `wire://localhost:7432/refactor-auth`. That token is the entire
-  join protocol — hand it over and the other session is in. No invites, no
+  join protocol: hand it over and the other session is in. No invites, no
   secrets. It works anywhere a channel is named: any command, any tool, the
   web page's URL.
 - a **message** is one turn, signed with who sent it. Messages are immutable and
   numbered from 1. A message can also carry a **kind** (task, result, question,
-  answer, ack, note), be addressed **to** one agent by name, point at the
-  message it answers with **reply_to**, and flag **reply_needed** when it
-  expects an answer — which is how agents keep an interleaved conversation
+  answer, ack, note), be addressed `to` one agent by name, point at the
+  message it answers with `reply_to`, and flag `reply_needed` when it
+  expects an answer. That is how agents keep an interleaved conversation
   straight without inventing their own conventions in prose.
 - agents **join** a channel by name. Joining puts you on the **roster** and
-  returns the briefing — the conventions, who else is here, and what's still
+  returns the briefing: the conventions, who else is here, and what's still
   owed. With more than two agents, address questions with `to`: an obligation
   addressed to nobody belongs to nobody.
 - a **cursor** is the number of the last message you read. Ask for everything
   after it and you get only what's new. Every read also reports
-  **awaiting_reply** (the messages still owed an answer),
-  **awaiting_reply_by** (the addressed ones, grouped by who owes them), and
-  **awaiting_reply_off_roster** (addressees on that map who aren't on the
+  `awaiting_reply` (the messages still owed an answer),
+  `awaiting_reply_by` (the addressed ones, grouped by who owes them), and
+  `awaiting_reply_off_roster` (addressees on that map who aren't on the
   roster). Don't settle by `awaiting_reply_by` alone: a question sent to a
   typo of your name, or to an agent that already left, files under a key
-  nobody checks — the off-roster list is where it shows up. It's advisory,
+  nobody checks, and the off-roster list is where it shows up. It's advisory,
   because a task addressed to an agent that hasn't joined yet looks exactly
   the same and resolves itself on the join.
-- a channel can declare **conventions** when it's opened — the ground rules of
+- a channel can declare **conventions** when it's opened: the ground rules of
   the conversation, shown to anyone who joins, even mid-transcript.
 
 Reading with a wait blocks until the next message lands, up to two minutes. If
-nothing arrives you get an empty answer, not an error — ask again, or stop.
+nothing arrives you get an empty answer, not an error. Ask again, or stop.
 
 When the work is done, **close** the channel. That's terminal: no more messages,
 and anyone blocked on a read wakes up instead of waiting for a reply that isn't
@@ -107,12 +107,12 @@ wire close <ref> [--note "<why>"]    # terminal, for everyone — leave is just 
 Every command takes `--from` (who you are); it defaults to `WIRE_FROM` or your
 username, which names the human at the terminal well enough. An agent driving
 the CLI should pass `--from` explicitly with a short distinctive name, as the
-MCP tools require. `<ref>` is a channel name, an id, or a connection string —
+MCP tools require. `<ref>` is a channel name, an id, or a connection string,
 whichever you happen to have.
 
 ## MCP + web view
 
-Mostly you'll use wire through Claude — it's the surface the whole thing is
+Mostly you'll use wire through Claude; it's the surface the whole thing is
 built for. Ask one session to open a channel, paste the connection string it
 gives you into another session, and they'll talk to each other. Claude calls
 the tools below.
@@ -123,14 +123,14 @@ On a standalone install, register the server once:
 claude mcp add --scope user wire -- wire mcp
 ```
 
-On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+On a ralph-managed machine, skip the manual command. MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
 
-`wire mcp` is a thin stdio-to-HTTP shim: it holds no state of its own and needs `wire serve` running — start it with `wire serve` (or, on a fleet, check `t-man status wire`). With serve down, the tools answer "wire serve not reachable".
+`wire mcp` is a thin stdio-to-HTTP shim: it holds no state of its own and needs `wire serve` running. Start it with `wire serve` (or, on a fleet, check `t-man status wire`). With serve down, the tools answer "wire serve not reachable".
 
 | Tool | Purpose |
 |------|---------|
 | `wire_open(name?, topic?, from, conventions?)` | Open a channel and get the connection string to pass on |
-| `wire_join(channel, from, note?)` | Get on the roster; returns the briefing — conventions, members, open obligations |
+| `wire_join(channel, from, note?)` | Get on the roster; returns the briefing: conventions, members, open obligations |
 | `wire_leave(channel, from, note?)` | Step off the roster; the conversation continues |
 | `wire_post(channel, from, body, to?, kind?, reply_to?, reply_needed?)` | Post a message, typed, addressed, and correlated |
 | `wire_read(channel, since?, wait?, limit?)` | Read after a cursor, optionally blocking; reports `members`, `awaiting_reply`, `awaiting_reply_by`, `awaiting_reply_off_roster` |
@@ -141,7 +141,7 @@ On a ralph-managed machine, skip the manual command — MCP registration is mach
 Open `http://wire.this/` (or `http://localhost:7432/`) to watch. The channel
 list shows who's talking and the last thing said; clicking one opens the
 transcript, which updates live as messages arrive and shows the channel's
-connection string. The page is read-only — you post through Claude or the CLI.
+connection string. The page is read-only; you post through Claude or the CLI.
 
 Confirm the registration with `claude mcp list`, and run `wire doctor` to check serve reachability, the store, and version skew in one pass.
 

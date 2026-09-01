@@ -94,7 +94,7 @@ tools:
 
 Purge has no MCP tool; deletion stays CLI + API only, human-triggered.
 
-On a standalone install, register the server once: `claude mcp add --scope user events -- events mcp`. On a ralph-managed machine, skip the manual command — registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `events serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for events yet, so start it directly (`events serve`) or under a process supervisor. Confirm with `claude mcp list`, then `events doctor` if a tool call fails.
+On a standalone install, register the server once: `claude mcp add --scope user events -- events mcp`. On a ralph-managed machine, skip the manual command: registration ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root) via `recipes/claude-mcp/servers.json` instead. Either way, `events serve` must already be running: the CLI and MCP tools are thin HTTP clients to it and return an unreachable error otherwise (see How it works). There's no brew formula for events yet, so start it directly (`events serve`) or under a process supervisor. Confirm with `claude mcp list`, then `events doctor` if a tool call fails.
 
 ## Where things live
 

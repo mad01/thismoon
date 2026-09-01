@@ -2,7 +2,7 @@
 
 A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, runs user-defined hook scripts, and can rewrite git history to remove a secret that already made it into a commit.
 
-Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config, but both derive their internal-name list the same way, so the two layers agree when their configs do. belt only sees what an agent does — suspenders also catches what you type.
+Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config, but both derive their internal-name list the same way, so the two layers agree when their configs do. belt only sees what an agent does; suspenders also catches what you type.
 
 ## Quickstart
 
@@ -17,10 +17,10 @@ config init` to write `~/.config/suspenders/config.yaml` when you want to
 adjust `dirs` to your layout. From then on, a staged secret blocks the
 commit that would carry it.
 
-Two things the defaults do not do:
+Two things the defaults don't do:
 
-- **The internal-name guard ships disabled.** Turn it on by giving it a name
-  source — every repo found under `workspace_dirs` contributes its org,
+- The internal-name guard ships disabled. Turn it on by giving it a name
+  source. Every repo found under `workspace_dirs` contributes its org,
   repo, and directory names to the blocked set:
 
   ```yaml
@@ -33,11 +33,11 @@ Two things the defaults do not do:
   Then `suspenders doctor` in any repo shows the derived blocked names, the
   config in effect, and whether that repo is exempt.
 
-- **Hooks are per-clone.** Re-run `suspenders hook install` after cloning
+- Hooks are per-clone. Re-run `suspenders hook install` after cloning
   something new, or `suspenders hook install --all` to sweep every
   discovered repo. On a ralph-managed machine, a companion recipe in your
   config repo can run the sweep on every `ralph up` (the post-install wiring
-  pattern — see `docs/adr/0006` and `examples/dotfiles/` at the repo root).
+  pattern; see `docs/adr/0006` and `examples/dotfiles/` at the repo root).
 
 ## When a block is wrong
 
@@ -46,18 +46,18 @@ take the lowest rung that solves it. `suspenders doctor` in the repo shows
 the state behind any decision: the config in effect, per-repo overrides,
 whether the repo is exempt, and the derived blocked-name list.
 
-1. **One commit**: `git commit --no-verify` skips the hook entirely. It is
-   the deliberate, audited override — the block message names it, and the
+1. One commit: `git commit --no-verify` skips the hook entirely. It is
+   the deliberate, audited override: the block message names it, and the
    attempt that was blocked is already on the events timeline.
-2. **One line**: a `suspenders:ignore` comment on the flagged line suppresses
+2. One line: a `suspenders:ignore` comment on the flagged line suppresses
    findings on that line permanently.
-3. **One value**: a known-safe secret-shaped string goes in the `allowlist`
+3. One value: a known-safe secret-shaped string goes in the `allowlist`
    (global config or the repo's `.suspenders.yaml`); a safe internal-name
    reference goes in `guard.allowlist`.
-4. **One repo**: `.suspenders.yaml` at the repo root suppresses rules,
+4. One repo: `.suspenders.yaml` at the repo root suppresses rules,
    paths, or patterns for that repo only; per-repo `allowlist` and `guard`
    entries append to the global config rather than replacing it.
-5. **One rule or check**: `scan.enabled: false` or `guard.enabled: false`
+5. One rule or check: `scan.enabled: false` or `guard.enabled: false`
    turns a whole check off; `suspenders hook uninstall [--all]` removes the
    hooks and restores whatever they backed up.
 
@@ -66,15 +66,15 @@ whether the repo is exempt, and the derived blocked-name list.
 Three different mechanisms decide which repos the checks apply to, and they
 answer different questions:
 
-- **`dirs` + `exclude`** decide which repos suspenders manages at all.
+- `dirs` + `exclude` decide which repos suspenders manages at all.
   `exclude` entries are globs matched against the `org/repo` name from the
-  origin remote — an excluded repo is skipped by `--all` discovery *and*
+  origin remote. An excluded repo is skipped by `--all` discovery *and*
   exempt from the internal-name guard.
-- **`guard.workspace_dirs` membership** exempts a repo from the guard by
+- `guard.workspace_dirs` membership exempts a repo from the guard by
   definition: a repo inside a workspace dir is internal, so referencing
-  internal names there is fine. Exemption does not remove that repo's names
+  internal names there is fine. Exemption doesn't remove that repo's names
   from the block list other repos are checked against.
-- **Public vs internal is derived, never declared**: there is no per-repo
+- Public vs internal is derived, never declared: there is no per-repo
   "this one is public" flag to get wrong. A repo is guarded exactly when it
   is neither inside `workspace_dirs` nor matched by `exclude`.
 
@@ -139,13 +139,13 @@ A foreign hook found at install time is moved to `<event>.backup` and the genera
 
 The `hook run` subcommand loads config, identifies the current repo, then runs each configured check in order:
 
-**pre-commit:**
+For `pre-commit`:
 
 1. External `pre_commit` hooks (in config order, stop on first failure)
 2. Built-in guard (if `guard.enabled` is true)
 3. Built-in scan (if `scan.enabled` is true, which is the default)
 
-**post-merge:**
+For `post-merge`:
 
 1. External `post_merge` hooks (in config order)
 
@@ -159,10 +159,10 @@ The `--all` flag walks every directory in `config.yaml`'s `dirs` array, discover
 
 Discovery runs through the shared [`kit/repofind`](../../kit/repofind/README.md) package, and suspenders uses it for two separate walks with two separate config lists:
 
-- **`dirs`** answers "which repos do I manage": `hook install --all` installs hooks into every repo found here (minus `exclude` globs).
-- **`guard.workspace_dirs`** answers "which names are internal": every repo found here contributes its org segment, repo segment, and checkout directory basename as three separate blocked names — never the combined `org/repo` form.
+- `dirs` answers "which repos do I manage": `hook install --all` installs hooks into every repo found here (minus `exclude` globs).
+- `guard.workspace_dirs` answers "which names are internal": every repo found here contributes its org segment, repo segment, and checkout directory basename as three separate blocked names, never the combined `org/repo` form.
 
-belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section — same derivation, standalone configs (docs/adr/0010) — which is what keeps the write-time and commit-time block lists identical when the two configs carry the same values. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
+belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section (same derivation, standalone configs, docs/adr/0010), which is what keeps the write-time and commit-time block lists identical when the two configs carry the same values. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
 
 ## Install
 
@@ -319,7 +319,7 @@ suspenders doctor                # current directory
 suspenders doctor /path/to/repo
 ```
 
-`suspenders config` prints the config file location and the settings in effect after defaults are applied. `suspenders config --help` carries the annotated reference of every setting — which key exempts a repo (`exclude`), which marks a name safe (`guard.allowlist`), and what the per-repo `.suspenders.yaml` can override.
+`suspenders config` prints the config file location and the settings in effect after defaults are applied. `suspenders config --help` carries the annotated reference of every setting: which key exempts a repo (`exclude`), which marks a name safe (`guard.allowlist`), and what the per-repo `.suspenders.yaml` can override.
 
 ```sh
 suspenders config
@@ -333,7 +333,7 @@ suspenders version              # bare version token
 suspenders version -o json      # version, commit, tag, build_time
 ```
 
-Plain output is the version and nothing else, so a probe can read the line as-is. The JSON form is the four-key build metadata object every tool in this repo reports, with each key present and `""` for anything the build did not stamp.
+Plain output is the version and nothing else, so a probe can read the line as-is. The JSON form is the four-key build metadata object every tool in this repo reports, with each key present and `""` for anything the build didn't stamp.
 
 ## Detection rules
 
@@ -479,7 +479,7 @@ These fire on the file's name alone, so binary key material (PKCS#12 keystores, 
 
 ## Configuration
 
-Suspenders reads its config from `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`); `--config <path>` and `$SUSPENDERS_CONFIG` point it somewhere else. The file is optional — with none, the defaults below apply in memory, and suspenders never creates one on its own. `suspenders config init` writes it explicitly. A file that exists but fails to parse is an error, so a broken config blocks commits rather than letting them through unchecked.
+Suspenders reads its config from `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`); `--config <path>` and `$SUSPENDERS_CONFIG` point it somewhere else. The file is optional: with none, the defaults below apply in memory, and suspenders never creates one on its own. `suspenders config init` writes it explicitly. A file that exists but fails to parse is an error, so a broken config blocks commits rather than letting them through unchecked.
 
 ```yaml
 # Directories to scan for git repositories (used by --all)
@@ -571,7 +571,7 @@ The block list is derived from your filesystem, not maintained by hand. Enumerat
 
 1. Each directory in `workspace_dirs` is walked (`~` expands to your home; repo inspection fans out to 32 workers). Hidden directories are skipped, discovery doesn't recurse into nested repos, and unreadable entries are silently passed over.
 2. A directory counts as a repo when it contains `.git`. For each repo found, the guard derives separate names:
-   - the org name and the repo name, each on its own, parsed from the `origin` remote URL — both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms. The combined `org/repo` string is never a name of its own: a nested checkout like `~/workspace/foo/bar` blocks `foo` and `bar`, and allowlisting a segment works without spelling out every combination.
+   - the org name and the repo name, each on its own, parsed from the `origin` remote URL, in both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms. The combined `org/repo` string is never a name of its own: a nested checkout like `~/workspace/foo/bar` blocks `foo` and `bar`, and allowlisting a segment works without spelling out every combination.
    - the repo's directory basename, so a repo checked out under a local name that differs from its remote name is blocked under both
 3. When a repo has no `origin` remote or the URL can't be parsed, discovery falls back to `parentdir/repodir` from the filesystem path.
 4. Safe references (`guard.allowlist`) are dropped, `blocked_words` entries are appended, and the result is deduplicated.
@@ -580,7 +580,7 @@ Because the list is recomputed per run and never persisted, a freshly cloned int
 
 Two details worth knowing:
 
-- The top-level `exclude` globs exempt a repo from the guard *running in it*: a repo whose `org/repo` name matches an exclude pattern can be committed to freely, like a repo inside `workspace_dirs`. They do **not** apply to name collection — an excluded repo checked out under a workspace dir still contributes its name to the block list for other repos.
+- The top-level `exclude` globs exempt a repo from the guard *running in it*: a repo whose `org/repo` name matches an exclude pattern can be committed to freely, like a repo inside `workspace_dirs`. They **never** apply to name collection: an excluded repo checked out under a workspace dir still contributes its name to the block list for other repos.
 - Names whose edges are word characters are matched with word-boundary guards, so a short repo name like `hig` can't match inside "higher". Entries with wildcard or punctuation edges keep their full reach.
 
 Blocked words are matched case-insensitively as literal strings, so an entry can be a single word (`acmecorp`), an internal domain (`internal.acmecorp.net`), or a docs link (`docs.acmecorp.net/runbooks`). A `*` in an entry matches any run of non-whitespace characters: `*.acmecorp.net` blocks every subdomain, and the match extends over the URL scheme so history cleanup replaces the whole reference. Overlapping entries match longest-first, so a docs link wins over its bare domain.
@@ -676,7 +676,7 @@ All findings on that line are suppressed.
 
 ## Where things live
 
-- Config: `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`, or wherever `--config`/`$SUSPENDERS_CONFIG` points), optional and never created implicitly — `suspenders config init` writes one
+- Config: `~/.config/suspenders/config.yaml` (or `$XDG_CONFIG_HOME/suspenders/config.yaml`, or wherever `--config`/`$SUSPENDERS_CONFIG` points), optional and never created implicitly; `suspenders config init` writes one
 - Per-repo overrides: `.suspenders.yaml` (or `.yml`) at a repo's root, holding ignore rules, paths, patterns, allowlist, and guard overrides
 - Binary: `~/code/bin/suspenders` (via `make install`)
 - Generated hooks: `.git/hooks/pre-commit`, `.git/hooks/post-merge`, both calling `suspenders hook run <event>`
@@ -761,6 +761,6 @@ headers, the root license covers the whole monorepo.
 - [operating](operating.md): runtime behavior, failure modes, first moves
 - [why](why.md): why this component exists
 - [config](config.md): configuration reference
-- [CONTEXT](CONTEXT.md): domain vocabulary — allowlist vs safe references vs blocked name
+- [CONTEXT](CONTEXT.md): domain vocabulary (allowlist vs safe references vs blocked name)
 - [history-clean](docs/history-clean.md): walkthrough of the history rewrite
 - [working-on-it](docs/working-on-it.md): hands-on guide to adding and tuning detection rules

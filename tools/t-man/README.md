@@ -1,7 +1,7 @@
 # t-man
 
-**t-man** (task-manager) is an idempotent service manager for macOS that
-provides declarative, hash-based service management through launchd — with
+t-man (task-manager) is an idempotent service manager for macOS that
+provides declarative, hash-based service management through launchd, with
 first-class seatbelt sandboxing for the services it runs.
 
 ## How it works
@@ -9,13 +9,13 @@ first-class seatbelt sandboxing for the services it runs.
 t-man improves upon existing service managers like [serviceman](https://github.com/therootcompany/serviceman)
 by providing:
 
-- **True idempotency**: hash-based change detection ensures services are only updated when configuration actually changes
-- **Seatbelt sandboxing**: `--sandbox-profile` launches a service through `sandbox-exec` with a custom profile — no other launchd manager (serviceman, `brew services`) can confine what it runs
-- **Read-compare-apply pattern**: consistent reconciliation logic that reads current state, compares with desired state, and only applies necessary changes
-- **Type safety**: written in Go with proper error handling and validation
-- **Drop-in compatibility**: compatible with serviceman CLI for easy migration
-- **Transparent management**: auto-detects managed services with embedded metadata
-- **Full test coverage**: unit and integration tests
+- True idempotency: hash-based change detection updates a service only when its configuration actually changes
+- Seatbelt sandboxing: `--sandbox-profile` launches a service through `sandbox-exec` with a custom profile. No other launchd manager (serviceman, `brew services`) can confine what it runs
+- Read-compare-apply pattern: consistent reconciliation logic that reads current state, compares with desired state, and only applies necessary changes
+- Type safety: written in Go with proper error handling and validation
+- Drop-in compatibility: compatible with serviceman CLI for easy migration
+- Transparent management: auto-detects managed services with embedded metadata
+- Full test coverage: unit and integration tests
 
 Feature summary:
 
@@ -36,14 +36,14 @@ Feature summary:
 t-man uses SHA256 hashing to detect configuration changes:
 
 1. When you add a service, t-man calculates a hash of the complete service definition
-2. This hash is stored in the launchd plist file as metadata
+2. t-man stores this hash in the launchd plist file as metadata
 3. When you run `add` again, t-man:
    - Reads the current service definition and hash
    - Calculates hash of the desired configuration
    - Compares hashes
    - Only updates if hashes differ
 
-This ensures true idempotency — no unnecessary service restarts.
+This ensures true idempotency: no unnecessary service restarts.
 
 ### Service metadata
 
@@ -143,13 +143,13 @@ agree; a pair that says the same thing twice is an error.
 
 The `add` command creates or updates a service. It's idempotent - running it twice with the same configuration shows "No changes needed".
 
-**Basic syntax:**
+Basic syntax:
 
 ```bash
 t-man add --name <service-name> [flags] -- <command> [args...]
 ```
 
-**Flags:**
+Flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -162,7 +162,7 @@ t-man add --name <service-name> [flags] -- <command> [args...]
 | `--sandbox-profile` | | Seatbelt profile (`.sb`); wraps the service in `sandbox-exec -f <profile>` |
 | `--extra-log NAME=PATH` | | Additional named log file (repeatable); view with `logs --source NAME` |
 
-**Examples:**
+Examples:
 
 ```bash
 # Simple service
@@ -209,15 +209,15 @@ t-man add --name speak-tts \
   -- $HOME/.local/share/speak/venv/bin/python -m mlx_audio.server --port 8765
 ```
 
-**Sandboxed services:** with `--sandbox-profile`, the generated plist launches
+Sandboxed services: with `--sandbox-profile`, the generated plist launches
 the command through `/usr/bin/sandbox-exec -D HOME=<home> -f <profile>`.
-Profiles can use `(param "HOME")` — t-man always supplies it. `sandbox-exec`
+Profiles can use `(param "HOME")`; t-man always supplies it. `sandbox-exec`
 execs the target in place (same PID), so KeepAlive and restart behavior are
 unchanged. Both the profile path and its content feed the idempotency hash:
 editing the `.sb` file makes the next `t-man add` re-render the plist and
 bounce the service; an unchanged re-add stays a no-op.
 
-**Idempotency in action:**
+Idempotency in action:
 
 ```bash
 # First run - creates service
@@ -370,7 +370,7 @@ Extra log paths show up under `Extra logs:` in `t-man status <name>`.
 ### Sandbox logs
 
 `t-man logs sandbox` collects extra log sources named `sandbox` or
-`sandbox-*` — by convention the seatbelt denial ledger and notification
+`sandbox-*`, by convention the seatbelt denial ledger and notification
 mirror written by a sandbox watcher:
 
 ```bash
@@ -570,11 +570,11 @@ internal/
 
 Key components:
 
-- **Service Definition**: Type-safe service configuration with validation
-- **Manager Interface**: Platform-agnostic service management
-- **Launchd Implementation**: macOS-specific launchd integration
-- **Reconciler**: Read-compare-apply reconciliation logic
-- **CLI**: User-facing command-line interface
+- Service definition: type-safe service configuration with validation
+- Manager interface: platform-agnostic service management
+- Launchd implementation: macOS-specific launchd integration
+- Reconciler: read-compare-apply reconciliation logic
+- CLI: user-facing command-line interface
 
 Deeper docs:
 

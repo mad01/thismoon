@@ -65,11 +65,11 @@ On a standalone install, register it once:
 claude mcp add --scope user reminder -- reminder mcp
 ```
 
-On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
+On a ralph-managed machine, skip the manual command. MCP registration is machine-private wiring that ships from the consuming repo's companion recipe ([docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
 
-`reminder mcp` is a thin stdio-to-HTTP shim: it holds no state of its own and needs `reminder serve` running — start it with `reminder serve` (or, on a fleet, check `t-man status reminder`). With serve down, the tools answer "reminder serve not reachable".
+`reminder mcp` is a thin stdio-to-HTTP shim: it holds no state of its own and needs `reminder serve` running. Start it with `reminder serve` (or, on a fleet, check `t-man status reminder`). With serve down, the tools answer "reminder serve not reachable".
 
-Ask in plain language — "remind me to call the dentist tomorrow at 9", "what are
+Ask in plain language: "remind me to call the dentist tomorrow at 9", "what are
 my reminders", "cancel the standup one". Claude works out the time and calls
 the tools below.
 
@@ -86,8 +86,8 @@ the tools below.
 
 To check notifications actually work on a machine, ask Claude to "send a test
 notification" (`reminder_test` with no id) or "test the standup reminder"
-(`reminder_test` with its id — sends the notification without changing the
-reminder). `reminder_fire` triggers a reminder for real ahead of its due time.
+(`reminder_test` with its id, which sends the notification without changing
+the reminder). `reminder_fire` triggers a reminder for real ahead of its due time.
 
 Confirm the registration with `claude mcp list`, and run `reminder doctor` to check serve reachability, the store, and version skew in one pass.
 

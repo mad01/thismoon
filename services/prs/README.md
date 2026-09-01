@@ -40,8 +40,8 @@ poll_interval: 5m
 ```
 
 Auth needs nothing beyond an existing `gh auth login` per host. prs mints a
-token per host with `gh auth token` and keeps it in memory; nothing is
-written to disk.
+token per host with `gh auth token` and keeps it in memory; it never writes
+one to disk.
 
 ## How fresh is it?
 

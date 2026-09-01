@@ -13,7 +13,7 @@ Detection is purely deterministic. The tool flags patterns; rewriting is left to
 
 Run both for full coverage.
 
-The watermark side (`lint`, `fix`, `rewrite`) is separate from the AI-writing detection above. `lint` and `fix` are deterministic and offline: they classify each code point against fixed tables and strip or normalize the carriers, preserving load-bearing invisibles. `rewrite` handles statistical marks a scrub can't reach — by default it only builds the prompt, so it too is offline; the model backends are opt-in and CLI-only.
+The watermark side (`lint`, `fix`, `rewrite`) is separate from the AI-writing detection above. `lint` and `fix` are deterministic and offline: they classify each code point against fixed tables and strip or normalize the carriers, preserving load-bearing invisibles. `rewrite` handles statistical marks a scrub can't reach. By default it only builds the prompt, so it too is offline; the model backends are opt-in and CLI-only.
 
 ### Style pack
 
@@ -70,7 +70,7 @@ Reads from stdin when you omit the file argument or pass `-`.
 
 Output groups findings by file position with a severity badge (`ERR`, `WARN`, `INFO`) and a summary line with counts per level.
 
-**Statistical mode** (`--statistical`) runs size-gated whole-sample checks (sentence-length uniformity, contraction rate, lexical diversity, anaphora, heading density) rather than span-level pattern matching. Run both modes for full coverage; very short snippets return few or no statistical findings.
+Statistical mode (`--statistical`) runs size-gated whole-sample checks (sentence-length uniformity, contraction rate, lexical diversity, anaphora, heading density) rather than span-level pattern matching. Run both modes for full coverage; very short snippets return few or no statistical findings.
 
 ### profile
 
@@ -104,7 +104,7 @@ humanizer rules list --category language
 humanizer rules explain Humanizer.EmDashOveruse
 ```
 
-**rules list** flags:
+`rules list` flags:
 
 | Flag | Description |
 |---|---|
@@ -115,7 +115,7 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 ### narrative
 
-For fiction and story-shaped prose only — skip it for docs, PR descriptions, and Slack drafts. Print the StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human-written from AI-generated fiction; in the paper this narrative signal also survives span-level style editing. These features need a reader's judgment, not a regex, so the command only serves the rubric — score a passage by running the judge prompt with the passage on stdin:
+For fiction and story-shaped prose only; skip it for docs, PR descriptions, and Slack drafts. Print the StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human-written from AI-generated fiction; in the paper this narrative signal also survives span-level style editing. These features need a reader's judgment, not a regex, so the command only serves the rubric. Score a passage by running the judge prompt with the passage on stdin:
 
 ```sh
 # human-readable rubric, grouped by theme
@@ -134,7 +134,7 @@ The judge prompt ends with an output contract (a final `VERDICT|confidence|featu
 
 ### lint
 
-Report invisible-Unicode and space-homoglyph watermark carriers. Reports only — it changes nothing.
+Report invisible-Unicode and space-homoglyph watermark carriers. Reports only; it changes nothing.
 
 ```sh
 humanizer lint draft.md
@@ -147,7 +147,7 @@ cat draft.md | humanizer lint --json
 | `--strip-emoji-glue` | Paranoid: also flag load-bearing invisibles (emoji glue, script joiners, flag tags, orthographic Cf) |
 | `--json` | Emit the report as JSON |
 
-Each hit reports a codepoint, kind (`strip`, `bidi`, `tag_chars`, `variation_selector`, `zwj_family`, `space`, `confusable`, `other_cf`), a confidence (`probable` for edit-carriers, `informational` for spaces), a count, and sample character offsets. Load-bearing invisibles — emoji ZWJ/variation selectors after an emoji base, script joiners inside complex scripts, flag tag characters, and orthographic Arabic/Syriac marks — are preserved and not flagged unless `--strip-emoji-glue` is set. Exits non-zero when any carrier is found.
+Each hit reports a codepoint, kind (`strip`, `bidi`, `tag_chars`, `variation_selector`, `zwj_family`, `space`, `confusable`, `other_cf`), a confidence (`probable` for edit-carriers, `informational` for spaces), a count, and sample character offsets. Load-bearing invisibles (emoji ZWJ/variation selectors after an emoji base, script joiners inside complex scripts, flag tag characters, and orthographic Arabic/Syriac marks) are preserved and not flagged unless `--strip-emoji-glue` is set. Exits non-zero when any carrier is found.
 
 ### fix
 
@@ -173,7 +173,7 @@ The default is non-intrusive: it strips invisible/format controls and normalizes
 
 ### rewrite
 
-Build (or run) a rewrite prompt for statistical watermarks, which the deterministic scrub cannot touch.
+Build (or run) a rewrite prompt for statistical watermarks, which the deterministic scrub can't touch.
 
 ```sh
 # offline default: print the prompt for you (or an agent) to run
@@ -197,7 +197,7 @@ humanizer rewrite draft.md --backend ollama -o draft.rewritten.md
 | `-o`, `--output` | Write the result here (default: stdout) |
 | `--json-stats` | Emit the info block as JSON on stderr |
 
-The default `print-prompt` backend calls no model — it returns the prompt so you or the calling agent produce the rewrite. The `ollama` and `openai-compatible` backends send text off-process: non-loopback hosts are refused unless `--allow-remote` (or `WATERMARKS_REWRITE_ALLOW_REMOTE=1`) is set, redirects are refused so the API-key header can't be forwarded to an unvalidated host, and the key is read from `WATERMARKS_REWRITE_API_KEY` only — never a flag. Prefer a rewrite model different from the suspected origin; rewriting with the origin model can re-stamp the text.
+The default `print-prompt` backend calls no model; it returns the prompt so you or the calling agent produce the rewrite. The `ollama` and `openai-compatible` backends send text off-process: non-loopback hosts are refused unless `--allow-remote` (or `WATERMARKS_REWRITE_ALLOW_REMOTE=1`) is set, redirects are refused so the API-key header can't be forwarded to an unvalidated host, and the key is read from `WATERMARKS_REWRITE_API_KEY` only, never a flag. Prefer a rewrite model different from the suspected origin; rewriting with the origin model can re-stamp the text.
 
 ### version
 
@@ -208,7 +208,7 @@ humanizer version              # bare version token
 humanizer version -o json      # version, commit, tag, build_time
 ```
 
-Plain output is the version and nothing else, so a probe can read the line as-is. The JSON form is the four-key build metadata object, with each key present and `""` for anything the build did not stamp.
+Plain output is the version and nothing else, so a probe can read the line as-is. The JSON form is the four-key build metadata object, with each key present and `""` for anything the build didn't stamp.
 
 ## MCP
 
@@ -222,7 +222,7 @@ An MCP host such as Claude Code launches this; don't run it by hand in normal us
 claude mcp add --scope user humanizer -- humanizer mcp
 ```
 
-On a ralph-managed machine, skip the manual command — MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root).
+On a ralph-managed machine, skip the manual command: MCP registration is machine-private wiring that ships from the consuming repo's companion recipe (`docs/adr/0006` at the repo root).
 
 The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and communicates over stdio. It exposes twelve tools:
 
