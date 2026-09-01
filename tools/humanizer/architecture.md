@@ -15,8 +15,12 @@ at all.
 
 ```
 cmd/humanizer/       entrypoint; delegates to internal/cli
-internal/cli/        cobra command tree: root, detect, profile, rules,
-                     narrative, lint, fix, rewrite, mcp, docs, version
+internal/cli/        cobra command tree: root, detect, judge, scan, profile,
+                     rules, narrative, lint, fix, rewrite, mcp, docs, version
+internal/goscan/     Go source prose extraction: goscan.go (walk plus the
+                     file filters), extract.go (one go/ast visitor per
+                     extraction site), document.go (a file's blocks joined
+                     into one document plus the line map back to source)
 internal/rules/      vale integration: embed.go (pack embedding + cache
                      extraction), vale.go (subprocess run + JSON parsing),
                      metadata.go (rule metadata from YAML headers),
@@ -66,6 +70,14 @@ em-dash density, heading density, anaphora), each gated on a minimum sample
 size. No vale, no
 spans — findings describe the sample as a whole.
 
+Source prose (`scan --go`): `goscan.Scan` walks the path and parses each Go
+file with `go/parser`, comments kept. One visitor per extraction site turns
+doc comments, cobra fields, MCP `Description` strings, the message arguments
+of the error constructors, and `jsonschema` tags into blocks carrying their
+file and line. With `--detect`, `goscan.Render` joins a file's blocks into
+one document so `rules.Detect` runs once per file, and `Doc.SourceLine` maps
+each finding's line back to the Go source it came from.
+
 Profiling: `voice.Compute` tokenizes the text and produces the metric set
 (counts, sentence-length distribution, punctuation densities, contraction
 rate, Flesch reading ease, top n-grams); `voice.DiffProfiles` computes the
@@ -91,7 +103,9 @@ else it reads (input files, temp files for vale) is transient.
 ## Interfaces
 
 CLI: `detect [file]` (flags `--min-severity`, `--rule`, `--statistical`,
-`--json`), `profile [file]` (`--diff`, `--json`), `rules list`
+`--json`), `scan [path]` (`--go`, `--detect`, `--holistic`, `--kind`; it
+takes a path rather than stdin, defaulting to the current directory),
+`profile [file]` (`--diff`, `--json`), `rules list`
 (`--category`, `--json`), `rules explain <rule_id>`, `narrative`
 (`--prompt`, `--json`), `lint`, `fix`, `rewrite`, `docs`, `mcp`, and
 `version [-o json]` (the bare version token, or the four-key build
