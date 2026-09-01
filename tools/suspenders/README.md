@@ -387,6 +387,7 @@ Suspenders ships with 84 built-in content rules validated against GitLeaks, GitH
 | `openai-api-key` | OpenAI API key legacy (`sk-...T3BlbkFJ...`) | high |
 | `openai-project-key` | OpenAI project API key (`sk-proj-`) | high |
 | `anthropic-api-key` | Anthropic API key (`sk-ant-`) | high |
+| `openrouter-api-key` | OpenRouter API key (`sk-or-v1-`) | high |
 | `huggingface-token` | HuggingFace access token (`hf_`) | high |
 | `cohere-api-key` | Cohere API key (keyword-gated) | high |
 | `replicate-api-token` | Replicate API token (`r8_`) | high |

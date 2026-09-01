@@ -239,6 +239,12 @@ var DefaultRules = []Rule{
 		Severity:    "high",
 	},
 	{
+		ID:          "openrouter-api-key",
+		Description: "OpenRouter API key",
+		Pattern:     regexp.MustCompile(`(sk-or-v1-[a-f0-9]{64})`),
+		Severity:    "high",
+	},
+	{
 		ID:          "huggingface-token",
 		Description: "HuggingFace access token",
 		Pattern:     regexp.MustCompile(`(hf_[a-zA-Z0-9]{34,})`),
