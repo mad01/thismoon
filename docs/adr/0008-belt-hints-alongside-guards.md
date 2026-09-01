@@ -11,7 +11,7 @@ followed.
 
 belt has one shape: a guard inspects a tool call before it runs and either
 allows it or denies it with a reason. Every guard so far prevents something
-hard to undo — a push to main, an internal name landing in a public repo.
+hard to undo: a push to main, an internal name landing in a public repo.
 
 Two new needs do not fit that shape.
 
@@ -46,12 +46,13 @@ which is what both needs want and what belt currently has no way to use.
 
 belt carries two concepts:
 
-- **guard** — PreToolUse. Returns a denial or nil. Guards run in registration
-  order and the first denial wins. Reserved for damage that is hard to undo.
-- **hint** — PostToolUse. Returns advisory text or nil. Every enabled hint
-  runs and their output is concatenated into one `additionalContext` block.
-  A hint has no denial path in its signature, so it cannot block a tool call
-  even by mistake.
+- A **guard** sits at PreToolUse and returns a denial or nil. Guards run in
+  registration order and the first denial wins. Reserved for damage that is
+  hard to undo.
+- A **hint** sits at PostToolUse and returns advisory text or nil. Every
+  enabled hint runs and their output is concatenated into one
+  `additionalContext` block. A hint has no denial path in its signature, so
+  it cannot block a tool call even by mistake.
 
 Two hints ship with this decision: `kof-assertions` surfaces stored
 assertions matching the subject of a csl search, and `prefer-csl` hands back
@@ -76,7 +77,7 @@ and risks breaking anything that parses the output.
 - Hook registration stays machine-private in the consuming repo (ADR-0006).
   The `hooks.PostToolUse` entries are not added here.
 - A hint that fires too often becomes wallpaper and stops being read, which
-  is a silent failure — nothing errors, the advice is simply ignored. The
+  is a silent failure: nothing errors, the advice is simply ignored. The
   `kof-assertions` hint caps at three assertions, dedupes per session, and
   requires the search to have hit at least one path segment below the repo
   root. If those gates prove wrong, the fix is tighter gating, not a louder

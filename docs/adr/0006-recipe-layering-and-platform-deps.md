@@ -18,25 +18,25 @@ Separately, the service recipes reference `packages.t_man` in `depends_on`.
 At the time of this decision, t-man's own recipe lived outside this repo, in
 the private repo that wires up a machine, so a service recipe hard-depending
 on it named an item key its own source didn't define, and that fails ralph
-validation on a machine that consumes only this source. The alternative —
-dropping the dep and relying on the `command -v t-man` runtime guards — keeps
+validation on a machine that consumes only this source. The alternative,
+dropping the dep and relying on the `command -v t-man` runtime guards, keeps
 recipes standalone but loses first-install ordering.
 
 ## Decision
 
 Recipes split into two layers:
 
-- **Public layer (this repo, `recipes/<svc>/`):** everything portable —
+- **Public layer** (this repo, `recipes/<svc>/`) carries everything portable:
   package build/install with a sources-cache `working_dir`, t-man-guarded
   restart and uninstall hooks, the service's Claude skill, sandbox profiles.
   Profile gating (`profiles = ["personal"]`) is allowed here when the gate is
   a property of the service itself, not of a machine.
-- **Private layer (the consuming repo):** the `[[recipe_sources]]` stanza and
-  pin, MCP registration (`servers.json`), host filtering and enables, env
-  vars, secrets, and per-machine config overlays as companion recipes that
-  add their own items — never by patching public recipe fields.
+- **Private layer** (the consuming repo) carries the `[[recipe_sources]]`
+  stanza and pin, MCP registration (`servers.json`), host filtering and
+  enables, env vars, secrets, and per-machine config overlays as companion
+  recipes that add their own items, never by patching public recipe fields.
 
-Cross-source `depends_on` on **platform foundations** — t-man and d-man — is
+Cross-source `depends_on` on **platform foundations** (t-man and d-man) is
 allowed and kept. These are prerequisites of the `*.this` platform, not
 optional integrations; a machine consuming these recipes without them is
 misconfigured, and validation failing there is the correct signal. Hooks keep

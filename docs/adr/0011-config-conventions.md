@@ -54,8 +54,8 @@ cannot be resolved is an error. A relative path is never a fallback.
 **Directory kinds.** Config, cache, and state are separate. Nothing but
 configuration belongs under `~/.config/<tool>`. State honors
 `XDG_STATE_HOME` and falls back to `~/.local/state/<component>`, and
-`confdir.StateDir` takes a legacy directory plus a probe — an artifact only
-the component itself writes — and prefers the legacy directory when that
+`confdir.StateDir` takes a legacy directory plus a probe (an artifact only
+the component itself writes) and prefers the legacy directory when that
 probe is present. csl keeps its index and present keeps its page store where
 they already are, while a fresh install lands in the right place. The probe
 is not optional detail: provisioning creates these directories on every

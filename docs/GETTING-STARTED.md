@@ -162,7 +162,7 @@ What happens on this run:
    verify commands below run from it.
 3. Each web service registers as a t-man launchd user agent (`csl-web` on
    port 7424, `present` on 7423, and so on) and starts. Service recipes
-   depend on t-man, so it is in place before they need it.
+   depend on t-man, so it's in place before they need it.
 
 Later runs are incremental: a component rebuilds when its source changed,
 and a service restarts only when the installed binary's bytes actually
@@ -205,7 +205,7 @@ sudo t-man --daemon add --name d-man -- \
   $HOME/code/bin/d-man serve --config $HOME/.config/d-man/routes.toml
 ```
 
-That is the only sudo the platform needs. Afterwards the daemon watches its
+That's the only sudo the platform needs. Afterwards the daemon watches its
 routes file, so edits apply on save, and it watches its own binary, so a
 rebuild by `ralph up` makes it exit and launchd relaunch the new build. The
 full walkthrough, including the optional block-page CA, is in
@@ -283,10 +283,9 @@ component's own `config.md` for its specific keys.
   assertions about your code; belt's hints surface them in Claude Code
   sessions when you work in the matching repo.
 
-The longer version of this argument — what the connections between the
-tools add up to, the ralph vocabulary, and the full rollout order including
-the private overlay layer — is
-[HOW-IT-FITS-TOGETHER.md](HOW-IT-FITS-TOGETHER.md).
+[HOW-IT-FITS-TOGETHER.md](HOW-IT-FITS-TOGETHER.md) is the longer version of
+this argument: what the connections between the tools add up to, the ralph
+vocabulary, and the full rollout order including the private overlay layer.
 
 ## Wire up your agent
 
@@ -294,7 +293,7 @@ The MCP column in the [README](../README.md) component tables marks which
 components ship an MCP server. Each of those serves MCP over stdio through a
 subcommand (`csl mcp`, for example); register that command as a stdio server
 in your agent's MCP configuration and the agent reads the same local data
-you do. For Claude Code that is one command per tool:
+you do. For Claude Code that's one command per tool:
 
 ```sh
 claude mcp add csl -- csl mcp
@@ -317,7 +316,7 @@ the settings block that turns belt's guards and hints on (explained hook by
 hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)), and
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) for the
 instruction file that teaches the agent when to reach for which tool. The
-six skills under `skills/` need no registration — their recipes symlink
+six skills under `skills/` need no registration; their recipes symlink
 them into `~/.claude/skills`, and they load when invoked by name
 (`/golang-style`, `/handoff`, `/humanizer`, `/loom`, `/present`,
 `/worklog`) or when a task matches; the MCP-backed ones assume their server
