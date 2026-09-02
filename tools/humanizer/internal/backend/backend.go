@@ -26,12 +26,16 @@ type Backend interface {
 
 // ErrNoBackend means no provider credentials were found in the environment.
 // Callers that treat the holistic pass as optional match on this and skip.
-var ErrNoBackend = errors.New("backend: no LLM backend configured (set OPENROUTER_API_KEY)")
+var ErrNoBackend = errors.New(
+	"backend: no LLM backend configured (set LITELLM_BASE_URL or OPENROUTER_API_KEY)",
+)
 
-// Select resolves a Backend. name forces a provider ("openrouter"); empty
-// falls back to the HUMANIZER_BACKEND env var and then credential
-// auto-detection. model overrides the provider's default model id; empty
-// falls back to HUMANIZER_MODEL and then the provider default.
+// Select resolves a Backend. name forces a provider ("litellm" or
+// "openrouter"); empty falls back to the HUMANIZER_BACKEND env var and then
+// credential auto-detection, where a LiteLLM base URL wins over an
+// OpenRouter key because pointing at a proxy is the more deliberate signal.
+// model overrides the provider's default model id; empty falls back to
+// HUMANIZER_MODEL and then the provider default.
 // Vertex and Anthropic are planned in MAD-342 but not implemented yet.
 func Select(name, model string) (Backend, error) {
 	if name == "" {
@@ -41,10 +45,15 @@ func Select(name, model string) (Backend, error) {
 	case "":
 		// Credential auto-detection, in the MAD-342 order. Vertex and
 		// Anthropic join here once implemented.
+		if os.Getenv("LITELLM_BASE_URL") != "" {
+			return newLiteLLMFromEnv(model)
+		}
 		if os.Getenv("OPENROUTER_API_KEY") != "" {
 			return newOpenRouterFromEnv(model)
 		}
 		return nil, ErrNoBackend
+	case "litellm":
+		return newLiteLLMFromEnv(model)
 	case "openrouter":
 		return newOpenRouterFromEnv(model)
 	case "vertex", "anthropic":
@@ -53,6 +62,14 @@ func Select(name, model string) (Backend, error) {
 			name,
 		)
 	default:
-		return nil, fmt.Errorf("backend: unknown backend %q (want openrouter)", name)
+		return nil, fmt.Errorf("backend: unknown backend %q (want litellm or openrouter)", name)
 	}
+}
+
+// envModel applies the HUMANIZER_MODEL fallback shared by every provider.
+func envModel(model string) string {
+	if model != "" {
+		return model
+	}
+	return os.Getenv("HUMANIZER_MODEL")
 }

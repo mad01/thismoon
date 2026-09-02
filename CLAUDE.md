@@ -55,7 +55,7 @@ The repo ships six agent skills under `skills/`, one directory per skill. Each i
 |-------|--------------|-----------|
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
 | `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
-| `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus `humanizer_judge` (LLM backend, OpenRouter Haiku) for holistic judgment |
+| `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus `humanizer_judge` (LLM backend, Haiku 4.5 via a LiteLLM proxy or OpenRouter) for holistic judgment |
 | `loom` | Coordinates parallel sessions on one repo with git worktrees: each session claims its own worktree under `~/.worktrees/` and commits there, and a single weaver session rebases the finished branches and lands them in order. | nothing (guidance only; creates worktrees under `~/.worktrees/`) |
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |

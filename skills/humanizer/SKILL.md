@@ -11,7 +11,7 @@ description: |
   narrative prose, adds a StoryScope narrative-level pass (thematic
   over-explanation, plot linearity, embodied emotion). Backed by the local
   humanizer MCP for deterministic detection and voice profiling, plus the
-  humanizer_judge LLM pass (OpenRouter, Haiku 4.5) for holistic whole-passage
+  humanizer_judge LLM pass (Haiku 4.5 via a LiteLLM proxy or OpenRouter) for holistic whole-passage
   AI/human judgment.
 license: MIT
 compatibility: claude-code opencode
@@ -43,14 +43,14 @@ The MCP never rewrites prose — it finds, measures, and (for `humanizer_fix`) d
 
 ## Holistic judgment via `humanizer_judge`
 
-The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: the **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (OpenRouter on `anthropic/claude-haiku-4.5` by default) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
+The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: the **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (Haiku 4.5 by default, through whichever provider the environment configures: a LiteLLM proxy or OpenRouter) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
 
 This is the fuzzy complement to the deterministic layer; the two cover disjoint failure modes, so run both. Two rules earned from testing:
 
 - **Whole-passage framing, never per-word.** Asked "is this flagged word a tell?", models defend every common word as fine (local 3B/9B scored 0/4 on real tells this way). Asked "is this passage AI-written?", they judge well. Feed sections or paragraphs, not isolated words.
 - **Haiku, not a local model.** Small local models (llama3.2:3b, gemma2:9b) false-positive on terse technical prose — they read a concrete debugging story as AI. Haiku got that case right. Still treat every verdict as advisory, not authoritative.
 
-**When:** an LLM backend is configured (`OPENROUTER_API_KEY` in the MCP server's environment). If the tool errors — no backend configured, or the sandbox denies egress — fall back to the CLI, which reads the key from your shell env:
+**When:** an LLM backend is configured in the MCP server's environment (`LITELLM_BASE_URL` for a LiteLLM proxy, or `OPENROUTER_API_KEY` for OpenRouter). If the tool errors — no backend configured, or the sandbox denies egress — fall back to the CLI, which reads the same variables from your shell env:
 
 ```bash
 humanizer judge --json section.md      # or: printf '%s\n' "$SECTION" | humanizer judge --json -
