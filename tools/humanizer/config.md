@@ -41,6 +41,22 @@ from the embedded copy, so deleting it is always safe.
 - `--json` (bool, default `false`): emit findings as JSON, the same shape
   `humanizer_detect` returns over MCP.
 
+### `judge`
+
+Each flag falls back to an environment variable when unset, listed with it
+below. `judge` is the one networked command: it needs a provider configured
+through the environment (see Environment variables) and fails without one.
+
+- `--backend` (string, default `""`, env `HUMANIZER_BACKEND`): force an LLM
+  backend, `litellm` or `openrouter`. Unset auto-detects: a set
+  `LITELLM_BASE_URL` selects `litellm`, else a set `OPENROUTER_API_KEY`
+  selects `openrouter`.
+- `--model` (string, default `""`, env `HUMANIZER_MODEL`): override the
+  backend's default model id (`claude-haiku-4-5-20251001` for `litellm`,
+  `anthropic/claude-haiku-4.5` for `openrouter`).
+- `--json` (bool, default `false`): emit the verdict as JSON, the same shape
+  `humanizer_judge` returns over MCP.
+
 ### `scan`
 
 - `--go` (bool, default `false`): extract from Go source. Required today:
@@ -134,6 +150,20 @@ and shell history. Set `WATERMARKS_REWRITE_API_KEY` instead.
 - `HUMANIZER_CACHE_DIR`: overrides the vale style pack cache root (see
   Cache directory above).
 - `XDG_CACHE_HOME`: cache root fallback when `HUMANIZER_CACHE_DIR` is unset.
+- `HUMANIZER_BACKEND`: fallback for `judge --backend` (`litellm` or
+  `openrouter`); also what `scan --holistic` and the `humanizer_judge` MCP
+  tool use, since neither takes a backend flag.
+- `HUMANIZER_MODEL`: fallback for `judge --model`, applied to whichever
+  backend is selected.
+- `LITELLM_BASE_URL`: base URL of a LiteLLM proxy, without the `/v1` suffix
+  (a trailing `/v1` is trimmed). Setting it selects the `litellm` backend
+  during auto-detection.
+- `LITELLM_API_KEY`: virtual key for the LiteLLM proxy, sent as a bearer
+  token. Optional: a proxy without a master key needs none. Never accepted
+  as a flag.
+- `OPENROUTER_API_KEY`: API key for OpenRouter. Setting it selects the
+  `openrouter` backend when no LiteLLM base URL is set. Never accepted as a
+  flag.
 - `WATERMARKS_REWRITE_BACKEND`: fallback for `rewrite --backend`.
 - `WATERMARKS_REWRITE_MODEL`: fallback for `rewrite --model`.
 - `WATERMARKS_REWRITE_BASE_URL`: fallback for `rewrite --base-url`.
