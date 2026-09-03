@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/humanizer/v0.10.0...humanizer/v0.11.0) (2026-09-02)
+
+
+### Features
+
+* **humanizer:** add litellm judge backend for OpenAI-compatible proxies (MAD-342) ([#64](https://github.com/mad01/thismoon/issues/64)) ([18f1426](https://github.com/mad01/thismoon/commit/18f1426a3470453a01db428a9d12a7530c27ae67))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/humanizer/v0.9.0...humanizer/v0.10.0) (2026-09-01)
 
 
