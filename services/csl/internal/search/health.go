@@ -103,8 +103,9 @@ func AheadBehind(repoPath string) (ahead, behind int, hasUpstream bool, err erro
 
 // gitHealthConcurrency bounds parallel git subprocesses during a sweep. Each
 // repo costs up to three (the fingerprint is TTL-cached, dirty counts and
-// ahead/behind are not).
-const gitHealthConcurrency = 8
+// ahead/behind are not). Raised for fleets with many checkouts, where a lower
+// bound makes a cold sweep drag.
+const gitHealthConcurrency = 16
 
 // GitHealthSweep gathers GitHealth for every repo concurrently, preserving
 // input order. Per-repo git failures land in that entry's Error field instead

@@ -232,7 +232,8 @@ func deriveAction(m repoInfoMatch) string {
 // --- csl_repo_health ---
 
 type repoHealthInput struct {
-	All bool `json:"all,omitempty" jsonschema:"include clean repos too; default returns only repos needing attention"`
+	All   bool `json:"all,omitempty"   jsonschema:"include clean repos too; default returns only repos needing attention"`
+	Fresh bool `json:"fresh,omitempty" jsonschema:"bypass the cached sweep and recompute now; default serves a recent cached sweep (up to a few minutes old)"`
 }
 
 // repoHealthEntry is one repo in the csl_repo_health result. It mirrors
@@ -253,10 +254,16 @@ type repoHealthEntry struct {
 }
 
 type repoHealthOutput struct {
-	Total     int               `json:"total"     jsonschema:"repos checked"`
-	Attention int               `json:"attention" jsonschema:"repos needing attention (action != ready)"`
-	Repos     []repoHealthEntry `json:"repos"     jsonschema:"per-repo git health; only repos needing attention unless all=true"`
+	Total      int               `json:"total"                 jsonschema:"repos checked"`
+	Attention  int               `json:"attention"             jsonschema:"repos needing attention (action != ready)"`
+	ComputedAt string            `json:"computed_at,omitempty" jsonschema:"when this sweep was computed (RFC3339); a recent cached sweep is served unless fresh=true"`
+	Repos      []repoHealthEntry `json:"repos"                 jsonschema:"per-repo git health; only repos needing attention unless all=true"`
 }
+
+// mcpHealthTTL bounds how stale a cached git-health sweep the MCP tool serves
+// before recomputing. A sweep spawns git subprocesses per repo, so on a large
+// fleet the cache keeps repeated calls cheap; fresh=true bypasses it.
+const mcpHealthTTL = 5 * time.Minute
 
 func handleRepoHealth(
 	ctx context.Context,
@@ -273,9 +280,16 @@ func handleRepoHealth(
 		return nil, repoHealthOutput{}, fmt.Errorf("walk repos: %w", err)
 	}
 
-	entries := search.GitHealthSweep(ctx, repos)
-	out := repoHealthOutput{Total: len(entries), Repos: []repoHealthEntry{}}
-	for _, e := range entries {
+	ttl := mcpHealthTTL
+	if in.Fresh {
+		ttl = 0
+	}
+	snap := search.CachedGitHealthSweep(ctx, repos, ttl)
+	out := repoHealthOutput{Total: len(snap.Entries), Repos: []repoHealthEntry{}}
+	if !snap.ComputedAt.IsZero() {
+		out.ComputedAt = snap.ComputedAt.UTC().Format(time.RFC3339)
+	}
+	for _, e := range snap.Entries {
 		if e.NeedsAttention() {
 			out.Attention++
 		}

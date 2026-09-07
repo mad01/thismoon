@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
@@ -28,6 +29,16 @@ type Service struct {
 	cfg        *config.Config
 	indexDir   string
 	socketPath string
+	health     healthCache
+}
+
+// healthCache coalesces background git-health refreshes so only one sweep runs
+// at a time within this process. The sweep result is persisted to disk by the
+// search package (search.SaveHealthSnapshot); this guard only prevents piling
+// up concurrent sweeps when many requests arrive while the snapshot is stale.
+type healthCache struct {
+	mu      sync.Mutex
+	running bool
 }
 
 // NewService builds a Service from the given config.
@@ -255,11 +266,68 @@ func (s *Service) ReadFile(repoName, relPath string, start, end int) (*ReadResul
 	return res, nil
 }
 
-// GitHealth runs the fleet git-health sweep across the discovered repos.
-func (s *Service) GitHealth(ctx context.Context) ([]search.GitHealth, error) {
-	repos, err := s.Repos()
-	if err != nil {
-		return nil, err
+// healthTTL is how long a persisted git-health snapshot is served before the
+// web layer triggers a background refresh.
+const healthTTL = 5 * time.Minute
+
+// GitHealthResult is a git-health sweep plus its freshness for the caller.
+// Computing is true when a background refresh is in flight, meaning Entries is
+// a stale snapshot (or empty on a cold start) that the UI should re-poll.
+type GitHealthResult struct {
+	Entries    []search.GitHealth
+	ComputedAt time.Time
+	Computing  bool
+}
+
+// GitHealth returns the fleet git-health sweep without blocking on git. It
+// serves the persisted snapshot and, when that snapshot is missing or older
+// than healthTTL, kicks off a single background refresh (stale-while-
+// revalidate). A full sweep spawns git subprocesses per repo, so on a large
+// fleet it is far too slow to run inside a request; callers that must have a
+// fresh, blocking sweep use search.CachedGitHealthSweep directly.
+func (s *Service) GitHealth(_ context.Context) (GitHealthResult, error) {
+	snap, ok := search.LoadHealthSnapshot()
+	if ok && time.Since(snap.ComputedAt) < healthTTL {
+		return GitHealthResult{Entries: snap.Entries, ComputedAt: snap.ComputedAt}, nil
 	}
-	return search.GitHealthSweep(ctx, repos), nil
+	s.refreshHealthAsync()
+	if ok {
+		return GitHealthResult{
+			Entries:    snap.Entries,
+			ComputedAt: snap.ComputedAt,
+			Computing:  true,
+		}, nil
+	}
+	return GitHealthResult{Entries: []search.GitHealth{}, Computing: true}, nil
+}
+
+// refreshHealthAsync recomputes the git-health snapshot in the background,
+// coalescing concurrent callers so only one sweep runs. It detaches from any
+// request context so a client disconnect cannot cancel a sweep others depend
+// on, and persists the result for every csl surface to share.
+func (s *Service) refreshHealthAsync() {
+	s.health.mu.Lock()
+	if s.health.running {
+		s.health.mu.Unlock()
+		return
+	}
+	s.health.running = true
+	s.health.mu.Unlock()
+
+	go func() {
+		defer func() {
+			s.health.mu.Lock()
+			s.health.running = false
+			s.health.mu.Unlock()
+		}()
+		repos, err := s.Repos()
+		if err != nil {
+			return
+		}
+		snap := search.HealthSnapshot{
+			ComputedAt: time.Now(),
+			Entries:    search.GitHealthSweep(context.Background(), repos),
+		}
+		_ = search.SaveHealthSnapshot(snap)
+	}()
 }

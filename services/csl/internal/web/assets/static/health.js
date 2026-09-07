@@ -1,6 +1,9 @@
 // Repo health page: renders /api/repo_health as a table, toggling between
-// repos needing attention and the full fleet. The API is called once with
-// all=true; the toggle filters client-side.
+// repos needing attention and the full fleet. The API is called with all=true;
+// the toggle filters client-side and large fleets render one page at a time.
+// The server serves a cached sweep and refreshes it in the background, so a
+// cold or stale response comes back with computing=true and the page re-polls
+// until the sweep lands.
 
 (function initHealthPage() {
   const status = document.getElementById('status');
@@ -11,6 +14,9 @@
   let entries = [];
   let attention = 0;
   let scope = 'attention';
+  let computing = false;
+  let computedAt = '';
+  let pollTimer = null;
 
   // ACTIONS maps the API action to a short label and a wk-badge variant.
   const ACTIONS = {
@@ -54,19 +60,30 @@
       '</tr>';
   }
 
+  function statusLine() {
+    let line = attention + ' of ' + entries.length + ' repos need attention';
+    if (computedAt) line += ' · checked ' + timeAgo(computedAt);
+    if (computing) line += ' · refreshing…';
+    return line;
+  }
+
   function render() {
     const shown = scope === 'all' ? entries : entries.filter(e => e.action !== 'ready');
-    status.textContent = attention + ' of ' + entries.length + ' repos need attention';
+    status.textContent = statusLine();
     if (!shown.length) {
+      if (computing && !entries.length) {
+        results.innerHTML = '<div class="health-empty">computing repo health…</div>';
+        return;
+      }
       results.innerHTML = '<div class="health-empty">' +
         (scope === 'all' ? 'no repos found' : 'all clean — nothing needs attention') + '</div>';
       return;
     }
-    results.innerHTML = '<wk-table><table>' +
-      '<thead><tr><th>repo</th><th>branch</th><th>changes</th><th>ahead/behind</th><th>action</th><th></th></tr></thead>' +
-      '<tbody>' + shown.map(row).join('') + '</tbody>' +
-      '</table></wk-table>';
-    bindCopyButtons(results);
+    renderPagedTable(results, shown, {
+      headHtml: '<thead><tr><th>repo</th><th>branch</th><th>changes</th><th>ahead/behind</th><th>action</th><th></th></tr></thead>',
+      rowFn: row,
+      onRender: bindCopyButtons,
+    });
   }
 
   if (toggle) {
@@ -77,13 +94,23 @@
     }));
   }
 
-  fetch('/api/repo_health?all=true')
-    .then(res => res.json().then(data => ({ ok: res.ok, data })))
-    .then(({ ok, data }) => {
-      if (!ok) throw new Error(data.error || 'request failed');
-      entries = data.repos || [];
-      attention = data.attention || 0;
-      render();
-    })
-    .catch(err => { status.textContent = 'error: ' + err.message; });
+  function load() {
+    fetch('/api/repo_health?all=true')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error || 'request failed');
+        entries = data.repos || [];
+        attention = data.attention || 0;
+        computing = !!data.computing;
+        computedAt = data.computed_at || '';
+        render();
+        clearTimeout(pollTimer);
+        // While a background sweep runs, re-poll: faster on a cold start (no
+        // entries yet) than when refreshing an already-shown stale snapshot.
+        if (computing) pollTimer = setTimeout(load, entries.length ? 3000 : 2000);
+      })
+      .catch(err => { status.textContent = 'error: ' + err.message; });
+  }
+
+  load();
 })();

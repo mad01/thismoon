@@ -30,9 +30,14 @@ type fakeSearcher struct {
 func (f *fakeSearcher) Search(_ context.Context, _ search.SearchOptions) ([]search.Match, error) {
 	return f.matches, f.searchErr
 }
-func (f *fakeSearcher) SemanticSearch(_ context.Context, _ SemanticRequest) (SemanticResult, error) {
+
+func (f *fakeSearcher) SemanticSearch(
+	_ context.Context,
+	_ SemanticRequest,
+) (SemanticResult, error) {
 	return f.semResult, f.semErr
 }
+
 func (f *fakeSearcher) HybridSearch(_ context.Context, _ HybridRequest) (HybridResult, error) {
 	return f.hybridResult, f.hybridErr
 }
@@ -41,8 +46,8 @@ func (f *fakeSearcher) ReadFile(_, _ string, _, _ int) (*ReadResult, error) {
 	return f.read, f.readErr
 }
 
-func (f *fakeSearcher) GitHealth(_ context.Context) ([]search.GitHealth, error) {
-	return f.health, f.healthErr
+func (f *fakeSearcher) GitHealth(_ context.Context) (GitHealthResult, error) {
+	return GitHealthResult{Entries: f.health}, f.healthErr
 }
 
 func (f *fakeSearcher) SemanticEnabled() bool { return f.semanticOn }
@@ -189,7 +194,9 @@ func TestRepoHealthEndpoint(t *testing.T) {
 
 	t.Run("default returns only attention", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		serverWith(fake).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health", nil))
+		serverWith(
+			fake,
+		).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health", nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
@@ -210,7 +217,9 @@ func TestRepoHealthEndpoint(t *testing.T) {
 
 	t.Run("all=true includes clean repos", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		serverWith(fake).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health?all=true", nil))
+		serverWith(
+			fake,
+		).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health?all=true", nil))
 		var resp repoHealthResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode: %v", err)
@@ -222,7 +231,9 @@ func TestRepoHealthEndpoint(t *testing.T) {
 
 	t.Run("empty fleet marshals repos as array", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		serverWith(&fakeSearcher{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health", nil))
+		serverWith(
+			&fakeSearcher{},
+		).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repo_health", nil))
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 			t.Fatalf("decode: %v", err)

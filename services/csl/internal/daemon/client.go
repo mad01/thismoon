@@ -81,6 +81,7 @@ func SearchVia(
 		ContextLines:  int32(opts.ContextLines),
 		OutputMode:    opts.OutputMode,
 		RepoNames:     repoNames,
+		Offset:        int32(opts.Offset),
 	})
 	if err != nil {
 		if isConnectionError(err) {
@@ -175,7 +176,10 @@ func ValidateVia(socketPath string, pattern string) (search.QueryInfo, error) {
 // SemanticSearchVia sends a semantic search request to the daemon. The response
 // carries Available=false (not an error) when the daemon has no semantic index
 // or embedding model loaded, so callers can decide what to surface.
-func SemanticSearchVia(socketPath string, req *pb.SemanticSearchRequest) (*pb.SemanticSearchResponse, error) {
+func SemanticSearchVia(
+	socketPath string,
+	req *pb.SemanticSearchRequest,
+) (*pb.SemanticSearchResponse, error) {
 	client, conn, err := dial(socketPath)
 	if err != nil {
 		return nil, notRunning()

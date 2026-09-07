@@ -382,17 +382,23 @@ async function initSearchPage() {
   const segBtns = document.querySelectorAll('#modeToggle button');
   let mode = 'files_with_matches';
 
-  // How many files to request from the server (it caps at 500), and how many
-  // file blocks to reveal per client-side page. Semantic and hybrid fetch a
-  // deeper ranked list than they show, then page client-side like lexical.
-  const FETCH_LIMIT = 200;
+  // How many files to request per server fetch (it caps at 500), and how many
+  // file blocks to reveal per client-side page. Lexical pages the server with an
+  // offset for "Load more"; semantic and hybrid fetch a deeper ranked list than
+  // they show, then page client-side.
+  const PAGE_FETCH = 200;
   const PAGE_SIZE = 20;
   const SEM_FETCH_K = 50;
 
-  // Render state for client-side pagination.
+  // Render + paging state. lastData is the accumulated (merged) lexical result
+  // set across fetched pages; baseParams/pageOffset/fetching drive server-side
+  // "Load more" (see fetchPage).
   let lastData = null;
   let lastTerms = [];
   let shown = 0;
+  let baseParams = null;
+  let pageOffset = 0;
+  let fetching = false;
 
   // Quick-filter state: facets from the last unfiltered search (so all chips
   // stay visible while filtering), and the multi-select set of selected
@@ -600,32 +606,80 @@ async function initSearchPage() {
     // a narrowed quick-filter selection adds a file-suffix filter on top.
     const narrowed = facetsNarrowed();
     if (narrowed) params.set('file', facetFileRegex(selectedExts));
-    params.set('limit', String(FETCH_LIMIT));
     if (mode === 'content') params.set('context', '2');
     applyScope(params);
-
+    // Remember the query params (without limit/offset) so "Load more" can fetch
+    // the next server page; reset the paging cursor for this fresh query.
+    baseParams = params;
+    pageOffset = 0;
     updateURL(q);
+    await fetchPage(true, { q, narrowed });
+  }
 
-    status.textContent = 'Searching…';
-    results.innerHTML = '';
+  // fetchPage requests one server page of lexical results at the current
+  // pageOffset. reset=true starts a new query (clears the view and refreshes the
+  // facet chips); reset=false appends the next page onto the accumulated result
+  // set for a server-side "Load more".
+  async function fetchPage(reset, ctx) {
+    if (fetching) return;
+    fetching = true;
+    const params = new URLSearchParams(baseParams);
+    params.set('limit', String(PAGE_FETCH));
+    params.set('offset', String(pageOffset));
+    if (reset) {
+      status.textContent = 'Searching…';
+      results.innerHTML = '';
+    } else {
+      const b = document.getElementById('loadMore');
+      if (b) { b.disabled = true; b.textContent = 'Loading…'; }
+    }
     try {
       const res = await fetch('/api/search?' + params.toString());
       const data = await res.json();
       if (!res.ok) { status.innerHTML = '<span class="err">' + Webkit.escapeHtml(data.error || 'error') + '</span>'; return; }
-      pushHistory(q);
-      if (!narrowed) {
-        // Unfiltered response: refresh the chip set and start with nothing
-        // selected (empty = show all). Clicking a chip narrows from there.
-        baselineFacets = data.facets || [];
-        selectedExts = new Set();
+      if (reset) {
+        pushHistory(ctx.q);
+        if (!ctx.narrowed) {
+          // Unfiltered response: refresh the chip set and start with nothing
+          // selected (empty = show all). Clicking a chip narrows from there.
+          baselineFacets = data.facets || [];
+          selectedExts = new Set();
+        }
+        document.getElementById('modeToggle').hidden = false;
+        if (expandCtl) expandCtl.hidden = false;
+        lastData = data;
+        lastTerms = highlightTerms(ctx.q);
+        shown = PAGE_SIZE;
+        pageOffset = data.files;
+        renderFacets();
+        renderPage();
+      } else {
+        mergePage(lastData, data);
+        pageOffset += data.files;
+        shown += PAGE_SIZE;
+        renderPage();
       }
-      document.getElementById('modeToggle').hidden = false;
-      if (expandCtl) expandCtl.hidden = false;
-      renderFacets();
-      render(data, q);
     } catch (err) {
       status.innerHTML = '<span class="err">' + Webkit.escapeHtml(String(err)) + '</span>';
+    } finally {
+      fetching = false;
     }
+  }
+
+  // mergePage folds a freshly fetched page into the accumulated result set:
+  // files of a repo already shown are appended to that repo group (preserving
+  // ranked order), new repos are added in order, and the counts and truncation
+  // flag advance to include the new page.
+  function mergePage(acc, page) {
+    const byRepo = new Map(acc.repos.map(r => [r.repo, r]));
+    for (const r of page.repos) {
+      const existing = byRepo.get(r.repo);
+      if (existing) existing.files.push(...r.files);
+      else { acc.repos.push(r); byRepo.set(r.repo, r); }
+    }
+    acc.total += page.total;
+    acc.files += page.files;
+    acc.truncated = page.truncated;
   }
 
   // runSemanticSearch routes the query to the vector backend and renders a flat
@@ -923,13 +977,6 @@ async function initSearchPage() {
     });
   }
 
-  function render(data, query) {
-    lastData = data;
-    lastTerms = highlightTerms(query);
-    shown = PAGE_SIZE;
-    renderPage();
-  }
-
   // renderPage draws the first `shown` file blocks across repos (in order),
   // grouping consecutive files under their repo header, plus a "Load more"
   // control and a status line that flags server-side truncation.
@@ -964,20 +1011,25 @@ async function initSearchPage() {
         files + '</div>');
     }
 
+    // Two-level "Load more": reveal more already-fetched files client-side
+    // (remaining > 0), otherwise fetch the next server page when the backend
+    // reported more results (truncated). Either way it is one button.
     const remaining = data.files - rendered;
     if (remaining > 0) {
       html.push('<button type="button" class="load-more" id="loadMore">Load more — ' +
         remaining + ' more file' + (remaining === 1 ? '' : 's') + '</button>');
     } else if (data.truncated) {
-      html.push('<div class="more-note">Showing the first ' + data.files +
-        ' files (server cap). Narrow your query — add <code>repo:</code>, <code>file:</code>, or <code>lang:</code> — to see the rest.</div>');
+      html.push('<button type="button" class="load-more" id="loadMore">Load more results</button>');
     }
 
     results.innerHTML = html.join('');
     status.textContent = statusText(data, rendered);
 
     const more = document.getElementById('loadMore');
-    if (more) more.addEventListener('click', () => { shown += PAGE_SIZE; renderPage(); });
+    if (more) more.addEventListener('click', () => {
+      if (shown < data.files) { shown += PAGE_SIZE; renderPage(); }
+      else if (data.truncated) { fetchPage(false); }
+    });
     results.querySelectorAll('.js-expand').forEach(btn => btn.addEventListener('click', () => expand(btn)));
     bindCopyButtons(results);
   }
@@ -986,7 +1038,7 @@ async function initSearchPage() {
     const base = data.total + ' match' + (data.total === 1 ? '' : 'es') +
       ' in ' + data.files + ' file' + (data.files === 1 ? '' : 's') +
       ' across ' + data.repos.length + ' repo' + (data.repos.length === 1 ? '' : 's') +
-      (data.truncated ? '+ (capped)' : '');
+      (data.truncated ? '+ (more available — Load more)' : '');
     if (rendered > 0 && rendered < data.files) return base + ' · showing ' + rendered;
     return base;
   }

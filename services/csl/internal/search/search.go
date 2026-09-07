@@ -38,6 +38,11 @@ type SearchOptions struct {
 	CaseSensitive bool
 	// Limit caps the number of files returned (default 50).
 	Limit int
+	// Offset skips this many ranked files before Limit is applied, so callers
+	// can page past the first Limit results (offset 0 = first page). Files are
+	// returned in zoekt's ranked order, which is stable for a given index, so
+	// successive pages line up as long as the index does not change between them.
+	Offset int
 	// ContextLines is the number of context lines around each match.
 	// Only applies when OutputMode is "content".
 	ContextLines int
