@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
-	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
@@ -256,12 +255,11 @@ func (r *Refresher) Status() Status {
 	outcomes := maps.Clone(r.results)
 	r.mu.Unlock()
 
-	repos, err := finder.FilteredWalk(r.cfg.Dirs, r.cfg.Index.Hosts)
+	targets, err := r.cfg.DiscoverRepos()
 	if err != nil {
 		st.Error = fmt.Sprintf("discover repos: %v", err)
 		return st
 	}
-	targets := r.cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	var state *search.IndexState
 	if indexDir, dirErr := search.DefaultIndexDir(); dirErr == nil {

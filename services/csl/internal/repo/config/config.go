@@ -187,6 +187,19 @@ func (h *PostMergeHook) FilterExcluded(repos []finder.Repo) []finder.Repo {
 	return out
 }
 
+// DiscoverRepos walks the configured dirs (filtered by the host allowlist) and
+// drops any repo on the exclude list. It is the single entry point every
+// search, health, and read surface should use instead of calling
+// finder.FilteredWalk directly, so an excluded repo is invisible everywhere,
+// not just at index time.
+func (c *Config) DiscoverRepos() ([]finder.Repo, error) {
+	repos, err := finder.FilteredWalk(c.Dirs, c.Index.Hosts)
+	if err != nil {
+		return nil, err
+	}
+	return c.Hooks.PostMerge.FilterExcluded(repos), nil
+}
+
 // EmptyResultHint explains an empty repo list in terms of the config file:
 // which file to create on a machine that has none, which file to fix on one
 // that does. Callers print it beside the empty result rather than instead of

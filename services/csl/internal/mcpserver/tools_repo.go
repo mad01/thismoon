@@ -94,7 +94,7 @@ func handleRepoLookup(
 		return nil, repoLookupOutput{}, fmt.Errorf("load csl config: %w", err)
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return nil, repoLookupOutput{}, fmt.Errorf("walk repos: %w", err)
 	}
@@ -151,7 +151,7 @@ func handleRepoInfo(
 		return nil, repoInfoOutput{}, fmt.Errorf("load csl config: %w", err)
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return nil, repoInfoOutput{}, fmt.Errorf("walk repos: %w", err)
 	}
@@ -275,7 +275,7 @@ func handleRepoHealth(
 		return nil, repoHealthOutput{}, fmt.Errorf("load csl config: %w", err)
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return nil, repoHealthOutput{}, fmt.Errorf("walk repos: %w", err)
 	}

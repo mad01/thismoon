@@ -29,7 +29,7 @@ func resolveRepo(name string) (finder.Repo, error) {
 		return finder.Repo{}, fmt.Errorf("load csl config: %w", err)
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return finder.Repo{}, fmt.Errorf("walk repos: %w", err)
 	}

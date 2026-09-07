@@ -10,7 +10,6 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/hybrid"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
-	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
 )
@@ -35,15 +34,15 @@ type hybridHit struct {
 	Path  string  `json:"path"  jsonschema:"file path relative to the repo root"`
 	Score float64 `json:"score" jsonschema:"fused RRF score; higithostr is a stronger combined match"`
 
-	LexRank int    `json:"lex_rank"            jsonschema:"1-based rank in the lexical (zoekt) results; 0 if the file didn't match lexically"`
-	LexLine int    `json:"lex_line,omitempty"  jsonschema:"line of the first lexical match"`
-	LexText string `json:"lex_text,omitempty"  jsonschema:"text of the first lexically matching line"`
+	LexRank int    `json:"lex_rank"           jsonschema:"1-based rank in the lexical (zoekt) results; 0 if the file didn't match lexically"`
+	LexLine int    `json:"lex_line,omitempty" jsonschema:"line of the first lexical match"`
+	LexText string `json:"lex_text,omitempty" jsonschema:"text of the first lexically matching line"`
 
-	SemRank  int     `json:"sem_rank"             jsonschema:"1-based rank in the semantic results; 0 if the file didn't match semantically"`
-	SemStart int     `json:"sem_start,omitempty"  jsonschema:"start line of the matched semantic chunk"`
-	SemEnd   int     `json:"sem_end,omitempty"    jsonschema:"end line of the matched semantic chunk"`
-	SemScore float32 `json:"sem_score,omitempty"  jsonschema:"cosine similarity of the semantic chunk in [0,1]"`
-	Snippet  string  `json:"snippet,omitempty"    jsonschema:"the matched semantic source chunk"`
+	SemRank  int     `json:"sem_rank"            jsonschema:"1-based rank in the semantic results; 0 if the file didn't match semantically"`
+	SemStart int     `json:"sem_start,omitempty" jsonschema:"start line of the matched semantic chunk"`
+	SemEnd   int     `json:"sem_end,omitempty"   jsonschema:"end line of the matched semantic chunk"`
+	SemScore float32 `json:"sem_score,omitempty" jsonschema:"cosine similarity of the semantic chunk in [0,1]"`
+	Snippet  string  `json:"snippet,omitempty"   jsonschema:"the matched semantic source chunk"`
 }
 
 // hybridSearchOutput is the typed output of csl_hybrid_search.
@@ -108,7 +107,7 @@ func hybridLexical(ctx context.Context, in hybridSearchInput, limit int) ([]sear
 	if err != nil {
 		return nil, fmt.Errorf("load csl config: %w", err)
 	}
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return nil, fmt.Errorf("walk repos: %w", err)
 	}

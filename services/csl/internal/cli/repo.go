@@ -52,7 +52,7 @@ func runRepo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return err
 	}

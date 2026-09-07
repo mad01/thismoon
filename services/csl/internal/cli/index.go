@@ -52,8 +52,10 @@ Use --drain to batch-index repos queued by post-merge hooks.`,
 }
 
 func init() {
-	indexCmd.Flags().BoolVar(&indexAllFlag, "all", false, "force full re-index of all repos (lexical + semantic)")
-	indexCmd.Flags().BoolVar(&indexLexicalAllFlag, "lexical-all", false, "force full lexical re-index only")
+	indexCmd.Flags().
+		BoolVar(&indexAllFlag, "all", false, "force full re-index of all repos (lexical + semantic)")
+	indexCmd.Flags().
+		BoolVar(&indexLexicalAllFlag, "lexical-all", false, "force full lexical re-index only")
 	indexCmd.Flags().BoolVar(&indexStatusFlag, "status", false, "show index status table")
 	indexCmd.Flags().BoolVar(&indexCleanFlag, "clean", false, "delete the index directory")
 	indexCmd.Flags().
@@ -122,11 +124,10 @@ func runIndex(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return err
 	}
-	repos = cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	state, err := search.LoadState(indexDir)
 	if err != nil {
@@ -409,11 +410,10 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-	allRepos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return err
 	}
-	repos := cfg.Hooks.PostMerge.FilterExcluded(allRepos)
 	if repoFilter != "" {
 		repos = filterReposByName(repos, repoFilter)
 	}
@@ -424,7 +424,11 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 
 	w := cmd.ErrOrStderr()
 	ctx := context.Background()
-	emb := semantic.NewOllamaEmbedder(cfg.Semantic.OllamaURL, cfg.Semantic.EmbedModel, cfg.Semantic.Dim)
+	emb := semantic.NewOllamaEmbedder(
+		cfg.Semantic.OllamaURL,
+		cfg.Semantic.EmbedModel,
+		cfg.Semantic.Dim,
+	)
 	if err := emb.CheckModel(ctx); err != nil {
 		return fmt.Errorf("embedding backend not ready: %w", err)
 	}
