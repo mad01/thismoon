@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/mad01/thismoon/compare/csl/v0.17.0...csl/v0.18.0) (2026-09-07)
+
+
+### Features
+
+* **csl-web:** disable semantic and hybrid modes when semantic is off ([#69](https://github.com/mad01/thismoon/issues/69)) ([0819a31](https://github.com/mad01/thismoon/commit/0819a31ba8fc86272d421a21927ebd5189385e49))
+* **csl:** scale health, refresh, and search for large repo fleets ([#71](https://github.com/mad01/thismoon/issues/71)) ([771f61c](https://github.com/mad01/thismoon/commit/771f61c4659719efb5f76b7b9f8c3066803929e3))
+
 ## [0.17.0](https://github.com/mad01/thismoon/compare/csl/v0.16.0...csl/v0.17.0) (2026-09-07)
 
 
