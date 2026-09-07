@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/mad01/thismoon/compare/csl/v0.16.0...csl/v0.17.0) (2026-09-07)
+
+
+### Features
+
+* **csl:** resolve git worktrees in repo finder ([#66](https://github.com/mad01/thismoon/issues/66)) ([19b1247](https://github.com/mad01/thismoon/commit/19b12471f1b2a8835eb7b234a47dca2ff880f7f5))
+
 ## [0.16.0](https://github.com/mad01/thismoon/compare/csl/v0.15.0...csl/v0.16.0) (2026-08-29)
 
 
