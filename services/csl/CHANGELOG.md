@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/mad01/thismoon/compare/csl/v0.18.1...csl/v0.18.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **csl:** apply the repo exclude list to every search and health surface ([#74](https://github.com/mad01/thismoon/issues/74)) ([7d91cc3](https://github.com/mad01/thismoon/commit/7d91cc3b7d3ccdde7087d7b3147f341e27afb955))
+
 ## [0.18.1](https://github.com/mad01/thismoon/compare/csl/v0.18.0...csl/v0.18.1) (2026-09-07)
 
 
