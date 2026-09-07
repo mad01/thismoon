@@ -102,6 +102,27 @@ When `semantic.sync: true` is set, `csl sync` runs the same per-repo
 embedding pass over repos whose lexical index changed, best-effort, after
 the pull.
 
+## When local semantic search is worth it
+
+Semantic and hybrid search are **off by default** (`semantic.enabled: false`),
+and whether to turn them on is a per-machine decision that comes down to corpus
+size. Building the index is the expensive part: every chunk of every tracked
+file passes through the embedding model once, and `csl sync` re-embeds changed
+repos on top of that. Lexical search has neither cost nor an Ollama dependency,
+so it stays the right default at any scale.
+
+As a rough guide, local semantic search stays comfortable up to **~250 repos**.
+Below that, the initial `csl index --semantic-all` and the incremental refreshes
+finish in reasonable time on a typical developer machine, so turning
+`semantic.enabled: true` on pays off. Well above that, the one-time embed (and
+every refresh after it) is too much compute to run locally: the build takes too
+long and starves everything else on the machine.
+
+For a corpus past that point, keep the machine lexical-only (the default), or
+point `ollama_url` at a beefier machine and run the bulk build there (see
+[Choosing and changing the model](#choosing-and-changing-the-model)) so the
+heavy embedding happens off your laptop while queries stay local.
+
 ## How a query works
 
 A semantic query (`csl semantic`, `csl_semantic_search`, the web UI, or the
