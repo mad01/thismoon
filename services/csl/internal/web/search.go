@@ -55,9 +55,9 @@ func NewService(cfg *config.Config) (*Service, error) {
 }
 
 // Repos returns the discovered repositories, filtered by the configured host
-// allowlist.
+// allowlist and exclude list.
 func (s *Service) Repos() ([]finder.Repo, error) {
-	return finder.FilteredWalk(s.cfg.Dirs, s.cfg.Index.Hosts)
+	return s.cfg.DiscoverRepos()
 }
 
 // SemanticEnabled reports whether semantic (and therefore hybrid) search is

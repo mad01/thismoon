@@ -11,7 +11,6 @@ import (
 	pb "github.com/mad01/thismoon/services/csl/internal/daemon/proto"
 	"github.com/mad01/thismoon/services/csl/internal/hybrid"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
-	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
 )
@@ -64,11 +63,15 @@ Examples:
 }
 
 func init() {
-	hybridCmd.Flags().StringVarP(&hybridRepoFlag, "repo", "r", "", "restrict to repos whose name contains this substring")
-	hybridCmd.Flags().StringVarP(&hybridLangFlag, "lang", "l", "", "restrict to a single language (e.g. go, typescript, python)")
+	hybridCmd.Flags().
+		StringVarP(&hybridRepoFlag, "repo", "r", "", "restrict to repos whose name contains this substring")
+	hybridCmd.Flags().
+		StringVarP(&hybridLangFlag, "lang", "l", "", "restrict to a single language (e.g. go, typescript, python)")
 	hybridCmd.Flags().IntVar(&hybridLimitFlag, "limit", 50, "maximum number of fused results")
-	hybridCmd.Flags().IntVar(&hybridRRFKFlag, "rrf-k", hybrid.DefaultK, "RRF smoothing constant (lower favors top-ranked outliers, higithostr favors consensus)")
-	hybridCmd.Flags().IntVar(&hybridExpandFlag, "expand", 0, "extra context lines around each semantic chunk")
+	hybridCmd.Flags().
+		IntVar(&hybridRRFKFlag, "rrf-k", hybrid.DefaultK, "RRF smoothing constant (lower favors top-ranked outliers, higithostr favors consensus)")
+	hybridCmd.Flags().
+		IntVar(&hybridExpandFlag, "expand", 0, "extra context lines around each semantic chunk")
 	hybridCmd.Flags().BoolVar(&hybridJSONFlag, "json", false, "output as JSON")
 	rootCmd.AddCommand(hybridCmd)
 }
@@ -115,7 +118,7 @@ func hybridLexicalMatches(cmd *cobra.Command, query string) ([]search.Match, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +144,11 @@ func hybridLexicalMatches(cmd *cobra.Command, query string) ([]search.Match, err
 		if derr == nil {
 			return matches, nil
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "daemon lexical search failed, falling back to in-process: %v\n", derr)
+		fmt.Fprintf(
+			cmd.ErrOrStderr(),
+			"daemon lexical search failed, falling back to in-process: %v\n",
+			derr,
+		)
 	}
 	return search.Search(context.Background(), indexDir, opts, repoNames)
 }
@@ -177,7 +184,11 @@ func hybridSemanticResults(cmd *cobra.Command, query string) ([]semantic.Result,
 				}
 				return hybridResultsFromProto(resp.Hits), true, nil
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "daemon semantic search failed, falling back to in-process: %v\n", derr)
+			fmt.Fprintf(
+				cmd.ErrOrStderr(),
+				"daemon semantic search failed, falling back to in-process: %v\n",
+				derr,
+			)
 		}
 	}
 

@@ -70,14 +70,11 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 
 	fmt.Fprintf(errw, "Discovering repos...")
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	targets, err := cfg.DiscoverRepos()
 	if err != nil {
 		fmt.Fprintln(errw)
 		return nil, err
 	}
-
-	// Apply exclude list (reuse hooks.post_merge.exclude).
-	targets := cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	if opts.Only != "" {
 		targets = filterOnly(targets, opts.Only)
@@ -271,8 +268,15 @@ func emitSyncEvent(start time.Time, counts map[string]int, total, indexed int) {
 	if counts["fail"] > 0 {
 		level = "warn"
 	}
-	notify.EmitEventSync("csl", level,
-		fmt.Sprintf("sync complete: %d repos, %d updated, %d indexed", total, counts["updated"], indexed),
+	notify.EmitEventSync(
+		"csl",
+		level,
+		fmt.Sprintf(
+			"sync complete: %d repos, %d updated, %d indexed",
+			total,
+			counts["updated"],
+			indexed,
+		),
 		syncSummary(counts),
 		map[string]string{
 			"repos":    fmt.Sprintf("%d", total),
@@ -280,7 +284,8 @@ func emitSyncEvent(start time.Time, counts map[string]int, total, indexed int) {
 			"indexed":  fmt.Sprintf("%d", indexed),
 			"failed":   fmt.Sprintf("%d", counts["fail"]),
 			"duration": time.Since(start).Round(time.Second).String(),
-		})
+		},
+	)
 }
 
 // reposToIndex selects which repos need (re-)indexing after a pull phase.

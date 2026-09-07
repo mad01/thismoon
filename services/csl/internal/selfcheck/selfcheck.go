@@ -16,7 +16,6 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
-	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -128,7 +127,7 @@ func indexFreshness(indexDir string) doctor.Check {
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
-			repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+			repos, err := cfg.DiscoverRepos()
 			if err != nil {
 				return err
 			}
@@ -139,7 +138,9 @@ func indexFreshness(indexDir string) doctor.Check {
 				return nil
 			}
 			if len(repos) == 0 {
-				return errors.New("no git repos found under the configured dirs; check 'csl config'")
+				return errors.New(
+					"no git repos found under the configured dirs; check 'csl config'",
+				)
 			}
 			state, err := search.LoadState(indexDir)
 			if err != nil {
@@ -173,7 +174,9 @@ func indexShardsValid(indexDir string) doctor.Check {
 			if len(corrupted) > 0 {
 				return fmt.Errorf(
 					"%d of %d shards corrupted; run 'csl index --repair' to drop them, then 'csl index' to rebuild",
-					len(corrupted), len(shards))
+					len(corrupted),
+					len(shards),
+				)
 			}
 			return nil
 		},

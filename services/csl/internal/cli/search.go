@@ -136,11 +136,10 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	repos, err := finder.FilteredWalk(cfg.Dirs, cfg.Index.Hosts)
+	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return err
 	}
-	repos = cfg.Hooks.PostMerge.FilterExcluded(repos)
 
 	if len(repos) == 0 {
 		// Nothing to search is a result, not a failure, on a machine that has
@@ -278,7 +277,10 @@ func indexForSearch(
 
 	unlock, err := syncer.Lock(indexDir)
 	if errors.Is(err, syncer.ErrLocked) {
-		fmt.Fprintln(w, "another sync or background refresh is indexing; searching the existing index")
+		fmt.Fprintln(
+			w,
+			"another sync or background refresh is indexing; searching the existing index",
+		)
 		return nil
 	}
 	if err != nil {
