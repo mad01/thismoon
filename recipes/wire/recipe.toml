@@ -2,6 +2,7 @@
 name = "wire"
 description = "wire: session-to-session message bus; CLI + MCP + live web view for channels agents talk over"
 wave = 0
+profiles = ["personal"]  # personal Mac only; work machines opt out
 
 # Consumed as a remote recipe: machines point at this repo with a
 # [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
