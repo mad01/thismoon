@@ -23,6 +23,7 @@ message SearchRequest {
   int32 context_lines = 7;
   string output_mode = 8;
   map<string, string> repo_names = 9;
+  int32 offset = 10;
 }
 
 message SearchResponse {

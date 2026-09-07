@@ -57,6 +57,7 @@ func (s *searchServer) Search(
 		Limit:         int(req.GetLimit()),
 		ContextLines:  int(req.GetContextLines()),
 		OutputMode:    req.GetOutputMode(),
+		Offset:        int(req.GetOffset()),
 	}
 
 	matches, err := search.SearchWith(ctx, s.searcher, opts, req.GetRepoNames())
@@ -302,9 +303,19 @@ func loadSemantic(ctx context.Context, srv *searchServer) {
 
 	emb := semantic.NewDefaultEmbedder()
 	if err := emb.CheckModel(ctx); err != nil {
-		log.Printf("semantic: %d chunks across %d stores, embedder ready=false (%v)", idx.Len(), idx.Stores(), err)
+		log.Printf(
+			"semantic: %d chunks across %d stores, embedder ready=false (%v)",
+			idx.Len(),
+			idx.Stores(),
+			err,
+		)
 		return
 	}
 	srv.embedder = emb
-	log.Printf("semantic: %d chunks across %d stores, embedder ready=true (ollama model %s)", idx.Len(), idx.Stores(), emb.Model)
+	log.Printf(
+		"semantic: %d chunks across %d stores, embedder ready=true (ollama model %s)",
+		idx.Len(),
+		idx.Stores(),
+		emb.Model,
+	)
 }

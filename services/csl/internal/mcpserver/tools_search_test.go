@@ -40,7 +40,7 @@ func makeFileMatches(n int, repo string) []search.Match {
 
 func TestBuildSearchOutput_FilesNotTruncated(t *testing.T) {
 	matches := makeFileMatches(10, "org/repo")
-	out := buildSearchOutput(filesOutputMode, 50, matches)
+	out := buildSearchOutput(filesOutputMode, 50, 0, matches)
 
 	if out.Truncated {
 		t.Error("expected truncated=false for 10 files with limit 50")
@@ -55,7 +55,7 @@ func TestBuildSearchOutput_FilesNotTruncated(t *testing.T) {
 
 func TestBuildSearchOutput_FilesTruncated(t *testing.T) {
 	matches := makeFileMatches(60, "org/repo")
-	out := buildSearchOutput(filesOutputMode, 50, matches)
+	out := buildSearchOutput(filesOutputMode, 50, 0, matches)
 
 	if !out.Truncated {
 		t.Error("expected truncated=true when files >= limit")
@@ -73,7 +73,7 @@ func TestBuildSearchOutput_FilesTruncated(t *testing.T) {
 
 func TestBuildSearchOutput_FilesExactlyAtLimit(t *testing.T) {
 	matches := makeFileMatches(50, "org/repo")
-	out := buildSearchOutput(filesOutputMode, 50, matches)
+	out := buildSearchOutput(filesOutputMode, 50, 0, matches)
 
 	if !out.Truncated {
 		t.Error("expected truncated=true when files == limit (more may exist upstream)")
@@ -85,7 +85,7 @@ func TestBuildSearchOutput_FilesExactlyAtLimit(t *testing.T) {
 
 func TestBuildSearchOutput_ContentNotTruncated(t *testing.T) {
 	matches := makeMatches(100, "org/repo", "main.go")
-	out := buildSearchOutput(contentOutputMode, 50, matches)
+	out := buildSearchOutput(contentOutputMode, 50, 0, matches)
 
 	if out.Truncated {
 		t.Error("expected truncated=false for 100 lines (under maxContentLines)")
@@ -97,7 +97,7 @@ func TestBuildSearchOutput_ContentNotTruncated(t *testing.T) {
 
 func TestBuildSearchOutput_ContentTruncatedAtMaxLines(t *testing.T) {
 	matches := makeMatches(500, "org/repo", "main.go")
-	out := buildSearchOutput(contentOutputMode, 50, matches)
+	out := buildSearchOutput(contentOutputMode, 50, 0, matches)
 
 	if !out.Truncated {
 		t.Error("expected truncated=true for 500 lines")
@@ -115,7 +115,7 @@ func TestBuildSearchOutput_ContentTruncatedAtMaxLines(t *testing.T) {
 
 func TestBuildSearchOutput_ContentExactlyAtMax(t *testing.T) {
 	matches := makeMatches(maxContentLines, "org/repo", "main.go")
-	out := buildSearchOutput(contentOutputMode, 50, matches)
+	out := buildSearchOutput(contentOutputMode, 50, 0, matches)
 
 	if out.Truncated {
 		t.Error("expected truncated=false when lines == maxContentLines exactly")
@@ -126,7 +126,7 @@ func TestBuildSearchOutput_ContentExactlyAtMax(t *testing.T) {
 }
 
 func TestBuildSearchOutput_EmptyResults(t *testing.T) {
-	out := buildSearchOutput(filesOutputMode, 50, nil)
+	out := buildSearchOutput(filesOutputMode, 50, 0, nil)
 	if out.Truncated {
 		t.Error("expected truncated=false for empty results")
 	}
@@ -134,7 +134,7 @@ func TestBuildSearchOutput_EmptyResults(t *testing.T) {
 		t.Errorf("expected total=0, got %d", out.Total)
 	}
 
-	out = buildSearchOutput(contentOutputMode, 50, nil)
+	out = buildSearchOutput(contentOutputMode, 50, 0, nil)
 	if out.Truncated {
 		t.Error("expected truncated=false for empty content results")
 	}
@@ -143,7 +143,7 @@ func TestBuildSearchOutput_EmptyResults(t *testing.T) {
 func TestBuildSearchOutput_FilesDeduplicated(t *testing.T) {
 	// Multiple matches in the same file should collapse to one entry.
 	matches := makeMatches(20, "org/repo", "main.go")
-	out := buildSearchOutput(filesOutputMode, 50, matches)
+	out := buildSearchOutput(filesOutputMode, 50, 0, matches)
 
 	if out.Total != 1 {
 		t.Errorf("expected 1 unique file, got %d", out.Total)
@@ -189,18 +189,36 @@ func TestOverConstraintNotes(t *testing.T) {
 		{name: "one term, no filters", in: searchInput{Query: "cluster_name"}, want: 0},
 		{name: "two terms", in: searchInput{Query: "cluster name"}, want: 0},
 		{name: "three AND terms", in: searchInput{Query: "backend service health"}, want: 1},
-		{name: "five AND terms", in: searchInput{Query: "backend service health check endpoint"}, want: 1},
+		{
+			name: "five AND terms",
+			in:   searchInput{Query: "backend service health check endpoint"},
+			want: 1,
+		},
 		{name: "file filter set", in: searchInput{Query: "x", File: `.*\.tf$`}, want: 1},
 		{name: "multi-word quoted phrase", in: searchInput{Query: `"backend service"`}, want: 1},
 		{name: "single-word quote is silent", in: searchInput{Query: `"backend"`}, want: 0},
-		{name: "filters, negations, OR groups don't count", in: searchInput{Query: "foo|bar -test lang:go f:x repo:y"}, want: 0},
-		{name: "terms and file filter stack", in: searchInput{Query: "backend service health", File: "x"}, want: 2},
+		{
+			name: "filters, negations, OR groups don't count",
+			in:   searchInput{Query: "foo|bar -test lang:go f:x repo:y"},
+			want: 0,
+		},
+		{
+			name: "terms and file filter stack",
+			in:   searchInput{Query: "backend service health", File: "x"},
+			want: 2,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := overConstraintNotes(tt.in)
 			if len(got) != tt.want {
-				t.Errorf("overConstraintNotes(%+v) = %d notes %v, want %d", tt.in, len(got), got, tt.want)
+				t.Errorf(
+					"overConstraintNotes(%+v) = %d notes %v, want %d",
+					tt.in,
+					len(got),
+					got,
+					tt.want,
+				)
 			}
 		})
 	}

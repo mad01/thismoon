@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
@@ -19,6 +20,11 @@ const (
 	maxLimit       = 500
 	maxContext     = 20
 	maxQueryLength = 1000
+	// maxOffset bounds how deep the client can page. Offset paging re-runs the
+	// search and discards the leading files, so each deeper page costs more;
+	// this keeps a very deep page from scanning an unbounded match set while
+	// still leaving far more results reachable than a single page.
+	maxOffset = 50000
 )
 
 // matchJSON is one search hit, with a link to the line on the git host.
@@ -68,9 +74,12 @@ type searchResponse struct {
 	Total int    `json:"total"`
 	Files int    `json:"files"`
 	Limit int    `json:"limit"`
+	// Offset is the ranked-file offset this page started at, echoed so the UI
+	// can request the next page (offset + limit).
+	Offset int `json:"offset"`
 	// Truncated is true when the file limit was reached, so more files may
 	// exist beyond those returned. The UI surfaces this so a capped result set
-	// is never mistaken for the complete set.
+	// is never mistaken for the complete set, and uses it to offer the next page.
 	Truncated bool        `json:"truncated"`
 	Facets    []facetJSON `json:"facets"`
 	Repos     []repoGroup `json:"repos"`
@@ -226,7 +235,7 @@ func collapseHome(p, home string) string {
 // match and the result set was capped.
 func buildSearchResponse(
 	query, mode string,
-	limit int,
+	limit, offset int,
 	matches []search.Match,
 	repoMap map[string]finder.Repo,
 ) searchResponse {
@@ -245,6 +254,7 @@ func buildSearchResponse(
 		Total:     len(matches),
 		Files:     files,
 		Limit:     limit,
+		Offset:    offset,
 		Truncated: files >= limit,
 		Facets:    extensionFacets(matches),
 		Repos:     repos,
@@ -269,6 +279,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := clampInt(q.Get("limit"), defaultLimit, 1, maxLimit)
+	offset := clampInt(q.Get("offset"), 0, 0, maxOffset)
 	opts := search.SearchOptions{
 		Pattern:       pattern,
 		RepoFilter:    q.Get("repo"),
@@ -276,6 +287,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		Lang:          q.Get("lang"),
 		CaseSensitive: q.Get("case") == "yes",
 		Limit:         limit,
+		Offset:        offset,
 		OutputMode:    mode,
 	}
 	if mode == "content" {
@@ -298,13 +310,16 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		repoMap[rp.Name] = rp
 	}
 
-	resp := buildSearchResponse(pattern, mode, limit, matches, repoMap)
+	resp := buildSearchResponse(pattern, mode, limit, offset, matches, repoMap)
 	// Collapse $HOME to "~" in copy-paths here, in the imperative shell, so
 	// buildSearchResponse stays a pure function of its inputs.
 	if home, err := os.UserHomeDir(); err == nil {
 		for i := range resp.Repos {
 			for j := range resp.Repos[i].Files {
-				resp.Repos[i].Files[j].LocalPath = collapseHome(resp.Repos[i].Files[j].LocalPath, home)
+				resp.Repos[i].Files[j].LocalPath = collapseHome(
+					resp.Repos[i].Files[j].LocalPath,
+					home,
+				)
 			}
 		}
 	}
@@ -330,25 +345,39 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-// repoHealthResponse is the /api/repo_health payload.
+// repoHealthResponse is the /api/repo_health payload. Computing is true while a
+// background sweep is in flight, meaning Repos reflects a stale snapshot (or is
+// empty on a cold start) and the client should re-poll; ComputedAt dates the
+// served snapshot.
 type repoHealthResponse struct {
-	Total     int                `json:"total"`
-	Attention int                `json:"attention"`
-	Repos     []search.GitHealth `json:"repos"`
+	Total      int                `json:"total"`
+	Attention  int                `json:"attention"`
+	Repos      []search.GitHealth `json:"repos"`
+	Computing  bool               `json:"computing,omitempty"`
+	ComputedAt string             `json:"computed_at,omitempty"`
 }
 
-// handleRepoHealth runs the fleet git-health sweep. Default returns only the
-// repos needing attention; ?all=true includes clean ones.
+// handleRepoHealth serves the fleet git-health sweep from the shared snapshot,
+// triggering a background refresh when it is stale (see Service.GitHealth).
+// Default returns only the repos needing attention; ?all=true includes clean
+// ones.
 func (s *Server) handleRepoHealth(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.svc.GitHealth(r.Context())
+	res, err := s.svc.GitHealth(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	all := r.URL.Query().Get("all") == "true"
 	// Repos starts non-nil so it marshals as [] not null.
-	resp := repoHealthResponse{Total: len(entries), Repos: []search.GitHealth{}}
-	for _, e := range entries {
+	resp := repoHealthResponse{
+		Total:     len(res.Entries),
+		Repos:     []search.GitHealth{},
+		Computing: res.Computing,
+	}
+	if !res.ComputedAt.IsZero() {
+		resp.ComputedAt = res.ComputedAt.UTC().Format(time.RFC3339)
+	}
+	for _, e := range res.Entries {
 		if e.NeedsAttention() {
 			resp.Attention++
 		}

@@ -9,6 +9,9 @@
   if (!status || !results) return;
 
   let pollTimer = null;
+  // pageState persists the paged-table expansion across polls so a re-render
+  // does not collapse the reader back to the first page.
+  const pageState = { shown: TABLE_PAGE_SIZE };
 
   // STATUSES maps the pull outcome to a short label and a wk-badge variant.
   const STATUSES = {
@@ -22,14 +25,8 @@
     notgit: ['not a git repo', 'warn'],
   };
 
-  function ago(iso) {
-    if (!iso) return '';
-    const secs = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
-    if (secs < 60) return secs + 's ago';
-    if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
-    if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
-    return Math.floor(secs / 86400) + 'd ago';
-  }
+  // ago is the shared timeAgo helper (common.js), aliased for local call sites.
+  const ago = timeAgo;
 
   function untilLabel(iso) {
     const secs = Math.floor((Date.parse(iso) - Date.now()) / 1000);
@@ -75,13 +72,16 @@
       results.innerHTML = '<div class="health-empty">no repos found</div>';
       return;
     }
-    results.innerHTML = '<wk-table><table>' +
-      '<thead><tr><th>repo</th><th>last refresh</th><th>detail</th><th>refreshed</th><th>indexed</th><th></th></tr></thead>' +
-      '<tbody>' + repos.map(row).join('') + '</tbody>' +
-      '</table></wk-table>';
-    results.querySelectorAll('.js-refresh').forEach(btn => {
-      btn.disabled = d.running;
-      btn.addEventListener('click', () => kick(btn.dataset.repo));
+    renderPagedTable(results, repos, {
+      state: pageState,
+      headHtml: '<thead><tr><th>repo</th><th>last refresh</th><th>detail</th><th>refreshed</th><th>indexed</th><th></th></tr></thead>',
+      rowFn: row,
+      onRender: root => {
+        root.querySelectorAll('.js-refresh').forEach(btn => {
+          btn.disabled = d.running;
+          btn.addEventListener('click', () => kick(btn.dataset.repo));
+        });
+      },
     });
   }
 

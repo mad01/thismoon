@@ -22,7 +22,7 @@ type searcher interface {
 	HybridSearch(ctx context.Context, req HybridRequest) (HybridResult, error)
 	Repos() ([]finder.Repo, error)
 	ReadFile(repo, file string, start, end int) (*ReadResult, error)
-	GitHealth(ctx context.Context) ([]search.GitHealth, error)
+	GitHealth(ctx context.Context) (GitHealthResult, error)
 	// SemanticEnabled reports whether semantic (and therefore hybrid) search is
 	// turned on in config; the UI disables those modes when it is off.
 	SemanticEnabled() bool

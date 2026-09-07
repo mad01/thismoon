@@ -123,7 +123,7 @@ func TestBuildSearchResponse(t *testing.T) {
 			{Repo: "mad01/thismoon", File: "a.go", Line: 2, Text: "y"},
 			{Repo: "mad01/thismoon", File: "b.go", Line: 1, Text: "z"},
 		}
-		resp := buildSearchResponse("foo", "files_with_matches", 50, matches, repoMap)
+		resp := buildSearchResponse("foo", "files_with_matches", 50, 0, matches, repoMap)
 		if resp.Total != 3 {
 			t.Errorf("Total = %d, want 3", resp.Total)
 		}
@@ -143,6 +143,7 @@ func TestBuildSearchResponse(t *testing.T) {
 			"q",
 			"files_with_matches",
 			50,
+			0,
 			matchesAcrossFiles("mad01/thismoon", 10),
 			repoMap,
 		)
@@ -159,6 +160,7 @@ func TestBuildSearchResponse(t *testing.T) {
 			"q",
 			"files_with_matches",
 			5,
+			0,
 			matchesAcrossFiles("mad01/thismoon", 5),
 			repoMap,
 		)
@@ -171,7 +173,7 @@ func TestBuildSearchResponse(t *testing.T) {
 	})
 
 	t.Run("empty result is not truncated", func(t *testing.T) {
-		resp := buildSearchResponse("q", "files_with_matches", 50, nil, repoMap)
+		resp := buildSearchResponse("q", "files_with_matches", 50, 0, nil, repoMap)
 		if resp.Total != 0 || resp.Files != 0 {
 			t.Errorf("want empty counts, got total=%d files=%d", resp.Total, resp.Files)
 		}
@@ -184,16 +186,23 @@ func TestBuildSearchResponse(t *testing.T) {
 	})
 
 	t.Run("marshals expected JSON keys", func(t *testing.T) {
-		resp := buildSearchResponse("q", "files_with_matches", 50, nil, repoMap)
+		resp := buildSearchResponse("q", "files_with_matches", 50, 0, nil, repoMap)
 		b, err := json.Marshal(resp)
 		if err != nil {
 			t.Fatal(err)
 		}
 		s := string(b)
-		for _, key := range []string{`"total":`, `"files":`, `"limit":`, `"truncated":`, `"repos":[]`} {
+		for _, key := range []string{`"total":`, `"files":`, `"limit":`, `"offset":`, `"truncated":`, `"repos":[]`} {
 			if !strings.Contains(s, key) {
 				t.Errorf("JSON missing %s in %s", key, s)
 			}
+		}
+	})
+
+	t.Run("echoes offset", func(t *testing.T) {
+		resp := buildSearchResponse("q", "files_with_matches", 50, 20, nil, repoMap)
+		if resp.Offset != 20 {
+			t.Errorf("Offset = %d, want 20 (echoed from request)", resp.Offset)
 		}
 	})
 }
@@ -278,12 +287,12 @@ func TestBuildSearchResponseFacets(t *testing.T) {
 		{Repo: "r", File: "a.go", Line: 1, Text: "x"},
 		{Repo: "r", File: "doc.md", Line: 1, Text: "y"},
 	}
-	resp := buildSearchResponse("q", "files_with_matches", 50, matches, repoMap)
+	resp := buildSearchResponse("q", "files_with_matches", 50, 0, matches, repoMap)
 	if len(resp.Facets) != 2 {
 		t.Fatalf("want 2 facets in response, got %+v", resp.Facets)
 	}
 
-	b, err := json.Marshal(buildSearchResponse("q", "files_with_matches", 50, nil, repoMap))
+	b, err := json.Marshal(buildSearchResponse("q", "files_with_matches", 50, 0, nil, repoMap))
 	if err != nil {
 		t.Fatal(err)
 	}

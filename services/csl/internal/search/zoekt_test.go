@@ -324,6 +324,67 @@ func TestSearch_NoResults(t *testing.T) {
 	}
 }
 
+// TestSearch_OffsetPaginates verifies that Offset skips ranked files so
+// successive pages partition the results without overlap or gaps.
+func TestSearch_OffsetPaginates(t *testing.T) {
+	dir := t.TempDir()
+	// Three files that each match the same needle, one match line apiece so the
+	// file count equals the match count.
+	for _, name := range []string{"a.go", "b.go", "c.go"} {
+		content := "package p\n// needle marker\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	indexDir := t.TempDir()
+	repo := finder.Repo{Name: "test/repo", Path: dir}
+	if err := IndexRepo(indexDir, repo); err != nil {
+		t.Fatalf("IndexRepo: %v", err)
+	}
+	repoNames := map[string]string{repo.Name: repo.Path}
+	ctx := context.Background()
+
+	fileOf := func(opts SearchOptions) []string {
+		t.Helper()
+		matches, err := Search(ctx, indexDir, opts, repoNames)
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		files := make([]string, len(matches))
+		for i, m := range matches {
+			files[i] = m.File
+		}
+		return files
+	}
+
+	page1 := fileOf(SearchOptions{Pattern: "needle", Limit: 2, Offset: 0})
+	if len(page1) != 2 {
+		t.Fatalf("page1 = %v, want 2 files", page1)
+	}
+	page2 := fileOf(SearchOptions{Pattern: "needle", Limit: 2, Offset: 2})
+	if len(page2) != 1 {
+		t.Fatalf("page2 = %v, want 1 file", page2)
+	}
+
+	seen := map[string]int{}
+	for _, f := range append(append([]string{}, page1...), page2...) {
+		seen[f]++
+	}
+	if len(seen) != 3 {
+		t.Fatalf("pages covered %d distinct files, want 3: %v", len(seen), seen)
+	}
+	for f, n := range seen {
+		if n != 1 {
+			t.Errorf("file %q appeared %d times across pages, want once", f, n)
+		}
+	}
+
+	// An offset past the end yields nothing.
+	if beyond := fileOf(SearchOptions{Pattern: "needle", Limit: 2, Offset: 3}); len(beyond) != 0 {
+		t.Errorf("offset past end = %v, want empty", beyond)
+	}
+}
+
 // ---------- Count ----------
 
 func TestCount(t *testing.T) {

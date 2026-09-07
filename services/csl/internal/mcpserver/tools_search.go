@@ -31,6 +31,7 @@ type searchInput struct {
 	OutputMode    string `json:"output_mode,omitempty"    jsonschema:"files_with_matches (default) returns unique file paths; content returns matching lines with context"`
 	ContextLines  int    `json:"context_lines,omitempty"  jsonschema:"number of context lines around each match in content mode (default 0); ignored in files_with_matches mode"`
 	Limit         int    `json:"limit,omitempty"          jsonschema:"maximum number of file results (default 50)"`
+	Offset        int    `json:"offset,omitempty"         jsonschema:"skip this many ranked file results before applying limit, to page past the first limit results (default 0); ranking is stable across calls, so successive pages line up"`
 	CaseSensitive bool   `json:"case_sensitive,omitempty" jsonschema:"force case-sensitive matching; default is smart case (case-insensitive unless the query has uppercase)"`
 }
 
@@ -58,8 +59,9 @@ type searchOutput struct {
 	Files          []searchMatchFile `json:"files,omitempty"            jsonschema:"unique file paths that matched; set when output_mode is files_with_matches"`
 	Lines          []searchMatchLine `json:"lines,omitempty"            jsonschema:"matching lines; set when output_mode is content"`
 	Total          int               `json:"total"                      jsonschema:"total number of match records returned (files or lines)"`
-	Truncated      bool              `json:"truncated"                  jsonschema:"true if limit capped the results; more matches exist, so refine your query or increase limit"`
-	TotalAvailable int               `json:"total_available,omitempty"  jsonschema:"total matches available before truncation (only set when truncated is true)"`
+	Offset         int               `json:"offset,omitempty"           jsonschema:"the ranked-file offset this page started at; request the next page with offset + limit"`
+	Truncated      bool              `json:"truncated"                  jsonschema:"true if limit capped the results; more matches exist, so page with offset (offset + limit), refine your query, or increase limit"`
+	TotalAvailable int               `json:"total_available,omitempty"  jsonschema:"matches in this page before limit capped it (only set when truncated is true); not a grand total across pages"`
 	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
 }
 
@@ -119,7 +121,7 @@ func registerSearchTools(s *mcp.Server) {
 			"AND is strict: all terms must appear in the SAME FILE. Use 1-2 terms and narrow with repo:/f:/lang: filters, not 3+ chained terms. " +
 			"Use | or lowercase 'or' for OR; uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
 			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax: the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
-			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call. When capped, truncated=true and total_available says how many matched, so narrow the query or paginate with filters. " +
+			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call. When capped, truncated=true; page with offset (next page = offset + limit), narrow the query, or raise limit. " +
 			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps); read it before retrying or concluding the code doesn't exist. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session.",
 	}, handleSearch)
@@ -164,6 +166,10 @@ func handleSearch(
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+	offset := in.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
 	indexDir, err := search.DefaultIndexDir()
 	if err != nil {
@@ -200,6 +206,7 @@ func handleSearch(
 		Lang:          in.Lang,
 		CaseSensitive: in.CaseSensitive,
 		Limit:         limit,
+		Offset:        offset,
 		ContextLines:  in.ContextLines,
 		OutputMode:    outputMode,
 	}
@@ -209,7 +216,7 @@ func handleSearch(
 		return nil, searchOutput{}, err
 	}
 
-	out := buildSearchOutput(outputMode, limit, matches)
+	out := buildSearchOutput(outputMode, limit, offset, matches)
 	if out.Total == 0 {
 		out.ZeroHint = buildZeroHint(in, opts, repos, indexDir)
 	}
@@ -305,14 +312,16 @@ func repoFilterHint(
 	if len(matched) == 0 {
 		return 0, []string{fmt.Sprintf(
 			"repo filter %q matched none of the %d locally discovered repos; check the name with csl_repo_lookup — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here",
-			repoFilter, len(repos),
+			repoFilter,
+			len(repos),
 		)}
 	}
 	searched := countIndexed(matched)
 	if unindexed := len(matched) - searched; unindexed > 0 {
 		return searched, []string{fmt.Sprintf(
 			"%d of the %d repos matching the filter are not in the search index yet and are invisible to search; run csl_repo_reindex on them",
-			unindexed, len(matched),
+			unindexed,
+			len(matched),
 		)}
 	}
 	return searched, nil
@@ -349,14 +358,18 @@ func overConstraintNotes(in searchInput) []string {
 	}
 	for _, span := range quotedSpans(in.Query) {
 		if strings.ContainsAny(span, " \t") {
-			notes = append(notes,
-				"a \"quoted phrase\" matches only that exact text verbatim — drop the quotes to match the words as separate AND terms")
+			notes = append(
+				notes,
+				"a \"quoted phrase\" matches only that exact text verbatim — drop the quotes to match the words as separate AND terms",
+			)
 			break
 		}
 	}
 	if in.File != "" {
-		notes = append(notes,
-			"the file filter is the most common over-constraint — retry without it before loosening the query")
+		notes = append(
+			notes,
+			"the file filter is the most common over-constraint — retry without it before loosening the query",
+		)
 	}
 	return notes
 }
@@ -437,8 +450,8 @@ func runSearch(
 
 const maxContentLines = 300
 
-func buildSearchOutput(mode string, limit int, matches []search.Match) searchOutput {
-	out := searchOutput{OutputMode: mode}
+func buildSearchOutput(mode string, limit, offset int, matches []search.Match) searchOutput {
+	out := searchOutput{OutputMode: mode, Offset: offset}
 	if len(matches) == 0 {
 		return out
 	}

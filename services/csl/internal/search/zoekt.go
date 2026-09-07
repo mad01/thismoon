@@ -165,11 +165,18 @@ func SearchWith(
 	if limit <= 0 {
 		limit = 50
 	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	// Fetch enough ranked files to cover the requested page (offset+limit),
+	// since offset paging discards the leading offset files after the fetch.
+	fetch := offset + limit
 
 	sOpts := zoekt.SearchOptions{
 		NumContextLines:    opts.ContextLines,
-		TotalMaxMatchCount: limit * 10,
-		ShardMaxMatchCount: limit * 5,
+		TotalMaxMatchCount: fetch * 10,
+		ShardMaxMatchCount: fetch * 5,
 	}
 
 	result, err := searcher.Search(ctx, q, &sOpts)
@@ -177,7 +184,7 @@ func SearchWith(
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	return convertResults(result.Files, limit, repoNames), nil
+	return convertResults(result.Files, offset, limit, repoNames), nil
 }
 
 // Count queries the zoekt index and returns match counts.
@@ -298,10 +305,17 @@ func BuildQueryString(opts SearchOptions) string {
 }
 
 // convertResults transforms zoekt FileMatches into our Match type.
-func convertResults(files []zoekt.FileMatch, limit int, repoNames map[string]string) []Match {
+func convertResults(
+	files []zoekt.FileMatch,
+	offset, limit int,
+	repoNames map[string]string,
+) []Match {
 	var matches []Match
 	fileCount := 0
-	for _, f := range files {
+	for i, f := range files {
+		if i < offset {
+			continue
+		}
 		if fileCount >= limit {
 			break
 		}
