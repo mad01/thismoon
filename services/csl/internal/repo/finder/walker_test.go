@@ -303,3 +303,91 @@ func gitSetRemote(t *testing.T, dir, url string) {
 		t.Fatalf("git remote add in %s: %v\n%s", dir, err, out)
 	}
 }
+
+func gitCommit(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git",
+		"-c", "user.email=test@example.com",
+		"-c", "user.name=test",
+		"commit", "--allow-empty", "-m", "init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit in %s: %v\n%s", dir, err, out)
+	}
+}
+
+func gitWorktreeAdd(t *testing.T, repoDir, worktreePath, branch string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "worktree", "add", "-b", branch, worktreePath)
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add %s (%s) in %s: %v\n%s", worktreePath, branch, repoDir, err, out)
+	}
+}
+
+// TestWorktreeResolvesRemoteAndBranch covers the layout of tools that keep many
+// git worktrees per repo (one worktree per feature branch): a primary clone plus
+// a linked worktree on a feature branch. The worktree's .git is a pointer file,
+// so before the worktree-aware repoInfo it resolved no remote (empty host) and
+// was silently dropped by the host allowlist. It must now resolve the same
+// remote/host as its clone, carry a branch-suffixed name, and survive
+// FilteredWalk.
+func TestWorktreeResolvesRemoteAndBranch(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Primary clone with an origin and one commit (worktree add needs a HEAD).
+	repo := filepath.Join(tmp, "Repositories", "service-a")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitInit(t, repo)
+	gitSetRemote(t, repo, "git@github.com:testorg/service-a.git")
+	gitCommit(t, repo)
+
+	// Linked worktree on a nested feature branch, the shape such tools create.
+	wt := filepath.Join(tmp, "Projects", "feat", "service-a")
+	gitWorktreeAdd(t, repo, wt, "project/feat")
+
+	repos, err := Walk([]string{tmp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := make(map[string]Repo, len(repos))
+	for _, r := range repos {
+		byPath[r.Path] = r
+	}
+
+	primary, ok := byPath[repo]
+	if !ok {
+		t.Fatalf("primary clone not discovered; got %+v", repos)
+	}
+	if primary.Name != "testorg/service-a" || primary.Host != "github.com" {
+		t.Errorf("primary: got name=%q host=%q, want testorg/service-a / github.com", primary.Name, primary.Host)
+	}
+
+	worktree, ok := byPath[wt]
+	if !ok {
+		t.Fatalf("worktree not discovered; got %+v", repos)
+	}
+	if worktree.Name != "testorg/service-a@project/feat" {
+		t.Errorf("worktree name: got %q, want testorg/service-a@project/feat", worktree.Name)
+	}
+	if worktree.Host != "github.com" {
+		t.Errorf("worktree host: got %q, want github.com (must survive the host allowlist)", worktree.Host)
+	}
+	if worktree.Remote != primary.Remote {
+		t.Errorf("worktree remote: got %q, want same as primary %q", worktree.Remote, primary.Remote)
+	}
+
+	// The host allowlist must keep the worktree, not silently drop it.
+	filtered, err := FilteredWalk([]string{tmp}, []string{"github.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 2 {
+		t.Fatalf("FilteredWalk[github.com]: got %d repos, want 2 (clone + worktree): %+v", len(filtered), filtered)
+	}
+}

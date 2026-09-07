@@ -155,15 +155,105 @@ func Inspect(path string) (Repo, error) {
 	return Repo{Name: name, Path: path, Remote: remote, Host: host}, nil
 }
 
-// repoInfo reads the origin remote URL from .git/config and returns
-// the parsed name (org/repo), the raw remote URL, and the extracted hostname.
+// repoInfo resolves a repo's identity (name, remote URL, host) from its .git
+// entry, reading files directly (no subprocess).
+//
+// For a normal clone .git is a directory and the origin remote is read from
+// .git/config. For a linked git WORKTREE .git is a FILE pointing at the repo's
+// shared git dir; the origin lives in the common config there and the working
+// tree sits on its own branch. A worktree is named "org/repo@branch" so it
+// resolves the same remote/host as its primary clone — which keeps it past the
+// host allowlist (FilteredWalk drops empty-host repos) — while staying a
+// distinct entry, since zoekt keys repos by Name and several worktrees of one
+// clone would otherwise collide.
 func repoInfo(dir string) (name, remote, host string) {
+	gitPath := filepath.Join(dir, ".git")
+	if info, err := os.Stat(gitPath); err == nil && !info.IsDir() {
+		if n, r, h, ok := worktreeInfo(dir, gitPath); ok {
+			return n, r, h
+		}
+	}
 	raw := readOriginURL(filepath.Join(dir, ".git", "config"))
 	if raw != "" {
 		return ParseRemote(raw), raw, ParseHost(raw)
 	}
 	// Fallback to directory name — no remote info available
 	return filepath.Base(filepath.Dir(dir)) + "/" + filepath.Base(dir), "", ""
+}
+
+// worktreeInfo resolves identity for a linked worktree whose .git is a pointer
+// file ("gitdir: <repo>/.git/worktrees/<id>"). The origin remote lives in the
+// shared config at the common git dir (located via the worktree's "commondir"
+// file); the checked-out branch comes from the worktree's own HEAD. The name is
+// "org/repo@branch", or "org/repo@<id>" when HEAD is detached, so multiple
+// worktrees of one clone never collide on name. ok is false when the pointer
+// cannot be followed to an origin URL, so the caller falls back to the
+// directory-name heuristic.
+func worktreeInfo(dir, gitFile string) (name, remote, host string, ok bool) {
+	gitDir := readGitdirPointer(gitFile)
+	if gitDir == "" {
+		return "", "", "", false
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	commonDir := resolveCommonDir(gitDir)
+	raw := readOriginURL(filepath.Join(commonDir, "config"))
+	if raw == "" {
+		return "", "", "", false
+	}
+	suffix := worktreeBranch(filepath.Join(gitDir, "HEAD"))
+	if suffix == "" {
+		suffix = filepath.Base(gitDir) // worktree id — unique per repo
+	}
+	return ParseRemote(raw) + "@" + suffix, raw, ParseHost(raw), true
+}
+
+// readGitdirPointer returns the path from a worktree's ".git" pointer file
+// ("gitdir: <path>"), or "" when the file is not a well-formed pointer.
+func readGitdirPointer(gitFile string) string {
+	data, err := os.ReadFile(gitFile)
+	if err != nil {
+		return ""
+	}
+	rest, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(rest)
+}
+
+// resolveCommonDir returns the shared git dir for a worktree git dir. A
+// worktree's private git dir holds a "commondir" file whose (usually relative)
+// value points at the main repo's git dir, where the shared config lives. When
+// the file is absent the git dir is its own common dir.
+func resolveCommonDir(gitDir string) string {
+	data, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if err != nil {
+		return gitDir
+	}
+	common := strings.TrimSpace(string(data))
+	if common == "" {
+		return gitDir
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(gitDir, common)
+	}
+	return filepath.Clean(common)
+}
+
+// worktreeBranch returns the short branch name from a HEAD file
+// ("ref: refs/heads/<branch>"), or "" when HEAD is detached (a raw sha).
+func worktreeBranch(headPath string) string {
+	data, err := os.ReadFile(headPath)
+	if err != nil {
+		return ""
+	}
+	ref, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "ref:")
+	if !ok {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimSpace(ref), "refs/heads/")
 }
 
 // readOriginURL parses a git config file to extract the URL of [remote "origin"].
