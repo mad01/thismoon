@@ -490,7 +490,7 @@ func buildSearchOutput(mode string, limit, offset int, matches []search.Match) s
 		seen[key] = struct{}{}
 		files = append(files, searchMatchFile{Repo: m.Repo, Path: m.File})
 	}
-	if len(files) >= limit {
+	if len(files) >= limit && offset+limit < search.RankUniverse {
 		out.Truncated = true
 		out.TotalAvailable = len(files)
 		files = files[:limit]

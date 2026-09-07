@@ -383,6 +383,20 @@ func TestSearch_OffsetPaginates(t *testing.T) {
 	if beyond := fileOf(SearchOptions{Pattern: "needle", Limit: 2, Offset: 3}); len(beyond) != 0 {
 		t.Errorf("offset past end = %v, want empty", beyond)
 	}
+
+	// Two pages must compose into the single-page result for the same span:
+	// page(0,2) ++ page(2,2) == page(0,4). This is the property that broke when
+	// the match caps scaled with offset+limit (each page ranked a different set).
+	whole := fileOf(SearchOptions{Pattern: "needle", Limit: 4, Offset: 0})
+	composed := append(append([]string{}, page1...), page2...)
+	if len(whole) != len(composed) {
+		t.Fatalf("composed pages = %v, single page = %v; lengths differ", composed, whole)
+	}
+	for i := range whole {
+		if whole[i] != composed[i] {
+			t.Errorf("position %d: single page %q, composed %q", i, whole[i], composed[i])
+		}
+	}
 }
 
 // ---------- Count ----------

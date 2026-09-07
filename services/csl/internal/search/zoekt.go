@@ -169,14 +169,18 @@ func SearchWith(
 	if offset < 0 {
 		offset = 0
 	}
-	// Fetch enough ranked files to cover the requested page (offset+limit),
-	// since offset paging discards the leading offset files after the fetch.
-	fetch := offset + limit
 
+	// Fix the match caps to a constant sized for RankUniverse files, regardless
+	// of the requested page. zoekt's per-shard cap decides which matches (and so
+	// which files) are collected and ranked, so a cap that grew with offset+limit
+	// would make each page rank a different universe: consecutive pages would
+	// then overlap or drop files at their boundaries. A constant cap means every
+	// page ranks the same list and offset slicing is stable. The extra matches a
+	// first page collects are cheap against the daemon's warm in-memory index.
 	sOpts := zoekt.SearchOptions{
 		NumContextLines:    opts.ContextLines,
-		TotalMaxMatchCount: fetch * 10,
-		ShardMaxMatchCount: fetch * 5,
+		TotalMaxMatchCount: RankUniverse * 10,
+		ShardMaxMatchCount: RankUniverse * 5,
 	}
 
 	result, err := searcher.Search(ctx, q, &sOpts)

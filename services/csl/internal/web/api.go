@@ -20,11 +20,10 @@ const (
 	maxLimit       = 500
 	maxContext     = 20
 	maxQueryLength = 1000
-	// maxOffset bounds how deep the client can page. Offset paging re-runs the
-	// search and discards the leading files, so each deeper page costs more;
-	// this keeps a very deep page from scanning an unbounded match set while
-	// still leaving far more results reachable than a single page.
-	maxOffset = 50000
+	// maxOffset bounds how deep the client can page: the search ranks a fixed
+	// universe of files (search.RankUniverse), so paging past it cannot surface
+	// anything new.
+	maxOffset = search.RankUniverse
 )
 
 // matchJSON is one search hit, with a link to the line on the git host.
@@ -249,13 +248,17 @@ func buildSearchResponse(
 		files += len(r.Files)
 	}
 	return searchResponse{
-		Query:     query,
-		Mode:      mode,
-		Total:     len(matches),
-		Files:     files,
-		Limit:     limit,
-		Offset:    offset,
-		Truncated: files >= limit,
+		Query:  query,
+		Mode:   mode,
+		Total:  len(matches),
+		Files:  files,
+		Limit:  limit,
+		Offset: offset,
+		// Truncated means a next page exists: this page filled the limit and the
+		// next one still falls within the ranked universe. It goes false at the
+		// paging ceiling so the UI stops offering "Load more" instead of
+		// refetching the clamped last page.
+		Truncated: files >= limit && offset+limit < search.RankUniverse,
 		Facets:    extensionFacets(matches),
 		Repos:     repos,
 	}
