@@ -24,6 +24,7 @@ type fakeSearcher struct {
 	hybridErr    error
 	health       []search.GitHealth
 	healthErr    error
+	semanticOn   bool
 }
 
 func (f *fakeSearcher) Search(_ context.Context, _ search.SearchOptions) ([]search.Match, error) {
@@ -44,8 +45,30 @@ func (f *fakeSearcher) GitHealth(_ context.Context) ([]search.GitHealth, error) 
 	return f.health, f.healthErr
 }
 
+func (f *fakeSearcher) SemanticEnabled() bool { return f.semanticOn }
+
 func serverWith(f *fakeSearcher) http.Handler {
 	return (&Server{svc: f}).Handler()
+}
+
+func TestCapabilitiesReflectsSemantic(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		fake := &fakeSearcher{semanticOn: on}
+		req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
+		rec := httptest.NewRecorder()
+		serverWith(fake).ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		var resp capabilitiesResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Semantic != on {
+			t.Errorf("Semantic = %v, want %v", resp.Semantic, on)
+		}
+	}
 }
 
 func TestSearchEndpointGroupsAndTruncates(t *testing.T) {

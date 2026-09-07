@@ -23,6 +23,9 @@ type searcher interface {
 	Repos() ([]finder.Repo, error)
 	ReadFile(repo, file string, start, end int) (*ReadResult, error)
 	GitHealth(ctx context.Context) ([]search.GitHealth, error)
+	// SemanticEnabled reports whether semantic (and therefore hybrid) search is
+	// turned on in config; the UI disables those modes when it is off.
+	SemanticEnabled() bool
 }
 
 // refresher is the background-refresh backend the refresh page depends on.
@@ -63,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/read", s.handleRead)
 	mux.HandleFunc("GET /api/repos", s.handleRepos)
 	mux.HandleFunc("GET /api/repo_health", s.handleRepoHealth)
+	mux.HandleFunc("GET /api/capabilities", s.handleCapabilities)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", assetsHandler())

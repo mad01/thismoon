@@ -257,7 +257,7 @@ const HYBRID_SECTIONS = [
 ];
 
 // ── Search page ──
-function initSearchPage() {
+async function initSearchPage() {
   const input = document.getElementById('searchInput');
   if (!input) return;
 
@@ -478,6 +478,25 @@ function initSearchPage() {
     if (input.value.trim()) runActiveSearch();
     else showExamples();
   }));
+
+  // Semantic — and the hybrid mode that fuses it — can be turned off per
+  // profile (config semantic.enabled). Ask the backend and, when off, disable
+  // those toggle buttons with a reason. Native disabled buttons ignore clicks,
+  // so no mode swap can reach them; best-effort — leave them enabled on error.
+  let semanticEnabled = true;
+  async function loadCapabilities() {
+    try {
+      const res = await fetch('/api/capabilities');
+      if (res.ok) semanticEnabled = (await res.json()).semantic !== false;
+    } catch { /* leave modes enabled on error */ }
+    if (semanticEnabled) return;
+    kindBtns.forEach(b => {
+      if (b.dataset.kind === 'semantic' || b.dataset.kind === 'hybrid') {
+        b.disabled = true;
+        b.title = 'Disabled in this profile (semantic.enabled = false in the csl config)';
+      }
+    });
+  }
 
   // Scope changes re-run the active search so the narrowed results appear
   // immediately; with no query there is nothing to re-run.
@@ -1074,11 +1093,15 @@ function initSearchPage() {
   renderHistory();
   renderExamples();
 
+  // Resolve which modes are disabled before restoring from the URL, so a
+  // ?kind=semantic deep link can't select a mode the backend won't serve.
+  await loadCapabilities();
+
   // Restore state from the URL (?q, ?kind, ?repo, ?lang) so searches in any
   // mode are shareable deep links; then run the query if one came along.
   const urlParams = new URLSearchParams(location.search);
   const urlKind = urlParams.get('kind');
-  if (urlKind === 'semantic' || urlKind === 'hybrid') applyKind(urlKind);
+  if ((urlKind === 'semantic' || urlKind === 'hybrid') && semanticEnabled) applyKind(urlKind);
   ensureOption(repoSelect, urlParams.get('repo'));
   ensureOption(langSelect, urlParams.get('lang'));
   const initial = urlParams.get('q');

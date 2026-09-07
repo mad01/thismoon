@@ -49,6 +49,12 @@ func (s *Service) Repos() ([]finder.Repo, error) {
 	return finder.FilteredWalk(s.cfg.Dirs, s.cfg.Index.Hosts)
 }
 
+// SemanticEnabled reports whether semantic (and therefore hybrid) search is
+// turned on in config; the web UI disables those modes when it is off.
+func (s *Service) SemanticEnabled() bool {
+	return s.cfg.SemanticEnabled()
+}
+
 // Search runs a query and returns flat matches. It tries the daemon first
 // (auto-starting it) and falls back to an in-process search that indexes when
 // no index exists yet.
