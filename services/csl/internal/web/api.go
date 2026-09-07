@@ -421,6 +421,19 @@ func clampInt(s string, def, min, max int) int {
 	return n
 }
 
+// capabilitiesResponse tells the UI which optional search modes are available
+// so it can disable the ones this profile turns off. semantic gates both the
+// semantic and hybrid modes (hybrid fuses in semantic results).
+type capabilitiesResponse struct {
+	Semantic bool `json:"semantic"`
+}
+
+// handleCapabilities reports which optional search modes are enabled, so the UI
+// can render disabled toggles instead of offering modes that return nothing.
+func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, capabilitiesResponse{Semantic: s.svc.SemanticEnabled()})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

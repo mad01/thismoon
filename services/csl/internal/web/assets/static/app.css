@@ -37,6 +37,9 @@
 
 /* ── Lexical ⇄ semantic mode toggle ── */
 .kind-row { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; }
+/* Search modes disabled in this profile (e.g. semantic/hybrid when
+   semantic.enabled = false) render greyed and non-interactive. */
+#searchKindToggle button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Repo / language scope dropdowns ── */
 .scope-selects { margin-left: auto; display: flex; gap: 0.4rem; }
