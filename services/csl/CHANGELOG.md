@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/mad01/thismoon/compare/csl/v0.18.0...csl/v0.18.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **csl:** stabilize search offset paging with a constant rank cap ([#72](https://github.com/mad01/thismoon/issues/72)) ([f3ddc8b](https://github.com/mad01/thismoon/commit/f3ddc8b6f473a84c70dd118dad65fd0a3be118b9))
+
 ## [0.18.0](https://github.com/mad01/thismoon/compare/csl/v0.17.0...csl/v0.18.0) (2026-09-07)
 
 
