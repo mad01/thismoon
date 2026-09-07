@@ -55,6 +55,12 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 			return nil
 		}
 
+		// Skip a linked worktree's .git pointer file — it is a regular file
+		// ("gitdir: …"), not a directory, so the hidden-dir skip above misses it.
+		if filepath.Base(path) == ".git" {
+			return nil
+		}
+
 		// Skip non-regular files
 		if !info.Mode().IsRegular() {
 			return nil
