@@ -23,6 +23,13 @@ type Match struct {
 	After string `json:"after,omitempty"`
 }
 
+// RankUniverse is how many top-ranked files offset paging can traverse. The
+// zoekt match caps are fixed to this size (see SearchWith), so every page ranks
+// the same universe and offset slicing stays consistent across pages. Files
+// ranked beyond it are not reachable by paging; callers should treat a page at
+// this depth as the last one and narrow the query to see more.
+const RankUniverse = 2000
+
 // SearchOptions configures a search query.
 // Field names align with the code-search MCP tool parameters.
 type SearchOptions struct {
