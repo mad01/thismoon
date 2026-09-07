@@ -119,6 +119,8 @@ web:
 
 Semantic (vector) search runs alongside the lexical zoekt index and is off by default. Embedding goes through a local [Ollama](https://ollama.com) server, so semantic features need Ollama running with the model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`); lexical search has no Ollama dependency. Build the index with `csl index --semantic-all`.
 
+Enabling it locally is a matter of corpus size: building the vector index scales with the number of repos, so as a rough guide it stays practical up to ~250 repos. Past that, keep the machine lexical-only or run the bulk build on a bigger machine — see [when local semantic search is worth it](semantic.md#when-local-semantic-search-is-worth-it).
+
 - `semantic.enabled: true` lets the daemon connect the embedder and load the vector index at startup, so the `csl_semantic_search` MCP tool and the web toggle answer from a warm daemon.
 - `semantic.sync: true` makes `csl sync` re-embed changed repos after the lexical reindex. The pass is incremental (only changed files) and best-effort: if Ollama or the model is unavailable, the lexical sync still succeeds. Leave it off to refresh embeddings manually with `csl index --semantic`.
 - `semantic.ollama_url`, `semantic.embed_model`, and `semantic.dim` override the embedding backend per machine. Changing the model or its dimensionality drops the existing vector stores and re-embeds everything on the next index run. Interactive queries keep the model warm in Ollama for 20 minutes; bulk index runs unload it when they finish.
