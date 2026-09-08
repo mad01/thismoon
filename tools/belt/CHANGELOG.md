@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/mad01/thismoon/compare/belt/v2.2.1...belt/v2.3.0) (2026-09-08)
+
+
+### Features
+
+* **belt:** publish-internal-names guard for PR text, branch names, and commit messages ([#81](https://github.com/mad01/thismoon/issues/81)) ([faeee64](https://github.com/mad01/thismoon/commit/faeee644ff996d3793b74b745b151f2df63467e9))
+
 ## [2.2.1](https://github.com/mad01/thismoon/compare/belt/v2.2.0...belt/v2.2.1) (2026-09-08)
 
 
