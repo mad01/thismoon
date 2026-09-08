@@ -2,7 +2,7 @@
 name = "deps"
 description = "deps, supply-chain dependency scanner: discovers deps across the tool repos, checks OSV.dev, notifies on flagged packages"
 wave = 0
-profiles = ["personal"]  # depends on d-man + scans personal repos; personal Mac only
+profiles = ["personal", "work"]  # depends on d-man + t-man (both ungated) and a catalog registry; the machine's registry.yaml scopes which repos it scans
 
 # Consumed as a remote recipe: machines point at this repo with a
 # [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout
