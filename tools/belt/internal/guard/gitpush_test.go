@@ -34,8 +34,18 @@ func TestGitPushMain(t *testing.T) {
 		{"compound command", "cd /tmp && git push origin main", "feature", true},
 		{"push after other git cmd", "git add . ; git push origin main", "feature", true},
 		{"git -C push bare", "git -C /some/repo push", "main", true},
-		{"git --git-dir space form", "git --git-dir /some/repo/.git push origin main", "feature", true},
-		{"git --git-dir equals form", "git --git-dir=/some/repo/.git push origin main", "feature", true},
+		{
+			"git --git-dir space form",
+			"git --git-dir /some/repo/.git push origin main",
+			"feature",
+			true,
+		},
+		{
+			"git --git-dir equals form",
+			"git --git-dir=/some/repo/.git push origin main",
+			"feature",
+			true,
+		},
 		{"non-push git", "git status", "main", false},
 		{"quoted mention not a push", `echo "git push origin main"`, "feature", false},
 		{"empty config fails closed", "git push origin main", "feature", true},
@@ -82,6 +92,97 @@ func TestGitPushPrefersDashCDir(t *testing.T) {
 	}
 }
 
+// TestGitPushMainCdTracking pins that the guard follows `cd`/`pushd` across a
+// compound command instead of trusting the session cwd: a bare or explicit
+// default-branch push is evaluated against the directory the shell has cd'd
+// into, so a `cd <non-exempt> && git push origin main` cannot ride an exempt
+// session cwd, and an unresolvable cd target (a variable, `cd -`) fails closed.
+func TestGitPushMainCdTracking(t *testing.T) {
+	const dotfiles = "github.com/mad01/dotfiles" // exempt
+	const other = "github.com/mad01/other-repo"  // not exempt
+	repoAt := func(dir string) string {
+		switch dir {
+		case "/repos/dotfiles":
+			return dotfiles
+		case "/repos/other":
+			return other
+		}
+		return ""
+	}
+	tests := []struct {
+		name     string
+		command  string
+		cwd      string
+		wantDeny bool
+	}{
+		{
+			name:     "cd into non-exempt repo then push main denied",
+			command:  "cd /repos/other && git push origin main",
+			cwd:      "/repos/dotfiles",
+			wantDeny: true,
+		},
+		{
+			name:     "cd into non-exempt repo then bare push on main denied",
+			command:  "cd /repos/other && git push",
+			cwd:      "/repos/dotfiles",
+			wantDeny: true,
+		},
+		{
+			name:     "cd into exempt repo then push main allowed",
+			command:  "cd /repos/dotfiles && git push origin main",
+			cwd:      "/repos/other",
+			wantDeny: false,
+		},
+		{
+			name:     "cd relative into exempt repo then push main allowed",
+			command:  "cd dotfiles && git push origin main",
+			cwd:      "/repos",
+			wantDeny: false,
+		},
+		{
+			name:     "unresolvable cd variable then push main fails closed",
+			command:  "cd $TARGET && git push origin main",
+			cwd:      "/repos/dotfiles",
+			wantDeny: true,
+		},
+		{
+			name:     "cd dash previous dir then push main fails closed",
+			command:  "cd - && git push origin main",
+			cwd:      "/repos/dotfiles",
+			wantDeny: true,
+		},
+		{
+			name:     "cd into non-exempt repo then push feature allowed",
+			command:  "cd /repos/other && git push origin my-feature",
+			cwd:      "/repos/dotfiles",
+			wantDeny: false,
+		},
+		{
+			name:     "git -C overrides cd for exemption",
+			command:  "cd /repos/other && git -C /repos/dotfiles push origin main",
+			cwd:      "/repos/other",
+			wantDeny: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGitPushMain(config.Config{DirectMainRepos: []string{dotfiles}})
+			g.resolveBranch = func(string) string { return "main" }
+			g.resolveRepo = repoAt
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf(
+					"Check(%q, cwd=%q) denial = %v, wantDeny %v",
+					tt.command,
+					tt.cwd,
+					d,
+					tt.wantDeny,
+				)
+			}
+		})
+	}
+}
+
 func TestGitPushMainAllowRepos(t *testing.T) {
 	const dotfiles = "github.com/mad01/dotfiles"
 	allow := []string{dotfiles}
@@ -94,17 +195,59 @@ func TestGitPushMainAllowRepos(t *testing.T) {
 		wantDeny      bool
 	}{
 		{"dotfiles bare push on main allowed", "git push", "main", dotfiles, allow, false},
-		{"dotfiles explicit origin main allowed", "git push origin main", "feature", dotfiles, allow, false},
-		{"dotfiles HEAD:main allowed", "git push origin HEAD:main", "feature", dotfiles, allow, false},
+		{
+			"dotfiles explicit origin main allowed",
+			"git push origin main",
+			"feature",
+			dotfiles,
+			allow,
+			false,
+		},
+		{
+			"dotfiles HEAD:main allowed",
+			"git push origin HEAD:main",
+			"feature",
+			dotfiles,
+			allow,
+			false,
+		},
 		{"dotfiles git -C push allowed", "git -C /repo push", "main", dotfiles, allow, false},
-		{"non-allowlisted repo denied", "git push origin main", "feature", "github.com/mad01/thismoon", allow, true},
+		{
+			"non-allowlisted repo denied",
+			"git push origin main",
+			"feature",
+			"github.com/mad01/thismoon",
+			allow,
+			true,
+		},
 		{"unresolved repo denied", "git push origin main", "feature", "", allow, true},
 		{"empty allowlist denied", "git push origin main", "feature", dotfiles, nil, true},
 		// allow_repos takes the same patterns as git_identity[].repos and
 		// commit_guards[].repos, so one spelling works file-wide.
-		{"org wildcard allowed", "git push origin main", "feature", dotfiles, []string{"github.com/mad01/*"}, false},
-		{"org wildcard denies other orgs", "git push origin main", "feature", dotfiles, []string{"github.com/other/*"}, true},
-		{"org wildcard needs a repo under it", "git push origin main", "feature", "github.com/mad01", []string{"github.com/mad01/*"}, true},
+		{
+			"org wildcard allowed",
+			"git push origin main",
+			"feature",
+			dotfiles,
+			[]string{"github.com/mad01/*"},
+			false,
+		},
+		{
+			"org wildcard denies other orgs",
+			"git push origin main",
+			"feature",
+			dotfiles,
+			[]string{"github.com/other/*"},
+			true,
+		},
+		{
+			"org wildcard needs a repo under it",
+			"git push origin main",
+			"feature",
+			"github.com/mad01",
+			[]string{"github.com/mad01/*"},
+			true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
