@@ -62,8 +62,11 @@ Missing config fails in two directions, deliberately. Guards and hints
 default to enabled. `git-push-main` fails closed: with no config it denies
 every push to main or master, and only a rendered config that disables it or
 allowlists a repo opens the door. With no internal_names section in the belt
-config, `write-internal-names` has an empty name list and allows every
-write: that one fails open. `belt doctor` reports the empty-name condition
+config, `write-internal-names` and `publish-internal-names` have an empty
+name list and allow every write and publish: those two fail open. They
+block only in public-bound repos: the top-level public_repos list when the
+config has one (a repo missing from it is not guarded), else every
+github.com repo. `belt doctor` reports the mode and the empty-name condition
 in its config-surfaces section, and flags a broken config file there too —
 when it does, the guard and hint state below that line is the defaults, not
 what belt is enforcing.

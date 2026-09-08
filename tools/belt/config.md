@@ -32,8 +32,8 @@ nothing:
   missing one) — the guard would register on an event that never fires;
 - a `mode:` anywhere other than `hard` or `soft`;
 - `mode: soft` under `guards:` or `hints:` on any id except
-  `script-deny-list`, the only one that reads a toggle mode. Use
-  `enabled: false` to switch a different guard off;
+  `script-deny-list` and `publish-internal-names`, the two that read a
+  toggle mode. Use `enabled: false` to switch a different guard off;
 - any list key on a built-in id that does not read it — each id declares
   the toggle fields it reads (the `GuardFields`/`HintFields` tables in the
   config package), and the error names the fields that do work there.
@@ -93,11 +93,28 @@ unrelated guard; a repo that needs an exemption from anything else uses
 that check's own `allow_repos`/`exclude_repos` (docs/adr/0013 records the
 reversibility criterion behind this).
 
+### public_repos (top-level)
+
+The repos whose content is public, or headed there: the only places the
+internal-name guards block internal names. Purpose-named like
+`direct_main_repos` and read by exactly the two checks whose subject is
+that fact, `write-internal-names` and `publish-internal-names`; nothing
+else consults it. Patterns are canonical `host/owner/repo` or a trailing
+`/*` org wildcard. A repo on the list is guarded unless that guard's own
+`allow_repos` carves it out (a private repo inside a listed org); a repo
+not on it allows internal names in files, commits, branch names, and PR
+text alike, so an internal org that happens to live on github.com never
+needs an exemption. Leaving the key out entirely keeps the rule the guards
+started with, every github.com repo is public-bound, so a rendering that
+predates the key stays strict rather than silently unguarded; `belt
+doctor` prints which of the two modes is in effect. An empty present list
+(`public_repos: []`) guards nothing. docs/adr/0015 records the decision.
+
 ### internal_names
 
-The name-derivation source for the `write-internal-names` guard. Belt-owned
-and standalone: absent or empty means an empty name set (see Where config
-lives).
+The name-derivation source for the `write-internal-names` and
+`publish-internal-names` guards. Belt-owned and standalone: absent or empty
+means an empty name set (see Where config lives).
 
 - `internal_names.workspace_dirs` (list of string, default: empty): directories
   to search for git repos. Every repo found contributes its origin remote's
@@ -206,7 +223,8 @@ or absent `command` makes the entry a no-op.
 ### guards
 
 A map keyed by built-in guard id (`git-push-main`, `git-identity`,
-`commit-guard`, `script-deny-list`, `write-internal-names`) or a
+`commit-guard`, `script-deny-list`, `write-internal-names`,
+`publish-internal-names`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. `allow_repos`
@@ -257,6 +275,25 @@ entries match the same way as `git_identity[].repos` and
   - `guards.write-internal-names.exclude_paths` (list of string, default:
     empty): target paths where internal references are deliberate. Same
     prefix-or-substring matching as `script-deny-list.exclude_paths`.
+- **publish-internal-names**
+  - `guards.publish-internal-names.enabled` (bool, default `true`): one
+    toggle for both of the guard's events (`bash` and `external-text`).
+  - `guards.publish-internal-names.mode` (string, default `hard`): `soft`
+    downgrades every denial to a warn event on the events service and lets
+    the call proceed, the rollout setting while the derived name set is
+    being tuned against real PR text and branch names.
+  - `guards.publish-internal-names.allow_repos` (list of string, default:
+    empty): canonical `host/owner/repo` entries (or a trailing `/*` org
+    wildcard) carved out of the guard even though `public_repos` (or the
+    legacy host rule) marks them public-bound: matched against the push
+    remote, the gh `-R` target, the repo a `gh api` endpoint or `gh repo
+    create` argument names, the cwd origin, and the MCP call's owner/repo.
+    Needed only for a private repo inside a listed org, or under the legacy
+    rule; a repo that is simply not on `public_repos` needs nothing. Per
+    check on purpose (docs/adr/0013 enumerates exemptions per check), so a
+    carve-out that should hold for both guards is listed under both. The
+    name set itself comes from `internal_names`, shared with the write
+    guard.
 - **custom guard entries**
   - `guards.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom guard, used only when that guard's own
@@ -359,6 +396,10 @@ environment at hook invocation time.
 # ~/.config/belt/config.yaml — every key optional; guards and hints default
 # to enabled when the file or their entry is missing.
 
+public_repos:
+  - github.com/you/your-open-source-tool
+  - github.com/you/your-public-site
+
 internal_names:
   workspace_dirs:
     - ~/workspace
@@ -415,6 +456,11 @@ guards:
       - github.com/you/private-companion
     exclude_paths:
       - ~/notes
+
+  publish-internal-names:
+    enabled: true
+    allow_repos:
+      - github.com/you/private-companion
 
 hints:
   agent-memory:

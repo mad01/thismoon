@@ -47,6 +47,11 @@ const EnvConfig = "BELT_CONFIG"
 const (
 	EventBash  = "bash"  // matcher: Bash
 	EventWrite = "write" // matcher: Write|Edit
+	// EventExternalText is the guard-side twin of the hint event of the same
+	// name: PreToolUse on the MCP tools that publish text to a public code
+	// host. Which tools those are is consuming-repo wiring (docs/adr/0006);
+	// a guard on this event treats every call that reaches it as public.
+	EventExternalText = "external-text"
 )
 
 // Guard and rule modes. "hard" denies, "soft" downgrades the denial to a
@@ -63,7 +68,7 @@ const (
 // operator believe a guard was downgraded while it still blocks (or, worse,
 // believe it blocks while they meant to soften it). A guard package test
 // pins this list to the ids that actually call Toggle.Soft.
-var SoftModeGuards = []string{"script-deny-list"}
+var SoftModeGuards = []string{"script-deny-list", "publish-internal-names"}
 
 // Config is everything a guard or hint needs to decide.
 type Config struct {
@@ -78,12 +83,22 @@ type Config struct {
 	// quiet an advisory and silently disarms a guard; a list that states a
 	// workflow fact cannot reach checks the fact is irrelevant to.
 	DirectMainRepos []string
-	Names           InternalNames
-	ClaudeSettings  ClaudeSettings         // gate on reading the Claude settings files
-	ClaudeDeny      []string               // Bash deny prefixes from the Claude settings; empty when the read is disabled
-	GitIdentity     []GitIdentity          // git-identity rules, first matching rule wins
-	CommitGuards    []CommitGuard          // commit-guard rules, every rule is checked
-	CustomGuards    map[string]CustomGuard // external-command guards keyed by guard name
+	// PublicRepos names the repos whose content is public or headed
+	// there: the only places internal names must stay out of. Read by
+	// exactly the two internal-name guards (write-internal-names,
+	// publish-internal-names), whose subject is that fact. Patterns are
+	// canonical host/owner/repo or a trailing /* org wildcard. nil means
+	// the list is absent from the config, and the guards fall back to the
+	// rule they started with: every github.com repo is public-bound. That
+	// fallback keeps a config/binary rollout skew strict instead of
+	// silently disarming both guards (docs/adr/0015).
+	PublicRepos    []string
+	Names          InternalNames
+	ClaudeSettings ClaudeSettings         // gate on reading the Claude settings files
+	ClaudeDeny     []string               // Bash deny prefixes from the Claude settings; empty when the read is disabled
+	GitIdentity    []GitIdentity          // git-identity rules, first matching rule wins
+	CommitGuards   []CommitGuard          // commit-guard rules, every rule is checked
+	CustomGuards   map[string]CustomGuard // external-command guards keyed by guard name
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -281,6 +296,26 @@ func (c Config) HintRepoExcludedTail(hintID, orgName string) bool {
 // only (see the Config field comment and docs/adr/0013).
 func (c Config) DirectMain(repo string) bool {
 	return RepoMatches(c.DirectMainRepos, repo)
+}
+
+// HasPublicRepos reports whether the config carries a public_repos list,
+// even an empty one. Without it the internal-name guards run the legacy
+// host rule (see PublicBound); with it, only listed repos are guarded.
+func (c Config) HasPublicRepos() bool { return c.PublicRepos != nil }
+
+// PublicBound reports whether internal names must stay out of the canonical
+// repo. With a public_repos list the repo must match it; without one, every
+// github.com repo counts, the rule the guards started with. An unresolved
+// repo ("") is never public-bound: the caller decides what an unknown
+// target means for its action.
+func (c Config) PublicBound(repo string) bool {
+	if repo == "" {
+		return false
+	}
+	if c.HasPublicRepos() {
+		return RepoMatches(c.PublicRepos, repo)
+	}
+	return strings.HasPrefix(repo, "github.com/")
 }
 
 // RepoMatches reports whether the canonical host/owner/repo matches any of
@@ -505,6 +540,7 @@ func LoadFrom(p Paths) (Config, error) {
 		Guards:          f.Guards,
 		Hints:           f.Hints,
 		DirectMainRepos: f.DirectMainRepos,
+		PublicRepos:     f.PublicRepos,
 		Names:           f.InternalNames,
 		ClaudeSettings:  f.ClaudeSettings,
 		GitIdentity:     f.GitIdentity,
@@ -568,6 +604,7 @@ type File struct {
 	Guards          map[string]Toggle      `toml:"guards"          yaml:"guards"`
 	Hints           map[string]Toggle      `toml:"hints"           yaml:"hints"`
 	DirectMainRepos []string               `toml:"direct_main_repos" yaml:"direct_main_repos"`
+	PublicRepos     []string               `toml:"public_repos"    yaml:"public_repos"`
 	InternalNames   InternalNames          `toml:"internal_names"  yaml:"internal_names"`
 	ClaudeSettings  ClaudeSettings         `toml:"claude_settings" yaml:"claude_settings"`
 	GitIdentity     []GitIdentity          `toml:"git_identity"    yaml:"git_identity"`
@@ -673,11 +710,12 @@ func (f File) validate() error {
 // turn ordinary rollout skew into a machine-wide deny.
 var (
 	GuardFields = map[string][]string{
-		"git-push-main":        {"allow_repos"},
-		"git-identity":         {},
-		"commit-guard":         {},
-		"script-deny-list":     {"extra_patterns", "exclude_paths"},
-		"write-internal-names": {"allow_repos", "exclude_paths"},
+		"git-push-main":          {"allow_repos"},
+		"git-identity":           {},
+		"commit-guard":           {},
+		"script-deny-list":       {"extra_patterns", "exclude_paths"},
+		"write-internal-names":   {"allow_repos", "exclude_paths"},
+		"publish-internal-names": {"allow_repos"},
 	}
 	HintFields = map[string][]string{
 		"agent-memory":    {},

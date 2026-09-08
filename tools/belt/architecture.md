@@ -26,14 +26,18 @@ internal/hook/      payload parsing + output emission per event: deny JSON,
                     additionalContext JSON, or plain stdout for prompt
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-identity, commit-guard,
-                    script-deny-list, write-internal-names), and the Custom
-                    guard that execs config-registered external commands
+                    script-deny-list, write-internal-names,
+                    publish-internal-names), and the Custom guard that execs
+                    config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     commit-policy, kof-assertions, kof-consult, kof-deposit,
                     agent-memory, humanizer-check), plus csl shard lookup,
                     search-response parsing, and the per-session seen store
 internal/config/    config.Load(): the belt config plus the gated
                     Claude-settings deny list, into one Config
+internal/mcptool/   MCP tool-name reading (server/operation split, the
+                    read-only verb rule) shared by the humanizer hint and
+                    the publish-internal-names guard
 internal/notify/    best-effort event emission to the local events service
 ```
 
@@ -79,7 +83,7 @@ Every failure path around that store degrades to "not seen".
 Everything else is read-only. Config comes from four surfaces, every one
 optional (`config.Load()` never errors; a missing file yields zero values):
 
-- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, and the `internal_names` section (legacy `config.toml` read when the YAML file is absent)
+- `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, the `internal_names` section, and the two purpose-named repo lists `direct_main_repos` and `public_repos` (legacy `config.toml` read when the YAML file is absent)
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation unless `claude_settings.enabled: false` turns the read off
 
 No other tool's config is read — neither the suspenders config nor the

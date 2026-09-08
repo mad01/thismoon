@@ -198,7 +198,8 @@ func toHintInput(event string, p payload) hint.Input {
 
 // toInput maps tool-specific payload fields onto the shared guard input.
 // Write carries `content`; Edit carries `new_string` — the new text is what
-// can leak, so that is what gets scanned.
+// can leak, so that is what gets scanned. An external-text call carries its
+// whole input: the guard decides which fields are text.
 func toInput(event string, p payload) guard.Input {
 	in := guard.Input{Event: event, Cwd: p.Cwd}
 	str := func(key string) string {
@@ -214,6 +215,9 @@ func toInput(event string, p payload) guard.Input {
 		if in.Content == "" {
 			in.Content = str("new_string")
 		}
+	case guard.EventExternalText:
+		in.ToolName = p.ToolName
+		in.ToolInput = p.ToolInput
 	}
 	return in
 }

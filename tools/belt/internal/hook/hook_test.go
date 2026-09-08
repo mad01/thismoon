@@ -97,6 +97,20 @@ func TestToInputEditUsesNewString(t *testing.T) {
 	}
 }
 
+func TestToInputExternalTextCarriesTheWholeCall(t *testing.T) {
+	in := toInput("external-text", payload{
+		ToolName:  "mcp__gh_com__create_pull_request",
+		ToolInput: map[string]any{"owner": "o", "repo": "r", "body": "text"},
+		Cwd:       "/x",
+	})
+	if in.ToolName != "mcp__gh_com__create_pull_request" || in.Cwd != "/x" {
+		t.Errorf("unexpected input: %+v", in)
+	}
+	if body, _ := in.ToolInput["body"].(string); body != "text" {
+		t.Errorf("tool input not mapped: %+v", in.ToolInput)
+	}
+}
+
 func TestDecisionShape(t *testing.T) {
 	d := decision{HookSpecificOutput: hookOutput{
 		HookEventName:            "PreToolUse",

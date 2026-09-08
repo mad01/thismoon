@@ -99,7 +99,7 @@ func TestDoctorReportsMissingConfigs(t *testing.T) {
 		"missing — defaults, everything enabled",
 		"write-internal-names has no names to match",
 		"blocked names (0)",
-		"allows every write",
+		"allow every write and publish",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)

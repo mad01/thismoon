@@ -37,6 +37,18 @@ const configReference = `# ~/.config/belt/config.yaml: every key optional; guard
 direct_main_repos:
   - github.com/you/dotfiles
 
+# The repos whose content is public, or headed there: the only places the
+# internal-name guards (write-internal-names, publish-internal-names) block
+# internal names. Everywhere else they are allowed, so an internal org that
+# happens to live on github.com never needs an exemption. Exact
+# host/owner/repo or a trailing /* org wildcard; a listed org can still
+# carve out private repos with each guard's allow_repos. Leaving the key
+# out entirely keeps the older rule, every github.com repo is public-bound
+# (docs/adr/0015).
+public_repos:
+  - github.com/you/your-open-source-tool
+  - github.com/you/your-public-site
+
 # The internal-name list for write-internal-names, owned by belt and
 # standalone: no other file is consulted, and an unset or empty section
 # means an empty name set (the guard then has nothing to match). Every repo

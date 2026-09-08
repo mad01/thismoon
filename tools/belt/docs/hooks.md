@@ -49,6 +49,10 @@ hooks block looks like this:
       {
         "matcher": "Write|Edit",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hook write" }]
+      },
+      {
+        "matcher": "^mcp__github__.*",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hook external-text" }]
       }
     ],
     "PostToolUse": [
@@ -88,6 +92,7 @@ The event-to-subcommand mapping is fixed:
 |---|---|---|
 | `belt hook bash` | PreToolUse | `Bash` |
 | `belt hook write` | PreToolUse | `Write\|Edit` |
+| `belt hook external-text` | PreToolUse | the github.com MCP server's tools, and only that server (see below) |
 | `belt hint search` | PostToolUse | the csl search MCP tools |
 | `belt hint bash` | PostToolUse | `Bash` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
@@ -118,6 +123,15 @@ Three wiring rules that are easy to get wrong:
   servers. belt drops calls whose operation names a read verb at either end
   (`get_file_contents`, `issue_read`), so a broad server-wide matcher wastes
   no nudge on fetches, but the matcher is still the primary filter.
+- **The `hook external-text` matcher is the public/private line only
+  without a `public_repos` list.** The guard behind it
+  (publish-internal-names) resolves the call's owner/repo and asks the
+  config whether that repo is public-bound; with the list, any MCP server
+  may be routed there and the target decides. A rendering without the list
+  falls back to "github.com is public", and then only the MCP server that
+  talks to github.com belongs on the matcher: an internal GitHub Enterprise
+  server routed to it would deny every internal PR body that names an
+  internal repo, which is most of them.
 
 `belt doctor` verifies the binary and the config, but it does not check
 whether `~/.claude/settings.json` actually points at belt. A correctly
@@ -134,14 +148,20 @@ event and reads its stdout can run it. What to expect per harness:
   as shown above.
 - **Codex** — reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
-  wires the five tool-event entries (`hook bash`, `hook write`,
-  `hint search`, `hint bash`, `hint external-text`); the session-boundary
+  wires the six tool-event entries (`hook bash`, `hook write`,
+  `hook external-text`, `hint search`, `hint bash`, `hint external-text`);
+  the session-boundary
   events are not wired there, so the agent-memory and kof-consult injections
   and the kof-deposit nudge stay Claude-only. Two Codex-specific rules:
   define hooks in `hooks.json` only — a duplicate `[[hooks.PreToolUse]]`
   block in `config.toml` runs belt twice per call — and Codex trusts hooks
   by content hash, so a new or changed entry must be re-trusted inside Codex
   before it fires.
+- **pi** — has no hooks schema either, but its permission extension can
+  exec `belt check bash <command>`, `belt check write --file … --content …`,
+  and `belt check external-text --tool <name> --input <json>` per tool
+  call and block on exit code 1; the guards are the same, the verdict
+  travels as the exit code and the `DENY` line instead of hook JSON.
 - **opencode** — not wired today: opencode has no Claude-style hooks schema,
   so belt does not run there. Its native `permission` config covers the
   allow/deny surface instead.
@@ -268,10 +288,12 @@ then run the file" bypass.
 Blocks Write/Edit content that would put internal org, repo, or host names
 into a public repo.
 
-- **Fires on** Write and Edit calls whose target file sits in a git repo with
-  a `github.com` origin remote — that is the whole public/private test, so
-  other git hosts and non-repo paths are exempt by construction, never by
-  enumeration.
+- **Fires on** Write and Edit calls whose target file sits in a public-bound
+  repo: one matching the config's `public_repos` list (exact
+  `host/owner/repo` or a `/*` org wildcard), or, for a rendering without
+  that list, any repo with a `github.com` origin remote. Non-repo paths and
+  unlisted repos are exempt; `belt doctor` says which of the two modes is
+  in effect (`docs/adr/0015` in the repo root).
 - **The blocked-name set is derived, not listed**: for every git repo under
   `internal_names.workspace_dirs`, the org segment, repo segment, and
   checkout directory basename each become a separate blocked name (never the
@@ -294,6 +316,80 @@ into a public repo.
 - **Fails open** in exactly one way that matters: with no name source
   configured anywhere, the blocked set is empty and every write is allowed.
   `belt doctor` calls that state out and prints the full derived set.
+
+### publish-internal-names
+
+Blocks internal org, repo, and host names on their way to a public
+github.com remote: the outbound half of the firewall write-internal-names
+starts. Where that guard checks the file being written, this one checks what
+an agent publishes around the code: PR and issue text, comments, branch and
+tag names, commit messages, and content pushed through the gh MCP without a
+local commit. Same name set, same `allow_phrases`, one guard id on two
+events.
+
+- **Fires on the `bash` event** for `git push` to a github.com remote (the
+  names of the pushed refs plus the messages of the commits the remote does
+  not have yet), `git commit -m`/`-F`, `git tag`, branch creation
+  (`checkout -b`, `switch -c`, `branch <name>`, `worktree add -b`), and the
+  gh subcommands that write: `pr create/edit/comment/review/merge/close/
+  reopen`, `issue create/edit/comment/close/reopen/develop`, `release
+  create/edit`, `repo create/edit/rename`, `gist create/edit/rename`,
+  `label create/edit`, and every `gh api`. `pr view`, `pr list`, `pr
+  checkout`, `repo clone` read and pass.
+- **Fires on the `external-text` event** for every MCP tool the matcher
+  routes there whose operation is not a read verb (`get`, `list`, `search`,
+  `read`, `fetch` at either end of the name). Every string in the call's
+  input except the top-level owner/repo pair is scanned, nested lists and
+  objects included, so a PR body, a `head` branch name, a label list, a
+  reviewer team slug, and a `push_files` content entry all count.
+- **The target repo decides, the same way as for write-internal-names**:
+  the push remote, the gh `-R` target, the repo a gh call names itself
+  (`gh api repos/{owner}/{repo}/...`, `gh repo create OWNER/REPO`), the cwd
+  origin, or the MCP call's owner/repo resolves to a canonical identity,
+  and that identity is public-bound when it matches `public_repos` (or,
+  for a rendering without the list, when its host is github.com). An
+  internal org that lives on github.com is therefore simply not listed,
+  and its pushes, PR bodies, and API calls pass with no exemption. Another
+  host, and `gh api --hostname` pointing elsewhere, never counts.
+- **Targets that cannot be named** (a gist, `repo create` without an
+  owner, a raw `gh api` outside `repos/`, an MCP call without owner/repo)
+  follow the mode: with a `public_repos` list they are by definition not on
+  it and pass; under the legacy host rule they are public and nothing can
+  exempt them.
+- **Outgoing commits**: for each pushed branch the base is its
+  remote-tracking ref when one exists, else the remote's HEAD
+  (`refs/remotes/<remote>/HEAD`); with neither, only ref names are checked
+  rather than all of history. Messages come from `git log -z` bounded to
+  the last 200 commits, and the deny names the commit (`commit 1a2b3c4
+  message`). A bare `git push` resolves its target through `@{push}`, else
+  origin and the current branch. `--all`, `--mirror`, and `--tags` sweeps
+  check names only. Deletions (`--delete`, `:branch`) are allowed: they
+  remove a name.
+- **Command text, not one flag**: commits, tags, and gh calls are scanned
+  against the whole bash command, so a heredoc body (which spans several
+  line segments) is covered, and the files a call reads (`--body-file`,
+  `-F`, `--notes-file`, `--input`, `key=@path`, gist file arguments) are
+  read from disk and scanned too. A file that does not exist yet
+  contributes nothing; the same command is usually writing it, and then its
+  text is in the command. `cd` is tracked across `&&` segments and `git -C`
+  is honored, as in git-push-main.
+- **Exemptions**: `allow_repos` by canonical identity, matched against the
+  push remote, the gh target, or the MCP owner/repo. It is the same list
+  shape as write-internal-names and a deliberate duplicate of it
+  (`docs/adr/0013` in the repo root: exemptions are enumerated per check,
+  never shared or derived). `internal_names.allow_phrases` neutralizes a
+  sanctioned compound before matching. `mode: soft` turns denials into warn
+  events on the events service, the rollout setting while the derived name
+  set is tuned against real PR text and branch names.
+- **Why it exists**: suspenders scans the staged diff and belt the written
+  file, but a commit message, a branch name, a PR body, and a gh MCP call
+  reached the remote unchecked, and an agent produces all four.
+- **Fails open** the way write-internal-names does: with no name source
+  configured the set is empty and nothing is denied, and a public repo
+  missing from `public_repos` is not guarded until it is added; `belt
+  doctor` prints the set both guards use and the mode in effect. Git it
+  cannot run (no repo in the cwd) resolves to "not public" for git
+  commands.
 
 ### Custom guards
 

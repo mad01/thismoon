@@ -296,3 +296,34 @@ func TestGitRemoteURLRealRepo(t *testing.T) {
 		t.Errorf("gitRemoteURL outside repo = %q, want empty", got)
 	}
 }
+
+// TestWriteInternalNamesPublicReposList covers the enumerated mode: with a
+// public_repos list only listed repos are guarded, so a private repo and
+// an internal org on github.com pass without any exemption.
+func TestWriteInternalNamesPublicReposList(t *testing.T) {
+	cfg := config.Config{
+		PublicRepos: []string{"github.com/you/tool", "github.com/oss-org/*"},
+		Names:       config.InternalNames{BlockedWords: []string{"internalco"}},
+	}
+	tests := []struct {
+		name     string
+		remote   string
+		wantDeny bool
+	}{
+		{"listed repo", "git@github.com:you/tool.git", true},
+		{"listed org", "https://github.com/oss-org/lib.git", true},
+		{"unlisted private repo", "git@github.com:you/private.git", false},
+		{"internal org on github.com", "git@github.com:work-org/svc.git", false},
+		{"no remote", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWriteInternalNames(cfg)
+			g.remoteURL = func(string) string { return tt.remote }
+			d := g.Check(Input{Event: EventWrite, FilePath: "/repo/f.md", Content: "internalco"})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("remote %q: denial = %v, wantDeny %v", tt.remote, d, tt.wantDeny)
+			}
+		})
+	}
+}

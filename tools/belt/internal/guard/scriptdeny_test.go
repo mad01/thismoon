@@ -3,6 +3,7 @@ package guard
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -220,13 +221,16 @@ func TestSoftModeGuardsMatchesTheGuardsThatReadAMode(t *testing.T) {
 	for _, g := range All(cfg) {
 		cfg.Guards[g.ID()] = config.Toggle{Mode: soft}
 	}
-	// script-deny-list is the only guard whose denial path consults the
-	// toggle mode; the rest carry a mode on their own rule entries instead.
-	want := []string{ScriptDenyListID}
-	if len(config.SoftModeGuards) != len(want) || config.SoftModeGuards[0] != want[0] {
+	// script-deny-list and publish-internal-names are the guards whose
+	// denial path consults the toggle mode; the rest carry a mode on their
+	// own rule entries instead.
+	want := []string{ScriptDenyListID, PublishInternalNamesID}
+	if !slices.Equal(config.SoftModeGuards, want) {
 		t.Errorf("config.SoftModeGuards = %v, want %v", config.SoftModeGuards, want)
 	}
-	if !cfg.Guards[ScriptDenyListID].Soft() {
-		t.Error("script-deny-list must read the toggle mode")
+	for _, id := range want {
+		if !cfg.Guards[id].Soft() {
+			t.Errorf("%s must read the toggle mode", id)
+		}
 	}
 }
