@@ -8,11 +8,13 @@ Item keys are the dotfiles-era names (`packages.catalog`,
 `hooks.builds.catalog_web_service`) so ralph state carried over at cutover —
 do not rename them.
 
-`profiles = ["personal"]` gates the recipe to personal machines: the catalog
-renders the personal repo registry, which only exists there. To override the
-gate from the consuming repo, key the override on the namespaced recipe name —
+No `profiles` gate: public recipes here never carry one (docs/adr/0006,
+2026-09-08 amendment). Which machine classes run the catalog is decided in
+the consuming layers, keyed on the namespaced recipe name
 `[recipes_config.overrides."thismoon/catalog"]` (quoted; remote recipes get
-`<source>/<name>` identities).
+`<source>/<name>` identities): the base config leaves it on, and a
+profile-gated role source withholds it for its machines with the same table
+in its `overrides.toml`.
 
 What stays in the consuming repo (machine wiring, per ADR-0006):
 

@@ -141,10 +141,14 @@ ralph profile set personal    # or: work, or both
 ```
 
 This writes the git-ignored `~/.config/ralph/config.local.toml` beside your
-config, the per-machine answer to "what kind of machine is this".
-Profile-gated recipes key off it, and so does belt's `git-push-main` guard,
-which reads the same file at runtime. Do this before the first `ralph up`: a
-machine with no profiles silently skips every profile-gated recipe, and only
+config, the per-machine answer to "what kind of machine is this". Your own
+profile-gated recipes and profile-gated `[[recipe_sources]]` key off it, and
+so does belt's `git-push-main` guard, which reads the same file at runtime.
+thismoon's recipes carry no profile gate of their own: to keep one off a
+machine class, override it from your config
+(`[recipes_config.overrides."thismoon/<name>"]`) or from a role source's
+`overrides.toml`. Do this before the first `ralph up`: a machine with no
+profiles silently skips every profile-gated recipe and source, and only
 `ralph doctor` will mention it.
 
 ### 5. First `ralph up`
