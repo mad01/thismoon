@@ -123,7 +123,7 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	fmt.Fprintf(
 		w,
 		"\nblocked names (%d) — write-internal-names and publish-internal-names"+
-			" deny these in github.com repos:\n",
+			" deny these in public-bound repos:\n",
 		len(names),
 	)
 	if len(names) == 0 {
