@@ -66,6 +66,14 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	if n := len(cfg.DirectMainRepos); n > 0 {
 		fmt.Fprintf(w, "  global       direct_main_repos: %d  (read by git-push-main + commit-policy only)\n", n)
 	}
+	if cfg.HasPublicRepos() {
+		fmt.Fprintf(w, "  global       public_repos: %d  (internal names blocked there by"+
+			" write-internal-names + publish-internal-names, allowed everywhere else)\n",
+			len(cfg.PublicRepos))
+	} else {
+		fmt.Fprintln(w, "  global       public_repos: unset  (legacy rule: every github.com repo"+
+			" is public-bound for write-internal-names + publish-internal-names)")
+	}
 	for _, warn := range unknownToggleWarnings(cfg) {
 		fmt.Fprintf(w, "  warning      %s\n", warn)
 	}

@@ -11,11 +11,12 @@ import (
 const WriteInternalNamesID = "write-internal-names"
 
 // WriteInternalNames blocks Write/Edit content that references internal
-// org/repo names when the target file lives in a public (github.com) repo.
-// Only github.com remotes count as public — other git hosts and files
-// outside any repo are exempt. The name list comes from the internal_names
-// section of the belt config (see BlockedNames); the publish-internal-names
-// guard matches the same set on the way out to a public remote.
+// org/repo names when the target file lives in a public-bound repo: one on
+// the config's public_repos list, or, when the rendering has no such list,
+// any github.com repo. Files outside any repo are exempt. The name list
+// comes from the internal_names section of the belt config (see
+// BlockedNames); the publish-internal-names guard matches the same set on
+// the way out to a public remote.
 type WriteInternalNames struct {
 	cfg config.Config
 	// remoteURL returns the origin URL for the repo containing dir, or ""
@@ -41,15 +42,16 @@ func (g *WriteInternalNames) Check(in Input) *Denial {
 		return nil
 	}
 	remote := g.remoteURL(nearestExistingDir(in.FilePath))
-	if !isPublicRemote(remote) {
+	repo := canonicalRepo(remote)
+	if !g.cfg.PublicBound(repo) {
 		return nil
 	}
 	// Repos allowlisted by canonical host/owner/repo may carry internal names
-	// even though they live on github.com — a private companion repo whose
-	// whole purpose is internal-only config. Matched by remote identity, not a
-	// fragile path substring, so both the working checkout and any cached
-	// clone (same origin) are covered.
-	if g.cfg.RepoAllowed(WriteInternalNamesID, canonicalRepo(remote)) {
+	// even though they are public-bound by list or host — a private
+	// companion repo inside a listed org, say. Matched by remote identity,
+	// not a fragile path substring, so both the working checkout and any
+	// cached clone (same origin) are covered.
+	if g.cfg.RepoAllowed(WriteInternalNamesID, repo) {
 		return nil
 	}
 	hits := newNameMatcher(g.cfg.Names).hits(in.Content)

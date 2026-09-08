@@ -231,7 +231,9 @@ func TestBrokenYAMLIsAnErrorNotDefaults(t *testing.T) {
 // wrote a config still gets the armed defaults, without an error.
 func TestMissingConfigIsNotAnError(t *testing.T) {
 	dir := t.TempDir()
-	cfg, err := LoadFrom(Paths{BeltYAML: missingYAML(dir), BeltTOML: filepath.Join(dir, "config.toml")})
+	cfg, err := LoadFrom(
+		Paths{BeltYAML: missingYAML(dir), BeltTOML: filepath.Join(dir, "config.toml")},
+	)
 	if err != nil {
 		t.Fatalf("missing config must load the defaults, got %v", err)
 	}
@@ -367,7 +369,14 @@ func TestValidateUnknownIdsStayLax(t *testing.T) {
 // widening onto the one guard that does read a mode.
 func TestValidateAcceptsTheSupportedSoftGuard(t *testing.T) {
 	dir := t.TempDir()
-	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", "guards:\n  script-deny-list:\n    mode: soft\n")}
+	p := Paths{
+		BeltYAML: writeFile(
+			t,
+			dir,
+			"config.yaml",
+			"guards:\n  script-deny-list:\n    mode: soft\n",
+		),
+	}
 	cfg, err := LoadFrom(p)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
@@ -610,5 +619,65 @@ func TestOverridesSkipsDotfiles(t *testing.T) {
 	got := Overrides()
 	if len(got) != 1 || got[0].Name != "vacation" {
 		t.Fatalf("Overrides() = %+v, want only vacation", got)
+	}
+}
+
+// TestPublicBound pins the two modes of the internal-name guards' public
+// rule: absent public_repos means every github.com repo (the legacy rule,
+// so a config/binary skew stays strict), a present list means only its
+// matches, and an empty present list means nothing at all.
+func TestPublicBound(t *testing.T) {
+	legacy := Config{}
+	if legacy.HasPublicRepos() {
+		t.Error("nil list must read as absent")
+	}
+	if !legacy.PublicBound("github.com/you/anything") || legacy.PublicBound("git.example/o/r") {
+		t.Error("legacy rule must cover exactly github.com")
+	}
+	listed := Config{PublicRepos: []string{"github.com/you/tool", "github.com/oss-org/*"}}
+	tests := map[string]bool{
+		"github.com/you/tool":         true,
+		"github.com/oss-org/anything": true,
+		"github.com/you/private":      false,
+		"github.com/work-org/svc":     false,
+		"":                            false,
+	}
+	for repo, want := range tests {
+		if got := listed.PublicBound(repo); got != want {
+			t.Errorf("PublicBound(%q) = %v, want %v", repo, got, want)
+		}
+	}
+	empty := Config{PublicRepos: []string{}}
+	if !empty.HasPublicRepos() || empty.PublicBound("github.com/you/tool") {
+		t.Error("an empty present list guards nothing")
+	}
+}
+
+func TestLoadPublicRepos(t *testing.T) {
+	dir := t.TempDir()
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml",
+		"public_repos:\n  - github.com/you/tool\n  - github.com/oss-org/*\n")}
+	cfg, err := LoadFrom(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HasPublicRepos() || len(cfg.PublicRepos) != 2 {
+		t.Errorf("public_repos not loaded: %+v", cfg.PublicRepos)
+	}
+	absent, err := LoadFrom(Paths{BeltYAML: writeFile(t, dir, "absent.yaml", "guards: {}\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if absent.HasPublicRepos() {
+		t.Error("a config without the key must read as absent, not empty")
+	}
+	emptyList, err := LoadFrom(
+		Paths{BeltYAML: writeFile(t, dir, "empty.yaml", "public_repos: []\n")},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !emptyList.HasPublicRepos() {
+		t.Error("public_repos: [] must read as present and empty")
 	}
 }

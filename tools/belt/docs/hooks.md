@@ -123,13 +123,15 @@ Three wiring rules that are easy to get wrong:
   servers. belt drops calls whose operation names a read verb at either end
   (`get_file_contents`, `issue_read`), so a broad server-wide matcher wastes
   no nudge on fetches, but the matcher is still the primary filter.
-- **The `hook external-text` matcher is the public/private line.** The
-  guard behind it (publish-internal-names) has no remote URL to inspect, so
-  it treats every call that reaches it as headed for a public repo. Route the
-  MCP server that talks to github.com there, and nothing else: an internal
-  GitHub Enterprise server routed to it would deny every internal PR body
-  that names an internal repo, which is most of them. The hint matcher above
-  can stay broad; this one cannot.
+- **The `hook external-text` matcher is the public/private line only
+  without a `public_repos` list.** The guard behind it
+  (publish-internal-names) resolves the call's owner/repo and asks the
+  config whether that repo is public-bound; with the list, any MCP server
+  may be routed there and the target decides. A rendering without the list
+  falls back to "github.com is public", and then only the MCP server that
+  talks to github.com belongs on the matcher: an internal GitHub Enterprise
+  server routed to it would deny every internal PR body that names an
+  internal repo, which is most of them.
 
 `belt doctor` verifies the binary and the config, but it does not check
 whether `~/.claude/settings.json` actually points at belt. A correctly
@@ -286,10 +288,12 @@ then run the file" bypass.
 Blocks Write/Edit content that would put internal org, repo, or host names
 into a public repo.
 
-- **Fires on** Write and Edit calls whose target file sits in a git repo with
-  a `github.com` origin remote — that is the whole public/private test, so
-  other git hosts and non-repo paths are exempt by construction, never by
-  enumeration.
+- **Fires on** Write and Edit calls whose target file sits in a public-bound
+  repo: one matching the config's `public_repos` list (exact
+  `host/owner/repo` or a `/*` org wildcard), or, for a rendering without
+  that list, any repo with a `github.com` origin remote. Non-repo paths and
+  unlisted repos are exempt; `belt doctor` says which of the two modes is
+  in effect (`docs/adr/0015` in the repo root).
 - **The blocked-name set is derived, not listed**: for every git repo under
   `internal_names.workspace_dirs`, the org segment, repo segment, and
   checkout directory basename each become a separate blocked name (never the
@@ -338,13 +342,19 @@ events.
   input except the top-level owner/repo pair is scanned, nested lists and
   objects included, so a PR body, a `head` branch name, a label list, a
   reviewer team slug, and a `push_files` content entry all count.
-- **Public is decided as for write-internal-names**: a github.com origin,
-  or the named push remote, or the gh `-R` target, means public; another
-  host, and `gh api --hostname` pointing elsewhere, is exempt. The
-  external-text event has no remote to inspect, so its matcher is the
-  public/private line (route only the github.com server, see the wiring
-  rules above). Calls with no repo at all (a gist, `repo create`, a raw
-  `gh api`, an MCP call without owner/repo) are public, and nothing can
+- **The target repo decides, the same way as for write-internal-names**:
+  the push remote, the gh `-R` target, the repo a gh call names itself
+  (`gh api repos/{owner}/{repo}/...`, `gh repo create OWNER/REPO`), the cwd
+  origin, or the MCP call's owner/repo resolves to a canonical identity,
+  and that identity is public-bound when it matches `public_repos` (or,
+  for a rendering without the list, when its host is github.com). An
+  internal org that lives on github.com is therefore simply not listed,
+  and its pushes, PR bodies, and API calls pass with no exemption. Another
+  host, and `gh api --hostname` pointing elsewhere, never counts.
+- **Targets that cannot be named** (a gist, `repo create` without an
+  owner, a raw `gh api` outside `repos/`, an MCP call without owner/repo)
+  follow the mode: with a `public_repos` list they are by definition not on
+  it and pass; under the legacy host rule they are public and nothing can
   exempt them.
 - **Outgoing commits**: for each pushed branch the base is its
   remote-tracking ref when one exists, else the remote's HEAD
@@ -375,10 +385,11 @@ events.
   file, but a commit message, a branch name, a PR body, and a gh MCP call
   reached the remote unchecked, and an agent produces all four.
 - **Fails open** the way write-internal-names does: with no name source
-  configured the set is empty and nothing is denied; `belt doctor` prints
-  the set both guards use. Git it cannot run (no repo in the cwd) resolves
-  to "not public" for git commands, and to public with no identity for
-  gist, api, and `repo create`.
+  configured the set is empty and nothing is denied, and a public repo
+  missing from `public_repos` is not guarded until it is added; `belt
+  doctor` prints the set both guards use and the mode in effect. Git it
+  cannot run (no repo in the cwd) resolves to "not public" for git
+  commands.
 
 ### Custom guards
 

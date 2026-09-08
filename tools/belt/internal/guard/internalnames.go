@@ -99,19 +99,10 @@ func BlockedNames(s config.InternalNames) []string {
 	return names
 }
 
-// isPublicRemote treats exactly github.com as public. All other hosts
-// and missing remotes are exempt — the firewall only exists
-// to keep internal names out of github.com repos.
-func isPublicRemote(remote string) bool {
-	return strings.Contains(remote, "github.com")
-}
-
-// isPublicRepo is the canonical-identity form of isPublicRemote: a repo
-// resolved to host/owner/repo is public when its host is github.com. An
-// unresolved repo ("") is not known to be public.
-func isPublicRepo(repo string) bool {
-	return strings.HasPrefix(repo, "github.com/")
-}
+// Which repos are public-bound is config.PublicBound's call: the
+// public_repos list when the rendering carries one, else every github.com
+// repo. Both guards ask it with a canonical host/owner/repo identity, so
+// an org that is internal yet hosted on github.com is handled in one place.
 
 // stripAllowedPhrases blanks case-insensitive occurrences of each allowed
 // phrase before name matching, so a sanctioned compound that contains a

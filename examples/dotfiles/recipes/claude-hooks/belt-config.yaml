@@ -77,6 +77,17 @@ guards:
 direct_main_repos:
   - github.com/you/dotfiles
 
+# The repos whose content is public, or headed there: the only places the
+# internal-name guards (write-internal-names, publish-internal-names) block
+# internal names. Everywhere else, an internal org hosted on github.com
+# included, they are allowed. Exact host/owner/repo or a trailing /* org
+# wildcard; a repo missing here is not guarded, so list every public or
+# public-bound repo agents work in. Leaving the key out keeps the older
+# rule, every github.com repo is public-bound (thismoon docs/adr/0015).
+public_repos:
+  - github.com/you/your-open-source-tool
+  - github.com/you/your-public-site
+
 hints:
   # Per-hint opt-outs (hints opt repos out with exclude_repos; allow_repos
   # belongs to guards). The commit-policy hint is the post-commit half of

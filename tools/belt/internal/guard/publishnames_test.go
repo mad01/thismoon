@@ -302,6 +302,87 @@ func TestPublishInternalNamesBashAllowRepos(t *testing.T) {
 	}
 }
 
+// TestPublishInternalNamesInternalOrgOnGitHub covers an org that is internal
+// yet hosted on github.com: an allow_repos org wildcard must exempt every
+// way of addressing its repos, including calls made outside any checkout.
+// The org name itself is a derived blocked name, so every command below
+// carries a hit that only the wildcard can excuse.
+func TestPublishInternalNamesInternalOrgOnGitHub(t *testing.T) {
+	cfg := config.Config{
+		Names: config.InternalNames{BlockedWords: []string{"internalco", "internal-org"}},
+		Guards: map[string]config.Toggle{
+			PublishInternalNamesID: {AllowRepos: []string{"github.com/internal-org/*"}},
+		},
+	}
+	inOrgRepo := map[string]string{"*|remote get-url origin": "git@github.com:internal-org/svc.git"}
+	allowed := []struct {
+		name    string
+		command string
+		git     map[string]string
+	}{
+		{"push in an org repo", "git push origin feat/internalco", inOrgRepo},
+		{"commit in an org repo", `git commit -m "bump internalco"`, inOrgRepo},
+		{"pr create in an org repo", "gh pr create --body internalco", inOrgRepo},
+		{"pr create -R org repo", "gh pr create -R internal-org/svc --body internalco", nil},
+		{
+			"api endpoint outside a checkout",
+			"gh api repos/internal-org/svc/pulls -f body=internalco",
+			nil,
+		},
+		{
+			"api full url",
+			"gh api https://api.github.com/repos/internal-org/svc/issues -f title=internalco",
+			nil,
+		},
+		{"repo create in the org", "gh repo create internal-org/internalco-tools --private", nil},
+	}
+	for _, tt := range allowed {
+		t.Run(tt.name, func(t *testing.T) {
+			g := newPublishGuard(EventBash, publishFixture{git: tt.git, cfg: cfg})
+			if d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"}); d != nil {
+				t.Errorf("wildcard did not exempt %q: %s", tt.command, d.Reason)
+			}
+		})
+	}
+	// The same calls against a repo outside the org still deny.
+	g := newPublishGuard(EventBash, publishFixture{cfg: cfg})
+	for _, command := range []string{
+		"gh api repos/acme/public/pulls -f body=internalco",
+		"gh repo create acme/internalco-tools --public",
+	} {
+		if d := g.Check(Input{Event: EventBash, Command: command, Cwd: "/tmp"}); d == nil {
+			t.Errorf("%q outside the org must deny", command)
+		}
+	}
+	// And the MCP half honours the same wildcard.
+	m := newPublishGuard(EventExternalText, publishFixture{cfg: cfg})
+	if d := m.Check(Input{
+		Event: EventExternalText, ToolName: "mcp__gh_com__create_pull_request",
+		ToolInput: map[string]any{"owner": "internal-org", "repo": "svc", "body": "internalco"},
+	}); d != nil {
+		t.Errorf("MCP call into the org denied: %s", d.Reason)
+	}
+}
+
+func TestGhNamedRepo(t *testing.T) {
+	tests := map[string]string{
+		"api repos/acme/public/pulls":                    "github.com/acme/public",
+		"api /repos/acme/public":                         "github.com/acme/public",
+		"api https://api.github.com/repos/acme/public/x": "github.com/acme/public",
+		"api user":                       "",
+		"api orgs/acme/repos":            "",
+		"repo create acme/new --private": "github.com/acme/new",
+		"repo create new --private":      "",
+		"pr create --body x":             "",
+	}
+	for in, want := range tests {
+		c, _ := parseGh(strings.Fields(in))
+		if got := c.namedRepo(); got != want {
+			t.Errorf("namedRepo(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestPublishInternalNamesBashAllowPhrases(t *testing.T) {
 	cfg := config.Config{Names: config.InternalNames{
 		BlockedWords: []string{"internalco"},
@@ -574,5 +655,94 @@ func TestCollectStrings(t *testing.T) {
 	})
 	if got != "first\nnested\nlast" {
 		t.Errorf("collectStrings = %q", got)
+	}
+}
+
+// TestPublishInternalNamesPublicReposList covers the enumerated mode on the
+// publish side: only listed repos are guarded, an internal org on
+// github.com passes with no exemption at all, and targets that cannot be
+// named (gists, a raw api call, an MCP call without owner/repo) pass too.
+func TestPublishInternalNamesPublicReposList(t *testing.T) {
+	cfg := config.Config{
+		PublicRepos: []string{"github.com/you/tool", "github.com/oss-org/*"},
+		Names:       config.InternalNames{BlockedWords: []string{"internalco", "work-org"}},
+	}
+	remote := func(url string) map[string]string {
+		return map[string]string{"*|remote get-url origin": url}
+	}
+	bash := []struct {
+		name     string
+		command  string
+		git      map[string]string
+		wantDeny bool
+	}{
+		{
+			"push in a listed repo",
+			"git push origin internalco",
+			remote("git@github.com:you/tool.git"),
+			true,
+		},
+		{
+			"commit in a listed org",
+			`git commit -m "internalco"`,
+			remote("git@github.com:oss-org/lib.git"),
+			true,
+		},
+		{
+			"push in the work org",
+			"git push origin internalco",
+			remote("git@github.com:work-org/svc.git"),
+			false,
+		},
+		{
+			"commit in an unlisted private repo",
+			`git commit -m "internalco"`,
+			remote("git@github.com:you/private.git"),
+			false,
+		},
+		{"pr create -R work org", "gh pr create -R work-org/svc --body internalco", nil, false},
+		{"pr create -R listed", "gh pr create -R you/tool --body internalco", nil, true},
+		{
+			"api endpoint in the work org",
+			"gh api repos/work-org/svc/pulls -f body=internalco",
+			nil,
+			false,
+		},
+		{"gist outside any list", "gh gist create notes.md", nil, false},
+		{"raw api call", "gh api user -f bio=internalco", nil, false},
+		{"repo create in the work org", "gh repo create work-org/internalco --private", nil, false},
+	}
+	for _, tt := range bash {
+		t.Run(tt.name, func(t *testing.T) {
+			g := newPublishGuard(EventBash, publishFixture{git: tt.git, cfg: cfg})
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/tmp"})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+		})
+	}
+	mcp := []struct {
+		name     string
+		input    map[string]any
+		wantDeny bool
+	}{
+		{"listed repo", map[string]any{"owner": "you", "repo": "tool", "body": "internalco"}, true},
+		{
+			"work org",
+			map[string]any{"owner": "work-org", "repo": "svc", "body": "internalco"},
+			false,
+		},
+		{"no owner/repo", map[string]any{"name": "internalco-tools"}, false},
+	}
+	for _, tt := range mcp {
+		t.Run("mcp "+tt.name, func(t *testing.T) {
+			g := newPublishGuard(EventExternalText, publishFixture{cfg: cfg})
+			d := g.Check(Input{
+				Event: EventExternalText, ToolName: "mcp__gh_com__create_pull_request", ToolInput: tt.input,
+			})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("%s: denial = %v, wantDeny %v", tt.name, d, tt.wantDeny)
+			}
+		})
 	}
 }

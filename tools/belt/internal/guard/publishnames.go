@@ -128,14 +128,20 @@ func (g *PublishInternalNames) Check(in Input) *Denial {
 // toolPublications turns an MCP tool call into publications: every string
 // in the input except the owner/repo pair that names the target. Read-only
 // operations publish nothing, so a server-wide matcher costs nothing on
-// fetches. A call with no resolvable target repo is still scanned: a new
-// repository or a gist is public all the same, and nothing can exempt it.
+// fetches. The target decides as it does for gh: public-bound by the
+// config's rule and not allowlisted. A call with no resolvable target (a
+// new repository, a gist) follows the unknown-target rule: guarded under
+// the legacy host rule, allowed once a public_repos list names the repos
+// that matter.
 func (g *PublishInternalNames) toolPublications(in Input) []publication {
 	if !mcptool.Publishes(in.ToolName) {
 		return nil
 	}
 	repo := toolRepo(in.ToolInput)
-	if repo != "" && g.cfg.RepoAllowed(PublishInternalNamesID, repo) {
+	if repo == "" && !g.unknownTargetGuarded() {
+		return nil
+	}
+	if repo != "" && !g.guarded(repo) {
 		return nil
 	}
 	var pubs []publication
@@ -261,10 +267,26 @@ func (g *PublishInternalNames) publicRepoAt(dir string) string {
 // publicRemote is publicRepoAt for a named remote: the push target.
 func (g *PublishInternalNames) publicRemote(dir, remote string) string {
 	repo := canonicalRepo(g.git(dir, "remote", "get-url", remote))
-	if !isPublicRepo(repo) || g.cfg.RepoAllowed(PublishInternalNamesID, repo) {
+	if !g.guarded(repo) {
 		return ""
 	}
 	return repo
+}
+
+// guarded reports whether internal names must stay out of the canonical
+// repo: public-bound by the config's rule and not on the guard's
+// allow_repos.
+func (g *PublishInternalNames) guarded(repo string) bool {
+	return g.cfg.PublicBound(repo) && !g.cfg.RepoAllowed(PublishInternalNamesID, repo)
+}
+
+// unknownTargetGuarded decides an action whose target repo cannot be named
+// (a gist, a raw api call, a new repository without an owner, an MCP call
+// without owner/repo). Under the legacy host rule everything on github.com
+// is public-bound, so the unknown target is guarded; with a public_repos
+// list the unknown target is by definition not on it.
+func (g *PublishInternalNames) unknownTargetGuarded() bool {
+	return !g.cfg.HasPublicRepos()
 }
 
 // commitPublications covers `git commit -m` and `-F`: the message travels
@@ -621,28 +643,54 @@ func (g *PublishInternalNames) ghPublications(
 }
 
 // ghTarget resolves which repo a gh call writes to and whether it is public
-// and unexempted: the -R/--repo flag first, then the cwd's origin. Gists,
-// new repositories, and raw api calls need no repo in the cwd and still
-// reach github.com, so they are public with no identity to exempt. An
-// internal --hostname exempts an api call the way an internal remote does.
+// and unexempted: the -R/--repo flag first, then the repo the call names
+// itself (a `repos/{owner}/{repo}` api endpoint, the OWNER/REPO argument of
+// `repo create`), then the cwd's origin. Resolving the named repo matters
+// for an org that lives on github.com but is internal: its allow_repos
+// wildcard can only exempt a call whose target is known. Gists and raw api
+// calls without a repo still reach github.com, so they are public with no
+// identity to exempt. An internal --hostname exempts an api call the way an
+// internal remote does.
 func (g *PublishInternalNames) ghTarget(c ghInvocation, cwd string) (repo string, public bool) {
 	if v, ok := flagValue(c.args, "-R", "--repo"); ok {
 		repo = ghRepoArg(v)
-		return repo, isPublicRepo(repo) && !g.cfg.RepoAllowed(PublishInternalNamesID, repo)
+		return repo, g.guarded(repo)
 	}
 	if host, ok := flagValue(c.args, "--hostname"); ok && host != "github.com" {
 		return "", false
 	}
+	if repo = c.namedRepo(); repo != "" {
+		return repo, g.guarded(repo)
+	}
 	if repo = canonicalRepo(g.git(cwd, "remote", "get-url", "origin")); repo != "" {
-		return repo, isPublicRepo(repo) && !g.cfg.RepoAllowed(PublishInternalNamesID, repo)
+		return repo, g.guarded(repo)
 	}
 	switch c.group {
 	case "gist", "api":
-		return "", true
+		return "", g.unknownTargetGuarded()
 	case "repo":
-		return "", c.sub == "create"
+		return "", c.sub == "create" && g.unknownTargetGuarded()
 	}
 	return "", false
+}
+
+// namedRepo returns the canonical repo a gh call names in its own
+// arguments: the `repos/{owner}/{repo}` prefix of an api endpoint, or the
+// OWNER/REPO argument of `repo create`. "" when the call names none.
+func (c ghInvocation) namedRepo() string {
+	switch {
+	case c.group == "api":
+		endpoint := strings.TrimPrefix(c.sub, "https://api.github.com/")
+		parts := strings.Split(strings.TrimPrefix(endpoint, "/"), "/")
+		if len(parts) >= 3 && parts[0] == "repos" {
+			return ghRepoArg(parts[1] + "/" + parts[2])
+		}
+	case c.group == "repo" && c.sub == "create":
+		if pos := positionals(c.args); len(pos) > 2 && strings.Contains(pos[2], "/") {
+			return ghRepoArg(pos[2])
+		}
+	}
+	return ""
 }
 
 // ghRepoArg canonicalizes a -R value: OWNER/REPO (github.com implied),
