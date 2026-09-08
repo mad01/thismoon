@@ -19,7 +19,17 @@ import (
 const (
 	EventBash  = config.EventBash  // matcher: Bash
 	EventWrite = config.EventWrite // matcher: Write|Edit
+	// matcher: the MCP tools that publish to a public code host (the
+	// consuming repo picks them, docs/adr/0006).
+	EventExternalText = config.EventExternalText
 )
+
+// Events lists every valid guard event. CLI validation and its error text
+// read from here so a new event cannot be added above and then be silently
+// rejected at the command line.
+func Events() []string {
+	return []string{EventBash, EventWrite, EventExternalText}
+}
 
 // Input carries the fields extracted from a PreToolUse payload.
 type Input struct {
@@ -28,6 +38,10 @@ type Input struct {
 	Cwd      string // bash: the session working directory
 	FilePath string // write: target file
 	Content  string // write: content being written (Write content / Edit new_string)
+	ToolName string // external-text: the MCP tool about to run
+	// ToolInput carries the external-text tool call's input fields: every
+	// string in it is text that is about to leave the machine.
+	ToolInput map[string]any
 }
 
 // Denial is a blocked tool call: which guard fired and why.
@@ -61,6 +75,12 @@ func All(cfg config.Config) []Guard {
 		NewCommitGuard(cfg),
 		NewScriptDenyList(cfg),
 		NewWriteInternalNames(cfg),
+		// One guard id on two events: the bash half watches git push, git
+		// commit, branch and tag creation, and gh; the external-text half
+		// watches the gh MCP tools. ForEvent keeps them apart, GuardEnabled
+		// switches both.
+		NewPublishInternalNames(cfg, EventBash),
+		NewPublishInternalNames(cfg, EventExternalText),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomGuards)) {
 		guards = append(guards, NewCustom(name, cfg.CustomGuards[name]))

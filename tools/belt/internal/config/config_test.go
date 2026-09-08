@@ -377,6 +377,27 @@ func TestValidateAcceptsTheSupportedSoftGuard(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsPublishGuardKeys pins the keys publish-internal-names
+// reads: allow_repos (per-check exemption, docs/adr/0013) and mode (soft
+// rollout). Either one rejected here would deny every tool call on a
+// machine whose rendering sets it.
+func TestValidateAcceptsPublishGuardKeys(t *testing.T) {
+	dir := t.TempDir()
+	content := "guards:\n  publish-internal-names:\n    mode: soft\n" +
+		"    allow_repos:\n      - github.com/you/private-companion\n"
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", content)}
+	cfg, err := LoadFrom(p)
+	if err != nil {
+		t.Fatalf("publish-internal-names keys rejected: %v", err)
+	}
+	if !cfg.Guards["publish-internal-names"].Soft() {
+		t.Error("mode: soft not loaded")
+	}
+	if !cfg.RepoAllowed("publish-internal-names", "github.com/you/private-companion") {
+		t.Error("allow_repos not loaded")
+	}
+}
+
 func TestHintEnabledDefaultsOn(t *testing.T) {
 	cfg := Config{}
 	if !cfg.HintEnabled("kof-assertions") {

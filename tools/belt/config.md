@@ -32,8 +32,8 @@ nothing:
   missing one) — the guard would register on an event that never fires;
 - a `mode:` anywhere other than `hard` or `soft`;
 - `mode: soft` under `guards:` or `hints:` on any id except
-  `script-deny-list`, the only one that reads a toggle mode. Use
-  `enabled: false` to switch a different guard off;
+  `script-deny-list` and `publish-internal-names`, the two that read a
+  toggle mode. Use `enabled: false` to switch a different guard off;
 - any list key on a built-in id that does not read it — each id declares
   the toggle fields it reads (the `GuardFields`/`HintFields` tables in the
   config package), and the error names the fields that do work there.
@@ -206,7 +206,8 @@ or absent `command` makes the entry a no-op.
 ### guards
 
 A map keyed by built-in guard id (`git-push-main`, `git-identity`,
-`commit-guard`, `script-deny-list`, `write-internal-names`) or a
+`commit-guard`, `script-deny-list`, `write-internal-names`,
+`publish-internal-names`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
 when the file or its entry is missing. The toggle shape is shared across
 guards, but which fields have an effect depends on the guard. `allow_repos`
@@ -257,6 +258,21 @@ entries match the same way as `git_identity[].repos` and
   - `guards.write-internal-names.exclude_paths` (list of string, default:
     empty): target paths where internal references are deliberate. Same
     prefix-or-substring matching as `script-deny-list.exclude_paths`.
+- **publish-internal-names**
+  - `guards.publish-internal-names.enabled` (bool, default `true`): one
+    toggle for both of the guard's events (`bash` and `external-text`).
+  - `guards.publish-internal-names.mode` (string, default `hard`): `soft`
+    downgrades every denial to a warn event on the events service and lets
+    the call proceed, the rollout setting while the derived name set is
+    being tuned against real PR text and branch names.
+  - `guards.publish-internal-names.allow_repos` (list of string, default:
+    empty): canonical `host/owner/repo` entries (or a trailing `/*` org
+    wildcard) that may receive internal names: matched against the push
+    remote, the gh `-R` target or cwd origin, and the MCP call's
+    owner/repo. Keep it a copy of `write-internal-names.allow_repos`; the
+    two are separate on purpose (docs/adr/0013 enumerates exemptions per
+    check) and a private companion repo belongs on both. The name set
+    itself comes from `internal_names`, shared with the write guard.
 - **custom guard entries**
   - `guards.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom guard, used only when that guard's own
@@ -415,6 +431,11 @@ guards:
       - github.com/you/private-companion
     exclude_paths:
       - ~/notes
+
+  publish-internal-names:
+    enabled: true
+    allow_repos:
+      - github.com/you/private-companion
 
 hints:
   agent-memory:

@@ -47,6 +47,11 @@ const EnvConfig = "BELT_CONFIG"
 const (
 	EventBash  = "bash"  // matcher: Bash
 	EventWrite = "write" // matcher: Write|Edit
+	// EventExternalText is the guard-side twin of the hint event of the same
+	// name: PreToolUse on the MCP tools that publish text to a public code
+	// host. Which tools those are is consuming-repo wiring (docs/adr/0006);
+	// a guard on this event treats every call that reaches it as public.
+	EventExternalText = "external-text"
 )
 
 // Guard and rule modes. "hard" denies, "soft" downgrades the denial to a
@@ -63,7 +68,7 @@ const (
 // operator believe a guard was downgraded while it still blocks (or, worse,
 // believe it blocks while they meant to soften it). A guard package test
 // pins this list to the ids that actually call Toggle.Soft.
-var SoftModeGuards = []string{"script-deny-list"}
+var SoftModeGuards = []string{"script-deny-list", "publish-internal-names"}
 
 // Config is everything a guard or hint needs to decide.
 type Config struct {
@@ -673,11 +678,12 @@ func (f File) validate() error {
 // turn ordinary rollout skew into a machine-wide deny.
 var (
 	GuardFields = map[string][]string{
-		"git-push-main":        {"allow_repos"},
-		"git-identity":         {},
-		"commit-guard":         {},
-		"script-deny-list":     {"extra_patterns", "exclude_paths"},
-		"write-internal-names": {"allow_repos", "exclude_paths"},
+		"git-push-main":          {"allow_repos"},
+		"git-identity":           {},
+		"commit-guard":           {},
+		"script-deny-list":       {"extra_patterns", "exclude_paths"},
+		"write-internal-names":   {"allow_repos", "exclude_paths"},
+		"publish-internal-names": {"allow_repos"},
 	}
 	HintFields = map[string][]string{
 		"agent-memory":    {},

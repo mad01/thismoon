@@ -141,8 +141,13 @@ func (g *GitPushMain) pushExempt(dir string) bool {
 // gitPush is one parsed `git push` invocation.
 type gitPush struct {
 	dir      string   // from git -C <dir>, if given
+	remote   string   // first positional; "" for a bare push
 	refspecs []string // positional args after the remote
 	explicit bool     // true when at least one refspec was given
+	// The sweep and delete flags decide what publish-internal-names scans:
+	// --all/--mirror push every branch, --tags every tag, and --delete
+	// removes a ref rather than publishing one.
+	all, tags, mirror, del bool
 }
 
 // targetBranch resolves which branch the push lands on. For explicit refspecs
@@ -193,6 +198,16 @@ func parsePushArgs(c gitInvocation) gitPush {
 	for i := 0; i < len(c.args); i++ {
 		tok := c.args[i]
 		if strings.HasPrefix(tok, "-") {
+			switch tok {
+			case "--all", "--branches":
+				push.all = true
+			case "--tags":
+				push.tags = true
+			case "--mirror":
+				push.mirror = true
+			case "--delete", "-d":
+				push.del = true
+			}
 			if pushFlagsWithValue[tok] {
 				i++
 			}
@@ -201,6 +216,9 @@ func parsePushArgs(c gitInvocation) gitPush {
 		positional = append(positional, tok)
 	}
 	// First positional is the remote; the rest are refspecs.
+	if len(positional) > 0 {
+		push.remote = positional[0]
+	}
 	if len(positional) > 1 {
 		push.refspecs = positional[1:]
 		push.explicit = true

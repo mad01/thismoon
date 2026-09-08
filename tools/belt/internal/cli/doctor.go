@@ -114,12 +114,13 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	sort.Strings(names)
 	fmt.Fprintf(
 		w,
-		"\nblocked names (%d) — write-internal-names denies these in github.com repos:\n",
+		"\nblocked names (%d) — write-internal-names and publish-internal-names"+
+			" deny these in github.com repos:\n",
 		len(names),
 	)
 	if len(names) == 0 {
-		fmt.Fprintln(w, "  (none — without an internal_names section in the belt config or a"+
-			" suspenders guard config the guard allows every write)")
+		fmt.Fprintln(w, "  (none — without an internal_names section in the belt config"+
+			" both guards allow every write and publish)")
 		return
 	}
 	for _, n := range names {

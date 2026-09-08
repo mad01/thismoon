@@ -16,6 +16,7 @@ func TestHookCmdEventValidation(t *testing.T) {
 	}{
 		{"bash", "bash", false},
 		{"write", "write", false},
+		{"external-text", "external-text", false},
 		{"mixed case tool name", "Bash", false},
 		{"hook event name", "PreToolUse", true},
 		{"unknown", "frobnicate", true},

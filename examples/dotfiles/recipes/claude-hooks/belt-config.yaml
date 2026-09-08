@@ -62,6 +62,13 @@ guards:
     enabled: true
     exclude_paths:
       - ~/notes # internal references are deliberate here
+  # The outbound half: PR/issue text, branch and tag names, commit messages,
+  # gh CLI bodies, and gh MCP calls headed for github.com. Same name set as
+  # write-internal-names; allow_repos is kept as a copy of that guard's list
+  # on purpose (docs/adr/0013). mode: soft warns instead of denying while
+  # the name set is tuned.
+  publish-internal-names:
+    enabled: true
 
 # The one shared repo list, named for the workflow fact it states: these
 # repos' workflow is direct-to-main. Read by exactly git-push-main (push

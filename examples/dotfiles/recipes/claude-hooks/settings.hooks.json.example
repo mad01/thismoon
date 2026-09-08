@@ -1,5 +1,5 @@
 {
-  "__comment": "The hooks block that registers belt in ~/.claude/settings.json. Merge the 'hooks' key into your settings (keep your existing entries); tools/belt/docs/hooks.md in the thismoon repo explains every entry. The external-text matcher below is an example - list the MCP tools on YOUR machine that publish text other people read (issue comments, PR reviews, chat messages).",
+  "__comment": "The hooks block that registers belt in ~/.claude/settings.json. Merge the 'hooks' key into your settings (keep your existing entries); tools/belt/docs/hooks.md in the thismoon repo explains every entry. The PostToolUse external-text matcher below is an example - list the MCP tools on YOUR machine that publish text other people read (issue comments, PR reviews, chat messages). The PreToolUse external-text matcher is stricter: route ONLY the MCP server that talks to github.com there, because the publish-internal-names guard treats every call it sees as public.",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,6 +9,10 @@
       {
         "matcher": "Write|Edit",
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hook write" }]
+      },
+      {
+        "matcher": "^mcp__github__.*",
+        "hooks": [{ "type": "command", "command": "~/code/bin/belt hook external-text" }]
       }
     ],
     "PostToolUse": [

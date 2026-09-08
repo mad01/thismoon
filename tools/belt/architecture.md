@@ -26,14 +26,18 @@ internal/hook/      payload parsing + output emission per event: deny JSON,
                     additionalContext JSON, or plain stdout for prompt
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-identity, commit-guard,
-                    script-deny-list, write-internal-names), and the Custom
-                    guard that execs config-registered external commands
+                    script-deny-list, write-internal-names,
+                    publish-internal-names), and the Custom guard that execs
+                    config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     commit-policy, kof-assertions, kof-consult, kof-deposit,
                     agent-memory, humanizer-check), plus csl shard lookup,
                     search-response parsing, and the per-session seen store
 internal/config/    config.Load(): the belt config plus the gated
                     Claude-settings deny list, into one Config
+internal/mcptool/   MCP tool-name reading (server/operation split, the
+                    read-only verb rule) shared by the humanizer hint and
+                    the publish-internal-names guard
 internal/notify/    best-effort event emission to the local events service
 ```
 
