@@ -35,3 +35,5 @@ update = true
 #
 # Recipe-level `hosts`/`profiles` (see recipes/secrets-env/recipe.toml) gate a
 # recipe you own; the overrides here gate a recipe that ships from a source.
+# A profile-gated source can ship the same table in its own overrides.toml,
+# which wins over this file on the machines where that source is active.

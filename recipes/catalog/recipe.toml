@@ -2,10 +2,10 @@
 name = "catalog"
 description = "catalog: systems & components catalog UI for the mad01 fleet (services/catalog)"
 wave = 0
-# Personal machines only: the catalog renders the personal repo registry, a
-# service property — the registry rows are personal checkouts that only exist
-# there (gate kept from the dotfiles-era recipe).
-profiles = ["personal"]
+# No profile gate. Which machine classes run the catalog is the consuming
+# layer's call: the base config leaves it on, and a profile-gated role source
+# withholds it for its machines with an overrides.toml entry keyed
+# "thismoon/catalog" (docs/adr/0006, 2026-09-08 amendment).
 
 # Consumed as a remote recipe: machines point at this repo with a
 # [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout

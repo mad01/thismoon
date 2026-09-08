@@ -2,7 +2,8 @@
 name = "prs"
 description = "prs: open-PR dashboard over local checkouts; CLI + MCP + web view polling every repo's GitHub host"
 wave = 0
-profiles = ["personal"]  # personal Mac only; work machines opt out
+# No profile gate: which machines run this is the consuming config's call
+# (an override on "thismoon/prs", or a role source's overrides.toml).
 
 # Consumed as a remote recipe: machines point at this repo with a
 # [[recipe_sources]] stanza (name = "thismoon"), and ralph caches the checkout

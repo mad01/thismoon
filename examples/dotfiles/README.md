@@ -69,7 +69,10 @@ enable = false
 
    Recipe-level `hosts`/`profiles` gate a recipe you own (see
    `recipes/secrets-env/recipe.toml`, which only applies on a `personal` host);
-   the override above gates a recipe that ships from a source.
+   the override above gates a recipe that ships from a source. A second,
+   profile-gated source (a work overlay repo, say) can carry the same table in
+   an `overrides.toml` at its root, so its machines get their own answer
+   without this repo restating it.
 
 ## Runtime profiles: block-list switching (d-man)
 

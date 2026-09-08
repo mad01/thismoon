@@ -103,12 +103,15 @@ detail.
 - **Profile**: a freeform label (`personal`, `work`) a machine declares in
   its git-ignored `~/.config/ralph/config.local.toml`, set with
   `ralph profile set`. A recipe or source listing profiles applies only on
-  machines that carry one of them. Profiles answer "what kind of machine is
-  this", and not only for ralph: belt reads the same file at runtime, so
-  its `git-push-main` guard steps aside on `personal` machines and blocks on
+  machines that carry one of them. thismoon's own recipes never list any:
+  which of them run on a machine class is decided in your config (an
+  override on `thismoon/<name>`) or in a profile-gated source's
+  `overrides.toml`. Profiles answer "what kind of machine is this", and not
+  only for ralph: belt reads the same file at runtime, so its
+  `git-push-main` guard steps aside on `personal` machines and blocks on
   everything else. **Set profiles before the first `ralph up`**: a machine
-  with none silently skips every profile-gated recipe, and `ralph doctor` is
-  the only thing that will tell you.
+  with none silently skips every profile-gated recipe and source, and
+  `ralph doctor` is the only thing that will tell you.
 
 ## The rollout, in order
 

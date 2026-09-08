@@ -16,8 +16,10 @@ recipe's directory inside the cache.
 
 - `wave = 0`: builds `~/code/bin/deps` like the other Go tools (before the
   the consuming repo's `recipes/claude-mcp` at wave 1 registers the MCP server).
-- `profiles = ["personal"]`: personal Mac only — it depends on d-man and scans
-  the personal repos. The MCP entry and d-man route carry the same gate.
+- No `profiles` gate: public recipes here never carry one (docs/adr/0006,
+  2026-09-08 amendment). It depends on d-man and t-man, which ship from this
+  repo, and on a catalog registry the consuming repo provides per machine
+  class; that registry scopes which repos get scanned.
 - **`directories.deps_config`** + **`dotfiles.deps_config`** — creates
   `~/.config/deps/` and symlinks `config.toml` (the `exclude_repos` /
   `exclude_paths` discovery config) into it. Editing it takes effect on the next
@@ -36,8 +38,8 @@ Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 
 - the `[[recipe_sources]]` stanza itself (each machine picks its pin)
 - MCP registration: the consuming repo's `recipes/claude-mcp/servers.json` (entry `deps`, command
-  `deps mcp`, `profiles: ["personal"]` — unsandboxed first-party code, HTTP
-  client only)
+  `deps mcp`, with whatever machine gate that repo wants — unsandboxed
+  first-party code, HTTP client only)
 - the `deps.this` route: `recipes/d-man/routes.toml` (`deps` → 7429)
 - `depends_on = ["packages.t_man"]` references the dotfiles t-man recipe's
   package key — the merged config must include the dotfiles recipes for

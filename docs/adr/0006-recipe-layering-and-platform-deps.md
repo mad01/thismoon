@@ -29,8 +29,9 @@ Recipes split into two layers:
 - **Public layer** (this repo, `recipes/<svc>/`) carries everything portable:
   package build/install with a sources-cache `working_dir`, t-man-guarded
   restart and uninstall hooks, the service's Claude skill, sandbox profiles.
-  Profile gating (`profiles = ["personal"]`) is allowed here when the gate is
-  a property of the service itself, not of a machine.
+  No profile gating: a public recipe never carries `profiles`. Where a recipe
+  runs is the consuming layer's call (see the 2026-09-08 amendment; the
+  original text allowed a gate when it was "a property of the service").
 - **Private layer** (the consuming repo) carries the `[[recipe_sources]]`
   stanza and pin, MCP registration (`servers.json`), host filtering and
   enables, env vars, secrets, and per-machine config overlays as companion
@@ -69,3 +70,25 @@ foundation, still govern every recipe added since.
 This repo is also headed toward a public release, which flips the default
 assumption in the original Context: a fresh machine with no private
 consuming repo at all becomes the common case, not the hypothetical one.
+
+## Amendment (2026-09-08)
+
+The public layer no longer carries `profiles` at all. The original decision
+allowed a gate when it described the service rather than a machine, and
+five recipes used that allowance (catalog, prs, reminder, wire, deps). In
+practice every one of those gates was a machine-class decision, and the
+consuming repos had to mirror each one by hand: the work-side overlay had to
+know which thismoon recipes were personal-only, and the base config had to
+restate the gate whenever it switched a recipe off.
+
+The gate moved to where the decision lives. ralph now reads an
+`overrides.toml` from any active recipe source (mad01/ralph#42), so the
+layering is: this repo declares what exists, the consuming base config sets
+the defaults with `[recipes_config.overrides."thismoon/<name>"]`, and a
+profile-gated role source ships an `overrides.toml` that switches recipes off
+(or on) for its machines only. Precedence per key is base config, then active
+sources, then the machine-local overlay.
+
+Consequence for recipes here: never add `profiles` to a public recipe. A
+recipe that should not run on some machine class is withheld from the
+consuming side, not gated from this one.
