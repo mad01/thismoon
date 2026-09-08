@@ -79,12 +79,12 @@ address, managed as launchd agents by t-man.
 | [d-man](services/d-man/README.md) | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
 | [deps](services/deps/README.md) | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
 | [events](services/events/README.md) | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
-| [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | evaluating |
+| [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | proven |
 | [present](services/present/README.md) | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
 | [prs](services/prs/README.md) | Open-PR dashboard: polls the GitHub hosts of every local checkout | web · CLI · MCP | experimental |
 | [reminder](services/reminder/README.md) | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
-| [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | evaluating |
+| [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | proven |
 | [wire](services/wire/README.md) | Channels agent sessions talk over, two of them or ten, with blocking reads | web · CLI · MCP | experimental |
 
 ## Tools
@@ -93,10 +93,10 @@ CLI tools under `tools/`, installed to your local bin.
 
 | Tool | What it does | Interfaces | State |
 |------|--------------|------------|-------|
-| [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | evaluating |
-| [clipboard](tools/clipboard/README.md) | macOS clipboard bridge over pbcopy/pbpaste | CLI · MCP | evaluating |
+| [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | proven |
+| [clipboard](tools/clipboard/README.md) | macOS clipboard bridge over pbcopy/pbpaste | CLI · MCP | proven |
 | [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling | CLI · MCP | proven |
-| [opener](tools/opener/README.md) | macOS open bridge: URLs, files, apps, Finder reveal | CLI · MCP | evaluating |
+| [opener](tools/opener/README.md) | macOS open bridge: URLs, files, apps, Finder reveal | CLI · MCP | proven |
 | [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
 | [t-man](tools/t-man/README.md) | Declarative launchd agent/daemon manager | CLI | proven |
 | [toss-bin](tools/toss-bin/README.md) | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
