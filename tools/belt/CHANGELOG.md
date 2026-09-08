@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.1](https://github.com/mad01/thismoon/compare/belt/v2.2.0...belt/v2.2.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **belt:** close cd bypass in git-push-main guard ([f176ecd](https://github.com/mad01/thismoon/commit/f176ecd5a8364caf38eb692ef5ff5eed307247b8))
+* **belt:** close cd bypass in git-push-main guard ([6344c2b](https://github.com/mad01/thismoon/commit/6344c2b8b540452f1401da0a2cd5b31c2dee210f))
+
 ## [2.2.0](https://github.com/mad01/thismoon/compare/belt/v2.1.0...belt/v2.2.0) (2026-08-31)
 
 
