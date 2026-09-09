@@ -106,6 +106,8 @@ func TestConfigHelpCarriesTheReference(t *testing.T) {
 		"workspace_dirs",
 		"blocked_words",
 		"safe references",
+		"allow_phrases",
+		"include",
 		"replace_table",
 		"Pair it with doctor",
 	} {

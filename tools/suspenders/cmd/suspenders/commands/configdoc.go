@@ -27,8 +27,8 @@ scan:
   enabled: true          # built-in secret scanner (default on)
   exclude_rules: []      # rule IDs to suppress globally
 
-guard:                   # internal-reference guard — the blocked-name source,
-  enabled: false         # shared with belt's write-internal-names
+guard:                   # internal-reference guard; belt's write-internal-names
+  enabled: false         # guard includes the same names files (docs/adr/0016)
   workspace_dirs:        # dirs scanned for repos; every discovered org/repo
     - ~/workspace        # name and dir basename becomes a blocked name.
                          # Repos inside these dirs are guard-exempt themselves.
@@ -36,6 +36,12 @@ guard:                   # internal-reference guard — the blocked-name source,
     - internalname       # run of non-space characters (*.host.net)
   allowlist:             # safe references: names that must NOT be blocked
     - grpc/grpc-go       # even though discovery would collect them
+  allow_phrases:         # exact phrases blanked before name matching: this
+    - dotfiles-internalname   # compound passes, a bare internalname still hits
+  include:               # shared names files holding blocked_words, allowlist,
+    - ~/.config/internal-names/common.yaml   # and allow_phrases, appended to
+                         # the lists above. A listed file that is missing or
+                         # broken fails the load, like a broken config does.
   file_patterns: []      # file globs the staged-diff check inspects
 
 watch: []                # custom secret-detection rules (id/pattern/severity)

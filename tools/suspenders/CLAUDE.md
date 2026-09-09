@@ -32,7 +32,8 @@ internal/
   config/
     config.go                Config struct (YAML), Load/LoadFrom, Path/PathFor
                              (kit/confdir; --config and $SUSPENDERS_CONFIG),
-                             WithDefaults, Write, ExpandPath
+                             WithDefaults, Write, ExpandPath; LoadFrom reads the
+                             guard.include names files via kit/internalnames
                              Types: ScanConfig, GuardConfig, HistoryConfig, ExternalHook, HooksConfig
   guard/
     guard.go                 Internal-reference guard: CollectNames, Check (staged diff),
@@ -66,7 +67,9 @@ Makefile                     part of module github.com/mad01/thismoon (no own go
 Repository discovery and remote parsing live in the shared
 `github.com/mad01/thismoon/kit/repofind` package (Find with 32 concurrent
 workers, IsRepo, InsideWorkTree, ParseRemote) — shared with belt so the
-pre-commit guard and the write-time firewall derive the same names. Blocked-
+pre-commit guard and the write-time firewall derive the same names, and both
+read their hand-written name lists from the same names files through
+`github.com/mad01/thismoon/kit/internalnames` (docs/adr/0016). Blocked-
 commit events go through `github.com/mad01/thismoon/kit/notify`
 (`EmitEventSync`; the hook process exits immediately after).
 
@@ -98,6 +101,8 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 - Hook scripts chain to `<event>.backup` (foreign hook preserved at install) before running suspenders
 - Per-repo overrides via `.suspenders.yaml` or `.suspenders.yml` (ignore rules, paths, patterns, allowlist, and a `guard` section whose allowlist/blocked_words append to the global guard config); resolved from the scan root or the enclosing git top-level (`repoConfigPath` in commands/scan.go)
 - Guard allowlist filtering and name dedup are case-insensitive, matching the case-insensitive matcher
+- Guard name sources: `guard.include` lists shared names files whose `blocked_words`, `allowlist`, and `allow_phrases` append to the config's own lists at load time (`loadIncludes` in config.go); a listed file that is missing, has an unknown key, or does not parse fails the load like a broken config, so the hook fails closed. Per-repo overrides layer on top of the merged lists.
+- `guard.allow_phrases` are blanked out of the checked content (single space) before name matching, in `Matcher.Find`, so the staged-diff check, `scan`, and both history commands honor them the same way
 - Guard exemption: repos inside `guard.workspace_dirs` or whose org/repo name matches a top-level `exclude` glob are never guard-blocked (`guardExempt` in commands/hook.go, used by hook run, scan, and history); name collection is unaffected
 - Repository discovery via the shared `kit/repofind` package, which walks dirs concurrently and extracts org/repo from remotes; each repo contributes its org and repo name as separate blocked names
 - Glob matching for excludes and repo filters via `github.com/gobwas/glob`
@@ -116,6 +121,8 @@ guard:
   workspace_dirs: []string     # directories to scan for internal repo names
   blocked_words: []string      # always-blocked terms; literal match, * = any non-space run
   allowlist: []string          # org/repo names safe to reference
+  allow_phrases: []string      # exact phrases blanked before matching (sanctioned compounds)
+  include: []string            # shared names files (blocked_words/allowlist/allow_phrases) appended at load
   file_patterns: []string      # file globs to check in staged diff
 
 watch: []WatchRule             # custom detection rules

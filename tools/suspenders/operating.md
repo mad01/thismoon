@@ -23,8 +23,9 @@ it cannot read fails the scan instead of being skipped.
 any other failure exits 2.
 
 The guard's blocked-name list is derived fresh on every run from the repos
-checked out under `guard.workspace_dirs`, plus `blocked_words`; it is never
-persisted. Matching is case-insensitive and by name only. Repos inside a
+under `guard.workspace_dirs` plus `blocked_words`, including the names files
+under `guard.include`; it is never persisted. Matching is case-insensitive
+and by name only, after `allow_phrases` are blanked out. Repos inside a
 workspace dir, or matching a top-level `exclude` glob, are guard-exempt.
 
 ## where config lives
@@ -62,11 +63,12 @@ every clone. `{{.Bin}} hook status` reports installed, outdated,
 not-installed, foreign, or error; `{{.Bin}} hook update` refreshes an
 outdated script.
 
-Config broken or missing: a config file that fails to parse fails every
-command that reads it, including the hook run — a commit is blocked rather
-than checked against nothing. No config file at all is fine; the defaults
-apply. `--all` reporting `config sets no dirs` means the file lists `dirs:
-[]`, so there is nothing to walk.
+Config broken or missing: a config file that fails to parse, or a names file
+listed under `guard.include` that is missing or broken, fails every command
+that reads it, including the hook run: a commit is blocked rather than
+checked against nothing. No config file at all is fine; the defaults apply.
+`--all` reporting `config sets no dirs` means the file lists `dirs: []`, so
+there is nothing to walk.
 
 Machines disagree: two causes. The guard derives blocked names from what is
 checked out locally, so a machine missing a checkout will not block that

@@ -112,8 +112,11 @@ func (g *Guard) CollectNames() ([]string, error) {
 }
 
 // Matcher matches blocked names in arbitrary content, case-insensitively.
+// Allowed phrases are neutralized before the names are matched, so a
+// sanctioned compound that contains a blocked name is never a hit.
 type Matcher struct {
 	pattern *regexp.Regexp
+	allowed []*regexp.Regexp
 }
 
 // NewMatcher collects the blocked names and compiles them into a Matcher.
@@ -141,7 +144,22 @@ func (g *Guard) NewMatcher() (*Matcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile pattern: %w", err)
 	}
-	return &Matcher{pattern: pattern}, nil
+	return &Matcher{pattern: pattern, allowed: allowPhrasePatterns(g.cfg.AllowPhrases)}, nil
+}
+
+// allowPhrasePatterns compiles each non-blank allowed phrase into a
+// case-insensitive literal match. QuoteMeta output always compiles, so a
+// failure here is a broken invariant rather than bad input.
+func allowPhrasePatterns(phrases []string) []*regexp.Regexp {
+	var out []*regexp.Regexp
+	for _, p := range phrases {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, regexp.MustCompile("(?i)"+regexp.QuoteMeta(p)))
+	}
+	return out
 }
 
 // namePattern converts a blocked name into its regex form. Entries are
@@ -177,8 +195,16 @@ func isWordChar(r rune) bool {
 		r >= 'A' && r <= 'Z'
 }
 
-// Find returns the blocked-name matches in line, in original case.
+// Find returns the blocked-name matches in line, in original case. Allowed
+// phrases are blanked to a single space first, which keeps the word
+// boundaries around them intact: `dotfiles-<name>` passes while a bare
+// `<name>` elsewhere on the same line still matches. Every caller (staged
+// diff, working tree, history scan and clean) goes through here, so the
+// phrases are honored the same way everywhere.
 func (m *Matcher) Find(line string) []string {
+	for _, re := range m.allowed {
+		line = re.ReplaceAllString(line, " ")
+	}
 	return m.pattern.FindAllString(line, -1)
 }
 
