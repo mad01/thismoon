@@ -123,21 +123,19 @@ keeper-of-facts, whose binary is `kof`:
 
 The same pattern covers every released component, not only the ones with a
 formula: the tag prefix is the directory name under `services/` or
-`tools/`. To try a tool without installing it, run it through `mise x`:
-
-```sh
-mise x "github:mad01/thismoon[exe=csl,tag_regex=^csl/]" -- csl version
-```
+`tools/`.
 
 You get the binary and nothing else: there is no `brew services` block, so
 a service runs under [t-man](../tools/t-man/README.md) or straight from
-your shell. mise verifies the release attestation on download, and
-`mise upgrade` moves the tool to the newest tag under its prefix.
+your shell. `mise upgrade` moves the tool to the newest tag under its
+prefix, the same way `latest` resolves. Releases are cosign-signed;
+[RELEASING.md](RELEASING.md) shows how to verify a download by hand.
 
 **More than one component.** mise keys a tool by its repository, so a
 second `mise use` for `github:mad01/thismoon` replaces the first entry
-instead of adding to it. For several components, pin each one in your mise
-config instead:
+instead of adding to it. For several components, pin each one to a version
+in your mise config instead (two `latest` entries for the same repository
+collide on their install directory):
 
 ```toml
 [tools]
