@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0](https://github.com/mad01/thismoon/compare/belt/v2.3.0...belt/v2.4.0) (2026-09-09)
+
+
+### Features
+
+* **belt,suspenders:** one shared internal-names file, doctor warnings, publish floor ([ac0c42d](https://github.com/mad01/thismoon/commit/ac0c42d510d7e5affaca1af163d2a7e213caa34c))
+* **belt:** include shared names files, doctor warnings, public-by-nature publish floor ([780777f](https://github.com/mad01/thismoon/commit/780777fd9d3aafb58ab110aa020e3fc9d60b5a71))
+
 ## [2.3.0](https://github.com/mad01/thismoon/compare/belt/v2.2.1...belt/v2.3.0) (2026-09-08)
 
 
