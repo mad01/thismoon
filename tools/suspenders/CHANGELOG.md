@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/suspenders/v0.10.0...suspenders/v0.11.0) (2026-09-09)
+
+
+### Features
+
+* **belt,suspenders:** one shared internal-names file, doctor warnings, publish floor ([ac0c42d](https://github.com/mad01/thismoon/commit/ac0c42d510d7e5affaca1af163d2a7e213caa34c))
+* **suspenders:** include shared names files and honor allow_phrases ([edb870d](https://github.com/mad01/thismoon/commit/edb870db15ed3d87ead8874098f0c0fb40f5604a))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/suspenders/v0.9.0...suspenders/v0.10.0) (2026-09-01)
 
 
