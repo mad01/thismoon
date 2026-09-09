@@ -65,7 +65,8 @@ how well it works — everything listed is running on real machines.
   don't build anything load-bearing on top of it yet.
 
 A component only moves up once it's been used enough to trust. The lower two
-levels are honest labels: some of them won't stay.
+levels are honest labels: some of them won't stay. The tables are sorted by
+state, proven first, then by name.
 
 ## Services
 
@@ -74,17 +75,17 @@ address, managed as launchd agents by t-man.
 
 | Service | What it does | Interfaces | State |
 |---------|--------------|------------|-------|
-| [catalog](services/catalog/README.md) | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
 | [csl](services/csl/README.md) | Code search over local checkouts (zoekt index) | web · CLI · MCP | proven |
 | [d-man](services/d-man/README.md) | The `.this` front door: managed `/etc/hosts` entries + reverse proxy | CLI | proven |
 | [deps](services/deps/README.md) | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
 | [events](services/events/README.md) | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
 | [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | proven |
 | [present](services/present/README.md) | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
-| [prs](services/prs/README.md) | Open-PR dashboard: polls the GitHub hosts of every local checkout | web · CLI · MCP | experimental |
-| [reminder](services/reminder/README.md) | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | proven |
+| [catalog](services/catalog/README.md) | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
+| [reminder](services/reminder/README.md) | Reminders that fire macOS notifications | web · CLI · MCP | evaluating |
+| [prs](services/prs/README.md) | Open-PR dashboard: polls the GitHub hosts of every local checkout | web · CLI · MCP | experimental |
 | [wire](services/wire/README.md) | Channels agent sessions talk over, two of them or ten, with blocking reads | web · CLI · MCP | experimental |
 
 ## Tools
@@ -97,10 +98,10 @@ CLI tools under `tools/`, installed to your local bin.
 | [clipboard](tools/clipboard/README.md) | macOS clipboard bridge over pbcopy/pbpaste | CLI · MCP | proven |
 | [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling | CLI · MCP | proven |
 | [opener](tools/opener/README.md) | macOS open bridge: URLs, files, apps, Finder reveal | CLI · MCP | proven |
-| [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
 | [t-man](tools/t-man/README.md) | Declarative launchd agent/daemon manager | CLI | proven |
 | [toss-bin](tools/toss-bin/README.md) | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
 | [worklog](tools/worklog/README.md) | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
+| [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
 
 The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers and your agent gets the code search, the audit log, and the
