@@ -627,8 +627,16 @@ func TestIsTransientPullError(t *testing.T) {
 	}{
 		{"ssh kex timeout", "kex_exchange_identification: read: Operation timed out", true},
 		{"connect timeout", "ssh: connect to host github.com port 22: Operation timed out", true},
-		{"connection reset", "fatal: the remote end hung up unexpectedly\nConnection reset by peer", true},
-		{"dns offline", "ssh: Could not resolve hostname github.com: nodename nor servname provided", true},
+		{
+			"connection reset",
+			"fatal: the remote end hung up unexpectedly\nConnection reset by peer",
+			true,
+		},
+		{
+			"dns offline",
+			"ssh: Could not resolve hostname github.com: nodename nor servname provided",
+			true,
+		},
 		{"rpc failed", "error: RPC failed; curl 92 HTTP/2 stream 5 was reset", true},
 		{"auth not transient", "git@github.com: Permission denied (publickey).", false},
 		{"diverged not transient", "fatal: Not possible to fast-forward, aborting.", false},

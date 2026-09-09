@@ -12,7 +12,9 @@ func lex(repo, file string, line int) search.Match {
 }
 
 func sem(repo, path string, start int) semantic.Result {
-	return semantic.Result{Hit: semantic.Hit{Repo: repo, Path: path, StartLine: start, EndLine: start + 5, Score: 0.9}}
+	return semantic.Result{
+		Hit: semantic.Hit{Repo: repo, Path: path, StartLine: start, EndLine: start + 5, Score: 0.9},
+	}
 }
 
 func paths(hits []FusedHit) []string {

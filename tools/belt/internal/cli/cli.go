@@ -42,8 +42,16 @@ func rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&configPath, "config", "",
 		"belt config file (default ~/.config/belt/config.yaml; overrides $"+config.EnvConfig+")")
 	paths := func() (config.Paths, error) { return config.PathsFor(configPath) }
-	root.AddCommand(hookCmd(paths), hintCmd(paths), checkCmd(paths), doctorCmd(paths), configDocCmd(paths),
-		overrideCmd(), agentcli.DocsCommand(belt.OperatingDoc, belt.Facts()), versionCmd())
+	root.AddCommand(
+		hookCmd(paths),
+		hintCmd(paths),
+		checkCmd(paths),
+		doctorCmd(paths),
+		configDocCmd(paths),
+		overrideCmd(),
+		agentcli.DocsCommand(belt.OperatingDoc, belt.Facts()),
+		versionCmd(),
+	)
 	return root
 }
 
@@ -101,7 +109,12 @@ stdout as plain text, the form that event adds to context). Wire them in
   }`,
 		Args: validHintEventArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hook.RunHint(strings.ToLower(args[0]), loader(paths), cmd.InOrStdin(), cmd.OutOrStdout())
+			hook.RunHint(
+				strings.ToLower(args[0]),
+				loader(paths),
+				cmd.InOrStdin(),
+				cmd.OutOrStdout(),
+			)
 			return nil // always exit 0: advice travels in the JSON, not the exit code
 		},
 	}
@@ -117,7 +130,11 @@ func validHintEventArg(cmd *cobra.Command, args []string) error {
 	if slices.Contains(hint.Events(), strings.ToLower(args[0])) {
 		return nil
 	}
-	return fmt.Errorf("unknown hint event %q (valid: %s)", args[0], strings.Join(hint.Events(), ", "))
+	return fmt.Errorf(
+		"unknown hint event %q (valid: %s)",
+		args[0],
+		strings.Join(hint.Events(), ", "),
+	)
 }
 
 func hookCmd(paths pathsFunc) *cobra.Command {
@@ -180,7 +197,13 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 			" --input '{\"owner\":\"o\",\"repo\":\"r\",\"title\":\"t\",\"body\":\"text\"}'",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			in := guard.Input{Event: args[0], Cwd: cwd, FilePath: file, Content: content, ToolName: tool}
+			in := guard.Input{
+				Event:    args[0],
+				Cwd:      cwd,
+				FilePath: file,
+				Content:  content,
+				ToolName: tool,
+			}
 			if len(args) == 2 {
 				in.Command = args[1]
 			}
@@ -219,11 +242,13 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory for bare git push resolution (default: current dir)")
+	cmd.Flags().
+		StringVar(&cwd, "cwd", "", "working directory for bare git push resolution (default: current dir)")
 	cmd.Flags().StringVar(&file, "file", "", "target file path (write event)")
 	cmd.Flags().StringVar(&content, "content", "", "content to scan (write event)")
 	cmd.Flags().StringVar(&tool, "tool", "", "MCP tool name (external-text event)")
-	cmd.Flags().StringVar(&input, "input", "", "tool call input as a JSON object (external-text event)")
+	cmd.Flags().
+		StringVar(&input, "input", "", "tool call input as a JSON object (external-text event)")
 	return cmd
 }
 

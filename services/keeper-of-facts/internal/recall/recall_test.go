@@ -11,9 +11,24 @@ import (
 
 func testAssertions() []store.Assertion {
 	return []store.Assertion{
-		{ID: "a1", Subject: "repo:x/y/store", Statement: "serve is the single writer", Status: store.StatusFresh},
-		{ID: "a2", Subject: "repo:x/y/cli", Statement: "flags expand tilde", Status: store.StatusStale},
-		{ID: "a3", Subject: "repo:x/y/old", Statement: "withdrawn claim", Status: store.StatusRetracted},
+		{
+			ID:        "a1",
+			Subject:   "repo:x/y/store",
+			Statement: "serve is the single writer",
+			Status:    store.StatusFresh,
+		},
+		{
+			ID:        "a2",
+			Subject:   "repo:x/y/cli",
+			Statement: "flags expand tilde",
+			Status:    store.StatusStale,
+		},
+		{
+			ID:        "a3",
+			Subject:   "repo:x/y/old",
+			Statement: "withdrawn claim",
+			Status:    store.StatusRetracted,
+		},
 	}
 }
 

@@ -35,7 +35,12 @@ func incrClock(start time.Time) func() time.Time {
 
 func newTestStore(t *testing.T, perCap, globalCap int) *Store {
 	t.Helper()
-	s, err := New(t.TempDir(), perCap, globalCap, incrClock(time.Date(2026, 6, 29, 9, 0, 0, 0, time.UTC)))
+	s, err := New(
+		t.TempDir(),
+		perCap,
+		globalCap,
+		incrClock(time.Date(2026, 6, 29, 9, 0, 0, 0, time.UTC)),
+	)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -231,8 +236,21 @@ func TestGlobalCap(t *testing.T) {
 func TestQueryFilters(t *testing.T) {
 	s := newTestStore(t, 0, 0)
 	mustAppend(t, s, event.Event{Source: "a", Title: "alpha", Level: "info"})
-	e2 := mustAppend(t, s, event.Event{Source: "a", Title: "beta", Level: "warn", Message: "needle here"})
-	mustAppend(t, s, event.Event{Source: "b", Title: "gamma", Level: "error", Tags: map[string]string{"repo": "needle-repo"}})
+	e2 := mustAppend(
+		t,
+		s,
+		event.Event{Source: "a", Title: "beta", Level: "warn", Message: "needle here"},
+	)
+	mustAppend(
+		t,
+		s,
+		event.Event{
+			Source: "b",
+			Title:  "gamma",
+			Level:  "error",
+			Tags:   map[string]string{"repo": "needle-repo"},
+		},
+	)
 
 	if got := s.Query(Filter{Source: "a"}); len(got) != 2 {
 		t.Errorf("source filter: len = %d, want 2", len(got))

@@ -36,7 +36,9 @@ func CheckPreconditions(repoPath string) error {
 		return err
 	}
 	if strings.TrimSpace(out) != "" {
-		return fmt.Errorf("working tree is dirty; commit or discard changes before rewriting history (stashes are refused too)")
+		return fmt.Errorf(
+			"working tree is dirty; commit or discard changes before rewriting history (stashes are refused too)",
+		)
 	}
 	// refs/stash is not among the rewritten refs, so a stashed secret would
 	// survive a rewrite that reports success. Refuse rather than leak.

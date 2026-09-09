@@ -316,7 +316,12 @@ func TestSemanticConfig(t *testing.T) {
 	}{
 		{"default (no semantic block)", "dirs:\n  - /tmp\n", false, false},
 		{"enabled only", "dirs:\n  - /tmp\nsemantic:\n  enabled: true\n", true, false},
-		{"enabled and sync", "dirs:\n  - /tmp\nsemantic:\n  enabled: true\n  sync: true\n", true, true},
+		{
+			"enabled and sync",
+			"dirs:\n  - /tmp\nsemantic:\n  enabled: true\n  sync: true\n",
+			true,
+			true,
+		},
 		{"explicit false", "dirs:\n  - /tmp\nsemantic:\n  enabled: false\n", false, false},
 	}
 

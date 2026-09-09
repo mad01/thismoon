@@ -53,10 +53,13 @@ Examples:
 }
 
 func init() {
-	semanticCmd.Flags().StringVar(&semanticRepoFlag, "repo", "", "restrict to repos whose name contains this substring")
-	semanticCmd.Flags().StringVar(&semanticLangFlag, "lang", "", "restrict to a single language (e.g. go, typescript, python)")
+	semanticCmd.Flags().
+		StringVar(&semanticRepoFlag, "repo", "", "restrict to repos whose name contains this substring")
+	semanticCmd.Flags().
+		StringVar(&semanticLangFlag, "lang", "", "restrict to a single language (e.g. go, typescript, python)")
 	semanticCmd.Flags().IntVar(&semanticKFlag, "k", 10, "maximum number of results")
-	semanticCmd.Flags().IntVar(&semanticExpandFlag, "expand", 0, "extra context lines around each matched chunk")
+	semanticCmd.Flags().
+		IntVar(&semanticExpandFlag, "expand", 0, "extra context lines around each matched chunk")
 	semanticCmd.Flags().BoolVar(&semanticJSONFlag, "json", false, "output as JSON")
 	rootCmd.AddCommand(semanticCmd)
 }

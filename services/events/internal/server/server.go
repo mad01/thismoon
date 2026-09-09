@@ -68,7 +68,11 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		Before: q.Get("before"),
 	}
 	if f.Level != "" && !validLevel(f.Level) {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid level %q (want info|warn|error)", f.Level))
+		writeErr(
+			w,
+			http.StatusBadRequest,
+			fmt.Errorf("invalid level %q (want info|warn|error)", f.Level),
+		)
 		return
 	}
 	if l := q.Get("limit"); l != "" {

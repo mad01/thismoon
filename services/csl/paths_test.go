@@ -11,7 +11,12 @@ import (
 // DefaultPort, or the two answers drift apart.
 func TestDefaultBaseURLMatchesDefaultPort(t *testing.T) {
 	if got := BaseURLForPort(DefaultPort); got != DefaultBaseURL {
-		t.Errorf("BaseURLForPort(%d) = %q, want DefaultBaseURL %q", DefaultPort, got, DefaultBaseURL)
+		t.Errorf(
+			"BaseURLForPort(%d) = %q, want DefaultBaseURL %q",
+			DefaultPort,
+			got,
+			DefaultBaseURL,
+		)
 	}
 }
 

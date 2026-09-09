@@ -26,7 +26,11 @@ func TestHandlerServesPageAndGames(t *testing.T) {
 	}{
 		{"/", "text/html", "is blocked"},
 		{"/some/blocked/path", "text/html", "is blocked"}, // catch-all still shows the page
-		{"/missing.js", "text/html", "is blocked"},        // unknown scripts fall back to the page too
+		{
+			"/missing.js",
+			"text/html",
+			"is blocked",
+		}, // unknown scripts fall back to the page too
 		{"/arcade.js", "application/javascript", "requestAnimationFrame"},
 		{"/smash.js", "application/javascript", "ARCADE.register"},
 		{"/gate.js", "application/javascript", "ARCADE.register"},
@@ -57,7 +61,10 @@ func TestPageScriptsAreEmbedded(t *testing.T) {
 			t.Errorf("index.html does not reference %s", name)
 		}
 		rec := get(t, h, "/"+name)
-		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/javascript") {
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(
+			ct,
+			"application/javascript",
+		) {
 			t.Errorf("%s served as %q, want application/javascript", name, ct)
 		}
 	}
@@ -86,7 +93,10 @@ func TestPluginGames(t *testing.T) {
 	t.Run("plugin scripts are served", func(t *testing.T) {
 		for _, name := range []string{"rally.js", "zed-2.js"} {
 			rec := get(t, h, "/"+name)
-			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/javascript") {
+			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(
+				ct,
+				"application/javascript",
+			) {
 				t.Errorf("%s served as %q, want application/javascript", name, ct)
 			}
 			if !strings.Contains(rec.Body.String(), "ARCADE.register") {

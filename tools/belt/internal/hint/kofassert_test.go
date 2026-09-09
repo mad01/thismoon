@@ -21,12 +21,21 @@ func TestSubjectForRequiresDepth(t *testing.T) {
 	}{
 		{
 			name: "shared directory becomes the subject",
-			in:   Input{Repo: "mad01/thismoon", Paths: []string{"services/csl/internal/semantic/index.go", "services/csl/internal/semantic/chunk.go"}},
+			in: Input{
+				Repo: "mad01/thismoon",
+				Paths: []string{
+					"services/csl/internal/semantic/index.go",
+					"services/csl/internal/semantic/chunk.go",
+				},
+			},
 			want: "repo:mad01/thismoon/services/csl/internal/semantic",
 		},
 		{
 			name: "divergent paths fall back to the common prefix",
-			in:   Input{Repo: "mad01/thismoon", Paths: []string{"services/csl/a.go", "services/keeper-of-facts/b.go"}},
+			in: Input{
+				Repo:  "mad01/thismoon",
+				Paths: []string{"services/csl/a.go", "services/keeper-of-facts/b.go"},
+			},
 			want: "repo:mad01/thismoon/services",
 		},
 		{
@@ -174,9 +183,16 @@ func TestSeenFilterWithoutSessionID(t *testing.T) {
 // any kof query happens.
 func TestKofAssertionsRepoExcluded(t *testing.T) {
 	h := NewKofAssertions(config.Config{
-		Hints: map[string]config.Toggle{"kof-assertions": {ExcludeRepos: []string{"github.com/mad01/thismoon"}}},
+		Hints: map[string]config.Toggle{
+			"kof-assertions": {ExcludeRepos: []string{"github.com/mad01/thismoon"}},
+		},
 	})
-	in := Input{Event: EventSearch, Repo: "mad01/thismoon", Paths: []string{"services/csl/a.go"}, SessionID: "s"}
+	in := Input{
+		Event:     EventSearch,
+		Repo:      "mad01/thismoon",
+		Paths:     []string{"services/csl/a.go"},
+		SessionID: "s",
+	}
 	if a := h.Check(in); a != nil {
 		t.Errorf("excluded repo should be silent, got %+v", a)
 	}

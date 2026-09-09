@@ -72,13 +72,41 @@ func TestScriptDenyList(t *testing.T) {
 		{"python -m is not a file", "python -m pytest", dir, false},
 		{"chained after safe command", "make build && bash " + deleting, "", true},
 		{"trailing -c does not skip file scan", "python3 " + nuking + " -c ignored", "", true},
-		{"pattern before inline segment allowed", `echo "kubectl delete would be bad" && bash -c "echo hi"`, "", false},
-		{"inline -c spanning separators", `bash -c "echo hi; gsutil rm -r gs://bucket/x"`, "", true},
+		{
+			"pattern before inline segment allowed",
+			`echo "kubectl delete would be bad" && bash -c "echo hi"`,
+			"",
+			false,
+		},
+		{
+			"inline -c spanning separators",
+			`bash -c "echo hi; gsutil rm -r gs://bucket/x"`,
+			"",
+			true,
+		},
 
-		{"write then run same command", "echo 'kubectl delete pod broken' > " + genPath + " && bash " + genPath, "", true},
-		{"write unrelated file then run clean script", "echo 'kubectl delete pod x' > " + filepath.Join(dir, "notes.txt") + " && bash " + clean, "", false},
+		{
+			"write then run same command",
+			"echo 'kubectl delete pod broken' > " + genPath + " && bash " + genPath,
+			"",
+			true,
+		},
+		{
+			"write unrelated file then run clean script",
+			"echo 'kubectl delete pod x' > " + filepath.Join(
+				dir,
+				"notes.txt",
+			) + " && bash " + clean,
+			"",
+			false,
+		},
 		{"tee then run", "echo 'rm -rf /tmp/x' | tee gen2.sh && bash gen2.sh", dir, true},
-		{"write without run", "echo 'kubectl delete pod x' > " + filepath.Join(dir, "never-run.sh"), "", false},
+		{
+			"write without run",
+			"echo 'kubectl delete pod x' > " + filepath.Join(dir, "never-run.sh"),
+			"",
+			false,
+		},
 
 		{"xargs indirection", "echo /tmp/scratch | xargs rm -rf", "", true},
 		{"xargs clean", "ls | xargs wc -l", "", false},

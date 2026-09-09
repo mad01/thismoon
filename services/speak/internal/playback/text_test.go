@@ -17,7 +17,11 @@ func TestSplitSentences(t *testing.T) {
 		{"two sentences", "One. Two.", []string{"One.", "Two."}},
 		{"bang and question", "Wow! Really? Yes.", []string{"Wow!", "Really?", "Yes."}},
 		{"decimal not split", "Pi is 3.14 today.", []string{"Pi is 3.14 today."}},
-		{"newline is whitespace", "First line.\nSecond line.", []string{"First line.", "Second line."}},
+		{
+			"newline is whitespace",
+			"First line.\nSecond line.",
+			[]string{"First line.", "Second line."},
+		},
 		{"trailing space", "Done. ", []string{"Done."}},
 		{"collapses gap", "A.    B.", []string{"A.", "B."}},
 	}
@@ -32,7 +36,9 @@ func TestSplitSentences(t *testing.T) {
 }
 
 func TestExtractSections(t *testing.T) {
-	src := []byte("Intro paragraph.\n\n# Heading One\n\nFirst body.\n\n## Heading Two\n\nSecond body.\n")
+	src := []byte(
+		"Intro paragraph.\n\n# Heading One\n\nFirst body.\n\n## Heading Two\n\nSecond body.\n",
+	)
 	got := ExtractSections(src)
 	if len(got) != 3 {
 		t.Fatalf("got %d sections, want 3: %#v", len(got), got)

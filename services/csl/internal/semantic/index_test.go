@@ -111,7 +111,11 @@ func TestIndexRepoSemanticIncremental(t *testing.T) {
 		t.Fatalf("second index: %v", err)
 	}
 	if stats.FilesSkipped != 1 || stats.FilesEmbedded != 0 {
-		t.Fatalf("incremental run: skipped=%d embedded=%d, want skipped=1 embedded=0", stats.FilesSkipped, stats.FilesEmbedded)
+		t.Fatalf(
+			"incremental run: skipped=%d embedded=%d, want skipped=1 embedded=0",
+			stats.FilesSkipped,
+			stats.FilesEmbedded,
+		)
 	}
 	if emb.calls != callsAfterFirst {
 		t.Fatalf("Embed called %d extra times on no-change run", emb.calls-callsAfterFirst)
@@ -127,7 +131,11 @@ func TestIndexRepoSemanticIncremental(t *testing.T) {
 		t.Fatalf("third index: %v", err)
 	}
 	if stats.FilesEmbedded != 1 || stats.FilesSkipped != 0 {
-		t.Fatalf("after change: embedded=%d skipped=%d, want embedded=1 skipped=0", stats.FilesEmbedded, stats.FilesSkipped)
+		t.Fatalf(
+			"after change: embedded=%d skipped=%d, want embedded=1 skipped=0",
+			stats.FilesEmbedded,
+			stats.FilesSkipped,
+		)
 	}
 }
 
@@ -152,7 +160,11 @@ func TestIndexRepoSemanticRebuildsOnChunkerBump(t *testing.T) {
 		t.Fatalf("re-index after downgrade: %v", err)
 	}
 	if stats.FilesEmbedded != 1 || stats.FilesSkipped != 0 {
-		t.Fatalf("chunker bump: embedded=%d skipped=%d, want embedded=1 skipped=0", stats.FilesEmbedded, stats.FilesSkipped)
+		t.Fatalf(
+			"chunker bump: embedded=%d skipped=%d, want embedded=1 skipped=0",
+			stats.FilesEmbedded,
+			stats.FilesSkipped,
+		)
 	}
 
 	// The rewritten store carries the current version: the next run skips again.
@@ -161,7 +173,11 @@ func TestIndexRepoSemanticRebuildsOnChunkerBump(t *testing.T) {
 		t.Fatalf("third index: %v", err)
 	}
 	if stats.FilesSkipped != 1 || stats.FilesEmbedded != 0 {
-		t.Fatalf("post-rebuild run: skipped=%d embedded=%d, want skipped=1 embedded=0", stats.FilesSkipped, stats.FilesEmbedded)
+		t.Fatalf(
+			"post-rebuild run: skipped=%d embedded=%d, want skipped=1 embedded=0",
+			stats.FilesSkipped,
+			stats.FilesEmbedded,
+		)
 	}
 }
 
@@ -413,7 +429,10 @@ func TestAuditRepoFilesMatchesWalk(t *testing.T) {
 		t.Error("go.sum indexed, want a skip reason")
 	}
 	if reasons["fixtures/huge.txt"] != "matched .cslignore" {
-		t.Errorf("fixtures/huge.txt reason = %q, want matched .cslignore", reasons["fixtures/huge.txt"])
+		t.Errorf(
+			"fixtures/huge.txt reason = %q, want matched .cslignore",
+			reasons["fixtures/huge.txt"],
+		)
 	}
 }
 

@@ -41,7 +41,8 @@ type Config struct {
 func New(version string, cfg Config) (*mcp.Server, error) {
 	if cfg.Checks == nil {
 		return nil, errors.New(
-			"mcpserver: no doctor checks; speak_doctor is advertised to clients and must be registered")
+			"mcpserver: no doctor checks; speak_doctor is advertised to clients and must be registered",
+		)
 	}
 	engine := playback.New(ttsclient.New(cfg.TTSURL), DefaultVoice, cfg.StateDir)
 	s := mcp.NewServer(

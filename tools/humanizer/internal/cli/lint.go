@@ -75,7 +75,15 @@ func printReport(w io.Writer, r scrub.Report) {
 			if len(samples) > 5 {
 				samples = samples[:5]
 			}
-			fmt.Fprintf(w, "  [%s/%s] %s x%d @ %v\n", h.Kind, h.Confidence, h.Label, h.Count, samples)
+			fmt.Fprintf(
+				w,
+				"  [%s/%s] %s x%d @ %v\n",
+				h.Kind,
+				h.Confidence,
+				h.Label,
+				h.Count,
+				samples,
+			)
 		}
 	}
 	for _, n := range r.Notes {

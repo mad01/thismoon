@@ -51,16 +51,40 @@ func TestCustomGuardExitCodes(t *testing.T) {
 		wantReason string
 	}{
 		{"exit 0 allows", []string{allow}, "", false, false, ""},
-		{"exit 1 denies with stdout reason", []string{deny}, "", true, false, "branch name is wrong"},
+		{
+			"exit 1 denies with stdout reason",
+			[]string{deny},
+			"",
+			true,
+			false,
+			"branch name is wrong",
+		},
 		{"exit 1 soft mode warns and allows", []string{deny}, "soft", false, true, ""},
-		{"exit 1 without output gets a fallback reason", []string{denySilent}, "", true, false, "no reason on stdout"},
+		{
+			"exit 1 without output gets a fallback reason",
+			[]string{denySilent},
+			"",
+			true,
+			false,
+			"no reason on stdout",
+		},
 		{"exit 2 allows with warn", []string{errorOut}, "", false, true, ""},
-		{"missing binary allows with warn", []string{filepath.Join(dir, "nope")}, "", false, true, ""},
+		{
+			"missing binary allows with warn",
+			[]string{filepath.Join(dir, "nope")},
+			"",
+			false,
+			true,
+			"",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var warned []string
-			g := newCustomGuard(config.CustomGuard{Event: EventBash, Command: tt.command, Mode: tt.mode}, &warned)
+			g := newCustomGuard(
+				config.CustomGuard{Event: EventBash, Command: tt.command, Mode: tt.mode},
+				&warned,
+			)
 			d := g.Check(Input{Event: EventBash, Command: "git commit -m x", Cwd: "/tmp"})
 			if (d != nil) != tt.wantDeny {
 				t.Errorf("denial = %v, wantDeny %v", d, tt.wantDeny)
@@ -98,7 +122,10 @@ func TestCustomGuardMatchGate(t *testing.T) {
 	// all for non-matching input.
 	deny := writeGuardScript(t, t.TempDir(), "deny.sh", "echo no\nexit 1")
 	var warned []string
-	g := newCustomGuard(config.CustomGuard{Event: EventBash, Command: []string{deny}, Match: "git commit"}, &warned)
+	g := newCustomGuard(
+		config.CustomGuard{Event: EventBash, Command: []string{deny}, Match: "git commit"},
+		&warned,
+	)
 	if d := g.Check(Input{Event: EventBash, Command: "ls -la", Cwd: "/tmp"}); d != nil {
 		t.Errorf("non-matching command reached the external: %v", d)
 	}
@@ -114,7 +141,10 @@ func TestCustomGuardPayload(t *testing.T) {
 
 	t.Run("bash payload", func(t *testing.T) {
 		var warned []string
-		g := newCustomGuard(config.CustomGuard{Event: EventBash, Command: []string{capture}}, &warned)
+		g := newCustomGuard(
+			config.CustomGuard{Event: EventBash, Command: []string{capture}},
+			&warned,
+		)
 		g.Check(Input{Event: EventBash, Command: "git commit -m x", Cwd: "/work"})
 		var got map[string]string
 		mustReadJSON(t, captured, &got)
@@ -125,11 +155,15 @@ func TestCustomGuardPayload(t *testing.T) {
 
 	t.Run("write payload", func(t *testing.T) {
 		var warned []string
-		g := newCustomGuard(config.CustomGuard{Event: EventWrite, Command: []string{capture}}, &warned)
+		g := newCustomGuard(
+			config.CustomGuard{Event: EventWrite, Command: []string{capture}},
+			&warned,
+		)
 		g.Check(Input{Event: EventWrite, FilePath: "/repo/file.md", Content: "text", Cwd: "/work"})
 		var got map[string]string
 		mustReadJSON(t, captured, &got)
-		if got["file_path"] != "/repo/file.md" || got["content"] != "text" || got["cwd"] != "/work" {
+		if got["file_path"] != "/repo/file.md" || got["content"] != "text" ||
+			got["cwd"] != "/work" {
 			t.Errorf("write payload = %v", got)
 		}
 	})

@@ -74,11 +74,15 @@ func TestLintPolicy(t *testing.T) {
 		},
 		{
 			"machine exclude silences",
-			"git commit -m 'x'", lintOverlay, thismoon, []string{thismoon}, false, "",
+			"git commit -m 'x'", lintOverlay, thismoon,
+			[]string{thismoon},
+			false, "",
 		},
 		{
 			"org wildcard excludes",
-			"git commit -m 'x'", lintOverlay, thismoon, []string{"github.com/mad01/*"}, false, "",
+			"git commit -m 'x'", lintOverlay, thismoon,
+			[]string{"github.com/mad01/*"},
+			false, "",
 		},
 		{
 			"overlay exclude true silences",
@@ -86,7 +90,9 @@ func TestLintPolicy(t *testing.T) {
 		},
 		{
 			"overlay exclude false overrides machine exclusion",
-			lintCmd, lintOverlayWith("exclude: false"), thismoon, []string{thismoon}, true, "lint/format policy",
+			lintCmd, lintOverlayWith("exclude: false"), thismoon,
+			[]string{thismoon},
+			true, "lint/format policy",
 		},
 		{
 			"unresolved repo is silent",
@@ -128,7 +134,13 @@ func TestLintPolicy(t *testing.T) {
 				Cwd: "/some/repo", SessionID: "lint-policy-test",
 			})
 			if got := a != nil; got != tt.fires {
-				t.Fatalf("Check(%q) fired = %v, want %v (advice: %+v)", tt.command, got, tt.fires, a)
+				t.Fatalf(
+					"Check(%q) fired = %v, want %v (advice: %+v)",
+					tt.command,
+					got,
+					tt.fires,
+					a,
+				)
 			}
 			if a == nil {
 				return

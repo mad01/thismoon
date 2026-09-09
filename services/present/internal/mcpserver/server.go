@@ -35,7 +35,9 @@ type Config struct {
 // New builds the present MCP server.
 func New(version string, cfg Config) (*mcp.Server, error) {
 	if cfg.Checks == nil {
-		return nil, errors.New("mcpserver: no doctor checks; present_doctor is advertised to clients and must be registered")
+		return nil, errors.New(
+			"mcpserver: no doctor checks; present_doctor is advertised to clients and must be registered",
+		)
 	}
 	st, err := store.New(cfg.Workdir)
 	if err != nil {

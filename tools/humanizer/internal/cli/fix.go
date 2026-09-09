@@ -41,12 +41,18 @@ Risky, visibly-altering transforms are opt-in:
 }
 
 func init() {
-	fixCmd.Flags().BoolVar(&fixNFKC, "nfkc", false, "apply Unicode NFKC after the scrub (risky: alters visible characters)")
-	fixCmd.Flags().BoolVar(&fixAggressive, "aggressive-homoglyphs", false, "map Cyrillic/fullwidth Latin confusables to ASCII (risky)")
-	fixCmd.Flags().BoolVar(&fixNoNormSpaces, "no-normalize-spaces", false, "do not rewrite exotic spaces to U+0020")
-	fixCmd.Flags().BoolVar(&fixStripEmoji, "strip-emoji-glue", false, "paranoid: strip load-bearing invisibles too (risky)")
-	fixCmd.Flags().StringVarP(&fixOutput, "output", "o", "", "write cleaned text here (default: stdout)")
-	fixCmd.Flags().BoolVar(&fixInPlace, "in-place", false, "overwrite the input file (writes a .bak backup first)")
+	fixCmd.Flags().
+		BoolVar(&fixNFKC, "nfkc", false, "apply Unicode NFKC after the scrub (risky: alters visible characters)")
+	fixCmd.Flags().
+		BoolVar(&fixAggressive, "aggressive-homoglyphs", false, "map Cyrillic/fullwidth Latin confusables to ASCII (risky)")
+	fixCmd.Flags().
+		BoolVar(&fixNoNormSpaces, "no-normalize-spaces", false, "do not rewrite exotic spaces to U+0020")
+	fixCmd.Flags().
+		BoolVar(&fixStripEmoji, "strip-emoji-glue", false, "paranoid: strip load-bearing invisibles too (risky)")
+	fixCmd.Flags().
+		StringVarP(&fixOutput, "output", "o", "", "write cleaned text here (default: stdout)")
+	fixCmd.Flags().
+		BoolVar(&fixInPlace, "in-place", false, "overwrite the input file (writes a .bak backup first)")
 	fixCmd.Flags().BoolVar(&fixJSON, "json", false, "emit the stats summary as JSON on stderr")
 	rootCmd.AddCommand(fixCmd)
 }

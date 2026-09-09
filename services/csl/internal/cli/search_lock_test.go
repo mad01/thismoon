@@ -36,7 +36,13 @@ func TestIndexForSearch(t *testing.T) {
 		defer unlock()
 
 		var errBuf bytes.Buffer
-		err = indexForSearch(newCmd(&errBuf), indexDir, repos, &search.StalenessResult{}, search.EmptyState())
+		err = indexForSearch(
+			newCmd(&errBuf),
+			indexDir,
+			repos,
+			&search.StalenessResult{},
+			search.EmptyState(),
+		)
 		if err != nil {
 			t.Fatalf("indexForSearch: %v", err)
 		}
@@ -58,7 +64,13 @@ func TestIndexForSearch(t *testing.T) {
 		indexDir := t.TempDir()
 
 		var errBuf bytes.Buffer
-		err := indexForSearch(newCmd(&errBuf), indexDir, repos, &search.StalenessResult{}, search.EmptyState())
+		err := indexForSearch(
+			newCmd(&errBuf),
+			indexDir,
+			repos,
+			&search.StalenessResult{},
+			search.EmptyState(),
+		)
 		if err != nil {
 			t.Fatalf("indexForSearch: %v", err)
 		}

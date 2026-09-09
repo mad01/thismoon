@@ -47,7 +47,11 @@ func (c *Client) Synthesize(text, voice string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal speech request: %w", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/v1/audio/speech", bytes.NewReader(body))
+	req, err := http.NewRequest(
+		http.MethodPost,
+		c.baseURL+"/v1/audio/speech",
+		bytes.NewReader(body),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +63,8 @@ func (c *Client) Synthesize(text, voice string) ([]byte, error) {
 		// Hint points the reader at the operating doc from here.
 		return nil, agentdoc.Hint(fmt.Errorf(
 			"TTS engine not reachable at %s — is the speak-tts agent running? (t-man status speak-tts): %w",
-			c.baseURL, err,
+			c.baseURL,
+			err,
 		), speak.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
@@ -72,7 +77,9 @@ func (c *Client) Synthesize(text, voice string) ([]byte, error) {
 		return nil, fmt.Errorf("read audio: %w", err)
 	}
 	if len(data) == 0 {
-		return nil, errors.New("TTS engine returned empty audio (check the engine's response_format/ffmpeg)")
+		return nil, errors.New(
+			"TTS engine returned empty audio (check the engine's response_format/ffmpeg)",
+		)
 	}
 	return data, nil
 }

@@ -275,9 +275,18 @@ func resolve(p, cwd string) string {
 // syntax, which is not the same language as grep.
 func (s *sweep) advice(repo string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s is indexed by csl, and a recursive %s re-walks the filesystem for results the index already has.", repo, s.tool)
+	fmt.Fprintf(
+		&b,
+		"%s is indexed by csl, and a recursive %s re-walks the filesystem for results the index already has.",
+		repo,
+		s.tool,
+	)
 	if s.pattern == "" {
-		fmt.Fprintf(&b, " Prefer csl_ls (repo=%q) for listing files, or csl_search for content.", repo)
+		fmt.Fprintf(
+			&b,
+			" Prefer csl_ls (repo=%q) for listing files, or csl_search for content.",
+			repo,
+		)
 		return b.String()
 	}
 	query := zoektQuery(s.pattern)
@@ -285,7 +294,9 @@ func (s *sweep) advice(repo string) string {
 		query += " " + f
 	}
 	fmt.Fprintf(&b, " Prefer: csl_search repo=%q query=%q.", repo, query)
-	b.WriteString(" Note zoekt is not grep: OR is `a|b` with no spaces, and two space-separated terms mean AND within one file.")
+	b.WriteString(
+		" Note zoekt is not grep: OR is `a|b` with no spaces, and two space-separated terms mean AND within one file.",
+	)
 	return b.String()
 }
 

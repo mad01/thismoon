@@ -122,7 +122,8 @@ func parseTags(pairs []string) (map[string]string, error) {
 func init() {
 	emitCmd.Flags().StringVar(&emitSource, "source", "", "event source (required)")
 	emitCmd.Flags().StringVar(&emitTitle, "title", "", "short event summary (required)")
-	emitCmd.Flags().StringVar(&emitComponent, "component", "", "optional sub-area within the source")
+	emitCmd.Flags().
+		StringVar(&emitComponent, "component", "", "optional sub-area within the source")
 	emitCmd.Flags().StringVar(&emitLevel, "level", "", "info (default) | warn | error")
 	emitCmd.Flags().StringVar(&emitMessage, "message", "", "optional longer detail")
 	emitCmd.Flags().StringArrayVar(&emitTags, "tag", nil, "key=value label, repeatable")
@@ -136,7 +137,8 @@ func init() {
 	listCmd.Flags().IntVar(&listLimit, "limit", 50, "max events to show")
 
 	purgeCmd.Flags().StringVar(&purgeSource, "source", "", "source to purge (required)")
-	purgeCmd.Flags().StringVar(&purgeBefore, "before", "", "only drop events with id <= this cursor")
+	purgeCmd.Flags().
+		StringVar(&purgeBefore, "before", "", "only drop events with id <= this cursor")
 	_ = purgeCmd.MarkFlagRequired("source")
 
 	rootCmd.AddCommand(emitCmd, listCmd, purgeCmd)

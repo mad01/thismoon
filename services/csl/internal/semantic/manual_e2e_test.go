@@ -39,7 +39,12 @@ func TestManualE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IndexRepoSemantic: %v", err)
 	}
-	t.Logf("indexed: files scanned=%d embedded=%d chunks=%d", stats.FilesScanned, stats.FilesEmbedded, stats.ChunksEmbedded)
+	t.Logf(
+		"indexed: files scanned=%d embedded=%d chunks=%d",
+		stats.FilesScanned,
+		stats.FilesEmbedded,
+		stats.ChunksEmbedded,
+	)
 
 	for _, q := range []string{
 		"compute a hash fingerprint of a repo's git state",
@@ -52,7 +57,15 @@ func TestManualE2E(t *testing.T) {
 		}
 		fmt.Printf("\n### query: %q\n", q)
 		for i, r := range res {
-			fmt.Printf("  %d. %s:%d-%d  score=%.3f  [%s]\n", i+1, r.Path, r.StartLine, r.EndLine, r.Score, r.Kind)
+			fmt.Printf(
+				"  %d. %s:%d-%d  score=%.3f  [%s]\n",
+				i+1,
+				r.Path,
+				r.StartLine,
+				r.EndLine,
+				r.Score,
+				r.Kind,
+			)
 		}
 		if len(res) == 0 {
 			t.Errorf("no results for %q", q)

@@ -246,7 +246,13 @@ func parseKey(k string) (ResolvedItem, bool) {
 	if a < 0 {
 		return ResolvedItem{}, false
 	}
-	return ResolvedItem{Ecosystem: eco, Name: nameVer[:a], Version: nameVer[a+1:], ID: id, Key: k}, true
+	return ResolvedItem{
+		Ecosystem: eco,
+		Name:      nameVer[:a],
+		Version:   nameVer[a+1:],
+		ID:        id,
+		Key:       k,
+	}, true
 }
 
 // ResolvedFixed returns acknowledged advisory occurrences that no longer appear

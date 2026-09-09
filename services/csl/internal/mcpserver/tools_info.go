@@ -30,14 +30,14 @@ type semanticInfo struct {
 
 // indexInfoOutput is the typed output of the csl_index_info tool.
 type indexInfoOutput struct {
-	ReposIndexed    int          `json:"repos_indexed"              jsonschema:"repos tracked in the index state"`
-	DirtyRepos      int          `json:"dirty_repos"                jsonschema:"repos whose working tree was dirty when last indexed"`
-	Shards          int          `json:"shards"                     jsonschema:"zoekt shard files on disk"`
-	CorruptShards   int          `json:"corrupt_shards"             jsonschema:"shards that failed validation; run csl doctor to repair"`
-	IndexSizeBytes  int64        `json:"index_size_bytes"           jsonschema:"total size of all zoekt shards"`
+	ReposIndexed    int          `json:"repos_indexed"               jsonschema:"repos tracked in the index state"`
+	DirtyRepos      int          `json:"dirty_repos"                 jsonschema:"repos whose working tree was dirty when last indexed"`
+	Shards          int          `json:"shards"                      jsonschema:"zoekt shard files on disk"`
+	CorruptShards   int          `json:"corrupt_shards"              jsonschema:"shards that failed validation; run csl doctor to repair"`
+	IndexSizeBytes  int64        `json:"index_size_bytes"            jsonschema:"total size of all zoekt shards"`
 	NewestIndexedAt string       `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
 	OldestIndexedAt string       `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); a very old value means some repo isn't being reindexed"`
-	DaemonRunning   bool         `json:"daemon_running"             jsonschema:"true when the search daemon answered a ping; false means the next query pays daemon startup"`
+	DaemonRunning   bool         `json:"daemon_running"              jsonschema:"true when the search daemon answered a ping; false means the next query pays daemon startup"`
 	Semantic        semanticInfo `json:"semantic"`
 }
 

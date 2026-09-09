@@ -12,7 +12,13 @@ import (
 
 // plantStore writes a one-chunk store for repo into indexDir, with the chunk's
 // source line living in a real file under srcDir so ExpandHit can read it back.
-func plantStore(t *testing.T, indexDir string, repo finder.Repo, emb Embedder, rel, embedText, line string) {
+func plantStore(
+	t *testing.T,
+	indexDir string,
+	repo finder.Repo,
+	emb Embedder,
+	rel, embedText, line string,
+) {
 	t.Helper()
 	srcPath := filepath.Join(repo.Path, rel)
 	if err := os.MkdirAll(filepath.Dir(srcPath), 0o755); err != nil {
@@ -56,7 +62,15 @@ func TestSearchInProcess(t *testing.T) {
 	// repoA's chunk text equals the query → identical (normalized) vector →
 	// cosine 1.0, so it must rank above repoB's unrelated chunk.
 	plantStore(t, indexDir, repoA, emb, "main.go", query, "func matchedHere() {}")
-	plantStore(t, indexDir, repoB, emb, "util.go", "completely unrelated content", "func somethingElse() {}")
+	plantStore(
+		t,
+		indexDir,
+		repoB,
+		emb,
+		"util.go",
+		"completely unrelated content",
+		"func somethingElse() {}",
+	)
 
 	results, err := SearchInProcess(context.Background(), indexDir, emb, query, 10, Filter{}, 0)
 	if err != nil {
@@ -100,7 +114,15 @@ func TestSearchInProcessRepoFilter(t *testing.T) {
 	plantStore(t, indexDir, repoA, emb, "main.go", "alpha text", "func a() {}")
 	plantStore(t, indexDir, repoB, emb, "util.go", "beta text", "func b() {}")
 
-	results, err := SearchInProcess(context.Background(), indexDir, emb, "alpha text", 10, Filter{Repos: []string{"match"}}, 0)
+	results, err := SearchInProcess(
+		context.Background(),
+		indexDir,
+		emb,
+		"alpha text",
+		10,
+		Filter{Repos: []string{"match"}},
+		0,
+	)
 	if err != nil {
 		t.Fatalf("SearchInProcess: %v", err)
 	}

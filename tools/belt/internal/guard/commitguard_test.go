@@ -16,7 +16,12 @@ type commitGuardFixture struct {
 	warned []string
 }
 
-func newCommitGuardFixture(cfg config.Config, repo string, now time.Time, overrides ...string) *commitGuardFixture {
+func newCommitGuardFixture(
+	cfg config.Config,
+	repo string,
+	now time.Time,
+	overrides ...string,
+) *commitGuardFixture {
 	f := &commitGuardFixture{guard: NewCommitGuard(cfg)}
 	f.guard.resolveRepo = func(string) string { return repo }
 	f.guard.now = func() time.Time { return now }
@@ -58,18 +63,114 @@ func TestCommitGuard(t *testing.T) {
 		wantDeny  bool
 		wantWarn  bool
 	}{
-		{"weekday 10:00 hard denies", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, true, false},
-		{"soft mode warns and allows", softRule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), nil, false, true},
-		{"evening allows", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), nil, false, false},
-		{"before window allows", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 8, 59), nil, false, false},
-		{"window end is exclusive", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 17, 0), nil, false, false},
-		{"saturday allows", rule, "github.com/mad01/thismoon", localTime(t, time.Saturday, 10, 0), nil, false, false},
-		{"sunday allows", rule, "github.com/mad01/thismoon", localTime(t, time.Sunday, 10, 0), nil, false, false},
-		{"always_allow repo any time", rule, "github.com/mad01/dotfiles", localTime(t, time.Tuesday, 10, 0), nil, false, false},
-		{"unlisted repo allows", rule, "other-host.example/org/repo", localTime(t, time.Tuesday, 10, 0), nil, false, false},
-		{"vacation override allows with audit warn", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"vacation"}, false, true},
-		{"override outside window stays silent", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 18, 0), []string{"vacation"}, false, false},
-		{"other override does not help", rule, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0), []string{"sick-day"}, true, false},
+		{
+			"weekday 10:00 hard denies",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 10, 0),
+			nil,
+			true,
+			false,
+		},
+		{
+			"soft mode warns and allows",
+			softRule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 10, 0),
+			nil,
+			false,
+			true,
+		},
+		{
+			"evening allows",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 18, 0),
+			nil,
+			false,
+			false,
+		},
+		{
+			"before window allows",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 8, 59),
+			nil,
+			false,
+			false,
+		},
+		{
+			"window end is exclusive",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 17, 0),
+			nil,
+			false,
+			false,
+		},
+		{
+			"saturday allows",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Saturday, 10, 0),
+			nil,
+			false,
+			false,
+		},
+		{
+			"sunday allows",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Sunday, 10, 0),
+			nil,
+			false,
+			false,
+		},
+		{
+			"always_allow repo any time",
+			rule,
+			"github.com/mad01/dotfiles",
+			localTime(t, time.Tuesday, 10, 0),
+			nil,
+			false,
+			false,
+		},
+		{
+			"unlisted repo allows",
+			rule,
+			"other-host.example/org/repo",
+			localTime(t, time.Tuesday, 10, 0),
+			nil,
+			false,
+			false,
+		},
+		{
+			"vacation override allows with audit warn",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 10, 0),
+			[]string{"vacation"},
+			false,
+			true,
+		},
+		{
+			"override outside window stays silent",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 18, 0),
+			[]string{"vacation"},
+			false,
+			false,
+		},
+		{
+			"other override does not help",
+			rule,
+			"github.com/mad01/thismoon",
+			localTime(t, time.Tuesday, 10, 0),
+			[]string{"sick-day"},
+			true,
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,18 +218,30 @@ func TestCommitGuardExplicitBlockDays(t *testing.T) {
 		Mode:       "hard",
 	}
 	cfg := config.Config{CommitGuards: []config.CommitGuard{rule}}
-	saturday := newCommitGuardFixture(cfg, "github.com/mad01/thismoon", localTime(t, time.Saturday, 10, 0))
+	saturday := newCommitGuardFixture(
+		cfg,
+		"github.com/mad01/thismoon",
+		localTime(t, time.Saturday, 10, 0),
+	)
 	if d := saturday.guard.Check(Input{Event: EventBash, Command: "git commit", Cwd: "/tmp"}); d == nil {
 		t.Error("explicit sat block day did not deny on Saturday")
 	}
-	monday := newCommitGuardFixture(cfg, "github.com/mad01/thismoon", localTime(t, time.Monday, 10, 0))
+	monday := newCommitGuardFixture(
+		cfg,
+		"github.com/mad01/thismoon",
+		localTime(t, time.Monday, 10, 0),
+	)
 	if d := monday.guard.Check(Input{Event: EventBash, Command: "git commit", Cwd: "/tmp"}); d != nil {
 		t.Errorf("Monday denied by a sat/sun rule: %v", d)
 	}
 }
 
 func TestCommitGuardMalformedWindowFailsOpen(t *testing.T) {
-	rule := config.CommitGuard{Repos: []string{"github.com/mad01/*"}, BlockHours: "nine-to-five", Mode: "hard"}
+	rule := config.CommitGuard{
+		Repos:      []string{"github.com/mad01/*"},
+		BlockHours: "nine-to-five",
+		Mode:       "hard",
+	}
 	cfg := config.Config{CommitGuards: []config.CommitGuard{rule}}
 	f := newCommitGuardFixture(cfg, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0))
 	if d := f.guard.Check(Input{Event: EventBash, Command: "git commit", Cwd: "/tmp"}); d != nil {
@@ -137,11 +250,19 @@ func TestCommitGuardMalformedWindowFailsOpen(t *testing.T) {
 }
 
 func TestCommitGuardNonCommitAndNoConfig(t *testing.T) {
-	f := newCommitGuardFixture(config.Config{}, "github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0))
+	f := newCommitGuardFixture(
+		config.Config{},
+		"github.com/mad01/thismoon",
+		localTime(t, time.Tuesday, 10, 0),
+	)
 	if d := f.guard.Check(Input{Event: EventBash, Command: "git commit", Cwd: "/tmp"}); d != nil {
 		t.Errorf("no config should allow, got %v", d)
 	}
-	rule := config.CommitGuard{Repos: []string{"github.com/mad01/*"}, BlockHours: "09:00-17:00", Mode: "hard"}
+	rule := config.CommitGuard{
+		Repos:      []string{"github.com/mad01/*"},
+		BlockHours: "09:00-17:00",
+		Mode:       "hard",
+	}
 	f = newCommitGuardFixture(config.Config{CommitGuards: []config.CommitGuard{rule}},
 		"github.com/mad01/thismoon", localTime(t, time.Tuesday, 10, 0))
 	if d := f.guard.Check(Input{Event: EventBash, Command: "git status", Cwd: "/tmp"}); d != nil {

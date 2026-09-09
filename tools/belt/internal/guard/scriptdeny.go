@@ -226,10 +226,12 @@ func (g *ScriptDenyList) checkProducer(s scan, i int) *Denial {
 			}
 		}
 	case fetchProducers[head]:
-		return Reasonf(ScriptDenyListID,
+		return Reasonf(
+			ScriptDenyListID,
 			"pipes a %s download straight into an interpreter, so nothing can inspect what would run. "+
 				"Download to a file first, then run the file, so the deny list (and the user) can read it before it executes.",
-			head)
+			head,
+		)
 	}
 	return nil
 }
@@ -463,10 +465,14 @@ func scanText(text, where string, patterns []deny) *Denial {
 		normalized := lineNoise.Replace(line.text)
 		for _, d := range patterns {
 			if d.re.MatchString(line.text) || d.re.MatchString(normalized) {
-				return Reasonf(ScriptDenyListID,
+				return Reasonf(
+					ScriptDenyListID,
 					"%s runs %q (line %d) — that command is on the Bash deny list and scripts don't get to bypass it. "+
 						"Run the blocked operation as a direct command so the permission system can evaluate it, or ask the user first.",
-					where, d.pattern, line.number)
+					where,
+					d.pattern,
+					line.number,
+				)
 			}
 		}
 	}

@@ -263,6 +263,11 @@ func TestNoDriftWithoutInstalledVersion(t *testing.T) {
 	m.cycle(ctx)
 	s := m.Snapshot().Services[0]
 	if s.Drift || s.Installed != "" || s.Version != "abc1234" {
-		t.Fatalf("drift=%v installed=%q version=%q, want false/empty/abc1234", s.Drift, s.Installed, s.Version)
+		t.Fatalf(
+			"drift=%v installed=%q version=%q, want false/empty/abc1234",
+			s.Drift,
+			s.Installed,
+			s.Version,
+		)
 	}
 }

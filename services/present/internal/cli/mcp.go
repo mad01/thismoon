@@ -42,7 +42,12 @@ func runMCP(_ *cobra.Command, _ []string) error {
 	log.Printf("present mcp: workdir=%s port=%d base-url=%s", flagWorkdir, flagPort, flagBaseURL)
 	server, err := mcpserver.New(
 		buildinfo.Get().Version,
-		mcpserver.Config{Workdir: flagWorkdir, Port: flagPort, BaseURL: flagBaseURL, Checks: doctorChecks},
+		mcpserver.Config{
+			Workdir: flagWorkdir,
+			Port:    flagPort,
+			BaseURL: flagBaseURL,
+			Checks:  doctorChecks,
+		},
 	)
 	if err != nil {
 		return err

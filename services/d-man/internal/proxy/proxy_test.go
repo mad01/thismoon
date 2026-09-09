@@ -166,7 +166,12 @@ func TestSitesFilteredByLiveness(t *testing.T) {
 		{Name: "up", Host: "up.this", URL: "http://up.this/", Backend: "127.0.0.1:1"},
 		{Name: "down", Host: "down.this", URL: "http://down.this/", Backend: "127.0.0.1:2"},
 	}
-	h, err := New(map[string]string{"up.this": "127.0.0.1:1", "down.this": "127.0.0.1:2"}, sites, nil, "")
+	h, err := New(
+		map[string]string{"up.this": "127.0.0.1:1", "down.this": "127.0.0.1:2"},
+		sites,
+		nil,
+		"",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

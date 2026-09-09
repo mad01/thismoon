@@ -76,7 +76,13 @@ func SemanticStatePath(indexDir string) string {
 // IndexRepoSemantic embeds a repo's source into its per-repo vector store,
 // incrementally: unchanged files (same content hash) keep their existing
 // vectors, changed/new files are re-embedded, and vanished files are pruned.
-func IndexRepoSemantic(ctx context.Context, indexDir string, repo finder.Repo, emb Embedder, opts ...IndexOption) (IndexStats, error) {
+func IndexRepoSemantic(
+	ctx context.Context,
+	indexDir string,
+	repo finder.Repo,
+	emb Embedder,
+	opts ...IndexOption,
+) (IndexStats, error) {
 	var o indexOpts
 	for _, fn := range opts {
 		fn(&o)
@@ -139,7 +145,14 @@ func IndexRepoSemantic(ctx context.Context, indexDir string, repo finder.Repo, e
 }
 
 // embedFile chunks, embeds, and stores a single source file, updating stats.
-func embedFile(ctx context.Context, store *Store, emb Embedder, repoName, rel, hash string, content []byte, stats *IndexStats) error {
+func embedFile(
+	ctx context.Context,
+	store *Store,
+	emb Embedder,
+	repoName, rel, hash string,
+	content []byte,
+	stats *IndexStats,
+) error {
 	chunks, err := ChunkFile(repoName, rel, LangForPath(rel), content)
 	if err != nil {
 		return fmt.Errorf("chunk %s: %w", rel, err)
@@ -171,7 +184,11 @@ func embedChunks(ctx context.Context, emb Embedder, chunks []Chunk) ([][]float32
 			return nil, fmt.Errorf("embed batch: %w", err)
 		}
 		if len(vecs) != len(texts) {
-			return nil, fmt.Errorf("embedder returned %d vectors for %d texts", len(vecs), len(texts))
+			return nil, fmt.Errorf(
+				"embedder returned %d vectors for %d texts",
+				len(vecs),
+				len(texts),
+			)
 		}
 		out = append(out, vecs...)
 	}

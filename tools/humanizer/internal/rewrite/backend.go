@@ -29,7 +29,11 @@ func CheckRemote(baseURL string, allowRemote bool) (warning string, err error) {
 		return "", fmt.Errorf("rewrite: invalid base URL %q: %w", baseURL, perr)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("rewrite: base URL must be http(s), got scheme %q: %s", u.Scheme, baseURL)
+		return "", fmt.Errorf(
+			"rewrite: base URL must be http(s), got scheme %q: %s",
+			u.Scheme,
+			baseURL,
+		)
 	}
 	host := u.Hostname()
 	if _, ok := loopbackHosts[host]; ok {
@@ -42,12 +46,20 @@ func CheckRemote(baseURL string, allowRemote bool) (warning string, err error) {
 			host,
 		)
 	}
-	return fmt.Sprintf("warning: rewrite base URL host is %q (not localhost); content will leave this machine", host), nil
+	return fmt.Sprintf(
+		"warning: rewrite base URL host is %q (not localhost); content will leave this machine",
+		host,
+	), nil
 }
 
 // httpJSON POSTs a JSON payload and decodes a JSON response. Redirects are
 // refused so the Authorization header is never forwarded to another host.
-func httpJSON(endpoint string, payload any, headers map[string]string, timeout time.Duration) (map[string]any, error) {
+func httpJSON(
+	endpoint string,
+	payload any,
+	headers map[string]string,
+	timeout time.Duration,
+) (map[string]any, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return nil, fmt.Errorf("rewrite: refusing non-http(s) endpoint: %s", endpoint)
@@ -89,7 +101,11 @@ func httpJSON(endpoint string, payload any, headers map[string]string, timeout t
 	return out, nil
 }
 
-func callOllama(baseURL, model, prompt string, timeout time.Duration, temperature float64) (string, error) {
+func callOllama(
+	baseURL, model, prompt string,
+	timeout time.Duration,
+	temperature float64,
+) (string, error) {
 	endpoint := strings.TrimRight(baseURL, "/") + "/api/chat"
 	data, err := httpJSON(endpoint, map[string]any{
 		"model":    model,
@@ -108,7 +124,11 @@ func callOllama(baseURL, model, prompt string, timeout time.Duration, temperatur
 	return strings.TrimSpace(content), nil
 }
 
-func callOpenAICompatible(baseURL, model, prompt, apiKey string, timeout time.Duration, temperature float64) (string, error) {
+func callOpenAICompatible(
+	baseURL, model, prompt, apiKey string,
+	timeout time.Duration,
+	temperature float64,
+) (string, error) {
 	endpoint := strings.TrimRight(baseURL, "/") + "/v1/chat/completions"
 	headers := map[string]string{}
 	if apiKey != "" {

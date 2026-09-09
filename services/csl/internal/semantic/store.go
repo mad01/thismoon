@@ -241,7 +241,13 @@ type persisted struct {
 // Save writes the store to path atomically (temp file then rename).
 func (s *Store) Save(path string) error {
 	s.mu.RLock()
-	snap := persisted{Dim: s.dim, ChunkerVersion: s.chunkerVer, RepoName: s.repoName, RepoPath: s.repoPath, Files: s.files}
+	snap := persisted{
+		Dim:            s.dim,
+		ChunkerVersion: s.chunkerVer,
+		RepoName:       s.repoName,
+		RepoPath:       s.repoPath,
+		Files:          s.files,
+	}
 	s.mu.RUnlock()
 
 	dir := filepath.Dir(path)
@@ -288,7 +294,13 @@ func LoadStore(path string) (*Store, error) {
 	if snap.Files == nil {
 		snap.Files = make(map[string]fileEntry)
 	}
-	return &Store{dim: snap.Dim, chunkerVer: snap.ChunkerVersion, repoName: snap.RepoName, repoPath: snap.RepoPath, files: snap.Files}, nil
+	return &Store{
+		dim:        snap.Dim,
+		chunkerVer: snap.ChunkerVersion,
+		repoName:   snap.RepoName,
+		repoPath:   snap.RepoPath,
+		files:      snap.Files,
+	}, nil
 }
 
 // normalize returns an L2-normalized copy of v (unchanged if its norm is zero).
