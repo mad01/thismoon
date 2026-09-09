@@ -30,9 +30,10 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     publish-internal-names), and the Custom guard that execs
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
-                    commit-policy, kof-assertions, kof-consult, kof-deposit,
-                    agent-memory, humanizer-check), plus csl shard lookup,
-                    search-response parsing, and the per-session seen store
+                    commit-policy, lint-policy, kof-assertions, kof-consult,
+                    kof-deposit, agent-memory, humanizer-check), plus csl
+                    shard lookup, search-response parsing, and the
+                    per-session seen store
 internal/config/    config.Load(): the belt config plus the gated
                     Claude-settings deny list, into one Config
 internal/mcptool/   MCP tool-name reading (server/operation split, the
@@ -80,10 +81,13 @@ once-per-session hints (kof-deposit, humanizer-check) and the per-session
 dedupe (kof-assertions, kof-consult) remember what a session already saw.
 Every failure path around that store degrades to "not seen".
 
-Everything else is read-only. Config comes from four surfaces, every one
-optional (`config.Load()` never errors; a missing file yields zero values):
+Everything else is read-only. Config comes from these surfaces. A missing
+file yields zero values; a present file that fails to parse, or a listed
+include that is missing or broken, is an error `config.Load()` returns and
+every hook denies on:
 
 - `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, the `internal_names` section, and the two purpose-named repo lists `direct_main_repos` and `public_repos` (legacy `config.toml` read when the YAML file is absent)
+- the shared names files `internal_names.include` lists (`~`-expanded paths belt's own config names, docs/adr/0016): `blocked_words`, `allowlist`, and `allow_phrases` only, decoded strictly so a stray key is an error; the lists are appended to the section's own, and a listed file that is missing denies exactly like a broken config.yaml
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation unless `claude_settings.enabled: false` turns the read off
 
 No other tool's config is read — neither the suspenders config nor the

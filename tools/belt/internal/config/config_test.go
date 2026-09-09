@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -287,6 +289,11 @@ func TestValidateRejectsUnusableValues(t *testing.T) {
 			"exclude_paths on a guard that ignores it",
 			"guards:\n  git-push-main:\n    exclude_paths:\n      - ~/notes\n",
 			"guards.git-push-main: exclude_paths has no effect",
+		},
+		{
+			"empty include entry",
+			"internal_names:\n  include:\n    - \"\"\n",
+			"internal_names.include[0] is empty",
 		},
 	}
 	for _, tt := range tests {
@@ -679,5 +686,141 @@ func TestLoadPublicRepos(t *testing.T) {
 	}
 	if !emptyList.HasPublicRepos() {
 		t.Error("public_repos: [] must read as present and empty")
+	}
+}
+
+// TestLoadFromIncludesAppendNames pins the include contract (docs/adr/0016):
+// each listed names file's three lists land after the section's own, in
+// listing order, and nothing else about the section changes.
+func TestLoadFromIncludesAppendNames(t *testing.T) {
+	dir := t.TempDir()
+	first := writeFile(t, dir, "shared.yaml", `
+blocked_words:
+  - sharedco
+allowlist:
+  - shared-safe
+allow_phrases:
+  - sharedco-public
+`)
+	second := writeFile(t, dir, "more.yaml", "blocked_words:\n  - moreco\n")
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", `
+internal_names:
+  include:
+    - `+first+`
+    - `+second+`
+  workspace_dirs:
+    - ~/workspace
+  blocked_words:
+    - ownco
+  allowlist:
+    - own-safe
+`)}
+
+	cfg := mustLoad(t, p)
+
+	assertList := func(what string, got, want []string) {
+		t.Helper()
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s = %v, want %v", what, got, want)
+		}
+	}
+	assertList("blocked_words", cfg.Names.BlockedWords, []string{"ownco", "sharedco", "moreco"})
+	assertList("allowlist", cfg.Names.Allowlist, []string{"own-safe", "shared-safe"})
+	assertList("allow_phrases", cfg.Names.AllowPhrases, []string{"sharedco-public"})
+	assertList("workspace_dirs", cfg.Names.WorkspaceDirs, []string{"~/workspace"})
+	assertList("include", cfg.Names.Include, []string{first, second})
+}
+
+// TestLoadFromIncludeMissingIsAnError pins the fail-closed half: a listed
+// file that does not exist is a config error naming the file, the same
+// shape the hook turns into a belt[config] deny for a broken config.yaml.
+// What did load still comes back, for doctor.
+func TestLoadFromIncludeMissingIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "absent.yaml")
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", `
+internal_names:
+  include:
+    - `+missing+`
+  blocked_words:
+    - ownco
+`)}
+
+	cfg, err := LoadFrom(p)
+	if err == nil {
+		t.Fatal("LoadFrom must surface the missing include so the hook can deny")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error %v does not name the file to fix", err)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error %v does not report the file as missing", err)
+	}
+	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "ownco" {
+		t.Errorf("own names must still load alongside the error, got %v", cfg.Names.BlockedWords)
+	}
+}
+
+// TestLoadFromIncludeRejectsUnknownKeys: a names file carries three lists
+// and nothing else. A stray key (workspace_dirs, say, copied from the
+// section it feeds) would parse cleanly and guard nothing, so it is an
+// error naming the key and the file.
+func TestLoadFromIncludeRejectsUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	stray := writeFile(t, dir, "names.yaml", "workspace_dirs:\n  - ~/workspace\n")
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml",
+		"internal_names:\n  include:\n    - "+stray+"\n")}
+
+	_, err := LoadFrom(p)
+	if err == nil {
+		t.Fatal("want an error for the stray key, got nil")
+	}
+	for _, want := range []string{stray, "workspace_dirs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %v does not mention %q", err, want)
+		}
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a present-but-broken include must not read as missing: %v", err)
+	}
+}
+
+// TestLoadFromIncludeEmptyFile: an empty names file is a valid, empty
+// include, not an error and not a change to the section's own lists.
+func TestLoadFromIncludeEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	empty := writeFile(t, dir, "empty.yaml", "")
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml", `
+internal_names:
+  include:
+    - `+empty+`
+  blocked_words:
+    - ownco
+`)}
+
+	cfg := mustLoad(t, p)
+	if len(cfg.Names.BlockedWords) != 1 ||
+		len(cfg.Names.Allowlist)+len(cfg.Names.AllowPhrases) != 0 {
+		t.Errorf("empty include changed the names: %+v", cfg.Names)
+	}
+}
+
+// TestLoadFromIncludeExpandsTilde: include entries take the same ~ prefix
+// every other path in the file takes, so one rendering works for every
+// home directory.
+func TestLoadFromIncludeExpandsTilde(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	writeFile(t, dir, "names.yaml", "blocked_words:\n  - tildeco\n")
+	p := Paths{BeltYAML: writeFile(t, dir, "config.yaml",
+		"internal_names:\n  include:\n    - ~/names.yaml\n")}
+
+	cfg := mustLoad(t, p)
+	if len(cfg.Names.BlockedWords) != 1 || cfg.Names.BlockedWords[0] != "tildeco" {
+		t.Errorf("~ include not read: blocked_words = %v", cfg.Names.BlockedWords)
+	}
+	incs, err := ReadIncludes([]string{"~/names.yaml"})
+	if err != nil || len(incs) != 1 || incs[0].Path != filepath.Join(dir, "names.yaml") {
+		t.Errorf("ReadIncludes = %+v, %v; want the expanded path", incs, err)
 	}
 }

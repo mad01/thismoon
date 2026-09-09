@@ -661,7 +661,9 @@ func TestCollectStrings(t *testing.T) {
 // TestPublishInternalNamesPublicReposList covers the enumerated mode on the
 // publish side: only listed repos are guarded, an internal org on
 // github.com passes with no exemption at all, and targets that cannot be
-// named (gists, a raw api call, an MCP call without owner/repo) pass too.
+// named (a raw api call, an MCP call without owner/repo) pass too, with one
+// floor: what is public by nature (a gist, the gists api endpoints, a repo
+// created public, and their MCP twins) is guarded whatever the list says.
 func TestPublishInternalNamesPublicReposList(t *testing.T) {
 	cfg := config.Config{
 		PublicRepos: []string{"github.com/you/tool", "github.com/oss-org/*"},
@@ -708,8 +710,19 @@ func TestPublishInternalNamesPublicReposList(t *testing.T) {
 			nil,
 			false,
 		},
-		{"gist outside any list", "gh gist create notes.md", nil, false},
+		{"gist is public by nature", "gh gist create --desc internalco notes.md", nil, true},
 		{"raw api call", "gh api user -f bio=internalco", nil, false},
+		{"api gists endpoint", "gh api gists -f description=internalco", nil, true},
+		{
+			"api gists endpoint with method first",
+			"gh api -X POST /gists -f files=internalco",
+			nil,
+			true,
+		},
+		{"api into the work org", "gh api /orgs/work-org/repos -f name=internalco", nil, false},
+		{"repo create public", "gh repo create internalco-tools", nil, true},
+		{"repo create private", "gh repo create internalco-tools --private", nil, false},
+		{"repo create internal", "gh repo create internalco-tools --internal", nil, false},
 		{"repo create in the work org", "gh repo create work-org/internalco --private", nil, false},
 	}
 	for _, tt := range bash {
@@ -721,28 +734,69 @@ func TestPublishInternalNamesPublicReposList(t *testing.T) {
 			}
 		})
 	}
+	const pr, repo, gist = "mcp__gh_com__create_pull_request", "mcp__gh_com__create_repository",
+		"mcp__gh_com__create_gist"
 	mcp := []struct {
 		name     string
+		tool     string
 		input    map[string]any
 		wantDeny bool
 	}{
-		{"listed repo", map[string]any{"owner": "you", "repo": "tool", "body": "internalco"}, true},
+		{
+			"listed repo",
+			pr,
+			map[string]any{"owner": "you", "repo": "tool", "body": "internalco"},
+			true,
+		},
 		{
 			"work org",
+			pr,
 			map[string]any{"owner": "work-org", "repo": "svc", "body": "internalco"},
 			false,
 		},
-		{"no owner/repo", map[string]any{"name": "internalco-tools"}, false},
+		{"no owner/repo", pr, map[string]any{"title": "internalco"}, false},
+		{"gist", gist, map[string]any{"description": "internalco"}, true},
+		{"gist update", "mcp__gh_com__update_gist", map[string]any{"content": "internalco"}, true},
+		{"private repository", repo, map[string]any{"name": "internalco", "private": true}, false},
+		{"public repository", repo, map[string]any{"name": "internalco", "private": false}, true},
+		{"repository visibility unset", repo, map[string]any{"name": "internalco"}, true},
 	}
 	for _, tt := range mcp {
 		t.Run("mcp "+tt.name, func(t *testing.T) {
 			g := newPublishGuard(EventExternalText, publishFixture{cfg: cfg})
-			d := g.Check(Input{
-				Event: EventExternalText, ToolName: "mcp__gh_com__create_pull_request", ToolInput: tt.input,
-			})
+			d := g.Check(Input{Event: EventExternalText, ToolName: tt.tool, ToolInput: tt.input})
 			if (d != nil) != tt.wantDeny {
 				t.Errorf("%s: denial = %v, wantDeny %v", tt.name, d, tt.wantDeny)
 			}
 		})
+	}
+}
+
+// TestGhPublicByNature pins the floor's shape: gists always, the gists api
+// endpoints wherever the endpoint sits among the positionals, repo create
+// unless the visibility flag says otherwise, and nothing else.
+func TestGhPublicByNature(t *testing.T) {
+	tests := map[string]bool{
+		"gist create a.md":                               true,
+		"gist edit abc123":                               true,
+		"api gists -f description=x":                     true,
+		"api /gists/abc123/comments -f body=x":           true,
+		"api -X POST gists":                              true,
+		"api --method POST https://api.github.com/gists": true,
+		"api user":                                  false,
+		"api orgs/acme/repos -f name=x":             false,
+		"api repos/acme/public/pulls -f body=gists": false,
+		"repo create new":                           true,
+		"repo create new --public":                  true,
+		"repo create new --private":                 false,
+		"repo create acme/new --internal":           false,
+		"repo edit acme/new --visibility public":    false,
+		"pr create --body x":                        false,
+	}
+	for in, want := range tests {
+		c, _ := parseGh(strings.Fields(in))
+		if got := c.publicByNature(); got != want {
+			t.Errorf("publicByNature(gh %s) = %v, want %v", in, got, want)
+		}
 	}
 }

@@ -123,15 +123,16 @@ Three wiring rules that are easy to get wrong:
   servers. belt drops calls whose operation names a read verb at either end
   (`get_file_contents`, `issue_read`), so a broad server-wide matcher wastes
   no nudge on fetches, but the matcher is still the primary filter.
-- **The `hook external-text` matcher is the public/private line only
-  without a `public_repos` list.** The guard behind it
-  (publish-internal-names) resolves the call's owner/repo and asks the
-  config whether that repo is public-bound; with the list, any MCP server
-  may be routed there and the target decides. A rendering without the list
-  falls back to "github.com is public", and then only the MCP server that
-  talks to github.com belongs on the matcher: an internal GitHub Enterprise
-  server routed to it would deny every internal PR body that names an
-  internal repo, which is most of them.
+- **Only the MCP server that talks to github.com belongs on the
+  `hook external-text` matcher.** The guard behind it
+  (publish-internal-names) resolves the call's `owner`/`repo` pair as a
+  github.com repo; the host is fixed in the code, so a server for another
+  host would have its repos judged as if they lived on github.com. With a
+  `public_repos` list the resolved repo is checked against it and an
+  unlisted one passes; without the list every resolved repo is
+  public-bound, and an internal GitHub Enterprise server routed there would
+  deny every internal PR body that names an internal repo. Either way the
+  matcher names github.com tools only.
 
 `belt doctor` verifies the binary and the config, but it does not check
 whether `~/.claude/settings.json` actually points at belt. A correctly
@@ -351,11 +352,18 @@ events.
   internal org that lives on github.com is therefore simply not listed,
   and its pushes, PR bodies, and API calls pass with no exemption. Another
   host, and `gh api --hostname` pointing elsewhere, never counts.
-- **Targets that cannot be named** (a gist, `repo create` without an
-  owner, a raw `gh api` outside `repos/`, an MCP call without owner/repo)
-  follow the mode: with a `public_repos` list they are by definition not on
-  it and pass; under the legacy host rule they are public and nothing can
-  exempt them.
+- **Targets that cannot be named** follow the mode, with a floor. A gist,
+  a `gh api` call on the `gists` endpoints (wherever the endpoint sits
+  among the arguments, so `gh api -X POST gists` counts), `gh repo create`
+  without `--private` or `--internal`, and the MCP equivalents
+  (`create_gist`, `update_gist`, `create_repository` unless `private` is
+  true) are public by nature: no `public_repos` entry could name them, so
+  they are guarded under both modes, whatever the cwd's origin is. Every
+  other unnamed target (a raw `gh api` outside `repos/` and `gists`, an MCP
+  call without owner/repo) is guarded under the legacy host rule and passes
+  with a list, being by definition not on it. `gh api orgs/<org>/...` stays
+  on the passing side on purpose: the whole command text is scanned, so
+  guarding it would deny every call into an internal org.
 - **Outgoing commits**: for each pushed branch the base is its
   remote-tracking ref when one exists, else the remote's HEAD
   (`refs/remotes/<remote>/HEAD`); with neither, only ref names are checked
@@ -407,8 +415,10 @@ external command, no Go required.
   custom guard with its event, mode, and a PATH reachability check, because
   an unreachable command means the guard warns-and-allows on every call — it
   checks nothing.
-- `event` is required and must be `bash` or `write`. A missing or misspelled
-  one is a config error rather than a guard that registers and never fires.
+- `custom_guards.<name>.event` is required and accepts `bash` and `write`
+  only; there is no custom guard on `external-text`. A missing or
+  misspelled one is a config error rather than a guard that registers and
+  never fires.
 
 ## Overriding, allowing, and disabling
 

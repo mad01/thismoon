@@ -50,11 +50,16 @@ public_repos:
   - github.com/you/your-public-site
 
 # The internal-name list for write-internal-names, owned by belt and
-# standalone: no other file is consulted, and an unset or empty section
-# means an empty name set (the guard then has nothing to match). Every repo
-# found under workspace_dirs contributes its org name, repo name, and
-# checkout dir name as separate blocked names.
+# standalone: no other tool's file is consulted, and an unset or empty
+# section means an empty name set (the guard then has nothing to match).
+# Every repo found under workspace_dirs contributes its org name, repo
+# name, and checkout dir name as separate blocked names.
 internal_names:
+  # Shared names files (blocked_words, allowlist, allow_phrases and nothing
+  # else) appended to the lists below; a listed file that is missing or
+  # broken is a config error, and every hook denies until it is fixed.
+  include:
+    - ~/.config/internal-names/common.yaml
   workspace_dirs:
     - ~/workspace
   blocked_words:
@@ -231,7 +236,7 @@ file and key to change.`,
 // header says so.
 func runConfigDoc(w io.Writer, p config.Paths) error {
 	cfg, _ := config.LoadFrom(p)
-	_, src := config.ReadFile(p)
+	f, src := config.ReadFile(p)
 	fmt.Fprintf(w, "config file:  %s (%s)\n", src.Path, loadStatus(src.Err))
 	switch {
 	case src.Legacy:
@@ -249,6 +254,10 @@ func runConfigDoc(w io.Writer, p config.Paths) error {
 	if src.Broken() {
 		fmt.Fprintln(w, "              belt hook DENIES every guarded tool call until this parses;"+
 			" the values below are the defaults, not what is being enforced")
+	}
+	incs, _ := config.ReadIncludes(f.InternalNames.Include)
+	for _, inc := range incs {
+		fmt.Fprintf(w, "include:      %s  (%s)\n", inc.Path, includeStatus(inc))
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		fmt.Fprintf(w, "also read:    %s  (%s — permissions.deny Bash entries)\n",
@@ -391,6 +400,20 @@ func loadStatus(err error) string {
 		return "missing, defaults in use"
 	default:
 		return "parse error: " + err.Error()
+	}
+}
+
+// includeStatus renders one internal_names.include entry's state in the
+// header vocabulary. Missing and broken both mean every hook is denying;
+// the word says which fix applies.
+func includeStatus(inc config.Include) string {
+	switch {
+	case inc.Err == nil:
+		return "loaded"
+	case inc.Missing():
+		return "MISSING, every belt hook denies until it exists or is removed from internal_names.include"
+	default:
+		return "BROKEN, every belt hook denies until it parses: " + inc.Err.Error()
 	}
 }
 

@@ -32,9 +32,25 @@ func doctorPaths(dir string) config.Paths {
 
 func runDoctorString(t *testing.T, p config.Paths) string {
 	t.Helper()
+	out, _ := runDoctorReport(t, p)
+	return out
+}
+
+// runDoctorReport returns the report and the warnings it ended with.
+func runDoctorReport(t *testing.T, p config.Paths) (string, []string) {
+	t.Helper()
 	var b strings.Builder
-	runDoctor(&b, p, stubKofProbe(3, nil))
-	return b.String()
+	warns := runDoctor(&b, p, stubKofProbe(3, nil))
+	return b.String(), warns
+}
+
+// armedConfig is a config whose warnings section is empty: one Bash deny
+// pattern for script-deny-list and one blocked word for the name guards.
+func armedConfig(t *testing.T, dir string) config.Paths {
+	t.Helper()
+	writeFile(t, dir, "config.yaml", "internal_names:\n  blocked_words:\n    - acmecorp\n")
+	writeFile(t, dir, "settings.json", `{"permissions": {"deny": ["Bash(kubectl delete:*)"]}}`)
+	return doctorPaths(dir)
 }
 
 // stubKofProbe keeps doctor tests off the network: the real probe dials the
@@ -70,7 +86,7 @@ internal_names:
 
 	for _, want := range []string{
 		"config.yaml  loaded",
-		"workspace dirs: 1, blocked words: 1, allowlist: 1",
+		"workspace dirs: 1, blocked words: 1, allowlist: 1, includes: 0",
 		"(from belt config internal_names",
 		"blocked names (3)",
 		"acmecorp",
@@ -285,4 +301,157 @@ func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 			t.Errorf("invalid custom guard event not named:\n%s", out)
 		}
 	})
+}
+
+// TestDoctorReportsIncludes pins the include lines: one per listed names
+// file, in listing order, each with its state, and the merged counts on the
+// names line above them.
+func TestDoctorReportsIncludes(t *testing.T) {
+	dir := t.TempDir()
+	shared := writeFile(
+		t,
+		dir,
+		"shared.yaml",
+		"blocked_words:\n  - sharedco\n  - otherco\nallowlist:\n  - safe\nallow_phrases:\n  - sharedco-oss\n",
+	)
+	broken := writeFile(t, dir, "broken.yaml", "workspace_dirs:\n  - ~/x\n")
+	missing := filepath.Join(dir, "absent.yaml")
+	writeFile(t, dir, "config.yaml", `
+internal_names:
+  include:
+    - `+shared+`
+    - `+broken+`
+    - `+missing+`
+  blocked_words:
+    - ownco
+`)
+
+	out := runDoctorString(t, doctorPaths(dir))
+
+	for _, want := range []string{
+		"blocked words: 3, allowlist: 1, includes: 3",
+		"include      " + shared + "  loaded (blocked words: 2, allowlist: 1, allow phrases: 1)",
+		"include      " + broken + "  BROKEN (",
+		"workspace_dirs",
+		"include      " + missing + "  MISSING — every belt hook denies until it exists" +
+			" or is removed from internal_names.include",
+		"sharedco",
+		"ownco",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestDoctorWarningsSection pins what ends up in the final section: every
+// state where belt denies everything or is armed and enforcing nothing.
+func TestDoctorWarningsSection(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string) config.Paths
+		want  string // %s stands for the temp dir
+	}{
+		{
+			"broken yaml",
+			func(t *testing.T, dir string) config.Paths {
+				p := armedConfig(t, dir)
+				writeFile(t, dir, "config.yaml", "guards: [broken")
+				return p
+			},
+			"config %s/config.yaml is BROKEN: every belt hook denies until it parses",
+		},
+		{
+			"missing include",
+			func(t *testing.T, dir string) config.Paths {
+				p := armedConfig(t, dir)
+				writeFile(t, dir, "config.yaml", "internal_names:\n  include:\n    - "+
+					filepath.Join(dir, "absent.yaml")+"\n  blocked_words:\n    - acmecorp\n")
+				return p
+			},
+			"include %s/absent.yaml is MISSING: every belt hook denies until it exists",
+		},
+		{
+			"zero deny patterns",
+			func(t *testing.T, dir string) config.Paths {
+				p := armedConfig(t, dir)
+				writeFile(t, dir, "settings.json", `{"permissions": {"deny": ["WebFetch"]}}`)
+				return p
+			},
+			"script-deny-list has no Bash deny patterns from the Claude settings;" +
+				" check permissions.deny in ~/.claude/settings.json",
+		},
+		{
+			"empty names",
+			func(t *testing.T, dir string) config.Paths {
+				p := armedConfig(t, dir)
+				writeFile(t, dir, "config.yaml", "guards: {}\n")
+				return p
+			},
+			"write-internal-names and publish-internal-names have no names to match",
+		},
+		{
+			"unknown toggle",
+			func(t *testing.T, dir string) config.Paths {
+				p := armedConfig(t, dir)
+				writeFile(t, dir, "config.yaml",
+					"guards:\n  git-push-mian:\n    enabled: false\n"+
+						"internal_names:\n  blocked_words:\n    - acmecorp\n")
+				return p
+			},
+			`unknown guard "git-push-mian" in config file`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := tt.setup(t, dir)
+			want := strings.ReplaceAll(tt.want, "%s", dir)
+
+			out, warns := runDoctorReport(t, p)
+
+			if len(warns) != 1 {
+				t.Fatalf("warnings = %v, want exactly one:\n%s", warns, out)
+			}
+			if !strings.Contains(warns[0], want) {
+				t.Errorf("warning %q does not contain %q", warns[0], want)
+			}
+			if !strings.Contains(out, "\nwarnings:\n  "+warns[0]) {
+				t.Errorf("warnings section missing %q:\n%s", warns[0], out)
+			}
+		})
+	}
+}
+
+// TestDoctorNoWarningsExitsClean: a config that arms every guard with
+// something to enforce ends with an empty section, the state a
+// provisioning check gates on.
+func TestDoctorNoWarningsExitsClean(t *testing.T) {
+	out, warns := runDoctorReport(t, armedConfig(t, t.TempDir()))
+
+	if len(warns) != 0 {
+		t.Errorf("warnings = %v, want none:\n%s", warns, out)
+	}
+	if !strings.Contains(out, "\nwarnings:\n  (none)\n") {
+		t.Errorf("empty warnings section not rendered:\n%s", out)
+	}
+}
+
+// TestDoctorCmdReturnsErrorOnWarnings pins the exit contract through cobra:
+// warnings present means a non-nil error (exit 1 from Execute), none means
+// nil. A machine with no config at all lands on the first side by design.
+func TestDoctorCmdReturnsErrorOnWarnings(t *testing.T) {
+	run := func(t *testing.T, p config.Paths) error {
+		t.Helper()
+		cmd := doctorCmdWith(func() (config.Paths, error) { return p, nil }, stubKofProbe(0, nil))
+		cmd.SetOut(&strings.Builder{})
+		cmd.SetArgs(nil)
+		return cmd.Execute()
+	}
+	if err := run(t, doctorPaths(t.TempDir())); !errors.Is(err, errDoctorWarnings) {
+		t.Errorf("no config: Execute() = %v, want %v", err, errDoctorWarnings)
+	}
+	if err := run(t, armedConfig(t, t.TempDir())); err != nil {
+		t.Errorf("armed config: Execute() = %v, want nil", err)
+	}
 }

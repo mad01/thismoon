@@ -22,10 +22,12 @@ with the payload on stdin and a deny decision on stdout. belt is that layer:
 suspenders holds up commits, belt holds up the session before anything
 reaches git. It stays separate from suspenders because the two run in
 different lifecycles, and each owns its own config: the write-internal-names
-guard reads the `internal_names` section of belt's own file and no other.
-What the two share is the derivation, not the file — both build their name
-list through the same `kit/repofind` discovery, so identical configs produce
-identical lists.
+guard reads the `internal_names` section of belt's own file, plus the shared
+names files that section lists under `include`, and never the suspenders
+config. What the two share is the derivation (both build their name list
+through the same `kit/repofind` discovery) and, when both list it, one names
+file each points at from its own config (docs/adr/0016), so identical inputs
+produce identical lists.
 
 ## Why this shape
 
