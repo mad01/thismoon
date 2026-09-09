@@ -94,14 +94,14 @@ CLI tools under `tools/`, installed to your local bin.
 
 | Tool | What it does | Interfaces | State |
 |------|--------------|------------|-------|
-| [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | proven |
 | [clipboard](tools/clipboard/README.md) | macOS clipboard bridge over pbcopy/pbpaste | CLI · MCP | proven |
 | [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling | CLI · MCP | proven |
 | [opener](tools/opener/README.md) | macOS open bridge: URLs, files, apps, Finder reveal | CLI · MCP | proven |
 | [t-man](tools/t-man/README.md) | Declarative launchd agent/daemon manager | CLI | proven |
 | [toss-bin](tools/toss-bin/README.md) | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
 | [worklog](tools/worklog/README.md) | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
-| [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | evaluating |
+| [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | experimental |
+| [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | experimental |
 
 The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers and your agent gets the code search, the audit log, and the
