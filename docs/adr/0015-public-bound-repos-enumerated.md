@@ -59,3 +59,14 @@ is not a usable signal either, since a private repo can be headed public
 - The `external-text` hook matcher stops being the public/private line:
   with a list, any MCP server may be routed to it and the target decides.
   Without a list, only the github.com server belongs there.
+- Adopting the list flipped every unnamed target from guarded to
+  unguarded. A gist, `gh repo create` without an owner, `gh api` without a
+  repo in its path, and an MCP call without owner/repo were public-bound
+  under the host rule and matched nothing once a list existed. Targets that
+  are public by nature are now guarded under both modes: gists, the `gists`
+  API endpoints, repository creation without `--private` or `--internal`,
+  and their MCP twins (`create_gist`, `update_gist`, and
+  `create_repository` unless private). Every other unnamed `gh api` call
+  stays allowed with a list, because the whole command text is scanned and
+  guarding `gh api orgs/<org>/...` would re-deny the work-org calls the
+  list exists to allow.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -196,11 +197,44 @@ func TestConfigHelpCarriesTheReference(t *testing.T) {
 		"allow_repos",
 		"exclude_paths",
 		"extra_patterns",
+		"include",
 		"kof-assertions",
 		"Pair it with doctor",
 	} {
 		if !strings.Contains(long, want) {
 			t.Errorf("--help text missing %q", want)
+		}
+	}
+}
+
+// TestConfigRendersIncludedNames pins the include surface in `belt config`:
+// each listed names file gets a header line with its state, and the body
+// prints the merged lists (what belt runs with) plus the include entries
+// themselves, so the output still round-trips into a config file.
+func TestConfigRendersIncludedNames(t *testing.T) {
+	dir := t.TempDir()
+	shared := writeFile(t, dir, "shared.yaml", "blocked_words:\n  - sharedco\n")
+	missing := filepath.Join(dir, "absent.yaml")
+	writeFile(t, dir, "config.yaml", `
+internal_names:
+  include:
+    - `+shared+`
+    - `+missing+`
+  blocked_words:
+    - ownco
+`)
+
+	out := runConfigDocString(t, doctorPaths(dir))
+
+	for _, want := range []string{
+		"include:      " + shared + "  (loaded)",
+		"include:      " + missing + "  (MISSING, every belt hook denies",
+		"- sharedco",
+		"- ownco",
+		"include:\n    - " + shared,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
 }

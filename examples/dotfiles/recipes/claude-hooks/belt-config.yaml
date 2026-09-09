@@ -8,22 +8,22 @@
 # profile-gated recipe per class, or a template), so a guard or rule that
 # should exist only on some machines is simply absent from the others'
 # files. This example is a work-machine rendering; a personal machine's
-# file would drop the work-hours rule and carry its own git-push-main
-# allow_repos list.
+# file would drop the work-hours rule and list its own direct_main_repos.
 
-# Name sources for the write-internal-names guard. belt reads only this
-# file — the suspenders pre-commit guard has an identically shaped section
-# in its own config, so keep the two in step (render both from one template
-# if your dotfiles can). Every git repo found under workspace_dirs
-# contributes its org, repo, and directory names as blocked words in public
-# (github.com) repos — the list is derived, never enumerated.
+# Name sources for the write-internal-names and publish-internal-names
+# guards. Every git repo found under workspace_dirs contributes its org,
+# repo, and directory names as blocked words in public-bound repos; the
+# list is derived, never enumerated. The hand-written lists (blocked_words,
+# allowlist, allow_phrases) live in the shared names file that `include`
+# points at, so the suspenders pre-commit guard reads the same lists from
+# its own `guard.include` and the two never drift (docs/adr/0016). Neither
+# tool reads the other's config. A listed file that is missing or broken is
+# a config error: every belt hook denies until it is fixed.
 internal_names:
   workspace_dirs:
     - ~/work-checkouts
-  blocked_words:
-    - internal-codename
-  allowlist:
-    - some-safe-name
+  include:
+    - ~/.config/internal-names/common.yaml
 
 # belt reads the Claude settings files (settings.json + settings.local.json)
 # for the permissions.deny Bash entries that script-deny-list enforces

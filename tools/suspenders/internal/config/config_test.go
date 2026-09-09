@@ -1,10 +1,22 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
+
+// writeTestFile writes content to path, failing the test on error.
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestExpandPath(t *testing.T) {
 	home, _ := os.UserHomeDir()
@@ -205,5 +217,108 @@ func TestPath_XDGOverride(t *testing.T) {
 	want := "/tmp/xdg/suspenders/config.yaml"
 	if p != want {
 		t.Errorf("Path() = %q, want %q", p, want)
+	}
+}
+
+// TestLoadFromIncludesAppendGuardLists: every names file under guard.include
+// feeds all three guard lists, after the config's own entries and in include
+// order, while the include list itself is kept as written.
+func TestLoadFromIncludesAppendGuardLists(t *testing.T) {
+	dir := t.TempDir()
+	common := filepath.Join(dir, "common.yaml")
+	writeTestFile(t, common, `
+blocked_words: [acmecorp]
+allowlist: [monitoring]
+allow_phrases: [dotfiles-acmecorp]
+`)
+	work := filepath.Join(dir, "work.yaml")
+	writeTestFile(t, work, "blocked_words: [acmeinc]\n")
+	path := filepath.Join(dir, "config.yaml")
+	writeTestFile(t, path, `
+guard:
+  blocked_words: [ownword]
+  include:
+    - `+common+`
+    - `+work+`
+`)
+
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom() error: %v", err)
+	}
+	g := cfg.Guard
+	if want := []string{"ownword", "acmecorp", "acmeinc"}; !slices.Equal(g.BlockedWords, want) {
+		t.Errorf("BlockedWords = %v, want %v", g.BlockedWords, want)
+	}
+	if want := []string{"monitoring"}; !slices.Equal(g.Allowlist, want) {
+		t.Errorf("Allowlist = %v, want %v", g.Allowlist, want)
+	}
+	if want := []string{"dotfiles-acmecorp"}; !slices.Equal(g.AllowPhrases, want) {
+		t.Errorf("AllowPhrases = %v, want %v", g.AllowPhrases, want)
+	}
+	if want := []string{common, work}; !slices.Equal(g.Include, want) {
+		t.Errorf("Include = %v, want %v", g.Include, want)
+	}
+}
+
+// TestLoadFromIncludeMissingIsAnError: a names file the config lists but
+// that does not exist fails the load, the same way a broken config does, so
+// the guard never runs against a silently shorter list. The error names the
+// include and keeps the not-exist cause visible.
+func TestLoadFromIncludeMissingIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "absent.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	writeTestFile(t, path, "guard:\n  include:\n    - "+missing+"\n")
+
+	cfg, err := LoadFrom(path)
+	if err == nil {
+		t.Fatal("LoadFrom() with a missing include returned nil error")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("error = %v, want one wrapping fs.ErrNotExist", err)
+	}
+	if !strings.Contains(err.Error(), "include "+missing) {
+		t.Errorf("error = %v, want it to name the include %s", err, missing)
+	}
+	if cfg != nil {
+		t.Errorf("config = %+v, want nil on a load error", cfg)
+	}
+}
+
+// TestLoadFromIncludeRejectsUnknownKeys: a names file carries three keys and
+// nothing else. A stray workspace_dirs would parse cleanly and guard nothing
+// if it were tolerated, so it is a load error that names the key.
+func TestLoadFromIncludeRejectsUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	names := filepath.Join(dir, "names.yaml")
+	writeTestFile(t, names, "blocked_words: [acmecorp]\nworkspace_dirs: [~/work]\n")
+	path := filepath.Join(dir, "config.yaml")
+	writeTestFile(t, path, "guard:\n  include:\n    - "+names+"\n")
+
+	_, err := LoadFrom(path)
+	if err == nil {
+		t.Fatal("LoadFrom() with an unknown key in the include returned nil error")
+	}
+	if !strings.Contains(err.Error(), "workspace_dirs") {
+		t.Errorf("error = %v, want it to name the unknown key", err)
+	}
+}
+
+// TestLoadFromIncludeExpandsTilde: include paths take a leading ~ like every
+// other path in the config.
+func TestLoadFromIncludeExpandsTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestFile(t, filepath.Join(home, "names.yaml"), "blocked_words: [acmecorp]\n")
+	path := filepath.Join(home, "config.yaml")
+	writeTestFile(t, path, "guard:\n  include:\n    - ~/names.yaml\n")
+
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom() error: %v", err)
+	}
+	if want := []string{"acmecorp"}; !slices.Equal(cfg.Guard.BlockedWords, want) {
+		t.Errorf("BlockedWords = %v, want %v", cfg.Guard.BlockedWords, want)
 	}
 }

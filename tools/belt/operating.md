@@ -25,7 +25,7 @@ immediately, with no restart and no new session.
 
 The belt-owned config is {{.StorePath}}: guard and hint toggles, exclude
 paths, extra patterns, claude_settings, guard rules, and the internal_names
-section. `$XDG_CONFIG_HOME/belt/config.yaml` wins when that variable is set,
+section, with the shared names files it lists under internal_names.include. `$XDG_CONFIG_HOME/belt/config.yaml` wins when that variable is set,
 and `--config` or `$BELT_CONFIG` relocates the file outright (a relocated
 file gets no legacy TOML fallback). The config is standalone and has no
 machine-profile concept: belt reads no other tool's file, and the
@@ -42,7 +42,9 @@ or validate makes every `belt hook` invocation deny with
 configured" from "the rules did not load", and guessing the permissive one
 would silently disarm every guard. Validation covers the values that parse
 and then do nothing: a `custom_guards.<name>.event` outside bash/write, and
-`mode:` values other than hard/soft or set on a guard that ignores them.
+`mode:` values other than hard/soft or set on a guard that ignores them. A
+names file listed under internal_names.include that is missing or fails to
+parse is the same error, and the deny names the include file.
 
 ## failure modes
 
@@ -94,8 +96,10 @@ again.
 
 ## first moves
 
-1. `belt doctor`: build metadata, which config surface loaded, guard and
-   hint enablement, kof reachability, and the resolved blocked-name list
+1. `belt doctor`: build metadata, which config surface loaded (include
+   files too), guard and hint enablement, kof reachability, and the
+   resolved blocked-name list; it ends with a warnings section and exits 1
+   when that section is not empty
 2. `belt check bash "<command>"`, or `belt check write --file <path>
    --content "<text>"`: dry-run the guards and print each verdict
 3. `belt config`: every setting in effect, with resolved defaults,

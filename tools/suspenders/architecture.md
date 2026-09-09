@@ -74,8 +74,10 @@ generated scripts call), `history scan` (`--branch`), `history clean`
 json]` (the bare version token, or the four-key build metadata object shared
 across the repo's components).
 
-Config surfaces: the global YAML file, the per-repo override file, and the
-inline `suspenders:ignore` line marker. The guard section is shaped like
-belt's `internal_names` section on purpose, but neither tool reads the
-other's file (docs/adr/0010). Hook scripts resolve the tool by bare name
+Config surfaces: the global YAML file, the shared names files it lists under
+`guard.include` (read through `kit/internalnames`), the per-repo override
+file, and the inline `suspenders:ignore` line marker. The guard section is
+shaped like belt's `internal_names` section on purpose and both tools
+include the same names files, but neither reads the other's config
+(docs/adr/0010, docs/adr/0016). Hook scripts resolve the tool by bare name
 through `$PATH`. There is no web or MCP surface.

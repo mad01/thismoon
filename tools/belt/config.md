@@ -1,5 +1,20 @@
 # belt configuration
 
+## Vocabulary
+
+Four terms recur in this file and in the `belt doctor` output:
+
+- rendering: one fully written belt config file for one machine class.
+  Nothing in it is conditional. A rule that should hold on only some
+  machines is present in their rendering and absent from the others.
+- machine class: personal or work. Decided at provisioning time, never
+  at hook time; belt has no runtime switch for it (docs/adr/0010).
+- provisioning layer: whatever installs the rendering and the hook
+  entries on a machine. In the maintainer's fleet that is ralph reading
+  recipes from a private config repo. Any tool that writes two files will do.
+- consuming repo: the private repo that carries the renderings and the
+  hook registration. belt ships none of it (docs/adr/0006).
+
 ## Where config lives
 
 belt's own settings live in `~/.config/belt/config.yaml` (YAML), or
@@ -69,14 +84,19 @@ annotated key reference reproduced in the Example section below.
 `internal_names` has no fallback: an absent or empty section means an empty
 name set, and `write-internal-names` then has nothing to match (`belt
 doctor` calls this out). The section is deliberately shape-compatible with
-the `guard:` section of the suspenders config so a provisioning layer can
-render one authored block into both files — that is where the two tools'
-name configs stay in step, not at read time.
+the `guard:` section of the suspenders config, and since docs/adr/0016 the
+three name lists can also live in one shared names file that both tools
+list under their own `include` key. That file is where the two tools' name
+configs stay in step; neither reads the other's config.
 
 Run `belt config` to see which files loaded (or failed to) and every setting
 belt is actually running with, after every default and fallback is applied.
 Run `belt doctor` to see the state those settings produce: enabled guards and
-hints, active overrides, and the resolved blocked-name list.
+hints, active overrides, and the resolved blocked-name list. The report ends
+with a warnings section and exits 1 when it is not empty: a broken config or
+include, a script guard with no deny patterns, an internal-name guard with no
+names, or a toggle nothing answers to. A machine with no config at all exits
+1 for the middle two by design.
 
 ## Keys
 
@@ -116,6 +136,17 @@ The name-derivation source for the `write-internal-names` and
 `publish-internal-names` guards. Belt-owned and standalone: absent or empty
 means an empty name set (see Where config lives).
 
+- `internal_names.include` (list of string, default: empty): paths of
+  shared names files, `~` expanded. Each file carries `blocked_words`,
+  `allowlist`, and `allow_phrases` and nothing else; any other key is an
+  error naming the file. The three lists are appended to the section's own.
+  A listed file that is missing or fails to parse is a config error with the
+  same consequence as a broken `config.yaml`: every `belt hook` call denies
+  with `belt[config]:` naming the include file until it is fixed or the
+  entry is removed. `belt doctor` prints one line per include with its state
+  (loaded with counts, MISSING, or BROKEN) and `belt config` lists each in
+  its header. suspenders names the same file from its own config; neither
+  tool reads the other's config (docs/adr/0016).
 - `internal_names.workspace_dirs` (list of string, default: empty): directories
   to search for git repos. Every repo found contributes its origin remote's
   org segment, repo segment, and checkout directory basename as three
@@ -396,11 +427,16 @@ environment at hook invocation time.
 # ~/.config/belt/config.yaml — every key optional; guards and hints default
 # to enabled when the file or their entry is missing.
 
+direct_main_repos:
+  - github.com/you/dotfiles
+
 public_repos:
   - github.com/you/your-open-source-tool
   - github.com/you/your-public-site
 
 internal_names:
+  include:
+    - ~/.config/internal-names/common.yaml
   workspace_dirs:
     - ~/workspace
   blocked_words:
@@ -438,8 +474,11 @@ custom_guards:
 guards:
   git-push-main:
     enabled: true
-    allow_repos:
-      - github.com/you/yourrepo
+    # direct_main_repos above already exempts the repos whose workflow is
+    # direct-to-main; allow_repos is the escape hatch for a one-off that is
+    # not a workflow fact.
+    # allow_repos:
+    #   - github.com/you/one-off-exception
 
   script-deny-list:
     enabled: true

@@ -33,3 +33,16 @@ target = "~/.config/belt"
 source = "belt-config.yaml"
 target = "~/.config/belt/config.yaml"
 action = "symlink"
+
+# The shared names file belt-config.yaml includes (docs/adr/0016). The same
+# file is what the suspenders config's guard.include points at, so the two
+# guards read one list without reading each other's config. Install it from
+# a recipe every machine class applies; a class-specific second file goes in
+# that class's overlay recipe.
+[directories.internal_names_dir]
+target = "~/.config/internal-names"
+
+[dotfiles.internal_names_common]
+source = "internal-names.yaml"
+target = "~/.config/internal-names/common.yaml"
+action = "symlink"

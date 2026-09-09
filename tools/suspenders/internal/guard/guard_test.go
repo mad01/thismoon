@@ -557,3 +557,27 @@ func TestStagedFiles(t *testing.T) {
 		t.Errorf("expected [test.go], got %v", files)
 	}
 }
+
+// TestMatcher_allowPhrasesNeutralizeCompound: a sanctioned compound that
+// contains a blocked name passes, in any casing, while the bare name
+// elsewhere on the same line still matches. Blank phrases are ignored rather
+// than blanking every character.
+func TestMatcher_allowPhrasesNeutralizeCompound(t *testing.T) {
+	g := New(config.GuardConfig{
+		Enabled:      true,
+		BlockedWords: []string{"acmecorp"},
+		AllowPhrases: []string{"dotfiles-acmecorp", "", "  "},
+	})
+	matcher, err := g.NewMatcher()
+	if err != nil {
+		t.Fatalf("NewMatcher: %v", err)
+	}
+
+	if m := matcher.Find("clone dotfiles-acmecorp then Dotfiles-AcmeCorp"); len(m) != 0 {
+		t.Errorf("sanctioned compound matched: %v", m)
+	}
+	m := matcher.Find("dotfiles-acmecorp mirrors acmecorp upstream")
+	if len(m) != 1 || m[0] != "acmecorp" {
+		t.Errorf("Find = %v, want the bare name only", m)
+	}
+}

@@ -4,7 +4,7 @@
 
 - Global config: `~/.config/suspenders/config.yaml`, or `$XDG_CONFIG_HOME/suspenders/config.yaml` when that variable holds an absolute path. YAML format. `--config <path>` and `$SUSPENDERS_CONFIG` relocate the file; the flag wins over the variable, and a leading `~` expands.
 - The config file is optional and **suspenders never creates it**. With no file, the defaults documented under Keys are what suspenders runs with, held in memory. Run `suspenders config init` to write a file with those defaults when you want one to edit; it refuses to overwrite an existing file. Loading used to write this file on first run, which under a git pre-commit hook meant creating one wherever git had left the process — and persisting one machine's directory layout onto every other machine that ran the tool.
-- A config file that exists but cannot be read or parsed is an error, never a silent fallback to the defaults: `hook run`, `scan`, `doctor`, and the `hook install/update/status` commands all fail on it, so a broken file blocks the commit instead of checking it against nothing. `suspenders config` is the exception — it reports the parse error in its header and prints the defaults anyway, so the reference stays readable while the file is broken.
+- A config file that exists but cannot be read or parsed is an error, never a silent fallback to the defaults: `hook run`, `scan`, `doctor`, and the `hook install/update/status` commands all fail on it, so a broken file blocks the commit instead of checking it against nothing. A names file listed under `guard.include` that is missing or does not parse is the same error. `suspenders config` is the exception: it reports the parse error in its header and prints the defaults anyway, so the reference stays readable while the file is broken.
 - An unresolvable home directory (no `$HOME`, no `$XDG_CONFIG_HOME`) is also an error. The old behavior resolved `./.config/suspenders/config.yaml` relative to the working directory, which inside a pre-commit hook is the repository being committed to.
 - Per-repo overrides: `.suspenders.yaml` (or `.suspenders.yml`) at a repository's root. Resolved from the scan root or the enclosing git top-level. Both `scan` and the pre-commit hook read it.
 - Precedence: per-repo `allowlist`, `watch`, `guard.allowlist`, and `guard.blocked_words` entries are appended to the corresponding global lists. Per-repo `rules`, `paths`, and `patterns` are repo-only ignore mechanisms with no global equivalent. Nothing in the per-repo file replaces a global value outright.
@@ -37,6 +37,8 @@ The internal-reference guard blocks commits that mention internal org or repo na
 - `guard.workspace_dirs` (string list, default empty): directories walked to discover repos. Every discovered repo's org name, repo name, and checkout directory basename become blocked names. Repos inside these directories are themselves guard-exempt.
 - `guard.blocked_words` (string list, default empty): terms added to the blocked name list regardless of workspace discovery, such as a brand name or an internal domain. Literal, case-insensitive match; `*` matches a run of non-space characters (`*.example.net`).
 - `guard.allowlist` (string list, default empty): safe references, names that must never be treated as blocked even though discovery or `blocked_words` would otherwise collect them (for example `grpc/grpc-go`). This is a separate list from the top-level `allowlist` above, which holds secret values, not names.
+- `guard.allow_phrases` (string list, default empty): exact phrases, matched case-insensitively, blanked out of the checked content before name matching. A sanctioned compound that contains a blocked name (a private companion repo called `dotfiles-<name>`, say) passes, while the bare name anywhere else still blocks. Honored by every check: staged diff, working-tree scan, history scan and clean.
+- `guard.include` (string list, default empty): paths of shared names files, `~` allowed. A names file holds exactly `blocked_words`, `allowlist`, and `allow_phrases`; each listed file's lists are appended to the three lists above at load time, in include order, and per-repo overrides layer on top of the merged result. belt lists the same files under its `internal_names.include`, so both guards read one source (docs/adr/0016). A listed file that is missing, carries any other key, or does not parse fails the load like a broken config.
 - `guard.file_patterns` (string list, default empty, meaning every file): globs restricting which staged files the guard inspects for blocked names.
 
 ### History
@@ -103,6 +105,10 @@ guard:
     - "*.examplecorp.net"
   allowlist:
     - grpc/grpc-go
+  allow_phrases:
+    - dotfiles-examplecorp
+  include:
+    - ~/.config/internal-names/common.yaml
   file_patterns:
     - "*.go"
     - "*.md"

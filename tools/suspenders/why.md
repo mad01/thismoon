@@ -45,7 +45,8 @@ repo without destroying what was already installed.
 suspenders makes no network calls and does no server-side or CI enforcement;
 it runs where the commit happens. It does not guard the agent session before
 anything reaches git — that is belt's layer, which derives its name list the
-same way from its own config. It does not try to stop a user who deliberately bypasses it:
+same way from its own config and the same shared names files (docs/adr/0016).
+It does not try to stop a user who deliberately bypasses it:
 `git commit --no-verify` is the explicit, auditable override, preferred over
 silently weakening the scan. Coverage of the derived block list ends at what
 is checked out locally; names that exist only elsewhere must be listed as

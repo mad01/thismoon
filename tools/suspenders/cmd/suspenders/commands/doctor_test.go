@@ -115,3 +115,50 @@ func TestDoctorWithDefaultConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorReportsIncludes(t *testing.T) {
+	names := filepath.Join(t.TempDir(), "common.yaml")
+	content := `
+blocked_words:
+  - acmecorp
+allowlist:
+  - grpc/grpc-go
+allow_phrases:
+  - dotfiles-acmecorp
+`
+	if err := os.WriteFile(names, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runDoctorString(t, "guard:\n  enabled: true\n  include:\n    - "+names+"\n", t.TempDir())
+
+	for _, want := range []string{
+		"workspace dirs: 0, blocked words: 1, safe references: 1, allow phrases: 1",
+		"include: " + names + " (loaded: blocked words 1, safe references 1, allow phrases 1)",
+		"blocked names (1)",
+		"acmecorp",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestDoctorFailsOnMissingInclude: a names file the config lists but that is
+// absent fails doctor the way it fails every other command, with the build
+// and config path already printed and the error naming the include.
+func TestDoctorFailsOnMissingInclude(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.yaml")
+	xdgConfig(t, "guard:\n  enabled: true\n  include:\n    - "+missing+"\n")
+
+	var b strings.Builder
+	doctorCmd.SetOut(&b)
+	defer doctorCmd.SetOut(nil)
+	err := runDoctor(doctorCmd, []string{t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "include "+missing) {
+		t.Fatalf("runDoctor error = %v, want one naming include %s", err, missing)
+	}
+	if !strings.Contains(b.String(), "config: ") {
+		t.Errorf("config path not printed before the failure:\n%s", b.String())
+	}
+}

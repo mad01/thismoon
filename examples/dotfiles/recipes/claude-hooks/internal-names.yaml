@@ -1,0 +1,28 @@
+# The one version of the internal-name lists (docs/adr/0016). Installed at
+# ~/.config/internal-names/common.yaml and named by belt
+# (internal_names.include) and suspenders (guard.include) in their own
+# configs; neither tool reads the other's config. Exactly these three keys
+# are legal; anything else fails to load in both tools, so a misspelled key
+# cannot parse and silently guard nothing.
+#
+# A machine class with extra names (a work overlay, say) installs a second
+# file beside this one and adds it to both include lists in that class's
+# renderings.
+
+# Names blocked outright, independent of any discovered repo. Both tools
+# match case-insensitively, so one spelling per name is enough.
+blocked_words:
+  - internal-codename
+
+# Names (or their basenames) that leave the derived set even though a repo
+# under workspace_dirs would contribute them: common words and public
+# tool names that only produce false positives.
+allowlist:
+  - docs
+  - monitoring
+
+# Exact phrases neutralized in checked content before name matching, so a
+# sanctioned compound (a private companion repo's own name) passes while the
+# bare blocked word anywhere else still denies.
+allow_phrases:
+  - dotfiles-internal-codename

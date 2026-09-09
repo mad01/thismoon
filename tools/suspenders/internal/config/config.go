@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/internalnames"
 )
 
 // Component is the config directory name suspenders owns under the XDG
@@ -55,7 +56,15 @@ type GuardConfig struct {
 	WorkspaceDirs []string `yaml:"workspace_dirs"`
 	BlockedWords  []string `yaml:"blocked_words"`
 	Allowlist     []string `yaml:"allowlist"`
-	FilePatterns  []string `yaml:"file_patterns"`
+	// AllowPhrases are exact phrases neutralized in checked content before
+	// name matching, so a sanctioned compound that contains a blocked name
+	// passes while the bare name anywhere else still matches.
+	AllowPhrases []string `yaml:"allow_phrases"`
+	// Include lists shared names files (docs/adr/0016) whose blocked_words,
+	// allowlist, and allow_phrases append to the lists above at load time.
+	// A listed file that is missing or does not parse is a load error.
+	Include      []string `yaml:"include"`
+	FilePatterns []string `yaml:"file_patterns"`
 }
 
 // HistoryConfig controls history clean behaviour.
@@ -179,7 +188,9 @@ func Load() (*Config, error) {
 // LoadFrom reads the config from path. A missing file yields the defaults
 // with a nil error; a file that exists but cannot be read or parsed is an
 // error, which the guard entrypoints turn into a failed hook rather than a
-// commit checked against nothing.
+// commit checked against nothing. The names files under guard.include are
+// read here too, and one that is missing or broken is the same kind of
+// error: the guard would otherwise run against a silently shorter list.
 func LoadFrom(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -193,7 +204,27 @@ func LoadFrom(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	if err := cfg.Guard.loadIncludes(); err != nil {
+		return nil, err
+	}
 	return cfg.WithDefaults(), nil
+}
+
+// loadIncludes appends the lists of every names file under Include to the
+// guard's own lists, in include order. Paths take a leading ~. Include
+// itself is left as written so `suspenders config` shows which files fed
+// the lists.
+func (g *GuardConfig) loadIncludes() error {
+	for _, p := range g.Include {
+		names, err := internalnames.Read(ExpandPath(p))
+		if err != nil {
+			return fmt.Errorf("include %s: %w", p, err)
+		}
+		g.BlockedWords = append(g.BlockedWords, names.BlockedWords...)
+		g.Allowlist = append(g.Allowlist, names.Allowlist...)
+		g.AllowPhrases = append(g.AllowPhrases, names.AllowPhrases...)
+	}
+	return nil
 }
 
 // Write creates path's parent directory and writes cfg to it. It is the

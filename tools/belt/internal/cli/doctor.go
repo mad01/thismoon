@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +18,18 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
 )
 
+// errDoctorWarnings is what `belt doctor` returns when its warnings section
+// is non-empty: the process exits 1, so a provisioning check can gate on a
+// belt that is armed but enforcing less than its config claims.
+var errDoctorWarnings = errors.New("belt doctor: warnings present")
+
 func doctorCmd(paths pathsFunc) *cobra.Command {
+	return doctorCmdWith(paths, liveKofProbe)
+}
+
+// doctorCmdWith builds the doctor command around an injectable kof probe,
+// so the command's exit contract can be tested without dialing a port.
+func doctorCmdWith(paths pathsFunc, probe kofProbe) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names",
@@ -26,14 +38,22 @@ config surface loaded (or didn't), which guards and hints are enabled,
 whether the kof serve instance the kof-* hints query is reachable, and
 the resolved blocked-name set the write-internal-names guard matches
 against. Use it to answer "why did that check fire": a deny names the
-guard, doctor names the build and the config behind it.`,
+guard, doctor names the build and the config behind it.
+
+The report ends with a warnings section and exits 1 when it is not empty:
+a broken config or include file (every hook is denying), a script guard
+with no deny patterns to enforce, an internal-name guard with no names to
+match, or a toggle no registered guard or hint answers to. A machine with
+no belt config at all warns about the last three by design.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths()
 			if err != nil {
 				return err
 			}
-			runDoctor(cmd.OutOrStdout(), p, liveKofProbe)
+			if warns := runDoctor(cmd.OutOrStdout(), p, probe); len(warns) > 0 {
+				return errDoctorWarnings
+			}
 			return nil
 		},
 	}
@@ -51,36 +71,36 @@ func liveKofProbe() (string, int, error) {
 	return base, count, err
 }
 
-func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
-	// The load error is reported in the config-surfaces section rather than
-	// aborting: doctor is what someone runs to find out why belt is denying
-	// everything, so it has to survive the config that caused it.
+// doctorReport is everything one doctor run resolved, read once and shared
+// by the section printers. The config file is read twice, by LoadFrom and
+// ReadFile, because the report needs the source and per-include states that
+// Config does not carry; both reads see the same file.
+type doctorReport struct {
+	cfg  config.Config
+	p    config.Paths
+	src  config.Source
+	incs []config.Include
+}
+
+func newDoctorReport(p config.Paths) doctorReport {
 	cfg, _ := config.LoadFrom(p)
+	f, src := config.ReadFile(p)
+	incs, _ := config.ReadIncludes(f.InternalNames.Include)
+	return doctorReport{cfg: cfg, p: p, src: src, incs: incs}
+}
+
+// runDoctor prints the report and returns the warnings it ends with: the
+// states where belt is armed but enforcing less than the config claims, or
+// denying everything. The load error is reported in the config-surfaces
+// section rather than aborting: doctor is what someone runs to find out why
+// belt is denying everything, so it has to survive the config that caused
+// it.
+func runDoctor(w io.Writer, p config.Paths, probe kofProbe) []string {
+	r := newDoctorReport(p)
+	cfg := r.cfg
 
 	printBuild(w)
-
-	fmt.Fprintln(w, "config surfaces:")
-	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(p))
-	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg))
-	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
-	if n := len(cfg.DirectMainRepos); n > 0 {
-		fmt.Fprintf(
-			w,
-			"  global       direct_main_repos: %d  (read by git-push-main + commit-policy only)\n",
-			n,
-		)
-	}
-	if cfg.HasPublicRepos() {
-		fmt.Fprintf(w, "  global       public_repos: %d  (internal names blocked there by"+
-			" write-internal-names + publish-internal-names, allowed everywhere else)\n",
-			len(cfg.PublicRepos))
-	} else {
-		fmt.Fprintln(w, "  global       public_repos: unset  (legacy rule: every github.com repo"+
-			" is public-bound for write-internal-names + publish-internal-names)")
-	}
-	for _, warn := range unknownToggleWarnings(cfg) {
-		fmt.Fprintf(w, "  warning      %s\n", warn)
-	}
+	warns := r.printConfigSurfaces(w)
 
 	fmt.Fprintln(w, "\nguards:")
 	var customs []*guard.Custom
@@ -125,6 +145,78 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	fmt.Fprintln(w, "\nkof serve — backs the kof-* hints:")
 	fmt.Fprintf(w, "  %s  %s\n", base, kofNote(count, probeErr))
 
+	nameWarns := r.printBlockedNames(w)
+	if !r.src.Broken() {
+		// A broken config zeroes the name set; the BROKEN warning already
+		// covers that, and a second one would describe the defaults.
+		warns = append(warns, nameWarns...)
+	}
+	warns = append(warns, unknownToggleWarnings(cfg)...)
+
+	fmt.Fprintln(w, "\nwarnings:")
+	if len(warns) == 0 {
+		fmt.Fprintln(w, "  (none)")
+	}
+	for _, warn := range warns {
+		fmt.Fprintf(w, "  %s\n", warn)
+	}
+	return warns
+}
+
+// printConfigSurfaces renders where each config surface was found and what
+// it yielded, and returns the warnings that section produces: a broken
+// config or include (the hooks are denying everything) and a script guard
+// with no deny patterns to enforce.
+func (r doctorReport) printConfigSurfaces(w io.Writer) []string {
+	cfg, p, src, incs := r.cfg, r.p, r.src, r.incs
+	var warns []string
+
+	fmt.Fprintln(w, "config surfaces:")
+	fmt.Fprintf(w, "  belt         %s\n", beltConfigLine(src))
+	if src.Broken() {
+		warns = append(warns, fmt.Sprintf(
+			"config %s is BROKEN: every belt hook denies until it parses", src.Path,
+		))
+	}
+	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg, len(incs)))
+	for _, inc := range incs {
+		fmt.Fprintf(w, "  include      %s\n", includeLine(inc))
+		if inc.Err != nil {
+			warns = append(warns, includeWarning(inc))
+		}
+	}
+	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
+	if cfg.GuardEnabled(guard.ScriptDenyListID) &&
+		cfg.ClaudeSettings.ReadEnabled() && len(cfg.ClaudeDeny) == 0 {
+		warns = append(
+			warns,
+			"script-deny-list has no Bash deny patterns from the Claude settings;"+
+				" check permissions.deny in ~/.claude/settings.json",
+		)
+	}
+	if n := len(cfg.DirectMainRepos); n > 0 {
+		fmt.Fprintf(
+			w,
+			"  global       direct_main_repos: %d  (read by git-push-main + commit-policy only)\n",
+			n,
+		)
+	}
+	if cfg.HasPublicRepos() {
+		fmt.Fprintf(w, "  global       public_repos: %d  (internal names blocked there by"+
+			" write-internal-names + publish-internal-names, allowed everywhere else)\n",
+			len(cfg.PublicRepos))
+	} else {
+		fmt.Fprintln(w, "  global       public_repos: unset  (legacy rule: every github.com repo"+
+			" is public-bound for write-internal-names + publish-internal-names)")
+	}
+	return warns
+}
+
+// printBlockedNames renders the resolved name set both internal-name guards
+// match, and warns when an enabled guard has nothing to match: armed and
+// checking nothing is the state doctor exists to expose.
+func (r doctorReport) printBlockedNames(w io.Writer) []string {
+	cfg := r.cfg
 	names := guard.BlockedNames(cfg.Names)
 	sort.Strings(names)
 	fmt.Fprintf(
@@ -133,14 +225,20 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 			" deny these in public-bound repos:\n",
 		len(names),
 	)
-	if len(names) == 0 {
-		fmt.Fprintln(w, "  (none — without an internal_names section in the belt config"+
-			" both guards allow every write and publish)")
-		return
-	}
 	for _, n := range names {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
+	if len(names) > 0 {
+		return nil
+	}
+	fmt.Fprintln(w, "  (none — without an internal_names section in the belt config"+
+		" both guards allow every write and publish)")
+	if !cfg.GuardEnabled(guard.WriteInternalNamesID) &&
+		!cfg.GuardEnabled(guard.PublishInternalNamesID) {
+		return nil
+	}
+	return []string{"write-internal-names and publish-internal-names have no names to match;" +
+		" set internal_names (blocked_words, workspace_dirs, or include) in the belt config"}
 }
 
 // printBuild reports which build of belt is answering. It comes first because
@@ -169,8 +267,7 @@ func orUnknown(s string) string {
 // line doctor prints: the hooks are denying every tool call while it stands,
 // and the rest of this report describes the defaults, not what belt is
 // enforcing.
-func beltConfigLine(p config.Paths) string {
-	_, src := config.ReadFile(p)
+func beltConfigLine(src config.Source) string {
 	switch {
 	case src.Err == nil && src.Legacy:
 		return src.Path + "  loaded (legacy TOML — rename to config.yaml)"
@@ -189,18 +286,53 @@ func beltConfigLine(p config.Paths) string {
 }
 
 // namesNote reports the internal-name inputs. The belt config's own
-// internal_names section is the only source (docs/adr/0010), so an empty
-// section is called out for what it means: the guard has nothing to match.
-func namesNote(cfg config.Config) string {
+// internal_names section is the only source (docs/adr/0010), with the names
+// files it lists under include already merged in, so an empty result is
+// called out for what it means: the guard has nothing to match.
+func namesNote(cfg config.Config, includes int) string {
 	if len(cfg.Names.WorkspaceDirs)+len(cfg.Names.BlockedWords) == 0 {
 		return "none (internal_names unset or empty) — write-internal-names has no names to match"
 	}
 	return fmt.Sprintf(
-		"workspace dirs: %d, blocked words: %d, allowlist: %d  (from belt config internal_names)",
+		"workspace dirs: %d, blocked words: %d, allowlist: %d, includes: %d"+
+			"  (from belt config internal_names)",
 		len(cfg.Names.WorkspaceDirs),
 		len(cfg.Names.BlockedWords),
 		len(cfg.Names.Allowlist),
+		includes,
 	)
+}
+
+// includeLine reports one internal_names.include entry the way
+// beltConfigLine reports the config file: loaded with its counts, missing,
+// or broken. The last two are the config-error state, so the line says what
+// the hooks are doing about it.
+func includeLine(inc config.Include) string {
+	switch {
+	case inc.Err == nil:
+		return fmt.Sprintf(
+			"%s  loaded (blocked words: %d, allowlist: %d, allow phrases: %d)",
+			inc.Path,
+			len(inc.Names.BlockedWords),
+			len(inc.Names.Allowlist),
+			len(inc.Names.AllowPhrases),
+		)
+	case inc.Missing():
+		return inc.Path + "  MISSING — every belt hook denies until it exists or is removed" +
+			" from internal_names.include"
+	default:
+		return fmt.Sprintf("%s  BROKEN (%v)", inc.Path, inc.Err)
+	}
+}
+
+// includeWarning is the warnings-section twin of a failed includeLine.
+func includeWarning(inc config.Include) string {
+	if inc.Missing() {
+		return fmt.Sprintf("include %s is MISSING: every belt hook denies until it exists"+
+			" or is removed from internal_names.include", inc.Path)
+	}
+	return fmt.Sprintf("include %s is BROKEN (%v): every belt hook denies until it parses",
+		inc.Path, inc.Err)
 }
 
 // claudeDenyNote reports the Claude settings read: the files and pattern
@@ -210,8 +342,15 @@ func claudeDenyNote(cfg config.Config, p config.Paths) string {
 	if !cfg.ClaudeSettings.ReadEnabled() {
 		return "disabled (claude_settings.enabled: false) — script-deny-list matches extra_patterns only"
 	}
-	return fmt.Sprintf("%s  %d bash deny patterns (belt config lists them)",
-		strings.Join(p.ClaudeSettings, " + "), len(cfg.ClaudeDeny))
+	files := strings.Join(p.ClaudeSettings, " + ")
+	if len(cfg.ClaudeDeny) == 0 {
+		return files + "  0 bash deny patterns — script-deny-list enforces nothing beyond extra_patterns"
+	}
+	return fmt.Sprintf(
+		"%s  %d bash deny patterns (belt config lists them)",
+		files,
+		len(cfg.ClaudeDeny),
+	)
 }
 
 // kofNote renders the kof reachability line. It exists to split the three

@@ -7,20 +7,24 @@
 // exception is the Bash deny patterns, which come from the Claude settings
 // (~/.claude/settings.json + settings.local.json) behind the
 // claude_settings gate so the script guard and the permission system share
-// one deny list.
+// one deny list. The shared names files listed under internal_names.include
+// are belt-named surfaces, not another tool's file: belt reads them because
+// its own config points at them (docs/adr/0016).
 //
 // Absent and invalid are different answers here. A missing config file
 // means the built-in defaults (every guard armed, no rules), because a
 // machine that never wrote one still gets the guardrails. A config file
 // that is present but unparseable or invalid is an error every caller must
 // surface: belt is a guard, and a guard that cannot read its own rules must
-// not decide it has none.
+// not decide it has none. A listed include that is missing or broken is the
+// same error: the config named a file it cannot use.
 package config
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -32,6 +36,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/internalnames"
 )
 
 // Component is belt's config directory name under the XDG config root.
@@ -208,9 +213,15 @@ func (t Toggle) ExcludesPath(path string) bool {
 // references to drop, and sanctioned compound phrases that may carry a
 // blocked name. Deliberately shape-compatible with the guard: section of the
 // suspenders config — the tools stay standalone and neither reads the
-// other's file (docs/adr/0010), but one authored block can be rendered into
-// both configs by the provisioning layer.
+// other's file (docs/adr/0010). What they can share is a names file each
+// lists under its own include key (docs/adr/0016).
 type InternalNames struct {
+	// Include lists shared names files (kit/internalnames) whose
+	// blocked_words, allowlist, and allow_phrases are appended to the lists
+	// below at load. A listed file that is missing or fails to parse is a
+	// config error with the same consequence as a broken config.yaml: every
+	// belt hook denies until it is fixed or the entry is removed.
+	Include       []string `toml:"include"        yaml:"include,omitempty"`
 	WorkspaceDirs []string `toml:"workspace_dirs" yaml:"workspace_dirs"`
 	BlockedWords  []string `toml:"blocked_words"  yaml:"blocked_words"`
 	Allowlist     []string `toml:"allowlist"      yaml:"allowlist"`
@@ -220,6 +231,59 @@ type InternalNames struct {
 	// anywhere else still denies. Unlike Allowlist, nothing leaves the
 	// blocked set.
 	AllowPhrases []string `toml:"allow_phrases"  yaml:"allow_phrases"`
+}
+
+// withIncludes returns the section with every loaded include's lists
+// appended after its own, in listing order. Derivation lowercases and
+// dedupes later, so order only affects what doctor prints.
+func (n InternalNames) withIncludes(incs []Include) InternalNames {
+	for _, inc := range incs {
+		n.BlockedWords = slices.Concat(n.BlockedWords, inc.Names.BlockedWords)
+		n.Allowlist = slices.Concat(n.Allowlist, inc.Names.Allowlist)
+		n.AllowPhrases = slices.Concat(n.AllowPhrases, inc.Names.AllowPhrases)
+	}
+	return n
+}
+
+// Include is one shared names file named by internal_names.include, as read
+// at load time. Every listed entry produces one, loaded or not, so doctor
+// and config can report each file's state.
+type Include struct {
+	Path  string        // the entry as written, with a leading ~ expanded
+	Names InternalNames // the three lists the file carried; zero when Err is set
+	Err   error         // nil when the file loaded; the open or parse failure otherwise
+}
+
+// Missing reports whether the include failed because the file does not
+// exist, as opposed to existing and failing to parse. Both fail the load;
+// the fix differs.
+func (i Include) Missing() bool { return errors.Is(i.Err, fs.ErrNotExist) }
+
+// ReadIncludes reads every names file listed under internal_names.include.
+// The returned error joins every failure, each naming its file, so LoadFrom
+// fails closed on all of them at once and a deny reason names the file to
+// fix. Entries that loaded are returned alongside the failed ones.
+func ReadIncludes(paths []string) ([]Include, error) {
+	var (
+		incs []Include
+		errs []error
+	)
+	for _, raw := range paths {
+		inc := Include{Path: ExpandHome(raw)}
+		f, err := internalnames.Read(inc.Path)
+		if err != nil {
+			inc.Err = fmt.Errorf("config: include %s: %w", inc.Path, err)
+			errs = append(errs, inc.Err)
+		} else {
+			inc.Names = InternalNames{
+				BlockedWords: f.BlockedWords,
+				Allowlist:    f.Allowlist,
+				AllowPhrases: f.AllowPhrases,
+			}
+		}
+		incs = append(incs, inc)
+	}
+	return incs, errors.Join(errs...)
 }
 
 // ClaudeSettings gates belt's read of the Claude Code settings files, the
@@ -531,8 +595,10 @@ func Load() (Config, error) {
 // LoadFrom reads all config surfaces from the given locations. A missing
 // belt config yields the defaults with a nil error; a present one that fails
 // to parse or validate yields an error, and callers that keep going anyway
-// (doctor, config) get the same defaults alongside it. The belt config owns
-// every setting; the only non-belt surface read is the Claude settings deny
+// (doctor, config) get the same defaults alongside it. A names file listed
+// under internal_names.include that is missing or broken is the same kind
+// of error, with whatever did load alongside it. The belt config owns every
+// setting; the only non-belt surface read is the Claude settings deny
 // lists, when the claude_settings gate allows it (docs/adr/0010).
 func LoadFrom(p Paths) (Config, error) {
 	f, src := ReadFile(p)
@@ -552,6 +618,11 @@ func LoadFrom(p Paths) (Config, error) {
 	}
 	if src.Broken() {
 		return cfg, src.Err
+	}
+	incs, incErr := ReadIncludes(f.InternalNames.Include)
+	cfg.Names = cfg.Names.withIncludes(incs)
+	if incErr != nil {
+		return cfg, incErr
 	}
 	return cfg, nil
 }
@@ -706,6 +777,11 @@ func (f File) validate() error {
 			errs = append(errs, fmt.Errorf("commit_guards[%d].%w", i, err))
 		}
 	}
+	for i, path := range f.InternalNames.Include {
+		if strings.TrimSpace(path) == "" {
+			errs = append(errs, fmt.Errorf("internal_names.include[%d] is empty", i))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -763,7 +839,8 @@ func toggleFieldErrors(kind string, toggles map[string]Toggle, schema map[string
 				reads = strings.Join(allowed, ", ")
 			}
 			errs = append(errs, fmt.Errorf(
-				"%s.%s: %s has no effect (%s reads: %s)", kind, id, field, id, reads))
+				"%s.%s: %s has no effect (%s reads: %s)", kind, id, field, id, reads,
+			))
 		}
 	}
 	return errs

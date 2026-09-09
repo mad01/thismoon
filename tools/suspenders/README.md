@@ -2,7 +2,7 @@
 
 A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, runs user-defined hook scripts, and can rewrite git history to remove a secret that already made it into a commit.
 
-Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config, but both derive their internal-name list the same way, so the two layers agree when their configs do. belt only sees what an agent does; suspenders also catches what you type.
+Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config, and both derive their internal-name list the same way from the same shared names files (`guard.include` here, `internal_names.include` in belt; docs/adr/0016), so the two layers agree by construction. belt only sees what an agent does; suspenders also catches what you type.
 
 ## Quickstart
 
@@ -30,8 +30,10 @@ Two things the defaults don't do:
       - ~/work-checkouts
   ```
 
-  Then `suspenders doctor` in any repo shows the derived blocked names, the
-  config in effect, and whether that repo is exempt.
+  Hand-written names (blocked words, safe references, allow phrases) can
+  live in a shared names file that belt includes too; list it under
+  `guard.include`. Then `suspenders doctor` in any repo shows the derived
+  blocked names, the config in effect, and whether that repo is exempt.
 
 - Hooks are per-clone. Re-run `suspenders hook install` after cloning
   something new, or `suspenders hook install --all` to sweep every
@@ -162,7 +164,7 @@ Discovery runs through the shared [`kit/repofind`](../../kit/repofind/README.md)
 - `dirs` answers "which repos do I manage": `hook install --all` installs hooks into every repo found here (minus `exclude` globs).
 - `guard.workspace_dirs` answers "which names are internal": every repo found here contributes its org segment, repo segment, and checkout directory basename as three separate blocked names, never the combined `org/repo` form.
 
-belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section (same derivation, standalone configs, docs/adr/0010), which is what keeps the write-time and commit-time block lists identical when the two configs carry the same values. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
+belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section (same derivation, standalone configs, docs/adr/0010), and both tools list the same shared names files for their hand-written entries (`guard.include` here, docs/adr/0016). That is what keeps the write-time and commit-time block lists in step without anyone copying entries between two configs. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
 
 ## Install
 
@@ -509,6 +511,10 @@ guard:
     - docs.acmecorp.net/runbooks
   allowlist:
     - grpc/grpc-go
+  allow_phrases:
+    - dotfiles-acmecorp
+  include:
+    - ~/.config/internal-names/common.yaml
   file_patterns:
     - "*.go"
     - "*.md"
@@ -560,9 +566,9 @@ The secret scanner runs by default on every pre-commit. To disable it (while kee
 The guard prevents internal repository names, and any other string you list (a brand name, an internal domain, a docs link), from leaking into public repos. When `guard.enabled` is `true`, it:
 
 1. Walks `workspace_dirs` to discover repos and derive their names (see below)
-2. Adds each entry from `blocked_words` (matched regardless of workspace scan)
-3. Removes entries in `allowlist`
-4. Checks the staged diff (added/modified lines only) in files matching `file_patterns` for case-insensitive matches
+2. Adds each entry from `blocked_words`, the config's own and those from the names files under `include` (matched regardless of workspace scan)
+3. Removes the safe references in `allowlist`, again config plus includes
+4. Blanks every `allow_phrases` entry out of the checked content, then checks the staged diff (added/modified lines only) in files matching `file_patterns` for case-insensitive matches
 
 Any match blocks the commit with a message listing the matched terms.
 
@@ -585,6 +591,16 @@ Two details worth knowing:
 - Names whose edges are word characters are matched with word-boundary guards, so a short repo name like `hig` can't match inside "higher". Entries with wildcard or punctuation edges keep their full reach.
 
 Blocked words are matched case-insensitively as literal strings, so an entry can be a single word (`acmecorp`), an internal domain (`internal.acmecorp.net`), or a docs link (`docs.acmecorp.net/runbooks`). A `*` in an entry matches any run of non-whitespace characters: `*.acmecorp.net` blocks every subdomain, and the match extends over the URL scheme so history cleanup replaces the whole reference. Overlapping entries match longest-first, so a docs link wins over its bare domain.
+
+#### Shared names files
+
+The hand-written lists (`blocked_words`, `allowlist`, `allow_phrases`) can live in names files outside either tool's config, listed under `guard.include`. A names file holds exactly those three keys. Each listed file's lists are appended to the config's own at load time, in include order, and per-repo `.suspenders.yaml` overrides layer on top of the merged result. belt lists the same files under `internal_names.include`, so one edit reaches both guards (docs/adr/0016); `workspace_dirs` stays in each tool's own config because the directories differ per tool and per machine.
+
+A listed file that is missing, carries an unknown key, or does not parse fails the load the way a broken config does: `hook run`, `scan`, and `doctor` stop with an error naming the file. A misspelled key or a lost file would otherwise guard nothing. `suspenders doctor` prints each include with the counts it contributed, and `suspenders config` shows the merged lists.
+
+#### Allow phrases
+
+`guard.allow_phrases` lists exact phrases, matched case-insensitively, that are blanked out of the checked content before name matching. A sanctioned compound that contains a blocked name, such as a private companion repo named `dotfiles-<name>`, then passes, while the bare name anywhere else on the same line still blocks. The replacement is a single space, so the words around the phrase keep their boundaries. Every check honors the phrases the same way: the staged diff, `scan` over the working tree, and `history scan` and `history clean`.
 
 The same block list runs in three other places: `suspenders scan` checks every tracked file in the working tree (reported with file and line), `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` and repos matching the top-level `exclude` globs are skipped everywhere; internal and explicitly excluded repos may reference internal names.
 
