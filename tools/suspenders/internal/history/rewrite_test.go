@@ -168,7 +168,10 @@ func TestTransformReplaceTableInBlobContent(t *testing.T) {
 		t.Fatalf("expected mapped data block, got:\n%s", out)
 	}
 	if stats.Replacements["old.internal.net"] != 1 {
-		t.Fatalf("expected 1 replacement for old.internal.net, got %d", stats.Replacements["old.internal.net"])
+		t.Fatalf(
+			"expected 1 replacement for old.internal.net, got %d",
+			stats.Replacements["old.internal.net"],
+		)
 	}
 	if stats.Replacements["oldBrand"] != 1 {
 		t.Fatalf("expected 1 replacement for oldBrand, got %d", stats.Replacements["oldBrand"])
@@ -351,7 +354,10 @@ func TestTransformStillReplacesUnprotectedBlobs(t *testing.T) {
 		t.Fatalf("expected replacement in config.txt, got:\n%s", out)
 	}
 	if stats.Replacements["old.internal.net"] != 1 {
-		t.Fatalf("expected 1 replacement in config.txt, got %d", stats.Replacements["old.internal.net"])
+		t.Fatalf(
+			"expected 1 replacement in config.txt, got %d",
+			stats.Replacements["old.internal.net"],
+		)
 	}
 }
 
@@ -377,7 +383,10 @@ func TestTransformProtectionDoesNotAffectCommitMessages(t *testing.T) {
 		t.Fatalf("expected rewritten commit message, got:\n%s", out)
 	}
 	if stats.Replacements["old.internal.net"] != 1 {
-		t.Fatalf("expected 1 replacement in commit message, got %d", stats.Replacements["old.internal.net"])
+		t.Fatalf(
+			"expected 1 replacement in commit message, got %d",
+			stats.Replacements["old.internal.net"],
+		)
 	}
 }
 

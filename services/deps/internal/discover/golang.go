@@ -142,7 +142,12 @@ type goModule struct {
 // resolved external versions are real dependencies to check. imported is the
 // import-graph module set from goListDeps (importedOK false → unavailable); each
 // module is tagged Imported accordingly, failing open to true.
-func parseGoList(r io.Reader, manifest string, imported map[string]struct{}, importedOK bool) ([]Package, error) {
+func parseGoList(
+	r io.Reader,
+	manifest string,
+	imported map[string]struct{},
+	importedOK bool,
+) ([]Package, error) {
 	dec := json.NewDecoder(r)
 	var pkgs []Package
 	for {

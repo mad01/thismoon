@@ -63,9 +63,13 @@ func (g *GitIdentity) Check(in Input) *Denial {
 			continue
 		}
 		if rule.Soft() {
-			g.emit("belt", "warn", "git-identity mismatch (soft)",
+			g.emit(
+				"belt",
+				"warn",
+				"git-identity mismatch (soft)",
 				"repo "+repo+" expects git user.email "+rule.Email+" but has "+email+" — commit allowed (soft mode)",
-				map[string]string{"guard": GitIdentityID, "repo": repo})
+				map[string]string{"guard": GitIdentityID, "repo": repo},
+			)
 			continue
 		}
 		return Reasonf(GitIdentityID,

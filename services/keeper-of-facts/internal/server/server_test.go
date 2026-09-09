@@ -458,14 +458,20 @@ func TestAppJS(t *testing.T) {
 // recallServer builds a test server with one seeded assertion and a judge
 // that returns a fixed reply instead of exec-ing claude. It hands back the
 // seeded assertion's id so replies can name it.
-func recallServer(t *testing.T, judge func(context.Context, string, string) (string, error)) (*httptest.Server, string) {
+func recallServer(
+	t *testing.T,
+	judge func(context.Context, string, string) (string, error),
+) (*httptest.Server, string) {
 	t.Helper()
 	st, err := store.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
 	repo := gitRepo(t)
-	resolved, err := pin.Resolve(pin.Ref{RepoPath: repo, File: "f.txt", StartLine: 1, EndLine: 2}, time.Now())
+	resolved, err := pin.Resolve(
+		pin.Ref{RepoPath: repo, File: "f.txt", StartLine: 1, EndLine: 2},
+		time.Now(),
+	)
 	if err != nil {
 		t.Fatalf("resolve pin: %v", err)
 	}

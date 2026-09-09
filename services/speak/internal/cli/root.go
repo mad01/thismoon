@@ -47,8 +47,9 @@ var serveCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().IntVar(&flagPort, "port", envdefault.Int("SPEAK_PORT", speak.DefaultPort),
-		"port the HTTP server listens on, and the one doctor probes (env SPEAK_PORT)")
+	rootCmd.PersistentFlags().
+		IntVar(&flagPort, "port", envdefault.Int("SPEAK_PORT", speak.DefaultPort),
+			"port the HTTP server listens on, and the one doctor probes (env SPEAK_PORT)")
 	rootCmd.PersistentFlags().StringVar(&flagTTSURL, "tts-url",
 		envdefault.String("SPEAK_TTS_URL", speak.DefaultTTSURL),
 		"base URL of the mlx-audio TTS server (env SPEAK_TTS_URL)")

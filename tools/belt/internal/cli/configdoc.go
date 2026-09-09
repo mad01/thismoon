@@ -237,7 +237,11 @@ func runConfigDoc(w io.Writer, p config.Paths) error {
 	case src.Legacy:
 		fmt.Fprintf(w, "              (legacy TOML format — rename it to %s)\n", p.BeltYAML)
 	case p.BeltTOML != "":
-		fmt.Fprintf(w, "              (legacy fallback %s, read only when this file is absent)\n", p.BeltTOML)
+		fmt.Fprintf(
+			w,
+			"              (legacy fallback %s, read only when this file is absent)\n",
+			p.BeltTOML,
+		)
 	default:
 		fmt.Fprintln(w, "              (relocated by --config or $"+config.EnvConfig+
 			"; no legacy TOML fallback applies)")

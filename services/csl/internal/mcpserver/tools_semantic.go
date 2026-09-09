@@ -31,18 +31,18 @@ type semanticSearchInput struct {
 // semanticHit is one result returned by csl_semantic_search.
 type semanticHit struct {
 	Repo      string  `json:"repo"`
-	Path      string  `json:"path" jsonschema:"file path relative to the repo root"`
+	Path      string  `json:"path"              jsonschema:"file path relative to the repo root"`
 	Lang      string  `json:"lang,omitempty"`
-	Kind      string  `json:"kind,omitempty"  jsonschema:"the chunk kind, e.g. func, type, method, or window"`
+	Kind      string  `json:"kind,omitempty"    jsonschema:"the chunk kind, e.g. func, type, method, or window"`
 	StartLine int     `json:"start_line"`
 	EndLine   int     `json:"end_line"`
-	Score     float32 `json:"score" jsonschema:"cosine similarity in [0,1]; higithostr is closer in meaning"`
+	Score     float32 `json:"score"             jsonschema:"cosine similarity in [0,1]; higithostr is closer in meaning"`
 	Snippet   string  `json:"snippet,omitempty" jsonschema:"the matched source text, widened by expand lines"`
 }
 
 // semanticSearchOutput is the typed output of csl_semantic_search.
 type semanticSearchOutput struct {
-	Available bool          `json:"available" jsonschema:"false when the semantic index or embedding model isn't ready; see note"`
+	Available bool          `json:"available"      jsonschema:"false when the semantic index or embedding model isn't ready; see note"`
 	Hits      []semanticHit `json:"hits,omitempty"`
 	Note      string        `json:"note,omitempty" jsonschema:"guidance when results are unavailable"`
 }

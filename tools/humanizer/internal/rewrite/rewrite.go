@@ -98,7 +98,14 @@ func Rewrite(text string, opts Options) (string, Info, error) {
 		case Ollama:
 			out, err = callOllama(opts.BaseURL, opts.Model, prompt, opts.Timeout, opts.Temperature)
 		case OpenAICompatible:
-			out, err = callOpenAICompatible(opts.BaseURL, opts.Model, prompt, opts.APIKey, opts.Timeout, opts.Temperature)
+			out, err = callOpenAICompatible(
+				opts.BaseURL,
+				opts.Model,
+				prompt,
+				opts.APIKey,
+				opts.Timeout,
+				opts.Temperature,
+			)
 		default:
 			return "", Info{}, fmt.Errorf("rewrite: unknown backend %q", opts.Backend)
 		}

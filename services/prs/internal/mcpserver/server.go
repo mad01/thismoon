@@ -37,7 +37,9 @@ type Config struct {
 // only for the human-facing link returned in tool responses.
 func New(version string, cfg Config) (*mcp.Server, error) {
 	if cfg.Checks == nil {
-		return nil, errors.New("mcpserver: no doctor checks; prs_doctor is advertised to clients and must be registered")
+		return nil, errors.New(
+			"mcpserver: no doctor checks; prs_doctor is advertised to clients and must be registered",
+		)
 	}
 	apiURL := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	webURL := cfg.BaseURL

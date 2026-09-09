@@ -36,7 +36,11 @@ func TestCycleSuccessRecordsOutcomes(t *testing.T) {
 	rep := &syncer.Report{
 		Results: []syncer.PullResult{
 			{Repo: finder.Repo{Name: "org/a", Path: "/repos/a"}, Status: "updated"},
-			{Repo: finder.Repo{Name: "org/b", Path: "/repos/b"}, Status: "dirty", Message: "on main, uncommitted changes"},
+			{
+				Repo:    finder.Repo{Name: "org/b", Path: "/repos/b"},
+				Status:  "dirty",
+				Message: "on main, uncommitted changes",
+			},
 		},
 		Indexed: []finder.Repo{{Name: "org/a", Path: "/repos/a"}},
 	}

@@ -19,10 +19,18 @@ func TestDeriveGitAction(t *testing.T) {
 		{"clean and synced", GitHealth{Branch: "main", HasUpstream: true}, GitActionReady},
 		{"error wins", GitHealth{Error: "boom", Dirty: true}, GitActionError},
 		{"detached", GitHealth{Branch: "HEAD", HasUpstream: true}, GitActionDetached},
-		{"dirty", GitHealth{Branch: "main", Dirty: true, HasUpstream: true}, GitActionCommitOrStash},
+		{
+			"dirty",
+			GitHealth{Branch: "main", Dirty: true, HasUpstream: true},
+			GitActionCommitOrStash,
+		},
 		{"dirty before upstream", GitHealth{Branch: "main", Dirty: true}, GitActionCommitOrStash},
 		{"no upstream", GitHealth{Branch: "feature"}, GitActionNoUpstream},
-		{"diverged", GitHealth{Branch: "main", HasUpstream: true, Ahead: 1, Behind: 2}, GitActionDiverged},
+		{
+			"diverged",
+			GitHealth{Branch: "main", HasUpstream: true, Ahead: 1, Behind: 2},
+			GitActionDiverged,
+		},
 		{"ahead", GitHealth{Branch: "main", HasUpstream: true, Ahead: 3}, GitActionPush},
 		{"behind", GitHealth{Branch: "main", HasUpstream: true, Behind: 1}, GitActionPull},
 	}
@@ -97,7 +105,12 @@ func TestAheadBehind(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !hasUpstream || ahead != 0 || behind != 0 {
-			t.Errorf("got ahead=%d behind=%d upstream=%v, want 0/0/true", ahead, behind, hasUpstream)
+			t.Errorf(
+				"got ahead=%d behind=%d upstream=%v, want 0/0/true",
+				ahead,
+				behind,
+				hasUpstream,
+			)
 		}
 	})
 

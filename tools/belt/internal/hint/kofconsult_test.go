@@ -170,7 +170,9 @@ func TestGitOriginURLReadsTheRealRemote(t *testing.T) {
 // not the org/name kof subjects use.
 func TestKofConsultRepoExcluded(t *testing.T) {
 	h := NewKofConsult(config.Config{
-		Hints: map[string]config.Toggle{"kof-consult": {ExcludeRepos: []string{"github.com/mad01/thismoon"}}},
+		Hints: map[string]config.Toggle{
+			"kof-consult": {ExcludeRepos: []string{"github.com/mad01/thismoon"}},
+		},
 	})
 	h.originURL = func(string) string { return "git@github.com:mad01/thismoon.git" }
 	h.resolveRepo = func(string) string { return "github.com/mad01/thismoon" }

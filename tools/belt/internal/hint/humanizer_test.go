@@ -21,9 +21,17 @@ func humanizerTranscript(t *testing.T, content string) string {
 }
 
 func TestHumanizerNudgesOncePerSession(t *testing.T) {
-	path := humanizerTranscript(t, `{"message":{"content":[{"type":"tool_use","name":"mcp__csl__csl_search"}]}}`+"\n")
+	path := humanizerTranscript(
+		t,
+		`{"message":{"content":[{"type":"tool_use","name":"mcp__csl__csl_search"}]}}`+"\n",
+	)
 	h := NewHumanizer(testConfig())
-	in := Input{Event: EventExternalText, ToolName: "mcp__github__add_issue_comment", SessionID: "humanizer-test", TranscriptPath: path}
+	in := Input{
+		Event:          EventExternalText,
+		ToolName:       "mcp__github__add_issue_comment",
+		SessionID:      "humanizer-test",
+		TranscriptPath: path,
+	}
 
 	got := h.Check(in)
 	if got == nil {
@@ -40,9 +48,17 @@ func TestHumanizerNudgesOncePerSession(t *testing.T) {
 func TestHumanizerSilentWhenSessionAlreadyLinted(t *testing.T) {
 	// A humanizer tool_use block anywhere in the transcript means the session
 	// already lints its own prose and does not need telling.
-	path := humanizerTranscript(t, `{"message":{"content":[{"type":"tool_use","name":"mcp__humanizer__humanizer_detect"}]}}`+"\n")
+	path := humanizerTranscript(
+		t,
+		`{"message":{"content":[{"type":"tool_use","name":"mcp__humanizer__humanizer_detect"}]}}`+"\n",
+	)
 	h := NewHumanizer(testConfig())
-	in := Input{Event: EventExternalText, ToolName: "mcp__slack__slack_send_message_draft", SessionID: "linted", TranscriptPath: path}
+	in := Input{
+		Event:          EventExternalText,
+		ToolName:       "mcp__slack__slack_send_message_draft",
+		SessionID:      "linted",
+		TranscriptPath: path,
+	}
 	if got := h.Check(in); got != nil {
 		t.Errorf("Check after a humanizer call = %+v, want nil", got)
 	}
@@ -51,9 +67,17 @@ func TestHumanizerSilentWhenSessionAlreadyLinted(t *testing.T) {
 func TestHumanizerCountsToolUseNotProse(t *testing.T) {
 	// The advice text itself names humanizer_detect and lands in the
 	// transcript verbatim; only the tool_use JSON key form may suppress it.
-	path := humanizerTranscript(t, `{"message":{"content":[{"type":"text","text":"run humanizer_detect on it"}]}}`+"\n")
+	path := humanizerTranscript(
+		t,
+		`{"message":{"content":[{"type":"text","text":"run humanizer_detect on it"}]}}`+"\n",
+	)
 	h := NewHumanizer(testConfig())
-	in := Input{Event: EventExternalText, ToolName: "mcp__tracker__save_comment", SessionID: "prose", TranscriptPath: path}
+	in := Input{
+		Event:          EventExternalText,
+		ToolName:       "mcp__tracker__save_comment",
+		SessionID:      "prose",
+		TranscriptPath: path,
+	}
 	if got := h.Check(in); got == nil {
 		t.Error("Check with only a prose mention = nil, want the nudge")
 	}
@@ -62,9 +86,16 @@ func TestHumanizerCountsToolUseNotProse(t *testing.T) {
 func TestHumanizerSilentWithoutSessionID(t *testing.T) {
 	path := humanizerTranscript(t, "")
 	h := NewHumanizer(testConfig())
-	in := Input{Event: EventExternalText, ToolName: "mcp__github__add_issue_comment", TranscriptPath: path}
+	in := Input{
+		Event:          EventExternalText,
+		ToolName:       "mcp__github__add_issue_comment",
+		TranscriptPath: path,
+	}
 	if got := h.Check(in); got != nil {
-		t.Errorf("Check without a session id = %+v, want nil: once-per-session is unenforceable", got)
+		t.Errorf(
+			"Check without a session id = %+v, want nil: once-per-session is unenforceable",
+			got,
+		)
 	}
 }
 
@@ -73,7 +104,12 @@ func TestHumanizerNudgesWhenTranscriptMissing(t *testing.T) {
 	// and a missing file says nothing about whether the session linted.
 	t.Setenv("HOME", t.TempDir())
 	h := NewHumanizer(testConfig())
-	in := Input{Event: EventExternalText, ToolName: "mcp__github__add_issue_comment", SessionID: "gone", TranscriptPath: "/nonexistent/t.jsonl"}
+	in := Input{
+		Event:          EventExternalText,
+		ToolName:       "mcp__github__add_issue_comment",
+		SessionID:      "gone",
+		TranscriptPath: "/nonexistent/t.jsonl",
+	}
 	if got := h.Check(in); got == nil {
 		t.Error("Check with a missing transcript = nil, want the nudge")
 	}

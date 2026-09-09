@@ -121,7 +121,13 @@ func TestChunkFileGo(t *testing.T) {
 	}
 	for kind, n := range wantKinds {
 		if len(byKind[kind]) != n {
-			t.Errorf("kind %q: got %d chunks, want %d (all: %+v)", kind, len(byKind[kind]), n, kindSummary(chunks))
+			t.Errorf(
+				"kind %q: got %d chunks, want %d (all: %+v)",
+				kind,
+				len(byKind[kind]),
+				n,
+				kindSummary(chunks),
+			)
 		}
 	}
 
@@ -144,7 +150,8 @@ func TestChunkFileGo(t *testing.T) {
 	if !strings.Contains(fn.EmbedText, "// File: demo.go") {
 		t.Errorf("EmbedText missing file breadcrumb: %q", fn.EmbedText)
 	}
-	if !strings.Contains(fn.EmbedText, "// Lang: go") || !strings.Contains(fn.EmbedText, "Kind: function_declaration") {
+	if !strings.Contains(fn.EmbedText, "// Lang: go") ||
+		!strings.Contains(fn.EmbedText, "Kind: function_declaration") {
 		t.Errorf("EmbedText missing lang/kind breadcrumb: %q", fn.EmbedText)
 	}
 	if !strings.Contains(fn.EmbedText, fn.Text) {
@@ -197,7 +204,13 @@ func TestChunkFileJava(t *testing.T) {
 	}
 	for kind, n := range wantKinds {
 		if len(byKind[kind]) != n {
-			t.Errorf("kind %q: got %d chunks, want %d (all: %v)", kind, len(byKind[kind]), n, kindSummary(chunks))
+			t.Errorf(
+				"kind %q: got %d chunks, want %d (all: %v)",
+				kind,
+				len(byKind[kind]),
+				n,
+				kindSummary(chunks),
+			)
 		}
 	}
 
@@ -207,7 +220,8 @@ func TestChunkFileJava(t *testing.T) {
 	if header.StartLine != 5 || header.EndLine != 6 {
 		t.Errorf("Greeter header: got lines %d-%d, want 5-6", header.StartLine, header.EndLine)
 	}
-	if !strings.Contains(header.Text, "class Greeter") || !strings.Contains(header.Text, "private final String name;") {
+	if !strings.Contains(header.Text, "class Greeter") ||
+		!strings.Contains(header.Text, "private final String name;") {
 		t.Errorf("Greeter header missing signature/fields: %q", header.Text)
 	}
 	if strings.Contains(header.Text, "this.name") {
@@ -266,7 +280,12 @@ resource "aws_instance" "web" {
 		t.Fatalf("got %d chunks, want 2 (%v)", len(chunks), kindSummary(chunks))
 	}
 	if chunks[0].Kind != "block" || chunks[0].StartLine != 1 || chunks[0].EndLine != 3 {
-		t.Errorf("variable block: kind=%q lines %d-%d, want block 1-3", chunks[0].Kind, chunks[0].StartLine, chunks[0].EndLine)
+		t.Errorf(
+			"variable block: kind=%q lines %d-%d, want block 1-3",
+			chunks[0].Kind,
+			chunks[0].StartLine,
+			chunks[0].EndLine,
+		)
 	}
 	if !strings.Contains(chunks[1].Text, `Name = "web"`) {
 		t.Errorf("resource chunk must contain nested block: %q", chunks[1].Text)
@@ -314,13 +333,24 @@ ENTRYPOINT ["/app"]
 	}
 	// Leading comment and ARG belong to the first stage.
 	if chunks[0].Kind != "stage" || chunks[0].StartLine != 1 || chunks[0].EndLine != 5 {
-		t.Errorf("stage 1: kind=%q lines %d-%d, want stage 1-5", chunks[0].Kind, chunks[0].StartLine, chunks[0].EndLine)
+		t.Errorf(
+			"stage 1: kind=%q lines %d-%d, want stage 1-5",
+			chunks[0].Kind,
+			chunks[0].StartLine,
+			chunks[0].EndLine,
+		)
 	}
 	if !strings.Contains(chunks[0].Text, "ARG GO_VERSION") {
 		t.Errorf("stage 1 must include leading ARG: %q", chunks[0].Text)
 	}
-	if chunks[1].StartLine != 6 || chunks[1].EndLine != 8 || !strings.Contains(chunks[1].Text, "ENTRYPOINT") {
-		t.Errorf("stage 2: lines %d-%d text %q", chunks[1].StartLine, chunks[1].EndLine, chunks[1].Text)
+	if chunks[1].StartLine != 6 || chunks[1].EndLine != 8 ||
+		!strings.Contains(chunks[1].Text, "ENTRYPOINT") {
+		t.Errorf(
+			"stage 2: lines %d-%d text %q",
+			chunks[1].StartLine,
+			chunks[1].EndLine,
+			chunks[1].Text,
+		)
 	}
 }
 
@@ -353,7 +383,8 @@ More text.
 			t.Errorf("chunk %d kind = %q, want section", i, c.Kind)
 		}
 	}
-	if !strings.Contains(chunks[0].Text, "# Title") || !strings.Contains(chunks[0].Text, "Intro paragraph.") {
+	if !strings.Contains(chunks[0].Text, "# Title") ||
+		!strings.Contains(chunks[0].Text, "Intro paragraph.") {
 		t.Errorf("top section missing title/intro: %q", chunks[0].Text)
 	}
 	if strings.Contains(chunks[0].Text, "Section one") {
@@ -397,7 +428,13 @@ service Greeter {
 	}
 	for kind, n := range wantKinds {
 		if len(byKind[kind]) != n {
-			t.Errorf("kind %q: got %d chunks, want %d (all: %v)", kind, len(byKind[kind]), n, kindSummary(chunks))
+			t.Errorf(
+				"kind %q: got %d chunks, want %d (all: %v)",
+				kind,
+				len(byKind[kind]),
+				n,
+				kindSummary(chunks),
+			)
 		}
 	}
 	if rpcs := byKind["rpc"]; len(rpcs) == 1 && !strings.Contains(rpcs[0].Text, "rpc Greet") {
@@ -423,7 +460,12 @@ INSERT INTO users (id, name) VALUES (1, 'a');
 		t.Fatalf("got %d chunks, want 3 statements (%v)", len(chunks), kindSummary(chunks))
 	}
 	if chunks[0].Kind != "statement" || chunks[0].StartLine != 1 || chunks[0].EndLine != 4 {
-		t.Errorf("create table: kind=%q lines %d-%d, want statement 1-4", chunks[0].Kind, chunks[0].StartLine, chunks[0].EndLine)
+		t.Errorf(
+			"create table: kind=%q lines %d-%d, want statement 1-4",
+			chunks[0].Kind,
+			chunks[0].StartLine,
+			chunks[0].EndLine,
+		)
 	}
 }
 
@@ -446,8 +488,14 @@ kind: Other
 	if len(chunks) != 3 {
 		t.Fatalf("got %d chunks, want 3 (%v)", len(chunks), kindSummary(chunks))
 	}
-	if chunks[1].Kind != "block_mapping_pair" || chunks[1].StartLine != 2 || chunks[1].EndLine != 6 {
-		t.Errorf("spec: kind=%q lines %d-%d, want block_mapping_pair 2-6", chunks[1].Kind, chunks[1].StartLine, chunks[1].EndLine)
+	if chunks[1].Kind != "block_mapping_pair" || chunks[1].StartLine != 2 ||
+		chunks[1].EndLine != 6 {
+		t.Errorf(
+			"spec: kind=%q lines %d-%d, want block_mapping_pair 2-6",
+			chunks[1].Kind,
+			chunks[1].StartLine,
+			chunks[1].EndLine,
+		)
 	}
 	if !strings.Contains(chunks[1].Text, "replicas: 3") {
 		t.Errorf("spec chunk must contain nested keys: %q", chunks[1].Text)

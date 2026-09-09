@@ -41,7 +41,8 @@ Read this index at session start.
 	if got == nil {
 		t.Fatal("Check = nil, want the memory index injected")
 	}
-	if !strings.Contains(got.Text, "draft only") || !strings.Contains(got.Text, "verify before claiming done") {
+	if !strings.Contains(got.Text, "draft only") ||
+		!strings.Contains(got.Text, "verify before claiming done") {
 		t.Errorf("advice %q is missing fact lines", got.Text)
 	}
 	if strings.Contains(got.Text, "Read this index at session start") {

@@ -137,7 +137,11 @@ func (o *OllamaEmbedder) Unload(ctx context.Context) error {
 }
 
 // embed posts one /api/embed request with the given keep-alive.
-func (o *OllamaEmbedder) embed(ctx context.Context, texts []string, keepAlive string) ([][]float32, error) {
+func (o *OllamaEmbedder) embed(
+	ctx context.Context,
+	texts []string,
+	keepAlive string,
+) ([][]float32, error) {
 	body, err := json.Marshal(ollamaEmbedRequest{
 		Model:     o.Model,
 		Input:     texts,

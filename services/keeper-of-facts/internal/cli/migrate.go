@@ -31,7 +31,8 @@ func migrateWorkdir(workdir string) error {
 		if len(entries) > 0 {
 			return fmt.Errorf(
 				"kof: both %s and %s hold data — refusing to guess which store is real; merge or remove one, then restart",
-				oldDefault, newDefault,
+				oldDefault,
+				newDefault,
 			)
 		}
 		if err := os.Remove(newDefault); err != nil {

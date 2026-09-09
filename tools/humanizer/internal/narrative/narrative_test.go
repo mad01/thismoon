@@ -17,7 +17,8 @@ func TestFeaturesIntegrity(t *testing.T) {
 	seen := make(map[string]bool, len(fs))
 	var ai, human int
 	for _, f := range fs {
-		if f.ID == "" || f.Name == "" || f.Question == "" || f.Dimension == "" || f.Direction == "" {
+		if f.ID == "" || f.Name == "" || f.Question == "" || f.Dimension == "" ||
+			f.Direction == "" {
 			t.Errorf("feature %q has an empty required field: %+v", f.ID, f)
 		}
 		if seen[f.ID] {

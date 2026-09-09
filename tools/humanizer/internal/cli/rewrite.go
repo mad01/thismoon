@@ -61,13 +61,20 @@ func init() {
 	rewriteCmd.Flags().StringVar(&rewriteStrength, "strength", string(rewrite.Paraphrase),
 		"paraphrase | backtranslate | structural | humanize | code")
 	rewriteCmd.Flags().StringVar(&rewriteLang, "lang", "French", "pivot language for backtranslate")
-	rewriteCmd.Flags().StringVar(&rewriteOrigLang, "original-lang", "English", "original language for backtranslate")
-	rewriteCmd.Flags().Float64Var(&rewriteTimeout, "timeout", 120.0, "per-request timeout in seconds")
-	rewriteCmd.Flags().Float64Var(&rewriteTemperature, "temperature", 0.9, "sampling temperature for the backend")
-	rewriteCmd.Flags().IntVar(&rewriteCandidates, "candidates", 1, "number of rewrite candidates to generate and score")
-	rewriteCmd.Flags().BoolVar(&rewriteNoLayerA, "no-layer-a-after", false, "skip the Layer A scrub on model output")
-	rewriteCmd.Flags().StringVarP(&rewriteOutput, "output", "o", "", "write result here (default: stdout)")
-	rewriteCmd.Flags().BoolVar(&rewriteJSON, "json-stats", false, "emit the info block as JSON on stderr")
+	rewriteCmd.Flags().
+		StringVar(&rewriteOrigLang, "original-lang", "English", "original language for backtranslate")
+	rewriteCmd.Flags().
+		Float64Var(&rewriteTimeout, "timeout", 120.0, "per-request timeout in seconds")
+	rewriteCmd.Flags().
+		Float64Var(&rewriteTemperature, "temperature", 0.9, "sampling temperature for the backend")
+	rewriteCmd.Flags().
+		IntVar(&rewriteCandidates, "candidates", 1, "number of rewrite candidates to generate and score")
+	rewriteCmd.Flags().
+		BoolVar(&rewriteNoLayerA, "no-layer-a-after", false, "skip the Layer A scrub on model output")
+	rewriteCmd.Flags().
+		StringVarP(&rewriteOutput, "output", "o", "", "write result here (default: stdout)")
+	rewriteCmd.Flags().
+		BoolVar(&rewriteJSON, "json-stats", false, "emit the info block as JSON on stderr")
 	// NOTE: no --api-key flag on purpose — keys on argv leak via `ps` and shell
 	// history. Set WATERMARKS_REWRITE_API_KEY instead.
 	rootCmd.AddCommand(rewriteCmd)

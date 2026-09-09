@@ -522,7 +522,10 @@ func discoverRepos() ([]repofind.Repo, error) {
 		if pathErr != nil {
 			return nil, pathErr
 		}
-		return nil, fmt.Errorf("config sets no dirs — nothing to discover; list the directories to walk under dirs in %s", path)
+		return nil, fmt.Errorf(
+			"config sets no dirs — nothing to discover; list the directories to walk under dirs in %s",
+			path,
+		)
 	}
 
 	expanded := make([]string, len(cfg.Dirs))

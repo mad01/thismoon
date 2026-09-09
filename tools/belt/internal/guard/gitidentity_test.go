@@ -33,20 +33,114 @@ func TestGitIdentity(t *testing.T) {
 		wantDeny bool
 		wantWarn bool
 	}{
-		{"matching email allows", rules, `git commit -m "x"`, "github.com/mad01/thismoon", "personal@example.com", false, false},
-		{"wrong email denies", rules, `git commit -m "x"`, "github.com/mad01/thismoon", "work@example.com", true, false},
-		{"work repo wrong email denies", rules, `git commit -m "x"`, "work-host.example/org/repo", "personal@example.com", true, false},
-		{"work repo right email allows", rules, `git commit -m "x"`, "work-host.example/org/repo", "work@example.com", false, false},
-		{"uncovered repo allows", rules, `git commit -m "x"`, "gitlab.com/other/repo", "anything@example.com", false, false},
-		{"unresolved repo allows", rules, `git commit -m "x"`, "", "work@example.com", false, false},
-		{"unresolved email fails open", rules, `git commit -m "x"`, "github.com/mad01/thismoon", "", false, false},
-		{"no config is a no-op", nil, `git commit -m "x"`, "github.com/mad01/thismoon", "work@example.com", false, false},
-		{"non-commit git allows", rules, "git status", "github.com/mad01/thismoon", "work@example.com", false, false},
-		{"quoted mention not a commit", rules, `echo "git commit -m x"`, "github.com/mad01/thismoon", "work@example.com", false, false},
-		{"compound command caught", rules, `git add . && git commit -m "x"`, "github.com/mad01/thismoon", "work@example.com", true, false},
+		{
+			"matching email allows",
+			rules,
+			`git commit -m "x"`,
+			"github.com/mad01/thismoon",
+			"personal@example.com",
+			false,
+			false,
+		},
+		{
+			"wrong email denies",
+			rules,
+			`git commit -m "x"`,
+			"github.com/mad01/thismoon",
+			"work@example.com",
+			true,
+			false,
+		},
+		{
+			"work repo wrong email denies",
+			rules,
+			`git commit -m "x"`,
+			"work-host.example/org/repo",
+			"personal@example.com",
+			true,
+			false,
+		},
+		{
+			"work repo right email allows",
+			rules,
+			`git commit -m "x"`,
+			"work-host.example/org/repo",
+			"work@example.com",
+			false,
+			false,
+		},
+		{
+			"uncovered repo allows",
+			rules,
+			`git commit -m "x"`,
+			"gitlab.com/other/repo",
+			"anything@example.com",
+			false,
+			false,
+		},
+		{
+			"unresolved repo allows",
+			rules,
+			`git commit -m "x"`,
+			"",
+			"work@example.com",
+			false,
+			false,
+		},
+		{
+			"unresolved email fails open",
+			rules,
+			`git commit -m "x"`,
+			"github.com/mad01/thismoon",
+			"",
+			false,
+			false,
+		},
+		{
+			"no config is a no-op",
+			nil,
+			`git commit -m "x"`,
+			"github.com/mad01/thismoon",
+			"work@example.com",
+			false,
+			false,
+		},
+		{
+			"non-commit git allows",
+			rules,
+			"git status",
+			"github.com/mad01/thismoon",
+			"work@example.com",
+			false,
+			false,
+		},
+		{
+			"quoted mention not a commit",
+			rules,
+			`echo "git commit -m x"`,
+			"github.com/mad01/thismoon",
+			"work@example.com",
+			false,
+			false,
+		},
+		{
+			"compound command caught",
+			rules,
+			`git add . && git commit -m "x"`,
+			"github.com/mad01/thismoon",
+			"work@example.com",
+			true,
+			false,
+		},
 		{
 			"soft mode warns and allows",
-			[]config.GitIdentity{{Repos: []string{"github.com/mad01/*"}, Email: "personal@example.com", Mode: "soft"}},
+			[]config.GitIdentity{
+				{
+					Repos: []string{"github.com/mad01/*"},
+					Email: "personal@example.com",
+					Mode:  "soft",
+				},
+			},
 			`git commit -m "x"`, "github.com/mad01/thismoon", "work@example.com", false, true,
 		},
 		{
@@ -93,7 +187,9 @@ func TestGitIdentityUsesDashCDir(t *testing.T) {
 		return "github.com/mad01/thismoon"
 	}
 	g.resolveEmail = func(string) string { return "x@example.com" }
-	g.Check(Input{Event: EventBash, Command: `git -C /other/repo commit -m "x"`, Cwd: "/session/cwd"})
+	g.Check(
+		Input{Event: EventBash, Command: `git -C /other/repo commit -m "x"`, Cwd: "/session/cwd"},
+	)
 	if gotDir != "/other/repo" {
 		t.Errorf("resolver dir = %q, want /other/repo", gotDir)
 	}

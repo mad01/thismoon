@@ -34,8 +34,10 @@ Examples:
 }
 
 func init() {
-	semanticFilesCmd.Flags().BoolVar(&semanticFilesSkippedFlag, "skipped", false, "list skipped files with their skip reason instead")
-	semanticFilesCmd.Flags().BoolVar(&semanticFilesJSONFlag, "json", false, "output every decision as JSON")
+	semanticFilesCmd.Flags().
+		BoolVar(&semanticFilesSkippedFlag, "skipped", false, "list skipped files with their skip reason instead")
+	semanticFilesCmd.Flags().
+		BoolVar(&semanticFilesJSONFlag, "json", false, "output every decision as JSON")
 	semanticCmd.AddCommand(semanticFilesCmd)
 }
 

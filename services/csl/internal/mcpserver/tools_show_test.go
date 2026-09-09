@@ -48,7 +48,10 @@ func TestHandleShowFile_BuildsURLAndOpens(t *testing.T) {
 		t.Errorf("repo/file = %q/%q, want org/testrepo/main.go", out.Repo, out.File)
 	}
 	if !strings.HasSuffix(out.LocalPath, "/org/testrepo/main.go") {
-		t.Errorf("LocalPath = %q, want absolute path ending in /org/testrepo/main.go", out.LocalPath)
+		t.Errorf(
+			"LocalPath = %q, want absolute path ending in /org/testrepo/main.go",
+			out.LocalPath,
+		)
 	}
 }
 
@@ -93,7 +96,11 @@ func TestHandleShowFile_OpenFailureWarnsInsteadOfErroring(t *testing.T) {
 		t.Fatalf("open failure should not fail the call: %v", err)
 	}
 	if out.Opened || out.Warning == "" {
-		t.Errorf("want Opened=false with a warning, got opened=%v warning=%q", out.Opened, out.Warning)
+		t.Errorf(
+			"want Opened=false with a warning, got opened=%v warning=%q",
+			out.Opened,
+			out.Warning,
+		)
 	}
 	if out.URL == "" {
 		t.Errorf("URL should still be returned when the browser fails to open")
@@ -112,7 +119,10 @@ func TestHandleShowFile_Errors(t *testing.T) {
 		{"missing file", showFileInput{Repo: "testrepo"}},
 		{"nonexistent file", showFileInput{Repo: "testrepo", File: "nope.go"}},
 		{"directory", showFileInput{Repo: "testrepo", File: "."}},
-		{"start after end", showFileInput{Repo: "testrepo", File: "main.go", StartLine: 5, EndLine: 2}},
+		{
+			"start after end",
+			showFileInput{Repo: "testrepo", File: "main.go", StartLine: 5, EndLine: 2},
+		},
 		{"negative line", showFileInput{Repo: "testrepo", File: "main.go", StartLine: -1}},
 	}
 	for _, tt := range tests {

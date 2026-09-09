@@ -181,7 +181,10 @@ func DetectStatistical(text string) []StatFinding {
 			Threshold: emDashDensityCeil,
 			Message: fmt.Sprintf(
 				"%d em-dashes across %d words (%.2f per 100 words, ceiling %.2f) — human prose runs an order of magnitude lower; swap most for commas or periods.",
-				emDashCount, proseWords, emDashDensity, emDashDensityCeil,
+				emDashCount,
+				proseWords,
+				emDashDensity,
+				emDashDensityCeil,
 			),
 		})
 	}

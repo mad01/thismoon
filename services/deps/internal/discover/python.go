@@ -92,7 +92,8 @@ func parseRequirementLine(line string) (name, version string, ok bool) {
 		version = strings.TrimSpace(version[:i])
 	}
 	// "===" (arbitrary equality) leaves a leading "="; "==1.*" is not exact.
-	if name == "" || version == "" || strings.HasPrefix(version, "=") || strings.Contains(version, "*") {
+	if name == "" || version == "" || strings.HasPrefix(version, "=") ||
+		strings.Contains(version, "*") {
 		return "", "", false
 	}
 	return normalizePyPI(name), version, true

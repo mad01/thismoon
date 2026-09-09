@@ -365,7 +365,11 @@ func TestWorktreeResolvesRemoteAndBranch(t *testing.T) {
 		t.Fatalf("primary clone not discovered; got %+v", repos)
 	}
 	if primary.Name != "testorg/service-a" || primary.Host != "github.com" {
-		t.Errorf("primary: got name=%q host=%q, want testorg/service-a / github.com", primary.Name, primary.Host)
+		t.Errorf(
+			"primary: got name=%q host=%q, want testorg/service-a / github.com",
+			primary.Name,
+			primary.Host,
+		)
 	}
 
 	worktree, ok := byPath[wt]
@@ -376,10 +380,17 @@ func TestWorktreeResolvesRemoteAndBranch(t *testing.T) {
 		t.Errorf("worktree name: got %q, want testorg/service-a@project/feat", worktree.Name)
 	}
 	if worktree.Host != "github.com" {
-		t.Errorf("worktree host: got %q, want github.com (must survive the host allowlist)", worktree.Host)
+		t.Errorf(
+			"worktree host: got %q, want github.com (must survive the host allowlist)",
+			worktree.Host,
+		)
 	}
 	if worktree.Remote != primary.Remote {
-		t.Errorf("worktree remote: got %q, want same as primary %q", worktree.Remote, primary.Remote)
+		t.Errorf(
+			"worktree remote: got %q, want same as primary %q",
+			worktree.Remote,
+			primary.Remote,
+		)
 	}
 
 	// The host allowlist must keep the worktree, not silently drop it.
@@ -388,6 +399,10 @@ func TestWorktreeResolvesRemoteAndBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(filtered) != 2 {
-		t.Fatalf("FilteredWalk[github.com]: got %d repos, want 2 (clone + worktree): %+v", len(filtered), filtered)
+		t.Fatalf(
+			"FilteredWalk[github.com]: got %d repos, want 2 (clone + worktree): %+v",
+			len(filtered),
+			filtered,
+		)
 	}
 }

@@ -74,8 +74,13 @@ func Run(event string, load Load, r io.Reader, w io.Writer) {
 	cfg, err := load()
 	if err != nil {
 		d := configDenial(err)
-		notify.EmitEventSync("belt", "error", "blocked every tool call (unreadable config)", d.Reason,
-			map[string]string{"guard": d.Guard, "event": event})
+		notify.EmitEventSync(
+			"belt",
+			"error",
+			"blocked every tool call (unreadable config)",
+			d.Reason,
+			map[string]string{"guard": d.Guard, "event": event},
+		)
 		writeDeny(w, d)
 		return
 	}
@@ -84,8 +89,13 @@ func Run(event string, load Load, r io.Reader, w io.Writer) {
 	if d == nil {
 		return
 	}
-	notify.EmitEventSync("belt", "warn", fmt.Sprintf("blocked %s (%s)", p.ToolName, d.Guard), d.Reason,
-		map[string]string{"guard": d.Guard, "event": event})
+	notify.EmitEventSync(
+		"belt",
+		"warn",
+		fmt.Sprintf("blocked %s (%s)", p.ToolName, d.Guard),
+		d.Reason,
+		map[string]string{"guard": d.Guard, "event": event},
+	)
 	writeDeny(w, d)
 }
 
@@ -105,10 +115,12 @@ func writeDeny(w io.Writer, d *guard.Denial) {
 // configDenial explains a config belt could not load, naming the file (the
 // wrapped error carries the path) and the two ways out.
 func configDenial(err error) *guard.Denial {
-	return guard.Reasonf(ConfigDenyID,
+	return guard.Reasonf(
+		ConfigDenyID,
 		"belt cannot read its config, so every guarded tool call is blocked until it is fixed: %v. "+
 			"Run `belt doctor` to see what belt resolved, then fix the file (or move it aside to fall back to the defaults).",
-		err)
+		err,
+	)
 }
 
 // RunHint reads a hook payload from r, runs the hints for event, and writes
@@ -136,8 +148,13 @@ func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 		return
 	}
 	for _, a := range advice {
-		notify.EmitEventSync("belt", "info", fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint), a.Text,
-			map[string]string{"hint": a.Hint, "event": event})
+		notify.EmitEventSync(
+			"belt",
+			"info",
+			fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint),
+			a.Text,
+			map[string]string{"hint": a.Hint, "event": event},
+		)
 	}
 	writeAdvice(w, event, text)
 }
@@ -172,7 +189,12 @@ func hintHookEventName(event string) string {
 // carries its repo and hit paths in the response; a bash command carries only
 // what it ran; an external-text call is identified by the tool that made it.
 func toHintInput(event string, p payload) hint.Input {
-	in := hint.Input{Event: event, Cwd: p.Cwd, SessionID: p.SessionID, TranscriptPath: p.TranscriptPath}
+	in := hint.Input{
+		Event:          event,
+		Cwd:            p.Cwd,
+		SessionID:      p.SessionID,
+		TranscriptPath: p.TranscriptPath,
+	}
 	switch event {
 	case hint.EventBash:
 		if s, ok := p.ToolInput["command"].(string); ok {
@@ -188,7 +210,8 @@ func toHintInput(event string, p payload) hint.Input {
 			// Fall back to the request's repo filter, which is a regex or
 			// substring rather than a resolved name — usable when it is
 			// already a plain org/repo.
-			if s, ok := p.ToolInput["repo"].(string); ok && !strings.ContainsAny(s, `.*+?[]()|\$^`) {
+			if s, ok := p.ToolInput["repo"].(string); ok &&
+				!strings.ContainsAny(s, `.*+?[]()|\$^`) {
 				in.Repo = s
 			}
 		}

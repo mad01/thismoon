@@ -50,7 +50,14 @@ func TestCommitPolicy(t *testing.T) {
 		{"commit on feature branch", "git commit -m 'x'", "feat/x", thismoon, exclude, false},
 		{"detached HEAD", "git commit -m 'x'", "HEAD", thismoon, exclude, false},
 		{"excluded repo", "git commit -m 'x'", "main", dotfiles, exclude, false},
-		{"org wildcard excludes", "git commit -m 'x'", "main", thismoon, []string{"github.com/mad01/*"}, false},
+		{
+			"org wildcard excludes",
+			"git commit -m 'x'",
+			"main",
+			thismoon,
+			[]string{"github.com/mad01/*"},
+			false,
+		},
 		{"no exclusions fires", "git commit -m 'x'", "main", thismoon, nil, true},
 		{"unresolved repo silent", "git commit -m 'x'", "main", "", exclude, false},
 		{"non-commit git", "git status", "main", thismoon, exclude, false},
@@ -64,7 +71,13 @@ func TestCommitPolicy(t *testing.T) {
 			h := newCommitPolicyHint(tt.branch, tt.repo, tt.exclude)
 			a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/some/repo"})
 			if got := a != nil; got != tt.fires {
-				t.Fatalf("Check(%q) fired = %v, want %v (advice: %+v)", tt.command, got, tt.fires, a)
+				t.Fatalf(
+					"Check(%q) fired = %v, want %v (advice: %+v)",
+					tt.command,
+					got,
+					tt.fires,
+					a,
+				)
 			}
 			if a == nil {
 				return
@@ -104,7 +117,9 @@ func TestCommitPolicyOverlay(t *testing.T) {
 		{
 			"exclude false overrides machine exclusion",
 			"hints:\n  commit-policy:\n    exclude: false\n",
-			"main", []string{thismoon}, true, "feature branch + PR",
+			"main",
+			[]string{thismoon},
+			true, "feature branch + PR",
 		},
 		{
 			"protected_branches replaces the default set",

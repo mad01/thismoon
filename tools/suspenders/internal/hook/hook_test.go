@@ -570,7 +570,8 @@ func TestInstall_linkedWorktree(t *testing.T) {
 	if got := m.Status(wt, PreCommit); got != "installed" {
 		t.Errorf("Status = %q, want installed", got)
 	}
-	if info, err := os.Stat(filepath.Join(wt, ".git", "hooks", "pre-commit")); err == nil && !info.IsDir() {
+	if info, err := os.Stat(filepath.Join(wt, ".git", "hooks", "pre-commit")); err == nil &&
+		!info.IsDir() {
 		t.Error("hook should not be written under <worktree>/.git/hooks")
 	}
 }

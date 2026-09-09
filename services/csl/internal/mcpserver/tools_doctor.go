@@ -24,7 +24,7 @@ type doctorCheck struct {
 type doctorOutput struct {
 	OK     bool          `json:"ok"             jsonschema:"true when every check passed"`
 	Note   string        `json:"note,omitempty" jsonschema:"set when csl is running with no config file, naming the path to create; the checks still pass, csl just has nothing configured to index"`
-	Checks []doctorCheck `json:"checks" jsonschema:"one entry per check, in the order csl doctor runs them"`
+	Checks []doctorCheck `json:"checks"         jsonschema:"one entry per check, in the order csl doctor runs them"`
 }
 
 func registerDoctorTools(s *mcp.Server) {
@@ -47,7 +47,10 @@ func handleDoctor(
 	report := doctor.Collect(ctx, selfcheck.Checks(false))
 	out := doctorOutput{OK: report.OK, Checks: make([]doctorCheck, 0, len(report.Checks))}
 	for _, c := range report.Checks {
-		out.Checks = append(out.Checks, doctorCheck{Name: c.Name, Status: c.Status, Detail: c.Detail})
+		out.Checks = append(
+			out.Checks,
+			doctorCheck{Name: c.Name, Status: c.Status, Detail: c.Detail},
+		)
 	}
 	return nil, out, nil
 }

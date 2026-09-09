@@ -64,7 +64,12 @@ type Handler struct {
 // the ones whose backend currently responds, re-probed at most every sitesTTL.
 // blocked hosts are served the local block page instead of being proxied;
 // gamesDir optionally names a directory of plugin block-page games.
-func New(routeMap map[string]string, sites []config.Site, blocked []string, gamesDir string) (*Handler, error) {
+func New(
+	routeMap map[string]string,
+	sites []config.Site,
+	blocked []string,
+	gamesDir string,
+) (*Handler, error) {
 	routes := make(map[string]*url.URL, len(routeMap))
 	for host, backend := range routeMap {
 		target, err := url.Parse("http://" + backend)

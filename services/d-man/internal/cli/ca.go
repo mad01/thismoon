@@ -84,7 +84,9 @@ func runCAInstall(cmd *cobra.Command, _ []string) error {
 	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := c.Run(); err != nil {
 		if os.Geteuid() != 0 {
-			return fmt.Errorf("trusting the CA in the system keychain needs root — try: sudo d-man ca install")
+			return fmt.Errorf(
+				"trusting the CA in the system keychain needs root — try: sudo d-man ca install",
+			)
 		}
 		return fmt.Errorf("add-trusted-cert: %w", err)
 	}
@@ -97,7 +99,9 @@ func runCAUninstall(cmd *cobra.Command, _ []string) error {
 	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := c.Run(); err != nil {
 		if os.Geteuid() != 0 {
-			return fmt.Errorf("removing the CA from the system keychain needs root — try: sudo d-man ca uninstall")
+			return fmt.Errorf(
+				"removing the CA from the system keychain needs root — try: sudo d-man ca uninstall",
+			)
 		}
 		return fmt.Errorf("delete-certificate: %w", err)
 	}

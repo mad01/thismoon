@@ -66,7 +66,8 @@ type Chunk struct {
 // tree-sitter chunker.
 func LangForPath(path string) string {
 	base := strings.ToLower(filepath.Base(path))
-	if base == "dockerfile" || strings.HasPrefix(base, "dockerfile.") || strings.HasSuffix(base, ".dockerfile") {
+	if base == "dockerfile" || strings.HasPrefix(base, "dockerfile.") ||
+		strings.HasSuffix(base, ".dockerfile") {
 		return "dockerfile"
 	}
 	switch strings.ToLower(filepath.Ext(path)) {

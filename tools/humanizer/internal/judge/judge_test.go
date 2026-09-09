@@ -62,8 +62,10 @@ func TestRun(t *testing.T) {
 			wantConfidence: 0.88,
 		},
 		{
-			name:           "a model that answers on the old 0-1 scale still parses",
-			replies:        []string{`{"verdict":"mixed","confidence":0.4,"summary":"half and half"}`},
+			name: "a model that answers on the old 0-1 scale still parses",
+			replies: []string{
+				`{"verdict":"mixed","confidence":0.4,"summary":"half and half"}`,
+			},
 			wantCalls:      1,
 			wantVerdict:    "mixed",
 			wantConfidence: 0.4,

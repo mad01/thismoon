@@ -206,7 +206,14 @@ though no word matches. On judge failure, fall back to: kof list.`,
 			return nil
 		}
 		for _, a := range as {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  [%s] %s\n    %s\n", a.ID, a.Status, a.Subject, a.Statement)
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"%s  [%s] %s\n    %s\n",
+				a.ID,
+				a.Status,
+				a.Subject,
+				a.Statement,
+			)
 		}
 		return nil
 	},

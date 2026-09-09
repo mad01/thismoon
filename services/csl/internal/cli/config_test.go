@@ -91,7 +91,11 @@ func TestConfigLoadedFile(t *testing.T) {
 		t.Errorf("sync.concurrency = %d, want the configured 3", got.Sync.Concurrency)
 	}
 	if got.Web.BaseURL != csl.DefaultBaseURL {
-		t.Errorf("web.base_url = %q, want the resolved default %q", got.Web.BaseURL, csl.DefaultBaseURL)
+		t.Errorf(
+			"web.base_url = %q, want the resolved default %q",
+			got.Web.BaseURL,
+			csl.DefaultBaseURL,
+		)
 	}
 }
 

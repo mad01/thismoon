@@ -21,7 +21,9 @@ func defaults() (config.Config, error) { return config.Config{}, nil }
 
 // failing is the load a machine with a broken config file gets.
 func failing() (config.Config, error) {
-	return config.Config{}, errors.New("config: parse /tmp/config.yaml: yaml: line 2: did not find expected key")
+	return config.Config{}, errors.New(
+		"config: parse /tmp/config.yaml: yaml: line 2: did not find expected key",
+	)
 }
 
 func TestRunMalformedPayload(t *testing.T) {
@@ -37,7 +39,12 @@ func TestRunMalformedPayload(t *testing.T) {
 // which file to fix rather than letting the call through unguarded.
 func TestRunDeniesOnUnreadableConfig(t *testing.T) {
 	var out bytes.Buffer
-	Run("bash", failing, strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`), &out)
+	Run(
+		"bash",
+		failing,
+		strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`),
+		&out,
+	)
 
 	var d decision
 	if err := json.Unmarshal(out.Bytes(), &d); err != nil {

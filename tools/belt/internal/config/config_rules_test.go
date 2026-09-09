@@ -82,7 +82,12 @@ func TestRepoMatches(t *testing.T) {
 		{"exact mismatch", []string{"github.com/mad01/thismoon"}, "github.com/mad01/ralph", false},
 		{"org wildcard matches", []string{"github.com/mad01/*"}, "github.com/mad01/ralph", true},
 		{"org wildcard other org", []string{"github.com/mad01/*"}, "github.com/other/ralph", false},
-		{"wildcard needs the slash", []string{"github.com/mad01/*"}, "github.com/mad01ish/repo", false},
+		{
+			"wildcard needs the slash",
+			[]string{"github.com/mad01/*"},
+			"github.com/mad01ish/repo",
+			false,
+		},
 		{"empty repo never matches", []string{"github.com/mad01/*"}, "", false},
 		{"empty patterns never match", nil, "github.com/mad01/thismoon", false},
 	}

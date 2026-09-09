@@ -64,7 +64,11 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 	fmt.Fprintf(w, "  names        %s\n", namesNote(cfg))
 	fmt.Fprintf(w, "  claude deny  %s\n", claudeDenyNote(cfg, p))
 	if n := len(cfg.DirectMainRepos); n > 0 {
-		fmt.Fprintf(w, "  global       direct_main_repos: %d  (read by git-push-main + commit-policy only)\n", n)
+		fmt.Fprintf(
+			w,
+			"  global       direct_main_repos: %d  (read by git-push-main + commit-policy only)\n",
+			n,
+		)
 	}
 	if cfg.HasPublicRepos() {
 		fmt.Fprintf(w, "  global       public_repos: %d  (internal names blocked there by"+
@@ -98,7 +102,10 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) {
 
 	printCustomGuards(w, cfg, customs)
 
-	fmt.Fprintln(w, "\noverrides — rules naming one stop applying while it is active (belt override set|extend|clear <name>):")
+	fmt.Fprintln(
+		w,
+		"\noverrides — rules naming one stop applying while it is active (belt override set|extend|clear <name>):",
+	)
 	if overrides := config.Overrides(); len(overrides) > 0 {
 		now := time.Now()
 		for _, o := range overrides {
@@ -188,8 +195,12 @@ func namesNote(cfg config.Config) string {
 	if len(cfg.Names.WorkspaceDirs)+len(cfg.Names.BlockedWords) == 0 {
 		return "none (internal_names unset or empty) — write-internal-names has no names to match"
 	}
-	return fmt.Sprintf("workspace dirs: %d, blocked words: %d, allowlist: %d  (from belt config internal_names)",
-		len(cfg.Names.WorkspaceDirs), len(cfg.Names.BlockedWords), len(cfg.Names.Allowlist))
+	return fmt.Sprintf(
+		"workspace dirs: %d, blocked words: %d, allowlist: %d  (from belt config internal_names)",
+		len(cfg.Names.WorkspaceDirs),
+		len(cfg.Names.BlockedWords),
+		len(cfg.Names.Allowlist),
+	)
 }
 
 // claudeDenyNote reports the Claude settings read: the files and pattern
@@ -274,7 +285,10 @@ func reachabilityNote(command []string) string {
 		return "  MISCONFIGURED (empty command — guard checks nothing)"
 	}
 	if _, err := exec.LookPath(command[0]); err != nil {
-		return fmt.Sprintf("  UNREACHABLE (%q not on PATH — guard allows with a warn event)", command[0])
+		return fmt.Sprintf(
+			"  UNREACHABLE (%q not on PATH — guard allows with a warn event)",
+			command[0],
+		)
 	}
 	return ""
 }

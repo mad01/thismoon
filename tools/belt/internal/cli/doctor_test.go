@@ -274,7 +274,12 @@ func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 	// where the key that failed validation gets named.
 	t.Run("invalid custom guard event", func(t *testing.T) {
 		dir := t.TempDir()
-		writeFile(t, dir, "config.yaml", "custom_guards:\n  lint:\n    event: Write\n    command: [lint]\n")
+		writeFile(
+			t,
+			dir,
+			"config.yaml",
+			"custom_guards:\n  lint:\n    event: Write\n    command: [lint]\n",
+		)
 		out := runDoctorString(t, doctorPaths(dir))
 		if !strings.Contains(out, "custom_guards.lint.event") {
 			t.Errorf("invalid custom guard event not named:\n%s", out)

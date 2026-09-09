@@ -307,7 +307,11 @@ func TestAPIPagesPaginatesFirstPage(t *testing.T) {
 	}
 	// Not the last page: a next link to page 2 must be available.
 	if !pages.HasNext || pages.NextPage != 2 {
-		t.Errorf("page 1 should have has_next with next_page=2, got has_next=%v next_page=%d", pages.HasNext, pages.NextPage)
+		t.Errorf(
+			"page 1 should have has_next with next_page=2, got has_next=%v next_page=%d",
+			pages.HasNext,
+			pages.NextPage,
+		)
 	}
 	if pages.HasPrev {
 		t.Errorf("page 1 should not have has_prev")
@@ -356,7 +360,11 @@ func TestAPIPagesLastPageHasNoNext(t *testing.T) {
 		t.Errorf("last page should not have has_next")
 	}
 	if !pages.HasPrev || pages.PrevPage != 2 {
-		t.Errorf("last page should have has_prev with prev_page=2, got has_prev=%v prev_page=%d", pages.HasPrev, pages.PrevPage)
+		t.Errorf(
+			"last page should have has_prev with prev_page=2, got has_prev=%v prev_page=%d",
+			pages.HasPrev,
+			pages.PrevPage,
+		)
 	}
 }
 
@@ -370,7 +378,11 @@ func TestAPIPagesOutOfRangePageClamps(t *testing.T) {
 		t.Errorf("out-of-range page should clamp to last page (oldest entry)")
 	}
 	if pages.Page != 3 || pages.TotalPages != 3 {
-		t.Errorf("out-of-range page should clamp to page 3 of 3, got page=%d total_pages=%d", pages.Page, pages.TotalPages)
+		t.Errorf(
+			"out-of-range page should clamp to page 3 of 3, got page=%d total_pages=%d",
+			pages.Page,
+			pages.TotalPages,
+		)
 	}
 
 	// page=0 and garbage clamp to page 1 (newest entry).
@@ -451,7 +463,8 @@ func TestAPIPageReturnsReferences(t *testing.T) {
 	if len(got.References) != 1 {
 		t.Fatalf("references = %d, want 1", len(got.References))
 	}
-	if got.References[0].Title != "dotfiles repo" || got.References[0].URL != "https://github.com/mad01/dotfiles" {
+	if got.References[0].Title != "dotfiles repo" ||
+		got.References[0].URL != "https://github.com/mad01/dotfiles" {
 		t.Errorf("reference = %+v, want the dotfiles ref", got.References[0])
 	}
 }

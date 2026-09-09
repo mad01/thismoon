@@ -601,15 +601,15 @@ func LoadClaudeDenyPatterns(paths ...string) []string {
 // absent internal_names section means an empty name set — belt reads no
 // other tool's config to fill it (docs/adr/0010).
 type File struct {
-	Guards          map[string]Toggle      `toml:"guards"          yaml:"guards"`
-	Hints           map[string]Toggle      `toml:"hints"           yaml:"hints"`
+	Guards          map[string]Toggle      `toml:"guards"            yaml:"guards"`
+	Hints           map[string]Toggle      `toml:"hints"             yaml:"hints"`
 	DirectMainRepos []string               `toml:"direct_main_repos" yaml:"direct_main_repos"`
-	PublicRepos     []string               `toml:"public_repos"    yaml:"public_repos"`
-	InternalNames   InternalNames          `toml:"internal_names"  yaml:"internal_names"`
-	ClaudeSettings  ClaudeSettings         `toml:"claude_settings" yaml:"claude_settings"`
-	GitIdentity     []GitIdentity          `toml:"git_identity"    yaml:"git_identity"`
-	CommitGuards    []CommitGuard          `toml:"commit_guards"   yaml:"commit_guards"`
-	CustomGuards    map[string]CustomGuard `toml:"custom_guards"   yaml:"custom_guards"`
+	PublicRepos     []string               `toml:"public_repos"      yaml:"public_repos"`
+	InternalNames   InternalNames          `toml:"internal_names"    yaml:"internal_names"`
+	ClaudeSettings  ClaudeSettings         `toml:"claude_settings"   yaml:"claude_settings"`
+	GitIdentity     []GitIdentity          `toml:"git_identity"      yaml:"git_identity"`
+	CommitGuards    []CommitGuard          `toml:"commit_guards"     yaml:"commit_guards"`
+	CustomGuards    map[string]CustomGuard `toml:"custom_guards"     yaml:"custom_guards"`
 }
 
 // Source reports which belt config file was read and what happened.
@@ -660,7 +660,11 @@ func ReadFile(p Paths) (File, Source) {
 // fail, so no caller can accidentally use a half-understood config.
 func validated(f File, src Source) (File, Source) {
 	if err := f.validate(); err != nil {
-		return File{}, Source{Path: src.Path, Legacy: src.Legacy, Err: fmt.Errorf("config: %s: %w", src.Path, err)}
+		return File{}, Source{
+			Path:   src.Path,
+			Legacy: src.Legacy,
+			Err:    fmt.Errorf("config: %s: %w", src.Path, err),
+		}
 	}
 	return f, src
 }
@@ -677,7 +681,12 @@ func (f File) validate() error {
 		cg := f.CustomGuards[name]
 		if cg.Event != EventBash && cg.Event != EventWrite {
 			errs = append(errs, fmt.Errorf(
-				"custom_guards.%s.event is %q (must be %q or %q)", name, cg.Event, EventBash, EventWrite))
+				"custom_guards.%s.event is %q (must be %q or %q)",
+				name,
+				cg.Event,
+				EventBash,
+				EventWrite,
+			))
 		}
 		if err := validMode(cg.Mode); err != nil {
 			errs = append(errs, fmt.Errorf("custom_guards.%s.%w", name, err))
@@ -774,7 +783,10 @@ func toggleModeErrors(kind string, toggles map[string]Toggle) []error {
 		if mode == ModeSoft && !slices.Contains(SoftModeGuards, id) {
 			errs = append(errs, fmt.Errorf(
 				"%s.%s: mode: soft has no effect (only %s reads a mode; use enabled: false to switch this one off)",
-				kind, id, strings.Join(SoftModeGuards, ", ")))
+				kind,
+				id,
+				strings.Join(SoftModeGuards, ", "),
+			))
 		}
 	}
 	return errs

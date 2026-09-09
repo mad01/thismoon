@@ -50,7 +50,8 @@ func fakeOllama(t *testing.T, dim int, tagModels []string, got *[]capturedEmbed)
 
 func TestOllamaEmbedderDefaults(t *testing.T) {
 	emb := NewOllamaEmbedder("", "", 0)
-	if emb.Endpoint != defaultOllamaEndpoint || emb.Model != defaultOllamaModel || emb.Dim() != defaultOllamaDim {
+	if emb.Endpoint != defaultOllamaEndpoint || emb.Model != defaultOllamaModel ||
+		emb.Dim() != defaultOllamaDim {
 		t.Fatalf("defaults = %q %q %d, want %q %q %d",
 			emb.Endpoint, emb.Model, emb.Dim(),
 			defaultOllamaEndpoint, defaultOllamaModel, defaultOllamaDim)

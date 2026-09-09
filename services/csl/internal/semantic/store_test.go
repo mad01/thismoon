@@ -67,7 +67,11 @@ func TestStoreSearchNearest(t *testing.T) {
 		t.Fatalf("nearest hit = %s:%d, want a.go:1", top.Path, top.StartLine)
 	}
 	if top.Repo != "org/repo" || top.RepoPath != "/repos/org/repo" {
-		t.Fatalf("hit repo metadata = %q/%q, want org/repo //repos/org/repo", top.Repo, top.RepoPath)
+		t.Fatalf(
+			"hit repo metadata = %q/%q, want org/repo //repos/org/repo",
+			top.Repo,
+			top.RepoPath,
+		)
 	}
 	if math.Abs(float64(top.Score)-1.0) > 1e-4 {
 		t.Fatalf("top score = %v, want ~1.0", top.Score)

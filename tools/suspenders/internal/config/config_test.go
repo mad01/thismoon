@@ -107,7 +107,12 @@ func TestPathForPrecedence(t *testing.T) {
 		flag string
 		want string
 	}{
-		{"neither set uses the default", "", "", filepath.Join(home, ".config", "suspenders", "config.yaml")},
+		{
+			"neither set uses the default",
+			"",
+			"",
+			filepath.Join(home, ".config", "suspenders", "config.yaml"),
+		},
 		{"env relocates", "/tmp/from-env.yaml", "", "/tmp/from-env.yaml"},
 		{"flag wins over env", "/tmp/from-env.yaml", "/tmp/from-flag.yaml", "/tmp/from-flag.yaml"},
 		{"tilde is expanded", "~/from-env.yaml", "", filepath.Join(home, "from-env.yaml")},

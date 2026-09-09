@@ -233,7 +233,10 @@ func TestDoctorReportsAFailingCheckAsAResult(t *testing.T) {
 	h := &handlers{checks: func(context.Context) []doctor.Check {
 		return []doctor.Check{
 			{Name: "store-readable", Run: func(context.Context) error { return nil }},
-			{Name: "service-reachable", Run: func(context.Context) error { return errors.New("connection refused") }},
+			{
+				Name: "service-reachable",
+				Run:  func(context.Context) error { return errors.New("connection refused") },
+			},
 		}
 	}}
 

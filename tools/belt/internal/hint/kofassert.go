@@ -236,7 +236,12 @@ func queryKof(base, subject string) []assertion {
 // mechanism's best signal.
 func render(subject string, as []assertion) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d stored assertion(s) for %s — prior sessions derived these; treat stale ones as needing re-verification.\n", len(as), subject)
+	fmt.Fprintf(
+		&b,
+		"%d stored assertion(s) for %s — prior sessions derived these; treat stale ones as needing re-verification.\n",
+		len(as),
+		subject,
+	)
 	for _, a := range as {
 		status := a.Status
 		if status == "" {
@@ -245,7 +250,14 @@ func render(subject string, as []assertion) string {
 		fmt.Fprintf(&b, "  [%s] %s\n", status, a.Statement)
 		if len(a.Pins) > 0 {
 			p := a.Pins[0]
-			fmt.Fprintf(&b, "          %s:%d-%d (kof_get id=%s)\n", p.File, p.StartLine, p.EndLine, a.ID)
+			fmt.Fprintf(
+				&b,
+				"          %s:%d-%d (kof_get id=%s)\n",
+				p.File,
+				p.StartLine,
+				p.EndLine,
+				a.ID,
+			)
 		}
 	}
 	b.WriteString("  Correct one that proves wrong with kof_retract rather than working around it.")

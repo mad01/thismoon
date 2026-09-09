@@ -83,7 +83,9 @@ func hostsEntriesPresent() doctor.Check {
 			if len(missing) > 0 {
 				return fmt.Errorf(
 					"managed block in %s is missing %s: the daemon has not synced the current routes",
-					flagHostsFile, strings.Join(missing, ", "))
+					flagHostsFile,
+					strings.Join(missing, ", "),
+				)
 			}
 			return nil
 		},

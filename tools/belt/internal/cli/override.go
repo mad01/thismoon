@@ -108,7 +108,11 @@ func overrideExtendCmd() *cobra.Command {
 			}
 			o, ok := config.ReadOverride(name)
 			if !ok {
-				return fmt.Errorf("override: %q is not set (belt override set %s --reason \"...\")", name, name)
+				return fmt.Errorf(
+					"override: %q is not set (belt override set %s --reason \"...\")",
+					name,
+					name,
+				)
 			}
 			// Extend from the current expiry while it is still ahead, from now
 			// otherwise — extending an expired, legacy, or malformed override
@@ -200,7 +204,10 @@ func listOverrides(cmd *cobra.Command) error {
 func overrideStatus(o config.Override, now time.Time) string {
 	switch {
 	case o.Malformed:
-		return fmt.Sprintf("MALFORMED — inactive (re-set with belt override set %s --reason \"...\")", o.Name)
+		return fmt.Sprintf(
+			"MALFORMED — inactive (re-set with belt override set %s --reason \"...\")",
+			o.Name,
+		)
 	case o.Legacy:
 		return "ACTIVE (untimed legacy file — re-set with --for to make it expire)"
 	case o.Active(now):
@@ -226,7 +233,9 @@ func overrideName(name string) (string, error) {
 func overrideReason(reason string) (string, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return "", fmt.Errorf("override: --reason must not be blank — say why the guard is being stood down")
+		return "", fmt.Errorf(
+			"override: --reason must not be blank — say why the guard is being stood down",
+		)
 	}
 	return reason, nil
 }

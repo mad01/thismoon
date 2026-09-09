@@ -114,7 +114,8 @@ func runServe(_ *cobra.Command, _ []string) error {
 	}()
 	go func() {
 		log.Printf("d-man: block-page TLS listener on https://%s", tlsAddr)
-		if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := tlsSrv.ListenAndServeTLS("", ""); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
