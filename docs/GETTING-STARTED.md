@@ -98,57 +98,64 @@ make install-all                    # everything
 ## One tool with mise
 
 [mise](https://mise.jdx.dev) reaches the same release tarballs through its
-`github` backend, which needs two options per component: `exe` names the
-binary inside the tarball, and `tag_regex` picks that component's tags out
-of the shared release feed, so `latest` resolves to the newest csl release
-rather than the newest release of anything. To put csl on your PATH:
+`github` backend. Every component releases from this one repository under
+its own tag prefix (`csl/v0.18.2`, `keeper-of-facts/v0.13.0`), so mise
+needs a tool alias per component and a `version_prefix` that picks the
+component's tags out of the shared feed. Two commands put csl on your PATH:
 
 ```sh
-mise use -g "github:mad01/thismoon[exe=csl,tag_regex=^csl/]"
+mise tool-alias set csl github:mad01/thismoon
+mise use -g "csl[version_prefix=csl/]"
 ```
 
-The tag prefix and the binary share a name for every component except
-keeper-of-facts, whose binary is `kof`:
+The first writes a `[tool_alias]` entry to `~/.config/mise/config.toml` and
+the second a `[tools]` entry, so the same setup as config is:
 
-| Component | `mise use -g` argument |
-|-----------|------------------------|
-| belt | `"github:mad01/thismoon[exe=belt,tag_regex=^belt/]"` |
-| csl | `"github:mad01/thismoon[exe=csl,tag_regex=^csl/]"` |
-| d-man | `"github:mad01/thismoon[exe=d-man,tag_regex=^d-man/]"` |
-| kof | `"github:mad01/thismoon[exe=kof,tag_regex=^keeper-of-facts/]"` |
-| present | `"github:mad01/thismoon[exe=present,tag_regex=^present/]"` |
-| speak | `"github:mad01/thismoon[exe=speak,tag_regex=^speak/]"` |
-| t-man | `"github:mad01/thismoon[exe=t-man,tag_regex=^t-man/]"` |
-| toss-bin | `"github:mad01/thismoon[exe=toss-bin,tag_regex=^toss-bin/]"` |
+```toml
+[tool_alias]
+csl = "github:mad01/thismoon"
 
-The same pattern covers every released component, not only the ones with a
-formula: the tag prefix is the directory name under `services/` or
-`tools/`.
+[tools]
+csl = { version = "latest", version_prefix = "csl/" }
+```
+
+The alias is the binary name and the prefix is the component's directory
+name under `services/` or `tools/`, so both commands take the same word for
+every component below except keeper-of-facts, whose binary is `kof`:
+
+| Component | Alias | `version_prefix` |
+|-----------|-------|------------------|
+| belt | `belt` | `belt/` |
+| clipboard | `clipboard` | `clipboard/` |
+| csl | `csl` | `csl/` |
+| d-man | `d-man` | `d-man/` |
+| deps | `deps` | `deps/` |
+| events | `events` | `events/` |
+| humanizer | `humanizer` | `humanizer/` |
+| keeper-of-facts | `kof` | `keeper-of-facts/` |
+| opener | `opener` | `opener/` |
+| present | `present` | `present/` |
+| speak | `speak` | `speak/` |
+| status | `status` | `status/` |
+| suspenders | `suspenders` | `suspenders/` |
+| t-man | `t-man` | `t-man/` |
+| toss-bin | `toss-bin` | `toss-bin/` |
+| worklog | `worklog` | `worklog/` |
+
+That is every proven component from the [README](../README.md) tables plus
+belt and suspenders. The other components release the same way, but they
+are still settling and aren't worth installing standalone yet.
+
+Each alias installs into its own directory, so any number of components sit
+side by side, and `mise upgrade` re-resolves each one within its own
+prefix. Don't skip the alias: `mise use` on the bare `github:mad01/thismoon`
+backend keys every component to the same tool, so a second component
+overwrites the first.
 
 You get the binary and nothing else: there is no `brew services` block, so
 a service runs under [t-man](../tools/t-man/README.md) or straight from
-your shell. `mise upgrade` moves the tool to the newest tag under its
-prefix, the same way `latest` resolves. Releases are cosign-signed;
-[RELEASING.md](RELEASING.md) shows how to verify a download by hand.
-
-**More than one component.** mise keys a tool by its repository, so a
-second `mise use` for `github:mad01/thismoon` replaces the first entry
-instead of adding to it. For several components, pin each one to a version
-in your mise config instead (two `latest` entries for the same repository
-collide on their install directory):
-
-```toml
-[tools]
-"github:mad01/thismoon" = [
-  { version = "csl/v0.18.2", exe = "csl", tag_regex = "^csl/" },
-  { version = "keeper-of-facts/v0.13.0", exe = "kof", tag_regex = "^keeper-of-facts/" },
-]
-```
-
-Each entry installs into its own directory and moves when you bump its
-version. This stays a list of binaries; the moment you want services,
-`.this` names, or updates on every merge, that is
-[the fleet](#the-fleet-with-ralph).
+your shell. Releases are cosign-signed; [RELEASING.md](RELEASING.md) shows
+how to verify a download by hand.
 
 **While this repo is private**, set `MISE_GITHUB_TOKEN` to a GitHub token
 with read access to it. `gh auth token` works if the GitHub CLI is logged in
@@ -405,6 +412,6 @@ install ever lands without a restart, `status.this` shows the service as
 tagged releases, so you update when a release is cut rather than on every
 merge.
 
-**mise:** `mise upgrade` for a `mise use` entry; a pinned array entry moves
-when you bump its version. Restart the t-man agent yourself if the tool runs
-as a service.
+**mise:** `mise upgrade <alias>` re-resolves the newest tag under the
+component's prefix. Restart the t-man agent yourself if the tool runs as a
+service.
