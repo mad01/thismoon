@@ -190,8 +190,16 @@ brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
 ```
 
 Most components have formulas (csl, kof, present, speak, d-man, belt,
-suspenders, t-man, and ralph itself); the rest follow as they prove useful
-outside the fleet. Everything installs from the module path too:
+t-man, toss-bin, and ralph itself); the rest follow as they prove useful
+outside the fleet. [mise](https://mise.jdx.dev) reaches the same release
+tarballs, one tool alias per component:
+
+```sh
+mise tool-alias set csl github:mad01/thismoon
+mise use -g "csl[version_prefix=csl/]"
+```
+
+Everything installs from the module path too:
 
 ```sh
 go install github.com/mad01/thismoon/services/present/cmd/present@latest
@@ -279,7 +287,10 @@ Once the repo is public, neither is needed for this module: drop the
 The ralph source stanza works unchanged in both worlds; it always clones over
 SSH. Homebrew is the opposite: the tap formulas download release tarballs
 from this repo, so `brew install` starts working only once the repo is
-public.
+public. mise fetches those same tarballs with a `MISE_GITHUB_TOKEN`, so the
+mise path works today;
+[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md#one-tool-with-mise) has
+the details.
 
 ## License
 

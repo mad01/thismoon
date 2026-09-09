@@ -2,8 +2,8 @@
 
 There are two ways to put thismoon on a Mac:
 
-- **One tool with Homebrew.** A standalone binary with its web UI on a
-  localhost port. Right for trying a single tool, for CI, or when you don't
+- **One tool with Homebrew or mise.** A standalone binary with its web UI on
+  a localhost port. Right for trying a single tool, for CI, or when you don't
   want a fleet of launchd agents on the machine.
 - **The fleet with [ralph](https://github.com/mad01/ralph).** Every component
   built from source, services running as launchd agents, `<name>.this`
@@ -15,13 +15,13 @@ covers both paths, what each one gives you, and how to verify the result.
 
 ## What each path gives you
 
-| | Homebrew | ralph fleet |
+| | Homebrew or mise | ralph fleet |
 |---|---|---|
 | What installs | one binary | every component, built from the repo |
 | Web UI address | `http://127.0.0.1:<port>` | `http://<name>.this/` |
-| Services run as | `brew services` jobs | launchd agents managed by t-man |
+| Services run as | `brew services` jobs, or a t-man agent you add | launchd agents managed by t-man |
 | Fleet wiring (status page, shared event log, agent hints) | no | yes |
-| Updates | `brew upgrade`, per formula, on releases | `ralph up`, whole fleet, on every merge to main |
+| Updates | `brew upgrade` or `mise upgrade`, per tool, on releases | `ralph up`, whole fleet, on every merge to main |
 
 A single tool standalone is fully functional. The fleet makes each tool
 better: [status](../services/status/README.md) watches every service with a
@@ -39,6 +39,8 @@ your agent sessions.
 - **Xcode Command Line Tools** (`xcode-select --install`). csl compiles its
   tree-sitter grammars with cgo, which needs a C toolchain.
 - **Homebrew**, for the tap path and the easiest ralph install.
+- **[mise](https://mise.jdx.dev)**, if you take the mise path instead of the
+  tap. It installs ralph too.
 
 While this repo is private, you also need an SSH key with access to it. The
 ralph path works today because ralph clones recipe sources over SSH. Two
@@ -52,14 +54,16 @@ caveats in the private phase:
   ```
 
 - `brew install` doesn't work yet: the tap formulas download release
-  tarballs from this repo, which needs the repo public. Until then, use the
-  `go install` or checkout variant wherever this guide shows a `brew`
-  command.
+  tarballs from this repo, which needs the repo public. mise does work
+  today: its `github` backend sends `MISE_GITHUB_TOKEN` when it fetches a
+  release, so a token with read access to this repo is all the
+  [mise path](#one-tool-with-mise) needs. Otherwise use the `go install` or
+  checkout variant wherever this guide shows a `brew` command.
 
 ## One tool with Homebrew
 
 The [tap](https://github.com/mad01/homebrew-tap) carries formulas for most
-components (csl, kof, present, speak, d-man, belt, suspenders, t-man, and
+components (csl, kof, present, speak, d-man, belt, t-man, toss-bin, and
 ralph itself):
 
 ```sh
@@ -91,6 +95,72 @@ make -C services/present install    # one component
 make install-all                    # everything
 ```
 
+## One tool with mise
+
+[mise](https://mise.jdx.dev) reaches the same release tarballs through its
+`github` backend. Every component releases from this one repository under
+its own tag prefix (`csl/v0.18.2`, `keeper-of-facts/v0.13.0`), so mise
+needs a tool alias per component and a `version_prefix` that picks the
+component's tags out of the shared feed. Two commands put csl on your PATH:
+
+```sh
+mise tool-alias set csl github:mad01/thismoon
+mise use -g "csl[version_prefix=csl/]"
+```
+
+The first writes a `[tool_alias]` entry to `~/.config/mise/config.toml` and
+the second a `[tools]` entry, so the same setup as config is:
+
+```toml
+[tool_alias]
+csl = "github:mad01/thismoon"
+
+[tools]
+csl = { version = "latest", version_prefix = "csl/" }
+```
+
+The alias is the binary name and the prefix is the component's directory
+name under `services/` or `tools/`, so both commands take the same word for
+every component below except keeper-of-facts, whose binary is `kof`:
+
+| Component | Alias | `version_prefix` |
+|-----------|-------|------------------|
+| belt | `belt` | `belt/` |
+| clipboard | `clipboard` | `clipboard/` |
+| csl | `csl` | `csl/` |
+| d-man | `d-man` | `d-man/` |
+| deps | `deps` | `deps/` |
+| events | `events` | `events/` |
+| humanizer | `humanizer` | `humanizer/` |
+| keeper-of-facts | `kof` | `keeper-of-facts/` |
+| opener | `opener` | `opener/` |
+| present | `present` | `present/` |
+| speak | `speak` | `speak/` |
+| status | `status` | `status/` |
+| suspenders | `suspenders` | `suspenders/` |
+| t-man | `t-man` | `t-man/` |
+| toss-bin | `toss-bin` | `toss-bin/` |
+| worklog | `worklog` | `worklog/` |
+
+That is every proven component from the [README](../README.md) tables plus
+belt and suspenders. The other components release the same way, but they
+are still settling and aren't worth installing standalone yet.
+
+Each alias installs into its own directory, so any number of components sit
+side by side, and `mise upgrade` re-resolves each one within its own
+prefix. Don't skip the alias: `mise use` on the bare `github:mad01/thismoon`
+backend keys every component to the same tool, so a second component
+overwrites the first.
+
+You get the binary and nothing else: there is no `brew services` block, so
+a service runs under [t-man](../tools/t-man/README.md) or straight from
+your shell. Releases are cosign-signed; [RELEASING.md](RELEASING.md) shows
+how to verify a download by hand.
+
+**While this repo is private**, set `MISE_GITHUB_TOKEN` to a GitHub token
+with read access to it. `gh auth token` works if the GitHub CLI is logged in
+to an account with access. Public releases need no token.
+
 ## The fleet with ralph
 
 ralph reconciles a machine against TOML recipes. This repo ships a recipe
@@ -101,6 +171,8 @@ whole platform and keeps it current.
 
 ```sh
 brew install mad01/tap/ralph
+# or
+mise use -g github:mad01/ralph
 # or
 go install github.com/mad01/ralph/cmd/ralph@latest
 ```
@@ -339,3 +411,7 @@ install ever lands without a restart, `status.this` shows the service as
 `brew services restart <formula>` if it runs as a service. Formulas track
 tagged releases, so you update when a release is cut rather than on every
 merge.
+
+**mise:** `mise upgrade <alias>` re-resolves the newest tag under the
+component's prefix. Restart the t-man agent yourself if the tool runs as a
+service.
