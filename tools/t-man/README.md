@@ -149,6 +149,8 @@ Basic syntax:
 t-man add --name <service-name> [flags] -- <command> [args...]
 ```
 
+The command path may start with `~/`, which t-man expands to your home directory even when the shell didn't (a quoted or config-supplied path).
+
 Flags:
 
 | Flag | Default | Description |

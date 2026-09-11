@@ -261,3 +261,69 @@ func TestLogDirectoryCreation(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveCommandPathExpandsTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	shim := filepath.Join(home, ".local", "share", "mise", "shims", "csl")
+	if err := os.MkdirAll(filepath.Dir(shim), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := resolveCommandPath("~/.local/share/mise/shims/csl")
+	if err != nil {
+		t.Fatalf("resolveCommandPath() error = %v", err)
+	}
+	if got != shim {
+		t.Errorf("resolveCommandPath() = %s, want %s", got, shim)
+	}
+}
+
+func TestResolveCommandPath(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "svc")
+	if err := os.WriteFile(abs, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		command string
+		want    string
+		wantErr bool
+	}{
+		{name: "absolute path is kept", command: abs, want: abs},
+		{
+			name:    "relative path with slash is made absolute",
+			command: "./bin/svc",
+			want:    filepath.Join(cwd, "bin", "svc"),
+		},
+		{name: "bare name resolves from PATH", command: "ls"},
+		{name: "unknown bare name errors", command: "no-such-command-12345", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveCommandPath(tt.command)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveCommandPath() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if tt.want != "" && got != tt.want {
+				t.Errorf("resolveCommandPath() = %s, want %s", got, tt.want)
+			}
+			if !filepath.IsAbs(got) {
+				t.Errorf("resolveCommandPath() = %s, want an absolute path", got)
+			}
+		})
+	}
+}

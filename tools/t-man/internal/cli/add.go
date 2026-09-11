@@ -33,7 +33,8 @@ var addCmd = &cobra.Command{
 This command is compatible with serviceman CLI syntax:
   t-man add --name myservice -- /path/to/executable arg1 arg2
 
-The command and its arguments must come after the -- separator.`,
+The command and its arguments must come after the -- separator. A command path
+may start with ~/, which expands to your home directory.`,
 	Example: `  # Add a simple service
   t-man add --name myapp -- /usr/local/bin/myapp
 
@@ -77,27 +78,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	commandPath := args[0]
-	commandArgs := args[1:]
-
-	// Ensure command is an absolute path
-	if !filepath.IsAbs(commandPath) {
-		// If the path contains a slash, treat it as a file path (relative or absolute)
-		if strings.Contains(commandPath, "/") {
-			absPath, err := filepath.Abs(commandPath)
-			if err != nil {
-				return fmt.Errorf("failed to resolve command path: %w", err)
-			}
-			commandPath = absPath
-		} else {
-			// No slash means it's a command name - resolve from PATH
-			resolved, err := resolveCommand(commandPath)
-			if err != nil {
-				return fmt.Errorf("command not found in PATH: %s (tried: /usr/local/bin, /usr/bin, /bin, /opt/homebrew/bin)", commandPath)
-			}
-			commandPath = resolved
-		}
+	commandPath, err := resolveCommandPath(args[0])
+	if err != nil {
+		return err
 	}
+	commandArgs := args[1:]
 
 	// Parse environment variables
 	envMap := make(map[string]string)
@@ -252,17 +237,43 @@ func expandPath(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
-// resolveCommand attempts to find a command in the system PATH
-func resolveCommand(cmd string) (string, error) {
-	// Check common locations
-	commonPaths := []string{
-		"/usr/local/bin",
-		"/usr/bin",
-		"/bin",
-		"/opt/homebrew/bin",
+// resolveCommandPath resolves the command given to add into an absolute path.
+// An absolute path is kept as is, a path containing a slash is expanded (a
+// leading ~/ becomes the home directory) and made absolute, and a bare name is
+// looked up in PATH.
+func resolveCommandPath(command string) (string, error) {
+	if filepath.IsAbs(command) {
+		return command, nil
 	}
+	if strings.Contains(command, "/") {
+		resolved, err := expandPath(command)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve command path: %w", err)
+		}
+		return resolved, nil
+	}
+	resolved, err := resolveCommand(command)
+	if err != nil {
+		return "", fmt.Errorf(
+			"command not found in PATH: %s (tried: %s, then PATH)",
+			command, strings.Join(commonCommandDirs, ", "),
+		)
+	}
+	return resolved, nil
+}
 
-	for _, dir := range commonPaths {
+// commonCommandDirs are consulted for a bare command name before PATH, in
+// this order, so a Homebrew binary wins over a version manager's shim.
+var commonCommandDirs = []string{
+	"/usr/local/bin",
+	"/usr/bin",
+	"/bin",
+	"/opt/homebrew/bin",
+}
+
+// resolveCommand attempts to find a command in commonCommandDirs, then PATH.
+func resolveCommand(cmd string) (string, error) {
+	for _, dir := range commonCommandDirs {
 		fullPath := filepath.Join(dir, cmd)
 		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
 			return fullPath, nil
