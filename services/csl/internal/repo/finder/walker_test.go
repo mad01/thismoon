@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -286,6 +287,80 @@ func TestFilteredWalkExcludesNoRemote(t *testing.T) {
 	}
 }
 
+// TestFilteredWalkReportReasons pins the reporting half of the host filter: a
+// repo the allowlist removes comes back with the rule and a reason naming the
+// setting, and the two ways it can be removed do not read the same.
+func TestFilteredWalkReportReasons(t *testing.T) {
+	tmp := t.TempDir()
+
+	kept := filepath.Join(tmp, "org", "kept")
+	_ = os.MkdirAll(kept, 0o755)
+	gitInit(t, kept)
+	gitSetRemote(t, kept, "git@github.com:testorg/kept.git")
+
+	otherHost := filepath.Join(tmp, "org", "other-host")
+	_ = os.MkdirAll(otherHost, 0o755)
+	gitInit(t, otherHost)
+	gitSetRemote(t, otherHost, "git@githost.example.com:testorg/other-host.git")
+
+	noRemote := filepath.Join(tmp, "org", "no-remote")
+	_ = os.MkdirAll(noRemote, 0o755)
+	gitInit(t, noRemote)
+
+	repos, dropped, err := FilteredWalkReport([]string{tmp}, []string{"github.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Name != "testorg/kept" {
+		t.Fatalf("kept = %v, want just testorg/kept", repos)
+	}
+	if len(dropped) != 2 {
+		t.Fatalf("dropped = %v, want 2 entries", dropped)
+	}
+
+	byKind := make(map[DropKind]Dropped, len(dropped))
+	for _, d := range dropped {
+		byKind[d.Kind] = d
+	}
+	host, ok := byKind[DropHost]
+	if !ok {
+		t.Fatalf("no %q drop in %v", DropHost, dropped)
+	}
+	if want := "host githost.example.com not in index.hosts"; host.Reason() != want {
+		t.Errorf("host drop reason = %q, want %q", host.Reason(), want)
+	}
+	if host.Repo.Path != otherHost {
+		t.Errorf("host drop path = %q, want %q", host.Repo.Path, otherHost)
+	}
+	missing, ok := byKind[DropNoRemote]
+	if !ok {
+		t.Fatalf("no %q drop in %v", DropNoRemote, dropped)
+	}
+	if missing.Reason() != ReasonNoRemote {
+		t.Errorf("no-remote drop reason = %q, want %q", missing.Reason(), ReasonNoRemote)
+	}
+}
+
+// TestFilteredWalkReportNoAllowlist covers the pass-through case: with no
+// allowlist there is nothing to explain, so nothing is reported as dropped.
+func TestFilteredWalkReportNoAllowlist(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "org", "repo")
+	_ = os.MkdirAll(repo, 0o755)
+	gitInit(t, repo)
+
+	repos, dropped, err := FilteredWalkReport([]string{tmp}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 {
+		t.Errorf("kept = %v, want 1 repo", repos)
+	}
+	if len(dropped) != 0 {
+		t.Errorf("dropped = %v, want none without an allowlist", dropped)
+	}
+}
+
 func gitInit(t *testing.T, dir string) {
 	t.Helper()
 	cmd := exec.Command("git", "init")
@@ -404,5 +479,32 @@ func TestWorktreeResolvesRemoteAndBranch(t *testing.T) {
 			len(filtered),
 			filtered,
 		)
+	}
+}
+
+// TestFilteredWalkReportRemoteWithoutHost separates "no remote" from "a remote
+// with no host to match": a local-path origin is a real remote, so the drop is
+// a host mismatch and the reason names the remote rather than calling it
+// missing.
+func TestFilteredWalkReportRemoteWithoutHost(t *testing.T) {
+	tmp := t.TempDir()
+	local := filepath.Join(tmp, "org", "mirror")
+	_ = os.MkdirAll(local, 0o755)
+	gitInit(t, local)
+	gitSetRemote(t, local, "/srv/mirrors/mirror.git")
+
+	_, dropped, err := FilteredWalkReport([]string{tmp}, []string{"github.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dropped) != 1 {
+		t.Fatalf("dropped = %v, want 1 entry", dropped)
+	}
+	d := dropped[0]
+	if d.Kind != DropHost {
+		t.Errorf("kind = %q, want %q (a remote without a host is not a missing remote)", d.Kind, DropHost)
+	}
+	if !strings.Contains(d.Reason(), "/srv/mirrors/mirror.git") || !strings.Contains(d.Reason(), "no host") {
+		t.Errorf("reason = %q, want it to name the remote and say it has no host", d.Reason())
 	}
 }

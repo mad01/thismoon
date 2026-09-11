@@ -41,14 +41,15 @@ does not parse is an error. Everything csl writes sits under {{.StorePath}}:
 ## failure modes
 
 Start with `csl doctor` (or the csl_doctor tool, same checks as JSON): one
-ok/FAIL line per check — config, state file, index freshness, shard
-integrity, and search-server responsiveness, plus two web-only checks
-(web-ui-reachable, web-ui-version-skew) that can fail while search keeps
-working. The config check fails on a file that does not parse, or one that
-parses and sets no `dirs` — the usual cause of "csl finds nothing at all". No
-config file at all is not a failure: the check reports ok with the path to
-create beside it. `--repair` resets a corrupt state file; the tool never
-repairs.
+ok/FAIL line per check — config, repos discovered, state file, index
+freshness, shard integrity, and search-server responsiveness, plus two
+web-only checks (web-ui-reachable, web-ui-version-skew) that can fail while
+search keeps working. The config check fails on a file that does not parse,
+or one that parses and sets no `dirs` — the usual cause of "csl finds nothing
+at all". repos-discovered fails when a loaded config discovers nothing and,
+when a filter dropped everything, says so with a count per filter. No config
+file at all is not a failure: the check reports ok with the path to create
+beside it. `--repair` resets a corrupt state file; the tool never repairs.
 
 Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return
@@ -57,7 +58,8 @@ zero. Use 1-2 terms plus repo:/f:/lang: filters. OR is `|` with no spaces
 not a glob (`f:\.go$`). Run `csl query "<pattern>"` (or csl_query_validate)
 to see how the query parsed. If the query is fine, the repo may not be
 indexed: `csl repo <name> --list` resolves it, and an empty result means the
-repo is not checked out or not under the configured dirs/hosts.
+repo is not checked out, not under the configured dirs, or dropped by
+index.hosts or the exclude list (`csl repo --list --skipped` says which, and why).
 
 Stale index: a repo's fingerprint (HEAD, branch, dirty state) no longer
 matches `state.json`. Searches still answer from the old shards, then
@@ -79,7 +81,9 @@ test without t-man, `csl web` in a spare terminal also works.
 `csl version -o json` reports the binary on PATH; `GET {{.BaseURL}}/version`
 reports the running web process. `csl doctor` runs the comparison as its
 web-ui-version-skew check. When the `commit` values differ, an old
-process survived an upgrade: `t-man restart csl-web`. The background search
+process survived an upgrade: `t-man restart csl-web`. Skew that survives a
+restart means the plist names a versioned path (a mise install dir); re-add
+the agent with the mise shim path. The background search
 server can also be an old build; `csl search --stop` kills it, and the next
 query forks a fresh one from the current binary.
 

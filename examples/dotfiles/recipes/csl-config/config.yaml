@@ -1,0 +1,31 @@
+# csl config for this machine, symlinked to ~/.config/csl/config.yaml by the
+# csl-config recipe. Only `dirs` is required; every other key has a default
+# (`csl config --help` lists them all, `csl config` prints the values in
+# effect).
+
+# Roots that hold your git checkouts. csl walks each one and indexes every
+# directory whose immediate child is .git. Missing paths are skipped.
+dirs:
+  - ~/code/src/github.com
+  - ~/workspace
+
+# Allowlist of git remote hosts, matched against the literal host in the
+# remote URL (an SSH alias like gh-work counts as the host). Repos that do not
+# match, and repos with no remote, are dropped; `csl repo --list --skipped`
+# names each one with the reason. Leave it commented out unless another
+# search tool already covers part of your checkouts.
+# index:
+#   hosts:
+#     - github.com
+
+# Repos to keep out of both indexes, by absolute path or org/repo name. The
+# `enabled` flag beside it only gates the deprecated csl-managed git hook.
+# hooks:
+#   post_merge:
+#     exclude:
+#       - ~/workspace/large-monorepo
+
+# Where the web UI is reachable, for the links csl_show_file opens. Set it to
+# http://csl.this when d-man fronts csl web on this machine.
+# web:
+#   base_url: http://csl.this

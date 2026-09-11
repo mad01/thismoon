@@ -1,0 +1,21 @@
+# Example overlay: the csl index list for this machine.
+#
+# The csl binary, the csl-web t-man agent, and the `repo` / `repo-sync` shell
+# functions all ship from the thismoon source (thismoon/csl). Which directories
+# a machine indexes is machine-private, so the config file lives here and is
+# symlinked into place. The CLI and the MCP server re-read it on every
+# command; the long-lived `csl web` process loads it once at startup, so
+# after editing config.yaml run `t-man restart csl-web` to move the web UI
+# and its refresh loop onto the new dirs.
+[recipe]
+name = "csl-config"
+description = "Per-machine csl config: which directories to index (binary ships from the thismoon source)"
+wave = 1
+
+[directories.csl_config]
+target = "~/.config/csl"
+
+[dotfiles.csl_config_yaml]
+source = "config.yaml"
+target = "~/.config/csl/config.yaml"
+action = "symlink"

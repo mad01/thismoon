@@ -74,7 +74,14 @@ that still sets them loads unchanged — unknown keys are ignored — but
   hostnames. When non-empty, only repos whose origin remote matches one of
   the listed hosts are indexed; repos with no remote are excluded whenever
   the list is non-empty. An empty or omitted list indexes every discovered
-  repo.
+  repo. The host is the literal text between `@` and `:` (SSH) or after
+  `://` (HTTPS) in the remote URL, so a checkout cloned through an SSH alias
+  such as `git@gh-work:org/repo.git` has host `gh-work` and must be listed
+  by that name. `csl repo --list` shows only the survivors;
+  `csl repo --list --skipped` lists the dropped repos with the reason for
+  each, and the repos-discovered check in `csl doctor` carries the counts. A
+  list that drops every repo fails with a message naming the filter, distinct
+  from the "no git repos found" a `dirs` entry that holds none produces.
 
 ### `hooks.post_merge`
 
