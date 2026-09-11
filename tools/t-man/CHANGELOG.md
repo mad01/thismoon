@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/mad01/thismoon/compare/t-man/v0.5.2...t-man/v0.5.3) (2026-09-11)
+
+
+### Bug Fixes
+
+* **t-man:** expand ~/ in the add command path ([8158291](https://github.com/mad01/thismoon/commit/81582916a6d9084eece0c18dafca2773aaffcaf3))
+
 ## [0.5.2](https://github.com/mad01/thismoon/compare/t-man/v0.5.1...t-man/v0.5.2) (2026-08-29)
 
 
