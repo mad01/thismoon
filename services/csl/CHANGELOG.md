@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/mad01/thismoon/compare/csl/v0.18.2...csl/v0.19.0) (2026-09-11)
+
+
+### Features
+
+* **csl:** explain dropped repos, doctor discovery, docs --claude-md, shell-init ([24ce029](https://github.com/mad01/thismoon/commit/24ce02941c92df2f53a7512f89a74c4aa35a2869))
+
 ## [0.18.2](https://github.com/mad01/thismoon/compare/csl/v0.18.1...csl/v0.18.2) (2026-09-07)
 
 
