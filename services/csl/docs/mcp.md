@@ -17,7 +17,7 @@ Expected:
 csl: csl mcp - ✓ Connected
 ```
 
-The registration stores the command name (not an absolute path), so `csl` must be on the `PATH` of whatever process launches Claude Code.
+The registration stores the command name (not an absolute path), so `csl` must be on the `PATH` of whatever process launches Claude Code. A Claude Code launched from the Dock does not run your shell's mise activation; when csl came from mise, register the shim instead: `claude mcp add --scope user csl -- "$HOME/.local/share/mise/shims/csl" mcp`. `--scope user` registers the server for every project; without it Claude Code registers csl for the current directory only.
 
 ## Tools
 

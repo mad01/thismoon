@@ -23,7 +23,7 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `dirs` | list of strings | yes | Root directories that contain your git checkouts. `csl` walks each recursively and records any directory whose child is `.git`. Tildes are expanded. Missing paths are skipped. |
-| `index.hosts` | list of strings | no (default `[]`) | Allowlist of git hostnames. When non-empty, only repos whose remote origin hostname matches one of the listed values are indexed. An empty list means all discovered repos are included (no filtering). Repos with no remote are excluded whenever the list is non-empty. |
+| `index.hosts` | list of strings | no (default `[]`) | Allowlist of git hostnames. When non-empty, only repos whose remote origin hostname matches one of the listed values are indexed. An empty list means all discovered repos are included (no filtering). Repos with no remote are excluded whenever the list is non-empty. The hostname is the literal text of the remote URL, so an SSH alias counts as the host (see Discovery rules). |
 | `hooks.post_merge.enabled` | bool | no (default `false`) | Master switch for the `csl hooks install` post-merge hook installer. See [hooks reference](hooks.md). |
 | `hooks.post_merge.exclude` | list of strings | no (default `[]`) | Repos to skip when installing hooks. Each entry matches against the repo's absolute path or its `org/repo` name. Tildes are expanded. |
 | `semantic.enabled` | bool | no (default `false`) | Whether the search daemon connects the embedder and loads the vector index at startup. When `false` the daemon serves lexical search only; the in-process `csl semantic` CLI, the `csl_semantic_search` MCP tool, and the web toggle still answer ad-hoc queries. See [semantic search](#semantic-search). |
@@ -139,7 +139,8 @@ semantic:
 - The walker uses 32 worker goroutines with a shared work channel. Each worker reads a directory; if any entry is named `.git`, the parent is recorded as a repo and the walker stops descending.
 - Hidden directories (any starting with `.`) are skipped.
 - Repo `name` is parsed from `.git/config` under `[remote "origin"]`. Both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms are supported. When no remote is set, the name falls back to `<parent-dir>/<repo-dir>`.
-- Repo `host` is extracted from the remote URL (`github.com`, `githost.example.com`) and surfaced in `csl repo --json` output and the `csl_repo_lookup` MCP tool.
+- Repo `host` is extracted from the remote URL (`github.com`, `githost.example.com`) and surfaced in `csl repo --json` output and the `csl_repo_lookup` MCP tool. It is the literal text of the URL, so an SSH alias (`git@gh-work:org/repo.git`) yields `gh-work`, and that is the value `index.hosts` compares against.
+- Repos dropped by `index.hosts` or `hooks.post_merge.exclude` are not reported; `csl repo --list` shows only the survivors. When a filter drops every repo, the error is the same "no git repos found under the dirs" that an empty `dirs` entry produces.
 
 ## State paths
 

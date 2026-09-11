@@ -197,14 +197,20 @@ that keep context lean.
   fine for non-search uses (piping, filtering command output, one-off checks on
   a single known file).
 
-Available `csl_*` MCP tools:
-- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`,
-  `csl_repo_reindex`.
-- **Search (lexical):** `csl_search`, `csl_count`, `csl_read`,
-  `csl_query_validate`.
+Available `csl_*` MCP tools (the canonical list lives in the csl README under
+"Add this to your CLAUDE.md"):
+- **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`,
+  `csl_repo_pull`, `csl_repo_reindex`.
+- **Search (lexical, the default):** `csl_search`, `csl_count`,
+  `csl_query_validate`. Always available; nothing has to be running.
 - **Search (semantic/hybrid):** `csl_semantic_search` (vector, by meaning),
-  `csl_hybrid_search` (RRF fusion of lexical + semantic — default when you want
-  exact-match safety AND meaning-based recall).
+  `csl_hybrid_search` (RRF fusion of lexical + semantic). Only once the
+  semantic index is built and Ollama is up: `csl_index_info` reports
+  `semantic.built`. Until then semantic answers `available=false` and hybrid
+  degrades to lexical-only, so stay on `csl_search`.
+- **Read and info:** `csl_read`, `csl_ls`, `csl_show_file` (opens a file
+  section in the web UI for the user), `csl_index_info`.
+- **Diagnosis:** `csl_doctor`. Call it before retrying a failed tool call.
 
 **zoekt query best practices:**
 - Use 1–2 search terms max, then narrow with `repo:`/`f:`/`lang:` filters. AND

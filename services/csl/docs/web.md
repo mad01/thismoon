@@ -278,8 +278,10 @@ manual buttons on the `/refresh` page keep working.
 
 ## Running as a service
 
-Register `csl web` with a process manager so the UI is always reachable:
+Register `csl web` with a process manager so the UI, the background refresh, and the `csl_show_file` links stay available:
 
 ```sh
-t-man add --name csl-web -- csl web --port 7424
+t-man add --name csl-web -- "$HOME/code/bin/csl" web --port 7424
 ```
+
+Give t-man an absolute path spelled with `$HOME`. It bakes the resolved command into the launchd plist and does not expand `~`, and a bare `csl` resolves to a Homebrew binary first when one exists. For a mise install use the shim, `"$HOME/.local/share/mise/shims/csl"`, which follows `mise upgrade`; the path `mise which csl` prints carries the version number and would keep the agent on the old build. After an upgrade, `t-man restart csl-web`; the web-ui-version-skew check in `csl doctor` reports when the running process is behind the binary on PATH.

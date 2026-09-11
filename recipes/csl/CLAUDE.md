@@ -18,5 +18,12 @@ What stays in the consuming repo (machine wiring, per ADR-0006):
 - Ollama and the embedding model pull (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`) —
   semantic search needs a running Ollama; lexical search works without it.
 
-Release artifacts do not exist for csl (tree-sitter is unconditional cgo — see
-the release.yml comment); this recipe is the only install path.
+Release artifacts exist (`csl/vX.Y.Z` tarballs, built with cgo on a macOS
+arm64 runner in release.yml) and serve the mise and Homebrew paths; the fleet
+ignores them and builds from the sources cache through this recipe.
+
+The `repo` and `repo-sync` functions are written to
+`~/.config/ralph/generated/generated_functions.sh` and reach a shell only
+where ralph's rc-file integration sources that script, so a machine with the
+binary but no ralph-managed rc file has neither helper. The standalone
+equivalents to paste into `~/.zshrc` are in `services/csl/docs/getting-started.md`.

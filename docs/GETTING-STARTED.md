@@ -36,8 +36,9 @@ your agent sessions.
   ([docs/adr/0007](adr/0007-macos-arm64-only-artifacts.md)).
 - **Go 1.26 or newer**, for the fleet path and `go install`. Everything
   builds from source.
-- **Xcode Command Line Tools** (`xcode-select --install`). csl compiles its
-  tree-sitter grammars with cgo, which needs a C toolchain.
+- **Xcode Command Line Tools** (`xcode-select --install`), for the fleet path
+  and `go install`. csl compiles its tree-sitter grammars with cgo, which
+  needs a C toolchain; the release tarballs have them compiled in.
 - **Homebrew**, for the tap path and the easiest ralph install.
 - **[mise](https://mise.jdx.dev)**, if you take the mise path instead of the
   tap. It installs ralph too.
@@ -156,6 +157,16 @@ You get the binary and nothing else: there is no `brew services` block, so
 a service runs under [t-man](../tools/t-man/README.md) or straight from
 your shell. Releases are cosign-signed; [RELEASING.md](RELEASING.md) shows
 how to verify a download by hand.
+
+The binary alone indexes nothing. Each component's README says what to
+configure next. For csl that is a `config.yaml` naming the directories that
+hold your checkouts, and the walkthrough from there to the MCP server and a
+t-man-supervised web UI is
+[services/csl/docs/getting-started.md](../services/csl/docs/getting-started.md).
+When you register a mise-installed tool with t-man, give it the shim path
+(`$HOME/.local/share/mise/shims/<tool>`): t-man bakes the resolved command
+into the launchd plist, and a versioned install path stays on the old build
+after `mise upgrade`.
 
 **While this repo is private**, set `MISE_GITHUB_TOKEN` to a GitHub token
 with read access to it. `gh auth token` works if the GitHub CLI is logged in
@@ -299,6 +310,16 @@ open http://status.this/
 `status.this` shows a card per t-man-managed service with a 30-day uptime
 strip. Green across the board means the fleet is up.
 
+Green from `csl doctor` does not mean csl is indexing anything: an
+unconfigured csl is a valid starting state and passes every check. Which
+directories a machine indexes is yours to declare in
+`~/.config/csl/config.yaml` (a `dirs` list; the worked overlay recipe is
+[`examples/dotfiles/recipes/csl-config/`](../examples/dotfiles/recipes/csl-config/)).
+Then `csl repo --list` should show your checkouts, and the first `csl search`
+builds the index. The recipe's `repo` and `repo-sync` shell functions land in
+`~/.config/ralph/generated/generated_functions.sh`, which ralph's rc snippet
+sources.
+
 ### What done looks like
 
 These addresses answer in any browser and in `curl`, one per declared route
@@ -372,8 +393,15 @@ in your agent's MCP configuration and the agent reads the same local data
 you do. For Claude Code that's one command per tool:
 
 ```sh
-claude mcp add csl -- csl mcp
+claude mcp add --scope user csl -- csl mcp
 ```
+
+`--scope user` registers the server for every project; without it Claude
+Code registers the tool for the current directory only. Registration alone
+does not change what the agent reaches for: each MCP-bearing component's
+README carries a CLAUDE.md section that tells the agent when to use its
+tools, and the csl one keeps the agent on lexical search until the semantic
+index exists.
 
 Registration is deliberately not part of the public recipes. Which agents
 run on a machine, with which servers and which config, is machine-private
@@ -414,4 +442,7 @@ merge.
 
 **mise:** `mise upgrade <alias>` re-resolves the newest tag under the
 component's prefix. Restart the t-man agent yourself if the tool runs as a
-service.
+service. The restart only helps when the agent was registered with the mise
+shim path (`$HOME/.local/share/mise/shims/<tool>`); a plist that names a
+versioned install directory keeps running the old build, and re-adding the
+agent with the shim path is the fix.

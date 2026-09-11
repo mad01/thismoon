@@ -79,7 +79,10 @@ test without t-man, `csl web` in a spare terminal also works.
 `csl version -o json` reports the binary on PATH; `GET {{.BaseURL}}/version`
 reports the running web process. `csl doctor` runs the comparison as its
 web-ui-version-skew check. When the `commit` values differ, an old
-process survived an upgrade: `t-man restart csl-web`. The background search
+process survived an upgrade: `t-man restart csl-web`. Skew that survives the
+restart means the agent's plist names a versioned path (a mise install dir):
+`t-man status csl-web` shows it; re-add the agent with the current path or
+the mise shim. The background search
 server can also be an old build; `csl search --stop` kills it, and the next
 query forks a fresh one from the current binary.
 
