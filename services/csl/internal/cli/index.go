@@ -410,16 +410,20 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-	repos, err := cfg.DiscoverRepos()
+	repos, dropped, err := cfg.DiscoverReposReport()
 	if err != nil {
 		return err
 	}
+	if len(repos) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), cfg.EmptyDiscoveryHint(dropped))
+		return nil
+	}
 	if repoFilter != "" {
 		repos = filterReposByName(repos, repoFilter)
-	}
-	if len(repos) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), cfg.EmptyResultHint())
-		return nil
+		if len(repos) == 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "no repo matching %q\n", repoFilter)
+			return nil
+		}
 	}
 
 	w := cmd.ErrOrStderr()

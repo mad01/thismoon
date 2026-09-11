@@ -48,8 +48,8 @@ dirs:
 
 # Optional allowlist of git remote hosts. When set, repos with a
 # non-matching host and repos with no remote are dropped from the index
-# without a message, so leave it out until another search tool covers
-# part of your checkouts. The host is the literal text of the remote URL:
+# (`csl repo --list --skipped` shows which, and why), so leave it out
+# until another search tool covers part of your checkouts. The host is the literal text of the remote URL:
 # a checkout cloned as git@gh-work:org/repo.git has host gh-work, not the
 # hostname your SSH config resolves it to.
 # index:
@@ -78,7 +78,7 @@ daemon:
   idle_timeout_minutes: 10   # how long the search daemon stays alive when idle
 ```
 
-`csl` walks each directory concurrently and records every directory whose immediate child is `.git`; it doesn't descend into nested repos once it finds a `.git`. When `index.hosts` is set, only repos whose origin remote matches a listed host are indexed; use this to avoid indexing repos covered by another search tool. `csl repo --list` shows what survived discovery and `csl repo --json` adds each repo's `remote` and `host`; the checklist for a repo that should be there and isn't is in [docs/getting-started.md](docs/getting-started.md#3-check-what-csl-discovered).
+`csl` walks each directory concurrently and records every directory whose immediate child is `.git`; it doesn't descend into nested repos once it finds a `.git`. When `index.hosts` is set, only repos whose origin remote matches a listed host are indexed; use this to avoid indexing repos covered by another search tool. `csl repo --list` shows what survived discovery, `csl repo --list --skipped` shows what was dropped and why, and `csl repo --json` adds each repo's `remote` and `host`; the checklist for a repo that should be there and isn't is in [docs/getting-started.md](docs/getting-started.md#3-check-what-csl-discovered).
 
 `hooks.post_merge.enabled` also gates the deprecated `csl hooks install` (see Usage); leave it unset unless you're deliberately using the legacy hook installer.
 
@@ -88,6 +88,7 @@ Moving the web UI off port 7424 for good takes `CSL_PORT` in the environment, or
 
 ```sh
 csl repo --list                          # list every indexed repo
+csl repo --list --skipped                # repos discovery dropped, with the reason
 csl search "func Walk"                   # search all indexed repos
 csl search "TODO" --repo myrepo          # filter to one repo
 csl search "fmt\.Errorf" --lang go --output-mode content -C 3
@@ -144,11 +145,11 @@ The MCP server exposes fifteen `csl_*` tools:
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults).
 
-To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`.
+To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint hands a multi-file `grep` or `find` inside an indexed repo back as the equivalent `csl_search` call, so the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
 
 ### Add this to your CLAUDE.md
 
-Registering the MCP server makes the tools available, but Claude will still reach for `find`, `ls`, `Glob`, or raw `grep` by default. Paste the snippet below into `~/.claude/CLAUDE.md` (user-level) or a project `CLAUDE.md` so Claude prefers `csl_*` tools for local repo work. It names all fifteen tools and keeps the agent on lexical search until you have built the semantic index; this is the one copy to keep current, the fleet example under `examples/dotfiles/CLAUDE.md.example` restates it.
+Registering the MCP server makes the tools available, but Claude will still reach for `find`, `ls`, `Glob`, or raw `grep` by default. Paste the snippet below into `~/.claude/CLAUDE.md` (user-level) or a project `CLAUDE.md` so Claude prefers `csl_*` tools for local repo work, or let the binary do it: `csl docs --claude-md >> ~/.claude/CLAUDE.md` prints the same text. It names all fifteen tools and keeps the agent on lexical search until you have built the semantic index. The binary embeds this block and a test holds the two copies byte-identical and checks every registered tool is named, so this is the copy to edit; the fleet example under `examples/dotfiles/CLAUDE.md.example` restates it.
 
 ```markdown
 ## Local Code Search (csl)
@@ -167,15 +168,17 @@ Tools:
 - `csl_semantic_search` and `csl_hybrid_search` need the semantic index built (`csl index --semantic-all`) and Ollama running. Until then semantic answers `available=false` and hybrid degrades to lexical-only. Reach for them on "where do we handle X" questions only when `csl_index_info` reports `semantic.built: true`; otherwise stay lexical.
 - Use `csl_read` for file contents you need yourself and `csl_show_file` to put a file section in front of the user (it needs `csl web` running).
 - If a tool errors or comes back unexpectedly empty, call `csl_doctor` before retrying.
+- If `csl_repo_lookup` finds no match for the repo you are working in, it sits outside csl's configured `dirs`: use `grep`, `find`, or `Glob` there instead. Plain `grep` is also fine for piping and filtering command output.
 
 ### Repo discovery
 - Use `csl_repo_lookup` or `csl_repo_info` to find repos. Do not use `find`, `ls`, `Glob`, or shell to manually search for repo directories.
 - `csl_repo_info` returns git health (branch, dirty files, index staleness, suggested action). Call it before starting work on a repo to decide whether to commit, stash, pull, or reindex.
 - `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed.
-- If lookup returns empty, the repo is not checked out locally or not under csl's configured dirs; say so, don't guess paths.
+- If lookup returns empty `matches` and a non-empty `dropped`, csl found the checkout but a config filter (`index.hosts` or the exclude list) removed it; report the `reason` to the user. Empty both means the repo is not checked out locally or not under csl's configured dirs; say so, don't guess paths.
 - Use `csl_repo_pull` before creating branches on repos that may be behind (it has safety checks for dirty state).
 - Use `csl_repo_reindex` after significant changes so `csl_search` results stay current.
 - Use `csl_repo_health` for a fleet-wide sweep of uncommitted or unpushed work, for example before switching machines.
+- Exploring needs no pull. Before changing a repo, or telling the user something about its current state they will act on, run `csl_repo_info` first. On a dirty tree never stash or discard on your own; on a stale index pull only when the tree is clean.
 
 ### Query syntax
 

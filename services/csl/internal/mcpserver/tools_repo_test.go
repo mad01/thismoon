@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -161,5 +162,31 @@ func TestHandleRepoLookupRejectsEmpty(t *testing.T) {
 		if err == nil {
 			t.Errorf("handleRepoLookup(%q) expected error, got nil", q)
 		}
+	}
+}
+
+// TestHandleRepoLookupReportsDropped: a repo hidden by index.hosts comes back
+// under dropped with its reason instead of as bare empty matches, so an agent
+// does not report a checkout that exists as missing.
+func TestHandleRepoLookupReportsDropped(t *testing.T) {
+	reposRoot := setupRepoEnv(t, []struct{ Org, Name string }{{"mad01", "octo"}})
+	cfgPath := filepath.Join(filepath.Dir(reposRoot), ".config", "csl", "config.yaml")
+	cfg := "dirs:\n  - " + reposRoot + "\nindex:\n  hosts:\n    - nowhere.example\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, out, err := handleRepoLookup(context.Background(), nil, repoLookupInput{Name: "octo"})
+	if err != nil {
+		t.Fatalf("handleRepoLookup: %v", err)
+	}
+	if len(out.Matches) != 0 {
+		t.Fatalf("matches = %+v, want none: the host filter should have dropped it", out.Matches)
+	}
+	if len(out.Dropped) != 1 || out.Dropped[0].Name != "mad01/octo" {
+		t.Fatalf("dropped = %+v, want just mad01/octo", out.Dropped)
+	}
+	if !strings.Contains(out.Dropped[0].Reason, "index.hosts") {
+		t.Errorf("reason = %q, want it to name index.hosts", out.Dropped[0].Reason)
 	}
 }

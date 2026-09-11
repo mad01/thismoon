@@ -26,4 +26,6 @@ The `repo` and `repo-sync` functions are written to
 `~/.config/ralph/generated/generated_functions.sh` and reach a shell only
 where ralph's rc-file integration sources that script, so a machine with the
 binary but no ralph-managed rc file has neither helper. The standalone
-equivalents to paste into `~/.zshrc` are in `services/csl/docs/getting-started.md`.
+equivalent is `eval "$(csl shell-init zsh)"`; a test in
+`services/csl/internal/cli` keeps the bodies here and the command's output
+identical, so a change to one must land in the other.

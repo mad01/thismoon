@@ -19,6 +19,8 @@ Every command that reads repos loads the config file — `--config`, else `$CSL_
 | [`csl config`](#csl-config) | Show which config file is read and the settings in effect |
 | [`csl query`](#csl-query) | Validate a zoekt query without running it |
 | [`csl mcp`](#csl-mcp) | Start the MCP stdio server (for Claude Code) |
+| [`csl docs`](#csl-docs) | Print the operating doc, or the CLAUDE.md section with `--claude-md` |
+| [`csl shell-init`](#csl-shell-init) | Print the `repo` and `repo-sync` shell functions for `eval` |
 | [`csl version`](#csl-version) | Print the build version |
 
 ---
@@ -251,6 +253,7 @@ Discover and pick git repos.
 csl repo                    # interactive fuzzy finder
 csl repo <query>            # print the single matching repo's path
 csl repo --list             # tab-separated name + path
+csl repo --list --skipped   # the repos discovery dropped, with the reason
 csl repo --json             # structured output
 csl repo --toon             # TOON-encoded output for LLMs
 ```
@@ -261,13 +264,16 @@ Without flags, `csl repo` opens a [fuzzy finder](https://github.com/ktr0731/go-f
 
 With a query argument, it skips the picker and prints the path of the single repo whose `org/repo` name contains the query (case-insensitive). Zero or multiple matches exit non-zero; the multi-match error lists the candidates. Combined with `--list`/`--json`/`--toon`, a query filters the output instead of erroring.
 
+`--skipped` answers the opposite question: which repos the walk found under `dirs` and then dropped, and why. Each line is `name<TAB>path<TAB>reason`, where the reason is one of `host <h> not in index.hosts`, `no remote (index.hosts is set)`, or `excluded by hooks.post_merge.exclude`. It implies `--list`, composes with `--json`/`--toon` (each entry then also carries `remote` and `host`, which is where an SSH alias shows up as the host), and a query filters it the same way. When a filter drops every repo, the plain commands fail with a message that names the filter and the counts and points here.
+
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
 | `--list` | `false` | Print every repo, tab-separated: `name<TAB>path` |
-| `--json` | `false` | Emit array of `{name, path, remote, host}` (implies `--list`) |
-| `--toon` | `false` | TOON-encoded output under a `repos` key (implies `--list`) |
+| `--skipped` | `false` | Print the repos discovery dropped instead, tab-separated: `name<TAB>path<TAB>reason` (implies `--list`) |
+| `--json` | `false` | Emit array of `{name, path, remote, host}` (implies `--list`; with `--skipped`, each entry adds `reason`) |
+| `--toon` | `false` | TOON-encoded output under a `repos` key (implies `--list`; `skipped` key with `--skipped`) |
 
 ### Examples
 
@@ -276,13 +282,15 @@ cd $(csl repo)                      # pick and cd
 cd $(csl repo thismoon)             # jump straight to the match
 csl repo --list | grep service-
 csl repo --json | jq '.[] | .host' | sort -u
+csl repo --list --skipped           # why is my repo missing?
+csl repo --json --skipped | jq '.[] | select(.reason | startswith("host"))'
 ```
 
-A shell function makes the jump a habit — bare `repo` opens the picker, `repo <query>` cd's straight there:
+A shell function makes the jump a habit — bare `repo` opens the picker, `repo <query>` cd's straight there. [`csl shell-init`](#csl-shell-init) prints it, so the body has one owner:
 
 ```sh
 # ~/.zshrc
-repo() { local d=$(csl repo "$@"); [[ -n "$d" ]] && cd "$d"; }
+eval "$(csl shell-init zsh)"
 ```
 
 ---
@@ -396,8 +404,9 @@ csl doctor [--repair]
 | Check | What it verifies |
 |-------|------------------|
 | `config-loads` | the config file parses and, when it exists, sets at least one `dirs` entry. No config file is not a failure: the check passes and the report leads with the path to create |
+| `repos-discovered` | a loaded config discovers at least one repo. Plain `ok` when every walked repo made it in; `ok` with the dropped counts (`N dropped by index.hosts (K with no remote), J excluded`) when a filter removed some; FAIL naming the filter when the walk found repos and dropped them all, or found none |
 | `state-file-loads` | `state.json` parses; with `--repair`, a corrupt file is backed up and reset |
-| `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count |
+| `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count. A machine with repos but none of them indexed yet passes with a note (the first search builds it), and when discovery yielded nothing this check steps aside with "no repos to check" rather than failing twice |
 | `index-shards-valid` | every `.zoekt` shard opens cleanly |
 | `search-server-responsive` | a running search server answers on its socket (a stopped server passes — it auto-starts) |
 | `web-ui-reachable` | the `csl web` process answers on its effective base URL — `web.base_url`, else `http://127.0.0.1:$CSL_PORT` (web-only; search works without it) |
@@ -411,6 +420,7 @@ A stale-index FAIL self-heals: searches answer from the old shards and reindex i
 
 ```
 ok config-loads
+ok repos-discovered (17 repos, 2 dropped by index.hosts (1 with no remote))
 ok state-file-loads
 FAIL index-freshness: 3 of 17 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now
 ok index-shards-valid
@@ -572,6 +582,55 @@ t-man add --name csl-web -- csl web --port 7424
 ```
 
 See [Web UI](web.md) for the full UI and API reference.
+
+---
+
+## `csl docs`
+
+Print the operating doc embedded in the binary, or the CLAUDE.md section.
+
+### Synopsis
+
+```sh
+csl docs
+csl docs --claude-md
+csl docs --claude-md >> ~/.claude/CLAUDE.md
+```
+
+### Description
+
+Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the section that teaches Claude Code when to reach for the `csl_*` MCP tools: csl-first for discovery and search, lexical by default with semantic and hybrid gated on the vector index, the repo health flow, and the zoekt query rules. The text is the fenced block under "Add this to your CLAUDE.md" in the README; a test holds the two byte-identical and checks the block names every tool `csl mcp` registers.
+
+### Flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--claude-md` | `false` | Print the CLAUDE.md section instead of the operating doc |
+
+---
+
+## `csl shell-init`
+
+Print the `repo` and `repo-sync` shell functions.
+
+### Synopsis
+
+```sh
+csl shell-init zsh
+csl shell-init bash
+eval "$(csl shell-init zsh)"     # in ~/.zshrc
+```
+
+### Description
+
+Prints two functions to stdout, one per line, ending with a newline:
+
+```sh
+repo() { local d=$(csl repo "$@"); [[ -n "$d" ]] && cd "$d"; }
+repo-sync() { csl sync; }
+```
+
+`repo <query>` jumps to the single repo matching the query and bare `repo` opens the fuzzy picker; `repo-sync` runs `csl sync`. The bodies are the same ones the ralph recipe in this repo defines through `[shell.functions]`, and a test asserts they match, so a machine set up either way gets identical helpers. Any shell other than `zsh` or `bash` is rejected with a non-zero exit.
 
 ---
 

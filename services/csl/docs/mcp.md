@@ -62,6 +62,9 @@ Resolve a repo name to its absolute local checkout path.
 | `matches[].path` | string | Absolute filesystem path to the repo root |
 | `matches[].remote` | string | Full origin remote URL (e.g. `git@github.com:mad01/csl.git`) |
 | `matches[].host` | string | Hostname extracted from the remote URL (e.g. `github.com`) |
+| `dropped` | array | Present only when `matches` is empty: repos matching the name that the walk found under `dirs` but `index.hosts` or `hooks.post_merge.exclude` removed |
+| `dropped[].name`, `.path`, `.remote`, `.host` | | The repo as discovered, same fields as a match |
+| `dropped[].reason` | string | The setting that removed it, e.g. `host gh-work not in index.hosts`, `no remote (index.hosts is set)`, `excluded by hooks.post_merge.exclude` |
 
 **Example:**
 
@@ -80,7 +83,7 @@ Resolve a repo name to its absolute local checkout path.
 }
 ```
 
-An empty `matches` means the repo is not checked out under any configured `dirs`. Report that to the user rather than guessing a path.
+An empty `matches` with a non-empty `dropped` means csl found the checkout under `dirs` and a config filter removed it; report `dropped[].reason` to the user (and, with a shell, `csl repo --list --skipped` shows the whole list). Empty both means the repo is not checked out under any configured `dirs`. Report that rather than guessing a path.
 
 ### `csl_repo_info`
 
@@ -554,7 +557,7 @@ Validate a zoekt query and return its parsed tree, or a parse error with a fixin
 
 ### `csl_doctor`
 
-Run csl's self-checks and return the report as JSON: config, state file, index freshness, shard integrity, the search server, and two web-UI probes.
+Run csl's self-checks and return the report as JSON: config, repos discovered, state file, index freshness, shard integrity, the search server, and two web-UI probes.
 
 **When to call:** when a csl tool errors or comes back empty and you have no shell to run `csl doctor` in. It is the first thing to try before concluding that a repo or a query is at fault.
 
@@ -567,6 +570,8 @@ Run csl's self-checks and return the report as JSON: config, state file, index f
   "ok": false,
   "checks": [
     {"name": "config-loads", "status": "ok"},
+    {"name": "repos-discovered", "status": "skipped",
+     "detail": "41 repos, 2 dropped by index.hosts (1 with no remote)"},
     {"name": "state-file-loads", "status": "ok"},
     {"name": "index-freshness", "status": "fail",
      "detail": "2 of 41 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now"},
@@ -578,7 +583,7 @@ Run csl's self-checks and return the report as JSON: config, state file, index f
 }
 ```
 
-A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`; `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing); `index-freshness` is `skipped` on a machine with repos but no index yet. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
 
 ## Troubleshooting
 

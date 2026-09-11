@@ -136,7 +136,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	repos, err := cfg.DiscoverRepos()
+	repos, dropped, err := cfg.DiscoverReposReport()
 	if err != nil {
 		return err
 	}
@@ -144,12 +144,13 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if len(repos) == 0 {
 		// Nothing to search is a result, not a failure, on a machine that has
 		// not been configured yet. The hint names the file to create; a
-		// configured machine that finds nothing keeps its error.
+		// configured machine that finds nothing keeps its error, and says so
+		// in terms of the filter when a filter is what emptied the list.
 		if !cfg.Loaded {
-			fmt.Fprintln(cmd.ErrOrStderr(), cfg.EmptyResultHint())
+			fmt.Fprintln(cmd.ErrOrStderr(), cfg.EmptyDiscoveryHint(dropped))
 			return nil
 		}
-		return errors.New(cfg.EmptyResultHint())
+		return errors.New(cfg.EmptyDiscoveryHint(dropped))
 	}
 
 	// Build repo name → path map for search.

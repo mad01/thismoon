@@ -11,9 +11,9 @@ dirs:
 
 # Allowlist of git remote hosts, matched against the literal host in the
 # remote URL (an SSH alias like gh-work counts as the host). Repos that do not
-# match, and repos with no remote, are dropped without a message. Leave it
-# commented out unless another search tool already covers part of your
-# checkouts.
+# match, and repos with no remote, are dropped; `csl repo --list --skipped`
+# names each one with the reason. Leave it commented out unless another
+# search tool already covers part of your checkouts.
 # index:
 #   hosts:
 #     - github.com

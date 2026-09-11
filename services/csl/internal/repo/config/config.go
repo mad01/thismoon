@@ -170,21 +170,67 @@ func (h *PostMergeHook) IsExcluded(repoPath, repoName string) bool {
 	return false
 }
 
-// FilterExcluded returns repos with the entries matching the exclude list
-// removed. Every path that indexes (lexical or semantic) must run discovered
-// repos through this so an excluded repo can never enter the index.
-func (h *PostMergeHook) FilterExcluded(repos []finder.Repo) []finder.Repo {
+// PartitionExcluded splits repos into the ones the exclude list keeps and the
+// ones it removes. Every path that indexes (lexical or semantic) reaches it
+// through DiscoverReposReport, so an excluded repo can never enter the index,
+// and the second return is what explains a repo that went missing.
+func (h *PostMergeHook) PartitionExcluded(repos []finder.Repo) ([]finder.Repo, []finder.Dropped) {
 	if h == nil || len(h.Exclude) == 0 {
-		return repos
+		return repos, nil
 	}
-	out := make([]finder.Repo, 0, len(repos))
+	kept := make([]finder.Repo, 0, len(repos))
+	var dropped []finder.Dropped
 	for _, r := range repos {
 		if h.IsExcluded(r.Path, r.Name) {
+			dropped = append(dropped, finder.Dropped{Repo: r, Kind: finder.DropExcluded})
 			continue
 		}
-		out = append(out, r)
+		kept = append(kept, r)
 	}
-	return out
+	return kept, dropped
+}
+
+// DropCounts summarizes dropped repos by the rule that removed them, so a
+// report can say how many and which setting without listing every repo.
+type DropCounts struct {
+	Host     int // removed by the index.hosts allowlist
+	NoRemote int // the subset of Host with no origin remote at all
+	Excluded int // removed by hooks.post_merge.exclude
+}
+
+// CountDrops tallies dropped repos by rule.
+func CountDrops(dropped []finder.Dropped) DropCounts {
+	var c DropCounts
+	for _, d := range dropped {
+		switch d.Kind {
+		case finder.DropHost:
+			c.Host++
+		case finder.DropNoRemote:
+			c.Host++
+			c.NoRemote++
+		case finder.DropExcluded:
+			c.Excluded++
+		}
+	}
+	return c
+}
+
+// Summary renders the counts as "3 dropped by index.hosts (1 with no remote),
+// 2 excluded", leaving out the parts that are zero. It is empty when nothing
+// was dropped.
+func (c DropCounts) Summary() string {
+	var parts []string
+	if c.Host > 0 {
+		part := fmt.Sprintf("%d dropped by index.hosts", c.Host)
+		if c.NoRemote > 0 {
+			part += fmt.Sprintf(" (%d with no remote)", c.NoRemote)
+		}
+		parts = append(parts, part)
+	}
+	if c.Excluded > 0 {
+		parts = append(parts, fmt.Sprintf("%d excluded", c.Excluded))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // DiscoverRepos walks the configured dirs (filtered by the host allowlist) and
@@ -193,11 +239,23 @@ func (h *PostMergeHook) FilterExcluded(repos []finder.Repo) []finder.Repo {
 // finder.FilteredWalk directly, so an excluded repo is invisible everywhere,
 // not just at index time.
 func (c *Config) DiscoverRepos() ([]finder.Repo, error) {
-	repos, err := finder.FilteredWalk(c.Dirs, c.Index.Hosts)
+	repos, _, err := c.DiscoverReposReport()
+	return repos, err
+}
+
+// DiscoverReposReport is DiscoverRepos with the discarded repos kept: the
+// first return is what every csl surface sees, the second is every repo the
+// walk found and a filter removed, each carrying the setting that removed it.
+// A repo dropped by index.hosts or the exclude list is invisible everywhere
+// else, and nothing about the checkout says why, so `csl repo --list
+// --skipped` and `csl doctor` read this to make the answer one command away.
+func (c *Config) DiscoverReposReport() ([]finder.Repo, []finder.Dropped, error) {
+	walked, dropped, err := finder.FilteredWalkReport(c.Dirs, c.Index.Hosts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return c.Hooks.PostMerge.FilterExcluded(repos), nil
+	kept, excluded := c.Hooks.PostMerge.PartitionExcluded(walked)
+	return kept, append(dropped, excluded...), nil
 }
 
 // EmptyResultHint explains an empty repo list in terms of the config file:
@@ -206,15 +264,36 @@ func (c *Config) DiscoverRepos() ([]finder.Repo, error) {
 // it — the empty answer is correct, the hint says how to get a fuller one.
 // Safe to call on a nil receiver.
 func (c *Config) EmptyResultHint() string {
-	path := "the config file ('csl config' prints its path)"
-	if c != nil && c.Path != "" {
-		path = c.Path
-	}
 	if c == nil || !c.Loaded {
-		return "no config file yet: create " + path +
+		return "no config file yet: create " + c.hintPath() +
 			" with a 'dirs' list naming the directories that hold your checkouts"
 	}
-	return "no git repos found under the dirs in " + path
+	return "no git repos found under the dirs in " + c.hintPath()
+}
+
+// EmptyDiscoveryHint explains an empty repo list from a discovery report. It
+// is EmptyResultHint plus the case only the report can see: the walk found
+// repos and a filter took every one of them, where the dirs list is already
+// right and index.hosts or the exclude list is what to look at. Safe to call
+// on a nil receiver.
+func (c *Config) EmptyDiscoveryHint(dropped []finder.Dropped) string {
+	if c == nil || !c.Loaded || len(dropped) == 0 {
+		return c.EmptyResultHint()
+	}
+	return fmt.Sprintf(
+		"%d git repos found under the dirs in %s and every one was dropped: %s; "+
+			"run 'csl repo --list --skipped' to see them",
+		len(dropped), c.hintPath(), CountDrops(dropped).Summary(),
+	)
+}
+
+// hintPath names the config file a hint should point at, falling back to the
+// command that prints the path when the config never resolved one.
+func (c *Config) hintPath() string {
+	if c != nil && c.Path != "" {
+		return c.Path
+	}
+	return "the config file ('csl config' prints its path)"
 }
 
 // SemanticEnabled reports whether the daemon should load the semantic index and

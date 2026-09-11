@@ -311,7 +311,9 @@ open http://status.this/
 strip. Green across the board means the fleet is up.
 
 Green from `csl doctor` does not mean csl is indexing anything: an
-unconfigured csl is a valid starting state and passes every check. Which
+unconfigured csl is a valid starting state and passes every check as long as
+the `csl-web` agent ralph registered is up (the two web probes fail without
+it). Which
 directories a machine indexes is yours to declare in
 `~/.config/csl/config.yaml` (a `dirs` list; the worked overlay recipe is
 [`examples/dotfiles/recipes/csl-config/`](../examples/dotfiles/recipes/csl-config/)).
@@ -401,7 +403,7 @@ Code registers the tool for the current directory only. Registration alone
 does not change what the agent reaches for: each MCP-bearing component's
 README carries a CLAUDE.md section that tells the agent when to use its
 tools, and the csl one keeps the agent on lexical search until the semantic
-index exists.
+index exists (`csl docs --claude-md >> ~/.claude/CLAUDE.md` appends it).
 
 Registration is deliberately not part of the public recipes. Which agents
 run on a machine, with which servers and which config, is machine-private
@@ -417,7 +419,9 @@ Every piece of that wiring has a worked example in
 for the MCP server set,
 [`recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/) for
 the settings block that turns belt's guards and hints on (explained hook by
-hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)), and
+hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md); the
+`prefer-csl` hint is the one that matters for csl, handing a multi-file
+`grep` in an indexed repo back as the equivalent `csl_search` call), and
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) for the
 instruction file that teaches the agent when to reach for which tool. The
 six skills under `skills/` need no registration; their recipes symlink

@@ -28,9 +28,22 @@ type repoMatch struct {
 	Host   string `json:"host,omitempty"   jsonschema:"git host extracted from remote URL (e.g. github.com, git.example.com)"`
 }
 
+// droppedMatch is a repo the walk found and a config filter removed. It turns
+// an empty matches array from "no such checkout" into "csl saw it and
+// index.hosts or the exclude list took it out", which is the answer an agent
+// would otherwise get wrong.
+type droppedMatch struct {
+	Name   string `json:"name"             jsonschema:"org/repo name extracted from the git remote URL"`
+	Path   string `json:"path"             jsonschema:"absolute filesystem path to the repo root"`
+	Remote string `json:"remote,omitempty" jsonschema:"full origin remote URL"`
+	Host   string `json:"host,omitempty"   jsonschema:"git host extracted from remote URL, empty when the remote has none"`
+	Reason string `json:"reason"           jsonschema:"the setting that removed the repo from the index (index.hosts or hooks.post_merge.exclude)"`
+}
+
 // repoLookupOutput is the structured output of the csl_repo_lookup tool.
 type repoLookupOutput struct {
-	Matches []repoMatch `json:"matches" jsonschema:"matching repos; empty when csl found no local checkout"`
+	Matches []repoMatch    `json:"matches"           jsonschema:"matching repos; empty when csl found no local checkout, or when a config filter dropped it (see dropped)"`
+	Dropped []droppedMatch `json:"dropped,omitempty" jsonschema:"matching repos the walk found but index.hosts or hooks.post_merge.exclude removed; present only when matches is empty"`
 }
 
 func registerRepoTools(s *mcp.Server) {
@@ -39,7 +52,8 @@ func registerRepoTools(s *mcp.Server) {
 		Description: "Resolve a git repo name to its local checkout path. " +
 			"Use when the user mentions a repo by name and you need its absolute path before cd-ing, reading, or grepping inside it. " +
 			"Matching is case-insensitive regex / substring against the org/repo name. " +
-			"Returns an empty matches array if the repo isn't checked out locally. In that case, tell the user the repo isn't present locally; don't guess a path under ~/code/src/... or elsewhere.",
+			"Returns an empty matches array if the repo isn't checked out locally. When a dropped array comes back beside it, csl found the checkout but a config filter (index.hosts or hooks.post_merge.exclude) removed it: report the reason rather than calling the repo missing. " +
+			"Empty matches with no dropped means the repo isn't present under csl's dirs; tell the user so and don't guess a path under ~/code/src/... or elsewhere.",
 	}, handleRepoLookup)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -94,7 +108,7 @@ func handleRepoLookup(
 		return nil, repoLookupOutput{}, fmt.Errorf("load csl config: %w", err)
 	}
 
-	repos, err := cfg.DiscoverRepos()
+	repos, dropped, err := cfg.DiscoverReposReport()
 	if err != nil {
 		return nil, repoLookupOutput{}, fmt.Errorf("walk repos: %w", err)
 	}
@@ -108,8 +122,24 @@ func handleRepoLookup(
 			)
 		}
 	}
-
-	return nil, repoLookupOutput{Matches: matches}, nil
+	out := repoLookupOutput{Matches: matches}
+	if len(matches) > 0 {
+		return nil, out, nil
+	}
+	// Nothing indexed matched. Before the caller concludes the repo is not
+	// checked out, say whether a filter is what hid it.
+	for _, d := range dropped {
+		if re.MatchString(d.Repo.Name) {
+			out.Dropped = append(out.Dropped, droppedMatch{
+				Name:   d.Repo.Name,
+				Path:   d.Repo.Path,
+				Remote: d.Repo.Remote,
+				Host:   d.Repo.Host,
+				Reason: d.Reason(),
+			})
+		}
+	}
+	return nil, out, nil
 }
 
 // --- csl_repo_info ---

@@ -452,6 +452,72 @@ func resetRepoFlags() {
 	repoListFlag = false
 	repoJSONFlag = false
 	repoToonFlag = false
+	repoSkippedFlag = false
+}
+
+// TestRepoSkippedFlag pins the answer to "csl cannot see my repo": --skipped
+// lists what discovery removed, tab-separated with the reason, and keeps
+// working on the machine where the filters took everything — which is exactly
+// the machine that has to ask.
+func TestRepoSkippedFlag(t *testing.T) {
+	tmp := t.TempDir()
+	dropped := filepath.Join(tmp, "org", "elsewhere")
+	if err := os.MkdirAll(dropped, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitInit(t, dropped)
+	gitSetRemote(t, dropped, "git@git.example.com:testorg/elsewhere.git")
+
+	setupTestConfig(t, "dirs:\n  - "+tmp+"\nindex:\n  hosts:\n    - github.com\n")
+
+	t.Run("plain", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--list", "--skipped")
+		want := "testorg/elsewhere\t" + dropped + "\thost git.example.com not in index.hosts\n"
+		if out != want {
+			t.Errorf("stdout = %q, want %q", out, want)
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--json", "--skipped")
+		var items []struct {
+			Name   string `json:"name"`
+			Path   string `json:"path"`
+			Remote string `json:"remote"`
+			Host   string `json:"host"`
+			Reason string `json:"reason"`
+		}
+		if err := json.Unmarshal([]byte(out), &items); err != nil {
+			t.Fatalf("unmarshal %q: %v", out, err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("items = %v, want 1", items)
+		}
+		got := items[0]
+		if got.Name != "testorg/elsewhere" || got.Path != dropped {
+			t.Errorf("item = %+v, want the dropped repo", got)
+		}
+		if got.Host != "git.example.com" || got.Remote == "" {
+			t.Errorf("item = %+v, want the remote and host carried through", got)
+		}
+		if got.Reason != "host git.example.com not in index.hosts" {
+			t.Errorf("reason = %q, want the host reason", got.Reason)
+		}
+	})
+}
+
+// runRepoCmd executes the repo command with args and returns stdout, with the
+// package-level flags reset around the call so tests do not leak state. It is
+// runCLI plus the repo flag reset; keep the cobra plumbing in one place.
+func runRepoCmd(t *testing.T, args ...string) string {
+	t.Helper()
+	resetRepoFlags()
+	t.Cleanup(resetRepoFlags)
+	out, err := runCLI(t, args...)
+	if err != nil {
+		t.Fatalf("%v: %v", args, err)
+	}
+	return out
 }
 
 func gitInit(t *testing.T, dir string) {

@@ -21,6 +21,7 @@ func TestCheckNamesAndOrder(t *testing.T) {
 	t.Setenv("CSL_CONFIG", "")
 	want := []string{
 		"config-loads",
+		"repos-discovered",
 		"state-file-loads",
 		"index-freshness",
 		"index-shards-valid",
@@ -57,7 +58,7 @@ func TestConfigLoads(t *testing.T) {
 			config.SetPath(path)
 			t.Cleanup(func() { config.SetPath("") })
 
-			err := configLoads().Run(context.Background())
+			err := configLoads(newShared()).Run(context.Background())
 			switch {
 			case tc.wantErr == "" && err != nil:
 				t.Fatalf("Run() = %v, want nil", err)
@@ -155,7 +156,7 @@ func TestNoConfigPasses(t *testing.T) {
 
 	// The check skips rather than passing silently or failing: a report an
 	// agent reads has to say why there is nothing to index.
-	report := doctor.Collect(context.Background(), []doctor.Check{configLoads()})
+	report := doctor.Collect(context.Background(), []doctor.Check{configLoads(newShared())})
 	if !report.OK {
 		t.Errorf("Collect().OK = false, want a skip to count as a pass")
 	}
@@ -166,8 +167,15 @@ func TestNoConfigPasses(t *testing.T) {
 	if got := report.Checks[0].Detail; !strings.Contains(got, wantPath) {
 		t.Errorf("config-loads detail = %q, want it to name %q", got, wantPath)
 	}
-	if err := indexFreshness(filepath.Join(home, "index")).Run(context.Background()); err != nil {
+	if err := indexFreshness(filepath.Join(home, "index"), newShared()).Run(context.Background()); err != nil {
 		t.Errorf("index-freshness with no config file = %v, want nil", err)
+	}
+	err := reposDiscovered(newShared()).Run(context.Background())
+	if err == nil || !isSkip(err) {
+		t.Fatalf("repos-discovered with no config file = %v, want a skip", err)
+	}
+	if !strings.Contains(err.Error(), wantPath) {
+		t.Errorf("repos-discovered note %q does not name %q", err, wantPath)
 	}
 }
 
@@ -178,14 +186,162 @@ func TestWebBaseURLFollowsPort(t *testing.T) {
 	t.Cleanup(func() { config.SetPath("") })
 	t.Setenv("CSL_PORT", "9424")
 
-	if got, want := webBaseURL(), "http://127.0.0.1:9424"; got != want {
-		t.Errorf("webBaseURL() = %q, want %q", got, want)
+	if got, want := webBaseURL(newShared()), "http://127.0.0.1:9424"; got != want {
+		t.Errorf("webBaseURL(newShared()) = %q, want %q", got, want)
 	}
+}
+
+// TestReposDiscovered covers the three answers the check can give a
+// configured machine: repos found (with the drops alongside the count),
+// repos found and every one filtered out, and dirs that hold nothing.
+func TestReposDiscovered(t *testing.T) {
+	tests := []struct {
+		name    string
+		repos   map[string]string // dir under the walk root → origin remote
+		hosts   string            // index.hosts YAML block, empty for none
+		wantErr bool
+		want    []string
+	}{
+		{
+			name: "counts kept and dropped",
+			repos: map[string]string{
+				"keep": "git@github.com:org/keep.git",
+				"off":  "git@git.example.com:org/off.git",
+			},
+			hosts: "index:\n  hosts:\n    - github.com\n",
+			want:  []string{"1 repos", "1 dropped by index.hosts"},
+		},
+		{
+			name:    "everything dropped fails with the pointer",
+			repos:   map[string]string{"off": "git@git.example.com:org/off.git"},
+			hosts:   "index:\n  hosts:\n    - github.com\n",
+			wantErr: true,
+			want:    []string{"1 git repos found", "csl repo --list --skipped"},
+		},
+		{
+			name:    "no repos at all keeps the dirs wording",
+			wantErr: true,
+			want:    []string{"no git repos found under the dirs in"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for dir, remote := range tc.repos {
+				writeRepo(t, filepath.Join(root, dir), remote)
+			}
+			configureCSL(t, "dirs:\n  - "+root+"\n"+tc.hosts)
+
+			err := reposDiscovered(newShared()).Run(context.Background())
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Run() = nil, want a failure mentioning %v", tc.want)
+				}
+				if isSkip(err) {
+					t.Fatalf("Run() skipped with %q, want a failure", err)
+				}
+			} else if err == nil || !isSkip(err) {
+				t.Fatalf("Run() = %v, want an ok-with-detail skip", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("detail %q does not mention %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestIndexFreshnessNeverIndexed is the first-run contract: repos discovered
+// and no index yet is where every machine starts, so freshness has nothing to
+// compare and says so instead of reporting every repo as stale.
+func TestIndexFreshnessNeverIndexed(t *testing.T) {
+	root := t.TempDir()
+	writeRepo(t, filepath.Join(root, "keep"), "git@github.com:org/keep.git")
+	configureCSL(t, "dirs:\n  - "+root+"\n")
+
+	err := indexFreshness(t.TempDir(), newShared()).Run(context.Background())
+	if err == nil || !isSkip(err) {
+		t.Fatalf("index-freshness with no index = %v, want a skip", err)
+	}
+	for _, want := range []string{"1 repos discovered", "none of them indexed yet", "csl index"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("skip note %q does not mention %q", err, want)
+		}
+	}
+}
+
+// TestIndexFreshnessNoRepos keeps the doctor report from blaming one cause
+// twice: repos-discovered owns the empty-discovery failure, so freshness
+// steps aside rather than failing for the same reason.
+func TestIndexFreshnessNoRepos(t *testing.T) {
+	root := t.TempDir()
+	writeRepo(t, filepath.Join(root, "off"), "git@git.example.com:org/off.git")
+	configureCSL(t, "dirs:\n  - "+root+"\nindex:\n  hosts:\n    - github.com\n")
+
+	err := indexFreshness(t.TempDir(), newShared()).Run(context.Background())
+	if err == nil || !isSkip(err) {
+		t.Fatalf("index-freshness with no discovered repos = %v, want a skip", err)
+	}
+	if want := "no repos to check"; err.Error() != want {
+		t.Errorf("skip note = %q, want %q", err, want)
+	}
+}
+
+// isSkip reports whether err is a doctor skip (an "ok" with a note) rather
+// than a failure. The skip type is unexported, so the test asks Collect,
+// which is where the distinction surfaces for real callers too.
+func isSkip(err error) bool {
+	report := doctor.Collect(context.Background(), []doctor.Check{
+		{Name: "probe", Run: func(context.Context) error { return err }},
+	})
+	return report.Checks[0].Status == doctor.StatusSkipped
+}
+
+// configureCSL points csl at a config file holding yaml, under a fake HOME.
+func configureCSL(t *testing.T, yaml string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
+	t.Setenv("CSL_CONFIG", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeFile(t, path, yaml)
+	config.SetPath(path)
+	t.Cleanup(func() { config.SetPath("") })
+}
+
+// writeRepo fakes a checkout the walker will find: a .git directory with an
+// origin URL, which is all the finder reads. No subprocess, so a doctor test
+// costs a file write instead of a `git init`.
+func writeRepo(t *testing.T, dir, remote string) {
+	t.Helper()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(gitDir, "config"), "[remote \"origin\"]\n\turl = "+remote+"\n")
 }
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestReposDiscoveredNoDirsSkips pins the single-cause rule: a config that
+// sets no dirs is config-loads' failure, and repos-discovered must not fail a
+// second time claiming repos were sought under dirs that do not exist.
+func TestReposDiscoveredNoDirsSkips(t *testing.T) {
+	configureCSL(t, "index:\n  hosts:\n    - github.com\n")
+
+	err := reposDiscovered(newShared()).Run(context.Background())
+	if err == nil || !isSkip(err) {
+		t.Fatalf("Run() = %v, want a skip that defers to config-loads", err)
+	}
+	if !strings.Contains(err.Error(), "config-loads") {
+		t.Errorf("skip note %q does not point at config-loads", err)
 	}
 }

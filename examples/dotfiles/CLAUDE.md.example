@@ -197,8 +197,8 @@ that keep context lean.
   fine for non-search uses (piping, filtering command output, one-off checks on
   a single known file).
 
-Available `csl_*` MCP tools (the canonical list lives in the csl README under
-"Add this to your CLAUDE.md"):
+Available `csl_*` MCP tools (the canonical section lives in the csl README
+under "Add this to your CLAUDE.md"; `csl docs --claude-md` prints it):
 - **Repo:** `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`,
   `csl_repo_pull`, `csl_repo_reindex`.
 - **Search (lexical, the default):** `csl_search`, `csl_count`,

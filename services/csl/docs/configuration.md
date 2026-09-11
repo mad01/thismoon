@@ -140,7 +140,7 @@ semantic:
 - Hidden directories (any starting with `.`) are skipped.
 - Repo `name` is parsed from `.git/config` under `[remote "origin"]`. Both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms are supported. When no remote is set, the name falls back to `<parent-dir>/<repo-dir>`.
 - Repo `host` is extracted from the remote URL (`github.com`, `githost.example.com`) and surfaced in `csl repo --json` output and the `csl_repo_lookup` MCP tool. It is the literal text of the URL, so an SSH alias (`git@gh-work:org/repo.git`) yields `gh-work`, and that is the value `index.hosts` compares against.
-- Repos dropped by `index.hosts` or `hooks.post_merge.exclude` are not reported; `csl repo --list` shows only the survivors. When a filter drops every repo, the error is the same "no git repos found under the dirs" that an empty `dirs` entry produces.
+- Repos dropped by `index.hosts` or `hooks.post_merge.exclude` are listed by `csl repo --list --skipped` with the reason for each (`--json` adds `remote` and `host`); `csl repo --list` shows only the survivors. When a filter drops every repo, the error names the filter and the counts, distinct from the "no git repos found under the dirs" that an empty `dirs` entry produces.
 
 ## State paths
 

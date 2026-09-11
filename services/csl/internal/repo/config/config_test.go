@@ -266,7 +266,7 @@ hooks:
 	}
 }
 
-func TestFilterExcluded(t *testing.T) {
+func TestPartitionExcluded(t *testing.T) {
 	h := &PostMergeHook{Exclude: []string{"/repos/skip-by-path", "org/skip-by-name"}}
 	repos := []finder.Repo{
 		{Name: "org/keep", Path: "/repos/keep"},
@@ -274,17 +274,25 @@ func TestFilterExcluded(t *testing.T) {
 		{Name: "org/skip-by-name", Path: "/repos/elsewhere"},
 	}
 
-	got := h.FilterExcluded(repos)
-	if len(got) != 1 || got[0].Name != "org/keep" {
-		t.Fatalf("FilterExcluded = %+v, want only org/keep", got)
+	kept, dropped := h.PartitionExcluded(repos)
+	if len(kept) != 1 || kept[0].Name != "org/keep" {
+		t.Fatalf("PartitionExcluded kept = %+v, want only org/keep", kept)
+	}
+	if len(dropped) != 2 {
+		t.Fatalf("PartitionExcluded dropped = %+v, want 2", dropped)
+	}
+	for _, d := range dropped {
+		if d.Kind != finder.DropExcluded || d.Reason() != finder.ReasonExcluded {
+			t.Errorf("dropped %+v: kind %q reason %q, want excluded", d.Repo.Name, d.Kind, d.Reason())
+		}
 	}
 
 	// Nil receiver and empty exclude list pass repos through untouched.
 	var nilHook *PostMergeHook
-	if out := nilHook.FilterExcluded(repos); len(out) != len(repos) {
+	if out, _ := nilHook.PartitionExcluded(repos); len(out) != len(repos) {
 		t.Fatalf("nil hook filtered repos: %+v", out)
 	}
-	if out := (&PostMergeHook{}).FilterExcluded(repos); len(out) != len(repos) {
+	if out, _ := (&PostMergeHook{}).PartitionExcluded(repos); len(out) != len(repos) {
 		t.Fatalf("empty exclude filtered repos: %+v", out)
 	}
 }
@@ -414,5 +422,104 @@ func TestDaemonIdleTimeoutDefault(t *testing.T) {
 	neg := &Config{Daemon: DaemonConfig{IdleTimeoutMinutes: -5}}
 	if got := neg.DaemonIdleTimeout(); got != 10*time.Minute {
 		t.Errorf("negative: DaemonIdleTimeout() = %v, want 10m", got)
+	}
+}
+
+// writeRepo fakes a checkout the walker will find: a .git directory with an
+// origin URL, which is all repoInfo reads. No subprocess, so a discovery test
+// costs a file write instead of a `git init`.
+func writeRepo(t *testing.T, dir, remote string) {
+	t.Helper()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := ""
+	if remote != "" {
+		content = "[remote \"origin\"]\n\turl = " + remote + "\n"
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDiscoverReposReport pins what the report adds over DiscoverRepos: both
+// filters name themselves, so a repo missing from search can be traced to the
+// setting that removed it.
+func TestDiscoverReposReport(t *testing.T) {
+	root := t.TempDir()
+	writeRepo(t, filepath.Join(root, "org", "keep"), "git@github.com:org/keep.git")
+	writeRepo(t, filepath.Join(root, "org", "skip"), "git@github.com:org/skip.git")
+	writeRepo(t, filepath.Join(root, "org", "elsewhere"), "git@git.example.com:org/elsewhere.git")
+
+	cfg := &Config{
+		Dirs:   []string{root},
+		Index:  IndexConfig{Hosts: []string{"github.com"}},
+		Hooks:  HooksConfig{PostMerge: PostMergeHook{Exclude: []string{"org/skip"}}},
+		Loaded: true,
+		Path:   filepath.Join(root, "config.yaml"),
+	}
+
+	kept, dropped, err := cfg.DiscoverReposReport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 1 || kept[0].Name != "org/keep" {
+		t.Fatalf("kept = %v, want just org/keep", kept)
+	}
+	reasons := make(map[string]string, len(dropped))
+	for _, d := range dropped {
+		reasons[d.Repo.Name] = d.Reason()
+	}
+	if got := reasons["org/skip"]; got != finder.ReasonExcluded {
+		t.Errorf("org/skip reason = %q, want %q", got, finder.ReasonExcluded)
+	}
+	if got, want := reasons["org/elsewhere"], "host git.example.com not in index.hosts"; got != want {
+		t.Errorf("org/elsewhere reason = %q, want %q", got, want)
+	}
+
+	// DiscoverRepos is the same walk without the explanation.
+	repos, err := cfg.DiscoverRepos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].Name != "org/keep" {
+		t.Errorf("DiscoverRepos() = %v, want just org/keep", repos)
+	}
+}
+
+// TestEmptyDiscoveryHint covers the message the "no results" path owes a
+// configured machine: dirs that hold repos plus filters that took all of them
+// is a different problem from dirs that hold nothing, and only one of the two
+// is fixed by editing the dirs list.
+func TestEmptyDiscoveryHint(t *testing.T) {
+	cfg := &Config{Loaded: true, Path: "/tmp/csl/config.yaml"}
+	dropped := []finder.Dropped{
+		{Repo: finder.Repo{Name: "org/a", Host: "x"}, Kind: finder.DropHost},
+		{Repo: finder.Repo{Name: "org/b"}, Kind: finder.DropNoRemote},
+		{Repo: finder.Repo{Name: "org/c"}, Kind: finder.DropExcluded},
+	}
+
+	hint := cfg.EmptyDiscoveryHint(dropped)
+	for _, want := range []string{
+		"3 git repos found",
+		cfg.Path,
+		"2 dropped by index.hosts (1 with no remote)",
+		"1 excluded",
+		"csl repo --list --skipped",
+	} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("EmptyDiscoveryHint() = %q, want it to mention %q", hint, want)
+		}
+	}
+
+	// With nothing dropped there is no filter to blame, so the hint stays the
+	// one that points at the dirs list.
+	if got, want := cfg.EmptyDiscoveryHint(nil), cfg.EmptyResultHint(); got != want {
+		t.Errorf("EmptyDiscoveryHint(nil) = %q, want %q", got, want)
+	}
+	var nilCfg *Config
+	if got := nilCfg.EmptyDiscoveryHint(dropped); !strings.Contains(got, "no config file yet") {
+		t.Errorf("nil receiver: EmptyDiscoveryHint() = %q, want the no-config wording", got)
 	}
 }

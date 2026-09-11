@@ -109,28 +109,46 @@ func Walk(dirs []string) ([]Repo, error) {
 
 // FilteredWalk is like Walk but applies a host allowlist after discovery.
 // When allowedHosts is non-empty, only repos whose Host field matches one of
-// the listed values are returned. Repos with an empty Host (no remote) are
-// always excluded when the allowlist is non-empty.
+// the listed values are returned. Repos with no remote, or a remote whose host
+// cannot be parsed, are always excluded when the allowlist is non-empty.
 // When allowedHosts is empty, FilteredWalk behaves identically to Walk.
 func FilteredWalk(dirs []string, allowedHosts []string) ([]Repo, error) {
+	kept, _, err := FilteredWalkReport(dirs, allowedHosts)
+	return kept, err
+}
+
+// FilteredWalkReport is FilteredWalk that also hands back what it removed.
+// The first return is what callers index and search; the second carries every
+// repo the allowlist rejected, each with the rule and a reason naming the
+// setting, so a surface can answer "csl cannot see my repo" instead of
+// leaving it silently missing. An empty allowedHosts drops nothing.
+func FilteredWalkReport(dirs, allowedHosts []string) ([]Repo, []Dropped, error) {
 	repos, err := Walk(dirs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(allowedHosts) == 0 {
-		return repos, nil
+		return repos, nil, nil
 	}
 	allowed := make(map[string]bool, len(allowedHosts))
 	for _, h := range allowedHosts {
 		allowed[h] = true
 	}
-	filtered := repos[:0]
+	kept := make([]Repo, 0, len(repos))
+	var dropped []Dropped
 	for _, r := range repos {
-		if allowed[r.Host] {
-			filtered = append(filtered, r)
+		switch {
+		case allowed[r.Host]:
+			kept = append(kept, r)
+		case r.Remote == "":
+			dropped = append(dropped, Dropped{Repo: r, Kind: DropNoRemote})
+		default:
+			// A remote with no parseable host (a local path, say) is a host
+			// mismatch, not a missing remote; Reason says which.
+			dropped = append(dropped, Dropped{Repo: r, Kind: DropHost})
 		}
 	}
-	return filtered, nil
+	return kept, dropped, nil
 }
 
 // Inspect resolves a single repo by its absolute working-tree path.

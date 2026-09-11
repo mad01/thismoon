@@ -66,8 +66,8 @@ dirs:
 That is the whole file for lexical search. Tildes are expanded and missing
 directories are skipped. Leave `index.hosts` out until you need it: it is an
 allowlist of git remote hosts, and any repo it does not match, including every
-checkout with no remote, disappears from the index without a message. Step 3
-shows how to check what got picked up.
+checkout with no remote, drops out of the index. Step 3 shows how to check
+what got picked up and what got dropped.
 
 Without a config file csl runs, but every command tells you which file to
 create and indexes nothing. A file that exists and does not parse is an error.
@@ -103,12 +103,21 @@ When a repo you expected is missing, work down this list:
    alias.
 3. `hooks.post_merge.exclude` removes repos from both indexes by absolute path
    or `org/repo` name, whatever the `enabled` flag beside it says.
-4. When every repo is filtered out, csl reports "no git repos found under the
-   dirs", the same message a wrong `dirs` entry produces. Remove `index.hosts`
-   and run `csl repo --list` again to tell the two apart.
+4. When every repo is filtered out, csl says so: "N git repos found under the
+   dirs ... and every one was dropped", with a count per filter. A wrong
+   `dirs` entry gives "no git repos found under the dirs" instead.
 
-Dropped repos are not listed anywhere yet; the steps above are the way to find
-them.
+`csl repo --list --skipped` lists the dropped repos with the reason for each,
+tab-separated name, path, and reason:
+
+```
+org/noremote	/Users/you/code/noremote	no remote (index.hosts is set)
+org/elsewhere	/Users/you/code/elsewhere	host git.example.com not in index.hosts
+org/excluded	/Users/you/code/excluded	excluded by hooks.post_merge.exclude
+```
+
+`--json --skipped` adds each repo's `remote` and `host`, which is where an SSH
+alias shows up as the host.
 
 ## 4. Run your first search
 
@@ -151,12 +160,17 @@ query parsed when the results surprise you.
 csl doctor
 ```
 
-One `ok` or `FAIL` line per check: config, state file, index freshness, shard
-integrity, the search server, and two web checks that only matter once you
-reach step 8. Run it after the first search. Before any index exists,
-index-freshness reports every repo as unindexed and doctor exits non-zero,
-which the first search (or `csl index`) clears. `csl docs` prints the operating
-notes behind each check.
+One `ok` or `FAIL` line per check: config, repos discovered, state file, index
+freshness, shard integrity, the search server, and two web probes. The
+repos-discovered line carries the dropped counts whenever a filter removed
+something, and it is the one search check a fresh config can fail: a loaded
+config that discovers no repos, with the line naming the filter responsible.
+Before the first search, index-freshness notes that nothing is indexed yet and
+passes. The two web probes, web-ui-reachable and web-ui-version-skew, FAIL
+until step 8 starts the web UI, and doctor exits non-zero because of them;
+search and the MCP server are unaffected, so on a CLI-only install read those
+two lines as "not running" rather than "broken". `csl docs` prints the
+operating notes behind each check.
 
 ## 6. Keep the index fresh
 
@@ -172,17 +186,26 @@ It pulls fast-forward only, skips dirty trees, non-default branches, and
 detached HEADs, then reindexes the changed repos.
 
 Two shell functions make this a habit. `repo <query>` jumps to a checkout by
-name and bare `repo` opens a fuzzy picker; `repo-sync` runs the sync:
+name and bare `repo` opens a fuzzy picker; `repo-sync` runs the sync. The
+binary prints them:
 
 ```sh
 # ~/.zshrc
+eval "$(csl shell-init zsh)"
+```
+
+which defines:
+
+```sh
 repo() { local d=$(csl repo "$@"); [[ -n "$d" ]] && cd "$d"; }
 repo-sync() { csl sync; }
 ```
 
-Machines provisioned through the ralph recipe in this repo get both functions
-generated into `~/.config/ralph/generated/generated_functions.sh`, which the
-source line in ralph's managed rc-file block loads on every shell start.
+`bash` is accepted too. Machines provisioned through the ralph recipe in this
+repo get the same two functions generated into
+`~/.config/ralph/generated/generated_functions.sh`, which the source line in
+ralph's managed rc-file block loads on every shell start; a test keeps the
+recipe bodies and the `shell-init` output identical.
 
 ## 7. Register the MCP server
 
@@ -202,11 +225,29 @@ claude mcp add --scope user csl -- "$HOME/.local/share/mise/shims/csl" mcp
 ```
 
 Add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json` to
-skip the per-call prompt. Then paste the CLAUDE.md section from the
-[README](../README.md#add-this-to-your-claudemd) into `~/.claude/CLAUDE.md`.
-Registering the server only makes the tools available; the CLAUDE.md section
-is what stops Claude from reaching for `grep` and `find` first, and it keeps
-the agent on lexical search unless you enable semantic search in step 9.
+skip the per-call prompt. Then give Claude the CLAUDE.md section that tells it
+when to use the tools:
+
+```sh
+csl docs --claude-md >> ~/.claude/CLAUDE.md
+```
+
+The same text sits in the [README](../README.md#add-this-to-your-claudemd) if
+you would rather paste it into a project `CLAUDE.md`. Registering the server
+only makes the tools available; the CLAUDE.md section is what stops Claude
+from reaching for `grep` and `find` first, and it keeps the agent on lexical
+search unless you enable semantic search in step 9.
+
+If you also run [belt](../../../tools/belt/README.md), the thismoon hook set
+for Claude Code, its `prefer-csl` hint closes the loop from the other side:
+when the agent runs a multi-file `grep` or `find` inside a repo csl indexes,
+the hook hands back the equivalent `csl_search` call with the pattern already
+translated to zoekt syntax. It reads csl's shard listing from disk and
+launches no csl process. The hint is on by default once belt's hooks are
+registered (`hints.prefer-csl.enabled` in belt's config); the hooks block to
+register is in
+[`tools/belt/docs/hooks.md`](../../../tools/belt/docs/hooks.md#prefer-csl-bash)
+and the worked settings example in `examples/dotfiles/recipes/claude-hooks/`.
 
 ## 8. Optional: the web UI as a background service
 
@@ -233,9 +274,9 @@ t-man add --name csl-web -- "$HOME/.local/share/mise/shims/csl" web --port 7424
 t-man status csl-web
 ```
 
-Use the shim path, spelled with `$HOME`. t-man bakes the resolved command path
-into the launchd plist and does not expand `~` in it. A bare `csl` resolves to
-a Homebrew binary first when one exists, and the path `mise which csl` prints
+Use the shim path. t-man bakes the resolved command path into the launchd
+plist, so the path has to be the right one at add time. A bare `csl` resolves
+to a Homebrew binary first when one exists, and the path `mise which csl` prints
 carries the version number, so an agent registered with either would keep
 running the old build after `mise upgrade csl`. The shim points at whatever
 version mise currently has: after an upgrade, `t-man restart csl-web` picks it
