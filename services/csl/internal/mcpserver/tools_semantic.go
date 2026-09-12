@@ -37,7 +37,7 @@ type semanticHit struct {
 	Kind      string  `json:"kind,omitempty"    jsonschema:"the chunk kind, e.g. func, type, method, or window"`
 	StartLine int     `json:"start_line"`
 	EndLine   int     `json:"end_line"`
-	Score     float32 `json:"score"             jsonschema:"cosine similarity in [0,1]; higithostr is closer in meaning"`
+	Score     float32 `json:"score"             jsonschema:"cosine similarity in [0,1]; higher is closer in meaning"`
 	Snippet   string  `json:"snippet,omitempty" jsonschema:"the matched source text, widened by expand lines"`
 }
 
@@ -58,6 +58,10 @@ func registerSemanticTools(s *mcp.Server) {
 			"Code is chunked by tree-sitter declarations for parseable languages and by 120-line windows for everything else, so hits in parseable languages correspond to whole declarations while other files return coarser windows. " +
 			"Costs: embedding runs via a local Ollama server (jina-code-v2 by default, pulled with 'ollama pull'), so Ollama must be running; a cold query pays ~1-2s model load, then the model stays warm for 20 minutes. " +
 			"Requires a semantic index built with 'csl index --semantic-all'; if it isn't built, the tool returns available=false with a note instead of an error.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleSemanticSearch, renderSemanticText)
 }
 

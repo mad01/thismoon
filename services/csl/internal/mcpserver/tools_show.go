@@ -48,6 +48,11 @@ func registerShowTools(s *mcp.Server) {
 			"The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button. " +
 			"The view reads the file live from disk via the running `csl web` server, so it must be up (it is a t-man service on this machine). " +
 			"Set no_open=true to just get the URL. This shows content to the human; to read file content yourself, use csl_read.",
+		// Read-only: it opens a page in the local web UI and writes nothing.
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleShowFile, nil)
 }
 

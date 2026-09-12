@@ -75,7 +75,10 @@ func registeredToolNames(t *testing.T) []string {
 	defer cancel()
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	serverSession, err := mcpserver.New("test").Connect(ctx, serverTransport, nil)
+	// Semantic enabled: the snippet documents the full tool set, including the
+	// two tools a machine with semantic.enabled off never sees.
+	opts := mcpserver.Options{SemanticEnabled: true}
+	serverSession, err := mcpserver.New("test", opts).Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("connect server: %v", err)
 	}

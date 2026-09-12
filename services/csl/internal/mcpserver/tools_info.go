@@ -73,10 +73,14 @@ type lsOutput struct {
 func registerInfoTools(s *mcp.Server) {
 	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_index_info",
-		Description: "Global health of the csl search index in one call: repo count, shard count and size, corrupt shards, " +
+		Description: "Report the health of the csl search index in one call: repo count, shard count and size, corrupt shards, " +
 			"newest/oldest per-repo index times, whether the search daemon is running, and semantic index status (stores, chunks, model presence). " +
 			"Use to answer 'is the index healthy', 'is semantic search ready', or 'why is search slow' before falling back to per-repo csl_repo_info calls. " +
 			"Reads state from disk and pings the daemon; it doesn't scan repos, so it returns in well under a second.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleIndexInfo, nil)
 
 	addFormattedTool(s, &mcp.Tool{
@@ -86,6 +90,10 @@ func registerInfoTools(s *mcp.Server) {
 			"Lists one directory level by default; set recursive=true to walk the whole subtree (files only). " +
 			"Filter with glob (matched against base names, e.g. '*.go'). " +
 			"Reads the filesystem directly (always current, .git excluded) and caps output at 500 entries; truncated=true with total_available when capped.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleLs, renderLsText)
 }
 

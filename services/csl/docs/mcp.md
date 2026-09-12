@@ -21,7 +21,7 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Fifteen tools are registered, grouped into four areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself.
+Fifteen tools are registered, grouped into four areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other thirteen.
 
 | Tool | Purpose |
 |---|---|
@@ -406,7 +406,7 @@ Find code by meaning across locally checked-out repos using vector embeddings. T
 }
 ```
 
-`score` is cosine similarity in `[0, 1]`; higithostr is closer. `kind` is the chunk kind (`function`, `method`, `struct`, …).
+`score` is cosine similarity in `[0, 1]`; higher is closer. `kind` is the chunk kind (`function`, `method`, `struct`, …).
 
 **When the index is not built:**
 

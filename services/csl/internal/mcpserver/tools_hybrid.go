@@ -22,7 +22,7 @@ type hybridSearchInput struct {
 	Repo   string `json:"repo,omitempty"   jsonschema:"restrict to a repo: the lexical side treats this as a case-insensitive regex, the semantic side as a case-sensitive substring; a plain repo name like 'mad01/csl' satisfies both"`
 	Lang   string `json:"lang,omitempty"   jsonschema:"restrict to a single language (e.g. go, typescript, python)"`
 	Limit  int    `json:"limit,omitempty"  jsonschema:"maximum number of fused file results to return (default 50)"`
-	RRFK   int    `json:"rrf_k,omitempty"  jsonschema:"Reciprocal Rank Fusion smoothing constant (default 60); lower favors top-ranked outliers, higithostr favors cross-backend consensus"`
+	RRFK   int    `json:"rrf_k,omitempty"  jsonschema:"Reciprocal Rank Fusion smoothing constant (default 60); lower favors top-ranked outliers, higher favors cross-backend consensus"`
 	Expand int    `json:"expand,omitempty" jsonschema:"extra lines of source context around each semantic chunk snippet (default 0)"`
 	formatParam
 }
@@ -33,7 +33,7 @@ type hybridSearchInput struct {
 type hybridHit struct {
 	Repo  string  `json:"repo"`
 	Path  string  `json:"path"  jsonschema:"file path relative to the repo root"`
-	Score float64 `json:"score" jsonschema:"fused RRF score; higithostr is a stronger combined match"`
+	Score float64 `json:"score" jsonschema:"fused RRF score; higher is a stronger combined match"`
 
 	LexRank int    `json:"lex_rank"           jsonschema:"1-based rank in the lexical (zoekt) results; 0 if the file didn't match lexically"`
 	LexLine int    `json:"lex_line,omitempty" jsonschema:"line of the first lexical match"`
@@ -63,6 +63,10 @@ func registerHybridTools(s *mcp.Server) {
 			"Filter by repo (substring) or lang (single language); tune fusion with rrf_k (default 60, limit default 50). " +
 			"Runs both backends per call, so the semantic cold-start cost (first-ever model download ~90 MB, model load on a cold daemon; see csl_semantic_search) applies here too. " +
 			"If the semantic index isn't built (csl index --semantic-all), results degrade to lexical-only with semantic_available=false.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleHybridSearch, renderHybridText)
 }
 

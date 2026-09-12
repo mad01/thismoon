@@ -147,6 +147,8 @@ The MCP server exposes fifteen `csl_*` tools:
 - Read and info: `csl_read`, `csl_ls`, `csl_show_file`, `csl_index_info`
 - Diagnosis: `csl_doctor`, the `csl doctor` checks as JSON, for a client with no shell
 
+The two semantic tools are registered only when `semantic.enabled` is true in `config.yaml`; with it off, `csl mcp` exposes the other thirteen.
+
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults). Every tool takes a `response_format` parameter, `text` by default and `json` for the structured object; the other formats and the precedence rule are in the same document under Response formats.
 
 To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint hands a multi-file `grep` or `find` inside an indexed repo back as the equivalent `csl_search` call, so the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
