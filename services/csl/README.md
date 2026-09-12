@@ -80,6 +80,8 @@ daemon:
 
 `csl` walks each directory concurrently and records every directory whose immediate child is `.git`; it doesn't descend into nested repos once it finds a `.git`. When `index.hosts` is set, only repos whose origin remote matches a listed host are indexed; use this to avoid indexing repos covered by another search tool. `csl repo --list` shows what survived discovery, `csl repo --list --skipped` shows what was dropped and why, and `csl repo --json` adds each repo's `remote` and `host`; the checklist for a repo that should be there and isn't is in [docs/getting-started.md](docs/getting-started.md#3-check-what-csl-discovered).
 
+Discovery also reads a Backstage-shaped catalog descriptor from each repo's root (`catalog-info.yaml`, `service-info.yaml`, or a `.csl-catalog.yaml` pointer for a non-standard layout), so `csl repo` and `csl_repo_lookup` can find repos by who owns them, not just by name. `csl repo --json` adds `component`, `owner`, and `system` when a repo carries one; `--component`/`--owner`/`--system` filter on them. See [configuration](docs/configuration.md) for the file formats.
+
 `hooks.post_merge.enabled` also gates the deprecated `csl hooks install` (see Usage); leave it unset unless you're deliberately using the legacy hook installer.
 
 Moving the web UI off port 7424 for good takes `CSL_PORT` in the environment, or a `web.base_url` in the config file, not just `csl web --port`. The flag binds one process, while the MCP server builds `csl_show_file` links from a different one and can only see those two settings. Full reference: [config.md](config.md).
@@ -89,6 +91,8 @@ Moving the web UI off port 7424 for good takes `CSL_PORT` in the environment, or
 ```sh
 csl repo --list                          # list every indexed repo
 csl repo --list --skipped                # repos discovery dropped, with the reason
+csl repo --list --system thismoon        # repos in the thismoon catalog system
+csl repo --list --owner platform         # repos the platform team owns
 csl search "func Walk"                   # search all indexed repos
 csl search "TODO" --repo myrepo          # filter to one repo
 csl search "fmt\.Errorf" --lang go --output-mode content -C 3
@@ -174,7 +178,7 @@ Tools:
 ### Repo discovery
 - Use `csl_repo_lookup` or `csl_repo_info` to find repos. Do not use `find`, `ls`, `Glob`, or shell to manually search for repo directories.
 - `csl_repo_info` returns git health (branch, dirty files, index staleness, suggested action). Call it before starting work on a repo to decide whether to commit, stash, pull, or reindex.
-- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed.
+- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed. It also returns `component`, `owner`, and `system` when a repo carries a catalog descriptor, and takes `component`/`owner`/`system` filters (case-insensitive regex, same rules as `name`) for "which repos does team X own" or "which repos are in system Y" questions; a repo with no descriptor never matches those filters.
 - If lookup returns empty `matches` and a non-empty `dropped`, csl found the checkout but a config filter (`index.hosts` or the exclude list) removed it; report the `reason` to the user. Empty both means the repo is not checked out locally or not under csl's configured dirs; say so, don't guess paths.
 - Use `csl_repo_pull` before creating branches on repos that may be behind (it has safety checks for dirty state).
 - Use `csl_repo_reindex` after significant changes so `csl_search` results stay current.

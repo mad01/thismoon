@@ -15,18 +15,26 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
-// repoLookupInput is the typed input for the csl_repo_lookup tool.
+// repoLookupInput is the typed input for the csl_repo_lookup tool. Every
+// field is a case-insensitive regex; at least one must be set, and all set
+// fields must match.
 type repoLookupInput struct {
-	Name string `json:"name" jsonschema:"case-insensitive regex or substring matched against the repo name (e.g. 'myrepo', 'mad01/.*')"`
+	Name      string `json:"name,omitempty"      jsonschema:"case-insensitive regex or substring matched against the org/repo name (e.g. 'myrepo', 'mad01/.*'); optional when component, owner, or system is set"`
+	Component string `json:"component,omitempty" jsonschema:"case-insensitive regex matched against metadata.name in the repo's root catalog descriptor (catalog-info.yaml or service-info.yaml); only repos with a descriptor can match"`
+	Owner     string `json:"owner,omitempty"     jsonschema:"case-insensitive regex matched against spec.owner in the repo's root catalog descriptor (e.g. 'platform', 'group:default/platform'); only repos with a descriptor can match"`
+	System    string `json:"system,omitempty"    jsonschema:"case-insensitive regex matched against spec.system in the repo's root catalog descriptor; only repos with a descriptor can match"`
 	formatParam
 }
 
 // repoMatch is one entry in the csl_repo_lookup result.
 type repoMatch struct {
-	Name   string `json:"name"             jsonschema:"org/repo name extracted from the git remote URL"`
-	Path   string `json:"path"             jsonschema:"absolute filesystem path to the repo root"`
-	Remote string `json:"remote,omitempty" jsonschema:"full origin remote URL"`
-	Host   string `json:"host,omitempty"   jsonschema:"git host extracted from remote URL (e.g. github.com, git.example.com)"`
+	Name      string `json:"name"                jsonschema:"org/repo name extracted from the git remote URL"`
+	Path      string `json:"path"                jsonschema:"absolute filesystem path to the repo root"`
+	Remote    string `json:"remote,omitempty"    jsonschema:"full origin remote URL"`
+	Host      string `json:"host,omitempty"      jsonschema:"git host extracted from remote URL (e.g. github.com, git.example.com)"`
+	Component string `json:"component,omitempty" jsonschema:"metadata.name from the repo's root catalog descriptor; absent when the repo has none"`
+	Owner     string `json:"owner,omitempty"     jsonschema:"spec.owner from the repo's root catalog descriptor, as written there; absent when the repo has none"`
+	System    string `json:"system,omitempty"    jsonschema:"spec.system from the repo's root catalog descriptor; absent when the repo has none or declares no system"`
 }
 
 // droppedMatch is a repo the walk found and a config filter removed. It turns
@@ -34,11 +42,24 @@ type repoMatch struct {
 // index.hosts or the exclude list took it out", which is the answer an agent
 // would otherwise get wrong.
 type droppedMatch struct {
-	Name   string `json:"name"             jsonschema:"org/repo name extracted from the git remote URL"`
-	Path   string `json:"path"             jsonschema:"absolute filesystem path to the repo root"`
-	Remote string `json:"remote,omitempty" jsonschema:"full origin remote URL"`
-	Host   string `json:"host,omitempty"   jsonschema:"git host extracted from remote URL, empty when the remote has none"`
-	Reason string `json:"reason"           jsonschema:"the setting that removed the repo from the index (index.hosts or hooks.post_merge.exclude)"`
+	Name      string `json:"name"                jsonschema:"org/repo name extracted from the git remote URL"`
+	Path      string `json:"path"                jsonschema:"absolute filesystem path to the repo root"`
+	Remote    string `json:"remote,omitempty"    jsonschema:"full origin remote URL"`
+	Host      string `json:"host,omitempty"      jsonschema:"git host extracted from remote URL, empty when the remote has none"`
+	Component string `json:"component,omitempty" jsonschema:"metadata.name from the repo's root catalog descriptor; absent when the repo has none"`
+	Owner     string `json:"owner,omitempty"     jsonschema:"spec.owner from the repo's root catalog descriptor; absent when the repo has none"`
+	System    string `json:"system,omitempty"    jsonschema:"spec.system from the repo's root catalog descriptor; absent when the repo has none"`
+	Reason    string `json:"reason"              jsonschema:"the setting that removed the repo from the index (index.hosts or hooks.post_merge.exclude)"`
+}
+
+// catalogFields returns the identity fields of a repo's catalog descriptor,
+// or three empty strings for a repo without one, so both match shapes fill
+// in the same way.
+func catalogFields(r finder.Repo) (component, owner, system string) {
+	if r.Catalog == nil {
+		return "", "", ""
+	}
+	return r.Catalog.Name, r.Catalog.Owner, r.Catalog.System
 }
 
 // repoLookupOutput is the structured output of the csl_repo_lookup tool.
@@ -50,9 +71,13 @@ type repoLookupOutput struct {
 func registerRepoTools(s *mcp.Server) {
 	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_repo_lookup",
-		Description: "Resolve a git repo name to its local checkout path. " +
-			"Use when the user mentions a repo by name and you need its absolute path before cd-ing, reading, or grepping inside it. " +
-			"Matching is case-insensitive regex / substring against the org/repo name. " +
+		Description: "Resolve a git repo name to its local checkout path, or find repos by catalog owner, system, or component name. " +
+			"Use when the user mentions a repo by name and you need its absolute path before cd-ing, reading, or grepping inside it, " +
+			"or asks which local repos a team owns or belong to a system. " +
+			"name is a case-insensitive regex / substring against the org/repo name. component, owner, and system match the same way against " +
+			"metadata.name, spec.owner, and spec.system in the Backstage-shaped catalog descriptor at the repo root (catalog-info.yaml or service-info.yaml, " +
+			"or the file a root .csl-catalog.yaml points at); repos without a descriptor never match those three. Set at least one field; all set fields must match. " +
+			"Each match carries the descriptor's component, owner, and system when it has one. " +
 			"Returns an empty matches array if the repo isn't checked out locally. When a dropped array comes back beside it, csl found the checkout but a config filter (index.hosts or hooks.post_merge.exclude) removed it: report the reason rather than calling the repo missing. " +
 			"Empty matches with no dropped means the repo isn't present under csl's dirs; tell the user so and don't guess a path under ~/code/src/... or elsewhere.",
 	}, handleRepoLookup, nil)
@@ -99,7 +124,13 @@ func handleRepoLookup(
 	_ *mcp.CallToolRequest,
 	in repoLookupInput,
 ) (*mcp.CallToolResult, repoLookupOutput, error) {
-	re, err := finder.CompileMatcher(in.Name)
+	q := finder.Query{
+		Name:      in.Name,
+		Component: in.Component,
+		Owner:     in.Owner,
+		System:    in.System,
+	}
+	match, err := q.RegexMatcher()
 	if err != nil {
 		return nil, repoLookupOutput{}, err
 	}
@@ -116,12 +147,19 @@ func handleRepoLookup(
 
 	matches := make([]repoMatch, 0, 4)
 	for _, r := range repos {
-		if re.MatchString(r.Name) {
-			matches = append(
-				matches,
-				repoMatch{Name: r.Name, Path: r.Path, Remote: r.Remote, Host: r.Host},
-			)
+		if !match(r) {
+			continue
 		}
+		component, owner, system := catalogFields(r)
+		matches = append(matches, repoMatch{
+			Name:      r.Name,
+			Path:      r.Path,
+			Remote:    r.Remote,
+			Host:      r.Host,
+			Component: component,
+			Owner:     owner,
+			System:    system,
+		})
 	}
 	out := repoLookupOutput{Matches: matches}
 	if len(matches) > 0 {
@@ -130,15 +168,20 @@ func handleRepoLookup(
 	// Nothing indexed matched. Before the caller concludes the repo is not
 	// checked out, say whether a filter is what hid it.
 	for _, d := range dropped {
-		if re.MatchString(d.Repo.Name) {
-			out.Dropped = append(out.Dropped, droppedMatch{
-				Name:   d.Repo.Name,
-				Path:   d.Repo.Path,
-				Remote: d.Repo.Remote,
-				Host:   d.Repo.Host,
-				Reason: d.Reason(),
-			})
+		if !match(d.Repo) {
+			continue
 		}
+		component, owner, system := catalogFields(d.Repo)
+		out.Dropped = append(out.Dropped, droppedMatch{
+			Name:      d.Repo.Name,
+			Path:      d.Repo.Path,
+			Remote:    d.Repo.Remote,
+			Host:      d.Repo.Host,
+			Component: component,
+			Owner:     owner,
+			System:    system,
+			Reason:    d.Reason(),
+		})
 	}
 	return nil, out, nil
 }

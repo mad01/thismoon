@@ -250,21 +250,28 @@ Discover and pick git repos.
 ### Synopsis
 
 ```sh
-csl repo                    # interactive fuzzy finder
+csl repo                    # interactive picker
 csl repo <query>            # print the single matching repo's path
 csl repo --list             # tab-separated name + path
 csl repo --list --skipped   # the repos discovery dropped, with the reason
 csl repo --json             # structured output
 csl repo --toon             # TOON-encoded output for LLMs
+csl repo --component <s>    # only repos whose catalog descriptor names this component
+csl repo --owner <s>        # only repos whose catalog descriptor has this owner
+csl repo --system <s>       # only repos whose catalog descriptor is in this system
 ```
 
 ### Description
 
-Without flags, `csl repo` opens a [fuzzy finder](https://github.com/ktr0731/go-fuzzyfinder) and prints the absolute path of the selected repo on stdout, useful for `cd $(csl repo)` workflows.
+Without flags, `csl repo` opens an interactive picker and prints the absolute path of the selected repo on stdout, useful for `cd $(csl repo)` workflows.
 
 With a query argument, it skips the picker and prints the path of the single repo whose `org/repo` name contains the query (case-insensitive). Zero or multiple matches exit non-zero; the multi-match error lists the candidates. Combined with `--list`/`--json`/`--toon`, a query filters the output instead of erroring.
 
+`--component`, `--owner`, and `--system` narrow the set to repos whose root catalog descriptor (`catalog-info.yaml` or `service-info.yaml`, a Backstage-shaped Component; see [configuration](configuration.md#catalog-descriptor)) has a matching `metadata.name`, `spec.owner`, or `spec.system` (case-insensitive substring; a repo with no descriptor never matches, whatever the pattern). They compose with the positional query and with `--list`/`--json`/`--toon` (all set filters must match). On their own, without a positional query, they open the picker over the narrowed set; when exactly one repo is left they print its path directly instead. A query that matches nothing (positional or catalog filters) errors with `no repos match query "<set fields>"`, naming the fields that were set.
+
 `--skipped` answers the opposite question: which repos the walk found under `dirs` and then dropped, and why. Each line is `name<TAB>path<TAB>reason`, where the reason is one of `host <h> not in index.hosts`, `no remote (index.hosts is set)`, or `excluded by hooks.post_merge.exclude`. It implies `--list`, composes with `--json`/`--toon` (each entry then also carries `remote` and `host`, which is where an SSH alias shows up as the host), and a query filters it the same way. When a filter drops every repo, the plain commands fail with a message that names the filter and the counts and points here.
+
+The picker is csl's own (`internal/picker`), not [go-fuzzyfinder](https://github.com/ktr0731/go-fuzzyfinder): it uses go-fuzzyfinder's matching package so the fuzzy match behaves the same, but draws with `tcell` directly because it needs to color parts of a line, which go-fuzzyfinder can't do. Each line reads `org/repo  <component>  owner:<owner>  system:<system> @ <path>`: the component name appears only when it differs from the repo's short name, the owner and system labels are dim, and matched characters highlight green. Colors: repo name default, component cyan, owner magenta, system blue, path and labels dim. `NO_COLOR` (any non-empty value) turns all color off. Keys: Enter selects, Esc or Ctrl-C aborts, Up/Down or Ctrl-P/Ctrl-N move the cursor, Backspace deletes a character, Ctrl-U clears the query, Ctrl-W deletes a word.
 
 ### Flags
 
@@ -272,8 +279,11 @@ With a query argument, it skips the picker and prints the path of the single rep
 |---|---|---|
 | `--list` | `false` | Print every repo, tab-separated: `name<TAB>path` |
 | `--skipped` | `false` | Print the repos discovery dropped instead, tab-separated: `name<TAB>path<TAB>reason` (implies `--list`) |
-| `--json` | `false` | Emit array of `{name, path, remote, host}` (implies `--list`; with `--skipped`, each entry adds `reason`) |
+| `--json` | `false` | Emit array of `{name, path, remote, host, component?, owner?, system?}` (implies `--list`; with `--skipped`, each entry adds `reason`) |
 | `--toon` | `false` | TOON-encoded output under a `repos` key (implies `--list`; `skipped` key with `--skipped`) |
+| `--component <s>` | `""` | Only repos whose catalog descriptor names this component (`metadata.name`), case-insensitive substring |
+| `--owner <s>` | `""` | Only repos whose catalog descriptor has this owner (`spec.owner`), case-insensitive substring |
+| `--system <s>` | `""` | Only repos whose catalog descriptor is in this system (`spec.system`), case-insensitive substring |
 
 ### Examples
 
@@ -284,6 +294,9 @@ csl repo --list | grep service-
 csl repo --json | jq '.[] | .host' | sort -u
 csl repo --list --skipped           # why is my repo missing?
 csl repo --json --skipped | jq '.[] | select(.reason | startswith("host"))'
+csl repo --system thismoon          # open the picker over one system's repos
+csl repo --list --owner platform    # everything the platform team owns
+csl repo --json --system thismoon | jq '.[] | .name'
 ```
 
 A shell function makes the jump a habit — bare `repo` opens the picker, `repo <query>` cd's straight there. [`csl shell-init`](#csl-shell-init) prints it, so the body has one owner:
@@ -409,6 +422,7 @@ csl doctor [--repair]
 | `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count. A machine with repos but none of them indexed yet passes with a note (the first search builds it), and when discovery yielded nothing this check steps aside with "no repos to check" rather than failing twice |
 | `index-shards-valid` | every `.zoekt` shard opens cleanly |
 | `search-server-responsive` | a running search server answers on its socket (a stopped server passes — it auto-starts) |
+| `catalog-descriptors` | every catalog descriptor discovery found reads cleanly. Passes with a note when no repo carries one (`--owner`/`--system` lookups then match nothing); FAILs naming each repo and descriptor it couldn't read or follow; skipped when `repos-discovered` already failed |
 | `web-ui-reachable` | the `csl web` process answers on its effective base URL — `web.base_url`, else `http://127.0.0.1:$CSL_PORT` (web-only; search works without it) |
 | `web-ui-version-skew` | the running web process was built from the same commit as this binary (web-only) |
 
@@ -425,6 +439,7 @@ ok state-file-loads
 FAIL index-freshness: 3 of 17 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now
 ok index-shards-valid
 ok search-server-responsive
+ok catalog-descriptors
 ok web-ui-reachable
 ok web-ui-version-skew
 ```

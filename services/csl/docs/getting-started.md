@@ -88,7 +88,9 @@ mad01/thismoon	/Users/you/code/src/github.com/mad01/thismoon
 
 Names come from the `origin` remote URL. A checkout with no remote is named
 `<parent-dir>/<repo-dir>`. `csl repo --json` adds the `remote` and `host`
-fields, which is how to see what a host filter would match against.
+fields, which is how to see what a host filter would match against, plus
+`component`, `owner`, and `system` for any repo that carries a catalog
+descriptor at its root (`catalog-info.yaml` or `service-info.yaml`).
 
 When a repo you expected is missing, work down this list:
 

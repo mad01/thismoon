@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -188,5 +189,140 @@ func TestHandleRepoLookupReportsDropped(t *testing.T) {
 	}
 	if !strings.Contains(out.Dropped[0].Reason, "index.hosts") {
 		t.Errorf("reason = %q, want it to name index.hosts", out.Dropped[0].Reason)
+	}
+}
+
+// writeDescriptor gives a fake repo a root catalog descriptor.
+func writeDescriptor(t *testing.T, dir, name, owner, system string) {
+	t.Helper()
+	content := "apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: " + name +
+		"\nspec:\n  owner: " + owner + "\n  system: " + system + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "catalog-info.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write descriptor: %v", err)
+	}
+}
+
+// TestHandleRepoLookupCatalogFilters pins the catalog side of the tool:
+// owner, system, and component select by the root descriptor, all set
+// fields must agree, a repo with no descriptor never matches a catalog
+// field, and every match carries the descriptor's fields.
+func TestHandleRepoLookupCatalogFilters(t *testing.T) {
+	root := setupRepoEnv(t, []struct{ Org, Name string }{
+		{"mad01", "code-search-local"},
+		{"mad01", "ralph"},
+		{"mad01", "dotfiles"},
+	})
+	writeDescriptor(
+		t,
+		filepath.Join(root, "mad01", "code-search-local"),
+		"csl",
+		"group:default/platform",
+		"thismoon",
+	)
+	writeDescriptor(t, filepath.Join(root, "mad01", "ralph"), "ralph", "mad01", "thismoon")
+
+	// Discovery walks concurrently, so match order is not stable; sort.
+	names := func(out repoLookupOutput) []string {
+		var got []string
+		for _, m := range out.Matches {
+			got = append(got, m.Name)
+		}
+		sort.Strings(got)
+		return got
+	}
+	tests := []struct {
+		name string
+		in   repoLookupInput
+		want []string
+	}{
+		{
+			"by system",
+			repoLookupInput{System: "thismoon"},
+			[]string{"mad01/code-search-local", "mad01/ralph"},
+		},
+		{
+			"by owner regex",
+			repoLookupInput{Owner: "^group:.*/platform$"},
+			[]string{"mad01/code-search-local"},
+		},
+		{
+			"by component name that differs from the repo name",
+			repoLookupInput{Component: "^csl$"},
+			[]string{"mad01/code-search-local"},
+		},
+		{
+			"name and owner together",
+			repoLookupInput{Name: "mad01", Owner: "mad01"},
+			[]string{"mad01/ralph"},
+		},
+		{
+			"permissive owner skips repos without a descriptor",
+			repoLookupInput{Owner: ".*"},
+			[]string{"mad01/code-search-local", "mad01/ralph"},
+		},
+		{"no such system", repoLookupInput{System: "shop"}, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, out, err := handleRepoLookup(context.Background(), nil, tc.in)
+			if err != nil {
+				t.Fatalf("handleRepoLookup(%+v): %v", tc.in, err)
+			}
+			got := names(out)
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("matches = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	_, out, err := handleRepoLookup(context.Background(), nil, repoLookupInput{Name: "code-search"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Matches) != 1 {
+		t.Fatalf("matches = %+v, want one", out.Matches)
+	}
+	m := out.Matches[0]
+	if m.Component != "csl" || m.Owner != "group:default/platform" || m.System != "thismoon" {
+		t.Errorf("match = %+v, want the descriptor's component, owner, and system", m)
+	}
+}
+
+// TestHandleRepoLookupRequiresSomeField: with no name the tool needs a
+// catalog field, and an invalid pattern is reported against its own field.
+func TestHandleRepoLookupRequiresSomeField(t *testing.T) {
+	setupRepoEnv(t, []struct{ Org, Name string }{{"mad01", "octo"}})
+
+	_, _, err := handleRepoLookup(context.Background(), nil, repoLookupInput{})
+	if err == nil {
+		t.Fatal("handleRepoLookup with no fields = nil error, want one")
+	}
+	_, _, err = handleRepoLookup(context.Background(), nil, repoLookupInput{System: "("})
+	if err == nil || !strings.Contains(err.Error(), "system") {
+		t.Errorf("bad system pattern error = %v, want one naming system", err)
+	}
+}
+
+// TestHandleRepoLookupDroppedCarriesCatalog: the dropped fallback filters by
+// the same query and carries the descriptor fields, so "csl saw it, a filter
+// hid it" still answers an owner question.
+func TestHandleRepoLookupDroppedCarriesCatalog(t *testing.T) {
+	root := setupRepoEnv(t, []struct{ Org, Name string }{{"mad01", "octo"}})
+	writeDescriptor(t, filepath.Join(root, "mad01", "octo"), "octo", "team-x", "sea")
+	cfgPath := filepath.Join(filepath.Dir(root), ".config", "csl", "config.yaml")
+	cfg := "dirs:\n  - " + root + "\nindex:\n  hosts:\n    - nowhere.example\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, out, err := handleRepoLookup(context.Background(), nil, repoLookupInput{Owner: "team-x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Matches) != 0 || len(out.Dropped) != 1 {
+		t.Fatalf("out = %+v, want no matches and one dropped", out)
+	}
+	if d := out.Dropped[0]; d.Owner != "team-x" || d.System != "sea" || d.Component != "octo" {
+		t.Errorf("dropped = %+v, want the descriptor fields", d)
 	}
 }

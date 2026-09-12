@@ -84,6 +84,11 @@ Web UI unreachable: t-man typically supervises it. Run `t-man list` to see
 whether the csl-web agent exists, then `t-man restart csl-web`. For a quick
 test without t-man, `csl web` in a spare terminal also works.
 
+No owner/system on a repo, or --owner/--system finds nothing: check `csl
+doctor` (catalog-descriptors) and `csl repo --json <name>`. The descriptor
+(catalog-info.yaml or service-info.yaml) must sit at the repo root, or a root
+.csl-catalog.yaml must point at it.
+
 ## version skew
 
 `csl version -o json` reports the binary on PATH; `GET {{.BaseURL}}/version`

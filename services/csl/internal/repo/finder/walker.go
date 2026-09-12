@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/mad01/thismoon/kit/repofind"
+	"github.com/mad01/thismoon/services/csl/internal/repo/catalogspec"
 )
 
 const numWorkers = 32
@@ -20,10 +21,11 @@ const numWorkers = 32
 func Walk(dirs []string) ([]Repo, error) {
 	work := make(chan string, 4096)
 	type result struct {
-		path   string
-		name   string
-		remote string
-		host   string
+		path    string
+		name    string
+		remote  string
+		host    string
+		catalog *catalogspec.Component
 	}
 	results := make(chan result, 256)
 
@@ -65,7 +67,13 @@ func Walk(dirs []string) ([]Repo, error) {
 				if isRepo {
 					name, remote, host := repoInfo(dir)
 					if name != "" {
-						results <- result{path: dir, name: name, remote: remote, host: host}
+						results <- result{
+							path:    dir,
+							name:    name,
+							remote:  remote,
+							host:    host,
+							catalog: readCatalog(dir),
+						}
 					}
 					inflight.Done()
 					continue
@@ -101,10 +109,29 @@ func Walk(dirs []string) ([]Repo, error) {
 	for r := range results {
 		if !seen[r.path] {
 			seen[r.path] = true
-			repos = append(repos, Repo{Name: r.name, Path: r.path, Remote: r.remote, Host: r.host})
+			repos = append(repos, Repo{
+				Name:    r.name,
+				Path:    r.path,
+				Remote:  r.remote,
+				Host:    r.host,
+				Catalog: r.catalog,
+			})
 		}
 	}
 	return repos, nil
+}
+
+// readCatalog returns the Component a repo's root descriptor declares, or nil
+// when there is none or it cannot be read. A malformed descriptor is dropped
+// silently here on purpose: discovery feeds every search and index path, and
+// one repo's broken YAML must not take the walk down with it. The repo still
+// lists, just without owner and system; `csl repo --json` shows the gap.
+func readCatalog(dir string) *catalogspec.Component {
+	c, ok, err := catalogspec.Read(dir)
+	if err != nil || !ok {
+		return nil
+	}
+	return &c
 }
 
 // FilteredWalk is like Walk but applies a host allowlist after discovery.
@@ -170,7 +197,13 @@ func Inspect(path string) (Repo, error) {
 	if name == "" {
 		return Repo{}, &os.PathError{Op: "inspect", Path: path, Err: os.ErrInvalid}
 	}
-	return Repo{Name: name, Path: path, Remote: remote, Host: host}, nil
+	return Repo{
+		Name:    name,
+		Path:    path,
+		Remote:  remote,
+		Host:    host,
+		Catalog: readCatalog(path),
+	}, nil
 }
 
 // repoInfo resolves a repo's identity (name, remote URL, host) from its .git

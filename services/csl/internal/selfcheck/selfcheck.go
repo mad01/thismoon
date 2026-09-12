@@ -12,10 +12,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
+	"github.com/mad01/thismoon/services/csl/internal/repo/catalogspec"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
@@ -49,6 +51,7 @@ func Checks(repair bool) []doctor.Check {
 	return []doctor.Check{
 		configLoads(s),
 		reposDiscovered(s),
+		catalogDescriptors(s),
 		stateFileLoads(indexDir, repair),
 		indexFreshness(indexDir, s),
 		indexShardsValid(indexDir),
@@ -171,6 +174,54 @@ func reposDiscovered(s shared) doctor.Check {
 	}
 }
 
+// catalogDescriptors verifies the catalog descriptors discovery found can be
+// read. Discovery drops a broken descriptor silently, because one repo's
+// YAML must not take the walk down, so this is where the drop becomes
+// visible: it fails naming every descriptor that exists and cannot be read
+// or followed. A fleet where no repo carries one passes with a note, since
+// that is the state where --owner and --system lookups match nothing and
+// the reader may not know why.
+func catalogDescriptors(s shared) doctor.Check {
+	return doctor.Check{
+		Name: "catalog-descriptors",
+		Run: func(context.Context) error {
+			d, err := s.discover()
+			if err != nil || len(d.repos) == 0 {
+				// repos-discovered owns that failure.
+				return doctor.Skip("no repos to check")
+			}
+			total := len(d.repos)
+			found := 0
+			var broken []string
+			for _, r := range d.repos {
+				_, ok, err := catalogspec.Read(r.Path)
+				switch {
+				case err != nil:
+					broken = append(broken, r.Name+": "+err.Error())
+				case ok:
+					found++
+				}
+			}
+			if len(broken) > 0 {
+				return fmt.Errorf("%d of %d repos have a catalog descriptor csl cannot read; "+
+					"they list without owner or system:\n  %s",
+					len(broken), total, strings.Join(broken, "\n  "))
+			}
+			if found == 0 {
+				names := strings.Join(
+					catalogspec.FileNames,
+					", ",
+				) + " or " + catalogspec.PointerFile
+				return doctor.Skip(fmt.Sprintf(
+					"none of %d repos carries a catalog descriptor (%s at the root), "+
+						"so --owner/--system lookups match nothing", total, names,
+				))
+			}
+			return nil
+		},
+	}
+}
+
 // stateFileLoads verifies state.json parses. LoadState renames a corrupt
 // file to state.json.corrupt on the way out, so with repair the check
 // completes the reset by writing a fresh empty state; the next index run
@@ -234,7 +285,8 @@ func indexFreshness(indexDir string, s shared) doctor.Check {
 				return doctor.Skip(fmt.Sprintf(
 					"%d repos discovered, none of them indexed yet; "+
 						"the first search or 'csl index' builds the index",
-					len(repos)))
+					len(repos),
+				))
 			}
 			staleness, err := search.CheckStaleness(repos, state)
 			if err != nil {
@@ -244,7 +296,8 @@ func indexFreshness(indexDir string, s shared) doctor.Check {
 				return fmt.Errorf(
 					"%d of %d repos stale, dirty, or unindexed; "+
 						"the next search reindexes them in the background, 'csl index' does it now",
-					n, len(repos))
+					n, len(repos),
+				)
 			}
 			return nil
 		},
@@ -302,7 +355,8 @@ func searchServerResponsive(pidPath, socketPath string) doctor.Check {
 				return fmt.Errorf(
 					"search server is alive but its socket does not answer: %w; "+
 						"'csl search --stop' kills it and the next query starts a fresh one",
-					err)
+					err,
+				)
 			}
 			return nil
 		},

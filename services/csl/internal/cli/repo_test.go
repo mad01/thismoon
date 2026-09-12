@@ -9,7 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/csl/internal/picker"
+	"github.com/mad01/thismoon/services/csl/internal/repo/catalogspec"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
+	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 )
 
 // isolateConfigEnv points every path csl resolves inside home for the rest
@@ -453,6 +456,9 @@ func resetRepoFlags() {
 	repoJSONFlag = false
 	repoToonFlag = false
 	repoSkippedFlag = false
+	repoComponentFlag = ""
+	repoOwnerFlag = ""
+	repoSystemFlag = ""
 }
 
 // TestRepoSkippedFlag pins the answer to "csl cannot see my repo": --skipped
@@ -535,5 +541,177 @@ func gitSetRemote(t *testing.T, dir, url string) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git remote add in %s: %v\n%s", dir, err, out)
+	}
+}
+
+// writeDescriptor gives a repo a root catalog descriptor.
+func writeDescriptor(t *testing.T, dir, name, owner, system string) {
+	t.Helper()
+	content := "apiVersion: catalog.mad01/v1alpha1\nkind: Component\nmetadata:\n  name: " + name +
+		"\nspec:\n  owner: " + owner + "\n  system: " + system + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "service-info.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setupCatalogRepos lays out three repos, two with descriptors, and points
+// csl at them. It returns the temp root.
+func setupCatalogRepos(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	for _, name := range []string{"code-search-local", "ralph", "dotfiles"} {
+		repoDir := filepath.Join(tmp, name)
+		if err := os.MkdirAll(repoDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitInit(t, repoDir)
+		gitSetRemote(t, repoDir, "git@github.com:mad01/"+name+".git")
+	}
+	writeDescriptor(t, filepath.Join(tmp, "code-search-local"), "csl", "platform", "thismoon")
+	writeDescriptor(t, filepath.Join(tmp, "ralph"), "ralph", "mad01", "thismoon")
+	setupTestConfig(t, "dirs:\n  - "+tmp+"\n")
+	return tmp
+}
+
+// TestRepoCatalogFilters pins the catalog flags on the non-interactive
+// paths: they narrow --list, resolve to one path on their own when one repo
+// is left, error like a query when none is, and compose with a query.
+func TestRepoCatalogFilters(t *testing.T) {
+	tmp := setupCatalogRepos(t)
+
+	t.Run("list by system", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--list", "--system", "thismoon")
+		for _, want := range []string{"mad01/code-search-local", "mad01/ralph"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output %q lacks %s", out, want)
+			}
+		}
+		if strings.Contains(out, "mad01/dotfiles") {
+			t.Errorf("output %q lists a repo with no descriptor", out)
+		}
+	})
+
+	t.Run("owner alone resolves the single match", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--owner", "PLATFORM")
+		if got := strings.TrimSpace(out); got != filepath.Join(tmp, "code-search-local") {
+			t.Errorf("stdout = %q, want the platform repo's path", got)
+		}
+	})
+
+	t.Run("component alone resolves the single match", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--component", "csl")
+		if got := strings.TrimSpace(out); got != filepath.Join(tmp, "code-search-local") {
+			t.Errorf("stdout = %q, want csl's checkout", got)
+		}
+	})
+
+	t.Run("query composes with a filter", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "ralph", "--system", "thismoon")
+		if got := strings.TrimSpace(out); got != filepath.Join(tmp, "ralph") {
+			t.Errorf("stdout = %q, want ralph's path", got)
+		}
+	})
+
+	t.Run("no match names the filters", func(t *testing.T) {
+		resetRepoFlags()
+		t.Cleanup(resetRepoFlags)
+		_, err := runCLI(t, "repo", "ralph", "--owner", "nobody")
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if !strings.Contains(err.Error(), "no repos match query") ||
+			!strings.Contains(err.Error(), "owner=nobody") {
+			t.Errorf("error %q should say no repos match and name owner=nobody", err)
+		}
+	})
+
+	t.Run("json carries the descriptor fields", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--json", "code-search")
+		var rows []struct {
+			Name      string `json:"name"`
+			Component string `json:"component"`
+			Owner     string `json:"owner"`
+			System    string `json:"system"`
+		}
+		if err := json.Unmarshal([]byte(out), &rows); err != nil {
+			t.Fatalf("unmarshal %q: %v", out, err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("rows = %+v, want one", rows)
+		}
+		if r := rows[0]; r.Component != "csl" || r.Owner != "platform" || r.System != "thismoon" {
+			t.Errorf("row = %+v, want csl/platform/thismoon", r)
+		}
+	})
+
+	t.Run("plain list stays name and path", func(t *testing.T) {
+		out := runRepoCmd(t, "repo", "--list", "code-search")
+		want := "mad01/code-search-local\t" + filepath.Join(tmp, "code-search-local") + "\n"
+		if out != want {
+			t.Errorf("stdout = %q, want %q", out, want)
+		}
+	})
+}
+
+// TestPickerItemSegments pins the picker line: the component name appears
+// only when it differs from the repo name, owner and system carry dim
+// labels and their own colors, and a repo without a descriptor is just name
+// and path.
+func TestPickerItemSegments(t *testing.T) {
+	plain := pickerItem(finder.Repo{Name: "mad01/dotfiles", Path: "/r/dotfiles"})
+	if got := plain.String(); got != "mad01/dotfiles @ /r/dotfiles" {
+		t.Errorf("plain line = %q", got)
+	}
+
+	full := pickerItem(finder.Repo{
+		Name: "mad01/code-search-local", Path: "/r/csl",
+		Catalog: &catalogspec.Component{Name: "csl", Owner: "platform", System: "thismoon"},
+	})
+	if got := full.String(); got != "mad01/code-search-local  csl  owner:platform  system:thismoon @ /r/csl" {
+		t.Errorf("full line = %q", got)
+	}
+	colors := map[string]picker.Color{}
+	for _, seg := range full {
+		colors[seg.Text] = seg.Color
+	}
+	if colors["csl"] != picker.Cyan || colors["platform"] != picker.Magenta ||
+		colors["thismoon"] != picker.Blue || colors["  owner:"] != picker.Dim {
+		t.Errorf("segment colors = %v", colors)
+	}
+
+	same := pickerItem(finder.Repo{
+		Name: "mad01/ralph@feature", Path: "/r/ralph",
+		Catalog: &catalogspec.Component{Name: "Ralph", Owner: "mad01"},
+	})
+	if got := same.String(); got != "mad01/ralph@feature  owner:mad01 @ /r/ralph" {
+		t.Errorf("worktree line = %q, want the component name folded into the repo name", got)
+	}
+}
+
+// TestRepoCatalogFilterAloneNoMatchErrors pins the fix for an empty picker:
+// catalog flags with no positional query and nothing left after filtering
+// must error like a query does, not open a picker over nothing.
+func TestRepoCatalogFilterAloneNoMatchErrors(t *testing.T) {
+	setupCatalogRepos(t)
+	resetRepoFlags()
+	t.Cleanup(resetRepoFlags)
+	_, err := runCLI(t, "repo", "--owner", "nobody")
+	if err == nil {
+		t.Fatal("expected an error, got nil (an empty picker would have opened)")
+	}
+	if !strings.Contains(err.Error(), `no repos match query "owner=nobody"`) {
+		t.Errorf("error = %q, want the no-match text naming owner=nobody", err)
+	}
+}
+
+// TestRepoQueryNoMatchKeepsBareName: the pre-catalog error text for a plain
+// query is unchanged, since scripts may match on it.
+func TestRepoQueryNoMatchKeepsBareName(t *testing.T) {
+	setupCatalogRepos(t)
+	resetRepoFlags()
+	t.Cleanup(resetRepoFlags)
+	_, err := runCLI(t, "repo", "nosuchrepo")
+	if err == nil || !strings.Contains(err.Error(), `no repos match query "nosuchrepo"`) {
+		t.Errorf("error = %v, want the bare-name no-match text", err)
 	}
 }

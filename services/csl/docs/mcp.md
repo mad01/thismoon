@@ -43,15 +43,20 @@ Fifteen tools are registered, grouped into four areas: `csl_repo_*` for repo man
 
 ### `csl_repo_lookup`
 
-Resolve a repo name to its absolute local checkout path.
+Resolve a repo name, or its catalog identity, to its absolute local checkout path.
 
-**When to call:** the user mentions a repo by name and you need its path before `cd`-ing, reading, or grepping inside it.
+**When to call:** the user mentions a repo by name and you need its path before `cd`-ing, reading, or grepping inside it; or the user asks a question shaped like "which repos does team X own" or "what's in system Y".
 
 **Input:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `name` | string | yes | Case-insensitive regex or substring matched against `org/repo` (e.g. `myrepo`, `mad01/.*`) |
+| `name` | string | no | Case-insensitive regex or substring matched against `org/repo` (e.g. `myrepo`, `mad01/.*`). Optional when `component`, `owner`, or `system` is set |
+| `component` | string | no | Case-insensitive regex matched against `metadata.name` in the repo's root catalog descriptor. Only repos with a descriptor can match |
+| `owner` | string | no | Case-insensitive regex matched against `spec.owner` in the repo's root catalog descriptor (e.g. `platform`, `group:default/platform`). Only repos with a descriptor can match |
+| `system` | string | no | Case-insensitive regex matched against `spec.system` in the repo's root catalog descriptor. Only repos with a descriptor can match |
+
+At least one field is required; every field that is set must match (AND). A repo with no catalog descriptor never matches `component`, `owner`, or `system`, however permissive the pattern, so `owner: ".*"` still excludes it.
 
 **Output:**
 
@@ -62,8 +67,11 @@ Resolve a repo name to its absolute local checkout path.
 | `matches[].path` | string | Absolute filesystem path to the repo root |
 | `matches[].remote` | string | Full origin remote URL (e.g. `git@github.com:mad01/csl.git`) |
 | `matches[].host` | string | Hostname extracted from the remote URL (e.g. `github.com`) |
-| `dropped` | array | Present only when `matches` is empty: repos matching the name that the walk found under `dirs` but `index.hosts` or `hooks.post_merge.exclude` removed |
-| `dropped[].name`, `.path`, `.remote`, `.host` | | The repo as discovered, same fields as a match |
+| `matches[].component` | string | `metadata.name` from the repo's root catalog descriptor; absent when the repo has none |
+| `matches[].owner` | string | `spec.owner` from the repo's root catalog descriptor, as written there; absent when the repo has none |
+| `matches[].system` | string | `spec.system` from the repo's root catalog descriptor; absent when the repo has none or declares no system |
+| `dropped` | array | Present only when `matches` is empty: repos matching the query that the walk found under `dirs` but `index.hosts` or `hooks.post_merge.exclude` removed |
+| `dropped[].name`, `.path`, `.remote`, `.host`, `.component`, `.owner`, `.system` | | The repo as discovered, same fields as a match |
 | `dropped[].reason` | string | The setting that removed it, e.g. `host gh-work not in index.hosts`, `no remote (index.hosts is set)`, `excluded by hooks.post_merge.exclude` |
 
 **Example:**
@@ -78,12 +86,37 @@ Resolve a repo name to its absolute local checkout path.
     "name": "mad01/thismoon",
     "path": "/Users/you/code/src/github.com/mad01/thismoon/services/csl",
     "remote": "git@github.com:mad01/thismoon.git",
-    "host": "github.com"
+    "host": "github.com",
+    "component": "csl",
+    "owner": "mad01",
+    "system": "thismoon"
   }]
 }
 ```
 
-An empty `matches` with a non-empty `dropped` means csl found the checkout under `dirs` and a config filter removed it; report `dropped[].reason` to the user (and, with a shell, `csl repo --list --skipped` shows the whole list). Empty both means the repo is not checked out under any configured `dirs`. Report that rather than guessing a path.
+**Find by owner or system, with no name given:**
+
+```json
+// request
+{"owner": "platform"}
+
+// response
+{
+  "matches": [
+    {
+      "name": "mad01/service-a",
+      "path": "/Users/you/code/src/github.com/mad01/service-a",
+      "remote": "git@github.com:mad01/service-a.git",
+      "host": "github.com",
+      "component": "service-a",
+      "owner": "platform",
+      "system": "shop"
+    }
+  ]
+}
+```
+
+An empty `matches` with a non-empty `dropped` means csl found the checkout under `dirs` and a config filter removed it; report `dropped[].reason` to the user (and, with a shell, `csl repo --list --skipped` shows the whole list). Empty both means the repo is not checked out under any configured `dirs`, or no repo's catalog descriptor matches the `component`/`owner`/`system` filters given. Report that rather than guessing a path.
 
 ### `csl_repo_info`
 
@@ -558,7 +591,7 @@ Validate a zoekt query and return its parsed tree, or a parse error with a fixin
 
 ### `csl_doctor`
 
-Run csl's self-checks and return the report as JSON: config, repos discovered, state file, index freshness, shard integrity, the search server, and two web-UI probes.
+Run csl's self-checks and return the report as JSON: config, repos discovered, state file, index freshness, shard integrity, the search server, catalog descriptors, and two web-UI probes.
 
 **When to call:** when a csl tool errors or comes back empty and you have no shell to run `csl doctor` in. It is the first thing to try before concluding that a repo or a query is at fault.
 
@@ -578,13 +611,14 @@ Run csl's self-checks and return the report as JSON: config, repos discovered, s
      "detail": "2 of 41 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now"},
     {"name": "index-shards-valid", "status": "ok"},
     {"name": "search-server-responsive", "status": "ok"},
+    {"name": "catalog-descriptors", "status": "ok"},
     {"name": "web-ui-reachable", "status": "ok"},
     {"name": "web-ui-version-skew", "status": "ok"}
   ]
 }
 ```
 
-A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`; `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing); `index-freshness` is `skipped` on a machine with repos but no index yet. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`; `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing); `index-freshness` is `skipped` on a machine with repos but no index yet; `catalog-descriptors` is `ok` with a note when no repo carries a descriptor, and `skipped` when `repos-discovered` already failed. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
 
 ## Response formats
 
