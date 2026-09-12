@@ -22,40 +22,73 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Speak the given text aloud on this machine's speakers using local TTS. " +
 			"Returns immediately; audio plays in the background. The text is split into sentences and played in order. " +
 			"Keep the returned session id: it is the handle for speak_pause / speak_resume / speak_stop.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleText)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "speak_file",
 		Description: "Read a markdown file aloud on this machine, section by section (a section is the content under each h1/h2). " +
 			"Returns immediately; audio plays in the background. Pass `sections` as comma-separated 1-based indices to read only some; omit for all.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleFile)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "speak_pause",
 		Description: "Pause the currently playing audio and release the playback lock so another process can play. Resume with speak_resume. " +
 			"Pass `session` to only pause if it matches the active session.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handlePause)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "speak_resume",
 		Description: "Resume audio after speak_pause, or restart from the saved position after speak_stop. Re-acquires the playback lock first. " +
 			"Pass `session` to only resume if it matches the active session.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleResume)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "speak_stop",
 		Description: "Stop playback. The position is saved, so speak_resume continues from where you stopped. " +
 			"Pass `session` to only stop if it matches the active session.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleStop)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "speak_voices",
 		Description: "List the available Kokoro TTS voices that can be passed as `voice` to speak_text / speak_file.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleVoices)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "speak_status",
 		Description: "Report whether the TTS engine is reachable and the current playback state (session, playing/paused/stopped/idle, position, lock holder).",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleStatus)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -66,6 +99,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when another speak tool errors: tts-engine-reachable is the check that gates every tool here, " +
 			"while service-reachable and version-skew describe `speak serve`, which playback doesn't need.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 
