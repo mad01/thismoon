@@ -24,29 +24,52 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Set the time ONE of two ways: `due` as an absolute RFC3339 timestamp (you know today's date; convert natural language like 'tomorrow 9am' or 'next monday' to RFC3339 yourself, in the user's local timezone), OR `in` as a Go duration ('2h30m', '45m', '90s') for a relative offset from now. " +
 			"Optional `repeat` makes it recurring: 'daily', 'weekly', or a Go duration like '24h'; omit for a one-shot. " +
 			"Keep the returned id: it is the handle for reminder_get / reminder_edit / reminder_cancel.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleCreate)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_list",
 		Description: "List reminders (id, title, due time, repeat, status, and an `overdue` flag), soonest due first. " +
 			"Optional `status` filter: 'pending' (armed), 'fired' (a one-shot that already fired), 'done', or 'cancelled'.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "reminder_get",
 		Description: "Get one reminder's full detail by id.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleGet)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_edit",
 		Description: "Edit a reminder by id (the `id` is REQUIRED). Change `title`, `body`, `due` (absolute RFC3339), and/or `repeat`; only the fields you pass change. " +
 			"Moving `due` to a future time re-arms a reminder that already fired.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleEdit)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_cancel",
 		Description: "Cancel a reminder by id, a soft stop that keeps the record (status becomes 'cancelled') and prevents it from firing. " +
 			"To remove a reminder permanently, delete it from the web page.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleCancel)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -54,12 +77,22 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Fire a notification NOW to verify macOS notifications actually work on this machine. Use this to confirm the notification path before trusting a real reminder. " +
 			"It is a dry run: it doesn't change any reminder's state (no one-shot consumed, no recurring schedule advanced) and isn't recorded in the event log. " +
 			"Pass `id` to send that reminder's exact notification (same title/body it would show when due), or omit `id` for a generic 'notifications are working' test (good right after setup).",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleTest)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "reminder_fire",
 		Description: "Fire a reminder for REAL right now (the `id` is REQUIRED), exactly as if it had just come due: it sends the notification, records the event, and advances state. A recurring reminder reschedules to its next occurrence, a one-shot becomes 'fired'. " +
 			"This isn't a dry run; use reminder_test to only verify notifications without changing state.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleFire)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -69,6 +102,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing, and it sends no notification. " +
 			"Call this when another reminder tool errors; use `reminder_test` instead to check that macOS " +
 			"notifications actually reach the user.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 
