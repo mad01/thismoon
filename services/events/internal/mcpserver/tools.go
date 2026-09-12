@@ -29,11 +29,19 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"`since` (an event id; returns only events newer than it, so use it to poll for new activity), " +
 			"and `limit` (max events, defaults to the global cap). Use events_sources first to see which sources exist. " +
 			"On zero results the response carries zero_result_hint (whether the source filter names a real source, the known sources, the time the since cursor decodes to). Read it before assuming nothing happened.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleQuery)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "events_sources",
 		Description: "List every event source with its current event count, sorted by name. Use it to discover which sources to filter events_query by.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleSources)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -41,6 +49,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Record an event in the local audit log. `source` and `title` are REQUIRED. " +
 			"Optional `level` ('info' default | 'warn' | 'error'), `component` (sub-area within the source), " +
 			"`message` (longer detail), and `tags` (a flat object of string key/values). Returns the new event id.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleEmit)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -50,6 +63,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when events_query comes back empty or events_emit errors: it separates a serve that is " +
 			"down or on a different port from a log that genuinely has nothing in it.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 
