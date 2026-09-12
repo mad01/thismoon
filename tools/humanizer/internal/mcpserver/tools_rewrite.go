@@ -29,6 +29,10 @@ func registerRewriteTools(s *mcp.Server) {
 			"Returns the prompt for the given strength (paraphrase, humanize, code, backtranslate, structural); YOU produce the rewrite by running the prompt. This tool calls no model, so it is offline and sandbox-safe. " +
 			"Prefer a rewrite model different from the suspected origin model; rewriting with the origin model can re-stamp the text. " +
 			"For running a local/remote model directly, use the `humanizer rewrite` CLI (network backends aren't available under the MCP sandbox).",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleRewrite)
 }
 

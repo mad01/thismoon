@@ -40,6 +40,10 @@ func registerStatisticalTools(s *mcp.Server) {
 			"Complements humanizer_detect (Vale span rules). Run both for full coverage. " +
 			"Returns findings (rule_id, severity, metric, value, threshold, message) plus the full voice profile the checks were computed from. " +
 			"Most checks gate on a minimum sample size, so very short snippets return few or no findings.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleDetectStatistical)
 }
 

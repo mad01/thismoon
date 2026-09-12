@@ -50,6 +50,10 @@ func registerRulesTools(s *mcp.Server) {
 		Description: "List every supported humanizer detection rule with its ID, category, default severity, and a one-line summary. " +
 			"Use to discover what humanizer_detect can find, or to build a targeted rules=[...] filter. " +
 			"Categories: content (significance inflation, promo language), language (AI vocab, negative parallelism), style (em-dashes, bold), communication (sycophancy, filler).",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleRulesList)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -57,6 +61,10 @@ func registerRulesTools(s *mcp.Server) {
 		Description: "Return full metadata for a single humanizer rule: rationale, before/after example, and reference. " +
 			"Use when a humanizer_detect finding is ambiguous or you need to explain a rewrite choice to the user. " +
 			"Rule IDs come from humanizer_rules_list (e.g. Humanizer.Sycophancy).",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleRulesExplain)
 }
 

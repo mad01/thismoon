@@ -55,6 +55,10 @@ func registerScanTools(s *mcp.Server) {
 			"Directories named vendor, node_modules, and testdata, dot-directories, and generated files are skipped; test files are included. " +
 			"Under the MCP sandbox only .go files (plus .md/.markdown/.txt) beneath the sandbox profile's workspace roots, plus /tmp paths, are readable. " +
 			"A denied path returns an error pointing at the CLI, which runs unsandboxed.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleScanGo)
 }
 

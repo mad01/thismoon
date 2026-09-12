@@ -51,6 +51,10 @@ func registerDetectTools(s *mcp.Server) {
 			"Returns findings with rule_id (e.g. Humanizer.AIVocabulary), severity (suggestion|warning|error), line, column, matched text, and message. " +
 			"Use before rewriting AI-heavy text so the rewrite targets are concrete. " +
 			"Filter with rules=[...] to check specific patterns, or min_severity=error for only the highest-confidence tells.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleDetect)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -58,6 +62,10 @@ func registerDetectTools(s *mcp.Server) {
 		Description: "Scan a file on disk for AI-writing patterns. Use instead of humanizer_detect when the text is already in a file: saves a read and lets vale use the real extension for format detection. " +
 			"Takes an absolute path. Under the MCP sandbox only prose files (.md/.markdown/.txt) and Go sources (.go) beneath the sandbox profile's workspace roots, plus /tmp paths, are readable; this tool still only makes sense on prose, so use humanizer_scan_go for Go source. " +
 			"For anything else pass the text via humanizer_detect. Returns the same findings shape as humanizer_detect.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleDetectFile)
 }
 

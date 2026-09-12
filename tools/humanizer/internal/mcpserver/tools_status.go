@@ -26,6 +26,10 @@ func registerStatusTools(s *mcp.Server) {
 		Name: "humanizer_status",
 		Description: "Report humanizer MCP health: whether the vale binary is installed, its version, the cache directory, and how many rules are bundled. " +
 			"Call first when humanizer_detect fails unexpectedly.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleStatus)
 }
 
