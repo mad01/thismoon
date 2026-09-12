@@ -22,14 +22,29 @@ type handlers struct {
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan",
-		Description: "Discover every external dependency across the registered tool repos (Go modules, npm) and persist the inventory, WITHOUT checking advisories. " +
+		Description: "Discover every external dependency across the registered tool repos (Go modules, npm, PyPI, Swift) and persist the inventory, WITHOUT checking advisories. " +
 			"Returns a per-ecosystem count. Use deps_check to also check versions against OSV.",
+		// Replaces the whole persisted inventory, so a rescan is destructive
+		// but idempotent over an unchanged tree. Go discovery shells out to
+		// `go list -m -json all`, which resolves the module graph against the
+		// Go module proxy when the local cache is cold.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(true),
+		},
 	}, h.handleScan)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_check",
 		Description: "Discover every dependency and check each version against the OSV.dev supply-chain advisory database. " +
 			"Returns the flagged packages with advisory id, severity, and the version that fixes each. This reaches the network and may take a few seconds.",
+		// Same replace-the-store write as deps_scan, plus the OSV.dev query.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(true),
+		},
 	}, h.handleCheck)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -37,12 +52,24 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Return the flagged packages from the most recent check WITHOUT re-scanning (fast, no network). " +
 			"Use after deps_check to re-read the findings. Each advisory carries a `key` and a `resolved` flag. " +
 			"An empty flagged list with total > 0 means the persisted inventory carries no unresolved advisories (run deps_check to re-verify against OSV); with total == 0 the response carries zero_result_hint, because an empty store means nothing was checked, not that anything is clean.",
+		// Reads the persisted store through the local serve API; no OSV call.
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleListFlagged)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan_repo",
 		Description: "Rescan a SINGLE repo (by absolute path or basename, e.g. 'dotfiles') against OSV and merge the result, " +
 			"without re-sweeping every repo. Use after bumping dependencies in one repo to re-check just it. Returns the full flagged set.",
+		// Replaces that repo's slice of the store (other repos are kept), and
+		// queries OSV for the rescanned versions.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(true),
+		},
 	}, h.handleScanRepo)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -50,6 +77,14 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Acknowledge (resolve) one or more flagged advisories by their `key` (from deps_check / deps_list_flagged). " +
 			"A resolved advisory stops alerting and drops out of the active findings until the package version changes or a NEW advisory appears on it. " +
 			"Use when the user has accepted a risk or will fix later.",
+		// Flips an advisory from active to acknowledged, which suppresses its
+		// alerts — a state change, not an append. Re-resolving the same keys
+		// leaves the resolved set exactly as it was.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleResolve)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -60,6 +95,12 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when another deps tool errors or comes back empty: it answers whether the fault is the " +
 			"service, the store, or a genuinely clean scan.",
+		// Probes localhost serve, the local store file, and the local binary's
+		// version; nothing external, nothing written.
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 
