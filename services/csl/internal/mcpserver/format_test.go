@@ -6,11 +6,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mad01/thismoon/services/csl/internal/mcpformat"
 )
 
 // stubInput and stubOutput exercise withFormat without touching csl state.
@@ -236,6 +239,15 @@ func TestEveryToolAcceptsResponseFormat(t *testing.T) {
 		}
 		if !strings.Contains(string(prop), "output encoding") {
 			t.Errorf("%s: response_format lost its description: %s", tool.Name, prop)
+		}
+		var withEnum struct {
+			Enum []string `json:"enum"`
+		}
+		if err := json.Unmarshal(prop, &withEnum); err != nil {
+			t.Fatalf("%s: decode response_format schema: %v", tool.Name, err)
+		}
+		if !slices.Equal(withEnum.Enum, mcpformat.Names()) {
+			t.Errorf("%s: response_format enum = %v, want %v", tool.Name, withEnum.Enum, mcpformat.Names())
 		}
 		for _, r := range required {
 			if r == "response_format" {

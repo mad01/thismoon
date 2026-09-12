@@ -48,25 +48,25 @@ type repoLookupOutput struct {
 }
 
 func registerRepoTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_repo_lookup",
 		Description: "Resolve a git repo name to its local checkout path. " +
 			"Use when the user mentions a repo by name and you need its absolute path before cd-ing, reading, or grepping inside it. " +
 			"Matching is case-insensitive regex / substring against the org/repo name. " +
 			"Returns an empty matches array if the repo isn't checked out locally. When a dropped array comes back beside it, csl found the checkout but a config filter (index.hosts or hooks.post_merge.exclude) removed it: report the reason rather than calling the repo missing. " +
 			"Empty matches with no dropped means the repo isn't present under csl's dirs; tell the user so and don't guess a path under ~/code/src/... or elsewhere.",
-	}, withFormat(handleRepoLookup, nil))
+	}, handleRepoLookup, nil)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_repo_info",
 		Description: "Check repo health before starting work. " +
 			"Returns git state (branch, dirty files, modified/untracked counts), index staleness, and an action field " +
 			"indicating what to do: \"ready\" (good to go), \"commit_or_stash\" (dirty working tree), " +
 			"\"pull_recommended\" (index stale >30min, likely behind remote), \"needs_reindex\" (local changes not in search index). " +
 			"Use this BEFORE creating branches or making changes to a repo.",
-	}, withFormat(handleRepoInfo, nil))
+	}, handleRepoInfo, nil)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_repo_health",
 		Description: "Fleet-wide repo health report: which local checkouts hold uncommitted or unpushed work. " +
 			"Walks every repo and returns branch, dirty counts, and commits ahead/behind the last-fetched upstream (no network fetch). " +
@@ -75,23 +75,23 @@ func registerRepoTools(s *mcp.Server) {
 			"Default returns only repos needing attention; set all=true for the full list. " +
 			"Use before a machine switch or as a hygiene sweep. Unlike csl_repo_info this runs git across the whole fleet, so it takes a few seconds; " +
 			"for one repo's health including index staleness, use csl_repo_info.",
-	}, withFormat(handleRepoHealth, nil))
+	}, handleRepoHealth, nil)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_repo_pull",
 		Description: "Git pull a workspace repo with safety checks. " +
 			"Warns if there are uncommitted changes or detached HEAD. Uses --ff-only (no merge commits). " +
 			"Set force=true to pull even with uncommitted changes. " +
 			"Use before creating branches on repos that may be out of date.",
-	}, withFormat(handleRepoPull, nil))
+	}, handleRepoPull, nil)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_repo_reindex",
 		Description: "Reindex a specific repo in the local zoekt search index. " +
 			"Use after making significant changes to ensure csl_search results are current, " +
 			"or when csl_repo_info reports needs_reindex. " +
 			"The call blocks until indexing finishes and returns the measured duration: typically sub-second for small repos, a few seconds for large ones.",
-	}, withFormat(handleRepoReindex, nil))
+	}, handleRepoReindex, nil)
 }
 
 func handleRepoLookup(

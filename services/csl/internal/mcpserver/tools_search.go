@@ -115,7 +115,7 @@ type queryValidateOutput struct {
 }
 
 func registerSearchTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_search",
 		Description: "Search code across locally checked-out git repos using zoekt query syntax. " +
 			"Use whenever the task involves finding where a symbol, function, pattern, or string is used: 'where is X defined', 'find all Y', 'does any of my projects use Z', 'show me every TODO in the Go code'. " +
@@ -128,22 +128,22 @@ func registerSearchTools(s *mcp.Server) {
 			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps); read it before retrying or concluding the code doesn't exist. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session. " +
 			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it.",
-	}, withFormat(handleSearch, renderSearchText))
+	}, handleSearch, renderSearchText)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_count",
 		Description: "Count matches of a zoekt query across locally checked-out repos. " +
 			"Accepts the same zoekt query syntax as csl_search (including repo:/f:/lang: filters and AND/OR/NOT). " +
 			"Use for cross-repo tallies like 'how many TODOs across my Go projects' or 'which language has the most calls to fmt.Errorf'. " +
 			"Set group_by to 'repo' or 'language' for a breakdown; leave it empty for a single total.",
-	}, withFormat(handleCount, renderCountText))
+	}, handleCount, renderCountText)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_query_validate",
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
 			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms. " +
 			"Also useful for debugging regex escaping like \\.go$.",
-	}, withFormat(handleQueryValidate, nil))
+	}, handleQueryValidate, nil)
 }
 
 func handleSearch(

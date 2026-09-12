@@ -41,14 +41,14 @@ var openURL = func(u string) error {
 }
 
 func registerShowTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_show_file",
 		Description: "Show a file section to the USER in the csl web UI (opens their browser). " +
 			"Use when the user should look at a piece of code you are referencing, instead of pasting it or having them hunt for the file in an editor. " +
 			"The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button. " +
 			"The view reads the file live from disk via the running `csl web` server, so it must be up (it is a t-man service on this machine). " +
 			"Set no_open=true to just get the URL. This shows content to the human; to read file content yourself, use csl_read.",
-	}, withFormat(handleShowFile, nil))
+	}, handleShowFile, nil)
 }
 
 func handleShowFile(

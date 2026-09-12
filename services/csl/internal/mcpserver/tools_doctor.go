@@ -31,14 +31,14 @@ type doctorOutput struct {
 }
 
 func registerDoctorTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_doctor",
 		Description: "Diagnose csl itself: config, index state, shard integrity, the search server, and the web UI. " +
 			"Read-only: it repairs nothing. Call it when a csl tool errors or returns nothing you expect, " +
 			"before concluding that a repo or a query is at fault. " +
 			"The web-ui checks can fail while search works fine; they only mean `csl web` is down or out of date. " +
 			"For git health of the repos csl indexes (dirty trees, unpushed work), use csl_repo_health instead.",
-	}, withFormat(handleDoctor, renderDoctorText))
+	}, handleDoctor, renderDoctorText)
 }
 
 func handleDoctor(

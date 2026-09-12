@@ -54,7 +54,7 @@ type hybridSearchOutput struct {
 }
 
 func registerHybridTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_hybrid_search",
 		Description: "Search code by combining lexical (exact/regex) and semantic (meaning) search and fusing the two rankings with Reciprocal Rank Fusion. " +
 			"Prefer this as the default code search when you want BOTH exact-match safety and meaning-based recall, e.g. a natural-language description that also contains a likely literal token ('where do we retry failed HTTP requests'). " +
@@ -63,7 +63,7 @@ func registerHybridTools(s *mcp.Server) {
 			"Filter by repo (substring) or lang (single language); tune fusion with rrf_k (default 60, limit default 50). " +
 			"Runs both backends per call, so the semantic cold-start cost (first-ever model download ~90 MB, model load on a cold daemon; see csl_semantic_search) applies here too. " +
 			"If the semantic index isn't built (csl index --semantic-all), results degrade to lexical-only with semantic_available=false.",
-	}, withFormat(handleHybridSearch, renderHybridText))
+	}, handleHybridSearch, renderHybridText)
 }
 
 func handleHybridSearch(

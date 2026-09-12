@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/services/csl/internal/mcpformat"
@@ -86,4 +87,38 @@ func renderOutput[Out any](format string, out Out, render func(Out) string) (str
 // textResult wraps rendered text as the only content of a tool result.
 func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+// addFormattedTool registers a tool through withFormat and advertises the
+// response_format values as a schema enum, so clients and models can
+// enumerate them instead of parsing the description. The schema is derived
+// the same way the SDK would derive it; a derivation error is a programming
+// error in the input type and panics at registration, as mcp.AddTool does.
+func addFormattedTool[In responseFormatter, Out any](
+	s *mcp.Server,
+	t *mcp.Tool,
+	h mcp.ToolHandlerFor[In, Out],
+	render func(Out) string,
+) {
+	schema, err := jsonschema.For[In](nil)
+	if err != nil {
+		panic(fmt.Sprintf("mcpserver: input schema for %s: %v", t.Name, err))
+	}
+	prop, ok := schema.Properties["response_format"]
+	if !ok {
+		panic(fmt.Sprintf("mcpserver: %s input lacks response_format", t.Name))
+	}
+	prop.Enum = formatEnum()
+	t.InputSchema = schema
+	mcp.AddTool(s, t, withFormat(h, render))
+}
+
+// formatEnum lists the response formats as schema enum values.
+func formatEnum() []any {
+	names := mcpformat.Names()
+	enum := make([]any, len(names))
+	for i, n := range names {
+		enum[i] = n
+	}
+	return enum
 }

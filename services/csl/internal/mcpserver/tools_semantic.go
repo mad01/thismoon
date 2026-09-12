@@ -49,7 +49,7 @@ type semanticSearchOutput struct {
 }
 
 func registerSemanticTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_semantic_search",
 		Description: "Find code by MEANING/intent across locally checked-out repos using vector embeddings. " +
 			"Complements csl_search (which does lexical/exact/regex matching): use csl_semantic_search when you don't know the exact symbol or wording, for natural-language questions like 'where do we retry failed HTTP requests' or 'code that parses config files', and for queries that should match synonyms and paraphrases rather than literal strings. " +
@@ -58,7 +58,7 @@ func registerSemanticTools(s *mcp.Server) {
 			"Code is chunked by tree-sitter declarations for parseable languages and by 120-line windows for everything else, so hits in parseable languages correspond to whole declarations while other files return coarser windows. " +
 			"Costs: embedding runs via a local Ollama server (jina-code-v2 by default, pulled with 'ollama pull'), so Ollama must be running; a cold query pays ~1-2s model load, then the model stays warm for 20 minutes. " +
 			"Requires a semantic index built with 'csl index --semantic-all'; if it isn't built, the tool returns available=false with a note instead of an error.",
-	}, withFormat(handleSemanticSearch, renderSemanticText))
+	}, handleSemanticSearch, renderSemanticText)
 }
 
 func handleSemanticSearch(
