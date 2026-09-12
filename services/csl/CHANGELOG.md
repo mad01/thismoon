@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/mad01/thismoon/compare/csl/v0.20.0...csl/v0.21.0) (2026-09-12)
+
+
+### Features
+
+* **csl:** find repos by catalog owner, system, and component ([#92](https://github.com/mad01/thismoon/issues/92)) ([e2d5b5d](https://github.com/mad01/thismoon/commit/e2d5b5dfea426fe4368dec95d39f1c04a6fe451e))
+
 ## [0.20.0](https://github.com/mad01/thismoon/compare/csl/v0.19.0...csl/v0.20.0) (2026-09-12)
 
 
