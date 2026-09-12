@@ -16,6 +16,11 @@ func registerTools(s *mcp.Server) {
 			"Use when the user says copy this, put it on my clipboard, copy to clipboard, " +
 			"or wants a snippet, command, or link ready to paste somewhere else. " +
 			"The text lands verbatim: include or omit a trailing newline deliberately.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, handleCopy)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -24,6 +29,10 @@ func registerTools(s *mcp.Server) {
 			"Use when the user says paste from my clipboard, what's on my clipboard, " +
 			"or asks to work with something they just copied. " +
 			"Text only: an image or file on the clipboard comes back empty, with a note saying so.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handlePaste)
 }
 
