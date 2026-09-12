@@ -33,6 +33,7 @@ type searchInput struct {
 	Limit         int    `json:"limit,omitempty"          jsonschema:"maximum number of file results (default 50)"`
 	Offset        int    `json:"offset,omitempty"         jsonschema:"skip this many ranked file results before applying limit, to page past the first limit results (default 0); ranking is stable across calls, so successive pages line up"`
 	CaseSensitive bool   `json:"case_sensitive,omitempty" jsonschema:"force case-sensitive matching; default is smart case (case-insensitive unless the query has uppercase)"`
+	formatParam
 }
 
 // searchMatchFile is one entry returned in files_with_matches mode.
@@ -84,6 +85,7 @@ type countInput struct {
 	Repo    string `json:"repo,omitempty"     jsonschema:"restrict to repo names matching this case-insensitive regex (a plain substring also works)"`
 	Lang    string `json:"lang,omitempty"     jsonschema:"restrict to files of this language"`
 	GroupBy string `json:"group_by,omitempty" jsonschema:"group matches by: repo or language; empty returns a single total"`
+	formatParam
 }
 
 // countGroup is one entry in the csl_count result.
@@ -101,6 +103,7 @@ type countOutput struct {
 // queryValidateInput is the typed input for the csl_query_validate tool.
 type queryValidateInput struct {
 	Query string `json:"query" jsonschema:"the zoekt query string to validate"`
+	formatParam
 }
 
 // queryValidateOutput is the typed output of the csl_query_validate tool.
@@ -112,7 +115,7 @@ type queryValidateOutput struct {
 }
 
 func registerSearchTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_search",
 		Description: "Search code across locally checked-out git repos using zoekt query syntax. " +
 			"Use whenever the task involves finding where a symbol, function, pattern, or string is used: 'where is X defined', 'find all Y', 'does any of my projects use Z', 'show me every TODO in the Go code'. " +
@@ -123,23 +126,24 @@ func registerSearchTools(s *mcp.Server) {
 			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax: the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
 			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call. When capped, truncated=true; page with offset (next page = offset + limit), narrow the query, or raise limit. " +
 			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps); read it before retrying or concluding the code doesn't exist. " +
-			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session.",
-	}, handleSearch)
+			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session. " +
+			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it.",
+	}, handleSearch, renderSearchText)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_count",
 		Description: "Count matches of a zoekt query across locally checked-out repos. " +
 			"Accepts the same zoekt query syntax as csl_search (including repo:/f:/lang: filters and AND/OR/NOT). " +
 			"Use for cross-repo tallies like 'how many TODOs across my Go projects' or 'which language has the most calls to fmt.Errorf'. " +
 			"Set group_by to 'repo' or 'language' for a breakdown; leave it empty for a single total.",
-	}, handleCount)
+	}, handleCount, renderCountText)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_query_validate",
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
 			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms. " +
 			"Also useful for debugging regex escaping like \\.go$.",
-	}, handleQueryValidate)
+	}, handleQueryValidate, nil)
 }
 
 func handleSearch(

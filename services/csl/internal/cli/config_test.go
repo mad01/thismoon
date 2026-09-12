@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/services/csl"
+	"github.com/mad01/thismoon/services/csl/internal/mcpformat"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
 
@@ -71,10 +72,16 @@ func TestConfigMissingFile(t *testing.T) {
 		t.Errorf("semantic model/dim = %q/%d, want the embedder defaults",
 			got.Semantic.EmbedModel, got.Semantic.Dim)
 	}
+	if got.MCP.ResponseFormat != mcpformat.Default {
+		t.Errorf("mcp.response_format = %q, want the default %q",
+			got.MCP.ResponseFormat, mcpformat.Default)
+	}
 }
 
 func TestConfigLoadedFile(t *testing.T) {
-	header, body := runConfigCmd(t, "dirs:\n  - /tmp/repos\nsync:\n  concurrency: 3\n", true)
+	header, body := runConfigCmd(t,
+		"dirs:\n  - /tmp/repos\nsync:\n  concurrency: 3\nmcp:\n  response_format: json\n",
+		true)
 
 	if !strings.Contains(header, "(loaded)") {
 		t.Errorf("header %q, want status %q", header, "loaded")
@@ -89,6 +96,10 @@ func TestConfigLoadedFile(t *testing.T) {
 	}
 	if got.Sync.Concurrency != 3 {
 		t.Errorf("sync.concurrency = %d, want the configured 3", got.Sync.Concurrency)
+	}
+	if got.MCP.ResponseFormat != mcpformat.JSON {
+		t.Errorf("mcp.response_format = %q, want the configured %q",
+			got.MCP.ResponseFormat, mcpformat.JSON)
 	}
 	if got.Web.BaseURL != csl.DefaultBaseURL {
 		t.Errorf(
@@ -127,6 +138,7 @@ func TestConfigLongDocumentsEveryKey(t *testing.T) {
 		"daemon:",
 		"refresh:",
 		"web:",
+		"mcp:",
 		// The settings with no YAML key of their own still have to be findable
 		// here: the reference is what a fresh machine is configured from.
 		"CSL_CONFIG",

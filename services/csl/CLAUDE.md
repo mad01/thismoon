@@ -205,6 +205,16 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 (`internal/mcpserver.New()`). Handlers reuse the same daemon-first-then-fallback
 path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 
+Every tool accepts `response_format`: `text` (default) | `json` | `jsonl` |
+`toon` | `csv` | `markdown-kv` | `xml`. Precedence: the tool parameter, then
+`mcp.response_format` in config.yaml, then the built-in default `text`; an
+unknown value in either place is an error that names its source. The return
+shapes below are the `json` form, the object every tool returned before the
+parameter existed. `text` is tool-specific (csl_search: ripgrep-style headings
+with `LINE:match` lines; csl_read: `LINE:text`; csl_ls, csl_count, csl_doctor:
+one line per entry) and falls back to `markdown-kv` for the rest; the full list
+is in docs/mcp.md under Response formats.
+
 **Repo:**
 - `csl_repo_lookup(name)` → `{matches: [{name, path, remote?, host?}], dropped?: [{name, path, remote?, host?, reason}]}`. Resolves a repo name (case-insensitive regex/substring) to its local checkout path. When `matches` is empty the handler also matches the name against what discovery dropped (`cfg.DiscoverReposReport()`), so `dropped` with a `reason` means a filter hid the checkout; empty both means the repo isn't checked out locally, so don't guess a path.
 - `csl_repo_info(name)` → `{matches: [{..., branch, dirty, modified_files, untracked_files, index_stale, indexed_at, action}]}`. Reports git and index health; `action` is one of `ready`, `commit_or_stash`, `pull_recommended`, `needs_reindex`. Call before creating branches or making changes.
@@ -213,7 +223,7 @@ path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 - `csl_repo_reindex(name)` → `{name, path, reindexed, duration}`. Blocking reindex of one repo.
 
 **Search:**
-- `csl_search(query, repo?, lang?, file?, output_mode?, context_lines?, limit?, case_sensitive?)` → `{output_mode, files[]|lines[], total, truncated, total_available?}`. Uses zoekt query syntax (see zoekt query pitfalls). Defaults: `limit` 50, `output_mode` files_with_matches; content mode caps at 300 lines per call.
+- `csl_search(query, repo?, lang?, file?, output_mode?, context_lines?, limit?, case_sensitive?, response_format?)` → `{output_mode, files[]|lines[], total, truncated, total_available?}`. Uses zoekt query syntax (see zoekt query pitfalls). Defaults: `limit` 50, `output_mode` files_with_matches; content mode caps at 300 lines per call.
 - `csl_count(query, repo?, lang?, group_by?)` → `{total, groups[]}`. Same query syntax as `csl_search`; `group_by` is `repo` or `language`.
 - `csl_query_validate(query)` → `{valid, parsed?, error?, hint?}`. Parse-tree debug for zero-result or unexpected-result queries.
 

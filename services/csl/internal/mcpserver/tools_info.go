@@ -17,8 +17,11 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
 )
 
-// indexInfoInput is the typed input for the csl_index_info tool.
-type indexInfoInput struct{}
+// indexInfoInput is the typed input for the csl_index_info tool: it takes no
+// parameters beyond the response format.
+type indexInfoInput struct {
+	formatParam
+}
 
 // semanticInfo describes the semantic index inside csl_index_info output.
 type semanticInfo struct {
@@ -47,6 +50,7 @@ type lsInput struct {
 	Path      string `json:"path,omitempty"      jsonschema:"directory relative to the repo root to list (default: the root)"`
 	Glob      string `json:"glob,omitempty"      jsonschema:"filter entries by base-name glob (e.g. '*.go'); matched against the file or directory name, not the full path"`
 	Recursive bool   `json:"recursive,omitempty" jsonschema:"walk the whole subtree instead of one level; directories are omitted, only files are returned"`
+	formatParam
 }
 
 // lsEntry is one file or directory in the csl_ls result.
@@ -67,22 +71,22 @@ type lsOutput struct {
 }
 
 func registerInfoTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_index_info",
 		Description: "Global health of the csl search index in one call: repo count, shard count and size, corrupt shards, " +
 			"newest/oldest per-repo index times, whether the search daemon is running, and semantic index status (stores, chunks, model presence). " +
 			"Use to answer 'is the index healthy', 'is semantic search ready', or 'why is search slow' before falling back to per-repo csl_repo_info calls. " +
 			"Reads state from disk and pings the daemon; it doesn't scan repos, so it returns in well under a second.",
-	}, handleIndexInfo)
+	}, handleIndexInfo, nil)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_ls",
 		Description: "List files and directories inside a locally checked-out repo. " +
 			"Use to answer 'what files are in internal/web/' without shelling out to ls or find. " +
 			"Lists one directory level by default; set recursive=true to walk the whole subtree (files only). " +
 			"Filter with glob (matched against base names, e.g. '*.go'). " +
 			"Reads the filesystem directly (always current, .git excluded) and caps output at 500 entries; truncated=true with total_available when capped.",
-	}, handleLs)
+	}, handleLs, renderLsText)
 }
 
 func handleIndexInfo(

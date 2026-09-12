@@ -287,6 +287,7 @@ Search code across locally checked-out repos using zoekt query syntax.
 | `context_lines` | int | `0` | Context lines per match. Only applies to `content` mode |
 | `limit` | int | `50` | Maximum number of file results |
 | `case_sensitive` | bool | `false` | Force case-sensitive matching; default is smart case |
+| `response_format` | string | `text` | `text`, `json`, `jsonl`, `toon`, `csv`, `markdown-kv`, or `xml`; see [Response formats](#response-formats). The output examples below are the `json` form |
 
 **Output (`files_with_matches`):**
 
@@ -584,6 +585,53 @@ Run csl's self-checks and return the report as JSON: config, repos discovered, s
 ```
 
 A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`; `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing); `index-freshness` is `skipped` on a machine with repos but no index yet. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+
+## Response formats
+
+Every one of the fifteen tools accepts a `response_format` parameter. The JSON examples in this document show the `json` format; the default is `text`.
+
+Precedence: the `response_format` parameter on the call, then `mcp.response_format` in `config.yaml`, then the built-in default `text`. An unknown value in either place is an error that names where the value came from.
+
+`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
+
+`csl_search` with `output_mode: "content"` and `context_lines: 1`:
+
+```
+mad01/thismoon/services/csl/internal/cli/mcp.go
+24-	cmd := &cobra.Command{
+25:		Use:   "mcp",
+26-		Short: "start the MCP stdio server",
+--
+55-func runMCP(_ *cobra.Command, _ []string) error {
+56:	server := mcpserver.New(buildinfo.Get().Version)
+57-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+
+mad01/thismoon/services/csl/claude_md_test.go
+77-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+78:	serverSession, err := mcpserver.New("test").Connect(ctx, serverTransport, nil)
+79-	if err != nil {
+
+mad01/thismoon/services/csl/docs/architecture.md
+61-1. Claude Code spawns `csl mcp` as a subprocess and sends an `initialize` JSON-RPC message over stdin.
+62:2. `internal/mcpserver.New()` registers fifteen `csl_*` tools against the `modelcontextprotocol/go-sdk` server.
+63-3. A `tools/call` for `csl_search` lands in `handleSearch`, which follows the same daemon-first-then-fallback pattern as the CLI (minus the stderr progress output).
+
+4 lines in 3 files
+```
+
+`json` is the structured object each tool section above documents, byte for byte what the tools returned before `response_format` existed. Ask for it from a client that parses results.
+
+`jsonl` puts the metadata object on the first line (every field except the main record array), then one compact JSON record per line.
+
+`csv` prints `# key: value` metadata lines, then an RFC 4180 table of the main record array. A nested value goes into its cell as a JSON string.
+
+`markdown-kv` prints `key: value` lines, with a `## field (N)` section per record array. It is also what `text` falls back to for tools without a renderer of their own.
+
+`xml` wraps the result in a `<result>` root; arrays become repeated `<item>` children.
+
+`toon` is Token-Oriented Object Notation (TOON), produced by the gotoon encoder. Flat records come out as a table.
+
+`text` is the default because Claude Code forwards only the structured content to the model when a result carries both structured content and text. The non-JSON formats therefore return a single text block and no structured output. Measured on 21 content hits across 13 files, `text` was 38% smaller than `json` at `context_lines: 0` and 20% smaller at `context_lines: 2`; TOON saved 29%. YAML was rejected because it came out larger than `json` once context lines were included. The parameter follows Anthropic's tool-writing guidance, which recommends a `response_format` switch so the agent picks the verbosity per call.
 
 ## Troubleshooting
 

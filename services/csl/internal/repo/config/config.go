@@ -40,6 +40,7 @@ type Config struct {
 	Daemon   DaemonConfig   `yaml:"daemon"`
 	Web      WebConfig      `yaml:"web"`
 	Refresh  RefreshConfig  `yaml:"refresh"`
+	MCP      MCPConfig      `yaml:"mcp"`
 
 	// Loaded reports whether a config file was read. False means csl is
 	// running on defaults because no file exists at Path.
@@ -69,6 +70,15 @@ type WebConfig struct {
 	// else 7424); set it to http://csl.this when the UI is fronted by d-man,
 	// which no local port can describe.
 	BaseURL string `yaml:"base_url"`
+}
+
+// MCPConfig controls the MCP server (`csl mcp`).
+type MCPConfig struct {
+	// ResponseFormat is the response_format every MCP tool uses when a call
+	// does not pass one: text, json, jsonl, toon, csv, markdown-kv, or xml.
+	// Empty means the built-in default (text). A tool call's response_format
+	// parameter always wins over this key.
+	ResponseFormat string `yaml:"response_format"`
 }
 
 // DaemonConfig controls the background search daemon.
@@ -337,6 +347,17 @@ func (c *Config) RefreshInterval() time.Duration {
 		return time.Duration(c.Refresh.IntervalMinutes) * time.Minute
 	}
 	return 15 * time.Minute
+}
+
+// MCPResponseFormat returns the configured default MCP response format, or
+// "" when unset so the caller applies the built-in default. The value is not
+// validated here; mcpformat.Resolve rejects unknown names and names the key.
+// Safe to call on a nil receiver.
+func (c *Config) MCPResponseFormat() string {
+	if c == nil {
+		return ""
+	}
+	return c.MCP.ResponseFormat
 }
 
 // DaemonIdleTimeout returns the configured daemon idle timeout, defaulting to

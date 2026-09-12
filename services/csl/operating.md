@@ -22,6 +22,14 @@ ping-then-fallback path. The only long-lived process is the web UI,
 `csl web` (default {{.BaseURL}}), typically supervised by t-man as the
 csl-web agent.
 
+MCP tools answer in `text` by default: csl_search prints ripgrep-style
+headings with `LINE:match` lines, csl_read prints `LINE:text`, and tools
+without a renderer of their own fall back to `key: value` lines. Pass
+`response_format` on a call (`json` for the structured object; `jsonl`, `csv`,
+`markdown-kv`, `xml`, or `toon`, Token-Oriented Object Notation) or set
+`mcp.response_format` in config.yaml; the parameter wins, and an unknown value
+in either place is an error that names its source.
+
 ## where state lives
 
 `config.yaml` sits in the config directory (`--config`, else CSL_CONFIG, else

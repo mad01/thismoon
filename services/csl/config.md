@@ -160,6 +160,19 @@ zoekt index, which has no disable switch. Embedding goes through a local
   doctor` in another shell) only see `CSL_PORT` and this key, so pin one of
   those when the UI permanently moves.
 
+### `mcp`
+
+- `mcp.response_format` (string, default `text`): the encoding every csl MCP
+  tool answers in when a tool call does not pass its own `response_format`
+  parameter. The parameter always wins over this key. Valid values: `text`,
+  `json`, `jsonl` (JSON Lines), `toon` (Token-Oriented Object Notation),
+  `csv`, `markdown-kv` (Markdown key-value pairs), and `xml`. `text` is
+  tool-specific: ripgrep-style lines for `csl_search`, key-value output for
+  most other tools. `json` is the structured object the tools returned before
+  this key existed, for clients that parse results. Any other value makes
+  every MCP tool call fail with an error naming `mcp.response_format`. That
+  is deliberate: a typo in the file should be loud, not silently ignored.
+
 ## Environment variables
 
 - `CSL_CONFIG`: path to the config file, overriding the default location.
@@ -223,4 +236,7 @@ refresh:
 
 web:
   base_url: http://127.0.0.1:7424
+
+mcp:
+  response_format: text
 ```
