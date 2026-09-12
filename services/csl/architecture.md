@@ -25,7 +25,11 @@ internal/
   hybrid/           Reciprocal Rank Fusion of lexical and semantic result lists
   queue/            reindex queue drained by csl sync / csl index --drain
   repo/config/      ~/.config/csl/config.yaml loading
-  repo/finder/      concurrent filesystem walk and remote-URL parsing
+  repo/finder/      concurrent filesystem walk, remote-URL parsing, and the
+                    name/component/owner/system query matcher
+  repo/catalogspec/ reads a repo's root catalog descriptor (catalog-info.yaml,
+                    service-info.yaml, or the file .csl-catalog.yaml points at)
+  picker/           the colored fuzzy picker behind csl repo (tcell)
   cslignore/        per-repo .cslignore glob filtering, shared by both indexes
   mcpserver/        MCP stdio wiring for the csl_* tools
   notify/           best-effort event emission to the events service
@@ -84,7 +88,13 @@ The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `repo`,
 `version`, and the deprecated `hooks`. `csl mcp` registers twelve tools:
 `csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`,
 `csl_search`, `csl_count`, `csl_query_validate`, `csl_semantic_search`,
-`csl_hybrid_search`, `csl_read`, `csl_ls`, and `csl_index_info`. Config is
+`csl_hybrid_search`, `csl_read`, `csl_ls`, and `csl_index_info`.
+`csl_repo_lookup` also takes `component`, `owner`, and `system` filters
+(case-insensitive regex, matched against the repo's root catalog descriptor)
+and returns those fields on each match alongside `name`, `path`, `remote`,
+and `host`; a repo with no descriptor never matches the three catalog
+filters. Config is
 `~/.config/csl/config.yaml` (dirs, `index.hosts`, `semantic.*`,
 `sync.concurrency`, `daemon.idle_timeout_minutes`) plus per-repo `.cslignore`
-files. A deeper walkthrough lives in `docs/architecture.md`.
+files and the optional catalog descriptor each repo may carry at its root. A
+deeper walkthrough lives in `docs/architecture.md`.

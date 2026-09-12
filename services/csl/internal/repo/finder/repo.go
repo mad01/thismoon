@@ -1,11 +1,18 @@
 package finder
 
+import "github.com/mad01/thismoon/services/csl/internal/repo/catalogspec"
+
 // Repo represents a discovered git repository.
 type Repo struct {
 	Name   string // org/repo extracted from remote URL
 	Path   string // absolute filesystem path
 	Remote string // full origin remote URL (e.g. "git@git.example.com:team/service.git")
 	Host   string // extracted hostname (e.g. "github.com", "git.example.com")
+	// Catalog is the Component the repo's root catalog descriptor declares
+	// (catalog-info.yaml or service-info.yaml), nil when it has none. It is
+	// read at discovery so every surface can match on owner and system
+	// without a second walk.
+	Catalog *catalogspec.Component
 }
 
 // DropKind names the rule that removed a repo from discovery. It is what a

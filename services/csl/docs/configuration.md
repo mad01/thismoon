@@ -153,6 +153,28 @@ semantic:
 - Repo `host` is extracted from the remote URL (`github.com`, `githost.example.com`) and surfaced in `csl repo --json` output and the `csl_repo_lookup` MCP tool. It is the literal text of the URL, so an SSH alias (`git@gh-work:org/repo.git`) yields `gh-work`, and that is the value `index.hosts` compares against.
 - Repos dropped by `index.hosts` or `hooks.post_merge.exclude` are listed by `csl repo --list --skipped` with the reason for each (`--json` adds `remote` and `host`); `csl repo --list` shows only the survivors. When a filter drops every repo, the error names the filter and the counts, distinct from the "no git repos found under the dirs" that an empty `dirs` entry produces.
 
+### Catalog descriptor
+
+Discovery also reads a repo's identity from a catalog descriptor at its root, so `csl repo` and `csl_repo_lookup` can filter by `component`, `owner`, and `system` (`--component`/`--owner`/`--system` on the CLI). Precedence: `.csl-catalog.yaml` first, then `catalog-info.yaml` (Backstage's name), then `service-info.yaml` (the catalog service's name). The first Component entity in the file wins; `apiVersion` must be under `backstage.io` or `catalog.mad01` (any version, and a missing `apiVersion` is accepted). A repo with none of these files, or a descriptor with no `Component`, simply has no `component`/`owner`/`system` to match on. A descriptor that exists but fails to parse or follow is dropped silently from discovery, so it never breaks the walk; `csl doctor` (`catalog-descriptors`) is where that surfaces.
+
+`.csl-catalog.yaml` is for a repo whose descriptor is not at the root, a monorepo or non-standard layout: one key, a repo-relative path that must stay inside the repo.
+
+```yaml
+descriptor: services/csl/service-info.yaml
+```
+
+A minimal descriptor at that path:
+
+```yaml
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: csl
+spec:
+  owner: platform
+  system: thismoon
+```
+
 ## State paths
 
 State lives in the state directory: `$XDG_STATE_HOME/csl` when that variable holds an absolute path, otherwise `~/.local/state/csl`. The config file is not part of it.

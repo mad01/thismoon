@@ -415,11 +415,16 @@ func (s *Server) handleRefreshKick(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
 }
 
-// repoJSON is one repo in the /api/repos list.
+// repoJSON is one repo in the /api/repos list. Component, owner, and system
+// come from the repo's root catalog descriptor and are omitted when it has
+// none.
 type repoJSON struct {
-	Name   string `json:"name"`
-	Host   string `json:"host"`
-	Remote string `json:"remote"`
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	Remote    string `json:"remote"`
+	Component string `json:"component,omitempty"`
+	Owner     string `json:"owner,omitempty"`
+	System    string `json:"system,omitempty"`
 }
 
 func (s *Server) handleRepos(w http.ResponseWriter, _ *http.Request) {
@@ -431,6 +436,9 @@ func (s *Server) handleRepos(w http.ResponseWriter, _ *http.Request) {
 	out := make([]repoJSON, len(repos))
 	for i, rp := range repos {
 		out[i] = repoJSON{Name: rp.Name, Host: rp.Host, Remote: rp.Remote}
+		if c := rp.Catalog; c != nil {
+			out[i].Component, out[i].Owner, out[i].System = c.Name, c.Owner, c.System
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

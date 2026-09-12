@@ -22,6 +22,7 @@ func TestCheckNamesAndOrder(t *testing.T) {
 	want := []string{
 		"config-loads",
 		"repos-discovered",
+		"catalog-descriptors",
 		"state-file-loads",
 		"index-freshness",
 		"index-shards-valid",
@@ -344,4 +345,78 @@ func TestReposDiscoveredNoDirsSkips(t *testing.T) {
 	if !strings.Contains(err.Error(), "config-loads") {
 		t.Errorf("skip note %q does not point at config-loads", err)
 	}
+}
+
+// TestCatalogDescriptors pins the check that makes a silently dropped
+// descriptor visible: readable descriptors pass plainly, none at all passes
+// with a note naming the files csl looks for, and a broken one fails naming
+// the repo and the file.
+func TestCatalogDescriptors(t *testing.T) {
+	component := "apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: x\nspec:\n  owner: y\n"
+	tests := []struct {
+		name     string
+		files    map[string]string // repo dir → descriptor content ("" for none)
+		wantSkip bool
+		wantErr  bool
+		want     []string
+	}{
+		{
+			name:  "readable descriptors pass",
+			files: map[string]string{"a": component, "b": ""},
+		},
+		{
+			name:     "no descriptors pass with a note",
+			files:    map[string]string{"a": "", "b": ""},
+			wantSkip: true,
+			want:     []string{"none of 2 repos", "catalog-info.yaml", ".csl-catalog.yaml"},
+		},
+		{
+			name:    "broken descriptor fails naming it",
+			files:   map[string]string{"a": component, "b": "kind: Component\nmetadata: [oops\n"},
+			wantErr: true,
+			want:    []string{"1 of 2 repos", "org/b", "catalog-info.yaml"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for dir, content := range tc.files {
+				writeRepo(t, filepath.Join(root, dir), "git@github.com:org/"+dir+".git")
+				if content != "" {
+					writeFile(t, filepath.Join(root, dir, "catalog-info.yaml"), content)
+				}
+			}
+			configureCSL(t, "dirs:\n  - "+root+"\n")
+
+			err := catalogDescriptors(newShared()).Run(context.Background())
+			switch {
+			case tc.wantErr:
+				if err == nil || isSkip(err) {
+					t.Fatalf("Run() = %v, want a failure", err)
+				}
+			case tc.wantSkip:
+				if err == nil || !isSkip(err) {
+					t.Fatalf("Run() = %v, want a skip with a note", err)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("Run() = %v, want nil", err)
+				}
+				return
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("detail %q does not mention %q", err, want)
+				}
+			}
+		})
+	}
+
+	t.Run("no repos defers to repos-discovered", func(t *testing.T) {
+		configureCSL(t, "dirs:\n  - "+t.TempDir()+"\n")
+		err := catalogDescriptors(newShared()).Run(context.Background())
+		if err == nil || !isSkip(err) {
+			t.Fatalf("Run() = %v, want a skip", err)
+		}
+	})
 }

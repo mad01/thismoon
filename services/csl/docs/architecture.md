@@ -36,6 +36,8 @@ The CLI and the MCP server are both thin shells over the same internal packages.
 | `internal/cli` | One file per cobra subcommand. Mostly argument parsing and dispatch into the other packages |
 | `internal/repo/config` | Resolves the config path (`--config`, `CSL_CONFIG`, XDG config dir) and parses `config.yaml` |
 | `internal/repo/finder` | Concurrent filesystem walk that discovers git repos and parses `[remote "origin"]` URLs |
+| `internal/repo/catalogspec` | Reads the catalog descriptor a repo may carry at its root (`catalog-info.yaml`, `service-info.yaml`, or a `.csl-catalog.yaml` pointer) |
+| `internal/picker` | csl's own fuzzy-finder picker (`tcell`), drawing colored segments per line for `csl repo` |
 | `internal/selfcheck` | The doctor check list, served by both `csl doctor` and the `csl_doctor` MCP tool |
 | `internal/search` | Indexing (`IndexRepo`, `IndexRepos`), searching (`Search`, `SearchWith`), counting, query validation, shard integrity |
 | `internal/semantic` | Vector search: tree-sitter chunking, embedding via Ollama (`OllamaEmbedder`), per-repo vector stores, cosine ranking |
@@ -242,7 +244,9 @@ make test
 
 Which expands to `go test -timeout 30s ./...`. The test suite covers:
 
-- `internal/repo/finder` — walker, remote/host parsing, edge cases (no remote, HTTPS, SSH).
+- `internal/repo/finder` — walker, remote/host parsing, edge cases (no remote, HTTPS, SSH), catalog-descriptor query matching (`Query.SubstringMatcher`/`RegexMatcher`).
+- `internal/repo/catalogspec` — parsing Backstage- and catalog-service-shaped descriptors, apiVersion group and kind matching, the `.csl-catalog.yaml` pointer, malformed-file handling.
+- `internal/picker` — fuzzy matching and key handling for the picker.
 - `internal/search` — indexing, search with filters, count grouping, query validation, re-indexing after edits, shard build and validation. Includes benchmarks (`BenchmarkIndexRepo`, `BenchmarkSearch`).
 - `internal/daemon` — lifecycle (PID read/write, `IsRunning` against dead and live PIDs, `RemoveStale`), gRPC server end-to-end (`TestSearch`, `TestCount`, `TestValidate`, `TestPing`, `TestShutdown`, `TestIdleTimeout`).
 - `internal/cli/repo_test.go` — cobra command with fake `HOME`, synthetic git repos, JSON and TOON output.

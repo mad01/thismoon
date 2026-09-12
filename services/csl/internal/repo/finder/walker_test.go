@@ -502,9 +502,86 @@ func TestFilteredWalkReportRemoteWithoutHost(t *testing.T) {
 	}
 	d := dropped[0]
 	if d.Kind != DropHost {
-		t.Errorf("kind = %q, want %q (a remote without a host is not a missing remote)", d.Kind, DropHost)
+		t.Errorf(
+			"kind = %q, want %q (a remote without a host is not a missing remote)",
+			d.Kind,
+			DropHost,
+		)
 	}
-	if !strings.Contains(d.Reason(), "/srv/mirrors/mirror.git") || !strings.Contains(d.Reason(), "no host") {
+	if !strings.Contains(d.Reason(), "/srv/mirrors/mirror.git") ||
+		!strings.Contains(d.Reason(), "no host") {
 		t.Errorf("reason = %q, want it to name the remote and say it has no host", d.Reason())
+	}
+}
+
+// TestWalkReadsCatalogDescriptor pins that discovery carries a repo's catalog
+// identity: a root descriptor fills Catalog, a pointer file redirects to the
+// descriptor it names, a repo without either has a nil Catalog, and a broken
+// descriptor costs that repo its identity but not its place in the list.
+func TestWalkReadsCatalogDescriptor(t *testing.T) {
+	tmp := t.TempDir()
+	component := func(name, owner, system string) string {
+		return "apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: " + name +
+			"\nspec:\n  owner: " + owner + "\n  system: " + system + "\n"
+	}
+	mk := func(name string, files map[string]string) {
+		dir := filepath.Join(tmp, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gitInit(t, dir)
+		gitSetRemote(t, dir, "git@github.com:org/"+name+".git")
+		for rel, content := range files {
+			path := filepath.Join(dir, rel)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	mk("plain", nil)
+	mk("rooted", map[string]string{"service-info.yaml": component("svc", "team-a", "shop")})
+	mk("pointed", map[string]string{
+		".csl-catalog.yaml":              "descriptor: services/api/catalog-info.yaml\n",
+		"services/api/catalog-info.yaml": component("api", "team-b", "shop"),
+	})
+	mk("broken", map[string]string{"catalog-info.yaml": "kind: Component\nmetadata: [oops\n"})
+
+	repos, err := Walk([]string{tmp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]Repo, len(repos))
+	for _, r := range repos {
+		byName[r.Name] = r
+	}
+	if len(byName) != 4 {
+		t.Fatalf("discovered %d repos, want 4: %v", len(byName), byName)
+	}
+	for _, name := range []string{"org/plain", "org/broken"} {
+		if c := byName[name].Catalog; c != nil {
+			t.Errorf("%s.Catalog = %+v, want nil", name, c)
+		}
+	}
+	rooted := byName["org/rooted"].Catalog
+	if rooted == nil || rooted.Name != "svc" || rooted.Owner != "team-a" ||
+		rooted.System != "shop" {
+		t.Errorf("org/rooted.Catalog = %+v, want svc/team-a/shop", rooted)
+	}
+	pointed := byName["org/pointed"].Catalog
+	wantFile := filepath.Join(tmp, "pointed", "services", "api", "catalog-info.yaml")
+	if pointed == nil || pointed.Name != "api" || pointed.File != wantFile {
+		t.Errorf("org/pointed.Catalog = %+v, want api read from %s", pointed, wantFile)
+	}
+
+	// Inspect resolves the same identity for a single known path.
+	one, err := Inspect(filepath.Join(tmp, "rooted"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.Catalog == nil || one.Catalog.Owner != "team-a" {
+		t.Errorf("Inspect().Catalog = %+v, want owner team-a", one.Catalog)
 	}
 }
