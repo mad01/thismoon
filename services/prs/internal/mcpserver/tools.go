@@ -29,6 +29,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"The response also carries the distinct repos and authors in the cache (the valid filter values) " +
 			"and the cache status including per-repo fetch errors. " +
 			"The cache refreshes on the serve poll interval; call prs_refresh first when you need the state right now.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -38,6 +42,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"open PRs were found, and how many repos failed to fetch. " +
 			"Takes seconds to a minute depending on repo count. Use it before prs_list when staleness matters, " +
 			"not on every call.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(true),
+		},
 	}, h.handleRefresh)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -47,6 +56,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"effect (scan dirs, excludes, host allowlist, poll interval). " +
 			"The first stop when prs_list looks wrong: a missing repo is usually an exclude, a host allowlist, " +
 			"or a fetch error visible here.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleStatus)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -57,6 +70,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when another prs tool errors or returns an empty list: it answers whether the fault is " +
 			"the service, the config, or genuinely no open PRs.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 
