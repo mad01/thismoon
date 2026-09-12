@@ -69,7 +69,7 @@ func init() {
 		StringVarP(&hybridLangFlag, "lang", "l", "", "restrict to a single language (e.g. go, typescript, python)")
 	hybridCmd.Flags().IntVar(&hybridLimitFlag, "limit", 50, "maximum number of fused results")
 	hybridCmd.Flags().
-		IntVar(&hybridRRFKFlag, "rrf-k", hybrid.DefaultK, "RRF smoothing constant (lower favors top-ranked outliers, higithostr favors consensus)")
+		IntVar(&hybridRRFKFlag, "rrf-k", hybrid.DefaultK, "RRF smoothing constant (lower favors top-ranked outliers, higher favors consensus)")
 	hybridCmd.Flags().
 		IntVar(&hybridExpandFlag, "expand", 0, "extra context lines around each semantic chunk")
 	hybridCmd.Flags().BoolVar(&hybridJSONFlag, "json", false, "output as JSON")

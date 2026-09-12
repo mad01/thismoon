@@ -10,9 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/services/wire/internal/client"
 )
 
@@ -34,31 +33,14 @@ func newHandlers(t *testing.T, reply any, seen *http.Request) *handlers {
 func noChecks(context.Context) []doctor.Check { return nil }
 
 func TestRegisteredToolNames(t *testing.T) {
-	ctx := context.Background()
 	srv, err := New("test", Config{Port: 1, BaseURL: "http://wire.this", Checks: noChecks})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	// Drive the real MCP handshake over an in-memory pair, so this checks what
-	// a client actually sees rather than the registry's internals.
-	serverT, clientT := mcp.NewInMemoryTransports()
-	ss, err := srv.Connect(ctx, serverT, nil)
-	if err != nil {
-		t.Fatalf("server connect: %v", err)
-	}
-	defer func() { _ = ss.Close() }()
-
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, clientT, nil)
-	if err != nil {
-		t.Fatalf("client connect: %v", err)
-	}
-	defer func() { _ = cs.Close() }()
-
-	res, err := cs.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatalf("list tools: %v", err)
-	}
+	// ListTools drives the real MCP handshake over an in-memory pair, so this
+	// checks what a client actually sees rather than the registry's internals.
+	tools := mcptest.ListTools(t, srv)
 
 	// A missing or renamed tool silently breaks every agent that calls it, so
 	// pin the surface.
@@ -67,7 +49,7 @@ func TestRegisteredToolNames(t *testing.T) {
 		"wire_doctor",
 	}
 	got := map[string]bool{}
-	for _, tool := range res.Tools {
+	for _, tool := range tools {
 		got[tool.Name] = true
 	}
 	if len(got) != len(want) {
@@ -256,4 +238,19 @@ func TestDoctorReportsAFailingCheckAsAResult(t *testing.T) {
 	if !strings.Contains(report.Checks[1].Detail, "connection refused") {
 		t.Errorf("detail = %q, want the cause", report.Checks[1].Detail)
 	}
+}
+
+// TestToolAnnotationContract holds every registered tool to the repo-wide
+// annotation rules: a spec-legal name, a description, an explicit open-world
+// hint, and a destructive hint on anything that writes.
+func TestToolAnnotationContract(t *testing.T) {
+	s, err := New("test", Config{
+		Port:    7432,
+		BaseURL: "http://wire.this",
+		Checks:  noChecks,
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	mcptest.VerifyToolAnnotations(t, s)
 }

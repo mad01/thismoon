@@ -222,6 +222,10 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 `csl mcp` starts the MCP stdio server and registers fifteen `csl_*` tools
 (`internal/mcpserver.New()`). Handlers reuse the same daemon-first-then-fallback
 path as the CLI, so zoekt shards stay mmap'd across calls in a session.
+`csl_semantic_search` and `csl_hybrid_search` are registered only when
+`semantic.enabled` is true; `csl mcp` passes `cfg.SemanticEnabled()` to
+`New` as `mcpserver.Options`, so a machine with semantic off advertises the
+other thirteen and the web UI gates its modes the same way.
 
 Every tool accepts `response_format`: `text` (default) | `json` | `jsonl` |
 `toon` | `csv` | `markdown-kv` | `xml`. Precedence: the tool parameter, then

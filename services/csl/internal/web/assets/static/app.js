@@ -212,11 +212,11 @@ const SEMANTIC_SECTIONS = [
 // ── Hybrid example queries ──
 // Natural-language seeds for the hybrid mode landing view. These work best with
 // hybrid because they contain a likely literal token AND carry meaning — files
-// matched by both backends rank higithostst (consensus). Groups by theme.
+// matched by both backends rank highest (consensus). Groups by theme.
 const HYBRID_SECTIONS = [
   {
     title: 'Infrastructure & lifecycle',
-    intro: 'These queries have both a literal token and clear intent — ideal for hybrid. Files that exact-match AND mean-match rank higithostst.',
+    intro: 'These queries have both a literal token and clear intent — ideal for hybrid. Files that exact-match AND mean-match rank highest.',
     rows: [
       'daemon idle timeout shutdown',
       'register an http route handler',
@@ -562,7 +562,7 @@ async function initSearchPage() {
         '"><code class="qhl">' + Webkit.escapeHtml(q) + '</code></a></td></tr>').join('') +
       '</table></wk-table></div>').join('');
     return '<p class="ex-lead">Hybrid search fuses lexical (zoekt) and semantic (vector) results via ' +
-      'Reciprocal Rank Fusion. Files matched by both backends rank higithostst — they are the consensus hits. ' +
+      'Reciprocal Rank Fusion. Files matched by both backends rank highest — they are the consensus hits. ' +
       'Click any example to run it.</p>' +
       sections;
   }
@@ -769,7 +769,7 @@ async function initSearchPage() {
   }
 
   // hybridFacets groups fused hits by file extension (hybrid hits carry no
-  // language), higithostst count first. '' means files without an extension.
+  // language), highest count first. '' means files without an extension.
   function hybridFacets(hits) {
     const idx = new Map();
     for (const h of hits) {
@@ -846,7 +846,7 @@ async function initSearchPage() {
   }
 
   // semanticFacets aggregates the ranked hits into per-language chips (one per
-  // distinct hit language, counted by hits), higithostst count first. Language is
+  // distinct hit language, counted by hits), highest count first. Language is
   // the natural axis here — semantic chunks are language-aware.
   function semanticFacets(hits) {
     const idx = new Map();

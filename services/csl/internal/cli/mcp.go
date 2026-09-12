@@ -12,6 +12,7 @@ import (
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/mcpserver"
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
 
 var mcpCmd = &cobra.Command{
@@ -41,6 +42,10 @@ Tools exposed:
   csl_index_info        Index-wide health in one call
   csl_doctor            Run the csl self-checks and return them as JSON
 
+csl_semantic_search and csl_hybrid_search are only registered when
+semantic.enabled is true in config.yaml; with it off the server exposes the
+other thirteen tools.
+
 ` + agentdoc.RegistrationSnippet(csl.Facts()) + `
 
 Smoke test the stdio transport:
@@ -53,7 +58,17 @@ func init() {
 }
 
 func runMCP(_ *cobra.Command, _ []string) error {
-	server := mcpserver.New(buildinfo.Get().Version)
+	// An unreadable config is reported on stderr (the stdio transport's log
+	// channel) and leaves semantic search off: the server still serves
+	// lexical search and csl_doctor, which is the tool that diagnoses the
+	// config problem.
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "csl mcp: load config: %v (semantic tools hidden)\n", err)
+	}
+	server := mcpserver.New(buildinfo.Get().Version, mcpserver.Options{
+		SemanticEnabled: cfg.SemanticEnabled(),
+	})
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintf(os.Stderr, "csl mcp: %v\n", err)
 		return err

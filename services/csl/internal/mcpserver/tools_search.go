@@ -128,6 +128,10 @@ func registerSearchTools(s *mcp.Server) {
 			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps); read it before retrying or concluding the code doesn't exist. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session. " +
 			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleSearch, renderSearchText)
 
 	addFormattedTool(s, &mcp.Tool{
@@ -136,6 +140,10 @@ func registerSearchTools(s *mcp.Server) {
 			"Accepts the same zoekt query syntax as csl_search (including repo:/f:/lang: filters and AND/OR/NOT). " +
 			"Use for cross-repo tallies like 'how many TODOs across my Go projects' or 'which language has the most calls to fmt.Errorf'. " +
 			"Set group_by to 'repo' or 'language' for a breakdown; leave it empty for a single total.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleCount, renderCountText)
 
 	addFormattedTool(s, &mcp.Tool{
@@ -143,6 +151,10 @@ func registerSearchTools(s *mcp.Server) {
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
 			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms. " +
 			"Also useful for debugging regex escaping like \\.go$.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleQueryValidate, nil)
 }
 

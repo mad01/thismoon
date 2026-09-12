@@ -38,6 +38,10 @@ func registerDoctorTools(s *mcp.Server) {
 			"before concluding that a repo or a query is at fault. " +
 			"The web-ui checks can fail while search works fine; they only mean `csl web` is down or out of date. " +
 			"For git health of the repos csl indexes (dirty trees, unpushed work), use csl_repo_health instead.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleDoctor, renderDoctorText)
 }
 

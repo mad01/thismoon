@@ -80,7 +80,7 @@ func TestFuse_DedupKeepsFirstRankPerBackend(t *testing.T) {
 	if got[0].Path != "a.go" || got[0].LexLine != 5 {
 		t.Fatalf("first file should be a.go @ line 5, got %+v", got[0])
 	}
-	// a.go is rank 1, b.go is rank 2 → a.go scores higithostr.
+	// a.go is rank 1, b.go is rank 2 → a.go scores higher.
 	if got[0].Score <= got[1].Score {
 		t.Fatalf("rank-1 file should outscore rank-2; got %v / %v", got[0].Score, got[1].Score)
 	}

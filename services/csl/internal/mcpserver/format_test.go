@@ -224,7 +224,7 @@ func schemaProperties(t *testing.T, schema any) (map[string]json.RawMessage, []s
 // property, and no tool may advertise an output schema, since a text-only
 // result would then violate the MCP structured-content contract.
 func TestEveryToolAcceptsResponseFormat(t *testing.T) {
-	ctx, session := connect(t, New("test"))
+	ctx, session := connect(t, New("test", Options{SemanticEnabled: true}))
 	var seen int
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {

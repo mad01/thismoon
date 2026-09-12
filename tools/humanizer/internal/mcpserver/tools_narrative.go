@@ -18,6 +18,10 @@ func registerNarrativeTools(s *mcp.Server) {
 			"fiction. These features need a reader's judgment, not a regex. For fiction or story-shaped long-form " +
 			"prose, feed the returned prompt plus the passage to an LLM judge (e.g. the humanizer skill's headless " +
 			"claude -p pass on Sonnet or better). Complements humanizer_detect, which only catches surface style.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleNarrativeRubric)
 }
 

@@ -84,7 +84,7 @@ type MCPConfig struct {
 // DaemonConfig controls the background search daemon.
 type DaemonConfig struct {
 	// IdleTimeoutMinutes is how long the daemon stays alive with no queries
-	// before exiting. Higithostr values keep the zoekt shards and semantic stores
+	// before exiting. Higher values keep the zoekt shards and semantic stores
 	// warm at the cost of resident memory. Zero or negative means the default
 	// (10 minutes).
 	IdleTimeoutMinutes int `yaml:"idle_timeout_minutes"`

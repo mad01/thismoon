@@ -43,6 +43,10 @@ func registerReadTools(s *mcp.Server) {
 			"The repo param is a case-insensitive regex (like every csl repo param) and must resolve to exactly one repo; an ambiguous name returns an error listing the candidates. " +
 			"Supply start_line / end_line (1-based inclusive) to slice; omit both to read the whole file (default caps at 500 lines). " +
 			"The output always includes total_lines (the file's full line count). When truncated is true, page through the rest with start_line/end_line.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, handleRead, renderReadText)
 }
 

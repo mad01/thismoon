@@ -78,7 +78,9 @@ it with `csl index` (stale repos only) or `csl sync` (pull + reindex).
 Semantic or hybrid unavailable: `available=false` (hybrid degrades to
 lexical-only) until `csl index --semantic-all` has run once and Ollama is up
 with the configured embedding model pulled. `csl config` shows the model in
-effect.
+effect. The csl_semantic_search and csl_hybrid_search tools are registered
+only when `semantic.enabled` is true, so a client that lists neither is
+looking at a machine with semantic search turned off.
 
 Web UI unreachable: t-man typically supervises it. Run `t-man list` to see
 whether the csl-web agent exists, then `t-man restart csl-web`. For a quick

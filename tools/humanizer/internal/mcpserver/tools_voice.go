@@ -30,12 +30,20 @@ func registerVoiceTools(s *mcp.Server) {
 		Name: "humanizer_voice_profile",
 		Description: "Compute a quantitative voice profile: sentence-length distribution (mean/stddev/p50/p90), punctuation density (em-dash, semicolon, colon, paren, comma per 100 words), contraction rate, hyphenated-pair density, bold density, type-token ratio, Flesch reading ease, and top bigrams/trigrams. " +
 			"Use on a user's writing sample to capture their voice, or on an AI draft to diagnose tells like low contraction rate or uniform sentence length.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleVoiceProfile)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "humanizer_voice_diff",
 		Description: "Profile a draft and a sample, then return a metric-by-metric delta sorted by magnitude. " +
 			"Use when the user provides their own writing as a voice reference: the diff shows which metrics to match during rewrite (e.g. \"sample is shorter, sample uses contractions 3x more, draft has too many em-dashes\").",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, handleVoiceDiff)
 }
 
