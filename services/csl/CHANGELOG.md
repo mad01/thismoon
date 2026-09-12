@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/mad01/thismoon/compare/csl/v0.19.0...csl/v0.20.0) (2026-09-12)
+
+
+### Features
+
+* **csl:** add response_format to every MCP tool ([#90](https://github.com/mad01/thismoon/issues/90)) ([663f9c1](https://github.com/mad01/thismoon/commit/663f9c1869a00c0ce3db61aa04f1af542f73ce4a))
+
 ## [0.19.0](https://github.com/mad01/thismoon/compare/csl/v0.18.2...csl/v0.19.0) (2026-09-11)
 
 
