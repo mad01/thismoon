@@ -18,6 +18,10 @@ func registerTools(s *mcp.Server) {
 			"scheme (https://...); non-http schemes go to their default handler. If any URL " +
 			"lacks a scheme the whole batch is rejected before anything opens. Returns the " +
 			"URLs it opened.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
+		},
 	}, handleURL)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -25,12 +29,22 @@ func registerTools(s *mcp.Server) {
 		Description: "Open a file or directory with its default macOS application (open <path>). " +
 			"Use when the user says open this file, open that folder, or open it in the default " +
 			"app. The path must be absolute or ~-prefixed and must exist. Returns the path it opened.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, handleFile)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "open_app",
 		Description: "Launch or foreground a macOS application by name (open -a), e.g. Safari, " +
 			"Xcode, Finder. Use when the user says launch, start, or switch to an app.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, handleApp)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -38,6 +52,11 @@ func registerTools(s *mcp.Server) {
 		Description: "Open a file with a specific macOS application instead of its default " +
 			"(open -a <app> <path>). Use when the user says open this in some app, e.g. open the " +
 			"log in Visual Studio Code. The path must be absolute or ~-prefixed and must exist.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, handleWith)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -45,6 +64,11 @@ func registerTools(s *mcp.Server) {
 		Description: "Reveal a file or directory in a Finder window, selected (open -R). " +
 			"Use when the user says show in Finder, reveal this file, or where is this on disk. " +
 			"The path must be absolute or ~-prefixed and must exist.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, handleReveal)
 }
 
