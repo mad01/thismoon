@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/humanizer/v0.11.0...humanizer/v0.12.0) (2026-09-12)
+
+
+### Features
+
+* annotate MCP tools, gate csl semantic tools on config, bump go-sdk to v1.8.0-pre.2 ([82ec8c4](https://github.com/mad01/thismoon/commit/82ec8c4898885b97945f2dc08edcf6584040814c))
+* **humanizer:** annotate MCP tools with read-only and open-world hints ([a773449](https://github.com/mad01/thismoon/commit/a773449ad2abef4e9fac4c7f126526ec651e5230))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/humanizer/v0.10.0...humanizer/v0.11.0) (2026-09-02)
 
 

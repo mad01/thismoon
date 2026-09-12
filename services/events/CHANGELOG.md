@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/events/v0.8.0...events/v0.9.0) (2026-09-12)
+
+
+### Features
+
+* annotate MCP tools, gate csl semantic tools on config, bump go-sdk to v1.8.0-pre.2 ([82ec8c4](https://github.com/mad01/thismoon/commit/82ec8c4898885b97945f2dc08edcf6584040814c))
+* **events:** annotate MCP tools with read-only and open-world hints ([28dfba6](https://github.com/mad01/thismoon/commit/28dfba6604212e8ad9801bd5f9c3688b86bcd2bd))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/events/v0.7.0...events/v0.8.0) (2026-08-29)
 
 

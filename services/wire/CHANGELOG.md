@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/mad01/thismoon/compare/wire/v0.8.0...wire/v0.9.0) (2026-09-12)
+
+
+### Features
+
+* annotate MCP tools, gate csl semantic tools on config, bump go-sdk to v1.8.0-pre.2 ([82ec8c4](https://github.com/mad01/thismoon/commit/82ec8c4898885b97945f2dc08edcf6584040814c))
+* **wire:** annotate MCP tools with read-only and open-world hints ([9bc7a17](https://github.com/mad01/thismoon/commit/9bc7a179934d4534d7c487b2a86d7dc533d9030a))
+
 ## [0.8.0](https://github.com/mad01/thismoon/compare/wire/v0.7.0...wire/v0.8.0) (2026-08-29)
 
 
