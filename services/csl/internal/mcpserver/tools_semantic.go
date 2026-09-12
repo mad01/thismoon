@@ -26,6 +26,7 @@ type semanticSearchInput struct {
 	Lang   string `json:"lang,omitempty"   jsonschema:"restrict to a single language (e.g. go, typescript, python)"`
 	K      int    `json:"k,omitempty"      jsonschema:"maximum number of results to return (default 10)"`
 	Expand int    `json:"expand,omitempty" jsonschema:"extra lines of source context to include above and below each matched chunk (default 0)"`
+	formatParam
 }
 
 // semanticHit is one result returned by csl_semantic_search.
@@ -57,7 +58,7 @@ func registerSemanticTools(s *mcp.Server) {
 			"Code is chunked by tree-sitter declarations for parseable languages and by 120-line windows for everything else, so hits in parseable languages correspond to whole declarations while other files return coarser windows. " +
 			"Costs: embedding runs via a local Ollama server (jina-code-v2 by default, pulled with 'ollama pull'), so Ollama must be running; a cold query pays ~1-2s model load, then the model stays warm for 20 minutes. " +
 			"Requires a semantic index built with 'csl index --semantic-all'; if it isn't built, the tool returns available=false with a note instead of an error.",
-	}, handleSemanticSearch)
+	}, withFormat(handleSemanticSearch, renderSemanticText))
 }
 
 func handleSemanticSearch(

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mad01/thismoon/services/csl/internal/mcpformat"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
 )
@@ -66,6 +68,17 @@ web:
                              # csl_show_file opens; empty derives it from the
                              # port (CSL_PORT, else 7424). Set http://csl.this
                              # when fronted by d-man.
+
+mcp:
+  response_format: text      # encoding every csl MCP tool answers in when a
+                             # call passes no response_format parameter of its
+                             # own; the parameter always wins. One of text,
+                             # json, jsonl, toon, csv, markdown-kv, xml. An
+                             # unknown value fails every tool call naming this
+                             # key, so a typo is loud. text is tool-specific
+                             # (ripgrep-style for csl_search, key-value for
+                             # most others); json is the structured object for
+                             # clients that parse results.
 
 hooks:
   post_merge:                # DEPRECATED installer: suspenders owns git hooks
@@ -145,6 +158,9 @@ func effectiveConfig(cfg *config.Config) config.Config {
 	eff.Semantic.Enabled = cfg.SemanticEnabled()
 	eff.Semantic.Sync = cfg.SemanticSyncEnabled()
 	eff.Web.BaseURL = cfg.EffectiveWebBaseURL()
+	// The format default lives in mcpformat, beside the validation that
+	// rejects unknown names at tool-call time.
+	eff.MCP.ResponseFormat = cmp.Or(cfg.MCPResponseFormat(), mcpformat.Default)
 
 	// The embedding defaults live in the embedder, not in the config package;
 	// building one is the only way to read them without duplicating them here.

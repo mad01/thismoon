@@ -22,6 +22,7 @@ type showFileInput struct {
 	StartLine int    `json:"start_line,omitempty" jsonschema:"first line of the section to highlight, 1-based; omit to show the whole file"`
 	EndLine   int    `json:"end_line,omitempty"   jsonschema:"last line of the section to highlight, 1-based inclusive; defaults to start_line"`
 	NoOpen    bool   `json:"no_open,omitempty"    jsonschema:"return the URL without opening the browser"`
+	formatParam
 }
 
 // showFileOutput is the structured output of the csl_show_file tool.
@@ -47,7 +48,7 @@ func registerShowTools(s *mcp.Server) {
 			"The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button. " +
 			"The view reads the file live from disk via the running `csl web` server, so it must be up (it is a t-man service on this machine). " +
 			"Set no_open=true to just get the URL. This shows content to the human; to read file content yourself, use csl_read.",
-	}, handleShowFile)
+	}, withFormat(handleShowFile, nil))
 }
 
 func handleShowFile(

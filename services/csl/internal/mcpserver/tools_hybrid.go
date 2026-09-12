@@ -24,6 +24,7 @@ type hybridSearchInput struct {
 	Limit  int    `json:"limit,omitempty"  jsonschema:"maximum number of fused file results to return (default 50)"`
 	RRFK   int    `json:"rrf_k,omitempty"  jsonschema:"Reciprocal Rank Fusion smoothing constant (default 60); lower favors top-ranked outliers, higithostr favors cross-backend consensus"`
 	Expand int    `json:"expand,omitempty" jsonschema:"extra lines of source context around each semantic chunk snippet (default 0)"`
+	formatParam
 }
 
 // hybridHit is one fused, file-level result from csl_hybrid_search. It carries
@@ -62,7 +63,7 @@ func registerHybridTools(s *mcp.Server) {
 			"Filter by repo (substring) or lang (single language); tune fusion with rrf_k (default 60, limit default 50). " +
 			"Runs both backends per call, so the semantic cold-start cost (first-ever model download ~90 MB, model load on a cold daemon; see csl_semantic_search) applies here too. " +
 			"If the semantic index isn't built (csl index --semantic-all), results degrade to lexical-only with semantic_available=false.",
-	}, handleHybridSearch)
+	}, withFormat(handleHybridSearch, renderHybridText))
 }
 
 func handleHybridSearch(

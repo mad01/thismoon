@@ -10,8 +10,11 @@ import (
 )
 
 // doctorInput is the typed input for the csl_doctor tool: the checks take no
-// parameters, and the repair path stays on the CLI where a human confirms it.
-type doctorInput struct{}
+// parameters beyond the response format, and the repair path stays on the CLI
+// where a human confirms it.
+type doctorInput struct {
+	formatParam
+}
 
 // doctorCheck is one check's outcome in the csl_doctor result.
 type doctorCheck struct {
@@ -35,7 +38,7 @@ func registerDoctorTools(s *mcp.Server) {
 			"before concluding that a repo or a query is at fault. " +
 			"The web-ui checks can fail while search works fine; they only mean `csl web` is down or out of date. " +
 			"For git health of the repos csl indexes (dirty trees, unpushed work), use csl_repo_health instead.",
-	}, handleDoctor)
+	}, withFormat(handleDoctor, renderDoctorText))
 }
 
 func handleDoctor(

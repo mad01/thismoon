@@ -143,7 +143,7 @@ The MCP server exposes fifteen `csl_*` tools:
 - Read and info: `csl_read`, `csl_ls`, `csl_show_file`, `csl_index_info`
 - Diagnosis: `csl_doctor`, the `csl doctor` checks as JSON, for a client with no shell
 
-See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults).
+See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults). Every tool takes a `response_format` parameter, `text` by default and `json` for the structured object; the other formats and the precedence rule are in the same document under Response formats.
 
 To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint hands a multi-file `grep` or `find` inside an indexed repo back as the equivalent `csl_search` call, so the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
 
@@ -167,6 +167,7 @@ Tools:
 - Default to `csl_search`. Lexical search always works and needs nothing running.
 - `csl_semantic_search` and `csl_hybrid_search` need the semantic index built (`csl index --semantic-all`) and Ollama running. Until then semantic answers `available=false` and hybrid degrades to lexical-only. Reach for them on "where do we handle X" questions only when `csl_index_info` reports `semantic.built: true`; otherwise stay lexical.
 - Use `csl_read` for file contents you need yourself and `csl_show_file` to put a file section in front of the user (it needs `csl web` running).
+- Tools return `text` by default. Set `mcp.response_format` in `config.yaml` to change the default, and pass `response_format: "json"` on a call when you need the structured object.
 - If a tool errors or comes back unexpectedly empty, call `csl_doctor` before retrying.
 - If `csl_repo_lookup` finds no match for the repo you are working in, it sits outside csl's configured `dirs`: use `grep`, `find`, or `Glob` there instead. Plain `grep` is also fine for piping and filtering command output.
 

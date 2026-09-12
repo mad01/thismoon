@@ -36,6 +36,7 @@ Loaded by the CLI and the MCP server on every invocation that needs to discover 
 | `refresh.enabled` | bool | no (default `true`) | Whether `csl web` runs the periodic background refresh (pull + reindex changed repos). Manual refresh from the web UI works either way. |
 | `refresh.interval_minutes` | int | no (default `15`) | How often the background refresh runs. Every cycle contacts every repo's remote, so keep it conservative. |
 | `web.base_url` | string | no (derived from the port) | Where the csl web UI is reachable, used by `csl_show_file` to build the links it opens. Unset means `http://127.0.0.1:<port>`, where the port is `CSL_PORT` or 7424. Set to `http://csl.this` when the UI is fronted by d-man; an explicit value always wins. |
+| `mcp.response_format` | string | no (default `text`) | Encoding every csl MCP tool answers in when a call does not pass its own `response_format` parameter; the parameter always wins. One of `text`, `json`, `jsonl` (JSON Lines), `toon` (Token-Oriented Object Notation), `csv`, `markdown-kv` (Markdown key-value pairs), `xml`. `text` is tool-specific (ripgrep-style for `csl_search`, key-value for most other tools); `json` is the structured object for clients that parse results. An unknown value fails every MCP tool call with an error naming this key. |
 
 `layout`, `summary`, and `tmpdir` were carried over from csl's origin as a session launcher and have been removed — nothing read them. A file that still sets them loads unchanged, since unknown keys are ignored.
 
@@ -90,6 +91,11 @@ refresh:
 # Where the web UI is reachable, for links `csl_show_file` opens.
 web:
   base_url: http://127.0.0.1:7424
+
+# Encoding the MCP tools answer in when a call passes no response_format of
+# its own. One of text, json, jsonl, toon, csv, markdown-kv, xml.
+mcp:
+  response_format: text
 ```
 
 ### What you can and can't toggle
@@ -114,6 +120,11 @@ web:
   embedding model behind the chunks is config (`semantic.embed_model`).
 - **There is no semantic-only repo scoping yet.** The exclude list removes
   a repo from both indexes; you can't currently keep a repo lexical-only.
+- **MCP output shape is a default, not a lock.** `mcp.response_format` picks
+  the encoding every `csl_*` tool answers in, and a call's own
+  `response_format` parameter overrides it per call. A value outside the
+  list above fails every MCP tool call with an error naming the key, so a
+  typo can't silently fall back to `text`.
 
 ### Semantic search
 

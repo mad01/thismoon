@@ -17,6 +17,7 @@ type readInput struct {
 	File      string `json:"file"                 jsonschema:"file path relative to the repo root"`
 	StartLine int    `json:"start_line,omitempty" jsonschema:"first line to return, 1-based; 0 or omit for start of file"`
 	EndLine   int    `json:"end_line,omitempty"   jsonschema:"last line to return, 1-based inclusive; 0 or omit for end of file"`
+	formatParam
 }
 
 // readLine is one line in the csl_read result.
@@ -42,7 +43,7 @@ func registerReadTools(s *mcp.Server) {
 			"The repo param is a case-insensitive regex (like every csl repo param) and must resolve to exactly one repo; an ambiguous name returns an error listing the candidates. " +
 			"Supply start_line / end_line (1-based inclusive) to slice; omit both to read the whole file (default caps at 500 lines). " +
 			"The output always includes total_lines (the file's full line count). When truncated is true, page through the rest with start_line/end_line.",
-	}, handleRead)
+	}, withFormat(handleRead, renderReadText))
 }
 
 func handleRead(
