@@ -34,6 +34,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"`from` names you and puts you on the roster; sign every message you post the same way. Give yourself a real name: short and distinctive (planner, quill), never a generic placeholder like agent, because `to` addressing and the obligation ledger key on it. Everyone else arrives via wire_join. " +
 			"Set `conventions` to the conversation's ground rules. They ride on the channel itself, so a session joining mid-conversation sees them without reading from the start. " +
 			"A convention set that holds up: \"one question per message; answer with reply_to; address questions with to; reply_needed only when blocked\".",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleOpen)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -44,6 +49,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"One call returns the full briefing: `channel.conventions` (the ground rules; follow them), `members` (who is on the channel), `cursor` (pass it to wire_read as since to read the backlog, or read from 0 for the full transcript), `awaiting_reply_by` (open obligations by addressee; check your name), and `awaiting_reply_off_roster` (obligation addressees nobody on the roster matches; check it for near-misses of your name, since a misaddressed question won't appear under yours). " +
 			"Your join lands in the transcript, so sessions blocked waiting for you wake immediately. " +
 			"Set `note` to say what you are joining as or ready for; it becomes the join message's body. Joining a channel you are already on is a no-op that still returns the briefing.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleJoin)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -52,6 +62,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Other sessions see the leave in the transcript and stop addressing messages to you. " +
 			"Set `note` to say why you are going and where your work landed. " +
 			"Don't confuse this with wire_close: close ends the conversation for everyone, leave is just your exit.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleLeave)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -64,6 +79,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"`reply_to` names the seq you are answering; set it on every response so an interleaved transcript stays followable. One reply_to per obligation: answer each question with its own message, and never bundle two questions into one seq, because a single reply clears the whole seq from awaiting_reply whether or not it covered everything. " +
 			"`reply_needed: true` says you are blocked until someone answers; it keeps the seq in awaiting_reply (and under the addressee's name in awaiting_reply_by) until a reply names it. It doesn't speed anything up; its value is that the debt survives in the record. " +
 			"Returns the message's `seq`, which is the cursor the next reader resumes from and the id other messages reference in `reply_to`. Posting to a closed channel is an error.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handlePost)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -77,6 +97,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"`awaiting_reply_by` maps roster names to the seqs each one owes an answer. **Look up your own name and settle those before posting anything new**. `awaiting_reply` is every open obligation including unaddressed ones, which belong to whoever picks them up. " +
 			"Don't trust `awaiting_reply_by` alone: `awaiting_reply_off_roster` lists the addressees on that map who aren't on the roster, and a question misaddressed to you (a typo of your name, or sent after someone left) sits under a key you would never check. When it is non-empty, read the seqs under those names and judge which are yours; the server can't tell a typo from a handoff to an agent that hasn't joined yet. " +
 			"`members` is the current roster; `channel.conventions` carries the ground rules the opener declared, so follow them.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleRead)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -84,6 +108,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "List channels, most recently active first, with their message counts, participants, last line, and connection string. " +
 			"Use it to find a conversation whose handle you have lost, or to see what other sessions are talking about. " +
 			"Closed channels are left out unless `include_closed` is set.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -91,6 +119,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Close a channel when the conversation is finished. " +
 			"Closing is terminal: no further messages, and every session waiting on the channel wakes immediately instead of blocking for a reply that will never come. " +
 			"Give a `note` saying how it ended. The transcript stays readable afterwards.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleClose)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -100,6 +133,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when another wire tool errors: it separates a serve that is down or on a different port " +
 			"from a channel that genuinely has nothing new.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 
