@@ -58,11 +58,20 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
 			"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
 			"Keep the returned id; it is the handle for present_update/present_read/present_open.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, withHint(h.handleCreate))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "present_read",
 		Description: "Read a presentation's current title, rendered HTML content, graph JS, version, and URL by id. For editing, prefer present_source: it returns the structured source in the format present_update accepts.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, withHint(h.handleRead))
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -70,6 +79,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc) and the structured graph JSON (graph_format=json), plus references. " +
 			"Both come back in exactly the format present_update accepts, so you can modify them and pass them straight back. Use this to mutate a page from a new or restored session. " +
 			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, withHint(h.handleSource))
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -78,11 +91,20 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Provide a Doc JSON object as `content` and/or a Graph JSON object as `graph`. " +
 			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph. " +
 			"Bumps the page version so any open browser tab auto-reloads, so you don't need to call present_open again after an update.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, withHint(h.handleUpdate))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "present_list",
 		Description: "List all presentations (id, title, URL, version, last updated), newest first.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, withHint(h.handleList))
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -91,6 +113,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Call this AT MOST ONCE per presentation: after the tab is open, present_update triggers an automatic reload, " +
 			"so don't call present_open again for subsequent edits. " +
 			"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, withHint(h.handleOpen))
 
 	// Not wrapped in withHint: the hint says to run `present doctor`, which is
@@ -103,6 +130,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"The store check matters most: these tools write the page store directly, so pages can be created " +
 			"and updated with serve down; only the URLs stop resolving. " +
 			"Call this when a present tool errors or a page URL doesn't load.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleDoctor)
 }
 

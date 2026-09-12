@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -947,4 +949,19 @@ func TestWithHintWrapsErrorsOnce(t *testing.T) {
 	if _, _, err := ok(context.Background(), nil, struct{}{}); err != nil {
 		t.Fatalf("clean handler returned error: %v", err)
 	}
+}
+
+// TestToolAnnotationContract holds every registered tool to the repo-wide
+// annotation rules: a spec-legal name, a description, an explicit open-world
+// hint, and a destructive hint on anything that writes.
+func TestToolAnnotationContract(t *testing.T) {
+	s, err := New("test", Config{
+		Workdir: t.TempDir(),
+		Port:    7423,
+		Checks:  func(context.Context) []doctor.Check { return nil },
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	mcptest.VerifyToolAnnotations(t, s)
 }
