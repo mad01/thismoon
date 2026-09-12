@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/tools/worklog/internal/store"
 )
 
@@ -40,4 +41,12 @@ func TestBuildZeroHintFilterMiss(t *testing.T) {
 	if len(hint.Notes) != 1 || !strings.Contains(hint.Notes[0], "1 items stored") {
 		t.Errorf("notes = %v, want the filter-miss note with the store count", hint.Notes)
 	}
+}
+
+// TestToolAnnotationContract holds every registered tool to the repo-wide
+// annotation rules: a spec-legal name, a description, an explicit open-world
+// hint, and a destructive hint on anything that writes. New only registers
+// tools, so an empty config path never gets resolved here.
+func TestToolAnnotationContract(t *testing.T) {
+	mcptest.VerifyToolAnnotations(t, New("test", ""))
 }

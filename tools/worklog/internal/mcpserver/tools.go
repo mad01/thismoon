@@ -71,6 +71,11 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"conclusions reached and WHY, working tool/query examples with exact parameters, " +
 			"anti-patterns that waste time, links to tickets/docs/PRs, decisions made and their reasoning, " +
 			"and concrete next steps. A thin checkpoint forces the next session to re-discover everything.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(true),
+		},
 	}, h.handleCheckpoint)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -78,12 +83,20 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "List work items, newest first. Filter by status (active|paused|done) or repo. " +
 			"Use to answer 'what was I working on' or to find an item to resume. " +
 			"On zero results the response carries zero_result_hint (how many items the store holds). Read it to tell a filter miss from an empty or unclonable store.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleList)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "worklog_search",
 		Description: "Search work items by key and content (active items first). Use to find a past task by ticket, topic, or keyword. " +
 			"On zero results the response carries zero_result_hint (how many items the store holds). Read it to tell a query miss from an empty or unclonable store.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleSearch)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -92,11 +105,20 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Use when resuming to restore context before continuing. " +
 			"Only explicitly checkpointed tasks have items. Unless a prior call already confirmed the key exists, " +
 			"run worklog_search first instead of assuming a ticket was checkpointed.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
 	}, h.handleShow)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "worklog_status",
 		Description: "Set a work item's status to active, paused, or done.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(true),
+		},
 	}, h.handleStatus)
 }
 
