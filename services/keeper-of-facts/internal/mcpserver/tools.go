@@ -28,6 +28,13 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"`kind` must be EXACTLY one of: code-behavior | dead-end | preference | decision | machine-state | open-thread. Write \"code-behavior\", not \"behavior\". " +
 			"`confidence` must be EXACTLY one of: verified | derived | hint, not high/medium/low. Any other value in either field is rejected. " +
 			"Keep the returned id; it is the handle for kof_get / kof_retract / kof_check.",
+		// Every call stores one more assertion under a new id and leaves the
+		// existing ones untouched, so the write is additive and not idempotent.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleAssert)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -36,21 +43,36 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Filter by `subject` (prefix match on the namespaced key), `kind`, and/or `status` (fresh | stale | retracted); omit all to list everything. " +
 			"Returns each assertion's id, statement, kind, confidence, and status. Follow up with kof_get for the full record including pins. " +
 			"On zero results the response carries zero_result_hint (how many stored subjects the prefix matched, whether other filters excluded everything); read it before assuming nothing is stored.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, h.handleQuery)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "kof_recall",
-		Description: "Ask the keeper what it knows relevant to a free-form question. " +
+		Description: "Search the assertion store by meaning for the assertions that bear on a free-form question. " +
 			"A one-shot model judge ranks the whole store against the question and returns the relevant assertions in rank order. " +
 			"Use this when you don't know the subject key: \"why does the store not lose writes\" finds the single-writer assertion even though no word matches. " +
 			"Stale assertions are included and marked (treat them as needing re-verification); retracted ones never appear. " +
 			"`question` is the ONLY parameter: there is no subject/kind/status filtering here; those params belong to kof_query. " +
 			"Takes a few seconds. If the judge is unavailable the error says so; fall back to kof_query.",
+		// The store is only read, but the ranking runs through the `claude -p`
+		// judge on serve's host, so this is the one kof tool that depends on a
+		// remote model and fails when the machine is offline.
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(true),
+			ReadOnlyHint:  true,
+		},
 	}, h.handleRecall)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "kof_get",
 		Description: "Get one assertion's full detail by id, including every evidence pin (repo, file, line range, content hash, resolved commit) and its provenance (which session derived it, when, and the token cost).",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, h.handleGet)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -58,6 +80,14 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Description: "Withdraw an assertion by id, a terminal action that records the claim as no longer holding. " +
 			"`note` is REQUIRED: give the reason or the counter-evidence, since the retracted record stays in the store as the explanation of why the claim was dropped. " +
 			"Use this instead of leaving a wrong assertion to go stale when you have direct evidence it is false.",
+		// Retracting supersedes an existing assertion and there is no
+		// un-retract, so the effect is destructive; retracting an
+		// already-retracted id is a no-op, so it is idempotent.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleRetract)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -66,6 +96,15 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Pass `id` to check one assertion, or omit `id` to re-check every non-retracted assertion. " +
 			"Returns counts of how many were checked, how many are fresh, how many are stale, and how many flipped between the two on this run. " +
 			"A stale result means the pinned code changed and the claim needs another look, not that it is necessarily wrong.",
+		// Checking rewrites the status, stale reason, and checked-at of the
+		// assertions it visits, so it is not read-only and not purely
+		// additive; re-running it against an unchanged working tree settles on
+		// the same statuses, so it is idempotent.
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   new(false),
+		},
 	}, h.handleCheck)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -75,6 +114,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"Read-only: it probes, it changes nothing. " +
 			"This is about the service, not the assertions: use `kof_check` to re-verify the claims in the store, " +
 			"and this when a kof tool errors or comes back empty and you need to know whether serve is even up.",
+		Annotations: &mcp.ToolAnnotations{
+			OpenWorldHint: new(false),
+			ReadOnlyHint:  true,
+		},
 	}, h.handleDoctor)
 }
 

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
 )
 
@@ -371,4 +373,19 @@ func TestQueryNonEmptyResultHasNoZeroHint(t *testing.T) {
 	if res.ZeroHint != nil {
 		t.Errorf("zero_result_hint must be absent on non-empty results, got %+v", res.ZeroHint)
 	}
+}
+
+// TestToolAnnotationsFollowTheContract builds the real MCP server and checks
+// the tool list against the shared annotation gate, so a tool added without
+// its read-only/destructive/open-world hints fails here rather than shipping
+// with the SDK defaults.
+func TestToolAnnotationsFollowTheContract(t *testing.T) {
+	s, err := New("test", Config{
+		Port:   1,
+		Checks: func(context.Context) []doctor.Check { return nil },
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	mcptest.VerifyToolAnnotations(t, s)
 }
