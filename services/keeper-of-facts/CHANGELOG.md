@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.13.0...keeper-of-facts/v0.14.0) (2026-09-12)
+
+
+### Features
+
+* annotate MCP tools, gate csl semantic tools on config, bump go-sdk to v1.8.0-pre.2 ([82ec8c4](https://github.com/mad01/thismoon/commit/82ec8c4898885b97945f2dc08edcf6584040814c))
+* **keeper-of-facts:** annotate MCP tools with read-only and open-world hints ([630208e](https://github.com/mad01/thismoon/commit/630208e4e9d8a68c949cc970eabf4d00ff1d6324))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.12.1...keeper-of-facts/v0.13.0) (2026-08-29)
 
 

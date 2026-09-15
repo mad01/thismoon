@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/mad01/thismoon/compare/prs/v0.2.0...prs/v0.3.0) (2026-09-12)
+
+
+### Features
+
+* annotate MCP tools, gate csl semantic tools on config, bump go-sdk to v1.8.0-pre.2 ([82ec8c4](https://github.com/mad01/thismoon/commit/82ec8c4898885b97945f2dc08edcf6584040814c))
+* **prs:** annotate MCP tools with read-only and open-world hints ([1e70618](https://github.com/mad01/thismoon/commit/1e7061886c67b666787bbfa8cdbbba2b90cab69b))
+
 ## [0.2.0](https://github.com/mad01/thismoon/compare/prs/v0.1.1...prs/v0.2.0) (2026-08-29)
 
 

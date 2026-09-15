@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.22.0](https://github.com/mad01/thismoon/compare/csl/v0.21.0...csl/v0.22.0) (2026-09-12)
+
+
+### Features
+
+* annotate MCP tools, gate csl semantic tools on config, bump go-sdk to v1.8.0-pre.2 ([82ec8c4](https://github.com/mad01/thismoon/commit/82ec8c4898885b97945f2dc08edcf6584040814c))
+* **csl:** gate semantic tools on config and annotate MCP tools ([df52c9f](https://github.com/mad01/thismoon/commit/df52c9f413887265d1aba3ee601b13031060dda4))
+
 ## [0.21.0](https://github.com/mad01/thismoon/compare/csl/v0.20.0...csl/v0.21.0) (2026-09-12)
 
 
