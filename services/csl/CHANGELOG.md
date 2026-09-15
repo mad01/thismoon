@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/mad01/thismoon/compare/csl/v0.22.0...csl/v0.23.0) (2026-09-15)
+
+
+### Features
+
+* **csl:** make the repo picker's selected row readable and its query editable ([#96](https://github.com/mad01/thismoon/issues/96)) ([3d5e937](https://github.com/mad01/thismoon/commit/3d5e937c84dbbfeeb839e83f538f243461743215))
+
 ## [0.22.0](https://github.com/mad01/thismoon/compare/csl/v0.21.0...csl/v0.22.0) (2026-09-12)
 
 
