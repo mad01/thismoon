@@ -12,6 +12,7 @@ import (
 	"html"
 	"html/template"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -72,9 +73,11 @@ type Block struct {
 	Label   string  `json:"label,omitempty"`
 
 	// t=chart
-	Kind   string        `json:"kind,omitempty"` // bar, area, sparkline
-	Unit   string        `json:"unit,omitempty"` // y-axis unit label, e.g. ms
-	Series []ChartSeries `json:"series,omitempty"`
+	Kind   string        `json:"kind,omitempty"`   // bar, line, area, sparkline, stacked-bar, horizontal-bar, doughnut, scatter, sankey
+	Unit   string        `json:"unit,omitempty"`   // value-axis unit label, e.g. ms
+	XUnit  string        `json:"xunit,omitempty"`  // x-axis unit label (scatter only)
+	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
+	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
 }
 
 // KVPair is a label-value pair within a kv block.
@@ -90,10 +93,47 @@ type ChartSeries struct {
 	Points []ChartPoint `json:"points"`
 }
 
-// ChartPoint is one x/y datum. X is a category label; Y the value.
+// ChartPoint is one x/y datum. X is a category label (or the numeric x for a
+// scatter chart, kept as its decimal string); Y the value.
 type ChartPoint struct {
 	X string  `json:"x,omitempty"`
 	Y float64 `json:"y"`
+}
+
+// UnmarshalJSON accepts x as either a JSON string or a JSON number, so a
+// scatter point can be written {"x": 12.5, "y": 3} without quoting. Numbers are
+// stored as their shortest decimal form; the client parses them back.
+func (p *ChartPoint) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		X json.RawMessage `json:"x"`
+		Y float64         `json:"y"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	p.Y = raw.Y
+	p.X = ""
+	if len(raw.X) == 0 || string(raw.X) == "null" {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(raw.X, &s); err == nil {
+		p.X = s
+		return nil
+	}
+	var n float64
+	if err := json.Unmarshal(raw.X, &n); err != nil {
+		return fmt.Errorf("chart point x: want string or number, got %s", raw.X)
+	}
+	p.X = strconv.FormatFloat(n, 'f', -1, 64)
+	return nil
+}
+
+// ChartFlow is one link in a sankey chart: Value units flow from From to To.
+type ChartFlow struct {
+	From  string  `json:"from"`
+	To    string  `json:"to"`
+	Value float64 `json:"value"`
 }
 
 // textNorms normalizes text for fixation reading and TTS pronunciation.
@@ -415,8 +455,10 @@ func chartSpec(b Block) template.JS {
 		Kind   string        `json:"kind"`
 		Title  string        `json:"title,omitempty"`
 		Unit   string        `json:"unit,omitempty"`
+		XUnit  string        `json:"xunit,omitempty"`
 		Series []ChartSeries `json:"series"`
-	}{Kind: b.Kind, Title: b.Title, Unit: b.Unit, Series: b.Series}
+		Flows  []ChartFlow   `json:"flows,omitempty"`
+	}{Kind: b.Kind, Title: b.Title, Unit: b.Unit, XUnit: b.XUnit, Series: b.Series, Flows: b.Flows}
 	out, err := json.Marshal(spec)
 	if err != nil {
 		return template.JS(`{"kind":"","series":[]}`)

@@ -2,10 +2,10 @@
 // present page view — client-side render. The backend serves a static shell
 // (chrome only) plus JSON at /api/p/{id}; this script fetches the page data and
 // builds the DOM. The Doc->HTML compile happens once at authoring time (Go), so
-// `content` is trusted authored HTML we mount as-is; the Cytoscape graph, metric
-// charts, references, and read-aloud are initialized client-side. webkit.js
-// loads before this file, so Webkit.el/escapeHtml/poll and the wk-* custom
-// elements are available.
+// `content` is trusted authored HTML we mount as-is; the Cytoscape graph (plus
+// its edge-flow animation), metric charts, references, and read-aloud are
+// initialized client-side. webkit.js loads before this file, so
+// Webkit.el/escapeHtml/poll and the wk-* custom elements are available.
 (function () {
   // Capture the Cytoscape instance the injected graph script creates, and make
   // the dagre layout registration explicit/idempotent (same shim the old
@@ -26,42 +26,173 @@
     window.cytoscape = wrapped;
   })();
 
+  // webkit.css only neutralises CSS animations under Reduce Motion; the JS
+  // loops here (graph flow, chart entry animation) must check it themselves.
+  var reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
   // ── Metric charts (Chart.js) ──
   // Each {t:"chart"} Doc block renders a .present-chart div carrying a JSON spec
   // in a <script type="application/json">. We read every block, build a Chart.js
   // instance into its canvas, and rebuild on theme change so colors track the
-  // palette — mirroring how the Cytoscape graph recolors.
+  // palette — mirroring how the Cytoscape graph recolors. Kinds group into
+  // three families: cartesian (bar, line, area, sparkline, stacked-bar,
+  // horizontal-bar, scatter), radial (doughnut), and sankey (needs the vendored
+  // chartjs-chart-sankey plugin).
+  function cssVar(name, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
   function getChartColors() {
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    return dark
-      ? { series: ['#E8956A', '#7AAAE8', '#6BC48A', '#8B6BB0'], grid: '#4A453D', text: '#B8B2A7' }
-      : { series: ['#C4704B', '#5B8EC4', '#4A9E6B', '#8B6BB0'], grid: '#D8D4CD', text: '#6B6459' };
+    var c = dark
+      ? { series: ['#E8956A', '#7AAAE8', '#6BC48A', '#8B6BB0'], grid: '#4A453D', text: '#B8B2A7', label: '#F5F3EF' }
+      : { series: ['#C4704B', '#5B8EC4', '#4A9E6B', '#8B6BB0'], grid: '#D8D4CD', text: '#6B6459', label: '#252320' };
+    // Surface color for the gaps between stacked segments and slices.
+    c.surface = cssVar('--card-bg', dark ? '#252320' : '#FFFFFF');
+    return c;
   }
   function chartSeriesColor(colors, name, i) {
     var map = { terracotta: 0, blue: 1, green: 2, purple: 3 };
     var idx = (name && Object.prototype.hasOwnProperty.call(map, name)) ? map[name] : (i % colors.series.length);
     return colors.series[idx];
   }
-  function buildChartOptions(kind, spec, colors) {
+  function axisTitle(colors, text) {
+    return { display: !!text, text: text || '', color: colors.text, font: { size: 11 } };
+  }
+  function entryAnimation(animate) {
+    return animate ? { duration: 700, easing: 'easeOutQuart' } : false;
+  }
+  function legendLabels(colors) {
+    return { color: colors.text, boxWidth: 12, boxHeight: 12, font: { size: 11 } };
+  }
+  function chartTypeFor(kind) {
+    if (kind === 'bar' || kind === 'stacked-bar' || kind === 'horizontal-bar') return 'bar';
+    if (kind === 'scatter') return 'scatter';
+    return 'line'; // line, area, sparkline
+  }
+  function cartesianOptions(kind, spec, colors, animate) {
     var spark = kind === 'sparkline';
     var multi = (spec.series || []).length > 1;
+    var horizontal = kind === 'horizontal-bar';
+    var stacked = kind === 'stacked-bar';
+    var scatter = kind === 'scatter';
+    var valueAxis = horizontal ? 'x' : 'y', categoryAxis = horizontal ? 'y' : 'x';
+    var scales = {};
+    scales[categoryAxis] = {
+      display: !spark, stacked: stacked,
+      grid: { color: colors.grid, display: !horizontal }, border: { display: false },
+      ticks: { color: colors.text, font: { size: 11 } }
+    };
+    scales[valueAxis] = {
+      display: !spark, stacked: stacked, beginAtZero: true,
+      grid: { color: colors.grid }, border: { display: false },
+      ticks: { color: colors.text, font: { size: 11 } },
+      title: axisTitle(colors, spec.unit)
+    };
+    if (scatter) { scales.x.type = 'linear'; scales.x.title = axisTitle(colors, spec.xunit); }
     return {
-      responsive: true, maintainAspectRatio: false, animation: false,
+      responsive: true, maintainAspectRatio: false, animation: entryAnimation(animate),
+      indexAxis: horizontal ? 'y' : 'x',
+      interaction: scatter ? { mode: 'nearest', intersect: true } : { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: multi && !spark, labels: { color: colors.text, boxWidth: 12, font: { size: 11 } } },
+        legend: { display: multi && !spark, labels: legendLabels(colors) },
         title: { display: false },
         tooltip: { enabled: !spark }
       },
-      scales: {
-        x: { display: !spark, grid: { color: colors.grid, drawBorder: false }, ticks: { color: colors.text, font: { size: 11 } } },
-        y: { display: !spark, beginAtZero: true, grid: { color: colors.grid, drawBorder: false },
-             ticks: { color: colors.text, font: { size: 11 } },
-             title: { display: !!spec.unit, text: spec.unit || '', color: colors.text, font: { size: 11 } } }
+      scales: scales
+    };
+  }
+  function cartesianDatasets(kind, spec, colors) {
+    return (spec.series || []).map(function (s, i) {
+      var col = chartSeriesColor(colors, s.color, i);
+      var pts = s.points || [];
+      var ds = { label: s.name || '', borderColor: col, backgroundColor: col };
+      if (kind === 'scatter') {
+        ds.data = pts.map(function (p) { return { x: parseFloat(p.x), y: p.y }; });
+        ds.borderColor = colors.surface; ds.borderWidth = 1; ds.pointRadius = 5; ds.pointHoverRadius = 7;
+        return ds;
+      }
+      ds.data = pts.map(function (p) { return p.y; });
+      if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.tension = 0.3; ds.pointRadius = 2; ds.borderWidth = 2; }
+      else if (kind === 'line') { ds.fill = false; ds.tension = 0.3; ds.pointRadius = 0; ds.pointHoverRadius = 5; ds.borderWidth = 2; }
+      else if (kind === 'sparkline') { ds.fill = false; ds.pointRadius = 0; ds.borderWidth = 1.5; ds.tension = 0.3; }
+      else if (kind === 'stacked-bar') { ds.borderColor = colors.surface; ds.borderWidth = 2; ds.borderRadius = 3; }
+      else { ds.borderWidth = 0; ds.borderRadius = 3; } // bar, horizontal-bar
+      return ds;
+    });
+  }
+  function cartesianConfig(kind, spec, colors, animate) {
+    var first = (spec.series || [])[0];
+    var labels = ((first && first.points) || []).map(function (p) { return p.x || ''; });
+    return {
+      type: chartTypeFor(kind),
+      data: { labels: labels, datasets: cartesianDatasets(kind, spec, colors) },
+      options: cartesianOptions(kind, spec, colors, animate)
+    };
+  }
+  // Doughnut: one series, one slice per point, slice colors in fixed palette order.
+  function doughnutConfig(spec, colors, animate) {
+    var first = (spec.series || [])[0] || {};
+    var pts = first.points || [];
+    return {
+      type: 'doughnut',
+      data: {
+        labels: pts.map(function (p) { return p.x || ''; }),
+        datasets: [{
+          data: pts.map(function (p) { return p.y; }),
+          backgroundColor: pts.map(function (_, i) { return colors.series[i % colors.series.length]; }),
+          borderColor: colors.surface, borderWidth: 2, hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '62%', animation: entryAnimation(animate),
+        plugins: {
+          legend: { position: 'right', labels: legendLabels(colors) },
+          tooltip: { callbacks: { label: function (t) { return ' ' + t.label + ': ' + t.parsed + (spec.unit ? ' ' + spec.unit : ''); } } }
+        }
       }
     };
   }
+  // Sankey: flows {from, to, value}; each node takes the next palette color in
+  // first-appearance order and every link fades from its source to its target.
+  function sankeyConfig(spec, colors, animate) {
+    var flows = (spec.flows || []).map(function (f) { return { from: f.from, to: f.to, flow: f.value }; });
+    var nodeColor = {}, n = 0;
+    flows.forEach(function (f) {
+      [f.from, f.to].forEach(function (k) {
+        if (!Object.prototype.hasOwnProperty.call(nodeColor, k)) { nodeColor[k] = colors.series[n % colors.series.length]; n++; }
+      });
+    });
+    return {
+      type: 'sankey',
+      data: { datasets: [{
+        label: spec.title || '', data: flows, colorMode: 'gradient', alpha: 0.55, nodeWidth: 10, borderWidth: 0,
+        color: colors.label, font: { size: 11 },
+        colorFrom: function (ctx) { return nodeColor[ctx.raw.from]; },
+        colorTo: function (ctx) { return nodeColor[ctx.raw.to]; }
+      }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: entryAnimation(animate),
+        plugins: { legend: { display: false }, tooltip: { enabled: true } }
+      }
+    };
+  }
+  function registerSankey() {
+    var sk = window['chartjs-chart-sankey'];
+    if (!sk || !sk.SankeyController) return;
+    try { Chart.register(sk.SankeyController, sk.Flow); } catch (e) {}
+  }
+  function sankeyAvailable() {
+    try { return !!Chart.registry.getController('sankey'); } catch (e) { return false; }
+  }
+  function chartNote(block, text) {
+    var n = block.querySelector('.present-chart-note');
+    if (!n) { n = document.createElement('p'); n.className = 'present-chart-note'; block.appendChild(n); }
+    n.textContent = text;
+  }
   function initPresentCharts() {
     if (typeof Chart === 'undefined') return;
+    registerSankey();
     document.querySelectorAll('.present-chart').forEach(function (block) {
       var specEl = block.querySelector('.chart-spec');
       var canvas = block.querySelector('canvas');
@@ -72,23 +203,70 @@
       var kind = spec.kind || 'bar';
       block.classList.toggle('is-sparkline', kind === 'sparkline');
       var colors = getChartColors();
-      var series = spec.series || [];
-      var labels = ((series[0] && series[0].points) || []).map(function (p) { return p.x || ''; });
-      var datasets = series.map(function (s, i) {
-        var col = chartSeriesColor(colors, s.color, i);
-        var ds = { label: s.name || '', data: (s.points || []).map(function (p) { return p.y; }),
-                   borderColor: col, backgroundColor: col };
-        if (kind === 'area') { ds.fill = true; ds.backgroundColor = col + '33'; ds.tension = 0.3; ds.pointRadius = 2; ds.borderWidth = 2; }
-        else if (kind === 'sparkline') { ds.fill = false; ds.pointRadius = 0; ds.borderWidth = 1.5; ds.tension = 0.3; }
-        else { ds.borderWidth = 0; }
-        return ds;
-      });
-      block._chart = new Chart(canvas, {
-        type: kind === 'bar' ? 'bar' : 'line',
-        data: { labels: labels, datasets: datasets },
-        options: buildChartOptions(kind, spec, colors)
-      });
+      // Entry animation plays once per block; a theme recolor rebuilds silently.
+      var animate = !reducedMotion && !block._built;
+      block._built = true;
+      var cfg;
+      if (kind === 'doughnut') {
+        cfg = doughnutConfig(spec, colors, animate);
+      } else if (kind === 'sankey') {
+        if (!sankeyAvailable()) {
+          chartNote(block, 'Sankey needs the chartjs-chart-sankey asset: run make cache in services/present.');
+          return;
+        }
+        cfg = sankeyConfig(spec, colors, animate);
+      } else {
+        cfg = cartesianConfig(kind, spec, colors, animate);
+      }
+      block._chart = new Chart(canvas, cfg);
     });
+  }
+
+  // ── Graph edge flow ── marches the dash pattern of every edge with data.flow
+  // from source to target; speed follows data.weight. The graph template styles
+  // those edges with line-dash-pattern [10, 6], so the period here is 16. The
+  // loop pauses while the graph is off screen or the tab is hidden, and under
+  // Reduce Motion it draws one static frame.
+  var flowStop = null;
+  function startGraphFlow() {
+    if (flowStop) { flowStop(); flowStop = null; }
+    var cy = window._cyInstance, el = document.getElementById('cy-graph');
+    if (!cy || !el) return;
+    var edges = cy.edges('[flow]');
+    if (!edges.length) return;
+    var period = 16;
+    var max = 0;
+    edges.forEach(function (e) { max = Math.max(max, e.data('weight') || 0); });
+    function speed(e) { // px per ms: 6 px/s for the lightest edge up to 20 px/s for the heaviest
+      var share = max ? (e.data('weight') || 0) / max : 0.5;
+      return 0.006 + 0.014 * share;
+    }
+    function frame(now) {
+      cy.startBatch();
+      edges.forEach(function (e) { e.style('line-dash-offset', period - ((now * speed(e)) % period)); });
+      cy.endBatch();
+    }
+    if (reducedMotion) { frame(0); return; }
+    var raf = 0, visible = true, stopped = false, io = null;
+    function tick(now) { raf = 0; if (stopped) return; frame(now); if (visible && !document.hidden) raf = requestAnimationFrame(tick); }
+    function kick() { if (!raf && !stopped && visible && !document.hidden) raf = requestAnimationFrame(tick); }
+    if ('IntersectionObserver' in window) {
+      // Entries batch when the graph crosses in and out between callbacks; the
+      // last one is the current state, the first can be stale.
+      io = new IntersectionObserver(function (entries) {
+        visible = entries[entries.length - 1].isIntersecting;
+        kick();
+      }, { threshold: 0.05 });
+      io.observe(el);
+    }
+    document.addEventListener('visibilitychange', kick);
+    kick();
+    flowStop = function () {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (io) io.disconnect();
+      document.removeEventListener('visibilitychange', kick);
+    };
   }
 
   // ── Cytoscape graph controls ── zoom/fit/fullscreen chrome around #cy-graph.
@@ -189,6 +367,11 @@
 
   var root = document.getElementById('root');
 
+  function initGraphAndFlow() {
+    if (typeof initGraph === 'function') initGraph();
+    startGraphFlow();
+  }
+
   function render(data) {
     document.title = data.title || 'present';
     var brief = document.createElement('div');
@@ -211,7 +394,7 @@
     }
 
     setupGraphControls();
-    if (typeof initGraph === 'function') initGraph();
+    initGraphAndFlow();
     initPresentCharts();
 
     brief.querySelectorAll('a[href]:not([href^="#"])').forEach(function (a) {
@@ -245,7 +428,7 @@
       var known = data.version;
       // Recolor the graph + charts when the webkit theme toggle fires.
       document.addEventListener('wk-themechange', function () {
-        if (typeof initGraph === 'function') initGraph();
+        initGraphAndFlow();
         initPresentCharts();
       });
       // Live update: poll the lightweight version endpoint (a bare int, which is
