@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/mad01/thismoon/compare/present/v1.2.0...present/v1.3.0) (2026-09-15)
+
+
+### Features
+
+* **present:** animate edge flow by weight and add six chart kinds ([#98](https://github.com/mad01/thismoon/issues/98)) ([d088e34](https://github.com/mad01/thismoon/commit/d088e34a7c66060274ec5e44f714026a42ca8b1e))
+
 ## [1.2.0](https://github.com/mad01/thismoon/compare/present/v1.1.1...present/v1.2.0) (2026-09-12)
 
 
