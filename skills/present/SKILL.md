@@ -39,12 +39,12 @@ Block =                                  // discriminated on `t`
   | {t: "callout", text, sev?}           | {t: "table", cols, rows}
   | {t: "kv", kv}                        | {t: "list", items, ordered?}
   | {t: "panel", title, sub?, accent?}   | {t: "progress", pct, label?}
-  | {t: "graph"}                         | {t: "chart", kind, series, title?, unit?}
+  | {t: "graph"}                         | {t: "chart", kind, series | flows, title?, unit?, xunit?}
   | {t: "code", text, lang?}             | {t: "html", text}
 
 Graph = {                                // the `graph` argument — one per page
   nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?}],
-  edges: [{from, to, type?: "consumes" | "publishes", label?}],
+  edges: [{from, to, type?: "consumes" | "publishes", label?, weight?, flow?}],
   layout: "dagre" | "cose"
 }
 
@@ -167,7 +167,7 @@ Chip styles: `stat` (gray), `a` (warm), `b` (green), `c` (blue), `outline`.
 | `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a CSS variable name (terracotta, blue, green, purple, amber) |
 | `progress` | `pct`, `label?` | Progress bar (0-100) |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
-| `chart` | `kind`, `series`, `title?`, `unit?` | Metric chart (Chart.js). `kind` is `bar`, `area`, or `sparkline`. Inline — use as many as you like per page. See **Chart format** below |
+| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline — use as many as you like per page. See **Chart format** below |
 | `code` | `text`, `lang?` | Fenced code block with language badge and copy button. `text` is verbatim code (NO inline markdown — backticks, `**`, `<` all render literally). `lang` sets the badge and syntax highlighting: `go`, `bash`, `json`, `python`, `typescript`, `yaml`, `sql` highlight; anything else (or omitted) renders plain with a `text` badge |
 | `html` | `text` | Raw HTML passthrough for one-off custom content |
 
@@ -259,6 +259,31 @@ Pass a structured object — the server generates the full Cytoscape JS includin
 
 Edges can have an optional `label` string.
 
+### Edge weight and flow
+
+Two optional edge fields turn a dependency graph into a traffic map:
+
+| Field | Type | Effect |
+|-------|------|--------|
+| `weight` | number | Traffic volume on the edge (requests per second, messages, bytes; any one unit per graph). Line width scales with it, and edges in the top third of the range are tinted in the accent color |
+| `flow` | boolean | Animates dashes moving from source to target. Speed follows `weight`; without weights every flow edge moves at a calm middle speed |
+
+```json
+{
+  "nodes": [
+    {"id": "ingress", "label": "ingress", "type": "center"},
+    {"id": "api", "label": "api gateway", "type": "module", "color": 1},
+    {"id": "db", "label": "postgres", "type": "registry"}
+  ],
+  "edges": [
+    {"from": "ingress", "to": "api", "weight": 1200, "flow": true, "label": "1.2k rps"},
+    {"from": "api", "to": "db", "weight": 600, "flow": true, "label": "600 rps"}
+  ]
+}
+```
+
+Put the number in `label` too when the reader should see it; the width alone only shows relative volume. The animation pauses while the graph is scrolled off screen or the tab is hidden, and it renders one static frame when the reader has Reduce Motion on.
+
 ### Layout
 
 - `dagre` (default) — layered DAG layout for trees and hierarchies; accounts for node size and minimizes edge crossings
@@ -300,14 +325,45 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `kind` | string | `bar` (grouped columns), `area` (filled line), or `sparkline` (chromeless trend, no axes). Defaults to `bar` |
+| `kind` | string | One of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Defaults to `bar` |
 | `title` | string? | Caption above the chart |
-| `unit` | string? | Y-axis unit label (e.g. `ms`, `req`). Ignored for `sparkline` |
-| `series` | array | One or more `{name?, color?, points}` series |
+| `unit` | string? | Value-axis unit label (e.g. `ms`, `req`). Ignored for `sparkline`; shown in tooltips for `doughnut` |
+| `xunit` | string? | X-axis unit label, `scatter` only (e.g. `payload KB`) |
+| `series` | array | One or more `{name?, color?, points}` series. Every kind except `sankey` |
+| `flows` | array | `{from, to, value}` links, `sankey` only. See **Sankey format** below |
 
-Each series: `name` (legend label, shown when 2+ series), `color` (one of `terracotta`, `blue`, `green`, `purple`; omit to auto-assign by index), and `points` — an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`).
+Each series: `name` (legend label, shown when 2+ series), `color` (one of `terracotta`, `blue`, `green`, `purple`; omit to auto-assign by index), and `points` — an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
 
-Charts use the same palette as the graph and recolor automatically on theme toggle. Use `bar` for counts/categories, `area` for a single trend over time, `sparkline` for a compact trend (e.g. next to KV stats).
+Charts use the same palette as the graph and recolor automatically on theme toggle. Hover shows a tooltip on every kind but `sparkline`; the entry animation plays once per render and is skipped when the reader has Reduce Motion on.
+
+### Which kind
+
+- `bar` — counts per category, one or more series side by side.
+- `stacked-bar` — composition per category (for example responses by status class per day). Series stack in order; keep it to four series.
+- `horizontal-bar` — a ranked list with long labels (stages, repos, endpoints). One series, sorted by value.
+- `line` — one or more trends over time, compared on one axis. Never two value axes: split into two charts instead.
+- `area` — a single trend where the filled volume matters.
+- `sparkline` — a compact trend beside a stat, drawn without axes.
+- `doughnut` — share of a whole. One series, at most four slices; fold the rest into "other".
+- `scatter` — correlation between two numbers, one point per observation.
+- `sankey` — volume flowing between stages or services.
+
+### Sankey format
+
+```json
+{
+  "t": "chart",
+  "kind": "sankey",
+  "title": "Requests per second",
+  "flows": [
+    {"from": "ingress", "to": "api gateway", "value": 1200},
+    {"from": "api gateway", "to": "orders", "value": 800},
+    {"from": "orders", "to": "postgres", "value": 600}
+  ]
+}
+```
+
+Node names are matched by exact string, so reuse the same spelling on every link. Each node takes the next palette color in order of first appearance and every link fades from its source color to its target color.
 
 ## References
 

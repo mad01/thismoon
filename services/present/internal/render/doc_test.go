@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -429,5 +430,49 @@ func TestRenderDocUnknownBlockType(t *testing.T) {
 	}
 	if !strings.Contains(out, "render error") {
 		t.Error("unknown block type should produce a comment error")
+	}
+}
+
+func TestChartPointNumericX(t *testing.T) {
+	var pts []ChartPoint
+	err := json.Unmarshal([]byte(`[{"x": 12.5, "y": 3}, {"x": "Mon", "y": 4}, {"y": 5}]`), &pts)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := []ChartPoint{{X: "12.5", Y: 3}, {X: "Mon", Y: 4}, {X: "", Y: 5}}
+	for i := range want {
+		if pts[i] != want[i] {
+			t.Errorf("point %d = %+v, want %+v", i, pts[i], want[i])
+		}
+	}
+	if err := json.Unmarshal([]byte(`[{"x": true, "y": 1}]`), &pts); err == nil {
+		t.Error("expected an error for a boolean x")
+	}
+}
+
+func TestRenderDocSankeyBlock(t *testing.T) {
+	doc := Doc{
+		Sections: []Section{{
+			Heading: "Traffic",
+			Blocks: []Block{{
+				T:     "chart",
+				Kind:  "sankey",
+				Title: "Requests",
+				Flows: []ChartFlow{{From: "ingress", To: "api", Value: 1200}},
+			}},
+		}},
+	}
+
+	out, err := RenderDoc(doc, "t")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	for _, want := range []string{
+		`"kind":"sankey"`,
+		`"flows":[{"from":"ingress","to":"api","value":1200}]`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output", want)
+		}
 	}
 }

@@ -144,15 +144,31 @@ theme). Do not add those controls manually.
   Cytoscape graph chrome (`.cy-*`), the metric-chart chrome (`.present-chart`),
   `.brief a` link styling, `.brief-list`, and the `.refs-*` references block.
 - **Metric charts are present-local, not webkit.** The `t=chart` Doc block
-  (`kind` = `bar`/`area`/`sparkline`) renders a `<div class="present-chart">`
+  (`kind` = `bar`/`line`/`area`/`sparkline`/`stacked-bar`/`horizontal-bar`/
+  `doughnut`/`scatter`/`sankey`) renders a `<div class="present-chart">`
   with a JSON spec in a `<script type="application/json">` island
   (`chartSpec` returns `template.JS` so html/template emits it verbatim instead
   of re-encoding it inside the script context). The `initPresentCharts`
   bootstrap in `app.js` reads each spec and builds a Chart.js instance,
   mirroring how the Cytoscape graph works: a vendored lib in `assets/js/`
   (`chart-4.4.6.umd.min.js`, fetched by `scripts/cache-assets.sh`) plus a
-  theme-aware color function. Charts are inline blocks, many per page,
-  unlike the single `graph` argument.
+  theme-aware color function. `sankey` also needs the vendored
+  `chartjs-chart-sankey-0.15.3.min.js` (same script, loaded by `shell.html`
+  right after Chart.js); when that asset is missing the block shows a note
+  instead of a chart. Scatter points accept `x` as a JSON number
+  (`ChartPoint.UnmarshalJSON` stores it as a decimal string; the client
+  parses it back). Charts are inline blocks, many per page, unlike the
+  single `graph` argument. The entry animation plays once per block and is
+  skipped under `prefers-reduced-motion`; a theme recolor rebuilds silently.
+- **Graph edge flow is split between the template and app.js.** A `GraphEdge`
+  with `weight` gets a `mapData` width over `[0, max weight]` and, in the top
+  third of the range, a `hot: 1` data flag that `graph.go` styles with the
+  accent tint; `flow: true` emits `flow: 1` and the dashed pattern `[10, 6]`.
+  `startGraphFlow` in `app.js` then marches `line-dash-offset` over that
+  period (16) on `cy.edges('[flow]')`, at 6 to 20 px/s by weight, pausing via
+  IntersectionObserver and `visibilitychange`, and drawing a single static
+  frame under `prefers-reduced-motion`. Change the pattern in one place and
+  the other must follow.
 
 ### Webkit
 

@@ -187,3 +187,52 @@ func TestRenderGraphRegistryNode(t *testing.T) {
 		t.Error("registry node style selector missing")
 	}
 }
+
+func TestRenderGraphFlowAndWeight(t *testing.T) {
+	g := GraphInput{
+		Nodes: []GraphNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}, {ID: "c", Label: "C"}},
+		Edges: []GraphEdge{
+			{From: "a", To: "b", Weight: 1200, Flow: true},
+			{From: "b", To: "c", Weight: 150},
+		},
+	}
+
+	out, err := RenderGraph(g)
+	if err != nil {
+		t.Fatalf("RenderGraph: %v", err)
+	}
+	checks := []string{
+		// the heaviest edge is hot and flows; the light one is neither
+		`{"data":{"flow":1,"hot":1,"source":"a","target":"b","weight":1200}}`,
+		`{"data":{"source":"b","target":"c","weight":150}}`,
+		`mapData(weight, 0, 1200, 1.5, 7)`,
+		`'line-dash-pattern': [10, 6]`,
+		`'target-arrow-color': c.hot`,
+	}
+	for _, want := range checks {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in graph output", want)
+		}
+	}
+}
+
+func TestRenderGraphNoWeightSkipsWidthMapping(t *testing.T) {
+	g := GraphInput{
+		Nodes: []GraphNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}},
+		Edges: []GraphEdge{{From: "a", To: "b", Flow: true}},
+	}
+
+	out, err := RenderGraph(g)
+	if err != nil {
+		t.Fatalf("RenderGraph: %v", err)
+	}
+	if strings.Contains(out, "mapData(") {
+		t.Error("width mapping emitted for a graph without weights")
+	}
+	if strings.Contains(out, `"hot"`) {
+		t.Error("hot tint emitted for a graph without weights")
+	}
+	if !strings.Contains(out, `{"data":{"flow":1,"source":"a","target":"b"}}`) {
+		t.Error("flow edge missing")
+	}
+}
