@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/mad01/thismoon/compare/csl/v0.23.0...csl/v0.24.0) (2026-09-16)
+
+
+### Features
+
+* **csl:** symbol index, chunk blocks, zero-result repair and outline tool ([#100](https://github.com/mad01/thismoon/issues/100)) ([43b637b](https://github.com/mad01/thismoon/commit/43b637bff2a7305739325e75fa7eca94d3202a83))
+
 ## [0.23.0](https://github.com/mad01/thismoon/compare/csl/v0.22.0...csl/v0.23.0) (2026-09-15)
 
 
