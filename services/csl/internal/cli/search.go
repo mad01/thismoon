@@ -344,12 +344,13 @@ func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {
 	switch searchOutputModeFlag {
 	case "content":
 		// One block per cluster of nearby hits, in the ripgrep --heading
-		// grammar the MCP text format also prints (search.FileBlocks.Render).
+		// grammar the MCP text format also prints (search.FileBlocks.Render),
+		// plus the match column (ripgrep --column) that only the CLI shows.
 		for i, f := range search.Blocks(matches) {
 			if i > 0 {
 				fmt.Fprintln(w)
 			}
-			for _, line := range f.Render() {
+			for _, line := range f.Render(search.RenderOptions{Column: true}) {
 				fmt.Fprintln(w, line)
 			}
 		}

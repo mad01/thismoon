@@ -69,7 +69,7 @@ func renderContentMatches(out searchOutput) string {
 	files := search.Blocks(contentMatches(out.Lines))
 	var lines []string
 	for _, f := range files {
-		lines = append(lines, f.Render()...)
+		lines = append(lines, f.Render(search.RenderOptions{})...)
 		lines = append(lines, "")
 	}
 	lines = append(

@@ -30,6 +30,8 @@ type Block struct {
 type BlockLine struct {
 	// Number is the 1-based line number.
 	Number int
+	// Column is the 1-based column where the match starts; 0 for context.
+	Column int
 	// Text is the line's content without its newline.
 	Text string
 	// Match is true for a matched line, false for a context line.
@@ -65,32 +67,51 @@ func Blocks(matches []Match) []FileBlocks {
 	return out
 }
 
+// RenderOptions selects what a rendered line carries beyond its number and
+// text. The zero value is the MCP text form.
+type RenderOptions struct {
+	// Column prints a match line as `LINE:COL:text` (ripgrep --column);
+	// context lines stay `LINE-text`. The CLI enables it, the MCP text
+	// format does not.
+	Column bool
+}
+
 // Render returns the file in ripgrep's --heading grammar: the `repo/path`
-// header, then one line per BlockLine (see BlockLine.String) with `--`
+// header, then one line per BlockLine (see BlockLine.Format) with `--`
 // between blocks. The CLI's content mode and the MCP text format both print
 // this form, so it is the one place the grammar lives.
-func (f FileBlocks) Render() []string {
+func (f FileBlocks) Render(opts RenderOptions) []string {
 	out := []string{f.Repo + "/" + f.File}
 	for i, b := range f.Blocks {
 		if i > 0 {
 			out = append(out, "--")
 		}
 		for _, l := range b.Lines {
-			out = append(out, l.String())
+			out = append(out, l.Format(opts))
 		}
 	}
 	return out
 }
 
-// String formats the line as `LINE:text` for a match and `LINE-text` for
-// context. A sym: hit's line ends with `  kind=<kind>`, plus `parent=<name>`
-// when the definition is nested, the same tokens the semantic renderer uses.
+// String formats the line without a column, the MCP text form.
 func (l BlockLine) String() string {
-	sep := "-"
-	if l.Match {
-		sep = ":"
+	return l.Format(RenderOptions{})
+}
+
+// Format renders the line as `LINE:text` for a match (`LINE:COL:text` with
+// opts.Column) and `LINE-text` for context. A sym: hit's line ends with
+// `  kind=<kind>`, plus `parent=<name>` when the definition is nested, the
+// same tokens the semantic renderer uses.
+func (l BlockLine) Format(opts RenderOptions) string {
+	var s string
+	switch {
+	case !l.Match:
+		s = fmt.Sprintf("%d-%s", l.Number, l.Text)
+	case opts.Column:
+		s = fmt.Sprintf("%d:%d:%s", l.Number, l.Column, l.Text)
+	default:
+		s = fmt.Sprintf("%d:%s", l.Number, l.Text)
 	}
-	s := fmt.Sprintf("%d%s%s", l.Number, sep, l.Text)
 	if l.Kind == "" {
 		return s
 	}
@@ -118,6 +139,7 @@ func (f *fileLines) add(m Match) {
 	}
 	f.lines[m.Line] = BlockLine{
 		Number: m.Line,
+		Column: m.Column,
 		Text:   m.Text,
 		Match:  true,
 		Kind:   m.Kind,

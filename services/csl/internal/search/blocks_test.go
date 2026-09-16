@@ -31,7 +31,7 @@ func TestBlocks_NearbyHitsShareOneWindow(t *testing.T) {
 		t.Fatalf("got %d files / %d blocks, want 1 / 1", len(files), len(files[0].Blocks))
 	}
 	wantRendered(
-		t, files[0].Render(),
+		t, files[0].Render(RenderOptions{}),
 		"org/repo/a.go",
 		"3-three",
 		"4-four",
@@ -54,7 +54,7 @@ func TestBlocks_FarHitsSplitWithSeparator(t *testing.T) {
 		t.Fatalf("got %d files / %d blocks, want 1 / 2", len(files), len(files[0].Blocks))
 	}
 	wantRendered(
-		t, files[0].Render(),
+		t, files[0].Render(RenderOptions{}),
 		"org/repo/a.go",
 		"2:two",
 		"3-three",
@@ -74,7 +74,15 @@ func TestBlocks_AdjacentWindowsMerge(t *testing.T) {
 	if n := len(files[0].Blocks); n != 1 {
 		t.Fatalf("got %d blocks, want 1", n)
 	}
-	wantRendered(t, files[0].Render(), "org/repo/a.go", "2:two", "3-three", "4-four", "5:five")
+	wantRendered(
+		t,
+		files[0].Render(RenderOptions{}),
+		"org/repo/a.go",
+		"2:two",
+		"3-three",
+		"4-four",
+		"5:five",
+	)
 }
 
 // TestBlocks_FilesKeepFirstAppearanceOrder: files group by repo/path in the
@@ -89,8 +97,8 @@ func TestBlocks_FilesKeepFirstAppearanceOrder(t *testing.T) {
 	if len(files) != 2 {
 		t.Fatalf("got %d files, want 2", len(files))
 	}
-	wantRendered(t, files[0].Render(), "org/repo/z.go", "1:z1", "2:z2")
-	wantRendered(t, files[1].Render(), "org/other/z.go", "9:o9")
+	wantRendered(t, files[0].Render(RenderOptions{}), "org/repo/z.go", "1:z1", "2:z2")
+	wantRendered(t, files[1].Render(RenderOptions{}), "org/other/z.go", "9:o9")
 }
 
 // TestBlocks_SymbolHitKeepsKind: a sym: hit's kind and parent survive the
@@ -106,7 +114,7 @@ func TestBlocks_SymbolHitKeepsKind(t *testing.T) {
 		},
 	})
 	wantRendered(
-		t, files[0].Render(),
+		t, files[0].Render(RenderOptions{}),
 		"org/repo/a.go",
 		"3:// doc",
 		"4:func Hello() {  kind=function",
@@ -141,4 +149,28 @@ func TestContextLines(t *testing.T) {
 			t.Errorf("contextLines(%q) = %q, want %q", tt.block, got, tt.want)
 		}
 	}
+}
+
+// TestBlocks_ColumnOption: the CLI form prints LINE:COL:text for a match and
+// leaves context lines and the sym: marker alone; the default stays LINE:text.
+func TestBlocks_ColumnOption(t *testing.T) {
+	files := Blocks([]Match{
+		{Repo: "org/repo", File: "a.go", Line: 5, Column: 7, Text: "five", Before: "four\n"},
+		{
+			Repo:   "org/repo",
+			File:   "a.go",
+			Line:   9,
+			Column: 1,
+			Text:   "func Nine() {",
+			Kind:   "function",
+		},
+	})
+	wantRendered(
+		t, files[0].Render(RenderOptions{Column: true}),
+		"org/repo/a.go", "4-four", "5:7:five", "--", "9:1:func Nine() {  kind=function",
+	)
+	wantRendered(
+		t, files[0].Render(RenderOptions{}),
+		"org/repo/a.go", "4-four", "5:five", "--", "9:func Nine() {  kind=function",
+	)
 }

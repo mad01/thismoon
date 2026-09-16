@@ -78,7 +78,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `sym:Name` | Restrict to symbol definitions (functions, types, methods, classes); content hits carry `kind` |
 | `case:yes` | Case-sensitive this term |
 
-`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format: one `repo/path` header per file, `LINE:text` for a matching line, `LINE-text` for a context line, and a blank line between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
+`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format: one `repo/path` header per file, `LINE:COL:text` for a matching line (`COL` is the 1-based column where the match starts, as with ripgrep `--column`; the MCP text form prints `LINE:text` without it), `LINE-text` for a context line, and a blank line between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
 
 Regex metacharacters inside the pattern need shell-escaping too. Validate a tricky query first with [`csl query`](#csl-query).
 
