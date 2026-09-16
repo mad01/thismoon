@@ -21,6 +21,16 @@ const stateFileName = "state.json"
 // directory, holding stateFileName and the zoekt shards.
 const indexDirName = "search-index"
 
+// indexFormatVersion is mixed into every repo fingerprint so a change in what
+// IndexRepo writes for the same tree marks every shard stale once, and the
+// next sync or search rebuilds it. Git state alone can never notice a format
+// change. Bump it on ANY change to the shard contents produced from an
+// unchanged working tree.
+//
+// History: 1 = tree-sitter symbol sections (sym: queries and definition
+// ranking).
+const indexFormatVersion = 1
+
 // RepoState tracks the indexed state of a single repository.
 type RepoState struct {
 	Fingerprint string    `json:"fingerprint"`
@@ -175,18 +185,20 @@ func Fingerprint(repoPath string) (RepoState, error) {
 		return RepoState{}, fmt.Errorf("git status in %s: %w", repoPath, err)
 	}
 
-	dirty := status != ""
-
-	h := sha256.New()
-	fmt.Fprintf(h, "%s\n%s\n%s", head, branch, status)
-	fingerprint := fmt.Sprintf("%x", h.Sum(nil))
-
 	return RepoState{
-		Fingerprint: fingerprint,
+		Fingerprint: fingerprintOf(head, branch, status, indexFormatVersion),
 		HEAD:        head,
 		Branch:      branch,
-		Dirty:       dirty,
+		Dirty:       status != "",
 	}, nil
+}
+
+// fingerprintOf hashes the git state a repo was indexed from together with
+// the index format version, so either kind of change reads as stale.
+func fingerprintOf(head, branch, status string, formatVersion int) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\n%s\n%s\nindex-format:%d", head, branch, status, formatVersion)
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // StalenessResult holds the result of a staleness check.

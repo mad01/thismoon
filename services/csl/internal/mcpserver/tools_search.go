@@ -24,7 +24,7 @@ const (
 
 // searchInput is the typed input for the csl_search tool.
 type searchInput struct {
-	Query         string `json:"query"                    jsonschema:"zoekt query: literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / repo: / file: / lang: / case:yes"`
+	Query         string `json:"query"                    jsonschema:"zoekt query: literal / regex / 'phrase' / AND (space) / OR (|) / NOT (-) / sym: (definitions only) / repo: / file: / lang: / case:yes"`
 	Repo          string `json:"repo,omitempty"           jsonschema:"restrict to repo names matching this case-insensitive regex (a plain substring also works)"`
 	Lang          string `json:"lang,omitempty"           jsonschema:"restrict to files of this language (e.g. go, swift, python)"`
 	File          string `json:"file,omitempty"           jsonschema:"restrict to file paths matching this regex (e.g. paths ending in .go)"`
@@ -51,6 +51,8 @@ type searchMatchLine struct {
 	Text   string `json:"text"`
 	Before string `json:"before,omitempty" jsonschema:"context lines before the match (only set when context_lines > 0)"`
 	After  string `json:"after,omitempty"  jsonschema:"context lines after the match"`
+	Kind   string `json:"kind,omitempty"   jsonschema:"symbol kind of the definition on this line (function, method, struct, class, ...); set only for sym: hits"`
+	Parent string `json:"parent,omitempty" jsonschema:"enclosing declaration of the definition (receiver type, class, message); set only for sym: hits"`
 }
 
 // searchOutput is the typed output of the csl_search tool. Exactly one of
@@ -121,6 +123,7 @@ func registerSearchTools(s *mcp.Server) {
 			"Use whenever the task involves finding where a symbol, function, pattern, or string is used: 'where is X defined', 'find all Y', 'does any of my projects use Z', 'show me every TODO in the Go code'. " +
 			"Defaults to returning unique matching file paths (files_with_matches); set output_mode to 'content' to get matching lines with optional context. " +
 			"Query syntax: literal substring, regex, \"quoted phrase\", AND (space), OR (|), NOT (-), repo:name, f:\\.go$, lang:go, case:yes. " +
+			"sym:Name matches symbol definitions only (function, method, type, class, field names as tree-sitter extracts them) and skips call sites and comments; in content mode each sym: hit carries kind (and parent for nested definitions). Plain queries already rank a definition's file above its call sites. " +
 			"AND is strict: all terms must appear in the SAME FILE. Use 1-2 terms and narrow with repo:/f:/lang: filters, not 3+ chained terms. " +
 			"Use | or lowercase 'or' for OR; uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
 			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax: the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
@@ -483,6 +486,8 @@ func buildSearchOutput(mode string, limit, offset int, matches []search.Match) s
 				Text:   m.Text,
 				Before: m.Before,
 				After:  m.After,
+				Kind:   m.Kind,
+				Parent: m.Parent,
 			})
 		}
 		if len(lines) > maxContentLines {

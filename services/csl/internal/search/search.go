@@ -21,6 +21,12 @@ type Match struct {
 	Before string `json:"before,omitempty"`
 	// After holds context lines after the match (when requested).
 	After string `json:"after,omitempty"`
+	// Kind is the symbol kind (function, method, struct, ...) when the match
+	// is a symbol definition hit from a sym: query; empty otherwise.
+	Kind string `json:"kind,omitempty"`
+	// Parent is the definition's enclosing declaration (a receiver type, a
+	// class, a protobuf message) for a sym: hit; empty otherwise.
+	Parent string `json:"parent,omitempty"`
 }
 
 // RankUniverse is how many top-ranked files offset paging can traverse. The

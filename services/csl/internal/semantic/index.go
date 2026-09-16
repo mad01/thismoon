@@ -13,6 +13,7 @@ import (
 
 	"github.com/mad01/thismoon/services/csl"
 	"github.com/mad01/thismoon/services/csl/internal/cslignore"
+	"github.com/mad01/thismoon/services/csl/internal/grammar"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
@@ -153,7 +154,7 @@ func embedFile(
 	content []byte,
 	stats *IndexStats,
 ) error {
-	chunks, err := ChunkFile(repoName, rel, LangForPath(rel), content)
+	chunks, err := ChunkFile(repoName, rel, grammar.LangForPath(rel), content)
 	if err != nil {
 		return fmt.Errorf("chunk %s: %w", rel, err)
 	}

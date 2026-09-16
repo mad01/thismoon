@@ -101,6 +101,8 @@ func SearchVia(
 			Text:     m.Text,
 			Before:   m.Before,
 			After:    m.After,
+			Kind:     m.Kind,
+			Parent:   m.Parent,
 		}
 	}
 	return matches, nil

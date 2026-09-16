@@ -45,6 +45,7 @@ Query syntax:
   foo bar         AND: both terms must appear
   foo|bar         OR: either term matches
   -test           NOT: exclude matches
+  sym:Name        Symbol definitions only (functions, types, methods)
   repo:name       Restrict to repos matching regex
   file:\.go$      Restrict to files matching regex
   lang:go         Restrict to a specific language

@@ -718,3 +718,107 @@ func stringFromInt(i int) string {
 	}
 	return s
 }
+
+// ---------- Symbols ----------
+
+// TestSearch_SymbolQuery pins the symbol index: a sym: query returns the
+// definition line of a function carrying its kind, a plain query for the same
+// name still works, and the file defining the name ranks above a file that
+// only calls it.
+func TestSearch_SymbolQuery(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.go":   "package main\n\n// Hello greets.\nfunc Hello() string { return \"hello\" }\n",
+		"caller.go": "package main\n\nfunc use() { _ = Hello(); _ = Hello() }\n",
+		"point.go":  "package main\n\ntype Point struct{ X int }\n\nfunc (p *Point) Hello() string { return \"\" }\n",
+	}
+	for rel, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	indexDir, _, repoNames := indexTestRepo(t, dir)
+	ctx := context.Background()
+
+	matches, err := Search(ctx, indexDir, SearchOptions{
+		Pattern:    "sym:Hello",
+		OutputMode: "content",
+		Limit:      50,
+	}, repoNames)
+	if err != nil {
+		t.Fatalf("Search sym:Hello: %v", err)
+	}
+	byFile := map[string]Match{}
+	for _, m := range matches {
+		byFile[m.File] = m
+	}
+	if _, ok := byFile["caller.go"]; ok {
+		t.Errorf("sym:Hello matched the call site in caller.go: %+v", matches)
+	}
+	fn, ok := byFile["main.go"]
+	if !ok {
+		t.Fatalf("sym:Hello did not match main.go: %+v", matches)
+	}
+	if fn.Line != 4 || fn.Kind != "function" || fn.Parent != "" {
+		t.Errorf(
+			"main.go hit = line %d kind %q parent %q, want line 4 function",
+			fn.Line,
+			fn.Kind,
+			fn.Parent,
+		)
+	}
+	method, ok := byFile["point.go"]
+	if !ok {
+		t.Fatalf("sym:Hello did not match the method in point.go: %+v", matches)
+	}
+	if method.Line != 5 || method.Kind != "method" || method.Parent != "Point" {
+		t.Errorf(
+			"point.go hit = line %d kind %q parent %q, want line 5 method Point",
+			method.Line,
+			method.Kind,
+			method.Parent,
+		)
+	}
+
+	// A plain query still matches every occurrence, with no kind attached,
+	// and ranks the defining file first.
+	plain, err := Search(ctx, indexDir, SearchOptions{Pattern: "Hello", Limit: 50}, repoNames)
+	if err != nil {
+		t.Fatalf("Search Hello: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, m := range plain {
+		seen[m.File] = true
+		if m.Kind != "" {
+			t.Errorf("plain query carried kind %q on %s:%d", m.Kind, m.File, m.Line)
+		}
+	}
+	if !seen["caller.go"] || !seen["main.go"] {
+		t.Errorf("plain query files = %v, want main.go and caller.go", seen)
+	}
+	if plain[0].File == "caller.go" {
+		t.Errorf("plain query ranked the call site first: %+v", plain)
+	}
+}
+
+// TestIndexRepo_SymbolExtractionNeverFailsRepo: a file whose declarations
+// do not parse cleanly still indexes, with whatever symbols were recovered.
+func TestIndexRepo_SymbolExtractionNeverFailsRepo(t *testing.T) {
+	dir := t.TempDir()
+	broken := "package p\n\nfunc Good() {}\n\nfunc broken( {\n\ntype T struct {\n"
+	if err := os.WriteFile(filepath.Join(dir, "broken.go"), []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	indexDir, _, repoNames := indexTestRepo(t, dir)
+	matches, err := Search(context.Background(), indexDir, SearchOptions{
+		Pattern:    "sym:Good",
+		OutputMode: "content",
+		Limit:      50,
+	}, repoNames)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Kind != "function" {
+		t.Fatalf("sym:Good = %+v, want one function hit", matches)
+	}
+}

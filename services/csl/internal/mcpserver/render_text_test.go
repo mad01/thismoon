@@ -126,7 +126,11 @@ func TestRenderSearchText_ContentTruncatedRepeatsCutFile(t *testing.T) {
 	last := got[len(got)-1]
 	want := "truncated: showing 300 of 400 lines; next offset=11"
 	if last != want {
-		t.Fatalf("trailer = %q, want %q (b.go was cut, so the next page must start at it)", last, want)
+		t.Fatalf(
+			"trailer = %q, want %q (b.go was cut, so the next page must start at it)",
+			last,
+			want,
+		)
 	}
 }
 
@@ -376,4 +380,46 @@ func TestContextLines(t *testing.T) {
 			t.Errorf("contextLines(%q) = %q, want %q", tt.block, got, tt.want)
 		}
 	}
+}
+
+// TestRenderSearchText_ContentMarksSymbolHits: a sym: hit's line ends with
+// the kind token the semantic renderer uses, plus the parent when nested;
+// plain hits and context lines are untouched.
+func TestRenderSearchText_ContentMarksSymbolHits(t *testing.T) {
+	out := searchOutput{
+		OutputMode: contentOutputMode,
+		Total:      3,
+		Lines: []searchMatchLine{
+			{
+				Repo:   "org/repo",
+				Path:   "a.go",
+				Line:   4,
+				Text:   "func Hello() {",
+				Kind:   "function",
+				Before: "// doc\n",
+			},
+			{
+				Repo:   "org/repo",
+				Path:   "a.go",
+				Line:   9,
+				Text:   "func (p *Point) Hello() {",
+				Kind:   "method",
+				Parent: "Point",
+			},
+			{Repo: "org/repo", Path: "b.go", Line: 1, Text: "Hello()"},
+		},
+	}
+	wantLines(
+		t, renderSearchText(out),
+		"org/repo/a.go",
+		"3-// doc",
+		"4:func Hello() {  kind=function",
+		"--",
+		"9:func (p *Point) Hello() {  kind=method parent=Point",
+		"",
+		"org/repo/b.go",
+		"1:Hello()",
+		"",
+		"3 lines in 2 files",
+	)
 }

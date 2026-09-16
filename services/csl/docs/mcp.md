@@ -365,6 +365,7 @@ Search code across locally checked-out repos using zoekt query syntax.
 | `-foo` | NOT |
 | `file:\.go$` | File path regex |
 | `lang:go` | Language filter |
+| `sym:Name` | Symbol definitions only (functions, types, methods, classes); content hits carry `kind` |
 | `repo:kitty` | Repo name regex |
 | `case:yes` | Case-sensitive match |
 

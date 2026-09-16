@@ -214,7 +214,7 @@ Each repo indexed by `csl` produces one or more `*.zoekt` shard files. The shard
 }
 ```
 
-The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain)`. Any change to committed state, branch, or working tree produces a new fingerprint, so `csl` knows to re-index that repo.
+The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`. Any change to committed state, branch, or working tree produces a new fingerprint, so `csl` knows to re-index that repo; so does a csl upgrade that changes what a shard holds, which re-indexes every repo once.
 
 ### Daemon lifecycle
 

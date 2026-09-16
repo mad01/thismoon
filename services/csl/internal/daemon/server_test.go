@@ -229,3 +229,25 @@ func TestIdleTimeout(t *testing.T) {
 	}
 	t.Error("server did not exit after idle timeout")
 }
+
+// TestSearchSymKind pins that a sym: hit's kind survives
+// the gRPC round trip, so daemon-served searches match in-process ones.
+func TestSearchSymKind(t *testing.T) {
+	client, _ := startServer(t, 5*time.Minute)
+
+	resp, err := client.Search(context.Background(), &pb.SearchRequest{
+		Pattern:    "sym:Hello",
+		OutputMode: "content",
+		Limit:      50,
+		RepoNames:  map[string]string{"test/repo": "/some/path"},
+	})
+	if err != nil {
+		t.Fatalf("Search RPC: %v", err)
+	}
+	if len(resp.Matches) != 1 {
+		t.Fatalf("got %d matches, want 1: %+v", len(resp.Matches), resp.Matches)
+	}
+	if m := resp.Matches[0]; m.File != "main.go" || m.Kind != "function" {
+		t.Errorf("match = %s kind %q, want main.go function", m.File, m.Kind)
+	}
+}

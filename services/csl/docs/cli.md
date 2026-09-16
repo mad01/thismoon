@@ -75,6 +75,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `repo:<regex>` | Restrict to repos matching |
 | `file:\.go$` | Restrict to file paths matching |
 | `lang:go` | Restrict to a language |
+| `sym:Name` | Restrict to symbol definitions (functions, types, methods, classes); content hits carry `kind` |
 | `case:yes` | Case-sensitive this term |
 
 Regex metacharacters inside the pattern need shell-escaping too. Validate a tricky query first with [`csl query`](#csl-query).
@@ -325,7 +326,7 @@ csl index --clean           # delete the entire index directory
 
 ### Description
 
-By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, and `git status --porcelain`, so any commit, checkout, or working-tree change triggers a re-index.
+By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, `git status --porcelain`, and the index format version, so any commit, checkout, or working-tree change triggers a re-index, and so does an upgrade that changes what a shard holds (every repo re-indexes once).
 
 `--repair` opens every `*.zoekt` shard, parses its metadata, and removes any that fail to read. Run `csl index` after repair to rebuild affected repos.
 

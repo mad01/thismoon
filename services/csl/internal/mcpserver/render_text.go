@@ -46,7 +46,9 @@ func renderFileMatches(out searchOutput) string {
 
 // renderContentMatches prints matches grouped per file in first-appearance
 // order. Content mode caps lines, not files, so the next offset is derived
-// from the files this page showed (see nextContentOffset).
+// from the files this page showed (see nextContentOffset). A sym: hit's line
+// ends with `kind=<kind>` (plus `parent=<name>` when nested), the same tokens
+// the semantic renderer uses.
 func renderContentMatches(out searchOutput) string {
 	files := groupContentLines(out.Lines)
 	var lines []string
@@ -86,6 +88,7 @@ type fileLines struct {
 	name  string
 	text  map[int]string
 	match map[int]bool
+	mark  map[int]string // symbol marker appended to a sym: hit's line
 }
 
 // groupContentLines buckets match lines by `repo/path`, keeping the order in
@@ -97,7 +100,12 @@ func groupContentLines(lines []searchMatchLine) []*fileLines {
 		name := l.Repo + "/" + l.Path
 		f, ok := byName[name]
 		if !ok {
-			f = &fileLines{name: name, text: map[int]string{}, match: map[int]bool{}}
+			f = &fileLines{
+				name:  name,
+				text:  map[int]string{},
+				match: map[int]bool{},
+				mark:  map[int]string{},
+			}
 			byName[name] = f
 			files = append(files, f)
 		}
@@ -115,6 +123,9 @@ func (f *fileLines) add(l searchMatchLine) {
 	}
 	f.text[l.Line] = l.Text
 	f.match[l.Line] = true
+	if m := symbolMarker(l); m != "" {
+		f.mark[l.Line] = m
+	}
 	for i, text := range contextLines(l.After) {
 		f.addContext(l.Line+1+i, text)
 	}
@@ -145,9 +156,25 @@ func (f *fileLines) render(dst []string) []string {
 		if f.match[n] {
 			sep = ":"
 		}
-		dst = append(dst, fmt.Sprintf("%d%s%s", n, sep, f.text[n]))
+		line := fmt.Sprintf("%d%s%s", n, sep, f.text[n])
+		if m := f.mark[n]; m != "" {
+			line += "  " + m
+		}
+		dst = append(dst, line)
 	}
 	return dst
+}
+
+// symbolMarker is `kind=method parent=Point` for a sym: hit, empty otherwise.
+func symbolMarker(l searchMatchLine) string {
+	if l.Kind == "" {
+		return ""
+	}
+	m := "kind=" + l.Kind
+	if l.Parent != "" {
+		m += " parent=" + l.Parent
+	}
+	return m
 }
 
 // contextLines splits a "\n"-joined context block into lines. A trailing

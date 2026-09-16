@@ -18,6 +18,10 @@ internal/
     proto/         gRPC service definition + generated code for the daemon
                     RPC (search.proto, search.pb.go, search_grpc.pb.go)
   search/          zoekt indexer/searcher wrappers
+  grammar/         the one table of tree-sitter grammars and the path-to-language
+                    rule, shared by symbols/ and semantic/
+  symbols/         tree-sitter symbol extraction feeding zoekt's symbol
+                    sections (sym: queries, definition-first ranking)
   semantic/        text embedding + code chunking for vector search
   hybrid/          Reciprocal Rank Fusion of lexical + semantic results
   queue/           reindex queue drained by `csl sync` / `csl index --drain`
@@ -62,8 +66,11 @@ minutes by default (`daemon.idle_timeout_minutes` in config), or on
 `SIGINT`/`SIGTERM`/`csl search --stop`.
 
 **Index freshness.** Each repo's fingerprint is
-`sha256(HEAD + "\n" + branch + "\n" + git status --porcelain)`, compared
-against the one stored in `state.json`. A mismatch marks the repo stale.
+`sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`,
+compared against the one stored in `state.json`. A mismatch marks the repo
+stale. The format version (`indexFormatVersion` in `internal/search/index.go`)
+bumps whenever a shard's contents change for an unchanged tree (adding symbol
+sections, say), so every repo re-indexes once after such an upgrade.
 `csl search` re-indexes stale repos in a background goroutine after
 returning results, so the current query is fast and the next one reflects
 the latest state; `csl sync` and `csl index` do it synchronously up front.

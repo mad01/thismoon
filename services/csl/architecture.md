@@ -21,6 +21,10 @@ internal/
   daemon/           search-server lifecycle: Unix socket, gRPC client/server,
                     EnsureDaemon/StartBackground, PID file
   search/           zoekt wrappers: IndexRepo(s), Search, Count, staleness checks
+  grammar/          the one table of tree-sitter grammars and the path-to-language
+                    rule, shared by symbols/ and semantic/
+  symbols/          tree-sitter symbol extraction feeding zoekt's symbol sections
+                    (sym: queries, definition-first ranking)
   semantic/         tree-sitter chunking, Ollama embedding, per-repo vector stores
   hybrid/           Reciprocal Rank Fusion of lexical and semantic result lists
   queue/            reindex queue drained by csl sync / csl index --drain
@@ -48,12 +52,18 @@ forks `csl search --serve` detached. The query then travels as gRPC over the
 socket (`daemon.SearchVia`); if the search server is unreachable the caller
 falls back to `search.Search()`, opening shards in-process for that one query.
 Freshness rides alongside: each repo's fingerprint (sha256 of HEAD, branch,
-and `git status --porcelain`) is compared to `state.json`, and stale repos are
-reindexed in a background goroutine after results return.
+`git status --porcelain`, and the index format version) is compared to
+`state.json`, and stale repos are reindexed in a background goroutine after
+results return.
 
 Indexing is the other half of the split. `csl sync` walks the configured
 directories (`finder.FilteredWalk`), pulls repos ff-only in parallel, batch
-reindexes the changed ones, and drains `reindex.queue`. Semantic indexing
+reindexes the changed ones, and drains `reindex.queue`. `search.IndexRepo`
+walks each working tree and, for the languages csl links tree-sitter grammars
+for (`internal/grammar`), attaches symbol sections from `internal/symbols` to
+every document: definition names with ctags-style kinds and their enclosing
+declaration. That is what makes `sym:` queries hit definitions and lets zoekt
+rank a definition's file above its call sites, with no ctags binary. Semantic indexing
 (`csl index --semantic-all`) chunks source files with tree-sitter, embeds the
 chunks over HTTP against a local Ollama server, and writes per-repo vector
 stores. `csl hybrid` and `csl_hybrid_search` run both backends, collapse each

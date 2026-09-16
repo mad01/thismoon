@@ -34,6 +34,7 @@ zoekt queries look like grep but have important differences:
 - AND is strict: space-separated terms must ALL appear in the SAME file. Use 1-2 terms and narrow with filters, not 3+ chained terms.
 - OR: use `|` with no spaces (`foo|bar`) or lowercase `or`. Uppercase `OR` is a literal string. Spaces around `|` break it.
 - Filters: `repo:name` (not `r:`), `f:\.go$` (not `file:`), `lang:go`, `-term` (NOT).
+- Definitions only: `sym:Name` matches symbol definitions (function, type, method, class names) and skips call sites and comments; in content mode each hit carries its `kind`. Plain queries already rank the defining file first.
 - File filters are regex, not glob: `f:.*\.go$` not `f:*.go`.
 - Exact phrase: `"foo bar"` requires that exact string on one line. For proximity, use regex: `foo.*bar`.
 - Validate: call `csl_query_validate` to see how zoekt parsed your query. This is especially useful when you get zero results.
