@@ -13,7 +13,6 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
-	"github.com/mad01/thismoon/services/csl/internal/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/symbols"
 )
@@ -38,53 +37,8 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 		return fmt.Errorf("create index builder for %s: %w", repo.Name, err)
 	}
 
-	ignore := cslignore.Load(repo.Path)
-
-	walkErr := filepath.Walk(repo.Path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // best-effort, skip unreadable files
-		}
-
-		// Skip hidden directories (including .git)
-		if info.IsDir() {
-			base := filepath.Base(path)
-			if strings.HasPrefix(base, ".") && path != repo.Path {
-				return filepath.SkipDir
-			}
-			// Skip common non-source directories
-			switch base {
-			case "node_modules", "vendor", "__pycache__", "build", "dist", "target":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip a linked worktree's .git pointer file — it is a regular file
-		// ("gitdir: …"), not a directory, so the hidden-dir skip above misses it.
-		if filepath.Base(path) == ".git" {
-			return nil
-		}
-
-		// Skip non-regular files
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
-		// Skip very large files (>1MB by default, zoekt handles this too)
-		if info.Size() > int64(opts.SizeMax) {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(repo.Path, path)
-		if err != nil {
-			return nil
-		}
-
-		if ignore.Match(relPath) {
-			return nil
-		}
-
-		return addFile(builder, repo.Name, relPath, path)
+	walkErr := WalkRepo(repo.Path, int64(opts.SizeMax), func(f WalkFile) error {
+		return addFile(builder, repo.Name, f.Rel, f.Abs)
 	})
 
 	if walkErr != nil {

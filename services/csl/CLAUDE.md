@@ -22,6 +22,9 @@ internal/
                     rule, shared by symbols/ and semantic/
   symbols/         tree-sitter symbol extraction feeding zoekt's symbol
                     sections (sym: queries, definition-first ranking)
+  outline/         the repo outline behind `csl outline` / csl_outline:
+                    definitions from symbols/ ranked by cross-file reference
+                    count, read straight from the working tree
   semantic/        text embedding + code chunking for vector search
   hybrid/          Reciprocal Rank Fusion of lexical + semantic results
   queue/           reindex queue drained by `csl sync` / `csl index --drain`
@@ -211,6 +214,7 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 - **`csl count <pattern>`**: count matches across indexed repos. `--repo/-r`, `--lang/-l`, `--group-by` (repo\|language), `--json`.
 - **`csl query <pattern>`**: validate and parse a zoekt query without running a search. `--json`.
 - **`csl read <file> --repo <name>`**: read a file from a repo with line numbers. `--repo/-r` (required), `--start-line`, `--end-line`, `--json`.
+- **`csl outline <repo> [path]`**: the ranked outline `csl_outline` returns, as text or `--json`. `--kinds` (comma-separated; fields, enumerators, and headings are out by default), `--limit` (100, max 500), `--include-tests`, `--max-files` (20000). The repo resolves by the MCP rule, case-insensitive regex matching exactly one repo (`finder.MatchOne`, shared with the tools).
 - **`csl repo [query]`**: interactive picker over discovered repos. With a query, prints the single matching repo's path (case-insensitive substring on org/repo; errors on zero or multiple matches); a query also filters `--list` output. `--component`/`--owner`/`--system` narrow by the repo's catalog descriptor (case-insensitive substring on `metadata.name`/`spec.owner`/`spec.system`; a repo with no descriptor never matches). All filters compose (AND); catalog filters alone open the picker over the narrowed set, or print the path directly when exactly one repo is left. `--list` (non-interactive), `--json`/`--toon` (imply `--list`, rows gain `component`/`owner`/`system` when present). `--skipped` (implies `--list`) prints the repos discovery dropped instead, tab-separated name/path/reason, from `cfg.DiscoverReposReport()` (`finder.Dropped` carries a `Kind`: host, no-remote, excluded); with `--json`/`--toon` each entry also carries `remote` and `host`. When a filter drops every repo, `cfg.EmptyDiscoveryHint(dropped)` names the filter and counts instead of the plain "no git repos found" hint; a zero query errors with `no repos match query "<set fields>"`. The picker is csl's own (`internal/picker`, tcell + go-fuzzyfinder's matching package), not go-fuzzyfinder, because it needs to color parts of a line: `org/repo  <component>  owner:<owner>  system:<system> @ <path>`, component shown only when it differs from the repo's short name, matched characters green, `NO_COLOR` disables all color. Space-separated query words are independent fuzzy terms that must all match (fzf extended search, `internal/picker` `findAll`); the query line has readline editing keys (cursor motion by rune and word, deletion on either side); the selected row's band is derived from the terminal background (`internal/picker/theme.go`: OSC 11 query on /dev/tty with a 100ms poll before tcell starts, stepped toward white on dark and black on light, bright-black palette fallback), with dim text lifted to the default foreground.
 - **`csl doctor`**: run the self-checks, one ok/FAIL line per check — config (parses, and sets at least one dir when the file exists; no file at all passes with a note naming the path to create), repos-discovered (plain ok when every walked repo made it in; a Skip note with the dropped counts when a filter removed any; FAIL naming the filter when a loaded config discovers nothing), state file, index freshness (a Skip note when repos exist but nothing is indexed yet, since the first search builds it, and "no repos to check" when repos-discovered already failed; FAIL only for stale or dirty repos against an existing index), shard integrity, search-server responsiveness, catalog-descriptors (ok when every descriptor discovery found reads cleanly, with a note when no repo carries one; FAIL naming each unreadable descriptor; skipped when repos-discovered already failed), plus web-only reachability and version-skew probes against the effective web base URL (search works with both failing). `--repair` (reset a corrupt state file). The list lives in `internal/selfcheck` and is also served as the `csl_doctor` MCP tool.
 - **`csl config`**: print which config file csl reads, whether it loaded, and the settings in effect once defaults are applied. `--help` carries an annotated reference of every key and of the `CSL_*` environment variables.
@@ -226,13 +230,13 @@ CLI subcommands beyond `web` and `mcp` (see HTTP API and MCP tools above/below):
 
 ## MCP tools
 
-`csl mcp` starts the MCP stdio server and registers fifteen `csl_*` tools
+`csl mcp` starts the MCP stdio server and registers sixteen `csl_*` tools
 (`internal/mcpserver.New()`). Handlers reuse the same daemon-first-then-fallback
 path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 `csl_semantic_search` and `csl_hybrid_search` are registered only when
 `semantic.enabled` is true; `csl mcp` passes `cfg.SemanticEnabled()` to
 `New` as `mcpserver.Options`, so a machine with semantic off advertises the
-other thirteen and the web UI gates its modes the same way.
+other fourteen and the web UI gates its modes the same way.
 
 Every tool accepts `response_format`: `text` (default) | `json` | `jsonl` |
 `toon` | `csv` | `markdown-kv` | `xml`. Precedence: the tool parameter, then
@@ -240,8 +244,8 @@ Every tool accepts `response_format`: `text` (default) | `json` | `jsonl` |
 unknown value in either place is an error that names its source. The return
 shapes below are the `json` form, the object every tool returned before the
 parameter existed. `text` is tool-specific (csl_search: ripgrep-style headings
-with `LINE:match` lines; csl_read: `LINE:text`; csl_ls, csl_count, csl_doctor:
-one line per entry) and falls back to `markdown-kv` for the rest; the full list
+with `LINE:match` lines; csl_read: `LINE:text`; csl_outline: symbols grouped
+by file; csl_ls, csl_count, csl_doctor: one line per entry) and falls back to `markdown-kv` for the rest; the full list
 is in docs/mcp.md under Response formats.
 
 **Repo:**
@@ -264,6 +268,7 @@ is in docs/mcp.md under Response formats.
 - `csl_read(repo, file, start_line?, end_line?)` → `{repo, path, lines[], total_lines, truncated}`. Reads a file by repo name and relative path; caps output at 500 lines unless the caller sets a range.
 - `csl_show_file(repo, file, start_line?, end_line?, no_open?)` → `{url, repo, file, local_path, opened, warning?}`. Shows a file section to the USER: builds a `/file` deep link into the csl web UI and opens it in the browser (`no_open=true` to just get the URL). The page renders the section like a search match with expand-to-full-file and copy-path controls, reading live from disk — `csl web` must be running. For reading content yourself, use `csl_read`.
 - `csl_ls(repo, path?, glob?, recursive?)` → `{repo, path, entries[], total, truncated, total_available?}`. Lists files/dirs in a repo (glob matches base names; `recursive` returns files only, no dirs); caps at 500 entries.
+- `csl_outline(repo, path?, kinds?, limit?, include_tests?, max_files?)` → `{repo, path, files_scanned, symbols_total, symbols_skipped?, truncated, files_capped?, symbols: [{name, kind, parent?, file, line, refs}]}`. The repo's (or one directory's) definitions ranked by `refs`, then kind (types before callables before members), then name. `path` narrows the definitions only; references always count across the whole repo, so a package's public API ranks by repo-wide use. `refs` is the number of other files holding the name as a whole identifier, counted in one tokenizing pass over the repo (never a search per symbol), with two adjustments that keep common names from crowding the top. A Go name starting lowercase is package-private, so it counts only files in its own directory. A name defined in several files with the same group of kind (types, callables, or members) shares its mentions evenly among them, so a `New` defined in twelve packages splits twelve ways while a type defined once keeps every mention. Names shorter than three characters get 0. Fields, enumerators, and markdown headings are out unless `kinds` names them (`symbols_skipped` counts them); test files are out of both sides unless `include_tests`. Reads the working tree through the indexer's walk (`search.WalkRepo`, the one home of the skip rules), so it needs no index; `max_files` (20000) stops a huge walk and sets `files_capped`. `limit` defaults to 100 and caps at 500. The text form groups symbols by file in rank order, `LINE kind name (parent)  refs=N`, the same text `csl outline` prints (`internal/outline`).
 - `csl_doctor()` → `{ok, checks: [{name, status, detail?}]}`. Runs the same checks as `csl doctor` (config, repos discovered, state file, index freshness, shard integrity, search server, catalog descriptors, web reachability and version skew) and returns them as JSON, for a client that can call a tool but has no shell. A machine with no config file reports `config-loads` as `skipped` with the path to create in `detail` — a pass with something to say, not a failure. Read-only: never repairs. Distinct from `csl_repo_health`, which is about the indexed repos rather than csl itself.
 - `csl_index_info()` → `{repos_indexed, dirty_repos, shards, corrupt_shards, index_size_bytes, newest_indexed_at?, oldest_indexed_at?, daemon_running, semantic: {built, stores, chunks, model_present}}`. Index-wide health in one call; reads state from disk and pings the daemon (no repo scan, sub-second).
 

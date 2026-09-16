@@ -176,3 +176,42 @@ func (q Query) matcher(
 		return true
 	}, nil
 }
+
+// MatchOne resolves query to exactly one of repos by case-insensitive regex
+// on the org/repo name, the rule every single-repo surface shares. Several
+// matches resolve to the one whose name equals the query, case-insensitive,
+// so a bare "org/repo" wins over "org/repo-two"; otherwise the error lists
+// the candidates and how to disambiguate.
+func MatchOne(repos []Repo, query string) (Repo, error) {
+	re, err := CompileMatcher(query)
+	if err != nil {
+		return Repo{}, err
+	}
+	normalized := NormalizeQuery(query)
+
+	var matches []Repo
+	for _, r := range repos {
+		if re.MatchString(r.Name) {
+			matches = append(matches, r)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return Repo{}, fmt.Errorf("no repo matching %q found locally", normalized)
+	case 1:
+		return matches[0], nil
+	}
+	for _, m := range matches {
+		if strings.EqualFold(m.Name, normalized) {
+			return m, nil
+		}
+	}
+	names := make([]string, len(matches))
+	for i, m := range matches {
+		names[i] = m.Name
+	}
+	return Repo{}, fmt.Errorf(
+		"ambiguous: %d repos match %q: %s — use the full org/repo name to disambiguate (e.g. %q)",
+		len(matches), normalized, strings.Join(names, ", "), matches[0].Name,
+	)
+}

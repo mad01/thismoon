@@ -21,7 +21,7 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Fifteen tools are registered, grouped into four areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other thirteen.
+Sixteen tools are registered, grouped into four areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other fourteen.
 
 | Tool | Purpose |
 |---|---|
@@ -36,6 +36,7 @@ Fifteen tools are registered, grouped into four areas: `csl_repo_*` for repo man
 | [`csl_count`](#csl_count) | Count matches, optionally grouped by repo or language |
 | [`csl_read`](#csl_read) | Read a file from a named local repo |
 | `csl_ls` | List files and directories in a repo (contract in the service CLAUDE.md) |
+| [`csl_outline`](#csl_outline) | Rank a repo's or a directory's definitions by cross-file references |
 | [`csl_show_file`](#csl_show_file) | Open a file section in the web UI for the user to look at |
 | `csl_index_info` | Index-wide health in one call (contract in the service CLAUDE.md) |
 | [`csl_query_validate`](#csl_query_validate) | Validate a zoekt query and return its parsed tree |
@@ -604,6 +605,63 @@ Show a file section to the user: builds a deep link into the csl web UI's file-v
 | `local_path` | string | Absolute on-disk path to the file |
 | `opened` | bool | True when the browser was opened |
 | `warning` | string | Non-fatal problem, e.g. the browser could not be opened |
+
+### `csl_outline`
+
+Outline a repo or a directory in it: every definition the tree-sitter extractor finds, ranked by how many other files in the repo mention its name as a whole identifier.
+
+**When to call:** the question is how a repo or a package is structured, or which types and functions matter most, before reading anything. One call replaces a run of `csl_search` and `csl_read` calls.
+
+**Input:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `repo` | string | yes | Case-insensitive regex or substring matched against `org/repo`; must resolve to exactly one repo |
+| `path` | string | no | Directory inside the repo whose files contribute definitions, e.g. `services/csl/internal`. Default: the whole repo. References are always counted across the whole repo |
+| `kinds` | array | no | Keep only these kinds: `interface`, `struct`, `class`, `type`, `typealias`, `enum`, `namespace`, `function`, `method`, `methodSpec`, `const`, `var`, `field`, `enumerator`, `section`. Default: all but `field`, `enumerator`, and `section` |
+| `limit` | int | no | Maximum symbols to return. Default 100, hard cap 500 |
+| `include_tests` | bool | no | Include test files (`_test.go`, `test_*.py`, `*.test.ts`, `__tests__/`, and the like). Default `false` leaves them out of both the definitions and the reference counts |
+| `max_files` | int | no | Stop the walk after this many files, in path order, and mark the result truncated. Default 20000 |
+
+**Output:**
+
+| Field | Type | Description |
+|---|---|---|
+| `repo` | string | Resolved `org/repo` name |
+| `path` | string | The scope relative to the repo root, `.` for the whole repo |
+| `files_scanned` | int | Files tokenized for references: the whole repo minus skipped and test files |
+| `symbols_total` | int | Definitions found in scope before the limit |
+| `symbols_skipped` | int | Definitions in scope left out by `kinds`; present when non-zero |
+| `truncated` | bool | `symbols_total` exceeds the limit, or the walk stopped at `max_files` |
+| `files_capped` | bool | The walk stopped at `max_files`, so definitions and counts cover the first `files_scanned` files only; present when true |
+| `symbols` | array | Ranked definitions |
+| `symbols[].name` | string | The defined name |
+| `symbols[].kind` | string | zoekt kind, as in `sym:` search hits |
+| `symbols[].parent` | string | Enclosing declaration (receiver type, class, message); absent at top level |
+| `symbols[].file` | string | Defining file, relative to the repo root |
+| `symbols[].line` | int | 1-based line of the definition |
+| `symbols[].refs` | int | Other walked files holding the name as a whole identifier token, see below |
+
+Ranking is `refs` descending, then kind (containers and types before functions and methods before constants and variables), then name; the sort is stable, so ties keep file order. `refs` is the number of other files holding the name as a whole identifier, counted in one tokenizing pass over the repo (never a search per symbol), with two adjustments that keep common names from crowding the top. A Go name starting lowercase is package-private, so it counts only files in its own directory. A name defined in several files with the same group of kind (types, callables, or members) shares its mentions evenly among them, so a `New` defined in twelve packages splits twelve ways while a type defined once keeps every mention. Names shorter than three characters get 0. Fields, enumerators, and markdown headings say little about structure and carry common names (`name`, `file`, `Overview`), so they stay out unless `kinds` names them; `symbols_skipped` counts what was left out. The walk is the indexer's own (`search.WalkRepo`), so hidden and generated directories, `.cslignore` matches, oversized files, and binaries stay out, and the outline reads the working tree directly with no index involved.
+
+Example, `path` = `services/csl/internal/search`, `response_format` = `text`:
+
+```
+mad01/thismoon/services/csl/internal/search/blocks.go
+105 method Format (BlockLine)  refs=34
+50 function Blocks  refs=13
+97 method String (BlockLine)  refs=8
+83 method Render (FileBlocks)  refs=6
+24 struct Block  refs=4
+72 struct RenderOptions  refs=3
+14 struct FileBlocks  refs=1
+163 method blocks (fileLines)  refs=1
+
+mad01/thismoon/services/csl/internal/search/search.go
+...
+
+86 symbols in 7 files; 975 files scanned
+```
 
 ### `csl_query_validate`
 

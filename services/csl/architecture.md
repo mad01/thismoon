@@ -25,6 +25,8 @@ internal/
                     rule, shared by symbols/ and semantic/
   symbols/          tree-sitter symbol extraction feeding zoekt's symbol sections
                     (sym: queries, definition-first ranking)
+  outline/          repo outline: definitions from symbols/ ranked by cross-file
+                    reference count, read from the working tree
   semantic/         tree-sitter chunking, Ollama embedding, per-repo vector stores
   hybrid/           Reciprocal Rank Fusion of lexical and semantic result lists
   queue/            reindex queue drained by csl sync / csl index --drain
@@ -71,6 +73,13 @@ to one entry per (repo, path), and fuse the ranked lists with RRF in
 `internal/hybrid/fuse.go`; without a semantic index the result degrades to
 lexical-only.
 
+`csl outline` and `csl_outline` are the one query path that skips the
+index: they walk the working tree with the indexer's rules
+(`search.WalkRepo`), extract definitions with `internal/symbols`, and rank
+them by how many other files hold each name as a whole identifier, counted
+in one tokenizing pass over the repo (package-private Go names count inside
+their directory; a name defined in several files shares its mentions).
+
 ## Storage
 
 Everything lives under `~/.config/csl/`:
@@ -93,12 +102,13 @@ Everything lives under `~/.config/csl/`:
 The web server exposes `GET /api/search`, `/api/semantic_search`,
 `/api/hybrid_search`, `/api/read`, `/api/repos`, `/healthz`, `/version`
 (service git sha), `/webkit/*` (shared chrome), and `/assets/*` (csl's own).
-The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `repo`,
+The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `outline`, `repo`,
 `doctor`, `index`, `semantic`, `hybrid`, `sync`, plus `web`, `mcp`,
-`version`, and the deprecated `hooks`. `csl mcp` registers twelve tools:
-`csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`,
-`csl_search`, `csl_count`, `csl_query_validate`, `csl_semantic_search`,
-`csl_hybrid_search`, `csl_read`, `csl_ls`, and `csl_index_info`.
+`version`, and the deprecated `hooks`. `csl mcp` registers sixteen tools:
+`csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`,
+`csl_repo_reindex`, `csl_search`, `csl_count`, `csl_query_validate`,
+`csl_semantic_search`, `csl_hybrid_search`, `csl_read`, `csl_ls`,
+`csl_outline`, `csl_show_file`, `csl_index_info`, and `csl_doctor`.
 `csl_repo_lookup` also takes `component`, `owner`, and `system` filters
 (case-insensitive regex, matched against the repo's root catalog descriptor)
 and returns those fields on each match alongside `name`, `path`, `remote`,

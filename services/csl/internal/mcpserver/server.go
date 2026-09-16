@@ -44,6 +44,7 @@ func New(version string, opts Options) *mcp.Server {
 		registerHybridTools(s)
 	}
 	registerReadTools(s)
+	registerOutlineTools(s)
 	registerShowTools(s)
 	registerInfoTools(s)
 	registerDoctorTools(s)

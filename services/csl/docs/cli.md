@@ -12,6 +12,7 @@ Every command that reads repos loads the config file — `--config`, else `$CSL_
 | [`csl count`](#csl-count) | Count matches, optionally grouped by repo or language |
 | [`csl hybrid`](#csl-hybrid) | Fuse lexical and semantic results with Reciprocal Rank Fusion |
 | [`csl read`](#csl-read) | Read a file from a named repo by relative path |
+| [`csl outline`](#csl-outline) | Rank a repo's definitions by how many other files reference them |
 | [`csl repo`](#csl-repo) | List or interactively pick a repo |
 | [`csl index`](#csl-index) | Manage the zoekt index (status, repair, clean) |
 | [`csl hooks`](#csl-hooks) | Install a `post-merge` git hook to auto-reindex on `git pull` |
@@ -242,6 +243,42 @@ Resolves `--repo` against every configured repo using substring match (not regex
 csl read internal/cli/root.go --repo thismoon
 csl read main.go --repo thismoon --start-line 10 --end-line 30
 csl read README.md --repo thismoon --json
+```
+
+---
+
+## `csl outline`
+
+Rank a repo's definitions by how many other files reference them.
+
+### Synopsis
+
+```sh
+csl outline [flags] <repo> [path]
+```
+
+### Description
+
+Prints every definition the tree-sitter extractor finds in `<repo>`, or under `[path]` inside it, grouped by file and ranked by the number of other files in the repo that mention the name as a whole identifier. Files appear in the order of their best symbol; each symbol is one line, `LINE kind name (parent)  refs=N`. `<repo>` is a case-insensitive regex that must match exactly one discovered repo. `[path]` narrows which files define; references are always counted across the whole repo. Test files stay out of both sides unless `--include-tests` is set, and fields, enumerators, and markdown headings stay out unless `--kinds` names them. The command reads the working tree directly, so it needs no index. The MCP tool `csl_outline` returns the same object and text; the reference-count rule is in [mcp.md](mcp.md#csl_outline).
+
+### Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--kinds <list>` | no | all but `field`, `enumerator`, `section` | Keep only these kinds, comma-separated: `interface`, `struct`, `class`, `type`, `typealias`, `enum`, `namespace`, `function`, `method`, `methodSpec`, `const`, `var`, `field`, `enumerator`, `section` |
+| `--limit <n>` | no | `100` | Maximum symbols to print (hard cap 500) |
+| `--include-tests` | no | `false` | Include test files in definitions and reference counts |
+| `--max-files <n>` | no | `20000` | Stop the walk after this many files and mark the result truncated |
+| `--json` | no | `false` | Emit as JSON: `{repo, path, files_scanned, symbols_total, symbols_skipped, truncated, files_capped, symbols: [{name, kind, parent, file, line, refs}]}` |
+
+### Examples
+
+```sh
+csl outline thismoon
+csl outline thismoon services/csl/internal
+csl outline thismoon --kinds struct,interface --limit 20
+csl outline thismoon docs --kinds section
+csl outline thismoon services/csl --json
 ```
 
 ---
