@@ -343,13 +343,14 @@ func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {
 
 	switch searchOutputModeFlag {
 	case "content":
-		for _, m := range matches {
-			if m.Before != "" {
-				fmt.Fprint(w, m.Before)
+		// One block per cluster of nearby hits, in the ripgrep --heading
+		// grammar the MCP text format also prints (search.FileBlocks.Render).
+		for i, f := range search.Blocks(matches) {
+			if i > 0 {
+				fmt.Fprintln(w)
 			}
-			fmt.Fprintf(w, "%s/%s:%d:%d: %s\n", m.Repo, m.File, m.Line, m.Column, m.Text)
-			if m.After != "" {
-				fmt.Fprint(w, m.After)
+			for _, line := range f.Render() {
+				fmt.Fprintln(w, line)
 			}
 		}
 	default: // files_with_matches

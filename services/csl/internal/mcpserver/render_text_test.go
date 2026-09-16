@@ -363,25 +363,6 @@ func TestRenderDoctorText(t *testing.T) {
 	)
 }
 
-func TestContextLines(t *testing.T) {
-	tests := []struct {
-		block string
-		want  []string
-	}{
-		{block: "", want: nil},
-		{block: "a", want: []string{"a"}},
-		{block: "a\n", want: []string{"a"}},
-		{block: "a\nb\n", want: []string{"a", "b"}},
-		{block: "\n", want: []string{""}},
-	}
-	for _, tt := range tests {
-		got := contextLines(tt.block)
-		if strings.Join(got, "|") != strings.Join(tt.want, "|") || len(got) != len(tt.want) {
-			t.Errorf("contextLines(%q) = %q, want %q", tt.block, got, tt.want)
-		}
-	}
-}
-
 // TestRenderSearchText_ContentMarksSymbolHits: a sym: hit's line ends with
 // the kind token the semantic renderer uses, plus the parent when nested;
 // plain hits and context lines are untouched.

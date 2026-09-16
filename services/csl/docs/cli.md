@@ -50,7 +50,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `-r, --repo <regex>` | `""` | Restrict to repos matching this regex or substring |
 | `-l, --lang <name>` | `""` | Restrict to a single language (e.g. `go`, `python`, `swift`) |
 | `-f, --file <regex>` | `""` | Restrict to file paths matching this regex (e.g. `\.go$`) |
-| `-o, --output-mode <mode>` | `files_with_matches` | `files_with_matches` prints unique paths; `content` prints matching lines |
+| `-o, --output-mode <mode>` | `files_with_matches` | `files_with_matches` prints unique paths; `content` prints matching lines with context, grouped per file (see below) |
 | `-C, --context-lines <n>` | `0` | Context lines around each match. Only applies to `content` mode |
 | `--limit <n>` | `50` | Maximum number of file results |
 | `--case-sensitive` | `false` | Force case-sensitive matching. Default is smart case (case-insensitive unless the query has uppercase) |
@@ -77,6 +77,8 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `lang:go` | Restrict to a language |
 | `sym:Name` | Restrict to symbol definitions (functions, types, methods, classes); content hits carry `kind` |
 | `case:yes` | Case-sensitive this term |
+
+`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format: one `repo/path` header per file, `LINE:text` for a matching line, `LINE-text` for a context line, and a blank line between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
 
 Regex metacharacters inside the pattern need shell-escaping too. Validate a tricky query first with [`csl query`](#csl-query).
 
