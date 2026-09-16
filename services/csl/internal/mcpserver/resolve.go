@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
@@ -16,55 +15,18 @@ import (
 // its filter is shared with the daemon, web UI, and CLI, so the tool
 // descriptions call that out instead of translating.
 
-// resolveRepo finds a single repo by name. Returns an error if no match or ambiguous.
+// resolveRepo finds a single repo by name among the discovered repos; the
+// matching rule and its errors are finder.MatchOne's.
 func resolveRepo(name string) (finder.Repo, error) {
-	re, err := finder.CompileMatcher(name)
-	if err != nil {
-		return finder.Repo{}, err
-	}
-	normalized := finder.NormalizeQuery(name)
-
 	cfg, err := config.Load()
 	if err != nil {
 		return finder.Repo{}, fmt.Errorf("load csl config: %w", err)
 	}
-
 	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return finder.Repo{}, fmt.Errorf("walk repos: %w", err)
 	}
-
-	var matches []finder.Repo
-	for _, r := range repos {
-		if re.MatchString(r.Name) {
-			matches = append(matches, r)
-		}
-	}
-
-	if len(matches) == 0 {
-		return finder.Repo{}, fmt.Errorf("no repo matching %q found locally", normalized)
-	}
-	if len(matches) > 1 {
-		// Try exact match first
-		for _, m := range matches {
-			if strings.EqualFold(m.Name, normalized) {
-				return m, nil
-			}
-		}
-		names := make([]string, len(matches))
-		for i, m := range matches {
-			names[i] = m.Name
-		}
-		return finder.Repo{}, fmt.Errorf(
-			"ambiguous: %d repos match %q: %s — use the full org/repo name to disambiguate (e.g. %q)",
-			len(matches),
-			normalized,
-			strings.Join(names, ", "),
-			matches[0].Name,
-		)
-	}
-
-	return matches[0], nil
+	return finder.MatchOne(repos, name)
 }
 
 // insensitiveRepoFilter prepends (?i) to a zoekt repo: filter so the lexical

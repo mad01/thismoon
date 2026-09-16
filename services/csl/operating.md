@@ -30,6 +30,19 @@ without a renderer of their own fall back to `key: value` lines. Pass
 `mcp.response_format` in config.yaml; the parameter wins, and an unknown value
 in either place is an error that names its source.
 
+`csl outline <repo> [path]` and the csl_outline tool are the one query path
+that skips the index: they walk the working tree with the indexer's skip
+rules, extract definitions with the tree-sitter grammars, and rank them by
+how many other files hold the name as a whole identifier. Nothing has to be
+indexed or running, and the outline is always current. An outline that looks
+thin is usually the scope: fields, enumerators, and markdown headings are out
+unless `kinds` names them (the empty-result line says how many were skipped),
+test files are out unless include_tests is set, only languages with a grammar
+(Go, TypeScript, Python, Java, protobuf, bash, markdown) contribute
+definitions, and a `path` narrows the definitions but never the reference
+count. A `files_capped` result stopped at max_files (20000) and covers the
+first files in path order only.
+
 ## where state lives
 
 `config.yaml` sits in the config directory (`--config`, else CSL_CONFIG, else
@@ -63,8 +76,12 @@ Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return
 zero. Use 1-2 terms plus repo:/f:/lang: filters. OR is `|` with no spaces
 (`a | b` is three AND terms; uppercase OR is a literal). `f:` takes a regex,
-not a glob (`f:\.go$`). Run `csl query "<pattern>"` (or csl_query_validate)
-to see how the query parsed. If the query is fine, the repo may not be
+not a glob (`f:\.go$`). csl_search's zero_result_hint counts files per AND
+term (term_counts) and reruns once without the terms that match nothing;
+that result carries relaxed_query and dropped_terms. A query of only
+quotes or with an unbalanced quote is refused with the fix. Run `csl query
+"<pattern>"` (or csl_query_validate) to see how the query parsed and the
+term split. If the query is fine, the repo may not be
 indexed: `csl repo <name> --list` resolves it, and an empty result means the
 repo is not checked out, not under the configured dirs, or dropped by
 index.hosts or the exclude list (`csl repo --list --skipped` says which, and why).

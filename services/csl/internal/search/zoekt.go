@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,12 +13,14 @@ import (
 	"github.com/sourcegraph/zoekt/query"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
-	"github.com/mad01/thismoon/services/csl/internal/cslignore"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
+	"github.com/mad01/thismoon/services/csl/internal/symbols"
 )
 
 // IndexRepo indexes a single repo's working tree into the zoekt index directory.
 // It walks the filesystem (not git objects) so uncommitted changes are included.
+// Symbol sections come from csl's own tree-sitter extractor rather than ctags,
+// so the builder's ctags run stays disabled and never looks for a binary.
 func IndexRepo(indexDir string, repo finder.Repo) error {
 	opts := index.Options{
 		IndexDir:     indexDir,
@@ -34,58 +37,8 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 		return fmt.Errorf("create index builder for %s: %w", repo.Name, err)
 	}
 
-	ignore := cslignore.Load(repo.Path)
-
-	walkErr := filepath.Walk(repo.Path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // best-effort, skip unreadable files
-		}
-
-		// Skip hidden directories (including .git)
-		if info.IsDir() {
-			base := filepath.Base(path)
-			if strings.HasPrefix(base, ".") && path != repo.Path {
-				return filepath.SkipDir
-			}
-			// Skip common non-source directories
-			switch base {
-			case "node_modules", "vendor", "__pycache__", "build", "dist", "target":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip a linked worktree's .git pointer file — it is a regular file
-		// ("gitdir: …"), not a directory, so the hidden-dir skip above misses it.
-		if filepath.Base(path) == ".git" {
-			return nil
-		}
-
-		// Skip non-regular files
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
-		// Skip very large files (>1MB by default, zoekt handles this too)
-		if info.Size() > int64(opts.SizeMax) {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(repo.Path, path)
-		if err != nil {
-			return nil
-		}
-
-		if ignore.Match(relPath) {
-			return nil
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil // skip unreadable files
-		}
-
-		return builder.AddFile(relPath, content)
+	walkErr := WalkRepo(repo.Path, int64(opts.SizeMax), func(f WalkFile) error {
+		return addFile(builder, repo.Name, f.Rel, f.Abs)
 	})
 
 	if walkErr != nil {
@@ -97,6 +50,40 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 		return fmt.Errorf("finish index for %s: %w", repo.Name, err)
 	}
 	return nil
+}
+
+// addFile reads one file and adds it to the builder with its symbol
+// sections. A file that cannot be read is skipped; a file whose symbols
+// cannot be extracted is logged and indexed without them, so one odd file
+// never fails its repo.
+func addFile(builder *index.Builder, repoName, relPath, path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	doc := index.Document{Name: relPath, Content: content}
+	syms, err := symbols.Extract(relPath, content)
+	if err != nil {
+		log.Printf("csl: index %s: %s: %v (indexed without symbols)", repoName, relPath, err)
+	}
+	doc.Symbols, doc.SymbolsMetaData = symbolSections(syms)
+	return builder.Add(doc)
+}
+
+// symbolSections converts extracted symbols into the paired slices zoekt's
+// Document carries. Both are nil when there are no symbols: the builder
+// requires the metadata slice to match the sections slice exactly or be nil.
+func symbolSections(syms []symbols.Symbol) ([]index.DocumentSection, []*zoekt.Symbol) {
+	if len(syms) == 0 {
+		return nil, nil
+	}
+	sections := make([]index.DocumentSection, len(syms))
+	meta := make([]*zoekt.Symbol, len(syms))
+	for i, s := range syms {
+		sections[i] = index.DocumentSection{Start: s.Start, End: s.End}
+		meta[i] = &zoekt.Symbol{Kind: s.Kind, Parent: s.Parent, ParentKind: s.ParentKind}
+	}
+	return sections, meta
 }
 
 // IndexRepos indexes multiple repos, calling progress after each one completes.
@@ -347,19 +334,24 @@ func convertResults(
 				if len(lm.After) > 0 {
 					m.After = string(lm.After)
 				}
+				m.Kind, m.Parent = fragmentSymbol(lm.LineFragments)
 				matches = append(matches, m)
 			}
 		} else if len(f.ChunkMatches) > 0 {
 			for _, cm := range f.ChunkMatches {
-				for _, r := range cm.Ranges {
-					matches = append(matches, Match{
+				for i, r := range cm.Ranges {
+					m := Match{
 						Repo:     f.Repository,
 						RepoPath: repoPath,
 						File:     f.FileName,
 						Line:     int(r.Start.LineNumber),
 						Column:   int(r.Start.Column),
 						Text:     strings.TrimSuffix(string(cm.Content), "\n"),
-					})
+					}
+					if i < len(cm.SymbolInfo) && cm.SymbolInfo[i] != nil {
+						m.Kind, m.Parent = cm.SymbolInfo[i].Kind, cm.SymbolInfo[i].Parent
+					}
+					matches = append(matches, m)
 				}
 			}
 		} else {
@@ -373,6 +365,17 @@ func convertResults(
 		}
 	}
 	return matches
+}
+
+// fragmentSymbol returns the kind and parent of the first fragment zoekt
+// hydrated with symbol info, which it does only for sym: hits.
+func fragmentSymbol(frags []zoekt.LineFragmentMatch) (kind, parent string) {
+	for _, fr := range frags {
+		if fr.SymbolInfo != nil {
+			return fr.SymbolInfo.Kind, fr.SymbolInfo.Parent
+		}
+	}
+	return "", ""
 }
 
 // ShardHealth describes the health of a single index shard file.

@@ -252,3 +252,49 @@ func TestQueryString(t *testing.T) {
 		}
 	}
 }
+
+// TestMatchOne pins the single-repo rule: case-insensitive regex, an exact
+// name settling a tie, and an ambiguity error that names the candidates.
+func TestMatchOne(t *testing.T) {
+	repos := []Repo{
+		{Name: "org/repo", Path: "/r"},
+		{Name: "org/repo-two", Path: "/r2"},
+		{Name: "other/thing", Path: "/t"},
+	}
+	tests := []struct {
+		name    string
+		query   string
+		want    string
+		wantErr string
+	}{
+		{name: "regex anchors", query: "REPO$", want: "org/repo"},
+		{name: "exact name settles a tie", query: " Org/Repo ", want: "org/repo"},
+		{name: "unique substring", query: "thing", want: "other/thing"},
+		{name: "ambiguous", query: "repo-?", wantErr: "ambiguous: 2 repos match"},
+		{name: "none", query: "nope", wantErr: `no repo matching "nope"`},
+		{name: "empty", query: "  ", wantErr: "name is required"},
+		{name: "bad regex", query: "repo(", wantErr: "invalid name pattern"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := MatchOne(repos, tc.query)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf(
+						"MatchOne(%q) error = %v, want one containing %q",
+						tc.query,
+						err,
+						tc.wantErr,
+					)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("MatchOne(%q): %v", tc.query, err)
+			}
+			if got.Name != tc.want {
+				t.Errorf("MatchOne(%q) = %q, want %q", tc.query, got.Name, tc.want)
+			}
+		})
+	}
+}

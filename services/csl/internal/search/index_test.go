@@ -1007,3 +1007,53 @@ func BenchmarkStateRoundTrip(b *testing.B) {
 		}
 	}
 }
+
+// ---------- index format version ----------
+
+// TestFingerprintIncludesIndexFormatVersion: the fingerprint changes when
+// the index format does, so a state file written by a binary with an older
+// format marks the repo stale even though its git state is unchanged. This
+// is what forces the one-time rebuild after a shard-content change.
+func TestFingerprintIncludesIndexFormatVersion(t *testing.T) {
+	gitAvailable(t)
+	dir := initGitRepo(t, t.TempDir())
+	repo := finder.Repo{Name: "test/repo", Path: dir}
+
+	fp, err := Fingerprint(dir)
+	if err != nil {
+		t.Fatalf("Fingerprint: %v", err)
+	}
+	status, err := gitOutput(dir, "status", "--porcelain")
+	if err != nil {
+		t.Fatalf("git status: %v", err)
+	}
+	if want := fingerprintOf(fp.HEAD, fp.Branch, status, indexFormatVersion); fp.Fingerprint != want {
+		t.Fatalf("Fingerprint = %s, want fingerprintOf(...) = %s", fp.Fingerprint, want)
+	}
+
+	previous := fingerprintOf(fp.HEAD, fp.Branch, status, indexFormatVersion-1)
+	if previous == fp.Fingerprint {
+		t.Fatal("fingerprint did not change with the index format version")
+	}
+
+	// Indexed under the previous format: stale, though git state matches.
+	state := EmptyState()
+	state.SetRepo(dir, RepoState{Fingerprint: previous, HEAD: fp.HEAD, Branch: fp.Branch})
+	res, err := CheckStaleness([]finder.Repo{repo}, state)
+	if err != nil {
+		t.Fatalf("CheckStaleness: %v", err)
+	}
+	if len(res.Stale) != 1 || len(res.Fresh) != 0 {
+		t.Fatalf("previous format: stale=%d fresh=%d, want 1 stale", len(res.Stale), len(res.Fresh))
+	}
+
+	// Indexed under the current format: fresh.
+	state.SetRepo(dir, fp)
+	res, err = CheckStaleness([]finder.Repo{repo}, state)
+	if err != nil {
+		t.Fatalf("CheckStaleness: %v", err)
+	}
+	if len(res.Fresh) != 1 || len(res.Stale) != 0 {
+		t.Fatalf("current format: stale=%d fresh=%d, want 1 fresh", len(res.Stale), len(res.Fresh))
+	}
+}

@@ -38,13 +38,14 @@ Tools exposed:
   csl_hybrid_search     Lexical + semantic, fused by RRF
   csl_read              Read a file from a named local repo
   csl_ls                List files and directories in a repo
+  csl_outline           Rank a repo's definitions by cross-file references
   csl_show_file         Open a file section for the user in the web UI
   csl_index_info        Index-wide health in one call
   csl_doctor            Run the csl self-checks and return them as JSON
 
 csl_semantic_search and csl_hybrid_search are only registered when
 semantic.enabled is true in config.yaml; with it off the server exposes the
-other thirteen tools.
+other fourteen tools.
 
 ` + agentdoc.RegistrationSnippet(csl.Facts()) + `
 

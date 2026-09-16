@@ -80,6 +80,8 @@ func (s *searchServer) Search(
 			Text:     m.Text,
 			Before:   m.Before,
 			After:    m.After,
+			Kind:     m.Kind,
+			Parent:   m.Parent,
 		}
 	}
 	return resp, nil

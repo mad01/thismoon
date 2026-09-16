@@ -12,6 +12,7 @@ Every command that reads repos loads the config file — `--config`, else `$CSL_
 | [`csl count`](#csl-count) | Count matches, optionally grouped by repo or language |
 | [`csl hybrid`](#csl-hybrid) | Fuse lexical and semantic results with Reciprocal Rank Fusion |
 | [`csl read`](#csl-read) | Read a file from a named repo by relative path |
+| [`csl outline`](#csl-outline) | Rank a repo's definitions by how many other files reference them |
 | [`csl repo`](#csl-repo) | List or interactively pick a repo |
 | [`csl index`](#csl-index) | Manage the zoekt index (status, repair, clean) |
 | [`csl hooks`](#csl-hooks) | Install a `post-merge` git hook to auto-reindex on `git pull` |
@@ -50,7 +51,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `-r, --repo <regex>` | `""` | Restrict to repos matching this regex or substring |
 | `-l, --lang <name>` | `""` | Restrict to a single language (e.g. `go`, `python`, `swift`) |
 | `-f, --file <regex>` | `""` | Restrict to file paths matching this regex (e.g. `\.go$`) |
-| `-o, --output-mode <mode>` | `files_with_matches` | `files_with_matches` prints unique paths; `content` prints matching lines |
+| `-o, --output-mode <mode>` | `files_with_matches` | `files_with_matches` prints unique paths; `content` prints matching lines with context, grouped per file (see below) |
 | `-C, --context-lines <n>` | `0` | Context lines around each match. Only applies to `content` mode |
 | `--limit <n>` | `50` | Maximum number of file results |
 | `--case-sensitive` | `false` | Force case-sensitive matching. Default is smart case (case-insensitive unless the query has uppercase) |
@@ -75,7 +76,10 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `repo:<regex>` | Restrict to repos matching |
 | `file:\.go$` | Restrict to file paths matching |
 | `lang:go` | Restrict to a language |
+| `sym:Name` | Restrict to symbol definitions (functions, types, methods, classes); content hits carry `kind` |
 | `case:yes` | Case-sensitive this term |
+
+`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format: one `repo/path` header per file, `LINE:COL:text` for a matching line (`COL` is the 1-based column where the match starts, as with ripgrep `--column`; the MCP text form prints `LINE:text` without it), `LINE-text` for a context line, and a blank line between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
 
 Regex metacharacters inside the pattern need shell-escaping too. Validate a tricky query first with [`csl query`](#csl-query).
 
@@ -243,6 +247,42 @@ csl read README.md --repo thismoon --json
 
 ---
 
+## `csl outline`
+
+Rank a repo's definitions by how many other files reference them.
+
+### Synopsis
+
+```sh
+csl outline [flags] <repo> [path]
+```
+
+### Description
+
+Prints every definition the tree-sitter extractor finds in `<repo>`, or under `[path]` inside it, grouped by file and ranked by the number of other files in the repo that mention the name as a whole identifier. Files appear in the order of their best symbol; each symbol is one line, `LINE kind name (parent)  refs=N`. `<repo>` is a case-insensitive regex that must match exactly one discovered repo. `[path]` narrows which files define; references are always counted across the whole repo. Test files stay out of both sides unless `--include-tests` is set, and fields, enumerators, and markdown headings stay out unless `--kinds` names them. The command reads the working tree directly, so it needs no index. The MCP tool `csl_outline` returns the same object and text; the reference-count rule is in [mcp.md](mcp.md#csl_outline).
+
+### Flags
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--kinds <list>` | no | all but `field`, `enumerator`, `section` | Keep only these kinds, comma-separated: `interface`, `struct`, `class`, `type`, `typealias`, `enum`, `namespace`, `function`, `method`, `methodSpec`, `const`, `var`, `field`, `enumerator`, `section` |
+| `--limit <n>` | no | `100` | Maximum symbols to print (hard cap 500) |
+| `--include-tests` | no | `false` | Include test files in definitions and reference counts |
+| `--max-files <n>` | no | `20000` | Stop the walk after this many files and mark the result truncated |
+| `--json` | no | `false` | Emit as JSON: `{repo, path, files_scanned, symbols_total, symbols_skipped, truncated, files_capped, symbols: [{name, kind, parent, file, line, refs}]}` |
+
+### Examples
+
+```sh
+csl outline thismoon
+csl outline thismoon services/csl/internal
+csl outline thismoon --kinds struct,interface --limit 20
+csl outline thismoon docs --kinds section
+csl outline thismoon services/csl --json
+```
+
+---
+
 ## `csl repo`
 
 Discover and pick git repos.
@@ -325,7 +365,7 @@ csl index --clean           # delete the entire index directory
 
 ### Description
 
-By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, and `git status --porcelain`, so any commit, checkout, or working-tree change triggers a re-index.
+By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, `git status --porcelain`, and the index format version, so any commit, checkout, or working-tree change triggers a re-index, and so does an upgrade that changes what a shard holds (every repo re-indexes once).
 
 `--repair` opens every `*.zoekt` shard, parses its metadata, and removes any that fail to read. Run `csl index` after repair to rebuild affected repos.
 

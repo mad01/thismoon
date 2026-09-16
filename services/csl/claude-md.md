@@ -6,13 +6,14 @@ Tools:
 - Repo: `csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`, `csl_repo_reindex`
 - Search: `csl_search`, `csl_count`, `csl_query_validate`
 - Semantic and hybrid: `csl_semantic_search`, `csl_hybrid_search` (only once semantic search is set up, see Search)
-- Read and info: `csl_read`, `csl_ls`, `csl_show_file`, `csl_index_info`
+- Read and info: `csl_read`, `csl_ls`, `csl_outline`, `csl_show_file`, `csl_index_info`
 - Diagnosis: `csl_doctor`
 
 ### Search
 - Default to `csl_search`. Lexical search always works and needs nothing running.
 - `csl_semantic_search` and `csl_hybrid_search` need the semantic index built (`csl index --semantic-all`) and Ollama running. Until then semantic answers `available=false` and hybrid degrades to lexical-only. Reach for them on "where do we handle X" questions only when `csl_index_info` reports `semantic.built: true`; otherwise stay lexical.
 - Use `csl_read` for file contents you need yourself and `csl_show_file` to put a file section in front of the user (it needs `csl web` running).
+- Start with `csl_outline` when the question is how a repo or a package is structured: it lists the definitions ranked by how many other files reference them, so the main types and entry points come first. Narrow with `path`, pass `kinds` for fields or markdown headings (out by default), then read the top hits with `csl_read`.
 - Tools return `text` by default. Set `mcp.response_format` in `config.yaml` to change the default, and pass `response_format: "json"` on a call when you need the structured object.
 - If a tool errors or comes back unexpectedly empty, call `csl_doctor` before retrying.
 - If `csl_repo_lookup` finds no match for the repo you are working in, it sits outside csl's configured `dirs`: use `grep`, `find`, or `Glob` there instead. Plain `grep` is also fine for piping and filtering command output.
@@ -34,9 +35,11 @@ zoekt queries look like grep but have important differences:
 - AND is strict: space-separated terms must ALL appear in the SAME file. Use 1-2 terms and narrow with filters, not 3+ chained terms.
 - OR: use `|` with no spaces (`foo|bar`) or lowercase `or`. Uppercase `OR` is a literal string. Spaces around `|` break it.
 - Filters: `repo:name` (not `r:`), `f:\.go$` (not `file:`), `lang:go`, `-term` (NOT).
+- Definitions only: `sym:Name` matches symbol definitions (function, type, method, class names) and skips call sites and comments; in content mode each hit carries its `kind`. Plain queries already rank the defining file first.
 - File filters are regex, not glob: `f:.*\.go$` not `f:*.go`.
 - Exact phrase: `"foo bar"` requires that exact string on one line. For proximity, use regex: `foo.*bar`.
 - Validate: call `csl_query_validate` to see how zoekt parsed your query. This is especially useful when you get zero results.
+- Zero results: read `zero_result_hint`. `term_counts` says how many files each AND term matches on its own; a `0` is the term to drop. When `csl_search` already dropped it and reran, the response carries `relaxed_query` and `dropped_terms`: use those results and do not add the term back. An empty, quote-only, or unbalanced-quote query is refused with the fix.
 
 Common grep-to-zoekt translations:
 

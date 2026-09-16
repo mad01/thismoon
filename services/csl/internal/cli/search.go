@@ -45,6 +45,7 @@ Query syntax:
   foo bar         AND: both terms must appear
   foo|bar         OR: either term matches
   -test           NOT: exclude matches
+  sym:Name        Symbol definitions only (functions, types, methods)
   repo:name       Restrict to repos matching regex
   file:\.go$      Restrict to files matching regex
   lang:go         Restrict to a specific language
@@ -342,13 +343,15 @@ func outputSearchResults(cmd *cobra.Command, matches []search.Match) error {
 
 	switch searchOutputModeFlag {
 	case "content":
-		for _, m := range matches {
-			if m.Before != "" {
-				fmt.Fprint(w, m.Before)
+		// One block per cluster of nearby hits, in the ripgrep --heading
+		// grammar the MCP text format also prints (search.FileBlocks.Render),
+		// plus the match column (ripgrep --column) that only the CLI shows.
+		for i, f := range search.Blocks(matches) {
+			if i > 0 {
+				fmt.Fprintln(w)
 			}
-			fmt.Fprintf(w, "%s/%s:%d:%d: %s\n", m.Repo, m.File, m.Line, m.Column, m.Text)
-			if m.After != "" {
-				fmt.Fprint(w, m.After)
+			for _, line := range f.Render(search.RenderOptions{Column: true}) {
+				fmt.Fprintln(w, line)
 			}
 		}
 	default: // files_with_matches

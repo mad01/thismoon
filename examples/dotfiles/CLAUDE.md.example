@@ -208,8 +208,10 @@ under "Add this to your CLAUDE.md"; `csl docs --claude-md` prints it):
   semantic index is built and Ollama is up: `csl_index_info` reports
   `semantic.built`. Until then semantic answers `available=false` and hybrid
   degrades to lexical-only, so stay on `csl_search`.
-- **Read and info:** `csl_read`, `csl_ls`, `csl_show_file` (opens a file
-  section in the web UI for the user), `csl_index_info`.
+- **Read and info:** `csl_read`, `csl_ls`, `csl_outline` (a repo's
+  definitions ranked by cross-file references, for "how is this structured"),
+  `csl_show_file` (opens a file section in the web UI for the user),
+  `csl_index_info`.
 - **Diagnosis:** `csl_doctor`. Call it before retrying a failed tool call.
 
 **zoekt query best practices:**

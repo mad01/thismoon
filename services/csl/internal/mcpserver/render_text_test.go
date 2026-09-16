@@ -126,7 +126,11 @@ func TestRenderSearchText_ContentTruncatedRepeatsCutFile(t *testing.T) {
 	last := got[len(got)-1]
 	want := "truncated: showing 300 of 400 lines; next offset=11"
 	if last != want {
-		t.Fatalf("trailer = %q, want %q (b.go was cut, so the next page must start at it)", last, want)
+		t.Fatalf(
+			"trailer = %q, want %q (b.go was cut, so the next page must start at it)",
+			last,
+			want,
+		)
 	}
 }
 
@@ -359,21 +363,86 @@ func TestRenderDoctorText(t *testing.T) {
 	)
 }
 
-func TestContextLines(t *testing.T) {
-	tests := []struct {
-		block string
-		want  []string
-	}{
-		{block: "", want: nil},
-		{block: "a", want: []string{"a"}},
-		{block: "a\n", want: []string{"a"}},
-		{block: "a\nb\n", want: []string{"a", "b"}},
-		{block: "\n", want: []string{""}},
+// TestRenderSearchText_ContentMarksSymbolHits: a sym: hit's line ends with
+// the kind token the semantic renderer uses, plus the parent when nested;
+// plain hits and context lines are untouched.
+func TestRenderSearchText_ContentMarksSymbolHits(t *testing.T) {
+	out := searchOutput{
+		OutputMode: contentOutputMode,
+		Total:      3,
+		Lines: []searchMatchLine{
+			{
+				Repo:   "org/repo",
+				Path:   "a.go",
+				Line:   4,
+				Text:   "func Hello() {",
+				Kind:   "function",
+				Before: "// doc\n",
+			},
+			{
+				Repo:   "org/repo",
+				Path:   "a.go",
+				Line:   9,
+				Text:   "func (p *Point) Hello() {",
+				Kind:   "method",
+				Parent: "Point",
+			},
+			{Repo: "org/repo", Path: "b.go", Line: 1, Text: "Hello()"},
+		},
 	}
-	for _, tt := range tests {
-		got := contextLines(tt.block)
-		if strings.Join(got, "|") != strings.Join(tt.want, "|") || len(got) != len(tt.want) {
-			t.Errorf("contextLines(%q) = %q, want %q", tt.block, got, tt.want)
-		}
+	wantLines(
+		t, renderSearchText(out),
+		"org/repo/a.go",
+		"3-// doc",
+		"4:func Hello() {  kind=function",
+		"--",
+		"9:func (p *Point) Hello() {  kind=method parent=Point",
+		"",
+		"org/repo/b.go",
+		"1:Hello()",
+		"",
+		"3 lines in 2 files",
+	)
+}
+
+func TestRenderSearchText_RelaxedLeadsWithDroppedTerms(t *testing.T) {
+	out := searchOutput{
+		OutputMode:   filesOutputMode,
+		Files:        []searchMatchFile{{Repo: "org/repo", Path: "a.go"}},
+		Total:        1,
+		RelaxedQuery: "retry backoff",
+		DroppedTerms: []string{"jitter"},
 	}
+	wantLines(
+		t, renderSearchText(out),
+		"relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`",
+		"",
+		"org/repo/a.go",
+		"",
+		"1 file",
+	)
+
+	out.DroppedTerms = []string{"jitter", "zzz"}
+	if got := renderSearchText(out); !strings.HasPrefix(
+		got,
+		"relaxed: dropped 'jitter', 'zzz' (0 files each);",
+	) {
+		t.Errorf("two dropped terms render as:\n%s", got)
+	}
+}
+
+func TestRenderSearchText_ZeroResultsTermCounts(t *testing.T) {
+	out := searchOutput{OutputMode: filesOutputMode, ZeroHint: &searchZeroHint{
+		ParsedQuery: `(and substr:"retry" substr:"jitter")`,
+		TermCounts:  []termCount{{Term: "retry", Files: 37}, {Term: "jitter", Files: 0}},
+		Notes:       []string{"n"},
+	}}
+	wantLines(
+		t, renderSearchText(out),
+		"no matches",
+		`parsed query: (and substr:"retry" substr:"jitter")`,
+		"files per term: retry=37, jitter=0",
+		"repos searched: 0 (0 indexed, 0 discovered)",
+		"- n",
+	)
 }

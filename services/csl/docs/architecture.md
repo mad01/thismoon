@@ -122,11 +122,15 @@ Each repo has one entry in `state.json`:
 }
 ```
 
-The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain)`. `search.CheckStaleness()` diffs the current fingerprint against the stored one; any difference means the shard is out of date.
+The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`. `search.CheckStaleness()` diffs the current fingerprint against the stored one; any difference means the shard is out of date. The index format version (`indexFormatVersion` in `internal/search/index.go`) is a constant that bumps whenever the shard contents produced from an unchanged tree change, so an upgrade that adds to what a shard holds re-indexes every repo once instead of serving old shards forever.
 
 ### Shard validation
 
 `search.ValidateShards()` opens each `*.zoekt` file and calls `index.NewIndexFile` + `index.ReadMetadata`. A failure marks the shard corrupted. `search.RepairIndex()` removes corrupted shards and drops the corresponding entries from `state.json` so the next `csl index` picks those repos up.
+
+### Symbols
+
+`search.IndexRepo` adds every file as an `index.Document` whose `Symbols` and `SymbolsMetaData` come from `internal/symbols.Extract`: it parses the file with the tree-sitter grammar `internal/grammar` maps its name to and walks a per-language rule table (Go, TypeScript, Python, Java, protobuf, markdown headings, bash functions) collecting definition names, a kind in zoekt's ctags vocabulary, and the enclosing declaration (a Go receiver type, a class, a protobuf message or service). Ranges are byte offsets on rune boundaries, sorted and non-overlapping, the invariants the shard builder checks. A file whose extraction fails is logged and indexed without symbols. zoekt's own ctags run stays disabled (`DisableCTags: true`), so no ctags binary is needed; `sym:` queries match only these sections, and every content match near a symbol picks up zoekt's symbol ranking, which is why a definition's file sorts above its call sites.
 
 ### What's indexed
 

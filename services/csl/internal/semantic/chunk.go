@@ -1,23 +1,12 @@
 package semantic
 
 import (
-	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/bash"
-	"github.com/smacker/go-tree-sitter/dockerfile"
-	"github.com/smacker/go-tree-sitter/golang"
-	"github.com/smacker/go-tree-sitter/hcl"
-	"github.com/smacker/go-tree-sitter/java"
-	"github.com/smacker/go-tree-sitter/markdown"
-	"github.com/smacker/go-tree-sitter/protobuf"
-	"github.com/smacker/go-tree-sitter/python"
-	"github.com/smacker/go-tree-sitter/sql"
-	"github.com/smacker/go-tree-sitter/typescript/typescript"
-	"github.com/smacker/go-tree-sitter/yaml"
+
+	"github.com/mad01/thismoon/services/csl/internal/grammar"
 )
 
 // Line-window fallback parameters (1-based, inclusive ranges).
@@ -61,43 +50,8 @@ type Chunk struct {
 	EmbedText string
 }
 
-// LangForPath derives a language tag from a file extension (or, for
-// dockerfiles, the file name). It returns an empty string for files without a
-// tree-sitter chunker.
-func LangForPath(path string) string {
-	base := strings.ToLower(filepath.Base(path))
-	if base == "dockerfile" || strings.HasPrefix(base, "dockerfile.") ||
-		strings.HasSuffix(base, ".dockerfile") {
-		return "dockerfile"
-	}
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".go":
-		return "go"
-	case ".ts", ".tsx":
-		return "typescript"
-	case ".py":
-		return "python"
-	case ".java":
-		return "java"
-	case ".tf", ".hcl":
-		return "hcl"
-	case ".sh", ".bash":
-		return "bash"
-	case ".md", ".markdown":
-		return "markdown"
-	case ".proto":
-		return "protobuf"
-	case ".sql":
-		return "sql"
-	case ".yml", ".yaml":
-		return "yaml"
-	default:
-		return ""
-	}
-}
-
 // ChunkFile splits src into semantic chunks: one chunk per relevant declaration
-// via tree-sitter for languages with a grammarFor entry, per section for
+// via tree-sitter for languages with a chunkSpec entry, per section for
 // markdown, per build stage for dockerfiles. Languages whose symbols nest
 // inside type bodies (java, protobuf services) are split per member. For any
 // other lang, or when tree-sitter yields nothing, it falls back to overlapping
@@ -116,10 +70,7 @@ func ChunkFile(repo, path, lang string, src []byte) ([]Chunk, error) {
 // parseChunks runs the tree-sitter chunker for lang, or nothing for languages
 // without one.
 func parseChunks(repo, path, lang string, src []byte) ([]Chunk, error) {
-	if lang == "markdown" {
-		return chunkMarkdownFile(repo, path, src)
-	}
-	if spec, ok := grammarFor(lang); ok {
+	if spec, ok := chunkSpec(lang); ok {
 		return chunkWithTreeSitter(repo, path, lang, src, spec)
 	}
 	return nil, nil
@@ -184,24 +135,22 @@ func truncateRunes(s string, max int) string {
 	return string(r)
 }
 
-// langSpec describes how one language is chunked: the grammar to parse with,
-// which node kinds become whole chunks, and — for languages whose symbols nest
-// inside type bodies — which container kinds to descend into and which member
-// kinds to emit from inside them.
+// langSpec describes how one language is chunked: which node kinds become
+// whole chunks, and — for languages whose symbols nest inside type bodies —
+// which container kinds to descend into and which member kinds to emit from
+// inside them. The grammar itself comes from the shared grammar registry.
 type langSpec struct {
-	grammar    *sitter.Language
 	kinds      map[string]bool // nodes emitted whole
 	containers map[string]bool // nodes split into a header chunk + per-member chunks
 	members    map[string]bool // nodes emitted whole from inside a container body
 	stageKind  string          // dockerfile-style: chunk per group of root children starting at this kind
 }
 
-// grammarFor returns the chunking spec for a language tag.
-func grammarFor(lang string) (langSpec, bool) {
+// chunkSpec returns the chunking spec for a language tag.
+func chunkSpec(lang string) (langSpec, bool) {
 	switch lang {
 	case "go":
 		return langSpec{
-			grammar: golang.GetLanguage(),
 			kinds: map[string]bool{
 				"function_declaration": true,
 				"method_declaration":   true,
@@ -210,7 +159,6 @@ func grammarFor(lang string) (langSpec, bool) {
 		}, true
 	case "typescript":
 		return langSpec{
-			grammar: typescript.GetLanguage(),
 			kinds: map[string]bool{
 				"function_declaration": true,
 				"class_declaration":    true,
@@ -219,7 +167,6 @@ func grammarFor(lang string) (langSpec, bool) {
 		}, true
 	case "python":
 		return langSpec{
-			grammar: python.GetLanguage(),
 			kinds: map[string]bool{
 				"function_definition": true,
 				"class_definition":    true,
@@ -227,7 +174,6 @@ func grammarFor(lang string) (langSpec, bool) {
 		}, true
 	case "java":
 		return langSpec{
-			grammar: java.GetLanguage(),
 			kinds: map[string]bool{
 				"enum_declaration": true,
 			},
@@ -244,26 +190,25 @@ func grammarFor(lang string) (langSpec, bool) {
 		}, true
 	case "hcl":
 		return langSpec{
-			grammar: hcl.GetLanguage(),
 			kinds: map[string]bool{
 				"block": true,
 			},
 		}, true
 	case "bash":
 		return langSpec{
-			grammar: bash.GetLanguage(),
 			kinds: map[string]bool{
 				"function_definition": true,
 			},
 		}, true
 	case "dockerfile":
-		return langSpec{
-			grammar:   dockerfile.GetLanguage(),
-			stageKind: "from_instruction",
-		}, true
+		return langSpec{stageKind: "from_instruction"}, true
+	case "markdown":
+		// One section per chunk: a heading plus its body, stopping at the
+		// first subsection (sections nest, so subsections become their own
+		// chunks via the container traversal).
+		return langSpec{containers: map[string]bool{"section": true}}, true
 	case "protobuf":
 		return langSpec{
-			grammar: protobuf.GetLanguage(),
 			kinds: map[string]bool{
 				"message": true,
 				"enum":    true,
@@ -277,14 +222,12 @@ func grammarFor(lang string) (langSpec, bool) {
 		}, true
 	case "sql":
 		return langSpec{
-			grammar: sql.GetLanguage(),
 			kinds: map[string]bool{
 				"statement": true,
 			},
 		}, true
 	case "yaml":
 		return langSpec{
-			grammar: yaml.GetLanguage(),
 			kinds: map[string]bool{
 				"block_mapping_pair": true,
 			},
@@ -296,10 +239,7 @@ func grammarFor(lang string) (langSpec, bool) {
 
 // chunkWithTreeSitter parses src and emits chunks for each relevant node.
 func chunkWithTreeSitter(repo, path, lang string, src []byte, spec langSpec) ([]Chunk, error) {
-	parser := sitter.NewParser()
-	parser.SetLanguage(spec.grammar)
-
-	tree, err := parser.ParseCtx(context.Background(), nil, src)
+	tree, err := grammar.Parse(lang, src)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -404,19 +344,6 @@ func chunkStages(repo, path, lang string, src []byte, root *sitter.Node, stageKi
 		chunks = append(chunks, newChunk(repo, path, lang, "stage", start, end, text))
 	}
 	return chunks
-}
-
-// chunkMarkdownFile chunks markdown one section per chunk: a heading plus its
-// body, stopping at the first subsection (sections nest, so subsections become
-// their own chunks via the container traversal). The markdown grammar has a
-// bespoke two-phase parse API, so it cannot go through grammarFor.
-func chunkMarkdownFile(repo, path string, src []byte) ([]Chunk, error) {
-	tree, err := markdown.ParseCtx(context.Background(), nil, src)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	spec := langSpec{containers: map[string]bool{"section": true}}
-	return chunkDecls(repo, path, "markdown", src, tree.BlockTree().RootNode(), spec), nil
 }
 
 // nodeChunk emits one node verbatim as a chunk.

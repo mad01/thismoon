@@ -5,37 +5,6 @@ import (
 	"testing"
 )
 
-func TestLangForPath(t *testing.T) {
-	tests := []struct {
-		path string
-		want string
-	}{
-		{"a/b/main.go", "go"},
-		{"x.ts", "typescript"},
-		{"x.tsx", "typescript"},
-		{"y.py", "python"},
-		{"src/Main.java", "java"},
-		{"main.tf", "hcl"},
-		{"vars.hcl", "hcl"},
-		{"run.sh", "bash"},
-		{"env.bash", "bash"},
-		{"Dockerfile", "dockerfile"},
-		{"docker/Dockerfile.dev", "dockerfile"},
-		{"build.dockerfile", "dockerfile"},
-		{"README.md", "markdown"},
-		{"api.proto", "protobuf"},
-		{"schema.sql", "sql"},
-		{"config.yaml", "yaml"},
-		{"ci.yml", "yaml"},
-		{"noext", ""},
-	}
-	for _, tt := range tests {
-		if got := LangForPath(tt.path); got != tt.want {
-			t.Errorf("LangForPath(%q) = %q, want %q", tt.path, got, tt.want)
-		}
-	}
-}
-
 const goSrc = `package demo
 
 import "fmt"

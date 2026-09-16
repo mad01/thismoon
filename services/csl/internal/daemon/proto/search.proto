@@ -39,6 +39,8 @@ message Match {
   string text = 6;
   string before = 7;
   string after = 8;
+  string kind = 9;    // symbol kind for a sym: hit (function, method, struct, ...)
+  string parent = 10; // enclosing declaration for a sym: hit
 }
 
 message CountRequest {

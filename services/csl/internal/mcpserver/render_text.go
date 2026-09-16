@@ -2,10 +2,10 @@ package mcpserver
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
 // Text renderers for the tools whose output has a shape worth more than a
@@ -21,10 +21,27 @@ func renderSearchText(out searchOutput) string {
 	if out.Total == 0 {
 		return renderZeroHint(out.ZeroHint)
 	}
+	body := renderFileMatches(out)
 	if out.OutputMode == contentOutputMode {
-		return renderContentMatches(out)
+		body = renderContentMatches(out)
 	}
-	return renderFileMatches(out)
+	if out.RelaxedQuery == "" {
+		return body
+	}
+	return relaxedLine(out) + "\n\n" + body
+}
+
+// relaxedLine leads a relaxed result, so the reader knows which terms were
+// dropped and which query the results answer.
+func relaxedLine(out searchOutput) string {
+	each := ""
+	if len(out.DroppedTerms) > 1 {
+		each = " each"
+	}
+	return fmt.Sprintf(
+		"relaxed: dropped %s (0 files%s); showing results for `%s`",
+		quoteList(out.DroppedTerms), each, out.RelaxedQuery,
+	)
 }
 
 // renderFileMatches lists one `repo/path` per line. When truncated, the page
@@ -45,13 +62,14 @@ func renderFileMatches(out searchOutput) string {
 }
 
 // renderContentMatches prints matches grouped per file in first-appearance
-// order. Content mode caps lines, not files, so the next offset is derived
-// from the files this page showed (see nextContentOffset).
+// order, with nearby hits merged into one block per context window
+// (search.Blocks). Content mode caps lines, not files, so the next offset is
+// derived from the files this page showed (see nextContentOffset).
 func renderContentMatches(out searchOutput) string {
-	files := groupContentLines(out.Lines)
+	files := search.Blocks(contentMatches(out.Lines))
 	var lines []string
 	for _, f := range files {
-		lines = f.render(lines)
+		lines = append(lines, f.Render(search.RenderOptions{})...)
 		lines = append(lines, "")
 	}
 	lines = append(
@@ -67,6 +85,27 @@ func renderContentMatches(out searchOutput) string {
 	return strings.Join(lines, "\n")
 }
 
+// contentMatches maps the tool's line entries back to search matches, the
+// shape the shared block merge takes, so the text form is built from the same
+// page the JSON form carries.
+func contentMatches(lines []searchMatchLine) []search.Match {
+	matches := make([]search.Match, len(lines))
+	for i, l := range lines {
+		matches[i] = search.Match{
+			Repo:   l.Repo,
+			File:   l.Path,
+			Line:   l.Line,
+			Column: l.Column,
+			Text:   l.Text,
+			Before: l.Before,
+			After:  l.After,
+			Kind:   l.Kind,
+			Parent: l.Parent,
+		}
+	}
+	return matches
+}
+
 // nextContentOffset picks the offset that continues a line-capped content
 // page without losing matches. The cap almost always lands inside the last
 // file shown, so the next page starts at that file again: a few lines print
@@ -79,86 +118,6 @@ func nextContentOffset(offset, filesShown int) int {
 	return offset + 1
 }
 
-// fileLines collects the printable lines of one file keyed by line number,
-// so overlapping or adjacent context between hits never prints twice, and a
-// line that is both a match and another hit's context prints as a match.
-type fileLines struct {
-	name  string
-	text  map[int]string
-	match map[int]bool
-}
-
-// groupContentLines buckets match lines by `repo/path`, keeping the order in
-// which files first appear in the ranked results.
-func groupContentLines(lines []searchMatchLine) []*fileLines {
-	var files []*fileLines
-	byName := make(map[string]*fileLines)
-	for _, l := range lines {
-		name := l.Repo + "/" + l.Path
-		f, ok := byName[name]
-		if !ok {
-			f = &fileLines{name: name, text: map[int]string{}, match: map[int]bool{}}
-			byName[name] = f
-			files = append(files, f)
-		}
-		f.add(l)
-	}
-	return files
-}
-
-// add records one match and its context. Before and After are "\n"-joined
-// blocks, so their line numbers are derived from the match line.
-func (f *fileLines) add(l searchMatchLine) {
-	before := contextLines(l.Before)
-	for i, text := range before {
-		f.addContext(l.Line-len(before)+i, text)
-	}
-	f.text[l.Line] = l.Text
-	f.match[l.Line] = true
-	for i, text := range contextLines(l.After) {
-		f.addContext(l.Line+1+i, text)
-	}
-}
-
-// addContext keeps the first text seen for a line; a match recorded later
-// overwrites it in add because the match line's text is authoritative.
-func (f *fileLines) addContext(n int, text string) {
-	if _, ok := f.text[n]; !ok {
-		f.text[n] = text
-	}
-}
-
-// render appends the file header and its lines in ascending order, with `--`
-// wherever consecutive printed lines are not adjacent in the file.
-func (f *fileLines) render(dst []string) []string {
-	nums := make([]int, 0, len(f.text))
-	for n := range f.text {
-		nums = append(nums, n)
-	}
-	sort.Ints(nums)
-	dst = append(dst, f.name)
-	for i, n := range nums {
-		if i > 0 && n != nums[i-1]+1 {
-			dst = append(dst, "--")
-		}
-		sep := "-"
-		if f.match[n] {
-			sep = ":"
-		}
-		dst = append(dst, fmt.Sprintf("%d%s%s", n, sep, f.text[n]))
-	}
-	return dst
-}
-
-// contextLines splits a "\n"-joined context block into lines. A trailing
-// newline closes the last line rather than adding an empty one.
-func contextLines(block string) []string {
-	if block == "" {
-		return nil
-	}
-	return strings.Split(strings.TrimSuffix(block, "\n"), "\n")
-}
-
 // renderZeroHint explains an empty search: how zoekt parsed the query, how
 // many repos the filters covered, index age, and the targeted notes.
 func renderZeroHint(hint *searchZeroHint) string {
@@ -168,6 +127,9 @@ func renderZeroHint(hint *searchZeroHint) string {
 	}
 	if hint.ParsedQuery != "" {
 		lines = append(lines, "parsed query: "+hint.ParsedQuery)
+	}
+	if len(hint.TermCounts) > 0 {
+		lines = append(lines, "files per term: "+termCountsLine(hint.TermCounts))
 	}
 	lines = append(lines, fmt.Sprintf(
 		"repos searched: %d (%d indexed, %d discovered)",
@@ -182,6 +144,15 @@ func renderZeroHint(hint *searchZeroHint) string {
 		lines = append(lines, "- "+n)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// termCountsLine renders term_counts as `retry=37, backoff=12, jitter=0`.
+func termCountsLine(counts []termCount) string {
+	parts := make([]string, len(counts))
+	for i, c := range counts {
+		parts[i] = fmt.Sprintf("%s=%d", c.Term, c.Files)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // renderSemanticText prints one header per hit (`repo/path:START-END

@@ -21,6 +21,12 @@ internal/
   daemon/           search-server lifecycle: Unix socket, gRPC client/server,
                     EnsureDaemon/StartBackground, PID file
   search/           zoekt wrappers: IndexRepo(s), Search, Count, staleness checks
+  grammar/          the one table of tree-sitter grammars and the path-to-language
+                    rule, shared by symbols/ and semantic/
+  symbols/          tree-sitter symbol extraction feeding zoekt's symbol sections
+                    (sym: queries, definition-first ranking)
+  outline/          repo outline: definitions from symbols/ ranked by cross-file
+                    reference count, read from the working tree
   semantic/         tree-sitter chunking, Ollama embedding, per-repo vector stores
   hybrid/           Reciprocal Rank Fusion of lexical and semantic result lists
   queue/            reindex queue drained by csl sync / csl index --drain
@@ -48,18 +54,31 @@ forks `csl search --serve` detached. The query then travels as gRPC over the
 socket (`daemon.SearchVia`); if the search server is unreachable the caller
 falls back to `search.Search()`, opening shards in-process for that one query.
 Freshness rides alongside: each repo's fingerprint (sha256 of HEAD, branch,
-and `git status --porcelain`) is compared to `state.json`, and stale repos are
-reindexed in a background goroutine after results return.
+`git status --porcelain`, and the index format version) is compared to
+`state.json`, and stale repos are reindexed in a background goroutine after
+results return.
 
 Indexing is the other half of the split. `csl sync` walks the configured
 directories (`finder.FilteredWalk`), pulls repos ff-only in parallel, batch
-reindexes the changed ones, and drains `reindex.queue`. Semantic indexing
+reindexes the changed ones, and drains `reindex.queue`. `search.IndexRepo`
+walks each working tree and, for the languages csl links tree-sitter grammars
+for (`internal/grammar`), attaches symbol sections from `internal/symbols` to
+every document: definition names with ctags-style kinds and their enclosing
+declaration. That is what makes `sym:` queries hit definitions and lets zoekt
+rank a definition's file above its call sites, with no ctags binary. Semantic indexing
 (`csl index --semantic-all`) chunks source files with tree-sitter, embeds the
 chunks over HTTP against a local Ollama server, and writes per-repo vector
 stores. `csl hybrid` and `csl_hybrid_search` run both backends, collapse each
 to one entry per (repo, path), and fuse the ranked lists with RRF in
 `internal/hybrid/fuse.go`; without a semantic index the result degrades to
 lexical-only.
+
+`csl outline` and `csl_outline` are the one query path that skips the
+index: they walk the working tree with the indexer's rules
+(`search.WalkRepo`), extract definitions with `internal/symbols`, and rank
+them by how many other files hold each name as a whole identifier, counted
+in one tokenizing pass over the repo (package-private Go names count inside
+their directory; a name defined in several files shares its mentions).
 
 ## Storage
 
@@ -83,12 +102,13 @@ Everything lives under `~/.config/csl/`:
 The web server exposes `GET /api/search`, `/api/semantic_search`,
 `/api/hybrid_search`, `/api/read`, `/api/repos`, `/healthz`, `/version`
 (service git sha), `/webkit/*` (shared chrome), and `/assets/*` (csl's own).
-The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `repo`,
+The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `outline`, `repo`,
 `doctor`, `index`, `semantic`, `hybrid`, `sync`, plus `web`, `mcp`,
-`version`, and the deprecated `hooks`. `csl mcp` registers twelve tools:
-`csl_repo_lookup`, `csl_repo_info`, `csl_repo_pull`, `csl_repo_reindex`,
-`csl_search`, `csl_count`, `csl_query_validate`, `csl_semantic_search`,
-`csl_hybrid_search`, `csl_read`, `csl_ls`, and `csl_index_info`.
+`version`, and the deprecated `hooks`. `csl mcp` registers sixteen tools:
+`csl_repo_lookup`, `csl_repo_info`, `csl_repo_health`, `csl_repo_pull`,
+`csl_repo_reindex`, `csl_search`, `csl_count`, `csl_query_validate`,
+`csl_semantic_search`, `csl_hybrid_search`, `csl_read`, `csl_ls`,
+`csl_outline`, `csl_show_file`, `csl_index_info`, and `csl_doctor`.
 `csl_repo_lookup` also takes `component`, `owner`, and `system` filters
 (case-insensitive regex, matched against the repo's root catalog descriptor)
 and returns those fields on each match alongside `name`, `path`, `remote`,
