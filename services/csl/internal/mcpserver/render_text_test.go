@@ -404,3 +404,45 @@ func TestRenderSearchText_ContentMarksSymbolHits(t *testing.T) {
 		"3 lines in 2 files",
 	)
 }
+
+func TestRenderSearchText_RelaxedLeadsWithDroppedTerms(t *testing.T) {
+	out := searchOutput{
+		OutputMode:   filesOutputMode,
+		Files:        []searchMatchFile{{Repo: "org/repo", Path: "a.go"}},
+		Total:        1,
+		RelaxedQuery: "retry backoff",
+		DroppedTerms: []string{"jitter"},
+	}
+	wantLines(
+		t, renderSearchText(out),
+		"relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`",
+		"",
+		"org/repo/a.go",
+		"",
+		"1 file",
+	)
+
+	out.DroppedTerms = []string{"jitter", "zzz"}
+	if got := renderSearchText(out); !strings.HasPrefix(
+		got,
+		"relaxed: dropped 'jitter', 'zzz' (0 files each);",
+	) {
+		t.Errorf("two dropped terms render as:\n%s", got)
+	}
+}
+
+func TestRenderSearchText_ZeroResultsTermCounts(t *testing.T) {
+	out := searchOutput{OutputMode: filesOutputMode, ZeroHint: &searchZeroHint{
+		ParsedQuery: `(and substr:"retry" substr:"jitter")`,
+		TermCounts:  []termCount{{Term: "retry", Files: 37}, {Term: "jitter", Files: 0}},
+		Notes:       []string{"n"},
+	}}
+	wantLines(
+		t, renderSearchText(out),
+		"no matches",
+		`parsed query: (and substr:"retry" substr:"jitter")`,
+		"files per term: retry=37, jitter=0",
+		"repos searched: 0 (0 indexed, 0 discovered)",
+		"- n",
+	)
+}

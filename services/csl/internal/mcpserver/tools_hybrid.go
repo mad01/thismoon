@@ -131,7 +131,12 @@ func hybridLexical(ctx context.Context, in hybridSearchInput, limit int) ([]sear
 		Limit:      limit,
 		OutputMode: contentOutputMode,
 	}
-	return runSearch(ctx, indexDir, daemon.DefaultSocketPath(), opts, repoNames)
+	backend := daemonBackend{
+		indexDir:   indexDir,
+		socketPath: daemon.DefaultSocketPath(),
+		repoNames:  repoNames,
+	}
+	return backend.search(ctx, opts)
 }
 
 // hybridSemantic reuses the csl_semantic_search handler so the daemon-first

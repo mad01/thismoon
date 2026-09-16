@@ -319,6 +319,7 @@ Search code across locally checked-out repos using zoekt query syntax.
 | `output_mode` | string | `files_with_matches` | `files_with_matches` or `content` |
 | `context_lines` | int | `0` | Context lines per match. Only applies to `content` mode |
 | `limit` | int | `50` | Maximum number of file results |
+| `offset` | int | `0` | Skip this many ranked file results before applying `limit`; the next page is `offset + limit` |
 | `case_sensitive` | bool | `false` | Force case-sensitive matching; default is smart case |
 | `response_format` | string | `text` | `text`, `json`, `jsonl`, `toon`, `csv`, `markdown-kv`, or `xml`; see [Response formats](#response-formats). The output examples below are the `json` form |
 
@@ -353,6 +354,51 @@ Search code across locally checked-out repos using zoekt query syntax.
   "total": 1
 }
 ```
+
+**Output (zero results):**
+
+```json
+{
+  "output_mode": "files_with_matches",
+  "total": 0,
+  "truncated": false,
+  "zero_result_hint": {
+    "parsed_query": "(and substr:\"retry\" substr:\"backoff\" substr:\"jitter\")",
+    "repos_searched": 45,
+    "repos_discovered": 45,
+    "repos_indexed": 45,
+    "newest_indexed_at": "2026-09-16T10:00:00Z",
+    "oldest_indexed_at": "2026-09-10T08:00:00Z",
+    "term_counts": [
+      {"term": "retry", "files": 37},
+      {"term": "backoff", "files": 12},
+      {"term": "jitter", "files": 3}
+    ],
+    "notes": [
+      "every term matches files on its own but no file contains all 3; search retry|backoff|jitter for files with any of them, or one term with a narrower file filter"
+    ]
+  }
+}
+```
+
+A search that matches nothing carries `zero_result_hint`: the query as zoekt parsed it with the filters folded in, how many repos the filters covered and how many of those are indexed, index age, and `notes` naming known traps (`a | b`, uppercase `OR`, a query made only of parameter names such as `output_mode`). For a query with two or more AND terms it also runs one count per term (the first six) under the same filters and reports `term_counts`, files per term, so a `0` names the term that killed the query.
+
+**Relaxation.** When some terms match no file and others do, `csl_search` reruns once with the zero-file terms removed, same filters and limit, first page only, and returns those results with two extra fields: `relaxed_query`, the query the results come from, and `dropped_terms`. Do not add a dropped term back. Nothing is rerun when every term matches on its own (the fix is the `a|b` form, which asks a different question), when `offset` is above zero, or when more than six terms were in play; the hint says which case applies. Successful searches are unchanged: both fields are absent.
+
+```json
+{
+  "output_mode": "files_with_matches",
+  "files": [
+    {"repo": "mad01/thismoon", "path": "kit/retry/backoff.go"}
+  ],
+  "total": 1,
+  "truncated": false,
+  "relaxed_query": "retry backoff",
+  "dropped_terms": ["jitter"]
+}
+```
+
+**Malformed queries.** A query that is empty, made only of quote characters, has an unbalanced double quote, contains an empty `""` phrase, or ends in a lone backslash is refused before any search runs; the error names the problem and the fix. `csl_query_validate` reports the same shapes as `valid: false`.
 
 **Query syntax:**
 
@@ -576,19 +622,25 @@ Validate a zoekt query and return its parsed tree, or a parse error with a fixin
 ```json
 {
   "valid": true,
-  "parsed": "(and substr:\"foo\" file_regexp:\"\\.go$\")"
+  "parsed": "(and substr:\"foo\" file_regexp:\"\\.go$\")",
+  "terms": ["foo"],
+  "filters": ["f:\\.go$"]
 }
 ```
+
+`terms` are the top-level AND terms, each of which must match in the same file; `filters` are the atoms that only narrow (`repo:`, `f:`, `lang:`, `sym:`, `case:`, `-term`). This is the split the zero-result diagnosis in `csl_search` counts and relaxes over. A query made only of `csl_search` parameter names is valid but carries the trap in `hint`.
 
 **Output (invalid):**
 
 ```json
 {
   "valid": false,
-  "error": "unexpected end of query",
-  "hint": "check for unbalanced quotes or parentheses"
+  "error": "query \"\\\"\" is only quote characters",
+  "hint": "put the search term itself in query; quotes are only needed around a multi-word phrase, e.g. \"retry backoff\""
 }
 ```
+
+The malformed shapes (empty, only quotes, unbalanced double quote, empty `""` phrase, lone trailing backslash) come back with the same problem and fix `csl_search` refuses them with; any other parse error carries zoekt's message.
 
 ### `csl_doctor`
 
@@ -627,7 +679,7 @@ Every one of the fifteen tools accepts a `response_format` parameter. The JSON e
 
 Precedence: the `response_format` parameter on the call, then `mcp.response_format` in `config.yaml`, then the built-in default `text`. An unknown value in either place is an error that names where the value came from.
 
-`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
+`text` is tool-specific. `csl_search` in `content` mode prints ripgrep `--heading` style: one `repo/path` header per file, `LINE:match` lines, `LINE-context` lines, `--` between non-contiguous groups in a file, a blank line between files, and a trailer `N lines in M files`. When the 300-line cap hits, a second trailer reads `truncated: showing N of M lines; next offset=K`. In `files_with_matches` mode it lists `repo/path` lines with an `N files` trailer. Zero results print `no matches` followed by the hint lines, including `files per term: retry=37, jitter=0` when term counts ran. A relaxed result opens with `relaxed: dropped 'jitter' (0 files); showing results for `retry backoff`` and a blank line, then the normal listing. `csl_hybrid_search` and `csl_semantic_search` print a header per hit (path, line range, score) and then the raw snippet. `csl_read` prints `LINE:text`. `csl_ls`, `csl_count`, and `csl_doctor` print one short line per entry. Every other tool falls back to `markdown-kv`.
 
 `csl_search` with `output_mode: "content"` and `context_lines: 1`:
 

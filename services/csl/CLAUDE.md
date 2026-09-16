@@ -252,9 +252,9 @@ is in docs/mcp.md under Response formats.
 - `csl_repo_reindex(name)` → `{name, path, reindexed, duration}`. Blocking reindex of one repo.
 
 **Search:**
-- `csl_search(query, repo?, lang?, file?, output_mode?, context_lines?, limit?, case_sensitive?, response_format?)` → `{output_mode, files[]|lines[], total, truncated, total_available?}`. Uses zoekt query syntax (see zoekt query pitfalls). Defaults: `limit` 50, `output_mode` files_with_matches; content mode caps at 300 lines per call.
+- `csl_search(query, repo?, lang?, file?, output_mode?, context_lines?, limit?, offset?, case_sensitive?, response_format?)` → `{output_mode, files[]|lines[], total, truncated, total_available?, relaxed_query?, dropped_terms?, zero_result_hint?}`. Uses zoekt query syntax (see zoekt query pitfalls). Defaults: `limit` 50, `output_mode` files_with_matches; content mode caps at 300 lines per call. A malformed query (empty, only quotes, unbalanced quote) is refused with the fix. On zero results `zero_result_hint` carries the parsed query, repos covered, index age, `term_counts` (files per AND term, first six) and notes; when some terms match no file and others do, the search reruns once without them (first page only) and the results carry `relaxed_query` and `dropped_terms`.
 - `csl_count(query, repo?, lang?, group_by?)` → `{total, groups[]}`. Same query syntax as `csl_search`; `group_by` is `repo` or `language`.
-- `csl_query_validate(query)` → `{valid, parsed?, error?, hint?}`. Parse-tree debug for zero-result or unexpected-result queries.
+- `csl_query_validate(query)` → `{valid, parsed?, error?, hint?, terms?, filters?}`. Parse-tree debug for zero-result or unexpected-result queries; `terms`/`filters` is the AND-term split the zero-result diagnosis works from, and the malformed shapes `csl_search` refuses come back as `valid: false` with the same fix.
 
 **Semantic and hybrid:**
 - `csl_semantic_search(query, repo?, lang?, k?, expand?)` → `{available, hits[]?, note?}`. Meaning-based search over vector embeddings; `hits[]` carries `{repo, path, lang?, kind?, start_line, end_line, score, snippet?}`. `repo` here is a case-sensitive substring, not a regex, unlike every other repo param. Returns `available=false` with a `note` when the semantic index isn't built (`csl index --semantic-all`).

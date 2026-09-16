@@ -187,24 +187,17 @@ func TestOverConstraintNotes(t *testing.T) {
 		want int
 	}{
 		{name: "one term, no filters", in: searchInput{Query: "cluster_name"}, want: 0},
-		{name: "two terms", in: searchInput{Query: "cluster name"}, want: 0},
-		{name: "three AND terms", in: searchInput{Query: "backend service health"}, want: 1},
 		{
-			name: "five AND terms",
-			in:   searchInput{Query: "backend service health check endpoint"},
-			want: 1,
+			name: "three AND terms alone are andTermsNote's job",
+			in:   searchInput{Query: "a b c"},
+			want: 0,
 		},
 		{name: "file filter set", in: searchInput{Query: "x", File: `.*\.tf$`}, want: 1},
 		{name: "multi-word quoted phrase", in: searchInput{Query: `"backend service"`}, want: 1},
 		{name: "single-word quote is silent", in: searchInput{Query: `"backend"`}, want: 0},
 		{
-			name: "filters, negations, OR groups don't count",
-			in:   searchInput{Query: "foo|bar -test lang:go f:x repo:y"},
-			want: 0,
-		},
-		{
-			name: "terms and file filter stack",
-			in:   searchInput{Query: "backend service health", File: "x"},
+			name: "phrase and file filter stack",
+			in:   searchInput{Query: `"backend service" health`, File: "x"},
 			want: 2,
 		},
 	}
@@ -224,21 +217,21 @@ func TestOverConstraintNotes(t *testing.T) {
 	}
 }
 
-func TestAndTermCount(t *testing.T) {
+func TestAndTermsNote(t *testing.T) {
 	tests := []struct {
 		query string
 		want  int
 	}{
-		{query: "foo", want: 1},
-		{query: "foo bar baz", want: 3},
-		{query: `"foo bar" baz`, want: 2},
-		{query: "foo|bar baz", want: 1},
-		{query: "foo -bar lang:go", want: 1},
-		{query: "foo or bar", want: 2},
+		{query: "cluster name", want: 0},
+		{query: "backend service health", want: 1},
+		{query: "backend service health check endpoint", want: 1},
+		{query: `"foo bar" baz -test lang:go f:x repo:y`, want: 0},
+		{query: "foo|bar baz qux", want: 1},
+		{query: "foo or bar baz", want: 0}, // top-level or is not an AND chain
 	}
 	for _, tt := range tests {
-		if got := andTermCount(tt.query); got != tt.want {
-			t.Errorf("andTermCount(%q) = %d, want %d", tt.query, got, tt.want)
+		if got := andTermsNote(tt.query); len(got) != tt.want {
+			t.Errorf("andTermsNote(%q) = %v, want %d notes", tt.query, got, tt.want)
 		}
 	}
 }
@@ -251,7 +244,7 @@ func TestBuildZeroHint_RepoFilterMatchesNone(t *testing.T) {
 	in := searchInput{Query: "foo", Repo: "nosuchrepo"}
 	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
 
-	hint := buildZeroHint(in, opts, repos, t.TempDir())
+	hint := buildZeroHint(in, opts, repos, t.TempDir(), termDiagnosis{})
 
 	if hint.ReposDiscovered != 2 {
 		t.Errorf("expected repos_discovered=2, got %d", hint.ReposDiscovered)
@@ -279,7 +272,7 @@ func TestBuildZeroHint_RepoFilterCaseInsensitive(t *testing.T) {
 	in := searchInput{Query: "foo", Repo: "alpha"}
 	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
 
-	hint := buildZeroHint(in, opts, repos, indexDir)
+	hint := buildZeroHint(in, opts, repos, indexDir, termDiagnosis{})
 
 	if hint.ReposSearched != 1 {
 		t.Errorf("expected repos_searched=1 (case-insensitive match), got %d", hint.ReposSearched)
@@ -303,7 +296,7 @@ func TestBuildZeroHint_MatchedButUnindexedRepoCarriesNote(t *testing.T) {
 	in := searchInput{Query: "foo", Repo: "alpha"}
 	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
 
-	hint := buildZeroHint(in, opts, repos, indexDir)
+	hint := buildZeroHint(in, opts, repos, indexDir, termDiagnosis{})
 
 	if hint.ReposSearched != 0 {
 		t.Errorf("expected repos_searched=0 for a matched-but-unindexed repo, got %d",
@@ -319,7 +312,7 @@ func TestBuildZeroHint_WhitespaceRepoFilterCarriesNote(t *testing.T) {
 	in := searchInput{Query: "foo", Repo: "my repo"}
 	opts := search.SearchOptions{Pattern: in.Query, RepoFilter: insensitiveRepoFilter(in.Repo)}
 
-	hint := buildZeroHint(in, opts, repos, t.TempDir())
+	hint := buildZeroHint(in, opts, repos, t.TempDir(), termDiagnosis{})
 
 	if len(hint.Notes) != 1 || !strings.Contains(hint.Notes[0], "whitespace") {
 		t.Errorf("notes = %v, want the whitespace-filter note", hint.Notes)
@@ -339,7 +332,7 @@ func TestBuildZeroHint_ZeroIndexedAtEntriesSkipped(t *testing.T) {
 	in := searchInput{Query: "foo"}
 	opts := search.SearchOptions{Pattern: in.Query}
 
-	hint := buildZeroHint(in, opts, repos, indexDir)
+	hint := buildZeroHint(in, opts, repos, indexDir, termDiagnosis{})
 
 	want := stamp.Format(time.RFC3339)
 	if hint.NewestIndexedAt != want || hint.OldestIndexedAt != want {
@@ -372,7 +365,7 @@ func TestBuildZeroHint_ParsedQueryAndIndexAge(t *testing.T) {
 	in := searchInput{Query: "foo bar"}
 	opts := search.SearchOptions{Pattern: in.Query}
 
-	hint := buildZeroHint(in, opts, repos, indexDir)
+	hint := buildZeroHint(in, opts, repos, indexDir, termDiagnosis{})
 
 	if hint.ParsedQuery == "" {
 		t.Error("expected parsed_query to be set for a valid query")
@@ -404,7 +397,7 @@ func TestBuildZeroHint_MissingStateOmitsIndexFields(t *testing.T) {
 	in := searchInput{Query: "foo"}
 	opts := search.SearchOptions{Pattern: in.Query}
 
-	hint := buildZeroHint(in, opts, repos, t.TempDir())
+	hint := buildZeroHint(in, opts, repos, t.TempDir(), termDiagnosis{})
 
 	if hint.ReposIndexed != 0 {
 		t.Errorf("expected repos_indexed=0 with no state file, got %d", hint.ReposIndexed)

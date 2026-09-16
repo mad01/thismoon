@@ -63,8 +63,12 @@ Empty search result: usually the query, not an error. zoekt AND requires all
 space-separated terms in the SAME file, so 3+ terms almost always return
 zero. Use 1-2 terms plus repo:/f:/lang: filters. OR is `|` with no spaces
 (`a | b` is three AND terms; uppercase OR is a literal). `f:` takes a regex,
-not a glob (`f:\.go$`). Run `csl query "<pattern>"` (or csl_query_validate)
-to see how the query parsed. If the query is fine, the repo may not be
+not a glob (`f:\.go$`). csl_search's zero_result_hint counts files per AND
+term (term_counts) and reruns once without the terms that match nothing;
+that result carries relaxed_query and dropped_terms. A query of only
+quotes or with an unbalanced quote is refused with the fix. Run `csl query
+"<pattern>"` (or csl_query_validate) to see how the query parsed and the
+term split. If the query is fine, the repo may not be
 indexed: `csl repo <name> --list` resolves it, and an empty result means the
 repo is not checked out, not under the configured dirs, or dropped by
 index.hosts or the exclude list (`csl repo --list --skipped` says which, and why).

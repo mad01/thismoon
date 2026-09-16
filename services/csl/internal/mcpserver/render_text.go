@@ -21,10 +21,27 @@ func renderSearchText(out searchOutput) string {
 	if out.Total == 0 {
 		return renderZeroHint(out.ZeroHint)
 	}
+	body := renderFileMatches(out)
 	if out.OutputMode == contentOutputMode {
-		return renderContentMatches(out)
+		body = renderContentMatches(out)
 	}
-	return renderFileMatches(out)
+	if out.RelaxedQuery == "" {
+		return body
+	}
+	return relaxedLine(out) + "\n\n" + body
+}
+
+// relaxedLine leads a relaxed result, so the reader knows which terms were
+// dropped and which query the results answer.
+func relaxedLine(out searchOutput) string {
+	each := ""
+	if len(out.DroppedTerms) > 1 {
+		each = " each"
+	}
+	return fmt.Sprintf(
+		"relaxed: dropped %s (0 files%s); showing results for `%s`",
+		quoteList(out.DroppedTerms), each, out.RelaxedQuery,
+	)
 }
 
 // renderFileMatches lists one `repo/path` per line. When truncated, the page
@@ -111,6 +128,9 @@ func renderZeroHint(hint *searchZeroHint) string {
 	if hint.ParsedQuery != "" {
 		lines = append(lines, "parsed query: "+hint.ParsedQuery)
 	}
+	if len(hint.TermCounts) > 0 {
+		lines = append(lines, "files per term: "+termCountsLine(hint.TermCounts))
+	}
 	lines = append(lines, fmt.Sprintf(
 		"repos searched: %d (%d indexed, %d discovered)",
 		hint.ReposSearched, hint.ReposIndexed, hint.ReposDiscovered,
@@ -124,6 +144,15 @@ func renderZeroHint(hint *searchZeroHint) string {
 		lines = append(lines, "- "+n)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// termCountsLine renders term_counts as `retry=37, backoff=12, jitter=0`.
+func termCountsLine(counts []termCount) string {
+	parts := make([]string, len(counts))
+	for i, c := range counts {
+		parts[i] = fmt.Sprintf("%s=%d", c.Term, c.Files)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // renderSemanticText prints one header per hit (`repo/path:START-END

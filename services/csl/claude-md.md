@@ -38,6 +38,7 @@ zoekt queries look like grep but have important differences:
 - File filters are regex, not glob: `f:.*\.go$` not `f:*.go`.
 - Exact phrase: `"foo bar"` requires that exact string on one line. For proximity, use regex: `foo.*bar`.
 - Validate: call `csl_query_validate` to see how zoekt parsed your query. This is especially useful when you get zero results.
+- Zero results: read `zero_result_hint`. `term_counts` says how many files each AND term matches on its own; a `0` is the term to drop. When `csl_search` already dropped it and reran, the response carries `relaxed_query` and `dropped_terms`: use those results and do not add the term back. An empty, quote-only, or unbalanced-quote query is refused with the fix.
 
 Common grep-to-zoekt translations:
 

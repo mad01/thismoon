@@ -4,14 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
-	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 )
 
@@ -65,20 +62,29 @@ type searchOutput struct {
 	Offset         int               `json:"offset,omitempty"           jsonschema:"the ranked-file offset this page started at; request the next page with offset + limit"`
 	Truncated      bool              `json:"truncated"                  jsonschema:"true if limit capped the results; more matches exist, so page with offset (offset + limit), refine your query, or increase limit"`
 	TotalAvailable int               `json:"total_available,omitempty"  jsonschema:"matches in this page before limit capped it (only set when truncated is true); not a grand total across pages"`
-	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
+	RelaxedQuery   string            `json:"relaxed_query,omitempty"    jsonschema:"set when the original query matched nothing and the search reran once without the AND terms that match no file at all; the query these results come from"`
+	DroppedTerms   []string          `json:"dropped_terms,omitempty"    jsonschema:"the AND terms removed to form relaxed_query, each matching zero files under the same filters; do not add them back"`
+	ZeroHint       *searchZeroHint   `json:"zero_result_hint,omitempty" jsonschema:"set only on zero results: how the query was parsed, files per AND term, how many repos the filters covered, and index age; read it before assuming the code doesn't exist"`
 }
 
 // searchZeroHint explains a zero-hit search so an agent can tell a genuinely
 // empty result from a malformed query or a stale index. Additive: it appears
 // only when the search returned nothing, and never changes non-empty output.
 type searchZeroHint struct {
-	ParsedQuery     string   `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it; check that terms and operators mean what you intended"`
-	ReposSearched   int      `json:"repos_searched"              jsonschema:"repos the repo filter matched that are also present in the search index (only indexed repos can produce hits); 0 means the filter or index coverage is the problem, not the query"`
-	ReposDiscovered int      `json:"repos_discovered"            jsonschema:"git repos discovered under the configured dirs"`
-	ReposIndexed    int      `json:"repos_indexed,omitempty"     jsonschema:"repos present in the search index; a repo discovered but not indexed is invisible to search until indexed"`
-	NewestIndexedAt string   `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
-	OldestIndexedAt string   `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); very old means some repo's index is stale"`
-	Notes           []string `json:"notes,omitempty"             jsonschema:"targeted suggestions for this query (known syntax traps, filter mismatches)"`
+	ParsedQuery     string      `json:"parsed_query,omitempty"      jsonschema:"the effective query (filters folded in) as zoekt parsed it; check that terms and operators mean what you intended"`
+	ReposSearched   int         `json:"repos_searched"              jsonschema:"repos the repo filter matched that are also present in the search index (only indexed repos can produce hits); 0 means the filter or index coverage is the problem, not the query"`
+	ReposDiscovered int         `json:"repos_discovered"            jsonschema:"git repos discovered under the configured dirs"`
+	ReposIndexed    int         `json:"repos_indexed,omitempty"     jsonschema:"repos present in the search index; a repo discovered but not indexed is invisible to search until indexed"`
+	NewestIndexedAt string      `json:"newest_indexed_at,omitempty" jsonschema:"most recent per-repo index time (RFC3339)"`
+	OldestIndexedAt string      `json:"oldest_indexed_at,omitempty" jsonschema:"least recent per-repo index time (RFC3339); very old means some repo's index is stale"`
+	TermCounts      []termCount `json:"term_counts,omitempty"       jsonschema:"files matching each top-level AND term on its own under the same filters, in query order; a 0 names the term that killed the query, and all non-zero means the terms exist but never in one file"`
+	Notes           []string    `json:"notes,omitempty"             jsonschema:"targeted suggestions for this query (known syntax traps, filter mismatches)"`
+}
+
+// termCount is one entry of term_counts.
+type termCount struct {
+	Term  string `json:"term"`
+	Files int    `json:"files" jsonschema:"files matching this term alone under the query's filters"`
 }
 
 // countInput is the typed input for the csl_count tool.
@@ -110,10 +116,12 @@ type queryValidateInput struct {
 
 // queryValidateOutput is the typed output of the csl_query_validate tool.
 type queryValidateOutput struct {
-	Valid  bool   `json:"valid"`
-	Parsed string `json:"parsed,omitempty" jsonschema:"string representation of the parsed query tree when valid"`
-	Error  string `json:"error,omitempty"  jsonschema:"parse error message when not valid"`
-	Hint   string `json:"hint,omitempty"   jsonschema:"suggestion for fixing the query when not valid"`
+	Valid   bool     `json:"valid"`
+	Parsed  string   `json:"parsed,omitempty"  jsonschema:"string representation of the parsed query tree when valid"`
+	Error   string   `json:"error,omitempty"   jsonschema:"parse error message when not valid"`
+	Hint    string   `json:"hint,omitempty"    jsonschema:"suggestion for fixing the query when not valid, or a trap spotted in a valid one"`
+	Terms   []string `json:"terms,omitempty"   jsonschema:"top-level AND terms, each of which must match in the same file; a zero-result csl_search counts these and drops the ones matching no file"`
+	Filters []string `json:"filters,omitempty" jsonschema:"filter atoms and negations (repo:, f:, lang:, sym:, case:, -term) that narrow the search and are never dropped"`
 }
 
 func registerSearchTools(s *mcp.Server) {
@@ -128,7 +136,9 @@ func registerSearchTools(s *mcp.Server) {
 			"Use | or lowercase 'or' for OR; uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
 			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax: the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
 			"Defaults and caps: limit 50 files, context_lines 0; content mode returns at most 300 lines per call. When capped, truncated=true; page with offset (next page = offset + limit), narrow the query, or raise limit. " +
-			"On zero results the response carries zero_result_hint (the query as zoekt parsed it, repos the filters covered, index age, known syntax traps); read it before retrying or concluding the code doesn't exist. " +
+			"On zero results the response carries zero_result_hint: the query as zoekt parsed it, term_counts (files matching each AND term alone), repos the filters covered, index age, and known traps; read it before retrying or concluding the code doesn't exist. " +
+			"When some AND terms match no file and others do, the search reruns once without them and the response carries relaxed_query and dropped_terms; do not add a dropped term back. " +
+			"A query that is empty, only quotes, or has an unbalanced quote is rejected with the fix instead of searched. " +
 			"The results come from a persistent in-memory zoekt index maintained by the csl search daemon, so calls are fast across a session. " +
 			"Set response_format to pick the encoding (text, the default, is ripgrep-style: `repo/path` headers, `LINE:match`, `LINE-context`; json restores the structured object); every csl tool accepts it.",
 		Annotations: &mcp.ToolAnnotations{
@@ -152,7 +162,8 @@ func registerSearchTools(s *mcp.Server) {
 	addFormattedTool(s, &mcp.Tool{
 		Name: "csl_query_validate",
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
-			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms. " +
+			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms, and terms/filters show the split csl_search's zero-result diagnosis works from (each term must match in the same file; filters are never dropped). " +
+			"A malformed query (empty, only quotes, unbalanced quote) reports valid=false with the fix, the same check csl_search applies before searching. " +
 			"Also useful for debugging regex escaping like \\.go$.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
@@ -166,8 +177,8 @@ func handleSearch(
 	_ *mcp.CallToolRequest,
 	in searchInput,
 ) (*mcp.CallToolResult, searchOutput, error) {
-	if strings.TrimSpace(in.Query) == "" {
-		return nil, searchOutput{}, fmt.Errorf("query is required")
+	if m := checkQueryShape(in.Query); m != nil {
+		return nil, searchOutput{}, m
 	}
 
 	outputMode := in.OutputMode
@@ -230,233 +241,43 @@ func handleSearch(
 		OutputMode:    outputMode,
 	}
 
-	matches, err := runSearch(ctx, indexDir, socketPath, opts, repoNames)
+	backend := daemonBackend{indexDir: indexDir, socketPath: socketPath, repoNames: repoNames}
+	matches, err := backend.search(ctx, opts)
 	if err != nil {
 		return nil, searchOutput{}, err
 	}
 
 	out := buildSearchOutput(outputMode, limit, offset, matches)
-	if out.Total == 0 {
-		out.ZeroHint = buildZeroHint(in, opts, repos, indexDir)
+	if out.Total > 0 {
+		return nil, out, nil
 	}
-	return nil, out, nil
+	return nil, explainZero(ctx, backend, in, opts, repos, indexDir), nil
 }
 
-// buildZeroHint assembles the zero_result_hint payload for a search that ran
-// cleanly but matched nothing. Best-effort: any piece that cannot be computed
-// is omitted rather than failing the response.
-func buildZeroHint(
-	in searchInput,
-	opts search.SearchOptions,
-	repos []finder.Repo,
-	indexDir string,
-) *searchZeroHint {
-	hint := &searchZeroHint{
-		ReposDiscovered: len(repos),
-		Notes:           append(queryTrapNotes(in.Query), overConstraintNotes(in)...),
-	}
-
-	if info := search.ValidateQuery(search.BuildQueryString(opts)); info.Valid {
-		hint.ParsedQuery = info.Parsed
-	}
-
-	indexed := make(map[string]struct{})
-	if state, err := search.LoadState(indexDir); err == nil {
-		hint.ReposIndexed = len(state.Repos)
-		var newest, oldest time.Time
-		for path, rs := range state.Repos {
-			indexed[path] = struct{}{}
-			if rs.IndexedAt.IsZero() {
-				continue
-			}
-			if newest.IsZero() || rs.IndexedAt.After(newest) {
-				newest = rs.IndexedAt
-			}
-			if oldest.IsZero() || rs.IndexedAt.Before(oldest) {
-				oldest = rs.IndexedAt
-			}
-		}
-		if !newest.IsZero() {
-			hint.NewestIndexedAt = newest.Format(time.RFC3339)
-			hint.OldestIndexedAt = oldest.Format(time.RFC3339)
-		}
-	}
-
-	searched, notes := repoFilterHint(in.Repo, repos, indexed)
-	hint.ReposSearched = searched
-	hint.Notes = append(hint.Notes, notes...)
-	return hint
+// searchBackend is the query surface the search tools need: a search and a
+// count over the same index. daemonBackend is the production one; tests
+// substitute a fake to drive the zero-result diagnosis.
+type searchBackend interface {
+	search(ctx context.Context, opts search.SearchOptions) ([]search.Match, error)
+	count(ctx context.Context, opts search.CountOptions) ([]search.CountResult, int, error)
 }
 
-// repoFilterHint reports how many discovered repos the repo filter matches
-// AND the index actually covers — zoekt cannot return hits from a repo that
-// is discovered on disk but not yet indexed. It mirrors the case-insensitive
-// matching the repo tools use; the whitespace case is called out instead of
-// diagnosed, because the search itself space-splits the filter into separate
-// zoekt terms and no repo-name count describes what actually ran.
-func repoFilterHint(
-	repoFilter string,
-	repos []finder.Repo,
-	indexed map[string]struct{},
-) (int, []string) {
-	countIndexed := func(rs []finder.Repo) (n int) {
-		for _, r := range rs {
-			if _, ok := indexed[r.Path]; ok {
-				n++
-			}
-		}
-		return n
-	}
-
-	if repoFilter == "" {
-		return countIndexed(repos), nil
-	}
-	if strings.ContainsAny(repoFilter, " \t") {
-		return 0, []string{fmt.Sprintf(
-			"repo filter %q contains whitespace; the search splits it into separate zoekt terms, so it is not matched as one repo name — use a regex without spaces",
-			repoFilter,
-		)}
-	}
-
-	re, err := finder.CompileMatcher(repoFilter)
-	if err != nil {
-		return 0, nil
-	}
-	var matched []finder.Repo
-	for _, r := range repos {
-		if re.MatchString(r.Name) {
-			matched = append(matched, r)
-		}
-	}
-	if len(matched) == 0 {
-		return 0, []string{fmt.Sprintf(
-			"repo filter %q matched none of the %d locally discovered repos; check the name with csl_repo_lookup — if the repo is not checked out locally, csl cannot see it, so search it where it is hosted instead of retrying here",
-			repoFilter,
-			len(repos),
-		)}
-	}
-	searched := countIndexed(matched)
-	if unindexed := len(matched) - searched; unindexed > 0 {
-		return searched, []string{fmt.Sprintf(
-			"%d of the %d repos matching the filter are not in the search index yet and are invisible to search; run csl_repo_reindex on them",
-			unindexed,
-			len(matched),
-		)}
-	}
-	return searched, nil
-}
-
-// queryTrapNotes flags known zoekt syntax traps present in the raw query that
-// commonly explain a surprising zero-hit result. Quoted phrases are stripped
-// first: an ' OR ' inside a "quoted literal" is content, not an operator.
-func queryTrapNotes(query string) []string {
-	query = stripQuoted(query)
-	var notes []string
-	if strings.Contains(query, " | ") {
-		notes = append(notes,
-			"'a | b' parses as three AND terms, not OR; write a|b with no spaces")
-	}
-	if strings.Contains(query, " OR ") {
-		notes = append(notes,
-			"uppercase OR is a literal search term; use | with no spaces or lowercase 'or'")
-	}
-	return notes
-}
-
-// overConstraintNotes flags the query shapes that most often explain a
-// zero-hit search: 3+ AND terms, a verbatim-only quoted phrase, and a stacked
-// file filter. Sessions loosen these one guess at a time over long refinement
-// chains; naming them up front is what shortens the chain.
-func overConstraintNotes(in searchInput) []string {
-	var notes []string
-	if n := andTermCount(in.Query); n >= 3 {
-		notes = append(notes, fmt.Sprintf(
-			"query has %d AND terms that must ALL appear in the same file — retry with 1-2 key terms, or join alternatives as a|b (no spaces)",
-			n,
-		))
-	}
-	for _, span := range quotedSpans(in.Query) {
-		if strings.ContainsAny(span, " \t") {
-			notes = append(
-				notes,
-				"a \"quoted phrase\" matches only that exact text verbatim — drop the quotes to match the words as separate AND terms",
-			)
-			break
-		}
-	}
-	if in.File != "" {
-		notes = append(
-			notes,
-			"the file filter is the most common over-constraint — retry without it before loosening the query",
-		)
-	}
-	return notes
-}
-
-// andTermCount counts the AND terms zoekt will require in the same file:
-// bare whitespace-separated tokens plus one per quoted phrase. Filters
-// (repo:/f:/lang:), negations, OR groups, and the or operator don't count —
-// they narrow or widen, but they are not another required term.
-func andTermCount(query string) int {
-	n := len(quotedSpans(query))
-	for tok := range strings.FieldsSeq(stripQuoted(query)) {
-		if strings.Contains(tok, ":") || strings.HasPrefix(tok, "-") ||
-			strings.Contains(tok, "|") || strings.EqualFold(tok, "or") {
-			continue
-		}
-		n++
-	}
-	return n
-}
-
-// quotedSpans returns the contents of every complete double-quoted span in
-// the query, in order. An unclosed quote yields no span for its tail.
-func quotedSpans(s string) []string {
-	var spans []string
-	for {
-		i := strings.Index(s, `"`)
-		if i < 0 {
-			return spans
-		}
-		s = s[i+1:]
-		j := strings.Index(s, `"`)
-		if j < 0 {
-			return spans
-		}
-		spans = append(spans, s[:j])
-		s = s[j+1:]
-	}
-}
-
-// stripQuoted removes double-quoted spans from a query so trap sniffing does
-// not fire on operators that appear inside a quoted literal phrase.
-func stripQuoted(s string) string {
-	var b strings.Builder
-	inQuote := false
-	for _, r := range s {
-		if r == '"' {
-			inQuote = !inQuote
-			continue
-		}
-		if !inQuote {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// runSearch mirrors the daemon-first-then-fallback pattern from
+// daemonBackend mirrors the daemon-first-then-fallback pattern from
 // internal/cli/search.go, minus the indexing / progress output (the daemon
 // handles that, and MCP clients do not benefit from progress logs written
 // to stderr during a single JSON-RPC call).
-func runSearch(
+type daemonBackend struct {
+	indexDir   string
+	socketPath string
+	repoNames  map[string]string
+}
+
+func (b daemonBackend) search(
 	ctx context.Context,
-	indexDir, socketPath string,
 	opts search.SearchOptions,
-	repoNames map[string]string,
 ) ([]search.Match, error) {
-	if err := daemon.EnsureDaemon(indexDir, socketPath); err == nil {
-		matches, err := daemon.SearchVia(ctx, socketPath, opts, repoNames)
+	if err := daemon.EnsureDaemon(b.indexDir, b.socketPath); err == nil {
+		matches, err := daemon.SearchVia(ctx, b.socketPath, opts, b.repoNames)
 		if err == nil {
 			return matches, nil
 		}
@@ -464,7 +285,23 @@ func runSearch(
 			return nil, err
 		}
 	}
-	return search.Search(ctx, indexDir, opts, repoNames)
+	return search.Search(ctx, b.indexDir, opts, b.repoNames)
+}
+
+func (b daemonBackend) count(
+	ctx context.Context,
+	opts search.CountOptions,
+) ([]search.CountResult, int, error) {
+	if err := daemon.EnsureDaemon(b.indexDir, b.socketPath); err == nil {
+		results, total, err := daemon.CountVia(ctx, b.socketPath, opts)
+		if err == nil {
+			return results, total, nil
+		}
+		if !errors.Is(err, daemon.ErrDaemonNotRunning) {
+			return nil, 0, err
+		}
+	}
+	return search.Count(ctx, b.indexDir, opts)
 }
 
 const maxContentLines = 300
@@ -526,8 +363,8 @@ func handleCount(
 	_ *mcp.CallToolRequest,
 	in countInput,
 ) (*mcp.CallToolResult, countOutput, error) {
-	if strings.TrimSpace(in.Query) == "" {
-		return nil, countOutput{}, fmt.Errorf("query is required")
+	if m := checkQueryShape(in.Query); m != nil {
+		return nil, countOutput{}, m
 	}
 	if in.GroupBy != "" && in.GroupBy != "repo" && in.GroupBy != "language" {
 		return nil, countOutput{}, fmt.Errorf(
@@ -548,28 +385,10 @@ func handleCount(
 		Lang:       in.Lang,
 		GroupBy:    in.GroupBy,
 	}
-
-	var (
-		results []search.CountResult
-		total   int
-	)
-
-	if err := daemon.EnsureDaemon(indexDir, socketPath); err == nil {
-		results, total, err = daemon.CountVia(ctx, socketPath, opts)
-		if err != nil {
-			if !errors.Is(err, daemon.ErrDaemonNotRunning) {
-				return nil, countOutput{}, fmt.Errorf("count: %w", err)
-			}
-			results, total, err = search.Count(ctx, indexDir, opts)
-			if err != nil {
-				return nil, countOutput{}, fmt.Errorf("count: %w", err)
-			}
-		}
-	} else {
-		results, total, err = search.Count(ctx, indexDir, opts)
-		if err != nil {
-			return nil, countOutput{}, fmt.Errorf("count: %w", err)
-		}
+	backend := daemonBackend{indexDir: indexDir, socketPath: socketPath}
+	results, total, err := backend.count(ctx, opts)
+	if err != nil {
+		return nil, countOutput{}, fmt.Errorf("count: %w", err)
 	}
 
 	groups := make([]countGroup, 0, len(results))
@@ -585,14 +404,23 @@ func handleQueryValidate(
 	_ *mcp.CallToolRequest,
 	in queryValidateInput,
 ) (*mcp.CallToolResult, queryValidateOutput, error) {
-	if strings.TrimSpace(in.Query) == "" {
-		return nil, queryValidateOutput{}, fmt.Errorf("query is required")
+	if m := checkQueryShape(in.Query); m != nil {
+		return nil, queryValidateOutput{Error: m.Problem, Hint: m.Fix}, nil
 	}
 	info := search.ValidateQuery(in.Query)
-	return nil, queryValidateOutput{
+	out := queryValidateOutput{
 		Valid:  info.Valid,
 		Parsed: info.Parsed,
 		Error:  info.Error,
 		Hint:   info.Hint,
-	}, nil
+	}
+	if !info.Valid {
+		return nil, out, nil
+	}
+	parts := splitTerms(in.Query)
+	out.Terms, out.Filters = parts.Terms, parts.Fixed
+	if note := paramNameNote(in.Query); note != "" {
+		out.Hint = note
+	}
+	return nil, out, nil
 }
