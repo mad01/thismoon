@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/mad01/thismoon/compare/csl/v0.24.0...csl/v0.25.0) (2026-09-17)
+
+
+### Features
+
+* **csl:** index .github and .claude via a hidden-directory allowlist ([#102](https://github.com/mad01/thismoon/issues/102)) ([aa8a9b3](https://github.com/mad01/thismoon/commit/aa8a9b31e48ee6ef35da6278f48da03e361a627a))
+
 ## [0.24.0](https://github.com/mad01/thismoon/compare/csl/v0.23.0...csl/v0.24.0) (2026-09-16)
 
 
