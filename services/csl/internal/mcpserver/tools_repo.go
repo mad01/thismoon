@@ -515,7 +515,11 @@ func handleRepoReindex(
 		return nil, repoReindexOutput{}, fmt.Errorf("name is required")
 	}
 
-	repo, err := resolveRepo(in.Name)
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, repoReindexOutput{}, fmt.Errorf("load csl config: %w", err)
+	}
+	repo, err := resolveRepoIn(cfg, in.Name)
 	if err != nil {
 		return nil, repoReindexOutput{}, err
 	}
@@ -526,7 +530,7 @@ func handleRepoReindex(
 	}
 
 	start := time.Now()
-	if err := search.IndexRepo(indexDir, repo); err != nil {
+	if err := search.IndexRepo(indexDir, repo, cfg.AllowedHiddenDirs()); err != nil {
 		return nil, repoReindexOutput{}, fmt.Errorf("index %s: %w", repo.Name, err)
 	}
 	dur := time.Since(start)

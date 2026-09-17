@@ -220,7 +220,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 			toIndex = staleness.Stale
 		}
 		if len(toIndex) > 0 {
-			if err := indexForSearch(cmd, indexDir, toIndex, staleness, state); err != nil {
+			if err := indexForSearch(cmd, indexDir, toIndex, cfg.AllowedHiddenDirs(), staleness, state); err != nil {
 				return err
 			}
 		}
@@ -241,7 +241,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 				return
 			}
 			defer unlock()
-			_ = search.IndexRepos(indexDir, staleness.Stale, nil)
+			_ = search.IndexRepos(indexDir, staleness.Stale, cfg.AllowedHiddenDirs(), nil)
 			// Reload state from disk to avoid clobbering concurrent writers.
 			freshState, err := search.LoadState(indexDir)
 			if err != nil {
@@ -272,6 +272,7 @@ func indexForSearch(
 	cmd *cobra.Command,
 	indexDir string,
 	toIndex []finder.Repo,
+	hiddenDirs []string,
 	staleness *search.StalenessResult,
 	state *search.IndexState,
 ) error {
@@ -291,7 +292,7 @@ func indexForSearch(
 	defer unlock()
 
 	fmt.Fprintf(w, "Indexing %d repo(s)...\n", len(toIndex))
-	if err := search.IndexRepos(indexDir, toIndex, func(i, total int, repo finder.Repo) {
+	if err := search.IndexRepos(indexDir, toIndex, hiddenDirs, func(i, total int, repo finder.Repo) {
 		fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
 	}); err != nil {
 		return fmt.Errorf("indexing failed: %w", err)

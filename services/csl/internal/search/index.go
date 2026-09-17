@@ -28,8 +28,8 @@ const indexDirName = "search-index"
 // unchanged working tree.
 //
 // History: 1 = tree-sitter symbol sections (sym: queries and definition
-// ranking).
-const indexFormatVersion = 1
+// ranking). 2 = allowed hidden directories (.github, .claude) in the walk.
+const indexFormatVersion = 2
 
 // RepoState tracks the indexed state of a single repository.
 type RepoState struct {

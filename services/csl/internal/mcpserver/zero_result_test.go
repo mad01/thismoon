@@ -256,7 +256,7 @@ func fixtureIndex(t *testing.T) (indexBackend, []finder.Repo) {
 	}
 	repo := finder.Repo{Name: "test/repo", Path: repoDir}
 	indexDir := t.TempDir()
-	if err := search.IndexRepo(indexDir, repo); err != nil {
+	if err := search.IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("IndexRepo: %v", err)
 	}
 	return indexBackend{indexDir: indexDir, repoNames: map[string]string{repo.Name: repo.Path}},

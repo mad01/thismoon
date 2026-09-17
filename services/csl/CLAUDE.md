@@ -169,6 +169,7 @@ Key sections:
 
 - **`dirs`**: directories to walk for git repos.
 - **`index.hosts`**: allowlist of git remote hosts. Only repos whose origin remote matches a listed host are indexed; repos with no remote are dropped whenever the list is set. The host is the literal text of the remote URL (an SSH alias counts as the host). Omit to index all repos. `csl repo --list --skipped` shows what it dropped.
+- **`index.allow_hidden_dirs`**: hidden directory names the file walk enters on top of the built-in `.github` and `.claude` (names, not paths; `.git` is refused at load). Files under an allowed hidden directory are indexed only when git tracks them. The walk (`search.WalkRepo`, `internal/search/walk.go`) is the one home of the skip rules; a change to what it visits needs an `indexFormatVersion` bump.
 - **`hooks.post_merge.exclude`**: repos to skip during `csl sync` / index (by absolute path or org/repo name). `hooks.post_merge.enabled` gates the deprecated `csl hooks install` (see Commands); the exclude list itself is still live and shared with `csl sync`.
 - **`sync.concurrency`**: parallel pull workers for `csl sync` (default 8).
 - **`semantic.enabled`**: whether the search daemon loads the semantic index and embedder at startup. Off by default; lexical search works either way.

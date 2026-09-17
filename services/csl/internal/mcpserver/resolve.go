@@ -22,6 +22,12 @@ func resolveRepo(name string) (finder.Repo, error) {
 	if err != nil {
 		return finder.Repo{}, fmt.Errorf("load csl config: %w", err)
 	}
+	return resolveRepoIn(cfg, name)
+}
+
+// resolveRepoIn is resolveRepo against an already loaded config, for a
+// handler that needs the config itself as well as the repo.
+func resolveRepoIn(cfg *config.Config, name string) (finder.Repo, error) {
 	repos, err := cfg.DiscoverRepos()
 	if err != nil {
 		return finder.Repo{}, fmt.Errorf("walk repos: %w", err)

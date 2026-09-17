@@ -163,7 +163,7 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 
 	fmt.Fprintf(errw, "\nIndexing %d repo(s)...\n", len(updated))
 
-	if err := search.IndexRepos(indexDir, updated, func(i, total int, repo finder.Repo) {
+	if err := search.IndexRepos(indexDir, updated, cfg.AllowedHiddenDirs(), func(i, total int, repo finder.Repo) {
 		fmt.Fprintf(errw, "  [%d/%d] %s\n", i+1, total, repo.Name)
 	}); err != nil {
 		return nil, fmt.Errorf("indexing failed: %w", err)

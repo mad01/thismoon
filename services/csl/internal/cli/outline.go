@@ -89,6 +89,7 @@ func runOutline(cmd *cobra.Command, args []string) error {
 		Limit:        outlineLimitFlag,
 		IncludeTests: outlineIncludeTestsFlag,
 		MaxFiles:     outlineMaxFilesFlag,
+		HiddenDirs:   cfg.AllowedHiddenDirs(),
 	}
 	if len(args) == 2 {
 		opts.Path = args[1]

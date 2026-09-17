@@ -56,6 +56,10 @@ type Options struct {
 	// MaxFiles stops the walk after this many files, in path order, and
 	// marks the result truncated; 0 means DefaultMaxFiles.
 	MaxFiles int
+	// HiddenDirs names the hidden directories the walk enters on top of the
+	// built-in ones: the config's index.allow_hidden_dirs, so the outline
+	// sees the files the index holds.
+	HiddenDirs []string
 }
 
 // Entry is one ranked definition.
@@ -93,7 +97,7 @@ func Build(repo finder.Repo, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	files, capped, err := listFiles(repo.Path, opts.IncludeTests, opts.MaxFiles)
+	files, capped, err := listFiles(repo.Path, opts.IncludeTests, opts.MaxFiles, opts.HiddenDirs)
 	if err != nil {
 		return Result{}, fmt.Errorf("outline: walk %s: %w", repo.Path, err)
 	}
@@ -159,12 +163,17 @@ var errFilesCapped = errors.New("outline: max_files reached")
 // listFiles walks the repo with the indexer's rules and returns the files
 // to scan, test files left out unless asked for. capped reports that the
 // walk stopped at maxFiles (DefaultMaxFiles when 0) with files unvisited.
-func listFiles(root string, includeTests bool, maxFiles int) ([]search.WalkFile, bool, error) {
+func listFiles(
+	root string,
+	includeTests bool,
+	maxFiles int,
+	hiddenDirs []string,
+) ([]search.WalkFile, bool, error) {
 	if maxFiles <= 0 {
 		maxFiles = DefaultMaxFiles
 	}
 	var files []search.WalkFile
-	err := search.WalkRepo(root, search.IndexSizeMax(), func(f search.WalkFile) error {
+	err := search.WalkRepo(root, search.IndexSizeMax(), hiddenDirs, func(f search.WalkFile) error {
 		if !includeTests && IsTestFile(f.Rel) {
 			return nil
 		}

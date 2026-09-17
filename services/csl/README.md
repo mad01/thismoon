@@ -56,6 +56,8 @@ dirs:
 #   hosts:
 #     - github.com
 #     - git.example.com
+#   allow_hidden_dirs:        # hidden directories to index beyond .github and
+#     - .circleci             # .claude; only git-tracked files under them count
 
 # Repos to skip during `csl sync` / indexing: matched by absolute
 # path or org/repo name.

@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/services/csl/internal/outline"
+	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 )
 
 // outlineInput is the typed input for the csl_outline tool.
@@ -51,7 +52,11 @@ func handleOutline(
 	if in.Limit < 0 || in.MaxFiles < 0 {
 		return nil, outline.Result{}, fmt.Errorf("limit and max_files must be >= 0")
 	}
-	matched, err := resolveRepo(in.Repo)
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, outline.Result{}, fmt.Errorf("load csl config: %w", err)
+	}
+	matched, err := resolveRepoIn(cfg, in.Repo)
 	if err != nil {
 		return nil, outline.Result{}, err
 	}
@@ -61,6 +66,7 @@ func handleOutline(
 		Limit:        in.Limit,
 		IncludeTests: in.IncludeTests,
 		MaxFiles:     in.MaxFiles,
+		HiddenDirs:   cfg.AllowedHiddenDirs(),
 	})
 	if err != nil {
 		return nil, outline.Result{}, err

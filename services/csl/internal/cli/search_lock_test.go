@@ -40,6 +40,7 @@ func TestIndexForSearch(t *testing.T) {
 			newCmd(&errBuf),
 			indexDir,
 			repos,
+			nil,
 			&search.StalenessResult{},
 			search.EmptyState(),
 		)
@@ -68,6 +69,7 @@ func TestIndexForSearch(t *testing.T) {
 			newCmd(&errBuf),
 			indexDir,
 			repos,
+			nil,
 			&search.StalenessResult{},
 			search.EmptyState(),
 		)
