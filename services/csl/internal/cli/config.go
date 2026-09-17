@@ -27,6 +27,10 @@ index:
   hosts:                     # git remote host allowlist. Only repos whose
     - github.com             # origin remote matches a listed host are indexed.
                              # Empty means index every repo found.
+  allow_hidden_dirs:         # hidden directories the file walk enters on top
+    - .circleci              # of the built-in .github and .claude. Names only
+                             # (.git is refused); files under them are indexed
+                             # only when git tracks them.
 
 sync:
   concurrency: 8             # parallel 'git pull' workers for 'csl sync'

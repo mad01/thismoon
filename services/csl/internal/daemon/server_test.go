@@ -42,7 +42,7 @@ func indexTestRepo(t *testing.T, repoPath string) string {
 	t.Helper()
 	indexDir := t.TempDir()
 	repo := finder.Repo{Name: "test/repo", Path: repoPath}
-	if err := search.IndexRepo(indexDir, repo); err != nil {
+	if err := search.IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("IndexRepo: %v", err)
 	}
 	return indexDir

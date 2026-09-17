@@ -157,9 +157,14 @@ func runIndex(cmd *cobra.Command, args []string) error {
 	w := cmd.ErrOrStderr()
 	fmt.Fprintf(w, "Indexing %d repo(s)...\n", len(toIndex))
 
-	err = search.IndexRepos(indexDir, toIndex, func(i, total int, repo finder.Repo) {
-		fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
-	})
+	err = search.IndexRepos(
+		indexDir,
+		toIndex,
+		cfg.AllowedHiddenDirs(),
+		func(i, total int, repo finder.Repo) {
+			fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("indexing failed: %w", err)
 	}
@@ -292,6 +297,11 @@ func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
 		return fmt.Errorf("inspect repo %s: %w", abs, err)
 	}
 
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
 	state, err := search.LoadState(indexDir)
 	if err != nil {
 		return err
@@ -300,7 +310,7 @@ func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
 	w := cmd.ErrOrStderr()
 	fmt.Fprintf(w, "Indexing %s\n", repo.Name)
 
-	if err := search.IndexRepos(indexDir, []finder.Repo{repo}, nil); err != nil {
+	if err := search.IndexRepos(indexDir, []finder.Repo{repo}, cfg.AllowedHiddenDirs(), nil); err != nil {
 		return fmt.Errorf("indexing failed: %w", err)
 	}
 
@@ -337,6 +347,11 @@ func runIndexDrain(cmd *cobra.Command, indexDir string) error {
 	w := cmd.ErrOrStderr()
 	fmt.Fprintf(w, "Draining %d repo(s) from queue...\n", len(repoPaths))
 
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
 	state, err := search.LoadState(indexDir)
 	if err != nil {
 		return err
@@ -358,7 +373,7 @@ func runIndexDrain(cmd *cobra.Command, indexDir string) error {
 		return nil
 	}
 
-	if err := search.IndexRepos(indexDir, repos, func(i, total int, repo finder.Repo) {
+	if err := search.IndexRepos(indexDir, repos, cfg.AllowedHiddenDirs(), func(i, total int, repo finder.Repo) {
 		fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
 	}); err != nil {
 		return fmt.Errorf("indexing failed (claimed file: %s): %w", claimedPath, err)

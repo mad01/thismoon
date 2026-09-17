@@ -142,7 +142,7 @@ func (s *Service) buildInitialIndex(
 	}
 	defer unlock()
 
-	if err := search.IndexRepos(s.indexDir, repos, nil); err != nil {
+	if err := search.IndexRepos(s.indexDir, repos, s.cfg.AllowedHiddenDirs(), nil); err != nil {
 		return fmt.Errorf("indexing failed: %w", err)
 	}
 	for _, repo := range repos {

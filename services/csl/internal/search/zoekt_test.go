@@ -69,7 +69,7 @@ func indexTestRepo(
 	t.Helper()
 	indexDir = t.TempDir()
 	repo = finder.Repo{Name: "test/repo", Path: repoPath}
-	if err := IndexRepo(indexDir, repo); err != nil {
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("IndexRepo: %v", err)
 	}
 	repoNames = map[string]string{repo.Name: repo.Path}
@@ -83,7 +83,7 @@ func TestIndexRepo(t *testing.T) {
 	indexDir := t.TempDir()
 	repo := finder.Repo{Name: "test/repo", Path: repoPath}
 
-	if err := IndexRepo(indexDir, repo); err != nil {
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("IndexRepo returned error: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestIndexRepo_EmptyDir(t *testing.T) {
 	repo := finder.Repo{Name: "test/empty", Path: repoPath}
 
 	// Indexing an empty directory should not error.
-	if err := IndexRepo(indexDir, repo); err != nil {
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("IndexRepo on empty dir returned error: %v", err)
 	}
 }
@@ -130,7 +130,7 @@ func TestIndexRepos(t *testing.T) {
 		called++
 	}
 
-	if err := IndexRepos(indexDir, repos, progress); err != nil {
+	if err := IndexRepos(indexDir, repos, nil, progress); err != nil {
 		t.Fatalf("IndexRepos: %v", err)
 	}
 	if called != 1 {
@@ -143,7 +143,7 @@ func TestIndexRepos_NilProgress(t *testing.T) {
 	indexDir := t.TempDir()
 	repos := []finder.Repo{{Name: "test/repo", Path: repoPath}}
 
-	if err := IndexRepos(indexDir, repos, nil); err != nil {
+	if err := IndexRepos(indexDir, repos, nil, nil); err != nil {
 		t.Fatalf("IndexRepos with nil progress: %v", err)
 	}
 }
@@ -338,7 +338,7 @@ func TestSearch_OffsetPaginates(t *testing.T) {
 	}
 	indexDir := t.TempDir()
 	repo := finder.Repo{Name: "test/repo", Path: dir}
-	if err := IndexRepo(indexDir, repo); err != nil {
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("IndexRepo: %v", err)
 	}
 	repoNames := map[string]string{repo.Name: repo.Path}
@@ -580,7 +580,7 @@ func TestReindex_PicksUpChanges(t *testing.T) {
 	}
 
 	// Re-index.
-	if err := IndexRepo(indexDir, repo); err != nil {
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
 		t.Fatalf("re-IndexRepo: %v", err)
 	}
 
@@ -666,7 +666,7 @@ func BenchmarkIndexRepo(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		indexDir := b.TempDir()
-		if err := IndexRepo(indexDir, repo); err != nil {
+		if err := IndexRepo(indexDir, repo, nil); err != nil {
 			b.Fatalf("IndexRepo: %v", err)
 		}
 	}
@@ -691,7 +691,7 @@ func BenchmarkSearch(b *testing.B) {
 
 	indexDir := b.TempDir()
 	repo := finder.Repo{Name: "bench/repo", Path: dir}
-	if err := IndexRepo(indexDir, repo); err != nil {
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
 		b.Fatalf("IndexRepo: %v", err)
 	}
 	repoNames := map[string]string{repo.Name: repo.Path}
@@ -820,5 +820,36 @@ func TestIndexRepo_SymbolExtractionNeverFailsRepo(t *testing.T) {
 	}
 	if len(matches) != 1 || matches[0].Kind != "function" {
 		t.Fatalf("sym:Good = %+v, want one function hit", matches)
+	}
+}
+
+// TestIndexRepo_AllowedHiddenDirs: a tracked workflow file under .github is
+// searchable through a file filter on the hidden directory, the lookup the
+// allowlist exists for.
+func TestIndexRepo_AllowedHiddenDirs(t *testing.T) {
+	gitAvailable(t)
+	dir := initGitRepo(t, t.TempDir())
+	rel := filepath.Join(".github", "workflows", "release.yml")
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rel), []byte("name: release\non: push\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", rel)
+
+	indexDir := t.TempDir()
+	repo := finder.Repo{Name: "test/repo", Path: dir}
+	if err := IndexRepo(indexDir, repo, nil); err != nil {
+		t.Fatalf("IndexRepo: %v", err)
+	}
+	repoNames := map[string]string{repo.Name: repo.Path}
+	opts := SearchOptions{Pattern: "release", FileFilter: `^\.github/`, Limit: 10}
+	matches, err := Search(context.Background(), indexDir, opts, repoNames)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(matches) != 1 || matches[0].File != ".github/workflows/release.yml" {
+		t.Fatalf("matches = %+v, want one hit on .github/workflows/release.yml", matches)
 	}
 }

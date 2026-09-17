@@ -1,3 +1,4 @@
+| `index.allow_hidden_dirs` | list of strings | no (default `[]`) | Hidden directory names the file walk enters on top of the built-in `.github` and `.claude`. Names only (each starts with a dot, no slashes); `.git` is refused. Files under an allowed hidden directory are indexed only when git tracks them, so gitignored local settings stay out. Every other hidden directory (`.cache`, `.venv`, `.terraform`) stays out of the lexical index. |
 # Configuration
 
 `csl` keeps its config file and its state in two different places. This page documents every file the tool reads or writes.
@@ -56,6 +57,10 @@ index:
   hosts:
     - github.com
     - githost.example.com
+  # Hidden directories to index beyond the built-in .github and .claude.
+  # Only git-tracked files under them count; .git is refused.
+  allow_hidden_dirs:
+    - .circleci
 
 # Repos to keep out of the index entirely (lexical and semantic), matched
 # by absolute path or org/repo name. `enabled` only gates the deprecated

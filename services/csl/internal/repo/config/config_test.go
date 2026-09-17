@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -283,7 +284,12 @@ func TestPartitionExcluded(t *testing.T) {
 	}
 	for _, d := range dropped {
 		if d.Kind != finder.DropExcluded || d.Reason() != finder.ReasonExcluded {
-			t.Errorf("dropped %+v: kind %q reason %q, want excluded", d.Repo.Name, d.Kind, d.Reason())
+			t.Errorf(
+				"dropped %+v: kind %q reason %q, want excluded",
+				d.Repo.Name,
+				d.Kind,
+				d.Reason(),
+			)
 		}
 	}
 
@@ -521,5 +527,43 @@ func TestEmptyDiscoveryHint(t *testing.T) {
 	var nilCfg *Config
 	if got := nilCfg.EmptyDiscoveryHint(dropped); !strings.Contains(got, "no config file yet") {
 		t.Errorf("nil receiver: EmptyDiscoveryHint() = %q, want the no-config wording", got)
+	}
+}
+
+// TestLoadFromAllowHiddenDirs: index.allow_hidden_dirs loads as directory
+// names, refuses what the walk could not honour naming the key, and reads
+// as nil on a nil config.
+func TestLoadFromAllowHiddenDirs(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	good := "dirs:\n  - /tmp/repos\nindex:\n  allow_hidden_dirs:\n    - .circleci\n    - .gitlab\n"
+	if err := os.WriteFile(cfgPath, []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFrom(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if got := strings.Join(cfg.AllowedHiddenDirs(), " "); got != ".circleci .gitlab" {
+		t.Errorf("AllowedHiddenDirs = %q, want .circleci .gitlab", got)
+	}
+
+	for _, bad := range []string{".git", "github", ".github/workflows", ".", ".."} {
+		content := fmt.Sprintf("index:\n  allow_hidden_dirs:\n    - %q\n", bad)
+		if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadFrom(cfgPath)
+		if err == nil || !strings.Contains(err.Error(), "index.allow_hidden_dirs") {
+			t.Errorf(
+				"LoadFrom with %q: err = %v, want one naming index.allow_hidden_dirs",
+				bad,
+				err,
+			)
+		}
+	}
+
+	var nilCfg *Config
+	if nilCfg.AllowedHiddenDirs() != nil {
+		t.Error("nil config AllowedHiddenDirs != nil")
 	}
 }

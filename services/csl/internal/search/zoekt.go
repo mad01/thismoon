@@ -19,9 +19,11 @@ import (
 
 // IndexRepo indexes a single repo's working tree into the zoekt index directory.
 // It walks the filesystem (not git objects) so uncommitted changes are included.
+// hiddenDirs names the hidden directories the walk enters on top of the
+// built-in ones (the config's index.allow_hidden_dirs; see WalkRepo).
 // Symbol sections come from csl's own tree-sitter extractor rather than ctags,
 // so the builder's ctags run stays disabled and never looks for a binary.
-func IndexRepo(indexDir string, repo finder.Repo) error {
+func IndexRepo(indexDir string, repo finder.Repo, hiddenDirs []string) error {
 	opts := index.Options{
 		IndexDir:     indexDir,
 		DisableCTags: true,
@@ -37,7 +39,7 @@ func IndexRepo(indexDir string, repo finder.Repo) error {
 		return fmt.Errorf("create index builder for %s: %w", repo.Name, err)
 	}
 
-	walkErr := WalkRepo(repo.Path, int64(opts.SizeMax), func(f WalkFile) error {
+	walkErr := WalkRepo(repo.Path, int64(opts.SizeMax), hiddenDirs, func(f WalkFile) error {
 		return addFile(builder, repo.Name, f.Rel, f.Abs)
 	})
 
@@ -87,10 +89,12 @@ func symbolSections(syms []symbols.Symbol) ([]index.DocumentSection, []*zoekt.Sy
 }
 
 // IndexRepos indexes multiple repos, calling progress after each one completes.
-// progress receives the current index (0-based) and total count.
+// progress receives the current index (0-based) and total count; hiddenDirs
+// is IndexRepo's.
 func IndexRepos(
 	indexDir string,
 	repos []finder.Repo,
+	hiddenDirs []string,
 	progress func(i, total int, repo finder.Repo),
 ) error {
 	if err := os.MkdirAll(indexDir, 0o755); err != nil {
@@ -98,7 +102,7 @@ func IndexRepos(
 	}
 
 	for i, repo := range repos {
-		if err := IndexRepo(indexDir, repo); err != nil {
+		if err := IndexRepo(indexDir, repo, hiddenDirs); err != nil {
 			return err
 		}
 		if progress != nil {

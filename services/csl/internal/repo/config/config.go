@@ -127,6 +127,11 @@ type IndexConfig struct {
 	// An empty list means all repos are included (no filtering).
 	// Example: ["github.com", "githost.example.com"]
 	Hosts []string `yaml:"hosts"`
+	// AllowHiddenDirs are hidden directory names the file walk enters on top
+	// of the built-in .github and .claude. Names, not paths: each starts with
+	// a dot, and .git is refused. Files under them are indexed only when git
+	// tracks them. Example: [".circleci", ".gitlab"]
+	AllowHiddenDirs []string `yaml:"allow_hidden_dirs"`
 }
 
 // SyncConfig holds configuration for `csl sync`.
@@ -306,6 +311,16 @@ func (c *Config) hintPath() string {
 	return "the config file ('csl config' prints its path)"
 }
 
+// AllowedHiddenDirs returns the hidden directory names the file walk enters
+// on top of the built-in ones (index.allow_hidden_dirs). Safe to call on a
+// nil receiver (returns nil).
+func (c *Config) AllowedHiddenDirs() []string {
+	if c == nil {
+		return nil
+	}
+	return c.Index.AllowHiddenDirs
+}
+
 // SemanticEnabled reports whether the daemon should load the semantic index and
 // embedding model. Safe to call on a nil receiver (returns false).
 func (c *Config) SemanticEnabled() bool {
@@ -445,8 +460,28 @@ func loadFrom(path string) (*Config, error) {
 	if err := expandAll(cfg.Hooks.PostMerge.Exclude); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+	if err := validateHiddenDirs(cfg.Index.AllowHiddenDirs); err != nil {
+		return nil, fmt.Errorf("parsing %s: index.allow_hidden_dirs: %w", path, err)
+	}
 
 	return &cfg, nil
+}
+
+// validateHiddenDirs rejects allow_hidden_dirs entries the walk could not
+// honour: a name without a leading dot is not hidden, a path is not a name,
+// and .git holds the object store no index should ever read.
+func validateHiddenDirs(names []string) error {
+	for _, name := range names {
+		switch {
+		case name == ".git":
+			return errors.New(".git can never be indexed")
+		case strings.ContainsAny(name, `/\\`):
+			return fmt.Errorf("%q is a path; list directory names only", name)
+		case !strings.HasPrefix(name, ".") || name == "." || name == "..":
+			return fmt.Errorf("%q is not a hidden directory name (must start with a dot)", name)
+		}
+	}
+	return nil
 }
 
 // expandAll expands a leading ~ in every entry of paths, in place.

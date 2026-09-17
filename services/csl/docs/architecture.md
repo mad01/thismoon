@@ -134,12 +134,15 @@ The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain 
 
 ### What's indexed
 
-`IndexRepo` walks the working tree (not the git object database), so uncommitted changes are searchable. The walker skips:
+`IndexRepo` walks the working tree (not the git object database), so uncommitted changes are searchable. The walk is `search.WalkRepo` in `internal/search/walk.go`, the one place the skip rules live (the outline reads the tree through it too). It skips:
 
-- any hidden directory except the repo root (rules out `.git`, `.cache`, `.venv`)
+- any hidden directory except the repo root and the allowed names (rules out `.git`, `.cache`, `.venv`)
 - `node_modules`, `vendor`, `__pycache__`, `build`, `dist`, `target`
 - files larger than the zoekt default `SizeMax` (1 MB)
 - non-regular files (symlinks, devices, sockets)
+- paths the repo's `.cslignore` matches
+
+The allowed hidden directories are `.github` and `.claude`, so a CI workflow or an agent skill is searchable; `index.allow_hidden_dirs` in config.yaml adds names (`.circleci`, `.gitlab`), and `.git` can never be added. A file under an allowed hidden directory is indexed only when git tracks it, so a gitignored `.claude/settings.local.json` stays out while csl still finds the committed settings beside it. Hidden files outside those directories (a root `.gitignore`, `.golangci.yml`) were never skipped. The semantic indexer lists `git ls-files` instead of walking, so it already sees every tracked hidden file; the allowlist only concerns the lexical index and the outline.
 
 ## Query flow
 

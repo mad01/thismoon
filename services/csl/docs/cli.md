@@ -518,6 +518,7 @@ sync:
 index:
     hosts:
         - github.com
+    allow_hidden_dirs: []
 semantic:
     enabled: false
     sync: false
