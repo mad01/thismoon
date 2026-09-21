@@ -18,7 +18,7 @@ Write Go the way this codebase already writes it: stdlib-first, compact, explici
 
 **Split with `golang-pro`:** `golang-pro` owns concurrent systems (goroutine patterns, channel pipelines, deep generics, pprof, gRPC, microservices). This skill owns *how code is structured and written*: naming, formatting, function and package design, error handling, safety, and the repo's HTTP/CLI/store/MCP patterns. When a task is "build a concurrent worker pool", use `golang-pro`. When it is "is this package laid out right, are the errors wrapped, is this function shaped well", use this skill.
 
-**Where the two disagree, this skill wins.** `golang-pro` is vendored and its generic advice conflicts with house style in three places: it teaches functional options (banned here — config structs), `var _ Iface` satisfaction asserts (not house style, see `language.md`), and a `pkg/` public-library layout (house layout is `cmd/` + `internal/` only). Take its concurrency, generics, and profiling content; ignore those three.
+**Where the two disagree, this skill wins.** `golang-pro` is vendored beside this skill (`skills/golang-pro`, from jeffallan/claude-skills) and its generic advice conflicts with house style in three places: it teaches functional options (banned here — config structs), `var _ Iface` satisfaction asserts (not house style, see `language.md`), and a `pkg/` public-library layout (house layout is `cmd/` + `internal/` only). Take its concurrency, generics, and profiling content; ignore those three.
 
 ## House style in one screen
 

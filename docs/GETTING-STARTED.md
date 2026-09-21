@@ -402,9 +402,9 @@ hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md); the
 `grep` in an indexed repo back as the equivalent `csl_search` call), and
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) for the
 instruction file that teaches the agent when to reach for which tool. The
-six skills under `skills/` need no registration; their recipes symlink
+seven skills under `skills/` need no registration; their recipes symlink
 them into `~/.claude/skills`, and they load when invoked by name
-(`/golang-style`, `/handoff`, `/humanizer`, `/loom`, `/present`,
+(`/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`, `/loom`, `/present`,
 `/worklog`) or when a task matches; the MCP-backed ones assume their server
 from this section is registered.
 
