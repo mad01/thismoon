@@ -26,7 +26,7 @@ jobs:
     steps:
       # A GitHub App token instead of GITHUB_TOKEN: the default token may not
       # create PRs unless a repo-wide Actions toggle is flipped — too broad a
-      # grant for a repo heading public — and PRs it opens never trigger
+      # grant for a public repo — and PRs it opens never trigger
       # ci.yml checks. The App mints a fresh token per run that expires within
       # the hour, so there is no long-lived PAT to rotate; its PRs still
       # trigger ci.yml. The App grants Contents + Pull requests + Issues

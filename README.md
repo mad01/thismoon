@@ -273,25 +273,6 @@ under `services/` or `tools/` has its own Makefile with `build`, `test`, and
 `install` targets; the root Makefile discovers and delegates to them
 (`make components` lists them).
 
-### While this repo is private
-
-`go install` and module fetches need git-over-SSH plus a `GOPRIVATE` entry:
-
-```sh
-export GOPRIVATE=github.com/mad01/*
-git config --global url."git@github.com:".insteadOf "https://github.com/"
-```
-
-Once the repo is public, neither is needed for this module: drop the
-`insteadOf` rewrite and trim `GOPRIVATE` to whatever private repos remain.
-The ralph source stanza works unchanged in both worlds; it always clones over
-SSH. Homebrew is the opposite: the tap formulas download release tarballs
-from this repo, so `brew install` starts working only once the repo is
-public. mise fetches those same tarballs with a `MISE_GITHUB_TOKEN`, so the
-mise path works today;
-[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md#one-tool-with-mise) has
-the details.
-
 ## License
 
 BSD-3-Clause, see [LICENSE](LICENSE). No per-file headers; the root license
