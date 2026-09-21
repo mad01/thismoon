@@ -43,24 +43,6 @@ your agent sessions.
 - **[mise](https://mise.jdx.dev)**, if you take the mise path instead of the
   tap. It installs ralph too.
 
-While this repo is private, you also need an SSH key with access to it. The
-ralph path works today because ralph clones recipe sources over SSH. Two
-caveats in the private phase:
-
-- `go install` needs module fetches routed over SSH:
-
-  ```sh
-  export GOPRIVATE=github.com/mad01/*
-  git config --global url."git@github.com:".insteadOf "https://github.com/"
-  ```
-
-- `brew install` doesn't work yet: the tap formulas download release
-  tarballs from this repo, which needs the repo public. mise does work
-  today: its `github` backend sends `MISE_GITHUB_TOKEN` when it fetches a
-  release, so a token with read access to this repo is all the
-  [mise path](#one-tool-with-mise) needs. Otherwise use the `go install` or
-  checkout variant wherever this guide shows a `brew` command.
-
 ## One tool with Homebrew
 
 The [tap](https://github.com/mad01/homebrew-tap) carries formulas for most
@@ -168,10 +150,6 @@ When you register a mise-installed tool with t-man, give it the shim path
 into the launchd plist, and a versioned install path stays on the old build
 after `mise upgrade`.
 
-**While this repo is private**, set `MISE_GITHUB_TOKEN` to a GitHub token
-with read access to it. `gh auth token` works if the GitHub CLI is logged in
-to an account with access. Public releases need no token.
-
 ## The fleet with ralph
 
 ralph reconciles a machine against TOML recipes. This repo ships a recipe
@@ -215,7 +193,7 @@ ralph clones the repo into `~/.config/ralph/sources/thismoon` and discovers
 every recipe in it, merged under the identity `thismoon/<recipe>`. With
 `ref = "main"` and `update = true`, every `ralph up` pulls main before
 applying; pin `ref` to a tag or commit to stay put. The clone runs over SSH,
-so this works while the repo is private.
+so the machine needs an SSH key registered with GitHub.
 
 ### 4. Declare the machine's profiles
 
