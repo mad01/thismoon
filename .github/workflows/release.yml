@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - main
+  # Rebuild the assets of a release that already exists. The tag names the
+  # component; release-please-config.json maps it back to its path. Needed
+  # when the run that cut a release created it but skipped the artifacts job.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing release tag, e.g. belt/v2.4.0"
+        required: true
+        type: string
 
 # Two merges to main racing release-please can double-process the release PR.
 concurrency:
@@ -13,6 +22,7 @@ concurrency:
 jobs:
   release-please:
     name: release-please
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,10 +52,61 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
 
+  # One matrix source for both triggers: on push, the paths release-please
+  # just released and their tags; on workflow_dispatch, the one tag named by
+  # the input, mapped to its path through release-please-config.json.
+  plan:
+    name: plan artifacts
+    needs: release-please
+    # release-please is skipped on workflow_dispatch; always() stops that skip
+    # from cascading here, and the second clause still drops a failed run.
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.release-please.result == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      paths: ${{ steps.plan.outputs.paths }}
+      tags: ${{ steps.plan.outputs.tags }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        if: github.event_name == 'workflow_dispatch'
+
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ inputs.tag }}
+          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+          OUTPUTS_JSON: ${{ needs.release-please.outputs.outputs_json }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            component="${TAG%%/v*}"
+            path=$(jq -r --arg c "$component" \
+              '.packages | to_entries[] | select(.value.component == $c) | .key' \
+              release-please-config.json)
+            if [ -z "$path" ]; then
+              echo "::error::no package with component '$component' in release-please-config.json"
+              exit 1
+            fi
+            gh release view "$TAG" --json tagName > /dev/null
+            paths=$(jq -cn --arg p "$path" '[$p]')
+            tags=$(jq -cn --arg p "$path" --arg t "$TAG" '{($p): $t}')
+          else
+            paths="${PATHS_RELEASED:-[]}"
+            # Per-path outputs are keyed "<path>--tag_name"; keep the released ones.
+            tags=$(printf '%s' "${OUTPUTS_JSON:-null}" | jq -c --argjson paths "$paths" '
+              (. // {})
+              | with_entries(select(.key | endswith("--tag_name")))
+              | with_entries(.key |= sub("--tag_name$"; ""))
+              | with_entries(select(.key as $k | $paths | index($k) != null))
+            ')
+          fi
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "paths=$paths tags=$tags"
+
   artifacts:
     name: ${{ matrix.path }}
-    needs: release-please
-    if: needs.release-please.outputs.paths_released != '' && needs.release-please.outputs.paths_released != '[]'
+    needs: plan
+    if: needs.plan.outputs.paths != '' && needs.plan.outputs.paths != '[]'
     # macOS arm64 runner: artifacts are darwin/arm64 only (docs/adr/0007),
     # and csl needs cgo (tree-sitter grammars) — building natively on the
     # target platform sidesteps cross-compilation entirely.
@@ -56,9 +117,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        path: ${{ fromJSON(needs.release-please.outputs.paths_released) }}
+        path: ${{ fromJSON(needs.plan.outputs.paths) }}
     env:
-      TAG: ${{ fromJSON(needs.release-please.outputs.outputs_json)[format('{0}--tag_name', matrix.path)] }}
+      TAG: ${{ fromJSON(needs.plan.outputs.tags)[matrix.path] }}
       COMPONENT_PATH: ${{ matrix.path }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
