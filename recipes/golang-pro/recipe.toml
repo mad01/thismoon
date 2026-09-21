@@ -1,0 +1,21 @@
+# golang-pro — skill-only recipe. The skill has no companion binary; it
+# ships the Go specialist skill (SKILL.md + references/) from the repo-root
+# skills/ dir into the agent skill directories on every machine.
+[recipe]
+name = "golang-pro"
+description = "golang-pro: agent skill for Go concurrency, generics, profiling, and gRPC"
+
+# The skill lives in the repo-root skills/ dir (discoverable by browsing the
+# repo); link just this skill's directory into place. Relative sources resolve
+# against the recipe dir and are path-cleaned, so ../../ reaches the
+# source-checkout root.
+[dotfiles.golang_pro_skill]
+source = "../../skills/golang-pro"
+target = "~/.claude/skills/golang-pro"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.golang_pro_codex_skill]
+source = "../../skills/golang-pro"
+target = "~/.agents/skills/golang-pro"
+action = "symlink_dir"
