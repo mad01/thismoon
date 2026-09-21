@@ -19,9 +19,5 @@ name = "present"   # http://present.this/ -> 127.0.0.1:7423
 port = 7423
 
 [[route]]
-name = "reminder"  # http://reminder.this/ -> 127.0.0.1:7428
-port = 7428
-
-[[route]]
 name = "p"         # http://p.this/ -> alias of present.this
 cname = "present"

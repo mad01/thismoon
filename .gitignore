@@ -21,7 +21,6 @@ services/deps/deps
 services/events/events
 services/pr/pr
 services/present/present
-services/reminder/reminder
 services/speak/speak
 services/status/status
 tools/belt/belt
