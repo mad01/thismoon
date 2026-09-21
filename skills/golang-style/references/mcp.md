@@ -1,39 +1,48 @@
 # MCP servers
 
-The `modelcontextprotocol/go-sdk` tool-handler shape used by `worklog`, `present`, `reminder`, and `humanizer`. Backed by the go-sdk and the repo MCP servers.
+The `modelcontextprotocol/go-sdk` tool-handler shape used by `worklog`, `present`, `events`, and `humanizer`. Backed by the go-sdk and the repo MCP servers.
 
 ## A `handlers` struct carries shared dependencies
 
-Group the dependencies every tool needs into one struct, constructed once. From `reminder/internal/mcpserver`:
+Group the dependencies every tool needs into one struct, constructed once. From `events/internal/mcpserver`:
 
 ```go
-// handlers carries the dependencies shared by all reminder tools.
+// handlers carries the dependencies shared by all event tools.
 type handlers struct {
 	client *client.Client
-	webURL string // where the user views reminders in a browser
+	webURL string // where the user views the event timeline in a browser
+	checks func(ctx context.Context) []doctor.Check
 }
 ```
 
-In this codebase the MCP server holds no state of its own — it is a thin HTTP client to the running `serve` process (the single writer, see `store.md`), so `handlers` wraps a `*client.Client`. A file-touching MCP (`present`, `worklog`) wraps a `*store.Store` instead.
+In this codebase the MCP server holds no state of its own — it is a thin HTTP client to the running `serve` process (the single writer, see `store.md`), so `handlers` wraps a `*client.Client`. A file-touching MCP (`present`, `worklog`) wraps a `*store.Store` instead. The `checks` field feeds the `events_doctor` tool; every serve-bearing component registers one (ADR-0009).
 
 ## Register tools with `mcp.AddTool`
 
-Register each tool with a name and a description written *for the model* — say what it does, when to use it, and what to keep. Handlers are methods on `handlers`:
+Register each tool with a name and a description written *for the model* — say what it does, when to use it, and what to keep. Annotations tell the client what a call can do: `ReadOnlyHint` for queries, `DestructiveHint: new(false)` for an append, `OpenWorldHint: new(false)` for anything that stays on localhost. Handlers are methods on `handlers`:
 
 ```go
 func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "reminder_create",
-		Description: "Create a reminder that fires a macOS notification at its due time. " +
-			"Set the time ONE of two ways: `due` as an absolute RFC3339 timestamp, OR " +
-			"`in` as a Go duration ('2h30m'). Keep the returned id — it is the handle " +
-			"for reminder_get / reminder_edit / reminder_cancel.",
-	}, h.handleCreate)
+		Name: "events_emit",
+		Description: "Record an event in the local audit log. `source` and `title` are REQUIRED. " +
+			"Optional `level` ('info' default | 'warn' | 'error'), `component` (sub-area within the source), " +
+			"`message` (longer detail), and `tags` (a flat object of string key/values). Returns the new event id.",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   new(false),
+		},
+	}, h.handleEmit)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "reminder_get",
-		Description: "Get one reminder's full detail by id.",
-	}, h.handleGet)
+		Name:        "events_sources",
+		Description: "List every event source with its current event count, sorted by name. Use it to discover which sources to filter events_query by.",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: new(false),
+		},
+	}, h.handleSources)
 }
 ```
 
@@ -42,16 +51,18 @@ func registerTools(s *mcp.Server, h *handlers) {
 Each tool has an input struct and an output struct. Tag fields with `json` and a `jsonschema` description so the generated schema documents itself to the model — the go-sdk's schema inferrer reads only the `jsonschema` tag, so a `jsonschema_description` tag is silently dropped. Use `omitempty` for optional fields:
 
 ```go
-type createInput struct {
-	Title  string `json:"title"            jsonschema:"what to be reminded about"`
-	Due    string `json:"due,omitempty"    jsonschema:"absolute due time as RFC3339. Provide this OR 'in', not both."`
-	In     string `json:"in,omitempty"     jsonschema:"relative due time as a Go duration from now. Provide this OR 'due', not both."`
-	Repeat string `json:"repeat,omitempty" jsonschema:"recurrence: 'daily', 'weekly', or a Go duration like '24h'. Omit for a one-shot."`
+type emitInput struct {
+	Source    string            `json:"source"              jsonschema:"event source, e.g. 'deps' (required)"`
+	Title     string            `json:"title"               jsonschema:"short summary of the event (required)"`
+	Level     string            `json:"level,omitempty"     jsonschema:"info (default) | warn | error"`
+	Component string            `json:"component,omitempty" jsonschema:"optional sub-area within the source"`
+	Message   string            `json:"message,omitempty"   jsonschema:"optional longer detail"`
+	Tags      map[string]string `json:"tags,omitempty"      jsonschema:"optional flat object of string key/values"`
 }
 
-type out struct {
-	Reminder client.Reminder `json:"reminder"`
-	URL      string          `json:"url" jsonschema:"web page where the user can view and manage reminders"`
+type emitOutput struct {
+	ID  string `json:"id"`
+	URL string `json:"url" jsonschema:"web page where the user can view the event timeline"`
 }
 ```
 
@@ -60,17 +71,28 @@ type out struct {
 A handler takes the context and request (both often unused, named `_`) plus the typed input, and returns `(*mcp.CallToolResult, OutputStruct, error)`. Keep it thin — call into the client or store, return the error as-is so the SDK surfaces it:
 
 ```go
-func (h *handlers) handleCreate(_ context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, out, error) {
-	r, err := h.client.Create(client.CreateBody{Title: in.Title, Due: in.Due, In: in.In, Repeat: in.Repeat})
+func (h *handlers) handleEmit(
+	_ context.Context,
+	_ *mcp.CallToolRequest,
+	in emitInput,
+) (*mcp.CallToolResult, emitOutput, error) {
+	id, err := h.client.Emit(client.EmitBody{
+		Source:    in.Source,
+		Title:     in.Title,
+		Level:     in.Level,
+		Component: in.Component,
+		Message:   in.Message,
+		Tags:      in.Tags,
+	})
 	if err != nil {
-		return nil, out{}, err
+		return nil, emitOutput{}, err
 	}
-	return nil, h.one(r), nil
+	return nil, emitOutput{ID: id, URL: h.webURL}, nil
 }
 ```
 
-Returning the structured output value (not a hand-built `CallToolResult`) lets the SDK encode it against the schema. A small helper like `h.one(r)` attaches shared fields (the web `URL`) so every tool response is consistent.
+Returning the structured output value (not a hand-built `CallToolResult`) lets the SDK encode it against the schema. Every output carries the shared web `URL` from `handlers`, so tool responses stay consistent.
 
 ## Wiring
 
-The `mcp` subcommand on the CLI (see `cli.md`) constructs `handlers`, registers the tools, and serves over stdio. MCP binaries that run third-party package code are seatbelt-sandboxed; first-party ones that only HTTP-call localhost (`worklog`, `reminder`) run unsandboxed. Registration lives in `recipes/claude-mcp/servers.json`.
+The `mcp` subcommand on the CLI (see `cli.md`) constructs `handlers`, registers the tools, and serves over stdio. MCP binaries that run third-party package code are seatbelt-sandboxed; first-party ones that only HTTP-call localhost (`worklog`, `events`) run unsandboxed. Registration lives in `recipes/claude-mcp/servers.json`.
