@@ -3,7 +3,7 @@
 ## The problem
 
 A machine running the `*.this` platform accumulates local services, each on
-its own port: present on 7423, reminder on 7428, and so on. Reaching them as
+its own port: present on 7423, csl on 7424, and so on. Reaching them as
 `127.0.0.1:<port>` means memorizing ports and breaking every saved link when
 one moves. The obvious fixes fail on macOS 26 (Tahoe): `mDNSResponder`
 hijacks DNS queries for any non-IANA TLD and answers them itself, so a local
