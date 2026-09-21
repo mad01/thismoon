@@ -6,7 +6,7 @@ Panic, `init()`, enums, embedding, type assertions, and time values — the lang
 
 Expected failures (missing file, bad input, network error) return an `error`. `panic` is reserved for conditions that mean the program itself is broken and cannot continue safely:
 
-- A must-succeed primitive failing: the ID generators panic when `crypto/rand` fails (`present/internal/store/id.go`: `panic("present: crypto/rand failed: " + err.Error())`) — same pattern in `keeper-of-facts` and `reminder`.
+- A must-succeed primitive failing: the ID generators panic when `crypto/rand` fails (`present/internal/store/id.go`: `panic("present: crypto/rand failed: " + err.Error())`) — same pattern in `keeper-of-facts`, `events`, and `wire`.
 - A build-time asset missing at startup: `d-man`'s blockpage panics when its embedded `index.html` isn't in the binary (`blockpage.go`).
 
 Panic messages are package-prefixed like sentinel errors. Never panic on user input or I/O results, and never use panic/recover as control flow. The codebase has no `recover` — if you think you need one (a server that must survive a misbehaving handler), it goes at one top-level boundary only, and `net/http` already provides that for handlers.
@@ -22,7 +22,7 @@ Panic messages are package-prefixed like sentinel errors. Never panic on user in
 ## Enums: `iota` for internal states, strings for stored values
 
 - Small internal state sets use a typed constant block with `iota`, where the zero value is a real, safe default: `suspenders`' `hookAbsent hookState = iota` — a zero `hookState` means "no hook file", which is exactly what an unset value should mean.
-- Anything serialized (JSON stores, APIs, config) uses typed string constants instead, so files stay readable and reordering constants can't corrupt persisted data. `reminder` stores status as a string, not an int.
+- Anything serialized (JSON stores, APIs, config) uses typed string constants instead, so files stay readable and reordering constants can't corrupt persisted data. `keeper-of-facts` stores assertion status as a string (`fresh`/`stale`/`retracted`) and `events` its level (`info`/`warn`/`error`), not as ints.
 - If the zero value would be ambiguous, either make the first constant an explicit invalid/unknown state or start real values at `iota + 1` — don't let `0` silently mean something.
 
 ## Embedding: internal convenience, not API surface

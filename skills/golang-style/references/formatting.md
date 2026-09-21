@@ -84,20 +84,13 @@ This is golangci-lint **v2** schema (`version: "2"` + `linters.settings.errcheck
 
 This keeps the bare call form readable and reserves `_ =` for genuine one-offs. Excluding `(*os.File).Close` means a failed flush-on-close on a *writable* file won't be caught — acceptable for these CLI tools; if a tool writes data it must not lose, check that specific `Close` explicitly instead.
 
-## Gap to fix: the dotfiles-internal tools lack a lint target
+## Gap to fix: no `-race` in the test targets
 
-The internal tools (`worklog`, `reminder`, `present`, …) currently have only `make fmt` and `make test` — **no `lint` target and no `-race`**. When touching one of these tools, a concrete uplift is to add:
-
-```make
-lint:
-	golangci-lint run ./...
-```
-
-and run it. Don't claim a tool is lint-clean if it has never had a lint target — add one and run it first.
+Every component Makefile has `fmt` and `lint` targets beside `test`, and the rule is to run `make fmt && make lint` in each touched component before pushing. What none of them has is `-race`: `make test` runs the plain suite. When touching a component with goroutines, run `go test -race ./...` in it before calling the change safe. Don't claim a tool is lint-clean unless you ran its lint target.
 
 ## In-source formatting rules
 
 - **Imports in three blank-line-separated groups:** stdlib, third-party, internal (`goimports` enforces). Use `import _` only in `main`/tests; `import .` only to break a test cycle.
 - **Group related declarations** — cluster related `const`/`var`/`type`; use `var (...)` and `const (...)` blocks.
 - **Declare locals close to first use;** keep variable scope tight.
-- **Reduce nesting with early returns.** Invert conditions, `return`/`continue` early, and omit `else` after a terminating branch. Keep the happy path at the left margin and indent the error path. The repo's `resolveDue` switch (`reminder/internal/server/server.go`) is the pattern: handle each case and return instead of nesting an else.
+- **Reduce nesting with early returns.** Invert conditions, `return`/`continue` early, and omit `else` after a terminating branch. Keep the happy path at the left margin and indent the error path. The `group` switch in `status/internal/server/monitor.go` is the pattern: handle each case and return instead of nesting an else.

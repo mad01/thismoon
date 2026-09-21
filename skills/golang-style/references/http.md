@@ -1,25 +1,27 @@
 # HTTP service patterns
 
-The shape every `net/http` server in this repo shares (`reminder`, `present`, `d-man`, `status`). Stdlib only — no chi/gin/echo. Backed by the `net/http` docs and the repo servers.
+The shape every `net/http` server in this repo shares (`events`, `keeper-of-facts`, `present`, `d-man`, `status`). Stdlib only — no chi/gin/echo. Backed by the `net/http` docs and the repo servers.
 
 ## ServeMux with Go 1.22 method routing
 
-Build routes on `http.NewServeMux` using method+path patterns (`"GET /path"`, `"POST /path"`) and `{id}` wildcards read back with `r.PathValue("id")`. Wrap the mux in middleware and return it from a `Handler()` method. From `reminder/internal/server/server.go`:
+Build routes on `http.NewServeMux` using method+path patterns (`"GET /path"`, `"POST /path"`) and `{id}` wildcards read back with `r.PathValue("id")`. Wrap the mux in middleware and return it from a `Handler()` method. From `keeper-of-facts/internal/server/server.go`:
 
 ```go
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
-	mux.HandleFunc("GET /api/reminders", s.handleList)
-	mux.HandleFunc("POST /api/reminders", s.handleCreate)
-	mux.HandleFunc("GET /api/reminders/{id}", s.handleGet)
-	mux.HandleFunc("PUT /api/reminders/{id}", s.handleUpdate)
-	mux.HandleFunc("DELETE /api/reminders/{id}", s.handleDelete)
+	mux.HandleFunc("GET /app.js", s.handleAppJS)
+	mux.HandleFunc("GET /api/assertions", s.handleList)
+	mux.HandleFunc("POST /api/assertions", s.handleCreate)
+	mux.HandleFunc("GET /api/assertions/{id}", s.handleGet)
+	mux.HandleFunc("POST /api/assertions/{id}/retract", s.handleRetract)
+	mux.HandleFunc("POST /api/check", s.handleCheck)
+	mux.HandleFunc("POST /api/recall", s.handleRecall)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /version", s.info.Handler())
-	mux.Handle("GET /webkit/", webkit.Handler())
+	webkit.Mount(mux)
 	return logRequests(mux)
 }
 ```
@@ -90,27 +92,33 @@ Handlers decode, validate, call the store, and on error call `writeStoreErr(w, e
 
 ## Optional fields in request bodies as pointers
 
-A PUT/PATCH body uses `*string` fields so an omitted field is left unchanged (mirrors the store `Patch` — see `functions.md`):
+A PUT/PATCH body, or an MCP update input, uses `*string` fields so an omitted field is left unchanged (mirrors the store `Patch` — see `functions.md`). From `present/internal/mcpserver/tools.go`:
 
 ```go
-type updateReq struct {
-	Title  *string `json:"title"`
-	Body   *string `json:"body"`
-	Due    *string `json:"due"`
-	Repeat *string `json:"repeat"`
+type updateInput struct {
+	ID         string      `json:"id"                   jsonschema:"page id to update"`
+	Title      *string     `json:"title,omitempty"      jsonschema:"new title; omit to leave unchanged"`
+	Content    *string     `json:"content,omitempty"    jsonschema:"new page content as a Doc JSON string or legacy HTML string; omit to leave unchanged"`
+	Graph      *string     `json:"graph,omitempty"      jsonschema:"new graph as structured JSON string or legacy JS string; omit to leave unchanged, empty string to remove"`
+	References *[]refInput `json:"references,omitempty" jsonschema:"replace the references list; omit to leave unchanged, empty array to clear"`
 }
 ```
 
 ## Request-logging middleware
 
-One middleware logs a line per request so problems show up in `t-man logs <tool> --stderr`:
+One middleware logs a line per request so problems show up in `t-man logs <tool> --stderr`. From `events/internal/server/server.go`:
 
 ```go
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf("reminder: %s %s (%s)", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		log.Printf(
+			"events: %s %s (%s)",
+			r.Method,
+			r.URL.Path,
+			time.Since(start).Round(time.Millisecond),
+		)
 	})
 }
 ```

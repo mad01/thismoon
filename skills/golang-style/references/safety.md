@@ -4,7 +4,7 @@ Zero values, nil, defer, copying, context, and concurrency discipline. Backed by
 
 ## Make the zero value useful
 
-A freshly declared value should be usable. `var b strings.Builder`, `var mu sync.Mutex`, and `var buf bytes.Buffer` all work with no init. Design your own types the same way where you can. `reminder`'s status field is stored, not derived, so a zero `Reminder` is never silently "pending" — be explicit when the zero value would be ambiguous, and start enums at a real value rather than letting `0` mean something.
+A freshly declared value should be usable. `var b strings.Builder`, `var mu sync.Mutex`, and `var buf bytes.Buffer` all work with no init. Design your own types the same way where you can. `keeper-of-facts` stores an assertion's status (`fresh`, set at creation) rather than deriving it, so a zero `Assertion` is never silently fresh — be explicit when the zero value would be ambiguous, and start enums at a real value rather than letting `0` mean something.
 
 ## Nil slices and maps
 
@@ -38,9 +38,9 @@ CLI flags, HTTP bodies, config files, environment variables, and persisted data 
 
 These are mostly sequential CLI/HTTP tools. Add goroutines only where they earn it, and prefer one owner of mutable state over locks sprinkled everywhere.
 
-- **Single-writer:** `reminder serve` is the *only* writer of the JSON store; the MCP and CLI are HTTP clients to it, so there are no file-lock races. Design for one owner before reaching for mutexes.
+- **Single-writer:** `events serve` is the *only* writer of the JSONL store; the MCP and CLI are HTTP clients to it, so there are no file-lock races. Design for one owner before reaching for mutexes.
 - **Goroutines where justified:** `d-man` probes backends concurrently with a `sync.WaitGroup` and an indexed result slice (no shared-write race), behind a `sync.Mutex`-guarded TTL cache. Its `serve` runs a watch loop plus signal handling.
-- **Cancellation:** loop on `select { case <-ctx.Done(): return; case <-t.C: ... }` (the `reminder` ticker), and shut an HTTP server down on `signal.NotifyContext` (the `d-man` daemon — see `http.md`).
+- **Cancellation:** loop on `select { case <-ctx.Done(): return; case <-t.C: ... }` (the `status` monitor loop), and shut an HTTP server down on `signal.NotifyContext` (the `d-man` daemon — see `http.md`).
 - **Lifetimes:** when spawning a goroutine, make its owner and exit condition clear at the call site. Do not start background work that has no cancellation, join, or process-lifetime contract.
 - A swappable handler guards its pointer with a `sync.RWMutex` (`d-man`'s `reloadableHandler`) so config reloads don't restart the listener.
 
@@ -48,4 +48,4 @@ Run tests with `-race` when you do add concurrency (the internal tools don't yet
 
 ## Keep the side effect at the edge behind a seam
 
-Push `exec`, file writes, notifications, and randomness to the edge behind a tiny interface so the core stays testable. `notify.Notifier` wraps the `osascript` call; the ticker fires through the interface and a test passes a fake. The same edge escapes untrusted input — `notify.appleScriptString` escapes quotes and backslashes so a reminder title can't break out of the AppleScript literal. Use `crypto/rand` for anything security-sensitive, never `math/rand`.
+Push `exec`, file writes, notifications, and randomness to the edge behind a tiny interface so the core stays testable. `deps`' `alert.Notifier` wraps the `osascript` call; the scanner fires through the interface and a test passes a fake. The same edge escapes untrusted input — `alert.appleScriptString` escapes quotes and backslashes so a package name can't break out of the AppleScript literal. Use `crypto/rand` for anything security-sensitive, never `math/rand`.

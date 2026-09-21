@@ -38,12 +38,12 @@ type Patch struct {
 }
 ```
 
-The HTTP layer mirrors this with `*string` JSON fields (`reminder`'s `updateReq`). Document the nil-vs-empty meaning in a comment every time.
+The JSON boundary mirrors this with `*string` fields (`present`'s `updateInput` in its MCP server). Document the nil-vs-empty meaning in a comment every time.
 
 ## Receivers: value vs pointer
 
 - **Pointer receiver** when the method mutates, when the type is large, or when it holds a `sync.Mutex`/uncopyable field. Stateful types (`*Store`, `*Server`, `*Client`, `*Handler`) always use pointer receivers.
-- **Value receiver** for small, immutable, behavior-only types. `notify.Osascript` is an empty struct, so `func (Osascript) Notify(...)` takes a value receiver.
+- **Value receiver** for small, immutable, behavior-only types. `deps`' `alert.Osascript` is an empty struct, so `func (Osascript) Notify(...)` takes a value receiver.
 - Be consistent within a type: don't mix value and pointer receivers on the same type.
 
 ## Returns
@@ -52,10 +52,10 @@ The HTTP layer mirrors this with `*string` JSON fields (`reminder`'s `updateReq`
 - **Avoid named returns** in general. The one idiomatic use here is the single-return-through-a-helper pattern, where a named return reads no better than the explicit form, so the repo writes it explicitly:
 
 ```go
-// reminder/internal/client/client.go
-func (c *Client) Get(id string) (Reminder, error) {
-	var out Reminder
-	return out, c.do(http.MethodGet, "/api/reminders/"+id, nil, &out)
+// events/internal/client/client.go
+func (c *Client) Sources() ([]SourceCount, error) {
+	var out []SourceCount
+	return out, c.do(http.MethodGet, "/api/sources", nil, &out)
 }
 ```
 
@@ -63,17 +63,16 @@ func (c *Client) Get(id string) (Reminder, error) {
 
 ## Accept interfaces, return structs
 
-Return concrete types from constructors and functions (`*Store`, `*Server`). Accept an interface only where you need a seam, and define that interface **in the consumer**, as small as possible. From `reminder/internal/ticker/ticker.go`:
+Return concrete types from constructors and functions (`*Store`, `*Server`). Accept an interface only where you need a seam, and define that interface **in the consumer**, as small as possible. From `deps/internal/scanner/scanner.go`:
 
 ```go
-// Store is the subset of *store.Store the ticker needs.
-type Store interface {
-	DueReminders(now time.Time) []store.Reminder
-	Trigger(id string, now time.Time) (store.Reminder, error)
+// Checker is the OSV surface the scanner needs (real *osv.Client or a fake).
+type Checker interface {
+	Check(ctx context.Context, queries []osv.Query) ([][]store.Advisory, error)
 }
 ```
 
-The ticker takes this two-method view, so a fake store in a test only implements two methods. The `notify.Notifier` interface (one method) and `proxy.Prober` (a func type) are the same idea: a tiny consumer-side seam for the side effect. Don't define an interface next to its only implementation "just in case" — add it when a second implementation or a test seam actually appears. See `safety.md` for keeping the implementation behind the seam pure.
+The scanner takes this one-method view, so a fake checker in a test implements one method. The `alert.Notifier` interface (one method) and `proxy.Prober` (a func type) are the same idea: a tiny consumer-side seam for the side effect. Don't define an interface next to its only implementation "just in case" — add it when a second implementation or a test seam actually appears. See `safety.md` for keeping the implementation behind the seam pure.
 
 ## Let semantics set function boundaries
 

@@ -1,6 +1,6 @@
 # Stores & persistence
 
-The file-backed store pattern shared by `worklog`, `reminder`, and `present`. Backed by the repo stores.
+The file-backed store pattern shared by `worklog`, `events`, and `present`. Backed by the repo stores.
 
 ## A `Store` struct with an injectable clock
 
@@ -36,7 +36,7 @@ func New(dir string) (*Store, error) {
 
 ## Pure model and helpers split from the I/O shell
 
-Keep the data model and pure functions in their own file, the file-touching methods in another (the functional-core/imperative-shell split — see `structure.md` and `safety.md`). `reminder/internal/store` separates `reminder.go` (the `Reminder` model + pure `NextDue`/`Overdue`) from `store.go` (the mutex-guarded JSON store) and `id.go` (id minting). Unexported path helpers stay on the store:
+Keep the data model and pure functions in their own file, the file-touching methods in another (the functional-core/imperative-shell split — see `structure.md` and `safety.md`). `events` separates `internal/event` (the `Event` model plus pure `Validate`, `SanitizeSource`, `NewID`, and `TimeFromID`) from `internal/store` (the mutex-guarded JSONL store). Unexported path helpers stay on the store:
 
 ```go
 func (s *Store) itemDir(key string) string    { return filepath.Join(s.Root, key) }
@@ -73,7 +73,7 @@ When a path comes from config or env that the shell didn't expand, expand a lead
 ## Serialization formats by source
 
 - **TOML** (`BurntSushi/toml`) for human-edited config: `d-man`'s `routes.toml`, `status`.
-- **JSON** for machine state: the `reminder` store, the `present` `meta.json`.
+- **JSON** for machine state: the `present` `meta.json`. **JSONL** for append-only logs: the `events` and `keeper-of-facts` stores.
 - **YAML frontmatter** (`gopkg.in/yaml.v3`) for markdown documents: `worklog`'s `CONTEXT.md` `Frontmatter`.
 
 Define a struct with explicit tags and document the contract:
@@ -92,7 +92,7 @@ type Frontmatter struct {
 
 ## Single writer for shared state
 
-When more than one process touches the same store, make one process the only writer and have the rest go through it (an HTTP client — see `http.md`). `reminder serve` owns its JSON store behind a mutex; the MCP and CLI are HTTP clients, so there are no file-lock races. Prefer this to file locking.
+When more than one process touches the same store, make one process the only writer and have the rest go through it (an HTTP client — see `http.md`). `events serve` owns its JSONL store behind a mutex; the MCP and CLI are HTTP clients, so there are no file-lock races. Prefer this to file locking.
 
 ## Updates take a `Patch`
 

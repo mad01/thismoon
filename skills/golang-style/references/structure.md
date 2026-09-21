@@ -33,11 +33,11 @@ A tool starts as a few `internal/` packages. Split a package out when it has a d
 
 ## Functional core, imperative shell
 
-Keep pure model + helpers in one file and the I/O shell in another. `reminder/internal/store/reminder.go` holds the `Reminder` model and pure functions (`NextDue`, `Overdue`); `store.go` and `id.go` hold the mutable, file-touching store. thismoon `services/d-man/internal/hosts` is pure `Validate`/`Render`/`Splice` plus a thin `Sync` shell. Side effects (`exec`, file writes, notifications, time) live at the edge — see `safety.md` and `functions.md`.
+Keep pure model + helpers in one file and the I/O shell in another. `events/internal/event/event.go` holds the `Event` model and pure functions (`Validate`, `SanitizeSource`, `NewID`, `TimeFromID`); `events/internal/store/store.go` holds the mutable, file-touching store. thismoon `services/d-man/internal/hosts` is pure `Validate`/`Render`/`Splice` plus a thin `Sync` shell. Side effects (`exec`, file writes, notifications, time) live at the edge — see `safety.md` and `functions.md`.
 
 ## File organization
 
-- **Group by cohesion, not one type per file.** One logical unit per file. `reminder/internal/store/` splits the model (`reminder.go`) from the store (`store.go`) from id generation (`id.go`).
+- **Group by cohesion, not one type per file.** One logical unit per file. `events/internal/` splits the model and its pure helpers (`event/`) from the store (`store/`) from the HTTP client (`client/`).
 - **Declaration order:** package doc comment → imports (three groups) → exported types → `New` constructor → methods → unexported helpers last.
 - **Imports in three groups**, separated by blank lines: stdlib, third-party, internal. `goimports` maintains this. Example from `worklog/internal/cli/cli.go`:
 

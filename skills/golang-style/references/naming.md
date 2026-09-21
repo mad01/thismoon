@@ -5,17 +5,17 @@ Backed by [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comme
 ## Case
 
 - **MixedCaps / mixedCaps**, never `snake_case` or `ALL_CAPS` — including constants. Exported = leading capital, unexported = leading lowercase.
-- **Initialisms keep one case as a unit:** `URL`, `ID`, `HTTP`, `JSON`. So `baseURL` (unexported), `NewID`, `apiReminder`, `webURL`, `cacheJSON` — not `baseUrl` or `newId`. Repo examples: `present` uses `URL` in `Reference`; `reminder/internal/store/id.go` has `NewID`; `proxy.go` has `cacheJSON`.
+- **Initialisms keep one case as a unit:** `URL`, `ID`, `HTTP`, `JSON`. So `baseURL` (unexported), `NewID`, `apiURL`, `webURL`, `cacheJSON` — not `baseUrl` or `newId`. Repo examples: `present` uses `URL` in `Reference`; `events/internal/event/event.go` has `NewID`; `proxy.go` has `cacheJSON`.
 
 ## Packages
 
 - Short, lowercase, and a single word. Base it on the directory: `store`, `proxy`, `ticker`. An underscore does not belong in a package name.
-- **Reduce stutter** between package and exported name. It is `store.New`, not `store.NewStore`; `client.Reminder`, not `client.ClientReminder`. The caller already writes the package name.
+- **Reduce stutter** between package and exported name. It is `store.New`, not `store.NewStore`; `client.Event`, not `client.ClientEvent`. The caller already writes the package name.
 - No `util`/`common`/`helpers` (see `structure.md`).
 
 ## Constructors and getters
 
-- Constructors are `New`. From `reminder/internal/client/client.go`: `func New(baseURL string) *Client`. When construction can fail it is `(*T, error)` — `present`'s `func New(dir string) (*Store, error)`.
+- Constructors are `New`. From `events/internal/client/client.go`: `func New(baseURL string) *Client`. When construction can fail it is `(*T, error)` — `present`'s `func New(dir string) (*Store, error)`.
 - **No `Get` prefix on getters.** Expose the field, or name the method for the noun: `store.DefaultRoot()`, `(*Store).ItemDir()`, `cfg.Hosts()`, `cfg.RouteMap()`. A setter is `SetX`; use `Fetch`/`Compute` for expensive or remote work.
 
 ## Errors
@@ -33,7 +33,7 @@ Backed by [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comme
 ## Variables and constants
 
 - Name length scales with scope: `i`, `r`, `w` in a tight loop; descriptive names at package level.
-- Don't restate the type in the name (`reminders`, not `reminderList`).
+- Don't restate the type in the name (`events`, not `eventList`).
 - Constants are named by role, not value; no `K` prefix, no `ALL_CAPS`. The repo uses typed-less `const` string blocks for statuses (`StatusPending`, `StatusFired`).
 - Build metadata lives in a shared `buildinfo` package, not a per-tool var: `Version`, `Commit`, `Tag`, `BuildTime`, all set via `-ldflags`. Read it with `buildinfo.Get()`; see `cli.md`.
 

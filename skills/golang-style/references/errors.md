@@ -37,14 +37,14 @@ Define a sentinel `var` only where a consumer branches on it. Prefix the message
 var ErrNotFound = errors.New("present: page not found")
 ```
 
-**Standardize on the prefix.** `present` prefixes (`present: page not found`); `reminder` does not (`reminder not found`). Prefer the package-prefixed form for new code.
+**Standardize on the prefix.** `present` prefixes (`present: page not found`); so does `events` (`event: source is required`). Use the package-prefixed form for new code.
 
 ## Map errors at the boundary with `errors.Is`/`errors.As`
 
 Branch on a sentinel with `errors.Is`, never by string-matching. The HTTP layer maps the store's sentinel to a status code in one helper:
 
 ```go
-// reminder/internal/server/server.go
+// keeper-of-facts/internal/server/server.go
 func writeStoreErr(w http.ResponseWriter, err error) {
 	if errors.Is(err, store.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, err)
@@ -71,20 +71,20 @@ Otherwise a sentinel `var` or a plain `fmt.Errorf` is enough. Pick by two axes: 
 
 ## Handle an error once
 
-Log it **or** return it, never both. In this codebase, library functions return errors and the CLI handles them once at the top: the cobra root sets `SilenceErrors: true` and `main` prints `tool: err` (see `cli.md`). Logging happens only in genuine fire-and-forget loops — the ticker logs a failed notification and continues, because there is no caller to return to:
+Log it **or** return it, never both. In this codebase, library functions return errors and the CLI handles them once at the top: the cobra root sets `SilenceErrors: true` and `main` prints `tool: err` (see `cli.md`). Logging happens only in genuine fire-and-forget paths — `deps` logs a failed notification and returns nil so the flags stay pending for the next cycle, because no caller could do better:
 
 ```go
-// reminder/internal/ticker/ticker.go
-if err := n.Notify(r.Title, r.Body); err != nil {
-	log.Printf("reminder: notify %s (%q) failed, will retry: %v", r.ID, r.Title, err)
-	continue
+// deps/internal/scanner/scanner.go
+if err := n.Notify(title, body); err != nil {
+	log.Printf("deps: notify failed, will retry: %v", err)
+	return 0, nil
 }
 ```
 
 ## CLI vs library layering
 
 - **Library packages** (`store`, `render`, `config`) return descriptive errors and never call `os.Exit` or `log.Fatal`.
-- **The HTTP client** turns a transport error into a user-facing one with `%w` so the cause is still there: `reminder`'s `client.do` wraps a dead-server dial with "reminder serve not reachable … (t-man status reminder): %w".
+- **The HTTP client** turns a transport error into a user-facing one with `%w` so the cause is still there: `events`' `client.do` wraps a dead-server dial with "events serve not reachable … (t-man status events): %w".
 - **`os.Exit`/`log.Fatal` only in `main`** (here, only in the `cmd/<tool>/main.go` shim).
 
 ## Always check errors — but don't litter `_ =` to silence the linter
