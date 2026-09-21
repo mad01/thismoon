@@ -106,7 +106,11 @@ jobs:
   artifacts:
     name: ${{ matrix.path }}
     needs: plan
-    if: needs.plan.outputs.paths != '' && needs.plan.outputs.paths != '[]'
+    # On workflow_dispatch release-please is skipped, and a skip cascades
+    # through every downstream job whose condition has no status function,
+    # even past a plan job that ran. !cancelled() stops the cascade; the
+    # explicit result check keeps a failed plan from building anything.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.paths != '' && needs.plan.outputs.paths != '[]' }}
     # macOS arm64 runner: artifacts are darwin/arm64 only (docs/adr/0007),
     # and csl needs cgo (tree-sitter grammars) — building natively on the
     # target platform sidesteps cross-compilation entirely.
