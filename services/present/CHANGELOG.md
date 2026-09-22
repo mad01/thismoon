@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0](https://github.com/mad01/thismoon/compare/present/v1.3.0...present/v1.4.0) (2026-09-22)
+
+
+### Features
+
+* **present:** container image, Kubernetes manifests, and a kind job in CI ([32734c0](https://github.com/mad01/thismoon/commit/32734c0e546e2579f0e1be9e705e93b3cea53d77))
+* **present:** Kubernetes page store with expiry sweeper ([782421a](https://github.com/mad01/thismoon/commit/782421a2aa6e51ee6133877c572a112d54a4da84))
+* **present:** share a local page to the shared instance ([fab5f12](https://github.com/mad01/thismoon/commit/fab5f120abc53995af90d363a1fe66cfc21e01d1))
+* **present:** shared mode with author keys and MCP over HTTP ([6226b68](https://github.com/mad01/thismoon/commit/6226b68bf18e4e321f8253ee425f44be3299de94))
+
+
+### Bug Fixes
+
+* **present:** harden shared mode after the kind validation ([29f48a6](https://github.com/mad01/thismoon/commit/29f48a6e3a42aba59c7d8c7101055db60c5888d8))
+
 ## [1.3.0](https://github.com/mad01/thismoon/compare/present/v1.2.0...present/v1.3.0) (2026-09-15)
 
 
