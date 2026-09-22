@@ -14,7 +14,8 @@ Monorepo for the `*.this` platform: local web services, CLI tools, the shared we
 ## Layout
 
 ```
-services/    *.this local web services (one directory per service)
+services/    *.this local web services (one directory per service; present also
+             runs as a shared instance in Kubernetes)
 tools/       CLI tools installed to the local bin
 webkit/      shared Go web UI package (in-module, no separate versioning)
 kit/         shared Go packages for cross-tool functionality (one subpackage

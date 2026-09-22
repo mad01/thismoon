@@ -56,9 +56,9 @@ refused on write.
   and every present build, local included, grows by about 12 MB. The deps
   scanner will surface advisories from that tree that no present code
   path compiles; they are resolved as phantoms, not upgraded away.
-- The CRD is a public shape. A field change needs a new served version and
-  a conversion story; a test keeps the embedded copy and `deploy/base/crd.yaml`
-  byte-identical.
+- The custom resource definition (CRD) is a public shape. A field change
+  needs a new served version and a conversion story; a test keeps the
+  embedded copy and `deploy/base/crd.yaml` byte-identical.
 - A lost author key orphans its pages until they expire or an operator
   deletes the resources; a leaked key is the author until every page is
   re-shared under a new one. Reads need no key by design, so the

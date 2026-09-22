@@ -60,6 +60,9 @@ func (e *expiring) ListMeta(ctx context.Context) ([]Page, error) {
 	return e.dropExpired(pages), err
 }
 
+// dropExpired filters expired pages out in place. The slice it is handed
+// is the one the wrapped store just built for this call, so reusing its
+// backing array clobbers nothing a caller still holds.
 func (e *expiring) dropExpired(pages []Page) []Page {
 	if pages == nil {
 		return nil

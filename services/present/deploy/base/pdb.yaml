@@ -1,0 +1,14 @@
+# maxUnavailable: 0 covers rollouts only. Node anti-affinity is preferred,
+# not required, so both replicas can land on one node and a drain would
+# otherwise take the instance down.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: present
+  labels:
+    app: present
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: present

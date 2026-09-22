@@ -1,21 +1,21 @@
-# Expose the shared instance through an Ingress. The hostname lives in the
-# present-host ConfigMap alone and is replaced into the Ingress host and the
-# external-dns annotation, so a private overlay redefines one value:
-#
-#   configMapGenerator:
-#     - name: present-host
-#       behavior: replace
-#       literals: [host=present.corp.example]
+# Expose the shared instance through an Ingress. The hostname and the ingress
+# class live in the present-host ConfigMap alone and are replaced into the
+# Ingress below. A private overlay layering on this one has to re-declare
+# these replacements or patch the Ingress directly: redefining the ConfigMap
+# by itself changes nothing, because the replacements already ran here.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: present
 resources:
+  - namespace.yaml
   - ../../base
   - ingress.yaml
 configMapGenerator:
   - name: present-host
     literals:
       - host=present.example.com
+      # Must match an IngressClass this cluster runs.
+      - ingressClass=nginx
 generatorOptions:
   disableNameSuffixHash: true
 replacements:
@@ -29,4 +29,15 @@ replacements:
           name: present
         fieldPaths:
           - spec.rules.0.host
+          - spec.tls.0.hosts.0
           - metadata.annotations.[external-dns.alpha.kubernetes.io/hostname]
+  - source:
+      kind: ConfigMap
+      name: present-host
+      fieldPath: data.ingressClass
+    targets:
+      - select:
+          kind: Ingress
+          name: present
+        fieldPaths:
+          - spec.ingressClassName

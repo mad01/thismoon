@@ -23,11 +23,14 @@ type pageSpec struct {
 	References  []reference `json:"references,omitempty"`
 	Version     int64       `json:"version"`
 	Author      string      `json:"author,omitempty"`
-	Ephemeral   bool        `json:"ephemeral,omitempty"`
-	ExpiresAt   string      `json:"expiresAt,omitempty"`
-	CreatedAt   string      `json:"createdAt"`
-	UpdatedAt   string      `json:"updatedAt"`
-	Shared      *sharedInfo `json:"shared,omitempty"`
+	// Ephemeral is written even when false: it is a printer column, and an
+	// omitted field renders as a blank cell in kubectl get pages rather
+	// than as the "kept until deleted" it means.
+	Ephemeral bool        `json:"ephemeral"`
+	ExpiresAt string      `json:"expiresAt,omitempty"`
+	CreatedAt string      `json:"createdAt"`
+	UpdatedAt string      `json:"updatedAt"`
+	Shared    *sharedInfo `json:"shared,omitempty"`
 }
 
 type reference struct {

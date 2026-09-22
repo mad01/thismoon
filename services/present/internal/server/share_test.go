@@ -67,8 +67,16 @@ func createLocal(t *testing.T, st store.Store, title string) store.Page {
 }
 
 // postShare hits the local share endpoint with a raw body (empty means no
-// body at all) and returns the status and body.
+// body at all) and returns the status and body. It declares JSON, which the
+// endpoint requires of every share request.
 func postShare(t *testing.T, ts *httptest.Server, id, body string) (int, []byte) {
+	t.Helper()
+	return postShareAs(t, ts, id, "application/json", body)
+}
+
+// postShareAs posts a share request under contentType (empty sends no
+// Content-Type header at all).
+func postShareAs(t *testing.T, ts *httptest.Server, id, contentType, body string) (int, []byte) {
 	t.Helper()
 	var payload io.Reader
 	if body != "" {
@@ -78,8 +86,8 @@ func postShare(t *testing.T, ts *httptest.Server, id, body string) (int, []byte)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -210,5 +218,34 @@ func TestSharedModeNeverOffersShare(t *testing.T) {
 	out := f.create(t, author.NewKey(), page("Hosted"))
 	if got := apiPageOf(t, f.ts.URL+"/api/p/"+out.ID).Share; got.Enabled {
 		t.Errorf("shared instance page share = %+v, want disabled", got)
+	}
+}
+
+// TestShareRequiresJSONContentType pins the preflight the share endpoint
+// leans on: a browser can send these content types cross-origin as a simple
+// request, so a page the user is visiting must not be able to reach the
+// share button's endpoint with one.
+func TestShareRequiresJSONContentType(t *testing.T) {
+	f := setupLocalSharing(t, author.NewKey())
+	p := createLocal(t, f.st, "Local")
+
+	for _, contentType := range []string{
+		"",
+		"text/plain;charset=UTF-8",
+		"application/x-www-form-urlencoded",
+		"multipart/form-data; boundary=x",
+	} {
+		code, body := postShareAs(t, f.ts, p.ID, contentType, `{"ephemeral":true}`)
+		if code != http.StatusUnsupportedMediaType {
+			t.Errorf("share as %q = %d (%s), want 415", contentType, code, body)
+		}
+	}
+	if got := apiPageOf(t, f.ts.URL+"/api/p/"+p.ID).Share; got.URL != "" {
+		t.Fatalf("a refused share left a record: %+v", got)
+	}
+
+	// The charset parameter does not change the media type.
+	if code, body := postShareAs(t, f.ts, p.ID, "Application/JSON; charset=utf-8", ""); code != http.StatusOK {
+		t.Fatalf("share as application/json with a charset = %d (%s), want 200", code, body)
 	}
 }

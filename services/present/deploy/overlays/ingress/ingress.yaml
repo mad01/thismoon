@@ -8,6 +8,17 @@ metadata:
     # external-dns creates the record for the host below.
     external-dns.alpha.kubernetes.io/hostname: present.example.com
 spec:
+  # Replaced from the present-host ConfigMap. It has to name an IngressClass
+  # the cluster actually runs, or no controller claims this Ingress.
+  ingressClassName: nginx
+  tls:
+    # cert-manager or a pre-created secret has to supply present-tls. The
+    # controller terminates TLS and is expected to set X-Forwarded-Proto and
+    # X-Forwarded-Host, which present builds its page URLs from; every common
+    # controller does.
+    - hosts:
+        - present.example.com
+      secretName: present-tls
   rules:
     - host: present.example.com
       http:

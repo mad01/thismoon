@@ -28,9 +28,9 @@ These are persistent flags, seen by every subcommand (`present serve`,
 
 - `--workdir` (string; env `PRESENT_WORKDIR`): directory holding `pages/`,
   the page store both processes read and write. The default is
-  `~/.config/present` while that directory exists, otherwise
-  `$XDG_STATE_HOME/present` (or `~/.local/state/present` when that variable
-  is unset or not absolute).
+  `~/.config/present` while that directory holds a `pages/` subdirectory,
+  otherwise `$XDG_STATE_HOME/present` (or `~/.local/state/present` when
+  that variable is unset or not absolute).
 - `--port` (int, default `7423`; env `PRESENT_PORT`): port `present serve`
   listens on. Also used to compute the default `--base-url`, and by
   `present mcp` to build the page URLs it returns.

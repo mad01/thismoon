@@ -69,7 +69,9 @@ func (s *Store) pages() dynamic.ResourceInterface {
 }
 
 // Create persists a new page. A draft without an id gets a fresh capability
-// id; a name collision (astronomically unlikely) is retried once.
+// id; a name collision (astronomically unlikely) is retried once under a
+// freshly minted id, whether the draft named the id or the store did, so
+// the caller must read the id back from the returned page.
 func (s *Store) Create(ctx context.Context, d store.Draft) (store.Page, error) {
 	now := s.now().UTC()
 	rec := record{
@@ -108,7 +110,11 @@ func (s *Store) Create(ctx context.Context, d store.Draft) (store.Page, error) {
 		if err == nil {
 			return rec.Page, nil
 		}
-		if apierrors.IsAlreadyExists(err) && mint && attempt == 0 {
+		if apierrors.IsAlreadyExists(err) && attempt == 0 {
+			// The id is taken. Mint a new one and try again, even when the
+			// caller supplied it: on a shared instance the id is a
+			// capability, so any unused one will do.
+			mint = true
 			continue
 		}
 		return store.Page{}, fmt.Errorf("create page %s: %w", rec.Page.ID, err)

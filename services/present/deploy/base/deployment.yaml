@@ -21,6 +21,9 @@ spec:
     spec:
       serviceAccountName: present
       automountServiceAccountToken: true
+      # The Service is named present, so kubelet would inject PRESENT_PORT
+      # and friends, colliding with the app's own PRESENT_* env prefix.
+      enableServiceLinks: false
       # serve drains in-flight requests on SIGTERM within 10s.
       terminationGracePeriodSeconds: 15
       securityContext:

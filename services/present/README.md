@@ -1,8 +1,8 @@
 # present
 
-A small CLI + MCP server for serving single-page HTML briefing pages over localhost.
+A small CLI + MCP server for serving single-page HTML briefing pages over localhost, and the same binary run as a shared instance others reach by link.
 
-Presentations are managed as create / read / update / list; there is no delete, so pages stick around. Each page stores only its HTML body; a shared **core template** supplies the chrome (styling, controls, scripts) and is injected when the page is served. Editing the template re-renders every page, old and new. An injected live-reload script refreshes any open browser tab after an update, so you open the page once and edits stream in.
+Pages are created, read, updated, and listed through the MCP tools; deleting one is a button in the web index rather than a tool. Each page keeps its rendered HTML body next to the Doc JSON it was rendered from. The browser does the assembly: `present serve` returns a chrome-only shell, fetches the page as JSON, and builds the DOM, so there is no template on disk to edit. An open tab polls the page's version and reloads itself after an update.
 
 ## Install
 
@@ -79,16 +79,26 @@ The tools write the page store directly, so they work with `present serve` down;
 
 Confirm the registration with `claude mcp list`, and run `present doctor` for a full check of the store, the server, and version skew.
 
-A shared instance is registered as an HTTP server instead, with the author key as a bearer header:
+A shared instance is registered as an HTTP server instead, with the author key as a bearer token. Claude Code:
 
 ```bash
 claude mcp add --transport http present-shared https://present.example.com/mcp \
   --header "Authorization: Bearer <your author key>"
 ```
 
+Codex, in `config.toml`:
+
+```toml
+[mcp_servers.present-shared]
+url = "https://present.example.com/mcp"
+bearer_token_env_var = "PRESENT_AUTHOR_KEY"
+```
+
+The instance's root page shows both forms filled in with its own hostname.
+
 ### Deploying a shared instance
 
-`services/present/Dockerfile` builds `ghcr.io/mad01/present` (linux/amd64 and arm64; releases push `X.Y.Z` and `latest`, main pushes `main` and `sha-<short>`). `deploy/base` is a kustomize base (CRD, RBAC, a two-replica Deployment, a Service); `deploy/overlays/ingress` and `deploy/overlays/istio` show how to expose it, with the hostname in a single ConfigMap value your own overlay replaces. To try it against a kind cluster:
+`services/present/Dockerfile` builds `ghcr.io/mad01/present` (linux/amd64 and arm64; releases push `X.Y.Z` and `latest`, main pushes `main` and `sha-<short>`). `deploy/base` is a kustomize base: the Page custom resource definition (CRD), the role-based access control (RBAC) objects the pods run under, a two-replica Deployment, a Service, and a PodDisruptionBudget. `deploy/overlays/ingress` and `deploy/overlays/istio` show how to expose it, with the hostname in a single ConfigMap value your own overlay replaces. [deploy/README.md](deploy/README.md) is the operator guide for a real cluster; [docs/RELEASING.md](../../docs/RELEASING.md) covers the image tags and how to verify the cosign signature. To try it against a kind cluster:
 
 ```bash
 make -C services/present kind-test   # build, load, apply deploy/overlays/kind, run the cluster tests
