@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"time"
 )
 
 // String returns the value of the environment variable name, or fallback
@@ -68,4 +69,26 @@ func boolFrom(w io.Writer, name string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+// Duration returns the duration value of the environment variable name
+// (time.ParseDuration syntax, e.g. "10m", "1h30m"), or fallback when it is
+// unset, empty, or does not parse. A set value that does not parse warns
+// once on stderr like Int.
+func Duration(name string, fallback time.Duration) time.Duration {
+	return durationFrom(os.Stderr, name, fallback)
+}
+
+// durationFrom is Duration with the warning sink injected so tests can read it.
+func durationFrom(w io.Writer, name string, fallback time.Duration) time.Duration {
+	v, ok := os.LookupEnv(name)
+	if !ok || v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		fmt.Fprintf(w, "%s: unparseable value %q, using default %s\n", name, v, fallback)
+		return fallback
+	}
+	return d
 }

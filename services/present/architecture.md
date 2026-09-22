@@ -27,6 +27,8 @@ cmd/present/         entrypoint, delegates to internal/cli
 internal/cli/        cobra command tree: serve, mcp, rerender, version
 internal/store/      Store interface + FS, the filesystem implementation over
                      pages/<id>/; id generation; expiry wrapper
+internal/store/k8sstore/  Store over Page custom resources (dynamic client),
+                     the CRD (embedded, copied to deploy/base), the sweeper
 internal/author/     author keys: mint, hash, read from a bearer header, check
 internal/baseurl/    public base URL from X-Forwarded-* (middleware + derivation)
 internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade
@@ -78,6 +80,21 @@ the list from `GET /api/pages`. There is no server-side template layer.
 
 Plain files, one directory per page. Raw HTML/JS input deletes the now-stale
 source file for that field; nothing else lands on disk.
+
+A shared instance in Kubernetes swaps the filesystem for `--store k8s`: one
+`Page` custom resource per page (`present.thismoon.mad01.dev/v1alpha1`,
+namespaced), holding the same fields plus the rendered artifacts and the
+canonical sources as strings in its spec. Replicas read and write it
+through the API server with client-go's dynamic client; a write is a read-modify-
+write guarded by resourceVersion and retried on conflict, so two replicas
+never clobber each other. `version` is an explicit spec field rather than
+`metadata.generation`, because source saves would bump the generation and
+make open tabs reload for nothing. Ephemeral pages carry a label the
+sweeper selects on; each replica sweeps on an interval, and a delete of an
+already-gone object counts as done, so no leader is needed. A page is one
+object, so the store refuses a page over 1 MiB before it reaches the API
+server. The CRD is embedded in the binary and a test keeps
+`deploy/base/crd.yaml` byte-identical to it.
 
 ## Interfaces
 

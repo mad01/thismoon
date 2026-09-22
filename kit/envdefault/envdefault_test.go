@@ -3,6 +3,7 @@ package envdefault
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 const varName = "THISMOON_TEST_VALUE"
@@ -128,6 +129,47 @@ func TestBool(t *testing.T) {
 						tc.fallback,
 						warn.String(),
 					)
+				}
+				return
+			}
+			if want := tc.wantWarn + "\n"; warn.String() != want {
+				t.Errorf("warning = %q, want %q", warn.String(), want)
+			}
+		})
+	}
+}
+
+func TestDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      bool
+		value    string
+		fallback time.Duration
+		want     time.Duration
+		wantWarn string
+	}{
+		{name: "unset falls back", fallback: 10 * time.Minute, want: 10 * time.Minute},
+		{name: "set wins", set: true, value: "90s", fallback: time.Minute, want: 90 * time.Second},
+		{name: "empty falls back", set: true, value: "", fallback: time.Minute, want: time.Minute},
+		{
+			name: "unparseable warns and falls back", set: true, value: "soon", fallback: time.Minute,
+			want:     time.Minute,
+			wantWarn: `THISMOON_TEST_VALUE: unparseable value "soon", using default 1m0s`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(varName, tc.value)
+			}
+			var warn strings.Builder
+			got := durationFrom(&warn, varName, tc.fallback)
+			if got != tc.want {
+				t.Errorf("Duration(%q, %s) = %s, want %s", varName, tc.fallback, got, tc.want)
+			}
+			if tc.wantWarn == "" {
+				if warn.Len() != 0 {
+					t.Errorf("Duration warned %q, want silence", warn.String())
 				}
 				return
 			}

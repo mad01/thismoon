@@ -1,0 +1,103 @@
+# The Page custom resource a shared present instance keeps its pages in.
+# One object per page; the serving replicas read and write it through the
+# API server and never run a controller. Source of truth: this file is
+# embedded in the present binary and copied to deploy/base/crd.yaml; a test
+# fails when the two drift.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: pages.present.thismoon.mad01.dev
+spec:
+  group: present.thismoon.mad01.dev
+  scope: Namespaced
+  names:
+    plural: pages
+    singular: page
+    kind: Page
+    listKind: PageList
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Title
+          type: string
+          jsonPath: .spec.title
+        - name: Version
+          type: integer
+          jsonPath: .spec.version
+        - name: Ephemeral
+          type: boolean
+          jsonPath: .spec.ephemeral
+        - name: Expires
+          type: string
+          jsonPath: .spec.expiresAt
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [title, content, version, createdAt, updatedAt]
+              properties:
+                title:
+                  type: string
+                content:
+                  type: string
+                  description: rendered HTML body fragment
+                graph:
+                  type: string
+                  description: rendered Cytoscape init script, empty when the page has no graph
+                doc:
+                  type: string
+                  description: canonical Doc JSON the content was rendered from, empty for legacy HTML
+                graphSource:
+                  type: string
+                  description: canonical graph JSON the graph was rendered from, empty for legacy JS
+                references:
+                  type: array
+                  items:
+                    type: object
+                    required: [title, url]
+                    properties:
+                      title:
+                        type: string
+                      url:
+                        type: string
+                version:
+                  type: integer
+                  minimum: 1
+                  description: bumped on every content update; open tabs poll it to reload
+                author:
+                  type: string
+                  description: hex SHA-256 of the author key that created the page
+                ephemeral:
+                  type: boolean
+                expiresAt:
+                  type: string
+                  format: date-time
+                createdAt:
+                  type: string
+                  format: date-time
+                updatedAt:
+                  type: string
+                  format: date-time
+                shared:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    url:
+                      type: string
+                    ephemeral:
+                      type: boolean
+                    expiresAt:
+                      type: string
+                      format: date-time
+                    sharedAt:
+                      type: string
+                      format: date-time

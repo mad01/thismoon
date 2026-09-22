@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/dynamic"
 
 	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/kit/doctor"
@@ -23,11 +24,15 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/mcpserver"
 	"github.com/mad01/thismoon/services/present/internal/server"
 	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/mad01/thismoon/services/present/internal/store/k8sstore"
 )
 
 var (
-	flagShared bool
-	flagBind   string
+	flagShared    bool
+	flagBind      string
+	flagStore     string
+	flagNamespace string
+	flagSweep     time.Duration
 )
 
 var serveCmd = &cobra.Command{
@@ -49,7 +54,12 @@ present_* tools are served over HTTP at /mcp (present_create, present_read,
 present_source, present_update, present_doctor). Shared mode never binds
 implicitly: pass --bind (0.0.0.0 inside a container, 127.0.0.1 to try it on
 this machine). Local mode refuses any bind but loopback, because it
-authenticates nothing.`,
+authenticates nothing.
+
+--store picks where pages live: fs (the workdir, the default) or k8s, which
+keeps each page as a Page custom resource in --namespace and is the store a
+shared instance with several replicas uses. With k8s the process also sweeps
+expired ephemeral pages every --sweep-interval.`,
 	RunE: runServe,
 }
 
@@ -60,6 +70,15 @@ func init() {
 	serveCmd.Flags().StringVar(&flagBind, "bind",
 		envdefault.String("PRESENT_BIND", present.DefaultBind),
 		"interface to listen on (env PRESENT_BIND); shared mode requires it explicitly")
+	serveCmd.Flags().StringVar(&flagStore, "store",
+		envdefault.String("PRESENT_STORE", present.DefaultStore),
+		"page store: fs (the workdir) or k8s (Page custom resources; shared mode only) (env PRESENT_STORE)")
+	serveCmd.Flags().StringVar(&flagNamespace, "namespace",
+		envdefault.String("PRESENT_NAMESPACE", ""),
+		"namespace the k8s store keeps pages in (env PRESENT_NAMESPACE); default: the pod's, else the kubeconfig context's")
+	serveCmd.Flags().DurationVar(&flagSweep, "sweep-interval",
+		envdefault.Duration("PRESENT_SWEEP_INTERVAL", present.DefaultSweepInterval),
+		"how often the k8s store purges expired ephemeral pages (env PRESENT_SWEEP_INTERVAL)")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -68,27 +87,69 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if err := checkBind(flagShared, flagBind, bindExplicit); err != nil {
 		return err
 	}
-	fs, err := store.NewFS(flagWorkdir)
+	if flagStore != "fs" && !flagShared {
+		return fmt.Errorf(
+			"--store %s is for shared mode; local present writes the workdir",
+			flagStore,
+		)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	raw, where, err := openStore()
 	if err != nil {
 		return err
 	}
-	var st store.Store = fs
+	st := raw
 	opts := server.Options{Workdir: flagWorkdir, Info: buildinfo.Get(), BaseURL: flagBaseURL}
 	mode := "local"
 	if flagShared {
 		mode = "shared"
-		st = store.WithoutExpired(fs, time.Now)
+		st = store.WithoutExpired(raw, time.Now)
 		opts.Mode = server.ModeShared
 		opts.MCP, err = sharedMCP(st)
 		if err != nil {
 			return err
 		}
+	}
+	if ks, ok := raw.(*k8sstore.Store); ok {
+		go k8sstore.RunSweeper(ctx, ks, flagSweep, log.Printf)
+	} else if flagShared {
 		log.Printf("present: shared mode on the filesystem store; run one replica only")
 	}
 	handler := server.New(st, opts).Handler()
 	addr := bindAddr(flagBind, flagPort)
-	log.Printf("present: serving %s on http://%s (%s mode)", flagWorkdir, addr, mode)
-	return serveUntilSignal(addr, handler)
+	log.Printf("present: serving %s on http://%s (%s mode)", where, addr, mode)
+	return serveUntilSignal(ctx, addr, handler)
+}
+
+// openStore opens the store --store names and describes it for the log.
+func openStore() (store.Store, string, error) {
+	switch flagStore {
+	case "fs":
+		fs, err := store.NewFS(flagWorkdir)
+		if err != nil {
+			return nil, "", err
+		}
+		return fs, "fs " + flagWorkdir, nil
+	case "k8s":
+		cfg, err := k8sstore.RESTConfig()
+		if err != nil {
+			return nil, "", err
+		}
+		client, err := dynamic.NewForConfig(cfg)
+		if err != nil {
+			return nil, "", fmt.Errorf("kubernetes client: %w", err)
+		}
+		ns := k8sstore.ResolveNamespace(flagNamespace)
+		st, err := k8sstore.New(k8sstore.Config{Client: client, Namespace: ns})
+		if err != nil {
+			return nil, "", err
+		}
+		return st, "k8s pages in namespace " + ns, nil
+	default:
+		return nil, "", fmt.Errorf("unknown --store %q: want fs or k8s", flagStore)
+	}
 }
 
 // sharedMCP builds the tool server a shared instance mounts at /mcp. One
@@ -121,14 +182,12 @@ func sharedChecks(st store.Store) func(context.Context) []doctor.Check {
 	}
 }
 
-// serveUntilSignal runs the server until SIGINT or SIGTERM, then drains
+// serveUntilSignal runs the server until ctx ends (SIGINT or SIGTERM), then drains
 // in-flight requests before returning. A rolling update sends SIGTERM and
 // waits; an abrupt exit there turns a deploy into a burst of reset
 // connections.
-func serveUntilSignal(addr string, handler http.Handler) error {
+func serveUntilSignal(ctx context.Context, addr string, handler http.Handler) error {
 	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()

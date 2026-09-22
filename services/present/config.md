@@ -52,6 +52,19 @@ These two belong to `present serve` alone:
   display override for the URLs writes return; left empty, each URL is
   derived from the request's `X-Forwarded-Proto` and `X-Forwarded-Host`
   headers, or from its `Host` when nothing in front forwarded them.
+- `--store` (string, default `fs`; env `PRESENT_STORE`): where pages live.
+  `fs` is the workdir. `k8s` keeps each page as a `Page` custom resource
+  (`present.thismoon.mad01.dev/v1alpha1`) in `--namespace`, reached through
+  the in-cluster credentials when running in a pod and the default
+  kubeconfig otherwise; it is the store a shared instance with several
+  replicas uses and is refused without `--shared`.
+- `--namespace` (string; env `PRESENT_NAMESPACE`): namespace the `k8s`
+  store keeps pages in. Unset, it is the pod's own namespace, else the
+  kubeconfig context's, else `default`.
+- `--sweep-interval` (duration, default `10m`; env `PRESENT_SWEEP_INTERVAL`):
+  how often the `k8s` store deletes expired ephemeral pages. Expired pages
+  already read as missing between sweeps; the interval only bounds how long
+  their objects linger.
 
 ## Where the page store lives
 
@@ -85,6 +98,12 @@ there is no automatic migration to undo.
 - `PRESENT_SHARED`: default for `--shared`; `1`, `true`, `0`, `false` in any
   case. An unparseable value warns once on stderr and the default (`false`)
   is used instead.
+- `PRESENT_STORE`: default for `--store`.
+- `PRESENT_NAMESPACE`: default for `--namespace`. The Kubernetes manifests
+  set it from the pod's own namespace.
+- `PRESENT_SWEEP_INTERVAL`: default for `--sweep-interval`, in
+  `time.ParseDuration` syntax (`10m`, `1h30m`). An unparseable value warns
+  once on stderr and the default is used instead.
 
 To see what a given environment actually resolved to, run `present doctor`;
 an agent with no shell gets the same report from the `present_doctor` MCP
@@ -110,6 +129,13 @@ A shared instance inside a container, and the same thing tried on one
 machine:
 
 ```bash
-present serve --shared --bind 0.0.0.0 --port 7423 --workdir /var/lib/present
+present serve --shared --store k8s --bind 0.0.0.0 --port 7423 --workdir /var/lib/present
 present serve --shared --bind 127.0.0.1 --port 17423 --workdir /tmp/present-shared
 ```
+
+The first is what the container runs: pages in the pod's namespace, the
+workdir holding only the baked assets. The second tries shared mode on one
+machine with the filesystem store, which is fine for a single process. From
+a developer machine, `--store k8s --namespace present` on top of the second
+line uses the kubeconfig's current context, which is how you exercise a
+kind cluster by hand.
