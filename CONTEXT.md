@@ -67,3 +67,19 @@ _Avoid_: sandbox, workspace, checkout (that means the canonical one)
 **Weaver**:
 The single session that integrates a loom's ready branches: rebase onto the default branch tip, gates, then PR or fast-forward merge by repo policy. A role, not a process — nothing enforces its exclusivity.
 _Avoid_: committer (the retired queue model's role), merger
+
+**Shared instance**:
+A present running with `--shared`: it serves pages by id only, takes writes only with an author key, and keeps no index or listing. Where a local present shares pages to.
+_Avoid_: shared server, remote present
+
+**Author key**:
+A self-issued secret a client sends to a shared instance as a bearer token; the instance stores only its hash, which becomes the page's author. Minted with `present key new`.
+_Avoid_: token (the bearer token is how the key travels, not what it is), password, API key
+
+**Ephemeral page**:
+A shared page that expires 30 days after its last write or share and is then purged by the sweeper.
+_Avoid_: temporary page, TTL page
+
+**Share**:
+Pushing a copy of a local page to a shared instance. Sharing the same page again replaces the copy under the same link.
+_Avoid_: publish, upload, sync

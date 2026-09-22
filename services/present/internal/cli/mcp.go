@@ -25,6 +25,8 @@ Tools exposed:
   present_update  Update a page by id (auto-reloads open tabs).
   present_list    List all pages.
   present_open    Open a page in the browser (once per page).
+  present_share   Push a page to the shared instance (only with --shared-url
+                  and --author-key set).
   present_doctor  Run the doctor checks and return the report.
 
 ` + agentdoc.RegistrationSnippet(present.Facts()),
@@ -47,6 +49,7 @@ func runMCP(_ *cobra.Command, _ []string) error {
 			Port:    flagPort,
 			BaseURL: flagBaseURL,
 			Checks:  doctorChecks,
+			Sharer:  sharer(),
 		},
 	)
 	if err != nil {

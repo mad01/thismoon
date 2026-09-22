@@ -8,16 +8,21 @@ Go CLI + MCP server. Manages single-page HTML presentations as create / read / u
 present/
   cmd/present/         - entrypoint (delegates to internal/cli)
   internal/
-    cli/               - cobra command tree: root, serve, mcp, version (build metadata from the shared buildinfo package)
-    store/             - Store interface (create/read/update/list + sources + Ping) with FS, the filesystem
+    cli/               - cobra command tree: root, serve, mcp, version (build metadata from the shared buildinfo package);
+                         share.go adds share, unshare, key new, and sharer(), which turns --shared-url/--author-key into a
+                         sharedclient.Client (nil, with a stderr warning, when only one is set)
+    store/             - Store interface (create/read/update/list + sources + SetShared + Ping) with FS, the filesystem
                          implementation over pages/<id>/ (store.go, doc.go, id.go); WithoutExpired wraps any
                          Store to hide expired pages; Delete is web-index-only, not exposed via MCP
     store/k8sstore/    - Store over Page custom resources for the shared instance: dynamic client + unstructured, no codegen; crd.yaml embedded (InstallCRD for tests/dev) and copied to deploy/base/crd.yaml (a test enforces byte equality); SweepExpired/RunSweeper purge expired ephemeral pages; RESTConfig (in-cluster, else kubeconfig) and ResolveNamespace
     author/            - author keys for the shared instance: NewKey, Hash, FromHeader (bearer), Check (ErrMissing→401, ErrMismatch→403)
     baseurl/           - public base URL from X-Forwarded-Proto/Host: Middleware fills them from the request, FromHeader derives scheme://host
+    sharedclient/      - client a local present uses against a shared instance: Create/Replace/Delete/WhoAmI over its JSON API with the
+                         author key as a bearer token; Share pushes a page bundle (title, content, graph, references, doc, graph_source,
+                         ephemeral) and records the result via store.SetShared, Unshare deletes the copy and clears the record
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
-    server/            - HTTP handlers per Mode: local = GET / (static index shell), /api/pages (page list as JSON), /index.js; shared = GET / (how-to shell), POST /api/pages, PUT /api/p/{id}, GET /api/whoami, /mcp; both = /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js, /p/{id}/version, DELETE /p/{id} (author-checked when shared); embeds index_shell.html, shared_index_shell.html, shell.html, index.js, app.js
-    mcpserver/         - MCP wiring + present_* tools; Mode picks the tool set and whether the bearer/forwarded headers on req.Extra.Header are read
+    server/            - HTTP handlers per Mode: local = GET / (static index shell), /api/pages (page list as JSON), /index.js, POST /p/{id}/share (share.go; only when a shared instance is configured); shared = GET / (how-to shell), POST /api/pages, PUT /api/p/{id}, GET /api/whoami, /mcp; both = /p/{id} (static shell.html), /api/p/{id} (page as JSON, plus a share block in local mode), /app.js, /p/{id}/version, DELETE /p/{id} (author-checked when shared); embeds index_shell.html, shared_index_shell.html, shell.html, index.js, app.js
+    mcpserver/         - MCP wiring + present_* tools; Mode picks the tool set and whether the bearer/forwarded headers on req.Extra.Header are read; present_share is registered only when Config.Sharer is set
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -26,6 +31,7 @@ present/
 - **`present mcp`** (stdio MCP server): tools write/read pages under the workdir. Never serves HTTP.
 - **`present serve`** (HTTP server): serves the static shell + `app.js` for page views (the browser fetches `GET /api/p/{id}` and renders), and the static index shell + `index.js` for the index (the browser fetches `GET /api/pages` and renders).
 - **`present serve --shared`** (shared instance): one process, meant for several replicas in Kubernetes. No index or listing; pages by 32-hex capability id; every write needs an author key as a bearer token (`internal/author`); ephemeral pages expire 30 days after their last write (`present.SharedTTL`, hidden by `store.WithoutExpired` until the sweeper deletes them); the tool server is mounted at `/mcp` via `mcp.NewStreamableHTTPHandler` in stateless mode with one `*mcp.Server` for all requests. Requires an explicit `--bind`; local mode refuses any bind but loopback (`checkBind` in `serve.go`).
+- **Sharing a local page** (`--shared-url` + `--author-key`, env `PRESENT_SHARED_URL`/`PRESENT_AUTHOR_KEY`; both persistent, both required, one alone warns on stderr and stays off): the page view's Share button (`POST /p/{id}/share`), `present share <id> [--ephemeral]`, and the `present_share` tool all call `sharedclient.Share`, which pushes the page bundle to the shared instance (`POST /api/pages`, or `PUT /api/p/{id}` to replace an earlier copy under the same link; Share recreates a purged copy) and records `{id,url,ephemeral,expires_at,shared_at}` in the local `meta.json` `shared` field. `present unshare <id>` deletes the copy and clears the record. `present key new` mints the author key; the shared instance keeps only its hash, so after losing a key you mint a new one and re-share.
 - Both share the workdir and port (`7423`), set via `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`. URLs the MCP returns point at the serve port. The workdir default is sticky: `~/.config/present` while that directory exists, else `~/.local/state/present` (`confdir.StateDir`) — pages are never migrated, so an existing store keeps being read. The recipe and the MCP sandbox wrapper both set it explicitly anyway.
 
 ## Data model & storage
@@ -33,7 +39,7 @@ present/
 ```
 ~/.config/present/
   pages/<id>/
-    meta.json              # {id,title,version,has_graph,has_refs,has_doc,created_at,updated_at}
+    meta.json              # {id,title,version,has_graph,has_refs,has_doc,created_at,updated_at,shared?}; shared = {id,url,ephemeral,expires_at,shared_at} once pushed
     content.html           # rendered HTML body fragment
     doc.json               # canonical Doc source (only when content was given as Doc JSON)
     graph.js               # optional rendered cytoscape init (only when has_graph)
@@ -81,6 +87,12 @@ deterministic legacy-HTML class→wk-* upgrade. Unchanged pages are skipped;
 changed ones get a version bump so open tabs live-reload. Run it after a webkit
 bump or renderer change that alters emitted markup.
 
+`present share <id> [--ephemeral]` pushes a page to the shared instance named
+by `--shared-url` and prints its link (the expiry goes to stderr when
+ephemeral); `present unshare <id>` removes the copy; `present key new` prints a
+fresh 64-hex author key. share and unshare need both `--shared-url` and
+`--author-key`; key new needs nothing.
+
 ## MCP tools
 
 - `present_create(title, content, graph?, references?)` → `{id, url, version}`
@@ -92,7 +104,8 @@ bump or renderer change that alters emitted markup.
 - `present_update(id, title?, content?, graph?, references?)` → patch (omitted fields unchanged; empty graph clears it; empty array clears refs); bumps version. Doc/graph JSON input refreshes `doc.json`/`graph.json`; raw HTML/JS input deletes the now-stale source file
 - `present_list()` → all pages (metadata only, no content), newest first; `has_doc` flags source-editable pages
 - `present_open(id)` → macOS `open` (call once per page; updates auto-reload)
-- `present_doctor()` → the `kit/doctor` report: store readable, serve reachable, no version skew; for a client that can call a tool but has no shell
+- `present_share(id, ephemeral?)` → `{url, ephemeral, expires_at?, shared_at}`: push the page to the configured shared instance; registered only when `--shared-url` and `--author-key` are set. Sharing again replaces the copy under the same link; `ephemeral` makes it expire 30 days after the last share
+- `present_doctor()` → the `kit/doctor` report: store readable, serve reachable, no version skew, shared instance answering `GET /api/whoami` (skipped without one); for a client that can call a tool but has no shell
 
 On a shared instance the set is `present_create` (plus an `ephemeral` bool; the bearer becomes the page's author), `present_read`, `present_source`, `present_update` (author-checked; resets an ephemeral page's expiry), and `present_doctor` (store ping only). No `present_list`, no `present_open`. URLs come from the request's forwarded headers unless `--base-url` overrides them.
 
@@ -221,6 +234,8 @@ confirms which embedded webkit assets the running present server serves.
 - **Client render uses webkit's shared helpers.** `app.js` builds the DOM with `Webkit.el` / `Webkit.escapeHtml` and polls `/p/{id}/version` for live-reload via `Webkit.poll` (webkit shared helpers). Decision recorded in `docs/adr/0005-webkit-client-side-rendering.md`.
 - **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/fixation are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-fixation`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
 - **Codesign for MCP.** macOS kills adhoc-signed binaries with stale provenance xattrs; `make install` re-signs.
+- **`present_share` cannot reach the network from the MCP sandbox.** The consuming repo registers `present mcp` through the seatbelt wrapper (`recipes/present/present.sb`), which denies all network, so the tool fails with a connection error until that profile allows the shared host. The Share button (served by the unsandboxed `present serve`) and `present share` work regardless; point users there when the tool fails.
+- **`SetShared` never bumps the version.** Sharing writes only the `shared` record in `meta.json`, so `/p/{id}/version` stays put and the open tab does not reload; the page view learns about a share from the `share` block in `GET /api/p/{id}` on load and from the `POST /p/{id}/share` response it just made.
 - **Bearer and host reach tool handlers through `req.Extra.Header`.** The go-sdk streamable HTTP transport copies the HTTP request headers onto every `CallToolRequest`, stateless mode included, so one server instance serves all replicas and nothing is threaded through context. `header(req)` in `tools.go` is nil-safe because stdio and tests pass no request.
 - **Go promotes `Host` out of `r.Header`.** A tool handler only sees the header map, so `baseurl.Middleware` copies `r.Host`/`r.TLS` into `X-Forwarded-Host`/`X-Forwarded-Proto` when the ingress did not set them; `baseurl.FromHeader` then works for HTTP handlers and tools alike.
 - **Expiry lives in a store decorator.** `store.WithoutExpired` turns an expired page into `ErrNotFound` on every call, so shared handlers carry no expiry branches. The sweeper (k8s store) must use the raw store, or it can never see what it should delete. `runServe` starts the sweeper on the raw `*k8sstore.Store` before wrapping.

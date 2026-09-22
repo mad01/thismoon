@@ -9,9 +9,11 @@ import (
 )
 
 var (
-	flagWorkdir string
-	flagPort    int
-	flagBaseURL string
+	flagWorkdir   string
+	flagPort      int
+	flagBaseURL   string
+	flagSharedURL string
+	flagAuthorKey string
 )
 
 var rootCmd = &cobra.Command{
@@ -25,7 +27,9 @@ chrome (header, theme, controls) comes from the shared webkit package.
 
 Subcommands:
   serve   Run the local HTTP server that serves pages.
-  mcp     Run the MCP stdio server exposing present_* tools to Claude Code.`,
+  mcp     Run the MCP stdio server exposing present_* tools to Claude Code.
+  share   Push a local page to the shared instance (--shared-url, --author-key).
+  key     Mint an author key for the shared instance.`,
 	// Let main print the error once; cobra stays quiet on both usage and errors.
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -40,6 +44,12 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url",
 		envdefault.String("PRESENT_BASE_URL", ""),
 		"base URL for page links (env PRESENT_BASE_URL); defaults to http://localhost:<port>")
+	rootCmd.PersistentFlags().StringVar(&flagSharedURL, "shared-url",
+		envdefault.String("PRESENT_SHARED_URL", ""),
+		"shared present instance pages can be pushed to, e.g. https://present.example.com (env PRESENT_SHARED_URL)")
+	rootCmd.PersistentFlags().StringVar(&flagAuthorKey, "author-key",
+		envdefault.String("PRESENT_AUTHOR_KEY", ""),
+		"author key sent to the shared instance as a bearer token; prefer the env var (env PRESENT_AUTHOR_KEY)")
 	// Expand a leading ~ in the workdir before any subcommand runs. A literal
 	// "~/..." reaches Go from PRESENT_WORKDIR or --workdir without shell
 	// expansion; left unexpanded the MCP and serve processes resolve different

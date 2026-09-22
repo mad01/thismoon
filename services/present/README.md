@@ -32,10 +32,27 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 | `--port` | `PRESENT_PORT` | `7423` |
 | `--bind` (serve only) | `PRESENT_BIND` | `127.0.0.1`; shared mode requires it explicitly |
 | `--shared` (serve only) | `PRESENT_SHARED` | `false` |
+| `--shared-url` | `PRESENT_SHARED_URL` | unset; sharing needs it and `--author-key` |
+| `--author-key` | `PRESENT_AUTHOR_KEY` | unset; prefer the env var over the flag |
 
 ### Shared mode
 
 `present serve --shared --bind 0.0.0.0` runs the same binary as a network-facing shared instance, meant for a few replicas in Kubernetes behind one hostname. There is no index and no listing: a page is reachable only by the 32-hex id present minted for it. Every write carries an author key as a bearer token (the server keeps only its hash, and only that key can update or delete the page), reads need nothing, and a page created as ephemeral disappears 30 days after its last write. The root serves a how-to page, `POST /api/pages` and `PUT /api/p/<id>` take pushed pages, and the present tools are served over HTTP at `/mcp` (`present_create` with an `ephemeral` flag, `present_read`, `present_source`, `present_update`, `present_doctor`). Page URLs follow the `X-Forwarded-Host` and `X-Forwarded-Proto` headers the ingress sets.
+
+### Sharing a page
+
+A local present can push any of its pages to a shared instance, so someone without access to your machine can read it by link. Mint an author key once, point the local processes at the instance, and share:
+
+```bash
+present key new                                   # prints a 64-hex author key; the instance stores only its hash
+export PRESENT_SHARED_URL=https://present.example.com
+export PRESENT_AUTHOR_KEY=<the key you minted>    # prefer the env var: a flag shows up in the process list
+present share <id>                                # prints the link
+present share <id> --ephemeral                    # the copy expires 30 days after the last share
+present unshare <id>                              # removes the copy
+```
+
+With both variables set, `present serve` shows a Share button in every page's header (a modal with the expiry checkbox, the link, and a Copy button; the button reads "Shared" once a copy exists) and `present mcp` registers a `present_share` tool. Sharing a page again replaces the copy under the same link. Only your author key can change or remove the copy; if you lose it, mint a new one and share each page again. `present doctor` checks the instance and the key once you have set both variables.
 
 ## MCP
 
@@ -57,6 +74,7 @@ The tools write the page store directly, so they work with `present serve` down;
 | `present_update(id, title?, content?, graph?)` | Patch a page (omitted fields unchanged); bumps version → open tabs auto-reload |
 | `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source |
 | `present_open(id)` | Open a page in the browser (call once per page) |
+| `present_share(id, ephemeral?)` | Push a page to the configured shared instance; returns `{url, ephemeral, expires_at, shared_at}`. Registered only when `--shared-url` and `--author-key` are set |
 | `present_doctor()` | Run the `present doctor` checks and return the report |
 
 Confirm the registration with `claude mcp list`, and run `present doctor` for a full check of the store, the server, and version skew.
@@ -114,7 +132,10 @@ MCP + sandbox. The MCP server runs inside a seatbelt profile
 (`recipes/present/present.sb`): no network at all, `$HOME` reads
 default-denied except `~/code/bin` and `~/.config/present`. Writes are
 confined to `~/.config/present` and temp. The sandbox shouldn't affect
-normal page operations; if an MCP tool fails, check sandbox denials:
+normal page operations, but it does block `present_share` until the profile
+allows the shared host; the Share button and `present share` run outside the
+sandbox and work regardless. If any other MCP tool fails, check sandbox
+denials:
 
 ```bash
 t-man logs sandbox

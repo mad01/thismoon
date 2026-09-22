@@ -97,6 +97,46 @@ object store caps those. present_doctor there reports store-reachable only:
 a FAIL means the pod can't list pages, which is the CRD missing, the
 service account's role missing, or the API server unreachable.
 
+## sharing from local present
+
+A local present pushes a page to a shared instance when both --shared-url
+and --author-key (PRESENT_SHARED_URL, PRESENT_AUTHOR_KEY) are set; with one
+of the two set it logs a warning at startup and sharing stays off. Three
+entry points do the same push: the Share button in the page header (hidden
+when sharing is off, and never shown on a shared instance), `present share
+<id>` (prints the link; --ephemeral makes the copy expire 30 days after the
+last share), and the present_share tool on the local MCP, registered only
+when both flags are set. All three send the page bundle (title, rendered
+content, graph, references, and the doc and graph sources) to the shared
+instance with the author key as a bearer token, then record where it landed
+in the local page's meta.json as a `shared` block: the shared id, the link,
+whether it is ephemeral, the expiry, and when it was last shared. That record
+is what the Share button reads to label itself "Shared" and show the link
+again. Writing it does not bump the page version, so an open tab does not
+reload when a page is shared.
+
+Sharing a page again replaces the copy under the same link and restarts an
+ephemeral copy's 30 days; if the shared instance has purged the copy
+meanwhile, the push creates it afresh under a new link. `present unshare
+<id>` deletes the copy and clears the record; a copy that is already gone
+counts as unshared. The author key is the only thing that can change or
+remove a copy. A lost key can't be recovered, only replaced: mint a new one
+with `present key new` and share every page again.
+
+`present doctor` runs a shared-instance check: skipped when no shared
+instance is set, otherwise one GET /api/whoami against it with the key. A FAIL there names the instance and the cause, unreachable or a
+refused key (401). A failed share reads "Share failed: ..." in the page's
+modal, comes back as an error naming the request from the CLI, and answers
+502 "share failed: ..." from the local serve's POST /p/<id>/share. In every
+case the failure is the shared instance's, not this process's.
+
+present_share has one caveat. On a supervised install the local MCP runs
+inside a seatbelt profile that denies network, so the tool fails with what
+looks like a network error (a refused connection or a denied operation)
+until that profile allows the shared host. The Share button and `present
+share` are unaffected, because `present serve` and the CLI run outside the
+sandbox; use either of those when the tool fails that way.
+
 ## version skew
 
 `present version -o json` reports the build of the binary on PATH. `GET
@@ -114,3 +154,6 @@ with `GET /p/{id}/version`, the per-page counter open tabs poll for reload.
 4. `present_list`, to confirm the store loads and to get real page ids
 5. On a wrong-looking page: `present_source`, check the Doc JSON against the
    content rules above, then `present_update`
+6. On a failed share: `present doctor` for the shared-instance line, then
+   retry from the Share button or `present share <id>`; present_share alone
+   is sandboxed
