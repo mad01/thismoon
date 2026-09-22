@@ -27,6 +27,14 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/store/k8sstore"
 )
 
+// Timeouts for one served connection and for shutdown. A client that opens
+// a connection and sends no headers must not hold one forever; a shutdown
+// waits that long for in-flight requests before dropping them.
+const (
+	readHeaderTimeout = 10 * time.Second
+	drainTimeout      = 10 * time.Second
+)
+
 var (
 	flagShared    bool
 	flagBind      string
@@ -110,7 +118,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	if flagShared {
 		mode = "shared"
-		st = store.WithoutExpired(raw, time.Now)
+		// Expiry first, then the size cap: a shared instance refuses an
+		// oversized page whichever store it runs on, and never writes to a
+		// page that has already expired.
+		st = store.WithSizeLimit(store.WithoutExpired(raw, time.Now), present.MaxPageBytes)
 		opts.Mode = server.ModeShared
 		opts.MCP, err = sharedMCP(st)
 		if err != nil {
@@ -187,22 +198,33 @@ func sharedChecks(st store.Store) func(context.Context) []doctor.Check {
 	}
 }
 
-// serveUntilSignal runs the server until ctx ends (SIGINT or SIGTERM), then drains
-// in-flight requests before returning. A rolling update sends SIGTERM and
-// waits; an abrupt exit there turns a deploy into a burst of reset
-// connections.
+// serveUntilSignal listens on addr and serves until ctx ends (SIGINT or
+// SIGTERM).
 func serveUntilSignal(ctx context.Context, addr string, handler http.Handler) error {
-	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+	return serveUntilDone(ctx, ln, handler)
+}
+
+// serveUntilDone serves ln until ctx ends, then drains in-flight requests
+// before returning. A rolling update sends SIGTERM and waits; an abrupt
+// exit there turns a deploy into a burst of reset connections. It takes the
+// listener rather than an address so a test can serve a port the kernel
+// picked.
+func serveUntilDone(ctx context.Context, ln net.Listener, handler http.Handler) error {
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- srv.ListenAndServe() }()
+	go func() { errCh <- srv.Serve(ln) }()
 
 	select {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
 		log.Printf("present: shutting down")
-		drain, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		drain, cancel := context.WithTimeout(context.Background(), drainTimeout)
 		defer cancel()
 		if err := srv.Shutdown(drain); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err

@@ -11,6 +11,7 @@ resources:
   - rolebinding.yaml
   - deployment.yaml
   - service.yaml
+  - pdb.yaml
 images:
   - name: ghcr.io/mad01/present
     newTag: latest

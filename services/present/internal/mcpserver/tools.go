@@ -494,102 +494,123 @@ type updateInput struct {
 	References *[]refInput `json:"references,omitempty" jsonschema:"replace the references list; omit to leave unchanged, empty array to clear"`
 }
 
+// sourcePlan is what an update does to the page's persisted sources once
+// the page itself is written. A source the update replaced is saved; one
+// the update made stale is deleted, so a later re-render never reads a
+// source the page no longer came from.
+type sourcePlan struct {
+	doc        []byte
+	clearDoc   bool
+	graph      []byte
+	clearGraph bool
+}
+
 func (h *handlers) handleUpdate(
 	ctx context.Context,
 	req *mcp.CallToolRequest,
 	in updateInput,
 ) (*mcp.CallToolResult, pageOutput, error) {
-	title := ""
-	if in.Title != nil {
-		title = *in.Title
-	}
-
-	var patch store.Patch
-	patch.Title = in.Title
-
-	var (
-		newDocJSON   []byte
-		contentIsDoc bool
-		clearDoc     bool
-	)
-	if in.Content != nil {
-		content, docJSON, err := resolveContent(*in.Content, title)
-		if err != nil {
-			return nil, pageOutput{}, fmt.Errorf("content: %w", err)
-		}
-		patch.Content = &content
-		if docJSON != nil {
-			newDocJSON, contentIsDoc = docJSON, true
-		} else if strings.TrimSpace(*in.Content) != "" {
-			// Content replaced with legacy HTML: any prior doc.json is now stale.
-			clearDoc = true
-		}
-	}
-	var (
-		newGraphJSON []byte
-		graphIsJSON  bool
-	)
-	if in.Graph != nil {
-		graph, graphJSON, err := resolveGraph(*in.Graph)
-		if err != nil {
-			return nil, pageOutput{}, fmt.Errorf("graph: %w", err)
-		}
-		patch.Graph = &graph
-		if graphJSON != nil {
-			newGraphJSON, graphIsJSON = graphJSON, true
-		}
-	}
-	if in.References != nil {
-		refs := toStoreRefs(*in.References)
-		patch.References = &refs
-	}
-	// On a shared instance only the author may write, and an ephemeral
-	// page's 30 days start over on every update.
+	// On a shared instance only the author may write. The check comes
+	// first, before any rendering: an update from the wrong key must cost
+	// this instance nothing but a store read.
+	var cur store.Page
 	if h.mode == ModeShared {
-		cur, err := h.store.Get(ctx, in.ID)
-		if err != nil {
+		var err error
+		if cur, err = h.store.Get(ctx, in.ID); err != nil {
 			return nil, pageOutput{}, err
 		}
 		if err := author.Check(cur.Author, header(req)); err != nil {
 			return nil, pageOutput{}, err
 		}
-		if cur.Ephemeral {
-			on := true
-			patch.Ephemeral = &on
-			patch.ExpiresAt = h.expiry(true)
-		}
 	}
-
+	patch, plan, err := resolveUpdate(in)
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	// An ephemeral page's 30 days start over on every update.
+	if h.mode == ModeShared && cur.Ephemeral {
+		on := true
+		patch.Ephemeral = &on
+		patch.ExpiresAt = h.expiry(true)
+	}
 	p, err := h.store.Update(ctx, in.ID, patch)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
-	switch {
-	case contentIsDoc:
-		if err := h.store.SaveDoc(ctx, p.ID, newDocJSON); err != nil {
-			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
-		}
-	case clearDoc:
-		if err := h.store.DeleteDoc(ctx, p.ID); err != nil {
-			return nil, pageOutput{}, fmt.Errorf("clear doc: %w", err)
-		}
-	}
-	if in.Graph != nil {
-		if graphIsJSON {
-			if err := h.store.SaveGraphSource(ctx, p.ID, newGraphJSON); err != nil {
-				return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
-			}
-		} else {
-			// Graph cleared or replaced with legacy JS: any prior graph.json is
-			// now stale and would mislead a later re-render.
-			if err := h.store.DeleteGraphSource(ctx, p.ID); err != nil {
-				return nil, pageOutput{}, fmt.Errorf("clear graph source: %w", err)
-			}
-		}
+	if err := h.applySourcePlan(ctx, p.ID, plan); err != nil {
+		return nil, pageOutput{}, err
 	}
 	notify.EmitEvent("present", "info", "page updated: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
 	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
+}
+
+// resolveUpdate renders the inputs an update carries into the patch for the
+// page and the plan for its sources. It touches no store, so a malformed
+// Doc or Graph fails before anything is written.
+func resolveUpdate(in updateInput) (store.Patch, sourcePlan, error) {
+	title := ""
+	if in.Title != nil {
+		title = *in.Title
+	}
+	patch := store.Patch{Title: in.Title}
+	var plan sourcePlan
+	if in.Content != nil {
+		content, docJSON, err := resolveContent(*in.Content, title)
+		if err != nil {
+			return store.Patch{}, sourcePlan{}, fmt.Errorf("content: %w", err)
+		}
+		patch.Content = &content
+		switch {
+		case docJSON != nil:
+			plan.doc = docJSON
+		case strings.TrimSpace(*in.Content) != "":
+			// Content replaced with legacy HTML: any prior doc.json is now stale.
+			plan.clearDoc = true
+		}
+	}
+	if in.Graph != nil {
+		graph, graphJSON, err := resolveGraph(*in.Graph)
+		if err != nil {
+			return store.Patch{}, sourcePlan{}, fmt.Errorf("graph: %w", err)
+		}
+		patch.Graph = &graph
+		// Graph cleared or replaced with legacy JS: any prior graph.json is
+		// now stale and would mislead a later re-render.
+		plan.graph, plan.clearGraph = graphJSON, graphJSON == nil
+	}
+	if in.References != nil {
+		refs := toStoreRefs(*in.References)
+		patch.References = &refs
+	}
+	return patch, plan, nil
+}
+
+// applySourcePlan persists the source changes an update implies. It runs
+// after the page is written, so a page that failed to update leaves its
+// sources alone.
+func (h *handlers) applySourcePlan(ctx context.Context, id string, plan sourcePlan) error {
+	switch {
+	case plan.doc != nil:
+		if err := h.store.SaveDoc(ctx, id, plan.doc); err != nil {
+			return fmt.Errorf("save doc: %w", err)
+		}
+	case plan.clearDoc:
+		if err := h.store.DeleteDoc(ctx, id); err != nil {
+			return fmt.Errorf("clear doc: %w", err)
+		}
+	}
+	switch {
+	case plan.graph != nil:
+		if err := h.store.SaveGraphSource(ctx, id, plan.graph); err != nil {
+			return fmt.Errorf("save graph source: %w", err)
+		}
+	case plan.clearGraph:
+		if err := h.store.DeleteGraphSource(ctx, id); err != nil {
+			return fmt.Errorf("clear graph source: %w", err)
+		}
+	}
+	return nil
 }
 
 // ── list ──

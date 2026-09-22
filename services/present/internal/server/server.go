@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
@@ -172,14 +173,25 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
+// probeAgent prefixes the User-Agent kubelet sends for readiness and
+// liveness probes (kube-probe/1.31 and the like).
+const probeAgent = "kube-probe/"
+
 // logRequests logs one line per request: method, path, status, bytes, duration.
 // Without this the serve daemon emits only its startup line, leaving update
 // problems (404s, wrong workdir, version mismatches) invisible in t-man logs.
+// Kubelet probes are the exception: they hit the instance every few seconds
+// and would bury every real request. The filter is on the prober's User-Agent
+// rather than on the path, because a human or present doctor asking the same
+// endpoint is a request worth seeing.
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		if strings.HasPrefix(r.UserAgent(), probeAgent) {
+			return
+		}
 		log.Printf("present: %s %s -> %d %dB (%s)",
 			r.Method, r.URL.Path, rec.status, rec.bytes, time.Since(start).Round(time.Millisecond))
 	})
@@ -397,7 +409,9 @@ func handleAppJS(w http.ResponseWriter, _ *http.Request) {
 
 // handleDelete removes a page. Local mode trusts the caller (the web index
 // behind a confirm dialog on loopback); shared mode requires the author's
-// key, so 401/403 come before the store is touched.
+// key, so 401/403 come before the store is touched. Deleting a local page
+// that was shared removes its copy from the shared instance first, so the
+// two never disagree about whether the page still exists.
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	// Look up the title before deleting so the event carries it; best-effort
@@ -416,6 +430,14 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, err)
 			return
 		}
+	} else if err == nil {
+		if err := s.dropSharedCopy(r, p); err != nil {
+			// The shared instance refused or is unreachable. Keep the local
+			// page: deleting it now would strand the copy with no record of
+			// where it is.
+			http.Error(w, "unshare failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 	err = s.store.Delete(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -429,6 +451,30 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 	notify.EmitEvent("present", "info", "page deleted: "+title, "",
 		map[string]string{"id": id, "title": title})
+}
+
+// dropSharedCopy removes a local page's copy from the shared instance
+// before the local page goes away. A page that was never shared is nothing
+// to do. Without a sharer configured this process cannot reach the
+// instance, so the copy stays where it is and the log says where to find
+// it; `present unshare` with the instance configured is the way to remove
+// it later.
+func (s *Server) dropSharedCopy(r *http.Request, p store.Page) error {
+	if p.Shared == nil {
+		return nil
+	}
+	if s.sharer == nil {
+		log.Printf(
+			"present: deleting local page %s; its shared copy at %s is left in place "+
+				"(no shared instance configured here)",
+			p.ID, p.Shared.URL,
+		)
+		return nil
+	}
+	if err := sharedclient.Unshare(r.Context(), s.store, s.sharer, p.ID); err != nil {
+		return fmt.Errorf("remove the shared copy at %s: %w", p.Shared.URL, err)
+	}
+	return nil
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {

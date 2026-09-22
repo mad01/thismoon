@@ -5,7 +5,7 @@ description: Generate a scrollable briefing page with fixation reading, Cytoscap
 
 # Present — Scrollable Briefing Pages
 
-Generate scrollable HTML briefing pages served live over localhost by the **present MCP**. You pass structured JSON; the server renders it into the full page with warm-neutral theme, fixation-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
+Generate scrollable HTML briefing pages served live over localhost by the **present MCP**, or on a shared instance others reach by link. You pass structured JSON; the server renders it into the full page with warm-neutral theme, fixation-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
 
 ## Trigger
 When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes").

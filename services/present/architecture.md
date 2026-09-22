@@ -8,8 +8,9 @@ serve`, a t-man launchd agent serving HTTP on port 7423 behind
 launches per session. The MCP writes page files and never serves HTTP; serve
 reads and serves them. They share one workdir (`~/.config/present` where it
 already exists, otherwise `~/.local/state/present`), which is the entire
-coupling between them — neither calls the other,
-and the MCP can run inside a no-network sandbox. Everything is localhost-only.
+coupling between them: neither calls the other, and the MCP can run inside
+a no-network sandbox. Local mode is loopback-only; shared mode, below, is
+the exception.
 
 The same binary also runs as a shared instance: `present serve --shared`
 is one process that serves pages by id alone (no index, no listing), takes

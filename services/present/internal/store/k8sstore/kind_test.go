@@ -32,8 +32,8 @@ func TestKindClusterConformance(t *testing.T) {
 		t.Fatalf("dynamic client: %v", err)
 	}
 	ctx := context.Background()
-	if err := InstallCRD(ctx, client); err != nil {
-		t.Fatalf("InstallCRD: %v", err)
+	if err := installCRD(ctx, client); err != nil {
+		t.Fatalf("installCRD: %v", err)
 	}
 	ns := "present-test-" + store.NewID()
 	nsGVR := schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
@@ -50,7 +50,9 @@ func TestKindClusterConformance(t *testing.T) {
 	runConformance(t, func(t *testing.T) *fixture {
 		t.Helper()
 		f := &fixture{now: time.Now().UTC().Truncate(time.Second)}
-		st, err := New(Config{Client: client, Namespace: ns, Now: func() time.Time { return f.now }})
+		st, err := New(
+			Config{Client: client, Namespace: ns, Now: func() time.Time { return f.now }},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}

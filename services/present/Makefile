@@ -7,6 +7,9 @@ include ../../buildinfo.mk
 
 IMAGE           ?= ghcr.io/mad01/present:dev
 KIND_CLUSTER    ?= kind
+# KIND_VERSION is the kind release the CI job installs by checksum; the node
+# image below is the one that release ships for this Kubernetes minor.
+KIND_VERSION    ?= v0.32.0
 KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 
 .PHONY: build install resign clean test tidy fmt lint cache cache-force image kind-test kind-down
@@ -63,8 +66,10 @@ image:
 # when it exists (creates it otherwise), loads the image under the :ci tag
 # the kind overlay expects, rolls the deployment, then runs the
 # cluster-gated tests through scripts/kind-e2e.sh. Leaves the deployment
-# running; kind-down removes it.
+# running; kind-down removes it. A kind binary other than KIND_VERSION only
+# warns: the node image pin is what keeps CI and this target on one minor.
 kind-test: image
+	@kind version | grep -q '^kind $(KIND_VERSION) ' || echo "warning: local kind is $$(kind version | cut -d' ' -f2), CI installs $(KIND_VERSION)" >&2
 	kind get clusters | grep -qx '$(KIND_CLUSTER)' || kind create cluster --name '$(KIND_CLUSTER)' --image '$(KIND_NODE_IMAGE)'
 	docker tag $(IMAGE) ghcr.io/mad01/present:ci
 	kind load docker-image ghcr.io/mad01/present:ci --name '$(KIND_CLUSTER)'
