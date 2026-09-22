@@ -8,21 +8,21 @@ import (
 
 func TestSaveAndLoadDoc(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.Create("Doc page", "<p>rendered</p>", "", nil)
+	p, err := s.Create(t.Context(), Draft{Title: "Doc page", Content: "<p>rendered</p>"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	doc := []byte(`{"sections":[{"h":"S","blocks":[{"t":"p","text":"hi"}]}]}`)
-	if err := s.SaveDoc(p.ID, doc); err != nil {
+	if err := s.SaveDoc(t.Context(), p.ID, doc); err != nil {
 		t.Fatalf("SaveDoc: %v", err)
 	}
 
-	if !s.HasDoc(p.ID) {
+	if !s.HasDoc(t.Context(), p.ID) {
 		t.Fatal("HasDoc = false after SaveDoc")
 	}
 
-	got, err := s.LoadDoc(p.ID)
+	got, err := s.LoadDoc(t.Context(), p.ID)
 	if err != nil {
 		t.Fatalf("LoadDoc: %v", err)
 	}
@@ -39,22 +39,22 @@ func TestSaveAndLoadDoc(t *testing.T) {
 
 func TestHasDocFalseWhenAbsent(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.Create("Legacy", "<p>html</p>", "", nil)
+	p, err := s.Create(t.Context(), Draft{Title: "Legacy", Content: "<p>html</p>"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if s.HasDoc(p.ID) {
+	if s.HasDoc(t.Context(), p.ID) {
 		t.Fatal("HasDoc = true for page with no doc.json")
 	}
 }
 
 func TestLoadDocNotFound(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.Create("Legacy", "<p>html</p>", "", nil)
+	p, err := s.Create(t.Context(), Draft{Title: "Legacy", Content: "<p>html</p>"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := s.LoadDoc(p.ID); err == nil {
+	if _, err := s.LoadDoc(t.Context(), p.ID); err == nil {
 		t.Fatal("LoadDoc should error when doc.json is absent")
 	}
 }

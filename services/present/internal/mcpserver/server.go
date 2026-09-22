@@ -25,6 +25,11 @@ type Config struct {
 	Port    int
 	BaseURL string // override for URL prefix (e.g. "http://present.this"); falls back to http://localhost:<Port>
 
+	// Store is the page store the tools read and write. When nil, the
+	// filesystem store under Workdir is opened, which is what present mcp
+	// does locally.
+	Store store.Store
+
 	// Checks builds the diagnostics behind the present_doctor tool, against
 	// the same resolved flags the rest of the CLI uses. It is required: the
 	// instructions block advertises present_doctor to every client, so a
@@ -39,9 +44,13 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 			"mcpserver: no doctor checks; present_doctor is advertised to clients and must be registered",
 		)
 	}
-	st, err := store.New(cfg.Workdir)
-	if err != nil {
-		return nil, hint(err)
+	st := cfg.Store
+	if st == nil {
+		fs, err := store.NewFS(cfg.Workdir)
+		if err != nil {
+			return nil, hint(err)
+		}
+		st = fs
 	}
 	base := cfg.BaseURL
 	if base == "" {

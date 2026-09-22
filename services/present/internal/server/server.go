@@ -42,15 +42,21 @@ var indexJS []byte
 
 // Server serves the index and individual presentation pages.
 type Server struct {
-	store   *store.Store
+	store   store.Store
 	workdir string
 	info    buildinfo.Info
 }
 
-// New returns a Server backed by the given store and template working directory.
-// info is present's own build metadata, reported on GET /version.
-func New(st *store.Store, workdir string, info buildinfo.Info) *Server {
-	return &Server{store: st, workdir: workdir, info: info}
+// Options configures a Server. Workdir is where the served assets live;
+// Info is present's own build metadata, reported on GET /version.
+type Options struct {
+	Workdir string
+	Info    buildinfo.Info
+}
+
+// New returns a Server backed by the given store.
+func New(st store.Store, opts Options) *Server {
+	return &Server{store: st, workdir: opts.Workdir, info: opts.Info}
 }
 
 // Handler builds the HTTP routes, wrapped in request logging.
@@ -148,7 +154,7 @@ type apiPages struct {
 // It carries the pagination state the client needs to render the prev/next
 // controls and the total count.
 func (s *Server) handleAPIPages(w http.ResponseWriter, r *http.Request) {
-	pages, err := s.store.ListMeta()
+	pages, err := s.store.ListMeta(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -242,7 +248,7 @@ func clampPage(page, totalPages int) int {
 // the page data from GET /api/p/{id} and renders the body client-side. We still
 // resolve the id here so an unknown page is a 404 rather than an empty shell.
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.store.Get(r.PathValue("id")); err != nil {
+	if _, err := s.store.Get(r.Context(), r.PathValue("id")); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.NotFound(w, r)
 			return
@@ -278,7 +284,7 @@ type apiPage struct {
 
 // handleAPIPage returns a page as JSON for client-side rendering.
 func (s *Server) handleAPIPage(w http.ResponseWriter, r *http.Request) {
-	p, err := s.store.Get(r.PathValue("id"))
+	p, err := s.store.Get(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -318,10 +324,10 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	// Look up the title before deleting so the event carries it; best-effort.
 	title := ""
-	if p, err := s.store.Get(id); err == nil {
+	if p, err := s.store.Get(r.Context(), id); err == nil {
 		title = p.Title
 	}
-	err := s.store.Delete(id)
+	err := s.store.Delete(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -336,7 +342,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	p, err := s.store.Get(r.PathValue("id"))
+	p, err := s.store.Get(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return

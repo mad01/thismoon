@@ -21,14 +21,14 @@ var testInfo = buildinfo.Info{
 	BuildTime: "2026-08-13T09:00:00Z",
 }
 
-func setup(t *testing.T) (*httptest.Server, *store.Store) {
+func setup(t *testing.T) (*httptest.Server, store.Store) {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.New(dir)
+	st, err := store.NewFS(dir)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
-	ts := httptest.NewServer(New(st, dir, testInfo).Handler())
+	ts := httptest.NewServer(New(st, Options{Workdir: dir, Info: testInfo}).Handler())
 	t.Cleanup(ts.Close)
 	return ts, st
 }
@@ -46,7 +46,10 @@ func get(t *testing.T, url string) (int, string) {
 
 func TestPageServesShell(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Demo", "<p data-fixation>unique-marker-text</p>", "", nil)
+	p, _ := st.Create(
+		t.Context(),
+		store.Draft{Title: "Demo", Content: "<p data-fixation>unique-marker-text</p>"},
+	)
 
 	code, body := get(t, ts.URL+"/p/"+p.ID)
 	if code != http.StatusOK {
@@ -66,7 +69,10 @@ func TestPageServesShell(t *testing.T) {
 
 func TestAPIPageReturnsContentAndTitle(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Demo", "<p data-fixation>unique-marker-text</p>", "", nil)
+	p, _ := st.Create(
+		t.Context(),
+		store.Draft{Title: "Demo", Content: "<p data-fixation>unique-marker-text</p>"},
+	)
 
 	code, body := get(t, ts.URL+"/api/p/"+p.ID)
 	if code != http.StatusOK {
@@ -104,7 +110,7 @@ func TestAppJSServed(t *testing.T) {
 
 func TestPageSetsNoStoreCacheHeader(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Cache", "<p>body</p>", "", nil)
+	p, _ := st.Create(t.Context(), store.Draft{Title: "Cache", Content: "<p>body</p>"})
 
 	resp, err := http.Get(ts.URL + "/p/" + p.ID)
 	if err != nil {
@@ -126,7 +132,7 @@ func TestUnknownPageIs404(t *testing.T) {
 
 func TestVersionEndpointReflectsUpdates(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("V", "<p>v1</p>", "", nil)
+	p, _ := st.Create(t.Context(), store.Draft{Title: "V", Content: "<p>v1</p>"})
 
 	code, body := get(t, ts.URL+"/p/"+p.ID+"/version")
 	if code != http.StatusOK || body != "1" {
@@ -134,7 +140,7 @@ func TestVersionEndpointReflectsUpdates(t *testing.T) {
 	}
 
 	newContent := "<p>v2</p>"
-	if _, err := st.Update(p.ID, store.Patch{Content: &newContent}); err != nil {
+	if _, err := st.Update(t.Context(), p.ID, store.Patch{Content: &newContent}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	_, body = get(t, ts.URL+"/p/"+p.ID+"/version")
@@ -205,7 +211,7 @@ func idIndex(pages apiPagesBody, id string) int {
 
 func TestIndexServesShell(t *testing.T) {
 	ts, st := setup(t)
-	_, _ = st.Create("Alpha", "<p>unique-marker-text</p>", "", nil)
+	_, _ = st.Create(t.Context(), store.Draft{Title: "Alpha", Content: "<p>unique-marker-text</p>"})
 
 	code, body := get(t, ts.URL+"/")
 	if code != http.StatusOK {
@@ -240,8 +246,8 @@ func TestIndexJSServed(t *testing.T) {
 
 func TestAPIPagesListsPages(t *testing.T) {
 	ts, st := setup(t)
-	a, _ := st.Create("Alpha", "<p>a</p>", "", nil)
-	b, _ := st.Create("Beta", "<p>b</p>", "", nil)
+	a, _ := st.Create(t.Context(), store.Draft{Title: "Alpha", Content: "<p>a</p>"})
+	b, _ := st.Create(t.Context(), store.Draft{Title: "Beta", Content: "<p>b</p>"})
 
 	pages := getAPIPages(t, ts.URL+"/api/pages")
 	if pages.Total != 2 {
@@ -254,7 +260,7 @@ func TestAPIPagesListsPages(t *testing.T) {
 
 func TestIndexSetsNoCacheHeader(t *testing.T) {
 	ts, st := setup(t)
-	_, _ = st.Create("Only", "<p>x</p>", "", nil)
+	_, _ = st.Create(t.Context(), store.Draft{Title: "Only", Content: "<p>x</p>"})
 
 	resp, err := http.Get(ts.URL + "/")
 	if err != nil {
@@ -268,11 +274,14 @@ func TestIndexSetsNoCacheHeader(t *testing.T) {
 
 // createOrdered creates n pages with stable, predictable titles and returns
 // them in creation order (oldest first). Newest-first listing is the reverse.
-func createOrdered(t *testing.T, st *store.Store, n int) []store.Page {
+func createOrdered(t *testing.T, st store.Store, n int) []store.Page {
 	t.Helper()
 	pages := make([]store.Page, 0, n)
 	for i := 0; i < n; i++ {
-		p, err := st.Create(fmt.Sprintf("Page-%02d", i), "<p>x</p>", "", nil)
+		p, err := st.Create(
+			t.Context(),
+			store.Draft{Title: fmt.Sprintf("Page-%02d", i), Content: "<p>x</p>"},
+		)
 		if err != nil {
 			t.Fatalf("Create %d: %v", i, err)
 		}
@@ -399,7 +408,7 @@ func TestAPIPagesOutOfRangePageClamps(t *testing.T) {
 
 func TestDeletePageRemovesIt(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Doomed", "<p>x</p>", "", nil)
+	p, _ := st.Create(t.Context(), store.Draft{Title: "Doomed", Content: "<p>x</p>"})
 
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/p/"+p.ID, nil)
 	resp, err := http.DefaultClient.Do(req)
@@ -432,7 +441,7 @@ func TestDeleteUnknownPageIs404(t *testing.T) {
 
 func TestIndexHasDeleteAffordance(t *testing.T) {
 	ts, st := setup(t)
-	p, _ := st.Create("Alpha", "<p>a</p>", "", nil)
+	p, _ := st.Create(t.Context(), store.Draft{Title: "Alpha", Content: "<p>a</p>"})
 
 	// The delete affordance is built client-side from the page id (which carries
 	// the data-id) plus the static delete-modal in the shell.
@@ -451,7 +460,10 @@ func TestAPIPageReturnsReferences(t *testing.T) {
 	refs := []store.Reference{
 		{Title: "dotfiles repo", URL: "https://github.com/mad01/dotfiles"},
 	}
-	p, _ := st.Create("Refs", "<p>body</p>", "", refs)
+	p, _ := st.Create(
+		t.Context(),
+		store.Draft{Title: "Refs", Content: "<p>body</p>", References: refs},
+	)
 	code, body := get(t, ts.URL+"/api/p/"+p.ID)
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)

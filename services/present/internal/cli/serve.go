@@ -31,11 +31,11 @@ func init() {
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
-	st, err := store.New(flagWorkdir)
+	st, err := store.NewFS(flagWorkdir)
 	if err != nil {
 		return err
 	}
-	handler := server.New(st, flagWorkdir, buildinfo.Get()).Handler()
+	handler := server.New(st, server.Options{Workdir: flagWorkdir, Info: buildinfo.Get()}).Handler()
 	log.Printf("present: serving %s on http://localhost:%d", flagWorkdir, flagPort)
 	return http.ListenAndServe(listenAddr(flagPort), handler)
 }
