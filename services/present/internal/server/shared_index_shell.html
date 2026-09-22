@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>present, shared</title>
+<script src="/webkit/boot.js"></script>
+<link href="/assets/css/fonts.css" rel="stylesheet">
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Chrome and section styling come from /webkit/webkit.css. This page is
+   static: there is no index on a shared instance, so the root explains how
+   to put a page here and how to connect. [data-origin] spans are filled with
+   the origin the reader arrived on, which is the instance's public URL. */
+.wrap{padding-top:1.5rem;max-width:52rem;margin:0 auto}
+.lead{color:var(--text-2);font-size:1.0625rem;line-height:1.6;margin:0 0 1.5rem}
+.wk-code-block{margin:0.75rem 0 1rem}
+</style>
+</head>
+<body>
+<wk-header brand="present" title="Shared pages"></wk-header>
+<div class="wrap">
+  <p class="lead" data-howto>This present instance holds pages shared by link. There is no index: a page is reachable only through the URL it was shared with, and only the author who put it here can change or remove it. An ephemeral page disappears 30 days after it was last shared; any other page stays until its author deletes it.</p>
+
+  <wk-section>
+    <wk-section-heading>Create and edit pages here from an agent</wk-section-heading>
+    <p>Register this instance as an HTTP MCP server. Mint an author key once (any 64-hex secret works; the local present CLI can mint one) and send it as a bearer token: the server stores only its hash, and that hash is what makes you the author of the pages you create.</p>
+    <p>Claude Code:</p>
+    <pre class="wk-code-block"><code class="language-bash">claude mcp add --transport http present-shared <span data-origin></span>/mcp \
+  --header "Authorization: Bearer &lt;your author key&gt;"</code></pre>
+    <p>Codex, in config.toml:</p>
+    <pre class="wk-code-block"><code class="language-toml">[mcp_servers.present-shared]
+url = "<span data-origin></span>/mcp"
+bearer_token_env_var = "PRESENT_AUTHOR_KEY"</code></pre>
+    <p>Tools on this instance: present_create (takes an ephemeral flag), present_read, present_source, present_update, and present_doctor. There is no list tool and no open tool; keep the URL present_create returns.</p>
+  </wk-section>
+
+  <wk-section>
+    <wk-section-heading>Push a page over HTTP</wk-section-heading>
+    <p>The same author key works on the JSON API. Create returns the page's id and URL; keep the URL, nothing else will list it.</p>
+    <pre class="wk-code-block"><code class="language-bash">curl -X POST <span data-origin></span>/api/pages \
+  -H "Authorization: Bearer &lt;your author key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Hello","content":"&lt;p&gt;hi&lt;/p&gt;","ephemeral":true}'</code></pre>
+    <p>Reading needs no key: GET /p/&lt;id&gt; is the page, GET /api/p/&lt;id&gt; its JSON. Replacing (PUT /api/p/&lt;id&gt;) and deleting (DELETE /p/&lt;id&gt;) need the author's key, and replacing an ephemeral page starts its 30 days over.</p>
+  </wk-section>
+</div>
+<script>
+document.querySelectorAll('[data-origin]').forEach(function (el) { el.textContent = location.origin; });
+</script>
+<script src="/webkit/webkit.js"></script>
+</body>
+</html>

@@ -16,6 +16,8 @@ import (
 
 	"github.com/mad01/thismoon/buildinfo"
 	"github.com/mad01/thismoon/kit/notify"
+	"github.com/mad01/thismoon/services/present/internal/author"
+	"github.com/mad01/thismoon/services/present/internal/baseurl"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/mad01/thismoon/webkit"
 )
@@ -40,31 +42,69 @@ var indexShellHTML []byte
 //go:embed index.js
 var indexJS []byte
 
+// Mode selects what the server exposes.
+type Mode int
+
+const (
+	// ModeLocal is present on one machine: an index of every page, listing
+	// and delete without authentication, bound to loopback.
+	ModeLocal Mode = iota
+	// ModeShared is a network-facing instance: pages by id only, a how-to
+	// page instead of an index, author keys on every write, and the MCP
+	// server over HTTP at /mcp.
+	ModeShared
+)
+
 // Server serves the index and individual presentation pages.
 type Server struct {
 	store   store.Store
+	mode    Mode
 	workdir string
 	info    buildinfo.Info
+	baseURL string
+	now     func() time.Time
+	mcp     http.Handler
 }
 
 // Options configures a Server. Workdir is where the served assets live;
-// Info is present's own build metadata, reported on GET /version.
+// Info is present's own build metadata, reported on GET /version. BaseURL
+// is the display override for the URLs shared writes return; empty means
+// derive it from each request's forwarded headers. MCP, when set in shared
+// mode, is mounted at /mcp. Now defaults to time.Now.
 type Options struct {
+	Mode    Mode
 	Workdir string
 	Info    buildinfo.Info
+	BaseURL string
+	Now     func() time.Time
+	MCP     http.Handler
 }
 
 // New returns a Server backed by the given store.
 func New(st store.Store, opts Options) *Server {
-	return &Server{store: st, workdir: opts.Workdir, info: opts.Info}
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Server{
+		store:   st,
+		mode:    opts.Mode,
+		workdir: opts.Workdir,
+		info:    opts.Info,
+		baseURL: opts.BaseURL,
+		now:     now,
+		mcp:     opts.MCP,
+	}
 }
 
-// Handler builds the HTTP routes, wrapped in request logging.
+// Handler builds the HTTP routes for the server's mode, wrapped in
+// forwarded-header defaults and request logging. The page view, its JSON,
+// the version poll, delete, assets, and webkit are common; local mode adds
+// the index and its listing, shared mode the how-to root, the write API,
+// whoami, and the MCP endpoint. A route the mode does not register is a
+// plain 404.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.handleIndex)
-	mux.HandleFunc("GET /api/pages", s.handleAPIPages)
-	mux.HandleFunc("GET /index.js", handleIndexJS)
 	mux.HandleFunc("GET /p/{id}", s.handlePage)
 	mux.HandleFunc("GET /api/p/{id}", s.handleAPIPage)
 	mux.HandleFunc("GET /app.js", handleAppJS)
@@ -73,7 +113,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", s.assetsHandler())
 	webkit.Mount(mux)
-	return logRequests(mux)
+	switch s.mode {
+	case ModeShared:
+		mux.HandleFunc("GET /{$}", s.handleHowTo)
+		mux.HandleFunc("POST /api/pages", s.handleSharedCreate)
+		mux.HandleFunc("PUT /api/p/{id}", s.handleSharedReplace)
+		mux.HandleFunc("GET /api/whoami", s.handleWhoAmI)
+		if s.mcp != nil {
+			mux.Handle("/mcp", s.mcp)
+		}
+	default:
+		mux.HandleFunc("GET /{$}", s.handleIndex)
+		mux.HandleFunc("GET /api/pages", s.handleAPIPages)
+		mux.HandleFunc("GET /index.js", handleIndexJS)
+	}
+	return logRequests(baseurl.Middleware(mux))
+}
+
+// pageURL is the public URL of a page for the caller of r: the display
+// override when configured, else the origin the request arrived on.
+func (s *Server) pageURL(r *http.Request, id string) string {
+	base := baseurl.FromHeader(r.Header, s.baseURL)
+	if base == "" {
+		base = s.baseURL
+	}
+	return base + "/p/" + id
 }
 
 // statusRecorder captures the response status code and byte count for access
@@ -320,14 +384,29 @@ func handleAppJS(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(appJS)
 }
 
+// handleDelete removes a page. Local mode trusts the caller (the web index
+// behind a confirm dialog on loopback); shared mode requires the author's
+// key, so 401/403 come before the store is touched.
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// Look up the title before deleting so the event carries it; best-effort.
+	// Look up the title before deleting so the event carries it; best-effort
+	// locally, load-bearing in shared mode where the author check needs it.
 	title := ""
-	if p, err := s.store.Get(r.Context(), id); err == nil {
+	p, err := s.store.Get(r.Context(), id)
+	if err == nil {
 		title = p.Title
 	}
-	err := s.store.Delete(r.Context(), id)
+	if s.mode == ModeShared {
+		if err != nil {
+			writeStoreError(w, r, err)
+			return
+		}
+		if err := author.Check(p.Author, r.Header); err != nil {
+			writeAuthError(w, err)
+			return
+		}
+	}
+	err = s.store.Delete(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return

@@ -81,6 +81,9 @@ type SharedInfo struct {
 // persisted alongside the page; nil means the input was legacy HTML or JS and
 // no source exists.
 type Draft struct {
+	// ID is optional. A shared instance mints a capability id and passes it
+	// here; when empty the store mints a local id.
+	ID          string
 	Title       string
 	Content     string
 	Graph       string
@@ -169,9 +172,15 @@ func (s *FS) pageDir(id string) string { return filepath.Join(s.pagesDir(), id) 
 // Create persists a new page and returns it with a freshly minted id. Sources
 // land first so the meta written last already reflects them.
 func (s *FS) Create(_ context.Context, d Draft) (Page, error) {
+	id := d.ID
+	if id == "" {
+		id = NewID()
+	} else if !ValidID(id) {
+		return Page{}, fmt.Errorf("present: invalid page id %q", id)
+	}
 	now := s.now().UTC()
 	p := Page{
-		ID:         NewID(),
+		ID:         id,
 		Title:      d.Title,
 		Content:    d.Content,
 		Graph:      d.Graph,

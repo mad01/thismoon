@@ -64,6 +64,27 @@ Page not found: the id is the directory name under pages/, minted by
 present_create, not derived from the title. present_list returns every id and
 URL.
 
+## shared mode
+
+`present serve --shared` is the same binary as a network-facing instance,
+usually several replicas in Kubernetes behind one hostname. It serves no
+index: the root is a how-to page, there is no listing endpoint and no
+present_list, and a page is reachable only by the id present minted for it
+(32 hex characters, a capability). Every write needs the caller's author key
+as a bearer token; the server stores only its SHA-256 as the page's author,
+and present_update, PUT /api/p/<id>, and DELETE /p/<id> refuse any other key
+(401 without one, 403 with the wrong one). Reads need nothing. A page
+created with ephemeral set expires 30 days after its last write and then
+reads as 404 until the sweeper deletes it; other pages stay until their
+author deletes them. The present_* tools are served over HTTP at /mcp with
+the reduced set (present_create, present_read, present_source,
+present_update, present_doctor); present_doctor there checks only that the
+store answers, because the tools run inside the serving process. Page URLs
+come from the X-Forwarded-Host and X-Forwarded-Proto headers the ingress
+sets, or from --base-url when given, so a URL naming the wrong host means
+the proxy in front isn't forwarding them. Shared mode refuses to start
+without an explicit --bind; local mode refuses any bind but loopback.
+
 ## version skew
 
 `present version -o json` reports the build of the binary on PATH. `GET
