@@ -1,0 +1,20 @@
+# Local and CI testing on a kind cluster: namespace `present`, the image
+# loaded into the cluster under the `ci` tag (never pulled), and no ingress;
+# tests reach the service through a port-forward.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: present
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - name: ghcr.io/mad01/present
+    newTag: ci
+patches:
+  - target:
+      kind: Deployment
+      name: present
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

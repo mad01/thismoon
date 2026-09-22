@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: present
+  labels:
+    app: present
+spec:
+  type: ClusterIP
+  selector:
+    app: present
+  ports:
+    - name: http
+      port: 7423
+      targetPort: http

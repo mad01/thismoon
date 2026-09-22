@@ -1,0 +1,28 @@
+# Expose the shared instance through an existing Istio Gateway. As with the
+# ingress overlay, the hostname lives in the present-host ConfigMap; the
+# gateway reference in virtualservice.yaml is the one deployment-specific
+# value a private overlay patches. Istio sets X-Forwarded-Host and
+# X-Forwarded-Proto, which is all present needs to build page URLs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: present
+resources:
+  - ../../base
+  - virtualservice.yaml
+configMapGenerator:
+  - name: present-host
+    literals:
+      - host=present.example.com
+generatorOptions:
+  disableNameSuffixHash: true
+replacements:
+  - source:
+      kind: ConfigMap
+      name: present-host
+      fieldPath: data.host
+    targets:
+      - select:
+          kind: VirtualService
+          name: present
+        fieldPaths:
+          - spec.hosts.0

@@ -103,6 +103,53 @@ jobs:
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
           echo "paths=$paths tags=$tags"
 
+  # present is the one component with a container image (docs/adr/0018):
+  # on a present release, build linux/amd64 and linux/arm64, push the semver
+  # and latest tags to ghcr.io, and sign the manifest digest keyless. Its
+  # own ubuntu job: the artifacts job runs on macOS, which has no Docker.
+  image:
+    name: present image
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.paths != '' && needs.plan.outputs.paths != '[]' && contains(fromJSON(needs.plan.outputs.paths), 'services/present') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+      id-token: write # cosign keyless signing via GitHub OIDC
+    env:
+      TAG: ${{ fromJSON(needs.plan.outputs.tags)['services/present'] }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.TAG }}
+
+      # Version matches the tarballs: v1.4.0-<short sha>; image tags carry
+      # the bare semver plus latest.
+      - id: meta
+        run: |
+          version="${TAG##*/}"
+          echo "version=${version}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "semver=${version#v}" >> "$GITHUB_OUTPUT"
+
+      - id: image
+        uses: ./.github/actions/present-image
+        with:
+          push: "true"
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/mad01/present:${{ steps.meta.outputs.semver }},ghcr.io/mad01/present:latest
+          version: ${{ steps.meta.outputs.version }}
+          tag: ${{ env.TAG }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4
+
+      # Verify with:
+      #   cosign verify \
+      #     --certificate-identity-regexp '^https://github.com/mad01/thismoon/' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      #     ghcr.io/mad01/present:<semver>
+      - name: Sign image (keyless)
+        run: cosign sign --yes "ghcr.io/mad01/present@${{ steps.image.outputs.digest }}"
+
   artifacts:
     name: ${{ matrix.path }}
     needs: plan
