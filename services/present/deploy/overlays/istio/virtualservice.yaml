@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: present
+  labels:
+    app: present
+spec:
+  hosts:
+    - present.example.com
+  gateways:
+    # The shared gateway that terminates TLS for internal hostnames.
+    - istio-system/internal-gateway
+  http:
+    - route:
+        - destination:
+            host: present
+            port:
+              number: 7423

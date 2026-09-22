@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: present
+  labels:
+    app: present
+  annotations:
+    # external-dns creates the record for the host below.
+    external-dns.alpha.kubernetes.io/hostname: present.example.com
+spec:
+  rules:
+    - host: present.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: present
+                port:
+                  name: http

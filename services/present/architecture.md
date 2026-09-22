@@ -96,6 +96,24 @@ object, so the store refuses a page over 1 MiB before it reaches the API
 server. The CRD is embedded in the binary and a test keeps
 `deploy/base/crd.yaml` byte-identical to it.
 
+## Deployment
+
+`Dockerfile` builds the shared instance from the repo root: a cross-compiled
+static binary on `distroless/static:nonroot` with the page assets (fonts,
+Cytoscape, Chart.js) baked into `/var/lib/present/assets`, so a pod needs no
+network and a read-only root filesystem. `deploy/base` is the kustomize
+base: the CRD, a service account with a Role over `pages` in its namespace,
+a two-replica Deployment running `serve --shared --store k8s --bind
+0.0.0.0` with `PRESENT_NAMESPACE` from the downward API, and a ClusterIP
+service on 7423. Overlays choose the namespace and the way in:
+`overlays/kind` for local and CI testing (image tag `ci`, loaded, never
+pulled), `overlays/ingress` (an Ingress with an external-dns hostname
+annotation), `overlays/istio` (a VirtualService on an existing Gateway); the
+hostname lives in one `present-host` ConfigMap value a private overlay
+replaces. `make image` and `make kind-test` build and exercise the whole
+thing against a kind cluster, and CI does the same on every PR that
+touches present.
+
 ## Interfaces
 
 Web: `GET /` (index shell), `GET /api/pages`, `GET /index.js`, `GET /p/{id}`

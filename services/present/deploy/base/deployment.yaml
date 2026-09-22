@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: present
+  labels:
+    app: present
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: present
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: present
+    spec:
+      serviceAccountName: present
+      automountServiceAccountToken: true
+      # serve drains in-flight requests on SIGTERM within 10s.
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: present
+      containers:
+        - name: present
+          image: ghcr.io/mad01/present:latest
+          imagePullPolicy: Always
+          # Shared mode on the cluster store, bound on every interface: the
+          # pod network is the only way in, and the ingress in front sets the
+          # forwarded headers the page URLs are derived from.
+          args: [serve, --shared, --store, k8s, --bind, "0.0.0.0"]
+          env:
+            - name: PRESENT_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Assets baked into the image; nothing is written here.
+            - name: PRESENT_WORKDIR
+              value: /var/lib/present
+          ports:
+            - name: http
+              containerPort: 7423
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

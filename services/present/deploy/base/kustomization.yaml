@@ -1,0 +1,16 @@
+# present shared instance: the Page CRD, a service account allowed to read
+# and write pages in its own namespace, two stateless replicas, and a
+# ClusterIP service. Namespace-agnostic: an overlay sets the namespace, the
+# image tag, and how the service is exposed (see ../overlays).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - crd.yaml
+  - serviceaccount.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - deployment.yaml
+  - service.yaml
+images:
+  - name: ghcr.io/mad01/present
+    newTag: latest

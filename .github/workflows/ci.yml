@@ -172,6 +172,92 @@ jobs:
           COMPONENT: ${{ matrix.component }}
         run: make -C "$COMPONENT" build
 
+  # present's shared mode runs in Kubernetes: build the image, stand up a
+  # kind cluster, roll the manifests, and run the cluster-gated tests (the
+  # store conformance suite against the API server and the HTTP end-to-end
+  # test through a port-forward). Runs whenever present is in the matrix,
+  # which includes fanout changes, since webkit and go.mod are baked in.
+  present-kind:
+    name: present in kind
+    needs: changes
+    if: needs.changes.outputs.has_components == 'true' && contains(fromJSON(needs.changes.outputs.components), 'services/present')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - uses: ./.github/actions/present-image
+        with:
+          load: "true"
+          platforms: linux/amd64
+          tags: ghcr.io/mad01/present:ci
+          version: ${{ github.sha }}
+
+      # Same kind release and node image as the local kind-test target, so
+      # CI and a developer machine exercise the same Kubernetes minor. The
+      # binary comes straight from the kind release with its checksum
+      # verified: helm/kind-action is not on this repo's allowed-actions list.
+      - name: Create kind cluster
+        env:
+          KIND_VERSION: v0.32.0
+          KIND_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
+          KIND_NODE_IMAGE: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+        run: |
+          curl -fsSL -o kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  kind" | sha256sum -c -
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+          kind create cluster --name present --image "$KIND_NODE_IMAGE" --wait 120s
+
+      - name: Load image and roll out
+        run: |
+          kind load docker-image ghcr.io/mad01/present:ci --name present
+          kubectl apply -k services/present/deploy/overlays/kind
+          kubectl -n present rollout status deploy/present --timeout=180s
+
+      - name: Cluster-gated tests
+        run: services/present/scripts/kind-e2e.sh
+
+      - name: Dump cluster state
+        if: failure()
+        run: |
+          kubectl -n present get all -o wide || true
+          kubectl -n present describe pods || true
+          kubectl -n present logs deploy/present --all-containers --tail=200 || true
+
+  # Every push to main that touched present publishes a moving image tag
+  # for machines that track main, next to the release job's semver tags.
+  present-image-main:
+    name: present image (main)
+    needs: present-kind
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+      id-token: write # cosign keyless signing via GitHub OIDC
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - id: meta
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - id: image
+        uses: ./.github/actions/present-image
+        with:
+          push: "true"
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/mad01/present:main,ghcr.io/mad01/present:sha-${{ steps.meta.outputs.short }}
+          version: ${{ steps.meta.outputs.short }}
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4
+
+      - name: Sign image (keyless)
+        run: cosign sign --yes "ghcr.io/mad01/present@${{ steps.image.outputs.digest }}"
+
   repo-safety-net:
     name: Repo-wide vet and build
     runs-on: ubuntu-latest

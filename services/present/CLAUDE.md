@@ -48,6 +48,21 @@ webkit bump). Pages created from raw HTML/JS have no source files; rerender
 falls back to a deterministic legacy-HTML upgrade and leaves legacy JS graphs
 untouched.
 
+## Shared instance in Kubernetes
+
+`Dockerfile` (context = repo root) builds the image; `deploy/` holds the
+kustomize base and the kind, ingress, and istio overlays; `make image`
+builds for the host arch, `make kind-test` loads it into the kind cluster
+named `KIND_CLUSTER` (default `kind`, reused when it exists), applies
+`deploy/overlays/kind`, rolls the deployment, and runs `scripts/kind-e2e.sh`
+(the k8sstore conformance suite with `PRESENT_KIND_TEST=1` plus
+`internal/e2e` over a port-forward); `make kind-down` removes the `present`
+namespace and leaves the CRD. CI runs the same in the `present-kind` job on
+every PR touching present, pushes `main`/`sha-*` tags on main, and the
+release workflow pushes `X.Y.Z`/`latest` (`docs/adr/0018`,
+`docs/RELEASING.md`). Machine-private overlays (hostname, gateway, author
+keys) live in the consuming repo.
+
 ## Build / install / test
 
 ```bash

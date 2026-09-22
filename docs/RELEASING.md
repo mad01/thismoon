@@ -48,6 +48,15 @@ Each released component gets, on its GitHub Release:
 Artifacts target darwin/arm64 only; the platform is macOS-focused and the
 linux targets carried no users (`docs/adr/0007`).
 
+present is the one exception, for its shared mode (`docs/adr/0018`): a
+present release also builds `ghcr.io/mad01/present` for linux/amd64 and
+linux/arm64 from `services/present/Dockerfile`, tags it `X.Y.Z` and
+`latest`, and signs the manifest digest keyless. Every push to main that
+touches present also publishes `main` and `sha-<short>` tags, so a cluster
+tracking main can follow it. The image job runs on an ubuntu runner apart
+from the macOS artifacts job, through the composite action in
+`.github/actions/present-image`.
+
 ## Build metadata
 
 The ldflags set four variables in the shared
@@ -83,6 +92,19 @@ shasum -a 256 -c checksums.txt
 
 The first command proves this repo's release workflow produced
 `checksums.txt`; the second proves your tarball matches it.
+
+For the present image:
+
+```sh
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/mad01/thismoon/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/mad01/present:X.Y.Z
+```
+
+The package on ghcr.io has to be made public once, by hand, after the
+first push; until then anonymous pulls (a kind cluster, a colleague's
+cluster) fail.
 
 ## Adding a new component
 

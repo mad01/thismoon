@@ -68,6 +68,14 @@ claude mcp add --transport http present-shared https://present.example.com/mcp \
   --header "Authorization: Bearer <your author key>"
 ```
 
+### Deploying a shared instance
+
+`services/present/Dockerfile` builds `ghcr.io/mad01/present` (linux/amd64 and arm64; releases push `X.Y.Z` and `latest`, main pushes `main` and `sha-<short>`). `deploy/base` is a kustomize base (CRD, RBAC, a two-replica Deployment, a Service); `deploy/overlays/ingress` and `deploy/overlays/istio` show how to expose it, with the hostname in a single ConfigMap value your own overlay replaces. To try it against a kind cluster:
+
+```bash
+make -C services/present kind-test   # build, load, apply deploy/overlays/kind, run the cluster tests
+```
+
 ## Where things live
 
 ```
