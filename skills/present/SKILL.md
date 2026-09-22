@@ -95,12 +95,16 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 | `present_update(id, title?, content?, graph?, references?)` | Patch a page. Omit fields to leave unchanged. Pass `graph: ""` to remove a graph, `references: []` to clear refs. |
 | `present_list()` | List all pages (id, title, url, version, updated, has_doc). `has_doc: true` means the page is source-editable via `present_source`. |
 | `present_open(id)` | Open in browser — **once per page**. |
+| `present_share(id, ephemeral?)` | Push the page to the shared instance this machine is configured for and return `{url, ephemeral, expires_at, shared_at}`. Only registered when a shared instance is configured; sharing again replaces the copy under the same link, `ephemeral` makes it expire 30 days after the last share. |
 
 > **Workflow rule:** `present_create` returns `{id, url, version}`. The `id` is
 > required for every subsequent call (`present_update`, `present_open`,
 > `present_source`, `present_read`). Hold it for the duration of the session.
 > If `present_open` fails (sandbox or no `open` binary), the URL from
 > `present_create` is the direct link — return it to the user instead.
+> When the user asks to share a page, call `present_share` with the id and
+> return the link; if the tool is missing or fails with a network error,
+> tell the user to use the Share button on the page or run `present share <id>`.
 
 ## Doc format (the `content` argument)
 

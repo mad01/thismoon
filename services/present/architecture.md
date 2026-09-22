@@ -20,17 +20,31 @@ stateless, so any number of replicas can sit behind one hostname without
 sticky sessions. The store behind either mode is the `store.Store`
 interface; local present uses the filesystem implementation.
 
+A local present can push its pages to such an instance. With `--shared-url`
+and `--author-key` set, `present serve` shows a Share button on every page,
+`present share <id>` does the same from a shell, and the local MCP registers
+`present_share`; all three go through `internal/sharedclient`, the one place
+that knows the wire shape. With only one of the two set, sharing stays off
+and the process warns at startup. A shared instance never pushes anywhere;
+it is where pages land.
+
 ## Structure
 
 ```
 cmd/present/         entrypoint, delegates to internal/cli
-internal/cli/        cobra command tree: serve, mcp, rerender, version
+internal/cli/        cobra command tree: serve, mcp, rerender, share, unshare,
+                     key, version; share.go also builds the shared-instance
+                     client from --shared-url/--author-key (nil when either
+                     is missing)
 internal/store/      Store interface + FS, the filesystem implementation over
                      pages/<id>/; id generation; expiry wrapper
 internal/store/k8sstore/  Store over Page custom resources (dynamic client),
                      the CRD (embedded, copied to deploy/base), the sweeper
 internal/author/     author keys: mint, hash, read from a bearer header, check
 internal/baseurl/    public base URL from X-Forwarded-* (middleware + derivation)
+internal/sharedclient/  client for a shared instance (create, replace, delete,
+                     whoami, author key as bearer); Share and Unshare wrap a
+                     push with the local store's shared record
 internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade
 internal/server/     HTTP handlers per mode; embeds shell.html, index_shell.html,
                      shared_index_shell.html, app.js, index.js
@@ -66,11 +80,27 @@ references, and read-aloud. It then polls `GET /p/{id}/version` via
 works the same way: `GET /` serves `index_shell.html` and `index.js` builds
 the list from `GET /api/pages`. There is no server-side template layer.
 
+The share path starts local and ends on a shared instance. The Share button
+posts to the local serve's `POST /p/{id}/share`; `present share` and
+`present_share` call the same function directly. `sharedclient.Share` loads
+the page and its sources from the local store, bundles them (title, content,
+graph, references, doc, graph_source, ephemeral), and sends the bundle with
+the author key as a bearer token to the shared instance's `POST /api/pages`,
+or to `PUT /api/p/{id}` when the page was shared before, so the link stays
+the same (when the instance has purged the copy, Share creates it afresh).
+The result (shared id, URL, expiry, time of the share) lands in the local page's
+`meta.json` through `store.SetShared`, which touches metadata only and never
+bumps the version, so the open tab keeps its place. `GET /api/p/{id}` then
+reports it in a `share` block that the page view reads to label the button
+"Shared" and show the link. `present unshare` sends `DELETE /p/{id}` to the
+instance and clears the record.
+
 ## Storage
 
 ```
 ~/.config/present/pages/<id>/
-  meta.json      id, title, version, has_* flags, timestamps
+  meta.json      id, title, version, has_* flags, timestamps, and the
+                 shared record once the page was pushed somewhere
   content.html   rendered HTML body fragment
   doc.json       canonical Doc source (when authored as Doc JSON)
   graph.js       rendered Cytoscape init (when has_graph)
@@ -117,16 +147,21 @@ touches present.
 ## Interfaces
 
 Web: `GET /` (index shell), `GET /api/pages`, `GET /index.js`, `GET /p/{id}`
-(page shell), `GET /api/p/{id}`, `GET /app.js`, `GET /p/{id}/version`,
-`DELETE /p/{id}` (the only delete surface), `GET /webkit/` and
+(page shell), `GET /api/p/{id}` (with a `share` block in local mode),
+`GET /app.js`, `GET /p/{id}/version`, `DELETE /p/{id}` (the only delete
+surface), `POST /p/{id}/share` (local mode with a shared instance configured;
+body `{"ephemeral": bool}`, answers the share block, 404 for an unknown page,
+502 when the shared instance refuses or is unreachable), `GET /webkit/` and
 `GET /webkit/version` from the webkit Go package.
 
 CLI: `present serve`, `present mcp`, `present rerender [id...]`,
-`present version [-o json]`.
+`present share <id> [--ephemeral]`, `present unshare <id>`,
+`present key new`, `present version [-o json]`.
 
 MCP tools: `present_create`, `present_read`, `present_source`,
-`present_update`, `present_list`, `present_open` (macOS `open`). Deliberately
-no delete tool.
+`present_update`, `present_list`, `present_open` (macOS `open`), and
+`present_share` when a shared instance is configured. Deliberately no delete
+tool.
 
 Shared mode drops `GET /`'s index for a static how-to page, drops
 `GET /api/pages` and `GET /index.js`, and adds `POST /api/pages` (create
@@ -137,5 +172,7 @@ key. Reads (`/p/{id}`, `/api/p/{id}`, `/p/{id}/version`) need nothing.
 
 Config: `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`, resolved
 identically by both processes (a leading `~` is expanded in Go); both log
-their resolved `workdir=… port=…` at startup. `present serve` alone takes
+their resolved `workdir=… port=…` at startup. `--shared-url`/
+`PRESENT_SHARED_URL` and `--author-key`/`PRESENT_AUTHOR_KEY` are persistent
+too, and sharing is on only when both are set. `present serve` alone takes
 `--bind`/`PRESENT_BIND` and `--shared`/`PRESENT_SHARED`.

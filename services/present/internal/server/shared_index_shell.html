@@ -23,6 +23,18 @@
   <p class="lead" data-howto>This present instance holds pages shared by link. There is no index: a page is reachable only through the URL it was shared with, and only the author who put it here can change or remove it. An ephemeral page disappears 30 days after it was last shared; any other page stays until its author deletes it.</p>
 
   <wk-section>
+    <wk-section-heading>Share a page from your local present</wk-section-heading>
+    <p>A local present pushes pages here once it knows this instance and your author key. Mint the key once (this instance stores only its hash), export both values, and share by id:</p>
+    <pre class="wk-code-block"><code class="language-bash">present key new
+export PRESENT_SHARED_URL=<span data-origin></span>
+export PRESENT_AUTHOR_KEY=&lt;the key you minted&gt;
+present share &lt;id&gt;                # prints the link; sharing again replaces the copy
+present share &lt;id&gt; --ephemeral    # the copy expires 30 days after the last share
+present unshare &lt;id&gt;              # removes the copy</code></pre>
+    <p>The Share button on any local page and the present_share tool of the local MCP do the same push.</p>
+  </wk-section>
+
+  <wk-section>
     <wk-section-heading>Create and edit pages here from an agent</wk-section-heading>
     <p>Register this instance as an HTTP MCP server. Mint an author key once (any 64-hex secret works; the local present CLI can mint one) and send it as a bearer token: the server stores only its hash, and that hash is what makes you the author of the pages you create.</p>
     <p>Claude Code:</p>

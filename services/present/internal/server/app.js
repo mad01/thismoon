@@ -413,6 +413,66 @@
     if (window.Webkit && typeof Webkit.enhanceProse === 'function') Webkit.enhanceProse(brief);
   }
 
+  // wireShare attaches the Share button and its modal. The button is hidden
+  // unless the server reports sharing enabled (a shared instance is
+  // configured and this is a local serve), so a shared instance never shows
+  // it. Confirm posts to /p/{id}/share; the result shows the shared URL and
+  // whether it expires. Re-sharing replaces the copy under the same URL.
+  function wireShare(share) {
+    var btn = document.getElementById('shareBtn');
+    var modal = document.getElementById('share-modal');
+    if (!btn || !modal || !share || !share.enabled) return;
+    var eph = document.getElementById('share-ephemeral');
+    var result = document.getElementById('share-result');
+    var urlEl = document.getElementById('share-url');
+    var status = document.getElementById('share-status');
+    var confirm = document.getElementById('share-confirm');
+
+    function show(info) {
+      if (!info || !info.url) { result.setAttribute('hidden', ''); btn.textContent = 'Share'; return; }
+      urlEl.textContent = info.url;
+      status.textContent = info.ephemeral && info.expires_at
+        ? 'Expires ' + new Date(info.expires_at).toLocaleDateString()
+        : 'Kept until unshared';
+      eph.checked = !!info.ephemeral;
+      result.removeAttribute('hidden');
+      btn.textContent = 'Shared';
+    }
+    function open() { modal.removeAttribute('hidden'); }
+    function close() { modal.setAttribute('hidden', ''); }
+
+    show(share);
+    btn.removeAttribute('hidden');
+    btn.onclick = open;
+    document.getElementById('share-cancel').onclick = close;
+    document.getElementById('share-x').onclick = close;
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !modal.hasAttribute('hidden')) close();
+    });
+    document.getElementById('share-copy').onclick = function () {
+      if (navigator.clipboard && urlEl.textContent) navigator.clipboard.writeText(urlEl.textContent);
+    };
+    confirm.onclick = function () {
+      confirm.setAttribute('disabled', '');
+      fetch('/p/' + encodeURIComponent(id) + '/share', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ephemeral: eph.checked })
+      })
+        .then(function (r) {
+          if (r.ok) return r.json();
+          return r.text().then(function (t) { throw new Error(t || ('share failed (' + r.status + ')')); });
+        })
+        .then(show)
+        .catch(function (err) {
+          status.textContent = 'Share failed: ' + ((err && err.message) || err);
+          result.removeAttribute('hidden');
+        })
+        .then(function () { confirm.removeAttribute('disabled'); });
+    };
+  }
+
   function pageId() {
     var m = location.pathname.match(/^\/p\/([^/]+)/);
     return m ? m[1] : '';
@@ -425,6 +485,7 @@
     .then(function (r) { if (!r.ok) throw new Error('load failed (' + r.status + ')'); return r.json(); })
     .then(function (data) {
       render(data);
+      wireShare(data.share);
       var known = data.version;
       // Recolor the graph + charts when the webkit theme toggle fires.
       document.addEventListener('wk-themechange', function () {

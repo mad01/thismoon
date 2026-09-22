@@ -103,6 +103,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	st := raw
 	opts := server.Options{Workdir: flagWorkdir, Info: buildinfo.Get(), BaseURL: flagBaseURL}
 	mode := "local"
+	if !flagShared {
+		// Only a local serve pushes pages elsewhere; a shared instance is
+		// where they land.
+		opts.Sharer = sharer()
+	}
 	if flagShared {
 		mode = "shared"
 		st = store.WithoutExpired(raw, time.Now)

@@ -15,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/kit/doctor"
 	present "github.com/mad01/thismoon/services/present"
+	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
@@ -53,6 +54,10 @@ type Config struct {
 	// Now is the clock ephemeral expiries are computed from; nil means
 	// time.Now.
 	Now func() time.Time
+
+	// Sharer, in local mode, is the shared instance present_share pushes
+	// pages to; nil leaves the tool unregistered.
+	Sharer *sharedclient.Client
 
 	// Checks builds the diagnostics behind the present_doctor tool, against
 	// the same resolved flags the rest of the CLI uses. It is required: the
@@ -100,6 +105,7 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 		now:     now,
 		open:    openURL,
 		checks:  cfg.Checks,
+		sharer:  cfg.Sharer,
 	})
 	return s, nil
 }

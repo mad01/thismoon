@@ -18,6 +18,7 @@ import (
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/baseurl"
+	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/mad01/thismoon/webkit"
 )
@@ -64,13 +65,16 @@ type Server struct {
 	baseURL string
 	now     func() time.Time
 	mcp     http.Handler
+	sharer  *sharedclient.Client
 }
 
 // Options configures a Server. Workdir is where the served assets live;
 // Info is present's own build metadata, reported on GET /version. BaseURL
 // is the display override for the URLs shared writes return; empty means
 // derive it from each request's forwarded headers. MCP, when set in shared
-// mode, is mounted at /mcp. Now defaults to time.Now.
+// mode, is mounted at /mcp. Sharer, in local mode, is the shared instance
+// pages can be pushed to; nil hides the share button and its endpoint. Now
+// defaults to time.Now.
 type Options struct {
 	Mode    Mode
 	Workdir string
@@ -78,6 +82,7 @@ type Options struct {
 	BaseURL string
 	Now     func() time.Time
 	MCP     http.Handler
+	Sharer  *sharedclient.Client
 }
 
 // New returns a Server backed by the given store.
@@ -94,6 +99,7 @@ func New(st store.Store, opts Options) *Server {
 		baseURL: opts.BaseURL,
 		now:     now,
 		mcp:     opts.MCP,
+		sharer:  opts.Sharer,
 	}
 }
 
@@ -126,6 +132,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /{$}", s.handleIndex)
 		mux.HandleFunc("GET /api/pages", s.handleAPIPages)
 		mux.HandleFunc("GET /index.js", handleIndexJS)
+		if s.sharer != nil {
+			mux.HandleFunc("POST /p/{id}/share", s.handleShare)
+		}
 	}
 	return logRequests(baseurl.Middleware(mux))
 }
@@ -344,6 +353,7 @@ type apiPage struct {
 	Content    string         `json:"content"`
 	Graph      string         `json:"graph"`
 	References []apiReference `json:"references"`
+	Share      apiShare       `json:"share"`
 }
 
 // handleAPIPage returns a page as JSON for client-side rendering.
@@ -365,6 +375,7 @@ func (s *Server) handleAPIPage(w http.ResponseWriter, r *http.Request) {
 		Content:    p.Content,
 		Graph:      p.Graph,
 		References: make([]apiReference, 0, len(p.References)),
+		Share:      s.shareState(p),
 	}
 	for _, ref := range p.References {
 		out.References = append(out.References, apiReference{Title: ref.Title, URL: ref.URL})

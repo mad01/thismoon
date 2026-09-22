@@ -39,7 +39,9 @@ per update drives live reload in open tabs.
 
 Pages are create/read/update/list; there is deliberately no MCP delete, so
 an agent cannot destroy a page (removal is a manual act in the web index).
-present serves localhost only: it is not a publishing platform, has no
-accounts, and produces single pages rather than multi-page sites. It is not
-a rendering framework either; the chrome and shared primitives come from
-webkit, and present keeps only its briefing-specific pieces local.
+present serves localhost by default; a shared instance can run on an
+internal network, but it stays a drop box for single pages reachable by
+unguessable id, with no accounts and no listing, and it never becomes a
+multi-page site. It is not a rendering framework either; the chrome and
+shared primitives come from webkit, and present keeps only its
+briefing-specific pieces local.

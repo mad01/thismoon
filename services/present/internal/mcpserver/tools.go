@@ -19,6 +19,7 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/baseurl"
 	"github.com/mad01/thismoon/services/present/internal/render"
+	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
@@ -57,6 +58,7 @@ type handlers struct {
 	now     func() time.Time
 	open    func(url string) error
 	checks  func(ctx context.Context) []doctor.Check
+	sharer  *sharedclient.Client
 }
 
 // createAnnotations is shared by both create tools.
@@ -146,6 +148,20 @@ func registerTools(s *mcp.Server, h *handlers) {
 				OpenWorldHint:   new(false),
 			},
 		}, withHint(h.handleOpen))
+
+		if h.sharer != nil {
+			mcp.AddTool(s, &mcp.Tool{
+				Name: "present_share",
+				Description: "Push a local page to the configured shared instance and return the link others can open. " +
+					"Sharing again replaces the copy under the same link. Set `ephemeral` to have the copy expire 30 days after " +
+					"the last share; otherwise it stays until `present unshare`. Only this machine's author key can change the copy.",
+				Annotations: &mcp.ToolAnnotations{
+					DestructiveHint: new(false),
+					IdempotentHint:  true,
+					OpenWorldHint:   new(true),
+				},
+			}, withHint(h.handleShare))
+		}
 	}
 
 	// Not wrapped in withHint: the hint says to run `present doctor`, which is
@@ -652,4 +668,40 @@ func (h *handlers) handleDoctor(
 	_ doctorInput,
 ) (*mcp.CallToolResult, doctor.Report, error) {
 	return nil, doctor.Collect(ctx, h.checks(ctx)), nil
+}
+
+// ── share ──
+
+type shareInput struct {
+	ID        string `json:"id"                  jsonschema:"local page id to share"`
+	Ephemeral bool   `json:"ephemeral,omitempty" jsonschema:"expire the shared copy 30 days after the last share instead of keeping it until unshared"`
+}
+
+type shareOutput struct {
+	URL       string `json:"url"`
+	Ephemeral bool   `json:"ephemeral"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+	SharedAt  string `json:"shared_at"`
+}
+
+func (h *handlers) handleShare(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	in shareInput,
+) (*mcp.CallToolResult, shareOutput, error) {
+	info, err := sharedclient.Share(ctx, h.store, h.sharer, in.ID, in.Ephemeral, h.now())
+	if err != nil {
+		return nil, shareOutput{}, err
+	}
+	out := shareOutput{
+		URL:       info.URL,
+		Ephemeral: info.Ephemeral,
+		SharedAt:  info.SharedAt.UTC().Format(time.RFC3339),
+	}
+	if info.ExpiresAt != nil {
+		out.ExpiresAt = info.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	notify.EmitEvent("present", "info", "page shared: "+in.ID, "",
+		map[string]string{"id": in.ID, "url": info.URL})
+	return nil, out, nil
 }

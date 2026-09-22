@@ -26,5 +26,27 @@ func doctorChecks(context.Context) []doctor.Check {
 		doctor.StoreReadable(flagWorkdir),
 		doctor.ServiceReachable(baseURL),
 		doctor.VersionSkew(baseURL),
+		sharedInstanceCheck(),
+	}
+}
+
+// sharedInstanceCheck asks the configured shared instance who this
+// machine's author key is: one round trip proves the instance is reachable
+// and the key arrives intact. Nothing configured is a skip, not a failure.
+func sharedInstanceCheck() doctor.Check {
+	return doctor.Check{
+		Name: "shared-instance",
+		Run: func(ctx context.Context) error {
+			c := sharer()
+			if c == nil {
+				return doctor.Skip(
+					"skipped: no shared instance configured (--shared-url, --author-key)",
+				)
+			}
+			if _, err := c.WhoAmI(ctx); err != nil {
+				return fmt.Errorf("shared instance %s: %w", c.BaseURL, err)
+			}
+			return nil
+		},
 	}
 }

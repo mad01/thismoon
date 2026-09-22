@@ -118,11 +118,30 @@ wk-kv-value code, code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', m
   .cy-wrapper.cy-fullscreen { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .cy-wrapper.cy-fullscreen .cy-container { border-radius: 0; }
 }
+#share-result code { word-break: break-all; }
+#share-status { color: var(--text-3); }
 </style>
 </head>
 <body>
-<wk-header back-href="/" back-label="← All" title="Brief" controls="cmdk,font,fixation,size,speed,reload,theme,help" fixation-targets="[data-fixation], wk-panel-title, wk-panel-subtitle, wk-kv-value, wk-callout, wk-section p, wk-section li"></wk-header>
+<wk-header back-href="/" back-label="← All" title="Brief" controls="cmdk,font,fixation,size,speed,reload,theme,help" fixation-targets="[data-fixation], wk-panel-title, wk-panel-subtitle, wk-kv-value, wk-callout, wk-section p, wk-section li"><button data-extra class="btn btn-ghost" id="shareBtn" hidden>Share</button></wk-header>
 <main id="root"></main>
+<wk-modal hidden id="share-modal">
+  <wk-modal-panel role="dialog" aria-modal="true" aria-labelledby="share-heading">
+    <wk-modal-head>
+      <h2 id="share-heading">Share this page</h2>
+      <button class="btn btn-ghost" id="share-x" aria-label="Close">✕</button>
+    </wk-modal-head>
+    <wk-modal-body>
+      <p>Push a copy to the shared instance. Anyone with the link can read it; only this machine's author key can change it.</p>
+      <label><input type="checkbox" id="share-ephemeral"> Expires 30 days after the last share</label>
+      <p id="share-result" hidden><code id="share-url"></code> <wk-button variant="ghost" id="share-copy">Copy</wk-button><br><small id="share-status"></small></p>
+    </wk-modal-body>
+    <wk-modal-actions>
+      <wk-button variant="ghost" id="share-cancel">Cancel</wk-button>
+      <wk-button variant="primary" id="share-confirm">Share</wk-button>
+    </wk-modal-actions>
+  </wk-modal-panel>
+</wk-modal>
 <script src="/webkit/webkit.js"></script>
 <script src="/app.js"></script>
 </body>

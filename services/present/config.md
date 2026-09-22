@@ -23,7 +23,8 @@ to the working directory instead, which quietly served an empty store.
 
 ## Flags
 
-These are persistent flags shared by `present serve` and `present mcp`:
+These are persistent flags, seen by every subcommand (`present serve`,
+`present mcp`, `present share`, `present unshare`):
 
 - `--workdir` (string; env `PRESENT_WORKDIR`): directory holding `pages/`,
   the page store both processes read and write. The default is
@@ -38,6 +39,15 @@ These are persistent flags shared by `present serve` and `present mcp`:
   `present_create`'s returned URL. Only needs overriding when pages are
   reached through something other than plain `localhost:<port>` (for example
   the local domain front door's `present.this`).
+- `--shared-url` (string; env `PRESENT_SHARED_URL`): the shared present
+  instance local pages can be pushed to, e.g. `https://present.example.com`.
+  Sharing is on only when `--author-key` is set as well.
+- `--author-key` (string; env `PRESENT_AUTHOR_KEY`): the author key sent to
+  the shared instance as a bearer token on every push; mint one with
+  `present key new`. Prefer the environment variable over the flag: an
+  argument list is visible to other processes on the machine, the
+  environment is not. With only one of the two set, the process warns once
+  on stderr and sharing stays off.
 
 These two belong to `present serve` alone:
 
@@ -93,6 +103,10 @@ there is no automatic migration to undo.
 - `PRESENT_PORT`: default for `--port`. An unparseable value warns once on
   stderr, and the built-in default (`7423`) is used instead.
 - `PRESENT_BASE_URL`: default for `--base-url`.
+- `PRESENT_SHARED_URL`: default for `--shared-url`.
+- `PRESENT_AUTHOR_KEY`: default for `--author-key`, and the recommended way
+  to set it: the environment is private to the process, the argument list
+  is not.
 - `PRESENT_BIND`: default for `--bind`. Setting it counts as an explicit
   bind for shared mode.
 - `PRESENT_SHARED`: default for `--shared`; `1`, `true`, `0`, `false` in any
@@ -108,7 +122,9 @@ there is no automatic migration to undo.
 To see what a given environment actually resolved to, run `present doctor`;
 an agent with no shell gets the same report from the `present_doctor` MCP
 tool. It checks the page store first, since the MCP tools write it directly
-and keep working while `serve` is down.
+and keep working while `serve` is down. With a shared instance configured
+it also calls that instance's `GET /api/whoami` with the key, so a wrong URL
+or a refused key shows up before the first share.
 
 ## Example
 
@@ -139,3 +155,19 @@ machine with the filesystem store, which is fine for a single process. From
 a developer machine, `--store k8s --namespace present` on top of the second
 line uses the kubeconfig's current context, which is how you exercise a
 kind cluster by hand.
+
+A local present pointed at a shared instance, so its pages can be shared
+from the page view, the CLI, or the `present_share` tool:
+
+```bash
+present key new                                   # once; keep the output somewhere safe
+export PRESENT_SHARED_URL=https://present.example.com
+export PRESENT_AUTHOR_KEY=<the key you minted>
+present serve                                     # the page view gains a Share button
+present share <id>                                # the same push from a shell
+```
+
+Both variables have to reach every process that shares: `present serve` for
+the Share button, `present mcp` for `present_share`, and the shell that runs
+`present share`. A shared instance never sets them; it is where pages land,
+not where they come from.
