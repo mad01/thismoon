@@ -22,8 +22,7 @@ loom without taking a role.
 2. Work entirely inside the worktree. Commit there directly, conventional
    format, staging only the files you changed. No queue, no request files.
 3. When the branch is done: run the repo's gates in the worktree, then
-   report the branch as ready — to the weaver on the loom's wire channel if
-   one was shared, otherwise to the user. Do not integrate it yourself.
+   report the branch as ready to the user. Do not integrate it yourself.
 4. Stop. The weaver owns the branch from here; your worktree disappears
    after the branch lands.
 

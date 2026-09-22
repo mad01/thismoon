@@ -316,7 +316,6 @@ you want them):
 | `present.this` | present | 7423 |
 | `speak.this` | speak | 7425 |
 | `status.this` | status | 7426 |
-| `wire.this` | wire | 7432 |
 
 The names are whatever your `routes.toml` says; each recipe fixes its
 service's port. The CLI tools (belt, humanizer, suspenders, t-man, toss-bin,
