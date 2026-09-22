@@ -13,9 +13,9 @@ import (
 
 // seedLegacyPage writes a page directly with legacy HTML content and no
 // doc.json, simulating a page created before Doc persistence existed.
-func seedLegacyPage(t *testing.T, st *store.Store, legacyHTML string) string {
+func seedLegacyPage(t *testing.T, st store.Store, legacyHTML string) string {
 	t.Helper()
-	p, err := st.Create("Legacy", legacyHTML, "", nil)
+	p, err := st.Create(t.Context(), store.Draft{Title: "Legacy", Content: legacyHTML})
 	if err != nil {
 		t.Fatalf("seed legacy: %v", err)
 	}
@@ -24,7 +24,7 @@ func seedLegacyPage(t *testing.T, st *store.Store, legacyHTML string) string {
 
 func TestRerenderUpgradesLegacyAndReRendersDoc(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.New(dir)
+	st, err := store.NewFS(dir)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -38,20 +38,20 @@ func TestRerenderUpgradesLegacyAndReRendersDoc(t *testing.T) {
 	// Doc page: persisted doc.json so rerender re-renders from source.
 	docID := seedLegacyPage(t, st, "<p>placeholder content from before a render change</p>")
 	docJSON := []byte(`{"sections":[{"h":"FromDoc","blocks":[{"t":"p","text":"re-rendered"}]}]}`)
-	if err := st.SaveDoc(docID, docJSON); err != nil {
+	if err := st.SaveDoc(t.Context(), docID, docJSON); err != nil {
 		t.Fatalf("SaveDoc: %v", err)
 	}
 
-	legacyBefore, _ := st.Get(legacyID)
-	docBefore, _ := st.Get(docID)
+	legacyBefore, _ := st.Get(t.Context(), legacyID)
+	docBefore, _ := st.Get(t.Context(), docID)
 
 	var out bytes.Buffer
-	if err := rerenderPages(st, nil, &out); err != nil {
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
 		t.Fatalf("rerenderPages: %v", err)
 	}
 
 	// Legacy page: classes gone, wk-* present, version bumped.
-	legacyAfter, _ := st.Get(legacyID)
+	legacyAfter, _ := st.Get(t.Context(), legacyID)
 	if strings.Contains(legacyAfter.Content, `class="section"`) ||
 		strings.Contains(legacyAfter.Content, `class="callout`) ||
 		strings.Contains(legacyAfter.Content, `class="chip`) {
@@ -67,7 +67,7 @@ func TestRerenderUpgradesLegacyAndReRendersDoc(t *testing.T) {
 	}
 
 	// Doc page: re-rendered from doc.json (new heading appears), version bumped.
-	docAfter, _ := st.Get(docID)
+	docAfter, _ := st.Get(t.Context(), docID)
 	if !strings.Contains(docAfter.Content, "FromDoc") ||
 		!strings.Contains(docAfter.Content, "re-rendered") {
 		t.Errorf("doc page not re-rendered from source:\n%s", docAfter.Content)
@@ -91,7 +91,7 @@ func TestRerenderUpgradesLegacyAndReRendersDoc(t *testing.T) {
 
 func TestRerenderUnchangedReportsUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.New(dir)
+	st, err := store.NewFS(dir)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -100,13 +100,13 @@ func TestRerenderUnchangedReportsUnchanged(t *testing.T) {
 	// so bare boolean attributes like data-fixation must already be data-fixation="").
 	clean := render.UpgradeLegacyHTML(`<wk-section id="x"><p data-fixation>clean</p></wk-section>`)
 	id := seedLegacyPage(t, st, clean)
-	before, _ := st.Get(id)
+	before, _ := st.Get(t.Context(), id)
 
 	var out bytes.Buffer
-	if err := rerenderPages(st, nil, &out); err != nil {
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
 		t.Fatalf("rerenderPages: %v", err)
 	}
-	after, _ := st.Get(id)
+	after, _ := st.Get(t.Context(), id)
 	if after.Version != before.Version {
 		t.Errorf("unchanged page version bumped: %d -> %d", before.Version, after.Version)
 	}
@@ -117,21 +117,21 @@ func TestRerenderUnchangedReportsUnchanged(t *testing.T) {
 
 func TestRerenderSpecificIDs(t *testing.T) {
 	dir := t.TempDir()
-	st, _ := store.New(dir)
+	st, _ := store.NewFS(dir)
 	a := seedLegacyPage(t, st, `<div class="callout callout-warn">a</div>`)
 	b := seedLegacyPage(t, st, `<div class="callout callout-warn">b</div>`)
 
-	bBefore, _ := st.Get(b)
+	bBefore, _ := st.Get(t.Context(), b)
 	var out bytes.Buffer
-	if err := rerenderPages(st, []string{a}, &out); err != nil {
+	if err := rerenderPages(t.Context(), st, []string{a}, &out); err != nil {
 		t.Fatalf("rerenderPages: %v", err)
 	}
 	// Only a was targeted; b is untouched.
-	bAfter, _ := st.Get(b)
+	bAfter, _ := st.Get(t.Context(), b)
 	if bAfter.Version != bBefore.Version {
 		t.Errorf("non-targeted page b was modified: %d -> %d", bBefore.Version, bAfter.Version)
 	}
-	aAfter, _ := st.Get(a)
+	aAfter, _ := st.Get(t.Context(), a)
 	if !strings.Contains(aAfter.Content, "<wk-callout") {
 		t.Errorf("targeted page a not upgraded:\n%s", aAfter.Content)
 	}
@@ -140,11 +140,11 @@ func TestRerenderSpecificIDs(t *testing.T) {
 // TestRerenderContentFileOnDisk confirms the rewrite lands in content.html.
 func TestRerenderContentFileOnDisk(t *testing.T) {
 	dir := t.TempDir()
-	st, _ := store.New(dir)
+	st, _ := store.NewFS(dir)
 	id := seedLegacyPage(t, st, `<div class="panel"><div class="panel-title">P</div></div>`)
 
 	var out bytes.Buffer
-	if err := rerenderPages(st, nil, &out); err != nil {
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
 		t.Fatalf("rerenderPages: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "pages", id, "content.html"))
@@ -158,23 +158,26 @@ func TestRerenderContentFileOnDisk(t *testing.T) {
 
 func TestRerenderReRendersGraphFromSource(t *testing.T) {
 	dir := t.TempDir()
-	st, _ := store.New(dir)
+	st, _ := store.NewFS(dir)
 
 	// Page whose graph.js is stale (placeholder) but has a graph source.
-	p, err := st.Create("G", "<p>clean</p>", "/* stale generated js */", nil)
+	p, err := st.Create(
+		t.Context(),
+		store.Draft{Title: "G", Content: "<p>clean</p>", Graph: "/* stale generated js */"},
+	)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := st.SaveGraphSource(p.ID, []byte(`{"nodes":[{"id":"a","label":"NodeA"}]}`)); err != nil {
+	if err := st.SaveGraphSource(t.Context(), p.ID, []byte(`{"nodes":[{"id":"a","label":"NodeA"}]}`)); err != nil {
 		t.Fatalf("SaveGraphSource: %v", err)
 	}
 
 	var out bytes.Buffer
-	if err := rerenderPages(st, nil, &out); err != nil {
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
 		t.Fatalf("rerenderPages: %v", err)
 	}
 
-	after, _ := st.Get(p.ID)
+	after, _ := st.Get(t.Context(), p.ID)
 	if !strings.Contains(after.Graph, "NodeA") || !strings.Contains(after.Graph, "initGraph") {
 		t.Errorf("graph not re-rendered from source:\n%s", after.Graph)
 	}
@@ -188,16 +191,19 @@ func TestRerenderReRendersGraphFromSource(t *testing.T) {
 
 func TestRerenderLeavesLegacyJSGraphAlone(t *testing.T) {
 	dir := t.TempDir()
-	st, _ := store.New(dir)
+	st, _ := store.NewFS(dir)
 
 	legacyJS := "function getGraphColors(){} function initGraph(){}"
-	p, _ := st.Create("G", "<p>clean</p>", legacyJS, nil)
+	p, _ := st.Create(
+		t.Context(),
+		store.Draft{Title: "G", Content: "<p>clean</p>", Graph: legacyJS},
+	)
 
 	var out bytes.Buffer
-	if err := rerenderPages(st, nil, &out); err != nil {
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
 		t.Fatalf("rerenderPages: %v", err)
 	}
-	after, _ := st.Get(p.ID)
+	after, _ := st.Get(t.Context(), p.ID)
 	if after.Graph != legacyJS {
 		t.Errorf("legacy JS graph was modified:\n%s", after.Graph)
 	}

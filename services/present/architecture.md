@@ -16,7 +16,8 @@ and the MCP can run inside a no-network sandbox. Everything is localhost-only.
 ```
 cmd/present/         entrypoint, delegates to internal/cli
 internal/cli/        cobra command tree: serve, mcp, rerender, version
-internal/store/      filesystem CRUD over pages/<id>/; id generation
+internal/store/      Store interface + FS, the filesystem implementation over
+                     pages/<id>/; id generation; expiry wrapper
 internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade
 internal/server/     HTTP handlers; embeds shell.html, index_shell.html,
                      app.js, index.js

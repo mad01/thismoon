@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,19 +36,19 @@ func init() {
 }
 
 func runRerender(_ *cobra.Command, args []string) error {
-	st, err := store.New(flagWorkdir)
+	st, err := store.NewFS(flagWorkdir)
 	if err != nil {
 		return err
 	}
-	return rerenderPages(st, args, os.Stdout)
+	return rerenderPages(context.Background(), st, args, os.Stdout)
 }
 
 // rerenderPages re-renders the given pages (all pages when ids is empty),
 // writing a one-line outcome per page to w. It is the testable core of the
 // rerender command.
-func rerenderPages(st *store.Store, ids []string, w io.Writer) error {
+func rerenderPages(ctx context.Context, st store.Store, ids []string, w io.Writer) error {
 	if len(ids) == 0 {
-		metas, err := st.ListMeta()
+		metas, err := st.ListMeta(ctx)
 		if err != nil {
 			return err
 		}
@@ -56,7 +57,7 @@ func rerenderPages(st *store.Store, ids []string, w io.Writer) error {
 		}
 	}
 	for _, id := range ids {
-		outcome, err := rerenderOne(st, id)
+		outcome, err := rerenderOne(ctx, st, id)
 		if err != nil {
 			return fmt.Errorf("%s: %w", id, err)
 		}
@@ -77,8 +78,8 @@ const (
 // through the legacy upgrader. A graph with a persisted source (graph.json) is
 // re-rendered too; legacy JS graphs are left as-is. Files are overwritten and
 // the version bumped only when the rendered output actually changed.
-func rerenderOne(st *store.Store, id string) (string, error) {
-	p, err := st.Get(id)
+func rerenderOne(ctx context.Context, st store.Store, id string) (string, error) {
+	p, err := st.Get(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -87,9 +88,9 @@ func rerenderOne(st *store.Store, id string) (string, error) {
 		newContent string
 		fromDoc    bool
 	)
-	if st.HasDoc(id) {
+	if st.HasDoc(ctx, id) {
 		fromDoc = true
-		raw, err := st.LoadDoc(id)
+		raw, err := st.LoadDoc(ctx, id)
 		if err != nil {
 			return "", fmt.Errorf("load doc: %w", err)
 		}
@@ -106,8 +107,8 @@ func rerenderOne(st *store.Store, id string) (string, error) {
 	}
 
 	newGraph := p.Graph
-	if st.HasGraphSource(id) {
-		raw, err := st.LoadGraphSource(id)
+	if st.HasGraphSource(ctx, id) {
+		raw, err := st.LoadGraphSource(ctx, id)
 		if err != nil {
 			return "", fmt.Errorf("load graph source: %w", err)
 		}
@@ -131,7 +132,7 @@ func rerenderOne(st *store.Store, id string) (string, error) {
 	if patch.Content == nil && patch.Graph == nil {
 		return outcomeUnchanged, nil
 	}
-	if _, err := st.Update(id, patch); err != nil {
+	if _, err := st.Update(ctx, id, patch); err != nil {
 		return "", fmt.Errorf("update page: %w", err)
 	}
 

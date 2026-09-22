@@ -9,7 +9,9 @@ present/
   cmd/present/         - entrypoint (delegates to internal/cli)
   internal/
     cli/               - cobra command tree: root, serve, mcp, version (build metadata from the shared buildinfo package)
-    store/             - filesystem CRUD over pages/<id>/ (id.go, store.go); Delete is web-index-only, not exposed via MCP
+    store/             - Store interface (create/read/update/list + sources + Ping) with FS, the filesystem
+                         implementation over pages/<id>/ (store.go, doc.go, id.go); WithoutExpired wraps any
+                         Store to hide expired pages; Delete is web-index-only, not exposed via MCP
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
     server/            - HTTP handlers: GET / (static index shell), /api/pages (page list as JSON), /index.js (client index renderer), /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js (embedded client renderer), /p/{id}/version, DELETE /p/{id}; embeds index_shell.html, shell.html, index.js, app.js
     mcpserver/         - MCP wiring + present_* tools

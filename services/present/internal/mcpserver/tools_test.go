@@ -16,7 +16,7 @@ import (
 
 func newTestHandlers(t *testing.T) (*handlers, *[]string) {
 	t.Helper()
-	st, err := store.New(t.TempDir())
+	st, err := store.NewFS(t.TempDir())
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -197,10 +197,10 @@ func TestCreatePersistsDocOnDocInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if !h.store.HasDoc(created.ID) {
+	if !h.store.HasDoc(t.Context(), created.ID) {
 		t.Fatal("doc.json not persisted on Doc-input create")
 	}
-	raw, err := h.store.LoadDoc(created.ID)
+	raw, err := h.store.LoadDoc(t.Context(), created.ID)
 	if err != nil {
 		t.Fatalf("LoadDoc: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestCreateDoesNotPersistDocOnHTMLInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if h.store.HasDoc(created.ID) {
+	if h.store.HasDoc(t.Context(), created.ID) {
 		t.Fatal("doc.json must not be written for legacy HTML input")
 	}
 }
@@ -235,7 +235,7 @@ func TestUpdatePersistsDocOnDocInput(t *testing.T) {
 	ctx := context.Background()
 
 	_, created, _ := h.handleCreate(ctx, nil, createInput{Title: "T", Content: "<p>v1</p>"})
-	if h.store.HasDoc(created.ID) {
+	if h.store.HasDoc(t.Context(), created.ID) {
 		t.Fatal("precondition: legacy page should have no doc.json")
 	}
 	doc := map[string]any{
@@ -246,7 +246,7 @@ func TestUpdatePersistsDocOnDocInput(t *testing.T) {
 	if _, _, err := h.handleUpdate(ctx, nil, updateInput{ID: created.ID, Content: ptrStr(toJSON(doc))}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if !h.store.HasDoc(created.ID) {
+	if !h.store.HasDoc(t.Context(), created.ID) {
 		t.Fatal("doc.json not persisted after updating with Doc content")
 	}
 }
@@ -261,13 +261,13 @@ func TestUpdateClearsStaleDocOnHTMLInput(t *testing.T) {
 		},
 	}
 	_, created, _ := h.handleCreate(ctx, nil, createInput{Title: "T", Content: toJSON(doc)})
-	if !h.store.HasDoc(created.ID) {
+	if !h.store.HasDoc(t.Context(), created.ID) {
 		t.Fatal("precondition: doc-input page should have doc.json")
 	}
 	if _, _, err := h.handleUpdate(ctx, nil, updateInput{ID: created.ID, Content: ptrStr("<p>now html</p>")}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if h.store.HasDoc(created.ID) {
+	if h.store.HasDoc(t.Context(), created.ID) {
 		t.Fatal("stale doc.json should be cleared when content replaced with HTML")
 	}
 }
@@ -724,10 +724,10 @@ func TestCreatePersistsGraphSourceOnStructuredGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if !h.store.HasGraphSource(created.ID) {
+	if !h.store.HasGraphSource(t.Context(), created.ID) {
 		t.Fatal("graph.json not persisted on structured-graph create")
 	}
-	raw, err := h.store.LoadGraphSource(created.ID)
+	raw, err := h.store.LoadGraphSource(t.Context(), created.ID)
 	if err != nil {
 		t.Fatalf("LoadGraphSource: %v", err)
 	}
@@ -748,7 +748,7 @@ func TestCreateDoesNotPersistGraphSourceOnLegacyJS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if h.store.HasGraphSource(created.ID) {
+	if h.store.HasGraphSource(t.Context(), created.ID) {
 		t.Fatal("graph.json must not be written for legacy JS input")
 	}
 }
@@ -763,7 +763,7 @@ func TestUpdateClearsGraphSourceOnLegacyJSAndOnClear(t *testing.T) {
 		nil,
 		createInput{Title: "G", Content: "<p>x</p>", Graph: toJSON(graph)},
 	)
-	if !h.store.HasGraphSource(created.ID) {
+	if !h.store.HasGraphSource(t.Context(), created.ID) {
 		t.Fatal("precondition: structured-graph page should have graph.json")
 	}
 
@@ -771,7 +771,7 @@ func TestUpdateClearsGraphSourceOnLegacyJSAndOnClear(t *testing.T) {
 	if _, _, err := h.handleUpdate(ctx, nil, updateInput{ID: created.ID, Graph: ptrStr("function initGraph(){}")}); err != nil {
 		t.Fatalf("update with JS: %v", err)
 	}
-	if h.store.HasGraphSource(created.ID) {
+	if h.store.HasGraphSource(t.Context(), created.ID) {
 		t.Fatal("stale graph.json should be cleared when graph replaced with JS")
 	}
 
@@ -779,13 +779,13 @@ func TestUpdateClearsGraphSourceOnLegacyJSAndOnClear(t *testing.T) {
 	if _, _, err := h.handleUpdate(ctx, nil, updateInput{ID: created.ID, Graph: ptrStr(toJSON(graph))}); err != nil {
 		t.Fatalf("update with JSON: %v", err)
 	}
-	if !h.store.HasGraphSource(created.ID) {
+	if !h.store.HasGraphSource(t.Context(), created.ID) {
 		t.Fatal("graph.json should be re-persisted on structured update")
 	}
 	if _, _, err := h.handleUpdate(ctx, nil, updateInput{ID: created.ID, Graph: ptrStr("")}); err != nil {
 		t.Fatalf("update clearing graph: %v", err)
 	}
-	if h.store.HasGraphSource(created.ID) {
+	if h.store.HasGraphSource(t.Context(), created.ID) {
 		t.Fatal("graph.json should be cleared when graph is removed")
 	}
 }

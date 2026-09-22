@@ -45,7 +45,7 @@ func withHint[In, Out any](
 
 // handlers carries the dependencies shared by all present tools.
 type handlers struct {
-	store   *store.Store
+	store   store.Store
 	baseURL string
 	open    func(url string) error
 	checks  func(ctx context.Context) []doctor.Check
@@ -225,7 +225,7 @@ type pageOutput struct {
 }
 
 func (h *handlers) handleCreate(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in createInput,
 ) (*mcp.CallToolResult, pageOutput, error) {
@@ -237,22 +237,19 @@ func (h *handlers) handleCreate(
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("graph: %w", err)
 	}
-	p, err := h.store.Create(in.Title, content, graph, toStoreRefs(in.References))
+	// The structured sources ride along (nil for legacy HTML/JS input) so a
+	// future renderer/template change can re-render the page from source and
+	// present_source can hand the source back for edits.
+	p, err := h.store.Create(ctx, store.Draft{
+		Title:       in.Title,
+		Content:     content,
+		Graph:       graph,
+		References:  toStoreRefs(in.References),
+		Doc:         docJSON,
+		GraphSource: graphJSON,
+	})
 	if err != nil {
 		return nil, pageOutput{}, err
-	}
-	// Persist the structured sources (only when the input was structured, not
-	// legacy HTML/JS) so future renderer/template changes can re-render the
-	// page from source and present_source can hand the source back for edits.
-	if docJSON != nil {
-		if err := h.store.SaveDoc(p.ID, docJSON); err != nil {
-			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
-		}
-	}
-	if graphJSON != nil {
-		if err := h.store.SaveGraphSource(p.ID, graphJSON); err != nil {
-			return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
-		}
 	}
 	notify.EmitEvent("present", "info", "page created: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
@@ -299,11 +296,11 @@ type readOutput struct {
 }
 
 func (h *handlers) handleRead(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in readInput,
 ) (*mcp.CallToolResult, readOutput, error) {
-	p, err := h.store.Get(in.ID)
+	p, err := h.store.Get(ctx, in.ID)
 	if err != nil {
 		return nil, readOutput{}, err
 	}
@@ -333,11 +330,11 @@ type sourceOutput struct {
 }
 
 func (h *handlers) handleSource(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in sourceInput,
 ) (*mcp.CallToolResult, sourceOutput, error) {
-	p, err := h.store.Get(in.ID)
+	p, err := h.store.Get(ctx, in.ID)
 	if err != nil {
 		return nil, sourceOutput{}, err
 	}
@@ -346,7 +343,7 @@ func (h *handlers) handleSource(
 		References: fromStoreRefs(p.References),
 		Version:    p.Version, URL: h.url(p.ID),
 	}
-	doc, err := h.store.LoadDoc(in.ID)
+	doc, err := h.store.LoadDoc(ctx, in.ID)
 	switch {
 	case err == nil:
 		out.ContentFormat, out.Content = "doc", string(doc)
@@ -356,7 +353,7 @@ func (h *handlers) handleSource(
 		return nil, sourceOutput{}, err
 	}
 	if p.HasGraph {
-		src, err := h.store.LoadGraphSource(in.ID)
+		src, err := h.store.LoadGraphSource(ctx, in.ID)
 		switch {
 		case err == nil:
 			out.GraphFormat, out.Graph = "json", string(src)
@@ -380,7 +377,7 @@ type updateInput struct {
 }
 
 func (h *handlers) handleUpdate(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in updateInput,
 ) (*mcp.CallToolResult, pageOutput, error) {
@@ -429,29 +426,29 @@ func (h *handlers) handleUpdate(
 		patch.References = &refs
 	}
 
-	p, err := h.store.Update(in.ID, patch)
+	p, err := h.store.Update(ctx, in.ID, patch)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
 	switch {
 	case contentIsDoc:
-		if err := h.store.SaveDoc(p.ID, newDocJSON); err != nil {
+		if err := h.store.SaveDoc(ctx, p.ID, newDocJSON); err != nil {
 			return nil, pageOutput{}, fmt.Errorf("save doc: %w", err)
 		}
 	case clearDoc:
-		if err := h.store.DeleteDoc(p.ID); err != nil {
+		if err := h.store.DeleteDoc(ctx, p.ID); err != nil {
 			return nil, pageOutput{}, fmt.Errorf("clear doc: %w", err)
 		}
 	}
 	if in.Graph != nil {
 		if graphIsJSON {
-			if err := h.store.SaveGraphSource(p.ID, newGraphJSON); err != nil {
+			if err := h.store.SaveGraphSource(ctx, p.ID, newGraphJSON); err != nil {
 				return nil, pageOutput{}, fmt.Errorf("save graph source: %w", err)
 			}
 		} else {
 			// Graph cleared or replaced with legacy JS: any prior graph.json is
 			// now stale and would mislead a later re-render.
-			if err := h.store.DeleteGraphSource(p.ID); err != nil {
+			if err := h.store.DeleteGraphSource(ctx, p.ID); err != nil {
 				return nil, pageOutput{}, fmt.Errorf("clear graph source: %w", err)
 			}
 		}
@@ -477,11 +474,11 @@ type listOutput struct {
 }
 
 func (h *handlers) handleList(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	_ struct{},
 ) (*mcp.CallToolResult, listOutput, error) {
-	pages, err := h.store.ListMeta()
+	pages, err := h.store.ListMeta(ctx)
 	if err != nil {
 		return nil, listOutput{}, err
 	}
@@ -508,12 +505,12 @@ type openOutput struct {
 }
 
 func (h *handlers) handleOpen(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	in openInput,
 ) (*mcp.CallToolResult, openOutput, error) {
 	// Confirm the page exists before launching a browser at a dead URL.
-	if _, err := h.store.Get(in.ID); err != nil {
+	if _, err := h.store.Get(ctx, in.ID); err != nil {
 		return nil, openOutput{}, err
 	}
 	url := h.url(in.ID)

@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-func newTestStore(t *testing.T) *Store {
+func newTestStore(t *testing.T) *FS {
 	t.Helper()
-	s, err := New(t.TempDir())
+	s, err := NewFS(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -19,7 +19,7 @@ func newTestStore(t *testing.T) *Store {
 
 func TestCreatePersistsAndReturnsID(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.Create("My Brief", "<p>body</p>", "", nil)
+	p, err := s.Create(t.Context(), Draft{Title: "My Brief", Content: "<p>body</p>"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -44,35 +44,38 @@ func TestCreatePersistsAndReturnsID(t *testing.T) {
 
 func TestDeleteRemovesPage(t *testing.T) {
 	s := newTestStore(t)
-	p, err := s.Create("Doomed", "<p>body</p>", "", nil)
+	p, err := s.Create(t.Context(), Draft{Title: "Doomed", Content: "<p>body</p>"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.Delete(p.ID); err != nil {
+	if err := s.Delete(t.Context(), p.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if _, err := os.Stat(s.pageDir(p.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("page dir still exists after delete: %v", err)
 	}
-	if _, err := s.Get(p.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Get(t.Context(), p.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get after delete = %v, want ErrNotFound", err)
 	}
 }
 
 func TestDeleteNotFound(t *testing.T) {
 	s := newTestStore(t)
-	if err := s.Delete("nope"); !errors.Is(err, ErrNotFound) {
+	if err := s.Delete(t.Context(), "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Delete = %v, want ErrNotFound", err)
 	}
 }
 
 func TestGetRoundTrips(t *testing.T) {
 	s := newTestStore(t)
-	created, err := s.Create("Title", "<p>hello</p>", "cy.init();", nil)
+	created, err := s.Create(
+		t.Context(),
+		Draft{Title: "Title", Content: "<p>hello</p>", Graph: "cy.init();"},
+	)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	got, err := s.Get(created.ID)
+	got, err := s.Get(t.Context(), created.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -86,17 +89,17 @@ func TestGetRoundTrips(t *testing.T) {
 
 func TestGetNotFound(t *testing.T) {
 	s := newTestStore(t)
-	if _, err := s.Get("deadbeef00"); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Get(t.Context(), "deadbeef00"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get unknown id: err = %v, want ErrNotFound", err)
 	}
 }
 
 func TestUpdatePatchesAndBumpsVersion(t *testing.T) {
 	s := newTestStore(t)
-	created, _ := s.Create("Original", "<p>v1</p>", "", nil)
+	created, _ := s.Create(t.Context(), Draft{Title: "Original", Content: "<p>v1</p>"})
 
 	newContent := "<p>v2</p>"
-	got, err := s.Update(created.ID, Patch{Content: &newContent})
+	got, err := s.Update(t.Context(), created.ID, Patch{Content: &newContent})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -113,7 +116,7 @@ func TestUpdatePatchesAndBumpsVersion(t *testing.T) {
 		t.Fatalf("CreatedAt changed: %v -> %v", created.CreatedAt, got.CreatedAt)
 	}
 	// Persisted, not just returned.
-	reloaded, _ := s.Get(created.ID)
+	reloaded, _ := s.Get(t.Context(), created.ID)
 	if reloaded.Version != 2 || reloaded.Content != newContent {
 		t.Fatalf("update not persisted: %+v", reloaded)
 	}
@@ -121,9 +124,9 @@ func TestUpdatePatchesAndBumpsVersion(t *testing.T) {
 
 func TestUpdateClearsGraphWithEmptyString(t *testing.T) {
 	s := newTestStore(t)
-	created, _ := s.Create("T", "<p>x</p>", "cy.init();", nil)
+	created, _ := s.Create(t.Context(), Draft{Title: "T", Content: "<p>x</p>", Graph: "cy.init();"})
 	empty := ""
-	got, err := s.Update(created.ID, Patch{Graph: &empty})
+	got, err := s.Update(t.Context(), created.ID, Patch{Graph: &empty})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -135,7 +138,10 @@ func TestUpdateClearsGraphWithEmptyString(t *testing.T) {
 func TestUpdateNotFound(t *testing.T) {
 	s := newTestStore(t)
 	title := "x"
-	if _, err := s.Update("nope000000", Patch{Title: &title}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Update(t.Context(), "nope000000", Patch{Title: &title}); !errors.Is(
+		err,
+		ErrNotFound,
+	) {
 		t.Fatalf("Update unknown id: err = %v, want ErrNotFound", err)
 	}
 }
@@ -147,11 +153,11 @@ func TestListSortedByUpdatedDesc(t *testing.T) {
 	tick := 0
 	s.now = func() time.Time { tick++; return base.Add(time.Duration(tick) * time.Minute) }
 
-	a, _ := s.Create("A", "<p>a</p>", "", nil) // t+1
-	b, _ := s.Create("B", "<p>b</p>", "", nil) // t+2
-	c, _ := s.Create("C", "<p>c</p>", "", nil) // t+3
+	a, _ := s.Create(t.Context(), Draft{Title: "A", Content: "<p>a</p>"}) // t+1
+	b, _ := s.Create(t.Context(), Draft{Title: "B", Content: "<p>b</p>"}) // t+2
+	c, _ := s.Create(t.Context(), Draft{Title: "C", Content: "<p>c</p>"}) // t+3
 
-	pages, err := s.List()
+	pages, err := s.List(t.Context())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -172,7 +178,10 @@ func TestCreateWithReferences(t *testing.T) {
 		{Title: "dotfiles repo", URL: "https://github.com/mad01/dotfiles"},
 		{Title: "Go docs", URL: "https://pkg.go.dev"},
 	}
-	p, err := s.Create("With Refs", "<p>body</p>", "", refs)
+	p, err := s.Create(
+		t.Context(),
+		Draft{Title: "With Refs", Content: "<p>body</p>", References: refs},
+	)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -183,7 +192,7 @@ func TestCreateWithReferences(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, refsFile)); err != nil {
 		t.Fatalf("refs.json should exist: %v", err)
 	}
-	got, _ := s.Get(p.ID)
+	got, _ := s.Get(t.Context(), p.ID)
 	if len(got.References) != 2 || got.References[0].Title != "dotfiles repo" {
 		t.Fatalf("round-trip refs mismatch: %+v", got.References)
 	}
@@ -191,12 +200,12 @@ func TestCreateWithReferences(t *testing.T) {
 
 func TestUpdatePatchesReferences(t *testing.T) {
 	s := newTestStore(t)
-	p, _ := s.Create("T", "<p>x</p>", "", nil)
+	p, _ := s.Create(t.Context(), Draft{Title: "T", Content: "<p>x</p>"})
 	if p.HasRefs {
 		t.Fatal("HasRefs should be false initially")
 	}
 	refs := []Reference{{Title: "PR #1", URL: "https://github.com/mad01/dotfiles/pull/1"}}
-	got, err := s.Update(p.ID, Patch{References: &refs})
+	got, err := s.Update(t.Context(), p.ID, Patch{References: &refs})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -204,7 +213,7 @@ func TestUpdatePatchesReferences(t *testing.T) {
 		t.Fatalf("refs not patched: HasRefs=%v len=%d", got.HasRefs, len(got.References))
 	}
 	empty := []Reference{}
-	got2, _ := s.Update(p.ID, Patch{References: &empty})
+	got2, _ := s.Update(t.Context(), p.ID, Patch{References: &empty})
 	if got2.HasRefs || len(got2.References) != 0 {
 		t.Fatalf("refs not cleared: HasRefs=%v len=%d", got2.HasRefs, len(got2.References))
 	}
@@ -212,7 +221,7 @@ func TestUpdatePatchesReferences(t *testing.T) {
 
 func TestListEmpty(t *testing.T) {
 	s := newTestStore(t)
-	pages, err := s.List()
+	pages, err := s.List(t.Context())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
