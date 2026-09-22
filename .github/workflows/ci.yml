@@ -42,7 +42,6 @@ jobs:
             services/keeper-of-facts
             services/events
             services/deps
-            services/wire
             services/present
             services/speak
             services/status

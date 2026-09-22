@@ -98,7 +98,7 @@ Pull the prose out of Go source and scan it. Doc comments, cobra command fields,
 ```sh
 humanizer scan --go internal/cli/detect.go
 humanizer scan --go ./services/ | humanizer detect
-humanizer scan --go --detect ./services/wire/
+humanizer scan --go --detect ./services/events/
 ```
 
 | Flag | Description |

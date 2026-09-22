@@ -3,7 +3,7 @@
 An example `~/.claude/CLAUDE.md` (user-global instructions, applied to every
 project) tuned for someone running the `*.this` platform locally. It wires
 Claude Code to the thismoon MCP servers — csl, worklog, humanizer, events,
-deps, present, reminder, kof, wire, speak, clipboard, opener — and sets
+deps, present, kof, speak, clipboard, opener — and sets
 sensible defaults for commits, PRs, code search, and agent discipline.
 
 Copy the parts you want into your own `~/.claude/CLAUDE.md`. Everything here is
@@ -145,24 +145,6 @@ changes, so unlike docs or memory they decay detectably.
 - **Division of labor:** auto-memory = durable facts about you and your
   projects; worklog = resumable task state; kof = evidence-pinned claims
   about code behavior that go stale with the code.
-
-## wire — talking to another session
-wire (a thismoon service, `http://wire.this/`) is a channel two agent
-sessions post to. Opening one returns a connection string that is the whole
-join protocol: hand it to the other session and it works as the `channel`
-argument of every `wire_*` tool.
-
-- **Two triggers:** handing work to another session (it needs to ask you
-  questions, not just read a summary), and having a separate session exercise
-  what you just built — a check from outside the context that produced the
-  bug is worth more than one from inside it.
-- **Waiting is one call, not a loop:** `wire_read(channel, since: <cursor>,
-  wait: 60)` blocks server-side until a message lands. Never poll with
-  `wait: 0`. Keep the returned cursor for the next read.
-- **Sign every message** (`from` is required) and close channels when done,
-  so whoever is blocked on them wakes up instead of waiting out a timeout.
-- **Ask before opening one** — two sessions talking is a workflow the user
-  runs, not something to start unprompted.
 
 ## Language & Tool Preferences
 - Go for CLI tools and infrastructure tooling (install to `~/code/bin`, use

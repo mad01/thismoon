@@ -60,8 +60,8 @@ The weaver classifies each worktree from git alone:
 
 Default order is oldest ready branch first. When one branch builds on
 another, the dependent branch is rebased onto its parent by its owner and
-becomes ready only after the parent lands — dependencies are stated on the
-wire channel or by the user, not stored anywhere.
+becomes ready only after the parent lands — dependencies are stated by the
+user, not stored anywhere.
 
 Per ready branch, in its own worktree:
 
@@ -100,13 +100,6 @@ administrative entries left by a worktree removed by hand.
 Before removing a worktree, harvest anything durable that points into it:
 evidence-pinned assertions (kof) record absolute paths, so a pin made in a
 worktree dies with it — re-pin against the canonical checkout.
-
-## Doorbell, optional
-
-Surveying on demand works. When sessions are live at the same time, the
-weaver can open a wire channel and share the connection string; an owner
-posts its branch name when it goes ready, and the weaver's blocking
-`wire_read` wakes immediately instead of waiting for the next survey.
 
 ## Known frictions
 

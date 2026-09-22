@@ -15,7 +15,6 @@
     "services/present": { "component": "present" },
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },
-    "services/wire": { "component": "wire" },
     "tools/belt": { "component": "belt" },
     "tools/clipboard": { "component": "clipboard" },
     "tools/humanizer": { "component": "humanizer" },

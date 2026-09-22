@@ -6,7 +6,7 @@ Panic, `init()`, enums, embedding, type assertions, and time values — the lang
 
 Expected failures (missing file, bad input, network error) return an `error`. `panic` is reserved for conditions that mean the program itself is broken and cannot continue safely:
 
-- A must-succeed primitive failing: the ID generators panic when `crypto/rand` fails (`present/internal/store/id.go`: `panic("present: crypto/rand failed: " + err.Error())`) — same pattern in `keeper-of-facts`, `events`, and `wire`.
+- A must-succeed primitive failing: the ID generators panic when `crypto/rand` fails (`present/internal/store/id.go`: `panic("present: crypto/rand failed: " + err.Error())`) — same pattern in `keeper-of-facts` and `events`.
 - A build-time asset missing at startup: `d-man`'s blockpage panics when its embedded `index.html` isn't in the binary (`blockpage.go`).
 
 Panic messages are package-prefixed like sentinel errors. Never panic on user input or I/O results, and never use panic/recover as control flow. The codebase has no `recover` — if you think you need one (a server that must survive a misbehaving handler), it goes at one top-level boundary only, and `net/http` already provides that for handlers.

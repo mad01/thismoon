@@ -84,7 +84,6 @@ address, managed as launchd agents by t-man.
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | proven |
 | [catalog](services/catalog/README.md) | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |
-| [wire](services/wire/README.md) | Channels agent sessions talk over, two of them or ten, with blocking reads | web · CLI · MCP | experimental |
 
 ## Tools
 
