@@ -87,4 +87,4 @@ values mean an old process is still serving: `t-man restart present`. Not
 4. Wrong-looking page: `present_source`, check it against the content rules
    above, then `present_update`
 5. Failed share: retry from the Share button or `present share <id>`;
-   present_share may be running inside a no-network seatbelt profile
+   the MCP sandbox lets present_share reach only an https:// shared URL

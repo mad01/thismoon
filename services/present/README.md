@@ -139,12 +139,14 @@ controls locally. A webkit change ships at the next build; run
 renderer.
 
 MCP + sandbox. The MCP server runs inside a seatbelt profile
-(`recipes/present/present.sb`): no network at all, `$HOME` reads
-default-denied except `~/code/bin` and `~/.config/present`. Writes are
-confined to `~/.config/present` and temp. The sandbox shouldn't affect
-normal page operations, but it does block `present_share` until the profile
-allows the shared host; the Share button and `present share` run outside the
-sandbox and work regardless. If any other MCP tool fails, check sandbox
+(`recipes/present/present.sb`): outbound HTTPS and DNS only (for
+`present_share`) plus the local events port, `$HOME` reads default-denied
+except `~/code/bin` and `~/.config/present`, writes confined to
+`~/.config/present` and temp. The wrapper reads `PRESENT_SHARED_URL` and
+`PRESENT_AUTHOR_KEY` from the ralph-managed secrets file, so `present_share`
+works with an `https://` shared URL and fails with a connection error on a
+plain-http one; the Share button and `present share` run outside the
+sandbox and take any URL. If any other MCP tool fails, check sandbox
 denials:
 
 ```bash

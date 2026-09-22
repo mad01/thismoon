@@ -169,5 +169,8 @@ present share <id>                                # the same push from a shell
 
 Both variables have to reach every process that shares: `present serve` for
 the Share button, `present mcp` for `present_share`, and the shell that runs
-`present share`. A shared instance never sets them; it is where pages land,
-not where they come from.
+`present share`. On a ralph-provisioned machine one place covers all three:
+the recipe's serve launcher and MCP wrapper read exactly these two exports
+from the ralph-managed secrets file, and the login shell sources it. A
+shared instance never sets them; it is where pages land, not where they
+come from.
