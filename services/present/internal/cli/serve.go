@@ -1,51 +1,190 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/kit/envdefault"
+	present "github.com/mad01/thismoon/services/present"
+	"github.com/mad01/thismoon/services/present/internal/mcpserver"
 	"github.com/mad01/thismoon/services/present/internal/server"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
+var (
+	flagShared bool
+	flagBind   string
+)
+
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Run the local HTTP server that serves presentation pages",
-	Long: `Serve presentation pages over HTTP on localhost. The index (/) lists all
-pages and /p/<id> serves a single page; both are static chrome-only shells that
-render client-side, fetching the page list from /api/pages and each page from
+	Short: "Run the HTTP server that serves presentation pages",
+	Long: `Serve presentation pages over HTTP. The index (/) lists all pages and
+/p/<id> serves a single page; both are static chrome-only shells that render
+client-side, fetching the page list from /api/pages and each page from
 /api/p/<id> as JSON. Pages are read fresh on every request and open tabs poll
 for version changes, so content updates appear without a restart.
 
 Typically run as a background service:
-  t-man add --name present -- present serve --port 7423`,
+  t-man add --name present -- present serve --port 7423
+
+--shared turns the same binary into a network-facing shared instance: there
+is no index and no listing, a page is reachable only by the id it was created
+with, every write needs the caller's author key as a bearer token, and the
+present_* tools are served over HTTP at /mcp (present_create, present_read,
+present_source, present_update, present_doctor). Shared mode never binds
+implicitly: pass --bind (0.0.0.0 inside a container, 127.0.0.1 to try it on
+this machine). Local mode refuses any bind but loopback, because it
+authenticates nothing.`,
 	RunE: runServe,
 }
 
 func init() {
+	serveCmd.Flags().BoolVar(&flagShared, "shared",
+		envdefault.Bool("PRESENT_SHARED", false),
+		"run as a shared instance: pages by id only, author keys on writes, MCP at /mcp (env PRESENT_SHARED)")
+	serveCmd.Flags().StringVar(&flagBind, "bind",
+		envdefault.String("PRESENT_BIND", present.DefaultBind),
+		"interface to listen on (env PRESENT_BIND); shared mode requires it explicitly")
 	rootCmd.AddCommand(serveCmd)
 }
 
-func runServe(_ *cobra.Command, _ []string) error {
-	st, err := store.NewFS(flagWorkdir)
+func runServe(cmd *cobra.Command, _ []string) error {
+	bindExplicit := cmd.Flags().Changed("bind") || os.Getenv("PRESENT_BIND") != ""
+	if err := checkBind(flagShared, flagBind, bindExplicit); err != nil {
+		return err
+	}
+	fs, err := store.NewFS(flagWorkdir)
 	if err != nil {
 		return err
 	}
-	handler := server.New(st, server.Options{Workdir: flagWorkdir, Info: buildinfo.Get()}).Handler()
-	log.Printf("present: serving %s on http://localhost:%d", flagWorkdir, flagPort)
-	return http.ListenAndServe(listenAddr(flagPort), handler)
+	var st store.Store = fs
+	opts := server.Options{Workdir: flagWorkdir, Info: buildinfo.Get(), BaseURL: flagBaseURL}
+	mode := "local"
+	if flagShared {
+		mode = "shared"
+		st = store.WithoutExpired(fs, time.Now)
+		opts.Mode = server.ModeShared
+		opts.MCP, err = sharedMCP(st)
+		if err != nil {
+			return err
+		}
+		log.Printf("present: shared mode on the filesystem store; run one replica only")
+	}
+	handler := server.New(st, opts).Handler()
+	addr := bindAddr(flagBind, flagPort)
+	log.Printf("present: serving %s on http://%s (%s mode)", flagWorkdir, addr, mode)
+	return serveUntilSignal(addr, handler)
 }
 
-// listenAddr builds the bind address for the HTTP server. It pins the loopback
-// interface explicitly: a bare ":<port>" would listen on 0.0.0.0 (all
-// interfaces), exposing pages to anything that can route to this machine —
-// other devices on the LAN, VPN peers. Pages hold work and research summaries
-// and nothing authenticates requests, so the server must stay reachable only
-// from localhost, matching the http://localhost URLs the MCP hands out.
+// sharedMCP builds the tool server a shared instance mounts at /mcp. One
+// server instance serves every request: the transport is stateless, so no
+// session lives on this replica, and each tool call carries its own HTTP
+// headers (the author key and the forwarded host).
+func sharedMCP(st store.Store) (http.Handler, error) {
+	srv, err := mcpserver.New(buildinfo.Get().Version, mcpserver.Config{
+		Store:   st,
+		Mode:    mcpserver.ModeShared,
+		BaseURL: flagBaseURL,
+		Port:    flagPort,
+		Checks:  sharedChecks(st),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return srv },
+		&mcp.StreamableHTTPOptions{Stateless: true},
+	), nil
+}
+
+// sharedChecks is the doctor set a shared instance answers present_doctor
+// with: the tools run inside the serving process, so reachability and skew
+// mean nothing there and the store is the one thing that can be down.
+func sharedChecks(st store.Store) func(context.Context) []doctor.Check {
+	return func(context.Context) []doctor.Check {
+		return []doctor.Check{{Name: "store-reachable", Run: st.Ping}}
+	}
+}
+
+// serveUntilSignal runs the server until SIGINT or SIGTERM, then drains
+// in-flight requests before returning. A rolling update sends SIGTERM and
+// waits; an abrupt exit there turns a deploy into a burst of reset
+// connections.
+func serveUntilSignal(addr string, handler http.Handler) error {
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		log.Printf("present: shutting down")
+		drain, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(drain); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
+}
+
+// checkBind enforces the bind posture. Local mode authenticates nothing, so
+// it may only listen on loopback; shared mode is meant to be reached over a
+// network, so it must be told where to listen rather than guess.
+func checkBind(shared bool, bind string, explicit bool) error {
+	if shared {
+		if !explicit {
+			return errors.New("shared mode needs an explicit --bind (or PRESENT_BIND): " +
+				"0.0.0.0 inside a container, 127.0.0.1 to test on this machine")
+		}
+		return nil
+	}
+	if !isLoopback(bind) {
+		return fmt.Errorf(
+			"local mode authenticates nothing, so --bind must stay on loopback (got %q); "+
+				"use --shared for a network-facing instance",
+			bind,
+		)
+	}
+	return nil
+}
+
+func isLoopback(bind string) bool {
+	if bind == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
+}
+
+// bindAddr joins the interface and port into a listen address.
+func bindAddr(bind string, port int) string {
+	return net.JoinHostPort(bind, strconv.Itoa(port))
+}
+
+// listenAddr is the local-mode listen address: the loopback interface,
+// explicitly. A bare ":<port>" would listen on 0.0.0.0 (all interfaces),
+// exposing pages to anything that can route to this machine, and local mode
+// authenticates no request.
 func listenAddr(port int) string {
-	return fmt.Sprintf("127.0.0.1:%d", port)
+	return bindAddr(present.DefaultBind, port)
 }

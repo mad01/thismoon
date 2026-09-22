@@ -12,9 +12,11 @@ present/
     store/             - Store interface (create/read/update/list + sources + Ping) with FS, the filesystem
                          implementation over pages/<id>/ (store.go, doc.go, id.go); WithoutExpired wraps any
                          Store to hide expired pages; Delete is web-index-only, not exposed via MCP
+    author/            - author keys for the shared instance: NewKey, Hash, FromHeader (bearer), Check (ErrMissing→401, ErrMismatch→403)
+    baseurl/           - public base URL from X-Forwarded-Proto/Host: Middleware fills them from the request, FromHeader derives scheme://host
     render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
-    server/            - HTTP handlers: GET / (static index shell), /api/pages (page list as JSON), /index.js (client index renderer), /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js (embedded client renderer), /p/{id}/version, DELETE /p/{id}; embeds index_shell.html, shell.html, index.js, app.js
-    mcpserver/         - MCP wiring + present_* tools
+    server/            - HTTP handlers per Mode: local = GET / (static index shell), /api/pages (page list as JSON), /index.js; shared = GET / (how-to shell), POST /api/pages, PUT /api/p/{id}, GET /api/whoami, /mcp; both = /p/{id} (static shell.html), /api/p/{id} (page as JSON), /app.js, /p/{id}/version, DELETE /p/{id} (author-checked when shared); embeds index_shell.html, shared_index_shell.html, shell.html, index.js, app.js
+    mcpserver/         - MCP wiring + present_* tools; Mode picks the tool set and whether the bearer/forwarded headers on req.Extra.Header are read
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
 
@@ -22,6 +24,7 @@ present/
 
 - **`present mcp`** (stdio MCP server): tools write/read pages under the workdir. Never serves HTTP.
 - **`present serve`** (HTTP server): serves the static shell + `app.js` for page views (the browser fetches `GET /api/p/{id}` and renders), and the static index shell + `index.js` for the index (the browser fetches `GET /api/pages` and renders).
+- **`present serve --shared`** (shared instance): one process, meant for several replicas in Kubernetes. No index or listing; pages by 32-hex capability id; every write needs an author key as a bearer token (`internal/author`); ephemeral pages expire 30 days after their last write (`present.SharedTTL`, hidden by `store.WithoutExpired` until the sweeper deletes them); the tool server is mounted at `/mcp` via `mcp.NewStreamableHTTPHandler` in stateless mode with one `*mcp.Server` for all requests. Requires an explicit `--bind`; local mode refuses any bind but loopback (`checkBind` in `serve.go`).
 - Both share the workdir and port (`7423`), set via `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`. URLs the MCP returns point at the serve port. The workdir default is sticky: `~/.config/present` while that directory exists, else `~/.local/state/present` (`confdir.StateDir`) — pages are never migrated, so an existing store keeps being read. The recipe and the MCP sandbox wrapper both set it explicitly anyway.
 
 ## Data model & storage
@@ -74,6 +77,8 @@ bump or renderer change that alters emitted markup.
 - `present_list()` → all pages (metadata only, no content), newest first; `has_doc` flags source-editable pages
 - `present_open(id)` → macOS `open` (call once per page; updates auto-reload)
 - `present_doctor()` → the `kit/doctor` report: store readable, serve reachable, no version skew; for a client that can call a tool but has no shell
+
+On a shared instance the set is `present_create` (plus an `ephemeral` bool; the bearer becomes the page's author), `present_read`, `present_source`, `present_update` (author-checked; resets an ephemeral page's expiry), and `present_doctor` (store ping only). No `present_list`, no `present_open`. URLs come from the request's forwarded headers unless `--base-url` overrides them.
 
 ## Shared UI: webkit
 
@@ -200,6 +205,10 @@ confirms which embedded webkit assets the running present server serves.
 - **Client render uses webkit's shared helpers.** `app.js` builds the DOM with `Webkit.el` / `Webkit.escapeHtml` and polls `/p/{id}/version` for live-reload via `Webkit.poll` (webkit shared helpers). Decision recorded in `docs/adr/0005-webkit-client-side-rendering.md`.
 - **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/fixation are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-fixation`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
 - **Codesign for MCP.** macOS kills adhoc-signed binaries with stale provenance xattrs; `make install` re-signs.
+- **Bearer and host reach tool handlers through `req.Extra.Header`.** The go-sdk streamable HTTP transport copies the HTTP request headers onto every `CallToolRequest`, stateless mode included, so one server instance serves all replicas and nothing is threaded through context. `header(req)` in `tools.go` is nil-safe because stdio and tests pass no request.
+- **Go promotes `Host` out of `r.Header`.** A tool handler only sees the header map, so `baseurl.Middleware` copies `r.Host`/`r.TLS` into `X-Forwarded-Host`/`X-Forwarded-Proto` when the ingress did not set them; `baseurl.FromHeader` then works for HTTP handlers and tools alike.
+- **Expiry lives in a store decorator.** `store.WithoutExpired` turns an expired page into `ErrNotFound` on every call, so shared handlers carry no expiry branches. The sweeper (k8s store) must use the raw store, or it can never see what it should delete.
+- **`sharedCreateInput` embeds `createInput`.** The schema generator inlines the embedded struct, so the shared tool exposes every create field plus `ephemeral`; keep it embedded rather than copying the field list.
 - **Version probe.** `GET /version` and `present version -o json` both return the shared four-key build metadata object (`version`, `commit`, `tag`, `build_time`, every key present and `""` when unknown) from `github.com/mad01/thismoon/buildinfo`, the cross-tool convention `ralph outdated` uses. Plain `present version` stays a bare token — status parses it as one. The recipe bakes this sha into the t-man service env so a new build reloads the running `serve` agent automatically. Not to be confused with `GET /p/{id}/version`, the per-page revision counter `app.js` polls for live reload.
 
 ## See also

@@ -47,3 +47,25 @@ func intFrom(w io.Writer, name string, fallback int) int {
 	}
 	return n
 }
+
+// Bool returns the boolean value of the environment variable name, or
+// fallback when it is unset, empty, or does not parse. It accepts the forms
+// strconv.ParseBool does (1, t, true, 0, f, false, in any case). A set value
+// that does not parse warns once on stderr like Int.
+func Bool(name string, fallback bool) bool {
+	return boolFrom(os.Stderr, name, fallback)
+}
+
+// boolFrom is Bool with the warning sink injected so tests can read it.
+func boolFrom(w io.Writer, name string, fallback bool) bool {
+	v, ok := os.LookupEnv(name)
+	if !ok || v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		fmt.Fprintf(w, "%s: unparseable value %q, using default %t\n", name, v, fallback)
+		return fallback
+	}
+	return b
+}

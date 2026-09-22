@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/kit/notify"
 	present "github.com/mad01/thismoon/services/present"
+	"github.com/mad01/thismoon/services/present/internal/author"
+	"github.com/mad01/thismoon/services/present/internal/baseurl"
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
@@ -43,27 +47,47 @@ func withHint[In, Out any](
 	}
 }
 
-// handlers carries the dependencies shared by all present tools.
+// handlers carries the dependencies shared by all present tools. baseURL is
+// the fixed URL prefix locally and the display override on a shared
+// instance, where an empty value means derive from the request.
 type handlers struct {
 	store   store.Store
+	mode    Mode
 	baseURL string
+	now     func() time.Time
 	open    func(url string) error
 	checks  func(ctx context.Context) []doctor.Check
 }
 
+// createAnnotations is shared by both create tools.
+var createAnnotations = &mcp.ToolAnnotations{
+	DestructiveHint: new(false),
+	IdempotentHint:  false,
+	OpenWorldHint:   new(false),
+}
+
 func registerTools(s *mcp.Server, h *handlers) {
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "present_create",
-		Description: "Create a new presentation page and return its id and URL. " +
-			"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
-			"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
-			"Keep the returned id; it is the handle for present_update/present_read/present_open.",
-		Annotations: &mcp.ToolAnnotations{
-			DestructiveHint: new(false),
-			IdempotentHint:  false,
-			OpenWorldHint:   new(false),
-		},
-	}, withHint(h.handleCreate))
+	if h.mode == ModeShared {
+		mcp.AddTool(s, &mcp.Tool{
+			Name: "present_create",
+			Description: "Create a page on this shared instance and return its id and URL. " +
+				"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
+				"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
+				"Set `ephemeral` to have the page expire 30 days after its last update; otherwise it stays until deleted. " +
+				"The author key this connection sends as its bearer token becomes the page's author; only it can update the page. " +
+				"Keep the returned URL: nothing on this instance lists pages.",
+			Annotations: createAnnotations,
+		}, withHint(h.handleCreateShared))
+	} else {
+		mcp.AddTool(s, &mcp.Tool{
+			Name: "present_create",
+			Description: "Create a new presentation page and return its id and URL. " +
+				"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
+				"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
+				"Keep the returned id; it is the handle for present_update/present_read/present_open.",
+			Annotations: createAnnotations,
+		}, withHint(h.handleCreate))
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "present_read",
@@ -98,27 +122,31 @@ func registerTools(s *mcp.Server, h *handlers) {
 		},
 	}, withHint(h.handleUpdate))
 
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "present_list",
-		Description: "List all presentations (id, title, URL, version, last updated), newest first.",
-		Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint:  true,
-			OpenWorldHint: new(false),
-		},
-	}, withHint(h.handleList))
+	// A shared instance lists nothing (pages are reachable by id alone) and
+	// has no browser to open.
+	if h.mode == ModeLocal {
+		mcp.AddTool(s, &mcp.Tool{
+			Name:        "present_list",
+			Description: "List all presentations (id, title, URL, version, last updated), newest first.",
+			Annotations: &mcp.ToolAnnotations{
+				ReadOnlyHint:  true,
+				OpenWorldHint: new(false),
+			},
+		}, withHint(h.handleList))
 
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "present_open",
-		Description: "Open a presentation in the default browser (macOS `open`). " +
-			"Call this AT MOST ONCE per presentation: after the tab is open, present_update triggers an automatic reload, " +
-			"so don't call present_open again for subsequent edits. " +
-			"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
-		Annotations: &mcp.ToolAnnotations{
-			DestructiveHint: new(false),
-			IdempotentHint:  false,
-			OpenWorldHint:   new(false),
-		},
-	}, withHint(h.handleOpen))
+		mcp.AddTool(s, &mcp.Tool{
+			Name: "present_open",
+			Description: "Open a presentation in the default browser (macOS `open`). " +
+				"Call this AT MOST ONCE per presentation: after the tab is open, present_update triggers an automatic reload, " +
+				"so don't call present_open again for subsequent edits. " +
+				"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
+			Annotations: &mcp.ToolAnnotations{
+				DestructiveHint: new(false),
+				IdempotentHint:  false,
+				OpenWorldHint:   new(false),
+			},
+		}, withHint(h.handleOpen))
+	}
 
 	// Not wrapped in withHint: the hint says to run `present doctor`, which is
 	// exactly what this tool already did.
@@ -137,8 +165,35 @@ func registerTools(s *mcp.Server, h *handlers) {
 	}, h.handleDoctor)
 }
 
-func (h *handlers) url(id string) string {
-	return h.baseURL + "/p/" + id
+// header returns the HTTP headers behind a tool call, which the streamable
+// HTTP transport attaches to every request. Nil over stdio and in tests
+// that pass no request.
+func header(req *mcp.CallToolRequest) http.Header {
+	if req == nil || req.Extra == nil {
+		return nil
+	}
+	return req.Extra.Header
+}
+
+// url is the public URL of a page for the caller: the fixed prefix locally,
+// the origin the request arrived on (or the override) on a shared instance.
+func (h *handlers) url(req *mcp.CallToolRequest, id string) string {
+	base := h.baseURL
+	if h.mode == ModeShared {
+		if derived := baseurl.FromHeader(header(req), h.baseURL); derived != "" {
+			base = derived
+		}
+	}
+	return base + "/p/" + id
+}
+
+// expiry returns when an ephemeral page touched now expires, or nil.
+func (h *handlers) expiry(ephemeral bool) *time.Time {
+	if !ephemeral {
+		return nil
+	}
+	t := h.now().UTC().Add(present.SharedTTL)
+	return &t
 }
 
 // resolveContent detects whether s is a Doc JSON object or a legacy HTML
@@ -218,16 +273,52 @@ type createInput struct {
 	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
 }
 
+// sharedCreateInput is createInput plus the one choice a shared page adds.
+type sharedCreateInput struct {
+	createInput
+	Ephemeral bool `json:"ephemeral,omitempty" jsonschema:"expire the page 30 days after its last update instead of keeping it until deleted"`
+}
+
 type pageOutput struct {
-	ID      string `json:"id"`
-	URL     string `json:"url"`
-	Version int    `json:"version"`
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	Version   int    `json:"version"`
+	Ephemeral bool   `json:"ephemeral,omitempty"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
+func pageOutputFor(p store.Page, url string) pageOutput {
+	out := pageOutput{ID: p.ID, URL: url, Version: p.Version, Ephemeral: p.Ephemeral}
+	if p.ExpiresAt != nil {
+		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 func (h *handlers) handleCreate(
 	ctx context.Context,
-	_ *mcp.CallToolRequest,
+	req *mcp.CallToolRequest,
 	in createInput,
+) (*mcp.CallToolResult, pageOutput, error) {
+	return h.create(ctx, req, in, false)
+}
+
+func (h *handlers) handleCreateShared(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	in sharedCreateInput,
+) (*mcp.CallToolResult, pageOutput, error) {
+	return h.create(ctx, req, in.createInput, in.Ephemeral)
+}
+
+// create renders the input and stores the page. On a shared instance the
+// caller's key must be present: it becomes the page's author, and the id
+// is a fresh capability id.
+func (h *handlers) create(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	in createInput,
+	ephemeral bool,
 ) (*mcp.CallToolResult, pageOutput, error) {
 	content, docJSON, err := resolveContent(in.Content, in.Title)
 	if err != nil {
@@ -240,20 +331,31 @@ func (h *handlers) handleCreate(
 	// The structured sources ride along (nil for legacy HTML/JS input) so a
 	// future renderer/template change can re-render the page from source and
 	// present_source can hand the source back for edits.
-	p, err := h.store.Create(ctx, store.Draft{
+	d := store.Draft{
 		Title:       in.Title,
 		Content:     content,
 		Graph:       graph,
 		References:  toStoreRefs(in.References),
 		Doc:         docJSON,
 		GraphSource: graphJSON,
-	})
+	}
+	if h.mode == ModeShared {
+		hash, ok := author.FromHeader(header(req))
+		if !ok {
+			return nil, pageOutput{}, author.ErrMissing
+		}
+		d.ID = store.NewSharedID()
+		d.Author = hash
+		d.Ephemeral = ephemeral
+		d.ExpiresAt = h.expiry(ephemeral)
+	}
+	p, err := h.store.Create(ctx, d)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
 	notify.EmitEvent("present", "info", "page created: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
-	return nil, pageOutput{ID: p.ID, URL: h.url(p.ID), Version: p.Version}, nil
+	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
 }
 
 func toStoreRefs(in []refInput) []store.Reference {
@@ -297,7 +399,7 @@ type readOutput struct {
 
 func (h *handlers) handleRead(
 	ctx context.Context,
-	_ *mcp.CallToolRequest,
+	req *mcp.CallToolRequest,
 	in readInput,
 ) (*mcp.CallToolResult, readOutput, error) {
 	p, err := h.store.Get(ctx, in.ID)
@@ -307,7 +409,7 @@ func (h *handlers) handleRead(
 	return nil, readOutput{
 		ID: p.ID, Title: p.Title, Content: p.Content, Graph: p.Graph,
 		References: fromStoreRefs(p.References),
-		Version:    p.Version, URL: h.url(p.ID), UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		Version:    p.Version, URL: h.url(req, p.ID), UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}, nil
 }
 
@@ -331,7 +433,7 @@ type sourceOutput struct {
 
 func (h *handlers) handleSource(
 	ctx context.Context,
-	_ *mcp.CallToolRequest,
+	req *mcp.CallToolRequest,
 	in sourceInput,
 ) (*mcp.CallToolResult, sourceOutput, error) {
 	p, err := h.store.Get(ctx, in.ID)
@@ -341,7 +443,7 @@ func (h *handlers) handleSource(
 	out := sourceOutput{
 		ID: p.ID, Title: p.Title,
 		References: fromStoreRefs(p.References),
-		Version:    p.Version, URL: h.url(p.ID),
+		Version:    p.Version, URL: h.url(req, p.ID),
 	}
 	doc, err := h.store.LoadDoc(ctx, in.ID)
 	switch {
@@ -378,7 +480,7 @@ type updateInput struct {
 
 func (h *handlers) handleUpdate(
 	ctx context.Context,
-	_ *mcp.CallToolRequest,
+	req *mcp.CallToolRequest,
 	in updateInput,
 ) (*mcp.CallToolResult, pageOutput, error) {
 	title := ""
@@ -425,6 +527,22 @@ func (h *handlers) handleUpdate(
 		refs := toStoreRefs(*in.References)
 		patch.References = &refs
 	}
+	// On a shared instance only the author may write, and an ephemeral
+	// page's 30 days start over on every update.
+	if h.mode == ModeShared {
+		cur, err := h.store.Get(ctx, in.ID)
+		if err != nil {
+			return nil, pageOutput{}, err
+		}
+		if err := author.Check(cur.Author, header(req)); err != nil {
+			return nil, pageOutput{}, err
+		}
+		if cur.Ephemeral {
+			on := true
+			patch.Ephemeral = &on
+			patch.ExpiresAt = h.expiry(true)
+		}
+	}
 
 	p, err := h.store.Update(ctx, in.ID, patch)
 	if err != nil {
@@ -455,7 +573,7 @@ func (h *handlers) handleUpdate(
 	}
 	notify.EmitEvent("present", "info", "page updated: "+p.Title, "",
 		map[string]string{"id": p.ID, "title": p.Title})
-	return nil, pageOutput{ID: p.ID, URL: h.url(p.ID), Version: p.Version}, nil
+	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
 }
 
 // ── list ──
@@ -475,7 +593,7 @@ type listOutput struct {
 
 func (h *handlers) handleList(
 	ctx context.Context,
-	_ *mcp.CallToolRequest,
+	req *mcp.CallToolRequest,
 	_ struct{},
 ) (*mcp.CallToolResult, listOutput, error) {
 	pages, err := h.store.ListMeta(ctx)
@@ -485,7 +603,7 @@ func (h *handlers) handleList(
 	out := listOutput{Pages: make([]listItem, 0, len(pages))}
 	for _, p := range pages {
 		out.Pages = append(out.Pages, listItem{
-			ID: p.ID, Title: p.Title, URL: h.url(p.ID),
+			ID: p.ID, Title: p.Title, URL: h.url(req, p.ID),
 			Version: p.Version, UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			HasDoc: p.HasDoc,
 		})
@@ -506,14 +624,14 @@ type openOutput struct {
 
 func (h *handlers) handleOpen(
 	ctx context.Context,
-	_ *mcp.CallToolRequest,
+	req *mcp.CallToolRequest,
 	in openInput,
 ) (*mcp.CallToolResult, openOutput, error) {
 	// Confirm the page exists before launching a browser at a dead URL.
 	if _, err := h.store.Get(ctx, in.ID); err != nil {
 		return nil, openOutput{}, err
 	}
-	url := h.url(in.ID)
+	url := h.url(req, in.ID)
 	if err := h.open(url); err != nil {
 		return nil, openOutput{URL: url, Opened: false}, fmt.Errorf("open %s: %w", url, err)
 	}

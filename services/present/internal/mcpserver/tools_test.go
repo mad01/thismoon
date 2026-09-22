@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/kit/mcptest"
@@ -24,6 +25,7 @@ func newTestHandlers(t *testing.T) (*handlers, *[]string) {
 	h := &handlers{
 		store:   st,
 		baseURL: "http://localhost:7423",
+		now:     time.Now,
 		open:    func(url string) error { *opened = append(*opened, url); return nil },
 	}
 	return h, opened

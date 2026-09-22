@@ -30,6 +30,12 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 |------|-----|---------|
 | `--workdir` | `PRESENT_WORKDIR` | `~/.config/present` if present, else `~/.local/state/present` |
 | `--port` | `PRESENT_PORT` | `7423` |
+| `--bind` (serve only) | `PRESENT_BIND` | `127.0.0.1`; shared mode requires it explicitly |
+| `--shared` (serve only) | `PRESENT_SHARED` | `false` |
+
+### Shared mode
+
+`present serve --shared --bind 0.0.0.0` runs the same binary as a network-facing shared instance, meant for a few replicas in Kubernetes behind one hostname. There is no index and no listing: a page is reachable only by the 32-hex id present minted for it. Every write carries an author key as a bearer token (the server keeps only its hash, and only that key can update or delete the page), reads need nothing, and a page created as ephemeral disappears 30 days after its last write. The root serves a how-to page, `POST /api/pages` and `PUT /api/p/<id>` take pushed pages, and the present tools are served over HTTP at `/mcp` (`present_create` with an `ephemeral` flag, `present_read`, `present_source`, `present_update`, `present_doctor`). Page URLs follow the `X-Forwarded-Host` and `X-Forwarded-Proto` headers the ingress sets.
 
 ## MCP
 
@@ -54,6 +60,13 @@ The tools write the page store directly, so they work with `present serve` down;
 | `present_doctor()` | Run the `present doctor` checks and return the report |
 
 Confirm the registration with `claude mcp list`, and run `present doctor` for a full check of the store, the server, and version skew.
+
+A shared instance is registered as an HTTP server instead, with the author key as a bearer header:
+
+```bash
+claude mcp add --transport http present-shared https://present.example.com/mcp \
+  --header "Authorization: Bearer <your author key>"
+```
 
 ## Where things live
 

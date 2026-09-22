@@ -11,6 +11,15 @@ already exists, otherwise `~/.local/state/present`), which is the entire
 coupling between them — neither calls the other,
 and the MCP can run inside a no-network sandbox. Everything is localhost-only.
 
+The same binary also runs as a shared instance: `present serve --shared`
+is one process that serves pages by id alone (no index, no listing), takes
+writes only from callers presenting an author key, and mounts the MCP
+tools over streamable HTTP at `/mcp`. Every request carries what the
+handler needs (the key, the forwarded host), and the transport is
+stateless, so any number of replicas can sit behind one hostname without
+sticky sessions. The store behind either mode is the `store.Store`
+interface; local present uses the filesystem implementation.
+
 ## Structure
 
 ```
@@ -18,10 +27,12 @@ cmd/present/         entrypoint, delegates to internal/cli
 internal/cli/        cobra command tree: serve, mcp, rerender, version
 internal/store/      Store interface + FS, the filesystem implementation over
                      pages/<id>/; id generation; expiry wrapper
+internal/author/     author keys: mint, hash, read from a bearer header, check
+internal/baseurl/    public base URL from X-Forwarded-* (middleware + derivation)
 internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade
-internal/server/     HTTP handlers; embeds shell.html, index_shell.html,
-                     app.js, index.js
-internal/mcpserver/  MCP wiring and the present_* tools
+internal/server/     HTTP handlers per mode; embeds shell.html, index_shell.html,
+                     shared_index_shell.html, app.js, index.js
+internal/mcpserver/  MCP wiring and the present_* tools, one tool set per mode
 kit/notify           best-effort event emit to events.this (shared)
 ```
 
@@ -82,6 +93,14 @@ MCP tools: `present_create`, `present_read`, `present_source`,
 `present_update`, `present_list`, `present_open` (macOS `open`). Deliberately
 no delete tool.
 
+Shared mode drops `GET /`'s index for a static how-to page, drops
+`GET /api/pages` and `GET /index.js`, and adds `POST /api/pages` (create
+from a pushed page bundle), `PUT /api/p/{id}` (replace, author only),
+`GET /api/whoami` (echo the caller's author hash), and `/mcp` (the tool
+server over streamable HTTP). `DELETE /p/{id}` stays but needs the author's
+key. Reads (`/p/{id}`, `/api/p/{id}`, `/p/{id}/version`) need nothing.
+
 Config: `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`, resolved
 identically by both processes (a leading `~` is expanded in Go); both log
-their resolved `workdir=… port=…` at startup.
+their resolved `workdir=… port=…` at startup. `present serve` alone takes
+`--bind`/`PRESENT_BIND` and `--shared`/`PRESENT_SHARED`.

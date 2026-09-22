@@ -39,6 +39,20 @@ These are persistent flags shared by `present serve` and `present mcp`:
   reached through something other than plain `localhost:<port>` (for example
   the local domain front door's `present.this`).
 
+These two belong to `present serve` alone:
+
+- `--bind` (string, default `127.0.0.1`; env `PRESENT_BIND`): interface the
+  server listens on. Local mode refuses anything but loopback, because it
+  authenticates nothing. Shared mode refuses to start unless the bind is
+  given explicitly (`0.0.0.0` inside a container, `127.0.0.1` to try it on
+  one machine), so exposure is always a stated choice.
+- `--shared` (bool, default `false`; env `PRESENT_SHARED`): run as a shared
+  instance: no index or listing, pages by id only, an author key on every
+  write, and the MCP tools over HTTP at `/mcp`. `--base-url` then acts as a
+  display override for the URLs writes return; left empty, each URL is
+  derived from the request's `X-Forwarded-Proto` and `X-Forwarded-Host`
+  headers, or from its `Host` when nothing in front forwarded them.
+
 ## Where the page store lives
 
 The store moved out of `~/.config` — pages are state, not configuration —
@@ -66,6 +80,11 @@ there is no automatic migration to undo.
 - `PRESENT_PORT`: default for `--port`. An unparseable value warns once on
   stderr, and the built-in default (`7423`) is used instead.
 - `PRESENT_BASE_URL`: default for `--base-url`.
+- `PRESENT_BIND`: default for `--bind`. Setting it counts as an explicit
+  bind for shared mode.
+- `PRESENT_SHARED`: default for `--shared`; `1`, `true`, `0`, `false` in any
+  case. An unparseable value warns once on stderr and the default (`false`)
+  is used instead.
 
 To see what a given environment actually resolved to, run `present doctor`;
 an agent with no shell gets the same report from the `present_doctor` MCP
@@ -85,4 +104,12 @@ Equivalent via environment variables:
 export PRESENT_WORKDIR=~/.config/present
 export PRESENT_PORT=7423
 present serve
+```
+
+A shared instance inside a container, and the same thing tried on one
+machine:
+
+```bash
+present serve --shared --bind 0.0.0.0 --port 7423 --workdir /var/lib/present
+present serve --shared --bind 127.0.0.1 --port 17423 --workdir /tmp/present-shared
 ```

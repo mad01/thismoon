@@ -16,7 +16,13 @@ func TestString(t *testing.T) {
 		want     string
 	}{
 		{name: "unset falls back", fallback: "7423", want: "7423"},
-		{name: "set wins", set: true, value: "http://csl.this", fallback: "x", want: "http://csl.this"},
+		{
+			name:     "set wins",
+			set:      true,
+			value:    "http://csl.this",
+			fallback: "x",
+			want:     "http://csl.this",
+		},
 		{name: "empty falls back", set: true, value: "", fallback: "x", want: "x"},
 		{name: "whitespace is a value", set: true, value: " ", fallback: "x", want: " "},
 	}
@@ -68,7 +74,60 @@ func TestInt(t *testing.T) {
 			}
 			if tc.wantWarn == "" {
 				if warn.Len() != 0 {
-					t.Errorf("Int(%q, %d) warned %q, want silence", varName, tc.fallback, warn.String())
+					t.Errorf(
+						"Int(%q, %d) warned %q, want silence",
+						varName,
+						tc.fallback,
+						warn.String(),
+					)
+				}
+				return
+			}
+			if want := tc.wantWarn + "\n"; warn.String() != want {
+				t.Errorf("warning = %q, want %q", warn.String(), want)
+			}
+		})
+	}
+}
+
+func TestBool(t *testing.T) {
+	tests := []struct {
+		name     string
+		set      bool
+		value    string
+		fallback bool
+		want     bool
+		wantWarn string
+	}{
+		{name: "unset falls back", fallback: true, want: true},
+		{name: "true wins", set: true, value: "true", fallback: false, want: true},
+		{name: "1 wins", set: true, value: "1", fallback: false, want: true},
+		{name: "FALSE wins", set: true, value: "FALSE", fallback: true, want: false},
+		{name: "empty falls back", set: true, value: "", fallback: true, want: true},
+		{
+			name: "unparseable warns and falls back", set: true, value: "yes", fallback: false,
+			want:     false,
+			wantWarn: `THISMOON_TEST_VALUE: unparseable value "yes", using default false`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(varName, tc.value)
+			}
+			var warn strings.Builder
+			got := boolFrom(&warn, varName, tc.fallback)
+			if got != tc.want {
+				t.Errorf("Bool(%q, %t) = %t, want %t", varName, tc.fallback, got, tc.want)
+			}
+			if tc.wantWarn == "" {
+				if warn.Len() != 0 {
+					t.Errorf(
+						"Bool(%q, %t) warned %q, want silence",
+						varName,
+						tc.fallback,
+						warn.String(),
+					)
 				}
 				return
 			}
