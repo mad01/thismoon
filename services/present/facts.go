@@ -41,6 +41,17 @@ const DefaultBind = "127.0.0.1"
 // it is created or shared again.
 const SharedTTL = 30 * 24 * time.Hour
 
+// DefaultStore is the page store `present serve` opens when PRESENT_STORE is
+// unset: the filesystem under the workdir. A shared instance in Kubernetes
+// passes k8s.
+const DefaultStore = "fs"
+
+// DefaultSweepInterval is how often a shared instance on the Kubernetes
+// store purges expired ephemeral pages. Expired pages already read as
+// missing between sweeps, so the interval only bounds how long their
+// objects linger.
+const DefaultSweepInterval = 10 * time.Minute
+
 // MaxPageBytes caps one page on a shared instance. The cluster store keeps a
 // page as a single object and the object store caps those a little above
 // this; a page that would not fit is refused at the API instead of failing

@@ -85,6 +85,18 @@ sets, or from --base-url when given, so a URL naming the wrong host means
 the proxy in front isn't forwarding them. Shared mode refuses to start
 without an explicit --bind; local mode refuses any bind but loopback.
 
+In Kubernetes the store is the Page custom resource (--store k8s): `kubectl
+get pages -n <namespace>` lists every page with its title, version, and
+expiry, and `kubectl describe page <id>` shows the spec, so the cluster is
+the debugging surface and no pod filesystem matters. Every replica sweeps
+expired ephemeral pages on its --sweep-interval (default 10 minutes) and
+logs `sweep deleted=N` when it removed any; a page whose expiry has passed
+already reads as 404 before the sweep. A write that would make a page larger
+than 1 MiB is refused with 413, because each page is one object and the
+object store caps those. present_doctor there reports store-reachable only:
+a FAIL means the pod can't list pages, which is the CRD missing, the
+service account's role missing, or the API server unreachable.
+
 ## version skew
 
 `present version -o json` reports the build of the binary on PATH. `GET
