@@ -21,12 +21,15 @@ MCP server).
 - **`packages.present.service`** — restarts the agent only when the installed
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
-- **`hooks.builds.present_service`** — registration only: `t-man add … present
-  serve --port 7423 --workdir ~/.config/present`. Idempotent; `run = "always"`
-  self-heals if the agent was removed. Guarded on t-man being on PATH.
+- **`hooks.builds.present_service`** — registration only: `t-man add …
+  present-serve.sh --port 7423 --workdir ~/.config/present`. The launcher
+  reads the sharing config from the secrets file and execs `present serve`,
+  so the Share button works and the plist holds no secret. Idempotent;
+  `run = "always"` self-heals if the agent was removed. Guarded on t-man
+  being on PATH.
 - **`hooks.builds.present_chmod_mcp_wrapper`** — keeps `present-mcp-sandbox.sh`
-  executable inside the sources cache (the overlay registers the wrapper, not
-  the bare binary).
+  and `present-serve.sh` executable inside the sources cache (the overlay
+  registers the wrapper, not the bare binary).
 - **`post_apply` cache hook** — `make cache` fetches fonts/JS into
   `~/.config/present` so pages have zero CDN dependencies. Offline-safe,
   and cache-assets.sh exits early once the assets exist.
@@ -56,16 +59,30 @@ Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 The MCP server runs inside a seatbelt profile. The dotfiles overlay registers
 `present-mcp-sandbox.sh` (not the bare binary); the wrapper `cd`-s to `/`
 (getcwd in a read-denied cwd is an EPERM), scrubs the environment with `env -i`
-(only `HOME` + the three `PRESENT_*` vars pass through), and execs
-`~/code/bin/present mcp` under `sandbox-exec -f present.sb` (the profile lives
-beside the wrapper in this directory).
+(only `HOME`, the three `PRESENT_*` config vars, and, when set, the two sharing
+vars pass through), and execs `~/code/bin/present mcp` under
+`sandbox-exec -f present.sb` (the profile lives beside the wrapper in this
+directory).
 
 `present.sb` posture:
-- **No network at all** — `present mcp` never serves or dials; it shares the
-  page store on disk with the separate (unsandboxed) `present serve` daemon.
+- **Egress shaped, not zero** — `present mcp` never serves; it dials the local
+  events port (`localhost:7430`) and, for `present_share`, outbound `:443` plus
+  DNS. Seatbelt can't filter by hostname, so a plain-http shared URL (a kind
+  port-forward, say) fails inside the sandbox on purpose; the Share button and
+  `present share` run outside it and take any URL.
 - **$HOME reads default-denied**; allow-list is `~/code/bin` (the binary) and
   `~/.config/present` (page store).
 - **Writes** confined to `~/.config/present` + temp.
+
+## Sharing config
+
+`PRESENT_SHARED_URL` and `PRESENT_AUTHOR_KEY` live in the ralph-managed
+secrets file (`~/.config/ralph/secrets.sh`, legacy `~/.secrets.sh` as a
+fallback), one `export` each; `present key new` mints the key. Both launchers
+source `present-shared-env.sh`, which reads exactly those two exports in a
+subshell (a var already in the environment wins) so neither the plist nor
+`servers.json` carries a secret, and the login shell sources the same file for
+`present share`. With the pair unset nothing changes: sharing stays off.
 
 `present_open` execs `/usr/bin/open`, which inherits the sandbox — the browser
 is launched by launchd *outside* the sandbox, so it runs unconfined.
@@ -83,7 +100,9 @@ present serve (t-man agent)  ─reads files─►   http://localhost:7423/p/<id>
 
 - MCP tools and the HTTP server share `~/.config/present` (the workdir) and the
   port; they communicate purely through the filesystem.
-- Pages are create/read/update/list only via MCP — **no delete**.
+- Pages are created, read, updated, and listed via MCP; delete is a button in
+  the web index, and deleting a page that was shared removes the shared copy
+  first.
 
 ## Working with it
 
@@ -102,4 +121,5 @@ picks up the new code:
 
 - Source + module notes: `services/present/CLAUDE.md`
 - Skill: repo-root `skills/present/SKILL.md` (linked into `~/.claude/skills/`)
-- Seatbelt profile + wrapper: `present.sb`, `present-mcp-sandbox.sh` (this dir)
+- Seatbelt profile + launchers: `present.sb`, `present-mcp-sandbox.sh`,
+  `present-serve.sh`, `present-shared-env.sh` (this dir)

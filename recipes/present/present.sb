@@ -3,7 +3,8 @@
 ;; Confines the present MCP server so a poisoned dependency can't exfiltrate
 ;; data or read secrets. `present mcp` never serves pages — it shares the page
 ;; store on disk with the separate (unsandboxed) `present serve` daemon:
-;;   - no network except one loopback port (the local events service)
+;;   - egress shaped, not zero: the local events port, plus outbound HTTPS
+;;     and DNS so present_share can reach the shared instance; no inbound
 ;;   - $HOME reads default-DENIED; allow-list is the binaries dir and the
 ;;     page store (a secrets blocklist can never be complete — deny the lot,
 ;;     allow what the server needs)
@@ -25,17 +26,34 @@
 (version 1)
 (allow default)
 
-;; ── Network: one loopback port. The server speaks stdio; pages are served by
-;; the separate `present serve` process, not this one. The exception is the
-;; fire-and-forget POST to the local events service
-;; (internal/notify/events.go → 127.0.0.1:7430). Before this allow it was
-;; denied on every page create, so the MCP archived nothing to events.this —
-;; the denial is what surfaced it (sandbox-watch, 2026-08-20). events has no
-;; egress of its own, so the reachable surface is one local append-only log.
-;; Everything else, including DNS, stays denied; EVENTS_BASE_URL can't
-;; redirect this because present-mcp-sandbox.sh scrubs env with `env -i`. ──
+;; ── Network: shaped, not zero. The server speaks stdio; pages are served by
+;; the separate `present serve` process, not this one. It dials out for two
+;; things only:
+;;   - the fire-and-forget POST to the local events service
+;;     (internal/notify/events.go → 127.0.0.1:7430). Before this allow it was
+;;     denied on every page create, so the MCP archived nothing to
+;;     events.this; the denial is what surfaced it (sandbox-watch,
+;;     2026-08-20). events has no egress of its own, so that surface is one
+;;     local append-only log.
+;;   - present_share, which pushes a page to the shared instance named by
+;;     PRESENT_SHARED_URL over HTTPS. Seatbelt can't filter by hostname, so
+;;     outbound :443 to anywhere plus DNS is the practical floor (the same
+;;     shape as the consuming repo's github-mcp.sb). A plain-http shared URL
+;;     stays blocked here on purpose; the Share button and `present share`
+;;     run outside the sandbox and take any URL.
+;; system-socket: socket creation is separate from connect. DNS may resolve
+;; via libresolv (direct :53) or libinfo (mDNSResponder unix socket) depending
+;; on the Go resolver path, so allow both. EVENTS_BASE_URL and the shared URL
+;; can't widen this: present-mcp-sandbox.sh scrubs env with `env -i` and
+;; passes only the PRESENT_* config through. ──
 (deny network*)
-(allow network-outbound (remote tcp "localhost:7430"))
+(allow system-socket)
+(allow network-outbound
+  (literal "/private/var/run/mDNSResponder")
+  (remote tcp "localhost:7430")
+  (remote tcp "*:443")
+  (remote udp "*:53")
+  (remote tcp "*:53"))
 
 ;; ── Filesystem writes: page store + temp only ──
 (deny file-write*)

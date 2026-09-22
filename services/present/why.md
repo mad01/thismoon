@@ -24,7 +24,7 @@ shared webkit chrome and fetch speech from speak cross-origin.
 
 Two cooperating processes share one workdir: `present mcp` writes page files
 and never serves HTTP, `present serve` reads and serves them. That split
-lets the MCP run inside a no-network sandbox while pages still appear at
+lets the MCP run inside a tight sandbox while pages still appear at
 `present.this`, and neither process depends on the other to do its half.
 Content is authored as structured Doc JSON and compiled to HTML once, at
 authoring time; the browser then renders client-side from a static shell

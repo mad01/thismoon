@@ -37,11 +37,13 @@ source = "../../skills/present"
 target = "~/.agents/skills/present"
 action = "symlink_dir"
 
-# Keep the MCP spawn wrapper executable — the consuming repo's claude-mcp overlay
-# registers the wrapper, not the bare binary (sandbox containment: the wrapper
-# execs `present mcp` under present.sb, which lives beside it in this dir).
+# Keep the two launchers executable: the consuming repo's claude-mcp overlay
+# registers the MCP wrapper, not the bare binary (sandbox containment: it
+# execs `present mcp` under present.sb, which lives beside it in this dir),
+# and the serve hook below registers present-serve.sh. Both source
+# present-shared-env.sh for the sharing config, which needs no mode bit.
 [hooks.builds.present_chmod_mcp_wrapper]
-commands = ["chmod +x present-mcp-sandbox.sh"]
+commands = ["chmod +x present-mcp-sandbox.sh present-serve.sh"]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/present"
 run = "always"
 idempotent = true
@@ -63,10 +65,13 @@ pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove present 2>/d
 # pages are always reachable on http://localhost:7423. Registration only —
 # restart-on-rebuild lives in [packages.present.service] above. `t-man add` is
 # idempotent (same definition -> same hash -> no-op), so run = "always" keeps
-# the agent registered and self-heals if it was manually removed.
+# the agent registered and self-heals if it was manually removed. The agent
+# runs present-serve.sh rather than the binary: the launcher reads the sharing
+# config (PRESENT_SHARED_URL, PRESENT_AUTHOR_KEY) from the secrets file at
+# start, so the Share button works and no secret lands in the plist.
 [hooks.builds.present_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name present -- $HOME/code/bin/present serve --port 7423 --workdir $HOME/.config/present; else echo 'present: skip service (t-man not on PATH; install t-man then run: t-man add --name present -- present serve --port 7423 --workdir ~/.config/present)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name present -- $HOME/.config/ralph/sources/thismoon/recipes/present/present-serve.sh --port 7423 --workdir $HOME/.config/present; else echo 'present: skip service (t-man not on PATH; install t-man then run: t-man add --name present -- present serve --port 7423 --workdir ~/.config/present)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/present"
 run = "always"
