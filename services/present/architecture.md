@@ -170,6 +170,11 @@ from a pushed page bundle), `PUT /api/p/{id}` (replace, author only),
 `GET /api/whoami` (echo the caller's author hash), and `/mcp` (the tool
 server over streamable HTTP). `DELETE /p/{id}` stays but needs the author's
 key. Reads (`/p/{id}`, `/api/p/{id}`, `/p/{id}/version`) need nothing.
+The chrome changes with the mode too: both shared shells leave the header's
+⌘K site picker out (there are no local `.this` sites to jump to, and webkit
+turns the shortcut off with the control), the page shell's back link reads
+"← About" because the root is the how-to page rather than an index, and the
+Share button stays hidden because the page JSON reports sharing disabled.
 
 Config: `--workdir`/`PRESENT_WORKDIR` and `--port`/`PRESENT_PORT`, resolved
 identically by both processes (a leading `~` is expanded in Go); both log
