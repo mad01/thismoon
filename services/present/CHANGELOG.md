@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/mad01/thismoon/compare/present/v1.4.0...present/v1.4.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **present:** leave the ⌘K picker out of the shared chrome ([51df5c5](https://github.com/mad01/thismoon/commit/51df5c528cde189314d117aeb659af1a3639f940))
+
 ## [1.4.0](https://github.com/mad01/thismoon/compare/present/v1.3.0...present/v1.4.0) (2026-09-22)
 
 
