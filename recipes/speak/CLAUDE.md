@@ -20,10 +20,18 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
 - **`hooks.builds.speak_web_service`** — registration only: `t-man add …
-  speak serve --port 7425`. The upload-a-markdown page + CORS reverse proxy
-  `/v1/audio/speech` → the engine. If the `speak-tts` engine agent is down the
-  page still serves, but the speech endpoints have nothing on
-  `127.0.0.1:8765` to reach.
+  speak-env.sh serve --port 7425`. The upload-a-markdown page + CORS-guarded
+  `/v1/audio/speech` through the provider `~/.config/speak/config.yaml`
+  selects. On the default local provider, a down `speak-tts` engine agent
+  leaves the page serving but the speech endpoints failing with that reason.
+- **`speak-env.sh`** — the spawn wrapper for speak-web and for a consuming
+  repo's speak MCP registration. It runs `speak config env` (the names of the
+  variables the active provider reads; nothing for the local engine), pulls
+  exactly those from `~/.config/ralph/secrets.sh` (legacy `~/.secrets.sh`) in
+  a subshell, and execs `~/code/bin/speak` with its arguments, the same
+  one-variable-at-a-time pattern as present's `present-shared-env.sh`. Select
+  the provider with the config file or `SPEAK_PROVIDER`: a `--provider` flag
+  after the subcommand is invisible to the wrapper's query.
 - **`hooks.builds.sandbox_watch_service`** — registers `sandbox-watch`, which
   execs `sandbox-watch.sh` straight from this directory in the sources cache.
   Turns seatbelt denials into Notification Center banners (batched per 60s)
@@ -33,8 +41,8 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   what a notification was about. Both files are registered as t-man extra
   logs (`sandbox`, `sandbox-notifications`): `t-man logs sandbox` shows them
   fleet-wide, `t-man logs sandbox speak-tts` scopes to one service.
-- **`hooks.builds.speak_chmod_scripts`** — keeps `sandbox-watch.sh` and
-  `sandbox-audit.sh` executable inside the sources cache.
+- **`hooks.builds.speak_chmod_scripts`** — keeps `sandbox-watch.sh`,
+  `sandbox-audit.sh` and `speak-env.sh` executable inside the sources cache.
 - **`pre_uninstall`** — removes both agents before cleanup deletes the binary.
 
 ## What stays in the consuming repo (private overlay)
@@ -47,6 +55,8 @@ Machine-specific wiring is deliberately not here (see `docs/adr/0006`):
   is a runtime dependency, not part of this repo's releases.
 - any read-aloud MCP registration (host-gated where the consumer registers it)
 - the `speak.this` route (`speak` → 7425 in the consumer's d-man routes overlay)
+- the provider config (`~/.config/speak/config.yaml`) for machines that use a
+  remote provider, and the key it names in the secrets file
 
 ## sandbox-watch
 

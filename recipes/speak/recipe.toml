@@ -9,10 +9,12 @@ wave = 0
 # working_dir on packages/builds, so the paths below name that cache directly.
 #
 # speak-web (Go, services/speak/) — upload-a-markdown-and-listen page + CORS
-# reverse proxy /v1/audio/speech -> the TTS engine, so present/csl pages can
-# fetch speech cross-origin. The engine it proxies to (speak-tts on
-# 127.0.0.1:8765) is machine wiring and stays in the consuming repo; if its
-# agent is down the page serves but the speech endpoints have nothing to reach.
+# /v1/audio/speech endpoint, so present/csl pages can fetch speech
+# cross-origin. Speech comes from the provider ~/.config/speak/config.yaml
+# selects: the local engine (speak-tts on 127.0.0.1:8765, machine wiring that
+# stays in the consuming repo) by default, or a remote one. The agent starts
+# through speak-env.sh, which hands speak the active provider's key from the
+# secrets file; with no config it is plain `speak serve`.
 #
 # sandbox-watch — streams seatbelt denials for all sandboxed t-man services,
 # so it lives here rather than with the engine: it is wanted on every machine
@@ -40,21 +42,22 @@ pre_uninstall = [
   "if command -v t-man >/dev/null; then t-man remove speak-web 2>/dev/null; t-man remove sandbox-watch 2>/dev/null; fi || true",
 ]
 
-# Keep the watcher scripts executable inside the sources cache — the
-# sandbox-watch agent execs sandbox-watch.sh straight from this directory.
+# Keep the scripts executable inside the sources cache: the sandbox-watch
+# agent execs sandbox-watch.sh, and speak-web and the consuming repo's MCP
+# registration exec speak-env.sh, straight from this directory.
 [hooks.builds.speak_chmod_scripts]
-commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh"]
+commands = ["chmod +x sandbox-watch.sh sandbox-audit.sh speak-env.sh"]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
 idempotent = true
 
 [hooks.builds.speak_web_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name speak-web -- $HOME/code/bin/speak serve --port 7425; else echo 'speak: skip speak-web service (t-man not on PATH; install t-man then run: t-man add --name speak-web -- speak serve --port 7425)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name speak-web -- $HOME/.config/ralph/sources/thismoon/recipes/speak/speak-env.sh serve --port 7425; else echo 'speak: skip speak-web service (t-man not on PATH; install t-man then run: t-man add --name speak-web -- speak serve --port 7425)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/speak"
 run = "always"
-depends_on = ["packages.speak", "packages.t_man"]
+depends_on = ["packages.speak", "packages.t_man", "builds.speak_chmod_scripts"]
 
 # ── sandbox-watch: seatbelt denial notifications ──
 # Streams unified-log Sandbox denials for watched process names, batches per
