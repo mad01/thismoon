@@ -30,7 +30,7 @@ func TestServeUntilDoneDrainsInFlightRequests(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	served := make(chan error, 1)
-	go func() { served <- serveUntilDone(ctx, ln, handler) }()
+	go func() { served <- serveUntilDone(ctx, ln, handler, nil) }()
 
 	type reply struct {
 		code int
@@ -69,6 +69,54 @@ func TestServeUntilDoneDrainsInFlightRequests(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("serveUntilDone did not return after its context was cancelled")
+	}
+}
+
+// TestServeUntilDoneEndsStreamsOnShutdown pins the hook event streams rely
+// on: a response that never finishes by itself would hold the drain for its
+// whole timeout, so onShutdown runs as shutdown starts and the stream ends
+// well inside the drain.
+func TestServeUntilDoneEndsStreamsOnShutdown(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	streaming, stopStreams := make(chan struct{}), make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "event: version\ndata: 1\n\n")
+		_ = http.NewResponseController(w).Flush()
+		close(streaming)
+		<-stopStreams
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() {
+		served <- serveUntilDone(ctx, ln, handler, func() { close(stopStreams) })
+	}()
+
+	resp, err := http.Get("http://" + addr + "/events")
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	<-streaming
+
+	start := time.Now()
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("serveUntilDone = %v, want nil", err)
+		}
+	case <-time.After(drainTimeout):
+		t.Fatalf("shutdown waited out the %s drain on an open stream", drainTimeout)
+	}
+	if took := time.Since(start); took > drainTimeout/2 {
+		t.Errorf("shutdown took %s with an open stream, want well under %s", took, drainTimeout)
 	}
 }
 

@@ -473,6 +473,100 @@
     };
   }
 
+  // Live update: reload once the page's version moves past the one this tab
+  // rendered. A server with a change feed pushes the version over
+  // server-sent events; otherwise, or when the stream cannot be trusted, the
+  // tab polls the lightweight version endpoint (a bare int, which is valid
+  // JSON) the way it always has.
+  var POLL_MS = 1500;
+  // The server resends the version every 25 seconds, so two missed
+  // heartbeats mean a proxy is holding the stream back.
+  var STREAM_SILENCE_MS = 60000;
+
+  function watchVersion(id, known) {
+    var base = '/p/' + encodeURIComponent(id);
+    var poller = null;
+    var stream = null;
+    var watchdog = null;
+    // gone is for good: the page was deleted or expired. leaving lasts while
+    // the tab unloads or sits in the back-forward cache. Either one keeps the
+    // browser's teardown of the stream, which fires the error handler, from
+    // starting a pointless poll.
+    var gone = false;
+    var leaving = false;
+
+    function onVersion(v) {
+      if (v === known) return;
+      leaving = true;
+      closeStream();
+      location.reload();
+    }
+
+    function poll() {
+      closeStream();
+      if (gone || leaving || poller) return;
+      if (!(window.Webkit && typeof Webkit.poll === 'function')) return;
+      poller = Webkit.poll(base + '/version', onVersion, POLL_MS);
+    }
+
+    function armWatchdog() {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(poll, STREAM_SILENCE_MS);
+    }
+
+    function closeStream() {
+      clearTimeout(watchdog);
+      if (stream) {
+        stream.close();
+        stream = null;
+      }
+    }
+
+    function openStream() {
+      if (gone || leaving || poller || stream || document.hidden) return;
+      stream = new EventSource(base + '/events');
+      stream.addEventListener('version', function (e) {
+        armWatchdog();
+        onVersion(parseInt(e.data, 10));
+      });
+      // Nothing left to reload into.
+      stream.addEventListener('gone', function () {
+        gone = true;
+        closeStream();
+      });
+      stream.onerror = function () {
+        // CONNECTING means the browser is already retrying a dropped stream,
+        // as it does across a rollout. CLOSED means the server refused it,
+        // a 404 from a server without a change feed included.
+        if (stream && stream.readyState === EventSource.CLOSED) poll();
+      };
+      armWatchdog();
+    }
+
+    if (!window.EventSource) {
+      poll();
+      return;
+    }
+    window.addEventListener('pagehide', function () {
+      leaving = true;
+      closeStream();
+    });
+    // A tab restored from the back-forward cache listens again; the reopened
+    // stream's first event catches up on anything it missed.
+    window.addEventListener('pageshow', function (e) {
+      if (!e.persisted) return;
+      leaving = false;
+      openStream();
+    });
+    // A hidden tab lets its stream go, so it holds no connection; showing it
+    // again reopens the stream, which catches up the same way.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) closeStream();
+      else openStream();
+    });
+    openStream();
+  }
+
   function pageId() {
     var m = location.pathname.match(/^\/p\/([^/]+)/);
     return m ? m[1] : '';
@@ -492,13 +586,7 @@
         initGraphAndFlow();
         initPresentCharts();
       });
-      // Live update: poll the lightweight version endpoint (a bare int, which is
-      // valid JSON) and reload when it changes. Replaces the old inline poller.
-      if (window.Webkit && typeof Webkit.poll === 'function') {
-        Webkit.poll('/p/' + encodeURIComponent(id) + '/version', function (v) {
-          if (v !== known) location.reload();
-        }, 1500);
-      }
+      watchVersion(id, known);
     })
     .catch(function (err) {
       root.innerHTML = '';

@@ -75,9 +75,11 @@ func slimPage(obj any) (any, error) {
 // list-and-watch against the API server. It keeps metadata only: a page's
 // bodies can reach a mebibyte, and every replica holds its own copy. It is
 // read-only and runs no reconcile loop; writes still go to the API server.
+// Its feed tells watchers when a page appears, moves version, or goes away.
 type pageCache struct {
 	informer cache.SharedIndexInformer
 	ns       string
+	feed     *pageFeed
 }
 
 // newPageCache builds the informer from the dynamic client directly rather
@@ -101,7 +103,11 @@ func newPageCache(client dynamic.Interface, ns string) (*pageCache, error) {
 	if err := inf.SetTransform(slimPage); err != nil {
 		return nil, fmt.Errorf("k8sstore: page cache transform: %w", err)
 	}
-	return &pageCache{informer: inf, ns: ns}, nil
+	feed := newPageFeed()
+	if _, err := inf.AddEventHandler(feed.handler()); err != nil {
+		return nil, fmt.Errorf("k8sstore: page cache feed: %w", err)
+	}
+	return &pageCache{informer: inf, ns: ns, feed: feed}, nil
 }
 
 // run lists and watches until ctx is done, logging when it starts and

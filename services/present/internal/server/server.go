@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mad01/thismoon/buildinfo"
@@ -82,6 +83,11 @@ type Server struct {
 	mcp     http.Handler
 	sharer  *sharedclient.Client
 	shell   []byte
+
+	watcher      PageWatcher
+	heartbeat    time.Duration
+	streamsDone  chan struct{}
+	closeStreams sync.Once
 }
 
 // Options configures a Server. Workdir is where the served assets live;
@@ -89,16 +95,21 @@ type Server struct {
 // is the display override for the URLs shared writes return; empty means
 // derive it from each request's forwarded headers. MCP, when set in shared
 // mode, is mounted at /mcp. Sharer, in local mode, is the shared instance
-// pages can be pushed to; nil hides the share button and its endpoint. Now
-// defaults to time.Now.
+// pages can be pushed to; nil hides the share button and its endpoint.
+// Watcher, when set, mounts GET /p/{id}/events, which pushes a page's version
+// to open tabs as it changes; without it tabs poll /p/{id}/version. Heartbeat
+// is how often an idle event stream resends the version, DefaultHeartbeat
+// when zero. Now defaults to time.Now.
 type Options struct {
-	Mode    Mode
-	Workdir string
-	Info    buildinfo.Info
-	BaseURL string
-	Now     func() time.Time
-	MCP     http.Handler
-	Sharer  *sharedclient.Client
+	Mode      Mode
+	Workdir   string
+	Info      buildinfo.Info
+	BaseURL   string
+	Now       func() time.Time
+	MCP       http.Handler
+	Sharer    *sharedclient.Client
+	Watcher   PageWatcher
+	Heartbeat time.Duration
 }
 
 // New returns a Server backed by the given store.
@@ -107,22 +118,30 @@ func New(st store.Store, opts Options) *Server {
 	if now == nil {
 		now = time.Now
 	}
+	heartbeat := opts.Heartbeat
+	if heartbeat <= 0 {
+		heartbeat = DefaultHeartbeat
+	}
 	return &Server{
-		store:   st,
-		mode:    opts.Mode,
-		workdir: opts.Workdir,
-		info:    opts.Info,
-		baseURL: opts.BaseURL,
-		now:     now,
-		mcp:     opts.MCP,
-		sharer:  opts.Sharer,
-		shell:   pageShell(opts.Mode),
+		watcher:     opts.Watcher,
+		heartbeat:   heartbeat,
+		streamsDone: make(chan struct{}),
+		store:       st,
+		mode:        opts.Mode,
+		workdir:     opts.Workdir,
+		info:        opts.Info,
+		baseURL:     opts.BaseURL,
+		now:         now,
+		mcp:         opts.MCP,
+		sharer:      opts.Sharer,
+		shell:       pageShell(opts.Mode),
 	}
 }
 
 // Handler builds the HTTP routes for the server's mode, wrapped in
 // forwarded-header defaults and request logging. The page view, its JSON,
-// the version poll, delete, assets, and webkit are common; local mode adds
+// the version poll, delete, assets, and webkit are common, and so is the
+// version event stream whenever a watcher is configured; local mode adds
 // the index and its listing, shared mode the how-to root, the write API,
 // whoami, and the MCP endpoint. A route the mode does not register is a
 // plain 404.
@@ -133,6 +152,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /app.js", handleAppJS)
 	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
 	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
+	if s.watcher != nil {
+		mux.HandleFunc("GET /p/{id}/events", s.handleEvents)
+	}
 	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", s.assetsHandler())
 	webkit.Mount(mux)

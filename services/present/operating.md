@@ -77,7 +77,8 @@ answers 502 from POST /p/<id>/share; the failure is the instance's.
 keys (version, commit, tag, build_time), for the binary on PATH and for the
 running process; a shared instance answers the same way. Differing `commit`
 values mean an old process is still serving: `t-man restart present`. Not
-`GET /p/{id}/version`, the per-page counter tabs poll for reload.
+`GET /p/{id}/version`, the per-page counter tabs poll for reload (a shared
+instance on the cluster store streams it from `GET /p/{id}/events`).
 
 ## first moves
 

@@ -142,6 +142,15 @@ func (s *Store) Create(ctx context.Context, d store.Draft) (store.Page, error) {
 	}
 }
 
+// WatchPage returns a channel that receives once page id appears, moves to a
+// new version, or goes away, as the page cache learns of it through its
+// watch, and a stop func that releases the channel. Signals coalesce, so a
+// reader re-reads the page rather than counting them, and they flow only
+// while RunCache runs.
+func (s *Store) WatchPage(id string) (<-chan struct{}, func()) {
+	return s.cache.feed.watch(id)
+}
+
 // Get loads a page by id. Returns store.ErrNotFound when it does not exist.
 func (s *Store) Get(ctx context.Context, id string) (store.Page, error) {
 	rec, _, err := s.get(ctx, id)

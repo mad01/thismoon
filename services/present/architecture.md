@@ -77,10 +77,22 @@ The read path renders client-side (docs/adr/0005). `GET /p/{id}` serves the
 embedded chrome-only `shell.html`; the browser loads `app.js`, fetches the
 page as JSON from `GET /api/p/{id}`, mounts the compiled `content` fragment,
 runs the graph script, and initializes the Cytoscape graph, metric charts,
-references, and read-aloud. It then polls `GET /p/{id}/version` via
-`Webkit.poll`, so an MCP update to the page reloads any open tab. The index
-works the same way: `GET /` serves `index_shell.html` and `index.js` builds
-the list from `GET /api/pages`. There is no server-side template layer.
+references, and read-aloud. It then watches the page's version and reloads
+when it moves, so an update reaches every open tab. The index works the same
+way: `GET /` serves `index_shell.html` and `index.js` builds the list from
+`GET /api/pages`. There is no server-side template layer.
+
+Where the server has a change feed, the tab watches over server-sent events:
+`GET /p/{id}/events` sends the version on connect, again whenever the page
+moves, a heartbeat every 25 seconds, and a final `gone` for a deleted or
+expired page. Only the cluster store has a feed, the informer behind its
+page cache, so every replica can serve any tab's stream and an update
+written through one replica reaches tabs on the other in well under a
+second. Everywhere else, and whenever a stream is refused or goes silent
+for a minute behind a buffering proxy, the tab polls `GET /p/{id}/version`
+via `Webkit.poll`. A hidden tab closes its stream and reopens it when shown,
+and serve ends every stream as shutdown starts, so a rollout moves tabs to
+the other replica instead of waiting out the drain.
 
 The share path starts local and ends on a shared instance. The Share button
 posts to the local serve's `POST /p/{id}/share`; `present share` and

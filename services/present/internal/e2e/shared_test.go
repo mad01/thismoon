@@ -5,7 +5,9 @@
 package e2e
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -53,6 +55,79 @@ func (c client) do(method, path, key string, body any) (int, []byte) {
 	defer func() { _ = resp.Body.Close() }()
 	out, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, out
+}
+
+// sseEvent is one server-sent event: its name and its data line.
+type sseEvent struct{ name, data string }
+
+// streamEvents opens a page's event stream and returns its events on a
+// channel that closes when the stream ends. The stream stays open until the
+// test finishes.
+func (c client) streamEvents(id string) <-chan sseEvent {
+	c.t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/p/"+id+"/events", nil)
+	if err != nil {
+		cancel()
+		c.t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		cancel()
+		c.t.Fatalf("GET /p/%s/events: %v", id, err)
+	}
+	c.t.Cleanup(func() {
+		cancel()
+		_ = resp.Body.Close()
+	})
+	if resp.StatusCode != http.StatusOK ||
+		!strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		c.t.Fatalf("GET /p/%s/events = %d %q, want 200 text/event-stream",
+			id, resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	out := make(chan sseEvent)
+	go func() {
+		defer close(out)
+		sc := bufio.NewScanner(resp.Body)
+		var e sseEvent
+		for sc.Scan() {
+			line := sc.Text()
+			switch {
+			case line == "" && e.name != "":
+				select {
+				case out <- e:
+				case <-ctx.Done():
+					return
+				}
+				e = sseEvent{}
+			case strings.HasPrefix(line, "event: "):
+				e.name = strings.TrimPrefix(line, "event: ")
+			case strings.HasPrefix(line, "data: "):
+				e.data = strings.TrimPrefix(line, "data: ")
+			}
+		}
+	}()
+	return out
+}
+
+// awaitEvent reads events until one matches want, skipping heartbeats and
+// anything else, and reports false if cacheLag passes or the stream ends
+// first.
+func awaitEvent(events <-chan sseEvent, want sseEvent) bool {
+	deadline := time.After(cacheLag)
+	for {
+		select {
+		case e, ok := <-events:
+			if !ok {
+				return false
+			}
+			if e == want {
+				return true
+			}
+		case <-deadline:
+			return false
+		}
+	}
 }
 
 // versionWithin polls a page's version until it reads want or cacheLag has
@@ -120,6 +195,12 @@ func TestSharedInstance(t *testing.T) {
 	if code, _ := c.do(http.MethodGet, "/api/p/"+created.ID, "", nil); code != http.StatusOK {
 		t.Errorf("read without key = %d, want 200", code)
 	}
+	// An open tab's view of the page: the version pushed on connect, then
+	// again after the replace below, then gone after the delete.
+	events := c.streamEvents(created.ID)
+	if !awaitEvent(events, sseEvent{"version", "1"}) {
+		t.Error("event stream did not open with version 1")
+	}
 	if code, _ := c.do(http.MethodGet, "/api/pages", "", nil); code == http.StatusOK {
 		t.Error("GET /api/pages must not list pages on a shared instance")
 	}
@@ -132,11 +213,17 @@ func TestSharedInstance(t *testing.T) {
 	if code, got := c.versionWithin(created.ID, "2"); code != http.StatusOK || got != "2" {
 		t.Errorf("version after replace = %d %q, want 200 \"2\" within %s", code, got, cacheLag)
 	}
+	if !awaitEvent(events, sseEvent{"version", "2"}) {
+		t.Errorf("event stream did not push version 2 within %s of the replace", cacheLag)
+	}
 	if code, _ := c.do(http.MethodDelete, "/p/"+created.ID, other, nil); code != http.StatusForbidden {
 		t.Errorf("delete with another key = %d, want 403", code)
 	}
 	if code, _ := c.do(http.MethodDelete, "/p/"+created.ID, key, nil); code != http.StatusNoContent {
 		t.Errorf("delete by author = %d, want 204", code)
+	}
+	if !awaitEvent(events, sseEvent{"gone", ""}) {
+		t.Errorf("event stream did not report the page gone within %s of the delete", cacheLag)
 	}
 	if code, _ := c.do(http.MethodGet, "/api/p/"+created.ID, "", nil); code != http.StatusNotFound {
 		t.Errorf("read after delete = %d, want 404", code)
