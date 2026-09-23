@@ -12,15 +12,21 @@ import (
 	"github.com/gofrs/flock"
 
 	"github.com/mad01/thismoon/services/speak/internal/tts"
-	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
+
+// testWAV stands in for a synthesized clip.
+var testWAV = tts.Audio{Data: []byte("wav"), ContentType: tts.ContentTypeWAV}
 
 // newTestEngine returns an Engine wired to temp paths, with synthesis and
 // playback replaced by instant no-ops so tests never touch the network or audio.
 func newTestEngine(t *testing.T) *Engine {
 	t.Helper()
-	e := New(ttsclient.New("http://127.0.0.1:0"), "af_heart", t.TempDir())
-	e.synth = func(_, _ string) ([]byte, error) { return []byte("wav"), nil }
+	e := New(Config{
+		Health:       tts.NewHealth("local", "kokoro"),
+		DefaultVoice: "af_heart",
+		StateDir:     t.TempDir(),
+	})
+	e.synth = func(_, _ string) (tts.Audio, error) { return testWAV, nil }
 	e.newPlayCmd = func(_ string) *exec.Cmd { return exec.Command("true") }
 	return e
 }
@@ -125,20 +131,13 @@ func TestBusyWhenLockHeld(t *testing.T) {
 	}
 }
 
-func TestVoices(t *testing.T) {
-	got := newTestEngine(t).Voices()
-	if !strings.Contains(got.Message, "af_heart") || !strings.Contains(got.Message, "am_michael") {
-		t.Errorf("voices = %q", got.Message)
-	}
-}
-
 // TestSpeakTextFailsWhenBackendIsDown pins the fix for the silent failure:
 // a backend that cannot synthesize the first sentence comes back as a failed
 // reply naming the reason, with nothing playing and the lock free.
 func TestSpeakTextFailsWhenBackendIsDown(t *testing.T) {
 	e := newTestEngine(t)
-	e.synth = func(_, _ string) ([]byte, error) {
-		return nil, &tts.Error{
+	e.synth = func(_, _ string) (tts.Audio, error) {
+		return tts.Audio{}, &tts.Error{
 			Kind:    tts.KindNetwork,
 			Message: "TTS engine not reachable at http://127.0.0.1:8765",
 		}
@@ -167,11 +166,11 @@ func TestSpeakTextFailsWhenBackendIsDown(t *testing.T) {
 func TestResumeRetriesAfterBackendRecovers(t *testing.T) {
 	e := newTestEngine(t)
 	down := true
-	e.synth = func(_, _ string) ([]byte, error) {
+	e.synth = func(_, _ string) (tts.Audio, error) {
 		if down {
-			return nil, &tts.Error{Kind: tts.KindQuota, Message: "rate limited"}
+			return tts.Audio{}, &tts.Error{Kind: tts.KindQuota, Message: "rate limited"}
 		}
-		return []byte("wav"), nil
+		return testWAV, nil
 	}
 	failed := e.SpeakText("One. Two.", "")
 
@@ -195,9 +194,9 @@ func TestResumeRetriesAfterBackendRecovers(t *testing.T) {
 func TestFirstSentenceSynthesizedOnce(t *testing.T) {
 	e := newTestEngine(t)
 	var calls []string
-	e.synth = func(text, _ string) ([]byte, error) {
+	e.synth = func(text, _ string) (tts.Audio, error) {
 		calls = append(calls, text)
-		return []byte("wav"), nil
+		return testWAV, nil
 	}
 	e.SpeakText("One. Two.", "")
 	waitIdle(t, e)
@@ -213,7 +212,7 @@ func TestConcurrentStartsAreSerialized(t *testing.T) {
 	e := newTestEngine(t)
 	release := make(chan struct{})
 	var inFlight, maxInFlight atomic.Int32
-	e.synth = func(text, _ string) ([]byte, error) {
+	e.synth = func(text, _ string) (tts.Audio, error) {
 		n := inFlight.Add(1)
 		defer inFlight.Add(-1)
 		if n > maxInFlight.Load() {
@@ -222,7 +221,7 @@ func TestConcurrentStartsAreSerialized(t *testing.T) {
 		if text == "First." {
 			<-release
 		}
-		return []byte("wav"), nil
+		return testWAV, nil
 	}
 
 	first := make(chan Result)

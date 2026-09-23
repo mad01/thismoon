@@ -1,12 +1,33 @@
 # speak
 
 A Go CLI that serves a local read-aloud page at `http://speak.this/` and
-reverse-proxies speech synthesis requests to a local Kokoro TTS engine.
+synthesizes speech through a configurable text-to-speech (TTS) provider: a
+local Kokoro engine by default, or OpenRouter, OpenAI or a LiteLLM proxy.
 
 Upload a markdown file, read it rendered in the browser, and play it section
 by section. The same service also handles `/v1/audio/speech` so other local
 tools (present briefings, for example) can request speech without touching the
-engine directly.
+provider directly.
+
+## Providers
+
+`~/.config/speak/config.yaml` holds a block per provider, all configured side
+by side, and a `provider:` line picking the one in use. Without the file speak
+uses the local engine. Keys come only from environment variables; `speak
+config` shows what is resolved and why a block cannot be used. For example,
+to read aloud with Gemini voices through OpenRouter:
+
+```yaml
+provider: openrouter-gemini
+providers:
+  local: {}
+  openrouter-gemini:
+    type: openrouter          # key from OPENROUTER_API_KEY
+    model: google/gemini-3.1-flash-tts-preview
+    voice: Kore
+```
+
+Full format, voices and precedence: [config.md](config.md).
 
 ## Install
 
@@ -21,10 +42,11 @@ repo's `speak-tts` recipe. To set it up from scratch:
 ralph up   # builds speak, creates the venv, pre-fetches the model, registers both agents
 ```
 
-**The release artifact is the Go binary only.** It serves the page and
-proxies speech requests, but synthesis needs the recipe-managed Kokoro
-sidecar running on `:8765`; without it the page loads and the speech
-endpoints return errors. CI builds and releases never ship the engine.
+**The release artifact is the Go binary only.** With the default local
+provider, synthesis needs the recipe-managed Kokoro sidecar running on
+`:8765`; without it the page loads and the speech endpoints return errors. CI
+builds and releases never ship the engine. A machine on a remote provider
+needs no engine.
 
 ### TTS engine dependencies
 
@@ -85,7 +107,7 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 | `GET /` | Upload form |
 | `GET /app.js` | Client-side renderer |
 | `POST /read` | Render and split a markdown file for playback |
-| `POST /v1/audio/speech` | Proxy to the Kokoro engine (CORS allowlist: loopback and `.this` origins) |
+| `POST /v1/audio/speech` | OpenAI-style speech through the active provider (CORS allowlist: loopback and `.this` origins); failures answer JSON naming the reason |
 | `GET /healthz` | 204; reachability probe for this page |
 | `GET /enginez` | TTS health as JSON (ok, degraded or down, with the reason); 200 when ok, 503 otherwise |
 | `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
@@ -100,12 +122,19 @@ The `<wk-read-aloud>` webkit component on the rendered page calls
 `speak serve` plays audio in the browser: the person at the page hears it.
 `speak mcp` plays audio on the machine's speakers with `afplay`, so an agent
 can make the machine talk. The two are independent: they share only the TTS
-engine, and the MCP server needs the `speak-tts` engine reachable but does **not**
-need `speak serve` running.
+provider, and the MCP server needs that provider reachable but does **not**
+need `speak serve` running. The `voice` parameter of `speak_text` and
+`speak_file` offers the provider's voices.
 
 ```bash
-speak mcp --tts-url http://127.0.0.1:8765   # stdio MCP server for Claude Code
+speak mcp   # stdio MCP server for Claude Code, on the configured provider
 ```
+
+A remote provider's key has to reach the server's environment, which an MCP
+host does not carry from your shell. The speak recipe's `speak-env.sh` pulls
+exactly the variables the active provider reads from the ralph secrets file
+and execs speak; register that script with the argument `mcp` instead of the
+bare binary.
 
 On a standalone install, register it once:
 
@@ -126,11 +155,11 @@ caller gets a `BUSY | …` reply instead of talking over the first.
 | `speak_pause` | Pause playback (`SIGSTOP` the `afplay` child) and release the lock. |
 | `speak_resume` | Resume after pause, or restart from the saved position after stop. |
 | `speak_stop` | Stop playback; the position is saved for `speak_resume`. |
-| `speak_voices` | List the Kokoro voices. |
-| `speak_status` | Report engine reachability and playback state (session, playing/paused/stopped/idle, position, lock holder). |
+| `speak_voices` | List the active provider's voices, default marked. |
+| `speak_status` | Report provider health and playback state (session, playing/paused/stopped/idle, position, lock holder). |
 | `speak_doctor` | Run the same checks as `speak doctor` and return the report as JSON. |
 
-Confirm the registration with `claude mcp list`, and run `speak doctor` to check the TTS engine, the store, the web surface, and version skew in one pass.
+Confirm the registration with `claude mcp list`, and run `speak doctor` to check the config, the providers, synthesis, the store, the web surface, and version skew in one pass.
 
 ## Configuration
 

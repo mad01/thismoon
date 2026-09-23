@@ -1,5 +1,5 @@
 // Package playback is the server-side read-aloud engine behind the speak MCP
-// tools. It fetches per-sentence WAV audio from the local TTS engine and plays
+// tools. It fetches per-sentence audio from the active TTS provider and plays
 // it on the machine's speakers with afplay, controlling pause/resume by sending
 // SIGSTOP/SIGCONT to the afplay child. A single afplay session runs at a time,
 // serialised across processes by an flock on playback.lock in the state
@@ -24,9 +24,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 
-	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
-	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
 const audioTTL = 24 * time.Hour
@@ -50,18 +48,34 @@ type Result struct {
 	Failed  bool   `json:"failed,omitempty"  jsonschema:"true when speech could not start; message says why and nothing is playing"`
 }
 
+// Speaker is what playback synthesizes through: the active provider.
+type Speaker interface {
+	Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error)
+}
+
+// Config wires an Engine to its provider and state directory.
+type Config struct {
+	Speaker      Speaker
+	Health       *tts.Health // records every synthesis; speak_status reports it
+	DefaultVoice string
+	StateDir     string // the resolved --state-dir: audio cache and playback.lock
+	// Ping checks a local engine is listening, reporting checked=false for
+	// a remote provider. nil means nothing to ping.
+	Ping func(ctx context.Context) (checked bool, err error)
+}
+
 // Engine owns the single server-side playback session. All mutable fields are
 // guarded by mu; cond wakes the worker when playback resumes.
 type Engine struct {
-	tts          *ttsclient.Client
 	health       *tts.Health
+	ping         func(ctx context.Context) (bool, error)
 	defaultVoice string
 	audioDir     string
 	lockPath     string
 
-	// injectable seams for tests (default to the TTS client and afplay).
-	synth      func(text, voice string) ([]byte, error)
-	newPlayCmd func(wavPath string) *exec.Cmd
+	// injectable seams for tests (default to the provider and afplay).
+	synth      func(text, voice string) (tts.Audio, error)
+	newPlayCmd func(audioPath string) *exec.Cmd
 
 	// startMu serializes startPlayback and Stop. A start holds the playback
 	// lock while it synthesizes the first sentence, before running is set;
@@ -88,21 +102,21 @@ type Engine struct {
 	lastResult string
 }
 
-// New builds an Engine that fetches audio from tts and speaks it aloud,
-// keeping its audio cache and lock under stateDir (the resolved
-// --state-dir). It reaps stale WAV files left by earlier runs.
-func New(client *ttsclient.Client, defaultVoice, stateDir string) *Engine {
-	base := expandUser(stateDir)
+// New builds an Engine that fetches audio from cfg.Speaker and speaks it
+// aloud, keeping its audio cache and lock under cfg.StateDir. It reaps stale
+// audio files left by earlier runs.
+func New(cfg Config) *Engine {
+	base := expandUser(cfg.StateDir)
 	e := &Engine{
-		tts:          client,
-		health:       tts.NewHealth(ttsclient.Provider, speak.DefaultModel),
-		defaultVoice: defaultVoice,
+		health:       cfg.Health,
+		ping:         cfg.Ping,
+		defaultVoice: cfg.DefaultVoice,
 		audioDir:     filepath.Join(base, "audio"),
 		lockPath:     filepath.Join(base, "playback.lock"),
 	}
 	e.cond = sync.NewCond(&e.mu)
-	e.synth = func(t, v string) ([]byte, error) {
-		return client.Synthesize(context.Background(), t, v)
+	e.synth = func(t, v string) (tts.Audio, error) {
+		return cfg.Speaker.Synthesize(context.Background(), tts.Request{Text: t, Voice: v})
 	}
 	e.newPlayCmd = func(wav string) *exec.Cmd { return exec.Command("afplay", wav) }
 	e.reapOldAudio()
@@ -251,23 +265,15 @@ func (e *Engine) Stop(session string) Result {
 	return Result{Message: "Stopped."}
 }
 
-// Voices lists the Kokoro voices the engine ships.
-func (e *Engine) Voices() Result {
-	return Result{Message: strings.Join([]string{
-		"af_heart (default, female)",
-		"af_bella (female)",
-		"af_nicole (female)",
-		"af_sarah (female)",
-		"af_sky (female)",
-		"am_adam (male)",
-		"am_michael (male)",
-	}, "\n")}
-}
-
 // Status reports engine reachability, the health recorded from this
 // process's syntheses, and the current playback state.
 func (e *Engine) Status() Result {
-	reachable := e.tts.Reachable()
+	reachable := "n/a (remote provider)"
+	if e.ping != nil {
+		if checked, err := e.ping(context.Background()); checked {
+			reachable = strconv.FormatBool(err == nil)
+		}
+	}
 	health := e.health.Snapshot()
 	checked := "never"
 	if !health.CheckedAt.IsZero() {
@@ -310,8 +316,10 @@ func (e *Engine) Status() Result {
 	}
 
 	return Result{Session: e.sessionID, Message: fmt.Sprintf(
-		"session: %s\nengine_reachable: %t\ntts_health: %s\ntts_checked: %s\nstate: %s\nposition: %s\nlocked: %t\nlock_holder: %s\ndefault_voice: %s\nlast_result: %s",
+		"session: %s\nprovider: %s (%s)\nengine_reachable: %s\ntts_health: %s\ntts_checked: %s\nstate: %s\nposition: %s\nlocked: %t\nlock_holder: %s\ndefault_voice: %s\nlast_result: %s",
 		sid,
+		health.Provider,
+		health.Model,
 		reachable,
 		health.Summary(),
 		checked,
@@ -501,10 +509,11 @@ func (e *Engine) fullStop() {
 	e.releaseLock()
 }
 
-// synthToFile synthesizes one sentence to a WAV file under the audio
-// directory, recording the outcome in the engine's health.
+// synthToFile synthesizes one sentence to an audio file under the audio
+// directory, recording the outcome in the engine's health. The extension
+// follows the audio's format, which afplay goes by.
 func (e *Engine) synthToFile(text, voice string) (string, error) {
-	data, err := e.synth(text, voice)
+	audio, err := e.synth(text, voice)
 	e.health.Record(err)
 	if err != nil {
 		return "", err
@@ -514,9 +523,9 @@ func (e *Engine) synthToFile(text, voice string) (string, error) {
 	}
 	path := filepath.Join(
 		e.audioDir,
-		fmt.Sprintf("speak_%d_%d.wav", time.Now().UnixMilli(), os.Getpid()),
+		fmt.Sprintf("speak_%d_%d%s", time.Now().UnixMilli(), os.Getpid(), audio.Ext()),
 	)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, audio.Data, 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -617,7 +626,7 @@ func (e *Engine) reapOldAudio() {
 	}
 	cutoff := time.Now().Add(-audioTTL)
 	for _, ent := range entries {
-		if ent.IsDir() || !strings.HasSuffix(ent.Name(), ".wav") {
+		if ent.IsDir() || !isAudioFile(ent.Name()) {
 			continue
 		}
 		info, err := ent.Info()
@@ -628,6 +637,12 @@ func (e *Engine) reapOldAudio() {
 			_ = os.Remove(filepath.Join(e.audioDir, ent.Name()))
 		}
 	}
+}
+
+// isAudioFile reports a clip synthToFile writes: WAV, or MP3 from a
+// provider that answers MP3.
+func isAudioFile(name string) bool {
+	return strings.HasSuffix(name, ".wav") || strings.HasSuffix(name, ".mp3")
 }
 
 // expandUser rewrites a leading ~ or ~/ to the user's home directory. When

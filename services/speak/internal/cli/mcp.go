@@ -21,8 +21,10 @@ markdown aloud on this machine's speakers.
 
 Unlike ` + "`speak serve`" + ` (which plays audio in the browser), the MCP tools drive
 server-side playback with afplay, so an agent can make the machine talk. The
-tools synthesize against the same local Kokoro engine as serve (--tts-url); the
-speak-tts agent must be running, but ` + "`speak serve`" + ` need not be.
+tools synthesize through the same provider as serve (the config's active
+block, --provider to override); that provider must be reachable, but
+` + "`speak serve`" + ` need not be running. The voice parameter lists the
+provider's voices.
 
 Tools exposed:
   speak_text    Speak given text aloud; returns a session id.
@@ -30,8 +32,8 @@ Tools exposed:
   speak_pause   Pause playback and release the lock.
   speak_resume  Resume after pause or stop.
   speak_stop    Stop playback, saving the position.
-  speak_voices  List the Kokoro voices.
-  speak_status  Report engine reachability and playback state.
+  speak_voices  List the provider's voices, default marked.
+  speak_status  Report provider health and playback state.
   speak_doctor  Run the same checks as ` + "`speak doctor`" + `, as JSON.
 
 ` + agentdoc.RegistrationSnippet(speak.Facts()),
@@ -42,11 +44,13 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 }
 
-func runMCP(_ *cobra.Command, _ []string) error {
+func runMCP(cmd *cobra.Command, _ []string) error {
+	p := activeProvider(cmd.Context())
 	// stdout is the MCP protocol channel; log the resolved target to stderr.
-	log.Printf("speak mcp: tts-url=%s state-dir=%s", flagTTSURL, flagStateDir)
+	log.Printf("speak mcp: provider=%s model=%s remote=%t state-dir=%s",
+		p.Name(), p.Model(), p.Config().Remote, flagStateDir)
 	srv, err := mcpserver.New(buildinfo.Get().Version, mcpserver.Config{
-		TTSURL:   flagTTSURL,
+		Provider: p,
 		StateDir: flagStateDir,
 		Checks:   doctorChecks,
 	})

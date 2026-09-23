@@ -1,15 +1,17 @@
-// Package ttsclient is a thin HTTP client for the local Kokoro TTS engine
-// (mlx-audio) that `speak serve` also reverse-proxies. The MCP playback engine
-// fetches per-sentence WAV audio from it and plays the bytes with afplay —
-// server-side synthesis stays in the engine, this package only speaks HTTP.
-// Every failure comes back as a *tts.Error, so callers can say why speech
-// failed rather than just that it did.
+// Package ttsclient is the HTTP client for OpenAI-compatible speech
+// endpoints (POST {base}/v1/audio/speech): the local Kokoro engine
+// (mlx-audio), OpenRouter, OpenAI and a LiteLLM proxy all serve that one
+// surface and differ only in base URL, key, model and the audio format they
+// return. Every answer is normalized to playable WAV or MP3, and every
+// failure comes back as a *tts.Error, so callers can say why speech failed
+// rather than just that it did.
 package ttsclient
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,130 +23,185 @@ import (
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
-// Provider is the name the local engine reports under in health state and
-// error bodies.
-const Provider = "local"
-
-// maxErrorBody bounds how much of an engine error response is read for its
+// maxErrorBody bounds how much of an error response is read for its
 // message.
 const maxErrorBody = 4 << 10
 
-// Client talks to the mlx-audio engine's OpenAI-compatible speech endpoint.
-type Client struct {
-	baseURL string
-	http    *http.Client
+// requestTimeout bounds one synthesis. A sentence takes well under a second
+// locally and a few seconds remotely; this only stops a hung backend from
+// holding a play click forever.
+const requestTimeout = 30 * time.Second
+
+// errRedirectRefused stops the client before it can re-send the request, and
+// its Authorization header, to a redirect target.
+var errRedirectRefused = errors.New("ttsclient: HTTP redirect refused")
+
+// Config locates one OpenAI-compatible speech endpoint.
+type Config struct {
+	Provider  string // the config block's name, reported in health and errors
+	Local     bool   // the local mlx-audio engine: failures point at its t-man agent
+	BaseURL   string // endpoint root, without /v1
+	APIKey    string // sent as a bearer token when set
+	APIKeyEnv string // named in the reason when the key is refused
+	Model     string
+	Format    string // response_format to request: wav, or pcm where wav is not offered
 }
 
-// New returns a Client for the engine at baseURL (e.g. http://127.0.0.1:8765).
-func New(baseURL string) *Client {
+// Client synthesizes speech against one endpoint.
+type Client struct {
+	cfg  Config
+	http *http.Client
+}
+
+// New returns a Client for cfg.
+func New(cfg Config) *Client {
+	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 30 * time.Second},
+		cfg: cfg,
+		http: &http.Client{
+			Timeout: requestTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return errRedirectRefused
+			},
+		},
 	}
 }
 
-// BaseURL is the engine address the client was built for.
-func (c *Client) BaseURL() string { return c.baseURL }
+// BaseURL is the endpoint root the client was built for.
+func (c *Client) BaseURL() string { return c.cfg.BaseURL }
 
 // speechRequest is the /v1/audio/speech payload. model is required: the
-// engine answers 422 without it. response_format is always "wav": the
-// engine's default mp3 path shells out to ffmpeg, which may be missing and
-// then fails as a 200 with an empty body rather than an error.
+// local engine answers 422 without it. response_format is wav wherever it
+// is offered: the local engine's default mp3 path shells out to ffmpeg,
+// which may be missing and then fails as a 200 with an empty body.
 type speechRequest struct {
-	Model          string `json:"model"`
-	Input          string `json:"input"`
-	Voice          string `json:"voice"`
-	ResponseFormat string `json:"response_format"`
+	Model          string  `json:"model"`
+	Input          string  `json:"input"`
+	Voice          string  `json:"voice"`
+	ResponseFormat string  `json:"response_format"`
+	Speed          float64 `json:"speed,omitempty"`
 }
 
-// Synthesize returns WAV bytes for one chunk of text in the given voice. A
-// failure is a *tts.Error: network when the engine never answered, otherwise
-// classified from the engine's status and message.
-func (c *Client) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
+// Synthesize returns playable audio for one chunk of text. A failure is a
+// *tts.Error: network when the endpoint never answered, otherwise
+// classified from its status and message.
+func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error) {
 	body, err := json.Marshal(speechRequest{
-		Model:          speak.DefaultModel,
-		Input:          text,
-		Voice:          voice,
-		ResponseFormat: "wav",
+		Model:          c.cfg.Model,
+		Input:          req.Text,
+		Voice:          req.Voice,
+		ResponseFormat: c.cfg.Format,
+		Speed:          req.Speed,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal speech request: %w", err)
+		return tts.Audio{}, fmt.Errorf("marshal speech request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(
+	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		c.baseURL+"/v1/audio/speech",
+		c.cfg.BaseURL+"/v1/audio/speech",
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("build speech request: %w", err)
+		return tts.Audio{}, fmt.Errorf("build speech request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.cfg.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	}
 
-	res, err := c.http.Do(req)
+	res, err := c.http.Do(httpReq)
 	if err != nil {
 		// The one transport chokepoint every playback path goes through;
 		// Hint points the reader at the operating doc from here.
-		return nil, agentdoc.Hint(UnreachableError(c.baseURL, err), speak.Facts())
+		return tts.Audio{}, agentdoc.Hint(c.unreachable(err), speak.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode >= http.StatusBadRequest {
 		detail, _ := io.ReadAll(io.LimitReader(res.Body, maxErrorBody))
-		return nil, tts.FromResponse(Provider, "TTS engine", res.StatusCode, detail)
+		failure := tts.FromResponse(c.cfg.Provider, c.label(), res.StatusCode, detail)
+		if failure.Kind == tts.KindAuth && c.cfg.APIKeyEnv != "" {
+			failure.Message += " (check " + c.cfg.APIKeyEnv + ")"
+		}
+		return tts.Audio{}, failure
 	}
 	data, err := io.ReadAll(res.Body)
 	if err != nil || len(data) == 0 {
-		return nil, FailedAfterAnswerError(res.StatusCode, err)
+		return tts.Audio{}, c.failedAfterAnswer(res.StatusCode, err)
 	}
-	return data, nil
+	audio, err := tts.Normalize(data, res.Header.Get("Content-Type"))
+	if err != nil {
+		return tts.Audio{}, &tts.Error{
+			Kind:     tts.KindUpstream,
+			Provider: c.cfg.Provider,
+			Status:   res.StatusCode,
+			Message:  c.label() + " answered audio speak cannot play: " + err.Error(),
+			Err:      err,
+		}
+	}
+	return audio, nil
 }
 
-// FailedAfterAnswerError is the classified failure for an engine that
-// answered 200 and then sent no audio, or broke off the stream (err set). It
-// hit an error after the status line was already out, so the cause is only
-// in its own log. It counts as upstream, not network: the engine is
-// reachable. The web proxy detects the same case at the end of the body.
-func FailedAfterAnswerError(status int, err error) *tts.Error {
+// label names the endpoint in reasons: "TTS engine" for the local one, the
+// provider's name otherwise.
+func (c *Client) label() string {
+	if c.cfg.Local {
+		return "TTS engine"
+	}
+	return c.cfg.Provider
+}
+
+// unreachable classifies an endpoint that never answered.
+func (c *Client) unreachable(err error) *tts.Error {
+	hint := ""
+	if c.cfg.Local {
+		hint = " (is the speak-tts agent running? t-man status speak-tts)"
+	}
+	return &tts.Error{
+		Kind:     tts.KindNetwork,
+		Provider: c.cfg.Provider,
+		Message:  fmt.Sprintf("%s not reachable at %s%s: %v", c.label(), c.cfg.BaseURL, hint, err),
+		Err:      err,
+	}
+}
+
+// failedAfterAnswer classifies a 200 that carried no audio, or a stream
+// broken off mid-body (err set). The endpoint hit an error after the status
+// line was out, so its cause is only in the endpoint's own log. It counts as
+// upstream, not network: the endpoint is reachable.
+func (c *Client) failedAfterAnswer(status int, err error) *tts.Error {
 	what := "returned empty audio"
 	if err != nil {
 		what = "broke off the audio stream (" + err.Error() + ")"
 	}
+	where := ""
+	if c.cfg.Local {
+		where = ", so the cause is in its log (t-man logs speak-tts)"
+	}
 	return &tts.Error{
 		Kind:     tts.KindUpstream,
-		Provider: Provider,
+		Provider: c.cfg.Provider,
 		Status:   status,
-		Message: "TTS engine " + what + " after answering, " +
-			"so the cause is in its log (t-man logs speak-tts)",
-		Err: err,
+		Message:  c.label() + " " + what + " after answering" + where,
+		Err:      err,
 	}
 }
 
-// UnreachableError is the classified failure for an engine that never
-// answered. The web proxy reports its transport errors through it too, so
-// both surfaces word a stopped engine the same way.
-func UnreachableError(baseURL string, err error) *tts.Error {
-	return &tts.Error{
-		Kind:     tts.KindNetwork,
-		Provider: Provider,
-		Message: fmt.Sprintf(
-			"TTS engine not reachable at %s (is the speak-tts agent running? t-man status speak-tts): %v",
-			baseURL,
-			err,
-		),
-		Err: err,
-	}
-}
-
-// Reachable reports whether the engine answers a quick GET / within 1.5s: a
-// cheap ping for speak_status. It proves a process is listening, not that it
-// can synthesize; the recorded tts.Health answers that.
-func (c *Client) Reachable() bool {
-	client := &http.Client{Timeout: 1500 * time.Millisecond}
-	res, err := client.Get(c.baseURL + "/")
+// Reachable reports whether the endpoint answers a quick GET / within 1.5s:
+// a cheap ping for speak_status and doctor on the local engine. It proves a
+// process is listening, not that it can synthesize; the recorded tts.Health
+// answers that.
+func (c *Client) Reachable(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.cfg.BaseURL+"/", nil)
 	if err != nil {
-		return false
+		return fmt.Errorf("build reachability probe: %w", err)
 	}
-	_ = res.Body.Close()
-	return res.StatusCode < 500
+	res, err := c.http.Do(req)
+	if err != nil {
+		return c.unreachable(err)
+	}
+	return res.Body.Close()
 }

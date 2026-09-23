@@ -7,14 +7,11 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/buildinfo"
-	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
-	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
 // shellHTML is the static page shell (chrome only). The page body — header,
@@ -30,21 +27,16 @@ var appJS []byte
 
 const maxUploadBytes = 5 << 20 // 5MB markdown is plenty for a local tool
 
-// NewMux builds the speak HTTP handler: the markdown read-aloud page plus a
-// reverse proxy in front of the mlx-audio speech endpoint that other local
-// origins (present.this etc.) can fetch speech from, subject to the CORS
-// allowlist in cors.go. info is the build metadata linked in via ldflags, exposed
-// at GET /version (the HTTP twin of the fleet-wide `speak version -o json`
-// probe ralph uses for update detection).
-func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
-	upstream, err := url.Parse(ttsURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse tts url %q: %w", ttsURL, err)
-	}
-	// One health state for the process: every proxied request and every
-	// /enginez probe records into it, so the banner and the error bodies agree.
-	health := tts.NewHealth(ttsclient.Provider, speak.DefaultModel)
-	proxy := newSpeechProxy(upstream, health)
+// NewMux builds the speak HTTP handler: the markdown read-aloud page plus an
+// OpenAI-style speech endpoint that other local origins (present.this etc.)
+// can fetch speech from, subject to the CORS allowlist in cors.go. speaker is
+// the active provider; health is the one state every speech request and
+// /enginez probe records into, so the banner and the error bodies agree.
+// info is the build metadata linked in via ldflags, exposed at GET /version
+// (the HTTP twin of the fleet-wide `speak version -o json` probe ralph uses
+// for update detection).
+func NewMux(speaker Speaker, health *tts.Health, info buildinfo.Info) *http.ServeMux {
+	speech := &speechHandler{speaker: speaker, health: health}
 
 	mux := http.NewServeMux()
 	webkit.Mount(mux)
@@ -97,7 +89,7 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		proxy.ServeHTTP(w, r)
+		speech.ServeHTTP(w, r)
 	})
 
 	// CORS on the root probe too: <wk-read-aloud> checks GET / cross-origin
@@ -111,11 +103,11 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 	// GET / on its endpoint, which same-origin is this page — always up even
 	// when the TTS engine behind the proxy is dead. app.js polls this to warn
 	// that play buttons won't work and why; see enginez in speech.go.
-	mux.Handle("GET /enginez", &enginez{engine: ttsclient.New(ttsURL), health: health})
+	mux.Handle("GET /enginez", &enginez{speaker: speaker, health: health})
 
 	mux.HandleFunc("GET /version", info.Handler())
 
-	return mux, nil
+	return mux
 }
 
 // readResponse is the JSON shape POST /read returns: the uploaded file name and
@@ -138,17 +130,20 @@ func writeReadJSON(w http.ResponseWriter, docName, content string) {
 // Serve runs the HTTP server on 127.0.0.1:<port>. The wrapper handler applies
 // the CORS allowlist to every response so cross-origin probes and speech
 // fetches from this machine's own pages work regardless of route.
-func Serve(port int, ttsURL string, info buildinfo.Info) error {
-	mux, err := NewMux(ttsURL, info)
-	if err != nil {
-		return err
-	}
+func Serve(port int, speaker Speaker, health *tts.Health, info buildinfo.Info) error {
+	mux := NewMux(speaker, health, info)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCORS(w, r)
 		mux.ServeHTTP(w, r)
 		log.Printf("%s %s", r.Method, r.URL.Path)
 	})
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	log.Printf("speak: serving on http://%s (tts upstream %s)", addr, ttsURL)
+	state := health.Snapshot()
+	log.Printf(
+		"speak: serving on http://%s (tts provider %s, model %s)",
+		addr,
+		state.Provider,
+		state.Model,
+	)
 	return http.ListenAndServe(addr, handler)
 }

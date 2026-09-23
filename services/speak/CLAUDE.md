@@ -2,10 +2,11 @@
 
 Go CLI serving a local page where you upload a markdown file, see it rendered
 inline, and play it section by section with the shared `<wk-read-aloud>` webkit
-component. The same process reverse-proxies `/v1/audio/speech` to the local
-Kokoro TTS engine (mlx-audio) behind a CORS allowlist, so pages on this
-machine's other local origins (present.this, localhost) can fetch speech from
-it too, and pages from anywhere else cannot.
+component. The same process serves an OpenAI-style `/v1/audio/speech` behind a
+CORS allowlist, so pages on this machine's other local origins (present.this,
+localhost) can fetch speech from it too, and pages from anywhere else cannot.
+Speech comes from the provider `~/.config/speak/config.yaml` selects: the local
+Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI or a LiteLLM proxy.
 
 ## Module layout
 
@@ -13,19 +14,29 @@ it too, and pages from anywhere else cannot.
 services/speak/
   cmd/speak/           # entrypoint (delegates to internal/cli)
   internal/
-    cli/               # cobra: root flags (--port/--tts-url/--state-dir), serve,
-                        # mcp, doctor, docs, version (build metadata from the
-                        # shared buildinfo package)
-    web/               # server.go (mux, TTS proxy, HTTP API), cors.go (the
+    cli/               # cobra: root flags (--config/--provider/--tts-url/--port/
+                        # --state-dir), serve, mcp, config (config/active/env),
+                        # doctor, docs, version (build metadata from the shared
+                        # buildinfo package); provider.go builds the provider
+                        # every subcommand uses
+    web/               # server.go (mux, HTTP API), speech.go (speech handler +
+                        # /enginez health), cors.go (the
                         # cross-origin allowlist), markdown.go
                         # (goldmark render + section split), assets/shell.html
                         # (chrome-only shell) + assets/app.js (client render)
+    config/            # the provider config file: a block per provider, the
+                        # active one selected; resolves type defaults and keys
+                        # from env, marks unusable blocks with a Problem
+    provider/          # builds the active provider from config: its client, its
+                        # voices (curated, discovered, or catalog), or a broken
+                        # provider that fails every synthesis with the reason
     tts/               # shared by every surface: tts.Error (classified failure:
-                        # auth/quota/model/network/config/upstream) and tts.Health
-                        # (ok/degraded/down + reason) that /enginez, doctor and
-                        # the MCP tools all report
-    ttsclient/         # HTTP client for the Kokoro engine (WAV over /v1/audio/speech);
-                        # every failure comes back as a *tts.Error
+                        # auth/quota/model/network/config/upstream), tts.Health
+                        # (ok/degraded/down + reason), tts.Audio + Normalize
+                        # (WAV/MP3 pass through, raw PCM gets a WAV header)
+    ttsclient/         # HTTP client for OpenAI-compatible speech endpoints (local
+                        # engine, OpenRouter, OpenAI, LiteLLM); every failure
+                        # comes back as a *tts.Error
     playback/          # server-side afplay engine: sessions, pause/resume via
                         # SIGSTOP/SIGCONT, flock, sentence split, md text extract
     mcpserver/         # go-sdk MCP server: 8 speak_* tools over the playback engine
@@ -34,33 +45,46 @@ services/speak/
 
 ## How it works
 
-- `speak serve --port 7425 --tts-url http://127.0.0.1:8765` (envs `SPEAK_PORT`,
-  `SPEAK_TTS_URL`). Those two plus `--state-dir`/`SPEAK_STATE_DIR` are
-  persistent root flags, so serve, mcp, and doctor cannot resolve different
-  engines or state directories. Full surface in `config.md`.
+- `speak serve --port 7425`. `--config`, `--provider`, `--tts-url`, `--port`
+  and `--state-dir` (each with a `SPEAK_*` env twin) are persistent root
+  flags, so serve, mcp, and doctor cannot resolve different providers, ports
+  or state directories. `cli.activeProvider` builds the provider for all of
+  them. Full surface, including the config file, in `config.md`.
+- **Providers.** One config file holds a block per provider side by side; the
+  `provider:` line (or `--provider`/`SPEAK_PROVIDER`) picks one. Types:
+  `local`, `openrouter`, `openai`, `litellm`, all served by `ttsclient`
+  (they share `POST {base}/v1/audio/speech`). Keys come only from env vars the
+  block names; `speak config env` lists them and `recipes/speak/speak-env.sh`
+  pulls exactly those from the secrets file for speak-web and MCP hosts. No
+  automatic fallback: a broken config or unusable active block becomes a
+  provider that fails every synthesis with a `config` reason, so every
+  surface shows it.
 - `POST /read` (multipart field `doc`, max 5MB) renders markdown via goldmark
   (GFM) and splits it into `<section class="doc-section">` blocks at every
   h1/h2; those blocks are the per-button play units of
   `<wk-read-aloud targets=".doc-section" endpoint="">` (empty endpoint = same
   origin). No storage; render per request.
-- `POST /v1/audio/speech` reverse-proxies to the mlx-audio engine and answers
-  `OPTIONS` preflight locally (the engine doesn't do CORS). `internal/web/cors.go`
+- `POST /v1/audio/speech` synthesizes through the active provider (the
+  request's `model` and `response_format` are ignored; a voice the provider
+  doesn't offer becomes its default) and answers `OPTIONS` preflight
+  locally. `internal/web/cors.go`
   is the allowlist: an `Origin` that is an http/https URL on loopback or under
   `.this` is reflected back with `Vary: Origin`; anything else gets no CORS
   headers. The wrapper handler applies it to every response, so the
   component's cross-origin `GET /` reachability probe works from the sibling
   `.this` pages. **Never widen this to `*`** — the endpoint drives the
   machine's TTS engine, so `*` lets any page the user is browsing use it.
-- **Failures carry a reason; nothing fails silently.** A failed proxied
-  request is answered with `{"error": {"message", "type", "provider", "model",
-  "health"}}` (the OpenAI error shape plus provider and health), which
-  `<wk-read-aloud>` shows as a toast. Every outcome is recorded in one
-  `tts.Health` per process, and `/enginez` reports it. A 200 is recorded when
-  its body ends, not at the status line: mlx-audio can answer 200 and then
-  break off or send nothing, and that counts as a failure. Failures also emit
-  an `error` event to events.this via `kit/notify` (fire-and-forget); success
-  is recorded but never emitted, since read-aloud fans out one request per
-  sentence and would flood the event log.
+- **Failures carry a reason; nothing fails silently.** A failed synthesis is
+  answered with `{"error": {"message", "type", "provider", "model",
+  "health"}}` (the OpenAI error shape plus provider and health): 502 for a
+  provider failure (speak is the gateway), 429 for a rate limit, 503 for a
+  config problem. `<wk-read-aloud>` shows the message as a toast. Every
+  outcome is recorded in one `tts.Health` per process, and `/enginez` reports
+  it. A 200 with no audio, or a stream broken off mid-body (mlx-audio does
+  both when it fails after answering), counts as an upstream failure.
+  Failures also emit an `error` event to events.this via `kit/notify`
+  (fire-and-forget); success is recorded but never emitted, since read-aloud
+  fans out one request per sentence and would flood the event log.
 - Chrome comes from the in-module webkit package (`GET /webkit/`). The
   service compiles against the webkit committed beside it; there is no version
   to pin or bump.
@@ -115,7 +139,7 @@ make test     # go test ./...
 | `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
 | `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
 | `POST /read` | Render and split a markdown file for playback; returns `{name, content}` JSON |
-| `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (reflects an allowlisted origin, strips the upstream's own CORS headers). A failure answers JSON `{"error": {"message", "type", "provider", "model", "health"}}` with the engine's status, or 502 when the engine never answered |
+| `POST /v1/audio/speech` | OpenAI-style speech through the active provider; answers WAV or MP3 (reflects an allowlisted origin). A failure answers JSON `{"error": {"message", "type", "provider", "model", "health"}}`: 502 for a provider failure, 429 rate limit, 503 config problem, 400 for a request without `input` |
 | `GET /healthz` | 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets its CORS header from the wrapper handler, which applies the allowlist to every response |
 | `GET /enginez` | TTS health as JSON (`status` ok/degraded/down/unknown, `provider`, `model`, `kind`, `reason`, `checked_at`); 200 when ok, 503 otherwise. Answers from the last recorded outcome when under a minute old, else runs a test synthesis first (a ping would call a running engine with a missing model healthy). `app.js` renders it as the banner; distinct from `/healthz`, which only proves this page is up |
 | `GET /version` | The four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the HTTP twin of `speak version -o json`, which ralph uses for update detection |
@@ -167,7 +191,8 @@ WAV and plays it there); mcp plays audio **on the machine's speakers** via
 - `speak_file`: read a file (text or markdown) aloud.
 - `speak_pause` / `speak_resume` / `speak_stop`: control the running playback
   session; stop saves the sentence index so a later resume restarts there.
-- `speak_voices`: list the engine's available voices.
+- `speak_voices`: list the active provider's voices with the default marked,
+  and where the list came from (config, discovered, catalog, default).
 - `speak_status`: report the playback state, current session, and
   `tts_health` (the health recorded from this process's syntheses).
 - `speak_doctor`: run the same checks as `speak doctor` and return the report
@@ -195,6 +220,12 @@ muscle memory carries over. Implementation notes:
 - **Go `regexp` has no lookbehind** — the sentence splitter
   (`playback.SplitSentences`) is hand-rolled, not a translation of the Python
   `re.split(r'(?<=[.!?])\s+')`.
+- **The `voice` parameter is the provider's voice list.** `registerTools`
+  builds the speak_text/speak_file input schemas from the struct, then pins
+  `voice` to an enum of the provider's voices (resolved once at startup:
+  discovery runs then, with a 3s budget for OpenRouter). With no known list
+  it stays free text. `OpenWorldHint` is true when the provider is remote,
+  since text then leaves the machine.
 - **speak_text and speak_file synthesize the first sentence before
   replying.** A backend that cannot speak comes back as `Failed` with an
   `UNAVAILABLE | TTS <health>` message, flagged `isError` over MCP, instead
@@ -221,10 +252,17 @@ muscle memory carries over. Implementation notes:
   `github.com/mad01/thismoon/buildinfo`, so ralph can check which build is live.
   Plain `speak version` stays a bare token — status parses it as one.
 - **Two processes, one release artifact.** The release artifact is the Go
-  binary only. It serves the page and proxies speech requests, but synthesis
-  needs the recipe-managed Kokoro sidecar running on `:8765`; without it the
-  page loads and the speech endpoints return errors. CI builds and releases
-  never ship the engine.
+  binary only. With the default local provider, synthesis needs the
+  recipe-managed Kokoro sidecar running on `:8765`; without it the page loads
+  and the speech endpoints return errors. CI builds and releases never ship
+  the engine. A machine on a remote provider needs no engine at all.
+- **OpenRouter offers mp3 or pcm, never wav.** The openrouter type requests
+  pcm and `tts.Normalize` wraps it in a WAV header, taking the sample rate
+  from the `Content-Type` parameters (24 kHz mono when absent).
+- **Local voice discovery filters to English.** It lists the Kokoro voice
+  packs in the Hugging Face cache, but only `af_`/`am_`/`bf_`/`bm_`: the
+  engine has English G2P only, and its zero-egress sandbox blocks fetching
+  another language's, so the other packs are present but cannot speak.
 - **The venv shares the legacy state path.** `~/.local/share/speak` holds
   both the engine's venv/logs (recipe-created, on every machine with the
   engine) and, on pre-XDG installs, the playback `audio/` cache and lock.
