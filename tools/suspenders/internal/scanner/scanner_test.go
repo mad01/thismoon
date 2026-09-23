@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -1980,6 +1981,68 @@ func writeFiles(t *testing.T, dir string, files map[string]string) {
 		}
 		if err := os.WriteFile(abs, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// TestProviderKeyReferencesPass pins the split the provider-key guard rests
+// on: config, scripts and docs that name the key variables (speak's
+// api_key_env, the spawn wrappers' secrets-file lookups, humanizer's
+// backend docs) pass every rule, while the same lines carrying a real
+// OpenRouter key are caught. Guarding the key by value is what lets those
+// files stay committed without an allowance.
+func TestProviderKeyReferencesPass(t *testing.T) {
+	references := []string{
+		`    api_key_env: OPENROUTER_API_KEY`,
+		`  for _v in OPENROUTER_API_KEY LITELLM_BASE_URL LITELLM_API_KEY HUMANIZER_MODEL; do`,
+		`export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"`,
+		`- OPENROUTER_API_KEY: API key for OpenRouter. Never accepted as a flag.`,
+		`	OpenRouterKeyEnv  = "OPENROUTER_API_KEY"`,
+		`env := map[string]string{"OPENROUTER_API_KEY": "sk-or"}`,
+	}
+	sc := New(DefaultRules)
+	for _, line := range references {
+		findings, err := sc.ScanLine("config.yaml", 1, line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findings {
+			t.Errorf("%q flagged by %s; naming the variable is not a secret", line, f.Rule.ID)
+		}
+	}
+
+	// Starting with $ is not enough to pass: a bcrypt hash in a config is
+	// still flagged by the generic rule.
+	bcrypt, err := sc.ScanLine(
+		"config.yaml",
+		1,
+		`password: "$2b$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW"`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bcrypt) == 0 {
+		t.Error("a quoted bcrypt hash passed; only pure variable references should")
+	}
+
+	key := "sk-or-v1-" + strings.Repeat("a1f9", 16)
+	for _, line := range []string{
+		`export OPENROUTER_API_KEY=` + key,
+		`    api_key: ` + key,
+		`OPENROUTER_API_KEY="` + key + `" speak mcp`,
+	} {
+		findings, err := sc.ScanLine("secrets.sh", 1, line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.ContainsFunc(
+			findings,
+			func(f Finding) bool { return f.Rule.ID == "openrouter-api-key" },
+		) {
+			t.Errorf(
+				"a committed OpenRouter key in %q was not caught",
+				strings.Replace(line, key, "<key>", 1),
+			)
 		}
 	}
 }

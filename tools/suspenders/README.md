@@ -458,7 +458,7 @@ Suspenders ships with 84 built-in content rules validated against GitLeaks, GitH
 | `pem-certificate-with-key` | PEM certificate block | low |
 | `age-secret-key` | age encryption secret key (`AGE-SECRET-KEY-1`) | high |
 | `jwt-token` | JSON Web Token (`eyJ...`) | medium |
-| `generic-secret-assignment` | Generic secret assignment in code (entropy-gated) | medium |
+| `generic-secret-assignment` | Generic secret assignment in code (entropy-gated; a value that is only a variable reference such as `"${API_KEY}"` passes) | medium |
 | `unquoted-secret-assignment` | Unquoted secret assignment, `.env`/YAML style (entropy-gated) | medium |
 | `hardcoded-password-string` | Hardcoded password in string literal (entropy-gated) | medium |
 | `authorization-bearer` | Authorization header with Bearer token | high |
