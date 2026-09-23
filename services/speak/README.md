@@ -87,7 +87,7 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 | `POST /read` | Render and split a markdown file for playback |
 | `POST /v1/audio/speech` | Proxy to the Kokoro engine (CORS allowlist: loopback and `.this` origins) |
 | `GET /healthz` | 204; reachability probe for this page |
-| `GET /enginez` | 204/502; reachability probe for the TTS engine behind the proxy |
+| `GET /enginez` | TTS health as JSON (ok, degraded or down, with the reason); 200 when ok, 503 otherwise |
 | `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-repo `webkit` package |
 

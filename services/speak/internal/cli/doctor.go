@@ -13,11 +13,17 @@ import (
 	"github.com/mad01/thismoon/kit/confdir"
 	"github.com/mad01/thismoon/kit/doctor"
 	speak "github.com/mad01/thismoon/services/speak"
+	"github.com/mad01/thismoon/services/speak/internal/tts"
+	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
-// engineProbeTimeout bounds the TTS engine ping; matches the budget serve's
-// /enginez handler gives the same upstream.
+// engineProbeTimeout bounds the TTS engine ping; matches the read-aloud
+// component's own reachability probe.
 const engineProbeTimeout = 1500 * time.Millisecond
+
+// synthesisProbeTimeout bounds the test synthesis. Generous on purpose: the
+// engine's first synthesis after a restart loads the model.
+const synthesisProbeTimeout = 10 * time.Second
 
 func init() {
 	rootCmd.AddCommand(agentcli.DoctorCommand(speak.Facts(), doctorChecks))
@@ -34,6 +40,7 @@ func doctorChecks(context.Context) []doctor.Check {
 	baseURL := serveBaseURL()
 	return []doctor.Check{
 		engineReachable(flagTTSURL),
+		synthesisWorks(flagTTSURL),
 		stateDirReadable(flagStateDir),
 		doctor.ServiceReachable(baseURL),
 		doctor.VersionSkew(baseURL),
@@ -65,9 +72,9 @@ func stateDirReadable(path string) doctor.Check {
 	return check
 }
 
-// engineReachable probes the TTS engine the way serve's /enginez handler
-// does: GET the engine root and count any HTTP response, even a 404, as
-// reachable.
+// engineReachable pings the TTS engine: GET the engine root and count any
+// HTTP response, even a 404, as reachable. It only proves a process is
+// listening; synthesisWorks proves it can speak.
 func engineReachable(ttsURL string) doctor.Check {
 	return doctor.Check{
 		Name: "tts-engine-reachable",
@@ -83,6 +90,33 @@ func engineReachable(ttsURL string) doctor.Check {
 				return fmt.Errorf("TTS engine not reachable at %s: %w", ttsURL, err)
 			}
 			return res.Body.Close()
+		},
+	}
+}
+
+// synthesisWorks speaks a short test phrase through the engine, the check a
+// ping cannot make: a running engine with a missing model, or one that
+// rejects the request, passes engineReachable and fails here with the
+// engine's own reason. An unreachable engine skips instead, since
+// tts-engine-reachable already reports it.
+func synthesisWorks(ttsURL string) doctor.Check {
+	return doctor.Check{
+		Name: "tts-synthesis",
+		Run: func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, synthesisProbeTimeout)
+			defer cancel()
+			_, err := ttsclient.New(ttsURL).Synthesize(ctx, "Ready.", speak.DefaultVoice)
+			te, ok := errors.AsType[*tts.Error](err)
+			switch {
+			case err == nil:
+				return nil
+			case ok && te.Kind == tts.KindNetwork:
+				return doctor.Skip("engine not reachable; see tts-engine-reachable")
+			case ok:
+				return fmt.Errorf("%s synthesis failed (%s): %s", te.Provider, te.Kind, te.Message)
+			default:
+				return fmt.Errorf("synthesis failed: %w", err)
+			}
 		},
 	}
 }

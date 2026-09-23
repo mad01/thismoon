@@ -1,21 +1,20 @@
 package web
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
-	"time"
 
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/buildinfo"
-	"github.com/mad01/thismoon/kit/notify"
+	speak "github.com/mad01/thismoon/services/speak"
+	"github.com/mad01/thismoon/services/speak/internal/tts"
+	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
 // shellHTML is the static page shell (chrome only). The page body — header,
@@ -31,10 +30,6 @@ var appJS []byte
 
 const maxUploadBytes = 5 << 20 // 5MB markdown is plenty for a local tool
 
-// enginezTimeout bounds the /enginez upstream ping; matches the read-aloud
-// component's own probe timeout so both surfaces agree on "down".
-const enginezTimeout = 1500 * time.Millisecond
-
 // NewMux builds the speak HTTP handler: the markdown read-aloud page plus a
 // reverse proxy in front of the mlx-audio speech endpoint that other local
 // origins (present.this etc.) can fetch speech from, subject to the CORS
@@ -46,34 +41,10 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse tts url %q: %w", ttsURL, err)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(upstream)
-	// The engine sets its own CORS headers; ours are already on the response,
-	// and duplicated Access-Control-Allow-Origin values make browsers reject
-	// the response outright. Strip the upstream's set.
-	proxy.ModifyResponse = func(res *http.Response) error {
-		for _, h := range []string{
-			"Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
-			"Access-Control-Allow-Headers", "Access-Control-Allow-Credentials",
-			"Access-Control-Max-Age",
-		} {
-			res.Header.Del(h)
-		}
-		// The engine answered but rejected the request — record it. Success
-		// responses are intentionally not emitted: read-aloud fans out one
-		// request per sentence and would flood the event log.
-		if res.StatusCode >= http.StatusBadRequest {
-			notify.EmitEvent("speak", "error", "tts synthesis failed",
-				fmt.Sprintf("upstream returned %s", res.Status),
-				map[string]string{"status": fmt.Sprintf("%d", res.StatusCode)})
-		}
-		return nil
-	}
-	// The engine is unreachable (down, or the request never completed). Record
-	// it, then fall back to the default 502 behaviour.
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		notify.EmitEvent("speak", "error", "tts engine unreachable", err.Error(), nil)
-		w.WriteHeader(http.StatusBadGateway)
-	}
+	// One health state for the process: every proxied request and every
+	// /enginez probe records into it, so the banner and the error bodies agree.
+	health := tts.NewHealth(ttsclient.Provider, speak.DefaultModel)
+	proxy := newSpeechProxy(upstream, health)
 
 	mux := http.NewServeMux()
 	webkit.Mount(mux)
@@ -136,28 +107,11 @@ func NewMux(ttsURL string, info buildinfo.Info) (*http.ServeMux, error) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Engine reachability, distinct from /healthz: the component's own probe
-	// hits GET / on its endpoint, which same-origin is this page — always up
-	// even when the TTS engine behind the proxy is dead. app.js polls this to
-	// warn that play buttons won't work. Any HTTP response from the upstream
-	// (even 404) counts as reachable.
-	mux.HandleFunc("GET /enginez", func(w http.ResponseWriter, r *http.Request) {
-		setCORS(w, r)
-		ctx, cancel := context.WithTimeout(r.Context(), enginezTimeout)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstream.String()+"/", nil)
-		if err != nil {
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
-		_ = res.Body.Close()
-		w.WriteHeader(http.StatusNoContent)
-	})
+	// Engine health, distinct from /healthz: the component's own probe hits
+	// GET / on its endpoint, which same-origin is this page — always up even
+	// when the TTS engine behind the proxy is dead. app.js polls this to warn
+	// that play buttons won't work and why; see enginez in speech.go.
+	mux.Handle("GET /enginez", &enginez{engine: ttsclient.New(ttsURL), health: health})
 
 	mux.HandleFunc("GET /version", info.Handler())
 

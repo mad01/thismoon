@@ -8,6 +8,7 @@
 package playback
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -23,6 +24,8 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 
+	speak "github.com/mad01/thismoon/services/speak"
+	"github.com/mad01/thismoon/services/speak/internal/tts"
 	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
@@ -38,16 +41,20 @@ const (
 	StateStopped State = "stopped"
 )
 
-// Result is a tool's reply: an optional session id plus a human-readable message.
+// Result is a tool's reply: an optional session id plus a human-readable
+// message. Failed marks a call that could not start speech, so the MCP layer
+// can flag the reply as an error rather than a success that stays silent.
 type Result struct {
 	Session string `json:"session,omitempty" jsonschema:"playback session id; pass it back to speak_pause/speak_resume/speak_stop"`
 	Message string `json:"message"           jsonschema:"human-readable status of the call"`
+	Failed  bool   `json:"failed,omitempty"  jsonschema:"true when speech could not start; message says why and nothing is playing"`
 }
 
 // Engine owns the single server-side playback session. All mutable fields are
 // guarded by mu; cond wakes the worker when playback resumes.
 type Engine struct {
 	tts          *ttsclient.Client
+	health       *tts.Health
 	defaultVoice string
 	audioDir     string
 	lockPath     string
@@ -55,6 +62,12 @@ type Engine struct {
 	// injectable seams for tests (default to the TTS client and afplay).
 	synth      func(text, voice string) ([]byte, error)
 	newPlayCmd func(wavPath string) *exec.Cmd
+
+	// startMu serializes startPlayback and Stop. A start holds the playback
+	// lock while it synthesizes the first sentence, before running is set;
+	// without this, a concurrent start or stop would see "not running" and
+	// release that lock mid-synthesis, and two sessions could play at once.
+	startMu sync.Mutex
 
 	mu   sync.Mutex
 	cond *sync.Cond
@@ -78,16 +91,19 @@ type Engine struct {
 // New builds an Engine that fetches audio from tts and speaks it aloud,
 // keeping its audio cache and lock under stateDir (the resolved
 // --state-dir). It reaps stale WAV files left by earlier runs.
-func New(tts *ttsclient.Client, defaultVoice, stateDir string) *Engine {
+func New(client *ttsclient.Client, defaultVoice, stateDir string) *Engine {
 	base := expandUser(stateDir)
 	e := &Engine{
-		tts:          tts,
+		tts:          client,
+		health:       tts.NewHealth(ttsclient.Provider, speak.DefaultModel),
 		defaultVoice: defaultVoice,
 		audioDir:     filepath.Join(base, "audio"),
 		lockPath:     filepath.Join(base, "playback.lock"),
 	}
 	e.cond = sync.NewCond(&e.mu)
-	e.synth = func(t, v string) ([]byte, error) { return tts.Synthesize(t, v) }
+	e.synth = func(t, v string) ([]byte, error) {
+		return client.Synthesize(context.Background(), t, v)
+	}
 	e.newPlayCmd = func(wav string) *exec.Cmd { return exec.Command("afplay", wav) }
 	e.reapOldAudio()
 	return e
@@ -219,6 +235,8 @@ func (e *Engine) Stop(session string) Result {
 	savedIndex, savedTotal, sid := e.currentIndex, e.total, e.sessionID
 	e.mu.Unlock()
 
+	e.startMu.Lock()
+	defer e.startMu.Unlock()
 	e.fullStop()
 	if savedTotal > 0 {
 		return Result{
@@ -246,9 +264,15 @@ func (e *Engine) Voices() Result {
 	}, "\n")}
 }
 
-// Status reports engine reachability and the current playback state.
+// Status reports engine reachability, the health recorded from this
+// process's syntheses, and the current playback state.
 func (e *Engine) Status() Result {
 	reachable := e.tts.Reachable()
+	health := e.health.Snapshot()
+	checked := "never"
+	if !health.CheckedAt.IsZero() {
+		checked = time.Since(health.CheckedAt).Round(time.Second).String() + " ago"
+	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -286,9 +310,11 @@ func (e *Engine) Status() Result {
 	}
 
 	return Result{Session: e.sessionID, Message: fmt.Sprintf(
-		"session: %s\nengine_reachable: %t\nstate: %s\nposition: %s\nlocked: %t\nlock_holder: %s\ndefault_voice: %s\nlast_result: %s",
+		"session: %s\nengine_reachable: %t\ntts_health: %s\ntts_checked: %s\nstate: %s\nposition: %s\nlocked: %t\nlock_holder: %s\ndefault_voice: %s\nlast_result: %s",
 		sid,
 		reachable,
+		health.Summary(),
+		checked,
 		state,
 		position,
 		locked,
@@ -300,14 +326,19 @@ func (e *Engine) Status() Result {
 
 // ── internals ──
 
-// startPlayback stops any current session, acquires the lock, and launches the
-// worker from startIndex. Reuses sessionID when resuming, else mints a new one.
+// startPlayback stops any current session, acquires the lock, synthesizes the
+// first sentence, and launches the worker from startIndex. Reuses sessionID
+// when resuming, else mints a new one. Synthesizing before the worker starts
+// is what lets a dead backend come back as a failed reply instead of a
+// "Playing" that stays silent.
 func (e *Engine) startPlayback(
 	sentences []string,
 	voice string,
 	startIndex int,
 	sessionID string,
 ) Result {
+	e.startMu.Lock()
+	defer e.startMu.Unlock()
 	e.fullStop()
 
 	if sessionID == "" {
@@ -315,6 +346,26 @@ func (e *Engine) startPlayback(
 	}
 	if owner, ok := e.acquireLock(sessionID); !ok {
 		return Result{Message: busyResponse(owner)}
+	}
+
+	firstWav, err := e.synthToFile(sentences[startIndex], voice)
+	if err != nil {
+		e.releaseLock()
+		// Keep the queue as a stopped session, so speak_resume retries it
+		// once the backend is fixed.
+		e.mu.Lock()
+		e.sessionID = sessionID
+		e.sentences = sentences
+		e.voice = voice
+		e.total = len(sentences)
+		e.currentIndex = startIndex
+		e.lastResult = "TTS error: " + err.Error()
+		e.mu.Unlock()
+		return Result{
+			Session: sessionID,
+			Failed:  true,
+			Message: unavailableResponse(e.health.Snapshot()),
+		}
 	}
 
 	e.mu.Lock()
@@ -330,7 +381,7 @@ func (e *Engine) startPlayback(
 	e.doneCh = make(chan struct{})
 	e.mu.Unlock()
 
-	go e.worker(sentences, voice, startIndex)
+	go e.worker(sentences, voice, startIndex, firstWav)
 
 	if startIndex > 0 {
 		remaining := len(sentences) - startIndex
@@ -353,7 +404,9 @@ func (e *Engine) startPlayback(
 	}
 }
 
-func (e *Engine) worker(sentences []string, voice string, start int) {
+// worker plays sentences from start, synthesizing each in turn except the
+// first, which startPlayback already wrote to firstWav.
+func (e *Engine) worker(sentences []string, voice string, start int, firstWav string) {
 	spoken := 0
 	defer func() {
 		e.mu.Lock()
@@ -386,7 +439,10 @@ func (e *Engine) worker(sentences []string, voice string, start int) {
 		e.currentIndex = i
 		e.mu.Unlock()
 
-		wavPath, err := e.synthToFile(sentences[i], voice)
+		wavPath, err := firstWav, error(nil)
+		if i != start {
+			wavPath, err = e.synthToFile(sentences[i], voice)
+		}
 		if err != nil {
 			e.mu.Lock()
 			e.lastResult = "TTS error: " + err.Error()
@@ -445,8 +501,11 @@ func (e *Engine) fullStop() {
 	e.releaseLock()
 }
 
+// synthToFile synthesizes one sentence to a WAV file under the audio
+// directory, recording the outcome in the engine's health.
 func (e *Engine) synthToFile(text, voice string) (string, error) {
 	data, err := e.synth(text, voice)
+	e.health.Record(err)
 	if err != nil {
 		return "", err
 	}
@@ -533,6 +592,17 @@ func (e *Engine) readLockOwner() string {
 		return "unknown"
 	}
 	return fmt.Sprintf("pid=%d, session=%s", m.Pid, m.Session)
+}
+
+// unavailableResponse is the reply when the first sentence could not be
+// synthesized: the health state names why, in the same "WORD | detail" shape
+// as busyResponse.
+func unavailableResponse(state tts.State) string {
+	return fmt.Sprintf(
+		"UNAVAILABLE | TTS %s. Nothing is playing. Call speak_doctor to diagnose, "+
+			"then speak_resume to retry.",
+		state.Summary(),
+	)
 }
 
 func busyResponse(owner string) string {

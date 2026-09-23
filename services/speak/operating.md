@@ -34,44 +34,50 @@ state live only in the memory of the mcp process that started playback.
 
 ## failure modes
 
-Start with `speak doctor`: four checks, one line each, FAIL lines naming the
-cause. In order: tts-engine-reachable pings the engine the way serve's
-/enginez does, store-readable opens the state dir, and service-reachable plus
-version-skew probe the optional web surface at {{.BaseURL}}. The last two
-failing means only the web page is down; the MCP tools can still speak as
-long as tts-engine-reachable passes. The `speak_doctor` tool runs the same
-four checks and returns them as JSON, for a client with no shell.
+Start with `speak doctor`: five checks, one line each, FAIL lines naming the
+cause. tts-engine-reachable pings the engine; tts-synthesis speaks a short
+test phrase through it, since a running engine can still fail to speak;
+store-readable opens the state dir; service-reachable and version-skew probe
+the optional web surface at {{.BaseURL}}. Only those last two failing leaves
+the MCP tools able to speak. The `speak_doctor` tool returns the same checks
+as JSON.
+
+Every surface reports one health state: ok, degraded (a failure that may pass
+on its own, fewer than three in a row) or down, with the reason. `GET
+{{.BaseURL}}/enginez` returns it as JSON, from the last real request when that
+is under a minute old and from a test synthesis otherwise; `/healthz` proves
+only that serve is up. The web page shows it as a banner, and a failed play
+turns its button red and raises a toast. speak_text and speak_file synthesize
+the first sentence before replying, so a dead engine comes back as an error
+reply starting UNAVAILABLE; speak_resume retries that session once fixed.
 
 FAIL tts-engine-reachable: the engine sidecar is down, and nothing can
-synthesize — not the web page, not the tools. `t-man status speak-tts`, then
-`t-man restart speak-tts`. From the web side the same fact shows as `GET
-{{.BaseURL}}/enginez` answering 502; `/healthz` proves only that serve is up,
-never the engine.
+synthesize. `t-man status speak-tts`, then `t-man restart speak-tts`.
+
+FAIL tts-synthesis: the engine answers but cannot speak; the detail carries
+its own reason. "broke off the audio stream" or "empty audio" means it failed
+after answering 200, so the cause is only in `t-man logs speak-tts`. A spaCy
+download error there means the G2P warm-up never ran and the sandbox blocked
+the lazy fetch.
 
 FAIL service-reachable: serve is not running, so the upload page and the
-speech proxy are down. t-man supervises it as speak-web: `t-man list`, then
-`t-man restart speak-web`. Playback tools are unaffected while the engine
-answers.
+speech proxy are down. t-man supervises it as speak-web: `t-man restart
+speak-web`. Playback tools are unaffected.
 
 A page fetches speech and the browser blocks it as a CORS error: serve
-answers cross-origin only for this machine's own pages — an Origin whose
-host is loopback or ends in .this. Any other origin gets no CORS headers at
-all. Open the page through its .this host or its localhost port rather than
-widening this; the allowlist has no override.
+answers cross-origin only for an Origin whose host is loopback or ends in
+.this. Open the page through its .this host or its localhost port; the
+allowlist has no override.
 
 Calls succeed but nothing is audible: afplay plays on the system default
-output device, so check the volume and the selected output device first. Then
-call `speak_status`: it reports engine reachability, the playback state, and
-`last_result`, which records the TTS or playback error that ended the worker.
-An "empty audio" error means the engine answered 200 with no body.
+output device, so check the volume and output device, then `speak_status`
+for tts_health and `last_result`, the error that ended the worker.
 
 BUSY reply: one playback session at a time, serialized across processes by a
-lock on `playback.lock`; a second caller gets "BUSY | ..." naming the holder
-instead of talking over the first. Pause suspends afplay and releases the
-lock; resume re-acquires it. Stop kills the current afplay and saves the
-sentence index, so resume restarts from there. Clear a stuck session by
-stopping it from the process that owns it, or by ending that process; either
-frees the lock.
+lock on `playback.lock`; a second caller gets "BUSY | ..." naming the holder.
+Pause releases the lock and resume re-acquires it; stop saves the sentence
+index for resume. Clear a stuck session by stopping it from the owning
+process or ending that process.
 
 ## version skew
 
@@ -84,8 +90,8 @@ skews on its own.
 
 ## first moves
 
-1. `speak doctor`: engine, state dir, web surface, and version skew in one pass
+1. `speak doctor`: engine, synthesis, state dir, web surface, and version skew in one pass
 2. FAIL tts-engine-reachable: `t-man restart speak-tts`, then `speak doctor` again
-3. FAIL service-reachable or version-skew only: `t-man restart speak-web`; tools keep working meanwhile
-4. `speak_status` for playback state, the lock holder, and the last worker error
-5. All checks pass but nothing is audible: volume and output device, then `speak_status` last_result
+3. FAIL tts-synthesis: `t-man logs speak-tts` for the engine's own error
+4. FAIL service-reachable or version-skew only: `t-man restart speak-web`; tools keep working meanwhile
+5. `speak_status` for tts_health, playback state, the lock holder, and the last worker error

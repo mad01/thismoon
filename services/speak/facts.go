@@ -19,6 +19,16 @@ const DefaultPort = 7425
 // separate process (the t-man agent speak-tts), not part of this binary.
 const DefaultTTSURL = "http://127.0.0.1:8765"
 
+// DefaultModel is the model id sent to the local engine. mlx-audio rejects a
+// speech request without one (422), and the read-aloud component sends the
+// same id.
+const DefaultModel = "mlx-community/Kokoro-82M-bf16"
+
+// DefaultVoice is the Kokoro voice used when a caller names none: the MCP
+// tools' default and the voice serve's health probe synthesizes with. The
+// read-aloud component defaults to the same id.
+const DefaultVoice = "af_heart"
+
 // LegacyStateDir is the pre-XDG location of the playback engine's on-disk
 // state: per-sentence WAV files under audio/ and the cross-process
 // playback.lock. An install that has played audio there keeps using it,

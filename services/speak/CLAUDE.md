@@ -20,7 +20,12 @@ services/speak/
                         # cross-origin allowlist), markdown.go
                         # (goldmark render + section split), assets/shell.html
                         # (chrome-only shell) + assets/app.js (client render)
-    ttsclient/         # HTTP client for the Kokoro engine (WAV over /v1/audio/speech)
+    tts/               # shared by every surface: tts.Error (classified failure:
+                        # auth/quota/model/network/config/upstream) and tts.Health
+                        # (ok/degraded/down + reason) that /enginez, doctor and
+                        # the MCP tools all report
+    ttsclient/         # HTTP client for the Kokoro engine (WAV over /v1/audio/speech);
+                        # every failure comes back as a *tts.Error
     playback/          # server-side afplay engine: sessions, pause/resume via
                         # SIGSTOP/SIGCONT, flock, sentence split, md text extract
     mcpserver/         # go-sdk MCP server: 8 speak_* tools over the playback engine
@@ -46,11 +51,16 @@ services/speak/
   component's cross-origin `GET /` reachability probe works from the sibling
   `.this` pages. **Never widen this to `*`** — the endpoint drives the
   machine's TTS engine, so `*` lets any page the user is browsing use it.
-- When the proxied request fails or the engine answers with a 4xx/5xx, the
-  server emits an `error` event to events.this via `kit/notify`: a
-  fire-and-forget POST that never blocks the response. Successful synthesis is
-  intentionally not logged, since read-aloud fans out one request per sentence
-  and would flood the event log.
+- **Failures carry a reason; nothing fails silently.** A failed proxied
+  request is answered with `{"error": {"message", "type", "provider", "model",
+  "health"}}` (the OpenAI error shape plus provider and health), which
+  `<wk-read-aloud>` shows as a toast. Every outcome is recorded in one
+  `tts.Health` per process, and `/enginez` reports it. A 200 is recorded when
+  its body ends, not at the status line: mlx-audio can answer 200 and then
+  break off or send nothing, and that counts as a failure. Failures also emit
+  an `error` event to events.this via `kit/notify` (fire-and-forget); success
+  is recorded but never emitted, since read-aloud fans out one request per
+  sentence and would flood the event log.
 - Chrome comes from the in-module webkit package (`GET /webkit/`). The
   service compiles against the webkit committed beside it; there is no version
   to pin or bump.
@@ -66,9 +76,15 @@ Gotchas that cost time once:
   (`[broadcast_shapes]` ValueError in istftnet on every input).
 - **`mlx-audio[server]` + `misaki[en]` are both required**: the bare package
   is missing uvicorn/fastapi, and Kokoro imports misaki at request time.
+- **Send `model`.** mlx-audio answers 422 "Field required" without it;
+  `ttsclient` sends `speak.DefaultModel` (the same id the read-aloud
+  component sends). Before speak's health reporting this 422 was invisible:
+  the MCP tools replied "Playing" and stayed silent.
 - **Request `response_format: "wav"`.** The default mp3 path shells out to
   ffmpeg, which may not be installed; failures surface as a 200 with an empty
-  streamed body, not an error status.
+  streamed body, not an error status. Any engine error after the status line
+  (a G2P crash, say) looks the same: 200, then an empty or broken-off body.
+  speak reports those as upstream failures pointing at `t-man logs speak-tts`.
 - **misaki pulls `en_core_web_sm` via `uv pip install` on first G2P**: that
   subprocess needs `VIRTUAL_ENV` set or it dies with "No virtual environment
   found" and the request hangs. The recipe warms G2P at install time and the
@@ -99,9 +115,9 @@ make test     # go test ./...
 | `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
 | `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
 | `POST /read` | Render and split a markdown file for playback; returns `{name, content}` JSON |
-| `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (reflects an allowlisted origin, strips the upstream's own CORS headers) |
+| `POST /v1/audio/speech` | Reverse proxy to the Kokoro engine (reflects an allowlisted origin, strips the upstream's own CORS headers). A failure answers JSON `{"error": {"message", "type", "provider", "model", "health"}}` with the engine's status, or 502 when the engine never answered |
 | `GET /healthz` | 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets its CORS header from the wrapper handler, which applies the allowlist to every response |
-| `GET /enginez` | Pings the TTS engine's `GET /` with a 1.5s timeout; 204 if reachable, 502 otherwise. `app.js` polls this to warn when play buttons won't work; distinct from `/healthz`, which only proves this page is up |
+| `GET /enginez` | TTS health as JSON (`status` ok/degraded/down/unknown, `provider`, `model`, `kind`, `reason`, `checked_at`); 200 when ok, 503 otherwise. Answers from the last recorded outcome when under a minute old, else runs a test synthesis first (a ping would call a running engine with a missing model healthy). `app.js` renders it as the banner; distinct from `/healthz`, which only proves this page is up |
 | `GET /version` | The four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the HTTP twin of `speak version -o json`, which ralph uses for update detection |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
@@ -152,7 +168,8 @@ WAV and plays it there); mcp plays audio **on the machine's speakers** via
 - `speak_pause` / `speak_resume` / `speak_stop`: control the running playback
   session; stop saves the sentence index so a later resume restarts there.
 - `speak_voices`: list the engine's available voices.
-- `speak_status`: report the playback state and current session.
+- `speak_status`: report the playback state, current session, and
+  `tts_health` (the health recorded from this process's syntheses).
 - `speak_doctor`: run the same checks as `speak doctor` and return the report
   as JSON, for a client that can call a tool but has no shell.
 
@@ -178,6 +195,14 @@ muscle memory carries over. Implementation notes:
 - **Go `regexp` has no lookbehind** — the sentence splitter
   (`playback.SplitSentences`) is hand-rolled, not a translation of the Python
   `re.split(r'(?<=[.!?])\s+')`.
+- **speak_text and speak_file synthesize the first sentence before
+  replying.** A backend that cannot speak comes back as `Failed` with an
+  `UNAVAILABLE | TTS <health>` message, flagged `isError` over MCP, instead
+  of a "Playing" reply that stays silent. The queue is kept as a stopped
+  session, so `speak_resume` retries it. `startMu` serializes starts and
+  stops: a start holds the playback lock while it synthesizes, before
+  `running` is set, so an unserialized second start would see "not running"
+  and release that lock mid-synthesis.
 - **stdout is the MCP protocol channel** — `runMCP` logs the resolved tts-url to
   stderr only.
 - **MCP registration stays host-gated in the consuming repo** (docs/adr/0006) —
