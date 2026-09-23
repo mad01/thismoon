@@ -2,7 +2,8 @@
 
 A Go CLI that serves a local read-aloud page at `http://speak.this/` and
 synthesizes speech through a configurable text-to-speech (TTS) provider: a
-local Kokoro engine by default, or OpenRouter, OpenAI or a LiteLLM proxy.
+local Kokoro engine by default, or OpenRouter, OpenAI, a LiteLLM proxy or
+the Gemini Developer API.
 
 Upload a markdown file, read it rendered in the browser, and play it section
 by section. The same service also handles `/v1/audio/speech` so other local

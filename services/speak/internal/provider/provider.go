@@ -16,14 +16,22 @@ import (
 	"slices"
 
 	"github.com/mad01/thismoon/services/speak/internal/config"
+	"github.com/mad01/thismoon/services/speak/internal/gemini"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
+// synthesizer is a backend client: ttsclient for the OpenAI-style
+// endpoints, gemini for the Gemini API.
+type synthesizer interface {
+	Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error)
+}
+
 // Provider is the active TTS backend.
 type Provider struct {
 	cfg    config.Provider
-	client *ttsclient.Client // nil when broken
+	synth  synthesizer       // nil when broken
+	engine *ttsclient.Client // the local engine, for Ping; nil otherwise
 	broken *tts.Error        // set when the config cannot produce a client
 	voices Voices
 }
@@ -39,19 +47,31 @@ func New(ctx context.Context, p config.Provider) *Provider {
 			voices: Voices{Default: p.Voice, Source: SourceDefault},
 		}
 	}
-	return &Provider{
-		cfg: p,
-		client: ttsclient.New(ttsclient.Config{
+	prov := &Provider{cfg: p, voices: resolveVoices(ctx, p)}
+	if p.Type == config.TypeGemini {
+		prov.synth = gemini.New(gemini.Config{
 			Provider:  p.Name,
-			Local:     p.Type == config.TypeLocal,
 			BaseURL:   p.BaseURL,
 			APIKey:    p.APIKey,
 			APIKeyEnv: p.APIKeyEnv,
 			Model:     p.Model,
-			Format:    p.Format,
-		}),
-		voices: resolveVoices(ctx, p),
+		})
+		return prov
 	}
+	client := ttsclient.New(ttsclient.Config{
+		Provider:  p.Name,
+		Local:     p.Type == config.TypeLocal,
+		BaseURL:   p.BaseURL,
+		APIKey:    p.APIKey,
+		APIKeyEnv: p.APIKeyEnv,
+		Model:     p.Model,
+		Format:    p.Format,
+	})
+	prov.synth = client
+	if p.Type == config.TypeLocal {
+		prov.engine = client
+	}
+	return prov
 }
 
 // Broken returns a provider for a config that could not be loaded at all
@@ -104,16 +124,16 @@ func (p *Provider) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, 
 		return tts.Audio{}, p.broken
 	}
 	req.Voice = p.voices.Resolve(req.Voice)
-	return p.client.Synthesize(ctx, req)
+	return p.synth.Synthesize(ctx, req)
 }
 
 // Ping checks that a local engine is listening. It reports false, nil for a
 // remote provider, where there is no process of ours to ping.
 func (p *Provider) Ping(ctx context.Context) (checked bool, err error) {
-	if p.client == nil || p.cfg.Type != config.TypeLocal {
+	if p.engine == nil {
 		return false, nil
 	}
-	return true, p.client.Reachable(ctx)
+	return true, p.engine.Reachable(ctx)
 }
 
 // Voices is a provider's resolved voice list.

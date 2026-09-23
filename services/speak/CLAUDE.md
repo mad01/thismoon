@@ -6,7 +6,8 @@ component. The same process serves an OpenAI-style `/v1/audio/speech` behind a
 CORS allowlist, so pages on this machine's other local origins (present.this,
 localhost) can fetch speech from it too, and pages from anywhere else cannot.
 Speech comes from the provider `~/.config/speak/config.yaml` selects: the local
-Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI or a LiteLLM proxy.
+Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM proxy
+or the Gemini Developer API.
 
 ## Module layout
 
@@ -37,6 +38,8 @@ services/speak/
     ttsclient/         # HTTP client for OpenAI-compatible speech endpoints (local
                         # engine, OpenRouter, OpenAI, LiteLLM); every failure
                         # comes back as a *tts.Error
+    gemini/            # client for the Gemini API's generateContent speech (key
+                        # in x-goog-api-key); same tts.Request/Audio/Error contract
     playback/          # server-side afplay engine: sessions, pause/resume via
                         # SIGSTOP/SIGCONT, flock, sentence split, md text extract
     mcpserver/         # go-sdk MCP server: 8 speak_* tools over the playback engine
@@ -52,10 +55,12 @@ services/speak/
   them. Full surface, including the config file, in `config.md`.
 - **Providers.** One config file holds a block per provider side by side; the
   `provider:` line (or `--provider`/`SPEAK_PROVIDER`) picks one. Types:
-  `local`, `openrouter`, `openai`, `litellm`, all served by `ttsclient`
-  (they share `POST {base}/v1/audio/speech`). Keys come only from env vars the
-  block names; `speak config env` lists them and `recipes/speak/speak-env.sh`
-  pulls exactly those from the secrets file for speak-web and MCP hosts. No
+  `local`, `openrouter`, `openai` and `litellm` share `POST
+  {base}/v1/audio/speech` and go through `ttsclient`; `gemini` goes through
+  `internal/gemini`. `provider.Provider` holds either behind a one-method
+  `synthesizer` interface. Keys come only from env vars the block names;
+  `speak config env` lists them and `recipes/speak/speak-env.sh` pulls
+  exactly those from the secrets file for speak-web and MCP hosts. No
   automatic fallback: a broken config or unusable active block becomes a
   provider that fails every synthesis with a `config` reason, so every
   surface shows it.
@@ -259,6 +264,14 @@ muscle memory carries over. Implementation notes:
 - **OpenRouter offers mp3 or pcm, never wav.** The openrouter type requests
   pcm and `tts.Normalize` wraps it in a WAV header, taking the sample rate
   from the `Content-Type` parameters (24 kHz mono when absent).
+- **The Gemini API answers a bad key with 400, not 401.** Its error body
+  carries `INVALID_ARGUMENT` with reason `API_KEY_INVALID`; `internal/gemini`
+  reclassifies that as `auth` so the reason names the key variable. Its audio
+  arrives as base64 `audio/L16;codec=pcm;rate=24000`, little-endian despite
+  the L16 name (Google's examples write it straight into a WAV). A 5xx or an
+  answer without audio is retried once: Google documents that the model
+  sometimes returns text instead of audio, at random, failing the request
+  with a 500. There is no speed control: `speed` is ignored.
 - **Local voice discovery filters to English.** It lists the Kokoro voice
   packs in the Hugging Face cache, but only `af_`/`am_`/`bf_`/`bm_`: the
   engine has English G2P only, and its zero-egress sandbox blocks fetching

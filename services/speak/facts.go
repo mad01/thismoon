@@ -57,6 +57,13 @@ const (
 	LiteLLMBaseURLEnv = "LITELLM_BASE_URL" // same variables humanizer reads
 	LiteLLMKeyEnv     = "LITELLM_API_KEY"
 	LiteLLMVoice      = "alloy"
+	// The Gemini Developer API. Its key is read from GEMINI_API_KEY, then
+	// GOOGLE_API_KEY, the order Google's own SDKs use.
+	GeminiBaseURL        = "https://generativelanguage.googleapis.com"
+	GeminiKeyEnv         = "GEMINI_API_KEY"
+	GeminiFallbackKeyEnv = "GOOGLE_API_KEY"
+	GeminiModel          = "gemini-3.1-flash-tts-preview"
+	GeminiVoice          = "Kore"
 )
 
 // LegacyStateDir is the pre-XDG location of the playback engine's on-disk

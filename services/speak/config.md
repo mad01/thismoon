@@ -46,6 +46,9 @@ providers:
   proxy:
     type: litellm
     model: tts-1
+
+  gemini:
+    voice: Puck
 ```
 
 Block fields, all optional:
@@ -82,8 +85,18 @@ works with nothing but `OPENROUTER_API_KEY` set.
   for. Base URL from `LITELLM_BASE_URL` and an optional key from
   `LITELLM_API_KEY`, the variables humanizer reads; `model` is required
   (the name the proxy routes speech to); voice defaults to `alloy`.
+- `gemini`: the Gemini Developer API, called directly rather than through
+  OpenRouter. Defaults: base URL `https://generativelanguage.googleapis.com`,
+  key from `GEMINI_API_KEY`, else `GOOGLE_API_KEY` (the order Google's own
+  SDKs use), model `gemini-3.1-flash-tts-preview`, voice `Kore`. The key
+  goes in the `x-goog-api-key` header, never the URL. The API has no speed
+  setting, so a requested speed is ignored. A server error, or an answer
+  without audio, is retried once: Google notes its speech models sometimes
+  return text instead of audio, at random, and says to retry.
 
-Every type speaks the OpenAI-style `POST {base}/v1/audio/speech`. Whatever a
+Every type except `gemini` speaks the OpenAI-style `POST
+{base}/v1/audio/speech`; `gemini` uses the Gemini API's `generateContent`
+with audio output. Whatever a
 provider returns (WAV, MP3, or raw PCM) is normalized to WAV or MP3 before
 it reaches the browser or afplay. A provider whose base URL is not loopback
 is remote: the text being read leaves this machine. There is no automatic
@@ -101,7 +114,8 @@ Each provider offers its own voices, resolved when serve or mcp starts:
    locally: the engine has English G2P only, and its sandbox blocks fetching
    another language's.
 3. Otherwise a built-in catalog: Kokoro's English voices for a Kokoro model,
-   OpenAI's voice set for `openai`.
+   OpenAI's voice set for `openai`, and the 30 Gemini voices for `gemini`
+   (the Gemini API does not list them).
 4. Otherwise nothing beyond the default voice. LiteLLM does not list voices,
    so set `voices` on a LiteLLM block to offer more than one.
 
@@ -161,7 +175,8 @@ an error, never a path relative to the working directory.
   `SPEAK_STATE_DIR`: defaults for the flags above. An unparseable
   `SPEAK_PORT` warns on stderr and the built-in default is used.
 - `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `LITELLM_BASE_URL`,
-  `LITELLM_API_KEY`: what the provider types read by default. A block's
+  `LITELLM_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`: what the provider
+  types read by default. A block's
   `api_key_env` and `base_url_env` name other variables. Keys are read only
   from the environment, never from the file or a flag.
 - `HF_HUB_CACHE`, `HF_HOME`: where local voice discovery looks.
