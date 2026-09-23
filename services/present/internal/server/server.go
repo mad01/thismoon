@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,19 @@ import (
 //
 //go:embed shell.html
 var shellHTML []byte
+
+// pageShell is shellHTML for the mode. A shared instance has no local .this
+// sites for the ⌘K picker to jump between and no index for the back link to
+// return to, so its shell leaves the cmdk control out (webkit turns the
+// shortcut off with it) and points the link at the how-to root. One shell
+// file, two substitutions, both pinned by a test.
+func pageShell(mode Mode) []byte {
+	if mode != ModeShared {
+		return shellHTML
+	}
+	out := bytes.Replace(shellHTML, []byte(`controls="cmdk,`), []byte(`controls="`), 1)
+	return bytes.Replace(out, []byte(`back-label="← All"`), []byte(`back-label="← About"`), 1)
+}
 
 //go:embed app.js
 var appJS []byte
@@ -67,6 +81,7 @@ type Server struct {
 	now     func() time.Time
 	mcp     http.Handler
 	sharer  *sharedclient.Client
+	shell   []byte
 }
 
 // Options configures a Server. Workdir is where the served assets live;
@@ -101,6 +116,7 @@ func New(st store.Store, opts Options) *Server {
 		now:     now,
 		mcp:     opts.MCP,
 		sharer:  opts.Sharer,
+		shell:   pageShell(opts.Mode),
 	}
 }
 
@@ -345,7 +361,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	// no-store: the version poll triggers location.reload() on a bump; a cached
 	// document would keep the stale embedded version and reload forever.
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(shellHTML)
+	_, _ = w.Write(s.shell)
 }
 
 // apiReference is the JSON shape of a reference in the page API.
