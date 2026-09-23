@@ -102,6 +102,10 @@ it reaches the browser or afplay. A provider whose base URL is not loopback
 is remote: the text being read leaves this machine. There is no automatic
 fallback from one provider to another.
 
+A request to a remote provider may take up to 2 minutes, since remote speech
+models answer with the whole clip at once and can take tens of seconds for a
+long part; the local engine gets 30 seconds. Neither limit is configurable.
+
 ## Voices
 
 Each provider offers its own voices, resolved when serve or mcp starts:
@@ -148,16 +152,18 @@ subcommands.
 - `--port` (int, default `7425`; env `SPEAK_PORT`): port `speak serve`
   listens on, and the port `speak doctor` and the `speak_doctor` MCP tool
   probe for the web surface.
-- `--state-dir` (string; env `SPEAK_STATE_DIR`): directory holding playback
-  state: per-sentence audio files under `audio/` and the cross-process
-  `playback.lock`. Only `speak mcp` writes there.
+- `--state-dir` (string; env `SPEAK_STATE_DIR`): directory holding speak's
+  state. `speak mcp` writes per-part audio files under `audio/` and the
+  cross-process `playback.lock`; `speak serve` keeps its audio cache under
+  `cache/`, deleting clips unused for 30 days and then the least recently
+  used while the cache is over 2 GiB.
 
 ### Where `--state-dir` defaults to
 
 1. `SPEAK_STATE_DIR`, when set.
 2. `~/.local/share/speak`, when it holds an `audio/` directory, so an install
-   that has actually played something keeps its cache and lock across
-   upgrades. The generated-audio cache is what settles it, not the directory:
+   that has actually played something keeps its audio and lock across
+   upgrades. `audio/` is what settles it, not the parent directory:
    the mlx-audio engine installs its virtualenv and logs under the same path,
    so on a machine with the TTS engine but no playback history the directory
    exists while the state does not, and that machine lands in (3).
@@ -199,13 +205,18 @@ wrapper's query would not see.
 ## Cross-origin access
 
 `speak serve` answers cross-origin requests only from this machine's own
-pages, so the speech endpoint is not reachable from an arbitrary page the
-browser happens to have open. An `Origin` header is allowed when it is an
-`http`/`https` URL whose host is loopback (`localhost`, `127.0.0.0/8`,
-`::1`, on any port) or ends in `.this`. An allowed origin is reflected back
-in `Access-Control-Allow-Origin` alongside `Vary: Origin`; any other origin
-gets no CORS headers at all, including on the `OPTIONS` preflight. Requests
-with no `Origin` header (same-origin fetches, curl) are unaffected.
+pages, so an arbitrary page the browser happens to have open cannot start a
+synthesis, which on a remote provider costs money. An `Origin` header is
+allowed when it is an `http`/`https` URL whose host is loopback
+(`localhost`, `127.0.0.0/8`, `::1`, on any port) or ends in `.this`. An
+allowed origin is reflected back in `Access-Control-Allow-Origin` alongside
+`Vary: Origin`; any other origin gets 403 with no CORS headers, on every
+route including the `OPTIONS` preflight. A request with no `Origin` header
+is refused the same way when the browser marks it cross-site
+(`Sec-Fetch-Site: cross-site`) and it is not a top-level load of the page
+(`GET /`), such as a foreign page's `<audio>` or `<iframe>` pointing at an
+audio URL. Same-origin fetches, following a
+link to the page, curl and the CLI are unaffected.
 
 The allowlist is fixed: no flag or environment variable widens it.
 

@@ -31,7 +31,7 @@ var testInfo = buildinfo.Info{
 // Hugging Face cache.
 func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
 	t.Helper()
-	return muxFor(provider.New(context.Background(), config.Provider{
+	return muxFor(t, provider.New(context.Background(), config.Provider{
 		Name:    "local",
 		Type:    config.TypeLocal,
 		BaseURL: engineURL,
@@ -42,8 +42,11 @@ func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
 	}))
 }
 
-func muxFor(p *provider.Provider) *http.ServeMux {
-	return NewMux(p, p.NewHealth(), testInfo)
+// muxFor serves the page against p with an audio cache of its own, so no
+// test answers from another's clips.
+func muxFor(t *testing.T, p *provider.Provider) *http.ServeMux {
+	t.Helper()
+	return NewMux(Config{Speaker: p, Health: p.NewHealth(), Info: testInfo, CacheDir: t.TempDir()})
 }
 
 // TestVersion pins the cross-tool build metadata contract: the four keys, the
@@ -145,7 +148,10 @@ func TestReadReturnsRenderedJSON(t *testing.T) {
 	if got.Name != "notes.md" {
 		t.Errorf("name = %q, want notes.md", got.Name)
 	}
-	for _, want := range []string{`<section class="doc-section">`, "<h2>Hello</h2>", "world paragraph"} {
+	for _, want := range []string{
+		`<section class="doc-section" data-section="1" data-ra-parts=`, "Hello</h2>",
+		"world paragraph",
+	} {
 		if !strings.Contains(got.Content, want) {
 			t.Errorf("rendered content missing %q", want)
 		}
@@ -191,6 +197,30 @@ func TestSpeechAnswersAudioWithCORS(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != tts.ContentTypeWAV {
 		t.Errorf("Content-Type = %q, want %s", ct, tts.ContentTypeWAV)
+	}
+}
+
+// TestSpeechAnswersRepeatsFromTheCache pins the read-through cache: the same
+// text, voice and speed are synthesized once, and a different speed is a
+// different clip.
+func TestSpeechAnswersRepeatsFromTheCache(t *testing.T) {
+	engine := newFakeEngine(t, http.StatusOK, "RIFFfake")
+	mux := newTestMux(t, engine.URL)
+	for i, body := range []string{
+		`{"input":"hi","voice":"af_heart"}`,
+		`{"input":"hi","voice":"af_heart"}`,
+		`{"input":"hi","voice":"Kore"}`, // resolves to af_heart: the same clip
+		`{"input":"hi","voice":"af_heart","speed":1.5}`,
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+			strings.NewReader(body)))
+		if rec.Code != http.StatusOK || rec.Body.String() != "RIFFfake" {
+			t.Fatalf("request %d = %d %q, want the clip", i+1, rec.Code, rec.Body.String())
+		}
+	}
+	if n := engine.requests.Load(); n != 2 {
+		t.Errorf("engine saw %d requests, want 2 (one per distinct clip)", n)
 	}
 }
 
@@ -246,7 +276,7 @@ func TestSpeechRejectsBadRequestsWithoutBlamingTheProvider(t *testing.T) {
 // request answers 503 with the config reason, and /enginez reports it
 // without probing anything.
 func TestSpeechConfigProblemIs503(t *testing.T) {
-	mux := muxFor(provider.New(context.Background(), config.Provider{
+	mux := muxFor(t, provider.New(context.Background(), config.Provider{
 		Name: "openrouter", Type: config.TypeOpenRouter, Problem: "OPENROUTER_API_KEY is not set",
 	}))
 	rec := httptest.NewRecorder()

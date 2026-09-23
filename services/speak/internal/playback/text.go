@@ -2,7 +2,6 @@ package playback
 
 import (
 	"strings"
-	"unicode"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -11,41 +10,6 @@ import (
 )
 
 var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
-
-// SplitSentences splits text into trimmed, non-empty sentences, breaking after
-// a '.', '!' or '?' that is immediately followed by whitespace. It is the
-// hand-rolled equivalent of Python's re.split(r'(?<=[.!?])\s+', text) — Go's
-// regexp has no lookbehind, so the delimiter is kept with the sentence and the
-// trailing whitespace is consumed.
-func SplitSentences(s string) []string {
-	runes := []rune(s)
-	var out []string
-	start := 0
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if r != '.' && r != '!' && r != '?' {
-			continue
-		}
-		j := i + 1
-		if j >= len(runes) || !unicode.IsSpace(runes[j]) {
-			continue
-		}
-		if seg := strings.TrimSpace(string(runes[start : i+1])); seg != "" {
-			out = append(out, seg)
-		}
-		for j < len(runes) && unicode.IsSpace(runes[j]) {
-			j++
-		}
-		start = j
-		i = j - 1
-	}
-	if start < len(runes) {
-		if seg := strings.TrimSpace(string(runes[start:])); seg != "" {
-			out = append(out, seg)
-		}
-	}
-	return out
-}
 
 // ExtractSections renders markdown and returns the plain text of each section,
 // where a new section starts at every level-1 or level-2 heading (content

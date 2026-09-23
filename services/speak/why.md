@@ -25,10 +25,10 @@ repo, while the Go component is what this repo can build, test, and release.
 
 ## Why this shape
 
-The proxy boundary comes first: `speak serve` reverse-proxies
-`/v1/audio/speech` to the engine and supplies everything the engine lacks
-(CORS on every response, preflight handling, probes, error events), leaving
-the engine untouched. The release artifact is the Go program only; the
+The gateway boundary comes first: `speak serve` answers `/v1/audio/speech`
+by synthesizing through the configured provider and supplies everything the
+provider lacks (CORS on every response, preflight handling, probes, error
+events, the audio cache), leaving the engine untouched. The release artifact is the Go program only; the
 Kokoro venv, model prefetch, and no-egress sandbox are recipe-managed wiring
 in the consuming repo (docs/adr/0006), so CI never ships a Python
 environment. And `speak mcp` is an independent surface with playback
@@ -38,13 +38,27 @@ client to its serve, speak's MCP does not funnel through serve, because the
 shared resource here is the audio device rather than a store; an flock on a
 playback lock file serializes it across processes instead.
 
+Remote providers pushed serve to prepare audio ahead. Gemini 3.1 Flash TTS
+through OpenRouter took 3.2 seconds for a 7-word sentence and 21.6 for 120
+words, and it answers with the whole clip at once, so there is no streaming
+to start playback early. Asking for one sentence at a time on play meant a
+wait on every press and a gap whenever a short sentence ended before the
+next, longer one arrived. serve now synthesizes an upload's parts in the
+background into a disk cache as soon as it arrives, and a play press replays
+them: a 4-part document took 18 seconds to prepare, then each part came back
+in about a millisecond. What cannot be prepared, such as present pages, text
+selections, and the MCP tools, groups sentences into parts that start at one
+sentence and keeps two parts synthesizing ahead of the one playing.
+
 ## Non-goals
 
 speak does not ship, install, or supervise the TTS engine; without that
 sidecar the page loads and the speech endpoints return errors, by design. It
-stores no documents: markdown is rendered per request and never written to
-disk, and recently-read docs are remembered only in the browser's
-localStorage. There is no cloud fallback; the engine runs offline with zero
+stores no documents: markdown is never written to disk, serve holds recent
+uploads in memory only, and recently-read docs are remembered in the
+browser's localStorage. What speak writes is synthesized audio and the
+playback lock; serve's cache deletes a clip after 30 days unused and stays
+under 2 GiB. There is no cloud fallback; the engine runs offline with zero
 network egress. MCP registration also stays out of this repo: the `mcp`
 subcommand ships, but wiring it into a client is machine-private
 (docs/adr/0006).

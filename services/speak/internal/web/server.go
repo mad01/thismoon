@@ -2,15 +2,16 @@ package web
 
 import (
 	_ "embed"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/mad01/thismoon/webkit"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/speak/internal/audiocache"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
@@ -27,16 +28,42 @@ var appJS []byte
 
 const maxUploadBytes = 5 << 20 // 5MB markdown is plenty for a local tool
 
-// NewMux builds the speak HTTP handler: the markdown read-aloud page plus an
-// OpenAI-style speech endpoint that other local origins (present.this etc.)
-// can fetch speech from, subject to the CORS allowlist in cors.go. speaker is
-// the active provider; health is the one state every speech request and
-// /enginez probe records into, so the banner and the error bodies agree.
-// info is the build metadata linked in via ldflags, exposed at GET /version
-// (the HTTP twin of the fleet-wide `speak version -o json` probe ralph uses
-// for update detection).
-func NewMux(speaker Speaker, health *tts.Health, info buildinfo.Info) *http.ServeMux {
-	speech := &speechHandler{speaker: speaker, health: health}
+// cacheTTL is how long a synthesized clip stays on disk unused: a document
+// reread within a month plays without waiting for the provider again.
+const cacheTTL = 30 * 24 * time.Hour
+
+// maxCacheBytes caps the audio cache: about 12 hours of 24 kHz mono WAV
+// (~170 MB an hour), since live speech is cached along with prepared
+// documents. Past it, the least recently used clips go first.
+const maxCacheBytes = 2 << 30
+
+// reapInterval is how often serve removes clips unused for cacheTTL or past
+// maxCacheBytes.
+const reapInterval = 24 * time.Hour
+
+// Config is what the speak page serves from.
+type Config struct {
+	// Speaker is the active provider.
+	Speaker Speaker
+	// Health is the one state every synthesis and /enginez probe records
+	// into, so the banner and the error bodies agree.
+	Health *tts.Health
+	// Info is the build metadata linked in via ldflags, exposed at GET
+	// /version (the HTTP twin of the fleet-wide `speak version -o json`
+	// probe ralph uses for update detection).
+	Info buildinfo.Info
+	// CacheDir holds synthesized clips; required.
+	CacheDir string
+}
+
+// NewMux builds the speak HTTP handler: the markdown read-aloud page with
+// its pre-synthesized document audio, plus an OpenAI-style speech endpoint
+// that other local origins (present.this etc.) can fetch speech from,
+// subject to the CORS allowlist in cors.go. Both answer from the audio cache
+// in cfg.CacheDir when they can.
+func NewMux(cfg Config) *http.ServeMux {
+	store := audiocache.NewStore(cfg.CacheDir)
+	speech := &speechHandler{speaker: cfg.Speaker, health: cfg.Health, store: store}
 
 	mux := http.NewServeMux()
 	webkit.Mount(mux)
@@ -54,30 +81,7 @@ func NewMux(speaker Speaker, health *tts.Health, info buildinfo.Info) *http.Serv
 		_, _ = w.Write(appJS)
 	})
 
-	mux.HandleFunc("POST /read", func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
-		file, header, err := r.FormFile("doc")
-		if err != nil {
-			http.Error(
-				w,
-				"upload a markdown file in the 'doc' field: "+err.Error(),
-				http.StatusBadRequest,
-			)
-			return
-		}
-		defer func() { _ = file.Close() }()
-		source, err := io.ReadAll(file)
-		if err != nil {
-			http.Error(w, "read upload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		content, err := RenderSections(source)
-		if err != nil {
-			http.Error(w, "render markdown: "+err.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-		writeReadJSON(w, header.Filename, content)
-	})
+	newDocServer(cfg, store).routes(mux)
 
 	mux.HandleFunc("/v1/audio/speech", func(w http.ResponseWriter, r *http.Request) {
 		setCORS(w, r)
@@ -103,47 +107,103 @@ func NewMux(speaker Speaker, health *tts.Health, info buildinfo.Info) *http.Serv
 	// GET / on its endpoint, which same-origin is this page — always up even
 	// when the TTS engine behind the proxy is dead. app.js polls this to warn
 	// that play buttons won't work and why; see enginez in speech.go.
-	mux.Handle("GET /enginez", &enginez{speaker: speaker, health: health})
+	mux.Handle("GET /enginez", &enginez{speaker: cfg.Speaker, health: cfg.Health})
 
-	mux.HandleFunc("GET /version", info.Handler())
+	mux.HandleFunc("GET /version", cfg.Info.Handler())
 
 	return mux
 }
 
-// readResponse is the JSON shape POST /read returns: the uploaded file name and
-// the rendered HTML body (goldmark sections). app.js mounts Content as-is and
-// shows Name as the doc label — the data the old {{DOC_NAME}}/{{CONTENT}}
-// template substitution baked into a full page, now delivered for client render.
-type readResponse struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
-}
-
-func writeReadJSON(w http.ResponseWriter, docName, content string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	if err := json.NewEncoder(w).Encode(readResponse{Name: docName, Content: content}); err != nil {
-		log.Printf("speak: encode read response: %v", err)
+// Serve runs the HTTP server on 127.0.0.1:<port> (see handler for what
+// wraps the routes). Clips unused for cacheTTL, then the least recently
+// used past maxCacheBytes, are removed at start and every reapInterval.
+func Serve(port int, cfg Config) error {
+	if cfg.CacheDir == "" {
+		return errors.New("speak: serve needs an audio cache directory")
 	}
-}
+	stop := make(chan struct{})
+	defer close(stop)
+	go reapCache(audiocache.NewStore(cfg.CacheDir), stop)
 
-// Serve runs the HTTP server on 127.0.0.1:<port>. The wrapper handler applies
-// the CORS allowlist to every response so cross-origin probes and speech
-// fetches from this machine's own pages work regardless of route.
-func Serve(port int, speaker Speaker, health *tts.Health, info buildinfo.Info) error {
-	mux := NewMux(speaker, health, info)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		setCORS(w, r)
-		mux.ServeHTTP(w, r)
-		log.Printf("%s %s", r.Method, r.URL.Path)
-	})
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	state := health.Snapshot()
+	state := cfg.Health.Snapshot()
 	log.Printf(
-		"speak: serving on http://%s (tts provider %s, model %s)",
+		"speak: serving on http://%s (tts provider %s, model %s, audio cache %s)",
 		addr,
 		state.Provider,
 		state.Model,
+		cfg.CacheDir,
 	)
-	return http.ListenAndServe(addr, handler)
+	return http.ListenAndServe(addr, handler(cfg))
+}
+
+// handler is NewMux behind what every request passes first: the CORS
+// allowlist on every response, so cross-origin probes and speech fetches
+// from this machine's own pages work on any route, and the cross-site guard.
+func handler(cfg Config) http.Handler {
+	mux := NewMux(cfg)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setCORS(w, r)
+		if reason := crossSite(r); reason != "" {
+			log.Printf("%s %s refused: %s", r.Method, r.URL.Path, reason)
+			writeError(w, http.StatusForbidden, "speak serves only this machine's own pages: "+
+				reason)
+			return
+		}
+		mux.ServeHTTP(w, r)
+		log.Printf("%s %s", r.Method, r.URL.Path)
+	})
+}
+
+// crossSite explains why r comes from a page that is not this machine's
+// own, or returns "" when it does not. Leaving out CORS headers is not
+// enough: a browser still sends a simple request (a form post, a text/plain
+// fetch, an <audio src>) and only hides the answer, and these routes spend
+// synthesis before they answer. A page that is not on the allowlist gives
+// itself away by its Origin, or, where a browser sends none (media, image
+// and frame loads, links), by Sec-Fetch-Site. Requests with neither (curl,
+// speak doctor) pass, and so does a link to the page itself from anywhere;
+// a link or frame pointing at an audio route does not.
+func crossSite(r *http.Request) string {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if originAllowed(origin) {
+			return ""
+		}
+		return fmt.Sprintf("origin %q is not on the allowlist", origin)
+	}
+	if r.Header.Get("Sec-Fetch-Site") != "cross-site" || isPageNavigation(r) {
+		return ""
+	}
+	return "a cross-site request from another page"
+}
+
+// isPageNavigation reports a browser opening the page itself, GET /, in a
+// tab: the one cross-site navigation speak takes.
+func isPageNavigation(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == "/" &&
+		r.Header.Get("Sec-Fetch-Mode") == "navigate" &&
+		r.Header.Get("Sec-Fetch-Dest") == "document"
+}
+
+// reapCache removes clips unused for cacheTTL, then the least recently used
+// past maxCacheBytes, now and every reapInterval until stop closes.
+func reapCache(store *audiocache.Store, stop <-chan struct{}) {
+	ticker := time.NewTicker(reapInterval)
+	defer ticker.Stop()
+	for {
+		reaped, err := store.Reap(cacheTTL, maxCacheBytes, time.Now())
+		if err != nil {
+			log.Printf("speak: reap audio cache: %v", err)
+		}
+		if reaped.Expired+reaped.Evicted > 0 {
+			log.Printf("speak: audio cache: removed %d clips unused for %d days and %d "+
+				"least recently used past the %d GiB cap", reaped.Expired,
+				int(cacheTTL.Hours()/24), reaped.Evicted, maxCacheBytes>>30)
+		}
+		select {
+		case <-ticker.C:
+		case <-stop:
+			return
+		}
+	}
 }

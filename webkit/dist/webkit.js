@@ -1492,6 +1492,7 @@ var Webkit = (() => {
     openFeatureGuide: () => openFeatureGuide,
     poll: () => poll,
     segmentSentences: () => segmentSentences,
+    stopReadAloud: () => stopReadAloud,
     toFixation: () => toFixation
   });
 
@@ -1538,6 +1539,56 @@ var Webkit = (() => {
       }
     }
     return out;
+  }
+  var MAX_PART_CHARS = 600;
+  var LIVE_RAMP = [0, 250, MAX_PART_CHARS];
+  function bound(ramp, i) {
+    if (!ramp.length) return MAX_PART_CHARS;
+    return ramp[Math.min(i, ramp.length - 1)];
+  }
+  function charCount(s) {
+    return Array.from(s).length;
+  }
+  function group(pieces, ramp) {
+    const parts = [];
+    let cur = [];
+    let size = 0;
+    pieces.forEach((piece, i) => {
+      const n = charCount(piece);
+      if (cur.length) {
+        const limit = bound(ramp, parts.length);
+        if (limit === 0 || size + 1 + n > limit) {
+          parts.push(cur);
+          cur = [];
+          size = 0;
+        } else {
+          size++;
+        }
+      }
+      cur.push(i);
+      size += n;
+    });
+    if (cur.length) parts.push(cur);
+    return parts;
+  }
+  var CLOSERS = /[)\]}'’»]+$/u;
+  var TERMINAL = ".!?:;\u2026";
+  function terminate(s) {
+    const core = s.replace(CLOSERS, "");
+    if (!core) return s;
+    const last = Array.from(core).pop() ?? "";
+    return TERMINAL.includes(last) ? s : s + ".";
+  }
+  function joinParts(pieces) {
+    return pieces.map((p) => p.trim()).filter((p) => p).map(terminate).join(" ");
+  }
+  function splitKeys(list) {
+    return (list ?? "").split(/\s+/).filter((k) => k);
+  }
+  function partKeys(planned, blocks) {
+    const plan = splitKeys(planned);
+    if (plan.length) return plan;
+    return [...new Set(blocks.flatMap(splitKeys))];
   }
 
   // src/read-aloud.ts
@@ -1678,19 +1729,54 @@ var Webkit = (() => {
     }
     section.normalize();
   }
+  function planCached(section, cfg) {
+    const readers = /* @__PURE__ */ new Map();
+    const lists = [];
+    section.querySelectorAll("[data-ra-chunk]").forEach((el2) => {
+      const list = el2.dataset.raChunk ?? "";
+      lists.push(list);
+      for (const key of splitKeys(list)) {
+        const els = readers.get(key);
+        if (els) {
+          els.push(el2);
+        } else {
+          readers.set(key, [el2]);
+        }
+      }
+    });
+    const keys = partKeys(section.dataset.raParts, lists);
+    if (!keys.length) return null;
+    const parts = keys.map((key) => ({
+      fetch: () => fetchCachedPart(cfg, key),
+      highlight: readers.get(key) ?? []
+    }));
+    return { parts, spans: /* @__PURE__ */ new Map(), cached: true };
+  }
+  function sentenceParts(cfg, sentences, spans) {
+    const pieces = sentences.map((s, idx) => ({ text: speakable(s.text), idx })).filter((p) => p.text);
+    return group(pieces.map((p) => p.text), LIVE_RAMP).map((members) => {
+      const text = joinParts(members.map((m) => pieces[m].text));
+      return {
+        fetch: () => fetchSpeech(cfg, text),
+        highlight: members.flatMap((m) => spans.get(pieces[m].idx) ?? [])
+      };
+    });
+  }
+  function planUncached(section, cfg) {
+    const { sentences, nodes } = planSection(section);
+    if (!sentences.some((s) => speakable(s.text))) return null;
+    const spans = wrapSentences(nodes, sentences);
+    return { parts: sentenceParts(cfg, sentences, spans), spans, cached: false };
+  }
+  var PARTS_AHEAD = 2;
   var session = null;
   function stopReadAloud() {
     if (session) endSession(session);
   }
-  async function fetchClip(cfg, text) {
+  async function fetchAudio(cfg, url, init2) {
     let res;
     try {
-      res = await fetch(cfg.endpoint + "/v1/audio/speech", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // wav: the engine encodes mp3 via ffmpeg, which may not be installed.
-        body: JSON.stringify({ model: TTS_MODEL, input: speakable(text), voice: cfg.voice, speed: cfg.speed, response_format: "wav" })
-      });
+      res = await fetch(url, init2);
     } catch {
       throw new Error("the speech service at " + (cfg.endpoint || location.origin) + " is not reachable");
     }
@@ -1703,6 +1789,17 @@ var Webkit = (() => {
     }
     if (!blob.size) throw new Error("the speech service returned empty audio");
     return URL.createObjectURL(blob);
+  }
+  function fetchSpeech(cfg, text) {
+    return fetchAudio(cfg, cfg.endpoint + "/v1/audio/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // wav: the engine encodes mp3 via ffmpeg, which may not be installed.
+      body: JSON.stringify({ model: TTS_MODEL, input: text, voice: cfg.voice, speed: cfg.speed, response_format: "wav" })
+    });
+  }
+  function fetchCachedPart(cfg, key) {
+    return fetchAudio(cfg, `${cfg.endpoint}/audio/${encodeURIComponent(key)}`);
   }
   async function failureReason(res) {
     try {
@@ -1739,10 +1836,17 @@ var Webkit = (() => {
   function ensureClip(s, idx) {
     let p = s.pending[idx];
     if (!p) {
-      p = fetchClip(s.cfg, s.sentences[idx].text);
+      p = s.plan.parts[idx].fetch();
       s.pending[idx] = p;
     }
     return p;
+  }
+  function prefetch(s, idx) {
+    const last = Math.min(idx + PARTS_AHEAD, s.plan.parts.length - 1);
+    for (let i = idx + 1; i <= last; i++) {
+      void ensureClip(s, i).catch(() => {
+      });
+    }
   }
   function setBtn(btn, state) {
     btn.innerHTML = state === "playing" ? SVG_PAUSE : SVG_PLAY;
@@ -1752,14 +1856,27 @@ var Webkit = (() => {
     btn.setAttribute("aria-pressed", String(state === "playing"));
     btn.setAttribute("aria-label", state === "playing" ? "Pause reading" : "Read section aloud");
   }
+  function syncWait(s) {
+    if (s.cancelled) return;
+    s.btn.classList.toggle("wk-ra-wait", s.waiting && !s.userPaused);
+  }
+  function applyRate(s) {
+    const rate = s.plan.cached ? s.cfg.speed : 1;
+    s.audio.defaultPlaybackRate = rate;
+    s.audio.playbackRate = rate;
+  }
   function highlight(s, idx) {
-    const prev = s.spans.get(idx - 1);
-    if (prev) prev.forEach((el2) => el2.classList.remove("wk-ra-active"));
-    const cur = s.spans.get(idx);
-    if (!cur || !cur.length) return;
+    const prev = s.lit;
+    const cur = s.plan.parts[idx].highlight;
+    prev.forEach((el2) => {
+      if (!cur.includes(el2)) el2.classList.remove("wk-ra-active");
+    });
     cur.forEach((el2) => el2.classList.add("wk-ra-active"));
+    s.lit = cur;
+    const fresh = cur.find((el2) => !prev.includes(el2));
+    if (!fresh) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    cur[0].scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+    fresh.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
   }
   function endSession(s) {
     s.cancelled = true;
@@ -1769,58 +1886,66 @@ var Webkit = (() => {
       if (p) p.then((url) => URL.revokeObjectURL(url)).catch(() => {
       });
     }
-    unwrapSentences(s.section, s.spans);
+    s.lit.forEach((el2) => el2.classList.remove("wk-ra-active"));
+    s.lit = [];
+    if (s.plan.spans.size) unwrapSentences(s.section, s.plan.spans);
+    s.btn.classList.remove("wk-ra-wait");
     setBtn(s.btn, "idle");
     if (s.restartBtn) s.restartBtn.hidden = true;
     if (session === s) session = null;
   }
+  function startClip(s, url, idx) {
+    s.audio.src = url;
+    applyRate(s);
+    s.audio.onended = () => {
+      void playFrom(s, idx + 1);
+    };
+    return s.audio.play();
+  }
   async function playFrom(s, idx) {
     if (s.cancelled) return;
-    if (idx >= s.sentences.length) {
+    if (idx >= s.plan.parts.length) {
       endSession(s);
       return;
     }
-    if (!speakable(s.sentences[idx].text)) {
-      return playFrom(s, idx + 1);
-    }
     highlight(s, idx);
+    const clip = ensureClip(s, idx);
+    prefetch(s, idx);
+    s.waiting = true;
+    syncWait(s);
     let url;
     try {
-      url = await ensureClip(s, idx);
+      url = await clip;
     } catch (err) {
       if (!s.cancelled) failSession(s, err);
       return;
+    } finally {
+      s.waiting = false;
+      syncWait(s);
     }
     if (s.cancelled) return;
-    if (idx + 1 < s.sentences.length) {
-      void ensureClip(s, idx + 1).catch(() => {
-      });
-    }
     if (s.userPaused) {
       s.queued = { url, idx };
       return;
     }
-    s.audio.src = url;
-    s.audio.onended = () => {
-      void playFrom(s, idx + 1);
-    };
     try {
-      await s.audio.play();
+      await startClip(s, url, idx);
     } catch (err) {
       if (!s.cancelled) failSession(s, err);
     }
   }
-  function newSession(section, btn, restartBtn, cfg, sentences, spans) {
+  function newSession(section, btn, restartBtn, cfg, plan) {
     const s = {
       section,
       btn,
       restartBtn,
       cfg,
-      sentences,
-      spans,
+      plan,
       audio: new Audio(),
-      pending: new Array(sentences.length).fill(null),
+      pending: new Array(plan.parts.length).fill(null),
       queued: null,
+      lit: [],
+      waiting: false,
       userPaused: false,
       cancelled: false
     };
@@ -1831,15 +1956,15 @@ var Webkit = (() => {
   }
   function startSession(section, btn, cfg, restartBtn = null) {
     if (session) endSession(session);
-    const { sentences, nodes } = planSection(section);
-    if (!sentences.length) return;
-    newSession(section, btn, restartBtn, cfg, sentences, wrapSentences(nodes, sentences));
+    const plan = planCached(section, cfg) ?? planUncached(section, cfg);
+    if (!plan) return;
+    newSession(section, btn, restartBtn, cfg, plan);
   }
   function startSelectionSession(text, btn, cfg) {
     if (session) endSession(session);
-    const sentences = segmentSentences(text);
-    if (!sentences.length) return;
-    newSession(btn, btn, null, cfg, sentences, /* @__PURE__ */ new Map());
+    const parts = sentenceParts(cfg, segmentSentences(text), /* @__PURE__ */ new Map());
+    if (!parts.length) return;
+    newSession(btn, btn, null, cfg, { parts, spans: /* @__PURE__ */ new Map(), cached: false });
   }
   function onButton(section, btn, cfg, restartBtn = null) {
     if (session && session.section === section) {
@@ -1847,21 +1972,19 @@ var Webkit = (() => {
       if (s.userPaused) {
         s.userPaused = false;
         setBtn(btn, "playing");
+        syncWait(s);
         if (s.queued) {
           const q = s.queued;
           s.queued = null;
-          s.audio.src = q.url;
-          s.audio.onended = () => {
-            void playFrom(s, q.idx + 1);
-          };
-          void s.audio.play().catch(() => endSession(s));
-        } else if (s.audio.src) {
+          void startClip(s, q.url, q.idx).catch(() => endSession(s));
+        } else if (!s.waiting && s.audio.src) {
           void s.audio.play().catch(() => endSession(s));
         }
       } else {
         s.userPaused = true;
         s.audio.pause();
         setBtn(btn, "paused");
+        syncWait(s);
       }
       return;
     }
@@ -1953,6 +2076,7 @@ var Webkit = (() => {
       };
       document.addEventListener("wk-speedchange", ((e) => {
         cfg.speed = e.detail.speed;
+        if (session?.cfg === cfg) applyRate(session);
       }));
       if (!await probe(cfg.endpoint)) return;
       const selector = this.getAttribute("targets");

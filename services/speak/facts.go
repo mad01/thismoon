@@ -67,7 +67,7 @@ const (
 )
 
 // LegacyStateDir is the pre-XDG location of the playback engine's on-disk
-// state: per-sentence WAV files under audio/ and the cross-process
+// state: per-part WAV files under audio/ and the cross-process
 // playback.lock. An install that has played audio there keeps using it,
 // while every other install lands in the XDG state directory
 // (~/.local/state/speak). The leading ~ is expanded at runtime, never at

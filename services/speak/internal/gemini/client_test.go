@@ -260,6 +260,35 @@ func TestRetryStopsWithTheContext(t *testing.T) {
 	}
 }
 
+// TestSlowAnswerIsNotRetried: a model that did not answer in time is an
+// upstream failure naming the wait, not a network one, and gets no retry,
+// since the one attempt already took the whole timeout.
+func TestSlowAnswerIsNotRetried(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		// Only once the body is read does the server watch the connection,
+		// so only then does the client hanging up end the request context.
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	c := testClient(srv.URL)
+	c.timeout = 50 * time.Millisecond
+
+	_, err := synthesize(c)
+	te, ok := errors.AsType[*tts.Error](err)
+	if !ok || te.Kind != tts.KindUpstream || te.Message != "gemini did not answer within 50ms" {
+		t.Fatalf("err = %v, want upstream \"gemini did not answer within 50ms\"", err)
+	}
+	if !strings.Contains(err.Error(), "speak doctor") {
+		t.Errorf("err = %q, want the doctor hint", err)
+	}
+	if n := attempts.Load(); n != 1 {
+		t.Errorf("attempts = %d, want no retry after a timeout", n)
+	}
+}
+
 func TestUnreachableIsANetworkFailure(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL

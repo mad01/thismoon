@@ -1,17 +1,20 @@
 'use strict';
 // speak — client-side render. The backend serves a static chrome-only shell
 // (internal/web/assets/shell.html) plus the markdown renderer at POST /read,
-// which returns {name, content} JSON: `content` is the goldmark-rendered HTML
-// split into <section class="doc-section"> blocks (compiled once in Go, mounted
-// here as-is). This script builds the page header + upload form, and on submit
-// fetches /read and mounts the rendered sections, then (re)creates the
-// <wk-read-aloud> element so it scans the freshly mounted sections. webkit.js
-// loads before this file, so Webkit.el and the wk-* custom elements exist.
+// which returns {name, content, doc} JSON: `content` is the goldmark-rendered
+// HTML split into <section class="doc-section"> blocks (compiled once in Go,
+// mounted here as-is) and `doc` is the audio status of the parts serve
+// synthesizes in the background. This script builds the page header + upload
+// form, and on submit fetches /read and mounts the rendered sections, then
+// (re)creates the <wk-read-aloud> element so it scans the freshly mounted
+// sections. webkit.js loads before this file, so Webkit.el and the wk-* custom
+// elements exist.
 //
 // Three input paths — file picker, drag-and-drop, paste — all funnel through
 // submitMarkdown(name, text), which is also what the recent-docs chips replay.
-// Recents live in localStorage only; the server stays storage-free and /read
-// stays the single render path.
+// Recents live in localStorage only: the server keeps an audio cache on disk
+// and recent docs in memory, never the markdown, and /read stays the single
+// render path.
 (function () {
   var app = document.getElementById('app');
   if (!app) return;
@@ -26,7 +29,8 @@
     return Webkit.el('wk-page-header', {}, [
       Webkit.el('wk-title', {}, 'speak'),
       Webkit.el('wk-subtitle', {}, 'Upload, drop, or paste markdown and listen to it. ' +
-        'Each section gets its own play button; the sentence being read is highlighted.')
+        'Each section gets its own play button; the passage being read is highlighted. ' +
+        'Audio is prepared in the background and can be downloaded once ready.')
     ]);
   }
 
@@ -62,7 +66,10 @@
   // doc holds the rendered sections; errBox surfaces a failed read. Both live
   // for the page lifetime and get their contents swapped on each upload.
   var docName = Webkit.el('div', { class: 'doc-name' }, '');
-  var doc = Webkit.el('div', { class: 'doc' }, [docName]);
+  // Page-level audio line: parts ready, Prepare all, whole-page download.
+  var audioBar = Webkit.el('div', { class: 'doc-audio' });
+  audioBar.style.display = 'none';
+  var doc = Webkit.el('div', { class: 'doc' }, [docName, audioBar]);
   var errBox = Webkit.el('div', { class: 'upload-error' });
   errBox.style.display = 'none';
 
@@ -150,8 +157,12 @@
   }
 
   // A failed play already recorded its reason server-side; re-check so the
-  // callout shows it next to the toast the component raised.
-  document.addEventListener('wk-read-aloud-error', checkEngine);
+  // callout shows it next to the toast the component raised, and so the
+  // section's audio badge shows a failed part.
+  document.addEventListener('wk-read-aloud-error', function () {
+    checkEngine();
+    refreshDoc();
+  });
 
   // ── Render + mount ──
 
@@ -162,10 +173,17 @@
     errBox.style.display = 'none';
     errBox.textContent = '';
     hint.style.display = 'none';
+    stopPolling();
+    current = null;
+    // A playing session holds the old sections, and removing <wk-read-aloud>
+    // below doesn't end it: stop it, or it plays on from a detached section.
+    Webkit.stopReadAloud();
 
     doc.innerHTML = '';
     docName.textContent = name || '';
     doc.appendChild(docName);
+    audioBar.style.display = 'none';
+    doc.appendChild(audioBar);
     // content is our own goldmark output (raw HTML is escaped by goldmark with
     // unsafe off), mounted as-is — the same trust boundary the old server-side
     // {{CONTENT}} substitution had.
@@ -188,9 +206,174 @@
     errBox.style.display = '';
   }
 
+  // ── Audio preparation ──
+  //
+  // serve synthesizes an upload's parts in the background into its cache, so
+  // play replays cached audio. The page shows how far that got, per section
+  // and for the page, polling while parts are queued or generating.
+
+  var POLL_MS = 2000;
+  // The mounted doc: serve's id for it plus the markdown it came from. serve
+  // keeps docs in memory only, so after a restart the page re-posts the
+  // markdown; `reposted` marks a doc that already came from a re-post.
+  var current = null;
+  var pollTimer = null;
+
+  function stopPolling() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+
+  function schedulePoll() {
+    stopPolling();
+    var id = current.id;
+    pollTimer = setTimeout(function () {
+      pollTimer = null;
+      docRequest('GET', '/doc/' + id)
+        .then(renderAudio)
+        .catch(function (err) {
+          if (!current || current.id !== id) return;
+          if (err.status === 404) { docGone(); return; }
+          schedulePoll(); // serve may be restarting; the next poll tells
+        });
+    }, POLL_MS);
+  }
+
+  // One request about the mounted doc. The error carries the HTTP status and
+  // serve's {"error": {"message"}} when it sent one.
+  function docRequest(method, path) {
+    return fetch(path, { method: method, cache: 'no-store', headers: { accept: 'application/json' } })
+      .then(function (r) {
+        if (r.ok) return r.json();
+        return r.json().catch(function () { return null; }).then(function (body) {
+          var err = new Error((body && body.error && body.error.message) || ('request failed (' + r.status + ')'));
+          err.status = r.status;
+          throw err;
+        });
+      });
+  }
+
+  // One status fetch outside the poll loop (after a failed play, say); starts
+  // polling again when that shows work in progress.
+  function refreshDoc() {
+    if (!current || pollTimer) return;
+    var id = current.id;
+    docRequest('GET', '/doc/' + id)
+      .then(renderAudio)
+      .catch(function (err) {
+        if (err.status === 404 && current && current.id === id) docGone();
+      });
+  }
+
+  // serve no longer knows the doc (it restarted): post the markdown again so
+  // the page's part keys resolve. Only once: a re-posted doc that goes
+  // missing too gets a note instead of another round trip.
+  function docGone() {
+    stopPolling();
+    var c = current;
+    if (!c) return;
+    if (c.reposted) {
+      audioBar.textContent = 'Audio: speak no longer has this document; upload it again to prepare its audio.';
+      audioBar.style.display = '';
+      return;
+    }
+    submitMarkdown(c.name, c.text, c);
+  }
+
+  function trackDoc(status, name, text, reposted) {
+    if (!status || !status.id) return; // an older serve without the audio cache
+    current = { id: status.id, name: name, text: text, reposted: reposted };
+    renderAudio(status);
+  }
+
+  function renderAudio(status) {
+    if (!current || !status || status.id !== current.id) return; // a doc since replaced
+    renderAudioBar(status);
+    (status.sections || []).forEach(renderSectionAudio);
+    var t = status.total || {};
+    if (t.queued || t.generating) schedulePoll();
+  }
+
+  function renderAudioBar(status) {
+    var t = status.total || {};
+    audioBar.textContent = '';
+    if (!t.parts) { audioBar.style.display = 'none'; return; }
+    var line = 'Audio: ' + t.ready + ' of ' + t.parts + ' parts ready';
+    if (t.queued || t.generating) line += ', ' + (t.queued + t.generating) + ' preparing';
+    if (t.idle) line += ', ' + t.idle + ' not prepared';
+    if (t.failed) line += ', ' + t.failed + ' failed';
+    audioBar.appendChild(Webkit.el('span', {}, line));
+    if (t.failed && status.reason) {
+      audioBar.appendChild(Webkit.el('span', { class: 'doc-audio-reason' }, status.reason));
+    }
+    if (t.idle || t.failed) {
+      var btn = Webkit.el('button', { type: 'button', class: 'audio-btn' }, 'Prepare all');
+      btn.addEventListener('click', function () { prepareAll(btn); });
+      audioBar.appendChild(btn);
+    }
+    if (t.ready === t.parts) {
+      audioBar.appendChild(downloadLink('/doc/' + status.id + '/audio', 'Download page audio'));
+    }
+    audioBar.style.display = '';
+  }
+
+  function prepareAll(btn) {
+    if (!current) return;
+    var id = current.id;
+    btn.disabled = true;
+    docRequest('POST', '/doc/' + id + '/prepare')
+      .then(renderAudio)
+      .catch(function (err) {
+        if (!current || current.id !== id) return;
+        if (err.status === 404) { docGone(); return; }
+        btn.disabled = false;
+        showError('Prepare audio: ' + err.message);
+      });
+  }
+
+  function downloadLink(href, label) {
+    return Webkit.el('a', { class: 'audio-dl', href: href, download: '' }, label);
+  }
+
+  // A section's audio state, most useful fact first: work in progress, then
+  // a failure, then what is left unprepared.
+  function sectionState(sec) {
+    if (sec.ready === sec.parts) return { variant: 'ok', text: 'audio ready' };
+    if (sec.generating) {
+      return { variant: 'info', text: 'generating ' + Math.min(sec.ready + 1, sec.parts) + ' of ' + sec.parts };
+    }
+    if (sec.queued) return { variant: 'info', text: 'queued, ' + sec.ready + ' of ' + sec.parts + ' ready' };
+    if (sec.failed) return { variant: 'error', text: 'failed: ' + (sec.reason || 'unknown reason') };
+    if (sec.ready) return { variant: 'outline', text: sec.ready + ' of ' + sec.parts + ' ready' };
+    return { variant: 'outline', text: 'not prepared' };
+  }
+
+  // The status sits in its own floated div, outside the p/li blocks that
+  // fixation walks and read-aloud reads, and its text is a wk-badge, which
+  // the read-aloud text walk skips. Created at mount, before <wk-read-aloud>
+  // finishes probing, so the play buttons it inserts later float to its right.
+  function renderSectionAudio(sec) {
+    var el = doc.querySelector('.doc-section[data-section="' + sec.section + '"]');
+    if (!el) return;
+    var box = el.querySelector(':scope > .section-audio');
+    if (!sec.parts) { if (box) box.remove(); return; }
+    if (!box) {
+      box = Webkit.el('div', { class: 'section-audio' });
+      el.insertBefore(box, el.firstChild);
+    }
+    var state = sectionState(sec);
+    box.textContent = '';
+    box.appendChild(Webkit.el('wk-badge', { variant: state.variant, title: state.text }, state.text));
+    if (sec.ready === sec.parts) {
+      box.appendChild(downloadLink('/doc/' + current.id + '/audio?section=' + sec.section, 'download'));
+    }
+  }
+
   // The one path to the server: raw markdown in, rendered sections mounted,
   // doc remembered. FormData keeps /read's multipart contract unchanged.
-  function submitMarkdown(name, text) {
+  // `reposted` is the tracked doc being re-posted after serve forgot it (see
+  // docGone).
+  function submitMarkdown(name, text, reposted) {
     var body = new FormData();
     body.append('doc', new Blob([text], { type: 'text/markdown' }), name);
     fetch('/read', { method: 'POST', body: body, headers: { accept: 'application/json' } })
@@ -203,7 +386,21 @@
         return r.json();
       })
       .then(function (d) {
+        if (reposted) {
+          // Another upload replaced the doc while the re-post was in flight.
+          if (current !== reposted) return;
+          // Same doc id: the page is unchanged, so keep it (and any playing
+          // session) and resume tracking.
+          if (d.doc && d.doc.id === reposted.id) {
+            trackDoc(d.doc, d.name, text, true);
+            return;
+          }
+        }
+        // Swap the doc in; after a re-post, keep the reader's place.
+        var y = window.scrollY;
         mount(d.name, d.content);
+        if (reposted) window.scrollTo(0, y);
+        trackDoc(d.doc, d.name, text, !!reposted);
         saveRecent(d.name, text);
         checkEngine();
       })

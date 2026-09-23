@@ -1,39 +1,6 @@
 package playback
 
-import (
-	"reflect"
-	"testing"
-)
-
-func TestSplitSentences(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want []string
-	}{
-		{"empty", "", nil},
-		{"blank", "   \n  ", nil},
-		{"single no punct", "hello there", []string{"hello there"}},
-		{"two sentences", "One. Two.", []string{"One.", "Two."}},
-		{"bang and question", "Wow! Really? Yes.", []string{"Wow!", "Really?", "Yes."}},
-		{"decimal not split", "Pi is 3.14 today.", []string{"Pi is 3.14 today."}},
-		{
-			"newline is whitespace",
-			"First line.\nSecond line.",
-			[]string{"First line.", "Second line."},
-		},
-		{"trailing space", "Done. ", []string{"Done."}},
-		{"collapses gap", "A.    B.", []string{"A.", "B."}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := SplitSentences(tc.in)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("SplitSentences(%q) = %#v, want %#v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
+import "testing"
 
 func TestExtractSections(t *testing.T) {
 	src := []byte(

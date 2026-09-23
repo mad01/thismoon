@@ -29,8 +29,10 @@ import (
 // message.
 const maxErrorBody = 4 << 10
 
-// requestTimeout bounds one synthesis attempt, as in ttsclient.
-const requestTimeout = 30 * time.Second
+// requestTimeout bounds one synthesis attempt, as ttsclient's remoteTimeout
+// does: the speech models answer with the whole clip at once, after 20
+// seconds and more for a part of a few hundred characters.
+const requestTimeout = 2 * time.Minute
 
 // retryDelay is the pause before the one retry. Google documents that the
 // speech models now and then return text instead of audio, failing the
@@ -56,6 +58,7 @@ type Config struct {
 type Client struct {
 	cfg        Config
 	http       *http.Client
+	timeout    time.Duration
 	retryDelay time.Duration
 }
 
@@ -66,11 +69,11 @@ func New(cfg Config) *Client {
 	return &Client{
 		cfg: cfg,
 		http: &http.Client{
-			Timeout: requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return errRedirectRefused
 			},
 		},
+		timeout:    requestTimeout,
 		retryDelay: retryDelay,
 	}
 }
@@ -95,7 +98,8 @@ func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, er
 }
 
 // retryable reports a failure worth one more try: a server error, or an
-// answer that carried no audio for no stated reason.
+// answer that carried no audio for no stated reason. A timeout is neither,
+// and is not retried: it already took the whole timeout.
 func retryable(err *tts.Error) bool {
 	return err.Kind == tts.KindUpstream && (err.Status >= http.StatusInternalServerError ||
 		errors.Is(err, errNoAudio))
@@ -103,6 +107,8 @@ func retryable(err *tts.Error) bool {
 
 // attempt is one generateContent call.
 func (c *Client) attempt(ctx context.Context, body []byte) (tts.Audio, error) {
+	ctx, cancel, limit := tts.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	endpoint := c.cfg.BaseURL + "/v1beta/models/" + url.PathEscape(c.cfg.Model) + ":generateContent"
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
@@ -122,7 +128,7 @@ func (c *Client) attempt(ctx context.Context, body []byte) (tts.Audio, error) {
 
 	res, err := c.http.Do(httpReq)
 	if err != nil {
-		return tts.Audio{}, agentdoc.Hint(c.unreachable(err), speak.Facts())
+		return tts.Audio{}, agentdoc.Hint(c.unanswered(limit, err), speak.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 
@@ -132,6 +138,9 @@ func (c *Client) attempt(ctx context.Context, body []byte) (tts.Audio, error) {
 	}
 	var answer generateResponse
 	if err := json.NewDecoder(res.Body).Decode(&answer); err != nil {
+		if tts.TimedOut(err) {
+			return tts.Audio{}, agentdoc.Hint(c.slow(limit, err), speak.Facts())
+		}
 		return tts.Audio{}, c.upstream(
 			res.StatusCode,
 			"answered unreadable JSON: "+err.Error(),
@@ -227,7 +236,27 @@ func (c *Client) upstream(status int, what string, err error) *tts.Error {
 	}
 }
 
-// unreachable classifies an API that never answered.
+// unanswered classifies a request that got no answer. Running out of time is
+// the model being slow, not the network failing.
+func (c *Client) unanswered(limit time.Duration, err error) *tts.Error {
+	if tts.TimedOut(err) {
+		return c.slow(limit, err)
+	}
+	return c.unreachable(err)
+}
+
+// slow classifies an API that did not answer within limit. It counts as
+// upstream, not network: the API was reached.
+func (c *Client) slow(limit time.Duration, err error) *tts.Error {
+	return &tts.Error{
+		Kind:     tts.KindUpstream,
+		Provider: c.cfg.Provider,
+		Message:  fmt.Sprintf("%s did not answer within %s", c.cfg.Provider, limit),
+		Err:      err,
+	}
+}
+
+// unreachable classifies an API that could not be reached.
 func (c *Client) unreachable(err error) *tts.Error {
 	return &tts.Error{
 		Kind:     tts.KindNetwork,

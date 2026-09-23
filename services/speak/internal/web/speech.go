@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/kit/notify"
+	"github.com/mad01/thismoon/services/speak/internal/audiocache"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
@@ -32,9 +33,11 @@ const probeTimeout = 10 * time.Second
 const probeText = "Ready."
 
 // Speaker is what the speech endpoints synthesize through: the active
-// provider.
+// provider. ClipID names what decides a clip's sound besides its text and
+// speed (provider, model, resolved voice), which the audio cache keys on.
 type Speaker interface {
 	Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error)
+	ClipID(voice string) string
 }
 
 // speechRequest is the OpenAI-style body <wk-read-aloud> posts. model and
@@ -61,12 +64,13 @@ type speechErrorDetail struct {
 	Health   tts.Status `json:"health"`
 }
 
-// speechHandler answers POST /v1/audio/speech: synthesize through the active
-// provider, record the outcome in health, and answer audio or a speechError
-// naming the reason.
+// speechHandler answers POST /v1/audio/speech: answer from the audio cache,
+// or synthesize through the active provider, record the outcome in health,
+// store the clip, and answer audio or a speechError naming the reason.
 type speechHandler struct {
 	speaker Speaker
 	health  *tts.Health
+	store   *audiocache.Store
 }
 
 func (h *speechHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +83,11 @@ func (h *speechHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Input == "" {
 		http.Error(w, "speech request has no input text", http.StatusBadRequest)
+		return
+	}
+	key := audiocache.Key(h.speaker.ClipID(req.Voice), req.Speed, req.Input)
+	if audio, ok := h.cached(key); ok {
+		writeAudio(w, audio) // nothing synthesized, so nothing to record
 		return
 	}
 	audio, err := h.speaker.Synthesize(r.Context(), tts.Request{
@@ -96,24 +105,58 @@ func (h *speechHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Success is recorded but not emitted: read-aloud fans out one request
-	// per sentence and would flood the event log.
+	// per part and would flood the event log.
 	h.health.Record(nil)
-	w.Header().Set("Content-Type", audio.ContentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(audio.Data)))
-	_, _ = w.Write(audio.Data)
+	if err := h.store.Put(key, audio); err != nil {
+		log.Printf("speak: cache speech: %v", err)
+	}
+	writeAudio(w, audio)
+}
+
+// cached returns the stored clip for key. A cache that cannot be read is
+// logged and treated as a miss: the provider can still answer.
+func (h *speechHandler) cached(key string) (tts.Audio, bool) {
+	audio, ok, err := h.store.Get(key)
+	if err != nil {
+		log.Printf("speak: read speech cache: %v", err)
+		return tts.Audio{}, false
+	}
+	return audio, ok
 }
 
 // fail records a synthesis failure, archives it as an event, and answers
 // with its reason.
 func (h *speechHandler) fail(w http.ResponseWriter, err error) {
 	h.health.Record(err)
-	state := h.health.Snapshot()
-	failure, ok := errors.AsType[*tts.Error](err)
-	if !ok {
-		failure = &tts.Error{Kind: tts.KindUpstream, Provider: state.Provider, Message: err.Error()}
+	emitFailure(h.health, err)
+	writeFailure(w, h.health, err)
+}
+
+// classify returns err as a classified failure; an unclassified error counts
+// as upstream.
+func classify(health *tts.Health, err error) *tts.Error {
+	if failure, ok := errors.AsType[*tts.Error](err); ok {
+		return failure
 	}
+	return &tts.Error{
+		Kind:     tts.KindUpstream,
+		Provider: health.Snapshot().Provider,
+		Message:  err.Error(),
+	}
+}
+
+// emitFailure archives a synthesis failure as an events.this event.
+func emitFailure(health *tts.Health, err error) {
+	failure := classify(health, err)
 	notify.EmitEvent("speak", "error", "tts synthesis failed", failure.Message,
-		map[string]string{"provider": state.Provider, "kind": string(failure.Kind)})
+		map[string]string{"provider": health.Snapshot().Provider, "kind": string(failure.Kind)})
+}
+
+// writeFailure answers a failed synthesis with its reason and the health
+// state it left behind. It records nothing: the caller already has.
+func writeFailure(w http.ResponseWriter, health *tts.Health, err error) {
+	failure := classify(health, err)
+	state := health.Snapshot()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(failureStatus(failure.Kind))
 	body := speechError{Error: speechErrorDetail{
@@ -126,6 +169,13 @@ func (h *speechHandler) fail(w http.ResponseWriter, err error) {
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		log.Printf("speak: encode speech error: %v", err)
 	}
+}
+
+// writeAudio answers a clip.
+func writeAudio(w http.ResponseWriter, audio tts.Audio) {
+	w.Header().Set("Content-Type", audio.ContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(audio.Data)))
+	_, _ = w.Write(audio.Data)
 }
 
 // failureStatus is the status speak answers a failed synthesis with. speak is

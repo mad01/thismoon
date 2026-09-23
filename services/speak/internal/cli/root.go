@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -47,7 +48,12 @@ var serveCmd = &cobra.Command{
 	Short: "Run the local HTTP server",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		p := activeProvider(cmd.Context())
-		return web.Serve(flagPort, p, p.NewHealth(), buildinfo.Get())
+		return web.Serve(flagPort, web.Config{
+			Speaker:  p,
+			Health:   p.NewHealth(),
+			Info:     buildinfo.Get(),
+			CacheDir: filepath.Join(flagStateDir, "cache"),
+		})
 	},
 }
 
@@ -66,7 +72,8 @@ func init() {
 		"base URL of the local mlx-audio engine, overriding local blocks' base_url (default "+
 			speak.DefaultTTSURL+"; env SPEAK_TTS_URL)")
 	rootCmd.PersistentFlags().StringVar(&flagStateDir, "state-dir", defaultStateDir(),
-		"directory holding playback audio and the playback lock (env SPEAK_STATE_DIR)")
+		"directory holding playback audio, the playback lock and serve's audio cache "+
+			"(cache/; env SPEAK_STATE_DIR)")
 	// Expand a leading ~ before any subcommand runs: SPEAK_STATE_DIR reaches
 	// Go without shell expansion under launchd, and an unexpanded ~ would
 	// create a literal "~" directory beside the working directory.

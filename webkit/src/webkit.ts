@@ -10,6 +10,7 @@ import { initProse } from './prose.js';
 
 export { toFixation } from './fixation.js';
 export { segmentSentences } from './sentences.js';
+export { stopReadAloud } from './read-aloud.js';
 export { enhanceProse } from './prose.js';
 export { escapeHtml, el, poll } from './render.js';
 export type { ElChild, ElAttrs, PollHandle } from './render.js';

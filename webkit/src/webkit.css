@@ -1282,6 +1282,22 @@ wk-read-aloud { display: none; }
 .wk-ra-btn.wk-ra-error { border-color: var(--red); color: var(--red); }
 
 .wk-ra-sentence.wk-ra-active { background: var(--ra-highlight); border-radius: 3px; }
+/* Cached mode lights whole blocks (p, li, headings). The ring is a box-shadow
+   spread in the same colour, so the text gets breathing room without the box
+   growing and shifting the layout. */
+[data-ra-chunk].wk-ra-active {
+  background: var(--ra-highlight); border-radius: 4px;
+  box-shadow: 0 0 0 0.25rem var(--ra-highlight);
+}
+
+/* The playing part's clip is still on its way (a part speak has not prepared
+   yet can take tens of seconds): a slow pulse, so the wait reads as work. */
+.wk-ra-btn.wk-ra-wait { animation: wkRaWait 1.2s ease-in-out infinite; }
+@keyframes wkRaWait { 50% { opacity: 0.5; } }
+/* The kit-wide reduced-motion rule below stops the pulse; keep a still cue. */
+@media (prefers-reduced-motion: reduce) {
+  .wk-ra-btn.wk-ra-wait { opacity: 0.6; }
+}
 
 /* Floating selection-speaker button (positioned at the selection's edge). */
 .wk-ra-btn.wk-ra-float {
