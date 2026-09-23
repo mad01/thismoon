@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/speak/v0.10.0...speak/v0.11.0) (2026-09-23)
+
+
+### Features
+
+* **speak:** prepare uploaded documents' audio ahead of playback ([#132](https://github.com/mad01/thismoon/issues/132)) ([54557c5](https://github.com/mad01/thismoon/commit/54557c5bdcb98e6f10a47586023728590fd90edd))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/speak/v0.9.0...speak/v0.10.0) (2026-09-23)
 
 
