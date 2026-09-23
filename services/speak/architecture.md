@@ -55,13 +55,19 @@ keys in play order, and every read block carries `data-ra-chunk`, the keys
 of the parts that read it, for highlighting. serve keeps the document in
 memory (the 32 most recent; an evicted one stops preparing), queues its
 parts in reading order for background synthesis up to 25,000 characters,
-ahead of older uploads' queued parts, and returns `{name, content, doc}` JSON, `doc`
-being the audio state. `app.js` mounts the content, re-mounts
-`<wk-read-aloud targets=".doc-section">`, and shows each section's audio
-state, polling `GET /doc/{id}` while parts are queued or generating. A play
+ahead of older uploads' queued parts, and returns `{name, content, doc}`
+JSON, `doc` being the audio state. A part that fails upstream gets up to 3
+attempts, 15s then 45s apart, and reads `retrying` in between; auth, quota,
+network, config and model failures are not retried and stop the background
+queue, as does a part whose last attempt timed out. `app.js` mounts the
+content, re-mounts `<wk-read-aloud targets=".doc-section">`, and shows each
+section's audio state with a Retry button (`POST
+/doc/{id}/prepare?section=N&failed=1`) when parts failed, polling
+`GET /doc/{id}` while parts are queued, generating or retrying. A play
 button fetches the section's parts from `GET /audio/{key}` with two in
 flight; a part not ready yet jumps the queue and the request waits for it.
-`GET /doc/{id}/audio` joins the ready parts into one download.
+`GET /doc/{id}/audio` joins the ready parts into one download for the whole
+page (`?section=N` for one section, which the page does not link).
 
 Why ahead of time: remote speech models answer with the whole clip at once
 and take seconds to tens of seconds per part (Gemini 3.1 Flash TTS through

@@ -15,11 +15,12 @@ import (
 const settleTimeout = 5 * time.Second
 
 // fakeSynth records the order texts are synthesized in, holds every
-// synthesis until gate is closed, and fails the texts in fail.
+// synthesis until gate is closed, and answers a text's syntheses with the
+// errors listed for it in fail, one per call, then with audio.
 type fakeSynth struct {
 	gate    chan struct{}
 	started chan string // each text as its synthesis starts
-	fail    map[string]error
+	fail    map[string][]error
 
 	mu    sync.Mutex
 	order []string
@@ -29,15 +30,17 @@ func newFakeSynth() *fakeSynth {
 	return &fakeSynth{
 		gate:    make(chan struct{}),
 		started: make(chan string, 100),
-		fail:    map[string]error{},
+		fail:    map[string][]error{},
 	}
 }
 
 func (f *fakeSynth) synth(ctx context.Context, text string) (tts.Audio, error) {
 	f.mu.Lock()
 	f.order = append(f.order, text)
-	err := f.fail[text]
-	delete(f.fail, text) // a failure happens once; the retry succeeds
+	var err error
+	if errs := f.fail[text]; len(errs) > 0 {
+		err, f.fail[text] = errs[0], errs[1:]
+	}
 	f.mu.Unlock()
 	f.started <- text
 	select {
@@ -49,6 +52,15 @@ func (f *fakeSynth) synth(ctx context.Context, text string) (tts.Audio, error) {
 		return tts.Audio{}, err
 	}
 	return tts.Audio{Data: tts.WAV([]byte(text), 24000, 1), ContentType: tts.ContentTypeWAV}, nil
+}
+
+// failNext makes the next n syntheses of text fail with err.
+func (f *fakeSynth) failNext(text string, n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for range n {
+		f.fail[text] = append(f.fail[text], err)
+	}
 }
 
 func (f *fakeSynth) calls() []string {
@@ -65,6 +77,8 @@ func newTestPreparer(t *testing.T, f *fakeSynth, workers int) *Preparer {
 		Health:  tts.NewHealth("fake", "model"),
 		Workers: workers,
 		Timeout: time.Minute,
+		// Retry at once, so no test waits out the backoff.
+		RetryDelay: func(int) time.Duration { return 0 },
 	})
 }
 
@@ -147,42 +161,156 @@ func TestPreparerFetchSynthesizesOnce(t *testing.T) {
 }
 
 // TestPreparerHaltsOnSharedFailures pins which failures stop the background
-// queue: those every other part would hit too. The first part fails; the
-// parts queued behind it go back to idle only for those kinds.
+// queue: those every other part would hit too. The first part fails once,
+// is not tried again, and the parts queued behind it go back to idle.
 func TestPreparerHaltsOnSharedFailures(t *testing.T) {
-	cases := []struct {
-		kind      tts.Kind
-		wantAfter State
-	}{
-		{tts.KindQuota, StateIdle},
-		{tts.KindAuth, StateIdle},
-		{tts.KindNetwork, StateIdle},
-		{tts.KindUpstream, StateReady},
-	}
-	for _, tc := range cases {
-		t.Run(string(tc.kind), func(t *testing.T) {
+	for _, kind := range []tts.Kind{
+		tts.KindQuota, tts.KindAuth, tts.KindNetwork, tts.KindConfig, tts.KindModel,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
 			f := newFakeSynth()
-			f.fail["a"] = &tts.Error{Kind: tc.kind, Provider: "fake", Message: "a failed"}
+			f.failNext("a", 1, &tts.Error{Kind: kind, Provider: "fake", Message: "a failed"})
 			p := newTestPreparer(t, f, 1)
 			p.Queue(items("a", "b", "c"))
 			close(f.gate)
 			waitState(t, p, "a", StateFailed)
 			for _, text := range []string{"b", "c"} {
-				waitState(t, p, text, tc.wantAfter)
+				waitState(t, p, text, StateIdle)
 			}
-			if _, err := p.State(key("a")); err == nil || err.Error() != "a failed" {
-				t.Errorf("State(a) reason = %v, want the failure", err)
+			if _, err := p.State(key("a")); err == nil ||
+				err.Error() != "failed after 1 attempt: a failed" {
+				t.Errorf("State(a) reason = %v, want the failure after 1 attempt", err)
 			}
-			if tc.wantAfter == StateIdle && len(f.calls()) != 1 {
-				t.Errorf("syntheses = %v, want only the failed one", f.calls())
+			if got := f.calls(); !slices.Equal(got, []string{"a"}) {
+				t.Errorf("syntheses = %v, want only the failed one, not retried", got)
 			}
 		})
 	}
 }
 
+// TestPreparerRetriesUpstreamFailures pins the automatic retry: an upstream
+// failure (a timeout included) is tried again after a backoff, up to
+// maxAttempts in all, and a part queued again after that starts over.
+func TestPreparerRetriesUpstreamFailures(t *testing.T) {
+	stall := &tts.Error{Kind: tts.KindUpstream, Provider: "fake", Message: "did not answer"}
+	cases := []struct {
+		name       string
+		failures   int
+		want       State
+		wantReason string
+		wantDelays []int // the attempts a backoff was asked for after
+	}{
+		{"second attempt succeeds", 1, StateReady, "", []int{1}},
+		{
+			"every attempt fails", maxAttempts, StateFailed,
+			"failed after 3 attempts: did not answer",
+			[]int{1, 2},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeSynth()
+			f.failNext("a", tc.failures, stall)
+			var mu sync.Mutex
+			var delays []int
+			p := NewPreparer(PreparerConfig{
+				Store: NewStore(t.TempDir()), Synth: f.synth,
+				Health: tts.NewHealth("fake", "model"),
+				RetryDelay: func(attempt int) time.Duration {
+					mu.Lock()
+					defer mu.Unlock()
+					delays = append(delays, attempt)
+					return 0
+				},
+			})
+			p.Queue(items("a", "b"))
+			close(f.gate)
+			waitState(t, p, "a", tc.want)
+			waitState(t, p, "b", StateReady) // the queue carries on past it
+			_, err := p.State(key("a"))
+			if (tc.wantReason == "" && err != nil) ||
+				(tc.wantReason != "" && (err == nil || err.Error() != tc.wantReason)) {
+				t.Errorf("State(a) reason = %v, want %q", err, tc.wantReason)
+			}
+			mu.Lock()
+			if !slices.Equal(delays, tc.wantDelays) {
+				t.Errorf("backoffs after attempts %v, want %v", delays, tc.wantDelays)
+			}
+			mu.Unlock()
+			if tc.want != StateFailed {
+				return
+			}
+			// Queued again by hand, the part gets a full set of attempts.
+			f.failNext("a", maxAttempts-1, stall)
+			p.Queue(items("a"))
+			waitState(t, p, "a", StateReady)
+		})
+	}
+}
+
+// TestPreparerFetchPromotesRetryingPart pins that a part someone plays does
+// not wait out its backoff.
+func TestPreparerFetchPromotesRetryingPart(t *testing.T) {
+	f := newFakeSynth()
+	f.failNext("a", 1, &tts.Error{Kind: tts.KindUpstream, Provider: "fake", Message: "stall"})
+	p := NewPreparer(PreparerConfig{
+		Store: NewStore(t.TempDir()), Synth: f.synth, Health: tts.NewHealth("fake", "model"),
+		RetryDelay: func(int) time.Duration { return time.Hour },
+	})
+	p.Queue(items("a"))
+	close(f.gate)
+	waitState(t, p, "a", StateRetrying)
+	audio, err := p.Fetch(context.Background(), key("a"), "a")
+	if err != nil || len(audio.Data) == 0 {
+		t.Fatalf("Fetch of a retrying part = %d bytes, %v; want the clip now", len(audio.Data),
+			err)
+	}
+	if got := f.calls(); len(got) != 2 {
+		t.Errorf("syntheses = %v, want the failed one and the fetched retry", got)
+	}
+}
+
+// TestPreparerForgetCancelsRetry pins that a forgotten part's pending retry
+// never runs.
+func TestPreparerForgetCancelsRetry(t *testing.T) {
+	const backoff = 200 * time.Millisecond
+	f := newFakeSynth()
+	f.failNext("a", 1, &tts.Error{Kind: tts.KindUpstream, Provider: "fake", Message: "stall"})
+	p := NewPreparer(PreparerConfig{
+		Store: NewStore(t.TempDir()), Synth: f.synth, Health: tts.NewHealth("fake", "model"),
+		RetryDelay: func(int) time.Duration { return backoff },
+	})
+	p.Queue(items("a"))
+	close(f.gate)
+	waitState(t, p, "a", StateRetrying)
+	p.Forget([]string{key("a")})
+	time.Sleep(2 * backoff)
+	if state, _ := p.State(key("a")); state != StateIdle || len(f.calls()) != 1 {
+		t.Errorf("after Forget: %s with syntheses %v, want idle and no retry", state, f.calls())
+	}
+}
+
+// TestPreparerHaltCancelsRetries pins that a shared failure also stops the
+// parts waiting to retry: they would hit it too.
+func TestPreparerHaltCancelsRetries(t *testing.T) {
+	f := newFakeSynth()
+	f.failNext("a", 1, &tts.Error{Kind: tts.KindUpstream, Provider: "fake", Message: "stall"})
+	f.failNext("b", 1, &tts.Error{Kind: tts.KindQuota, Provider: "fake", Message: "rate limit"})
+	p := NewPreparer(PreparerConfig{
+		Store: NewStore(t.TempDir()), Synth: f.synth, Health: tts.NewHealth("fake", "model"),
+		RetryDelay: func(int) time.Duration { return time.Hour },
+	})
+	p.Queue(items("a", "b"))
+	close(f.gate)
+	waitState(t, p, "b", StateFailed)
+	if state, _ := p.State(key("a")); state != StateIdle {
+		t.Errorf("retrying part after a quota failure = %s, want idle", state)
+	}
+}
+
 func TestPreparerFetchRetriesFailedPart(t *testing.T) {
 	f := newFakeSynth()
-	f.fail["a"] = &tts.Error{Kind: tts.KindUpstream, Provider: "fake", Message: "engine hiccup"}
+	f.failNext("a", 1, &tts.Error{Kind: tts.KindQuota, Provider: "fake", Message: "rate limit"})
 	health := tts.NewHealth("fake", "model")
 	p := NewPreparer(PreparerConfig{
 		Store: NewStore(t.TempDir()), Synth: f.synth, Health: health, Workers: 1,
@@ -263,5 +391,38 @@ func TestPreparerForgetDropsQueuedParts(t *testing.T) {
 	waitState(t, p, "c", StateReady)
 	if got := f.calls(); !slices.Equal(got, []string{"a", "c"}) {
 		t.Errorf("syntheses = %v, want [a c] (b forgotten, a left to finish)", got)
+	}
+}
+
+// TestPreparerHaltsWhenOutOfAttemptsOnTimeouts pins the cost guard: a part
+// that spends every attempt on a timeout says the provider is stalling, so
+// the parts queued behind it go back to idle instead of each spending its
+// own attempts. Running out on another upstream failure does not.
+func TestPreparerHaltsWhenOutOfAttemptsOnTimeouts(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		wantAfter State
+	}{
+		{"timeouts", &tts.Error{
+			Kind: tts.KindUpstream, Provider: "fake", Message: "fake did not answer within 1m30s",
+			Err: context.DeadlineExceeded,
+		}, StateIdle},
+		{"other upstream failures", &tts.Error{
+			Kind: tts.KindUpstream, Provider: "fake", Message: "engine returned 500",
+		}, StateReady},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeSynth()
+			f.failNext("a", maxAttempts, tc.err)
+			p := newTestPreparer(t, f, 1) // no backoff: a's retries go first
+			p.Queue(items("a", "b", "c"))
+			close(f.gate)
+			waitState(t, p, "a", StateFailed)
+			for _, text := range []string{"b", "c"} {
+				waitState(t, p, text, tc.wantAfter)
+			}
+		})
 	}
 }

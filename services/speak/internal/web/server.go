@@ -54,6 +54,10 @@ type Config struct {
 	Info buildinfo.Info
 	// CacheDir holds synthesized clips; required.
 	CacheDir string
+
+	// retryDelay overrides the preparer's backoff between attempts, so
+	// tests do not wait it out; nil in production.
+	retryDelay func(attempt int) time.Duration
 }
 
 // NewMux builds the speak HTTP handler: the markdown read-aloud page with

@@ -24,12 +24,14 @@ import (
 const settleTimeout = 5 * time.Second
 
 // fakeSpeaker holds every synthesis until opened, then answers a WAV of two
-// bytes of silence per character of text, or err.
+// bytes of silence per character of text, or the error set with failWith.
 type fakeSpeaker struct {
 	gate     chan struct{}
 	openOnce sync.Once
-	err      error
 	calls    atomic.Int32
+
+	mu  sync.Mutex
+	err error
 }
 
 func newFakeSpeaker() *fakeSpeaker {
@@ -38,6 +40,13 @@ func newFakeSpeaker() *fakeSpeaker {
 
 func (f *fakeSpeaker) open() { f.openOnce.Do(func() { close(f.gate) }) }
 
+// failWith makes every synthesis from now on fail with err; nil ends that.
+func (f *fakeSpeaker) failWith(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
 func (f *fakeSpeaker) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error) {
 	f.calls.Add(1)
 	select {
@@ -45,8 +54,11 @@ func (f *fakeSpeaker) Synthesize(ctx context.Context, req tts.Request) (tts.Audi
 	case <-ctx.Done():
 		return tts.Audio{}, ctx.Err()
 	}
-	if f.err != nil {
-		return tts.Audio{}, f.err
+	f.mu.Lock()
+	err := f.err
+	f.mu.Unlock()
+	if err != nil {
+		return tts.Audio{}, err
 	}
 	pcm := make([]byte, 2*len(req.Text))
 	return tts.Audio{Data: tts.WAV(pcm, 24000, 1), ContentType: tts.ContentTypeWAV}, nil
@@ -218,7 +230,7 @@ func TestAudioRejectsKeys(t *testing.T) {
 // status carries the reason.
 func TestAudioFailureAnswersLikeSpeech(t *testing.T) {
 	f := newFakeSpeaker()
-	f.err = &tts.Error{Kind: tts.KindQuota, Provider: "fake", Message: "rate limited"}
+	f.failWith(&tts.Error{Kind: tts.KindQuota, Provider: "fake", Message: "rate limited"})
 	mux := newDocMux(t, f)
 	got := upload(t, mux, f, "Hello there.\n")
 	f.open()
@@ -232,8 +244,10 @@ func TestAudioFailureAnswersLikeSpeech(t *testing.T) {
 			rec.Body.String())
 	}
 	st := settle(t, mux, got.Doc.ID)
-	if st.Total.Failed != 1 || st.Reason != "rate limited" || st.Sections[0].Reason == "" {
-		t.Errorf("status = %+v, want the part failed with its reason", st)
+	// A rate limit is not retried: one attempt, and the reason says so.
+	want := "failed after 1 attempt: rate limited"
+	if st.Total.Failed != 1 || st.Reason != want || st.Sections[0].Reason != want {
+		t.Errorf("status = %+v, want the part failed with reason %q", st, want)
 	}
 }
 
@@ -412,5 +426,138 @@ func TestWhileKeptSkipsEvictedDocuments(t *testing.T) {
 	}
 	if len(forgotten) != 1 || forgotten[0] != "k0" {
 		t.Errorf("forgotten = %v, want the evicted document's part k0", forgotten)
+	}
+}
+
+// waitStatus polls document id until done accepts its status.
+func waitStatus(t *testing.T, mux *http.ServeMux, id string, done func(DocStatus) bool) DocStatus {
+	t.Helper()
+	deadline := time.Now().Add(settleTimeout)
+	for {
+		st := docStatus(t, serve(mux, http.MethodGet, "/doc/"+id))
+		if done(st) {
+			return st
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("document %s never reached the awaited status: %+v", id, st)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestStatusReportsRetries pins how a part the provider keeps failing reads
+// in the status: retrying while another attempt is scheduled, then failed
+// with the attempt count in the reason.
+func TestStatusReportsRetries(t *testing.T) {
+	stall := &tts.Error{
+		Kind: tts.KindUpstream, Provider: "fake", Message: "fake did not answer within 1m30s",
+	}
+	t.Run("retrying", func(t *testing.T) {
+		f := newFakeSpeaker()
+		f.failWith(stall)
+		cfg := Config{
+			Speaker: f, Health: tts.NewHealth("fake", "model"), CacheDir: t.TempDir(),
+			retryDelay: func(int) time.Duration { return time.Hour },
+		}
+		s := newDocServer(cfg, audiocache.NewStore(cfg.CacheDir))
+		mux := http.NewServeMux()
+		s.routes(mux)
+		f.open()
+		got := upload(t, mux, f, "Hello there.\n")
+		t.Cleanup(func() { s.prep.Forget([]string{firstKey(t, got.Content)}) })
+
+		st := waitStatus(t, mux, got.Doc.ID, func(st DocStatus) bool {
+			return st.Total.Retrying == 1
+		})
+		want := "retrying after 1 attempt: fake did not answer within 1m30s"
+		if st.Sections[0].Retrying != 1 || st.Total.Failed != 0 ||
+			st.Sections[0].Reason != want || st.Reason != want {
+			t.Errorf("status = %+v, want one part retrying with reason %q", st, want)
+		}
+		raw := serve(mux, http.MethodGet, "/doc/"+got.Doc.ID).Body.String()
+		if !strings.Contains(raw, `"retrying":1`) {
+			t.Errorf("status JSON %s has no retrying count", raw)
+		}
+	})
+	t.Run("out of attempts", func(t *testing.T) {
+		f := newFakeSpeaker()
+		f.failWith(stall)
+		cfg := Config{
+			Speaker: f, Health: tts.NewHealth("fake", "model"), CacheDir: t.TempDir(),
+			retryDelay: func(int) time.Duration { return 0 },
+		}
+		mux := NewMux(cfg)
+		f.open()
+		got := upload(t, mux, f, "Hello there.\n")
+		st := waitStatus(t, mux, got.Doc.ID, func(st DocStatus) bool {
+			return st.Total.Failed == 1
+		})
+		want := "failed after 3 attempts: fake did not answer within 1m30s"
+		if st.Reason != want || st.Sections[0].Reason != want || f.calls.Load() != 3 {
+			t.Errorf("status = %+v after %d syntheses, want reason %q after 3", st,
+				f.calls.Load(), want)
+		}
+	})
+}
+
+// TestPrepareOneSection pins ?section=N: only that section's parts are
+// queued again.
+func TestPrepareOneSection(t *testing.T) {
+	f := newFakeSpeaker()
+	f.failWith(&tts.Error{Kind: tts.KindQuota, Provider: "fake", Message: "rate limited"})
+	mux := newDocMux(t, f)
+	f.open()
+	got := upload(t, mux, f, "## One\n\nAlpha.\n\n## Two\n\nBeta.\n")
+	if st := settle(t, mux, got.Doc.ID); st.Total.Ready != 0 {
+		t.Fatalf("after the quota failure: %+v, want nothing ready", st.Total)
+	}
+
+	f.failWith(nil)
+	rec := serve(mux, http.MethodPost, "/doc/"+got.Doc.ID+"/prepare?section=2")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("prepare?section=2 = %d %s", rec.Code, rec.Body.String())
+	}
+	st := settle(t, mux, got.Doc.ID)
+	if st.Sections[0].Ready != 0 || st.Sections[1].Ready != 1 {
+		t.Errorf("sections = %+v, want only section 2 prepared", st.Sections)
+	}
+	for _, bad := range []string{"0", "3", "two"} {
+		target := "/doc/" + got.Doc.ID + "/prepare?section=" + bad
+		if rec := serve(mux, http.MethodPost, target); rec.Code != http.StatusBadRequest {
+			t.Errorf("prepare?section=%s = %d, want 400", bad, rec.Code)
+		}
+	}
+}
+
+// TestPrepareFailedOnly pins ?failed=1: retrying what failed leaves the idle
+// parts idle, so it spends nothing past what already failed.
+func TestPrepareFailedOnly(t *testing.T) {
+	f := newFakeSpeaker()
+	f.failWith(&tts.Error{Kind: tts.KindQuota, Provider: "fake", Message: "rate limited"})
+	mux := newDocMux(t, f)
+	f.open()
+	var md strings.Builder
+	for i := range prepareWorkers + 2 { // more parts than workers: a halt leaves some idle
+		fmt.Fprintf(&md, "Part %d. %s\n\n", i, strings.Repeat("Some words to read. ", 20))
+	}
+	got := upload(t, mux, f, md.String())
+	before := settle(t, mux, got.Doc.ID).Total
+	if before.Failed == 0 || before.Idle == 0 {
+		t.Fatalf("after the quota failure: %+v, want some parts failed and some idle", before)
+	}
+
+	f.failWith(nil)
+	rec := serve(mux, http.MethodPost, "/doc/"+got.Doc.ID+"/prepare?section=1&failed=1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("prepare?failed=1 = %d %s", rec.Code, rec.Body.String())
+	}
+	after := settle(t, mux, got.Doc.ID).Total
+	if after.Ready != before.Failed || after.Idle != before.Idle || after.Failed != 0 {
+		t.Errorf("after prepare?failed=1: %+v, want the %d failed parts ready and %d still idle",
+			after, before.Failed, before.Idle)
+	}
+	target := "/doc/" + got.Doc.ID + "/prepare?failed=maybe"
+	if rec := serve(mux, http.MethodPost, target); rec.Code != http.StatusBadRequest {
+		t.Errorf("prepare?failed=maybe = %d, want 400", rec.Code)
 	}
 }

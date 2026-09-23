@@ -32,10 +32,17 @@ const maxErrorBody = 4 << 10
 // forever.
 const localTimeout = 30 * time.Second
 
-// remoteTimeout bounds one synthesis on a remote provider. Remote speech
-// models answer with the whole clip at once, after 20 seconds and more for a
-// part of a few hundred characters, and now and then took longer than 30.
-const remoteTimeout = 2 * time.Minute
+// remoteTimeout bounds one attempt at a remote provider. Remote speech
+// models answer with the whole clip at once: parts of up to about 700
+// characters took 15 to 22 seconds, with tails near 45. A request also
+// stalls now and then, at random: one 323-character part took 14.0, 15.2,
+// 15.7 and 44.8 seconds in four tries, after a first that ran past two
+// minutes. So an attempt gets twice the slow tail, and one that runs out is
+// retried rather than waited out.
+const remoteTimeout = 90 * time.Second
+
+// retryDelay is the pause before a remote request's one retry.
+const retryDelay = 500 * time.Millisecond
 
 // errRedirectRefused stops the client before it can re-send the request, and
 // its Authorization header, to a redirect target.
@@ -54,9 +61,10 @@ type Config struct {
 
 // Client synthesizes speech against one endpoint.
 type Client struct {
-	cfg     Config
-	http    *http.Client
-	timeout time.Duration // bounds one synthesis: localTimeout or remoteTimeout
+	cfg        Config
+	http       *http.Client
+	timeout    time.Duration // bounds one attempt: localTimeout or remoteTimeout
+	retryDelay time.Duration
 }
 
 // New returns a Client for cfg.
@@ -73,7 +81,8 @@ func New(cfg Config) *Client {
 				return errRedirectRefused
 			},
 		},
-		timeout: timeout,
+		timeout:    timeout,
+		retryDelay: retryDelay,
 	}
 }
 
@@ -95,20 +104,61 @@ type speechRequest struct {
 // Synthesize returns playable audio for one chunk of text. A failure is a
 // *tts.Error: network when the endpoint could not be reached, upstream when
 // it did not answer within the timeout, otherwise classified from its status
-// and message.
+// and message. A remote request that timed out or answered 5xx is retried
+// once when the caller's context has room for another attempt. The local
+// engine is not retried: it does not stall at random, and a hung one would
+// only hang again.
 func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error) {
+	body, err := json.Marshal(speechRequest{
+		Model:          c.cfg.Model,
+		Input:          req.Text,
+		Voice:          req.Voice,
+		ResponseFormat: c.cfg.Format,
+		Speed:          req.Speed,
+	})
+	if err != nil {
+		return tts.Audio{}, fmt.Errorf("marshal speech request: %w", err)
+	}
+	audio, err := c.attempt(ctx, body)
+	if c.cfg.Local || !retryable(err) || !tts.WaitToRetry(ctx, c.timeout, c.retryDelay) {
+		return audio, hinted(err)
+	}
+	audio, retryErr := c.attempt(ctx, body)
+	return audio, hinted(tts.Retried(err, retryErr))
+}
+
+// retryable reports a remote failure worth one more try: running out of
+// time, which is a random stall more often than a slow text, or a server
+// error.
+func retryable(err error) bool {
+	te, ok := errors.AsType[*tts.Error](err)
+	return ok && (tts.TimedOut(te) ||
+		(te.Kind == tts.KindUpstream && te.Status >= http.StatusInternalServerError))
+}
+
+// hinted points the reader at speak's operating doc when the endpoint gave
+// no answer at all: this is the one transport chokepoint every playback path
+// goes through.
+func hinted(err error) error {
+	te, ok := errors.AsType[*tts.Error](err)
+	if !ok || (te.Kind != tts.KindNetwork && !tts.TimedOut(te)) {
+		return err
+	}
+	return agentdoc.Hint(err, speak.Facts())
+}
+
+// attempt is one request, bounded by the client's timeout.
+func (c *Client) attempt(ctx context.Context, body []byte) (tts.Audio, error) {
 	ctx, cancel, limit := tts.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	httpReq, err := c.newRequest(ctx, req)
+	httpReq, err := c.newRequest(ctx, body)
 	if err != nil {
 		return tts.Audio{}, err
 	}
 
 	res, err := c.http.Do(httpReq)
 	if err != nil {
-		// The one transport chokepoint every playback path goes through;
-		// Hint points the reader at the operating doc from here.
-		return tts.Audio{}, agentdoc.Hint(c.unanswered(limit, err), speak.Facts())
+		return tts.Audio{}, c.unanswered(limit, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 
@@ -122,7 +172,7 @@ func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, er
 	}
 	data, err := io.ReadAll(res.Body)
 	if tts.TimedOut(err) {
-		return tts.Audio{}, agentdoc.Hint(c.slow(limit, err), speak.Facts())
+		return tts.Audio{}, c.slow(limit, err)
 	}
 	if err != nil || len(data) == 0 {
 		return tts.Audio{}, c.failedAfterAnswer(res.StatusCode, err)
@@ -140,18 +190,8 @@ func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, er
 	return audio, nil
 }
 
-// newRequest builds the speech request for req.
-func (c *Client) newRequest(ctx context.Context, req tts.Request) (*http.Request, error) {
-	body, err := json.Marshal(speechRequest{
-		Model:          c.cfg.Model,
-		Input:          req.Text,
-		Voice:          req.Voice,
-		ResponseFormat: c.cfg.Format,
-		Speed:          req.Speed,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("marshal speech request: %w", err)
-	}
+// newRequest builds the speech request carrying body.
+func (c *Client) newRequest(ctx context.Context, body []byte) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,

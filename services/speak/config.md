@@ -90,9 +90,9 @@ works with nothing but `OPENROUTER_API_KEY` set.
   key from `GEMINI_API_KEY`, else `GOOGLE_API_KEY` (the order Google's own
   SDKs use), model `gemini-3.1-flash-tts-preview`, voice `Kore`. The key
   goes in the `x-goog-api-key` header, never the URL. The API has no speed
-  setting, so a requested speed is ignored. A server error, or an answer
-  without audio, is retried once: Google notes its speech models sometimes
-  return text instead of audio, at random, and says to retry.
+  setting, so a requested speed is ignored. A server error, an answer
+  without audio, or a timeout is retried once: Google notes its speech models
+  sometimes return text instead of audio, at random, and says to retry.
 
 Every type except `gemini` speaks the OpenAI-style `POST
 {base}/v1/audio/speech`; `gemini` uses the Gemini API's `generateContent`
@@ -102,9 +102,13 @@ it reaches the browser or afplay. A provider whose base URL is not loopback
 is remote: the text being read leaves this machine. There is no automatic
 fallback from one provider to another.
 
-A request to a remote provider may take up to 2 minutes, since remote speech
-models answer with the whole clip at once and can take tens of seconds for a
-long part; the local engine gets 30 seconds. Neither limit is configurable.
+One attempt at a remote provider may take up to 90 seconds, since remote
+speech models answer with the whole clip at once and can take tens of
+seconds for a long part. They also stall now and then at random, so a remote
+request that times out or gets a server error is retried once, making up to
+two attempts. A caller with a shorter deadline, such as a 10-second health
+probe, gets no retry. The local engine gets 30 seconds and no retry. None of
+these limits is configurable.
 
 ## Voices
 

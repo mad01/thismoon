@@ -34,8 +34,8 @@ services/speak/
                         # webkit/src/sentences.ts, change both together
     audiocache/        # serve's clip cache: Key, Store (mtime = last use;
                         # Reap: 30 days unused, then a 2 GiB cap), Preparer
-                        # (3 lazy workers, urgent queue), Join (one WAV or
-                        # MP3 from many)
+                        # (3 lazy workers, urgent queue, 3 attempts with
+                        # backoff), Join (one WAV or MP3 from many)
     config/            # the provider config file: a block per provider, the
                         # active one selected; resolves type defaults and keys
                         # from env, marks unusable blocks with a Problem
@@ -47,7 +47,8 @@ services/speak/
                         # (ok/degraded/down + reason), tts.Audio + Normalize
                         # (WAV/MP3 pass through, raw PCM gets a WAV header),
                         # WithTimeout/TimedOut (a timeout is upstream, not
-                        # network)
+                        # network), WaitToRetry/Retried (the one client
+                        # retry)
     ttsclient/         # HTTP client for OpenAI-compatible speech endpoints (local
                         # engine, OpenRouter, OpenAI, LiteLLM); every failure
                         # comes back as a *tts.Error
@@ -100,9 +101,19 @@ services/speak/
   the browser applies the speed control through `playbackRate`. A failure of
   kind auth, quota, network, config or model, from a background part or a
   played one, returns every background-queued part to idle, so a bad key or a
-  rate limit does not cost a request per part; an upstream failure leaves the
-  queue running. A played part is always
-  retried. After a restart serve has no docs; the page gets a 404 from
+  rate limit does not cost a request per part. Those halting kinds are never
+  retried, and a halt also cancels pending retries. An upstream (or
+  unclassified) failure leaves the queue running and gets up to 3 attempts in
+  total, 15s then 45s apart; while it waits the part is `retrying` (the
+  section's reason is its last failure), then it goes back to the front of
+  the background queue. A part whose last attempt also timed out halts the
+  background the same way, so a provider that stalls on everything cannot
+  cost 3 attempts per part; played parts still run. Playing a retrying part
+  runs its next attempt at once; playing a failed part, or a manual re-queue
+  (Retry failed, a section's Retry, Prepare all), starts it over with a fresh
+  count. The reason reads `failed after N attempts: <reason>`. Each attempt has a 4-minute
+  backstop in case the client never returns; the client's own two 90s tries
+  end first. After a restart serve has no docs; the page gets a 404 from
   `GET /doc/{id}` and re-posts its markdown, and `GET /audio/{key}` serves a
   key already on disk even when no loaded doc holds it.
 - **The cache is `<state-dir>/cache/<key>.wav|.mp3`**, named by
@@ -142,12 +153,17 @@ services/speak/
   recorded but never emitted, since read-aloud fans out one request per part
   and would flood the event log. The document routes answer errors as `{"error":
   {"message"}}`; `/read` errors stay plain text.
-- **Timeouts.** A request to a remote provider may take 2 minutes, the local
-  engine 30s. Running out of time is kind `upstream` with `<provider> did not
-  answer within <limit>` (the limit is the caller's own deadline when that is
-  shorter, as with doctor's 10s probe); `not reachable` (kind `network`) is
-  kept for a failed connection. `tts.WithTimeout`/`tts.TimedOut` implement
-  both clients' split. Gemini does not retry a timeout.
+- **Timeouts and the client retry.** One attempt at a remote provider gets
+  90s, the local engine 30s. A remote attempt that times out or answers 5xx
+  (for Gemini also an answer without audio) is retried once after 500ms; the
+  local engine is never retried. Running out of time is kind `upstream` with
+  `<provider> did not answer within <limit>` (the limit is the caller's own
+  deadline when that is shorter), plus ` (2 attempts)` when both attempts
+  timed out: `did not answer within 1m30s (2 attempts)`. `not reachable`
+  (kind `network`) means a failed connection. `tts.WaitToRetry` skips the
+  retry when the caller's context is done or its deadline cannot fit the
+  500ms pause plus another whole attempt, so the 10s doctor and `/enginez`
+  probes never retry, even on a fast 5xx.
 - Chrome comes from the in-module webkit package (`GET /webkit/`). The
   service compiles against the webkit committed beside it; there is no version
   to pin or bump.
@@ -202,9 +218,9 @@ make test     # go test ./...
 | `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
 | `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
 | `POST /read` | Render and split a markdown file for playback, keep it, and start synthesizing its parts; returns `{name, content, doc}` JSON (`doc` is a `DocStatus`). Errors stay plain text |
-| `GET /doc/{id}` | `DocStatus`: part counts (`parts`, `ready`, `generating`, `queued`, `idle`, `failed`) for the doc and per section, plus the latest failure `reason`. 404 when serve no longer keeps the doc |
-| `POST /doc/{id}/prepare` | Queue every part not ready (idle or failed); answers `DocStatus` |
-| `GET /doc/{id}/audio[?section=N]` | The doc, or section N, as one file (WAV parts joined, MP3 appended) with `Content-Disposition: attachment` (`notes.wav`, `notes-section-2.wav`). 409 naming how many parts are ready, 404 when nothing there is read aloud, 400 for a bad section |
+| `GET /doc/{id}` | `DocStatus`: part counts (`parts`, `ready`, `generating`, `queued`, `retrying`, `idle`, `failed`) for the doc and per section, plus the latest failure `reason` with its attempt count (`failed after 3 attempts: ...`). 404 when serve no longer keeps the doc |
+| `POST /doc/{id}/prepare[?section=N][&failed=1]` | Queue every idle or failed part of the doc, or of section N (1-based; 400 for a bad number), failed ones with a fresh attempt count; `failed=1` queues only the failed parts. Answers `DocStatus` |
+| `GET /doc/{id}/audio[?section=N]` | The doc, or section N (the page links only the whole doc; the section form is for scripts), as one file (WAV parts joined, MP3 appended) with `Content-Disposition: attachment` (`notes.wav`, `notes-section-2.wav`). 409 naming how many parts are ready, 404 when nothing there is read aloud, 400 for a bad section |
 | `GET /audio/{key}` | One part's clip. A part not ready yet moves to the front of the queue and the request waits for it (tens of seconds on a remote provider); a synthesis failure answers like `/v1/audio/speech`. A key already on disk is served even when no loaded doc holds it. 400 malformed key, 404 unknown key |
 | `POST /v1/audio/speech` | OpenAI-style speech through the active provider, read-through cached (key: provider, model, resolved voice, speed, text); answers WAV or MP3 (reflects an allowlisted origin; like every route, 403 for any other origin or a cross-site request without one). A failure answers JSON `{"error": {"message", "type", "provider", "model", "health"}}`: 502 for a provider failure, 429 rate limit, 503 config problem, 400 for a request without `input` |
 | `GET /healthz` | 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets its CORS header from the wrapper handler, which applies the allowlist to every response |
@@ -239,11 +255,18 @@ palette/topbar/theme CSS locally; it lives in webkit only.
   engine-down banner, and `<wk-read-aloud targets=".doc-section" endpoint="">`
   (see `webkit/COMPONENTS.md`) mounted fresh after every upload since it reads
   its targets once on connect.
-- Recent-docs chips, drag/drop/paste handling, and the audio state (a
-  `<wk-badge>` per section, the page's `Audio: n of m parts ready` line,
-  Prepare all, download links, a 2s `GET /doc/{id}` poll while anything is
-  queued or generating) are speak-local logic in `app.js`, not webkit
-  components.
+- Recent-docs chips, drag/drop/paste handling, and the audio state are
+  speak-local logic in `app.js`, not webkit components. The audio state is a
+  `<wk-badge>` per section (amber `retrying, n of m ready` while an automatic
+  retry waits, its title naming the last failure) with a Retry button beside
+  it when the section has failed parts (`POST
+  /doc/{id}/prepare?section=N&failed=1`); the page's `Audio: n of m parts
+  ready` line with its retrying and failed counts, a `Retry failed (n)`
+  button (`?failed=1`) when anything failed or `Prepare all` (idle and
+  failed parts) when parts are only unprepared, and `Download page audio`
+  once every part is ready; and a 2s
+  `GET /doc/{id}` poll while anything is queued, generating or retrying.
+  There is no per-section download link.
 
 ### Version check
 
@@ -346,17 +369,21 @@ muscle memory carries over. Implementation notes:
   answered as one clip; three parallel requests ran without slowing down.
   That is why serve prepares uploads ahead (a 4-part document took 18s, then
   each part came from the cache in about a millisecond), why live playback
-  starts on a one-sentence part and keeps 2 parts in flight, and why remote
-  requests get 2 minutes. `chunk.MaxChars` (600) keeps a part well inside
-  that limit.
+  starts on a one-sentence part and keeps 2 parts in flight. Healthy parts
+  of up to about 700 characters take 15 to 22s, with tails near 45s, but a
+  request also stalls now and then at random: one 323-character part ran
+  past 2 minutes in production, then took 14.0, 15.2, 15.7 and 44.8s in four
+  re-timings. So a remote attempt gets 90s, about twice the slow tail, plus
+  one retry, rather than waiting a stall out. `chunk.MaxChars` (600) keeps a
+  part well inside that limit.
 - **The Gemini API answers a bad key with 400, not 401.** Its error body
   carries `INVALID_ARGUMENT` with reason `API_KEY_INVALID`; `internal/gemini`
   reclassifies that as `auth` so the reason names the key variable. Its audio
   arrives as base64 `audio/L16;codec=pcm;rate=24000`, little-endian despite
-  the L16 name (Google's examples write it straight into a WAV). A 5xx or an
-  answer without audio is retried once: Google documents that the model
-  sometimes returns text instead of audio, at random, failing the request
-  with a 500. There is no speed control: `speed` is ignored.
+  the L16 name (Google's examples write it straight into a WAV). A 5xx, an
+  answer without audio, or a timeout is retried once: Google documents that
+  the model sometimes returns text instead of audio, at random, failing the
+  request with a 500. There is no speed control: `speed` is ignored.
 - **Local voice discovery filters to English.** It lists the Kokoro voice
   packs in the Hugging Face cache, but only `af_`/`am_`/`bf_`/`bm_`: the
   engine has English G2P only, and its zero-egress sandbox blocks fetching
