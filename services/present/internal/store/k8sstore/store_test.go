@@ -10,19 +10,33 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
+// testNamespace is where the fake-client tests keep their pages.
+const testNamespace = "present-test"
+
+func newFakeClient() *fake.FakeDynamicClient {
+	return fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{GVR: listKind})
+}
+
 func fakeFixture(t *testing.T) *fixture {
 	t.Helper()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
-		map[schema.GroupVersionResource]string{GVR: listKind})
+	return fixtureOn(t, newFakeClient())
+}
+
+// fixtureOn builds a store over client in testNamespace with a clock the
+// test controls. Its page cache is idle; startCache runs it.
+func fixtureOn(t *testing.T, client dynamic.Interface) *fixture {
+	t.Helper()
 	f := &fixture{now: time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)}
 	st, err := New(
-		Config{Client: client, Namespace: "present-test", Now: func() time.Time { return f.now }},
+		Config{Client: client, Namespace: testNamespace, Now: func() time.Time { return f.now }},
 	)
 	if err != nil {
 		t.Fatal(err)

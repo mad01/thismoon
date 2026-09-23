@@ -26,7 +26,16 @@ func (e *expiring) live(ctx context.Context, id string) error {
 }
 
 func (e *expiring) Get(ctx context.Context, id string) (Page, error) {
-	p, err := e.Store.Get(ctx, id)
+	return e.unlessExpired(e.Store.Get(ctx, id))
+}
+
+func (e *expiring) GetMeta(ctx context.Context, id string) (Page, error) {
+	return e.unlessExpired(e.Store.GetMeta(ctx, id))
+}
+
+// unlessExpired passes a read through, turning an expired page into
+// ErrNotFound.
+func (e *expiring) unlessExpired(p Page, err error) (Page, error) {
 	if err != nil {
 		return Page{}, err
 	}

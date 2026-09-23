@@ -87,6 +87,33 @@ func TestGetRoundTrips(t *testing.T) {
 	}
 }
 
+// TestGetMetaLeavesBodiesOut pins GetMeta's contract on the filesystem:
+// the page's metadata and flags, and none of its bodies.
+func TestGetMetaLeavesBodiesOut(t *testing.T) {
+	s := newTestStore(t)
+	created, err := s.Create(t.Context(), Draft{
+		Title: "Title", Content: "<p>hello</p>", Graph: "cy.init();",
+		References: []Reference{{Title: "r", URL: "https://r"}},
+		Doc:        []byte(`{"sections":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := s.GetMeta(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if got.Content != "" || got.Graph != "" || got.References != nil {
+		t.Fatalf("GetMeta carries bodies: %+v", got)
+	}
+	if got.Title != "Title" || got.Version != 1 || !got.HasGraph || !got.HasRefs || !got.HasDoc {
+		t.Fatalf("GetMeta lost metadata: %+v", got)
+	}
+	if _, err := s.GetMeta(t.Context(), "deadbeef00"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetMeta unknown id: err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestGetNotFound(t *testing.T) {
 	s := newTestStore(t)
 	if _, err := s.Get(t.Context(), "deadbeef00"); !errors.Is(err, ErrNotFound) {

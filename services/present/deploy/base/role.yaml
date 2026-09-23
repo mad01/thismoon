@@ -1,6 +1,7 @@
-# Everything the store does: get, list (also the sweeper and Ping), create,
-# update (read-modify-write under resourceVersion), delete. No watch, no
-# patch, and nothing outside the pages resource.
+# Everything the store does: get, list and watch (the page cache, the
+# sweeper, and Ping), create, update (read-modify-write under
+# resourceVersion), delete. No patch, and nothing outside the pages
+# resource.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -10,4 +11,4 @@ metadata:
 rules:
   - apiGroups: [present.thismoon.mad01.dev]
     resources: [pages]
-    verbs: [get, list, create, update, delete]
+    verbs: [get, list, watch, create, update, delete]

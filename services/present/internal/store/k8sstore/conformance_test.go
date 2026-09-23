@@ -55,8 +55,35 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		if doc, err := f.st.LoadDoc(ctx, p.ID); err != nil || string(doc) != `{"sections":[]}` {
 			t.Fatalf("LoadDoc = %q, %v", doc, err)
 		}
-		if src, err := f.st.LoadGraphSource(ctx, p.ID); err != nil || string(src) != `{"nodes":[]}` {
+		if src, err := f.st.LoadGraphSource(ctx, p.ID); err != nil ||
+			string(src) != `{"nodes":[]}` {
 			t.Fatalf("LoadGraphSource = %q, %v", src, err)
+		}
+	})
+
+	t.Run("GetMetaDropsBodies", func(t *testing.T) {
+		f := newFixture(t)
+		ctx := context.Background()
+		p, err := f.st.Create(ctx, store.Draft{
+			Title: "T", Content: "<p>x</p>", Graph: "cy.init();",
+			References: []store.Reference{{Title: "r", URL: "https://r"}},
+			Doc:        []byte(`{"sections":[]}`),
+		})
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		m, err := f.st.GetMeta(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("GetMeta: %v", err)
+		}
+		if m.Content != "" || m.Graph != "" || m.References != nil {
+			t.Fatalf("GetMeta carries bodies: %+v", m)
+		}
+		if m.Title != "T" || m.Version != 1 || !m.HasGraph || !m.HasRefs || !m.HasDoc {
+			t.Fatalf("GetMeta lost metadata: %+v", m)
+		}
+		if _, err := f.st.GetMeta(ctx, store.NewSharedID()); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("GetMeta unknown id: err = %v, want ErrNotFound", err)
 		}
 	})
 
@@ -84,7 +111,10 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 				t.Errorf("Delete(%q): %v, want ErrNotFound", id, err)
 			}
 			title := "x"
-			if _, err := f.st.Update(ctx, id, store.Patch{Title: &title}); !errors.Is(err, store.ErrNotFound) {
+			if _, err := f.st.Update(ctx, id, store.Patch{Title: &title}); !errors.Is(
+				err,
+				store.ErrNotFound,
+			) {
 				t.Errorf("Update(%q): %v, want ErrNotFound", id, err)
 			}
 			if err := f.st.SetShared(ctx, id, nil); !errors.Is(err, store.ErrNotFound) {
@@ -104,11 +134,16 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		content := "<p>v2</p>"
 		on := true
 		exp := f.now.Add(time.Hour)
-		got, err := f.st.Update(ctx, p.ID, store.Patch{Content: &content, Ephemeral: &on, ExpiresAt: &exp})
+		got, err := f.st.Update(
+			ctx,
+			p.ID,
+			store.Patch{Content: &content, Ephemeral: &on, ExpiresAt: &exp},
+		)
 		if err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if got.Version != 2 || got.Content != content || !got.Ephemeral || got.ExpiresAt == nil || !got.UpdatedAt.Equal(f.now) {
+		if got.Version != 2 || got.Content != content || !got.Ephemeral || got.ExpiresAt == nil ||
+			!got.UpdatedAt.Equal(f.now) {
 			t.Fatalf("after update: %+v", got)
 		}
 		if err := f.st.SaveDoc(ctx, p.ID, []byte(`{}`)); err != nil {
@@ -145,7 +180,13 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		ctx := context.Background()
 		p, _ := f.st.Create(ctx, store.Draft{Title: "T", Content: "<p>x</p>"})
 		exp := f.now.Add(time.Hour)
-		info := &store.SharedInfo{ID: store.NewSharedID(), URL: "https://s/p/x", Ephemeral: true, ExpiresAt: &exp, SharedAt: f.now}
+		info := &store.SharedInfo{
+			ID:        store.NewSharedID(),
+			URL:       "https://s/p/x",
+			Ephemeral: true,
+			ExpiresAt: &exp,
+			SharedAt:  f.now,
+		}
 		if err := f.st.SetShared(ctx, p.ID, info); err != nil {
 			t.Fatalf("SetShared: %v", err)
 		}
@@ -196,7 +237,10 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		for i := range big {
 			big[i] = 'x'
 		}
-		if _, err := f.st.Create(ctx, store.Draft{Title: "Big", Content: string(big)}); !errors.Is(err, store.ErrTooLarge) {
+		if _, err := f.st.Create(ctx, store.Draft{Title: "Big", Content: string(big)}); !errors.Is(
+			err,
+			store.ErrTooLarge,
+		) {
 			t.Fatalf("Create over cap: %v, want ErrTooLarge", err)
 		}
 		p, err := f.st.Create(ctx, store.Draft{Title: "Small", Content: "<p>x</p>"})
@@ -204,7 +248,10 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 			t.Fatal(err)
 		}
 		content := string(big)
-		if _, err := f.st.Update(ctx, p.ID, store.Patch{Content: &content}); !errors.Is(err, store.ErrTooLarge) {
+		if _, err := f.st.Update(ctx, p.ID, store.Patch{Content: &content}); !errors.Is(
+			err,
+			store.ErrTooLarge,
+		) {
 			t.Fatalf("Update over cap: %v, want ErrTooLarge", err)
 		}
 		if got, _ := f.st.Get(ctx, p.ID); got.Version != 1 {
@@ -216,8 +263,14 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		f := newFixture(t)
 		ctx := context.Background()
 		past, future := f.now.Add(-time.Hour), f.now.Add(time.Hour)
-		dead, _ := f.st.Create(ctx, store.Draft{Title: "Dead", Content: "x", Ephemeral: true, ExpiresAt: &past})
-		live, _ := f.st.Create(ctx, store.Draft{Title: "Live", Content: "x", Ephemeral: true, ExpiresAt: &future})
+		dead, _ := f.st.Create(
+			ctx,
+			store.Draft{Title: "Dead", Content: "x", Ephemeral: true, ExpiresAt: &past},
+		)
+		live, _ := f.st.Create(
+			ctx,
+			store.Draft{Title: "Live", Content: "x", Ephemeral: true, ExpiresAt: &future},
+		)
 		forever, _ := f.st.Create(ctx, store.Draft{Title: "Forever", Content: "x"})
 		n, err := f.st.SweepExpired(ctx, f.now)
 		if err != nil || n != 1 {
@@ -246,6 +299,8 @@ func TestDeployCRDMatchesEmbedded(t *testing.T) {
 		t.Fatalf("read deploy/base/crd.yaml: %v", err)
 	}
 	if string(deployed) != string(CRD) {
-		t.Fatal("deploy/base/crd.yaml differs from internal/store/k8sstore/crd.yaml; copy the embedded file over")
+		t.Fatal(
+			"deploy/base/crd.yaml differs from internal/store/k8sstore/crd.yaml; copy the embedded file over",
+		)
 	}
 }

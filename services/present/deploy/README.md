@@ -12,7 +12,7 @@ side is the service [README](../README.md).
 - the `pages.present.thismoon.mad01.dev` custom resource definition (CRD),
   cluster-scoped, one `Page` object per page
 - a `present` ServiceAccount, plus a Role and RoleBinding granting get,
-  list, create, update, and delete on `pages` in this namespace only
+  list, watch, create, update, and delete on `pages` in this namespace only
 - a Deployment of 2 replicas whose rolling update never drops below full
   strength (`maxUnavailable: 0`, `maxSurge: 1`), with soft anti-affinity
   across nodes and a 15 second termination grace period
@@ -79,9 +79,11 @@ kubectl -n present logs deploy/present
 so the cluster is the debugging surface; a kept page carries `ephemeral:
 false`, so that column reads `false` rather than blank.
 
-Two log lines say a replica came up whole: `present: serving k8s pages in
-namespace present on http://0.0.0.0:7423 (shared mode)` and `present:
-sweeping expired pages every 10m0s`. Each sweep logs after that, one that
+Four log lines say a replica came up whole: `present: serving k8s pages in
+namespace present on http://0.0.0.0:7423 (shared mode)`, `present: page
+cache watching pages in present`, `present: page cache synced pages=12`
+with that namespace's page count, and `present: sweeping expired pages every
+10m0s`. Each sweep logs after that, one that
 deleted nothing included: `present: sweep deleted=0 next in 10m0s`. Silence
 past one interval means the sweeper goroutine is gone. Probe traffic stays
 out of the access log, because a request whose User-Agent starts with
@@ -111,6 +113,12 @@ kubectl delete namespace present
 `pages.present.thismoon.mad01.dev is forbidden` in the logs is the
 RoleBinding, not the image: the service account lost its Role, or the pod is
 running under a different account.
+
+A forbidden error naming the `watch` verb, repeating in the logs, means the
+Role lacks `watch` on `pages`. The instance still serves, but the page cache
+only refreshes when client-go relists after each failed watch, up to 30
+seconds apart, so an open tab can take that long to see an update. Apply
+`deploy/base`; the next retry picks the Role up without a restart.
 
 `the server could not find the requested resource` means the CRD is missing.
 It ships in `deploy/base`, so apply that first on a fresh cluster.

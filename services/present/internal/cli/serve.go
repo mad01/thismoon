@@ -129,6 +129,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	if ks, ok := raw.(*k8sstore.Store); ok {
+		go k8sstore.RunCache(ctx, ks, log.Printf)
 		go k8sstore.RunSweeper(ctx, ks, flagSweep, log.Printf)
 	} else if flagShared {
 		log.Printf("present: shared mode on the filesystem store; run one replica only")

@@ -180,6 +180,13 @@ func fromObject(u *unstructured.Unstructured) (record, error) {
 	return rec, nil
 }
 
+// withoutBodies drops the parts of a page that can be large, keeping the
+// flags that say whether it has them.
+func withoutBodies(p store.Page) store.Page {
+	p.Content, p.Graph, p.References = "", "", nil
+	return p
+}
+
 func formatTime(t *time.Time) string {
 	if t == nil {
 		return ""

@@ -13,7 +13,13 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
+
+// cacheLag bounds how long a page's version may trail a write: the version
+// poll reads each replica's page cache, which learns of the write from its
+// watch.
+const cacheLag = 5 * time.Second
 
 type client struct {
 	t    *testing.T
@@ -47,6 +53,21 @@ func (c client) do(method, path, key string, body any) (int, []byte) {
 	defer func() { _ = resp.Body.Close() }()
 	out, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, out
+}
+
+// versionWithin polls a page's version until it reads want or cacheLag has
+// passed, and returns the last answer.
+func (c client) versionWithin(id, want string) (int, string) {
+	c.t.Helper()
+	deadline := time.Now().Add(cacheLag)
+	for {
+		code, body := c.do(http.MethodGet, "/p/"+id+"/version", "", nil)
+		got := strings.TrimSpace(string(body))
+		if (code == http.StatusOK && got == want) || time.Now().After(deadline) {
+			return code, got
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func TestSharedInstance(t *testing.T) {
@@ -108,9 +129,8 @@ func TestSharedInstance(t *testing.T) {
 	if code, _ := c.do(http.MethodPut, "/api/p/"+created.ID, key, page); code != http.StatusOK {
 		t.Errorf("replace by author = %d, want 200", code)
 	}
-	if code, body := c.do(http.MethodGet, "/p/"+created.ID+"/version", "", nil); code != http.StatusOK ||
-		strings.TrimSpace(string(body)) != "2" {
-		t.Errorf("version after replace = %d %q, want 200 \"2\"", code, body)
+	if code, got := c.versionWithin(created.ID, "2"); code != http.StatusOK || got != "2" {
+		t.Errorf("version after replace = %d %q, want 200 \"2\" within %s", code, got, cacheLag)
 	}
 	if code, _ := c.do(http.MethodDelete, "/p/"+created.ID, other, nil); code != http.StatusForbidden {
 		t.Errorf("delete with another key = %d, want 403", code)

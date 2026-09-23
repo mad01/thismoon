@@ -51,6 +51,9 @@ func TestInvalidIDIsNotFoundEverywhere(t *testing.T) {
 	if _, err := s.Get(ctx, bad); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Get: err = %v, want ErrNotFound", err)
 	}
+	if _, err := s.GetMeta(ctx, bad); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetMeta: err = %v, want ErrNotFound", err)
+	}
 	if err := s.Delete(ctx, bad); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Delete: err = %v, want ErrNotFound", err)
 	}
@@ -253,6 +256,12 @@ func TestWithoutExpiredHidesExpiredPages(t *testing.T) {
 	}
 	if _, err := s.Get(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Get dead: err = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetMeta(ctx, live.ID); err != nil {
+		t.Errorf("GetMeta live: %v", err)
+	}
+	if _, err := s.GetMeta(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetMeta dead: err = %v, want ErrNotFound", err)
 	}
 	title := "x"
 	if _, err := s.Update(ctx, dead.ID, Patch{Title: &title}); !errors.Is(err, ErrNotFound) {

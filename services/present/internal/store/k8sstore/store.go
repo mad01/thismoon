@@ -1,8 +1,11 @@
 // Package k8sstore keeps present pages as Page custom resources in one
 // Kubernetes namespace. It is the store behind a shared instance: every
-// replica talks to the API server directly, optimistic concurrency comes
-// from resourceVersion, and a periodic sweeper on each replica deletes
-// expired ephemeral pages. There is no controller and no leader.
+// replica writes through the API server, optimistic concurrency comes from
+// resourceVersion, and a periodic sweeper on each replica deletes expired
+// ephemeral pages. Each replica also runs an informer that keeps a
+// metadata-only cache of the namespace's pages, which answers GetMeta and
+// feeds the sweeper once it has synced. There is no controller and no
+// leader.
 package k8sstore
 
 import (
@@ -39,11 +42,13 @@ type Store struct {
 	ns       string
 	now      func() time.Time
 	maxBytes int
+	cache    *pageCache
 }
 
 var _ store.Store = (*Store)(nil)
 
-// New returns a Store over cfg.Client in cfg.Namespace.
+// New returns a Store over cfg.Client in cfg.Namespace. Its page cache is
+// built but idle until RunCache starts it.
 func New(cfg Config) (*Store, error) {
 	if cfg.Client == nil {
 		return nil, errors.New("k8sstore: no client")
@@ -51,7 +56,13 @@ func New(cfg Config) (*Store, error) {
 	if cfg.Namespace == "" {
 		return nil, errors.New("k8sstore: no namespace")
 	}
-	s := &Store{client: cfg.Client, ns: cfg.Namespace, now: cfg.Now, maxBytes: cfg.MaxBytes}
+	pc, err := newPageCache(cfg.Client, cfg.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{
+		client: cfg.Client, ns: cfg.Namespace, now: cfg.Now, maxBytes: cfg.MaxBytes, cache: pc,
+	}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -63,6 +74,16 @@ func New(cfg Config) (*Store, error) {
 
 // Namespace reports where the store keeps its pages.
 func (s *Store) Namespace() string { return s.ns }
+
+// RunCache runs the page cache GetMeta and the sweeper read from, listing
+// and watching the namespace's pages until ctx is done. Call it once per
+// Store. Until the cache has synced, and on a Store it never runs for,
+// both read the API server instead. A Role that grants list but not watch
+// still lets the cache sync; it then refreshes only when client-go relists
+// after each failed watch, at most 30 seconds apart, and logs each failure.
+func RunCache(ctx context.Context, s *Store, logf func(string, ...any)) {
+	s.cache.run(ctx, logf)
+}
 
 func (s *Store) pages() dynamic.ResourceInterface {
 	return s.client.Resource(GVR).Namespace(s.ns)
@@ -125,6 +146,21 @@ func (s *Store) Create(ctx context.Context, d store.Draft) (store.Page, error) {
 func (s *Store) Get(ctx context.Context, id string) (store.Page, error) {
 	rec, _, err := s.get(ctx, id)
 	return rec.Page, err
+}
+
+// GetMeta loads a page without its content, graph, or references. Once the
+// page cache has synced it answers from memory, trailing a write made
+// through another replica by the watch delay; before that it reads the API
+// server. Returns store.ErrNotFound when the page does not exist.
+func (s *Store) GetMeta(ctx context.Context, id string) (store.Page, error) {
+	if !store.ValidID(id) {
+		return store.Page{}, store.ErrNotFound
+	}
+	if s.cache.synced() {
+		return s.cache.get(id)
+	}
+	rec, _, err := s.get(ctx, id)
+	return withoutBodies(rec.Page), err
 }
 
 // get fetches the object and decodes it, keeping the object so a write
@@ -194,40 +230,44 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// list pages through every object matching selector.
-func (s *Store) list(ctx context.Context, selector string) ([]record, error) {
-	var out []record
+// eachObject calls fn for every Page object matching selector, paging
+// through the list, and stops at the first error fn returns.
+func (s *Store) eachObject(
+	ctx context.Context, selector string, fn func(*unstructured.Unstructured) error,
+) error {
 	cont := ""
 	for {
 		l, err := s.pages().List(ctx, metav1.ListOptions{
 			Limit: listPageSize, Continue: cont, LabelSelector: selector,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("list pages: %w", err)
+			return fmt.Errorf("list pages: %w", err)
 		}
 		for i := range l.Items {
-			rec, err := fromObject(&l.Items[i])
-			if err != nil {
-				return nil, err
+			if err := fn(&l.Items[i]); err != nil {
+				return err
 			}
-			out = append(out, rec)
 		}
 		cont = l.GetContinue()
 		if cont == "" {
-			return out, nil
+			return nil
 		}
 	}
 }
 
 // List returns every page fully loaded, newest update first.
 func (s *Store) List(ctx context.Context) ([]store.Page, error) {
-	recs, err := s.list(ctx, "")
+	pages := []store.Page{}
+	err := s.eachObject(ctx, "", func(u *unstructured.Unstructured) error {
+		rec, err := fromObject(u)
+		if err != nil {
+			return err
+		}
+		pages = append(pages, rec.Page)
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	pages := make([]store.Page, 0, len(recs))
-	for _, rec := range recs {
-		pages = append(pages, rec.Page)
 	}
 	store.SortNewestFirst(pages)
 	return pages, nil
@@ -238,7 +278,7 @@ func (s *Store) List(ctx context.Context) ([]store.Page, error) {
 func (s *Store) ListMeta(ctx context.Context) ([]store.Page, error) {
 	pages, err := s.List(ctx)
 	for i := range pages {
-		pages[i].Content, pages[i].Graph, pages[i].References = "", "", nil
+		pages[i] = withoutBodies(pages[i])
 	}
 	return pages, err
 }
