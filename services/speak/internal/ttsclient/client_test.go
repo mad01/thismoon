@@ -5,13 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
+
+// shortTimeout stands in for the real timeouts, so a slow endpoint times out
+// fast.
+const shortTimeout = 50 * time.Millisecond
 
 // localClient is a client for a stand-in local engine at url.
 func localClient(url string) *Client {
@@ -206,6 +213,131 @@ func TestLocalFailuresPointAtTheEngine(t *testing.T) {
 		t.Fatalf("error = %v, want an upstream broken-stream error pointing at the engine log", err)
 	}
 }
+
+// TestTimeoutsByEndpoint pins the timeout each endpoint gets: remote
+// models answer a long part after tens of seconds, the local engine in one
+// or two.
+func TestTimeoutsByEndpoint(t *testing.T) {
+	if got := New(Config{Local: true}).timeout; got != localTimeout {
+		t.Errorf("local timeout = %s, want %s", got, localTimeout)
+	}
+	if got := New(Config{Provider: "openrouter"}).timeout; got != remoteTimeout {
+		t.Errorf("remote timeout = %s, want %s", got, remoteTimeout)
+	}
+}
+
+// stall answers nothing until the client gives up; with headers set, it
+// sends the status line and a first byte of audio before it stalls.
+func stall(headers bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Only once the body is read does the server watch the connection,
+		// so only then does the client hanging up end the request context.
+		_, _ = io.Copy(io.Discard, r.Body)
+		if headers {
+			w.Header().Set("Content-Type", "audio/wav")
+			_, _ = w.Write([]byte("R"))
+			w.(http.Flusher).Flush()
+		}
+		<-r.Context().Done()
+	}
+}
+
+// TestSlowAnswerIsNotUnreachable pins the timeout classification: an
+// endpoint that took too long was reached, so the failure is upstream and
+// says how long speak waited, instead of blaming the network for a slow
+// model.
+func TestSlowAnswerIsNotUnreachable(t *testing.T) {
+	cases := []struct {
+		name    string
+		local   bool
+		headers bool
+		want    string
+	}{
+		{"remote, no answer", false, false, "openrouter did not answer within 50ms"},
+		{"remote, stalled audio", false, true, "openrouter did not answer within 50ms"},
+		{
+			"local, no answer", true, false,
+			"TTS engine did not answer within 50ms (check t-man logs speak-tts)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(stall(tc.headers))
+			defer srv.Close()
+			c := New(Config{Provider: "openrouter", Local: tc.local, BaseURL: srv.URL})
+			c.timeout = shortTimeout
+
+			_, err := synthesize(t, c)
+			te, ok := errors.AsType[*tts.Error](err)
+			if !ok || te.Kind != tts.KindUpstream || te.Message != tc.want {
+				t.Fatalf("error = %v, want upstream %q", err, tc.want)
+			}
+			if !strings.Contains(err.Error(), "speak doctor") {
+				t.Errorf("error = %q, want the doctor hint", err)
+			}
+		})
+	}
+}
+
+// TestTimeoutNamesTheCallersDeadline: a caller with a shorter deadline (a
+// health probe) gets a reason naming its wait, not the client's.
+func TestTimeoutNamesTheCallersDeadline(t *testing.T) {
+	srv := httptest.NewServer(stall(false))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+
+	_, err := New(Config{Provider: "openrouter", BaseURL: srv.URL}).Synthesize(ctx,
+		tts.Request{Text: "hello world", Voice: "af_heart"})
+	const want = "openrouter did not answer within 1s"
+	if te, ok := errors.AsType[*tts.Error](err); !ok || te.Kind != tts.KindUpstream ||
+		te.Message != want {
+		t.Fatalf("error = %v, want upstream %q", err, want)
+	}
+}
+
+// TestNoConnectionIsUnreachable: only a failure to get through to the
+// endpoint is a network failure, including a connect attempt that timed
+// out; a caller that cancelled is not reported as a slow provider.
+func TestNoConnectionIsUnreachable(t *testing.T) {
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	cases := []struct {
+		name      string
+		ctx       context.Context
+		transport http.RoundTripper
+	}{
+		{"closed port", context.Background(), nil},
+		{"connect timed out", context.Background(), roundTripFunc(
+			func(*http.Request) (*http.Response, error) {
+				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: os.ErrDeadlineExceeded}
+			},
+		)},
+		{"caller cancelled", cancelled, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := New(Config{Provider: "openrouter", BaseURL: dead.URL})
+			if tc.transport != nil {
+				c.http.Transport = tc.transport
+			}
+			_, err := c.Synthesize(tc.ctx, tts.Request{Text: "hello world", Voice: "af_heart"})
+			te, ok := errors.AsType[*tts.Error](err)
+			if !ok || te.Kind != tts.KindNetwork ||
+				!strings.Contains(te.Message, "openrouter not reachable at "+dead.URL) {
+				t.Errorf("error = %v, want a network failure naming %s", err, dead.URL)
+			}
+		})
+	}
+}
+
+// roundTripFunc stubs the transport, for failures no server can produce on
+// demand.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // TestSynthesizeRefusesRedirects keeps the bearer key from following a
 // redirect to another host.

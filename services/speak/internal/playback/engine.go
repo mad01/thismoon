@@ -1,10 +1,11 @@
 // Package playback is the server-side read-aloud engine behind the speak MCP
-// tools. It fetches per-sentence audio from the active TTS provider and plays
-// it on the machine's speakers with afplay, controlling pause/resume by sending
-// SIGSTOP/SIGCONT to the afplay child. A single afplay session runs at a time,
-// serialised across processes by an flock on playback.lock in the state
-// directory, so two agents can't talk over each other. This is a faithful port
-// of the Python speak_mcp.py playback worker.
+// tools. It fetches audio part by part (sentences grouped by package chunk)
+// from the active TTS provider and plays it on the machine's speakers with
+// afplay, controlling pause/resume by sending SIGSTOP/SIGCONT to the afplay
+// child. A single afplay session runs at a time, serialised across processes
+// by an flock on playback.lock in the state directory, so two agents can't
+// talk over each other. It started as a port of the Python speak_mcp.py
+// playback worker.
 package playback
 
 import (
@@ -26,10 +27,21 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 
+	"github.com/mad01/thismoon/services/speak/internal/chunk"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
 const audioTTL = 24 * time.Hour
+
+// prefetchDepth is how many parts are synthesized ahead of the one playing.
+// A remote provider takes seconds per part and answers with the whole clip at
+// once, so a single part ahead leaves a gap whenever a short part plays out
+// before a long one arrives.
+const prefetchDepth = 2
+
+// followingSections sizes the parts of every file section after the first:
+// playback is already under way by then, so there is no start to ramp.
+var followingSections = chunk.Ramp{chunk.MaxChars}
 
 // State is the coarse playback state reported by Status.
 type State string
@@ -39,6 +51,9 @@ const (
 	StatePlaying State = "playing"
 	StatePaused  State = "paused"
 	StateStopped State = "stopped"
+	// StateStarting is a start synthesizing its first part, which can take
+	// minutes on a remote provider.
+	StateStarting State = "starting"
 )
 
 // Result is a tool's reply: an optional session id plus a human-readable
@@ -76,11 +91,11 @@ type Engine struct {
 	lockPath     string
 
 	// injectable seams for tests (default to the provider and afplay).
-	synth      func(text, voice string) (tts.Audio, error)
+	synth      func(ctx context.Context, text, voice string) (tts.Audio, error)
 	newPlayCmd func(audioPath string) *exec.Cmd
 
 	// startMu serializes startPlayback and Stop. A start holds the playback
-	// lock while it synthesizes the first sentence, before running is set;
+	// lock while it synthesizes the first part, before running is set;
 	// without this, a concurrent start or stop would see "not running" and
 	// release that lock mid-synthesis, and two sessions could play at once.
 	startMu sync.Mutex
@@ -89,7 +104,7 @@ type Engine struct {
 	cond *sync.Cond
 
 	sessionID    string
-	sentences    []string
+	parts        []string
 	voice        string
 	currentIndex int
 	total        int
@@ -97,10 +112,18 @@ type Engine struct {
 	paused  bool
 	stopped bool
 	running bool
+	// starting is set while a start synthesizes its first part: the queue
+	// is recorded but no worker runs yet, which is not a stopped session
+	// for Resume to restart.
+	starting bool
 
-	playCmd    *exec.Cmd
-	lock       *flock.Flock
-	doneCh     chan struct{}
+	playCmd *exec.Cmd
+	lock    *flock.Flock
+	doneCh  chan struct{}
+	// cancel ends the session's context: its first synthesis, its
+	// prefetches, and the worker's wait for a clip. Stop calls it before
+	// taking startMu, so a slow first synthesis cannot hold Stop up.
+	cancel     context.CancelFunc
 	lastResult string
 }
 
@@ -117,22 +140,23 @@ func New(cfg Config) *Engine {
 		lockPath:     filepath.Join(base, "playback.lock"),
 	}
 	e.cond = sync.NewCond(&e.mu)
-	e.synth = func(t, v string) (tts.Audio, error) {
-		return cfg.Speaker.Synthesize(context.Background(), tts.Request{Text: t, Voice: v})
+	e.synth = func(ctx context.Context, t, v string) (tts.Audio, error) {
+		return cfg.Speaker.Synthesize(ctx, tts.Request{Text: t, Voice: v})
 	}
 	e.newPlayCmd = func(wav string) *exec.Cmd { return exec.Command("afplay", wav) }
 	e.reapOldAudio()
 	return e
 }
 
-// SpeakText splits text into sentences and starts playback. Returns immediately.
+// SpeakText splits text into parts and starts playback once the first part
+// is synthesized.
 func (e *Engine) SpeakText(text, voice string) Result {
 	v := e.resolveVoice(voice)
-	sentences := SplitSentences(text)
-	if len(sentences) == 0 {
+	parts := chunk.Parts(text, chunk.Live)
+	if len(parts) == 0 {
 		return Result{Message: "Nothing to speak."}
 	}
-	return e.startPlayback(sentences, v, 0, "")
+	return e.startPlayback(parts, v, 0, "")
 }
 
 // unreadable explains a file speak_file cannot read. A file that exists but
@@ -163,28 +187,46 @@ func (e *Engine) SpeakFile(path, voice, sections string) Result {
 	if len(all) == 0 {
 		return Result{Message: "No speakable content found."}
 	}
+	parts := sectionParts(all, selectedSections(sections))
+	if len(parts) == 0 {
+		return Result{Message: "No speakable content after filtering."}
+	}
+	return e.startPlayback(parts, v, 0, "")
+}
 
-	var want map[int]bool
-	if strings.TrimSpace(sections) != "" {
-		want = map[int]bool{}
-		for _, part := range strings.Split(sections, ",") {
-			if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
-				want[n-1] = true
-			}
+// selectedSections parses speak_file's comma-separated 1-based section list
+// into 0-based indices. nil means every section.
+func selectedSections(sections string) map[int]bool {
+	if strings.TrimSpace(sections) == "" {
+		return nil
+	}
+	want := map[int]bool{}
+	for _, field := range strings.Split(sections, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(field)); err == nil {
+			want[n-1] = true
 		}
 	}
+	return want
+}
 
-	var sentences []string
+// sectionParts splits the wanted sections (all when want is nil) into parts.
+// The first section that has anything to say ramps up from one sentence;
+// later ones start at full size. A part never spans two sections.
+func sectionParts(all []string, want map[int]bool) []string {
+	var parts []string
+	ramp := chunk.Live
 	for idx, sec := range all {
 		if want != nil && !want[idx] {
 			continue
 		}
-		sentences = append(sentences, SplitSentences(sec)...)
+		secParts := chunk.Parts(sec, ramp)
+		if len(secParts) == 0 {
+			continue
+		}
+		parts = append(parts, secParts...)
+		ramp = followingSections
 	}
-	if len(sentences) == 0 {
-		return Result{Message: "No speakable content after filtering."}
-	}
-	return e.startPlayback(sentences, v, 0, "")
+	return parts
 }
 
 // Pause suspends the current afplay child and releases the playback lock so
@@ -211,7 +253,7 @@ func (e *Engine) Pause(session string) Result {
 	e.releaseLock()
 	return Result{
 		Session: sid,
-		Message: fmt.Sprintf("Paused at sentence %d of %d. Playback lock released.", pos, total),
+		Message: fmt.Sprintf("Paused at part %d of %d. Playback lock released.", pos, total),
 	}
 }
 
@@ -223,12 +265,17 @@ func (e *Engine) Resume(session string) Result {
 		e.mu.Unlock()
 		return mismatch
 	}
-	alive, paused, hasQueue := e.running, e.paused, len(e.sentences) > 0
-	sid := e.sessionID
-	from, sents, v := e.currentIndex, e.sentences, e.voice
+	alive, paused, hasQueue := e.running, e.paused, len(e.parts) > 0
+	starting, sid := e.starting, e.sessionID
+	from, parts, v := e.currentIndex, e.parts, e.voice
 	e.mu.Unlock()
 
 	switch {
+	case starting:
+		return Result{
+			Session: sid,
+			Message: "Playback is starting: the first part is still being synthesized.",
+		}
 	case alive && paused:
 		if owner, ok := e.acquireLock(sid); !ok {
 			return Result{Message: busyResponse(owner)}
@@ -243,10 +290,10 @@ func (e *Engine) Resume(session string) Result {
 		e.mu.Unlock()
 		return Result{
 			Session: sid,
-			Message: fmt.Sprintf("Resumed at sentence %d of %d.", pos, total),
+			Message: fmt.Sprintf("Resumed at part %d of %d.", pos, total),
 		}
 	case !alive && hasQueue:
-		return e.startPlayback(sents, v, from, sid)
+		return e.startPlayback(parts, v, from, sid)
 	default:
 		return Result{Message: "Nothing to resume."}
 	}
@@ -259,17 +306,24 @@ func (e *Engine) Stop(session string) Result {
 		e.mu.Unlock()
 		return mismatch
 	}
-	savedIndex, savedTotal, sid := e.currentIndex, e.total, e.sessionID
+	// A start holds startMu while it synthesizes the first part, which can
+	// take minutes on a remote provider: cancel it rather than wait it out.
+	if e.cancel != nil {
+		e.cancel()
+	}
 	e.mu.Unlock()
 
 	e.startMu.Lock()
 	defer e.startMu.Unlock()
 	e.fullStop()
+	e.mu.Lock()
+	savedIndex, savedTotal, sid := e.currentIndex, e.total, e.sessionID
+	e.mu.Unlock()
 	if savedTotal > 0 {
 		return Result{
 			Session: sid,
 			Message: fmt.Sprintf(
-				"Stopped at sentence %d of %d. Call speak_resume to continue.",
+				"Stopped at part %d of %d. Call speak_resume to continue.",
 				savedIndex+1,
 				savedTotal,
 			),
@@ -304,7 +358,9 @@ func (e *Engine) Status() Result {
 		} else {
 			state = StatePlaying
 		}
-	case len(e.sentences) > 0 && !e.running:
+	case e.starting:
+		state = StateStarting
+	case len(e.parts) > 0 && !e.running:
 		state = StateStopped
 	default:
 		state = StateIdle
@@ -312,7 +368,7 @@ func (e *Engine) Status() Result {
 
 	position := "n/a"
 	if e.total > 0 {
-		position = fmt.Sprintf("sentence %d of %d", e.currentIndex+1, e.total)
+		position = fmt.Sprintf("part %d of %d", e.currentIndex+1, e.total)
 	}
 	locked := e.lock != nil
 	holder := e.readLockOwner()
@@ -348,12 +404,12 @@ func (e *Engine) Status() Result {
 // ── internals ──
 
 // startPlayback stops any current session, acquires the lock, synthesizes the
-// first sentence, and launches the worker from startIndex. Reuses sessionID
+// first part, and launches the worker from startIndex. Reuses sessionID
 // when resuming, else mints a new one. Synthesizing before the worker starts
 // is what lets a dead backend come back as a failed reply instead of a
 // "Playing" that stays silent.
 func (e *Engine) startPlayback(
-	sentences []string,
+	parts []string,
 	voice string,
 	startIndex int,
 	sessionID string,
@@ -369,135 +425,262 @@ func (e *Engine) startPlayback(
 		return Result{Message: busyResponse(owner)}
 	}
 
-	firstWav, err := e.synthToFile(sentences[startIndex], voice)
-	if err != nil {
-		e.releaseLock()
-		// Keep the queue as a stopped session, so speak_resume retries it
-		// once the backend is fixed.
-		e.mu.Lock()
-		e.sessionID = sessionID
-		e.sentences = sentences
-		e.voice = voice
-		e.total = len(sentences)
-		e.currentIndex = startIndex
-		e.lastResult = "TTS error: " + err.Error()
-		e.mu.Unlock()
-		return Result{
-			Session: sessionID,
-			Failed:  true,
-			Message: unavailableResponse(e.health.Snapshot()),
-		}
-	}
-
+	// The queue is recorded before the first synthesis, so a Stop naming
+	// this session can cancel it, and a start that does not get going is
+	// kept as a stopped session that speak_resume starts again.
+	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
-	e.sessionID = sessionID
-	e.sentences = sentences
-	e.voice = voice
-	e.total = len(sentences)
-	e.currentIndex = startIndex
+	e.setQueue(sessionID, parts, voice, startIndex)
+	e.cancel = cancel
+	e.starting = true
+	e.mu.Unlock()
+
+	firstClip, err := e.synthToFile(ctx, parts[startIndex], voice)
+	e.mu.Lock()
+	if err != nil || ctx.Err() != nil {
+		e.mu.Unlock()
+		return e.notStarted(ctx, sessionID, err)
+	}
 	e.paused = false
 	e.stopped = false
 	e.running = true
+	e.starting = false
 	e.lastResult = ""
 	e.doneCh = make(chan struct{})
 	e.mu.Unlock()
 
-	go e.worker(sentences, voice, startIndex, firstWav)
+	fetch := newPrefetcher(e.synthToFile, parts, voice, startIndex, firstClip)
+	go e.worker(ctx, fetch, startIndex)
+	return startedResult(sessionID, len(parts), startIndex)
+}
 
+// stoppedBeforeStart is the reply to a start that Stop cancelled while it
+// synthesized the first part.
+const stoppedBeforeStart = "Stopped before the first part was ready."
+
+// notStarted ends a start whose first part is not playing: Stop cancelled
+// it, or the provider failed. Either way the queue stays as a stopped
+// session, so speak_resume can start it again.
+func (e *Engine) notStarted(ctx context.Context, sessionID string, err error) Result {
+	stopped := ctx.Err() != nil
+	e.releaseLock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.starting = false
+	if e.cancel != nil {
+		e.cancel()
+		e.cancel = nil
+	}
+	if stopped {
+		e.lastResult = stoppedBeforeStart
+		return Result{Session: sessionID, Message: stoppedBeforeStart}
+	}
+	e.lastResult = "TTS error: " + err.Error()
+	return Result{
+		Session: sessionID,
+		Failed:  true,
+		Message: unavailableResponse(e.health.Snapshot()),
+	}
+}
+
+// setQueue records the session's parts and position. mu must be held.
+func (e *Engine) setQueue(sessionID string, parts []string, voice string, index int) {
+	e.sessionID = sessionID
+	e.parts = parts
+	e.voice = voice
+	e.total = len(parts)
+	e.currentIndex = index
+}
+
+// startedResult is the reply to a start that is now playing.
+func startedResult(sessionID string, total, startIndex int) Result {
 	if startIndex > 0 {
-		remaining := len(sentences) - startIndex
 		return Result{
 			Session: sessionID,
 			Message: fmt.Sprintf(
-				"Resuming from sentence %d of %d (%d remaining).",
+				"Resuming from part %d of %d (%d remaining).",
 				startIndex+1,
-				len(sentences),
-				remaining,
+				total,
+				total-startIndex,
 			),
 		}
 	}
 	return Result{
 		Session: sessionID,
 		Message: fmt.Sprintf(
-			"Playing %d sentence(s). Use speak_pause/speak_resume/speak_stop with this session id.",
-			len(sentences),
+			"Playing %d part(s). Use speak_pause/speak_resume/speak_stop with this session id.",
+			total,
 		),
 	}
 }
 
-// worker plays sentences from start, synthesizing each in turn except the
-// first, which startPlayback already wrote to firstWav.
-func (e *Engine) worker(sentences []string, voice string, start int, firstWav string) {
+// clip is one part's synthesis outcome: the audio file, or why there is none.
+type clip struct {
+	path string
+	err  error
+}
+
+// prefetcher synthesizes parts ahead of playback, each in its own goroutine,
+// and hands the clips over in reading order. Only the worker calls its
+// methods.
+type prefetcher struct {
+	synth func(ctx context.Context, text, voice string) (string, error)
+	parts []string
+	voice string
+	clips []chan clip // clips[i] delivers part i once it is launched
+	next  int         // the next part to launch
+}
+
+// newPrefetcher starts at part start, whose clip first is already on disk.
+func newPrefetcher(
+	synth func(ctx context.Context, text, voice string) (string, error),
+	parts []string,
+	voice string,
+	start int,
+	first string,
+) *prefetcher {
+	p := &prefetcher{
+		synth: synth,
+		parts: parts,
+		voice: voice,
+		clips: make([]chan clip, len(parts)),
+		next:  start + 1,
+	}
+	p.clips[start] = make(chan clip, 1)
+	p.clips[start] <- clip{path: first}
+	return p
+}
+
+// fill launches the synthesis of every part up to and including last that
+// is not launched yet. Cancelling ctx abandons them.
+func (p *prefetcher) fill(ctx context.Context, last int) {
+	for ; p.next <= last && p.next < len(p.parts); p.next++ {
+		// Buffered, so a clip nobody waits for any more (the session was
+		// stopped) does not strand its goroutine.
+		ch := make(chan clip, 1)
+		p.clips[p.next] = ch
+		go func(text string) {
+			path, err := p.synth(ctx, text, p.voice)
+			ch <- clip{path: path, err: err}
+		}(p.parts[p.next])
+	}
+}
+
+// wait returns part i's clip, or ok=false once ctx is cancelled, including
+// when the clip and the cancellation arrive together.
+func (p *prefetcher) wait(ctx context.Context, i int) (clip, bool) {
+	select {
+	case c := <-p.clips[i]:
+		return c, ctx.Err() == nil
+	case <-ctx.Done():
+		return clip{}, false
+	}
+}
+
+// worker plays parts from start, keeping the next prefetchDepth parts
+// synthesizing while one plays. A part that failed to synthesize ends the
+// session when playback reaches it, like a failure of the first part.
+// Cancelling ctx stops it without waiting for a synthesis.
+func (e *Engine) worker(ctx context.Context, fetch *prefetcher, start int) {
 	spoken := 0
-	defer func() {
-		e.mu.Lock()
-		stopped := e.stopped
-		e.running = false
-		e.playCmd = nil
-		if e.lastResult == "" {
-			e.lastResult = fmt.Sprintf("Spoke %d/%d sentence(s).", spoken, len(sentences))
-		}
-		done := e.doneCh
-		e.mu.Unlock()
-		// On a clean finish we release the lock; on Stop, fullStop owns release.
-		if !stopped {
-			e.releaseLock()
-		}
-		if done != nil {
-			close(done)
-		}
-	}()
+	defer func() { e.finish(spoken, len(fetch.parts)) }()
 
-	for i := start; i < len(sentences); i++ {
-		e.mu.Lock()
-		for e.paused && !e.stopped {
-			e.cond.Wait()
-		}
-		if e.stopped {
-			e.mu.Unlock()
+	for i := start; i < len(fetch.parts); i++ {
+		if !e.advance(i) {
 			return
 		}
-		e.currentIndex = i
-		e.mu.Unlock()
-
-		wavPath, err := firstWav, error(nil)
-		if i != start {
-			wavPath, err = e.synthToFile(sentences[i], voice)
-		}
-		if err != nil {
-			e.mu.Lock()
-			e.lastResult = "TTS error: " + err.Error()
-			e.mu.Unlock()
+		fetch.fill(ctx, i+prefetchDepth)
+		c, ok := fetch.wait(ctx, i)
+		if !ok {
 			return
 		}
-
-		cmd := e.newPlayCmd(wavPath)
-		if err := cmd.Start(); err != nil {
-			e.mu.Lock()
-			e.lastResult = "playback error: " + err.Error()
-			e.mu.Unlock()
+		if c.err != nil {
+			e.setLastResult("TTS error: " + c.err.Error())
 			return
 		}
-		e.mu.Lock()
-		e.playCmd = cmd
-		e.mu.Unlock()
-
-		_ = cmd.Wait()
-
-		e.mu.Lock()
-		stopped := e.stopped
-		e.playCmd = nil
-		e.mu.Unlock()
-		if stopped {
+		if !e.play(c.path) {
 			return
 		}
 		spoken++
 	}
 }
 
+// advance waits out a pause and moves the position to part i. It reports
+// false when the session was stopped.
+func (e *Engine) advance(i int) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for e.paused && !e.stopped {
+		e.cond.Wait()
+	}
+	if e.stopped {
+		return false
+	}
+	e.currentIndex = i
+	return true
+}
+
+// play runs the player on one clip until it ends. It reports false when the
+// player could not start or the session was stopped.
+func (e *Engine) play(path string) bool {
+	cmd := e.newPlayCmd(path)
+	if err := cmd.Start(); err != nil {
+		e.setLastResult("playback error: " + err.Error())
+		return false
+	}
+	e.mu.Lock()
+	e.playCmd = cmd
+	stopped := e.stopped
+	e.mu.Unlock()
+	if stopped {
+		// fullStop ran before playCmd was set, so it had nothing to kill.
+		_ = cmd.Process.Kill()
+	}
+
+	_ = cmd.Wait()
+
+	e.mu.Lock()
+	stopped = e.stopped
+	e.playCmd = nil
+	e.mu.Unlock()
+	return !stopped
+}
+
+// finish records how the worker ended and releases what it held.
+func (e *Engine) finish(spoken, total int) {
+	e.mu.Lock()
+	stopped := e.stopped
+	e.running = false
+	e.playCmd = nil
+	if e.lastResult == "" {
+		e.lastResult = fmt.Sprintf("Spoke %d/%d part(s).", spoken, total)
+	}
+	done := e.doneCh
+	e.mu.Unlock()
+	// On a clean finish we release the lock; on Stop, fullStop owns release.
+	if !stopped {
+		e.releaseLock()
+	}
+	if done != nil {
+		close(done)
+	}
+}
+
+func (e *Engine) setLastResult(msg string) {
+	e.mu.Lock()
+	e.lastResult = msg
+	e.mu.Unlock()
+}
+
 // fullStop tears down any running session and blocks until the worker exits.
+// It never waits for a synthesis: cancelling the session's context abandons
+// the prefetches, and the worker gives up on a clip still in flight.
 func (e *Engine) fullStop() {
 	e.mu.Lock()
+	if e.cancel != nil {
+		e.cancel()
+		e.cancel = nil
+	}
 	if !e.running {
 		e.paused = false
 		e.mu.Unlock()
@@ -522,26 +705,42 @@ func (e *Engine) fullStop() {
 	e.releaseLock()
 }
 
-// synthToFile synthesizes one sentence to an audio file under the audio
-// directory, recording the outcome in the engine's health. The extension
-// follows the audio's format, which afplay goes by.
-func (e *Engine) synthToFile(text, voice string) (string, error) {
-	audio, err := e.synth(text, voice)
+// synthToFile synthesizes one part to an audio file under the audio
+// directory, recording the outcome in the engine's health. A synthesis cut
+// short by cancelling ctx is not recorded: it says nothing about the
+// provider.
+func (e *Engine) synthToFile(ctx context.Context, text, voice string) (string, error) {
+	audio, err := e.synth(ctx, text, voice)
+	if err != nil && ctx.Err() != nil {
+		return "", fmt.Errorf("synthesis cancelled: %w", ctx.Err())
+	}
 	e.health.Record(err)
 	if err != nil {
 		return "", err
 	}
+	return e.writeClip(audio)
+}
+
+// writeClip saves audio under the audio directory with the extension its
+// format needs, which afplay goes by. Prefetched parts are written
+// concurrently, so every clip gets a file of its own.
+func (e *Engine) writeClip(audio tts.Audio) (string, error) {
 	if err := os.MkdirAll(e.audioDir, 0o755); err != nil {
-		return "", err
+		return "", fmt.Errorf("create audio dir: %w", err)
 	}
-	path := filepath.Join(
-		e.audioDir,
-		fmt.Sprintf("speak_%d_%d%s", time.Now().UnixMilli(), os.Getpid(), audio.Ext()),
-	)
-	if err := os.WriteFile(path, audio.Data, 0o644); err != nil {
-		return "", err
+	f, err := os.CreateTemp(e.audioDir, "speak_*"+audio.Ext())
+	if err != nil {
+		return "", fmt.Errorf("create clip: %w", err)
 	}
-	return path, nil
+	_, err = f.Write(audio.Data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write clip: %w", err)
+	}
+	return f.Name(), nil
 }
 
 func (e *Engine) resolveVoice(voice string) string {
@@ -616,7 +815,7 @@ func (e *Engine) readLockOwner() string {
 	return fmt.Sprintf("pid=%d, session=%s", m.Pid, m.Session)
 }
 
-// unavailableResponse is the reply when the first sentence could not be
+// unavailableResponse is the reply when the first part could not be
 // synthesized: the health state names why, in the same "WORD | detail" shape
 // as busyResponse.
 func unavailableResponse(state tts.State) string {

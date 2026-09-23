@@ -39,7 +39,8 @@ func registerTools(s *mcp.Server, h *handlers) error {
 		Name:        "speak_text",
 		InputSchema: textSchema,
 		Description: "Speak the given text aloud on this machine's speakers through the configured TTS provider. " +
-			"Returns once the first sentence is synthesized; the rest plays in the background. The text is split into sentences and played in order. " +
+			"Returns once the first part is synthesized; the rest plays in the background. " +
+			"The text is split into sentences and grouped into parts that grow from one sentence to a few hundred characters; the next parts are synthesized while one plays. " +
 			"If the TTS backend cannot synthesize, the call fails with an UNAVAILABLE reply naming the reason and nothing plays. " +
 			"Keep the returned session id: it is the handle for speak_pause / speak_resume / speak_stop.",
 		Annotations: &mcp.ToolAnnotations{
@@ -53,7 +54,8 @@ func registerTools(s *mcp.Server, h *handlers) error {
 		Name:        "speak_file",
 		InputSchema: fileSchema,
 		Description: "Read a markdown file aloud on this machine, section by section (a section is the content under each h1/h2). " +
-			"Returns once the first sentence is synthesized; the rest plays in the background. Pass `sections` as comma-separated 1-based indices to read only some; omit for all. " +
+			"Returns once the first part is synthesized; the rest plays in the background, sentences grouped into parts that grow from one sentence to a few hundred characters, the next parts synthesized while one plays. " +
+			"Pass `sections` as comma-separated 1-based indices to read only some; omit for all. " +
 			"If the TTS backend cannot synthesize, the call fails with an UNAVAILABLE reply naming the reason and nothing plays.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
@@ -107,7 +109,7 @@ func registerTools(s *mcp.Server, h *handlers) error {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "speak_status",
-		Description: "Report whether the TTS engine is reachable, the TTS health recorded from recent syntheses (ok, degraded or down, with the reason), and the current playback state (session, playing/paused/stopped/idle, position, lock holder).",
+		Description: "Report whether the TTS engine is reachable, the TTS health recorded from recent syntheses (ok, degraded or down, with the reason), and the current playback state (session, starting/playing/paused/stopped/idle, position, lock holder).",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),

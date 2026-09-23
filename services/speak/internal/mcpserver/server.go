@@ -25,7 +25,7 @@ const Name = "speak-aloud"
 // and the directory playback writes its audio and lock to.
 type Config struct {
 	Provider *provider.Provider
-	StateDir string // playback state: per-sentence audio files and playback.lock
+	StateDir string // playback state: per-part audio files and playback.lock
 
 	// Checks builds the diagnostics behind the speak_doctor tool, against
 	// the same resolved flags the rest of the CLI uses. It is required: the

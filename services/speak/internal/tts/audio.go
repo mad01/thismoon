@@ -24,9 +24,9 @@ const (
 	ContentTypeMP3 = "audio/mpeg"
 )
 
-// Request is one synthesis call: a chunk of text (a sentence, in practice)
-// in a voice. Speed is a multiplier where 1 is normal; 0 leaves it to the
-// provider.
+// Request is one synthesis call: a part of text (one sentence up to a few
+// hundred characters) in a voice. Speed is a multiplier where 1 is normal;
+// 0 leaves it to the provider.
 type Request struct {
 	Text  string
 	Voice string

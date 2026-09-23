@@ -27,10 +27,15 @@ import (
 // message.
 const maxErrorBody = 4 << 10
 
-// requestTimeout bounds one synthesis. A sentence takes well under a second
-// locally and a few seconds remotely; this only stops a hung backend from
-// holding a play click forever.
-const requestTimeout = 30 * time.Second
+// localTimeout bounds one synthesis on the local engine, where a part takes
+// a second or two; this only stops a hung engine from holding a play click
+// forever.
+const localTimeout = 30 * time.Second
+
+// remoteTimeout bounds one synthesis on a remote provider. Remote speech
+// models answer with the whole clip at once, after 20 seconds and more for a
+// part of a few hundred characters, and now and then took longer than 30.
+const remoteTimeout = 2 * time.Minute
 
 // errRedirectRefused stops the client before it can re-send the request, and
 // its Authorization header, to a redirect target.
@@ -49,21 +54,26 @@ type Config struct {
 
 // Client synthesizes speech against one endpoint.
 type Client struct {
-	cfg  Config
-	http *http.Client
+	cfg     Config
+	http    *http.Client
+	timeout time.Duration // bounds one synthesis: localTimeout or remoteTimeout
 }
 
 // New returns a Client for cfg.
 func New(cfg Config) *Client {
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
+	timeout := remoteTimeout
+	if cfg.Local {
+		timeout = localTimeout
+	}
 	return &Client{
 		cfg: cfg,
 		http: &http.Client{
-			Timeout: requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return errRedirectRefused
 			},
 		},
+		timeout: timeout,
 	}
 }
 
@@ -83,38 +93,22 @@ type speechRequest struct {
 }
 
 // Synthesize returns playable audio for one chunk of text. A failure is a
-// *tts.Error: network when the endpoint never answered, otherwise
-// classified from its status and message.
+// *tts.Error: network when the endpoint could not be reached, upstream when
+// it did not answer within the timeout, otherwise classified from its status
+// and message.
 func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error) {
-	body, err := json.Marshal(speechRequest{
-		Model:          c.cfg.Model,
-		Input:          req.Text,
-		Voice:          req.Voice,
-		ResponseFormat: c.cfg.Format,
-		Speed:          req.Speed,
-	})
+	ctx, cancel, limit := tts.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	httpReq, err := c.newRequest(ctx, req)
 	if err != nil {
-		return tts.Audio{}, fmt.Errorf("marshal speech request: %w", err)
-	}
-	httpReq, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		c.cfg.BaseURL+"/v1/audio/speech",
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return tts.Audio{}, fmt.Errorf("build speech request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.cfg.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+		return tts.Audio{}, err
 	}
 
 	res, err := c.http.Do(httpReq)
 	if err != nil {
 		// The one transport chokepoint every playback path goes through;
 		// Hint points the reader at the operating doc from here.
-		return tts.Audio{}, agentdoc.Hint(c.unreachable(err), speak.Facts())
+		return tts.Audio{}, agentdoc.Hint(c.unanswered(limit, err), speak.Facts())
 	}
 	defer func() { _ = res.Body.Close() }()
 
@@ -127,6 +121,9 @@ func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, er
 		return tts.Audio{}, failure
 	}
 	data, err := io.ReadAll(res.Body)
+	if tts.TimedOut(err) {
+		return tts.Audio{}, agentdoc.Hint(c.slow(limit, err), speak.Facts())
+	}
 	if err != nil || len(data) == 0 {
 		return tts.Audio{}, c.failedAfterAnswer(res.StatusCode, err)
 	}
@@ -143,6 +140,34 @@ func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, er
 	return audio, nil
 }
 
+// newRequest builds the speech request for req.
+func (c *Client) newRequest(ctx context.Context, req tts.Request) (*http.Request, error) {
+	body, err := json.Marshal(speechRequest{
+		Model:          c.cfg.Model,
+		Input:          req.Text,
+		Voice:          req.Voice,
+		ResponseFormat: c.cfg.Format,
+		Speed:          req.Speed,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal speech request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.cfg.BaseURL+"/v1/audio/speech",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build speech request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.cfg.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	}
+	return httpReq, nil
+}
+
 // label names the endpoint in reasons: "TTS engine" for the local one, the
 // provider's name otherwise.
 func (c *Client) label() string {
@@ -152,7 +177,32 @@ func (c *Client) label() string {
 	return c.cfg.Provider
 }
 
-// unreachable classifies an endpoint that never answered.
+// unanswered classifies a request that got no answer. Running out of time is
+// the provider being slow, not the network failing: a remote model can take
+// tens of seconds for one part.
+func (c *Client) unanswered(limit time.Duration, err error) *tts.Error {
+	if tts.TimedOut(err) {
+		return c.slow(limit, err)
+	}
+	return c.unreachable(err)
+}
+
+// slow classifies an endpoint that did not answer within limit. It counts as
+// upstream, not network: the endpoint was reached.
+func (c *Client) slow(limit time.Duration, err error) *tts.Error {
+	where := ""
+	if c.cfg.Local {
+		where = " (check t-man logs speak-tts)"
+	}
+	return &tts.Error{
+		Kind:     tts.KindUpstream,
+		Provider: c.cfg.Provider,
+		Message:  fmt.Sprintf("%s did not answer within %s%s", c.label(), limit, where),
+		Err:      err,
+	}
+}
+
+// unreachable classifies an endpoint that could not be reached.
 func (c *Client) unreachable(err error) *tts.Error {
 	hint := ""
 	if c.cfg.Local {

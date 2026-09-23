@@ -6,9 +6,11 @@ local Kokoro engine by default, or OpenRouter, OpenAI, a LiteLLM proxy or
 the Gemini Developer API.
 
 Upload a markdown file, read it rendered in the browser, and play it section
-by section. The same service also handles `/v1/audio/speech` so other local
-tools (present briefings, for example) can request speech without touching the
-provider directly.
+by section. speak synthesizes the document's audio in the background as soon
+as it is uploaded, so play starts from ready audio, and a finished section or
+the whole page can be downloaded as one audio file. The same service also
+handles `/v1/audio/speech` so other local tools (present briefings, for
+example) can request speech without touching the provider directly.
 
 ## Providers
 
@@ -107,16 +109,20 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 |------|-------------|
 | `GET /` | Upload form |
 | `GET /app.js` | Client-side renderer |
-| `POST /read` | Render and split a markdown file for playback |
-| `POST /v1/audio/speech` | OpenAI-style speech through the active provider (CORS allowlist: loopback and `.this` origins); failures answer JSON naming the reason |
+| `POST /read` | Render and split a markdown file for playback and start synthesizing its audio |
+| `GET /doc/{id}` | Audio state of an uploaded document: parts ready, in progress, not prepared, failed |
+| `POST /doc/{id}/prepare` | Synthesize every part not ready yet |
+| `GET /doc/{id}/audio[?section=N]` | The document, or one section, as one audio file once every part is ready |
+| `GET /audio/{key}` | One part's audio, synthesized first if it is not ready |
+| `POST /v1/audio/speech` | OpenAI-style speech through the active provider, cached on disk (CORS allowlist: loopback and `.this` origins); failures answer JSON naming the reason |
 | `GET /healthz` | 204; reachability probe for this page |
 | `GET /enginez` | TTS health as JSON (ok, degraded or down, with the reason); 200 when ok, 503 otherwise |
 | `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-repo `webkit` package |
 
-The `<wk-read-aloud>` webkit component on the rendered page calls
-`POST /v1/audio/speech` locally; present briefings call it cross-origin via
-`http://speak.this`.
+The `<wk-read-aloud>` webkit component on the rendered page plays the
+prepared parts from `GET /audio/{key}`; present briefings and text selections
+call `POST /v1/audio/speech`, present cross-origin via `http://speak.this`.
 
 ## MCP server
 
@@ -170,11 +176,13 @@ All three are root flags: `serve`, `mcp`, and `doctor` resolve them the same way
 |------|-----|---------|
 | `--port` | `SPEAK_PORT` | `7425` |
 | `--tts-url` | `SPEAK_TTS_URL` | `http://127.0.0.1:8765` |
-| `--state-dir` | `SPEAK_STATE_DIR` | `~/.local/share/speak` where it exists, else `~/.local/state/speak` |
+| `--state-dir` | `SPEAK_STATE_DIR` | `~/.local/share/speak` where it holds `audio/`, else `~/.local/state/speak` |
 
 `speak serve` answers cross-origin requests only from this machine's own
-pages: an `Origin` on loopback or under `.this` is reflected back, anything
-else gets no CORS headers. See [config.md](config.md) for the full surface.
+pages: an `Origin` on loopback or under `.this` is reflected back, and any
+other origin, or a cross-site request that sends none, gets 403, so a
+foreign page cannot start a synthesis. curl and the CLI are unaffected. See
+[config.md](config.md) for the full surface.
 
 ## Where things live
 
@@ -191,9 +199,12 @@ else gets no CORS headers. See [config.md](config.md) for the full surface.
   voice packs, cached at install time). The runtime engine runs offline with
   no network egress; if the model cache is missing or incomplete, synthesis
   fails mid-request with `LocalEntryNotFoundError`.
-- No document storage on the server: markdown is rendered per request and
-  never written to disk. Recently-read docs are remembered client-side only,
-  in the browser's `localStorage`.
+- Audio cache: `<state-dir>/cache/`, one file per synthesized part, capped
+  at 2 GiB. When `speak serve` starts and once a day after, it deletes files
+  unused for 30 days, then the least recently used until the cache fits.
+- No markdown on disk: `speak serve` keeps the 32 most recent uploads in
+  memory, and recently-read docs are remembered in the browser's
+  `localStorage`, which the page posts again after a restart.
 
 ## Develop
 

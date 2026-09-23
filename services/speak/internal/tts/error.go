@@ -25,14 +25,15 @@ const (
 	KindQuota Kind = "quota"
 	// KindModel means the model or voice does not exist on the backend (404).
 	KindModel Kind = "model"
-	// KindNetwork means the request never got an answer: connection refused,
-	// DNS failure, timeout.
+	// KindNetwork means the request never reached the backend: connection
+	// refused, DNS failure, a connect timeout.
 	KindNetwork Kind = "network"
 	// KindConfig means speak itself is missing what it needs to ask: no
 	// backend or no credentials configured.
 	KindConfig Kind = "config"
 	// KindUpstream means the backend answered with an error nothing more
-	// specific fits: a 5xx, another 4xx, or an empty audio body.
+	// specific fits (a 5xx, another 4xx, an empty audio body), or took the
+	// connection and did not answer within the request timeout.
 	KindUpstream Kind = "upstream"
 )
 

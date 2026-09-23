@@ -76,7 +76,7 @@ Place one element per page. It injects a floating play/pause button into each el
 
 On load it probes `GET {endpoint}/` with a 1.5s timeout. If unreachable it injects nothing — pages degrade gracefully on hosts without speak.
 
-The active sentence is highlighted with `.wk-ra-sentence.wk-ra-active` (background `--ra-highlight`). Starting a second section stops the first. While a section plays, a restart button appears beside its play/pause control to rewind to the section start. Esc clears selection playback.
+Speech is fetched in parts that start at one sentence and grow to a few hundred characters, two ahead of the one playing; on a speak page, whose sections list their part keys in `data-ra-parts`, the parts are prepared audio from `GET {endpoint}/audio/{key}`. The playing part is highlighted with `.wk-ra-active` (background `--ra-highlight`), on its sentence spans (`.wk-ra-sentence`) or on the `data-ra-chunk` blocks it reads, and the play button pulses (`.wk-ra-wait`) while that part is still loading. Starting a second section stops the first. While a section plays, a restart button appears beside its play/pause control to rewind to the section start. Esc clears selection playback.
 
 ---
 

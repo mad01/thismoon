@@ -67,6 +67,28 @@ wk-callout { margin-top: 1rem; }
 .doc-section td, .doc-section th { border: 1px solid var(--border); padding: 0.375rem 0.625rem; font-size: 0.875rem; }
 .doc-section blockquote { border-left: 3px solid var(--border-hover); padding-left: 1rem; color: var(--text-2); margin-bottom: 0.75rem; }
 .doc-section a { color: var(--primary); }
+/* Audio preparation: the page-level line above the sections and each
+   section's badge, floated beside its play buttons. */
+.doc-audio { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; font-size: 0.8125rem; color: var(--text-2); }
+.doc-audio-reason { color: var(--red); }
+.audio-btn {
+  appearance: none; background: var(--chip-bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.25rem 0.625rem; font-family: inherit;
+  font-size: 0.75rem; font-weight: 500; color: var(--text-2); cursor: pointer; transition: all 0.15s;
+}
+.audio-btn:hover { border-color: var(--border-hover); color: var(--text-1); }
+.audio-btn:disabled { opacity: 0.6; cursor: default; }
+.audio-dl { font-size: 0.75rem; color: var(--primary); }
+.section-audio {
+  float: right; display: flex; align-items: center; gap: 0.5rem;
+  min-height: 1.75rem; margin: 0 0 0 0.75rem;
+}
+/* No bottom margin on the floated controls: under a short h2 it pushed the
+   float past the heading, and the paragraph's first line wrapped early. */
+.doc-section > .wk-ra-btn { margin-bottom: 0; }
+/* inline-block, not the badge's inline-flex, so a long failure reason can
+   ellipsize (the full text is in the title). */
+.section-audio wk-badge { display: inline-block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -75,6 +97,8 @@ wk-callout { margin-top: 1rem; }
   <div class="wk-help-section-title">This tool</div>
   <div class="wk-help-row"><div class="wk-help-term">Read a document</div>
   <div class="wk-help-desc">Choose a markdown file and speak reads it aloud, section by section, over your speakers — a hands-free way to get through a long document by ear.</div></div>
+  <div class="wk-help-row"><div class="wk-help-term">Prepared audio</div>
+  <div class="wk-help-desc">An upload is prepared in the background, so play starts from ready audio instead of waiting on the voice model. Each section shows how far that got, and once a section (or the whole page) is ready it can be downloaded as one audio file. Prepare all queues whatever is left.</div></div>
 </template>
 <main class="wrap"><div id="app"></div></main>
 <script src="/webkit/webkit.js"></script>

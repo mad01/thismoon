@@ -65,25 +65,48 @@ match. Attributes:
 Backend contract: the endpoint must serve an OpenAI-compatible
 `POST {endpoint}/v1/audio/speech` accepting `{model, input, voice, speed}` and
 returning a WAV body, with CORS allowed (the d-man `speak` route provides both
-via mlx-audio + the route's `cors = true` flag). On connect the element probes
-`GET {endpoint}/` with a 1.5s timeout — if unreachable it injects nothing, so
-pages degrade gracefully on hosts without the speak service.
+via mlx-audio + the route's `cors = true` flag). Cached mode (below) also needs
+`GET {endpoint}/audio/{key}`, which speak serve provides. On connect the
+element probes `GET {endpoint}/` with a 1.5s timeout — if unreachable it
+injects nothing, so pages degrade gracefully on hosts without the speak
+service.
 
-Playback: section text is extracted skipping `code/pre/table/svg/button`
-subtrees, split into sentences (`Intl.Segmenter`), fetched one clip per
-sentence with the next clip prefetched while the current plays. The active
-sentence is wrapped in `.wk-ra-sentence.wk-ra-active` (soft `--ra-highlight`
-background) and kept in view. One session at a time: starting another section
-stops the current one; the section button toggles pause/resume. While a section
-plays, a restart button appears next to its play/pause control and rewinds to
-the start of the section; it hides again when playback ends.
+Playback: a session plays a list of parts, one speech request each, keeping
+two parts in flight ahead of the one playing. While the playing part's clip is
+still being fetched, the play button carries `.wk-ra-wait` (a slow pulse; a
+still dim under reduced motion), so a long wait reads as work, not a hang.
+One session at a time: starting another section stops the current one; the
+section button toggles pause/resume. While a section plays, a restart button
+appears next to its play/pause control and rewinds to the start of the
+section; it hides again when playback ends.
+
+- **Uncached mode** (present pages, any section without `data-ra-chunk`):
+  section text is extracted skipping `pre/table/svg/button/wk-badge`
+  subtrees, split into sentences (`Intl.Segmenter`), and grouped into parts
+  that ramp up: one sentence first, so the first sound comes after one short
+  request, then up to 250 characters, then up to 600 (`LIVE_RAMP` in
+  `src/sentences.ts`, which mirrors speak's `internal/chunk`; change both
+  together). A sentence without terminal punctuation (a heading, a list item)
+  gets a period in the request so it doesn't run into the next. Each part is
+  a `POST /v1/audio/speech` with the speed in the body. The playing part's
+  sentences are wrapped in `.wk-ra-sentence.wk-ra-active` (soft
+  `--ra-highlight` background) and kept in view.
+- **Cached mode**: a section whose blocks carry
+  `data-ra-chunk="<key> [<key> ...]"` (the keys of the pre-synthesized parts
+  that read the block, as speak serve renders them) plays the keys in the
+  section's own `data-ra-parts` list (play order, repeats kept), or the
+  blocks' keys in document order, each once, when that is absent. Each is
+  fetched with `GET {endpoint}/audio/{key}`. Every block whose list holds the
+  playing key gets `[data-ra-chunk].wk-ra-active`; no sentence spans. Cached
+  parts are synthesized at the provider's default speed, so the speed control
+  sets the audio element's `playbackRate` instead, live while a part plays.
 
 Selection speaker: independent of `targets`, selecting any text on the page
 (outside the header/controls) shows a floating play button at the selection's
-edge that reads just the selected text — same pause/resume toggle, no
-highlight spans (the selection itself is the visual). Esc clears the
-selection, the float button, and any selection playback. One element on the
-page enables this even with no `targets` attribute.
+edge that reads just the selected text, in parts like uncached mode — same
+pause/resume toggle, no highlight spans (the selection itself is the visual).
+Esc clears the selection, the float button, and any selection playback. One
+element on the page enables this even with no `targets` attribute.
 
 Failures: a clip that cannot be fetched or played ends the session and says
 why, never silently. The button turns red (`.wk-ra-error`, reason in its
@@ -95,9 +118,12 @@ element dispatches `wk-read-aloud-error` on `document` with `{detail:
 code; an unreachable endpoint, empty audio, and a broken-off stream each get
 their own message.
 
-Caveat: toggling fixation mid-playback rewrites the section's innerHTML and
-detaches the live highlight spans — audio keeps playing but highlighting stops
-until that section is played again.
+Fixation: toggling it ends any playing session, since fixation rewrites the
+targets' innerHTML and would detach the live sentence spans.
+
+`Webkit.stopReadAloud()` ends any playing session. Removing the element does
+not, so a page that replaces its sections (speak's upload) calls it first;
+otherwise the session plays on from the detached section.
 
 ### Content components (CSS-only; define as no-op elements for semantics)
 - `<wk-page-header>` wrapping `<wk-title>` + `<wk-subtitle>` — hero/page header

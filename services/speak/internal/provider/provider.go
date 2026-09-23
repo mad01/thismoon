@@ -127,6 +127,14 @@ func (p *Provider) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, 
 	return p.synth.Synthesize(ctx, req)
 }
 
+// ClipID names what decides a clip's sound besides its text and speed: the
+// provider, its model, and the voice a request for voice resolves to. speak
+// serve's audio cache keys clips by it, so switching provider, model or
+// voice never replays a clip made the old way.
+func (p *Provider) ClipID(voice string) string {
+	return fmt.Sprintf("%q %q %q", p.cfg.Name, p.cfg.Model, p.voices.Resolve(voice))
+}
+
 // Ping checks that a local engine is listening. It reports false, nil for a
 // remote provider, where there is no process of ours to ping.
 func (p *Provider) Ping(ctx context.Context) (checked bool, err error) {

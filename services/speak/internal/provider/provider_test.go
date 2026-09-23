@@ -233,6 +233,35 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// TestClipIDFollowsTheSound pins what the audio cache keys on: the same
+// sound gives the same ID (a voice the provider lacks resolves to the
+// default, like Synthesize does), and changing the provider, model or voice
+// gives another.
+func TestClipIDFollowsTheSound(t *testing.T) {
+	curated := func(name, model string) *Provider {
+		return New(context.Background(), config.Provider{
+			Name: name, Type: config.TypeLocal, BaseURL: "http://127.0.0.1:1", Model: model,
+			Voice: "af_heart", Voices: []string{"af_heart", "am_adam"},
+		})
+	}
+	p := curated("local", kokoro)
+	base := p.ClipID("")
+	for _, voice := range []string{"af_heart", "Kore"} {
+		if got := p.ClipID(voice); got != base {
+			t.Errorf("ClipID(%q) = %q, want the default voice's %q", voice, got, base)
+		}
+	}
+	for name, other := range map[string]string{
+		"voice":    p.ClipID("am_adam"),
+		"model":    curated("local", "other-model").ClipID(""),
+		"provider": curated("remote", kokoro).ClipID(""),
+	} {
+		if other == base {
+			t.Errorf("changing the %s left ClipID at %q", name, base)
+		}
+	}
+}
+
 // TestProblemsBecomeConfigFailures pins the no-quiet-fallback rule: a block
 // that cannot be used fails every synthesis with its reason, as a config
 // error.
