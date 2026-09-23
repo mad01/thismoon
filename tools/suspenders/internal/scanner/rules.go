@@ -32,6 +32,14 @@ type Rule struct {
 	Filter func(secret string) bool
 }
 
+// envReference matches a value that is only a shell or env variable
+// reference: $NAME, ${NAME}, or ${NAME} with a :-, -, :=, =, :?, ?, :+ or +
+// modifier. A value that merely starts with $ (a bcrypt hash, $2b$...) does
+// not match, so it is still scanned.
+var envReference = regexp.MustCompile(
+	`^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*(?::?[-=?+][^}]*)?\})$`,
+)
+
 var DefaultRules = []Rule{
 	{
 		ID:          "aws-access-key-id",
@@ -144,6 +152,9 @@ var DefaultRules = []Rule{
 		),
 		Severity:   "medium",
 		MinEntropy: 3.0,
+		// A quoted reference to another variable is where the secret comes
+		// from, not the secret: export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}".
+		Filter: func(secret string) bool { return !envReference.MatchString(secret) },
 	},
 	{
 		ID:          "unquoted-secret-assignment",
