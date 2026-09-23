@@ -129,15 +129,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	if ks, ok := raw.(*k8sstore.Store); ok {
+		// The cache's feed is what lets open tabs hear of an update over
+		// server-sent events instead of polling for it.
+		opts.Watcher = ks
 		go k8sstore.RunCache(ctx, ks, log.Printf)
 		go k8sstore.RunSweeper(ctx, ks, flagSweep, log.Printf)
 	} else if flagShared {
 		log.Printf("present: shared mode on the filesystem store; run one replica only")
 	}
-	handler := server.New(st, opts).Handler()
+	srv := server.New(st, opts)
 	addr := bindAddr(flagBind, flagPort)
 	log.Printf("present: serving %s on http://%s (%s mode)", where, addr, mode)
-	return serveUntilSignal(ctx, addr, handler)
+	return serveUntilSignal(ctx, addr, srv.Handler(), srv.CloseStreams)
 }
 
 // openStore opens the store --store names and describes it for the log.
@@ -201,21 +204,30 @@ func sharedChecks(st store.Store) func(context.Context) []doctor.Check {
 
 // serveUntilSignal listens on addr and serves until ctx ends (SIGINT or
 // SIGTERM).
-func serveUntilSignal(ctx context.Context, addr string, handler http.Handler) error {
+func serveUntilSignal(
+	ctx context.Context, addr string, handler http.Handler, onShutdown func(),
+) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
-	return serveUntilDone(ctx, ln, handler)
+	return serveUntilDone(ctx, ln, handler, onShutdown)
 }
 
 // serveUntilDone serves ln until ctx ends, then drains in-flight requests
 // before returning. A rolling update sends SIGTERM and waits; an abrupt
 // exit there turns a deploy into a burst of reset connections. It takes the
 // listener rather than an address so a test can serve a port the kernel
-// picked.
-func serveUntilDone(ctx context.Context, ln net.Listener, handler http.Handler) error {
+// picked. onShutdown, when set, runs as shutdown starts, which is where
+// long-lived responses such as event streams are told to finish so the
+// drain does not wait on them.
+func serveUntilDone(
+	ctx context.Context, ln net.Listener, handler http.Handler, onShutdown func(),
+) error {
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
+	if onShutdown != nil {
+		srv.RegisterOnShutdown(onShutdown)
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()

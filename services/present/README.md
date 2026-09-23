@@ -2,7 +2,7 @@
 
 A small CLI + MCP server for serving single-page HTML briefing pages over localhost, and the same binary run as a shared instance others reach by link.
 
-Pages are created, read, updated, and listed through the MCP tools; deleting one is a button in the web index rather than a tool. Each page keeps its rendered HTML body next to the Doc JSON it was rendered from. The browser does the assembly: `present serve` returns a chrome-only shell, fetches the page as JSON, and builds the DOM, so there is no template on disk to edit. An open tab polls the page's version and reloads itself after an update.
+Pages are created, read, updated, and listed through the MCP tools; deleting one is a button in the web index rather than a tool. Each page keeps its rendered HTML body next to the Doc JSON it was rendered from. The browser does the assembly: `present serve` returns a chrome-only shell, fetches the page as JSON, and builds the DOM, so there is no template on disk to edit. An open tab reloads itself after an update: a shared instance on the cluster store pushes the new version over server-sent events, and everywhere else the tab polls for it.
 
 ## Install
 

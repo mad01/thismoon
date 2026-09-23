@@ -55,6 +55,14 @@ the controller sets `X-Forwarded-Proto` and `X-Forwarded-Host` for page URLs.
 `virtualservice.yaml`, which ships pointing at `istio-system/internal-gateway`;
 Istio sets the forwarded headers already.
 
+Whichever overlay you pick, open tabs hold a server-sent event stream each,
+so the proxy in front must pass responses through unbuffered and keep an
+idle stream open for longer than the 25 second heartbeat. ingress-nginx
+honours the `X-Accel-Buffering: no` header present sends and times out
+after 60 seconds by default, and Istio routes carry no timeout unless you
+set one. Serve the hostname over HTTP/2, as TLS ingresses do: browsers
+allow six HTTP/1.1 connections per host, and every visible tab spends one.
+
 Redefining the ConfigMap from an overlay layered on top of these changes
 nothing, because the replacements already ran here: re-declare them beside
 your own literals, or patch the Ingress and VirtualService fields directly.
