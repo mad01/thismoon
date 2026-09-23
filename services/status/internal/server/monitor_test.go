@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/services/status/internal/history"
 )
@@ -150,13 +152,15 @@ func TestTodayRecoversTowardGreen(t *testing.T) {
 }
 
 // writeFakeBinary drops a script at path that answers `version` with sha, the
-// way every fleet binary does.
+// way every fleet binary does, and launches it once so a monitor cycle's
+// timed probe never pays for its first launch.
 func writeFakeBinary(t *testing.T, path, sha string) {
 	t.Helper()
 	script := "#!/bin/sh\necho " + sha + "\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	launchOnce(t, path)
 }
 
 // TestDriftDetection walks the stale-binary story: the running process serves
@@ -269,5 +273,22 @@ func TestNoDriftWithoutInstalledVersion(t *testing.T) {
 			s.Installed,
 			s.Version,
 		)
+	}
+}
+
+// firstLaunchBudget bounds the untimed launch that warms a fake binary.
+const firstLaunchBudget = 30 * time.Second
+
+// launchOnce runs a newly written executable once, outside any probe
+// deadline. macOS assesses a new executable on its first launch, and while a
+// full make test is linking and launching dozens of fresh test binaries that
+// queue made a fake script's first launch take up to 4.9 s, past the 3 s
+// probe timeout; later launches of the same file took milliseconds.
+func launchOnce(t *testing.T, path string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), firstLaunchBudget)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, path, "version").CombinedOutput(); err != nil {
+		t.Fatalf("first launch of %s: %v: %s", path, err, out)
 	}
 }
