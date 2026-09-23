@@ -10,7 +10,9 @@ package playback
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -133,6 +135,17 @@ func (e *Engine) SpeakText(text, voice string) Result {
 	return e.startPlayback(sentences, v, 0, "")
 }
 
+// unreadable explains a file speak_file cannot read. A file that exists but
+// is denied (its mode, or macOS privacy protection on the MCP host) is not
+// "not found": the reply names the way around it.
+func unreadable(path string, err error) Result {
+	if errors.Is(err, fs.ErrPermission) {
+		return Result{Failed: true, Message: "UNREADABLE | " + path + ": permission denied. " +
+			"Read the file yourself and pass its text to speak_text."}
+	}
+	return Result{Message: "File not found: " + path}
+}
+
 // SpeakFile reads a markdown file aloud section by section. sections is a
 // comma-separated list of 1-based section indices; empty reads all.
 func (e *Engine) SpeakFile(path, voice, sections string) Result {
@@ -140,11 +153,11 @@ func (e *Engine) SpeakFile(path, voice, sections string) Result {
 	path = expandUser(path)
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() {
-		return Result{Message: "File not found: " + path}
+		return unreadable(path, err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Result{Message: "File not found: " + path}
+		return unreadable(path, err)
 	}
 	all := ExtractSections(data)
 	if len(all) == 0 {

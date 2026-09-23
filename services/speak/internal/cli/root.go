@@ -32,8 +32,8 @@ rendered inline, and play it section by section, at http://localhost:%d
 fetch speech from it.
 
 Speech comes from the provider the config file selects: the local Kokoro
-engine (mlx-audio) by default, or OpenRouter, OpenAI or a LiteLLM proxy
-(see 'speak config' and 'speak docs'). serve and mcp are two surfaces over
+engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM proxy or
+the Gemini API (see 'speak config' and 'speak docs'). serve and mcp are two surfaces over
 the same provider and neither needs the other: serve plays audio in the
 browser, mcp plays it on this machine's speakers.`, speak.DefaultPort),
 	// An error from a subcommand is a diagnosis, not a usage mistake; main
@@ -88,9 +88,11 @@ func Execute() error {
 }
 
 // serveBaseURL is where `speak serve` answers for the resolved --port: what
-// doctor probes and what the MCP doctor tool reports on.
+// doctor probes and what the MCP doctor tool reports on. It is the address
+// serve binds, not "localhost", which can resolve to ::1 first where
+// nothing listens.
 func serveBaseURL() string {
-	return fmt.Sprintf("http://localhost:%d", flagPort)
+	return fmt.Sprintf("http://127.0.0.1:%d", flagPort)
 }
 
 // defaultConfigPath is the config file inside speak's config directory. A

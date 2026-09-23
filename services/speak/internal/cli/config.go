@@ -39,8 +39,7 @@ var configActiveCmd = &cobra.Command{
 	Use:   "active",
 	Short: "Show the active provider",
 	Long: `Show the active provider block: name, type, model, default voice, base
-URL, whether text leaves this machine (remote), and its problem if any.
-Spawn wrappers read -o json to pick the sandbox profile.`,
+URL, whether text leaves this machine (remote), and its problem if any.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
