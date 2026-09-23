@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
 // testInfo is the build metadata the test mux reports on /version.
@@ -172,24 +174,221 @@ func TestSpeechProxyForwardsAndAddsCORS(t *testing.T) {
 	}
 }
 
-func TestEnginezReportsUpstreamState(t *testing.T) {
-	// Reachable upstream — even a 404 response means the engine is up.
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+// fakeEngine is a TTS engine stand-in that answers every speech request with
+// status and body, counting the requests so tests can tell a probe from a
+// cached answer.
+type fakeEngine struct {
+	*httptest.Server
+	requests atomic.Int32
+}
+
+func newFakeEngine(t *testing.T, status int, body string) *fakeEngine {
+	t.Helper()
+	fe := &fakeEngine{}
+	fe.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fe.requests.Add(1)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
 	}))
-	mux := newTestMux(t, upstream.URL)
+	t.Cleanup(fe.Close)
+	return fe
+}
+
+func getEnginez(t *testing.T, mux *http.ServeMux) (int, tts.State) {
+	t.Helper()
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/enginez", nil))
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("enginez with live upstream: status = %d, want 204", rec.Code)
+	var state tts.State
+	if err := json.Unmarshal(rec.Body.Bytes(), &state); err != nil {
+		t.Fatalf("decode enginez %q: %v", rec.Body.String(), err)
+	}
+	return rec.Code, state
+}
+
+// TestEnginezProbesSynthesis pins that /enginez answers from a real test
+// synthesis, not a ping, and reuses a fresh outcome instead of probing on
+// every poll.
+func TestEnginezProbesSynthesis(t *testing.T) {
+	engine := newFakeEngine(t, http.StatusOK, "RIFFfake")
+	mux := newTestMux(t, engine.URL)
+
+	code, state := getEnginez(t, mux)
+	if code != http.StatusOK || state.Status != tts.StatusOK || state.Provider != "local" {
+		t.Errorf("enginez = %d %+v, want 200 ok from provider local", code, state)
+	}
+	getEnginez(t, mux)
+	if n := engine.requests.Load(); n != 1 {
+		t.Errorf(
+			"engine saw %d synthesis requests, want 1 (second poll reuses the fresh outcome)",
+			n,
+		)
+	}
+}
+
+// TestEnginezNamesTheFailure covers the states a reachability ping reported
+// as healthy or as a bare 502: each comes back as 503 with the reason.
+func TestEnginezNamesTheFailure(t *testing.T) {
+	cases := []struct {
+		name       string
+		engineURL  func(t *testing.T) string
+		wantStatus tts.Status
+		wantKind   tts.Kind
+		wantReason string
+	}{
+		{
+			name: "engine up, model missing",
+			engineURL: func(t *testing.T) string {
+				return newFakeEngine(t, http.StatusInternalServerError,
+					`{"detail":"LocalEntryNotFoundError: Kokoro-82M"}`).URL
+			},
+			wantStatus: tts.StatusDegraded,
+			wantKind:   tts.KindUpstream,
+			wantReason: "LocalEntryNotFoundError: Kokoro-82M",
+		},
+		{
+			name: "engine stopped",
+			engineURL: func(t *testing.T) string {
+				fe := newFakeEngine(t, http.StatusOK, "")
+				fe.Close()
+				return fe.URL
+			},
+			wantStatus: tts.StatusDown,
+			wantKind:   tts.KindNetwork,
+			wantReason: "not reachable",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, state := getEnginez(t, newTestMux(t, tc.engineURL(t)))
+			if code != http.StatusServiceUnavailable {
+				t.Errorf("enginez status = %d, want 503", code)
+			}
+			if state.Status != tc.wantStatus || state.Kind != tc.wantKind {
+				t.Errorf(
+					"state = %s/%s, want %s/%s",
+					state.Status,
+					state.Kind,
+					tc.wantStatus,
+					tc.wantKind,
+				)
+			}
+			if !strings.Contains(state.Reason, tc.wantReason) {
+				t.Errorf("reason = %q, want it to contain %q", state.Reason, tc.wantReason)
+			}
+		})
+	}
+}
+
+// TestSpeechFailureCarriesTheReason pins the body <wk-read-aloud> shows: a
+// failed synthesis answers JSON naming the cause, keeps the CORS header so a
+// sibling page can read it, and feeds the same health /enginez reports.
+func TestSpeechFailureCarriesTheReason(t *testing.T) {
+	engine := newFakeEngine(
+		t,
+		http.StatusInternalServerError,
+		`{"detail":"voice xx_nope not found"}`,
+	)
+	mux := newTestMux(t, engine.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+		strings.NewReader(`{"input":"hi","voice":"xx_nope"}`))
+	req.Header.Set("Origin", "http://present.this")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want the engine's 500", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://present.this" {
+		t.Errorf("ACAO = %q, want the allowlisted origin", got)
+	}
+	var body speechError
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body %q: %v", rec.Body.String(), err)
+	}
+	if !strings.Contains(body.Error.Message, "voice xx_nope not found") ||
+		body.Error.Provider != "local" || body.Error.Health != tts.StatusDegraded {
+		t.Errorf(
+			"error body = %+v, want the engine's reason, provider local, health degraded",
+			body.Error,
+		)
 	}
 
-	// Dead upstream — connection refused maps to 502.
-	upstream.Close()
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/enginez", nil))
+	_, state := getEnginez(t, mux)
+	if !strings.Contains(state.Reason, "voice xx_nope not found") {
+		t.Errorf("enginez reason = %q, want the failure the real request recorded", state.Reason)
+	}
+	if n := engine.requests.Load(); n != 1 {
+		t.Errorf("engine saw %d requests, want 1 (enginez answers from the recorded failure)", n)
+	}
+}
+
+// TestSpeechEmptyAudioCountsAsFailure pins the case the status line hides:
+// mlx-audio answers 200 and then fails mid-stream, sending no audio. The
+// proxy can't change the status any more, but health records the failure
+// once the body ends, so /enginez reports it without a probe.
+func TestSpeechEmptyAudioCountsAsFailure(t *testing.T) {
+	engine := newFakeEngine(t, http.StatusOK, "")
+	mux := newTestMux(t, engine.URL)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+		strings.NewReader(`{"input":"hi","voice":"af_heart"}`)))
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body = %q, want the engine's empty answer passed through", rec.Body.String())
+	}
+
+	_, state := getEnginez(t, mux)
+	if state.Status != tts.StatusDegraded || state.Kind != tts.KindUpstream ||
+		!strings.Contains(state.Reason, "empty audio") {
+		t.Errorf("state = %+v, want degraded with the empty-audio reason", state)
+	}
+	if n := engine.requests.Load(); n != 1 {
+		t.Errorf("engine saw %d requests, want 1 (enginez answers from the recorded failure)", n)
+	}
+}
+
+// TestSpeechBrokenStreamIsUpstream pins the failure this machine's engine
+// showed live: 200, then the stream breaks off. The engine is reachable, so
+// it must read as upstream, never network.
+func TestSpeechBrokenStreamIsUpstream(t *testing.T) {
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000") // promise audio, then hang up
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("RIFF"))
+	}))
+	defer engine.Close()
+	mux := newTestMux(t, engine.URL)
+
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+		strings.NewReader(`{"input":"hi","voice":"af_heart"}`)))
+
+	_, state := getEnginez(t, mux)
+	if state.Kind != tts.KindUpstream ||
+		!strings.Contains(state.Reason, "broke off the audio stream") {
+		t.Errorf("state = %+v, want an upstream broken-stream failure", state)
+	}
+}
+
+func TestSpeechUnreachableEngineIsNamed(t *testing.T) {
+	engine := newFakeEngine(t, http.StatusOK, "")
+	engine.Close()
+	mux := newTestMux(t, engine.URL)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+		strings.NewReader(`{"input":"hi","voice":"af_heart"}`)))
+
 	if rec.Code != http.StatusBadGateway {
-		t.Errorf("enginez with dead upstream: status = %d, want 502", rec.Code)
+		t.Errorf("status = %d, want 502", rec.Code)
+	}
+	var body speechError
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body %q: %v", rec.Body.String(), err)
+	}
+	if body.Error.Type != tts.KindNetwork ||
+		!strings.Contains(body.Error.Message, "not reachable") {
+		t.Errorf("error body = %+v, want a network failure naming the engine", body.Error)
 	}
 }
 

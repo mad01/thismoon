@@ -21,6 +21,8 @@ internal/cli/        cobra: root flags (root.go), serve, mcp (mcp.go),
 internal/web/        server.go (mux, TTS proxy, HTTP API), cors.go (the
                      cross-origin allowlist), markdown.go (goldmark render +
                      section split), assets/shell.html + assets/app.js
+internal/tts/        tts.Error (classified failure) and tts.Health (ok,
+                     degraded or down, with the reason), shared by every surface
 internal/ttsclient/  HTTP client for the engine (WAV over /v1/audio/speech)
 internal/playback/   afplay engine: sessions, flock, sentence split,
                      pause/resume via SIGSTOP/SIGCONT
@@ -47,14 +49,18 @@ engine and answers `OPTIONS` preflight locally (the engine does no CORS).
 `cors.go` decides who may fetch: an `Origin` on loopback or under `.this` is
 reflected back with `Vary: Origin`, and anything else gets no CORS headers,
 so pages on other local origins such as present briefings keep working while
-a page from the internet cannot reach the engine. A failed or 4xx/5xx proxied
-request emits an `error` event through `kit/notify`; successful synthesis is
-not logged. `GET /enginez` probes the engine behind the proxy, `GET /healthz`
-proves only that the page is up.
+a page from the internet cannot reach the engine. Every proxied outcome feeds
+one `tts.Health`: a failure is answered with a JSON error body naming the
+reason and emits an `error` event through `kit/notify`, and a 200 counts only
+once its body ends with audio, since the engine can fail after answering.
+`GET /enginez` reports that health, running a test synthesis when nothing
+fresh is recorded; `GET /healthz` proves only that the page is up.
 
 MCP path: `speak_text`/`speak_file` extract plain text from the input,
 split it into sentences (`playback.SplitSentences`, hand-rolled because Go
-`regexp` has no lookbehind), and start a worker goroutine that fetches each
+`regexp` has no lookbehind), synthesize the first sentence before replying (so
+a backend that cannot speak comes back as an `UNAVAILABLE` error reply), and
+start a worker goroutine that fetches each
 sentence's WAV through `internal/ttsclient`, writes it under the state
 directory's `audio/`, and plays it with `afplay`. Pause sends
 `SIGSTOP` to the afplay child and releases the lock; resume re-acquires it and

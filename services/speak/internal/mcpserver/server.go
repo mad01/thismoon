@@ -21,9 +21,6 @@ import (
 // Name is the MCP server name advertised to clients.
 const Name = "speak-aloud"
 
-// DefaultVoice is the Kokoro voice used when a tool omits one.
-const DefaultVoice = "af_heart"
-
 // Config locates what the tools need: the TTS engine they synthesize
 // against and the directory playback writes its audio and lock to.
 type Config struct {
@@ -44,7 +41,7 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 			"mcpserver: no doctor checks; speak_doctor is advertised to clients and must be registered",
 		)
 	}
-	engine := playback.New(ttsclient.New(cfg.TTSURL), DefaultVoice, cfg.StateDir)
+	engine := playback.New(ttsclient.New(cfg.TTSURL), speak.DefaultVoice, cfg.StateDir)
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Version: version},
 		&mcp.ServerOptions{Instructions: agentdoc.Instructions(speak.Facts())},

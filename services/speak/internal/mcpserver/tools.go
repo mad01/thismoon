@@ -20,7 +20,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "speak_text",
 		Description: "Speak the given text aloud on this machine's speakers using local TTS. " +
-			"Returns immediately; audio plays in the background. The text is split into sentences and played in order. " +
+			"Returns once the first sentence is synthesized; the rest plays in the background. The text is split into sentences and played in order. " +
+			"If the TTS backend cannot synthesize, the call fails with an UNAVAILABLE reply naming the reason and nothing plays. " +
 			"Keep the returned session id: it is the handle for speak_pause / speak_resume / speak_stop.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
@@ -32,7 +33,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "speak_file",
 		Description: "Read a markdown file aloud on this machine, section by section (a section is the content under each h1/h2). " +
-			"Returns immediately; audio plays in the background. Pass `sections` as comma-separated 1-based indices to read only some; omit for all.",
+			"Returns once the first sentence is synthesized; the rest plays in the background. Pass `sections` as comma-separated 1-based indices to read only some; omit for all. " +
+			"If the TTS backend cannot synthesize, the call fails with an UNAVAILABLE reply naming the reason and nothing plays.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
 			IdempotentHint:  false,
@@ -84,7 +86,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "speak_status",
-		Description: "Report whether the TTS engine is reachable and the current playback state (session, playing/paused/stopped/idle, position, lock holder).",
+		Description: "Report whether the TTS engine is reachable, the TTS health recorded from recent syntheses (ok, degraded or down, with the reason), and the current playback state (session, playing/paused/stopped/idle, position, lock holder).",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
@@ -97,7 +99,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 			"is the optional `speak serve` web surface up and running the installed build. " +
 			"Returns one result per check with `ok` false if any failed. " +
 			"Read-only: it probes, it changes nothing. " +
-			"Call this when another speak tool errors: tts-engine-reachable is the check that gates every tool here, " +
+			"Call this when another speak tool errors: tts-engine-reachable and tts-synthesis gate every tool here " +
+			"(tts-synthesis speaks a short test phrase, so it catches a running engine that cannot synthesize), " +
 			"while service-reachable and version-skew describe `speak serve`, which playback doesn't need.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
@@ -200,9 +203,12 @@ func (h *handlers) handleDoctor(
 }
 
 // reply returns the engine result as both a text content block (the message)
-// and structured output, so agents get a readable line and machine-parsable fields.
+// and structured output, so agents get a readable line and machine-parsable
+// fields. A failed result is flagged as a tool error, so a client treats
+// "speech could not start" as a failure rather than a reply to read past.
 func reply(res playback.Result) (*mcp.CallToolResult, playback.Result, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: res.Message}},
+		IsError: res.Failed,
 	}, res, nil
 }

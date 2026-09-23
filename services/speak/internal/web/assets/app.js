@@ -51,16 +51,12 @@
   var recentRow = Webkit.el('div', { class: 'recent-row' });
   recentRow.style.display = 'none';
 
-  // Engine-down callout. The <wk-read-aloud> reachability probe hits GET / on
-  // its endpoint — same-origin here, i.e. this very page — so play buttons
-  // appear even when the TTS engine behind the proxy is dead and every play
-  // click would fail silently. /enginez pings the actual upstream.
-  var engineCallout = Webkit.el('wk-callout', { variant: 'warn' }, [
-    'Read-aloud is unavailable — the TTS engine is not responding, so the play ' +
-    'buttons won’t work. Try ',
-    Webkit.el('code', {}, 't-man restart speak-tts'),
-    '.'
-  ]);
+  // Engine health callout. The <wk-read-aloud> reachability probe hits GET /
+  // on its endpoint — same-origin here, i.e. this very page — so play buttons
+  // appear even when the TTS engine behind the proxy cannot speak. /enginez
+  // reports the health a real test synthesis recorded, with the reason;
+  // the callout says what is wrong and what to try.
+  var engineCallout = Webkit.el('wk-callout', { variant: 'warn' }, '');
   engineCallout.style.display = 'none';
 
   // doc holds the rendered sections; errBox surfaces a failed read. Both live
@@ -116,10 +112,46 @@
   // ── Engine reachability ──
 
   function checkEngine() {
-    fetch('/enginez').then(function (r) {
-      engineCallout.style.display = r.ok ? 'none' : '';
-    }).catch(function () { engineCallout.style.display = ''; });
+    fetch('/enginez', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(renderEngine)
+      .catch(function () {
+        renderEngine({ status: 'down', kind: 'network', reason: 'speak itself is not responding' });
+      });
   }
+
+  // What to try next, by failure kind. Only the local engine has a known fix
+  // command; remote providers point at speak doctor.
+  function engineHint(state) {
+    if (state.provider === 'local' && state.kind === 'network') {
+      return ['Try ', Webkit.el('code', {}, 't-man restart speak-tts'), '.'];
+    }
+    if (state.kind === 'quota') return ['It usually clears on its own; try again shortly.'];
+    return ['Run ', Webkit.el('code', {}, 'speak doctor'), ' for details.'];
+  }
+
+  function renderEngine(state) {
+    if (!state || state.status === 'ok' || state.status === 'unknown') {
+      engineCallout.style.display = 'none';
+      return;
+    }
+    var what = state.status === 'degraded'
+      ? 'Read-aloud is degraded, so some play clicks may fail. '
+      : 'Read-aloud is unavailable, so the play buttons won’t work. ';
+    var source = state.provider ? ' (' + state.provider + (state.model ? ', ' + state.model : '') + ')' : '';
+    engineCallout.textContent = '';
+    engineCallout.appendChild(Webkit.el('strong', {}, what));
+    engineCallout.appendChild(document.createTextNode(
+      'Reason' + source + ': ' + (state.reason || state.status) + '. '));
+    engineHint(state).forEach(function (part) {
+      engineCallout.appendChild(typeof part === 'string' ? document.createTextNode(part) : part);
+    });
+    engineCallout.style.display = '';
+  }
+
+  // A failed play already recorded its reason server-side; re-check so the
+  // callout shows it next to the toast the component raised.
+  document.addEventListener('wk-read-aloud-error', checkEngine);
 
   // ── Render + mount ──
 
