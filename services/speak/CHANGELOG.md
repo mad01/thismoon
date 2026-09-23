@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/mad01/thismoon/compare/speak/v0.11.0...speak/v0.11.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **speak:** retry stalled synthesis and let the page retry failed parts ([#134](https://github.com/mad01/thismoon/issues/134)) ([1343357](https://github.com/mad01/thismoon/commit/1343357f564791ddc75c29e7e03092a77a787339))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/speak/v0.10.0...speak/v0.11.0) (2026-09-23)
 
 
