@@ -70,7 +70,9 @@ wk-callout { margin-top: 1rem; }
 /* Audio preparation: the page-level line above the sections and each
    section's badge, floated beside its play buttons. */
 .doc-audio { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; font-size: 0.8125rem; color: var(--text-2); }
-.doc-audio-reason { color: var(--red); }
+/* flex-basis 0: the reason takes only the room left on the line and ellipsizes
+   (full text in its title), so a long reason never pushes the button along. */
+.doc-audio-reason { color: var(--red); flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audio-btn {
   appearance: none; background: var(--chip-bg); border: 1px solid var(--border);
   border-radius: 6px; padding: 0.25rem 0.625rem; font-family: inherit;
@@ -98,7 +100,7 @@ wk-callout { margin-top: 1rem; }
   <div class="wk-help-row"><div class="wk-help-term">Read a document</div>
   <div class="wk-help-desc">Choose a markdown file and speak reads it aloud, section by section, over your speakers — a hands-free way to get through a long document by ear.</div></div>
   <div class="wk-help-row"><div class="wk-help-term">Prepared audio</div>
-  <div class="wk-help-desc">An upload is prepared in the background, so play starts from ready audio instead of waiting on the voice model. Each section shows how far that got, and once a section (or the whole page) is ready it can be downloaded as one audio file. Prepare all queues whatever is left.</div></div>
+  <div class="wk-help-desc">An upload is prepared in the background, so play starts from ready audio instead of waiting on the voice model. Each section shows how far that got, with a Retry button when a part failed, and once the whole page is ready it can be downloaded as one audio file. Retry failed or Prepare all on the audio line queues whatever is left.</div></div>
 </template>
 <main class="wrap"><div id="app"></div></main>
 <script src="/webkit/webkit.js"></script>

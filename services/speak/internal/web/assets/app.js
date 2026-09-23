@@ -66,8 +66,16 @@
   // doc holds the rendered sections; errBox surfaces a failed read. Both live
   // for the page lifetime and get their contents swapped on each upload.
   var docName = Webkit.el('div', { class: 'doc-name' }, '');
-  // Page-level audio line: parts ready, Prepare all, whole-page download.
-  var audioBar = Webkit.el('div', { class: 'doc-audio' });
+  // Page-level audio line: parts ready, the failure reason, Retry failed,
+  // Prepare all, and the whole-page download. Built once and updated in
+  // place (see renderAudioBar); the buttons are wired in the audio section.
+  var barLine = Webkit.el('span', {}, '');
+  var barReason = Webkit.el('span', { class: 'doc-audio-reason', hidden: '' }, '');
+  var retryFailedBtn = Webkit.el('button', { type: 'button', class: 'audio-btn', hidden: '' }, '');
+  var prepareAllBtn = Webkit.el('button', { type: 'button', class: 'audio-btn', hidden: '' }, 'Prepare all');
+  var pageDownload = Webkit.el('a', { class: 'audio-dl', download: '', hidden: '' }, 'Download page audio');
+  var audioBar = Webkit.el('div', { class: 'doc-audio' },
+    [barLine, barReason, retryFailedBtn, prepareAllBtn, pageDownload]);
   audioBar.style.display = 'none';
   var doc = Webkit.el('div', { class: 'doc' }, [docName, audioBar]);
   var errBox = Webkit.el('div', { class: 'upload-error' });
@@ -210,7 +218,8 @@
   //
   // serve synthesizes an upload's parts in the background into its cache, so
   // play replays cached audio. The page shows how far that got, per section
-  // and for the page, polling while parts are queued or generating.
+  // and for the page, polling while parts are queued, generating or waiting
+  // for serve's automatic retry.
 
   var POLL_MS = 2000;
   // The mounted doc: serve's id for it plus the markdown it came from. serve
@@ -273,7 +282,8 @@
     var c = current;
     if (!c) return;
     if (c.reposted) {
-      audioBar.textContent = 'Audio: speak no longer has this document; upload it again to prepare its audio.';
+      setText(barLine, 'Audio: speak no longer has this document; upload it again to prepare its audio.');
+      barReason.hidden = retryFailedBtn.hidden = prepareAllBtn.hidden = pageDownload.hidden = true;
       audioBar.style.display = '';
       return;
     }
@@ -290,61 +300,94 @@
     if (!current || !status || status.id !== current.id) return; // a doc since replaced
     renderAudioBar(status);
     (status.sections || []).forEach(renderSectionAudio);
-    var t = status.total || {};
-    if (t.queued || t.generating) schedulePoll();
+    if (inProgress(status.total || {})) schedulePoll();
   }
+
+  // Parts serve is still working on; a status counts object (total or one
+  // section). `retrying` is absent from an older serve.
+  function inProgress(c) {
+    return (c.queued || 0) + (c.generating || 0) + (c.retrying || 0);
+  }
+
+  // The audio line and badges are updated in place, never rebuilt: polling
+  // renders every 2s while parts are in progress, and a button replaced
+  // between mousedown and mouseup would swallow the click. Writing only on
+  // change also keeps an idle poll from touching the DOM at all.
+  function setText(el, text) {
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  function setTitle(el, title) {
+    if (el.title !== title) el.title = title;
+  }
+
+  retryFailedBtn.addEventListener('click', function () { prepare(retryFailedBtn, 0, true); });
+  prepareAllBtn.addEventListener('click', function () { prepare(prepareAllBtn, 0, false); });
 
   function renderAudioBar(status) {
     var t = status.total || {};
-    audioBar.textContent = '';
     if (!t.parts) { audioBar.style.display = 'none'; return; }
+    var working = (t.queued || 0) + (t.generating || 0);
     var line = 'Audio: ' + t.ready + ' of ' + t.parts + ' parts ready';
-    if (t.queued || t.generating) line += ', ' + (t.queued + t.generating) + ' preparing';
+    if (working) line += ', ' + working + ' preparing';
+    if (t.retrying) line += ', ' + t.retrying + ' retrying';
     if (t.idle) line += ', ' + t.idle + ' not prepared';
     if (t.failed) line += ', ' + t.failed + ' failed';
-    audioBar.appendChild(Webkit.el('span', {}, line));
-    if (t.failed && status.reason) {
-      audioBar.appendChild(Webkit.el('span', { class: 'doc-audio-reason' }, status.reason));
-    }
-    if (t.idle || t.failed) {
-      var btn = Webkit.el('button', { type: 'button', class: 'audio-btn' }, 'Prepare all');
-      btn.addEventListener('click', function () { prepareAll(btn); });
-      audioBar.appendChild(btn);
-    }
-    if (t.ready === t.parts) {
-      audioBar.appendChild(downloadLink('/doc/' + status.id + '/audio', 'Download page audio'));
-    }
+    setText(barLine, line);
+    // One line with an ellipsis, full text in the title, so a long reason
+    // never moves the buttons.
+    var reason = t.failed ? status.reason || '' : '';
+    setText(barReason, reason);
+    setTitle(barReason, reason);
+    barReason.hidden = !reason;
+    setText(retryFailedBtn, 'Retry failed (' + t.failed + ')');
+    retryFailedBtn.hidden = !t.failed;
+    prepareAllBtn.hidden = !t.idle;
+    pageDownload.setAttribute('href', '/doc/' + status.id + '/audio');
+    pageDownload.hidden = t.ready !== t.parts;
     audioBar.style.display = '';
   }
 
-  function prepareAll(btn) {
+  // Re-queues parts of one section, or of the whole doc when section is 0:
+  // the failed ones only (the Retry buttons, so a retry never starts paid
+  // synthesis of parts the reader left unprepared), or every idle and failed
+  // one (Prepare all).
+  function prepare(btn, section, failedOnly) {
     if (!current) return;
     var id = current.id;
+    var query = [];
+    if (section) query.push('section=' + section);
+    if (failedOnly) query.push('failed=1');
     btn.disabled = true;
-    docRequest('POST', '/doc/' + id + '/prepare')
-      .then(renderAudio)
+    docRequest('POST', '/doc/' + id + '/prepare' + (query.length ? '?' + query.join('&') : ''))
+      .then(function (status) {
+        btn.disabled = false;
+        renderAudio(status);
+      })
       .catch(function (err) {
+        btn.disabled = false;
         if (!current || current.id !== id) return;
         if (err.status === 404) { docGone(); return; }
-        btn.disabled = false;
         showError('Prepare audio: ' + err.message);
       });
   }
 
-  function downloadLink(href, label) {
-    return Webkit.el('a', { class: 'audio-dl', href: href, download: '' }, label);
-  }
-
   // A section's audio state, most useful fact first: work in progress, then
-  // a failure, then what is left unprepared.
+  // an automatic retry, then a failure, then what is left unprepared.
   function sectionState(sec) {
+    var ready = sec.ready + ' of ' + sec.parts + ' ready';
     if (sec.ready === sec.parts) return { variant: 'ok', text: 'audio ready' };
     if (sec.generating) {
       return { variant: 'info', text: 'generating ' + Math.min(sec.ready + 1, sec.parts) + ' of ' + sec.parts };
     }
-    if (sec.queued) return { variant: 'info', text: 'queued, ' + sec.ready + ' of ' + sec.parts + ' ready' };
-    if (sec.failed) return { variant: 'error', text: 'failed: ' + (sec.reason || 'unknown reason') };
-    if (sec.ready) return { variant: 'outline', text: sec.ready + ' of ' + sec.parts + ' ready' };
+    if (sec.queued) return { variant: 'info', text: 'queued, ' + ready };
+    if (sec.retrying) return { variant: 'warn', text: 'retrying, ' + ready };
+    if (sec.failed) {
+      // serve's reason already opens with "failed after 3 attempts".
+      var reason = sec.reason || 'unknown reason';
+      return { variant: 'error', text: /^failed\b/i.test(reason) ? reason : 'failed: ' + reason };
+    }
+    if (sec.ready) return { variant: 'outline', text: ready };
     return { variant: 'outline', text: 'not prepared' };
   }
 
@@ -352,21 +395,30 @@
   // fixation walks and read-aloud reads, and its text is a wk-badge, which
   // the read-aloud text walk skips. Created at mount, before <wk-read-aloud>
   // finishes probing, so the play buttons it inserts later float to its right.
+  function sectionAudioBox(el, section) {
+    var retry = Webkit.el('button', { type: 'button', class: 'audio-btn', hidden: '' }, 'Retry');
+    retry.addEventListener('click', function () { prepare(retry, section, true); });
+    var box = Webkit.el('div', { class: 'section-audio' }, [Webkit.el('wk-badge', {}, ''), retry]);
+    el.insertBefore(box, el.firstChild);
+    return box;
+  }
+
   function renderSectionAudio(sec) {
     var el = doc.querySelector('.doc-section[data-section="' + sec.section + '"]');
     if (!el) return;
     var box = el.querySelector(':scope > .section-audio');
     if (!sec.parts) { if (box) box.remove(); return; }
-    if (!box) {
-      box = Webkit.el('div', { class: 'section-audio' });
-      el.insertBefore(box, el.firstChild);
-    }
+    if (!box) box = sectionAudioBox(el, sec.section);
+    var badge = box.querySelector('wk-badge');
     var state = sectionState(sec);
-    box.textContent = '';
-    box.appendChild(Webkit.el('wk-badge', { variant: state.variant, title: state.text }, state.text));
-    if (sec.ready === sec.parts) {
-      box.appendChild(downloadLink('/doc/' + current.id + '/audio?section=' + sec.section, 'download'));
-    }
+    if (badge.getAttribute('variant') !== state.variant) badge.setAttribute('variant', state.variant);
+    setText(badge, state.text);
+    // The badge ellipsizes; its title keeps the full reason, including the
+    // last failure behind a retry.
+    setTitle(badge, sec.reason && state.variant !== 'error' && state.variant !== 'ok'
+      ? state.text + ' (last failure: ' + sec.reason + ')'
+      : state.text);
+    box.querySelector('.audio-btn').hidden = !sec.failed;
   }
 
   // The one path to the server: raw markdown in, rendered sections mounted,

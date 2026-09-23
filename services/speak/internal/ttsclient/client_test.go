@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -163,6 +164,7 @@ func TestSynthesizeClassifiesFailures(t *testing.T) {
 			c := New(
 				Config{Provider: "openrouter", BaseURL: srv.URL, APIKeyEnv: "OPENROUTER_API_KEY"},
 			)
+			c.retryDelay = 0
 			_, err := synthesize(t, c)
 			te, ok := errors.AsType[*tts.Error](err)
 			if !ok {
@@ -242,30 +244,51 @@ func stall(headers bool) http.HandlerFunc {
 	}
 }
 
+// counted counts the requests h serves.
+func counted(h http.Handler, n *atomic.Int32) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		h.ServeHTTP(w, r)
+	})
+}
+
 // TestSlowAnswerIsNotUnreachable pins the timeout classification: an
 // endpoint that took too long was reached, so the failure is upstream and
 // says how long speak waited, instead of blaming the network for a slow
-// model.
+// model. A remote request gets one retry, and a reason naming both
+// attempts when that stalls too; the local engine gets none.
 func TestSlowAnswerIsNotUnreachable(t *testing.T) {
 	cases := []struct {
-		name    string
-		local   bool
-		headers bool
-		want    string
+		name     string
+		local    bool
+		headers  bool
+		want     string
+		attempts int32
 	}{
-		{"remote, no answer", false, false, "openrouter did not answer within 50ms"},
-		{"remote, stalled audio", false, true, "openrouter did not answer within 50ms"},
+		{
+			"remote, no answer",
+			false,
+			false,
+			"openrouter did not answer within 50ms (2 attempts)",
+			2,
+		},
+		{
+			"remote, stalled audio", false, true,
+			"openrouter did not answer within 50ms (2 attempts)", 2,
+		},
 		{
 			"local, no answer", true, false,
-			"TTS engine did not answer within 50ms (check t-man logs speak-tts)",
+			"TTS engine did not answer within 50ms (check t-man logs speak-tts)", 1,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(stall(tc.headers))
+			var attempts atomic.Int32
+			srv := httptest.NewServer(counted(stall(tc.headers), &attempts))
 			defer srv.Close()
 			c := New(Config{Provider: "openrouter", Local: tc.local, BaseURL: srv.URL})
 			c.timeout = shortTimeout
+			c.retryDelay = 0
 
 			_, err := synthesize(t, c)
 			te, ok := errors.AsType[*tts.Error](err)
@@ -275,14 +298,83 @@ func TestSlowAnswerIsNotUnreachable(t *testing.T) {
 			if !strings.Contains(err.Error(), "speak doctor") {
 				t.Errorf("error = %q, want the doctor hint", err)
 			}
+			if n := attempts.Load(); n != tc.attempts {
+				t.Errorf("attempts = %d, want %d", n, tc.attempts)
+			}
+		})
+	}
+}
+
+// TestRetry pins which failures get the one retry: a remote request that
+// stalled or answered 5xx, which are random faults, and nothing on the
+// local engine, refused outright, or under a caller's deadline too short
+// for another whole attempt (a health probe allows 10s).
+func TestRetry(t *testing.T) {
+	serverError := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusBadGateway)
+	})
+	refused := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "no such voice", http.StatusBadRequest)
+	})
+	cases := []struct {
+		name     string
+		local    bool
+		deadline time.Duration // the caller's; zero means none
+		first    http.Handler  // the first attempt; later ones answer audio
+		wantErr  string        // empty: the retry's audio comes back
+		attempts int32
+	}{
+		{"remote stall, then audio", false, 0, stall(false), "", 2},
+		{"remote 5xx, then audio", false, 0, serverError, "", 2},
+		{"remote 4xx", false, 0, refused, "returned 400", 1},
+		{"local 5xx", true, 0, serverError, "returned 502", 1},
+		{"remote 5xx under a probe", false, 10 * time.Second, serverError, "returned 502", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			srv := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if attempts.Add(1) == 1 {
+						tc.first.ServeHTTP(w, r)
+						return
+					}
+					w.Header().Set("Content-Type", "audio/wav")
+					_, _ = w.Write([]byte("RIFFwavdata"))
+				}),
+			)
+			defer srv.Close()
+			c := New(Config{Provider: "openrouter", Local: tc.local, BaseURL: srv.URL})
+			c.retryDelay = 0
+			ctx := context.Background()
+			if tc.deadline > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.deadline)
+				defer cancel()
+			} else {
+				c.timeout = shortTimeout
+			}
+
+			audio, err := c.Synthesize(ctx, tts.Request{Text: "hello world", Voice: "af_heart"})
+			switch {
+			case tc.wantErr == "" && (err != nil || string(audio.Data) != "RIFFwavdata"):
+				t.Errorf("Synthesize = %q, %v; want the retry's audio", audio.Data, err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if n := attempts.Load(); n != tc.attempts {
+				t.Errorf("attempts = %d, want %d", n, tc.attempts)
+			}
 		})
 	}
 }
 
 // TestTimeoutNamesTheCallersDeadline: a caller with a shorter deadline (a
-// health probe) gets a reason naming its wait, not the client's.
+// health probe) gets a reason naming its wait, not the client's, and no
+// retry, since a second attempt could not finish before that deadline.
 func TestTimeoutNamesTheCallersDeadline(t *testing.T) {
-	srv := httptest.NewServer(stall(false))
+	var attempts atomic.Int32
+	srv := httptest.NewServer(counted(stall(false), &attempts))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
 	defer cancel()
@@ -293,6 +385,9 @@ func TestTimeoutNamesTheCallersDeadline(t *testing.T) {
 	if te, ok := errors.AsType[*tts.Error](err); !ok || te.Kind != tts.KindUpstream ||
 		te.Message != want {
 		t.Fatalf("error = %v, want upstream %q", err, want)
+	}
+	if n := attempts.Load(); n != 1 {
+		t.Errorf("attempts = %d, want no retry past the caller's deadline", n)
 	}
 }
 

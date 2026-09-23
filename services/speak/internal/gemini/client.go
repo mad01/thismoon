@@ -30,15 +30,17 @@ import (
 const maxErrorBody = 4 << 10
 
 // requestTimeout bounds one synthesis attempt, as ttsclient's remoteTimeout
-// does: the speech models answer with the whole clip at once, after 20
-// seconds and more for a part of a few hundred characters.
-const requestTimeout = 2 * time.Minute
+// does: the speech models answer with the whole clip at once, in 15 to 22
+// seconds for a part of up to about 700 characters with tails near 45, and
+// now and then a request stalls at random, so one that runs out is retried
+// rather than waited out.
+const requestTimeout = 90 * time.Second
 
 // retryDelay is the pause before the one retry. Google documents that the
 // speech models now and then return text instead of audio, failing the
 // request with a 500 at random, and says to retry. An answer that arrives
-// without audio is the same fault getting past the server, so it gets the
-// same retry.
+// without audio is the same fault getting past the server, and a stalled
+// request another random fault, so both get the same retry.
 const retryDelay = 500 * time.Millisecond
 
 // errRedirectRefused stops the client before it can re-send the request, and
@@ -78,31 +80,41 @@ func New(cfg Config) *Client {
 	}
 }
 
-// Synthesize returns playable audio for one chunk of text. A 5xx, or an
-// answer without audio, is retried once.
+// Synthesize returns playable audio for one chunk of text. A 5xx, an answer
+// without audio, or a request that timed out is retried once, when the
+// caller's context has room for another attempt.
 func (c *Client) Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error) {
 	body, err := json.Marshal(newGenerateRequest(req))
 	if err != nil {
 		return tts.Audio{}, fmt.Errorf("marshal generateContent request: %w", err)
 	}
 	audio, err := c.attempt(ctx, body)
-	if te, ok := errors.AsType[*tts.Error](err); !ok || !retryable(te) {
-		return audio, err
+	if !retryable(err) || !tts.WaitToRetry(ctx, c.timeout, c.retryDelay) {
+		return audio, hinted(err)
 	}
-	select {
-	case <-ctx.Done():
-		return tts.Audio{}, err
-	case <-time.After(c.retryDelay):
-	}
-	return c.attempt(ctx, body)
+	audio, retryErr := c.attempt(ctx, body)
+	return audio, hinted(tts.Retried(err, retryErr))
 }
 
-// retryable reports a failure worth one more try: a server error, or an
-// answer that carried no audio for no stated reason. A timeout is neither,
-// and is not retried: it already took the whole timeout.
-func retryable(err *tts.Error) bool {
-	return err.Kind == tts.KindUpstream && (err.Status >= http.StatusInternalServerError ||
-		errors.Is(err, errNoAudio))
+// retryable reports a failure worth one more try: a server error, an answer
+// that carried no audio for no stated reason, or running out of time.
+func retryable(err error) bool {
+	te, ok := errors.AsType[*tts.Error](err)
+	if !ok {
+		return false
+	}
+	return tts.TimedOut(te) || (te.Kind == tts.KindUpstream &&
+		(te.Status >= http.StatusInternalServerError || errors.Is(te, errNoAudio)))
+}
+
+// hinted points the reader at speak's operating doc when the API gave no
+// answer at all, unreachable or out of time.
+func hinted(err error) error {
+	te, ok := errors.AsType[*tts.Error](err)
+	if !ok || (te.Kind != tts.KindNetwork && !tts.TimedOut(te)) {
+		return err
+	}
+	return agentdoc.Hint(err, speak.Facts())
 }
 
 // attempt is one generateContent call.
@@ -128,7 +140,7 @@ func (c *Client) attempt(ctx context.Context, body []byte) (tts.Audio, error) {
 
 	res, err := c.http.Do(httpReq)
 	if err != nil {
-		return tts.Audio{}, agentdoc.Hint(c.unanswered(limit, err), speak.Facts())
+		return tts.Audio{}, c.unanswered(limit, err)
 	}
 	defer func() { _ = res.Body.Close() }()
 
@@ -139,7 +151,7 @@ func (c *Client) attempt(ctx context.Context, body []byte) (tts.Audio, error) {
 	var answer generateResponse
 	if err := json.NewDecoder(res.Body).Decode(&answer); err != nil {
 		if tts.TimedOut(err) {
-			return tts.Audio{}, agentdoc.Hint(c.slow(limit, err), speak.Facts())
+			return tts.Audio{}, c.slow(limit, err)
 		}
 		return tts.Audio{}, c.upstream(
 			res.StatusCode,

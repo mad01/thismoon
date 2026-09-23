@@ -41,9 +41,10 @@ const autoPrepareChars = 25_000
 const prepareWorkers = 3
 
 // prepareTimeout backstops one background synthesis. The provider clients
-// time out first (two minutes for a remote one); this only stops a synthesis
-// that somehow never returns from holding a worker forever.
-const prepareTimeout = 3 * time.Minute
+// give up first (a remote one makes two attempts of 90 seconds each); this
+// only stops a synthesis that somehow never returns from holding a worker
+// forever.
+const prepareTimeout = 4 * time.Minute
 
 // audioMaxAge is how long a browser may reuse a part's audio. A key names
 // its content, so the clip behind a URL never changes.
@@ -88,8 +89,9 @@ type PartCounts struct {
 	Ready      int `json:"ready"`
 	Generating int `json:"generating"`
 	Queued     int `json:"queued"`
+	Retrying   int `json:"retrying"` // failed, another attempt scheduled
 	Idle       int `json:"idle"`
-	Failed     int `json:"failed"`
+	Failed     int `json:"failed"` // out of attempts, or stopped by a shared failure
 }
 
 // SectionStatus is one section's audio state; Section is 1-based, matching
@@ -97,7 +99,10 @@ type PartCounts struct {
 type SectionStatus struct {
 	Section int `json:"section"`
 	PartCounts
-	Reason string `json:"reason"` // the section's last failure, or empty
+	// Reason is the section's last failure with its attempt count ("failed
+	// after 3 attempts: ..."), or, when nothing failed for good, the last
+	// failure being retried ("retrying after 1 attempt: ..."); else empty.
+	Reason string `json:"reason"`
 }
 
 // DocStatus is a document's audio state: what GET /doc/{id}, POST
@@ -107,7 +112,7 @@ type DocStatus struct {
 	Name     string          `json:"name"`
 	Total    PartCounts      `json:"total"`
 	Sections []SectionStatus `json:"sections"`
-	Reason   string          `json:"reason"` // the document's last failure, or empty
+	Reason   string          `json:"reason"` // as SectionStatus.Reason, over the document
 }
 
 func (c *PartCounts) count(state audiocache.State) {
@@ -119,6 +124,8 @@ func (c *PartCounts) count(state audiocache.State) {
 		c.Generating++
 	case audiocache.StateQueued:
 		c.Queued++
+	case audiocache.StateRetrying:
+		c.Retrying++
 	case audiocache.StateFailed:
 		c.Failed++
 	default:
@@ -131,6 +138,7 @@ func (c *PartCounts) add(o PartCounts) {
 	c.Ready += o.Ready
 	c.Generating += o.Generating
 	c.Queued += o.Queued
+	c.Retrying += o.Retrying
 	c.Idle += o.Idle
 	c.Failed += o.Failed
 }
@@ -267,11 +275,12 @@ func newDocServer(cfg Config, store *audiocache.Store) *docServer {
 		health:  cfg.Health,
 		store:   store,
 		prep: audiocache.NewPreparer(audiocache.PreparerConfig{
-			Store:   store,
-			Synth:   synth,
-			Health:  cfg.Health,
-			Workers: prepareWorkers,
-			Timeout: prepareTimeout,
+			Store:      store,
+			Synth:      synth,
+			Health:     cfg.Health,
+			Workers:    prepareWorkers,
+			Timeout:    prepareTimeout,
+			RetryDelay: cfg.retryDelay, // nil: the preparer's own backoff
 		}),
 	}
 	s.docs.forget = s.prep.Forget
@@ -374,15 +383,50 @@ func (s *docServer) status(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// prepare queues every part of a document that is not stored yet, retrying
-// failed ones, ahead of other documents' parts.
+// prepare queues every part of a document, or of the section named by
+// ?section=N, that is not stored yet, ahead of other documents' parts. With
+// ?failed=1 it queues only the failed ones: retrying what failed without
+// also starting the idle parts past the upload cap. Failed parts start over
+// with a fresh attempt count.
 func (s *docServer) prepare(w http.ResponseWriter, r *http.Request) {
 	d, ok := s.lookup(w, r)
 	if !ok {
 		return
 	}
-	s.docs.whileKept(d, func() { s.prep.Queue(items(d.allParts())) })
+	query := r.URL.Query()
+	parts, _, err := d.partsFor(query.Get("section"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	failedOnly, err := optionalBool(query.Get("failed"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed must be 1 or 0: "+err.Error())
+		return
+	}
+	s.docs.whileKept(d, func() {
+		if failedOnly {
+			parts = s.failedParts(parts)
+		}
+		s.prep.Queue(items(parts))
+	})
 	writeJSON(w, http.StatusOK, s.docStatus(d))
+}
+
+// failedParts is the parts whose last synthesis failed for good.
+func (s *docServer) failedParts(parts []Part) []Part {
+	return slices.DeleteFunc(slices.Clone(parts), func(p Part) bool {
+		state, _ := s.prep.State(p.Key)
+		return state != audiocache.StateFailed
+	})
+}
+
+// optionalBool parses a query flag; absent is false.
+func optionalBool(v string) (bool, error) {
+	if v == "" {
+		return false, nil
+	}
+	return strconv.ParseBool(v)
 }
 
 // lookup finds the document named in the path, answering 404 when serve
@@ -404,12 +448,13 @@ func (s *docServer) docStatus(d *document) DocStatus {
 		for _, p := range parts {
 			state, err := s.prep.State(p.Key)
 			sec.count(state)
-			if err != nil {
+			// A failure for good outranks one being retried.
+			if err != nil && (state == audiocache.StateFailed || sec.Failed == 0) {
 				sec.Reason = err.Error()
 			}
 		}
 		status.Total.add(sec.PartCounts)
-		if sec.Reason != "" {
+		if sec.Reason != "" && (sec.Failed > 0 || status.Total.Failed == 0) {
 			status.Reason = sec.Reason
 		}
 		status.Sections[i] = sec

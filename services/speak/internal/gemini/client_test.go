@@ -260,32 +260,103 @@ func TestRetryStopsWithTheContext(t *testing.T) {
 	}
 }
 
-// TestSlowAnswerIsNotRetried: a model that did not answer in time is an
-// upstream failure naming the wait, not a network one, and gets no retry,
-// since the one attempt already took the whole timeout.
-func TestSlowAnswerIsNotRetried(t *testing.T) {
+// stall answers nothing until the client gives up.
+func stall(w http.ResponseWriter, r *http.Request) {
+	// Only once the body is read does the server watch the connection, so
+	// only then does the client hanging up end the request context.
+	_, _ = io.Copy(io.Discard, r.Body)
+	<-r.Context().Done()
+}
+
+// TestOneRetryRecoversAStall: requests stall now and then at random, so a
+// timed-out attempt gets the one retry, and its audio comes back.
+func TestOneRetryRecoversAStall(t *testing.T) {
 	var attempts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			stall(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(audioAnswer("24000")))
+	}))
+	defer srv.Close()
+	c := testClient(srv.URL)
+	c.timeout = 50 * time.Millisecond
+
+	audio, err := synthesize(c)
+	if err != nil || audio.ContentType != tts.ContentTypeWAV || attempts.Load() != 2 {
+		t.Fatalf("Synthesize = %s, %v after %d attempts; want the retry's audio",
+			audio.ContentType, err, attempts.Load())
+	}
+}
+
+// TestTwoStallsNameBothAttempts: a model that did not answer in time is an
+// upstream failure naming the wait, not a network one, and when the retry
+// stalls too the reason says both attempts did.
+func TestTwoStallsNameBothAttempts(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
-		// Only once the body is read does the server watch the connection,
-		// so only then does the client hanging up end the request context.
-		_, _ = io.Copy(io.Discard, r.Body)
-		<-r.Context().Done()
+		stall(w, r)
 	}))
 	defer srv.Close()
 	c := testClient(srv.URL)
 	c.timeout = 50 * time.Millisecond
 
 	_, err := synthesize(c)
+	const want = "gemini did not answer within 50ms (2 attempts)"
 	te, ok := errors.AsType[*tts.Error](err)
-	if !ok || te.Kind != tts.KindUpstream || te.Message != "gemini did not answer within 50ms" {
-		t.Fatalf("err = %v, want upstream \"gemini did not answer within 50ms\"", err)
+	if !ok || te.Kind != tts.KindUpstream || te.Message != want {
+		t.Fatalf("err = %v, want upstream %q", err, want)
 	}
 	if !strings.Contains(err.Error(), "speak doctor") {
 		t.Errorf("err = %q, want the doctor hint", err)
 	}
-	if n := attempts.Load(); n != 1 {
-		t.Errorf("attempts = %d, want no retry after a timeout", n)
+	if n := attempts.Load(); n != 2 {
+		t.Errorf("attempts = %d, want 2", n)
+	}
+}
+
+// TestProbeDeadlineIsNotRetried: a caller whose deadline cannot fit another
+// whole attempt (a health probe allows 10s) gets one attempt, whether it
+// stalled into that deadline or failed fast. A stall is named by the
+// caller's own wait.
+func TestProbeDeadlineIsNotRetried(t *testing.T) {
+	serverError := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"code":500,"message":"Internal error encountered."}}`))
+	}
+	cases := []struct {
+		name     string
+		deadline time.Duration
+		handler  http.HandlerFunc
+		want     string
+	}{
+		{"stall", 600 * time.Millisecond, stall, "gemini did not answer within 1s"},
+		{"server error", 10 * time.Second, serverError, "gemini returned 500"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var attempts atomic.Int32
+			srv := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					attempts.Add(1)
+					tc.handler(w, r)
+				}),
+			)
+			defer srv.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), tc.deadline)
+			defer cancel()
+
+			_, err := testClient(srv.URL).Synthesize(ctx, tts.Request{Text: "hi", Voice: "Kore"})
+			if te, ok := errors.AsType[*tts.Error](err); !ok ||
+				!strings.HasPrefix(te.Message, tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+			if n := attempts.Load(); n != 1 {
+				t.Errorf("attempts = %d, want no retry the deadline cannot fit", n)
+			}
+		})
 	}
 }
 

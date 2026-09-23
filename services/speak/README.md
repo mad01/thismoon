@@ -7,10 +7,11 @@ the Gemini Developer API.
 
 Upload a markdown file, read it rendered in the browser, and play it section
 by section. speak synthesizes the document's audio in the background as soon
-as it is uploaded, so play starts from ready audio, and a finished section or
-the whole page can be downloaded as one audio file. The same service also
-handles `/v1/audio/speech` so other local tools (present briefings, for
-example) can request speech without touching the provider directly.
+as it is uploaded, retrying a part the provider fails on, so play starts
+from ready audio, and once every part is ready the whole page can be
+downloaded as one audio file. The same service also handles
+`/v1/audio/speech` so other local tools (present briefings, for example) can
+request speech without touching the provider directly.
 
 ## Providers
 
@@ -110,8 +111,8 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 | `GET /` | Upload form |
 | `GET /app.js` | Client-side renderer |
 | `POST /read` | Render and split a markdown file for playback and start synthesizing its audio |
-| `GET /doc/{id}` | Audio state of an uploaded document: parts ready, in progress, not prepared, failed |
-| `POST /doc/{id}/prepare` | Synthesize every part not ready yet |
+| `GET /doc/{id}` | Audio state of an uploaded document: parts ready, in progress, retrying, not prepared, failed |
+| `POST /doc/{id}/prepare[?section=N][&failed=1]` | Synthesize every part not ready yet, in the document or in section N; `failed=1` retries only the failed ones |
 | `GET /doc/{id}/audio[?section=N]` | The document, or one section, as one audio file once every part is ready |
 | `GET /audio/{key}` | One part's audio, synthesized first if it is not ready |
 | `POST /v1/audio/speech` | OpenAI-style speech through the active provider, cached on disk (CORS allowlist: loopback and `.this` origins); failures answer JSON naming the reason |

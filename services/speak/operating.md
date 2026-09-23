@@ -24,9 +24,8 @@ serve synthesizes an uploaded document ahead of playback: its parts (up to
 600 characters each, three at a time) go into a disk cache, up to about 30
 minutes of speech, and the page's Prepare all queues the rest. The newest
 upload goes first. Playing a part that is not ready moves it to the front and
-waits for it. A remote model
-answers a part in seconds to tens of seconds, all at once, so audio that was
-not prepared starts late.
+waits for it. A remote model answers a part in seconds to tens of seconds,
+all at once, so audio that was not prepared starts late.
 
 `speak mcp` does not go through serve or its cache. Playback lives in the mcp
 process itself: each tool call groups the text's sentences into parts (one
@@ -41,14 +40,15 @@ Disk state lives under the state directory (--state-dir, SPEAK_STATE_DIR):
 ~/.local/state/speak. serve writes `cache/`, one audio file per part, named by
 a hash of provider, model, voice, speed and text. At serve start and daily it
 deletes files unused for 30 days, then the least recently used until the
-cache is under 2 GiB; serve's startup log line names the directory. mcp writes per-part audio in `audio/` (reaped after 24 hours on
-start) and `playback.lock` plus a `.owner` sidecar naming the current lock
-holder.
+cache is under 2 GiB; serve's startup log line names the directory. mcp
+writes per-part audio in `audio/` (reaped after 24 hours on start) and
+`playback.lock` plus a `.owner` sidecar naming the current lock holder.
 
 serve keeps uploaded documents in memory only, the 32 most recent; an older
 one stops preparing. After a restart the open page posts its markdown again
-and prepared parts play from the cache. The mcp part queue, position, and pause state live only in the
-memory of the mcp process that started playback.
+and prepared parts play from the cache. The mcp part queue, position, and
+pause state live only in the memory of the mcp process that started
+playback.
 
 ## failure modes
 
@@ -71,17 +71,27 @@ turns its button red and raises a toast. speak_text and speak_file synthesize
 the first part before replying, so a dead engine comes back as an error
 reply starting UNAVAILABLE; speak_resume retries that session once fixed.
 
-A part serve failed to prepare shows its reason on the section's badge;
-playing it or Prepare all queues it again. After an auth, quota, network,
-config or model failure serve stops preparing in the background (queued parts
-go back to not prepared) rather than spend a request per part on the same
-error: fix the cause, then Prepare all. An upstream failure leaves the queue
-running. events.this gets at most one preparation-failure event a minute;
-the badge and health still show every failure.
+serve retries a part that failed upstream by itself, up to 3 attempts, 15s
+then 45s apart; meanwhile its section badge reads "retrying" and its title
+names the last failure. A part out of attempts is failed, with a reason
+starting "failed after 3 attempts", and its section gets a Retry button; the
+page's "Retry failed (n)" re-queues only the failed parts, Prepare all the
+failed and the not prepared ones, and playing a part also tries it again.
+After an auth, quota, network, config or model failure, or a part whose
+last attempt timed out too, serve stops preparing in the background (queued
+and retrying parts go back to not prepared) rather than spend requests on
+the same error; parts someone plays still run. Fix the cause, or for a
+stalling provider wait a while, then Prepare all. events.this gets at most
+one preparation-failure event a minute; the badge and health still show
+every failure.
 
-"did not answer within 2m0s" (30s on the local engine, less under a caller's
-shorter deadline) means the provider was reached but was slow, not that the
-network failed; "not reachable" is a failed connection.
+"did not answer within 1m30s" (30s on the local engine, less under a
+caller's shorter deadline) means the provider was reached but was slow, not
+that the network failed; "not reachable" is a failed connection. A remote
+request that timed out is retried once, and " (2 attempts)" at the end means
+it stalled twice in a row. Stalls are usually random: a background part
+then gets up to 3 attempts of its own, and playing the part again or
+pressing Retry usually works. A 10s probe (doctor, /enginez) never retries.
 
 FAIL config or the active provider: speak starts anyway and fails every
 synthesis with that reason, never falling back to another provider. Fix the
