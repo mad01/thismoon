@@ -29,6 +29,36 @@ const DefaultModel = "mlx-community/Kokoro-82M-bf16"
 // read-aloud component defaults to the same id.
 const DefaultVoice = "af_heart"
 
+// ConfigFileName is speak's provider configuration inside its config
+// directory (kit/confdir). ConfigEnv and ProviderEnv back --config and
+// --provider. A missing file means the one implicit local provider.
+const (
+	ConfigFileName = "config.yaml"
+	ConfigEnv      = "SPEAK_CONFIG"
+	ProviderEnv    = "SPEAK_PROVIDER"
+)
+
+// DefaultProvider is the provider block speak uses when neither --provider,
+// SPEAK_PROVIDER nor the config file's provider line names one: the local
+// Kokoro engine, which sends no text off the machine.
+const DefaultProvider = "local"
+
+// Defaults for the remote provider types. A config block of that type (or
+// named after it) inherits these unless it sets its own. API keys are only
+// ever read from the environment variable a block names.
+const (
+	OpenRouterBaseURL = "https://openrouter.ai/api"
+	OpenRouterKeyEnv  = "OPENROUTER_API_KEY"
+	OpenRouterModel   = "hexgrad/kokoro-82m" // the local engine's model, hosted
+	OpenAIBaseURL     = "https://api.openai.com"
+	OpenAIKeyEnv      = "OPENAI_API_KEY"
+	OpenAIModel       = "gpt-4o-mini-tts"
+	OpenAIVoice       = "alloy"
+	LiteLLMBaseURLEnv = "LITELLM_BASE_URL" // same variables humanizer reads
+	LiteLLMKeyEnv     = "LITELLM_API_KEY"
+	LiteLLMVoice      = "alloy"
+)
+
 // LegacyStateDir is the pre-XDG location of the playback engine's on-disk
 // state: per-sentence WAV files under audio/ and the cross-process
 // playback.lock. An install that has played audio there keeps using it,
@@ -55,7 +85,7 @@ func Facts() agentdoc.Facts {
 		BaseURL:       fmt.Sprintf("http://localhost:%d", DefaultPort),
 		StorePath:     LegacyStateDir,
 		HasDoctor:     true,
-		MCPNote:       "Tools play audio in this process via the local TTS engine (t-man agent speak-tts); the speak web service is separate and not required.",
+		MCPNote:       "Tools play audio in this process through the configured TTS provider (by default the local engine, t-man agent speak-tts); the speak web service is separate and not required.",
 		MCPDoctorTool: "speak_doctor",
 	}
 }

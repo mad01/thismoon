@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/mad01/thismoon/buildinfo"
+	"github.com/mad01/thismoon/services/speak/internal/config"
+	"github.com/mad01/thismoon/services/speak/internal/provider"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
@@ -23,13 +26,24 @@ var testInfo = buildinfo.Info{
 	BuildTime: "2026-08-13T09:00:00Z",
 }
 
-func newTestMux(t *testing.T, ttsURL string) *http.ServeMux {
+// newTestMux serves the page against a local provider whose engine is at
+// engineURL. The provider curates its voices, so no test reads the real
+// Hugging Face cache.
+func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
 	t.Helper()
-	mux, err := NewMux(ttsURL, testInfo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return mux
+	return muxFor(provider.New(context.Background(), config.Provider{
+		Name:    "local",
+		Type:    config.TypeLocal,
+		BaseURL: engineURL,
+		Model:   "mlx-community/Kokoro-82M-bf16",
+		Voice:   "af_heart",
+		Voices:  []string{"af_heart", "am_adam"},
+		Format:  "wav",
+	}))
+}
+
+func muxFor(p *provider.Provider) *http.ServeMux {
+	return NewMux(p, p.NewHealth(), testInfo)
 }
 
 // TestVersion pins the cross-tool build metadata contract: the four keys, the
@@ -138,7 +152,10 @@ func TestReadReturnsRenderedJSON(t *testing.T) {
 	}
 }
 
-func TestSpeechProxyForwardsAndAddsCORS(t *testing.T) {
+// TestSpeechAnswersAudioWithCORS pins the success path: the request goes to
+// the provider's endpoint and the audio comes back with exactly one CORS
+// header, ours (the engine's own must never leak through).
+func TestSpeechAnswersAudioWithCORS(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/audio/speech" {
 			t.Errorf("upstream path = %q, want /v1/audio/speech", r.URL.Path)
@@ -163,7 +180,7 @@ func TestSpeechProxyForwardsAndAddsCORS(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("proxy status = %d, want 200", rec.Code)
+		t.Fatalf("speech status = %d, want 200", rec.Code)
 	}
 	if got := rec.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 ||
 		got[0] != "http://present.this" {
@@ -171,6 +188,79 @@ func TestSpeechProxyForwardsAndAddsCORS(t *testing.T) {
 	}
 	if rec.Body.String() != "RIFFfake" {
 		t.Errorf("body = %q, want upstream audio passthrough", rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != tts.ContentTypeWAV {
+		t.Errorf("Content-Type = %q, want %s", ct, tts.ContentTypeWAV)
+	}
+}
+
+// TestSpeechMapsUnknownVoiceToDefault covers the read-aloud component on a
+// non-Kokoro provider: it sends af_heart everywhere, and a voice the
+// provider does not offer becomes the provider's default.
+func TestSpeechMapsUnknownVoiceToDefault(t *testing.T) {
+	var gotVoice string
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Voice string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotVoice = body.Voice
+		_, _ = w.Write([]byte("RIFFfake"))
+	}))
+	defer engine.Close()
+
+	rec := httptest.NewRecorder()
+	newTestMux(
+		t,
+		engine.URL,
+	).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+		strings.NewReader(`{"input":"hi","voice":"Kore"}`)))
+	if rec.Code != http.StatusOK || gotVoice != "af_heart" {
+		t.Errorf(
+			"status %d, provider got voice %q; want 200 with the default af_heart",
+			rec.Code,
+			gotVoice,
+		)
+	}
+}
+
+// TestSpeechRejectsBadRequestsWithoutBlamingTheProvider pins that a
+// malformed request is the caller's fault: 400, and health stays unknown.
+func TestSpeechRejectsBadRequestsWithoutBlamingTheProvider(t *testing.T) {
+	engine := newFakeEngine(t, http.StatusOK, "RIFFfake")
+	mux := newTestMux(t, engine.URL)
+	for _, body := range []string{`not json`, `{"voice":"af_heart"}`} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(
+			rec,
+			httptest.NewRequest(http.MethodPost, "/v1/audio/speech", strings.NewReader(body)),
+		)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("body %s: status = %d, want 400", body, rec.Code)
+		}
+	}
+	if n := engine.requests.Load(); n != 0 {
+		t.Errorf("engine saw %d requests, want none for bad requests", n)
+	}
+}
+
+// TestSpeechConfigProblemIs503 covers a provider that cannot be built: every
+// request answers 503 with the config reason, and /enginez reports it
+// without probing anything.
+func TestSpeechConfigProblemIs503(t *testing.T) {
+	mux := muxFor(provider.New(context.Background(), config.Provider{
+		Name: "openrouter", Type: config.TypeOpenRouter, Problem: "OPENROUTER_API_KEY is not set",
+	}))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
+		strings.NewReader(`{"input":"hi"}`)))
+	var body speechError
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusServiceUnavailable || body.Error.Type != tts.KindConfig ||
+		!strings.Contains(body.Error.Message, "OPENROUTER_API_KEY is not set") {
+		t.Errorf("speech = %d %+v, want 503 naming the missing key", rec.Code, body.Error)
+	}
+	_, state := getEnginez(t, mux)
+	if state.Status != tts.StatusDown || state.Kind != tts.KindConfig {
+		t.Errorf("enginez = %+v, want down with kind config", state)
 	}
 }
 
@@ -296,8 +386,11 @@ func TestSpeechFailureCarriesTheReason(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want the engine's 500", rec.Code)
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf(
+			"status = %d, want 502 (speak is the gateway; the browser's request was fine)",
+			rec.Code,
+		)
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://present.this" {
 		t.Errorf("ACAO = %q, want the allowlisted origin", got)
@@ -325,8 +418,7 @@ func TestSpeechFailureCarriesTheReason(t *testing.T) {
 
 // TestSpeechEmptyAudioCountsAsFailure pins the case the status line hides:
 // mlx-audio answers 200 and then fails mid-stream, sending no audio. The
-// proxy can't change the status any more, but health records the failure
-// once the body ends, so /enginez reports it without a probe.
+// browser gets a 502 naming it, and /enginez reports it without a probe.
 func TestSpeechEmptyAudioCountsAsFailure(t *testing.T) {
 	engine := newFakeEngine(t, http.StatusOK, "")
 	mux := newTestMux(t, engine.URL)
@@ -334,8 +426,8 @@ func TestSpeechEmptyAudioCountsAsFailure(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/audio/speech",
 		strings.NewReader(`{"input":"hi","voice":"af_heart"}`)))
-	if rec.Body.Len() != 0 {
-		t.Fatalf("body = %q, want the engine's empty answer passed through", rec.Body.String())
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "empty audio") {
+		t.Fatalf("speech = %d %q, want 502 naming the empty audio", rec.Code, rec.Body.String())
 	}
 
 	_, state := getEnginez(t, mux)

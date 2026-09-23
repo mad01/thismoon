@@ -13,62 +13,102 @@ import (
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
-func TestSynthesizeRequestsWAV(t *testing.T) {
+// localClient is a client for a stand-in local engine at url.
+func localClient(url string) *Client {
+	return New(Config{
+		Provider: "local",
+		Local:    true,
+		BaseURL:  url,
+		Model:    "mlx-community/Kokoro-82M-bf16",
+		Format:   "wav",
+	})
+}
+
+func synthesize(t *testing.T, c *Client) (tts.Audio, error) {
+	t.Helper()
+	return c.Synthesize(context.Background(), tts.Request{Text: "hello world", Voice: "af_heart"})
+}
+
+// TestSynthesizeSendsTheOpenAIRequest pins the request every
+// OpenAI-compatible endpoint gets: the configured model (the local engine
+// answers 422 without one), the format, the bearer key, and the speed.
+func TestSynthesizeSendsTheOpenAIRequest(t *testing.T) {
 	var got speechRequest
+	var auth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/audio/speech" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+		auth = r.Header.Get("Authorization")
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "audio/wav")
 		_, _ = w.Write([]byte("RIFFwavdata"))
 	}))
 	defer srv.Close()
 
-	data, err := New(srv.URL).Synthesize(context.Background(), "hello world", "af_heart")
+	c := New(Config{
+		Provider: "openrouter",
+		BaseURL:  srv.URL + "/api/",
+		APIKey:   "sk-test",
+		Model:    "hexgrad/kokoro-82m",
+		Format:   "pcm",
+	})
+	audio, err := c.Synthesize(context.Background(),
+		tts.Request{Text: "hello world", Voice: "af_heart", Speed: 1.25})
 	if err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
-	if got.ResponseFormat != "wav" {
-		t.Errorf("response_format = %q, want wav", got.ResponseFormat)
+	want := speechRequest{
+		Model: "hexgrad/kokoro-82m", Input: "hello world", Voice: "af_heart",
+		ResponseFormat: "pcm", Speed: 1.25,
 	}
-	if got.Input != "hello world" || got.Voice != "af_heart" {
-		t.Errorf("payload = %+v", got)
+	if got != want {
+		t.Errorf("request = %+v, want %+v", got, want)
 	}
-	if string(data) != "RIFFwavdata" {
-		t.Errorf("audio bytes = %q", data)
+	if auth != "Bearer sk-test" {
+		t.Errorf("Authorization = %q, want the bearer key", auth)
 	}
-}
-
-func TestSynthesizeEmptyBodyIsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK) // 200 with empty body — the ffmpeg-missing failure mode
-	}))
-	defer srv.Close()
-
-	if _, err := New(srv.URL).Synthesize(context.Background(), "x", "af_heart"); err == nil {
-		t.Fatal("expected error on empty audio, got nil")
+	if string(audio.Data) != "RIFFwavdata" || audio.ContentType != tts.ContentTypeWAV {
+		t.Errorf("audio = %q %s, want the WAV passed through", audio.Data, audio.ContentType)
 	}
 }
 
-func TestReachable(t *testing.T) {
+// TestSynthesizeWrapsPCM covers OpenRouter's pcm answer: raw samples with
+// the rate in the content type come back as a playable WAV.
+func TestSynthesizeWrapsPCM(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "audio/pcm; rate=24000; channels=1")
+		_, _ = w.Write([]byte{1, 0, 2, 0})
 	}))
 	defer srv.Close()
 
-	if !New(srv.URL).Reachable() {
-		t.Error("Reachable() = false for a live server")
+	audio, err := synthesize(t, localClient(srv.URL))
+	if err != nil {
+		t.Fatalf("Synthesize: %v", err)
 	}
-	srv.Close()
-	if New(srv.URL).Reachable() {
-		t.Error("Reachable() = true for a dead server")
+	if audio.ContentType != tts.ContentTypeWAV || !strings.HasPrefix(string(audio.Data), "RIFF") ||
+		len(audio.Data) != 44+4 {
+		t.Errorf("audio = %d bytes %s, want a 48-byte WAV", len(audio.Data), audio.ContentType)
+	}
+}
+
+func TestSynthesizeSendsNoKeyWhenNoneIsSet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization = %q, want none for a keyless proxy", got)
+		}
+		_, _ = w.Write([]byte("RIFFwav"))
+	}))
+	defer srv.Close()
+	if _, err := synthesize(t, localClient(srv.URL)); err != nil {
+		t.Fatal(err)
 	}
 }
 
 // TestSynthesizeClassifiesFailures pins the contract every surface builds
 // its "why" message on: each failure is a *tts.Error whose kind says what to
-// fix and whose message carries the engine's own reason.
+// fix and whose message carries the endpoint's own reason.
 func TestSynthesizeClassifiesFailures(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -82,7 +122,7 @@ func TestSynthesizeClassifiesFailures(t *testing.T) {
 			http.StatusUnauthorized,
 			`{"error":{"message":"bad key"}}`,
 			tts.KindAuth,
-			"bad key",
+			"bad key (check OPENROUTER_API_KEY)",
 		},
 		{
 			"missing model",
@@ -93,31 +133,41 @@ func TestSynthesizeClassifiesFailures(t *testing.T) {
 		},
 		{"rate limited", http.StatusTooManyRequests, "slow down", tts.KindQuota, "slow down"},
 		{
-			"engine crash",
+			"server error",
 			http.StatusInternalServerError,
-			`{"detail":"LocalEntryNotFoundError: Kokoro-82M"}`,
+			`{"detail":"boom"}`,
 			tts.KindUpstream,
-			"returned 500: LocalEntryNotFoundError: Kokoro-82M",
+			"openrouter returned 500: boom",
 		},
-		{"empty audio", http.StatusOK, "", tts.KindUpstream, "empty audio"},
+		{"empty audio", http.StatusOK, "", tts.KindUpstream, "openrouter returned empty audio"},
+		{"unplayable audio", http.StatusOK, "<html>", tts.KindUpstream, "audio speak cannot play"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/html")
 					w.WriteHeader(tc.status)
 					_, _ = w.Write([]byte(tc.body))
 				}),
 			)
 			defer srv.Close()
 
-			_, err := New(srv.URL).Synthesize(context.Background(), "x", "af_heart")
+			c := New(
+				Config{Provider: "openrouter", BaseURL: srv.URL, APIKeyEnv: "OPENROUTER_API_KEY"},
+			)
+			_, err := synthesize(t, c)
 			te, ok := errors.AsType[*tts.Error](err)
 			if !ok {
 				t.Fatalf("error = %v, want a *tts.Error", err)
 			}
-			if te.Kind != tc.wantKind {
-				t.Errorf("kind = %q, want %q", te.Kind, tc.wantKind)
+			if te.Kind != tc.wantKind || te.Provider != "openrouter" {
+				t.Errorf(
+					"kind = %q from %q, want %q from openrouter",
+					te.Kind,
+					te.Provider,
+					tc.wantKind,
+				)
 			}
 			if !strings.Contains(te.Message, tc.wantMsg) {
 				t.Errorf("message = %q, want it to contain %q", te.Message, tc.wantMsg)
@@ -126,37 +176,61 @@ func TestSynthesizeClassifiesFailures(t *testing.T) {
 	}
 }
 
-func TestSynthesizeUnreachableIsNetwork(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	url := srv.URL
-	srv.Close()
-
-	_, err := New(url).Synthesize(context.Background(), "x", "af_heart")
+// TestLocalFailuresPointAtTheEngine pins the local-only hints: a stopped
+// engine names its t-man agent, and a failure after answering points at its
+// log, while the doctor hint rides along on transport errors.
+func TestLocalFailuresPointAtTheEngine(t *testing.T) {
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	_, err := synthesize(t, localClient(dead.URL))
 	te, ok := errors.AsType[*tts.Error](err)
-	if !ok || te.Kind != tts.KindNetwork {
-		t.Fatalf("error = %v, want a network *tts.Error", err)
+	if !ok || te.Kind != tts.KindNetwork ||
+		!strings.Contains(te.Message, "t-man status speak-tts") {
+		t.Fatalf("error = %v, want a network error naming the speak-tts agent", err)
 	}
 	if !strings.Contains(err.Error(), "speak doctor") {
 		t.Errorf("error = %q, want the doctor hint", err)
 	}
-}
 
-// TestSynthesizeBrokenStreamIsUpstream pins that an engine which answers and
-// then breaks off counts as reachable-but-failing: doctor skips the
-// synthesis check for network errors, so a network kind here would hide the
-// failure behind "engine not reachable".
-func TestSynthesizeBrokenStreamIsUpstream(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Length", "1000")
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000") // promise audio, then hang up
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("RIFF"))
 	}))
+	defer broken.Close()
+	_, err = synthesize(t, localClient(broken.URL))
+	te, ok = errors.AsType[*tts.Error](err)
+	if !ok || te.Kind != tts.KindUpstream ||
+		!strings.Contains(te.Message, "broke off the audio stream") ||
+		!strings.Contains(te.Message, "t-man logs speak-tts") {
+		t.Fatalf("error = %v, want an upstream broken-stream error pointing at the engine log", err)
+	}
+}
+
+// TestSynthesizeRefusesRedirects keeps the bearer key from following a
+// redirect to another host.
+func TestSynthesizeRefusesRedirects(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.invalid/steal", http.StatusFound)
+	}))
+	defer srv.Close()
+	c := New(Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk-test"})
+	if _, err := synthesize(t, c); err == nil {
+		t.Fatal("Synthesize followed a redirect")
+	}
+}
+
+func TestReachable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
 	defer srv.Close()
 
-	_, err := New(srv.URL).Synthesize(context.Background(), "x", "af_heart")
-	te, ok := errors.AsType[*tts.Error](err)
-	if !ok || te.Kind != tts.KindUpstream ||
-		!strings.Contains(te.Message, "broke off the audio stream") {
-		t.Fatalf("error = %v, want an upstream broken-stream *tts.Error", err)
+	if err := localClient(srv.URL).Reachable(context.Background()); err != nil {
+		t.Errorf("Reachable = %v for a live server (any answer counts)", err)
+	}
+	srv.Close()
+	if err := localClient(srv.URL).Reachable(context.Background()); err == nil {
+		t.Error("Reachable = nil for a dead server")
 	}
 }

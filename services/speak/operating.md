@@ -1,26 +1,29 @@
 # operating speak
 
-speak turns text and markdown into audio with a local Kokoro TTS engine
-(mlx-audio). It is two independent surfaces in one binary: `speak serve` is a
-web page plus a CORS-adding reverse proxy for `/v1/audio/speech`, with audio
-playing in the browser; `speak mcp` is a stdio MCP server that plays audio on
-the machine's speakers with afplay. Both need the engine; neither needs the
-other.
+speak turns text and markdown into audio through a TTS provider: the local
+Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI or a LiteLLM
+proxy. It is two independent surfaces in one binary: `speak serve` is a web
+page plus a CORS-guarded `/v1/audio/speech`, with audio playing in the
+browser; `speak mcp` is a stdio MCP server that plays audio on the machine's
+speakers with afplay. Both need the provider; neither needs the other.
 
 ## how it runs
 
-`speak serve` listens on localhost (default {{.BaseURL}}) and reverse-proxies
-synthesis requests to the engine at http://127.0.0.1:8765 (--tts-url,
-SPEAK_TTS_URL). The engine is a separate process, supervised as the t-man
-agent speak-tts; serve only fronts it and holds no playback state. Machines
+`speak serve` listens on localhost (default {{.BaseURL}}) and synthesizes
+through the provider ~/.config/speak/config.yaml selects (`speak config`
+shows which, and why a block cannot be used). Without that file it is the
+local engine at http://127.0.0.1:8765, a separate process supervised as the
+t-man agent speak-tts. Remote providers read their key from an environment
+variable; speak-web and MCP hosts start through the recipe's speak-env.sh,
+which pulls it from the secrets file. Machines
 usually also route http://speak.this to serve via the local domain front door;
 if the localhost port answers but the .this host does not, the router is the
 problem, not this service.
 
 `speak mcp` does not go through serve. Playback lives in the mcp process
-itself: each tool call splits text into sentences, fetches one WAV per
-sentence from the engine, and plays it with afplay. The only dependency the
-two surfaces share is the engine.
+itself: each tool call splits text into sentences, fetches one clip per
+sentence from the provider, and plays it with afplay. The only dependency the
+two surfaces share is the provider.
 
 ## where state lives
 
@@ -34,13 +37,15 @@ state live only in the memory of the mcp process that started playback.
 
 ## failure modes
 
-Start with `speak doctor`: five checks, one line each, FAIL lines naming the
-cause. tts-engine-reachable pings the engine; tts-synthesis speaks a short
-test phrase through it, since a running engine can still fail to speak;
-store-readable opens the state dir; service-reachable and version-skew probe
-the optional web surface at {{.BaseURL}}. Only those last two failing leaves
-the MCP tools able to speak. The `speak_doctor` tool returns the same checks
-as JSON.
+Start with `speak doctor`, one line per check, FAIL lines naming the cause.
+config parses the file; one provider line per block fails for the active
+block's problem (an unset key, say) and only notes an inactive one's;
+tts-engine-reachable pings a local engine; tts-synthesis speaks a short test
+phrase, since a running provider can still fail to speak; voices checks the
+default voice is one the provider offers; store-readable opens the state
+dir; service-reachable and version-skew probe the optional web surface at
+{{.BaseURL}}. Only those last two failing leaves the MCP tools able to
+speak. The `speak_doctor` tool returns the same checks as JSON.
 
 Every surface reports one health state: ok, degraded (a failure that may pass
 on its own, fewer than three in a row) or down, with the reason. `GET
@@ -51,11 +56,16 @@ turns its button red and raises a toast. speak_text and speak_file synthesize
 the first sentence before replying, so a dead engine comes back as an error
 reply starting UNAVAILABLE; speak_resume retries that session once fixed.
 
-FAIL tts-engine-reachable: the engine sidecar is down, and nothing can
+FAIL config or the active provider: speak starts anyway and fails every
+synthesis with that reason, never falling back to another provider. Fix the
+file or set the variable the problem names; for a key, the secrets file
+speak-env.sh reads. `speak config` lists every block and its problem.
+
+FAIL tts-engine-reachable: the local engine sidecar is down, and nothing can
 synthesize. `t-man status speak-tts`, then `t-man restart speak-tts`.
 
-FAIL tts-synthesis: the engine answers but cannot speak; the detail carries
-its own reason. "broke off the audio stream" or "empty audio" means it failed
+FAIL tts-synthesis: the provider answers but cannot speak; the detail carries
+its own reason, and an auth failure names the key variable to check. "broke off the audio stream" or "empty audio" means it failed
 after answering 200, so the cause is only in `t-man logs speak-tts`. A spaCy
 download error there means the G2P warm-up never ran and the sandbox blocked
 the lazy fetch.
@@ -90,8 +100,8 @@ skews on its own.
 
 ## first moves
 
-1. `speak doctor`: engine, synthesis, state dir, web surface, and version skew in one pass
-2. FAIL tts-engine-reachable: `t-man restart speak-tts`, then `speak doctor` again
-3. FAIL tts-synthesis: `t-man logs speak-tts` for the engine's own error
+1. `speak doctor`: config, providers, synthesis, voices, state dir, web surface, version skew
+2. FAIL config or the active provider: `speak config`, then fix the file or the key it names
+3. FAIL tts-engine-reachable or tts-synthesis on local: `t-man restart speak-tts`, `t-man logs speak-tts`
 4. FAIL service-reachable or version-skew only: `t-man restart speak-web`; tools keep working meanwhile
 5. `speak_status` for tts_health, playback state, the lock holder, and the last worker error

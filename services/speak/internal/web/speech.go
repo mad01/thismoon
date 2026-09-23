@@ -1,28 +1,22 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/mad01/thismoon/kit/notify"
-	speak "github.com/mad01/thismoon/services/speak"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
-	"github.com/mad01/thismoon/services/speak/internal/ttsclient"
 )
 
-// maxErrorBody bounds how much of an engine error response is read for its
-// message before the body is replaced with speak's own.
-const maxErrorBody = 4 << 10
+// maxSpeechBody bounds a speech request body. One is a sentence of text plus
+// a few fields; 64 KiB leaves room for a long paragraph.
+const maxSpeechBody = 64 << 10
 
 // enginezMaxAge is how long a recorded synthesis outcome answers /enginez
 // before a fresh test synthesis runs. Real speech requests refresh it, so a
@@ -30,12 +24,27 @@ const maxErrorBody = 4 << 10
 const enginezMaxAge = time.Minute
 
 // probeTimeout bounds the /enginez test synthesis. Generous on purpose: the
-// engine's first synthesis after a restart loads the model.
+// local engine's first synthesis after a restart loads the model.
 const probeTimeout = 10 * time.Second
 
 // probeText is what the /enginez test synthesis speaks: short, so a probe
-// costs next to nothing on a metered backend.
+// costs next to nothing on a metered provider.
 const probeText = "Ready."
+
+// Speaker is what the speech endpoints synthesize through: the active
+// provider.
+type Speaker interface {
+	Synthesize(ctx context.Context, req tts.Request) (tts.Audio, error)
+}
+
+// speechRequest is the OpenAI-style body <wk-read-aloud> posts. model and
+// response_format are ignored: the config picks the model, and the answer
+// is always WAV or MP3.
+type speechRequest struct {
+	Input string  `json:"input"`
+	Voice string  `json:"voice"`
+	Speed float64 `json:"speed"`
+}
 
 // speechError is the body of a failed POST /v1/audio/speech, in the OpenAI
 // error shape ({"error": {"message", "type"}}) plus which provider failed and
@@ -52,142 +61,94 @@ type speechErrorDetail struct {
 	Health   tts.Status `json:"health"`
 }
 
-// newSpeechProxy fronts the engine's /v1/audio/speech. A good answer passes
-// through untouched; a failed one is replaced by a speechError body naming
-// the reason; every outcome is recorded in health.
-func newSpeechProxy(upstream *url.URL, health *tts.Health) *httputil.ReverseProxy {
-	proxy := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(upstream)
-			// Let the transport negotiate compression itself, so an error
-			// body arrives decoded and can be read for its message.
-			pr.Out.Header.Del("Accept-Encoding")
-		},
-	}
-	proxy.ModifyResponse = func(res *http.Response) error {
-		// The engine sets its own CORS headers; ours are already on the
-		// response, and duplicated Access-Control-Allow-Origin values make
-		// browsers reject the response outright. Strip the upstream's set.
-		for _, h := range []string{
-			"Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
-			"Access-Control-Allow-Headers", "Access-Control-Allow-Credentials",
-			"Access-Control-Max-Age",
-		} {
-			res.Header.Del(h)
-		}
-		if res.StatusCode < http.StatusBadRequest {
-			// Recorded when the body ends, not now: the engine can fail
-			// after answering 200 and send no audio at all. Success is
-			// recorded but not emitted: read-aloud fans out one request per
-			// sentence and would flood the event log.
-			res.Body = &recordingBody{ReadCloser: res.Body, done: func(n int64, err error) {
-				if err == nil && n > 0 {
-					health.Record(nil)
-					return
-				}
-				failure := ttsclient.FailedAfterAnswerError(res.StatusCode, err)
-				health.Record(failure)
-				notify.EmitEvent("speak", "error", "tts synthesis failed", failure.Message, nil)
-			}}
-			return nil
-		}
-		detail, _ := io.ReadAll(io.LimitReader(res.Body, maxErrorBody))
-		_ = res.Body.Close()
-		failure := tts.FromResponse(ttsclient.Provider, "TTS engine", res.StatusCode, detail)
-		health.Record(failure)
-		notify.EmitEvent("speak", "error", "tts synthesis failed", failure.Message,
-			map[string]string{
-				"status": strconv.Itoa(res.StatusCode),
-				"kind":   string(failure.Kind),
-			})
-		body := encodeSpeechError(failure, health.Snapshot())
-		res.Body = io.NopCloser(bytes.NewReader(body))
-		res.ContentLength = int64(len(body))
-		res.Header.Set("Content-Length", strconv.Itoa(len(body)))
-		res.Header.Set("Content-Type", "application/json")
-		return nil
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		if r.Context().Err() != nil {
-			// The browser went away (navigation, closed tab); that says
-			// nothing about the engine.
-			return
-		}
-		failure := ttsclient.UnreachableError(upstream.String(), err)
-		health.Record(failure)
-		notify.EmitEvent("speak", "error", "tts engine unreachable", err.Error(), nil)
-		writeSpeechError(w, http.StatusBadGateway, failure, health.Snapshot())
-	}
-	return proxy
+// speechHandler answers POST /v1/audio/speech: synthesize through the active
+// provider, record the outcome in health, and answer audio or a speechError
+// naming the reason.
+type speechHandler struct {
+	speaker Speaker
+	health  *tts.Health
 }
 
-// recordingBody passes a streamed audio body through, counting its bytes,
-// and calls done once: at EOF with the total, or with the error when the
-// engine breaks off the stream. A body closed early (the browser left
-// mid-clip) reports only if it carried audio: no bytes before an early close
-// says nothing about the engine.
-type recordingBody struct {
-	io.ReadCloser
-	n        int64
-	reported bool
-	done     func(n int64, err error)
-}
-
-func (b *recordingBody) Read(p []byte) (int, error) {
-	n, err := b.ReadCloser.Read(p)
-	b.n += int64(n)
-	switch {
-	case errors.Is(err, io.EOF):
-		b.report(nil)
-	case err != nil:
-		b.report(err)
-	}
-	return n, err
-}
-
-func (b *recordingBody) Close() error {
-	if b.n > 0 {
-		b.report(nil)
-	}
-	return b.ReadCloser.Close()
-}
-
-func (b *recordingBody) report(err error) {
-	if b.reported {
+func (h *speechHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var req speechRequest
+	body := http.MaxBytesReader(w, r.Body, maxSpeechBody)
+	if err := json.NewDecoder(body).Decode(&req); err != nil {
+		http.Error(w, "speech request must be JSON with an input field: "+err.Error(),
+			http.StatusBadRequest)
 		return
 	}
-	b.reported = true
-	b.done(b.n, err)
+	if req.Input == "" {
+		http.Error(w, "speech request has no input text", http.StatusBadRequest)
+		return
+	}
+	audio, err := h.speaker.Synthesize(r.Context(), tts.Request{
+		Text:  req.Input,
+		Voice: req.Voice,
+		Speed: req.Speed,
+	})
+	if err != nil {
+		if r.Context().Err() != nil {
+			// The browser went away (navigation, closed tab); that says
+			// nothing about the provider.
+			return
+		}
+		h.fail(w, err)
+		return
+	}
+	// Success is recorded but not emitted: read-aloud fans out one request
+	// per sentence and would flood the event log.
+	h.health.Record(nil)
+	w.Header().Set("Content-Type", audio.ContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(audio.Data)))
+	_, _ = w.Write(audio.Data)
 }
 
-// encodeSpeechError renders the speechError body for a classified failure.
-func encodeSpeechError(failure *tts.Error, state tts.State) []byte {
-	body, err := json.Marshal(speechError{Error: speechErrorDetail{
+// fail records a synthesis failure, archives it as an event, and answers
+// with its reason.
+func (h *speechHandler) fail(w http.ResponseWriter, err error) {
+	h.health.Record(err)
+	state := h.health.Snapshot()
+	failure, ok := errors.AsType[*tts.Error](err)
+	if !ok {
+		failure = &tts.Error{Kind: tts.KindUpstream, Provider: state.Provider, Message: err.Error()}
+	}
+	notify.EmitEvent("speak", "error", "tts synthesis failed", failure.Message,
+		map[string]string{"provider": state.Provider, "kind": string(failure.Kind)})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(failureStatus(failure.Kind))
+	body := speechError{Error: speechErrorDetail{
 		Message:  failure.Message,
 		Type:     failure.Kind,
-		Provider: failure.Provider,
+		Provider: state.Provider,
 		Model:    state.Model,
 		Health:   state.Status,
-	}})
-	if err != nil {
-		// Every field is a string; Marshal cannot fail on this shape.
-		panic("web: encode speech error: " + err.Error())
+	}}
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		log.Printf("speak: encode speech error: %v", err)
 	}
-	return body
 }
 
-func writeSpeechError(w http.ResponseWriter, status int, failure *tts.Error, state tts.State) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(encodeSpeechError(failure, state))
+// failureStatus is the status speak answers a failed synthesis with. speak is
+// a gateway to the provider, so a provider's own 401 or 404 is a 502 here:
+// the browser's request was fine. A rate limit stays 429 so clients know to
+// retry later, and a config problem is speak's own 503.
+func failureStatus(kind tts.Kind) int {
+	switch kind {
+	case tts.KindQuota:
+		return http.StatusTooManyRequests
+	case tts.KindConfig:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusBadGateway
+	}
 }
 
 // enginez answers GET /enginez with the health state, running a test
 // synthesis first when nothing has been recorded for enginezMaxAge. A ping
 // alone would call a running engine with a missing model healthy.
 type enginez struct {
-	engine *ttsclient.Client
-	health *tts.Health
+	speaker Speaker
+	health  *tts.Health
 
 	probeMu sync.Mutex // one probe at a time; callers queued behind it reuse its result
 }
@@ -217,9 +178,9 @@ func (e *enginez) refresh(ctx context.Context) {
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	_, err := e.engine.Synthesize(probeCtx, probeText, speak.DefaultVoice)
+	_, err := e.speaker.Synthesize(probeCtx, tts.Request{Text: probeText})
 	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
-		return // the caller left mid-probe; the outcome says nothing about the engine
+		return // the caller left mid-probe; the outcome says nothing about the provider
 	}
 	e.health.Record(err)
 }

@@ -4,26 +4,30 @@
 
 speak is two independent surfaces built from one component. `speak serve`, a
 t-man launchd agent on port 7425 behind `http://speak.this/`, serves the
-read-aloud web page and reverse-proxies `/v1/audio/speech` to the local Kokoro
-TTS engine (mlx-audio on `127.0.0.1:8765`); audio plays in the browser.
-`speak mcp` is a stdio MCP server that plays audio on the machine's speakers
-via `afplay`; it needs the engine but not serve. The two share only the
-engine, which is not part of this component: it is a recipe-managed sidecar in
-the consuming repo (docs/adr/0006), and the release artifact here is the Go
-program alone.
+read-aloud web page and an OpenAI-style `/v1/audio/speech`; audio plays in the
+browser. `speak mcp` is a stdio MCP server that plays audio on the machine's
+speakers via `afplay`; it needs the provider but not serve. Both synthesize
+through the TTS provider a config file selects: the local Kokoro engine
+(mlx-audio on `127.0.0.1:8765`, a recipe-managed sidecar in the consuming repo,
+docs/adr/0006) by default, or OpenRouter, OpenAI or a LiteLLM proxy. The
+release artifact here is the Go program alone.
 
 ## Structure
 
 ```
 cmd/speak/           entrypoint, delegates to internal/cli
-internal/cli/        cobra: root flags (root.go), serve, mcp (mcp.go),
-                     doctor (doctor.go), docs (docs.go), version (version.go)
-internal/web/        server.go (mux, TTS proxy, HTTP API), cors.go (the
+internal/cli/        cobra: root flags (root.go), serve, mcp (mcp.go), config
+                     (config.go), doctor (doctor.go), docs, version; provider.go
+                     builds the provider every subcommand uses
+internal/web/        server.go (mux, HTTP API), speech.go (speech handler,
+                     /enginez), cors.go (the
                      cross-origin allowlist), markdown.go (goldmark render +
                      section split), assets/shell.html + assets/app.js
-internal/tts/        tts.Error (classified failure) and tts.Health (ok,
-                     degraded or down, with the reason), shared by every surface
-internal/ttsclient/  HTTP client for the engine (WAV over /v1/audio/speech)
+internal/config/     the provider config file: a block per provider, one active
+internal/provider/   the active provider built from config: client and voices
+internal/tts/        tts.Error (classified failure), tts.Health (ok, degraded or
+                     down, with the reason), tts.Audio (WAV/MP3 normalization)
+internal/ttsclient/  HTTP client for OpenAI-compatible speech endpoints
 internal/playback/   afplay engine: sessions, flock, sentence split,
                      pause/resume via SIGSTOP/SIGCONT
 internal/mcpserver/  go-sdk MCP server: the 8 speak_* tools over playback
@@ -44,17 +48,20 @@ renders the markdown with goldmark (GFM), splits it into
 targets=".doc-section">`, whose play buttons fetch one WAV per sentence from
 `POST /v1/audio/speech` on the same origin.
 
-Proxy path: `internal/web/server.go` reverse-proxies `/v1/audio/speech` to the
-engine and answers `OPTIONS` preflight locally (the engine does no CORS).
-`cors.go` decides who may fetch: an `Origin` on loopback or under `.this` is
-reflected back with `Vary: Origin`, and anything else gets no CORS headers,
-so pages on other local origins such as present briefings keep working while
-a page from the internet cannot reach the engine. Every proxied outcome feeds
-one `tts.Health`: a failure is answered with a JSON error body naming the
-reason and emits an `error` event through `kit/notify`, and a 200 counts only
-once its body ends with audio, since the engine can fail after answering.
-`GET /enginez` reports that health, running a test synthesis when nothing
-fresh is recorded; `GET /healthz` proves only that the page is up.
+Speech path: `internal/web/speech.go` decodes the OpenAI-style request and
+synthesizes through the active provider (`internal/provider`, built once at
+startup from `internal/config`), which maps a voice it does not offer to its
+default and calls `internal/ttsclient` against the provider's
+`/v1/audio/speech`. Raw PCM answers get a WAV header (`tts.Normalize`).
+`OPTIONS` preflight is answered locally. `cors.go` decides who may fetch: an
+`Origin` on loopback or under `.this` is reflected back with `Vary: Origin`,
+and anything else gets no CORS headers, so pages on other local origins such
+as present briefings keep working while a page from the internet cannot use
+the endpoint. Every outcome feeds one `tts.Health`: a failure is answered
+with a JSON error body naming the reason and emits an `error` event through
+`kit/notify`. `GET /enginez` reports that health, running a test synthesis
+when nothing fresh is recorded; `GET /healthz` proves only that the page is
+up.
 
 MCP path: `speak_text`/`speak_file` extract plain text from the input,
 split it into sentences (`playback.SplitSentences`, hand-rolled because Go
@@ -86,15 +93,18 @@ Web: `GET /` (upload page), `GET /app.js`, `POST /read`,
 `POST /v1/audio/speech` (engine proxy), `GET /healthz`, `GET /enginez`,
 `GET /version`, `GET /webkit/` from the webkit Go package.
 
-CLI: `speak serve`, `speak mcp`, `speak doctor`, `speak docs`,
-`speak version [-o json]`.
+CLI: `speak serve`, `speak mcp`, `speak config [active|env] [-o json]`,
+`speak doctor`, `speak docs`, `speak version [-o json]`.
 
 MCP tools: `speak_text`, `speak_file`, `speak_pause`, `speak_resume`,
 `speak_stop`, `speak_voices`, `speak_status`, `speak_doctor`. Registering the
 MCP server with a client is machine-private wiring and stays in the consuming
 repo; `speak mcp --help` prints the snippet.
 
-Config: `--port`/`SPEAK_PORT` (default 7425), `--tts-url`/`SPEAK_TTS_URL`
-(default `http://127.0.0.1:8765`), and `--state-dir`/`SPEAK_STATE_DIR`. All
-three are root flags, so serve, mcp, and doctor resolve identically; see
-`config.md`.
+Config: `~/.config/speak/config.yaml` holds a block per provider and a
+`provider:` line picking one (`--config`/`SPEAK_CONFIG`,
+`--provider`/`SPEAK_PROVIDER`); keys come from env vars the block names.
+`--tts-url`/`SPEAK_TTS_URL` overrides the local engine's address,
+`--port`/`SPEAK_PORT` (default 7425) and `--state-dir`/`SPEAK_STATE_DIR` are
+as before. All are root flags, so serve, mcp, and doctor resolve identically;
+see `config.md`.
