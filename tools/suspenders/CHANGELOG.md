@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/mad01/thismoon/compare/suspenders/v0.11.0...suspenders/v0.11.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **suspenders:** let quoted variable references pass the generic rule ([#129](https://github.com/mad01/thismoon/issues/129)) ([1606e1a](https://github.com/mad01/thismoon/commit/1606e1afa1c0ef6d12279fd20357c12f0cefe636))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/suspenders/v0.10.0...suspenders/v0.11.0) (2026-09-09)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/mad01/thismoon/compare/speak/v0.9.0...speak/v0.10.0) (2026-09-23)
+
+
+### Features
+
+* **speak:** add the Gemini API as a provider ([#130](https://github.com/mad01/thismoon/issues/130)) ([aa799f7](https://github.com/mad01/thismoon/commit/aa799f7297cce6de3a2acefb1970fc92bb8e2555))
+* **speak:** choose the TTS provider from a config file ([#128](https://github.com/mad01/thismoon/issues/128)) ([703b6f2](https://github.com/mad01/thismoon/commit/703b6f274cb977b2eb95f02dd17f4a37059b602a))
+* **speak:** report TTS failures with their reason on every surface ([#127](https://github.com/mad01/thismoon/issues/127)) ([2a108f2](https://github.com/mad01/thismoon/commit/2a108f2cfdb1b6bc710b8661c9b078d76ba7c8da))
+
+
+### Bug Fixes
+
+* **speak:** probe serve on 127.0.0.1 and report unreadable files ([#131](https://github.com/mad01/thismoon/issues/131)) ([801fb83](https://github.com/mad01/thismoon/commit/801fb8367b2234d6efd9c5eb9c786452cb7f3f86))
+
 ## [0.9.0](https://github.com/mad01/thismoon/compare/speak/v0.8.1...speak/v0.9.0) (2026-09-12)
 
 
