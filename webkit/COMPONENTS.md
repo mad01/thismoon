@@ -104,7 +104,8 @@ until that section is played again.
   `<wk-badge variant="filter" active>All</wk-badge>`
 - `<wk-button variant="primary|ghost|danger">` — align to the header `.btn`/`.btn-primary`/
   `.btn-ghost`/`.btn-danger` already in webkit.css (share the same rules). `danger` fills
-  with the theme `--red` for destructive actions.
+  with the theme `--red` for destructive actions. `[hidden]` hides either one: the kit ships that
+  override because the shared `display` rule would otherwise win.
 - `<wk-search>` — search bar: styles a child `<input>` (+ optional `<button>`).
   Port csl/catalog `.search-bar`/`.search-input`/`.search-btn`. An optional first-child
   `<svg>` overlays the input's left edge as a leading icon; the input gains extra
