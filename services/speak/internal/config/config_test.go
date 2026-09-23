@@ -92,6 +92,7 @@ providers:
   openrouter: {}
   openai: {}
   litellm: {}
+  gemini: {}
   proxy2:
     type: litellm
     base_url_env: PROXY2_URL
@@ -111,6 +112,7 @@ providers:
 		"openrouter": "OPENROUTER_API_KEY is not set",
 		"openai":     "",
 		"litellm":    "LITELLM_BASE_URL is not set",
+		"gemini":     "neither GEMINI_API_KEY nor GOOGLE_API_KEY is set",
 		"proxy2":     "PROXY2_URL is not set",
 		"typo":       `unknown type "openrouterr"`,
 		"bad-url":    "is not an http(s) URL",
@@ -133,6 +135,41 @@ func TestLiteLLMReadsHumanizersVariables(t *testing.T) {
 	if p.BaseURL != "https://litellm.example.com" || !p.Remote ||
 		p.Problem != "model is required: name the model your LiteLLM proxy routes speech to" {
 		t.Errorf("litellm = %+v", p)
+	}
+}
+
+// TestGeminiReadsGooglesKeyNames pins the Gemini defaults and the key
+// lookup Google's SDKs use: GEMINI_API_KEY, else GOOGLE_API_KEY, with the
+// variable actually read named in the block.
+func TestGeminiReadsGooglesKeyNames(t *testing.T) {
+	cases := map[string]struct {
+		env     map[string]string
+		wantKey string
+		wantEnv string
+	}{
+		"gemini key": {map[string]string{"GEMINI_API_KEY": "g1"}, "g1", "GEMINI_API_KEY"},
+		"google key": {map[string]string{"GOOGLE_API_KEY": "g2"}, "g2", "GOOGLE_API_KEY"},
+		"both, gemini wins": {
+			map[string]string{"GEMINI_API_KEY": "g1", "GOOGLE_API_KEY": "g2"},
+			"g1",
+			"GEMINI_API_KEY",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := load(t, "", Options{Provider: "gemini"}, tc.env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := cfg.ActiveProvider()
+			if p.APIKey != tc.wantKey || p.APIKeyEnv != tc.wantEnv || p.Problem != "" {
+				t.Errorf("key from %s (problem %q), want %s", p.APIKeyEnv, p.Problem, tc.wantEnv)
+			}
+			if p.BaseURL != "https://generativelanguage.googleapis.com" || !p.Remote ||
+				p.Model != "gemini-3.1-flash-tts-preview" || p.Voice != "Kore" {
+				t.Errorf("gemini defaults = %+v", p)
+			}
+		})
 	}
 }
 
@@ -238,6 +275,10 @@ providers:
   openrouter: {}
   litellm:
     model: tts-1
+  gemini: {}
+  own-key:
+    type: gemini
+    api_key_env: MY_GEMINI_KEY
   proxy:
     type: litellm
     base_url_env: PROXY_URL
@@ -251,6 +292,8 @@ providers:
 		"local":      nil,
 		"openrouter": {"OPENROUTER_API_KEY"},
 		"litellm":    {"LITELLM_BASE_URL", "LITELLM_API_KEY"},
+		"gemini":     {"GEMINI_API_KEY", "GOOGLE_API_KEY"},
+		"own-key":    {"MY_GEMINI_KEY"},
 		"proxy":      {"PROXY_URL", "PROXY_KEY"},
 	}
 	for _, p := range cfg.Providers {

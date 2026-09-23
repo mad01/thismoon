@@ -40,10 +40,61 @@ const (
 	// TypeLiteLLM is a LiteLLM proxy, which routes to whatever backend it is
 	// configured for.
 	TypeLiteLLM Type = "litellm"
+	// TypeGemini is the Gemini Developer API's speech generation.
+	TypeGemini Type = "gemini"
 )
 
 // types lists the known types, in the order error messages name them.
-var types = []Type{TypeLocal, TypeOpenRouter, TypeOpenAI, TypeLiteLLM}
+var types = []Type{TypeLocal, TypeOpenRouter, TypeOpenAI, TypeLiteLLM, TypeGemini}
+
+// defaults is what a type fills in where its block is silent.
+type defaults struct {
+	baseURL     string   // the endpoint root
+	baseURLEnv  string   // read for the base URL instead, when set
+	keyEnvs     []string // variables tried in order for the API key
+	keyRequired bool
+	model       string // "" = the block must name one
+	voice       string
+	format      string // response_format to request, for OpenAI-style endpoints
+}
+
+var typeDefaults = map[Type]defaults{
+	TypeLocal: {
+		baseURL: speak.DefaultTTSURL,
+		model:   speak.DefaultModel,
+		voice:   speak.DefaultVoice,
+		format:  "wav",
+	},
+	TypeOpenRouter: {
+		baseURL:     speak.OpenRouterBaseURL,
+		keyEnvs:     []string{speak.OpenRouterKeyEnv},
+		keyRequired: true,
+		model:       speak.OpenRouterModel,
+		voice:       speak.DefaultVoice,
+		format:      "pcm", // OpenRouter offers mp3 or pcm, no wav
+	},
+	TypeOpenAI: {
+		baseURL:     speak.OpenAIBaseURL,
+		keyEnvs:     []string{speak.OpenAIKeyEnv},
+		keyRequired: true,
+		model:       speak.OpenAIModel,
+		voice:       speak.OpenAIVoice,
+		format:      "wav",
+	},
+	TypeLiteLLM: {
+		baseURLEnv: speak.LiteLLMBaseURLEnv,
+		keyEnvs:    []string{speak.LiteLLMKeyEnv}, // optional: a proxy may have no key
+		voice:      speak.LiteLLMVoice,
+		format:     "wav",
+	},
+	TypeGemini: {
+		baseURL:     speak.GeminiBaseURL,
+		keyEnvs:     []string{speak.GeminiKeyEnv, speak.GeminiFallbackKeyEnv},
+		keyRequired: true,
+		model:       speak.GeminiModel,
+		voice:       speak.GeminiVoice,
+	},
+}
 
 // File is the on-disk shape of the config file.
 type File struct {
@@ -164,51 +215,36 @@ func readFile(path string) (File, bool, error) {
 // resolve applies the type's defaults to a block and checks it is usable.
 func resolve(name string, b Block, opts Options) Provider {
 	p := Provider{
-		Name:      name,
-		Type:      Type(firstNonEmpty(b.Type, name)),
-		APIKeyEnv: b.APIKeyEnv,
-		Model:     b.Model,
-		Voice:     b.Voice,
-		Voices:    b.Voices,
+		Name:   name,
+		Type:   Type(firstNonEmpty(b.Type, name)),
+		Voices: b.Voices,
 	}
-	baseURL := firstNonEmpty(b.BaseURL, envValue(opts.Getenv, b.BaseURLEnv))
-	if b.BaseURL == "" && b.BaseURLEnv != "" {
-		p.Env = append(p.Env, b.BaseURLEnv)
-	}
-	switch p.Type {
-	case TypeLocal:
-		baseURL = firstNonEmpty(opts.TTSURL, baseURL, speak.DefaultTTSURL)
-		p.Model = firstNonEmpty(p.Model, speak.DefaultModel)
-		p.Voice = firstNonEmpty(p.Voice, speak.DefaultVoice)
-		p.Format = "wav"
-	case TypeOpenRouter:
-		baseURL = firstNonEmpty(baseURL, speak.OpenRouterBaseURL)
-		p.APIKeyEnv = firstNonEmpty(p.APIKeyEnv, speak.OpenRouterKeyEnv)
-		p.Model = firstNonEmpty(p.Model, speak.OpenRouterModel)
-		p.Voice = firstNonEmpty(p.Voice, speak.DefaultVoice)
-		p.Format = "pcm" // OpenRouter offers mp3 or pcm, no wav
-	case TypeOpenAI:
-		baseURL = firstNonEmpty(baseURL, speak.OpenAIBaseURL)
-		p.APIKeyEnv = firstNonEmpty(p.APIKeyEnv, speak.OpenAIKeyEnv)
-		p.Model = firstNonEmpty(p.Model, speak.OpenAIModel)
-		p.Voice = firstNonEmpty(p.Voice, speak.OpenAIVoice)
-		p.Format = "wav"
-	case TypeLiteLLM:
-		if b.BaseURL == "" && b.BaseURLEnv == "" {
-			baseURL = envValue(opts.Getenv, speak.LiteLLMBaseURLEnv)
-			p.Env = append(p.Env, speak.LiteLLMBaseURLEnv)
-		}
-		p.APIKeyEnv = firstNonEmpty(p.APIKeyEnv, speak.LiteLLMKeyEnv)
-		p.Voice = firstNonEmpty(p.Voice, speak.LiteLLMVoice)
-		p.Format = "wav"
-	default:
+	d, ok := typeDefaults[p.Type]
+	if !ok {
 		p.Problem = fmt.Sprintf("unknown type %q (set type: to one of %s)", p.Type, typeList())
 		return p
 	}
-	p.APIKey = envValue(opts.Getenv, p.APIKeyEnv)
-	if p.APIKeyEnv != "" {
-		p.Env = append(p.Env, p.APIKeyEnv)
+	p.Model = firstNonEmpty(b.Model, d.model)
+	p.Voice = firstNonEmpty(b.Voice, d.voice)
+	p.Format = d.format
+
+	baseURL := b.BaseURL
+	if baseURLEnv := firstNonEmpty(b.BaseURLEnv, d.baseURLEnv); baseURL == "" && baseURLEnv != "" {
+		baseURL = envValue(opts.Getenv, baseURLEnv)
+		p.Env = append(p.Env, baseURLEnv)
 	}
+	baseURL = firstNonEmpty(baseURL, d.baseURL)
+	if p.Type == TypeLocal && opts.TTSURL != "" {
+		baseURL = opts.TTSURL
+	}
+
+	keyEnvs := d.keyEnvs
+	if b.APIKeyEnv != "" {
+		keyEnvs = []string{b.APIKeyEnv}
+	}
+	p.Env = append(p.Env, keyEnvs...)
+	p.APIKeyEnv, p.APIKey = firstSet(opts.Getenv, keyEnvs)
+
 	if len(p.Voices) > 0 && b.Voice == "" {
 		p.Voice = p.Voices[0]
 	}
@@ -216,35 +252,51 @@ func resolve(name string, b Block, opts Options) Provider {
 		p.Voices = append([]string{p.Voice}, p.Voices...)
 	}
 	if baseURL == "" {
-		p.Problem = noBaseURL(p.Type, b)
+		p.Problem = noBaseURL(b, d)
 		return p
 	}
 	p.BaseURL, p.Remote, p.Problem = checkBaseURL(baseURL)
 	if p.Problem == "" {
-		p.Problem = missing(p)
+		p.Problem = missing(p, d, keyEnvs)
 	}
 	return p
 }
 
+// firstSet returns the first of names that holds a value, and the value.
+// When none does, it names the first, the one a fix should set.
+func firstSet(getenv func(string) string, names []string) (name, value string) {
+	for _, n := range names {
+		if v := envValue(getenv, n); v != "" {
+			return n, v
+		}
+	}
+	if len(names) == 0 {
+		return "", ""
+	}
+	return names[0], ""
+}
+
 // noBaseURL says where a block's base URL was expected to come from.
-func noBaseURL(t Type, b Block) string {
+func noBaseURL(b Block, d defaults) string {
 	switch {
 	case b.BaseURLEnv != "":
 		return b.BaseURLEnv + " is not set"
-	case t == TypeLiteLLM:
-		return speak.LiteLLMBaseURLEnv + " is not set (or set base_url)"
+	case d.baseURLEnv != "":
+		return d.baseURLEnv + " is not set (or set base_url)"
 	default:
 		return "no base URL: set base_url, or base_url_env naming a variable that holds it"
 	}
 }
 
-// missing names what a block of a remote type lacks, or "". A LiteLLM key
-// is optional: a proxy without a master key needs none.
-func missing(p Provider) string {
+// missing names what a usable block still lacks, or "".
+func missing(p Provider, d defaults, keyEnvs []string) string {
 	switch {
-	case p.Type == TypeLiteLLM && p.Model == "":
+	case p.Model == "": // only LiteLLM has no default model
 		return "model is required: name the model your LiteLLM proxy routes speech to"
-	case (p.Type == TypeOpenRouter || p.Type == TypeOpenAI) && p.APIKey == "":
+	case d.keyRequired && p.APIKey == "" && len(keyEnvs) > 1:
+		return "neither " + strings.Join(keyEnvs[:len(keyEnvs)-1], ", ") + " nor " +
+			keyEnvs[len(keyEnvs)-1] + " is set"
+	case d.keyRequired && p.APIKey == "":
 		return p.APIKeyEnv + " is not set"
 	}
 	return ""

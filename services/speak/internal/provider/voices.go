@@ -37,6 +37,16 @@ var openAIVoices = []string{
 	"nova", "onyx", "sage", "shimmer", "verse",
 }
 
+// geminiVoices is the Gemini API's prebuilt speech voice set, shared by its
+// speech models. The API has no endpoint listing them.
+var geminiVoices = []string{
+	"Achernar", "Achird", "Algenib", "Algieba", "Alnilam", "Aoede",
+	"Autonoe", "Callirrhoe", "Charon", "Despina", "Enceladus", "Erinome",
+	"Fenrir", "Gacrux", "Iapetus", "Kore", "Laomedeia", "Leda", "Orus",
+	"Puck", "Pulcherrima", "Rasalgethi", "Sadachbia", "Sadaltager",
+	"Schedar", "Sulafat", "Umbriel", "Vindemiatrix", "Zephyr", "Zubenelgenubi",
+}
+
 // resolveVoices builds a provider's voice list: the block's curated voices:
 // when set, else whatever the provider can tell us, else a catalog for the
 // model family, else the default voice alone.
@@ -56,6 +66,8 @@ func resolveVoices(ctx context.Context, p config.Provider) Voices {
 		v.List, err = openRouterVoices(ctx, p.BaseURL, p.Model)
 	case config.TypeOpenAI:
 		v.List, v.Source = openAIVoices, SourceCatalog
+	case config.TypeGemini:
+		v.List, v.Source = geminiVoices, SourceCatalog
 	case config.TypeLiteLLM:
 		v.Source = SourceDefault
 		v.Note = "LiteLLM does not list voices; set voices: on the block to offer more"

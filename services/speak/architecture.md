@@ -9,8 +9,8 @@ browser. `speak mcp` is a stdio MCP server that plays audio on the machine's
 speakers via `afplay`; it needs the provider but not serve. Both synthesize
 through the TTS provider a config file selects: the local Kokoro engine
 (mlx-audio on `127.0.0.1:8765`, a recipe-managed sidecar in the consuming repo,
-docs/adr/0006) by default, or OpenRouter, OpenAI or a LiteLLM proxy. The
-release artifact here is the Go program alone.
+docs/adr/0006) by default, or OpenRouter, OpenAI, a LiteLLM proxy or the
+Gemini Developer API. The release artifact here is the Go program alone.
 
 ## Structure
 
@@ -28,6 +28,7 @@ internal/provider/   the active provider built from config: client and voices
 internal/tts/        tts.Error (classified failure), tts.Health (ok, degraded or
                      down, with the reason), tts.Audio (WAV/MP3 normalization)
 internal/ttsclient/  HTTP client for OpenAI-compatible speech endpoints
+internal/gemini/     client for the Gemini API's generateContent speech
 internal/playback/   afplay engine: sessions, flock, sentence split,
                      pause/resume via SIGSTOP/SIGCONT
 internal/mcpserver/  go-sdk MCP server: the 8 speak_* tools over playback
@@ -51,8 +52,9 @@ targets=".doc-section">`, whose play buttons fetch one WAV per sentence from
 Speech path: `internal/web/speech.go` decodes the OpenAI-style request and
 synthesizes through the active provider (`internal/provider`, built once at
 startup from `internal/config`), which maps a voice it does not offer to its
-default and calls `internal/ttsclient` against the provider's
-`/v1/audio/speech`. Raw PCM answers get a WAV header (`tts.Normalize`).
+default and calls its backend client: `internal/ttsclient` against an
+OpenAI-style `/v1/audio/speech`, or `internal/gemini` against the Gemini
+API's `generateContent`. Raw PCM answers get a WAV header (`tts.Normalize`).
 `OPTIONS` preflight is answered locally. `cors.go` decides who may fetch: an
 `Origin` on loopback or under `.this` is reflected back with `Vary: Origin`,
 and anything else gets no CORS headers, so pages on other local origins such
@@ -68,7 +70,7 @@ split it into sentences (`playback.SplitSentences`, hand-rolled because Go
 `regexp` has no lookbehind), synthesize the first sentence before replying (so
 a backend that cannot speak comes back as an `UNAVAILABLE` error reply), and
 start a worker goroutine that fetches each
-sentence's WAV through `internal/ttsclient`, writes it under the state
+sentence's audio from the provider, writes it under the state
 directory's `audio/`, and plays it with `afplay`. Pause sends
 `SIGSTOP` to the afplay child and releases the lock; resume re-acquires it and
 sends `SIGCONT`; stop saves the sentence index so resume restarts the worker

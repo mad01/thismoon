@@ -1,8 +1,8 @@
 # operating speak
 
 speak turns text and markdown into audio through a TTS provider: the local
-Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI or a LiteLLM
-proxy. It is two independent surfaces in one binary: `speak serve` is a web
+Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM
+proxy or the Gemini API. It is two independent surfaces in one binary: `speak serve` is a web
 page plus a CORS-guarded `/v1/audio/speech`, with audio playing in the
 browser; `speak mcp` is a stdio MCP server that plays audio on the machine's
 speakers with afplay. Both need the provider; neither needs the other.

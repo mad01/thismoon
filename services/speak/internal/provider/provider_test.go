@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -143,6 +144,53 @@ func TestOpenRouterVoicesAreDiscovered(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// TestGeminiSpeaksThroughTheGeminiAPI pins the routing: a gemini block
+// synthesizes over generateContent (not the OpenAI-style endpoint), offers
+// the Gemini voice catalog, and swaps a voice outside it for the default.
+func TestGeminiSpeaksThroughTheGeminiAPI(t *testing.T) {
+	var voice string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, ":generateContent") {
+			t.Errorf("request went to %s, want generateContent", r.URL.Path)
+		}
+		var body struct {
+			GenerationConfig struct {
+				SpeechConfig struct {
+					VoiceConfig struct {
+						PrebuiltVoiceConfig struct {
+							VoiceName string `json:"voiceName"`
+						} `json:"prebuiltVoiceConfig"`
+					} `json:"voiceConfig"`
+				} `json:"speechConfig"`
+			} `json:"generationConfig"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		voice = body.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"inlineData":
+			{"mimeType":"audio/L16;codec=pcm;rate=24000","data":"AQACAA=="}}]}}]}`))
+	}))
+	defer srv.Close()
+
+	p := New(context.Background(), config.Provider{
+		Name: "gemini", Type: config.TypeGemini, BaseURL: srv.URL, APIKey: "k",
+		Model: "gemini-3.1-flash-tts-preview", Voice: "Kore",
+	})
+	v := p.Voices()
+	if v.Source != SourceCatalog || !slices.Contains(v.List, "Kore") || v.Note != "" {
+		t.Errorf("voices = %+v, want the Gemini catalog", v)
+	}
+	audio, err := p.Synthesize(context.Background(), tts.Request{Text: "hi", Voice: "af_heart"})
+	if err != nil || audio.ContentType != tts.ContentTypeWAV {
+		t.Fatalf("Synthesize = %s, %v", audio.ContentType, err)
+	}
+	if voice != "Kore" {
+		t.Errorf("voice sent = %q, want the Kokoro voice swapped for the default Kore", voice)
+	}
+	if checked, _ := p.Ping(context.Background()); checked {
+		t.Error("Ping checked a remote provider, want it skipped")
 	}
 }
 
