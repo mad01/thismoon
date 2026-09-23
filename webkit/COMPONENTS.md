@@ -29,7 +29,9 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
 - `brand`, `brand-href` (default `/`) — wordmark (wrap trailing `.`/`·` in `.dot`).
 - `back-label`, `back-href` — optional back link (present's "← All").
 - `title` — small muted label (present's "Brief").
-- `controls` — CSV, default `cmdk,font,fixation,size,reload,theme,help`.
+- `controls` — CSV, default `cmdk,font,fixation,size,reload,theme,help`. Leaving
+  `cmdk` out also turns the ⌘K shortcut off on that page: the picker lists local
+  `.this` sites, which a network-facing page has none of.
 - `page-width` — number, sets `--page-width` (default 1080).
 - `fixation-targets` — selector override.
 - `help` — a `?` control that opens a feature-guide modal (dismiss on X, Esc, or

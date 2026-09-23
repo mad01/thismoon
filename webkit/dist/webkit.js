@@ -2712,6 +2712,10 @@ var Webkit = (() => {
       const raw = this._attr("controls", "cmdk,font,fixation,size,reload,theme,help");
       return raw.split(",").map((s) => s.trim()).filter(Boolean);
     }
+    /** Whether this header lists the ⌘K site picker; the keyboard shortcut follows it. */
+    wantsCmdK() {
+      return this._controls().includes("cmdk");
+    }
     _render() {
       const brand = this._attr("brand");
       const brandHref = this._attr("brand-href", "/");
@@ -3150,12 +3154,17 @@ var Webkit = (() => {
   function openCmdK() {
     void cmdkOpen();
   }
+  function cmdkWanted() {
+    const headers = Array.from(document.querySelectorAll("wk-header"));
+    return headers.length === 0 || headers.some((h) => h instanceof WkHeader && h.wantsCmdK());
+  }
   var cmdkInstalled = false;
   function initCmdK() {
     if (cmdkInstalled) return;
     cmdkInstalled = true;
     document.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        if (!cmdkWanted()) return;
         e.preventDefault();
         if (cmdkIsOpen()) cmdkClose();
         else void cmdkOpen();
