@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/mad01/thismoon/compare/present/v1.4.1...present/v1.5.0) (2026-09-23)
+
+
+### Features
+
+* **present:** push live reload over server-sent events ([#125](https://github.com/mad01/thismoon/issues/125)) ([fb8a8cf](https://github.com/mad01/thismoon/commit/fb8a8cf0d0f435d965e8efade09d48243345c015))
+* **present:** serve version polls from an informer page cache ([#123](https://github.com/mad01/thismoon/issues/123)) ([bdf1118](https://github.com/mad01/thismoon/commit/bdf1118d22c7e3569b15ae5c5bf4edf72e0776b6))
+
 ## [1.4.1](https://github.com/mad01/thismoon/compare/present/v1.4.0...present/v1.4.1) (2026-09-23)
 
 
