@@ -85,6 +85,16 @@ highlight spans (the selection itself is the visual). Esc clears the
 selection, the float button, and any selection playback. One element on the
 page enables this even with no `targets` attribute.
 
+Failures: a clip that cannot be fetched or played ends the session and says
+why, never silently. The button turns red (`.wk-ra-error`, reason in its
+title) until the next click, a `<wk-toast variant="err">` names the reason
+(the element adds a `<wk-toast-host>` when the page has none), and the
+element dispatches `wk-read-aloud-error` on `document` with `{detail:
+{reason}}` so the page can react. The reason is the backend's
+`{"error": {"message"}}` body when it sends one (speak does), else the status
+code; an unreachable endpoint, empty audio, and a broken-off stream each get
+their own message.
+
 Caveat: toggling fixation mid-playback rewrites the section's innerHTML and
 detaches the live highlight spans — audio keeps playing but highlighting stops
 until that section is played again.

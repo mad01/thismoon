@@ -1545,6 +1545,7 @@ var Webkit = (() => {
   var DEFAULT_VOICE = "af_heart";
   var TTS_MODEL = "mlx-community/Kokoro-82M-bf16";
   var PROBE_TIMEOUT_MS = 1500;
+  var ERROR_TOAST_MS = 8e3;
   var SKIP_TAGS = /* @__PURE__ */ new Set([
     "PRE",
     "TABLE",
@@ -1682,14 +1683,58 @@ var Webkit = (() => {
     if (session) endSession(session);
   }
   async function fetchClip(cfg, text) {
-    const res = await fetch(cfg.endpoint + "/v1/audio/speech", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // wav: the engine encodes mp3 via ffmpeg, which may not be installed.
-      body: JSON.stringify({ model: TTS_MODEL, input: speakable(text), voice: cfg.voice, speed: cfg.speed, response_format: "wav" })
-    });
-    if (!res.ok) throw new Error("speak endpoint returned " + res.status);
-    return URL.createObjectURL(await res.blob());
+    let res;
+    try {
+      res = await fetch(cfg.endpoint + "/v1/audio/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // wav: the engine encodes mp3 via ffmpeg, which may not be installed.
+        body: JSON.stringify({ model: TTS_MODEL, input: speakable(text), voice: cfg.voice, speed: cfg.speed, response_format: "wav" })
+      });
+    } catch {
+      throw new Error("the speech service at " + (cfg.endpoint || location.origin) + " is not reachable");
+    }
+    if (!res.ok) throw new Error(await failureReason(res));
+    let blob;
+    try {
+      blob = await res.blob();
+    } catch {
+      throw new Error("the speech service broke off the audio mid-response");
+    }
+    if (!blob.size) throw new Error("the speech service returned empty audio");
+    return URL.createObjectURL(blob);
+  }
+  async function failureReason(res) {
+    try {
+      const body = await res.json();
+      const msg = body?.error?.message;
+      if (typeof msg === "string" && msg) return msg;
+    } catch {
+    }
+    return "the speech service returned " + res.status;
+  }
+  function failSession(s, err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn("wk-read-aloud:", reason);
+    endSession(s);
+    s.btn.classList.add("wk-ra-error");
+    s.btn.title = "Read-aloud failed: " + reason + ". Click to try again.";
+    s.btn.setAttribute("aria-label", "Read-aloud failed. Click to try again.");
+    showErrorToast("Read-aloud failed: " + reason);
+    document.dispatchEvent(new CustomEvent("wk-read-aloud-error", { detail: { reason } }));
+  }
+  function showErrorToast(text) {
+    let host = document.querySelector("wk-toast-host");
+    if (!host) {
+      host = document.createElement("wk-toast-host");
+      document.body.appendChild(host);
+    }
+    const toast = document.createElement("wk-toast");
+    toast.setAttribute("variant", "err");
+    toast.setAttribute("role", "alert");
+    toast.textContent = text;
+    host.appendChild(toast);
+    setTimeout(() => toast.remove(), ERROR_TOAST_MS);
   }
   function ensureClip(s, idx) {
     let p = s.pending[idx];
@@ -1701,6 +1746,8 @@ var Webkit = (() => {
   }
   function setBtn(btn, state) {
     btn.innerHTML = state === "playing" ? SVG_PAUSE : SVG_PLAY;
+    btn.classList.remove("wk-ra-error");
+    btn.title = btn.classList.contains("wk-ra-float") ? "Read selection aloud" : "Read aloud";
     btn.classList.toggle("active", state !== "idle");
     btn.setAttribute("aria-pressed", String(state === "playing"));
     btn.setAttribute("aria-label", state === "playing" ? "Pause reading" : "Read section aloud");
@@ -1741,8 +1788,7 @@ var Webkit = (() => {
     try {
       url = await ensureClip(s, idx);
     } catch (err) {
-      console.warn("wk-read-aloud:", err);
-      endSession(s);
+      if (!s.cancelled) failSession(s, err);
       return;
     }
     if (s.cancelled) return;
@@ -1761,8 +1807,7 @@ var Webkit = (() => {
     try {
       await s.audio.play();
     } catch (err) {
-      console.warn("wk-read-aloud: play failed", err);
-      endSession(s);
+      if (!s.cancelled) failSession(s, err);
     }
   }
   function newSession(section, btn, restartBtn, cfg, sentences, spans) {

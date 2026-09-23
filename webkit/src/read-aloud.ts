@@ -10,6 +10,8 @@ const DEFAULT_ENDPOINT = 'http://speak.this';
 const DEFAULT_VOICE = 'af_heart';
 const TTS_MODEL = 'mlx-community/Kokoro-82M-bf16';
 const PROBE_TIMEOUT_MS = 1500;
+// How long a failure toast stays up: long enough to read a provider's reason.
+const ERROR_TOAST_MS = 8000;
 
 // Subtrees that produce no speakable text. Block code and tables read terribly
 // as linear speech, so they are skipped rather than mangled. Inline <code> is
@@ -169,14 +171,67 @@ export function stopReadAloud(): void {
 }
 
 async function fetchClip(cfg: SpeakConfig, text: string): Promise<string> {
-  const res = await fetch(cfg.endpoint + '/v1/audio/speech', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // wav: the engine encodes mp3 via ffmpeg, which may not be installed.
-    body: JSON.stringify({ model: TTS_MODEL, input: speakable(text), voice: cfg.voice, speed: cfg.speed, response_format: 'wav' }),
-  });
-  if (!res.ok) throw new Error('speak endpoint returned ' + res.status);
-  return URL.createObjectURL(await res.blob());
+  let res: Response;
+  try {
+    res = await fetch(cfg.endpoint + '/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // wav: the engine encodes mp3 via ffmpeg, which may not be installed.
+      body: JSON.stringify({ model: TTS_MODEL, input: speakable(text), voice: cfg.voice, speed: cfg.speed, response_format: 'wav' }),
+    });
+  } catch {
+    throw new Error('the speech service at ' + (cfg.endpoint || location.origin) + ' is not reachable');
+  }
+  if (!res.ok) throw new Error(await failureReason(res));
+  let blob: Blob;
+  try {
+    blob = await res.blob();
+  } catch {
+    throw new Error('the speech service broke off the audio mid-response');
+  }
+  if (!blob.size) throw new Error('the speech service returned empty audio');
+  return URL.createObjectURL(blob);
+}
+
+/** The reason a speech request failed. speak answers failures with
+ * {"error": {"message"}} (the OpenAI error shape); any other body, from an
+ * older speak or another backend, falls back to the status code. */
+async function failureReason(res: Response): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    const msg = (body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof msg === 'string' && msg) return msg;
+  } catch { /* not JSON */ }
+  return 'the speech service returned ' + res.status;
+}
+
+/** Ends a session that failed and says why: the button shows an error state
+ * until the next click, a toast names the reason, and a wk-read-aloud-error
+ * event lets the page react (speak's page re-checks its engine banner). */
+function failSession(s: Session, err: unknown): void {
+  const reason = err instanceof Error ? err.message : String(err);
+  console.warn('wk-read-aloud:', reason);
+  endSession(s);
+  s.btn.classList.add('wk-ra-error');
+  s.btn.title = 'Read-aloud failed: ' + reason + '. Click to try again.';
+  s.btn.setAttribute('aria-label', 'Read-aloud failed. Click to try again.');
+  showErrorToast('Read-aloud failed: ' + reason);
+  document.dispatchEvent(new CustomEvent('wk-read-aloud-error', { detail: { reason } }));
+}
+
+/** Shows a red toast, reusing the page's <wk-toast-host> or adding one. */
+function showErrorToast(text: string): void {
+  let host = document.querySelector('wk-toast-host');
+  if (!host) {
+    host = document.createElement('wk-toast-host');
+    document.body.appendChild(host);
+  }
+  const toast = document.createElement('wk-toast');
+  toast.setAttribute('variant', 'err');
+  toast.setAttribute('role', 'alert');
+  toast.textContent = text;
+  host.appendChild(toast);
+  setTimeout(() => toast.remove(), ERROR_TOAST_MS);
 }
 
 function ensureClip(s: Session, idx: number): Promise<string> {
@@ -190,6 +245,8 @@ function ensureClip(s: Session, idx: number): Promise<string> {
 
 function setBtn(btn: HTMLButtonElement, state: 'idle' | 'playing' | 'paused'): void {
   btn.innerHTML = state === 'playing' ? SVG_PAUSE : SVG_PLAY;
+  btn.classList.remove('wk-ra-error');
+  btn.title = btn.classList.contains('wk-ra-float') ? 'Read selection aloud' : 'Read aloud';
   btn.classList.toggle('active', state !== 'idle');
   btn.setAttribute('aria-pressed', String(state === 'playing'));
   btn.setAttribute('aria-label', state === 'playing' ? 'Pause reading' : 'Read section aloud');
@@ -229,8 +286,7 @@ async function playFrom(s: Session, idx: number): Promise<void> {
   try {
     url = await ensureClip(s, idx);
   } catch (err) {
-    console.warn('wk-read-aloud:', err);
-    endSession(s);
+    if (!s.cancelled) failSession(s, err);
     return;
   }
   if (s.cancelled) return;
@@ -244,8 +300,7 @@ async function playFrom(s: Session, idx: number): Promise<void> {
     await s.audio.play();
   } catch (err) {
     // Most likely NotAllowedError: no user activation (autoplay policy).
-    console.warn('wk-read-aloud: play failed', err);
-    endSession(s);
+    if (!s.cancelled) failSession(s, err);
   }
 }
 

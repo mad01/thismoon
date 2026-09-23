@@ -1277,6 +1277,9 @@ wk-read-aloud { display: none; }
 .wk-ra-btn:hover { border-color: var(--border-hover); color: var(--text-1); }
 .wk-ra-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .wk-ra-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* Set when the last play failed (reason in the title and a toast); the next
+   click clears it. */
+.wk-ra-btn.wk-ra-error { border-color: var(--red); color: var(--red); }
 
 .wk-ra-sentence.wk-ra-active { background: var(--ra-highlight); border-radius: 3px; }
 
