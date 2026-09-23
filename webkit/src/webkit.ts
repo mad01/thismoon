@@ -158,6 +158,11 @@ class WkHeader extends HTMLElement {
     return raw.split(',').map(s => s.trim()).filter(Boolean) as Control[];
   }
 
+  /** Whether this header lists the ⌘K site picker; the keyboard shortcut follows it. */
+  wantsCmdK(): boolean {
+    return this._controls().includes('cmdk');
+  }
+
   private _render(): void {
     const brand       = this._attr('brand');
     const brandHref   = this._attr('brand-href', '/');
@@ -663,12 +668,22 @@ function cmdkClose(): void {
 /** Open the ⌘K site picker programmatically. */
 export function openCmdK(): void { void cmdkOpen(); }
 
+// The shortcut follows the header: a page whose <wk-header> leaves the cmdk
+// control out (a network-facing present instance has no local .this sites
+// to jump to) gets no picker from the keyboard either, and the browser keeps
+// its own ⌘K. A page with no header at all keeps the shortcut.
+function cmdkWanted(): boolean {
+  const headers = Array.from(document.querySelectorAll('wk-header'));
+  return headers.length === 0 || headers.some(h => h instanceof WkHeader && h.wantsCmdK());
+}
+
 let cmdkInstalled = false;
 function initCmdK(): void {
   if (cmdkInstalled) return;
   cmdkInstalled = true;
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      if (!cmdkWanted()) return;
       e.preventDefault();
       if (cmdkIsOpen()) cmdkClose(); else void cmdkOpen();
     }
