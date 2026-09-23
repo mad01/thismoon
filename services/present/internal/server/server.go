@@ -493,8 +493,11 @@ func (s *Server) dropSharedCopy(r *http.Request, p store.Page) error {
 	return nil
 }
 
+// handleVersion answers the live-reload poll every open tab makes. It reads
+// metadata only, so a poll never loads the page's bodies, and on a cached
+// store it never reaches the backend at all.
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	p, err := s.store.Get(r.Context(), r.PathValue("id"))
+	p, err := s.store.GetMeta(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return

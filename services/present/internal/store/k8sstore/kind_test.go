@@ -20,6 +20,29 @@ import (
 // needs a cluster. It installs the Page CRD (never removes it) and works in
 // a namespace of its own that it deletes afterwards.
 func TestKindClusterConformance(t *testing.T) {
+	client, ns := kindNamespace(t)
+	runConformance(t, func(t *testing.T) *fixture {
+		t.Helper()
+		return kindFixture(t, client, ns)
+	})
+}
+
+// TestKindClusterCacheConformance runs the page cache suite against the
+// same cluster, so the informer lists and watches a real API server.
+func TestKindClusterCacheConformance(t *testing.T) {
+	client, ns := kindNamespace(t)
+	runCacheConformance(t, func(t *testing.T) *fixture {
+		t.Helper()
+		f := kindFixture(t, client, ns)
+		startCache(t, f.st)
+		return f
+	})
+}
+
+// kindNamespace skips unless PRESENT_KIND_TEST is set, then installs the
+// CRD and creates a namespace of the test's own that cleanup deletes.
+func kindNamespace(t *testing.T) (dynamic.Interface, string) {
+	t.Helper()
 	if os.Getenv("PRESENT_KIND_TEST") == "" {
 		t.Skip("set PRESENT_KIND_TEST=1 with a kubeconfig pointing at a kind cluster")
 	}
@@ -46,25 +69,25 @@ func TestKindClusterConformance(t *testing.T) {
 	t.Cleanup(func() {
 		_ = client.Resource(nsGVR).Delete(context.Background(), ns, metav1.DeleteOptions{})
 	})
+	return client, ns
+}
 
-	runConformance(t, func(t *testing.T) *fixture {
-		t.Helper()
-		f := &fixture{now: time.Now().UTC().Truncate(time.Second)}
-		st, err := New(
-			Config{Client: client, Namespace: ns, Now: func() time.Time { return f.now }},
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Each subtest starts from an empty namespace so list counts hold.
-		pages, err := st.List(context.Background())
-		if err != nil {
-			t.Fatalf("list before subtest: %v", err)
-		}
-		for _, p := range pages {
-			_ = st.Delete(context.Background(), p.ID)
-		}
-		f.st = st
-		return f
-	})
+// kindFixture builds a store in ns and empties the namespace first, so each
+// subtest starts from no pages and list counts hold.
+func kindFixture(t *testing.T, client dynamic.Interface, ns string) *fixture {
+	t.Helper()
+	f := &fixture{now: time.Now().UTC().Truncate(time.Second)}
+	st, err := New(Config{Client: client, Namespace: ns, Now: func() time.Time { return f.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("list before subtest: %v", err)
+	}
+	for _, p := range pages {
+		_ = st.Delete(context.Background(), p.ID)
+	}
+	f.st = st
+	return f
 }

@@ -7,28 +7,70 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // SweepExpired deletes every ephemeral page whose expiry has passed at now
-// and reports how many it removed. It is idempotent across replicas: a
-// page another replica already deleted counts as gone.
+// and reports how many it removed. It judges pages from the page cache once
+// that has synced, else from a list against the API server, and deletes
+// each one only at the resourceVersion it was judged at. It is idempotent
+// across replicas: a page another replica already deleted counts as gone.
 func (s *Store) SweepExpired(ctx context.Context, now time.Time) (int, error) {
-	recs, err := s.list(ctx, LabelEphemeral+"=true")
+	pages, err := s.ephemeralPages(ctx)
 	if err != nil {
 		return 0, err
 	}
 	deleted := 0
-	for _, rec := range recs {
-		if !rec.Page.Expired(now) {
+	for _, cp := range pages {
+		if !cp.page.Expired(now) {
 			continue
 		}
-		err := s.pages().Delete(ctx, rec.Page.ID, metav1.DeleteOptions{})
-		if err != nil && !apierrors.IsNotFound(err) {
-			return deleted, fmt.Errorf("delete expired page %s: %w", rec.Page.ID, err)
+		gone, err := s.deleteAsSeen(ctx, cp)
+		if err != nil {
+			return deleted, err
 		}
-		deleted++
+		if gone {
+			deleted++
+		}
 	}
 	return deleted, nil
+}
+
+// ephemeralPages returns the ephemeral pages, from the cache once it has
+// synced and from the API server before that.
+func (s *Store) ephemeralPages(ctx context.Context) ([]*cachedPage, error) {
+	if s.cache.synced() {
+		return s.cache.ephemeral()
+	}
+	var out []*cachedPage
+	err := s.eachObject(ctx, LabelEphemeral+"=true", func(u *unstructured.Unstructured) error {
+		cp := newCachedPage(u)
+		if cp.err != nil {
+			return cp.err
+		}
+		out = append(out, cp)
+		return nil
+	})
+	return out, err
+}
+
+// deleteAsSeen deletes a page under a resourceVersion precondition, so the
+// API server refuses when the page changed after the sweeper looked at it,
+// which a cache trailing the watch could otherwise miss. It reports whether
+// the page is gone; a refused delete is left for the next sweep to judge.
+func (s *Store) deleteAsSeen(ctx context.Context, cp *cachedPage) (bool, error) {
+	rv := cp.ResourceVersion
+	err := s.pages().Delete(ctx, cp.Name, metav1.DeleteOptions{
+		Preconditions: &metav1.Preconditions{ResourceVersion: &rv},
+	})
+	switch {
+	case err == nil, apierrors.IsNotFound(err):
+		return true, nil
+	case apierrors.IsConflict(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("delete expired page %s: %w", cp.Name, err)
+	}
 }
 
 // RunSweeper announces itself, sweeps once immediately, and then sweeps

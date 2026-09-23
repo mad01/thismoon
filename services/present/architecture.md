@@ -40,7 +40,8 @@ internal/cli/        cobra command tree: serve, mcp, rerender, share, unshare,
 internal/store/      Store interface + FS, the filesystem implementation over
                      pages/<id>/; id generation; expiry wrapper
 internal/store/k8sstore/  Store over Page custom resources (dynamic client),
-                     the CRD (embedded, copied to deploy/base), the sweeper
+                     the CRD (embedded, copied to deploy/base), the page
+                     cache, the sweeper
 internal/author/     author keys: mint, hash, read from a bearer header, check
 internal/baseurl/    public base URL from X-Forwarded-* (middleware + derivation)
 internal/sharedclient/  client for a shared instance (create, replace, delete,
@@ -115,17 +116,25 @@ source file for that field; nothing else lands on disk.
 A shared instance in Kubernetes swaps the filesystem for `--store k8s`: one
 `Page` custom resource per page (`present.thismoon.mad01.dev/v1alpha1`,
 namespaced), holding the same fields plus the rendered artifacts and the
-canonical sources as strings in its spec. Replicas read and write it
-through the API server with client-go's dynamic client; a write is a read-modify-
+canonical sources as strings in its spec. Replicas read and write it through
+the API server with client-go's dynamic client; a write is a read-modify-
 write guarded by resourceVersion and retried on conflict, so two replicas
 never clobber each other. `version` is an explicit spec field rather than
 `metadata.generation`, because source saves would bump the generation and
-make open tabs reload for nothing. Ephemeral pages carry a label the
-sweeper selects on; each replica sweeps on an interval, and a delete of an
-already-gone object counts as done, so no leader is needed. A page is one
-object, so the store refuses a page over 1 MiB before it reaches the API
-server. The CRD is embedded in the binary and a test keeps
-`deploy/base/crd.yaml` byte-identical to it.
+make open tabs reload for nothing. Each replica also runs an informer over
+the namespace's pages. Its cache keeps metadata only, because a transform
+drops content, graph, and references before the informer stores an object,
+so its memory stays small however large pages get. Once synced it answers
+the version poll every open tab makes, so a poll costs no API request; the
+answer can trail a write made through another replica by the watch delay.
+Full reads and every write still go to the API server. Ephemeral pages carry
+a label the sweeper selects on; each replica sweeps on an interval, judging
+expiry from the cache, and deletes each expired page under a resourceVersion
+precondition, so a page that changed after the cache saw it survives until
+the next sweep. A delete of an already-gone object counts as done, so no
+leader is needed. A page is one object, so the store refuses a page over
+1 MiB before it reaches the API server. The CRD is embedded in the binary
+and a test keeps `deploy/base/crd.yaml` byte-identical to it.
 
 ## Deployment
 

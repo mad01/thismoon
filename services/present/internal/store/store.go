@@ -117,6 +117,10 @@ type Store interface {
 	Create(ctx context.Context, d Draft) (Page, error)
 	// Get loads a page by id. Returns ErrNotFound when it does not exist.
 	Get(ctx context.Context, id string) (Page, error)
+	// GetMeta loads a page's metadata only, without Content, Graph, or
+	// References. A cached store may answer from a copy that trails a
+	// concurrent write for a moment, so read with Get before writing.
+	GetMeta(ctx context.Context, id string) (Page, error)
 	// Update applies patch, bumps the version, and stamps UpdatedAt.
 	Update(ctx context.Context, id string, patch Patch) (Page, error)
 	// Delete removes a page and its sources. Irreversible.
@@ -215,21 +219,11 @@ func (s *FS) Create(_ context.Context, d Draft) (Page, error) {
 // that is not one present minted is not found either, which also keeps a
 // crafted id from escaping the pages directory.
 func (s *FS) Get(_ context.Context, id string) (Page, error) {
-	if !ValidID(id) {
-		return Page{}, ErrNotFound
+	p, err := s.readMeta(id)
+	if err != nil {
+		return Page{}, err
 	}
 	dir := s.pageDir(id)
-	metaBytes, err := os.ReadFile(filepath.Join(dir, metaFile))
-	if errors.Is(err, os.ErrNotExist) {
-		return Page{}, ErrNotFound
-	}
-	if err != nil {
-		return Page{}, fmt.Errorf("read meta: %w", err)
-	}
-	var p Page
-	if err := json.Unmarshal(metaBytes, &p); err != nil {
-		return Page{}, fmt.Errorf("decode meta: %w", err)
-	}
 	content, err := os.ReadFile(filepath.Join(dir, contentFile))
 	if err != nil {
 		return Page{}, fmt.Errorf("read content: %w", err)
@@ -252,6 +246,38 @@ func (s *FS) Get(_ context.Context, id string) (Page, error) {
 		}
 	}
 	p.HasDoc = s.hasSource(p.ID, docFile)
+	return p, nil
+}
+
+// GetMeta loads a page's metadata only, reading meta.json and nothing else.
+// Returns ErrNotFound when the page does not exist.
+func (s *FS) GetMeta(_ context.Context, id string) (Page, error) {
+	p, err := s.readMeta(id)
+	if err != nil {
+		return Page{}, err
+	}
+	p.HasDoc = s.hasSource(p.ID, docFile)
+	return p, nil
+}
+
+// readMeta decodes a page's meta.json. An invalid or unknown id is
+// ErrNotFound, which also keeps a crafted id from escaping the pages
+// directory.
+func (s *FS) readMeta(id string) (Page, error) {
+	if !ValidID(id) {
+		return Page{}, ErrNotFound
+	}
+	metaBytes, err := os.ReadFile(filepath.Join(s.pageDir(id), metaFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return Page{}, ErrNotFound
+	}
+	if err != nil {
+		return Page{}, fmt.Errorf("read meta: %w", err)
+	}
+	var p Page
+	if err := json.Unmarshal(metaBytes, &p); err != nil {
+		return Page{}, fmt.Errorf("decode meta: %w", err)
+	}
 	return p, nil
 }
 
