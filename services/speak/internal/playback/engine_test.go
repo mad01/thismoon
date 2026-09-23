@@ -80,6 +80,21 @@ func TestSpeakFileNotFound(t *testing.T) {
 	}
 }
 
+// TestSpeakFileUnreadable: a file speak may not read fails with the way
+// around it, not a misleading "not found".
+func TestSpeakFileUnreadable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secret.md")
+	writeFile(t, path, "# A\n\nAlpha.\n")
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	got := newTestEngine(t).SpeakFile(path, "", "")
+	if !got.Failed || !strings.HasPrefix(got.Message, "UNREADABLE | "+path) ||
+		!strings.Contains(got.Message, "speak_text") {
+		t.Errorf("res = %+v, want a failed UNREADABLE reply pointing at speak_text", got)
+	}
+}
+
 func TestSpeakFileSections(t *testing.T) {
 	e := newTestEngine(t)
 	dir := t.TempDir()

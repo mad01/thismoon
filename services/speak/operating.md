@@ -89,6 +89,10 @@ Pause releases the lock and resume re-acquires it; stop saves the sentence
 index for resume. Clear a stuck session by stopping it from the owning
 process or ending that process.
 
+UNREADABLE reply: speak_file found the file but may not read it (its mode,
+or macOS privacy protection on the MCP host). Read it yourself and pass the
+text to speak_text.
+
 ## version skew
 
 `speak version -o json` reports the build of the binary on PATH. `GET
