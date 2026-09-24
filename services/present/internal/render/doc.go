@@ -183,6 +183,13 @@ var (
 // inlineMd converts inline markdown to HTML. Input is plain text (will be
 // HTML-escaped), output is trusted HTML.
 func inlineMd(s string) template.HTML {
+	// The placeholder tokens below are NUL-delimited and swapped back at
+	// their first match, so a NUL in the input could forge a token and splice
+	// one generated piece into another's attribute. CommonMark's rule for
+	// NUL, replace it with U+FFFD, removes the only character a forgery
+	// needs; after this line every NUL in s is one this function wrote.
+	s = strings.ReplaceAll(s, "\x00", "�")
+
 	// Extract chips and links before escaping so their delimiters survive.
 	// We use placeholder tokens, escape the rest, then restore.
 	type placeholder struct {
@@ -214,8 +221,11 @@ func inlineMd(s string) template.HTML {
 		return fmt.Sprintf(`<wk-badge>%s</wk-badge>`, html.EscapeString(p[2]))
 	})
 
-	// Links: [text](url)
+	// Links: [text](url). A url outside the allowlist stays literal text.
 	replace(reLink, func(p []string) string {
+		if !LinkHrefAllowed(p[2]) {
+			return html.EscapeString(p[0])
+		}
 		return fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(p[2]), html.EscapeString(p[1]))
 	})
 
@@ -243,6 +253,32 @@ func inlineMd(s string) template.HTML {
 	s = reItalicPost.ReplaceAllString(s, `<em>$1</em>`)
 
 	return template.HTML(s)
+}
+
+// LinkHrefAllowed reports whether an inline `[text](href)` link in a prose
+// field may point at href: http, https, and mailto URLs, plus relative paths
+// and fragments (no scheme at all). Anything else, javascript: and data:
+// above all, renders as literal text instead of a link, whichever way the
+// Doc was authored. It governs inline links only: a `t: html` block is raw
+// passthrough by design and is not checked. Whitespace and control
+// characters are ignored when reading the scheme, because browsers ignore
+// them too and `java\tscript:` would otherwise slip through.
+func LinkHrefAllowed(href string) bool {
+	h := strings.Map(func(r rune) rune {
+		if r <= ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, href)
+	scheme, _, ok := strings.Cut(h, ":")
+	if !ok || strings.ContainsAny(scheme, "/?#") {
+		return true
+	}
+	switch strings.ToLower(scheme) {
+	case "http", "https", "mailto":
+		return true
+	}
+	return false
 }
 
 // langClass sanitizes a code block's language into a Prism class suffix:
@@ -410,7 +446,9 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{define "block-html"}}{{rawHTML .Text}}{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
-// names like JIRA render as words, not spelled-out acronyms.
+// names like JIRA render as words, not spelled-out acronyms. Code blocks are
+// left alone: their text is verbatim, and turning `a & b` into `a and b`
+// would change the program shown.
 func (d *Doc) normalize() {
 	d.Summary = normalizeNames(d.Summary)
 	d.Meta = normalizeNames(d.Meta)
@@ -421,6 +459,9 @@ func (d *Doc) normalize() {
 		d.Sections[i].Heading = normalizeNames(d.Sections[i].Heading)
 		for j := range d.Sections[i].Blocks {
 			b := &d.Sections[i].Blocks[j]
+			if b.T == "code" {
+				continue
+			}
 			b.Text = normalizeNames(b.Text)
 			b.Title = normalizeNames(b.Title)
 			b.Subtitle = normalizeNames(b.Subtitle)

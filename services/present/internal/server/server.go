@@ -142,9 +142,9 @@ func New(st store.Store, opts Options) *Server {
 // forwarded-header defaults and request logging. The page view, its JSON,
 // the version poll, delete, assets, and webkit are common, and so is the
 // version event stream whenever a watcher is configured; local mode adds
-// the index and its listing, shared mode the how-to root, the write API,
-// whoami, and the MCP endpoint. A route the mode does not register is a
-// plain 404.
+// the index, its listing, and the markdown import; shared mode the how-to
+// root, the write API, whoami, and the MCP endpoint. A route the mode does
+// not register is a plain 404.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /p/{id}", s.handlePage)
@@ -171,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /{$}", s.handleIndex)
 		mux.HandleFunc("GET /api/pages", s.handleAPIPages)
 		mux.HandleFunc("GET /index.js", handleIndexJS)
+		mux.HandleFunc("POST /api/import", s.handleImport)
 		if s.sharer != nil {
 			mux.HandleFunc("POST /p/{id}/share", s.handleShare)
 		}

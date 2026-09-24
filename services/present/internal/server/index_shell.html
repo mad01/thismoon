@@ -27,11 +27,21 @@
 .pager{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1.5rem}
 .pager-status{font-size:0.8125rem;color:var(--text-3);font-variant-numeric:tabular-nums}
 .pager-spacer{visibility:hidden}
+/* Import: the page header holds the button; the hidden file input below is
+   what it clicks. Dropping a file anywhere on the page imports it too, and
+   .drop-active outlines the list while a file is over it. */
+.header-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.header-row wk-page-header{flex:1;min-width:0}
+#import-button{flex:none;margin-top:1.5rem;cursor:pointer}
+#import-button[aria-busy="true"]{opacity:0.6;pointer-events:none}
+.wrap{border:2px dashed transparent;border-radius:12px;transition:border-color 0.15s ease}
+body.drop-active .wrap{border-color:var(--primary)}
 </style>
 </head>
 <body>
 <wk-header brand="present" title="Presentations"></wk-header>
 <div class="wrap"><div id="app"></div></div>
+<input type="file" id="import-file" accept=".md,.markdown,.txt" hidden>
 <wk-modal hidden id="delete-modal">
   <wk-modal-panel role="dialog" aria-modal="true" aria-labelledby="delete-heading">
     <wk-modal-head>
