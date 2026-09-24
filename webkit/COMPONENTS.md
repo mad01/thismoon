@@ -38,7 +38,7 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
   a click outside). It documents the controls this header renders, adds a
   read-aloud/speed section when `speed` is present, and appends the innerHTML of
   any `<template data-wk-help>` in the page so a consumer can add its own
-  sections (e.g. speak's file upload).
+  sections (e.g. speak's landing page).
 
 Light-DOM children it relocates into the bar:
 - `<a data-nav [class=active]>…</a>` → nav links area.
@@ -100,7 +100,7 @@ section; it hides again when playback ends.
   `--ra-highlight` background) and kept in view.
 - **Cached mode**: a section whose blocks carry
   `data-ra-chunk="<key> [<key> ...]"` (the keys of the pre-synthesized parts
-  that read the block, as speak serve renders them) plays the keys in the
+  that read the block, as prepared mode stamps them) plays the keys in the
   section's own `data-ra-parts` list (play order, repeats kept), or the
   blocks' keys in document order, each once, when that is absent. Each is
   fetched with `GET {endpoint}/audio/{key}`. Every block whose list holds the
@@ -172,8 +172,9 @@ Fixation: toggling it ends any playing session, since fixation rewrites the
 targets' innerHTML and would detach the live sentence spans.
 
 `Webkit.stopReadAloud()` ends any playing session. Removing the element does
-not, so a page that replaces its sections (speak's upload) calls it first;
-otherwise the session plays on from the detached section.
+not, so a page that replaces its sections (a client render swapping its
+content) calls it first; otherwise the session plays on from the detached
+section.
 
 ### Content components (CSS-only; define as no-op elements for semantics)
 - `<wk-page-header>` wrapping `<wk-title>` + `<wk-subtitle>` — hero/page header

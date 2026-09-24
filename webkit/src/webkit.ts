@@ -153,7 +153,7 @@ class WkHeader extends HTMLElement {
 
   private _controls(): Control[] {
     // `speed` (read-aloud playback speed) is intentionally NOT in the default —
-    // it only makes sense on pages with <wk-read-aloud> content (speak, present
+    // it only makes sense on pages with <wk-read-aloud> content (present
     // briefings). Those consumers opt in via controls="…,speed,…".
     const raw = this._attr('controls', 'cmdk,font,fixation,size,reload,theme,help');
     return raw.split(',').map(s => s.trim()).filter(Boolean) as Control[];
@@ -697,7 +697,7 @@ initCmdK();
 // The ? header control opens a <wk-modal> explaining the controls THIS header
 // renders (so a tool only documents what it shows), plus a read-aloud/speed
 // section when the page has read-aloud, plus any consumer-provided
-// <template data-wk-help> sections (e.g. speak's file upload). Content is
+// <template data-wk-help> sections (e.g. speak's landing page). Content is
 // rebuilt on each open. Dismiss on X, Escape, or a click outside the panel —
 // the same affordances as the ⌘K overlay.
 
