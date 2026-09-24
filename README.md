@@ -17,11 +17,12 @@ notes, and dashboards stay on your disk.
 
 One of the things I use daily is the reading support. The shared web chrome
 has a fixation toggle that bolds the first half of every word to pull your
-eye along the line, and present and speak can read a page aloud section by
-section at a speed you pick. For a long briefing that combination is easier
-on the eyes and the attention, and it genuinely helps if you read with
-dyslexia. speak extends it to files: hand it a markdown document and it reads
-the whole thing aloud, so you can take in a long doc by ear.
+eye along the line, and present can read a page aloud section by section at
+a speed you pick, with speak preparing the audio ahead of you. For a long
+briefing that combination is easier on the eyes and the attention, and it
+genuinely helps if you read with dyslexia. speak's MCP tools extend it to
+agents: an agent can hand it a markdown file and it reads the whole thing
+aloud on the speakers, so you can take in a long doc by ear.
 
 This is a personal project in the plainest sense: each tool grew out of a
 problem I hit building my own things — an agent that pushed straight to

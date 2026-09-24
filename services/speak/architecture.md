@@ -4,8 +4,10 @@
 
 speak is two independent surfaces built from one component. `speak serve`, a
 t-man launchd agent on port 7425 behind `http://speak.this/`, serves the
-read-aloud web page and an OpenAI-style `/v1/audio/speech`; audio plays in the
-browser, mostly from a disk cache serve fills ahead of playback. `speak mcp`
+document audio routes present pages register with and play from, an
+OpenAI-style `/v1/audio/speech`, and a static landing page; audio plays in
+the browser on present, mostly from a disk cache serve fills ahead of
+playback. `speak mcp`
 is a stdio MCP server that plays audio on the machine's speakers via
 `afplay`; it needs the provider but not serve. Both synthesize
 through the TTS provider a config file selects: the local Kokoro engine
@@ -20,11 +22,11 @@ cmd/speak/           entrypoint, delegates to internal/cli
 internal/cli/        cobra: root flags (root.go), serve, mcp (mcp.go), config
                      (config.go), doctor (doctor.go), docs, version; provider.go
                      builds the provider every subcommand uses
-internal/web/        server.go (mux, cache reaper), docs.go (uploaded docs and
-                     their audio routes), speech.go (speech handler,
+internal/web/        server.go (mux, cache reaper), docs.go (registered docs
+                     and their audio routes), speech.go (speech handler,
                      /enginez), cors.go (the cross-origin allowlist),
-                     markdown.go (goldmark render, section split, part
-                     plan), assets/shell.html + assets/app.js
+                     plan.go (blocks into parts and keys), assets/index.html
+                     (the landing page)
 internal/chunk/      sentences grouped into parts, sized by a ramp
 internal/audiocache/ serve's clip cache on disk and the background Preparer
 internal/config/     the provider config file: a block per provider, one active
@@ -39,44 +41,38 @@ internal/mcpserver/  go-sdk MCP server: the 8 speak_* tools over playback
 ```
 
 `internal/web` mounts the in-module webkit Go package with
-`webkit.Mount(mux)`; `shell.html` carries the `<wk-header>` and speak-local
-styling, and the rendered document is played through webkit's
-`<wk-read-aloud>` component.
+`webkit.Mount(mux)`; `index.html` carries the `<wk-header>` and the landing
+page's own layout. The reading UI, webkit's `<wk-read-aloud>` in prepared
+mode, is mounted by present and talks to the document routes here.
 
 ## Data flow
 
-Web path: `GET /` serves the embedded chrome-only `shell.html` and `app.js`
-builds the page client-side. `POST /read` (multipart field `doc`, max 5 MB)
-renders the markdown with goldmark (GFM), splits it into
-`<section class="doc-section" data-section="N">` blocks at every h1/h2, and
-plans each section's parts (`chunk.Prepared`: the first up to 250
-characters, then up to 600). Each section carries `data-ra-parts`, its part
-keys in play order, and every read block carries `data-ra-chunk`, the keys
-of the parts that read it, for highlighting. serve keeps the document in
-memory (32 at most; an evicted one stops preparing, and eviction takes the
-least recently used document with no part queued, generating or retrying
-before any that has, so a page view registering text never drops an
-upload's queued parts), queues its
-parts in reading order for background synthesis up to 25,000 characters,
-ahead of older uploads' queued parts, and returns `{name, content, doc}`
-JSON, `doc` being the audio state. The same route takes
-`application/json`: a page that renders itself (present) posts its text
-split into sections and blocks, gets each section's part keys and each
-block's keys back in the same order, and serve keeps the document without
-queueing anything; the same block texts plan to the same keys and document
-id either way, and play or prepare starts their synthesis. A part that fails
-upstream gets up to 3
-attempts, 15s then 45s apart, and reads `retrying` in between; auth, quota,
-network, config and model failures are not retried and stop the background
-queue, as does a part whose last attempt timed out. `app.js` mounts the
-content, re-mounts `<wk-read-aloud targets=".doc-section">`, and shows each
+Web path: `GET /` serves the embedded static `index.html`, which fetches
+`GET /enginez` client-side for its engine line. A present page registers its
+text with `POST /read` (`application/json`, max 5 MB): the text split into
+the sections it plays by and the blocks that show them. serve plans each
+section's parts (`chunk.Prepared`: the first up to 250 characters, then up
+to 600; a block longer than a part splits at sentences) and answers each
+section's part keys in play order and each block's keys in the same order,
+which the page stamps on as `data-ra-parts` and `data-ra-chunk`. serve keeps
+the document in memory (32 at most; an evicted one stops preparing, and
+eviction takes the least recently used document with no part queued,
+generating or retrying before any that has, so a page view registering text
+never drops a document being prepared) and queues nothing: the same texts
+plan to the same keys and document id on every view, and play or prepare
+starts their synthesis. `POST /doc/{id}/prepare` queues the idle parts in
+reading order, ahead of older documents' queued parts; a play button fetches
+the section's parts from `GET /audio/{key}` with two in flight, and a part
+not ready yet jumps the queue and the request waits for it. A part that
+fails upstream gets up to 3 attempts, 15s then 45s apart, and reads
+`retrying` in between; auth, quota, network, config and model failures are
+not retried and stop the background queue, as does a part whose last
+attempt timed out. `<wk-read-aloud>` on the present page shows each
 section's audio state with a Retry button (`POST
 /doc/{id}/prepare?section=N&failed=1`) when parts failed, polling
-`GET /doc/{id}` while parts are queued, generating or retrying. A play
-button fetches the section's parts from `GET /audio/{key}` with two in
-flight; a part not ready yet jumps the queue and the request waits for it.
+`GET /doc/{id}` while parts are queued, generating or retrying.
 `GET /doc/{id}/audio` joins the ready parts into one download for the whole
-page (`?section=N` for one section, which the page does not link).
+page or one section (`?section=N`).
 
 Why ahead of time: remote speech models answer with the whole clip at once
 and take seconds to tens of seconds per part (Gemini 3.1 Flash TTS through
@@ -90,9 +86,8 @@ default and calls its backend client: `internal/ttsclient` against an
 OpenAI-style `/v1/audio/speech`, or `internal/gemini` against the Gemini
 API's `generateContent`. Raw PCM answers get a WAV header (`tts.Normalize`).
 The clip is stored in the audio cache, so the same request (provider, model,
-resolved voice, speed, text) answers from disk next time; present pages and
-text selections, which have no prepared parts, still gain from that on a
-replay. `cors.go` decides who may fetch, for every route: an `Origin` on
+resolved voice, speed, text) answers from disk next time; text selections,
+which have no prepared parts, still gain from that on a replay. `cors.go` decides who may fetch, for every route: an `Origin` on
 loopback or under `.this` is reflected back with `Vary: Origin`, and any
 other `Origin`, or a cross-site request without one that is not a top-level
 load of `GET /` (`Sec-Fetch-Site`, `Sec-Fetch-Dest`), gets 403. The served
@@ -104,7 +99,7 @@ Pages on other local origins such as present briefings keep working while a
 page from the internet cannot start a synthesis. Every outcome feeds one `tts.Health`: a failure is answered
 with a JSON error body naming the reason and emits an `error` event through
 `kit/notify`. `GET /enginez` reports that health, running a test synthesis
-when nothing fresh is recorded; `GET /healthz` proves only that the page is
+when nothing fresh is recorded; `GET /healthz` proves only that serve is
 up.
 
 MCP path: `speak_text`/`speak_file` extract plain text from the input,
@@ -125,9 +120,9 @@ second caller gets a `BUSY` reply.
 
 ## Storage
 
-Markdown is never written to disk: serve keeps the 32 most recent uploads in
-memory, and recently-read docs live in the browser's localStorage, which the
-page re-posts after a serve restart. Synthesized audio does go to disk, in
+Text is never written to disk: serve keeps the 32 most recently registered
+documents in memory, and a present page registers again after a serve
+restart. Synthesized audio does go to disk, in
 serve's cache at `<state-dir>/cache/<key>.wav` or `.mp3`; the key is 32 hex
 characters of a sha256 over provider, model, resolved voice, speed and
 text. A clip's mtime is bumped on every use. At start and daily serve
@@ -143,8 +138,7 @@ never writes them.
 
 ## Interfaces
 
-Web: `GET /` (upload page), `GET /app.js`, `POST /read` (markdown upload or
-JSON blocks), `GET /doc/{id}`,
+Web: `GET /` (landing page), `POST /read` (JSON blocks), `GET /doc/{id}`,
 `POST /doc/{id}/prepare`, `GET /doc/{id}/audio`, `GET /audio/{key}`,
 `POST /v1/audio/speech` (engine proxy), `GET /healthz`, `GET /enginez`,
 `GET /version`, `GET /webkit/` from the webkit Go package.

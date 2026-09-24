@@ -3,11 +3,11 @@
 // d-man at http://speak.this). Injects a play/pause button into each `targets`
 // match; stays fully inert when the endpoint is unreachable, so pages work
 // unchanged on hosts without the speak service. Sections whose blocks name
-// pre-synthesized parts (data-ra-chunk) replay cached audio: speak serve
-// stamps the pages it renders, and with the `prepare` attribute the element
-// registers the page's own text with speak (POST /read), stamps the blocks
-// itself and shows how far synthesis got. Anything else is synthesized live,
-// a few sentences per request.
+// pre-synthesized parts (data-ra-chunk) replay cached audio: with the
+// `prepare` attribute the element registers the page's own text with speak
+// (POST /read), stamps the blocks itself and shows how far synthesis got; a
+// page may also arrive stamped by whatever rendered it. Anything else is
+// synthesized live, a few sentences per request.
 
 import {
   barView, BlockCollector, DocStatus, downloadName, inProgress, parseDocStatus, parseRegistration,
@@ -190,8 +190,8 @@ interface Plan {
  * Cached mode: each speakable block of the section carries
  * data-ra-chunk="<key> [<key> ...]", the parts that read it, and the section
  * lists its parts in play order in data-ra-parts; speak synthesizes those
- * parts ahead of time (stamped by speak serve on the pages it renders, or by
- * prepared mode below). Each part highlights every block it reads, so no
+ * parts ahead of time (stamped by prepared mode below, or by whatever
+ * rendered the page). Each part highlights every block it reads, so no
  * sentence spans are needed. The section counts as a block of its own when
  * it holds text directly (a summary paragraph that is its own target). Null
  * when the section carries no keys.
@@ -386,7 +386,7 @@ async function failureReason(res: Response): Promise<string> {
 
 /** Ends a session that failed and says why: the button shows an error state
  * until the next click, a toast names the reason, and a wk-read-aloud-error
- * event lets the page react (speak's page re-checks its engine banner). */
+ * event lets the page react (re-check the engine state, say). */
 function failSession(s: Session, err: unknown): void {
   const reason = reasonOf(err);
   console.warn('wk-read-aloud:', reason);

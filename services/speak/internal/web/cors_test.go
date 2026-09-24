@@ -215,7 +215,7 @@ func TestHandlerRefusesOtherSites(t *testing.T) {
 			"text/plain", evilOrigin,
 		},
 		{
-			"form upload", http.MethodPost, "/read", "--b\r\nContent-Disposition: form-data; " +
+			"form post", http.MethodPost, "/read", "--b\r\nContent-Disposition: form-data; " +
 				"name=\"doc\"; filename=\"a.md\"\r\n\r\nHello there.\r\n--b--\r\n",
 			"multipart/form-data; boundary=b", evilOrigin,
 		},

@@ -273,8 +273,8 @@ export function audioExt(mime: string): string {
  * The name a downloaded file gets: the document's name made filename-safe
  * the way speak's own Content-Disposition does (that header is not readable
  * cross-origin), with "-section-N" for one section (1-based; 0 is the whole
- * document) and the extension the blob's type calls for. A markdown upload's
- * extension comes off; a page title keeps its dots.
+ * document) and the extension the blob's type calls for. A name ending in
+ * .md, .markdown or .txt loses that extension; a page title keeps its dots.
  */
 export function downloadName(name: string, section: number, mime: string): string {
   let base = name.trim().replace(/\.(md|markdown|txt)$/i, '');
@@ -285,7 +285,7 @@ export function downloadName(name: string, section: number, mime: string): strin
 }
 
 /** How often prepared mode asks speak about the document while parts are in
- * progress; speak's own page polls at the same rate. */
+ * progress. */
 export const POLL_MS = 2000;
 /** The longest wait between polls while speak keeps not answering. */
 export const POLL_MAX_MS = 60_000;

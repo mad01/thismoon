@@ -2,10 +2,10 @@
 
 speak turns text and markdown into audio through a TTS provider: the local
 Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM
-proxy or the Gemini API. It is two independent surfaces in one binary: `speak serve` is a web
-page plus a CORS-guarded `/v1/audio/speech`, with audio playing in the
-browser; `speak mcp` is a stdio MCP server that plays audio on the machine's
-speakers with afplay. Both need the provider; neither needs the other.
+proxy or the Gemini API. It is two independent surfaces in one binary: `speak serve` is the
+audio API present pages read aloud through plus a CORS-guarded `/v1/audio/speech`,
+with audio playing in the browser; `speak mcp` is a stdio MCP server that plays
+audio on the machine's speakers with afplay. Both need the provider; neither needs the other.
 
 ## how it runs
 
@@ -20,12 +20,12 @@ usually also route http://speak.this to serve via the local domain front door;
 if the localhost port answers but the .this host does not, the router is the
 problem, not this service.
 
-serve synthesizes an uploaded document ahead of playback: its parts (up to
-600 characters each, three at a time) go into a disk cache, up to about 30
-minutes of speech, and the page's Prepare all queues the rest. The newest
-upload goes first. Playing a part that is not ready moves it to the front and
-waits for it. A remote model answers a part in seconds to tens of seconds,
-all at once, so audio that was not prepared starts late.
+serve prepares a registered page ahead of playback: a present page registers
+its text on load, and Prepare all or a play queues its parts (up to 600
+characters each, three at a time) into a disk cache. The newest request goes
+first. Playing a part that is not ready moves it to the front and waits for
+it. A remote model answers a part in seconds to tens of seconds, all at once,
+so audio that was not prepared starts late.
 
 `speak mcp` does not go through serve or its cache. Playback lives in the mcp
 process itself: each tool call groups the text's sentences into parts (one
@@ -44,8 +44,8 @@ cache is under 2 GiB; serve's startup log line names the directory. mcp
 writes per-part audio in `audio/` (reaped after 24 hours on start) and
 `playback.lock` plus a `.owner` sidecar naming the current lock holder.
 
-serve keeps uploaded documents in memory only, the 32 most recent; an older
-one stops preparing. After a restart the open page posts its markdown again
+serve keeps registered documents in memory only, the 32 most recent; an older
+one stops preparing. After a restart the open present page registers again
 and prepared parts play from the cache. The mcp part queue, position, and
 pause state live only in the memory of the mcp process that started
 playback.
@@ -66,17 +66,17 @@ Every surface reports one health state: ok, degraded (a failure that may pass
 on its own, fewer than three in a row) or down, with the reason. `GET
 {{.BaseURL}}/enginez` returns it as JSON, from the last real request when that
 is under a minute old and from a test synthesis otherwise; `/healthz` proves
-only that serve is up. The web page shows it as a banner, and a failed play
-turns its button red and raises a toast. speak_text and speak_file synthesize
+only that serve is up. speak's landing page shows it as its engine line; on
+present a failed play turns its button red and raises a toast. speak_text and speak_file synthesize
 the first part before replying, so a dead engine comes back as an error
 reply starting UNAVAILABLE; speak_resume retries that session once fixed.
 
 serve retries a part that failed upstream by itself, up to 3 attempts, 15s
-then 45s apart; meanwhile its section badge reads "retrying" and its title
-names the last failure. A part out of attempts is failed, with a reason
-starting "failed after 3 attempts", and its section gets a Retry button; the
-page's "Retry failed (n)" re-queues only the failed parts, Prepare all the
-failed and the not prepared ones, and playing a part also tries it again.
+then 45s apart; meanwhile its section badge on the present page reads
+"retrying" and its title names the last failure. A part out of attempts is
+failed, with a reason starting "failed after 3 attempts", and its section
+gets a Retry button; "Retry failed (n)" re-queues only the failed parts,
+Prepare all the failed and the not prepared ones, and a play tries it again.
 After an auth, quota, network, config or model failure, or a part whose
 last attempt timed out too, serve stops preparing in the background (queued
 and retrying parts go back to not prepared) rather than spend requests on
@@ -107,15 +107,15 @@ after answering 200, so the cause is only in `t-man logs speak-tts`. A spaCy
 download error there means the G2P warm-up never ran and the sandbox blocked
 the lazy fetch.
 
-FAIL service-reachable: serve is not running, so the upload page and the
-speech proxy are down. t-man supervises it as speak-web: `t-man restart
-speak-web`. Playback tools are unaffected.
+FAIL service-reachable: serve is not running, so present pages show no
+read-aloud and the speech proxy is down. t-man supervises it as speak-web:
+`t-man restart speak-web`. Playback tools are unaffected.
 
 A page's speech request gets 403 or a CORS error: serve answers only an
 Origin whose host is loopback or ends in .this, and refuses a cross-site
-request that sends no Origin unless it opens the page itself. Open the page
-through its .this host or its localhost port; the allowlist has no override.
-curl and the CLI send no Origin and are unaffected.
+request that sends no Origin unless it opens speak's own landing page. Open
+the requesting page through its .this host or its localhost port; the
+allowlist has no override. curl and the CLI send no Origin and are unaffected.
 
 Calls succeed but nothing is audible: afplay plays on the system default
 output device, so check the volume and output device, then `speak_status`

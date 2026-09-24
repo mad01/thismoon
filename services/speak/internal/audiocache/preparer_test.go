@@ -355,7 +355,7 @@ func TestPreparerQueueSkipsStoredClips(t *testing.T) {
 	}
 }
 
-// TestPreparerNewestQueueGoesFirst pins the order across two uploads: the
+// TestPreparerNewestQueueGoesFirst pins the order across two documents: the
 // later document's parts run before the earlier one's that still wait, each
 // in reading order, and a part both hold moves up with the later one.
 func TestPreparerNewestQueueGoesFirst(t *testing.T) {

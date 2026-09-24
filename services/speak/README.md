@@ -1,17 +1,18 @@
 # speak
 
-A Go CLI that serves a local read-aloud page at `http://speak.this/` and
-synthesizes speech through a configurable text-to-speech (TTS) provider: a
-local Kokoro engine by default, or OpenRouter, OpenAI, a LiteLLM proxy or
-the Gemini Developer API.
+A Go CLI that turns text into speech for this machine through a configurable
+text-to-speech (TTS) provider: a local Kokoro engine by default, or
+OpenRouter, OpenAI, a LiteLLM proxy or the Gemini Developer API. `speak
+serve` at `http://speak.this/` is the audio service present pages read aloud
+through; `speak mcp` reads on the speakers for agents.
 
-Upload a markdown file, read it rendered in the browser, and play it section
-by section. speak synthesizes the document's audio in the background as soon
-as it is uploaded, retrying a part the provider fails on, so play starts
-from ready audio, and once every part is ready the whole page can be
-downloaded as one audio file. The same service also handles
-`/v1/audio/speech` so other local tools (present briefings, for example) can
-request speech without touching the provider directly.
+Documents are read on present. A present page registers its text with speak
+on load; speak synthesizes the parts into a disk cache when the page asks
+(Prepare all) or plays them, section by section, retrying a part the
+provider fails on, and a replay starts from ready audio; once every part is
+ready the whole page can be downloaded as one audio file. The same service handles `/v1/audio/speech` so other local
+tools can request speech without touching the provider directly. speak's own
+page is a landing page: the engine state and the routes.
 
 ## Providers
 
@@ -72,7 +73,7 @@ Two cooperating processes:
 
 | Process | Role | Port |
 |---------|------|------|
-| `speak serve` | web front-end and TTS proxy | 7425 |
+| `speak serve` | document audio API and TTS proxy | 7425 |
 | `python -m mlx_audio.server` | Kokoro TTS engine | 8765 |
 
 Both run as background launchd agents (via t-man). To start them manually:
@@ -91,7 +92,8 @@ t-man logs speak-tts       # engine logs
 ```
 
 Open `http://speak.this/` (or `http://localhost:7425/` on hosts without
-d-man) to upload a markdown file and play it back section by section.
+d-man) to see the engine state and the routes; open a page on
+`http://present.this/` to read it aloud.
 
 To verify the full stack:
 
@@ -108,22 +110,22 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 
 | Path | Description |
 |------|-------------|
-| `GET /` | Upload form |
-| `GET /app.js` | Client-side renderer |
-| `POST /read` | Keep a document for playback: a multipart markdown upload is rendered and synthesized ahead; a JSON body of text already split into sections and blocks gets the same keys back and is synthesized on play or prepare |
-| `GET /doc/{id}` | Audio state of an uploaded document: parts ready, in progress, retrying, not prepared, failed |
+| `GET /` | Landing page: the engine state (fetched from `/enginez`) and the routes; documents are read on present |
+| `POST /read` | Register a page's text, split into sections and blocks, as a document; answers the part keys the page plays by and synthesizes nothing until play or prepare. JSON only, 415 otherwise |
+| `GET /doc/{id}` | Audio state of a registered document: parts ready, in progress, retrying, not prepared, failed |
 | `POST /doc/{id}/prepare[?section=N][&failed=1]` | Synthesize every part not ready yet, in the document or in section N; `failed=1` retries only the failed ones |
 | `GET /doc/{id}/audio[?section=N]` | The document, or one section, as one audio file once every part is ready |
 | `GET /audio/{key}` | One part's audio, synthesized first if it is not ready |
 | `POST /v1/audio/speech` | OpenAI-style speech through the active provider, cached on disk (CORS allowlist: loopback and `.this` origins); failures answer JSON naming the reason |
-| `GET /healthz` | 204; reachability probe for this page |
+| `GET /healthz` | 204; reachability probe for serve |
 | `GET /enginez` | TTS health as JSON (ok, degraded or down, with the reason); 200 when ok, 503 otherwise |
 | `GET /version` | Build metadata: `version`, `commit`, `tag`, `build_time` |
 | `GET /webkit/` | Shared chrome from the in-repo `webkit` package |
 
-The `<wk-read-aloud>` webkit component on the rendered page plays the
-prepared parts from `GET /audio/{key}`; present briefings and text selections
-call `POST /v1/audio/speech`, present cross-origin via `http://speak.this`.
+The `<wk-read-aloud>` webkit component on a present page registers the page
+through `POST /read` and plays the prepared parts from `GET /audio/{key}`,
+cross-origin via `http://speak.this`; text selections and pages without
+prepared parts call `POST /v1/audio/speech`.
 
 ## MCP server
 
@@ -203,9 +205,8 @@ foreign page cannot start a synthesis. curl and the CLI are unaffected. See
 - Audio cache: `<state-dir>/cache/`, one file per synthesized part, capped
   at 2 GiB. When `speak serve` starts and once a day after, it deletes files
   unused for 30 days, then the least recently used until the cache fits.
-- No markdown on disk: `speak serve` keeps the 32 most recent uploads in
-  memory, and recently-read docs are remembered in the browser's
-  `localStorage`, which the page posts again after a restart.
+- No text on disk: `speak serve` keeps the 32 most recently registered
+  documents in memory; a present page registers again after a restart.
 
 ## Develop
 

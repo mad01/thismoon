@@ -19,21 +19,14 @@ import (
 	"sync"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/mad01/thismoon/services/speak/internal/audiocache"
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
-// maxDocs is how many uploaded documents serve keeps for their audio routes.
-// A page whose document fell out re-posts its markdown.
+// maxDocs is how many registered documents serve keeps for their audio
+// routes. A page whose document fell out registers it again.
 const maxDocs = 32
-
-// autoPrepareChars caps what an upload queues for synthesis by itself:
-// about 30 minutes of speech at ~14 characters a second, so a long document
-// does not spend hours of remote synthesis nobody asked for. Parts past it
-// stay idle until prepared.
-const autoPrepareChars = 25_000
 
 // prepareWorkers is how many syntheses run at once. Remote providers handled
 // three parallel requests without slowing down; more would risk their rate
@@ -60,11 +53,11 @@ const untitledName = "untitled"
 // emits. A failing provider fails every queued part, and upstream failures
 // do not stop the queue, so one event a minute tells the story without
 // flooding the log. Every failure is still recorded in health and shown on
-// the page.
+// the page that registered the document.
 const failureEventInterval = time.Minute
 
-// document is an uploaded markdown file as serve keeps it: the name it was
-// uploaded under and each section's parts in reading order.
+// document is a registered page as serve keeps it: the name it was registered
+// under and each section's parts in reading order.
 type document struct {
 	id       string
 	name     string
@@ -97,8 +90,8 @@ type PartCounts struct {
 	Failed     int `json:"failed"` // out of attempts, or stopped by a shared failure
 }
 
-// SectionStatus is one section's audio state; Section is 1-based, matching
-// the rendered data-section.
+// SectionStatus is one section's audio state; Section is 1-based, the index
+// the routes take as ?section=N.
 type SectionStatus struct {
 	Section int `json:"section"`
 	PartCounts
@@ -167,7 +160,7 @@ func items(parts []Part) []audiocache.Item {
 // docRegistry keeps the most recently used documents, up to maxDocs.
 type docRegistry struct {
 	// forget is handed the part keys of evicted documents that no kept
-	// document holds. It runs under mu, so a re-upload of an evicted
+	// document holds. It runs under mu, so a re-registration of an evicted
 	// document cannot queue its parts between eviction and forgetting.
 	forget func(keys []string)
 	// pending reports whether any of the keys has work in flight; nil
@@ -196,9 +189,9 @@ func (r *docRegistry) add(d *document) {
 
 // evictOne removes and returns the document that makes room for the one
 // just added (the last): the least recently used with no work in flight, so
-// a registration that queues nothing (a page view) never costs an upload its
-// queued parts; when every other document has work in flight, the least
-// recently used of them. The caller holds r.mu.
+// a registration that queues nothing (a page view) never costs a document
+// being prepared its queued parts; when every other document has work in
+// flight, the least recently used of them. The caller holds r.mu.
 func (r *docRegistry) evictOne() *document {
 	others := r.docs[:len(r.docs)-1]
 	i := slices.IndexFunc(others, func(d *document) bool { return !r.busy(d) })
@@ -276,7 +269,7 @@ func (r *docRegistry) text(key string) (string, bool) {
 	return "", false
 }
 
-// docServer serves uploaded documents and their pre-synthesized audio.
+// docServer serves registered documents and their pre-synthesized audio.
 type docServer struct {
 	speaker Speaker
 	health  *tts.Health
@@ -344,20 +337,10 @@ func (s *docServer) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /audio/{key}", s.audio)
 }
 
-// readResponse is the JSON shape the multipart form of POST /read returns:
-// the uploaded file name, the rendered HTML body (goldmark sections) and the
-// document's audio state. app.js mounts Content as-is and shows Name as the
-// doc label.
-type readResponse struct {
-	Name    string    `json:"name"`
-	Content string    `json:"content"`
-	Doc     DocStatus `json:"doc"`
-}
-
-// readRequest is the JSON form of POST /read: a page's text already split
-// into the sections it plays by and the blocks that show them, in reading
-// order, from a page that renders itself (present). Name labels the
-// document; empty falls back to untitledName.
+// readRequest is the body of POST /read: a page's text already split into
+// the sections it plays by and the blocks that show them, in reading order,
+// from a page that renders itself (present). Name labels the document; empty
+// falls back to untitledName.
 type readRequest struct {
 	Name     string           `json:"name"`
 	Sections []requestSection `json:"sections"`
@@ -367,78 +350,36 @@ type requestSection struct {
 	Blocks []string `json:"blocks"`
 }
 
-// registerResponse is what the JSON form of POST /read returns: the keys the
-// page plays and highlights by, mirroring the request's sections and blocks
-// one to one, plus the document's audio state.
+// registerResponse is what POST /read returns: the keys the page plays and
+// highlights by, mirroring the request's sections and blocks one to one,
+// plus the document's audio state.
 type registerResponse struct {
 	Name     string        `json:"name"`
 	Doc      DocStatus     `json:"doc"`
 	Sections []sectionKeys `json:"sections"`
 }
 
-// sectionKeys is one section's part keys in play order (what the markdown
-// form puts in partsAttr) and, per block, the keys of the parts that read it
-// (chunkAttr); [] for a block with nothing speakable.
+// sectionKeys is one section's part keys in play order (what the page stamps
+// on the section as data-ra-parts) and, per block, the keys of the parts that
+// read it (data-ra-chunk); [] for a block with nothing speakable.
 type sectionKeys struct {
 	Parts  []string   `json:"parts"`
 	Blocks [][]string `json:"blocks"`
 }
 
-// read keeps a document for the audio routes, in the form its Content-Type
-// declares: a JSON body of pre-split block text (readBlocks) or a multipart
-// markdown upload (readUpload). Both are capped at maxUploadBytes.
+// read plans and keeps a document posted as pre-split block text (JSON, at
+// most maxReadBytes) and answers the keys, but queues no synthesis: a page
+// registers on every view and a remote provider bills every part, so
+// playback (GET /audio/{key}) and POST /doc/{id}/prepare start it instead.
+// Errors answer the document routes' JSON shape; a body not declared JSON
+// (the retired markdown upload, say) gets 415.
 func (s *docServer) read(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
-	if isJSON(r.Header.Get("Content-Type")) {
-		s.readBlocks(w, r)
+	if !isJSON(r.Header.Get("Content-Type")) {
+		writeError(w, http.StatusUnsupportedMediaType,
+			`POST /read takes application/json: {"name", "sections": [{"blocks": [text, ...]}]}`)
 		return
 	}
-	s.readUpload(w, r)
-}
-
-// isJSON reports whether contentType declares a JSON body, with or without a
-// charset parameter.
-func isJSON(contentType string) bool {
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	return err == nil && mediaType == "application/json"
-}
-
-// readUpload renders an uploaded markdown file (multipart field doc), keeps
-// it and starts synthesizing its opening parts. Its errors stay plain text.
-func (s *docServer) readUpload(w http.ResponseWriter, r *http.Request) {
-	file, header, err := r.FormFile("doc")
-	if err != nil {
-		http.Error(w, "upload a markdown file in the 'doc' field: "+err.Error(),
-			http.StatusBadRequest)
-		return
-	}
-	defer func() { _ = file.Close() }()
-	source, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "read upload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	plan, err := PlanSections(source, s.keyFunc())
-	if err != nil {
-		http.Error(w, "render markdown: "+err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
-	d := newDocument(header.Filename, plan.Sections)
-	s.docs.add(d)
-	s.docs.whileKept(d, func() { s.queueOpening(d) })
-	writeJSON(w, http.StatusOK, readResponse{
-		Name:    header.Filename,
-		Content: plan.HTML,
-		Doc:     s.docStatus(d),
-	})
-}
-
-// readBlocks plans and keeps a document posted as pre-split block text, and
-// answers the keys, but queues no synthesis: a page registers on every view
-// and a remote provider bills every part, so playback (GET /audio/{key}) and
-// POST /doc/{id}/prepare start it instead. Errors answer the document routes'
-// JSON shape.
-func (s *docServer) readBlocks(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxReadBytes)
 	var req readRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, decodeReason(err))
@@ -465,11 +406,18 @@ func (s *docServer) readBlocks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, registerResponse{Name: name, Doc: s.docStatus(d), Sections: keys})
 }
 
+// isJSON reports whether contentType declares a JSON body, with or without a
+// charset parameter.
+func isJSON(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == "application/json"
+}
+
 // decodeReason words a failed JSON body decode for the caller: the body cap
 // by name, else the decoder's own reason.
 func decodeReason(err error) string {
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		return fmt.Sprintf("body over %d MB", maxUploadBytes>>20)
+		return fmt.Sprintf("body over %d MB", maxReadBytes>>20)
 	}
 	return "decode JSON body: " + err.Error()
 }
@@ -482,23 +430,6 @@ func (s *docServer) keyFunc() func(text string) string {
 	return func(text string) string { return audiocache.Key(clipID, 0, text) }
 }
 
-// queueOpening queues d's parts in reading order up to autoPrepareChars,
-// ahead of older documents' parts. Parts already stored count toward the
-// cap: it measures how far into the document the listener can go without
-// waiting.
-func (s *docServer) queueOpening(d *document) {
-	parts := d.allParts()
-	chars := 0
-	for i, p := range parts {
-		chars += utf8.RuneCountInString(p.Text)
-		if chars > autoPrepareChars {
-			parts = parts[:i]
-			break
-		}
-	}
-	s.prep.Queue(items(parts))
-}
-
 func (s *docServer) status(w http.ResponseWriter, r *http.Request) {
 	if d, ok := s.lookup(w, r); ok {
 		writeJSON(w, http.StatusOK, s.docStatus(d))
@@ -508,8 +439,8 @@ func (s *docServer) status(w http.ResponseWriter, r *http.Request) {
 // prepare queues every part of a document, or of the section named by
 // ?section=N, that is not stored yet, ahead of other documents' parts. With
 // ?failed=1 it queues only the failed ones: retrying what failed without
-// also starting the idle parts past the upload cap. Failed parts start over
-// with a fresh attempt count.
+// also starting the idle parts. Failed parts start over with a fresh attempt
+// count.
 func (s *docServer) prepare(w http.ResponseWriter, r *http.Request) {
 	d, ok := s.lookup(w, r)
 	if !ok {
@@ -557,7 +488,7 @@ func (s *docServer) lookup(w http.ResponseWriter, r *http.Request) (*document, b
 	d, ok := s.docs.get(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound,
-			"unknown document; upload it again (serve keeps the "+
+			"unknown document; register it again (serve keeps the "+
 				strconv.Itoa(maxDocs)+" most recent)")
 	}
 	return d, ok
@@ -657,7 +588,7 @@ func (s *docServer) joinStored(parts []Part) (tts.Audio, error) {
 	return audiocache.Join(clips)
 }
 
-// downloadName is a file name for a document's audio: the uploaded name
+// downloadName is a file name for a document's audio: the document's name
 // without its extension, cut to characters safe in any file system, plus
 // the section when there is one.
 func downloadName(docName string, section int) string {
@@ -692,7 +623,7 @@ func (s *docServer) audio(w http.ResponseWriter, r *http.Request) {
 	if text, ok := s.docs.text(key); ok {
 		audio, err = s.prep.Fetch(r.Context(), key, text)
 	} else if audio, ok, err = s.store.Get(key); err == nil && !ok {
-		writeError(w, http.StatusNotFound, "no loaded document reads this part; upload it again")
+		writeError(w, http.StatusNotFound, "no loaded document reads this part; register it again")
 		return
 	}
 	switch {

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>speak</title>
+<script src="/webkit/boot.js"></script>
+<link href="/webkit/webkit.css" rel="stylesheet">
+<style>
+/* Palette and chrome come from /webkit/webkit.css; only the landing page's own
+   layout lives here. The page is static: the engine line is the one thing
+   filled in client-side, from GET /enginez, so serving it never runs a
+   synthesis. */
+main.wrap { max-width: var(--page-width); margin: 0 auto; padding: 1.5rem 2rem 4rem; }
+.lead { margin: 1.25rem 0 0; font-size: 0.9375rem; color: var(--text-2); }
+.lead a { color: var(--primary); }
+.engine { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; margin-top: 1rem; font-size: 0.8125rem; color: var(--text-2); }
+.engine .detail { font-family: var(--mono); }
+h2 { margin: 2rem 0 0.75rem; font-size: 1rem; }
+.routes { border-collapse: collapse; font-size: 0.8125rem; }
+.routes td { border-top: 1px solid var(--border); padding: 0.4rem 1rem 0.4rem 0; vertical-align: top; color: var(--text-2); }
+.routes td:first-child { font-family: var(--mono); white-space: nowrap; color: var(--text-1); }
+</style>
+</head>
+<body>
+<wk-header brand="speak" controls="cmdk,font,fixation,size,reload,theme,help"></wk-header>
+<template data-wk-help>
+  <div class="wk-help-section-title">This tool</div>
+  <div class="wk-help-row"><div class="wk-help-term">Text-to-speech</div>
+  <div class="wk-help-desc">speak turns text into audio for this machine's own pages and agents. Documents are read on present; this page shows the speech engine's state and lists the routes speak answers.</div></div>
+</template>
+<main class="wrap">
+  <wk-page-header>
+    <wk-title>speak</wk-title>
+    <wk-subtitle>text-to-speech for this machine's pages and agents</wk-subtitle>
+  </wk-page-header>
+  <p class="lead" data-fixation>Documents are read aloud on <a href="http://present.this/">present</a>: open a page there and use its audio bar. The <code>speak</code> CLI and its MCP tools read on this machine's speakers.</p>
+  <p class="engine"><wk-badge id="engine-status" variant="outline">checking</wk-badge><span class="detail" id="engine-detail">asking the speech engine</span></p>
+  <h2>Routes</h2>
+  <table class="routes">
+    <tr><td>POST /v1/audio/speech</td><td>OpenAI-style speech through the active provider, cached on disk; only this machine's own pages may call it cross-origin</td></tr>
+    <tr><td>POST /read</td><td>Register a page's text, split into sections and blocks, as a document; answers the part keys the page plays by</td></tr>
+    <tr><td>GET /doc/{id}</td><td>A document's audio state</td></tr>
+    <tr><td>POST /doc/{id}/prepare</td><td>Synthesize the parts not ready yet; <code>?section=N</code> for one section, <code>?failed=1</code> for the failed parts only</td></tr>
+    <tr><td>GET /doc/{id}/audio</td><td>The document, or one section, as one audio file once every part is ready</td></tr>
+    <tr><td>GET /audio/{key}</td><td>One part's clip, synthesized first when it is not ready</td></tr>
+    <tr><td>GET /enginez</td><td>The speech engine's health as JSON</td></tr>
+    <tr><td>GET /healthz</td><td>204 when serve is up</td></tr>
+    <tr><td>GET /version</td><td>Build metadata</td></tr>
+  </table>
+</main>
+<script src="/webkit/webkit.js"></script>
+<script>
+(function () {
+  var badge = document.getElementById('engine-status');
+  var detail = document.getElementById('engine-detail');
+  var variants = { ok: 'ok', degraded: 'warn', down: 'error' };
+  function show(status, text) {
+    badge.setAttribute('variant', variants[status] || 'outline');
+    badge.textContent = status;
+    detail.textContent = text;
+  }
+  // /enginez answers 200 when the engine is ok and 503 otherwise, both with
+  // the same JSON state, so read the body whatever the status.
+  fetch('/enginez', { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (s) {
+      var where = 'provider ' + (s.provider || 'unknown') + (s.model ? ', model ' + s.model : '');
+      var status = s.status || 'unknown';
+      show(status, status === 'ok' ? where : where + ': ' + (s.reason || 'no reason recorded'));
+    })
+    .catch(function () {
+      show('unknown', 'GET /enginez did not answer; serve is up, the engine state is not known');
+    });
+})();
+</script>
+</body>
+</html>
