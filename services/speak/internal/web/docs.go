@@ -53,6 +53,9 @@ const audioMaxAge = 24 * time.Hour
 // docIDHexLen is the length of a document ID: 64 bits of a sha256.
 const docIDHexLen = 16
 
+// untitledName labels a document registered under no name.
+const untitledName = "untitled"
+
 // failureEventInterval spaces the events.this events background preparation
 // emits. A failing provider fails every queued part, and upstream failures
 // do not stop the queue, so one event a minute tells the story without
@@ -167,13 +170,16 @@ type docRegistry struct {
 	// document holds. It runs under mu, so a re-upload of an evicted
 	// document cannot queue its parts between eviction and forgetting.
 	forget func(keys []string)
+	// pending reports whether any of the keys has work in flight; nil
+	// means none ever does. It decides which document an eviction takes.
+	pending func(keys []string) bool
 
 	mu   sync.Mutex
 	docs []*document // least recently used first
 }
 
 // add keeps d as the most recent document, replacing one with its ID and
-// evicting the least recently used past maxDocs.
+// evicting one past maxDocs (see evictOne).
 func (r *docRegistry) add(d *document) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -182,11 +188,31 @@ func (r *docRegistry) add(d *document) {
 	if len(r.docs) <= maxDocs {
 		return
 	}
-	evicted := slices.Clone(r.docs[:len(r.docs)-maxDocs])
-	r.docs = slices.Delete(r.docs, 0, len(evicted))
-	if keys := orphanKeys(evicted, r.docs); len(keys) > 0 && r.forget != nil {
+	evicted := r.evictOne()
+	if keys := orphanKeys([]*document{evicted}, r.docs); len(keys) > 0 && r.forget != nil {
 		r.forget(keys)
 	}
+}
+
+// evictOne removes and returns the document that makes room for the one
+// just added (the last): the least recently used with no work in flight, so
+// a registration that queues nothing (a page view) never costs an upload its
+// queued parts; when every other document has work in flight, the least
+// recently used of them. The caller holds r.mu.
+func (r *docRegistry) evictOne() *document {
+	others := r.docs[:len(r.docs)-1]
+	i := slices.IndexFunc(others, func(d *document) bool { return !r.busy(d) })
+	if i < 0 {
+		i = 0
+	}
+	d := r.docs[i]
+	r.docs = slices.Delete(r.docs, i, i+1)
+	return d
+}
+
+// busy reports whether any part of d is queued, generating or retrying.
+func (r *docRegistry) busy(d *document) bool {
+	return r.pending != nil && r.pending(keysOf(d.allParts()))
 }
 
 // orphanKeys is the part keys of gone documents that no kept document holds.
@@ -284,6 +310,7 @@ func newDocServer(cfg Config, store *audiocache.Store) *docServer {
 		}),
 	}
 	s.docs.forget = s.prep.Forget
+	s.docs.pending = s.prep.Pending
 	return s
 }
 
@@ -317,19 +344,68 @@ func (s *docServer) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /audio/{key}", s.audio)
 }
 
-// readResponse is the JSON shape POST /read returns: the uploaded file name,
-// the rendered HTML body (goldmark sections) and the document's audio state.
-// app.js mounts Content as-is and shows Name as the doc label.
+// readResponse is the JSON shape the multipart form of POST /read returns:
+// the uploaded file name, the rendered HTML body (goldmark sections) and the
+// document's audio state. app.js mounts Content as-is and shows Name as the
+// doc label.
 type readResponse struct {
 	Name    string    `json:"name"`
 	Content string    `json:"content"`
 	Doc     DocStatus `json:"doc"`
 }
 
-// read renders an uploaded markdown file, keeps it for the audio routes and
-// starts synthesizing its opening parts.
+// readRequest is the JSON form of POST /read: a page's text already split
+// into the sections it plays by and the blocks that show them, in reading
+// order, from a page that renders itself (present). Name labels the
+// document; empty falls back to untitledName.
+type readRequest struct {
+	Name     string           `json:"name"`
+	Sections []requestSection `json:"sections"`
+}
+
+type requestSection struct {
+	Blocks []string `json:"blocks"`
+}
+
+// registerResponse is what the JSON form of POST /read returns: the keys the
+// page plays and highlights by, mirroring the request's sections and blocks
+// one to one, plus the document's audio state.
+type registerResponse struct {
+	Name     string        `json:"name"`
+	Doc      DocStatus     `json:"doc"`
+	Sections []sectionKeys `json:"sections"`
+}
+
+// sectionKeys is one section's part keys in play order (what the markdown
+// form puts in partsAttr) and, per block, the keys of the parts that read it
+// (chunkAttr); [] for a block with nothing speakable.
+type sectionKeys struct {
+	Parts  []string   `json:"parts"`
+	Blocks [][]string `json:"blocks"`
+}
+
+// read keeps a document for the audio routes, in the form its Content-Type
+// declares: a JSON body of pre-split block text (readBlocks) or a multipart
+// markdown upload (readUpload). Both are capped at maxUploadBytes.
 func (s *docServer) read(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if isJSON(r.Header.Get("Content-Type")) {
+		s.readBlocks(w, r)
+		return
+	}
+	s.readUpload(w, r)
+}
+
+// isJSON reports whether contentType declares a JSON body, with or without a
+// charset parameter.
+func isJSON(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == "application/json"
+}
+
+// readUpload renders an uploaded markdown file (multipart field doc), keeps
+// it and starts synthesizing its opening parts. Its errors stay plain text.
+func (s *docServer) readUpload(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("doc")
 	if err != nil {
 		http.Error(w, "upload a markdown file in the 'doc' field: "+err.Error(),
@@ -342,10 +418,7 @@ func (s *docServer) read(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read upload: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	clipID := s.speaker.ClipID("")
-	plan, err := PlanSections(source, func(text string) string {
-		return audiocache.Key(clipID, 0, text)
-	})
+	plan, err := PlanSections(source, s.keyFunc())
 	if err != nil {
 		http.Error(w, "render markdown: "+err.Error(), http.StatusUnprocessableEntity)
 		return
@@ -358,6 +431,55 @@ func (s *docServer) read(w http.ResponseWriter, r *http.Request) {
 		Content: plan.HTML,
 		Doc:     s.docStatus(d),
 	})
+}
+
+// readBlocks plans and keeps a document posted as pre-split block text, and
+// answers the keys, but queues no synthesis: a page registers on every view
+// and a remote provider bills every part, so playback (GET /audio/{key}) and
+// POST /doc/{id}/prepare start it instead. Errors answer the document routes'
+// JSON shape.
+func (s *docServer) readBlocks(w http.ResponseWriter, r *http.Request) {
+	var req readRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, decodeReason(err))
+		return
+	}
+	if len(req.Sections) == 0 {
+		writeError(w, http.StatusBadRequest, "sections must hold at least one section")
+		return
+	}
+	name := req.Name
+	if strings.TrimSpace(name) == "" {
+		name = untitledName
+	}
+	key := s.keyFunc()
+	sections := make([][]Part, len(req.Sections))
+	keys := make([]sectionKeys, len(req.Sections))
+	for i, sec := range req.Sections {
+		plan := planBlocks(sec.Blocks, key)
+		sections[i] = plan.parts
+		keys[i] = sectionKeys{Parts: keysOf(plan.parts), Blocks: plan.blockKeys}
+	}
+	d := newDocument(name, sections)
+	s.docs.add(d)
+	writeJSON(w, http.StatusOK, registerResponse{Name: name, Doc: s.docStatus(d), Sections: keys})
+}
+
+// decodeReason words a failed JSON body decode for the caller: the body cap
+// by name, else the decoder's own reason.
+func decodeReason(err error) string {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		return fmt.Sprintf("body over %d MB", maxUploadBytes>>20)
+	}
+	return "decode JSON body: " + err.Error()
+}
+
+// keyFunc names a part's audio from its text: the cache key for the active
+// provider's default voice at its default speed, the way every part is
+// synthesized (see newDocServer).
+func (s *docServer) keyFunc() func(text string) string {
+	clipID := s.speaker.ClipID("")
+	return func(text string) string { return audiocache.Key(clipID, 0, text) }
 }
 
 // queueOpening queues d's parts in reading order up to autoPrepareChars,

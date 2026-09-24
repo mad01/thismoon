@@ -53,10 +53,19 @@ plans each section's parts (`chunk.Prepared`: the first up to 250
 characters, then up to 600). Each section carries `data-ra-parts`, its part
 keys in play order, and every read block carries `data-ra-chunk`, the keys
 of the parts that read it, for highlighting. serve keeps the document in
-memory (the 32 most recent; an evicted one stops preparing), queues its
+memory (32 at most; an evicted one stops preparing, and eviction takes the
+least recently used document with no part queued, generating or retrying
+before any that has, so a page view registering text never drops an
+upload's queued parts), queues its
 parts in reading order for background synthesis up to 25,000 characters,
 ahead of older uploads' queued parts, and returns `{name, content, doc}`
-JSON, `doc` being the audio state. A part that fails upstream gets up to 3
+JSON, `doc` being the audio state. The same route takes
+`application/json`: a page that renders itself (present) posts its text
+split into sections and blocks, gets each section's part keys and each
+block's keys back in the same order, and serve keeps the document without
+queueing anything; the same block texts plan to the same keys and document
+id either way, and play or prepare starts their synthesis. A part that fails
+upstream gets up to 3
 attempts, 15s then 45s apart, and reads `retrying` in between; auth, quota,
 network, config and model failures are not retried and stop the background
 queue, as does a part whose last attempt timed out. `app.js` mounts the
@@ -83,11 +92,14 @@ API's `generateContent`. Raw PCM answers get a WAV header (`tts.Normalize`).
 The clip is stored in the audio cache, so the same request (provider, model,
 resolved voice, speed, text) answers from disk next time; present pages and
 text selections, which have no prepared parts, still gain from that on a
-replay. `OPTIONS` preflight is answered locally. `cors.go` decides who may
-fetch, for every route: an `Origin` on loopback or under `.this` is
-reflected back with `Vary: Origin`, and any other `Origin`, or a cross-site
-request without one that is not a top-level load of `GET /`
-(`Sec-Fetch-Site`, `Sec-Fetch-Dest`), gets 403.
+replay. `cors.go` decides who may fetch, for every route: an `Origin` on
+loopback or under `.this` is reflected back with `Vary: Origin`, and any
+other `Origin`, or a cross-site request without one that is not a top-level
+load of `GET /` (`Sec-Fetch-Site`, `Sec-Fetch-Dest`), gets 403. The served
+wrapper in `server.go` answers every `OPTIONS` preflight itself, 204 with
+the permission for an allowed origin and 403 for any other, so a sibling
+page can post JSON to `/read` or `/doc/{id}/prepare` without those routes
+handling OPTIONS.
 Pages on other local origins such as present briefings keep working while a
 page from the internet cannot start a synthesis. Every outcome feeds one `tts.Health`: a failure is answered
 with a JSON error body naming the reason and emits an `error` event through
@@ -131,7 +143,8 @@ never writes them.
 
 ## Interfaces
 
-Web: `GET /` (upload page), `GET /app.js`, `POST /read`, `GET /doc/{id}`,
+Web: `GET /` (upload page), `GET /app.js`, `POST /read` (markdown upload or
+JSON blocks), `GET /doc/{id}`,
 `POST /doc/{id}/prepare`, `GET /doc/{id}/audio`, `GET /audio/{key}`,
 `POST /v1/audio/speech` (engine proxy), `GET /healthz`, `GET /enginez`,
 `GET /version`, `GET /webkit/` from the webkit Go package.
