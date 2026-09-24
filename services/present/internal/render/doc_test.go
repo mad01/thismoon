@@ -418,6 +418,53 @@ func TestRenderDocChartScriptSafe(t *testing.T) {
 	}
 }
 
+// Name normalization rewrites operators in prose (" & " to " and ") but must
+// leave a code block's text alone.
+func TestRenderDocCodeBlockSkipsNormalize(t *testing.T) {
+	doc := Doc{
+		Sections: []Section{{
+			Heading: "S",
+			Blocks: []Block{
+				{T: "p", Text: "a & b = c"},
+				{T: "code", Lang: "sh", Text: "a & b = c"},
+			},
+		}},
+	}
+	out, err := RenderDoc(doc, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	if !strings.Contains(out, "<p data-fixation>a and b equals c</p>") {
+		t.Errorf("prose not normalized in: %s", out)
+	}
+	if !strings.Contains(out, `<code class="language-sh">a &amp; b = c</code>`) {
+		t.Errorf("code block was normalized in: %s", out)
+	}
+}
+
+// Compile parses, renders, and returns the canonical JSON the store keeps.
+func TestCompileReturnsHTMLAndCanonicalJSON(t *testing.T) {
+	c, err := Compile(
+		[]byte(`{"sections":[{"h":"S","blocks":[{"t":"p","text":"hi"}],"extra":1}]}`),
+		"T",
+	)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if !strings.Contains(c.HTML, "<p data-fixation>hi</p>") {
+		t.Errorf("html = %s", c.HTML)
+	}
+	if strings.Contains(string(c.JSON), "extra") {
+		t.Errorf("canonical json kept an unknown field: %s", c.JSON)
+	}
+	if len(c.Doc.Sections) != 1 || c.Doc.Sections[0].Heading != "S" {
+		t.Errorf("doc = %+v", c.Doc)
+	}
+	if _, err := Compile([]byte(`{not json`), "T"); err == nil {
+		t.Error("Compile accepted malformed JSON")
+	}
+}
+
 func TestRenderDocUnknownBlockType(t *testing.T) {
 	doc := Doc{
 		Sections: []Section{

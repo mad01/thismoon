@@ -2,7 +2,9 @@
 // present index view — client-side render. The backend serves a static shell
 // (chrome only) plus JSON at GET /api/pages; this script fetches the page list
 // and builds the DOM. webkit.js loads before this file, so Webkit.el /
-// Webkit.escapeHtml and the wk-* custom elements are available.
+// Webkit.escapeHtml and the wk-* custom elements are available. It also owns
+// the markdown import: a header button or a file dropped on the page goes to
+// POST /api/import and the browser moves to the new page.
 (function () {
   var app = document.getElementById('app');
 
@@ -38,9 +40,15 @@
     var total = data.total || 0;
     var children = [];
 
-    children.push(Webkit.el('wk-page-header', {}, [
-      Webkit.el('wk-title', {}, 'Presentations'),
-      Webkit.el('wk-subtitle', {}, total + ' page' + (total === 1 ? '' : 's'))
+    children.push(Webkit.el('div', { class: 'header-row' }, [
+      Webkit.el('wk-page-header', {}, [
+        Webkit.el('wk-title', {}, 'Presentations'),
+        Webkit.el('wk-subtitle', {}, total + ' page' + (total === 1 ? '' : 's'))
+      ]),
+      Webkit.el('wk-button', {
+        id: 'import-button', variant: 'ghost', role: 'button', tabindex: '0',
+        title: 'Import a markdown file as a new page (or drop one anywhere)'
+      }, 'Import markdown')
     ]));
 
     var pages = data.pages || [];
@@ -62,6 +70,98 @@
     app.innerHTML = '';
     children.forEach(function (c) { app.appendChild(c); });
     wireDelete();
+    wireImportButton();
+  }
+
+  // toast shows a short message bottom-right, reusing the page's
+  // <wk-toast-host> or adding one; webkit.css styles both.
+  function toast(text, variant) {
+    var host = document.querySelector('wk-toast-host');
+    if (!host) {
+      host = document.createElement('wk-toast-host');
+      document.body.appendChild(host);
+    }
+    var el = Webkit.el('wk-toast', { variant: variant || 'err', role: 'alert' }, text);
+    host.appendChild(el);
+    setTimeout(function () { el.remove(); }, 8000);
+  }
+
+  // importFile reads a markdown file in the browser, posts it to
+  // POST /api/import, and opens the page it became. The server converts and
+  // stores it; errors come back as {"error": "..."} and land in a toast.
+  var importing = false;
+  function importFile(file) {
+    if (!file || importing) return;
+    if (!/\.(md|markdown|txt)$/i.test(file.name)) {
+      toast('Import failed: ' + file.name + ' is not a markdown file (.md, .markdown, .txt)');
+      return;
+    }
+    importing = true;
+    var btn = document.getElementById('import-button');
+    if (btn) btn.setAttribute('aria-busy', 'true');
+    file.text().then(function (markdown) {
+      return fetch('/api/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: file.name, markdown: markdown })
+      });
+    }).then(function (resp) {
+      return resp.json().catch(function () { return {}; }).then(function (data) {
+        if (!resp.ok) throw new Error(data.error || ('import failed (' + resp.status + ')'));
+        // Same-origin by construction: the server's url may name the backend
+        // host when a proxy sits in front, so navigate by id.
+        location.assign('/p/' + encodeURIComponent(data.id));
+      });
+    }).catch(function (err) {
+      importing = false;
+      if (btn) btn.removeAttribute('aria-busy');
+      toast('Import failed: ' + ((err && err.message) || String(err)));
+    });
+  }
+
+  // wireImportButton makes the freshly rendered header button open the file
+  // picker (the hidden #import-file input in the shell). wk-button is not a
+  // <button>, so Enter and Space are handled by hand.
+  function wireImportButton() {
+    var btn = document.getElementById('import-button');
+    var input = document.getElementById('import-file');
+    if (!btn || !input) return;
+    btn.addEventListener('click', function () { input.click(); });
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
+  }
+
+  // wireImportDrop wires the shell's file input and page-wide drag-and-drop
+  // once; render() may run many times but the shell elements never change.
+  function wireImportDrop() {
+    var input = document.getElementById('import-file');
+    if (!input) return;
+    input.addEventListener('change', function () {
+      importFile(input.files && input.files[0]);
+      input.value = '';
+    });
+    function hasFiles(e) {
+      var types = e.dataTransfer && e.dataTransfer.types;
+      return !!types && Array.prototype.indexOf.call(types, 'Files') !== -1;
+    }
+    document.addEventListener('dragover', function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      document.body.classList.add('drop-active');
+    });
+    document.addEventListener('dragleave', function (e) {
+      if (e.relatedTarget === null) document.body.classList.remove('drop-active');
+    });
+    document.addEventListener('drop', function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      document.body.classList.remove('drop-active');
+      var files = e.dataTransfer.files;
+      if (files.length > 1) toast('Importing the first file only (' + files[0].name + ')', 'ok');
+      importFile(files[0]);
+    });
   }
 
   // wireDelete attaches the delete-confirm modal to the freshly rendered list.
@@ -123,5 +223,6 @@
       });
   }
 
+  wireImportDrop();
   load();
 })();

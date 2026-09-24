@@ -1,6 +1,6 @@
 # present, CLI + MCP server for served briefing pages
 
-Go CLI + MCP server. Manages single-page HTML presentations as create / read / update / list; delete exists only in the web index (confirm dialog → `DELETE /p/{id}`), not as an MCP tool. Content is authored as structured JSON (Doc format) and compiled to HTML at authoring time (`internal/render` `RenderDoc`/`RenderGraph`, run by `present_create`/`present_update`/`present rerender`). **The page view renders client-side**: `GET /p/{id}` serves a static chrome-only shell (`internal/server/shell.html`), and `app.js` (served at `GET /app.js`) fetches the page as JSON from `GET /api/p/{id}` and builds the DOM in the browser, replacing the old live-reload script with `watchVersion`: a server-sent event stream on `/p/{id}/events` where the server has a change feed, else `Webkit.poll` on `/p/{id}/version`. The **index** view (`GET /`) renders client-side the same way: it serves a static shell (`internal/server/index_shell.html`) and `index.js` (served at `GET /index.js`) fetches the page list as JSON from `GET /api/pages` and builds the list in the browser. Pages are served over localhost, except on a shared instance (`serve --shared`), which is network-facing. See `docs/adr/0005-webkit-client-side-rendering.md`.
+Go CLI + MCP server. Manages single-page HTML presentations as create / read / update / list; delete exists only in the web index (confirm dialog → `DELETE /p/{id}`), not as an MCP tool, and the index can also import a markdown file as a new page (`POST /api/import`, local mode only; see *Importing markdown*). Content is authored as structured JSON (Doc format) and compiled to HTML at authoring time (`internal/render` `Compile`/`CompileDoc` around `RenderDoc`, plus `RenderGraph`, run by `present_create`/`present_update`/`present rerender` and the import). **The page view renders client-side**: `GET /p/{id}` serves a static chrome-only shell (`internal/server/shell.html`), and `app.js` (served at `GET /app.js`) fetches the page as JSON from `GET /api/p/{id}` and builds the DOM in the browser, replacing the old live-reload script with `watchVersion`: a server-sent event stream on `/p/{id}/events` where the server has a change feed, else `Webkit.poll` on `/p/{id}/version`. The **index** view (`GET /`) renders client-side the same way: it serves a static shell (`internal/server/index_shell.html`) and `index.js` (served at `GET /index.js`) fetches the page list as JSON from `GET /api/pages` and builds the list in the browser. Pages are served over localhost, except on a shared instance (`serve --shared`), which is network-facing. See `docs/adr/0005-webkit-client-side-rendering.md`.
 
 ## Module layout
 
@@ -20,8 +20,12 @@ present/
     sharedclient/      - client a local present uses against a shared instance: Create/Replace/Delete/WhoAmI over its JSON API with the
                          author key as a bearer token; Share pushes a page bundle (title, content, graph, references, doc, graph_source,
                          ephemeral) and records the result via store.SetShared, Unshare deletes the copy and clears the record
-    render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); RenderDoc/RenderGraph run at authoring time
-    server/            - HTTP handlers per Mode: local = GET / (static index shell), /api/pages (page list as JSON), /index.js, POST /p/{id}/share (share.go; only when a shared instance is configured); shared = GET / (how-to shell), POST /api/pages, PUT /api/p/{id}, GET /api/whoami, /mcp; both = /p/{id} (static shell.html), /api/p/{id} (page as JSON, plus a share block in local mode), /app.js, /p/{id}/version, DELETE /p/{id} (author-checked when shared), and GET /p/{id}/events (events.go) whenever Options.Watcher is set, which serve does for the k8s store; embeds index_shell.html, shared_index_shell.html, shell.html, index.js, app.js
+    render/            - Doc-to-HTML renderer (doc.go), Graph-to-JS renderer (graph.go), legacy raw-HTML upgrade (upgrade.go); compile.go
+                         holds Compile (Doc JSON in) and CompileDoc (parsed Doc in), the one parse → RenderDoc → canonical JSON step
+                         the MCP tools, present rerender, and the import all call
+    mdimport/          - markdown file → title + Doc (goldmark, GFM): Convert(name, src); pure, no HTTP; the mapping and its losses
+                         are under *Importing markdown* below
+    server/            - HTTP handlers per Mode: local = GET / (static index shell), /api/pages (page list as JSON), /index.js, POST /api/import (import.go; markdown to page), POST /p/{id}/share (share.go; only when a shared instance is configured); shared = GET / (how-to shell), POST /api/pages, PUT /api/p/{id}, GET /api/whoami, /mcp; both = /p/{id} (static shell.html), /api/p/{id} (page as JSON, plus a share block in local mode), /app.js, /p/{id}/version, DELETE /p/{id} (author-checked when shared), and GET /p/{id}/events (events.go) whenever Options.Watcher is set, which serve does for the k8s store; embeds index_shell.html, shared_index_shell.html, shell.html, index.js, app.js
     mcpserver/         - MCP wiring + present_* tools; Mode picks the tool set and whether the bearer/forwarded headers on req.Extra.Header are read; present_share is registered only when Config.Sharer is set
   Makefile             - part of module github.com/mad01/thismoon (no own go.mod)
 ```
@@ -92,6 +96,27 @@ by `--shared-url` and prints its link (the expiry goes to stderr when
 ephemeral); `present unshare <id>` removes the copy; `present key new` prints a
 fresh 64-hex author key. share and unshare need both `--shared-url` and
 `--author-key`; key new needs nothing.
+
+## Importing markdown
+
+The index has an "Import markdown" button (a hidden `<input type=file>` behind a `wk-button`) and takes a file dropped anywhere on the page. `index.js` reads the file in the browser and posts `{"name": "notes.md", "markdown": "..."}` to `POST /api/import`; the server runs `mdimport.Convert`, then `render.CompileDoc`, then `store.Create` with the same fields an MCP-created page gets (rendered `content.html` plus `doc.json`), emits the same `page created` event, and answers `201 {"id", "url"}`. The browser then navigates to `/p/{id}`. Errors come back as `{"error": "..."}` and land in a `wk-toast`: 415 without `Content-Type: application/json`, 403 for a cross-site request (an `Origin` that is neither this host, the `X-Forwarded-Host` a proxy such as d-man sets, nor loopback; or `Sec-Fetch-Site: cross-site`), 413 over `present.MaxPageBytes` (the request body, and the stored page measured the way a shared instance measures it, so an imported page can always be shared later), 400 for an empty file or one that yields no blocks. Shared mode does not register the route: writes there need an author key, and there is no index to import from.
+
+Mapping (goldmark, GFM plus footnotes so both halves can be dropped):
+
+| Markdown | Doc |
+|----------|-----|
+| first `#` | page title; later `#` behave like `##`. No `#`: the file name without extension, else "Untitled" |
+| `##` | new section (`h` = heading as plain text) |
+| `###` to `######` | `h3` block, plain text |
+| text before the first `##` | a leading paragraph becomes `summary` when anything else follows it; the rest becomes an "Introduction" section. With no `##` at all the page has one section named after the title |
+| paragraph | `p` with inline markup rewritten: `*x*`/`_x_` → `*x*`, `**x**`/`__x__` → `**x**`, code span → backticks, `[t](u)` → `[t](u)` with `javascript:`/`data:`/`vbscript:` hrefs reduced to the label and `)` in a URL encoded as `%29`, bare URLs and `<u>` → `[u](u)`, emails → `[a](mailto:a)`, strikethrough → its words, image → its alt text, line breaks → a space |
+| list (bullet, ordered, task) | `list` with flat `items`; nested items follow their parent, paragraphs of one item join with a space, task boxes become `[x] `/`[ ] `. A code block, table, or quote inside an item ends the list block, is emitted on its own, and a new list block follows (an ordered list restarts at 1) |
+| fenced or indented code | `code` with `lang` from the fence (mermaid stays `lang: mermaid`, rendered as plain code until MAD-357) |
+| table | `table`: header cells plain, body cells through the inline mapping |
+| blockquote | one `callout` `info` with all its blocks flattened into one text; `[!WARNING]`/`[!CAUTION]` on the first line make it `warn`, `[!NOTE]`/`[!TIP]`/`[!IMPORTANT]` stay `info`, the marker is removed |
+| raw HTML, `---`, footnotes | dropped |
+
+Limits, all consequences of present's inline syntax having no escape: a bold span that holds a code span or a link loses the bold (the renderer would print a stray token), emphasis inside emphasis keeps only the outer mark, a link label is plain text, a code span holding a backtick comes out as words, and literal `](` or `@chip(` in prose or a code span gets a space inserted so it cannot turn into a link or chip. A literal `*` in the source still italicises when rendered. Name normalization applies to imported prose like to any Doc (` & ` reads "and", ` - ` reads "minus"); code blocks are exempt since this change.
 
 ## MCP tools
 

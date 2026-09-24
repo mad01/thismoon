@@ -410,7 +410,9 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{define "block-html"}}{{rawHTML .Text}}{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
-// names like JIRA render as words, not spelled-out acronyms.
+// names like JIRA render as words, not spelled-out acronyms. Code blocks are
+// left alone: their text is verbatim, and turning `a & b` into `a and b`
+// would change the program shown.
 func (d *Doc) normalize() {
 	d.Summary = normalizeNames(d.Summary)
 	d.Meta = normalizeNames(d.Meta)
@@ -421,6 +423,9 @@ func (d *Doc) normalize() {
 		d.Sections[i].Heading = normalizeNames(d.Sections[i].Heading)
 		for j := range d.Sections[i].Blocks {
 			b := &d.Sections[i].Blocks[j]
+			if b.T == "code" {
+				continue
+			}
 			b.Text = normalizeNames(b.Text)
 			b.Title = normalizeNames(b.Title)
 			b.Subtitle = normalizeNames(b.Subtitle)

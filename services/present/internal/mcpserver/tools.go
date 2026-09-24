@@ -222,25 +222,13 @@ func resolveContent(s string, title string) (htmlOut string, docJSON []byte, err
 		return "", nil, nil
 	}
 	if s[0] == '{' {
-		return parseDocAndRender([]byte(s), title)
+		c, err := render.Compile([]byte(s), title)
+		if err != nil {
+			return "", nil, err
+		}
+		return c.HTML, c.JSON, nil
 	}
 	return s, nil, nil
-}
-
-func parseDocAndRender(data []byte, title string) (htmlOut string, docJSON []byte, err error) {
-	var doc render.Doc
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return "", nil, fmt.Errorf("parse doc: %w", err)
-	}
-	out, err := render.RenderDoc(doc, title)
-	if err != nil {
-		return "", nil, err
-	}
-	canonical, err := json.Marshal(doc)
-	if err != nil {
-		return "", nil, fmt.Errorf("marshal doc: %w", err)
-	}
-	return out, canonical, nil
 }
 
 // resolveGraph detects whether s is a GraphInput JSON object or a legacy JS

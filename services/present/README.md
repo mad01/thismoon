@@ -54,6 +54,17 @@ present unshare <id>                              # removes the copy
 
 With both variables set, `present serve` shows a Share button in every page's header (a modal with the expiry checkbox, the link, and a Copy button; the button reads "Shared" once a copy exists) and `present mcp` registers a `present_share` tool. Sharing a page again replaces the copy under the same link. Only your author key can change or remove the copy; if you lose it, mint a new one and share each page again. `present doctor` checks the instance and the key once you have set both variables.
 
+### Importing a markdown file
+
+The index page (`GET /`) has an "Import markdown" button, and a `.md`, `.markdown`, or `.txt` file dropped anywhere on that page does the same: the browser reads it and posts it to `POST /api/import`, the server converts it to a page, and you land on the new page. Headings become the title and sections, paragraphs, lists, code blocks, tables, and blockquotes map to their present blocks; raw HTML, horizontal rules, and footnotes are dropped, nested lists are flattened, and a fenced `mermaid` block stays a code block for now. Files over 1 MiB are refused. The same endpoint works from a shell on the local instance:
+
+```bash
+jq -Rs '{name: "notes.md", markdown: .}' notes.md \
+  | curl -sS -X POST http://localhost:7423/api/import -H 'Content-Type: application/json' -d @-
+```
+
+The import exists in local mode only; a shared instance takes pages through the MCP tools or `POST /api/pages` with an author key.
+
 ## MCP
 
 On a standalone install, register it once:

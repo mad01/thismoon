@@ -47,7 +47,10 @@ internal/baseurl/    public base URL from X-Forwarded-* (middleware + derivation
 internal/sharedclient/  client for a shared instance (create, replace, delete,
                      whoami, author key as bearer); Share and Unshare wrap a
                      push with the local store's shared record
-internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade
+internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade;
+                     compile.go is the parse, render, canonical-JSON step every
+                     write path shares
+internal/mdimport/   markdown file to title + Doc (goldmark), pure
 internal/server/     HTTP handlers per mode; embeds shell.html, index_shell.html,
                      shared_index_shell.html, app.js, index.js
 internal/mcpserver/  MCP wiring and the present_* tools, one tool set per mode
@@ -63,15 +66,28 @@ helpers (`Webkit.el`, `Webkit.escapeHtml`, `Webkit.poll`).
 
 ## Data flow
 
-The write path is MCP-only. `present_create` and `present_update` accept
-content as structured Doc JSON (or legacy HTML, auto-detected) and an optional
-Graph JSON; `internal/render` compiles them to HTML and a Cytoscape init
-script at authoring time (`RenderDoc`/`RenderGraph`), and `internal/store`
-writes the results under `pages/<id>/` with a version bump. `present_source`
-returns the stored `doc.json`/`graph.json` so a later session can round-trip
-them back through `present_update`. `present rerender` pushes a renderer or
-webkit change through existing pages by re-rendering from those sources
-(pages without sources get a deterministic legacy-HTML upgrade).
+The write path is the MCP, with one browser-side exception. `present_create`
+and `present_update` accept content as structured Doc JSON (or legacy HTML,
+auto-detected) and an optional Graph JSON; `internal/render` compiles them
+to HTML and a Cytoscape init script at authoring time (`Compile` wraps
+`RenderDoc` and hands back the canonical Doc JSON too; `RenderGraph` does the
+graph), and `internal/store` writes the results under `pages/<id>/` with a
+version bump. `present_source` returns the stored `doc.json`/`graph.json` so
+a later session can round-trip them back through `present_update`. `present
+rerender` pushes a renderer or webkit change through existing pages by
+re-rendering from those sources (pages without sources get a deterministic
+legacy-HTML upgrade).
+
+The exception is the markdown import, a local-mode route the index offers as
+a button and a drop target. The browser reads the file and posts it to
+`POST /api/import`; `internal/mdimport` maps the markdown onto a title and
+a Doc, the same `Compile` step renders it, and the store gets exactly what
+an MCP create would have written, `doc.json` included, so the page is
+editable through `present_source` afterwards. The handler asks for a JSON
+content type and a same-origin or loopback `Origin`, which is what keeps a
+page in another tab from importing into a loopback server that
+authenticates nothing, and it applies the shared instance's size cap so an
+imported page can always be shared later.
 
 The read path renders client-side (docs/adr/0005). `GET /p/{id}` serves the
 embedded chrome-only `shell.html`; the browser loads `app.js`, fetches the
@@ -171,7 +187,10 @@ touches present.
 Web: `GET /` (index shell), `GET /api/pages`, `GET /index.js`, `GET /p/{id}`
 (page shell), `GET /api/p/{id}` (with a `share` block in local mode),
 `GET /app.js`, `GET /p/{id}/version`, `DELETE /p/{id}` (the only delete
-surface), `POST /p/{id}/share` (local mode with a shared instance configured;
+surface), `POST /api/import` (local mode; body `{"name", "markdown"}` as
+JSON, answers `201 {"id", "url"}`, 415 without the JSON content type, 403
+cross-site, 413 over 1 MiB, 400 for a file with nothing to import),
+`POST /p/{id}/share` (local mode with a shared instance configured;
 body `{"ephemeral": bool}`, answers the share block, 404 for an unknown page,
 502 when the shared instance refuses or is unreachable), `GET /webkit/` and
 `GET /webkit/version` from the webkit Go package.

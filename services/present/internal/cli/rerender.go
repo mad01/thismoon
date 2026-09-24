@@ -94,14 +94,11 @@ func rerenderOne(ctx context.Context, st store.Store, id string) (string, error)
 		if err != nil {
 			return "", fmt.Errorf("load doc: %w", err)
 		}
-		var doc render.Doc
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			return "", fmt.Errorf("parse doc: %w", err)
-		}
-		newContent, err = render.RenderDoc(doc, p.Title)
+		c, err := render.Compile(raw, p.Title)
 		if err != nil {
-			return "", fmt.Errorf("render doc: %w", err)
+			return "", err
 		}
+		newContent = c.HTML
 	} else {
 		newContent = render.UpgradeLegacyHTML(p.Content)
 	}
