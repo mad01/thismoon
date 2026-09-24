@@ -61,12 +61,19 @@ match. Attributes:
 - `endpoint` — base URL of the speech service (default `http://speak.this`).
 - `voice` — Kokoro voice id (default `af_heart`).
 - `speed` — playback speed multiplier (default `1`).
+- `prepare` — boolean; registers the page's text with speak on connect so its
+  parts are synthesized ahead of playback and the page shows how far that got
+  (prepared mode, below).
+- `name` — the document name speak files the page under (default: the page
+  title); it names the downloads.
 
 Backend contract: the endpoint must serve an OpenAI-compatible
 `POST {endpoint}/v1/audio/speech` accepting `{model, input, voice, speed}` and
 returning a WAV body, with CORS allowed (the d-man `speak` route provides both
 via mlx-audio + the route's `cors = true` flag). Cached mode (below) also needs
-`GET {endpoint}/audio/{key}`, which speak serve provides. On connect the
+`GET {endpoint}/audio/{key}`, and prepared mode speak serve's document API
+(`POST /read`, `GET /doc/{id}`, `POST /doc/{id}/prepare`, `GET
+/doc/{id}/audio`); speak serve provides all of them. On connect the
 element probes `GET {endpoint}/` with a 1.5s timeout — if unreachable it
 injects nothing, so pages degrade gracefully on hosts without the speak
 service.
@@ -100,6 +107,49 @@ section; it hides again when playback ends.
   playing key gets `[data-ra-chunk].wk-ra-active`; no sentence spans. Cached
   parts are synthesized at the provider's default speed, so the speed control
   sets the audio element's `playbackRate` instead, live while a part plays.
+  A section that holds text directly (present's summary block) counts as a
+  block of its own when it carries `data-ra-chunk`.
+- **Prepared mode** (`prepare` attribute; present pages): once the probe
+  succeeds, the element collects each target section's readable blocks and
+  posts them as one document. A block is the nearest block-level element
+  around a run of text (`BLOCK_TAGS` in `src/read-aloud.ts`, among them
+  `wk-section-heading`, `p`, `li`, `wk-callout`, the headings and
+  `blockquote`), or the section itself when it holds text directly.
+  `pre/table/svg/button/wk-badge` subtrees are left out as in uncached mode;
+  each block's text has its whitespace collapsed, and a block left with no
+  text is dropped. The request is
+  `POST {endpoint}/read` with `{name, sections: [{blocks: [text, ...]},
+  ...]}`; speak answers, per section, the keys that read each block and the
+  section's play order, and the element stamps `data-ra-chunk` and
+  `data-ra-parts` itself, so cached mode takes over: `GET /audio/{key}`
+  synthesizes a part on demand, and registration alone starts nothing. When
+  registration fails (unreachable, non-2xx, an answer that doesn't mirror
+  the request) nothing is stamped and the page reads live as before; the
+  reason goes to `console.debug` only.
+
+Prepared status: with the page registered, the element renders a bar inside
+itself (`.wk-ra-bar`; `wk-read-aloud` turns visible where the consumer placed
+it): "Audio: N of M parts ready" and what the rest are doing (preparing,
+retrying, not prepared, failed), the failure reason, and the buttons
+"Prepare all" (`POST /doc/{id}/prepare`, enabled while idle or failed parts
+remain), "Retry failed (N)" (`?failed=1`, shown when something failed) and
+"Download page audio" (`GET /doc/{id}/audio`, enabled once every part is
+ready; speak's 409 while parts are missing shows as a notice toast). Each
+section with parts gets a `wk-badge.wk-ra-state` beside its play buttons
+(audio ready, generating i of n, queued, retrying, failed with speak's
+reason, or not prepared), a "Retry" button while it has failed parts
+(`?section=N&failed=1`) and a "Download" button once it is fully ready
+(`?section=N`). Downloads go fetch, blob, object URL, click, since speak
+refuses a cross-origin `<a download>`; the file is `<name>.wav` or
+`<name>-section-N.wav`, `.mp3` when the clip is `audio/mpeg`. The status is
+polled every 2s while any part is queued, generating or retrying, and again
+after a prepare call and whenever a session fetches a part; while speak
+doesn't answer, the poll backs off, doubling to once a minute, and the next
+prepare click or fetched part brings the 2s cadence back. A 404 from
+`GET /doc/{id}`, or from a part during playback, means speak restarted: the
+page registers again, stamps anew (keys may differ) and playback resumes from
+the same part; if that registration fails the stamps come off, one toast says
+so, and the page reads live from then on.
 
 Selection speaker: independent of `targets`, selecting any text on the page
 (outside the header/controls) shows a floating play button at the selection's

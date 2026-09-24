@@ -1261,8 +1261,10 @@ wk-toast[variant="err"] { background: var(--red); color: #fff; }
 /* ── Read aloud (wk-read-aloud) ── */
 
 /* The element itself is a controller, not a visual: it injects .wk-ra-btn
-   into its `targets` and stays empty. */
+   into its `targets` and stays empty, except in prepared mode, where it holds
+   the page's audio bar and shows where the consumer placed it. */
 wk-read-aloud { display: none; }
+wk-read-aloud:has(> .wk-ra-bar) { display: block; }
 
 .wk-ra-btn {
   appearance: none; float: right; background: var(--chip-bg); border: 1px solid var(--border);
@@ -1308,6 +1310,41 @@ wk-read-aloud { display: none; }
    specificity, later in the file) — without this, the active float button
    renders a white pause icon on a white card. */
 .wk-ra-btn.wk-ra-float.active { background: var(--primary); }
+
+/* Prepared mode: labelled actions (prepare, retry, download) in the icon
+   button's frame, sized to their text. */
+.wk-ra-btn.wk-ra-text {
+  width: auto; padding: 0 0.6rem; font-size: 0.75rem; font-weight: 500;
+  white-space: nowrap; font-family: inherit;
+}
+.wk-ra-btn:disabled { opacity: 0.5; cursor: default; }
+.wk-ra-btn:disabled:hover { border-color: var(--border); color: var(--text-2); }
+
+/* A section's audio state, floated beside its play buttons. A block (not the
+   badge's inline-flex) so a long failure reason ellipsizes; the full text is
+   in the title. Same height as .wk-ra-btn. */
+wk-badge.wk-ra-state {
+  display: block; float: right; margin: 0 0 0.5rem 0.75rem;
+  line-height: 1.25rem; max-width: 16rem;
+  overflow: hidden; text-overflow: ellipsis;
+  position: relative; z-index: 2;
+}
+
+/* The page bar: how far speak got with the page's audio, and what to do
+   about it. */
+.wk-ra-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  margin: 1rem 0; padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg);
+  font-size: 0.8rem; color: var(--text-2);
+}
+.wk-ra-bar-line { color: var(--text-1); font-weight: 500; white-space: nowrap; }
+.wk-ra-bar-reason {
+  flex: 1 1 8rem; min-width: 0; color: var(--red);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wk-ra-bar-actions { display: inline-flex; gap: 0.5rem; margin-left: auto; }
+.wk-ra-bar .wk-ra-btn { float: none; margin: 0; }
 
 /* Respect reduced-motion kit-wide (consumers previously shipped this locally). */
 @media (prefers-reduced-motion: reduce) {

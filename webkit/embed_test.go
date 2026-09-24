@@ -55,8 +55,9 @@ func TestHandlerServesCSS(t *testing.T) {
 		".wk-cmdk-overlay", ".wk-cmdk-item", ".ctrl-kbd",
 		// feature guide (help modal)
 		".wk-help-row", ".wk-help-close", ".wk-help-section-title",
-		// read aloud
+		// read aloud, plus prepared mode's page bar, section badge and text buttons
 		"wk-read-aloud", ".wk-ra-btn", ".wk-ra-sentence",
+		".wk-ra-bar", ".wk-ra-bar-actions", "wk-badge.wk-ra-state", ".wk-ra-btn.wk-ra-text",
 		// a11y
 		"prefers-reduced-motion", ":focus-visible",
 	} {
@@ -81,6 +82,8 @@ func TestHandlerServesJS(t *testing.T) {
 		"wk-seg", "wk-kv", "wk-section", "wk-callout",
 		"wk-progress", "wk-toc", "wk-modal", "wk-form", "wk-toast",
 		"wk-read-aloud", "v1/audio/speech",
+		// prepared mode: the attribute, speak's document API, the status UI classes
+		`hasAttribute("prepare")`, `"/read"`, "/prepare", "data-ra-chunk", "wk-ra-bar", "wk-ra-state",
 		// ⌘K site picker
 		"wk-cmdk:open", "__this/sites.json", "webkit-cmdk",
 		// feature guide (help modal)

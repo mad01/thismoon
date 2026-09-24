@@ -770,11 +770,11 @@ var Webkit = (() => {
                 if (rematch && pos >= rematch.reach) {
                   break;
                 }
-                var str = currentNode.value;
+                var str2 = currentNode.value;
                 if (tokenList.length > text.length) {
                   return;
                 }
-                if (str instanceof Token) {
+                if (str2 instanceof Token) {
                   continue;
                 }
                 var removeCount = 1;
@@ -802,19 +802,19 @@ var Webkit = (() => {
                     p += k.value.length;
                   }
                   removeCount--;
-                  str = text.slice(pos, p);
+                  str2 = text.slice(pos, p);
                   match.index -= pos;
                 } else {
-                  match = matchPattern(pattern, 0, str, lookbehind);
+                  match = matchPattern(pattern, 0, str2, lookbehind);
                   if (!match) {
                     continue;
                   }
                 }
                 var from = match.index;
                 var matchStr = match[0];
-                var before = str.slice(0, from);
-                var after = str.slice(from + matchStr.length);
-                var reach = pos + str.length;
+                var before = str2.slice(0, from);
+                var after = str2.slice(from + matchStr.length);
+                var reach = pos + str2.length;
                 if (rematch && reach > rematch.reach) {
                   rematch.reach = reach;
                 }
@@ -1514,6 +1514,173 @@ var Webkit = (() => {
     return Math.max(SIZE_MIN, Math.min(SIZE_MAX, px));
   }
 
+  // src/prepare.ts
+  function blockText(runs) {
+    return runs.map((r) => r.replace(/\s+/g, " ").trim()).filter((r) => r).join(" ");
+  }
+  var BlockCollector = class {
+    constructor() {
+      this.runs = /* @__PURE__ */ new Map();
+    }
+    text(block, s) {
+      let runs = this.runs.get(block);
+      if (!runs) {
+        if (!s.trim()) return;
+        runs = [""];
+        this.runs.set(block, runs);
+      }
+      runs[runs.length - 1] += s;
+    }
+    cut(block) {
+      const runs = this.runs.get(block);
+      if (runs && runs[runs.length - 1]) runs.push("");
+    }
+    blocks() {
+      return Array.from(this.runs, ([el2, runs]) => ({ el: el2, text: blockText(runs) })).filter((b) => b.text);
+    }
+  };
+  function readRequest(name, sections) {
+    return { name, sections: sections.map((blocks) => ({ blocks: [...blocks] })) };
+  }
+  function isRecord(v) {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+  function isStringList(v) {
+    return Array.isArray(v) && v.every((s) => typeof s === "string");
+  }
+  function num(v) {
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  }
+  function str(v) {
+    return typeof v === "string" ? v : "";
+  }
+  function counts(v) {
+    const r = isRecord(v) ? v : {};
+    return {
+      parts: num(r.parts),
+      ready: num(r.ready),
+      generating: num(r.generating),
+      queued: num(r.queued),
+      retrying: num(r.retrying),
+      idle: num(r.idle),
+      failed: num(r.failed)
+    };
+  }
+  function parseDocStatus(body) {
+    if (!isRecord(body) || typeof body.id !== "string" || !body.id) return null;
+    const sections = Array.isArray(body.sections) ? body.sections : [];
+    return {
+      id: body.id,
+      name: str(body.name),
+      total: counts(body.total),
+      sections: sections.filter(isRecord).map((s) => ({
+        ...counts(s),
+        section: num(s.section),
+        reason: str(s.reason)
+      })),
+      reason: str(body.reason)
+    };
+  }
+  function parseRegistration(body, blockCounts) {
+    if (!isRecord(body)) return null;
+    const doc = parseDocStatus(body.doc);
+    if (!doc) return null;
+    if (!Array.isArray(body.sections) || body.sections.length !== blockCounts.length) return null;
+    const sections = [];
+    for (let i = 0; i < blockCounts.length; i++) {
+      const s = body.sections[i];
+      if (!isRecord(s) || !isStringList(s.parts)) return null;
+      if (!Array.isArray(s.blocks) || s.blocks.length !== blockCounts[i] || !s.blocks.every(isStringList)) {
+        return null;
+      }
+      sections.push({ parts: s.parts, blocks: s.blocks });
+    }
+    return { name: str(body.name) || doc.name, doc, sections };
+  }
+  function inProgress(c) {
+    return c.queued + c.generating + c.retrying;
+  }
+  function statusOfSection(status, index) {
+    return status.sections.find((s) => s.section === index + 1);
+  }
+  function pageLine(t) {
+    let line = `Audio: ${t.ready} of ${t.parts} parts ready`;
+    const working = t.queued + t.generating;
+    if (working) line += `, ${working} preparing`;
+    if (t.retrying) line += `, ${t.retrying} retrying`;
+    if (t.idle) line += `, ${t.idle} not prepared`;
+    if (t.failed) line += `, ${t.failed} failed`;
+    return line;
+  }
+  function barView(status) {
+    const t = status.total;
+    return {
+      line: pageLine(t),
+      reason: t.failed ? status.reason : "",
+      canPrepare: t.idle + t.failed > 0,
+      failed: t.failed,
+      canDownload: t.parts > 0 && t.ready === t.parts
+    };
+  }
+  function sectionView(sec) {
+    const ready = `${sec.ready} of ${sec.parts} ready`;
+    let variant;
+    let text;
+    if (sec.parts && sec.ready === sec.parts) {
+      variant = "ok";
+      text = "audio ready";
+    } else if (sec.generating) {
+      variant = "info";
+      text = `generating ${Math.min(sec.ready + 1, sec.parts)} of ${sec.parts}`;
+    } else if (sec.queued) {
+      variant = "info";
+      text = `queued, ${ready}`;
+    } else if (sec.retrying) {
+      variant = "warn";
+      text = `retrying, ${ready}`;
+    } else if (sec.failed) {
+      const reason = sec.reason || "unknown reason";
+      variant = "error";
+      text = /^failed\b/i.test(reason) ? reason : `failed: ${reason}`;
+    } else if (sec.ready) {
+      variant = "outline";
+      text = ready;
+    } else {
+      variant = "outline";
+      text = "not prepared";
+    }
+    const title = sec.reason && variant !== "error" && variant !== "ok" ? `${text} (last failure: ${sec.reason})` : text;
+    return {
+      variant,
+      text,
+      title,
+      retry: sec.failed > 0,
+      download: sec.parts > 0 && sec.ready === sec.parts
+    };
+  }
+  function prepareQuery(section, failedOnly) {
+    const q = [];
+    if (section > 0) q.push(`section=${section}`);
+    if (failedOnly) q.push("failed=1");
+    return q.length ? "?" + q.join("&") : "";
+  }
+  function audioExt(mime) {
+    const type = mime.split(";")[0].trim().toLowerCase();
+    return type === "audio/mpeg" || type === "audio/mp3" ? ".mp3" : ".wav";
+  }
+  function downloadName(name, section, mime) {
+    let base = name.trim().replace(/\.(md|markdown|txt)$/i, "");
+    base = Array.from(base).map((ch) => /[\p{L}\p{N}\-_.]/u.test(ch) ? ch : "-").join("");
+    base = base.replace(/^[-.]+|[-.]+$/g, "") || "speak";
+    if (section > 0) base += `-section-${section}`;
+    return base + audioExt(mime);
+  }
+  var POLL_MS = 2e3;
+  var POLL_MAX_MS = 6e4;
+  function pollDelay(failures) {
+    return Math.min(POLL_MAX_MS, POLL_MS * 2 ** Math.max(0, failures));
+  }
+
   // src/sentences.ts
   function speakable(text) {
     return text.replace(/[`"“”„«»]/g, "").replace(/\s+/g, " ").trim();
@@ -1642,6 +1809,9 @@ var Webkit = (() => {
   var SVG_PLAY = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
   var SVG_PAUSE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
   var SVG_RESTART = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>';
+  function tagOf(el2) {
+    return el2.tagName.toUpperCase();
+  }
   function collectRuns(root) {
     const runs = [];
     let current = [];
@@ -1657,7 +1827,7 @@ var Webkit = (() => {
         return;
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return;
-      const tag = node.tagName;
+      const tag = tagOf(node);
       if (SKIP_TAGS.has(tag)) return;
       const isBlock = BLOCK_TAGS.has(tag);
       if (isBlock) flush();
@@ -1732,7 +1902,9 @@ var Webkit = (() => {
   function planCached(section, cfg) {
     const readers = /* @__PURE__ */ new Map();
     const lists = [];
-    section.querySelectorAll("[data-ra-chunk]").forEach((el2) => {
+    const blocks = Array.from(section.querySelectorAll("[data-ra-chunk]"));
+    if (section.hasAttribute("data-ra-chunk")) blocks.unshift(section);
+    blocks.forEach((el2) => {
       const list = el2.dataset.raChunk ?? "";
       lists.push(list);
       for (const key of splitKeys(list)) {
@@ -1773,22 +1945,64 @@ var Webkit = (() => {
   function stopReadAloud() {
     if (session) endSession(session);
   }
-  async function fetchAudio(cfg, url, init2) {
+  var SpeechError = class extends Error {
+    constructor(message, status) {
+      super(message);
+      this.status = status;
+    }
+  };
+  function unreachable(cfg) {
+    return new SpeechError(
+      "the speech service at " + (cfg.endpoint || location.origin) + " is not reachable",
+      0
+    );
+  }
+  function isGone(err) {
+    return err instanceof SpeechError && err.status === 404;
+  }
+  function reasonOf(err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  async function fetchClip(cfg, url, init2) {
     let res;
     try {
       res = await fetch(url, init2);
     } catch {
-      throw new Error("the speech service at " + (cfg.endpoint || location.origin) + " is not reachable");
+      throw unreachable(cfg);
     }
-    if (!res.ok) throw new Error(await failureReason(res));
+    if (!res.ok) throw new SpeechError(await failureReason(res), res.status);
     let blob;
     try {
       blob = await res.blob();
     } catch {
-      throw new Error("the speech service broke off the audio mid-response");
+      throw new SpeechError("the speech service broke off the audio mid-response", res.status);
     }
-    if (!blob.size) throw new Error("the speech service returned empty audio");
-    return URL.createObjectURL(blob);
+    if (!blob.size) throw new SpeechError("the speech service returned empty audio", res.status);
+    return blob;
+  }
+  async function fetchAudio(cfg, url, init2) {
+    return URL.createObjectURL(await fetchClip(cfg, url, init2));
+  }
+  async function requestJSON(cfg, method, path, body) {
+    const headers = { accept: "application/json" };
+    if (body !== void 0) headers["Content-Type"] = "application/json";
+    let res;
+    try {
+      res = await fetch(cfg.endpoint + path, {
+        method,
+        headers,
+        cache: "no-store",
+        body: body === void 0 ? void 0 : JSON.stringify(body)
+      });
+    } catch {
+      throw unreachable(cfg);
+    }
+    if (!res.ok) throw new SpeechError(await failureReason(res), res.status);
+    try {
+      return await res.json();
+    } catch {
+      throw new SpeechError("the speech service answered with malformed JSON", res.status);
+    }
   }
   function fetchSpeech(cfg, text) {
     return fetchAudio(cfg, cfg.endpoint + "/v1/audio/speech", {
@@ -1811,24 +2025,24 @@ var Webkit = (() => {
     return "the speech service returned " + res.status;
   }
   function failSession(s, err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = reasonOf(err);
     console.warn("wk-read-aloud:", reason);
     endSession(s);
     s.btn.classList.add("wk-ra-error");
     s.btn.title = "Read-aloud failed: " + reason + ". Click to try again.";
     s.btn.setAttribute("aria-label", "Read-aloud failed. Click to try again.");
-    showErrorToast("Read-aloud failed: " + reason);
+    showToast("Read-aloud failed: " + reason);
     document.dispatchEvent(new CustomEvent("wk-read-aloud-error", { detail: { reason } }));
   }
-  function showErrorToast(text) {
+  function showToast(text, error = true) {
     let host = document.querySelector("wk-toast-host");
     if (!host) {
       host = document.createElement("wk-toast-host");
       document.body.appendChild(host);
     }
     const toast = document.createElement("wk-toast");
-    toast.setAttribute("variant", "err");
-    toast.setAttribute("role", "alert");
+    if (error) toast.setAttribute("variant", "err");
+    toast.setAttribute("role", error ? "alert" : "status");
     toast.textContent = text;
     host.appendChild(toast);
     setTimeout(() => toast.remove(), ERROR_TOAST_MS);
@@ -1911,13 +2125,16 @@ var Webkit = (() => {
     highlight(s, idx);
     const clip = ensureClip(s, idx);
     prefetch(s, idx);
+    if (s.plan.cached) s.cfg.prepared?.refresh();
     s.waiting = true;
     syncWait(s);
     let url;
     try {
       url = await clip;
     } catch (err) {
-      if (!s.cancelled) failSession(s, err);
+      if (s.cancelled) return;
+      if (s.plan.cached && isGone(err) && await recoverSession(s, idx)) return;
+      failSession(s, err);
       return;
     } finally {
       s.waiting = false;
@@ -1934,7 +2151,7 @@ var Webkit = (() => {
       if (!s.cancelled) failSession(s, err);
     }
   }
-  function newSession(section, btn, restartBtn, cfg, plan) {
+  function newSession(section, btn, restartBtn, cfg, plan, from = 0) {
     const s = {
       section,
       btn,
@@ -1947,18 +2164,29 @@ var Webkit = (() => {
       lit: [],
       waiting: false,
       userPaused: false,
-      cancelled: false
+      cancelled: false,
+      epoch: cfg.prepared?.epoch ?? 0
     };
     session = s;
     setBtn(btn, "playing");
     if (restartBtn) restartBtn.hidden = false;
-    void playFrom(s, 0);
+    void playFrom(s, from);
   }
-  function startSession(section, btn, cfg, restartBtn = null) {
+  function startSession(section, btn, cfg, restartBtn = null, from = 0) {
     if (session) endSession(session);
     const plan = planCached(section, cfg) ?? planUncached(section, cfg);
     if (!plan) return;
-    newSession(section, btn, restartBtn, cfg, plan);
+    newSession(section, btn, restartBtn, cfg, plan, Math.min(from, plan.parts.length - 1));
+  }
+  async function recoverSession(s, idx) {
+    const prep = s.cfg.prepared;
+    if (!prep) return false;
+    const ok = prep.epoch !== s.epoch || await prep.docGone();
+    if (s.cancelled) return true;
+    const { section, btn, cfg, restartBtn } = s;
+    endSession(s);
+    if (ok) startSession(section, btn, cfg, restartBtn, idx);
+    return true;
   }
   function startSelectionSession(text, btn, cfg) {
     if (session) endSession(session);
@@ -2004,7 +2232,7 @@ var Webkit = (() => {
       const text = sel.toString().trim();
       if (text.length < MIN_SELECTION_CHARS) return;
       const anchor = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement;
-      if (anchor?.closest(".wk-ra-btn, wk-header")) return;
+      if (anchor?.closest(".wk-ra-btn, wk-header, wk-read-aloud")) return;
       selectedText = text;
       const rect = sel.getRangeAt(0).getBoundingClientRect();
       if (!floatBtn) {
@@ -2044,6 +2272,329 @@ var Webkit = (() => {
       }
     });
   }
+  function collectBlocks(section) {
+    const blocks = new BlockCollector();
+    const walk = (node, block) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        blocks.text(block, node.textContent ?? "");
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el2 = node;
+      const tag = tagOf(el2);
+      if (SKIP_TAGS.has(tag)) return;
+      if (!BLOCK_TAGS.has(tag)) {
+        Array.from(el2.childNodes).forEach((child) => walk(child, block));
+        return;
+      }
+      blocks.cut(block);
+      Array.from(el2.childNodes).forEach((child) => walk(child, el2));
+    };
+    Array.from(section.childNodes).forEach((child) => walk(child, section));
+    return blocks.blocks();
+  }
+  function stamp(sections, blocks, reg) {
+    sections.forEach((section, i) => {
+      const answer = reg.sections[i];
+      blocks[i].forEach((block, j) => {
+        const keys = answer.blocks[j];
+        if (keys.length) block.el.dataset.raChunk = keys.join(" ");
+        else delete block.el.dataset.raChunk;
+      });
+      if (answer.parts.length) section.dataset.raParts = answer.parts.join(" ");
+      else delete section.dataset.raParts;
+    });
+  }
+  function unstamp(sections) {
+    for (const section of sections) {
+      delete section.dataset.raParts;
+      delete section.dataset.raChunk;
+      section.querySelectorAll("[data-ra-chunk]").forEach((el2) => {
+        delete el2.dataset.raChunk;
+      });
+    }
+  }
+  function setText(el2, text) {
+    if (el2.textContent !== text) el2.textContent = text;
+  }
+  function setTitle(el2, title) {
+    if (el2.title !== title) el2.title = title;
+  }
+  function textButton(label, title) {
+    const b = document.createElement("button");
+    b.className = "wk-ra-btn wk-ra-text";
+    b.type = "button";
+    b.textContent = label;
+    b.title = title;
+    return b;
+  }
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 6e4);
+  }
+  var Preparer = class {
+    constructor(host, cfg, name, sections, anchors) {
+      this.host = host;
+      this.cfg = cfg;
+      this.name = name;
+      this.sections = sections;
+      this.anchors = anchors;
+      /** Bumped on every stamping, so a session can tell its plan is stale. */
+      this.epoch = 0;
+      this.status = null;
+      this.pollTimer = null;
+      /** Consecutive status polls that failed; sets the backoff. */
+      this.failures = 0;
+      this.registering = null;
+      this.stopped = false;
+      this.bar = null;
+      this.controls = [];
+    }
+    /** Registers the page; false when it could not be (the page reads live,
+     * the reason goes to the console only: nothing is wrong for the reader). */
+    start() {
+      return this.register();
+    }
+    async register() {
+      const blocks = this.sections.map(collectBlocks);
+      if (!blocks.some((b) => b.length)) {
+        console.debug("wk-read-aloud: nothing to prepare, no section holds readable text");
+        return false;
+      }
+      let reg;
+      try {
+        const body = readRequest(this.name, blocks.map((b) => b.map((block) => block.text)));
+        reg = parseRegistration(await requestJSON(this.cfg, "POST", "/read", body), blocks.map((b) => b.length));
+        if (!reg) console.debug("wk-read-aloud: speak answered the registration in an unexpected shape");
+      } catch (err) {
+        console.debug("wk-read-aloud: registering the page with speak failed:", reasonOf(err));
+        return false;
+      }
+      if (!reg || this.stopped) return false;
+      unstamp(this.sections);
+      stamp(this.sections, blocks, reg);
+      this.epoch++;
+      this.failures = 0;
+      this.render(reg.doc);
+      return true;
+    }
+    render(status) {
+      if (this.stopped) return;
+      this.status = status;
+      this.renderBar(status);
+      this.sections.forEach((_, i) => this.renderSection(i, statusOfSection(status, i)));
+      if (inProgress(status.total)) this.schedulePoll();
+      else this.stopPolling();
+    }
+    renderBar(status) {
+      if (!status.total.parts) {
+        this.bar?.root.remove();
+        this.bar = null;
+        return;
+      }
+      const bar = this.bar ?? (this.bar = this.buildBar());
+      const view = barView(status);
+      setText(bar.line, view.line);
+      setText(bar.reason, view.reason);
+      setTitle(bar.reason, view.reason);
+      bar.reason.hidden = !view.reason;
+      bar.prepareAll.disabled = !view.canPrepare;
+      setText(bar.retryFailed, `Retry failed (${view.failed})`);
+      bar.retryFailed.hidden = !view.failed;
+      bar.download.disabled = !view.canDownload;
+    }
+    buildBar() {
+      const line = document.createElement("span");
+      line.className = "wk-ra-bar-line";
+      const reason = document.createElement("span");
+      reason.className = "wk-ra-bar-reason";
+      reason.hidden = true;
+      const prepareAll = textButton("Prepare all", "Synthesize every part that is not ready yet");
+      prepareAll.addEventListener("click", () => void this.prepare(prepareAll, 0, false));
+      const retryFailed = textButton("Retry failed", "Try the failed parts again");
+      retryFailed.hidden = true;
+      retryFailed.addEventListener("click", () => void this.prepare(retryFailed, 0, true));
+      const download = textButton("Download page audio", "Download the whole page as one audio file");
+      download.addEventListener("click", () => void this.download(download, 0));
+      const actions = document.createElement("span");
+      actions.className = "wk-ra-bar-actions";
+      actions.append(prepareAll, retryFailed, download);
+      const root = document.createElement("div");
+      root.className = "wk-ra-bar";
+      root.append(line, reason, actions);
+      this.host.appendChild(root);
+      return { root, line, reason, prepareAll, retryFailed, download };
+    }
+    renderSection(i, sec) {
+      let c = this.controls[i] ?? null;
+      if (!sec?.parts) {
+        if (c) this.removeControls(i);
+        return;
+      }
+      if (!c) {
+        c = this.buildControls(i);
+        this.controls[i] = c;
+      }
+      const view = sectionView(sec);
+      if (c.badge.getAttribute("variant") !== view.variant) c.badge.setAttribute("variant", view.variant);
+      setText(c.badge, view.text);
+      setTitle(c.badge, view.title);
+      c.retry.hidden = !view.retry;
+      c.download.hidden = !view.download;
+    }
+    buildControls(i) {
+      const section = i + 1;
+      const badge = document.createElement("wk-badge");
+      badge.className = "wk-ra-state";
+      const retry = textButton("Retry", "Try this section's failed parts again");
+      retry.hidden = true;
+      retry.addEventListener("click", () => void this.prepare(retry, section, true));
+      const download = textButton("Download", "Download this section as one audio file");
+      download.hidden = true;
+      download.addEventListener("click", () => void this.download(download, section));
+      this.anchors[i].after(download, retry, badge);
+      return { badge, retry, download };
+    }
+    removeControls(i) {
+      const c = this.controls[i];
+      if (!c) return;
+      c.badge.remove();
+      c.retry.remove();
+      c.download.remove();
+      this.controls[i] = null;
+    }
+    /** Runs an action with its button disabled, then renders the status again
+     * so every control ends in the state the status calls for. */
+    async busy(btn, action) {
+      btn.disabled = true;
+      try {
+        await action();
+      } finally {
+        btn.disabled = false;
+        if (this.status) this.render(this.status);
+      }
+    }
+    /** Queues parts of one section (1-based) or the whole document (0): the
+     * failed ones only (Retry, so a retry never starts synthesis of parts the
+     * reader left unprepared), or every idle and failed one (Prepare all). */
+    prepare(btn, section, failedOnly) {
+      return this.busy(btn, async () => {
+        const id = this.status?.id;
+        if (!id) return;
+        try {
+          const path = `/doc/${encodeURIComponent(id)}/prepare${prepareQuery(section, failedOnly)}`;
+          const status = parseDocStatus(await requestJSON(this.cfg, "POST", path));
+          this.failures = 0;
+          if (status) this.render(status);
+          else this.refresh();
+        } catch (err) {
+          if (isGone(err)) void this.docGone();
+          else showToast("Prepare audio: " + reasonOf(err));
+        }
+      });
+    }
+    /** Downloads the joined audio of one section (1-based) or the page (0).
+     * speak answers 409 while parts are missing; that message is a notice,
+     * not a failure. */
+    download(btn, section) {
+      return this.busy(btn, async () => {
+        const st = this.status;
+        if (!st) return;
+        try {
+          const url = `${this.cfg.endpoint}/doc/${encodeURIComponent(st.id)}/audio${section ? `?section=${section}` : ""}`;
+          const blob = await fetchClip(this.cfg, url, { cache: "no-store" });
+          saveBlob(blob, downloadName(st.name, section, blob.type));
+        } catch (err) {
+          if (isGone(err)) void this.docGone();
+          else showToast("Download audio: " + reasonOf(err), !(err instanceof SpeechError && err.status === 409));
+        }
+      });
+    }
+    /** Arms the next poll: the normal cadence, or the backoff after failures. */
+    schedulePoll() {
+      this.stopPolling();
+      if (!this.host.isConnected) return;
+      this.pollTimer = window.setTimeout(() => {
+        this.pollTimer = null;
+        void this.poll();
+      }, pollDelay(this.failures));
+    }
+    stopPolling() {
+      if (this.pollTimer !== null) clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+    /** Asks for the status again at the normal cadence: a session started or a
+     * part was fetched, so speak has work (and, for a fetched part, is up),
+     * which also ends any backoff. */
+    refresh() {
+      if (this.stopped || !this.status) return;
+      this.failures = 0;
+      this.schedulePoll();
+    }
+    /** A status poll that failed for a reason other than a missing document:
+     * speak may be restarting, or its proxy answers for it. The next poll
+     * tells, after a wait that grows with each failure in a row. */
+    pollFailed() {
+      this.failures++;
+      this.schedulePoll();
+    }
+    async poll() {
+      const id = this.status?.id;
+      if (!id || this.stopped) return;
+      try {
+        const status = parseDocStatus(await requestJSON(this.cfg, "GET", `/doc/${encodeURIComponent(id)}`));
+        if (this.stopped || this.status?.id !== id) return;
+        if (!status) {
+          this.pollFailed();
+          return;
+        }
+        this.failures = 0;
+        this.render(status);
+      } catch (err) {
+        if (this.stopped || this.status?.id !== id) return;
+        if (isGone(err)) void this.docGone();
+        else this.pollFailed();
+      }
+    }
+    /** speak no longer knows the document (it restarted): registers the page
+     * again so the keys resolve, and picks up polling. One attempt, shared by
+     * whoever noticed first (a poll, a download, a playing part); when it
+     * fails, the page falls back to reading live. Resolves to whether prepared
+     * mode goes on. */
+    docGone() {
+      if (this.stopped) return Promise.resolve(false);
+      if (!this.registering) {
+        this.registering = this.register().then((ok) => {
+          this.registering = null;
+          if (!ok) this.fallback();
+          return ok;
+        });
+      }
+      return this.registering;
+    }
+    fallback() {
+      this.teardown();
+      unstamp(this.sections);
+      this.cfg.prepared = null;
+      showToast("Prepared audio is gone: the speech service no longer has this page. Reading live from now on.");
+    }
+    /** Stops polling and removes the status UI. */
+    teardown() {
+      this.stopped = true;
+      this.stopPolling();
+      this.bar?.root.remove();
+      this.bar = null;
+      this.controls.forEach((_, i) => this.removeControls(i));
+      this.controls = [];
+      this.status = null;
+    }
+  };
   async function probe(endpoint) {
     try {
       const ctrl = new AbortController();
@@ -2055,15 +2606,41 @@ var Webkit = (() => {
       return false;
     }
   }
+  function installSectionButtons(section, cfg) {
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "wk-ra-btn";
+    restartBtn.type = "button";
+    restartBtn.hidden = true;
+    restartBtn.title = "Restart from beginning";
+    restartBtn.innerHTML = SVG_RESTART;
+    restartBtn.setAttribute("aria-label", "Restart from beginning");
+    restartBtn.addEventListener("click", () => startSession(section, btn, cfg, restartBtn));
+    const btn = document.createElement("button");
+    btn.className = "wk-ra-btn";
+    btn.type = "button";
+    btn.title = "Read aloud";
+    setBtn(btn, "idle");
+    btn.addEventListener("click", () => onButton(section, btn, cfg, restartBtn));
+    section.insertBefore(restartBtn, section.firstChild);
+    section.insertBefore(btn, section.firstChild);
+    return restartBtn;
+  }
   var WkReadAloud = class extends HTMLElement {
     constructor() {
       super(...arguments);
       this._initialized = false;
+      this._preparer = null;
     }
     connectedCallback() {
-      if (this._initialized) return;
+      if (this._initialized) {
+        this._preparer?.refresh();
+        return;
+      }
       this._initialized = true;
       void this._setup();
+    }
+    disconnectedCallback() {
+      this._preparer?.stopPolling();
     }
     async _setup() {
       const savedSpeed = localStorage.getItem("webkit-ra-speed");
@@ -2072,7 +2649,8 @@ var Webkit = (() => {
       const cfg = {
         endpoint: (this.getAttribute("endpoint") ?? DEFAULT_ENDPOINT).replace(/\/+$/, ""),
         voice: this.getAttribute("voice") ?? DEFAULT_VOICE,
-        speed: initialSpeed
+        speed: initialSpeed,
+        prepared: null
       };
       document.addEventListener("wk-speedchange", ((e) => {
         cfg.speed = e.detail.speed;
@@ -2080,27 +2658,19 @@ var Webkit = (() => {
       }));
       if (!await probe(cfg.endpoint)) return;
       const selector = this.getAttribute("targets");
-      if (selector) {
-        document.querySelectorAll(selector).forEach((section) => {
-          const restartBtn = document.createElement("button");
-          restartBtn.className = "wk-ra-btn";
-          restartBtn.type = "button";
-          restartBtn.hidden = true;
-          restartBtn.title = "Restart from beginning";
-          restartBtn.innerHTML = SVG_RESTART;
-          restartBtn.setAttribute("aria-label", "Restart from beginning");
-          restartBtn.addEventListener("click", () => startSession(section, btn, cfg, restartBtn));
-          const btn = document.createElement("button");
-          btn.className = "wk-ra-btn";
-          btn.type = "button";
-          btn.title = "Read aloud";
-          setBtn(btn, "idle");
-          btn.addEventListener("click", () => onButton(section, btn, cfg, restartBtn));
-          section.insertBefore(restartBtn, section.firstChild);
-          section.insertBefore(btn, section.firstChild);
-        });
-      }
+      const sections = selector ? Array.from(document.querySelectorAll(selector)) : [];
+      const anchors = sections.map((section) => installSectionButtons(section, cfg));
       installSelectionSpeaker(cfg);
+      if (this.hasAttribute("prepare") && sections.length) {
+        const name = this.getAttribute("name") || document.title || "page";
+        const preparer = new Preparer(this, cfg, name, sections, anchors);
+        this._preparer = preparer;
+        cfg.prepared = preparer;
+        if (!await preparer.start()) {
+          this._preparer = null;
+          cfg.prepared = null;
+        }
+      }
     }
   };
 
