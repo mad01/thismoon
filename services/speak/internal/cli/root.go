@@ -25,12 +25,13 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "speak",
-	Short: "Read markdown aloud over localhost",
-	Long: fmt.Sprintf(`speak serves a local page where you upload a markdown file, see it
-rendered inline, and play it section by section, at http://localhost:%d
-(speak.this with d-man). It also serves an OpenAI-compatible
-/v1/audio/speech endpoint, so other pages on this machine (present, csl) can
-fetch speech from it.
+	Short: "Text-to-speech for this machine's pages and agents",
+	Long: fmt.Sprintf(`speak turns text into speech for this machine. 'speak serve' answers at
+http://localhost:%d (speak.this with d-man): pages on this machine register
+their text with it and play the audio it prepares, part by part, and an
+OpenAI-compatible /v1/audio/speech serves speech for anything else.
+Documents are read aloud on present, which prepares its pages through speak;
+speak's own page shows the engine state and lists the routes.
 
 Speech comes from the provider the config file selects: the local Kokoro
 engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM proxy or

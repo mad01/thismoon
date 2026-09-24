@@ -2,7 +2,7 @@ apiVersion: catalog.mad01/v1alpha1
 kind: Component
 metadata:
   name: speak
-  description: Read markdown aloud over localhost, upload page + CORS proxy in front of local Kokoro TTS
+  description: Text-to-speech over localhost, document audio API + CORS speech proxy for local pages, MCP tools for agents
   tags: [go, cli, tts]
 spec:
   type: cli

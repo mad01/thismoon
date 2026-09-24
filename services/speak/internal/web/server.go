@@ -15,18 +15,15 @@ import (
 	"github.com/mad01/thismoon/services/speak/internal/tts"
 )
 
-// shellHTML is the static page shell (chrome only). The page body — header,
-// upload form, and rendered doc — is built client-side by appJS, which posts
-// uploads to /read and mounts the returned sections. appJS is served at
-// GET /app.js.
+// indexHTML is the landing page served at GET /: static, naming the service,
+// pointing at present (where documents are read) and listing the routes. The
+// engine state on it is fetched client-side from GET /enginez, so serving the
+// page never runs a synthesis.
 //
-//go:embed assets/shell.html
-var shellHTML []byte
+//go:embed assets/index.html
+var indexHTML []byte
 
-//go:embed assets/app.js
-var appJS []byte
-
-const maxUploadBytes = 5 << 20 // 5MB markdown is plenty for a local tool
+const maxReadBytes = 5 << 20 // 5MB of block text is plenty for one page
 
 // cacheTTL is how long a synthesized clip stays on disk unused: a document
 // reread within a month plays without waiting for the provider again.
@@ -41,12 +38,12 @@ const maxCacheBytes = 2 << 30
 // maxCacheBytes.
 const reapInterval = 24 * time.Hour
 
-// Config is what the speak page serves from.
+// Config is what speak serve serves from.
 type Config struct {
 	// Speaker is the active provider.
 	Speaker Speaker
 	// Health is the one state every synthesis and /enginez probe records
-	// into, so the banner and the error bodies agree.
+	// into, so the engine line and the error bodies agree.
 	Health *tts.Health
 	// Info is the build metadata linked in via ldflags, exposed at GET
 	// /version (the HTTP twin of the fleet-wide `speak version -o json`
@@ -60,11 +57,11 @@ type Config struct {
 	retryDelay func(attempt int) time.Duration
 }
 
-// NewMux builds the speak HTTP handler: the markdown read-aloud page with
-// its pre-synthesized document audio, plus an OpenAI-style speech endpoint
-// that other local origins (present.this etc.) can fetch speech from,
-// subject to the CORS allowlist in cors.go. Both answer from the audio cache
-// in cfg.CacheDir when they can.
+// NewMux builds the speak HTTP handler: the document audio routes a page
+// registers its text with and plays prepared parts from, an OpenAI-style
+// speech endpoint that other local origins (present.this etc.) fetch speech
+// from, both subject to the CORS allowlist in cors.go, and the static landing
+// page. The audio routes answer from the cache in cfg.CacheDir when they can.
 func NewMux(cfg Config) *http.ServeMux {
 	store := audiocache.NewStore(cfg.CacheDir)
 	speech := &speechHandler{speaker: cfg.Speaker, health: cfg.Health, store: store}
@@ -74,15 +71,10 @@ func NewMux(cfg Config) *http.ServeMux {
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// no-store: the page is small, probed often (status, every present
+		// page view) and a rebuild's copy must show on the next load.
 		w.Header().Set("Cache-Control", "no-store")
-		_, _ = w.Write(shellHTML)
-	})
-
-	mux.HandleFunc("GET /app.js", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		// no-cache so a speak rebuild's app.js is picked up on the next load.
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(appJS)
+		_, _ = w.Write(indexHTML)
 	})
 
 	newDocServer(cfg, store).routes(mux)
@@ -102,9 +94,9 @@ func NewMux(cfg Config) *http.ServeMux {
 	})
 
 	// Engine health, distinct from /healthz: the component's own probe hits
-	// GET / on its endpoint, which same-origin is this page — always up even
-	// when the TTS engine behind the proxy is dead. app.js polls this to warn
-	// that play buttons won't work and why; see enginez in speech.go.
+	// GET / on its endpoint, which is always up even when the TTS engine
+	// behind it is dead. The landing page fetches this client-side to show
+	// the engine state; see enginez in speech.go.
 	mux.Handle("GET /enginez", &enginez{speaker: cfg.Speaker, health: cfg.Health})
 
 	mux.HandleFunc("GET /version", cfg.Info.Handler())

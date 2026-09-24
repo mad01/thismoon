@@ -1,11 +1,14 @@
-# speak, read markdown aloud over localhost
+# speak, text-to-speech over localhost
 
-Go CLI serving a local page where you upload a markdown file, see it rendered
-inline, and play it section by section with the shared `<wk-read-aloud>` webkit
-component, from audio serve synthesizes ahead into a disk cache. The same
-process serves an OpenAI-style `/v1/audio/speech` behind a CORS allowlist, so
-pages on this machine's other local origins (present.this, localhost) can
-fetch speech from it too, and pages from anywhere else are refused.
+Go CLI whose `speak serve` is the speech service this machine's own pages read
+aloud through: a present page registers its text with it and plays, through
+the shared `<wk-read-aloud>` webkit component, the audio serve synthesizes
+into a disk cache when the page prepares or plays a part. The same process serves an OpenAI-style
+`/v1/audio/speech` behind a CORS allowlist, so pages on this machine's local
+origins (present.this, localhost) can fetch speech from it too, and pages from
+anywhere else are refused. `speak mcp` reads on the speakers for agents. speak
+has no reading page of its own: documents are read on present, and `GET /` is
+a static landing page with the engine state and the routes.
 Speech comes from the provider `~/.config/speak/config.yaml` selects: the local
 Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM proxy
 or the Gemini Developer API.
@@ -23,15 +26,12 @@ services/speak/
                         # every subcommand uses
     web/               # server.go (mux, web.Config, cache reaper, the served
                         # wrapper: CORS, cross-site guard, preflight), docs.go
-                        # (both forms of POST /read, kept docs, DocStatus,
-                        # the /doc and /audio routes), speech.go
-                        # (read-through cached speech handler + /enginez
-                        # health), cors.go (the cross-origin allowlist),
-                        # markdown.go (planBlocks: the part plan both forms
-                        # of /read share; PlanSections: goldmark render and
-                        # section split around it), assets/shell.html
-                        # (chrome-only shell) + assets/app.js (client render,
-                        # audio badges)
+                        # (POST /read, kept docs, DocStatus, the /doc and
+                        # /audio routes), speech.go (read-through cached
+                        # speech handler + /enginez health), cors.go (the
+                        # cross-origin allowlist), plan.go (planBlocks: a
+                        # section's blocks into parts and their keys),
+                        # assets/index.html (the static landing page)
     chunk/             # text into parts: SplitSentences, Speakable, the Live
                         # and Prepared size ramps; mirrored by
                         # webkit/src/sentences.ts, change both together
@@ -82,42 +82,37 @@ services/speak/
   automatic fallback: a broken config or unusable active block becomes a
   provider that fails every synthesis with a `config` reason, so every
   surface shows it.
-- `POST /read` (multipart field `doc`, max 5MB) renders markdown via goldmark
-  (GFM) and splits it into `<section class="doc-section" data-section="N">`
-  blocks at every h1/h2; those blocks are the per-button play units of
-  `<wk-read-aloud targets=".doc-section" endpoint="">` (empty endpoint = same
-  origin). `web.PlanSections` also plans each section's parts with
-  `chunk.Prepared` (the first up to 250 characters, then up to 600). Each
-  section carries `data-ra-parts` with its part keys in play order, and every
-  read block (p, h1-h6, li) carries `data-ra-chunk="<key> ..."`, the parts
-  that read it, for highlighting; code, tables, raw HTML and images carry no
-  tag and are not read. The component plays the keys from `GET /audio/{key}`.
-- **`POST /read` has a JSON form** for a page that renders itself (present):
-  `Content-Type: application/json` with `{"name", "sections": [{"blocks":
-  ["text", ...]}, ...]}`, the page's text already split into the sections it
-  plays by and the blocks that show them. It answers `{"name", "doc",
-  "sections": [{"parts": [keys in play order], "blocks": [[keys per block],
-  ...]}]}`, the arrays mirroring the request one to one (`[]` for an empty
-  section or a block with nothing speakable). Both forms plan through
-  `planBlocks`, so a block posted as text gets the key the same block
-  rendered from markdown does, and the same texts make the same document
-  id. The JSON form keeps the document but queues nothing: a page registers
-  on every view and a remote provider bills every part, so playback and
-  `POST /doc/{id}/prepare` start synthesis. Its errors (400 for malformed
-  JSON, no sections, or a body over 5MB) use the document routes' JSON
-  shape; the multipart form's stay plain text.
-- **serve pre-synthesizes uploads.** Remote models answer slowly and with the
-  whole clip at once (see Gotchas), so serve keeps each upload in memory (the
-  32 most recently used docs) and synthesizes its parts in reading order into
-  a disk cache, up to 25,000 characters (about 30 minutes of speech); the rest
-  waits for Prepare all (`POST /doc/{id}/prepare`). `audiocache.Preparer` runs 3
-  workers, started when work is queued, and a part someone is waiting to play
-  jumps to an urgent queue. A newer upload's parts go before older queued
-  ones, and a doc that falls out of the 32 stops preparing its queued parts.
-  The one that falls out is the least recently used with nothing queued,
-  generating or retrying, so a page registering text on every view (the JSON
-  form of `/read`) never costs an upload its queued parts; only when every
-  document has work in flight does the least recently used of them go.
+- `POST /read` registers a page's text for the audio routes: `Content-Type:
+  application/json` with `{"name", "sections": [{"blocks": ["text", ...]},
+  ...]}`, the page's text already split into the sections it plays by and
+  the blocks that show them (present posts this on every page view through
+  `<wk-read-aloud prepare>`). `planBlocks` groups each section's blocks into
+  parts with `chunk.Prepared` (the first up to 250 characters, then up to
+  600); a block longer than a part splits at sentences. It answers `{"name",
+  "doc", "sections": [{"parts": [keys in play order], "blocks": [[keys per
+  block], ...]}]}`, the arrays mirroring the request one to one (`[]` for an
+  empty section or a block with nothing speakable), and the page stamps them
+  on as `data-ra-parts` and `data-ra-chunk` for the component to play and
+  highlight by. The plan depends on the texts alone, so the same page
+  registers to the same keys and document id on every view. Registration
+  queues nothing: a page registers on every view and a remote provider bills
+  every part, so playback and `POST /doc/{id}/prepare` start synthesis. Any
+  other content type (the retired multipart markdown upload included) gets
+  415; malformed JSON, no sections, or a body over 5MB get 400; all in the
+  document routes' JSON error shape.
+- **serve prepares documents into a disk cache.** Remote models answer slowly
+  and with the whole clip at once (see Gotchas), so serve keeps each
+  registered document in memory (the 32 most recently used) and synthesizes
+  parts into a disk cache when a page asks: Prepare all (`POST
+  /doc/{id}/prepare`) queues a document's idle parts in reading order, and
+  playing a part (`GET /audio/{key}`) that is not ready yet jumps it to an
+  urgent queue and waits for it. `audiocache.Preparer` runs 3 workers,
+  started when work is queued. A newer document's parts go before older
+  queued ones, and a document that falls out of the 32 stops preparing its
+  queued parts. The one that falls out is the least recently used with
+  nothing queued, generating or retrying, so a page registering on every
+  view never costs a document being prepared its queued parts; only when
+  every document has work in flight does the least recently used of them go.
   Parts are synthesized in the provider's default voice at its default speed;
   the browser applies the speed control through `playbackRate`. A failure of
   kind auth, quota, network, config or model, from a background part or a
@@ -135,8 +130,8 @@ services/speak/
   count. The reason reads `failed after N attempts: <reason>`. Each attempt has a 4-minute
   backstop in case the client never returns; the client's own two 90s tries
   end first. After a restart serve has no docs; the page gets a 404 from
-  `GET /doc/{id}` and re-posts its markdown, and `GET /audio/{key}` serves a
-  key already on disk even when no loaded doc holds it.
+  `GET /doc/{id}` and registers again, and `GET /audio/{key}` serves a key
+  already on disk even when no loaded doc holds it.
 - **The cache is `<state-dir>/cache/<key>.wav|.mp3`**, named by
   `audiocache.Key`: 32 hex characters of a sha256 over `provider.ClipID`
   (provider name, model, resolved voice), the speed and the text, so a
@@ -172,11 +167,10 @@ services/speak/
   both when it fails after answering), counts as an upstream failure.
   Failures also emit an `error` event to events.this via `kit/notify`
   (fire-and-forget); background preparation failures emit at most one a
-  minute, while the page badge and health still show every one. Success is
-  recorded but never emitted, since read-aloud fans out one request per part
-  and would flood the event log. The document routes and the JSON form of
-  `/read` answer errors as `{"error": {"message"}}`; the multipart form's
-  `/read` errors stay plain text.
+  minute, while the present page's badges and health still show every one.
+  Success is recorded but never emitted, since read-aloud fans out one
+  request per part and would flood the event log. The document routes and
+  `/read` answer errors as `{"error": {"message"}}`.
 - **Timeouts and the client retry.** One attempt at a remote provider gets
   90s, the local engine 30s. A remote attempt that times out or answers 5xx
   (for Gemini also an answer without audio) is retried once after 500ms; the
@@ -239,16 +233,15 @@ make test     # go test ./...
 
 | Path | Description |
 |------|-------------|
-| `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
-| `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
-| `POST /read` | Keep a document for the audio routes. Multipart field `doc` (the speak page): render and split a markdown file, start synthesizing its parts, return `{name, content, doc}` (`doc` is a `DocStatus`); errors stay plain text. `application/json` body `{name, sections: [{blocks: [text, ...]}]}` (a page that renders itself, such as present): plan the same keys without synthesizing anything, return `{name, doc, sections: [{parts: [...], blocks: [[...], ...]}]}` aligned with the request; 400 as `{"error": {"message"}}` for malformed JSON, no sections, or a body over 5MB |
+| `GET /` | Static landing page (embedded `index.html`): the service name, a link to present where documents are read, the engine state fetched client-side from `/enginez`, and the routes. Always 200 with `Cache-Control: no-store`; serving it runs no synthesis |
+| `POST /read` | Register a page's text for the audio routes: `application/json` body `{name, sections: [{blocks: [text, ...]}]}` (a page that renders itself, such as present). Plans the same keys on every view without synthesizing anything and returns `{name, doc, sections: [{parts: [...], blocks: [[...], ...]}]}` aligned with the request (`doc` is a `DocStatus`). 415 for any other content type, 400 for malformed JSON, no sections, or a body over 5MB, all as `{"error": {"message"}}` |
 | `GET /doc/{id}` | `DocStatus`: part counts (`parts`, `ready`, `generating`, `queued`, `retrying`, `idle`, `failed`) for the doc and per section, plus the latest failure `reason` with its attempt count (`failed after 3 attempts: ...`). 404 when serve no longer keeps the doc |
 | `POST /doc/{id}/prepare[?section=N][&failed=1]` | Queue every idle or failed part of the doc, or of section N (1-based; 400 for a bad number), failed ones with a fresh attempt count; `failed=1` queues only the failed parts. Answers `DocStatus` |
-| `GET /doc/{id}/audio[?section=N]` | The doc, or section N (the page links only the whole doc; the section form is for scripts), as one file (WAV parts joined, MP3 appended) with `Content-Disposition: attachment` (`notes.wav`, `notes-section-2.wav`). 409 naming how many parts are ready, 404 when nothing there is read aloud, 400 for a bad section |
+| `GET /doc/{id}/audio[?section=N]` | The doc, or section N, as one file (WAV parts joined, MP3 appended) with `Content-Disposition: attachment` (`notes.wav`, `notes-section-2.wav`). 409 naming how many parts are ready, 404 when nothing there is read aloud, 400 for a bad section |
 | `GET /audio/{key}` | One part's clip. A part not ready yet moves to the front of the queue and the request waits for it (tens of seconds on a remote provider); a synthesis failure answers like `/v1/audio/speech`. A key already on disk is served even when no loaded doc holds it. 400 malformed key, 404 unknown key |
 | `POST /v1/audio/speech` | OpenAI-style speech through the active provider, read-through cached (key: provider, model, resolved voice, speed, text); answers WAV or MP3 (reflects an allowlisted origin; like every route, 403 for any other origin or a cross-site request without one). A failure answers JSON `{"error": {"message", "type", "provider", "model", "health"}}`: 502 for a provider failure, 429 rate limit, 503 config problem, 400 for a request without `input` |
 | `GET /healthz` | 204; the `<wk-read-aloud>` component's cross-origin reachability probe against `GET /` gets its CORS header from the wrapper handler, which applies the allowlist to every response |
-| `GET /enginez` | TTS health as JSON (`status` ok/degraded/down/unknown, `provider`, `model`, `kind`, `reason`, `checked_at`); 200 when ok, 503 otherwise. Answers from the last recorded outcome when under a minute old, else runs a test synthesis first (a ping would call a running engine with a missing model healthy). `app.js` renders it as the banner; distinct from `/healthz`, which only proves this page is up |
+| `GET /enginez` | TTS health as JSON (`status` ok/degraded/down/unknown, `provider`, `model`, `kind`, `reason`, `checked_at`); 200 when ok, 503 otherwise. Answers from the last recorded outcome when under a minute old, else runs a test synthesis first (a ping would call a running engine with a missing model healthy). The landing page fetches it client-side for its engine line; distinct from `/healthz`, which only proves serve is up |
 | `GET /version` | The four-key build metadata object (`version`, `commit`, `tag`, `build_time`), the HTTP twin of `speak version -o json`, which ralph uses for update detection |
 | `GET /webkit/` | Shared chrome from the in-module `webkit` package |
 
@@ -256,41 +249,31 @@ make test     # go test ./...
 
 The chrome (`<wk-header>` + theme/font/size/fixation controls) comes from the
 in-module package **`github.com/mad01/thismoon/webkit`**, mounted at
-`GET /webkit/` via `webkit.Mount(mux)` and loaded by `internal/web/assets/shell.html`
-(which pulls the FOUC guard from `/webkit/boot.js`). Don't re-add
-palette/topbar/theme CSS locally; it lives in webkit only.
+`GET /webkit/` via `webkit.Mount(mux)` and loaded by
+`internal/web/assets/index.html` (which pulls the FOUC guard from
+`/webkit/boot.js`). Don't re-add palette/topbar/theme CSS locally; it lives in
+webkit only.
 
-### Header markup
+### The landing page
 
-`shell.html` uses:
+`index.html` is static: `<wk-header brand="speak">`, a `<wk-page-header>` +
+`<wk-title>` + `<wk-subtitle>` hero, one paragraph pointing at
+`http://present.this/`, an engine line (a `<wk-badge>` plus the provider and
+model, filled in by an inline script from `GET /enginez`; a failed fetch
+reads as unknown) and a table of the routes. Only its own layout lives in the
+inline `<style>` block. There is no `<wk-read-aloud>` on it and no client
+script beyond the engine fetch, so serving it never costs a synthesis.
 
-```html
-<wk-header brand="speak·aloud" controls="cmdk,font,fixation,size,speed,reload,theme"
-  fixation-targets="[data-fixation], .doc-section p, .doc-section li"></wk-header>
-```
+### The reading UI lives in webkit and present
 
-### Per-repo changes
-
-- Page chrome lives in `internal/web/assets/shell.html`; only speak-specific
-  styles (upload form, drop overlay, `.doc-section` rendering) live in its
-  inline `<style>` block.
-- webkit components speak uses: `<wk-page-header>` + `<wk-title>` +
-  `<wk-subtitle>` for the hero block, `<wk-callout variant="warn">` for the
-  engine-down banner, and `<wk-read-aloud targets=".doc-section" endpoint="">`
-  (see `webkit/COMPONENTS.md`) mounted fresh after every upload since it reads
-  its targets once on connect.
-- Recent-docs chips, drag/drop/paste handling, and the audio state are
-  speak-local logic in `app.js`, not webkit components. The audio state is a
-  `<wk-badge>` per section (amber `retrying, n of m ready` while an automatic
-  retry waits, its title naming the last failure) with a Retry button beside
-  it when the section has failed parts (`POST
-  /doc/{id}/prepare?section=N&failed=1`); the page's `Audio: n of m parts
-  ready` line with its retrying and failed counts, a `Retry failed (n)`
-  button (`?failed=1`) when anything failed or `Prepare all` (idle and
-  failed parts) when parts are only unprepared, and `Download page audio`
-  once every part is ready; and a 2s
-  `GET /doc/{id}` poll while anything is queued, generating or retrying.
-  There is no per-section download link.
+The audio badges, Retry, Prepare all and the document download that used to
+be speak's page are webkit's `<wk-read-aloud prepare>` (prepared mode, see
+`webkit/COMPONENTS.md`), mounted by present. speak's part of that contract
+is the document API above: the component registers through `POST /read`,
+stamps the keys, polls `GET /doc/{id}` every 2s while parts are queued,
+generating or retrying, re-queues through `POST /doc/{id}/prepare`
+(`?section=N`, `?failed=1`), plays from `GET /audio/{key}` and downloads
+through `GET /doc/{id}/audio`.
 
 ### Version check
 
@@ -381,8 +364,8 @@ muscle memory carries over. Implementation notes:
   Plain `speak version` stays a bare token — status parses it as one.
 - **Two processes, one release artifact.** The release artifact is the Go
   binary only. With the default local provider, synthesis needs the
-  recipe-managed Kokoro sidecar running on `:8765`; without it the page loads
-  and the speech endpoints return errors. CI builds and releases never ship
+  recipe-managed Kokoro sidecar running on `:8765`; without it the landing
+  page loads and the speech endpoints return errors. CI builds and releases never ship
   the engine. A machine on a remote provider needs no engine at all.
 - **OpenRouter offers mp3 or pcm, never wav.** The openrouter type requests
   pcm and `tts.Normalize` wraps it in a WAV header, taking the sample rate
@@ -391,7 +374,7 @@ muscle memory carries over. Implementation notes:
   synthesis.** Gemini 3.1 Flash TTS (preview) through OpenRouter took 3.2s for
   a 7-word sentence, 8.6 to 14.3s for 34 words and 21.6s for 120 words, each
   answered as one clip; three parallel requests ran without slowing down.
-  That is why serve prepares uploads ahead (a 4-part document took 18s, then
+  That is why serve prepares documents ahead (a 4-part document took 18s, then
   each part came from the cache in about a millisecond), why live playback
   starts on a one-sentence part and keeps 2 parts in flight. Healthy parts
   of up to about 700 characters take 15 to 22s, with tails near 45s, but a

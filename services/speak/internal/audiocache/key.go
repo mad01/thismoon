@@ -1,9 +1,9 @@
 // Package audiocache keeps synthesized speech on disk, addressed by what
 // decides its sound, and synthesizes clips ahead of playback. A remote TTS
 // model takes seconds to tens of seconds per request and answers with the
-// whole clip at once, so speak serve prepares an uploaded document's parts in
-// the background and plays them from disk; a part asked for before it is
-// ready jumps the queue.
+// whole clip at once, so speak serve prepares a registered document's parts
+// in the background, when a page prepares or plays them, and plays them from
+// disk; a part asked for before it is ready jumps the queue.
 package audiocache
 
 import (

@@ -137,8 +137,8 @@ Kokoro default to every provider) becomes the provider's default.
 A file that exists but cannot be parsed, has an unknown field (a key pasted
 in as `api_key`, say), or selects a provider with no block is not ignored.
 speak starts anyway, logs the problem to stderr, and fails every synthesis
-with that reason as a `config` error: the web page's banner, the speech
-endpoint, the MCP tools and `speak doctor` all show it. The same goes for a
+with that reason as a `config` error: the landing page's engine line, the
+speech endpoint, the MCP tools and `speak doctor` all show it. The same goes for a
 block that cannot be used, such as one whose key variable is unset. speak
 never falls back to another provider quietly.
 

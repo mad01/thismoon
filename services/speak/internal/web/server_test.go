@@ -1,11 +1,9 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,7 +38,7 @@ func testProvider(engineURL string) *provider.Provider {
 	})
 }
 
-// newTestMux serves the page against testProvider(engineURL).
+// newTestMux serves the routes against testProvider(engineURL).
 func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
 	t.Helper()
 	return muxFor(t, testProvider(engineURL))
@@ -53,7 +51,7 @@ func configFor(t *testing.T, p *provider.Provider) Config {
 	return Config{Speaker: p, Health: p.NewHealth(), Info: testInfo, CacheDir: t.TempDir()}
 }
 
-// muxFor is the page's mux against p; handler wraps it in what Serve adds.
+// muxFor is the routes' mux against p; handler wraps it in what Serve adds.
 func muxFor(t *testing.T, p *provider.Provider) *http.ServeMux {
 	t.Helper()
 	return NewMux(configFor(t, p))
@@ -91,8 +89,12 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestIndexServesShell(t *testing.T) {
-	mux := newTestMux(t, "http://127.0.0.1:1")
+// TestIndexServesLandingPage pins GET /: a static page, always 200, that
+// points at present (where documents are read) and fetches the engine state
+// client-side, so serving it runs no synthesis; the retired app.js is gone.
+func TestIndexServesLandingPage(t *testing.T) {
+	engine := newFakeEngine(t, http.StatusOK, "RIFFfake")
+	mux := newTestMux(t, engine.URL)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusOK {
@@ -101,70 +103,29 @@ func TestIndexServesShell(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("GET / Content-Type = %q, want text/html", ct)
 	}
-	body := rec.Body.String()
-	// The shell is chrome only: header + a mount point + the webkit/app scripts.
-	// The upload form and <wk-read-aloud> are built client-side by app.js now.
-	for _, want := range []string{`id="app"`, "/app.js", "/webkit/webkit.js", "wk-header"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("shell missing %q", want)
-		}
-	}
-}
-
-func TestAppJSServesJavaScript(t *testing.T) {
-	mux := newTestMux(t, "http://127.0.0.1:1")
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /app.js: status = %d, want 200", rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/javascript") {
-		t.Errorf("GET /app.js Content-Type = %q, want application/javascript", ct)
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("GET / Cache-Control = %q, want no-store", cc)
 	}
 	body := rec.Body.String()
-	// The client logic that left the shell: the upload form posts to /read and
-	// builds <wk-read-aloud> over the rendered sections.
-	for _, want := range []string{"/read", "wk-read-aloud"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("app.js missing %q", want)
-		}
-	}
-}
-
-func TestReadReturnsRenderedJSON(t *testing.T) {
-	mux := newTestMux(t, "http://127.0.0.1:1")
-
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	fw, _ := mw.CreateFormFile("doc", "notes.md")
-	_, _ = fw.Write([]byte("## Hello\n\nworld paragraph\n"))
-	_ = mw.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/read", &buf)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /read: status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("POST /read Content-Type = %q, want application/json", ct)
-	}
-	var got readResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode /read response: %v (body: %s)", err, rec.Body.String())
-	}
-	if got.Name != "notes.md" {
-		t.Errorf("name = %q, want notes.md", got.Name)
-	}
 	for _, want := range []string{
-		`<section class="doc-section" data-section="1" data-ra-parts=`, "Hello</h2>",
-		"world paragraph",
+		`href="http://present.this/"`, "fetch('/enginez'", "/webkit/webkit.js", "wk-header",
+		"/v1/audio/speech",
 	} {
-		if !strings.Contains(got.Content, want) {
-			t.Errorf("rendered content missing %q", want)
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page missing %q", want)
 		}
+	}
+	if strings.Contains(body, "/app.js") {
+		t.Error("landing page still loads /app.js")
+	}
+	if n := engine.requests.Load(); n != 0 {
+		t.Errorf("serving / ran %d syntheses, want none: the page fetches /enginez itself", n)
+	}
+
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET /app.js = %d, want 404", rec.Code)
 	}
 }
 
