@@ -93,6 +93,49 @@ func TestAPIPageReturnsContentAndTitle(t *testing.T) {
 	}
 }
 
+// The page view learns where speak is from the page JSON, the same way it
+// learns whether sharing is on: an empty URL is the switch that keeps a page
+// from creating the read-aloud element at all, so it must survive the trip
+// as an empty string rather than a default.
+func TestAPIPageCarriesSpeakURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{"configured", "http://127.0.0.1:7426"},
+		{"disabled", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			st, err := store.NewFS(dir)
+			if err != nil {
+				t.Fatalf("store.NewFS: %v", err)
+			}
+			opts := Options{Workdir: dir, Info: testInfo, SpeakURL: tc.url}
+			ts := httptest.NewServer(New(st, opts).Handler())
+			t.Cleanup(ts.Close)
+			p, _ := st.Create(t.Context(), store.Draft{Title: "Demo", Content: "<p>x</p>"})
+
+			_, body := get(t, ts.URL+"/api/p/"+p.ID)
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(body), &got); err != nil {
+				t.Fatalf("api body not JSON: %v (body=%q)", err, body)
+			}
+			raw, ok := got["speak_url"]
+			if !ok {
+				t.Fatalf("api page has no speak_url key (body=%q)", body)
+			}
+			if want := fmt.Sprintf("%q", tc.url); string(raw) != want {
+				t.Errorf("speak_url = %s, want %s", raw, want)
+			}
+		})
+	}
+	// The key the server emits is the one app.js reads; pin the two together.
+	if !contains(string(appJS), "data.speak_url") {
+		t.Error("app.js does not read speak_url from the page JSON")
+	}
+}
+
 func TestAppJSServed(t *testing.T) {
 	ts, _ := setup(t)
 	resp, err := http.Get(ts.URL + "/app.js")

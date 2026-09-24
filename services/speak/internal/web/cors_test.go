@@ -67,17 +67,54 @@ func TestCORSAllowlist(t *testing.T) {
 	}
 }
 
-// A disallowed origin's preflight still answers 204 — it just carries no
-// permission, so the browser refuses the follow-up request.
-func TestSpeechPreflightDeniesForeignOrigin(t *testing.T) {
-	mux := newTestMux(t, "http://127.0.0.1:1")
-	req := httptest.NewRequest(http.MethodOptions, "/v1/audio/speech", nil)
-	req.Header.Set("Origin", "https://evil.example")
+// preflight is the browser's OPTIONS before a cross-origin JSON POST.
+func preflight(h http.Handler, origin, target string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodOptions, target, nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
+	return rec
+}
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d, want 204", rec.Code)
+// TestPreflightAnswersForOwnPages pins that a page on the allowlist can post
+// JSON to any route: its preflight gets 204 with the permission on, from the
+// wrapper, without a route of its own for OPTIONS.
+func TestPreflightAnswersForOwnPages(t *testing.T) {
+	f := newFakeSpeaker()
+	h := guardHandler(t, f)
+	want := map[string]string{
+		"Access-Control-Allow-Origin":  "http://present.this",
+		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Max-Age":       "86400",
+	}
+	for _, target := range []string{"/read", "/doc/0123456789abcdef/prepare", "/v1/audio/speech"} {
+		rec := preflight(h, "http://present.this", target)
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("OPTIONS %s = %d %s, want 204", target, rec.Code, rec.Body.String())
+		}
+		for k, v := range want {
+			if got := rec.Header().Get(k); got != v {
+				t.Errorf("OPTIONS %s: %s = %q, want %q", target, k, got, v)
+			}
+		}
+	}
+	if n := f.calls.Load(); n != 0 {
+		t.Errorf("preflights ran %d syntheses, want none", n)
+	}
+}
+
+// A foreign origin's preflight is refused outright, with no permission on
+// it, so the browser never sends the request behind it.
+func TestPreflightRefusesForeignOrigin(t *testing.T) {
+	h := guardHandler(t, newFakeSpeaker())
+	rec := preflight(h, "https://evil.example", "/read")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("preflight status = %d, want 403", rec.Code)
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("ACAO = %q, want empty for a foreign origin", got)
@@ -139,11 +176,18 @@ func TestHandlerAllowsOwnPages(t *testing.T) {
 	f.open()
 	h := guardHandler(t, f)
 	speech := `{"input":"hi"}`
+	blocks := `{"sections":[{"blocks":["Hi there."]}]}`
 	for _, c := range []guardCase{
 		{name: "curl speech", method: http.MethodPost, target: "/v1/audio/speech", body: speech},
 		{"page speech", http.MethodPost, "/v1/audio/speech", speech, "", fromSpeakPage},
 		{"present speech", http.MethodPost, "/v1/audio/speech", speech, "", fromPresent},
 		{"present preflight", http.MethodOptions, "/v1/audio/speech", "", "", fromPresent},
+		{"present read preflight", http.MethodOptions, "/read", "", "", fromPresent},
+		{"present register", http.MethodPost, "/read", blocks, "application/json", fromPresent},
+		{
+			"present prepare preflight", http.MethodOptions, "/doc/0123456789abcdef/prepare", "",
+			"", fromPresent,
+		},
 		{"present probe", http.MethodGet, "/", "", "", fromPresent},
 		{"present healthz", http.MethodGet, "/healthz", "", "", fromPresent},
 		{"present enginez", http.MethodGet, "/enginez", "", "", fromPresent},
@@ -175,6 +219,11 @@ func TestHandlerRefusesOtherSites(t *testing.T) {
 				"name=\"doc\"; filename=\"a.md\"\r\n\r\nHello there.\r\n--b--\r\n",
 			"multipart/form-data; boundary=b", evilOrigin,
 		},
+		{
+			"register", http.MethodPost, "/read", `{"sections":[{"blocks":["Hi there."]}]}`,
+			"application/json", evilOrigin,
+		},
+		{"read preflight", http.MethodOptions, "/read", "", "", evilOrigin},
 		{"prepare", http.MethodPost, "/doc/0123456789abcdef/prepare", "", "", evilOrigin},
 		{
 			"opaque origin", http.MethodPost, "/v1/audio/speech", `{"input":"hi"}`, "",

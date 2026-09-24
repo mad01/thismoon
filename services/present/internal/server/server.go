@@ -74,15 +74,16 @@ const (
 
 // Server serves the index and individual presentation pages.
 type Server struct {
-	store   store.Store
-	mode    Mode
-	workdir string
-	info    buildinfo.Info
-	baseURL string
-	now     func() time.Time
-	mcp     http.Handler
-	sharer  *sharedclient.Client
-	shell   []byte
+	store    store.Store
+	mode     Mode
+	workdir  string
+	info     buildinfo.Info
+	baseURL  string
+	speakURL string
+	now      func() time.Time
+	mcp      http.Handler
+	sharer   *sharedclient.Client
+	shell    []byte
 
 	watcher      PageWatcher
 	heartbeat    time.Duration
@@ -99,12 +100,15 @@ type Server struct {
 // Watcher, when set, mounts GET /p/{id}/events, which pushes a page's version
 // to open tabs as it changes; without it tabs poll /p/{id}/version. Heartbeat
 // is how often an idle event stream resends the version, DefaultHeartbeat
-// when zero. Now defaults to time.Now.
+// when zero. SpeakURL is the speak service the page view registers a page's
+// text with for read-aloud; empty leaves read-aloud out of the page. Now
+// defaults to time.Now.
 type Options struct {
 	Mode      Mode
 	Workdir   string
 	Info      buildinfo.Info
 	BaseURL   string
+	SpeakURL  string
 	Now       func() time.Time
 	MCP       http.Handler
 	Sharer    *sharedclient.Client
@@ -131,6 +135,7 @@ func New(st store.Store, opts Options) *Server {
 		workdir:     opts.Workdir,
 		info:        opts.Info,
 		baseURL:     opts.BaseURL,
+		speakURL:    opts.SpeakURL,
 		now:         now,
 		mcp:         opts.MCP,
 		sharer:      opts.Sharer,
@@ -395,7 +400,9 @@ type apiReference struct {
 
 // apiPage is the page data the frontend renders. Content is the stored,
 // authoring-time-compiled HTML body fragment; Graph is the stored Cytoscape
-// init script. The frontend mounts Content and executes Graph.
+// init script. The frontend mounts Content and executes Graph. SpeakURL is
+// the speak service the page registers its text with for read-aloud; empty
+// means the page renders no read-aloud at all.
 type apiPage struct {
 	ID         string         `json:"id"`
 	Title      string         `json:"title"`
@@ -405,6 +412,7 @@ type apiPage struct {
 	Graph      string         `json:"graph"`
 	References []apiReference `json:"references"`
 	Share      apiShare       `json:"share"`
+	SpeakURL   string         `json:"speak_url"`
 }
 
 // handleAPIPage returns a page as JSON for client-side rendering.
@@ -427,6 +435,7 @@ func (s *Server) handleAPIPage(w http.ResponseWriter, r *http.Request) {
 		Graph:      p.Graph,
 		References: make([]apiReference, 0, len(p.References)),
 		Share:      s.shareState(p),
+		SpeakURL:   s.speakURL,
 	}
 	for _, ref := range p.References {
 		out.References = append(out.References, apiReference{Title: ref.Title, URL: ref.URL})

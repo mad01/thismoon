@@ -57,6 +57,11 @@ spec:
             # Assets baked into the image; nothing is written here.
             - name: PRESENT_WORKDIR
               value: /var/lib/present
+            # No speak service runs beside a shared instance, so pages here
+            # carry no read-aloud instead of probing speak.this from every
+            # reader's browser. Empty is the setting, not an omission.
+            - name: PRESENT_SPEAK_URL
+              value: ""
           ports:
             - name: http
               containerPort: 7423

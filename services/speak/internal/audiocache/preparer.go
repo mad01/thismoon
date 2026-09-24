@@ -185,6 +185,19 @@ func (p *Preparer) Forget(keys []string) {
 	p.background = slices.DeleteFunc(p.background, func(j *job) bool { return dropped[j] })
 }
 
+// Pending reports whether any of keys has work in flight: queued, generating
+// or waiting to retry. A document with none holds nothing Forget would drop.
+func (p *Preparer) Pending(keys []string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, key := range keys {
+		if j := p.jobs[key]; j != nil && j.pending() {
+			return true
+		}
+	}
+	return false
+}
+
 // Fetch returns the clip for key, synthesizing it ahead of all background
 // work when it is not stored yet and waiting for it until ctx ends. A clip
 // whose last synthesis failed is tried again.

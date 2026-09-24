@@ -26,6 +26,9 @@ capability dropped. Both probes hit `/version`, readiness every 5 seconds and
 liveness every 20, and a container requests 50m CPU and 64Mi of memory, capped
 at 256Mi. Service links are off: the Service is named `present`, so kubelet
 would otherwise inject `PRESENT_PORT` and collide with the app's own prefix.
+Read-aloud is off too: `PRESENT_SPEAK_URL` is set empty because no speak
+service runs beside the instance, so pages here show no audio controls
+instead of probing `speak.this` from every reader's browser.
 
 ## prerequisites
 

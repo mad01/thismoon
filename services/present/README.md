@@ -34,6 +34,9 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 | `--shared` (serve only) | `PRESENT_SHARED` | `false` |
 | `--shared-url` | `PRESENT_SHARED_URL` | unset; sharing needs it and `--author-key` |
 | `--author-key` | `PRESENT_AUTHOR_KEY` | unset; prefer the env var over the flag |
+| `--speak-url` (serve only) | `PRESENT_SPEAK_URL` | `http://speak.this`; empty turns read-aloud off |
+
+Pages are read aloud through the speak service. On load a page registers its text with speak and shows an audio bar under the summary: how many parts are ready, a button to prepare them all, and a download of the page's audio once they are; each section gets its own play, state badge, and download. Code blocks and tables are left out. Without speak reachable the page shows no read-aloud controls; with `--speak-url ""` it never asks.
 
 ### Shared mode
 

@@ -394,6 +394,31 @@ func TestPreparerForgetDropsQueuedParts(t *testing.T) {
 	}
 }
 
+// TestPreparerPendingReportsWorkInFlight pins what the document registry
+// evicts by: a generating or queued part counts as work in flight; an
+// unknown, forgotten or stored one does not.
+func TestPreparerPendingReportsWorkInFlight(t *testing.T) {
+	f := newFakeSynth()
+	p := newTestPreparer(t, f, 1)
+	if p.Pending([]string{key("a")}) {
+		t.Error("an unknown part counts as pending")
+	}
+	p.Queue(items("a", "b"))
+	<-f.started // the one worker holds a
+	if !p.Pending([]string{key("a")}) || !p.Pending([]string{key("x"), key("b")}) {
+		t.Error("a generating part or a queued one among others does not count as pending")
+	}
+	p.Forget([]string{key("b")})
+	if p.Pending([]string{key("b")}) {
+		t.Error("a forgotten part counts as pending")
+	}
+	close(f.gate)
+	waitState(t, p, "a", StateReady)
+	if p.Pending([]string{key("a")}) {
+		t.Error("a stored part counts as pending")
+	}
+}
+
 // TestPreparerHaltsWhenOutOfAttemptsOnTimeouts pins the cost guard: a part
 // that spends every attempt on a timeout says the provider is stalling, so
 // the parts queued behind it go back to idle instead of each spending its

@@ -103,6 +103,22 @@ when it moves, so an update reaches every open tab. The index works the same
 way: `GET /` serves `index_shell.html` and `index.js` builds the list from
 `GET /api/pages`. There is no server-side template layer.
 
+Read-aloud is the page view's one dependency outside present: the speak
+service named by `--speak-url` (default `http://speak.this`), which the page
+JSON carries as `speak_url`. With a URL, `app.js` places webkit's
+`<wk-read-aloud>` element in prepared mode right under the summary, and the
+browser talks to speak directly: it registers the page's readable blocks
+with `POST /read`, speak answers with a part key per block, and the element
+shows how many parts are ready, prepares them on request, and downloads the
+page's or one section's audio once every part exists. speak keeps that
+registry in memory, so after a restart the element registers the page again.
+When speak refuses the registration the page reads live, one request per
+part, starting with a single sentence and ramping up to several, with no
+status bar; when speak is unreachable the page has no read-aloud at all;
+with the URL empty, which the shared manifest sets, the element is never
+created. Code blocks and tables are never read. present
+itself never calls speak.
+
 Where the server has a change feed, the tab watches over server-sent events:
 `GET /p/{id}/events` sends the version on connect, again whenever the page
 moves, a heartbeat every 25 seconds, and a final `gone` for a deleted or
@@ -177,7 +193,8 @@ Cytoscape, Chart.js) baked into `/var/lib/present/assets`, so a pod needs no
 network and a read-only root filesystem. `deploy/base` is the kustomize
 base: the CRD, a service account with a Role over `pages` in its namespace,
 a two-replica Deployment running `serve --shared --store k8s --bind
-0.0.0.0` with `PRESENT_NAMESPACE` from the downward API, and a ClusterIP
+0.0.0.0` with `PRESENT_NAMESPACE` from the downward API and
+`PRESENT_SPEAK_URL` empty (no speak service runs there), and a ClusterIP
 service on 7423. Overlays choose the namespace and the way in:
 `overlays/kind` for local and CI testing (image tag `ci`, loaded, never
 pulled), `overlays/ingress` (an Ingress with an external-dns hostname
@@ -227,4 +244,6 @@ identically by both processes (a leading `~` is expanded in Go); both log
 their resolved `workdir=… port=…` at startup. `--shared-url`/
 `PRESENT_SHARED_URL` and `--author-key`/`PRESENT_AUTHOR_KEY` are persistent
 too, and sharing is on only when both are set. `present serve` alone takes
-`--bind`/`PRESENT_BIND` and `--shared`/`PRESENT_SHARED`.
+`--bind`/`PRESENT_BIND`, `--shared`/`PRESENT_SHARED`, and
+`--speak-url`/`PRESENT_SPEAK_URL`, where an empty value is the off switch
+rather than a fallback to the default.

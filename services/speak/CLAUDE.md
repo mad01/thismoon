@@ -21,14 +21,17 @@ services/speak/
                         # doctor, docs, version (build metadata from the shared
                         # buildinfo package); provider.go builds the provider
                         # every subcommand uses
-    web/               # server.go (mux, web.Config, cache reaper), docs.go
-                        # (uploaded docs, DocStatus, the /doc and /audio
-                        # routes), speech.go (read-through cached speech
-                        # handler + /enginez health), cors.go (the
-                        # cross-origin allowlist), markdown.go (PlanSections:
-                        # goldmark render, section split, part plan),
-                        # assets/shell.html (chrome-only shell) +
-                        # assets/app.js (client render, audio badges)
+    web/               # server.go (mux, web.Config, cache reaper, the served
+                        # wrapper: CORS, cross-site guard, preflight), docs.go
+                        # (both forms of POST /read, kept docs, DocStatus,
+                        # the /doc and /audio routes), speech.go
+                        # (read-through cached speech handler + /enginez
+                        # health), cors.go (the cross-origin allowlist),
+                        # markdown.go (planBlocks: the part plan both forms
+                        # of /read share; PlanSections: goldmark render and
+                        # section split around it), assets/shell.html
+                        # (chrome-only shell) + assets/app.js (client render,
+                        # audio badges)
     chunk/             # text into parts: SplitSentences, Speakable, the Live
                         # and Prepared size ramps; mirrored by
                         # webkit/src/sentences.ts, change both together
@@ -89,6 +92,20 @@ services/speak/
   read block (p, h1-h6, li) carries `data-ra-chunk="<key> ..."`, the parts
   that read it, for highlighting; code, tables, raw HTML and images carry no
   tag and are not read. The component plays the keys from `GET /audio/{key}`.
+- **`POST /read` has a JSON form** for a page that renders itself (present):
+  `Content-Type: application/json` with `{"name", "sections": [{"blocks":
+  ["text", ...]}, ...]}`, the page's text already split into the sections it
+  plays by and the blocks that show them. It answers `{"name", "doc",
+  "sections": [{"parts": [keys in play order], "blocks": [[keys per block],
+  ...]}]}`, the arrays mirroring the request one to one (`[]` for an empty
+  section or a block with nothing speakable). Both forms plan through
+  `planBlocks`, so a block posted as text gets the key the same block
+  rendered from markdown does, and the same texts make the same document
+  id. The JSON form keeps the document but queues nothing: a page registers
+  on every view and a remote provider bills every part, so playback and
+  `POST /doc/{id}/prepare` start synthesis. Its errors (400 for malformed
+  JSON, no sections, or a body over 5MB) use the document routes' JSON
+  shape; the multipart form's stay plain text.
 - **serve pre-synthesizes uploads.** Remote models answer slowly and with the
   whole clip at once (see Gotchas), so serve keeps each upload in memory (the
   32 most recently used docs) and synthesizes its parts in reading order into
@@ -97,6 +114,10 @@ services/speak/
   workers, started when work is queued, and a part someone is waiting to play
   jumps to an urgent queue. A newer upload's parts go before older queued
   ones, and a doc that falls out of the 32 stops preparing its queued parts.
+  The one that falls out is the least recently used with nothing queued,
+  generating or retrying, so a page registering text on every view (the JSON
+  form of `/read`) never costs an upload its queued parts; only when every
+  document has work in flight does the least recently used of them go.
   Parts are synthesized in the provider's default voice at its default speed;
   the browser applies the speed control through `playbackRate`. A failure of
   kind auth, quota, network, config or model, from a background part or a
@@ -128,12 +149,14 @@ services/speak/
 - `POST /v1/audio/speech` synthesizes through the active provider (the
   request's `model` and `response_format` are ignored; a voice the provider
   doesn't offer becomes its default), read-through cached under the same key
-  scheme, and answers `OPTIONS` preflight locally. `internal/web/cors.go`
-  is the allowlist: an `Origin` that is an http/https URL on loopback or under
-  `.this` is reflected back with `Vary: Origin`. The wrapper handler applies
-  it to every request, so the component's cross-origin `GET /` reachability
-  probe works from the sibling `.this` pages, and it answers 403 to any other
-  `Origin` and to a cross-site request without one (`Sec-Fetch-Site:
+  scheme. `internal/web/cors.go` is the allowlist: an `Origin` that is an
+  http/https URL on loopback or under `.this` is reflected back with `Vary:
+  Origin`. The wrapper handler applies it to every request, so the
+  component's cross-origin `GET /` reachability probe works from the sibling
+  `.this` pages, and answers every `OPTIONS` preflight itself (204 carrying
+  the permission, so a sibling page can post JSON to any route; no route
+  handles OPTIONS on its own). It answers 403 to any other `Origin`,
+  preflight included, and to a cross-site request without one (`Sec-Fetch-Site:
   cross-site` on anything but a top-level load of `GET /`, such as an `<audio src>` or `<iframe>` on a
   foreign page), so no foreign page can start a paid synthesis. curl and the
   CLI send no `Origin` and pass. **Never widen this to `*`**: the endpoint
@@ -151,8 +174,9 @@ services/speak/
   (fire-and-forget); background preparation failures emit at most one a
   minute, while the page badge and health still show every one. Success is
   recorded but never emitted, since read-aloud fans out one request per part
-  and would flood the event log. The document routes answer errors as `{"error":
-  {"message"}}`; `/read` errors stay plain text.
+  and would flood the event log. The document routes and the JSON form of
+  `/read` answer errors as `{"error": {"message"}}`; the multipart form's
+  `/read` errors stay plain text.
 - **Timeouts and the client retry.** One attempt at a remote provider gets
   90s, the local engine 30s. A remote attempt that times out or answers 5xx
   (for Gemini also an answer without audio) is retried once after 500ms; the
@@ -217,7 +241,7 @@ make test     # go test ./...
 |------|-------------|
 | `GET /` | Upload form (embedded `shell.html`; body built client-side by `app.js`) |
 | `GET /app.js` | Client renderer; `Cache-Control: no-cache` so a rebuild is picked up on next load |
-| `POST /read` | Render and split a markdown file for playback, keep it, and start synthesizing its parts; returns `{name, content, doc}` JSON (`doc` is a `DocStatus`). Errors stay plain text |
+| `POST /read` | Keep a document for the audio routes. Multipart field `doc` (the speak page): render and split a markdown file, start synthesizing its parts, return `{name, content, doc}` (`doc` is a `DocStatus`); errors stay plain text. `application/json` body `{name, sections: [{blocks: [text, ...]}]}` (a page that renders itself, such as present): plan the same keys without synthesizing anything, return `{name, doc, sections: [{parts: [...], blocks: [[...], ...]}]}` aligned with the request; 400 as `{"error": {"message"}}` for malformed JSON, no sections, or a body over 5MB |
 | `GET /doc/{id}` | `DocStatus`: part counts (`parts`, `ready`, `generating`, `queued`, `retrying`, `idle`, `failed`) for the doc and per section, plus the latest failure `reason` with its attempt count (`failed after 3 attempts: ...`). 404 when serve no longer keeps the doc |
 | `POST /doc/{id}/prepare[?section=N][&failed=1]` | Queue every idle or failed part of the doc, or of section N (1-based; 400 for a bad number), failed ones with a fresh attempt count; `failed=1` queues only the failed parts. Answers `DocStatus` |
 | `GET /doc/{id}/audio[?section=N]` | The doc, or section N (the page links only the whole doc; the section form is for scripts), as one file (WAV parts joined, MP3 appended) with `Content-Disposition: attachment` (`notes.wav`, `notes-section-2.wav`). 409 naming how many parts are ready, 404 when nothing there is read aloud, 400 for a bad section |

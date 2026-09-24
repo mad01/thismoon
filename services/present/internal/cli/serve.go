@@ -41,6 +41,7 @@ var (
 	flagStore     string
 	flagNamespace string
 	flagSweep     time.Duration
+	flagSpeakURL  string
 )
 
 var serveCmd = &cobra.Command{
@@ -87,7 +88,23 @@ func init() {
 	serveCmd.Flags().DurationVar(&flagSweep, "sweep-interval",
 		envdefault.Duration("PRESENT_SWEEP_INTERVAL", present.DefaultSweepInterval),
 		"how often the k8s store purges expired ephemeral pages (env PRESENT_SWEEP_INTERVAL)")
+	serveCmd.Flags().StringVar(&flagSpeakURL, "speak-url", defaultSpeakURL(),
+		"speak service the page view prepares read-aloud audio with; "+
+			"empty turns read-aloud off (env PRESENT_SPEAK_URL)")
 	rootCmd.AddCommand(serveCmd)
+}
+
+// defaultSpeakURL resolves --speak-url: PRESENT_SPEAK_URL when the variable
+// is set, an empty value included, else present.DefaultSpeakURL. Unlike the
+// other PRESENT_* variables, which envdefault reads with empty meaning unset,
+// an empty value is the setting here: it is how a deployment with no speak
+// service beside it, the shared instance in Kubernetes, turns read-aloud off
+// from its env alone.
+func defaultSpeakURL() string {
+	if v, ok := os.LookupEnv("PRESENT_SPEAK_URL"); ok {
+		return v
+	}
+	return present.DefaultSpeakURL
 }
 
 func runServe(cmd *cobra.Command, _ []string) error {
@@ -109,7 +126,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	st := raw
-	opts := server.Options{Workdir: flagWorkdir, Info: buildinfo.Get(), BaseURL: flagBaseURL}
+	opts := server.Options{
+		Workdir:  flagWorkdir,
+		Info:     buildinfo.Get(),
+		BaseURL:  flagBaseURL,
+		SpeakURL: flagSpeakURL,
+	}
 	mode := "local"
 	if !flagShared {
 		// Only a local serve pushes pages elsewhere; a shared instance is
@@ -139,7 +161,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	srv := server.New(st, opts)
 	addr := bindAddr(flagBind, flagPort)
-	log.Printf("present: serving %s on http://%s (%s mode)", where, addr, mode)
+	log.Printf("present: serving %s on http://%s (%s mode) speak-url=%q",
+		where, addr, mode, flagSpeakURL)
 	return serveUntilSignal(ctx, addr, srv.Handler(), srv.CloseStreams)
 }
 

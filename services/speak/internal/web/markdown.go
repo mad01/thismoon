@@ -96,43 +96,78 @@ func splitSections(doc ast.Node) [][]ast.Node {
 	return groups
 }
 
-// planSection groups a section's blocks into parts sized by chunk.Prepared
-// and tags each block's node with the keys of the parts covering it. A block
-// is one piece unless it is longer than a part may be; then it splits at
-// sentences, so a part boundary falls inside a block only when it must.
+// planSection plans a section's readable blocks (see planBlocks) and tags
+// each block's node with the keys of the parts covering it. A node showing
+// several blocks (a list item whose paragraphs surround a nested list) lists
+// the keys of all of them, each once.
 func planSection(group []ast.Node, source []byte, key func(string) string) []Part {
 	var blocks []block
 	for _, n := range group {
 		blocks = collectBlocks(blocks, n, source)
 	}
-	var pieces []string
-	var owners []ast.Node
-	for _, b := range blocks {
-		for _, p := range blockPieces(b.text) {
-			pieces = append(pieces, p)
-			owners = append(owners, b.node)
-		}
+	texts := make([]string, len(blocks))
+	for j, b := range blocks {
+		texts[j] = b.text
 	}
-	var parts []Part
+	plan := planBlocks(texts, key)
 	tags := make(map[ast.Node][]string)
-	for _, members := range chunk.Group(pieces, chunk.Prepared) {
-		texts := make([]string, len(members))
-		for i, idx := range members {
-			texts[i] = pieces[idx]
-		}
-		part := Part{Text: chunk.Join(texts)}
-		part.Key = key(part.Text)
-		parts = append(parts, part)
-		for _, idx := range members {
-			if keys := tags[owners[idx]]; !slices.Contains(keys, part.Key) {
-				tags[owners[idx]] = append(keys, part.Key)
+	for j, b := range blocks {
+		for _, k := range plan.blockKeys[j] {
+			if keys := tags[b.node]; !slices.Contains(keys, k) {
+				tags[b.node] = append(keys, k)
 			}
 		}
 	}
 	for n, keys := range tags {
 		n.SetAttributeString(chunkAttr, strings.Join(keys, " "))
 	}
-	return parts
+	return plan.parts
+}
+
+// sectionPlan is one section's parts in reading order and, per block, the
+// keys of the parts that read it.
+type sectionPlan struct {
+	parts []Part
+	// blockKeys[j] covers block j, in play order; empty, never nil, for a
+	// block with nothing speakable, so it encodes as [].
+	blockKeys [][]string
+}
+
+// planBlocks groups a section's block texts into parts sized by
+// chunk.Prepared and names each part's audio with key. Both forms of POST
+// /read plan through it, so a block posted as text gets the key the same
+// block rendered from markdown does. A block is one piece unless it is longer
+// than a part may be; then it splits at sentences, so a part boundary falls
+// inside a block only when it must.
+func planBlocks(texts []string, key func(string) string) sectionPlan {
+	var pieces []string
+	var owners []int // owners[i] is the block pieces[i] came from
+	for j, text := range texts {
+		for _, p := range blockPieces(text) {
+			pieces = append(pieces, p)
+			owners = append(owners, j)
+		}
+	}
+	plan := sectionPlan{blockKeys: make([][]string, len(texts))}
+	for j := range plan.blockKeys {
+		plan.blockKeys[j] = []string{}
+	}
+	for _, members := range chunk.Group(pieces, chunk.Prepared) {
+		own := make([]string, len(members))
+		for i, idx := range members {
+			own[i] = pieces[idx]
+		}
+		part := Part{Text: chunk.Join(own)}
+		part.Key = key(part.Text)
+		plan.parts = append(plan.parts, part)
+		for _, idx := range members {
+			j := owners[idx]
+			if !slices.Contains(plan.blockKeys[j], part.Key) {
+				plan.blockKeys[j] = append(plan.blockKeys[j], part.Key)
+			}
+		}
+	}
+	return plan
 }
 
 // collectBlocks appends the readable blocks under n in reading order.
@@ -219,13 +254,18 @@ func writeText(b *strings.Builder, t *ast.Text, source []byte) {
 	}
 }
 
-// partKeys is the keys of parts in order, space-separated.
-func partKeys(parts []Part) string {
+// keysOf is the keys of parts in order; empty, never nil, so it encodes as [].
+func keysOf(parts []Part) []string {
 	keys := make([]string, len(parts))
 	for i, p := range parts {
 		keys[i] = p.Key
 	}
-	return strings.Join(keys, " ")
+	return keys
+}
+
+// partKeys is the keys of parts in order, space-separated.
+func partKeys(parts []Part) string {
+	return strings.Join(keysOf(parts), " ")
 }
 
 // renderSections renders each group as a numbered doc-section listing its

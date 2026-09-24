@@ -110,7 +110,7 @@ curl -sS -X POST http://speak.this/v1/audio/speech \
 |------|-------------|
 | `GET /` | Upload form |
 | `GET /app.js` | Client-side renderer |
-| `POST /read` | Render and split a markdown file for playback and start synthesizing its audio |
+| `POST /read` | Keep a document for playback: a multipart markdown upload is rendered and synthesized ahead; a JSON body of text already split into sections and blocks gets the same keys back and is synthesized on play or prepare |
 | `GET /doc/{id}` | Audio state of an uploaded document: parts ready, in progress, retrying, not prepared, failed |
 | `POST /doc/{id}/prepare[?section=N][&failed=1]` | Synthesize every part not ready yet, in the document or in section N; `failed=1` retries only the failed ones |
 | `GET /doc/{id}/audio[?section=N]` | The document, or one section, as one audio file once every part is ready |

@@ -26,12 +26,10 @@ var testInfo = buildinfo.Info{
 	BuildTime: "2026-08-13T09:00:00Z",
 }
 
-// newTestMux serves the page against a local provider whose engine is at
-// engineURL. The provider curates its voices, so no test reads the real
-// Hugging Face cache.
-func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
-	t.Helper()
-	return muxFor(t, provider.New(context.Background(), config.Provider{
+// testProvider is a local provider whose engine is at engineURL. It curates
+// its voices, so no test reads the real Hugging Face cache.
+func testProvider(engineURL string) *provider.Provider {
+	return provider.New(context.Background(), config.Provider{
 		Name:    "local",
 		Type:    config.TypeLocal,
 		BaseURL: engineURL,
@@ -39,14 +37,26 @@ func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
 		Voice:   "af_heart",
 		Voices:  []string{"af_heart", "am_adam"},
 		Format:  "wav",
-	}))
+	})
 }
 
-// muxFor serves the page against p with an audio cache of its own, so no
-// test answers from another's clips.
+// newTestMux serves the page against testProvider(engineURL).
+func newTestMux(t *testing.T, engineURL string) *http.ServeMux {
+	t.Helper()
+	return muxFor(t, testProvider(engineURL))
+}
+
+// configFor serves p with an audio cache of its own, so no test answers from
+// another's clips.
+func configFor(t *testing.T, p *provider.Provider) Config {
+	t.Helper()
+	return Config{Speaker: p, Health: p.NewHealth(), Info: testInfo, CacheDir: t.TempDir()}
+}
+
+// muxFor is the page's mux against p; handler wraps it in what Serve adds.
 func muxFor(t *testing.T, p *provider.Provider) *http.ServeMux {
 	t.Helper()
-	return NewMux(Config{Speaker: p, Health: p.NewHealth(), Info: testInfo, CacheDir: t.TempDir()})
+	return NewMux(configFor(t, p))
 }
 
 // TestVersion pins the cross-tool build metadata contract: the four keys, the
@@ -514,6 +524,8 @@ func TestSpeechUnreachableEngineIsNamed(t *testing.T) {
 	}
 }
 
+// TestSpeechPreflightAnsweredLocally pins that the served handler answers a
+// preflight itself: nothing reaches the engine.
 func TestSpeechPreflightAnsweredLocally(t *testing.T) {
 	// Upstream that fails the test if the preflight is forwarded.
 	upstream := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
@@ -521,11 +533,11 @@ func TestSpeechPreflightAnsweredLocally(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	mux := newTestMux(t, upstream.URL)
+	h := handler(configFor(t, testProvider(upstream.URL)))
 	req := httptest.NewRequest(http.MethodOptions, "/v1/audio/speech", nil)
 	req.Header.Set("Origin", "http://present.this")
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d, want 204", rec.Code)

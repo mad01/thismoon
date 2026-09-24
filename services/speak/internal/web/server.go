@@ -87,16 +87,10 @@ func NewMux(cfg Config) *http.ServeMux {
 
 	newDocServer(cfg, store).routes(mux)
 
-	mux.HandleFunc("/v1/audio/speech", func(w http.ResponseWriter, r *http.Request) {
+	// CORS here too, so the mux answers a sibling page's fetch on its own;
+	// the preflight before it is handler's, like every route's.
+	mux.HandleFunc("POST /v1/audio/speech", func(w http.ResponseWriter, r *http.Request) {
 		setCORS(w, r)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
 		speech.ServeHTTP(w, r)
 	})
 
@@ -143,7 +137,11 @@ func Serve(port int, cfg Config) error {
 
 // handler is NewMux behind what every request passes first: the CORS
 // allowlist on every response, so cross-origin probes and speech fetches
-// from this machine's own pages work on any route, and the cross-site guard.
+// from this machine's own pages work on any route; the cross-site guard; and
+// the preflight answer, so a page on the allowlist can post JSON to any route
+// without each route handling OPTIONS. A preflight from an allowed origin
+// gets 204 carrying the permission setCORS put on; one from anywhere else is
+// refused like any other request.
 func handler(cfg Config) http.Handler {
 	mux := NewMux(cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +152,11 @@ func handler(cfg Config) http.Handler {
 				reason)
 			return
 		}
-		mux.ServeHTTP(w, r)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			mux.ServeHTTP(w, r)
+		}
 		log.Printf("%s %s", r.Method, r.URL.Path)
 	})
 }

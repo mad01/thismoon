@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -176,6 +177,189 @@ func TestReadReturnsDocStatus(t *testing.T) {
 	f.open()
 	if st := settle(t, mux, doc.ID); st.Total.Ready != 1 {
 		t.Errorf("after synthesis: %+v, want the part ready", st.Total)
+	}
+}
+
+// register posts body to /read under contentType: the JSON form when that
+// is application/json.
+func register(mux http.Handler, body, contentType string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/read", strings.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+// registered decodes a JSON registration's answer, failing on any other.
+func registered(t *testing.T, rec *httptest.ResponseRecorder) registerResponse {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /read (JSON) = %d %s", rec.Code, rec.Body.String())
+	}
+	var got registerResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode /read: %v (body %s)", err, rec.Body.String())
+	}
+	return got
+}
+
+// TestReadJSONRegistersWithoutSynthesis pins the JSON form of POST /read: the
+// keys come back aligned with the request, the document is kept, nothing is
+// queued, and a part plays on demand all the same.
+func TestReadJSONRegistersWithoutSynthesis(t *testing.T) {
+	f := newFakeSpeaker()
+	mux := newDocMux(t, f)
+	body := `{"name":"Briefing","sections":[` +
+		`{"blocks":["Overview","First paragraph.","A list item"]},{"blocks":["Second section."]}]}`
+	got := registered(t, register(mux, body, "application/json; charset=utf-8"))
+	t.Cleanup(func() {
+		f.open()
+		settle(t, mux, got.Doc.ID)
+	})
+
+	if got.Name != "Briefing" || got.Doc.Name != "Briefing" || len(got.Sections) != 2 {
+		t.Fatalf("response = %+v, want the name and both sections", got)
+	}
+	first := got.Sections[0]
+	if len(first.Parts) != 1 || !audiocache.ValidKey(first.Parts[0]) || len(first.Blocks) != 3 {
+		t.Fatalf("section 1 = %+v, want three short blocks in one part with a cache key", first)
+	}
+	for j, keys := range first.Blocks {
+		if len(keys) != 1 || keys[0] != first.Parts[0] {
+			t.Errorf("block %d keys = %v, want the section's one part", j, keys)
+		}
+	}
+	if second := got.Sections[1]; len(second.Parts) != 1 || len(second.Blocks) != 1 {
+		t.Errorf("section 2 = %+v, want one block in one part", second)
+	}
+	if st := got.Doc.Total; st.Parts != 2 || st.Idle != 2 {
+		t.Errorf("total = %+v, want both parts idle: registration queues nothing", st)
+	}
+	if n := f.calls.Load(); n != 0 {
+		t.Errorf("registration ran %d syntheses, want none", n)
+	}
+	if again := docStatus(t, serve(mux, http.MethodGet, "/doc/"+got.Doc.ID)); again.ID != got.Doc.ID {
+		t.Errorf("GET /doc/%s = %+v, want the registered document", got.Doc.ID, again)
+	}
+
+	f.open()
+	rec := serve(mux, http.MethodGet, "/audio/"+first.Parts[0])
+	if rec.Code != http.StatusOK || !bytes.HasPrefix(rec.Body.Bytes(), []byte("RIFF")) {
+		t.Errorf("GET /audio = %d %s, want the part synthesized on demand", rec.Code,
+			rec.Header().Get("Content-Type"))
+	}
+}
+
+// TestReadJSONMatchesMarkdownKeys pins the contract the JSON form exists
+// for: the same block texts get the same keys, and so the same document,
+// whether they arrive as markdown or pre-split.
+func TestReadJSONMatchesMarkdownKeys(t *testing.T) {
+	f := newFakeSpeaker()
+	mux := newDocMux(t, f)
+	long := strings.Repeat("This sentence is here to make the paragraph long enough to split. ", 20)
+	up := upload(t, mux, f, "## Overview\n\nFirst paragraph.\n\n- A list item\n- Another\n\n"+
+		"## Details\n\n"+long+"\n")
+	body, _ := json.Marshal(readRequest{Name: "notes.md", Sections: []requestSection{
+		{Blocks: []string{"Overview", "First paragraph.", "A list item", "Another"}},
+		{Blocks: []string{"Details", long}},
+	}})
+	got := registered(t, register(mux, string(body), "application/json"))
+
+	if got.Doc.ID != up.Doc.ID {
+		t.Errorf("registered doc %s, uploaded doc %s; want the same keys and so the same id",
+			got.Doc.ID, up.Doc.ID)
+	}
+	partsAttrs := sectionParts.FindAllStringSubmatch(up.Content, -1)
+	if len(partsAttrs) != len(got.Sections) {
+		t.Fatalf(
+			"%d sections listed in the HTML, %d registered",
+			len(partsAttrs),
+			len(got.Sections),
+		)
+	}
+	for i, m := range partsAttrs {
+		if want := strings.Fields(m[1]); !slices.Equal(got.Sections[i].Parts, want) {
+			t.Errorf("section %d parts = %v, HTML lists %v", i+1, got.Sections[i].Parts, want)
+		}
+	}
+	var blocks [][]string
+	for _, sec := range got.Sections {
+		blocks = append(blocks, sec.Blocks...)
+	}
+	tags := chunkKeys.FindAllStringSubmatch(up.Content, -1)
+	if len(tags) != len(blocks) {
+		t.Fatalf("%d tagged blocks in the HTML, %d registered", len(tags), len(blocks))
+	}
+	for j, m := range tags {
+		if want := strings.Fields(m[1]); !slices.Equal(blocks[j], want) {
+			t.Errorf("block %d keys = %v, HTML tags %v", j, blocks[j], want)
+		}
+	}
+}
+
+// TestReadJSONKeepsEmptyPlaces pins the alignment a page indexes by: an
+// empty section and a block with nothing speakable answer [] (never null) in
+// their place, and a missing name gets a label.
+func TestReadJSONKeepsEmptyPlaces(t *testing.T) {
+	mux := newDocMux(t, newFakeSpeaker())
+	rec := register(mux, `{"sections":[{"blocks":[]},{"blocks":["\"\"","Spoken."]}]}`,
+		"application/json")
+	got := registered(t, rec)
+	if got.Name != untitledName || got.Doc.Name != untitledName {
+		t.Errorf("name = %q / %q, want %q", got.Name, got.Doc.Name, untitledName)
+	}
+	if len(got.Sections) != 2 || len(got.Sections[0].Parts) != 0 ||
+		len(got.Sections[0].Blocks) != 0 {
+		t.Errorf("sections = %+v, want an empty first section", got.Sections)
+	}
+	second := got.Sections[1]
+	if len(second.Parts) != 1 || len(second.Blocks) != 2 || len(second.Blocks[0]) != 0 ||
+		!slices.Equal(second.Blocks[1], second.Parts) {
+		t.Errorf("section 2 = %+v, want the quotes-only block empty and the spoken one keyed",
+			second)
+	}
+	raw := rec.Body.String()
+	for _, want := range []string{`"parts":[],"blocks":[]`, `"blocks":[[],["`} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("response %s lacks %s: empty places must encode as [], not null", raw, want)
+		}
+	}
+}
+
+// TestReadJSONRejectsBadBodies pins the 400s of the JSON form, each with the
+// document routes' error shape, and that anything not declared JSON still
+// takes the multipart path.
+func TestReadJSONRejectsBadBodies(t *testing.T) {
+	f := newFakeSpeaker()
+	mux := newDocMux(t, f)
+	cases := []struct {
+		name, body, wantReason string
+	}{
+		{"malformed", `not json`, "decode JSON body"},
+		{"no sections", `{"name":"x"}`, "at least one section"},
+		{"empty sections", `{"sections":[]}`, "at least one section"},
+		{
+			"oversize", `{"sections":[{"blocks":["` + strings.Repeat("a", maxUploadBytes) + `"]}]}`,
+			"body over 5 MB",
+		},
+	}
+	for _, tc := range cases {
+		rec := register(mux, tc.body, "application/json")
+		var body errorBody
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if rec.Code != http.StatusBadRequest ||
+			!strings.Contains(body.Error.Message, tc.wantReason) {
+			t.Errorf("%s: POST /read = %d %.120s, want 400 naming %q", tc.name, rec.Code,
+				rec.Body.String(), tc.wantReason)
+		}
+	}
+	rec := register(mux, `{"sections":[{"blocks":["Hi."]}]}`, "text/plain")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "'doc' field") {
+		t.Errorf("text/plain POST /read = %d %s, want the multipart path's plain-text 400",
+			rec.Code, rec.Body.String())
+	}
+	if n := f.calls.Load(); n != 0 {
+		t.Errorf("rejected requests ran %d syntheses, want none", n)
 	}
 }
 
@@ -408,6 +592,59 @@ func TestEventLimiterSpacesEvents(t *testing.T) {
 		if got := l.allow(); got != step.want {
 			t.Errorf("allow() at +%s = %v, want %v", step.at, got, step.want)
 		}
+	}
+}
+
+// TestAddEvictsIdleDocumentsFirst pins the eviction order: a full registry
+// makes room by dropping the least recently used document with no work in
+// flight, so a registration that queues nothing (a page view) never costs an
+// upload its queued parts; only when every other document has work in flight
+// does the least recently used of them go.
+func TestAddEvictsIdleDocumentsFirst(t *testing.T) {
+	inFlight := make(map[string]bool)
+	var forgotten []string
+	r := docRegistry{
+		forget: func(keys []string) { forgotten = append(forgotten, keys...) },
+		pending: func(keys []string) bool {
+			return slices.ContainsFunc(keys, func(k string) bool { return inFlight[k] })
+		},
+	}
+	add := func(key string, busy bool) {
+		inFlight[key] = busy
+		r.add(newDocument(key, [][]Part{{{Key: key, Text: key}}}))
+	}
+	kept := func() []string {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		names := make([]string, len(r.docs))
+		for i, d := range r.docs {
+			names[i] = d.name
+		}
+		return names
+	}
+
+	add("queued", true) // the oldest, with work in flight
+	add("idle", false)
+	for i := range maxDocs - 2 {
+		add(fmt.Sprintf("busy%d", i), true)
+	}
+	add("view", false) // one past the cap, holding no work
+	if names := kept(); slices.Contains(names, "idle") || !slices.Contains(names, "queued") ||
+		!slices.Contains(names, "view") {
+		t.Errorf("kept %v, want the idle document gone, the queued one and the new one kept",
+			names)
+	}
+	if !slices.Equal(forgotten, []string{"idle"}) {
+		t.Errorf("forgotten = %v, want the idle document's part", forgotten)
+	}
+
+	inFlight["view"] = true // now every kept document has work in flight
+	add("view2", false)
+	if names := kept(); slices.Contains(names, "queued") || !slices.Contains(names, "view2") {
+		t.Errorf("kept %v, want plain LRU once every document is busy: the oldest gone", names)
+	}
+	if !slices.Equal(forgotten, []string{"idle", "queued"}) {
+		t.Errorf("forgotten = %v, want the idle document's part, then the oldest's", forgotten)
 	}
 }
 

@@ -49,7 +49,7 @@ These are persistent flags, seen by every subcommand (`present serve`,
   environment is not. With only one of the two set, the process warns once
   on stderr and sharing stays off.
 
-These two belong to `present serve` alone:
+These belong to `present serve` alone:
 
 - `--bind` (string, default `127.0.0.1`; env `PRESENT_BIND`): interface the
   server listens on. Local mode refuses anything but loopback, because it
@@ -75,6 +75,13 @@ These two belong to `present serve` alone:
   how often the `k8s` store deletes expired ephemeral pages. Expired pages
   already read as missing between sweeps; the interval only bounds how long
   their objects linger.
+- `--speak-url` (string, default `http://speak.this`; env
+  `PRESENT_SPEAK_URL`): the speak service the page view registers a page's
+  text with, so its audio can be prepared ahead of playback and downloaded.
+  The value reaches the browser as `speak_url` in the page JSON. An empty
+  value turns read-aloud off: the page creates no read-aloud element and
+  never probes speak. The shared manifest sets it empty, since no speak
+  service runs beside a shared instance.
 
 ## Where the page store lives
 
@@ -118,6 +125,10 @@ there is no automatic migration to undo.
 - `PRESENT_SWEEP_INTERVAL`: default for `--sweep-interval`, in
   `time.ParseDuration` syntax (`10m`, `1h30m`). An unparseable value warns
   once on stderr and the default is used instead.
+- `PRESENT_SPEAK_URL`: default for `--speak-url`. The one variable here
+  where an empty value counts as set: `PRESENT_SPEAK_URL=` turns read-aloud
+  off rather than falling back to `http://speak.this`, which is how the
+  Kubernetes manifest disables it without touching the container args.
 
 To see what a given environment actually resolved to, run `present doctor`;
 an agent with no shell gets the same report from the `present_doctor` MCP
@@ -150,8 +161,10 @@ present serve --shared --bind 127.0.0.1 --port 17423 --workdir /tmp/present-shar
 ```
 
 The first is what the container runs: pages in the pod's namespace, the
-workdir holding only the baked assets. The second tries shared mode on one
-machine with the filesystem store, which is fine for a single process. From
+workdir holding only the baked assets, and `PRESENT_SPEAK_URL` empty from
+the manifest so pages there carry no read-aloud. The second tries shared
+mode on one machine with the filesystem store, which is fine for a single
+process. From
 a developer machine, `--store k8s --namespace present` on top of the second
 line uses the kubeconfig's current context, which is how you exercise a
 kind cluster by hand.

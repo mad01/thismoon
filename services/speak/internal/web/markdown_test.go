@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -179,6 +180,60 @@ func TestPlanSectionsListsPartsInReadingOrder(t *testing.T) {
 	key := twice.Sections[0][0].Key
 	if !strings.Contains(twice.HTML, `data-ra-parts="`+key+" "+key+`"`) {
 		t.Errorf("a repeated part is not listed twice:\n%s", twice.HTML)
+	}
+}
+
+// TestPlanBlocksMatchesPlanSections pins that the two forms of POST /read
+// agree: a block posted as text gets the keys the same block rendered from
+// markdown does, part for part and block for block, with the same
+// normalization (inline code is read as written, quotes are dropped).
+func TestPlanBlocksMatchesPlanSections(t *testing.T) {
+	long := strings.Repeat("This sentence is here to make the paragraph long enough to split. ", 20)
+	blocks := []string{"Title", "Run `make test` and say \"done\".", "one", "two", long}
+	markdown := "## Title\n\nRun `make test` and say \"done\".\n\n- one\n- two\n\n" + long + "\n"
+	byText := func(text string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(text)))[:8] }
+
+	fromMarkdown, err := PlanSections([]byte(markdown), byText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromBlocks := planBlocks(blocks, byText)
+	if got, want := keysOf(fromBlocks.parts), keysOf(fromMarkdown.Sections[0]); !slices.Equal(
+		got,
+		want,
+	) {
+		t.Errorf("parts from blocks = %v, from markdown = %v", got, want)
+	}
+	if len(fromBlocks.parts) < 3 {
+		t.Errorf("planned %d parts, want the long block spread over several", len(fromBlocks.parts))
+	}
+	tags := regexp.MustCompile(`data-ra-chunk="([^"]+)"`).
+		FindAllStringSubmatch(fromMarkdown.HTML, -1)
+	if len(tags) != len(blocks) {
+		t.Fatalf("%d tagged elements, want one per block (%d)\n%s", len(tags), len(blocks),
+			fromMarkdown.HTML)
+	}
+	for j, tag := range tags {
+		if got, want := fromBlocks.blockKeys[j], strings.Fields(tag[1]); !slices.Equal(got, want) {
+			t.Errorf("block %d keys from blocks = %v, from markdown = %v", j, got, want)
+		}
+	}
+}
+
+// TestPlanBlocksEmptyBlocksKeepTheirPlace pins the alignment the JSON form
+// relies on: a block with nothing speakable still has an entry, an empty
+// one, and a section with no blocks plans no parts.
+func TestPlanBlocksEmptyBlocksKeepTheirPlace(t *testing.T) {
+	got := planBlocks([]string{`""`, "Spoken.", "   "}, sequentialKeys())
+	if len(got.parts) != 1 || got.parts[0].Text != "Spoken." {
+		t.Errorf("parts = %+v, want the one spoken block", got.parts)
+	}
+	if len(got.blockKeys) != 3 || got.blockKeys[0] == nil || len(got.blockKeys[0]) != 0 ||
+		!slices.Equal(got.blockKeys[1], []string{"p1"}) || len(got.blockKeys[2]) != 0 {
+		t.Errorf("block keys = %v, want [] p1 [] with the empty ones non-nil", got.blockKeys)
+	}
+	if none := planBlocks(nil, sequentialKeys()); len(none.parts) != 0 || len(none.blockKeys) != 0 {
+		t.Errorf("no blocks planned %+v, want nothing", none)
 	}
 }
 

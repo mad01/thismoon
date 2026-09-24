@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,36 @@ func TestCheckBind(t *testing.T) {
 					err,
 					tc.wantErr,
 				)
+			}
+		})
+	}
+}
+
+// PRESENT_SPEAK_URL is the one PRESENT_* variable where an empty value is a
+// setting: the shared instance's manifest sets it empty to keep pages there
+// from probing speak.this, so it must not fall back to the default the way
+// envdefault.String would.
+func TestDefaultSpeakURL(t *testing.T) {
+	cases := []struct {
+		name  string
+		set   bool
+		value string
+		want  string
+	}{
+		{"unset is the fleet speak", false, "", "http://speak.this"},
+		{"set wins", true, "http://127.0.0.1:7426", "http://127.0.0.1:7426"},
+		{"empty turns read-aloud off", true, "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv("PRESENT_SPEAK_URL", tc.value)
+			} else {
+				t.Setenv("PRESENT_SPEAK_URL", "")
+				_ = os.Unsetenv("PRESENT_SPEAK_URL")
+			}
+			if got := defaultSpeakURL(); got != tc.want {
+				t.Errorf("defaultSpeakURL() = %q, want %q", got, tc.want)
 			}
 		})
 	}
