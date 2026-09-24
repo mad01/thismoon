@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.0](https://github.com/mad01/thismoon/compare/present/v1.5.0...present/v1.6.0) (2026-09-24)
+
+
+### Features
+
+* present reads pages aloud through speak's prepared-document flow ([52a8011](https://github.com/mad01/thismoon/commit/52a80113c022497eb72bff90aaadbf15838f131f))
+* **present:** import a markdown file as a page ([#136](https://github.com/mad01/thismoon/issues/136)) ([5a92757](https://github.com/mad01/thismoon/commit/5a92757ca602bba8416913b30488328933ce7518))
+* **present:** prepare read-aloud audio through speak and make the speak URL a setting ([0d36752](https://github.com/mad01/thismoon/commit/0d367528f6c83c1033f7990e82353db1339228e7))
+
 ## [1.5.0](https://github.com/mad01/thismoon/compare/present/v1.4.1...present/v1.5.0) (2026-09-23)
 
 
