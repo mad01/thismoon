@@ -20,10 +20,12 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   binary's content changed (ralph hashes `install_paths`). The `t-man status`
   guard skips the restart on first install (before registration).
 - **`hooks.builds.speak_web_service`** — registration only: `t-man add …
-  speak-env.sh serve --port 7425`. The upload-a-markdown page + CORS-guarded
-  `/v1/audio/speech` through the provider `~/.config/speak/config.yaml`
+  speak-env.sh serve --port 7425`. The document audio routes present pages
+  register with and play from, the CORS-guarded `/v1/audio/speech`, and a
+  static landing page, all through the provider `~/.config/speak/config.yaml`
   selects. On the default local provider, a down `speak-tts` engine agent
-  leaves the page serving but the speech endpoints failing with that reason.
+  leaves the landing page serving but the speech endpoints failing with that
+  reason.
 - **`speak-env.sh`** — the spawn wrapper for speak-web and for a consuming
   repo's speak MCP registration. It runs `speak config env` (the names of the
   variables the active provider reads; nothing for the local engine), pulls

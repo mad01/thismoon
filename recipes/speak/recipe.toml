@@ -1,6 +1,6 @@
 [recipe]
 name = "speak"
-description = "speak: the Go speak-web front-end for http://speak.this + the sandbox-watch seatbelt-denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
+description = "speak: the Go text-to-speech service at http://speak.this (document audio for present, CORS speech proxy) + the sandbox-watch seatbelt-denial notifier. The Kokoro TTS engine lives in the consuming repo's speak-tts recipe."
 wave = 0
 
 # Consumed as a remote recipe: machines point at this repo with a
@@ -8,9 +8,10 @@ wave = 0
 # under ~/.config/ralph/sources/thismoon. Remote recipes cannot use relative
 # working_dir on packages/builds, so the paths below name that cache directly.
 #
-# speak-web (Go, services/speak/) — upload-a-markdown-and-listen page + CORS
-# /v1/audio/speech endpoint, so present/csl pages can fetch speech
-# cross-origin. Speech comes from the provider ~/.config/speak/config.yaml
+# speak-web (Go, services/speak/): the document audio routes present pages
+# register with and play from, plus a CORS /v1/audio/speech endpoint, so
+# present/csl pages can fetch speech cross-origin; its own page is a static
+# landing page. Speech comes from the provider ~/.config/speak/config.yaml
 # selects: the local engine (speak-tts on 127.0.0.1:8765, machine wiring that
 # stays in the consuming repo) by default, or a remote one. The agent starts
 # through speak-env.sh, which hands speak the active provider's key from the
