@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/speak/v0.11.1...speak/v0.12.0) (2026-09-24)
+
+
+### Features
+
+* present reads pages aloud through speak's prepared-document flow ([52a8011](https://github.com/mad01/thismoon/commit/52a80113c022497eb72bff90aaadbf15838f131f))
+* **speak:** accept pre-split block text on POST /read and answer preflights ([9877bee](https://github.com/mad01/thismoon/commit/9877bee5c007cde250954c3b8fef3a3bf1d44277))
+
 ## [0.11.1](https://github.com/mad01/thismoon/compare/speak/v0.11.0...speak/v0.11.1) (2026-09-23)
 
 
