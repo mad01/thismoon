@@ -401,13 +401,28 @@
       a.target = '_blank'; a.rel = 'noopener';
     });
 
-    // Read-aloud reads its targets on connect; append it after the content so it
-    // sees the sections. webkit.js already defined the element, so it upgrades.
+    // Read-aloud reads its targets on connect, so it is created once the
+    // content is mounted. With a speak URL the element registers the page's
+    // text there (prepared mode) and shows its status bar where it sits, so
+    // it goes right under the summary, or above the first section on a page
+    // without one. No speak URL (a shared instance, say) means no element.
     var oldRA = document.querySelector('wk-read-aloud');
     if (oldRA) oldRA.remove();
-    var ra = document.createElement('wk-read-aloud');
-    ra.setAttribute('targets', '.brief-summary, wk-section');
-    root.appendChild(ra);
+    if (data.speak_url) {
+      var ra = document.createElement('wk-read-aloud');
+      ra.setAttribute('targets', '.brief-summary, wk-section');
+      ra.setAttribute('prepare', '');
+      ra.setAttribute('name', data.title || 'present');
+      ra.setAttribute('endpoint', data.speak_url);
+      // before() rather than brief.insertBefore(): a legacy raw-HTML page can
+      // wrap its sections, and insertBefore throws when the anchor is not a
+      // direct child, which would blank the page.
+      var summary = brief.querySelector('.brief-summary');
+      var firstSection = brief.querySelector('wk-toc, wk-section');
+      if (summary) summary.insertAdjacentElement('afterend', ra);
+      else if (firstSection) firstSection.before(ra);
+      else brief.appendChild(ra);
+    }
 
     // Highlight code blocks / enhance prose in the freshly injected content.
     if (window.Webkit && typeof Webkit.enhanceProse === 'function') Webkit.enhanceProse(brief);

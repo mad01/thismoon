@@ -6,12 +6,11 @@ authoring time, and an open tab follows later updates live.
 
 ## how it runs
 
-Locally, two processes share one workdir and never talk to each other.
-`present serve` is the HTTP server, bound to loopback only (default
-{{.BaseURL}}); `present mcp` is a stdio shim that writes page files into the
-workdir and serves no HTTP, so present_create succeeds with serve down and
-the URL it returns stays dead until serve runs. Both read
---workdir/PRESENT_WORKDIR and --port/PRESENT_PORT and log what they resolved.
+Locally, two processes share one workdir and never talk: `present serve` is
+the HTTP server on loopback only (default {{.BaseURL}}); `present mcp` is a
+stdio shim that writes page files into the workdir and serves no HTTP, so
+present_create succeeds with serve down and its URL stays dead until serve
+runs. Both read --workdir/PRESENT_WORKDIR and --port/PRESENT_PORT and log them.
 
 `present serve --shared` is the same binary run as one network-facing
 process, usually several replicas in Kubernetes behind one hostname. It has
@@ -44,8 +43,11 @@ Updates land but the page never changes: the MCP and serve resolved a
 different workdir or port; compare what each logged at startup. Literal
 garbage tokens mean a backtick code span nested inside **bold** in a text
 field, so un-nest it through present_source and present_update. Multi-line
-code goes in a t=code block, an unknown block type renders as an HTML
-comment so a typoed t leaves a gap, and read-aloud skips code and tables.
+code goes in a t=code block; an unknown block type renders as an HTML comment,
+so a typoed t leaves a gap. Read-aloud goes through speak (--speak-url, default
+http://speak.this; empty turns it off) and skips code and tables: play buttons
+but no audio bar mean registration in flight, nothing speakable, or speak
+refused it and the page reads live; no buttons at all mean speak is down.
 
 ## sharing a page
 
@@ -74,18 +76,15 @@ answers 502 from POST /p/<id>/share; the failure is the instance's.
 ## version skew
 
 `present version -o json` and `GET {{.BaseURL}}/version` return the same four
-keys (version, commit, tag, build_time), for the binary on PATH and for the
+keys (version, commit, tag, build_time) for the binary on PATH and for the
 running process; a shared instance answers the same way. Differing `commit`
-values mean an old process is still serving: `t-man restart present`. Not
-`GET /p/{id}/version`, the per-page counter tabs poll for reload (a shared
-instance on the cluster store streams it from `GET /p/{id}/events`).
+values mean an old process is still serving: `t-man restart present`.
 
 ## first moves
 
 1. `present doctor`: store, reachability, skew, shared instance in one pass
 2. Serve unreachable or skewed: `t-man restart present`, then doctor again
-3. `present_list`, to confirm the store loads and to get real page ids
-4. Wrong-looking page: `present_source`, check it against the content rules
-   above, then `present_update`
-5. Failed share: retry from the Share button or `present share <id>`;
+3. Wrong-looking page: `present_list` for its id, `present_source` to check
+   it against the content rules above, then `present_update`
+4. Failed share: retry from the Share button or `present share <id>`;
    the MCP sandbox lets present_share reach only an https:// shared URL

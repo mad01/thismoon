@@ -37,6 +37,12 @@ const DefaultPort = 7423
 // choice.
 const DefaultBind = "127.0.0.1"
 
+// DefaultSpeakURL is the speak service the page view registers a page's text
+// with for read-aloud when PRESENT_SPEAK_URL is unset: the fleet's local
+// speak behind the .this front door. An empty value turns read-aloud off,
+// which is what a shared instance sets, since no speak runs beside it.
+const DefaultSpeakURL = "http://speak.this"
+
 // SharedTTL is how long an ephemeral page on a shared instance lives after
 // it is created or shared again.
 const SharedTTL = 30 * 24 * time.Hour
