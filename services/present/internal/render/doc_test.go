@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/json"
+	"html"
 	"strings"
 	"testing"
 )
@@ -27,6 +28,32 @@ func TestInlineMdLink(t *testing.T) {
 	got := string(inlineMd("see [Go docs](https://pkg.go.dev)"))
 	if !strings.Contains(got, `<a href="https://pkg.go.dev">Go docs</a>`) {
 		t.Errorf("link not rendered: %s", got)
+	}
+}
+
+// A link may point at http, https, mailto, a relative path, or a fragment;
+// any other scheme renders as the literal text, so no Doc source, MCP or
+// import, can put a javascript: href on the page.
+func TestInlineMdLinkSchemeAllowlist(t *testing.T) {
+	for _, href := range []string{
+		"https://ex.com/a", "http://ex.com", "mailto:a@b.c", "/p/abc", "../rel", "#frag", "?q=1",
+	} {
+		got := string(inlineMd("[x](" + href + ")"))
+		if !strings.Contains(got, `<a href="`+html.EscapeString(href)+`">x</a>`) {
+			t.Errorf("href %q not rendered as a link: %s", href, got)
+		}
+	}
+	for _, href := range []string{
+		"javascript:alert(1)", "JavaScript:alert%281%29", "java\tscript:alert(1)",
+		" javascript:alert(1)", "data:text/html,hi", "vbscript:msgbox", "file:///etc/passwd",
+	} {
+		got := string(inlineMd("see [x](" + href + ") now"))
+		if strings.Contains(got, "<a ") {
+			t.Errorf("href %q rendered as a link: %s", href, got)
+		}
+		if !strings.Contains(got, html.EscapeString("[x]("+href+")")) {
+			t.Errorf("href %q not kept as literal text: %s", href, got)
+		}
 	}
 }
 

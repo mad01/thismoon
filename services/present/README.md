@@ -56,7 +56,7 @@ With both variables set, `present serve` shows a Share button in every page's he
 
 ### Importing a markdown file
 
-The index page (`GET /`) has an "Import markdown" button, and a `.md`, `.markdown`, or `.txt` file dropped anywhere on that page does the same: the browser reads it and posts it to `POST /api/import`, the server converts it to a page, and you land on the new page. Headings become the title and sections, paragraphs, lists, code blocks, tables, and blockquotes map to their present blocks; raw HTML, horizontal rules, and footnotes are dropped, nested lists are flattened, and a fenced `mermaid` block stays a code block for now. Files over 1 MiB are refused. The same endpoint works from a shell on the local instance:
+The index page (`GET /`) has an "Import markdown" button, and a `.md`, `.markdown`, or `.txt` file dropped anywhere on that page does the same: the browser reads it and posts it to `POST /api/import`, the server converts it to a page, and you land on the new page. Headings become the title and sections, paragraphs, lists, code blocks, tables, and blockquotes map to their present blocks; raw HTML, horizontal rules, and footnotes are dropped, nested lists are flattened, and a fenced `mermaid` block stays a code block for now. A file is refused when the page it renders to (the HTML plus the Doc source) would pass 1 MiB, the cap a shared instance enforces, so an imported page can always be shared; that is roughly 250 KiB of markdown. The same endpoint works from a shell on the local instance:
 
 ```bash
 jq -Rs '{name: "notes.md", markdown: .}' notes.md \

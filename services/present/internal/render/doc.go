@@ -214,8 +214,11 @@ func inlineMd(s string) template.HTML {
 		return fmt.Sprintf(`<wk-badge>%s</wk-badge>`, html.EscapeString(p[2]))
 	})
 
-	// Links: [text](url)
+	// Links: [text](url). A url outside the allowlist stays literal text.
 	replace(reLink, func(p []string) string {
+		if !LinkHrefAllowed(p[2]) {
+			return html.EscapeString(p[0])
+		}
 		return fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(p[2]), html.EscapeString(p[1]))
 	})
 
@@ -243,6 +246,30 @@ func inlineMd(s string) template.HTML {
 	s = reItalicPost.ReplaceAllString(s, `<em>$1</em>`)
 
 	return template.HTML(s)
+}
+
+// LinkHrefAllowed reports whether an inline link may point at href: http,
+// https, and mailto URLs, plus relative paths and fragments (no scheme at
+// all). Anything else, javascript: and data: above all, renders as literal
+// text instead of a link, whichever way the Doc was authored. Whitespace and
+// control characters are ignored when reading the scheme, because browsers
+// ignore them too and `java\tscript:` would otherwise slip through.
+func LinkHrefAllowed(href string) bool {
+	h := strings.Map(func(r rune) rune {
+		if r <= ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, href)
+	scheme, _, ok := strings.Cut(h, ":")
+	if !ok || strings.ContainsAny(scheme, "/?#") {
+		return true
+	}
+	switch strings.ToLower(scheme) {
+	case "http", "https", "mailto":
+		return true
+	}
+	return false
 }
 
 // langClass sanitizes a code block's language into a Prism class suffix:

@@ -83,11 +83,16 @@ a button and a drop target. The browser reads the file and posts it to
 `POST /api/import`; `internal/mdimport` maps the markdown onto a title and
 a Doc, the same `Compile` step renders it, and the store gets exactly what
 an MCP create would have written, `doc.json` included, so the page is
-editable through `present_source` afterwards. The handler asks for a JSON
-content type and a same-origin or loopback `Origin`, which is what keeps a
-page in another tab from importing into a loopback server that
-authenticates nothing, and it applies the shared instance's size cap so an
-imported page can always be shared later.
+editable through `present_source` afterwards. Local serve authenticates
+nothing, so the handler narrows who can reach it in three ways: it requires
+`Content-Type: application/json`, which a cross-origin form or plain fetch
+cannot send without a CORS preflight the server never answers; it refuses a
+request the browser marks `Sec-Fetch-Site: cross-site`; and when an
+`Origin` header is present it accepts only http(s) on localhost, a loopback
+address, or a `.this` host, never comparing against the request's own Host,
+because a DNS name pointed at 127.0.0.1 would agree with itself. It also
+applies the shared instance's size cap so an imported page can always be
+shared later.
 
 The read path renders client-side (docs/adr/0005). `GET /p/{id}` serves the
 embedded chrome-only `shell.html`; the browser loads `app.js`, fetches the
@@ -189,7 +194,8 @@ Web: `GET /` (index shell), `GET /api/pages`, `GET /index.js`, `GET /p/{id}`
 `GET /app.js`, `GET /p/{id}/version`, `DELETE /p/{id}` (the only delete
 surface), `POST /api/import` (local mode; body `{"name", "markdown"}` as
 JSON, answers `201 {"id", "url"}`, 415 without the JSON content type, 403
-cross-site, 413 over 1 MiB, 400 for a file with nothing to import),
+cross-site, 413 when the rendered page would pass the 1 MiB page cap, 400
+for a file with nothing to import),
 `POST /p/{id}/share` (local mode with a shared instance configured;
 body `{"ephemeral": bool}`, answers the share block, 404 for an unknown page,
 502 when the shared instance refuses or is unreachable), `GET /webkit/` and

@@ -243,9 +243,13 @@ func (c *converter) listItems(l *ast.List, b *listBuild) {
 				emit()
 				c.listItems(ch, b)
 			default:
-				emit()
-				b.flush()
-				b.out = append(b.out, c.blocks(ch)...)
+				// Only a child that yields blocks splits the list; a dropped
+				// one (raw HTML, a rule) leaves the items together.
+				if bs := c.blocks(ch); len(bs) > 0 {
+					emit()
+					b.flush()
+					b.out = append(b.out, bs...)
+				}
 			}
 		}
 		emit()
@@ -295,9 +299,10 @@ func (c *converter) callout(q *ast.Blockquote) []render.Block {
 	return []render.Block{{T: "callout", Severity: sev, Text: txt}}
 }
 
-// flatten joins the text of every block under n with spaces: paragraphs and
-// table cells through the inline mapping, headings plain, code verbatim,
-// containers recursively.
+// flatten joins the text of every block under n with spaces into one string
+// present will render as prose: paragraphs and table cells through the
+// inline mapping, headings and code as neutralized text (code in backticks
+// when it can be), containers recursively.
 func (c *converter) flatten(n ast.Node) string {
 	var parts []string
 	for ch := n.FirstChild(); ch != nil; ch = ch.NextSibling() {
@@ -306,9 +311,9 @@ func (c *converter) flatten(n ast.Node) string {
 		case *ast.Paragraph, *ast.TextBlock, *extast.TableCell:
 			part = c.inline(ch)
 		case *ast.Heading:
-			part = c.plain(ch)
+			part = neutralize(c.plain(ch))
 		case *ast.FencedCodeBlock, *ast.CodeBlock:
-			part = c.lines(ch)
+			part = codeSpan(c.lines(ch))
 		case *ast.HTMLBlock, *ast.ThematicBreak:
 		default:
 			part = c.flatten(ch)
@@ -320,28 +325,68 @@ func (c *converter) flatten(n ast.Node) string {
 	return strings.Join(parts, " ")
 }
 
+// codeSpan writes code that has to live inside prose: on one line, neutral
+// to present's link and chip syntax, and in backticks unless it holds one.
+func codeSpan(code string) string {
+	s := neutralize(strings.ReplaceAll(code, "\n", " "))
+	if s == "" || strings.Contains(s, "`") {
+		return s
+	}
+	return "`" + s + "`"
+}
+
+// inlineBuf assembles one run of inline text for present. Everything the
+// converter writes as text lands in a pending run that neutralize sees as a
+// whole once the run ends, so a link or chip spelled across several nodes,
+// or glued together by a node that emits nothing (raw HTML, a footnote
+// reference, an image with no alt text), cannot reach the page. Links the
+// converter emits itself bypass that pass, since they are what it protects.
+type inlineBuf struct {
+	out  strings.Builder
+	text strings.Builder
+}
+
+func (b *inlineBuf) WriteString(s string) { b.text.WriteString(s) }
+
+// link ends the pending text run and writes a present link verbatim.
+func (b *inlineBuf) link(s string) {
+	b.endRun()
+	b.out.WriteString(s)
+}
+
+func (b *inlineBuf) endRun() {
+	b.out.WriteString(neutralize(b.text.String()))
+	b.text.Reset()
+}
+
+// String ends the run and returns the assembled text, trimmed.
+func (b *inlineBuf) String() string {
+	b.endRun()
+	return strings.TrimSpace(b.out.String())
+}
+
 // inline maps n's inline content onto present's inline syntax.
 func (c *converter) inline(n ast.Node) string {
-	var b strings.Builder
+	var b inlineBuf
 	c.writeInline(&b, n, false)
-	return strings.TrimSpace(b.String())
+	return b.String()
 }
 
 // plain writes n's inline content as words alone, for headings and table
 // header cells, which present renders without inline markup.
 func (c *converter) plain(n ast.Node) string {
-	var b strings.Builder
+	var b inlineBuf
 	c.writeInline(&b, n, true)
-	return strings.TrimSpace(b.String())
+	return b.String()
 }
 
-func (c *converter) writeInline(b *strings.Builder, n ast.Node, plain bool) {
+func (c *converter) writeInline(b *inlineBuf, n ast.Node, plain bool) {
 	for ch := n.FirstChild(); ch != nil; ch = ch.NextSibling() {
 		switch ch := ch.(type) {
 		case *ast.Text:
 			c.writeText(b, ch)
 		case *ast.String:
-			b.Write(ch.Value)
+			b.WriteString(string(ch.Value))
 		case *ast.CodeSpan:
 			c.writeCode(b, ch, plain)
 		case *ast.Emphasis:
@@ -369,23 +414,28 @@ func (c *converter) writeInline(b *strings.Builder, n ast.Node, plain bool) {
 
 // writeText writes a text node as a reader sees it: escapes and entities
 // resolved, a space for a line break.
-func (c *converter) writeText(b *strings.Builder, t *ast.Text) {
+func (c *converter) writeText(b *inlineBuf, t *ast.Text) {
 	v := t.Value(c.src)
 	if !t.IsRaw() {
-		v = util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(v)))
+		v = unescape(v)
 	}
-	b.WriteString(neutralize(string(v)))
+	b.WriteString(string(v))
 	if t.SoftLineBreak() || t.HardLineBreak() {
-		b.WriteByte(' ')
+		b.WriteString(" ")
 	}
 }
 
-// neutralize breaks the two present inline forms that literal text could
-// otherwise spell by accident. Markdown that goldmark did not take as a link
-// (a control character in the URL, say) must not become one in present,
-// whose renderer only HTML-escapes an href; and a chip or link inside a code
-// span renders as a stray token there. A space after the bracket or the chip
-// name is the one edit that stops both.
+// unescape resolves backslash escapes and character references the way the
+// markdown renderer would before showing the bytes.
+func unescape(v []byte) []byte {
+	return util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(v)))
+}
+
+// neutralize breaks the two present inline forms that text could otherwise
+// spell by accident: `](` (a link the renderer would honour, even one
+// goldmark refused because of a control character in the URL) and `@chip(`.
+// Inside a code span both would also render as a stray token. A space after
+// the bracket or the chip name is the one edit that stops all of it.
 func neutralize(s string) string {
 	s = strings.ReplaceAll(s, "](", "] (")
 	return strings.ReplaceAll(s, "@chip(", "@chip (")
@@ -393,14 +443,14 @@ func neutralize(s string) string {
 
 // writeCode writes a code span in backticks. present's syntax has no escape
 // for a backtick inside one, so code holding a backtick is written as words.
-func (c *converter) writeCode(b *strings.Builder, n *ast.CodeSpan, plain bool) {
+func (c *converter) writeCode(b *inlineBuf, n *ast.CodeSpan, plain bool) {
 	var code strings.Builder
 	for t := n.FirstChild(); t != nil; t = t.NextSibling() {
 		if seg, ok := t.(*ast.Text); ok {
 			code.Write(seg.Value(c.src))
 		}
 	}
-	s := neutralize(strings.ReplaceAll(code.String(), "\n", " "))
+	s := strings.ReplaceAll(code.String(), "\n", " ")
 	if plain || strings.Contains(s, "`") {
 		b.WriteString(s)
 		return
@@ -412,7 +462,7 @@ func (c *converter) writeCode(b *strings.Builder, n *ast.CodeSpan, plain bool) {
 // code spans and links after it applies bold, so a bold span holding either
 // would render as a stray token: the words stay, the bold goes. Emphasis
 // nested in emphasis is written without its own mark for the same reason.
-func (c *converter) writeEmphasis(b *strings.Builder, e *ast.Emphasis, plain bool) {
+func (c *converter) writeEmphasis(b *inlineBuf, e *ast.Emphasis, plain bool) {
 	mark := "*"
 	switch {
 	case plain, c.emphasis > 0, e.Level >= 2 && holdsLinkOrCode(e):
@@ -446,10 +496,11 @@ func holdsLinkOrCode(n ast.Node) bool {
 
 // writeLink writes [label](href). The label is words alone, because
 // present's link regex stops at the first closing bracket and applies no
-// markup inside one.
-func (c *converter) writeLink(b *strings.Builder, l *ast.Link, plain bool) {
+// markup inside one. The destination is unescaped the way the markdown
+// renderer would before it is checked, so `&amp;` reaches the page as `&`.
+func (c *converter) writeLink(b *inlineBuf, l *ast.Link, plain bool) {
 	label := c.plain(l)
-	href := safeHref(string(l.Destination))
+	href := safeHref(string(unescape(l.Destination)))
 	if label == "" {
 		label = href
 	}
@@ -457,7 +508,7 @@ func (c *converter) writeLink(b *strings.Builder, l *ast.Link, plain bool) {
 }
 
 // writeAutoLink writes a bare URL or email address as a link to itself.
-func (c *converter) writeAutoLink(b *strings.Builder, l *ast.AutoLink, plain bool) {
+func (c *converter) writeAutoLink(b *inlineBuf, l *ast.AutoLink, plain bool) {
 	label := string(l.Label(c.src))
 	href := string(l.URL(c.src))
 	if l.AutoLinkType == ast.AutoLinkEmail && !strings.HasPrefix(href, "mailto:") {
@@ -468,35 +519,24 @@ func (c *converter) writeAutoLink(b *strings.Builder, l *ast.AutoLink, plain boo
 
 // writeLinkSyntax writes present's [label](href), or the label alone when
 // the link cannot be expressed: no href survived, or the label holds the
-// bracket that would end it early.
-func (c *converter) writeLinkSyntax(b *strings.Builder, label, href string, plain bool) {
+// bracket that would end it early. The label is neutralized here because a
+// finished link bypasses the run-level pass.
+func (c *converter) writeLinkSyntax(b *inlineBuf, label, href string, plain bool) {
 	if plain || href == "" || strings.Contains(label, "]") {
 		b.WriteString(label)
 		return
 	}
-	fmt.Fprintf(b, "[%s](%s)", label, href)
+	b.link(fmt.Sprintf("[%s](%s)", neutralize(label), href))
 }
 
-// safeHref returns href fit for a link, or "" when its scheme would run
-// script in the reader's browser. A closing parenthesis is percent-encoded
-// because present's link syntax ends at the first one.
+// safeHref returns href fit for a present link, or "" when the renderer
+// would refuse it (render.LinkHrefAllowed: http, https, mailto, relative),
+// in which case only the label is worth writing. A closing parenthesis is
+// percent-encoded because present's link syntax ends at the first one.
 func safeHref(href string) string {
 	h := strings.TrimSpace(href)
-	if h == "" {
+	if h == "" || !render.LinkHrefAllowed(h) {
 		return ""
-	}
-	if scheme, _, ok := strings.Cut(h, ":"); ok && !strings.ContainsAny(scheme, "/?#") {
-		// Browsers ignore control characters inside a scheme; so does this.
-		scheme = strings.Map(func(r rune) rune {
-			if r <= ' ' {
-				return -1
-			}
-			return r
-		}, scheme)
-		switch strings.ToLower(scheme) {
-		case "javascript", "data", "vbscript":
-			return ""
-		}
 	}
 	return strings.ReplaceAll(h, ")", "%29")
 }

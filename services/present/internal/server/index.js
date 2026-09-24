@@ -90,15 +90,27 @@
   // POST /api/import, and opens the page it became. The server converts and
   // stores it; errors come back as {"error": "..."} and land in a toast.
   var importing = false;
+
+  // setBusy marks an import in flight. The button is looked up each time
+  // because a delete re-renders the list and replaces it.
+  function setBusy(on) {
+    importing = on;
+    var btn = document.getElementById('import-button');
+    if (!btn) return;
+    if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
+  }
+
+  // A page restored from the back/forward cache comes back as it was left,
+  // busy flag included, when the user returns from the imported page.
+  window.addEventListener('pageshow', function (e) { if (e.persisted) setBusy(false); });
+
   function importFile(file) {
     if (!file || importing) return;
     if (!/\.(md|markdown|txt)$/i.test(file.name)) {
       toast('Import failed: ' + file.name + ' is not a markdown file (.md, .markdown, .txt)');
       return;
     }
-    importing = true;
-    var btn = document.getElementById('import-button');
-    if (btn) btn.setAttribute('aria-busy', 'true');
+    setBusy(true);
     file.text().then(function (markdown) {
       return fetch('/api/import', {
         method: 'POST',
@@ -113,8 +125,7 @@
         location.assign('/p/' + encodeURIComponent(data.id));
       });
     }).catch(function (err) {
-      importing = false;
-      if (btn) btn.removeAttribute('aria-busy');
+      setBusy(false);
       toast('Import failed: ' + ((err && err.message) || String(err)));
     });
   }

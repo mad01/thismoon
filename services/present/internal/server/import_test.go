@@ -28,6 +28,12 @@ func postImport(
 		req.Header.Set("Content-Type", contentType)
 	}
 	for k, v := range extra {
+		// Go keeps Host out of the header map; a test that wants to spoof
+		// the host the request arrived on sets it here.
+		if k == "Host" {
+			req.Host = v
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 	resp, err := http.DefaultClient.Do(req)
@@ -149,6 +155,12 @@ func TestImportRefusesCrossSiteRequests(t *testing.T) {
 	body := importBody(t, "n.md", importSample)
 	refused := []map[string]string{
 		{"Origin": "https://evil.example"},
+		// DNS rebinding: the attacker's name resolves to this machine, so
+		// Origin and Host agree; neither may vouch for the other.
+		{"Origin": "http://evil.example:7423", "Host": "evil.example:7423"},
+		{"Origin": "http://evil.example", "X-Forwarded-Host": "evil.example"},
+		{"Origin": "http://this.example.com"},
+		{"Origin": "ftp://localhost"},
 		{"Origin": "null"},
 		{"Sec-Fetch-Site": "cross-site"},
 		{"Sec-Fetch-Site": "cross-site", "Origin": "http://localhost:7423"},
@@ -166,13 +178,13 @@ func TestImportRefusesCrossSiteRequests(t *testing.T) {
 		t.Errorf("a refused import created %d page(s)", pages.Total)
 	}
 
-	host := strings.TrimPrefix(ts.URL, "http://")
 	allowed := []map[string]string{
 		{"Origin": ts.URL},
 		{"Origin": "http://localhost:7423", "Sec-Fetch-Site": "same-origin"},
+		{"Origin": "http://LocalHost"},
 		{"Origin": "http://[::1]:7423"},
-		{"Origin": "http://present.this", "X-Forwarded-Host": "present.this"},
-		{"Origin": "http://" + strings.ToUpper(host)},
+		{"Origin": "http://present.this"},
+		{"Origin": "https://Present.THIS:8443", "Host": "127.0.0.1:7423"},
 	}
 	for _, h := range allowed {
 		code, out := postImport(t, ts, "application/json", body, h)

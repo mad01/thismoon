@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -47,8 +48,12 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 			"import needs Content-Type: application/json")
 		return
 	}
-	if !sameOrigin(r) {
-		writeJSONError(w, http.StatusForbidden, "import is only accepted from present's own pages")
+	if !originAllowed(r) {
+		writeJSONError(
+			w,
+			http.StatusForbidden,
+			"import is only accepted from pages on this machine",
+		)
 		return
 	}
 	in, ok := readImport(w, r)
@@ -95,11 +100,10 @@ func readImport(w http.ResponseWriter, r *http.Request) (importRequest, bool) {
 	if err := json.NewDecoder(body).Decode(&in); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			writeJSONError(
-				w,
-				http.StatusRequestEntityTooLarge,
-				"markdown too large: the limit is 1 MiB",
-			)
+			writeJSONError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
+				"markdown too large: a page must stay under %d KiB once rendered",
+				present.MaxPageBytes>>10,
+			))
 			return importRequest{}, false
 		}
 		writeJSONError(w, http.StatusBadRequest, "invalid import body: "+err.Error())
@@ -112,11 +116,18 @@ func readImport(w http.ResponseWriter, r *http.Request) (importRequest, bool) {
 	return in, true
 }
 
-// sameOrigin reports whether r may have come from present's own index. A
-// request without an Origin header (curl, a same-origin GET) passes; one
-// the browser marks cross-site, or whose Origin is neither this host (as
-// seen directly or through a forwarding proxy) nor loopback, does not.
-func sameOrigin(r *http.Request) bool {
+// thisSuffix is the domain d-man serves the local .this sites under.
+const thisSuffix = ".this"
+
+// originAllowed reports whether r may have come from a page on this machine.
+// A request without an Origin header passes (curl; a browser always sends
+// one on a POST), and so does an http or https Origin on localhost, a
+// loopback address, or a .this host, the same set speak's CORS check
+// accepts. Anything else is refused, as is any request the browser marks
+// cross-site. The request's own Host is deliberately not consulted: a DNS
+// name an attacker controls can resolve to 127.0.0.1, and Origin and Host
+// would then agree with each other.
+func originAllowed(r *http.Request) bool {
 	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
 		return false
 	}
@@ -125,28 +136,14 @@ func sameOrigin(r *http.Request) bool {
 		return true
 	}
 	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return false
 	}
-	if isLoopbackHost(u.Hostname()) {
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, thisSuffix) {
 		return true
 	}
-	forwarded, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Host"), ",")
-	for _, h := range []string{r.Host, strings.TrimSpace(forwarded)} {
-		if h != "" && strings.EqualFold(u.Host, h) {
-			return true
-		}
-	}
-	return false
-}
-
-// isLoopbackHost reports whether h names this machine: localhost or a
-// loopback address.
-func isLoopbackHost(h string) bool {
-	if strings.EqualFold(h, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(h)
+	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
 

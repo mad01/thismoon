@@ -197,6 +197,19 @@ func TestConvertInline(t *testing.T) {
 		{"inline html is dropped", "a <b>bold</b> c", "a bold c"},
 		{"code span holding a backtick is words", "a `` x`y `` c", "a x`y c"},
 		{"footnote reference is dropped", "a[^1] b\n\n[^1]: note\n", "a b"},
+		{
+			"entity in a destination resolves",
+			"[a](http://x/?q=1&amp;b=2)",
+			"[a](http://x/?q=1&b=2)",
+		},
+		{"escapes in a destination resolve", `[a](http://x/\(1\))`, "[a](http://x/(1%29)"},
+		{
+			"chip syntax in a label is broken up",
+			"[@chip(a:b)](http://x)",
+			"[@chip (a:b)](http://x)",
+		},
+		{"file scheme is words", "[x](file:///etc/passwd)", "x"},
+		{"relative link survives", "[x](../p/1)", "[x](../p/1)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -247,6 +260,16 @@ func TestConvertBlocks(t *testing.T) {
 				{T: "code", Lang: "sh", Text: "run"},
 				{T: "list", Ordered: true, Items: []string{"b"}},
 			},
+		},
+		{
+			name: "html block or rule inside an item does not split the list",
+			src:  "1. a\n   <div>x</div>\n2. b\n\n   ---\n3. c\n",
+			want: []render.Block{{T: "list", Ordered: true, Items: []string{"a", "b", "c"}}},
+		},
+		{
+			name: "code inside a blockquote becomes a code span in the callout",
+			src:  "> Run:\n>\n> ```sh\n> make all\n> ```\n",
+			want: []render.Block{{T: "callout", Severity: "info", Text: "Run: `make all`"}},
 		},
 		{
 			name: "fenced code keeps its language and text verbatim",
@@ -303,7 +326,7 @@ func TestConvertBlocks(t *testing.T) {
 		{
 			name: "blockquote with a list and code flattens into one callout",
 			src:  "> Steps:\n>\n> - one\n> - two\n>\n> ```\n> run\n> ```\n",
-			want: []render.Block{{T: "callout", Severity: "info", Text: "Steps: one two run"}},
+			want: []render.Block{{T: "callout", Severity: "info", Text: "Steps: one two `run`"}},
 		},
 		{
 			name: "raw html, thematic breaks and footnotes are dropped",
@@ -328,6 +351,46 @@ func TestConvertEmptyIsAnError(t *testing.T) {
 		if !errors.Is(err, ErrEmpty) {
 			t.Errorf("Convert(%q) err = %v, want ErrEmpty", src, err)
 		}
+	}
+}
+
+// A link goldmark did not parse must not become one in present, however its
+// pieces reach the text: split across nodes by an escape or an entity, or
+// glued together by a node that emits nothing. Every prose field is covered,
+// since the renderer applies inline markup to all of them.
+func TestConvertNeverAssemblesAScriptLink(t *testing.T) {
+	const payload = "(javascript:alert%281%29)"
+	cases := map[string]string{
+		"comment between":         "[x]<!-- -->" + payload,
+		"empty inline html":       "[x]<b></b>" + payload,
+		"image without alt":       "[x]![](y)" + payload,
+		"footnote reference":      "[x][^1]" + payload + "\n\n[^1]: note\n",
+		"escaped paren":           `[x]\` + payload,
+		"entity parens":           "[x]&#40;javascript:alert%281%29&#41;",
+		"in a summary":            "# T\n\n[x]<!-- -->" + payload + "\n\n## S\n\nbody\n",
+		"in a table cell":         "## S\n\n| h |\n|---|\n| [x]<!-- -->" + payload + " |\n",
+		"in a list item":          "## S\n\n- [x]<!-- -->" + payload + "\n",
+		"in a callout":            "## S\n\n> [x]<!-- -->" + payload + "\n",
+		"in a callout heading":    "## S\n\n> # [x]<!-- -->" + payload + "\n",
+		"in a callout code block": "## S\n\n> ```\n> [x](javascript:alert%281%29)\n> ```\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := convert(t, "x.md", src)
+			c, err := render.CompileDoc(p.Doc, p.Title)
+			if err != nil {
+				t.Fatalf("CompileDoc: %v", err)
+			}
+			if strings.Contains(string(c.JSON), "](") {
+				t.Errorf("stored doc keeps link syntax: %s", c.JSON)
+			}
+			if strings.Contains(c.HTML, "<a ") {
+				t.Errorf("rendered a link: %s", c.HTML)
+			}
+			if !strings.Contains(c.HTML, "javascript:alert") {
+				t.Errorf("payload text lost instead of neutralized: %s", c.HTML)
+			}
+		})
 	}
 }
 
