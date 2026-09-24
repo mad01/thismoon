@@ -101,7 +101,8 @@ func readImport(w http.ResponseWriter, r *http.Request) (importRequest, bool) {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
 			writeJSONError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(
-				"markdown too large: a page must stay under %d KiB once rendered",
+				"markdown too large: the rendered page must stay under %d KiB, "+
+					"about 250 to 500 KiB of markdown, less for markup-heavy files",
 				present.MaxPageBytes>>10,
 			))
 			return importRequest{}, false

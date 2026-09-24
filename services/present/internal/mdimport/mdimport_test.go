@@ -3,6 +3,7 @@ package mdimport
 import (
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -389,6 +390,49 @@ func TestConvertNeverAssemblesAScriptLink(t *testing.T) {
 			}
 			if !strings.Contains(c.HTML, "javascript:alert") {
 				t.Errorf("payload text lost instead of neutralized: %s", c.HTML)
+			}
+		})
+	}
+}
+
+// reAnchor captures each rendered anchor's attribute list.
+var reAnchor = regexp.MustCompile(`<a([^>]*)>`)
+
+// The renderer marks the pieces it generates with NUL-delimited tokens and
+// swaps each back at its first match. goldmark passes a raw NUL through in
+// a link destination, so markdown could forge a token and splice a second
+// link into the first one's href, where the browser reads an onmouseover=
+// as a live attribute. Convert replaces NUL with U+FFFD before parsing, and
+// the renderer does the same on its own input, so neither the stored Doc
+// nor the page can carry one.
+func TestConvertNULCannotForgeRendererTokens(t *testing.T) {
+	cases := map[string]string{
+		"link destination":  "## S\n\n[a](https://x/\x00PH1\x00) [t](https://ok/onmouseover=document.title=`pwned`//)\n",
+		"code span":         "## S\n\n`\x00PH1\x00` [t](https://ok/onmouseover=alert(1)//)\n",
+		"plain text":        "## S\n\n\x00PH0\x00 [t](https://ok/x)\n",
+		"heading and title": "# \x00PH0\x00\n\n## \x00PH1\x00\n\n[t](https://ok/x)\n",
+		"code block":        "## S\n\n```\n\x00PH0\x00\n```\n\n[t](https://ok/x)\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := convert(t, "x.md", src)
+			c, err := render.CompileDoc(p.Doc, p.Title)
+			if err != nil {
+				t.Fatalf("CompileDoc: %v", err)
+			}
+			if strings.Contains(string(c.JSON), "\\u0000") || strings.Contains(p.Title, "\x00") {
+				t.Errorf("stored doc carries a NUL: %s", c.JSON)
+			}
+			if strings.Contains(c.HTML, "\x00") {
+				t.Errorf("rendered page carries a NUL: %s", c.HTML)
+			}
+			for _, m := range reAnchor.FindAllStringSubmatch(c.HTML, -1) {
+				if !regexp.MustCompile(`^ href="[^"]*"$`).MatchString(m[1]) {
+					t.Errorf("anchor with attributes other than href: %s", m[0])
+				}
+			}
+			if !strings.Contains(c.HTML, "�") {
+				t.Errorf("NUL was dropped rather than replaced: %s", c.HTML)
 			}
 		})
 	}

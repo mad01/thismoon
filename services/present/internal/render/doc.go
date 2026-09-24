@@ -183,6 +183,13 @@ var (
 // inlineMd converts inline markdown to HTML. Input is plain text (will be
 // HTML-escaped), output is trusted HTML.
 func inlineMd(s string) template.HTML {
+	// The placeholder tokens below are NUL-delimited and swapped back at
+	// their first match, so a NUL in the input could forge a token and splice
+	// one generated piece into another's attribute. CommonMark's rule for
+	// NUL, replace it with U+FFFD, removes the only character a forgery
+	// needs; after this line every NUL in s is one this function wrote.
+	s = strings.ReplaceAll(s, "\x00", "�")
+
 	// Extract chips and links before escaping so their delimiters survive.
 	// We use placeholder tokens, escape the rest, then restore.
 	type placeholder struct {
@@ -248,12 +255,14 @@ func inlineMd(s string) template.HTML {
 	return template.HTML(s)
 }
 
-// LinkHrefAllowed reports whether an inline link may point at href: http,
-// https, and mailto URLs, plus relative paths and fragments (no scheme at
-// all). Anything else, javascript: and data: above all, renders as literal
-// text instead of a link, whichever way the Doc was authored. Whitespace and
-// control characters are ignored when reading the scheme, because browsers
-// ignore them too and `java\tscript:` would otherwise slip through.
+// LinkHrefAllowed reports whether an inline `[text](href)` link in a prose
+// field may point at href: http, https, and mailto URLs, plus relative paths
+// and fragments (no scheme at all). Anything else, javascript: and data:
+// above all, renders as literal text instead of a link, whichever way the
+// Doc was authored. It governs inline links only: a `t: html` block is raw
+// passthrough by design and is not checked. Whitespace and control
+// characters are ignored when reading the scheme, because browsers ignore
+// them too and `java\tscript:` would otherwise slip through.
 func LinkHrefAllowed(href string) bool {
 	h := strings.Map(func(r rune) rune {
 		if r <= ' ' || r == 0x7f {

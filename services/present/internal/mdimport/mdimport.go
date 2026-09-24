@@ -9,6 +9,7 @@
 package mdimport
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -52,7 +53,11 @@ var alertMarker = regexp.MustCompile(`^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]
 
 // Convert parses src as markdown and maps it onto a Doc. name is the file
 // name, which titles the page when the document has no level-1 heading.
+// NUL bytes become U+FFFD first, CommonMark's rule, which goldmark itself
+// does not apply: the renderer's placeholder tokens are NUL-delimited, and a
+// NUL that reached a stored Doc could forge one.
 func Convert(name string, src []byte) (Page, error) {
+	src = bytes.ReplaceAll(src, []byte{0}, []byte("�"))
 	root := md.Parser().Parse(text.NewReader(src))
 	c := &converter{src: src}
 	for n := root.FirstChild(); n != nil; n = n.NextSibling() {

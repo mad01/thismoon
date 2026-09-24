@@ -3,6 +3,7 @@ package render
 import (
 	"encoding/json"
 	"html"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -31,9 +32,11 @@ func TestInlineMdLink(t *testing.T) {
 	}
 }
 
-// A link may point at http, https, mailto, a relative path, or a fragment;
-// any other scheme renders as the literal text, so no Doc source, MCP or
-// import, can put a javascript: href on the page.
+// An inline link in a prose field may point at http, https, mailto, a
+// relative path, or a fragment; any other scheme renders as the literal
+// text, so no Doc source, MCP or import, can put a javascript: href on the
+// page through inline markup. (A `t: html` block is raw passthrough by
+// design and outside this check.)
 func TestInlineMdLinkSchemeAllowlist(t *testing.T) {
 	for _, href := range []string{
 		"https://ex.com/a", "http://ex.com", "mailto:a@b.c", "/p/abc", "../rel", "#frag", "?q=1",
@@ -54,6 +57,67 @@ func TestInlineMdLinkSchemeAllowlist(t *testing.T) {
 		if !strings.Contains(got, html.EscapeString("[x]("+href+")")) {
 			t.Errorf("href %q not kept as literal text: %s", href, got)
 		}
+	}
+}
+
+// reOpenTag captures every opening tag and its attribute list in rendered
+// inline HTML.
+var reOpenTag = regexp.MustCompile(`<([a-z-]+)([^>]*)>`)
+
+// checkInlineAttrs fails when any tag in got carries an attribute the
+// renderer does not write: an anchor may have href, a badge may have
+// variant, nothing else may have any. It is how a test tells a spliced-in
+// attribute (onmouseover=...) from a legitimate one.
+func checkInlineAttrs(t *testing.T, in, got string) {
+	t.Helper()
+	allowed := map[string]string{"a": "href", "wk-badge": "variant"}
+	for _, m := range reOpenTag.FindAllStringSubmatch(got, -1) {
+		tag, attrs := m[1], m[2]
+		want := allowed[tag]
+		ok := attrs == "" ||
+			(want != "" && regexp.MustCompile(`^ `+want+`="[^"]*"$`).MatchString(attrs))
+		if !ok {
+			t.Errorf(
+				"input %q: tag <%s> carries unexpected attributes %q in: %s",
+				in,
+				tag,
+				attrs,
+				got,
+			)
+		}
+	}
+}
+
+// inlineMd stands in for each generated piece with a NUL-delimited token and
+// swaps it back at its first match, so a NUL in the input could forge a
+// token and splice one generated piece into another's attribute (a second
+// link's href inside the first link's href, say, where the browser then
+// reads onmouseover as a live attribute). NUL is replaced with U+FFFD before
+// anything else happens, so no forged token can match.
+func TestInlineMdNULCannotForgePlaceholders(t *testing.T) {
+	forged := []string{
+		"[a](https://x/\x00PH1\x00) [t](https://ok/onmouseover=document.title=`pwned`//)",
+		"[a](https://x/\x00PH0\x00) [t](https://ok/onmouseover=alert(1)//)",
+		"`\x00PH1\x00` [t](https://ok/onmouseover=alert(1)//)",
+		"@chip(a:\x00PH1\x00) [t](https://ok/onmouseover=alert(1)//)",
+		"**\x00PH1\x00** `<img src=x onerror=alert(1)>`",
+		"\x00PH0\x00 [t](https://ok/x) \x00PH1\x00",
+		"[\x00PH1\x00](https://x/) [t](javascript:alert(1))",
+	}
+	for _, in := range forged {
+		got := string(inlineMd(in))
+		if strings.Contains(got, "\x00") {
+			t.Errorf("input %q: NUL survived into the output: %q", in, got)
+		}
+		if strings.Contains(got, "<img") {
+			t.Errorf("input %q: code span content escaped as markup: %s", in, got)
+		}
+		checkInlineAttrs(t, in, got)
+	}
+	// The replacement character stands where the NUL was, so the text is not
+	// silently shortened.
+	if got := string(inlineMd("a\x00b")); got != "a\uFFFDb" {
+		t.Errorf("NUL in plain text = %q, want a\uFFFDb", got)
 	}
 }
 
