@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/mad01/thismoon/compare/speak/v0.12.0...speak/v0.13.0) (2026-09-24)
+
+
+### Features
+
+* **speak:** retire the web page and make POST /read JSON-only ([aee5f85](https://github.com/mad01/thismoon/commit/aee5f85a083b95214e54786c1733089c2fb19f7f))
+* **speak:** retire the web page; present is the reading UI ([a0b48a0](https://github.com/mad01/thismoon/commit/a0b48a05cb101927416a6e72837c78416fe8f0e3))
+
 ## [0.12.0](https://github.com/mad01/thismoon/compare/speak/v0.11.1...speak/v0.12.0) (2026-09-24)
 
 
