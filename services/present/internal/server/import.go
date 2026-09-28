@@ -39,7 +39,8 @@ const maxImportBodyBytes = present.MaxPageBytes
 // nothing, so the request has to look like one present's own index made: a
 // JSON content type, which no form can send cross-origin without a
 // preflight, and when the browser names an Origin, this server's own or a
-// loopback one. The page gets the same fields present_create gives one, and
+// loopback one. The page gets the same fields present_create gives one, the
+// graph included when the file's first mermaid flowchart became one, and
 // the size cap a shared instance enforces applies here already, so a page
 // that imports can also be shared later instead of failing with 413 then.
 func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
@@ -65,16 +66,13 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	c, err := render.CompileDoc(page.Doc, page.Title)
+	draft, err := importDraft(page)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	capped := store.WithSizeLimit(s.store, present.MaxPageBytes)
-	p, err := capped.Create(
-		r.Context(),
-		store.Draft{Title: page.Title, Content: c.HTML, Doc: c.JSON},
-	)
+	p, err := capped.Create(r.Context(), draft)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, store.ErrTooLarge) {
@@ -89,6 +87,25 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(importResponse{ID: p.ID, URL: s.pageURL(r, p.ID)})
+}
+
+// importDraft compiles a converted page into the Draft the store creates:
+// the Doc's HTML and canonical JSON, plus the graph script and its source
+// when the file yielded a graph.
+func importDraft(page mdimport.Page) (store.Draft, error) {
+	c, err := render.CompileDoc(page.Doc, page.Title)
+	if err != nil {
+		return store.Draft{}, err
+	}
+	d := store.Draft{Title: page.Title, Content: c.HTML, Doc: c.JSON}
+	if page.Graph == nil {
+		return d, nil
+	}
+	d.Graph, d.GraphSource, err = render.CompileGraph(*page.Graph)
+	if err != nil {
+		return store.Draft{}, err
+	}
+	return d, nil
 }
 
 // readImport decodes the import body, bounded by maxImportBodyBytes, and

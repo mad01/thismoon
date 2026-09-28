@@ -247,20 +247,15 @@ func resolveGraph(s string) (js string, srcJSON []byte, err error) {
 	return s, nil, nil
 }
 
+// parseGraphAndRender decodes GraphInput JSON and compiles it the way every
+// graph write path does, so the MCP tools and the markdown import share one
+// implementation.
 func parseGraphAndRender(data []byte) (js string, srcJSON []byte, err error) {
 	var g render.GraphInput
 	if err := json.Unmarshal(data, &g); err != nil {
 		return "", nil, fmt.Errorf("parse graph: %w", err)
 	}
-	out, err := render.RenderGraph(g)
-	if err != nil {
-		return "", nil, err
-	}
-	canonical, err := json.Marshal(g)
-	if err != nil {
-		return "", nil, fmt.Errorf("marshal graph: %w", err)
-	}
-	return out, canonical, nil
+	return render.CompileGraph(g)
 }
 
 // ── create ──

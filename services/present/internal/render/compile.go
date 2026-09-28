@@ -38,3 +38,18 @@ func CompileDoc(d Doc, title string) (Compiled, error) {
 	}
 	return Compiled{Doc: d, HTML: out, JSON: canonical}, nil
 }
+
+// CompileGraph renders g to the Cytoscape init script a page stores and
+// returns it with the canonical GraphInput JSON, re-marshaled from the
+// parsed struct like CompileDoc does for a Doc.
+func CompileGraph(g GraphInput) (js string, canonical []byte, err error) {
+	js, err = RenderGraph(g)
+	if err != nil {
+		return "", nil, err
+	}
+	canonical, err = json.Marshal(g)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal graph: %w", err)
+	}
+	return js, canonical, nil
+}
