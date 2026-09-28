@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/mad01/thismoon/compare/present/v1.6.0...present/v1.7.0) (2026-09-28)
+
+
+### Features
+
+* **present:** render fenced mermaid flowcharts as the page graph ([#141](https://github.com/mad01/thismoon/issues/141)) ([fe171f4](https://github.com/mad01/thismoon/commit/fe171f4b2c77553ad1cf819479ff7d0138f58d14))
+
 ## [1.6.0](https://github.com/mad01/thismoon/compare/present/v1.5.0...present/v1.6.0) (2026-09-24)
 
 
