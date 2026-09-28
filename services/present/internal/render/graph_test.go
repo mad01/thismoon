@@ -26,8 +26,7 @@ func TestRenderGraphMinimal(t *testing.T) {
 		"function getGraphColors()",
 		"function initGraph()",
 		"cytoscape(",
-		`name: 'dagre'`,
-		"nodeDimensionsIncludeLabels: true",
+		`layout: presentGraphLayout('dagre', 'LR')`,
 		"Node A",
 		"Node B",
 	}
@@ -50,22 +49,40 @@ func TestRenderGraphDirection(t *testing.T) {
 		g    GraphInput
 		want string
 	}{
-		{"auto small graph is LR", GraphInput{Nodes: fewNodes}, `rankDir: 'LR'`},
-		{"auto large graph is TB", GraphInput{Nodes: manyNodes}, `rankDir: 'TB'`},
+		{
+			"auto small graph is LR",
+			GraphInput{Nodes: fewNodes},
+			`presentGraphLayout('dagre', 'LR')`,
+		},
+		{
+			"auto large graph is TB",
+			GraphInput{Nodes: manyNodes},
+			`presentGraphLayout('dagre', 'TB')`,
+		},
 		{
 			"explicit TB wins on small graph",
 			GraphInput{Nodes: fewNodes, Direction: "TB"},
-			`rankDir: 'TB'`,
+			`presentGraphLayout('dagre', 'TB')`,
 		},
 		{
 			"explicit LR wins on large graph",
 			GraphInput{Nodes: manyNodes, Direction: "LR"},
-			`rankDir: 'LR'`,
+			`presentGraphLayout('dagre', 'LR')`,
 		},
 		{
 			"breadthfirst aliases to dagre",
 			GraphInput{Nodes: manyNodes, Layout: "breadthfirst"},
-			`name: 'dagre'`,
+			`presentGraphLayout('dagre', 'TB')`,
+		},
+		{
+			"elk keeps the resolved direction",
+			GraphInput{Nodes: manyNodes, Layout: "elk"},
+			`presentGraphLayout('elk', 'TB')`,
+		},
+		{
+			"elk algorithm passes through",
+			GraphInput{Nodes: fewNodes, Layout: "elk-mrtree", Direction: "TB"},
+			`presentGraphLayout('elk-mrtree', 'TB')`,
 		},
 	}
 	for _, tc := range cases {
@@ -89,11 +106,20 @@ func TestRenderGraphCoseLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderGraph: %v", err)
 	}
-	if !strings.Contains(out, `name: 'cose'`) {
+	if !strings.Contains(out, `presentGraphLayout('cose', 'LR')`) {
 		t.Error("layout not set to cose")
 	}
-	if !strings.Contains(out, "nodeRepulsion") {
-		t.Error("cose layout should have nodeRepulsion parameter")
+}
+
+func TestRenderGraphUnknownLayoutFails(t *testing.T) {
+	for _, layout := range []string{"elk-bogus", "klay", "ELK"} {
+		_, err := RenderGraph(GraphInput{
+			Nodes:  []GraphNode{{ID: "a", Label: "A"}},
+			Layout: layout,
+		})
+		if err == nil || !strings.Contains(err.Error(), layout) {
+			t.Errorf("layout %q: err = %v, want unknown-layout error naming it", layout, err)
+		}
 	}
 }
 

@@ -220,7 +220,15 @@ theme). Do not add those controls manually.
   theme-aware color function. `sankey` also needs the vendored
   `chartjs-chart-sankey-0.15.3.min.js` (same script, loaded by `shell.html`
   right after Chart.js); when that asset is missing the block shows a note
-  instead of a chart. Scatter points accept `x` as a JSON number
+  instead of a chart. The graph's layout engines (dagre, the ELK
+  algorithms, cose) are built in `app.js` (`presentGraphLayout`), not in the
+  generated graph script, which only names the engine and the resolved
+  direction: the ELK options take the container's aspect ratio at run time,
+  and the graph toolbar's engine button cycles the live graph through every
+  engine for comparison. ELK needs the vendored `elk-0.12.0.bundled.js` plus
+  the `cytoscape-elk-2.3.0.js` adapter (same script, loaded by `shell.html`
+  after cytoscape-dagre); the `elk` layout is ELK layered with wrapping,
+  which folds a long chain of steps into rows to fit the container. Scatter points accept `x` as a JSON number
   (`ChartPoint.UnmarshalJSON` stores it as a decimal string; the client
   parses it back). Charts are inline blocks, many per page, unlike the
   single `graph` argument. The entry animation plays once per block and is

@@ -7,19 +7,103 @@
 // initialized client-side. webkit.js loads before this file, so
 // Webkit.el/escapeHtml/poll and the wk-* custom elements are available.
 (function () {
-  // Capture the Cytoscape instance the injected graph script creates, and make
-  // the dagre layout registration explicit/idempotent (same shim the old
-  // template carried inline).
+  // ── Graph layout engines ──
+  // The layout option objects live here rather than in the generated graph
+  // script: the ELK ones take the container's aspect ratio at run time (the
+  // adapter passes cy.width()/cy.height() as elk.aspectRatio), and the engine
+  // control in setupGraphControls rebuilds them for any engine on any page.
+  // The generated initGraph() calls presentGraphLayout(engine, direction)
+  // with the engine the page was authored with and the direction the server
+  // resolved ('LR' or 'TB'). 'elk' is ELK layered with wrapping, which folds
+  // a long chain of layers into rows until the drawing approaches the
+  // container's aspect ratio; the elk-<algorithm> engines pick another ELK
+  // algorithm without wrapping. The order here is the cycle order of the
+  // engine control.
+  var GRAPH_ENGINES = ['dagre', 'elk', 'elk-layered', 'elk-mrtree', 'elk-stress', 'elk-radial', 'elk-force', 'cose'];
+
+  function presentGraphLayout(engine, direction) {
+    var dir = direction === 'LR' ? 'LR' : 'TB';
+    var opts;
+    if (engine === 'cose') {
+      opts = { name: 'cose', padding: 30, nodeRepulsion: 8000 };
+    } else if (engine === 'elk' || (engine || '').indexOf('elk-') === 0) {
+      opts = elkLayout(engine, dir);
+    } else {
+      engine = 'dagre';
+      // Gaps tuned for the 140x50 node boxes: nodeSep separates siblings
+      // within a rank, rankSep separates ranks (where edges and labels run).
+      opts = {
+        name: 'dagre', rankDir: dir,
+        nodeSep: dir === 'LR' ? 20 : 25, rankSep: dir === 'LR' ? 80 : 60, edgeSep: 10,
+        padding: 30, nodeDimensionsIncludeLabels: true
+      };
+    }
+    // Stamped so the shim and the engine control can read back what ran.
+    opts.presentEngine = engine;
+    opts.presentDirection = dir;
+    return opts;
+  }
+
+  function elkLayout(engine, dir) {
+    var algorithm = engine === 'elk' ? 'layered' : engine.slice(4);
+    var elk = {
+      algorithm: algorithm,
+      'elk.direction': dir === 'LR' ? 'RIGHT' : 'DOWN',
+      'elk.spacing.nodeNode': 25
+    };
+    if (algorithm === 'layered') {
+      elk['elk.layered.spacing.nodeNodeBetweenLayers'] = dir === 'LR' ? 80 : 60;
+      elk['elk.spacing.edgeNode'] = 20;
+    }
+    if (engine === 'elk') {
+      elk['elk.layered.wrapping.strategy'] = 'MULTI_EDGE';
+      elk['elk.layered.wrapping.additionalEdgeSpacing'] = 20;
+    }
+    if (algorithm === 'stress') elk['elk.stress.desiredEdgeLength'] = 200;
+    if (algorithm === 'force') elk['elk.spacing.nodeNode'] = 60;
+    return { name: 'elk', padding: 30, nodeDimensionsIncludeLabels: true, elk: elk };
+  }
+  window.presentGraphLayout = presentGraphLayout;
+
+  // The engine the reader picked with the graph control; null means the
+  // page's authored engine. It outlives a theme recolor, which rebuilds the
+  // Cytoscape instance through the shim below.
+  var engineOverride = null;
+  // The layout options the page's graph script passed to cytoscape(), for
+  // the engine and direction it was authored with. A page rendered before
+  // the engines moved here carries a dagre or cose literal instead.
+  var baseLayout = null;
+  function layoutDirection(l) { return (l && (l.presentDirection || l.rankDir)) === 'LR' ? 'LR' : 'TB'; }
+  function layoutEngine(l) { return (l && (l.presentEngine || l.name)) || 'dagre'; }
+  function currentEngine() { return engineOverride || layoutEngine(baseLayout); }
+  // The toolbar is built before the page's graph script runs, so the label
+  // is set again once initGraph has passed its layout through the shim.
+  function showEngine() {
+    var btn = document.querySelector('.cy-engine');
+    if (btn) btn.textContent = currentEngine();
+  }
+
+  // Capture the Cytoscape instance the injected graph script creates, apply
+  // the reader's engine choice, and make the dagre and elk layout
+  // registrations explicit/idempotent (same shim the old template carried
+  // inline).
   (function () {
     var orig = window.cytoscape;
     if (!orig) return;
-    if (window.cytoscapeDagre && typeof orig.use === 'function') {
-      try { orig.use(window.cytoscapeDagre); } catch (e) {}
+    if (typeof orig.use === 'function') {
+      if (window.cytoscapeDagre) { try { orig.use(window.cytoscapeDagre); } catch (e) {} }
+      if (window.cytoscapeElk) { try { orig.use(window.cytoscapeElk); } catch (e) {} }
     }
     window._cyInstance = null;
     var wrapped = function () {
+      var opts = arguments[0];
+      var isPage = !!(opts && opts.container);
+      if (isPage && opts.layout) {
+        baseLayout = opts.layout;
+        if (engineOverride) opts.layout = presentGraphLayout(engineOverride, layoutDirection(baseLayout));
+      }
       var cy = orig.apply(this, arguments);
-      if (arguments[0] && arguments[0].container) window._cyInstance = cy;
+      if (isPage) window._cyInstance = cy;
       return cy;
     };
     for (var k in orig) if (orig.hasOwnProperty(k)) wrapped[k] = orig[k];
@@ -269,9 +353,11 @@
     };
   }
 
-  // ── Cytoscape graph controls ── zoom/fit/fullscreen chrome around #cy-graph.
-  // No-ops when the page has no graph. Removes any prior backdrop first so a
-  // re-render does not stack duplicates.
+  // ── Cytoscape graph controls ── engine/zoom/fit/fullscreen chrome around
+  // #cy-graph. No-ops when the page has no graph. Removes any prior backdrop
+  // first so a re-render does not stack duplicates. The engine button cycles
+  // through GRAPH_ENGINES and re-runs the layout in place, so any page can be
+  // compared across engines without re-authoring it.
   function setupGraphControls() {
     var el = document.getElementById('cy-graph');
     if (!el) return;
@@ -295,6 +381,7 @@
     ctrls.className = 'cy-controls';
     ctrls.innerHTML =
       '<button class="size-btn cy-close-btn" data-cy="close" title="Close">' + svgClose + '</button>' +
+      '<button class="size-btn cy-engine" data-cy="engine" title="Cycle layout engine"></button>' +
       '<button class="size-btn" data-cy="in" title="Zoom in">+</button>' +
       '<button class="size-btn" data-cy="out" title="Zoom out">&minus;</button>' +
       '<button class="size-btn" data-cy="fit" title="Reset view">' + svgFit + '</button>' +
@@ -304,13 +391,26 @@
     function cy() { return window._cyInstance; }
     function mid() { return { x: el.clientWidth / 2, y: el.clientHeight / 2 }; }
 
+    showEngine();
+
+    function runEngine(c, engine) {
+      c.layout(presentGraphLayout(engine, layoutDirection(baseLayout))).run();
+    }
+    // An ELK layout is shaped by the container's aspect ratio, so a resize
+    // re-runs it; dagre and cose keep their drawing and just refit.
+    function refit(c, pad) {
+      if (currentEngine().indexOf('elk') === 0) { runEngine(c, currentEngine()); return; }
+      c.fit(undefined, pad);
+      c.center();
+    }
+
     function openPopup() {
       wrapper.classList.add('cy-fullscreen');
       backdrop.classList.add('active');
       ctrls.querySelector('[data-cy="fs"]').innerHTML = svgCollapse;
       ctrls.querySelector('[data-cy="fs"]').title = 'Exit fullscreen';
       var c = cy();
-      if (c) setTimeout(function () { c.resize(); c.fit(undefined, 40); c.center(); }, 120);
+      if (c) setTimeout(function () { c.resize(); refit(c, 40); }, 120);
     }
 
     function closePopup() {
@@ -319,7 +419,7 @@
       ctrls.querySelector('[data-cy="fs"]').innerHTML = svgExpand;
       ctrls.querySelector('[data-cy="fs"]').title = 'Fullscreen';
       var c = cy();
-      if (c) setTimeout(function () { c.resize(); c.fit(undefined, 30); }, 80);
+      if (c) setTimeout(function () { c.resize(); refit(c, 30); }, 80);
     }
 
     ctrls.addEventListener('click', function (e) {
@@ -332,6 +432,13 @@
         return;
       }
       if (!c) return;
+      if (action === 'engine') {
+        var next = GRAPH_ENGINES[(GRAPH_ENGINES.indexOf(currentEngine()) + 1) % GRAPH_ENGINES.length];
+        engineOverride = next;
+        showEngine();
+        runEngine(c, next);
+        return;
+      }
       if (action === 'in') c.zoom({ level: c.zoom() * 1.3, renderedPosition: mid() });
       else if (action === 'out') c.zoom({ level: c.zoom() / 1.3, renderedPosition: mid() });
       else if (action === 'fit') { c.fit(undefined, 30); c.center(); }
@@ -369,6 +476,7 @@
 
   function initGraphAndFlow() {
     if (typeof initGraph === 'function') initGraph();
+    showEngine();
     startGraphFlow();
   }
 
