@@ -131,16 +131,15 @@ Prepared status: with the page registered, the element renders a bar inside
 itself (`.wk-ra-bar`; `wk-read-aloud` turns visible where the consumer placed
 it): "Audio: N of M parts ready" and what the rest are doing (preparing,
 retrying, not prepared, failed), the failure reason, and the buttons
-"Prepare all" (`POST /doc/{id}/prepare`, enabled while idle or failed parts
-remain), "Retry failed (N)" (`?failed=1`, shown when something failed) and
-"Download page audio" (`GET /doc/{id}/audio`, enabled once every part is
-ready; speak's 409 while parts are missing shows as a notice toast). Each
-section with parts gets a `wk-badge.wk-ra-state` beside its play buttons
-(audio ready, generating i of n, queued, retrying, failed with speak's
-reason, or not prepared), a "Retry" button while it has failed parts
-(`?section=N&failed=1`) and a "Download" button once it is fully ready
-(`?section=N`). Downloads go fetch, blob, object URL, click, since speak
-refuses a cross-origin `<a download>`; the file is `<name>.wav` or
+"Generate all TTS for page" (`POST /doc/{id}/prepare`, enabled while idle or
+failed parts remain) and "Retry failed (N)" (`?failed=1`, shown when
+something failed). Each section with parts gets a `wk-badge.wk-ra-state`
+beside its play buttons (audio ready, generating i of n, queued, retrying,
+failed with speak's reason, or not prepared), a "Retry" button while it has
+failed parts (`?section=N&failed=1`) and a "Download" button once it is
+fully ready (`GET /doc/{id}/audio?section=N`; speak's 409 while parts are
+missing shows as a notice toast). Downloads go fetch, blob, object URL,
+click, since speak refuses a cross-origin `<a download>`; the file is
 `<name>-section-N.wav`, `.mp3` when the clip is `audio/mpeg`. The status is
 polled every 2s while any part is queued, generating or retrying, and again
 after a prepare call and whenever a session fetches a part; while speak

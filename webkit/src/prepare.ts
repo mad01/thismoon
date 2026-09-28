@@ -174,12 +174,10 @@ export function statusOfSection(status: DocStatus, index: number): SectionStatus
 export interface BarView {
   line: string;
   reason: string;
-  /** Idle or failed parts remain for "Prepare all" to queue. */
+  /** Idle or failed parts remain for "Generate all TTS for page" to queue. */
   canPrepare: boolean;
   /** Failed parts for "Retry failed"; the button hides at zero. */
   failed: number;
-  /** Every part is ready, so the page downloads as one file. */
-  canDownload: boolean;
 }
 
 /** The page's audio line: "Audio: N of M parts ready", then what the rest
@@ -201,7 +199,6 @@ export function barView(status: DocStatus): BarView {
     reason: t.failed ? status.reason : '',
     canPrepare: t.idle + t.failed > 0,
     failed: t.failed,
-    canDownload: t.parts > 0 && t.ready === t.parts,
   };
 }
 

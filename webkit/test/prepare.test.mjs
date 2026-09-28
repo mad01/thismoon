@@ -177,7 +177,6 @@ test('barView: actions follow the counts', () => {
   const idle = barView(doc({ parts: 4, idle: 4 }));
   assert.equal(idle.canPrepare, true);
   assert.equal(idle.failed, 0);
-  assert.equal(idle.canDownload, false);
   assert.equal(idle.reason, '');
 
   const failed = barView(doc({ parts: 4, ready: 2, failed: 2 }, 'failed after 3 attempts: no engine'));
@@ -191,10 +190,7 @@ test('barView: actions follow the counts', () => {
 
   const ready = barView(doc({ parts: 4, ready: 4 }));
   assert.equal(ready.canPrepare, false);
-  assert.equal(ready.canDownload, true);
   assert.equal(ready.line, 'Audio: 4 of 4 parts ready');
-
-  assert.equal(barView(doc({})).canDownload, false, 'nothing to download');
 });
 
 test('sectionView: most useful fact first', () => {

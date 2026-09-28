@@ -1684,8 +1684,7 @@ var Webkit = (() => {
       line: pageLine(t),
       reason: t.failed ? status.reason : "",
       canPrepare: t.idle + t.failed > 0,
-      failed: t.failed,
-      canDownload: t.parts > 0 && t.ready === t.parts
+      failed: t.failed
     };
   }
   function sectionView(sec) {
@@ -2474,7 +2473,6 @@ var Webkit = (() => {
       bar.prepareAll.disabled = !view.canPrepare;
       setText(bar.retryFailed, `Retry failed (${view.failed})`);
       bar.retryFailed.hidden = !view.failed;
-      bar.download.disabled = !view.canDownload;
     }
     buildBar() {
       const line = document.createElement("span");
@@ -2482,21 +2480,19 @@ var Webkit = (() => {
       const reason = document.createElement("span");
       reason.className = "wk-ra-bar-reason";
       reason.hidden = true;
-      const prepareAll = textButton("Prepare all", "Synthesize every part that is not ready yet");
+      const prepareAll = textButton("Generate all TTS for page", "Synthesize every part that is not ready yet");
       prepareAll.addEventListener("click", () => void this.prepare(prepareAll, 0, false));
       const retryFailed = textButton("Retry failed", "Try the failed parts again");
       retryFailed.hidden = true;
       retryFailed.addEventListener("click", () => void this.prepare(retryFailed, 0, true));
-      const download = textButton("Download page audio", "Download the whole page as one audio file");
-      download.addEventListener("click", () => void this.download(download, 0));
       const actions = document.createElement("span");
       actions.className = "wk-ra-bar-actions";
-      actions.append(prepareAll, retryFailed, download);
+      actions.append(prepareAll, retryFailed);
       const root = document.createElement("div");
       root.className = "wk-ra-bar";
       root.append(line, reason, actions);
       this.host.appendChild(root);
-      return { root, line, reason, prepareAll, retryFailed, download };
+      return { root, line, reason, prepareAll, retryFailed };
     }
     renderSection(i, sec) {
       let c = this.controls[i] ?? null;
@@ -2549,7 +2545,8 @@ var Webkit = (() => {
     }
     /** Queues parts of one section (1-based) or the whole document (0): the
      * failed ones only (Retry, so a retry never starts synthesis of parts the
-     * reader left unprepared), or every idle and failed one (Prepare all). */
+     * reader left unprepared), or every idle and failed one (Generate all
+     * TTS for page). */
     prepare(btn, section, failedOnly) {
       return this.busy(btn, async () => {
         const id = this.status?.id;
@@ -2566,15 +2563,14 @@ var Webkit = (() => {
         }
       });
     }
-    /** Downloads the joined audio of one section (1-based) or the page (0).
-     * speak answers 409 while parts are missing; that message is a notice,
-     * not a failure. */
+    /** Downloads the joined audio of one section (1-based). speak answers
+     * 409 while parts are missing; that message is a notice, not a failure. */
     download(btn, section) {
       return this.busy(btn, async () => {
         const st = this.status;
         if (!st) return;
         try {
-          const url = `${this.cfg.endpoint}/doc/${encodeURIComponent(st.id)}/audio${section ? `?section=${section}` : ""}`;
+          const url = `${this.cfg.endpoint}/doc/${encodeURIComponent(st.id)}/audio?section=${section}`;
           const blob = await fetchClip(this.cfg, url, { cache: "no-store" });
           saveBlob(blob, downloadName(st.name, section, blob.type));
         } catch (err) {
