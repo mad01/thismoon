@@ -50,7 +50,9 @@ internal/sharedclient/  client for a shared instance (create, replace, delete,
 internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade;
                      compile.go is the parse, render, canonical-JSON step every
                      write path shares
-internal/mdimport/   markdown file to title + Doc (goldmark), pure
+internal/mdimport/   markdown file to title + Doc + optional graph (goldmark), pure
+internal/mermaid/    Mermaid flowchart source to GraphInput, pure; mdimport calls
+                     it for a fenced mermaid block
 internal/server/     HTTP handlers per mode; embeds shell.html, index_shell.html,
                      shared_index_shell.html, app.js, index.js
 internal/mcpserver/  MCP wiring and the present_* tools, one tool set per mode
@@ -70,8 +72,8 @@ The write path is the MCP, with one browser-side exception. `present_create`
 and `present_update` accept content as structured Doc JSON (or legacy HTML,
 auto-detected) and an optional Graph JSON; `internal/render` compiles them
 to HTML and a Cytoscape init script at authoring time (`Compile` wraps
-`RenderDoc` and hands back the canonical Doc JSON too; `RenderGraph` does the
-graph), and `internal/store` writes the results under `pages/<id>/` with a
+`RenderDoc` and hands back the canonical Doc JSON too; `CompileGraph` does the
+same around `RenderGraph`), and `internal/store` writes the results under `pages/<id>/` with a
 version bump. `present_source` returns the stored `doc.json`/`graph.json` so
 a later session can round-trip them back through `present_update`. `present
 rerender` pushes a renderer or webkit change through existing pages by
@@ -81,7 +83,8 @@ legacy-HTML upgrade).
 The exception is the markdown import, a local-mode route the index offers as
 a button and a drop target. The browser reads the file and posts it to
 `POST /api/import`; `internal/mdimport` maps the markdown onto a title and
-a Doc, the same `Compile` step renders it, and the store gets exactly what
+a Doc, and the first fenced mermaid flowchart onto a graph through
+`internal/mermaid`; the same `Compile` steps render them, and the store gets exactly what
 an MCP create would have written, `doc.json` included, so the page is
 editable through `present_source` afterwards. Local serve authenticates
 nothing, so the handler narrows who can reach it in three ways: it requires

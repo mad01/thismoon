@@ -280,9 +280,44 @@ func TestConvertBlocks(t *testing.T) {
 			},
 		},
 		{
-			name: "mermaid stays a code block with its language",
-			src:  "```mermaid\ngraph TD; A-->B\n```\n",
-			want: []render.Block{{T: "code", Lang: "mermaid", Text: "graph TD; A-->B"}},
+			name: "mermaid flowchart becomes the graph placement",
+			src:  "```mermaid\ngraph LR\n  A[Start] --> B[End]\n```\n",
+			want: []render.Block{{T: "graph"}},
+		},
+		{
+			name: "mermaid language matches case-insensitively",
+			src:  "```Mermaid\ngraph LR\n  A[Start] --> B[End]\n```\n",
+			want: []render.Block{{T: "graph"}},
+		},
+		{
+			name: "second mermaid flowchart stays a code block",
+			src: "```mermaid\ngraph LR\n  A --> B\n```\n\n" +
+				"```mermaid\ngraph TD; C-->D\n```\n",
+			want: []render.Block{
+				{T: "graph"},
+				{T: "code", Lang: "mermaid", Text: "graph TD; C-->D"},
+			},
+		},
+		{
+			name: "mermaid that is not a flowchart stays a code block",
+			src:  "```mermaid\nsequenceDiagram\n  A->>B: hi\n```\n",
+			want: []render.Block{
+				{T: "code", Lang: "mermaid", Text: "sequenceDiagram\n  A->>B: hi"},
+			},
+		},
+		{
+			name: "mermaid flowchart inside a list item splits the list around the graph",
+			src:  "- a\n\n  ```mermaid\n  graph LR\n    A[Start] --> B[End]\n  ```\n\n- b\n",
+			want: []render.Block{
+				{T: "list", Items: []string{"a"}},
+				{T: "graph"},
+				{T: "list", Items: []string{"b"}},
+			},
+		},
+		{
+			name: "mermaid flowchart inside a blockquote stays callout text",
+			src:  "> ```mermaid\n> graph LR; A-->B\n> ```\n",
+			want: []render.Block{{T: "callout", Severity: "info", Text: "`graph LR; A-->B`"}},
 		},
 		{
 			name: "indented code has no language",
@@ -341,6 +376,50 @@ func TestConvertBlocks(t *testing.T) {
 			got := p.Doc.Sections[0].Blocks
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("blocks =\n%+v\nwant\n%+v", got, c.want)
+			}
+		})
+	}
+}
+
+// The first mermaid flowchart is the page graph; later ones and diagrams
+// that are not flowcharts leave it untouched.
+func TestConvertMermaidFlowchartIsThePageGraph(t *testing.T) {
+	flow := "```mermaid\ngraph LR\n  A[Start] --> B[End]\n```\n"
+	first := &render.GraphInput{
+		Nodes:     []render.GraphNode{{ID: "A", Label: "Start"}, {ID: "B", Label: "End"}},
+		Edges:     []render.GraphEdge{{From: "A", To: "B"}},
+		Direction: "LR",
+	}
+	cases := []struct {
+		name string
+		src  string
+		want *render.GraphInput
+	}{
+		{name: "flowchart", src: flow, want: first},
+		{
+			name: "case-insensitive language",
+			src:  strings.Replace(flow, "mermaid", "Mermaid", 1),
+			want: first,
+		},
+		{
+			name: "second flowchart does not replace the first",
+			src:  flow + "\n```mermaid\ngraph TD\n  C --> D\n```\n",
+			want: first,
+		},
+		{
+			name: "flowchart inside a list item",
+			src:  "- a\n\n  ```mermaid\n  graph LR\n    A[Start] --> B[End]\n  ```\n\n- b\n",
+			want: first,
+		},
+		{name: "flowchart inside a blockquote", src: "> ```mermaid\n> graph LR; A-->B\n> ```\n"},
+		{name: "sequence diagram", src: "```mermaid\nsequenceDiagram\n  A->>B: hi\n```\n"},
+		{name: "no mermaid", src: "```go\npackage x\n```\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := convert(t, "x.md", "## S\n\n"+c.src)
+			if !reflect.DeepEqual(p.Graph, c.want) {
+				t.Errorf("Graph =\n%+v\nwant\n%+v", p.Graph, c.want)
 			}
 		})
 	}

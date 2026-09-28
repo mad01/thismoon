@@ -1,11 +1,16 @@
 // Package mdimport converts a markdown file into the title and Doc a present
 // page is rendered from, so a file written by hand or by another tool becomes
-// a page without an agent rewriting it as Doc JSON. The mapping is lossy
-// where present has no equivalent: raw HTML, thematic breaks, and footnotes
-// are dropped, nested lists flatten into their parent, a blockquote becomes
-// one callout, and inline markup is rewritten into present's own inline
-// syntax, which the renderer applies to prose again (so a literal asterisk
-// in the source still italicises).
+// a page without an agent rewriting it as Doc JSON. The first mermaid
+// flowchart in the file becomes the page graph, placed where the fence was,
+// unless it sits inside a blockquote, where it flattens into callout text
+// like any other code; present has one graph per page, so every later
+// mermaid fence, and any mermaid fence that is not a flowchart, stays a code
+// block. The mapping is
+// lossy where present has no equivalent: raw HTML, thematic breaks, and
+// footnotes are dropped, nested lists flatten into their parent, a
+// blockquote becomes one callout, and inline markup is rewritten into
+// present's own inline syntax, which the renderer applies to prose again (so
+// a literal asterisk in the source still italicises).
 package mdimport
 
 import (
@@ -23,18 +28,25 @@ import (
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 
+	"github.com/mad01/thismoon/services/present/internal/mermaid"
 	"github.com/mad01/thismoon/services/present/internal/render"
 )
 
 // ErrEmpty is returned when the markdown yields no blocks at all.
 var ErrEmpty = errors.New("mdimport: markdown has no content to import")
 
-// Page is a converted markdown file: the page title and the Doc it renders
-// from.
+// Page is a converted markdown file: the page title, the Doc it renders
+// from, and the page graph converted from the first mermaid flowchart, nil
+// when the file has none.
 type Page struct {
 	Title string
 	Doc   render.Doc
+	Graph *render.GraphInput
 }
+
+// mermaidLang is the fence language, compared case-insensitively, whose
+// flowchart becomes the page graph.
+const mermaidLang = "mermaid"
 
 // introHeading titles the section holding what sits between the title and
 // the first level-2 heading, once the summary has been taken from it.
@@ -72,7 +84,8 @@ type converter struct {
 	title    string
 	intro    []render.Block // blocks before the first level-2 heading
 	sections []render.Section
-	emphasis int // nesting depth of the emphasis being written
+	graph    *render.GraphInput // the first mermaid flowchart, once seen
+	emphasis int                // nesting depth of the emphasis being written
 }
 
 // top routes one top-level node: headings shape the outline, anything else
@@ -150,7 +163,7 @@ func (c *converter) page(name string) (Page, error) {
 	if total == 0 {
 		return Page{}, ErrEmpty
 	}
-	return Page{Title: title, Doc: doc}, nil
+	return Page{Title: title, Doc: doc, Graph: c.graph}, nil
 }
 
 // titleFromName is the file name without directory and extension.
@@ -177,7 +190,7 @@ func (c *converter) blocks(n ast.Node) []render.Block {
 	case *ast.List:
 		return c.list(n)
 	case *ast.FencedCodeBlock:
-		return []render.Block{{T: "code", Lang: string(n.Language(c.src)), Text: c.lines(n)}}
+		return c.fenced(n)
 	case *ast.CodeBlock:
 		return []render.Block{{T: "code", Text: c.lines(n)}}
 	case *extast.Table:
@@ -188,6 +201,23 @@ func (c *converter) blocks(n ast.Node) []render.Block {
 	// Raw HTML, thematic breaks, footnote definitions: present has nothing
 	// to map them to.
 	return nil
+}
+
+// fenced maps a fenced code block. A mermaid fence holding a flowchart
+// becomes the page graph and leaves a graph placement in its place, once per
+// page; a second flowchart, or a mermaid fence the converter cannot parse (a
+// sequence diagram, unsupported syntax), stays a code block like any other
+// language.
+func (c *converter) fenced(n *ast.FencedCodeBlock) []render.Block {
+	lang := string(n.Language(c.src))
+	text := c.lines(n)
+	if c.graph == nil && strings.EqualFold(lang, mermaidLang) {
+		if g, err := mermaid.Convert(text); err == nil {
+			c.graph = &g
+			return []render.Block{{T: "graph"}}
+		}
+	}
+	return []render.Block{{T: "code", Lang: lang, Text: text}}
 }
 
 // lines is a code block's text: its source lines as written, without the

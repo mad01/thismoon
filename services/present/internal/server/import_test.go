@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	present "github.com/mad01/thismoon/services/present"
+	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
 const importSample = "# Weekly\n\nA short brief.\n\n## Done\n\nShipped **it**.\n\n" +
@@ -125,6 +127,63 @@ func TestImportPersistsTheDocSource(t *testing.T) {
 	}
 	if !strings.Contains(string(doc), `"h":"Done"`) {
 		t.Errorf("doc.json = %s, want the Done section", doc)
+	}
+}
+
+// A mermaid flowchart in the file becomes the page graph, with its source
+// persisted like an MCP-created graph's; a mermaid fence that is not a
+// flowchart stays a code block and leaves the page without a graph.
+func TestImportRendersAMermaidFlowchartAsTheGraph(t *testing.T) {
+	ts, st := setup(t)
+	src := "# Flow\n\nHow it goes.\n\n## Steps\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```\n"
+	code, body := postImport(t, ts, "application/json", importBody(t, "flow.md", src), nil)
+	if code != http.StatusCreated {
+		t.Fatalf("status = %d (%s)", code, body)
+	}
+	var out importResponse
+	_ = json.Unmarshal(body, &out)
+	page := apiPageOf(t, ts.URL+"/api/p/"+out.ID)
+	if !strings.Contains(page.Content, `id="cy-graph"`) {
+		t.Errorf("content has no graph placement: %s", page.Content)
+	}
+	if strings.Contains(page.Content, "language-mermaid") {
+		t.Errorf("content still holds the mermaid code block: %s", page.Content)
+	}
+	if !page.HasGraph {
+		t.Error("has_graph = false, want true")
+	}
+	for _, want := range []string{"initGraph", "Start"} {
+		if !strings.Contains(page.Graph, want) {
+			t.Errorf("graph script missing %q in: %s", want, page.Graph)
+		}
+	}
+	graphSrc, err := st.LoadGraphSource(t.Context(), out.ID)
+	if err != nil {
+		t.Fatalf("LoadGraphSource: %v", err)
+	}
+	if !strings.Contains(string(graphSrc), `"id":"A"`) {
+		t.Errorf("graph source = %s, want node A", graphSrc)
+	}
+}
+
+func TestImportKeepsANonFlowchartMermaidAsCode(t *testing.T) {
+	ts, st := setup(t)
+	src := "# Seq\n\n## Steps\n\n```mermaid\nsequenceDiagram\n  A->>B: hi\n```\n"
+	code, body := postImport(t, ts, "application/json", importBody(t, "seq.md", src), nil)
+	if code != http.StatusCreated {
+		t.Fatalf("status = %d (%s)", code, body)
+	}
+	var out importResponse
+	_ = json.Unmarshal(body, &out)
+	page := apiPageOf(t, ts.URL+"/api/p/"+out.ID)
+	if !strings.Contains(page.Content, "language-mermaid") {
+		t.Errorf("content lost the mermaid code block: %s", page.Content)
+	}
+	if page.HasGraph || page.Graph != "" {
+		t.Errorf("has_graph = %v, graph = %q, want no graph", page.HasGraph, page.Graph)
+	}
+	if _, err := st.LoadGraphSource(t.Context(), out.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("LoadGraphSource err = %v, want ErrNotFound", err)
 	}
 }
 
