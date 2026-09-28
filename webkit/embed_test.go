@@ -84,6 +84,8 @@ func TestHandlerServesJS(t *testing.T) {
 		"wk-read-aloud", "v1/audio/speech",
 		// prepared mode: the attribute, speak's document API, the status UI classes
 		`hasAttribute("prepare")`, `"/read"`, "/prepare", "data-ra-chunk", "wk-ra-bar", "wk-ra-state",
+		// fixation's in-place text-walk: the run span it wraps each text node in
+		"wk-fixation-run",
 		// ⌘K site picker
 		"wk-cmdk:open", "__this/sites.json", "webkit-cmdk",
 		// feature guide (help modal)

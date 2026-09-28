@@ -1,9 +1,9 @@
 // webkit.ts — shared web-chrome bundle (globalName: Webkit)
 // Exports: init (backward-compat shim), toFixation, bootSnippet
 
-import { toFixation } from './fixation.js';
+import { unwrapFixation, wrapFixation } from './fixation-dom.js';
 import { clampSize, SIZE_STEP, SIZE_DEFAULT } from './size.js';
-import { WkReadAloud, stopReadAloud } from './read-aloud.js';
+import { WkReadAloud } from './read-aloud.js';
 import { rankSites } from './fuzzy.js';
 import type { Site, SiteMatch } from './fuzzy.js';
 import { initProse } from './prose.js';
@@ -77,19 +77,6 @@ const SPEED_OPTIONS: { value: string; label: string }[] = [
 ];
 
 // ── Utilities ──
-
-function walkText(node: Node): void {
-  if (node.nodeType === Node.TEXT_NODE) {
-    const span = document.createElement('span');
-    span.innerHTML = toFixation((node as Text).textContent ?? '');
-    node.parentNode?.replaceChild(span, node);
-  } else if (
-    node.nodeType === Node.ELEMENT_NODE &&
-    !['CODE', 'B', 'STRONG', 'SCRIPT', 'STYLE'].includes((node as Element).tagName)
-  ) {
-    Array.from(node.childNodes).forEach(walkText);
-  }
-}
 
 function renderBrand(text: string, href: string): string {
   const last = text[text.length - 1];
@@ -354,39 +341,17 @@ class WkHeader extends HTMLElement {
     // render and later poll/version re-renders with zero consumer changes. When
     // fixation is off the observer is disconnected, so the default case is free.
     const fixationBtn = this.querySelector('#webkit-fixation');
-    // Per-element original markup, so toggling off restores the plain text. A
-    // WeakMap (not the targets at init) keys on the live nodes and lets replaced
-    // nodes be garbage-collected on re-render.
-    const fixationOriginals = new WeakMap<HTMLElement, string>();
     let fixationActive = localStorage.getItem(FIXATION_KEY) === 'true';
 
-    // walk one target if it hasn't been walked yet (idempotent via a dataset
-    // flag, so a re-walk pass skips already-processed nodes and only touches
-    // freshly rendered ones).
-    const fixationify = (el: HTMLElement): void => {
-      if (el.dataset.fixationDone === '1') return;
-      fixationOriginals.set(el, el.innerHTML);
-      el.classList.add('fixation');
-      const frag = document.createElement('div');
-      frag.innerHTML = el.innerHTML;
-      walkText(frag);
-      el.innerHTML = frag.innerHTML;
-      el.dataset.fixationDone = '1';
-    };
-
-    const unbionify = (el: HTMLElement): void => {
-      if (el.dataset.fixationDone !== '1') return;
-      const orig = fixationOriginals.get(el);
-      if (orig !== undefined) el.innerHTML = orig;
-      el.classList.remove('fixation');
-      delete el.dataset.fixationDone;
-    };
-
+    // The walk wraps text nodes in place and skips the runs it made before, so
+    // a pass over every target is idempotent and cheap: the observer's
+    // re-walks only touch text that arrived since the last one.
     const applyFixation = (active: boolean): void => {
       fixationBtn?.classList.toggle('active', active);
       fixationBtn?.setAttribute('aria-pressed', String(active));
       document.querySelectorAll<HTMLElement>(fixationTargets).forEach(el => {
-        if (active) fixationify(el); else unbionify(el);
+        el.classList.toggle('fixation', active);
+        if (active) wrapFixation(el); else unwrapFixation(el);
       });
     };
 
@@ -413,10 +378,8 @@ class WkHeader extends HTMLElement {
     if (fixationActive) observe();
 
     fixationBtn?.addEventListener('click', () => {
-      // End any read-aloud session first: fixationify snapshots and rewrites
-      // innerHTML, which would detach the session's highlight spans and strand
-      // stale .wk-ra-sentence markup in the restored snapshot.
-      stopReadAloud();
+      // A read-aloud session plays on through the toggle: the walk keeps the
+      // blocks and sentence spans it highlights, and the buttons it injected.
       fixationActive = !fixationActive;
       localStorage.setItem(FIXATION_KEY, String(fixationActive));
       fixationObserver.disconnect();
