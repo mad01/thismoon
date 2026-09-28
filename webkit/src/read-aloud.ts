@@ -16,6 +16,7 @@ import {
 import {
   group, joinParts, LIVE_RAMP, partKeys, segmentSentences, speakable, splitKeys, Sentence,
 } from './sentences.js';
+import { unwrapFixation } from './fixation-dom.js';
 
 const DEFAULT_ENDPOINT = 'http://speak.this';
 const DEFAULT_VOICE = 'af_heart';
@@ -155,8 +156,10 @@ function wrapSentences(nodes: Text[], sentences: Sentence[]): Map<number, HTMLEl
 }
 
 /** Replaces highlight spans with plain text and merges adjacent text nodes.
- * Surgical (no innerHTML rewrite) so sibling element identity — which the
- * fixation toggle depends on — is preserved. */
+ * Surgical (no innerHTML rewrite), so the elements around the spans keep
+ * their identity: fixation's runs stay where they are, and a run fixation
+ * made inside a span (fixation turned on mid-session) folds back into plain
+ * text, which its observer bolds again. */
 function unwrapSentences(section: Element, spans: Map<number, HTMLElement[]>): void {
   for (const list of spans.values()) {
     for (const span of list) {
@@ -243,8 +246,14 @@ function sentenceParts(
 }
 
 /** Uncached mode (present pages, any section without keys): the section's
- * sentences, wrapped in highlight spans. Null when nothing is speakable. */
+ * sentences, wrapped in highlight spans. Null when nothing is speakable.
+ * Planned on plain text: fixation's runs split each word's text node at
+ * the half-bold seam, and sentence spans cut along those seams would have a
+ * later re-walk bold "Th" and "e" as words of their own. So the runs come
+ * off the section first; fixation's observer puts them back, inside the
+ * whole-sentence spans, before the next paint. */
 function planUncached(section: HTMLElement, cfg: SpeakConfig): Plan | null {
+  unwrapFixation(section);
   const { sentences, nodes } = planSection(section);
   if (!sentences.some(s => speakable(s.text))) return null;
   const spans = wrapSentences(nodes, sentences);
@@ -278,12 +287,11 @@ interface Session {
 
 let session: Session | null = null;
 
-/** Ends any active playback session. Exported for the fixation toggle: fixation
- * rewrites the target subtrees via innerHTML, which detaches the highlight
- * spans a live session holds — ending the session first keeps the DOM clean.
- * Also on the Webkit global for pages that replace their sections: removing
- * <wk-read-aloud> doesn't end a session, which would play on from the
- * detached section. */
+/** Ends any active playback session. On the Webkit global for pages that
+ * replace their sections: removing <wk-read-aloud> doesn't end a session,
+ * which would play on from the detached section. The fixation toggle needs
+ * no such call: it wraps and unwraps text nodes in place, so a session's
+ * highlight spans and blocks survive it. */
 export function stopReadAloud(): void {
   if (session) endSession(session);
 }

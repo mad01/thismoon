@@ -168,8 +168,19 @@ element dispatches `wk-read-aloud-error` on `document` with `{detail:
 code; an unreachable endpoint, empty audio, and a broken-off stream each get
 their own message.
 
-Fixation: toggling it ends any playing session, since fixation rewrites the
-targets' innerHTML and would detach the live sentence spans.
+Fixation: the two work together, in any order. Fixation wraps each text node
+that holds a word in `span.wk-fixation-run` with a `<b>` per word start, and
+takes those spans off again on toggle-off; nothing else under a target moves.
+So the play buttons, the badge and the text buttons injected into a section
+that is also a fixation target (present's summary) keep their listeners, the
+`data-ra-chunk`/`data-ra-parts` stamps and the `.wk-ra-active` highlight
+stay, and a playing session, live or cached, carries on through the toggle.
+Fixation's walk skips `button`, `select`, `textarea`, `wk-badge`, `svg`,
+`code`, `b` and `strong` subtrees, so the controls' labels and the badge are
+never half-bolded. A live session is planned on plain text: read-aloud takes
+fixation's runs off the section before it wraps the sentences, and fixation's
+observer bolds the text inside the whole-sentence spans again before the
+next paint, so a sentence span never cuts through a word.
 
 `Webkit.stopReadAloud()` ends any playing session. Removing the element does
 not, so a page that replaces its sections (a client render swapping its

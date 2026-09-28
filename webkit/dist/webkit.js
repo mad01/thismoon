@@ -1497,12 +1497,78 @@ var Webkit = (() => {
   });
 
   // src/fixation.ts
-  function toFixation(text) {
-    return text.replace(/\b([a-zA-Z]+)\b/g, (word) => {
-      if (word.length <= 1) return word;
+  var WORD = /\b([a-zA-Z]+)\b/g;
+  function fixationSegments(text) {
+    const out = [];
+    const push = (t, bold) => {
+      if (!t) return;
+      const last = out[out.length - 1];
+      if (last && last.bold === bold) last.text += t;
+      else out.push({ text: t, bold });
+    };
+    let pos = 0;
+    for (const m of text.matchAll(WORD)) {
+      const word = m[0];
+      if (word.length <= 1) continue;
+      const at = m.index ?? 0;
       const mid = Math.ceil(word.length / 2);
-      return "<b>" + word.slice(0, mid) + "</b>" + word.slice(mid);
+      push(text.slice(pos, at), false);
+      push(word.slice(0, mid), true);
+      pos = at + mid;
+    }
+    push(text.slice(pos), false);
+    return out;
+  }
+  function toFixation(text) {
+    return fixationSegments(text).map((s) => s.bold ? "<b>" + s.text + "</b>" : s.text).join("");
+  }
+
+  // src/fixation-dom.ts
+  var FIXATION_RUN = "wk-fixation-run";
+  var FIXATION_SKIP = /* @__PURE__ */ new Set([
+    "CODE",
+    "B",
+    "STRONG",
+    "SCRIPT",
+    "STYLE",
+    "SVG",
+    "BUTTON",
+    "SELECT",
+    "TEXTAREA",
+    "WK-BADGE"
+  ]);
+  function fixateTextNode(node) {
+    const segments = fixationSegments(node.data);
+    if (!segments.some((s) => s.bold)) return;
+    const run = document.createElement("span");
+    run.className = FIXATION_RUN;
+    for (const s of segments) {
+      if (s.bold) {
+        const b = document.createElement("b");
+        b.textContent = s.text;
+        run.appendChild(b);
+      } else {
+        run.appendChild(document.createTextNode(s.text));
+      }
+    }
+    node.replaceWith(run);
+  }
+  function wrapFixation(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      fixateTextNode(node);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el2 = node;
+    if (FIXATION_SKIP.has(el2.tagName.toUpperCase()) || el2.classList.contains(FIXATION_RUN)) return;
+    Array.from(el2.childNodes).forEach(wrapFixation);
+  }
+  function unwrapFixation(root) {
+    root.querySelectorAll("." + FIXATION_RUN).forEach((run) => {
+      run.querySelectorAll("b").forEach((b) => b.replaceWith(...b.childNodes));
+      run.replaceWith(...run.childNodes);
     });
+    root.normalize();
   }
 
   // src/size.ts
@@ -1935,6 +2001,7 @@ var Webkit = (() => {
     });
   }
   function planUncached(section, cfg) {
+    unwrapFixation(section);
     const { sentences, nodes } = planSection(section);
     if (!sentences.some((s) => speakable(s.text))) return null;
     const spans = wrapSentences(nodes, sentences);
@@ -3392,15 +3459,6 @@ var Webkit = (() => {
     { value: "1.5", label: "1.5\xD7" },
     { value: "2", label: "2\xD7" }
   ];
-  function walkText(node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const span = document.createElement("span");
-      span.innerHTML = toFixation(node.textContent ?? "");
-      node.parentNode?.replaceChild(span, node);
-    } else if (node.nodeType === Node.ELEMENT_NODE && !["CODE", "B", "STRONG", "SCRIPT", "STYLE"].includes(node.tagName)) {
-      Array.from(node.childNodes).forEach(walkText);
-    }
-  }
   function renderBrand(text, href) {
     const last = text[text.length - 1];
     let inner;
@@ -3587,31 +3645,14 @@ var Webkit = (() => {
         });
       }
       const fixationBtn = this.querySelector("#webkit-fixation");
-      const fixationOriginals = /* @__PURE__ */ new WeakMap();
       let fixationActive = localStorage.getItem(FIXATION_KEY) === "true";
-      const fixationify = (el2) => {
-        if (el2.dataset.fixationDone === "1") return;
-        fixationOriginals.set(el2, el2.innerHTML);
-        el2.classList.add("fixation");
-        const frag = document.createElement("div");
-        frag.innerHTML = el2.innerHTML;
-        walkText(frag);
-        el2.innerHTML = frag.innerHTML;
-        el2.dataset.fixationDone = "1";
-      };
-      const unbionify = (el2) => {
-        if (el2.dataset.fixationDone !== "1") return;
-        const orig = fixationOriginals.get(el2);
-        if (orig !== void 0) el2.innerHTML = orig;
-        el2.classList.remove("fixation");
-        delete el2.dataset.fixationDone;
-      };
       const applyFixation = (active) => {
         fixationBtn?.classList.toggle("active", active);
         fixationBtn?.setAttribute("aria-pressed", String(active));
         document.querySelectorAll(fixationTargets).forEach((el2) => {
-          if (active) fixationify(el2);
-          else unbionify(el2);
+          el2.classList.toggle("fixation", active);
+          if (active) wrapFixation(el2);
+          else unwrapFixation(el2);
         });
       };
       let fixationScheduled = false;
@@ -3630,7 +3671,6 @@ var Webkit = (() => {
       applyFixation(fixationActive);
       if (fixationActive) observe();
       fixationBtn?.addEventListener("click", () => {
-        stopReadAloud();
         fixationActive = !fixationActive;
         localStorage.setItem(FIXATION_KEY, String(fixationActive));
         fixationObserver.disconnect();

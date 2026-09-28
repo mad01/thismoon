@@ -23,6 +23,8 @@ The only interactive custom element. Renders the sticky topbar with brand, nav, 
 | `page-width` | `1080` | Sets `--page-width` on `:root` |
 | `fixation-targets` | `[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td` | CSS selector for fixation text-walk |
 
+The fixation text-walk works in place: each text node under a target that holds a word becomes a `span.wk-fixation-run` with a `<b>` around the first half of every word, and toggling fixation off unwraps those spans again. Elements, attributes, classes and listeners under a target are left as they are, so content another component injected (read-aloud's buttons and badges, its `data-ra-chunk` stamps and highlights) survives the toggle. The walk skips `code`, `b`, `strong`, `button`, `select`, `textarea`, `wk-badge`, `svg`, `script` and `style` subtrees: chips and control labels aren't prose. A `MutationObserver` re-walks new content while fixation is on, so client-rendered pages need no extra call. Read-aloud plans a live session on plain text: it takes the runs off the section before wrapping sentences, and the observer bolds the text inside the whole-sentence spans again before the next paint.
+
 **Light-DOM children relocated by the element:**
 
 - `<a data-nav [class="active"] href="…">…</a>` — rendered in the nav area
