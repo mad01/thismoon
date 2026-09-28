@@ -49,8 +49,16 @@ func TestRenderGraphDirection(t *testing.T) {
 		g    GraphInput
 		want string
 	}{
-		{"auto small graph is LR", GraphInput{Nodes: fewNodes}, `presentGraphLayout('dagre', 'LR')`},
-		{"auto large graph is TB", GraphInput{Nodes: manyNodes}, `presentGraphLayout('dagre', 'TB')`},
+		{
+			"auto small graph is LR",
+			GraphInput{Nodes: fewNodes},
+			`presentGraphLayout('dagre', 'LR')`,
+		},
+		{
+			"auto large graph is TB",
+			GraphInput{Nodes: manyNodes},
+			`presentGraphLayout('dagre', 'TB')`,
+		},
 		{
 			"explicit TB wins on small graph",
 			GraphInput{Nodes: fewNodes, Direction: "TB"},
