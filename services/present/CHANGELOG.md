@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/mad01/thismoon/compare/present/v1.7.0...present/v1.8.0) (2026-09-28)
+
+
+### Features
+
+* **present:** ELK graph layouts with an engine cycle control ([#144](https://github.com/mad01/thismoon/issues/144)) ([9bb9695](https://github.com/mad01/thismoon/commit/9bb96950ee3bd3294faf1c257d4e8c7c5f98f447))
+
 ## [1.7.0](https://github.com/mad01/thismoon/compare/present/v1.6.0...present/v1.7.0) (2026-09-28)
 
 
