@@ -103,10 +103,10 @@ services/speak/
 - **serve prepares documents into a disk cache.** Remote models answer slowly
   and with the whole clip at once (see Gotchas), so serve keeps each
   registered document in memory (the 32 most recently used) and synthesizes
-  parts into a disk cache when a page asks: Prepare all (`POST
-  /doc/{id}/prepare`) queues a document's idle parts in reading order, and
-  playing a part (`GET /audio/{key}`) that is not ready yet jumps it to an
-  urgent queue and waits for it. `audiocache.Preparer` runs 3 workers,
+  parts into a disk cache when a page asks: Generate all TTS for page
+  (`POST /doc/{id}/prepare`) queues a document's idle parts in reading order,
+  and playing a part (`GET /audio/{key}`) that is not ready yet jumps it to
+  an urgent queue and waits for it. `audiocache.Preparer` runs 3 workers,
   started when work is queued. A newer document's parts go before older
   queued ones, and a document that falls out of the 32 stops preparing its
   queued parts. The one that falls out is the least recently used with
@@ -126,8 +126,8 @@ services/speak/
   background the same way, so a provider that stalls on everything cannot
   cost 3 attempts per part; played parts still run. Playing a retrying part
   runs its next attempt at once; playing a failed part, or a manual re-queue
-  (Retry failed, a section's Retry, Prepare all), starts it over with a fresh
-  count. The reason reads `failed after N attempts: <reason>`. Each attempt has a 4-minute
+  (Retry failed, a section's Retry, Generate all TTS for page), starts it
+  over with a fresh count. The reason reads `failed after N attempts: <reason>`. Each attempt has a 4-minute
   backstop in case the client never returns; the client's own two 90s tries
   end first. After a restart serve has no docs; the page gets a 404 from
   `GET /doc/{id}` and registers again, and `GET /audio/{key}` serves a key
@@ -266,14 +266,15 @@ script beyond the engine fetch, so serving it never costs a synthesis.
 
 ### The reading UI lives in webkit and present
 
-The audio badges, Retry, Prepare all and the document download that used to
-be speak's page are webkit's `<wk-read-aloud prepare>` (prepared mode, see
-`webkit/COMPONENTS.md`), mounted by present. speak's part of that contract
-is the document API above: the component registers through `POST /read`,
-stamps the keys, polls `GET /doc/{id}` every 2s while parts are queued,
-generating or retrying, re-queues through `POST /doc/{id}/prepare`
-(`?section=N`, `?failed=1`), plays from `GET /audio/{key}` and downloads
-through `GET /doc/{id}/audio`.
+The audio badges, Retry, Generate all TTS for page and the section download
+that used to be speak's page are webkit's `<wk-read-aloud prepare>` (prepared
+mode, see `webkit/COMPONENTS.md`), mounted by present. speak's part of that
+contract is the document API above: the component registers through `POST
+/read`, stamps the keys, polls `GET /doc/{id}` every 2s while parts are
+queued, generating or retrying, re-queues through `POST /doc/{id}/prepare`
+(`?section=N`, `?failed=1`), plays from `GET /audio/{key}` and downloads a
+section through `GET /doc/{id}/audio?section=N`. The whole-document form of
+that route, without `?section`, stays served but no button calls it.
 
 ### Version check
 

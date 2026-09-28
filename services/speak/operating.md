@@ -21,11 +21,11 @@ if the localhost port answers but the .this host does not, the router is the
 problem, not this service.
 
 serve prepares a registered page ahead of playback: a present page registers
-its text on load, and Prepare all or a play queues its parts (up to 600
-characters each, three at a time) into a disk cache. The newest request goes
-first. Playing a part that is not ready moves it to the front and waits for
-it. A remote model answers a part in seconds to tens of seconds, all at once,
-so audio that was not prepared starts late.
+its text on load, and Generate all TTS for page or a play queues its parts
+(up to 600 characters each, three at a time) into a disk cache. The newest
+request goes first. Playing a part that is not ready moves it to the front
+and waits for it. A remote model answers a part in seconds to tens of
+seconds, all at once, so audio that was not prepared starts late.
 
 `speak mcp` does not go through serve or its cache. Playback lives in the mcp
 process itself: each tool call groups the text's sentences into parts (one
@@ -76,14 +76,15 @@ then 45s apart; meanwhile its section badge on the present page reads
 "retrying" and its title names the last failure. A part out of attempts is
 failed, with a reason starting "failed after 3 attempts", and its section
 gets a Retry button; "Retry failed (n)" re-queues only the failed parts,
-Prepare all the failed and the not prepared ones, and a play tries it again.
+"Generate all TTS for page" the failed and the not prepared ones, and a play
+tries it again.
 After an auth, quota, network, config or model failure, or a part whose
 last attempt timed out too, serve stops preparing in the background (queued
 and retrying parts go back to not prepared) rather than spend requests on
 the same error; parts someone plays still run. Fix the cause, or for a
-stalling provider wait a while, then Prepare all. events.this gets at most
-one preparation-failure event a minute; the badge and health still show
-every failure.
+stalling provider wait a while, then Generate all TTS for page. events.this
+gets at most one preparation-failure event a minute; the badge and health
+still show every failure.
 
 "did not answer within 1m30s" (30s on the local engine, less under a
 caller's shorter deadline) means the provider was reached but was slow, not
