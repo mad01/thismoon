@@ -6,6 +6,8 @@ ASSETS="$WORKDIR/assets"
 CYTOSCAPE_VERSION="3.31.0"
 DAGRE_VERSION="0.8.5"
 CY_DAGRE_VERSION="2.5.0"
+ELK_VERSION="0.12.0"
+CY_ELK_VERSION="2.3.0"
 CHART_VERSION="4.4.6"
 SANKEY_VERSION="0.15.3"
 FONTS_URL="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Lexend:wght@300..700&family=Work+Sans:ital,wght@0,300..700;1,300..700&display=swap"
@@ -14,11 +16,13 @@ UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, l
 cy_file="$ASSETS/js/cytoscape-${CYTOSCAPE_VERSION}.min.js"
 dagre_file="$ASSETS/js/dagre-${DAGRE_VERSION}.min.js"
 cy_dagre_file="$ASSETS/js/cytoscape-dagre-${CY_DAGRE_VERSION}.js"
+elk_file="$ASSETS/js/elk-${ELK_VERSION}.bundled.js"
+cy_elk_file="$ASSETS/js/cytoscape-elk-${CY_ELK_VERSION}.js"
 chart_file="$ASSETS/js/chart-${CHART_VERSION}.umd.min.js"
 sankey_file="$ASSETS/js/chartjs-chart-sankey-${SANKEY_VERSION}.min.js"
 fonts_file="$ASSETS/css/fonts.css"
 
-if [ -s "$cy_file" ] && [ -s "$dagre_file" ] && [ -s "$cy_dagre_file" ] && [ -s "$chart_file" ] && [ -s "$sankey_file" ] && [ -s "$fonts_file" ] && [ "$(ls -1 "$ASSETS/fonts/"*.woff2 2>/dev/null | wc -l)" -gt 0 ]; then
+if [ -s "$cy_file" ] && [ -s "$dagre_file" ] && [ -s "$cy_dagre_file" ] && [ -s "$elk_file" ] && [ -s "$cy_elk_file" ] && [ -s "$chart_file" ] && [ -s "$sankey_file" ] && [ -s "$fonts_file" ] && [ "$(ls -1 "$ASSETS/fonts/"*.woff2 2>/dev/null | wc -l)" -gt 0 ]; then
   echo "present: assets cached, skipping"
   exit 0
 fi
@@ -36,6 +40,14 @@ curl -sL "https://cdn.jsdelivr.net/npm/dagre@${DAGRE_VERSION}/dist/dagre.min.js"
 echo "cytoscape-dagre@${CY_DAGRE_VERSION}"
 curl -sL "https://cdn.jsdelivr.net/npm/cytoscape-dagre@${CY_DAGRE_VERSION}/cytoscape-dagre.js" \
   -o "$cy_dagre_file"
+
+echo "elkjs@${ELK_VERSION}"
+curl -sL "https://cdn.jsdelivr.net/npm/elkjs@${ELK_VERSION}/lib/elk.bundled.js" \
+  -o "$elk_file"
+
+echo "cytoscape-elk@${CY_ELK_VERSION}"
+curl -sL "https://cdn.jsdelivr.net/npm/cytoscape-elk@${CY_ELK_VERSION}/dist/cytoscape-elk.js" \
+  -o "$cy_elk_file"
 
 echo "chart.js@${CHART_VERSION}"
 curl -sL "https://cdn.jsdelivr.net/npm/chart.js@${CHART_VERSION}/dist/chart.umd.min.js" \

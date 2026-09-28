@@ -630,7 +630,7 @@ func TestCreateWithStructuredGraph(t *testing.T) {
 	if !strings.Contains(read.Graph, `publishes`) {
 		t.Error("graph missing edge type")
 	}
-	if !strings.Contains(read.Graph, `name: 'cose'`) {
+	if !strings.Contains(read.Graph, `presentGraphLayout('cose'`) {
 		t.Error("graph layout not set to cose")
 	}
 }

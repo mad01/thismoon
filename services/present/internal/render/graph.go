@@ -14,8 +14,8 @@ import (
 type GraphInput struct {
 	Nodes     []GraphNode `json:"nodes"`
 	Edges     []GraphEdge `json:"edges,omitempty"`
-	Layout    string      `json:"layout,omitempty"`    // dagre (default; breadthfirst is a legacy alias) or cose
-	Direction string      `json:"direction,omitempty"` // TB or LR (dagre only); empty = auto: LR for small graphs, TB otherwise
+	Layout    string      `json:"layout,omitempty"`    // a layoutEngines key: dagre (default), cose, elk, elk-<algorithm>
+	Direction string      `json:"direction,omitempty"` // TB or LR (dagre and ELK layered); empty = auto: LR for small graphs, TB otherwise
 }
 
 // GraphNode is a node in the graph.
@@ -141,12 +141,16 @@ func RenderGraph(g GraphInput) (string, error) {
 		}
 	}
 
+	layout, err := layoutOptions(g)
+	if err != nil {
+		return "", err
+	}
 	maxW := maxWeight(g.Edges)
 	var buf bytes.Buffer
 	if err := graphTemplate.Execute(&buf, graphData{
 		ElementsJSON: string(elemJSON),
 		ModuleStyles: styles,
-		LayoutOpts:   layoutOptions(g),
+		LayoutOpts:   layout,
 		HasWeight:    maxW > 0,
 		MaxWeight:    strconv.FormatFloat(maxW, 'f', -1, 64),
 	}); err != nil {
@@ -156,38 +160,56 @@ func RenderGraph(g GraphInput) (string, error) {
 }
 
 // lrNodeThreshold is the node count at or below which an unset direction
-// auto-flips dagre to left-to-right, filling the wide graph container.
+// auto-flips to left-to-right, filling the wide graph container.
 const lrNodeThreshold = 8
 
-// layoutOptions returns the Cytoscape layout options object as a JS literal.
-// Dagre is the default: a layered DAG layout that accounts for node dimensions
-// and minimizes edge crossings, so edges don't land under unrelated nodes the
-// way the old breadthfirst grid did. "breadthfirst" is kept as an alias for
-// pages whose stored graph.json predates the switch.
-func layoutOptions(g GraphInput) string {
-	if g.Layout == "cose" {
-		return `{ name: 'cose', padding: 30, nodeRepulsion: 8000 }`
-	}
+// layoutEngines maps the layout a graph names to the engine app.js builds
+// options for. dagre is the default, and "breadthfirst" stays as an alias
+// for pages whose stored graph.json predates the switch to it. "elk" is ELK
+// layered with wrapping, which folds a long chain of layers into rows until
+// the drawing approaches the container's aspect ratio; the elk-<algorithm>
+// forms pick another ELK algorithm without wrapping.
+var layoutEngines = map[string]string{
+	"":             "dagre",
+	"dagre":        "dagre",
+	"breadthfirst": "dagre",
+	"cose":         "cose",
+	"elk":          "elk",
+	"elk-layered":  "elk-layered",
+	"elk-mrtree":   "elk-mrtree",
+	"elk-stress":   "elk-stress",
+	"elk-radial":   "elk-radial",
+	"elk-force":    "elk-force",
+}
 
-	dir := g.Direction
-	if dir != "TB" && dir != "LR" {
-		dir = "TB"
-		if len(g.Nodes) <= lrNodeThreshold {
-			dir = "LR"
-		}
+// layoutOptions returns the JS expression the template puts in the layout
+// slot: a call to app.js's presentGraphLayout with the engine and the
+// resolved direction. The option objects live in app.js rather than here
+// because the ELK ones take the container's aspect ratio at run time, and
+// because the page's engine control rebuilds them for any engine on any
+// page.
+func layoutOptions(g GraphInput) (string, error) {
+	engine, ok := layoutEngines[g.Layout]
+	if !ok {
+		return "", fmt.Errorf(
+			"unknown layout %q (want dagre, cose, elk, or elk-<layered|mrtree|stress|radial|force>)",
+			g.Layout,
+		)
 	}
-	// Gaps tuned for the 140x50 node boxes: nodeSep separates siblings within
-	// a rank, rankSep separates ranks (where edges and their labels run).
-	nodeSep, rankSep := 25, 60
-	if dir == "LR" {
-		nodeSep, rankSep = 20, 80
+	return fmt.Sprintf("presentGraphLayout('%s', '%s')", engine, layoutDirection(g)), nil
+}
+
+// layoutDirection resolves the direction dagre and ELK layered draw in: the
+// explicit one, else LR for small graphs, which fills the wide container,
+// and TB otherwise.
+func layoutDirection(g GraphInput) string {
+	if g.Direction == "TB" || g.Direction == "LR" {
+		return g.Direction
 	}
-	return fmt.Sprintf(
-		`{ name: 'dagre', rankDir: '%s', nodeSep: %d, rankSep: %d, edgeSep: 10, padding: 30, nodeDimensionsIncludeLabels: true }`,
-		dir,
-		nodeSep,
-		rankSep,
-	)
+	if len(g.Nodes) <= lrNodeThreshold {
+		return "LR"
+	}
+	return "TB"
 }
 
 type cyElement struct {

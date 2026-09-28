@@ -45,7 +45,8 @@ Block =                                  // discriminated on `t`
 Graph = {                                // the `graph` argument — one per page
   nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?}],
   edges: [{from, to, type?: "consumes" | "publishes", label?, weight?, flow?}],
-  layout: "dagre" | "cose"
+  layout: "dagre" | "elk" | "elk-layered" | "elk-mrtree" | "elk-stress" | "elk-radial" | "elk-force" | "cose",
+  direction?: "TB" | "LR"
 }
 
 PageRef = {id, url, version}             // present_create return — hold `id` all session
@@ -291,9 +292,13 @@ Put the number in `label` too when the reader should see it; the width alone onl
 ### Layout
 
 - `dagre` (default) — layered DAG layout for trees and hierarchies; accounts for node size and minimizes edge crossings
+- `elk` — ELK layered with wrapping: the same kind of layered drawing, but a long chain of steps folds into rows (or columns, top-down) until the drawing fits the container's aspect ratio instead of shrinking into a thin strip. Use it for pipelines and flows with many steps in sequence
+- `elk-layered`, `elk-mrtree`, `elk-stress`, `elk-radial`, `elk-force` — the other ELK algorithms, without folding: plain layered, tree, stress-majorization, radial, and force-directed
 - `cose` — for general graphs with no clear hierarchy
 
-Dagre takes an optional `direction`: `TB` (top-down) or `LR` (left-to-right). Omit it for auto — small graphs (≤8 nodes) draw left-to-right to fill the wide container, larger ones top-down.
+`dagre` and `elk` take an optional `direction`: `TB` (top-down) or `LR` (left-to-right). Omit it for auto — small graphs (≤8 nodes) draw left-to-right to fill the wide container, larger ones top-down.
+
+The page's graph toolbar has an engine button that cycles the live graph through every engine, so a reader can compare them on any page without re-authoring it. The choice is not saved; set `layout` to keep it.
 
 Place a `{"t": "graph"}` block in the section where you want the graph to appear.
 
