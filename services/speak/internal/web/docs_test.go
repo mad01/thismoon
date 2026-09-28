@@ -121,7 +121,8 @@ func registerDoc(
 	return got
 }
 
-// prepareAll queues every part of document id, as the page's Prepare all does.
+// prepareAll queues every part of document id, as the page's Generate all TTS
+// for page button does.
 func prepareAll(t *testing.T, mux *http.ServeMux, id string) DocStatus {
 	t.Helper()
 	rec := serve(mux, http.MethodPost, "/doc/"+id+"/prepare")
@@ -488,8 +489,9 @@ func longBlocks(n int) []string {
 	return blocks
 }
 
-// TestPrepareQueuesIdleParts pins Prepare all: a registration leaves every
-// part idle, and one POST /doc/{id}/prepare puts all of them on their way.
+// TestPrepareQueuesIdleParts pins Generate all TTS for page: a registration
+// leaves every part idle, and one POST /doc/{id}/prepare puts all of them on
+// their way.
 func TestPrepareQueuesIdleParts(t *testing.T) {
 	const parts = 60
 	f := newFakeSpeaker()
