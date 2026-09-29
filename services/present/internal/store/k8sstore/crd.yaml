@@ -48,13 +48,19 @@ spec:
                   type: string
                 content:
                   type: string
-                  description: rendered HTML body fragment
+                  description: rendered HTML body fragment of the brief, empty for a deck-only page
+                deck:
+                  type: string
+                  description: rendered HTML fragment of the page's slide deck, empty when it has none
                 graph:
                   type: string
                   description: rendered Cytoscape init script, empty when the page has no graph
                 doc:
                   type: string
                   description: canonical Doc JSON the content was rendered from, empty for legacy HTML
+                deckSource:
+                  type: string
+                  description: canonical Doc JSON the deck was rendered from
                 graphSource:
                   type: string
                   description: canonical graph JSON the graph was rendered from, empty for legacy JS

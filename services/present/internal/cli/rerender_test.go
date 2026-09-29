@@ -211,3 +211,72 @@ func TestRerenderLeavesLegacyJSGraphAlone(t *testing.T) {
 		t.Errorf("version bumped for unchanged page: %d -> %d", p.Version, after.Version)
 	}
 }
+
+func TestRerenderReRendersDeckFromSource(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.NewFS(dir)
+
+	// A deck-only page whose deck.html is stale but whose deck.json is current.
+	p, err := st.Create(t.Context(), store.Draft{
+		Title:      "D",
+		Deck:       "<p>stale deck markup</p>",
+		DeckSource: []byte(`{"sections":[{"h":"FromDeck","blocks":[{"t":"p","text":"slide"}]}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
+		t.Fatalf("rerenderPages: %v", err)
+	}
+	after, _ := st.Get(t.Context(), p.ID)
+	if !strings.Contains(after.Deck, "FromDeck") ||
+		strings.Contains(after.Deck, "stale deck markup") {
+		t.Errorf("deck not re-rendered from deck.json:\n%s", after.Deck)
+	}
+	if after.Content != "" {
+		t.Errorf("a deck-only page grew content: %q", after.Content)
+	}
+	if after.Version <= p.Version {
+		t.Errorf("version not bumped: %d -> %d", p.Version, after.Version)
+	}
+	if !strings.Contains(out.String(), p.ID+": re-rendered-deck\n") {
+		t.Errorf("summary missing re-rendered-deck:\n%s", out.String())
+	}
+
+	// A second run finds the deck current and leaves the page alone.
+	out.Reset()
+	if err := rerenderPages(t.Context(), st, nil, &out); err != nil {
+		t.Fatalf("rerenderPages: %v", err)
+	}
+	if !strings.Contains(out.String(), "unchanged") {
+		t.Errorf("second run should report unchanged:\n%s", out.String())
+	}
+}
+
+func TestRerenderReportsDeckBesideContent(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.NewFS(dir)
+	p, err := st.Create(t.Context(), store.Draft{
+		Title:      "Both",
+		Content:    "<p>stale content</p>",
+		Doc:        []byte(`{"sections":[{"h":"Brief","blocks":[{"t":"p","text":"prose"}]}]}`),
+		Deck:       "<p>stale deck</p>",
+		DeckSource: []byte(`{"sections":[{"h":"Slide","blocks":[{"t":"p","text":"one"}]}]}`),
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var out bytes.Buffer
+	if err := rerenderPages(t.Context(), st, []string{p.ID}, &out); err != nil {
+		t.Fatalf("rerenderPages: %v", err)
+	}
+	if !strings.Contains(out.String(), p.ID+": re-rendered-from-doc+deck\n") {
+		t.Errorf("summary should report both artifacts:\n%s", out.String())
+	}
+	after, _ := st.Get(t.Context(), p.ID)
+	if !strings.Contains(after.Content, "Brief") || !strings.Contains(after.Deck, "Slide") {
+		t.Errorf("content or deck not re-rendered: content %q deck %q", after.Content, after.Deck)
+	}
+}

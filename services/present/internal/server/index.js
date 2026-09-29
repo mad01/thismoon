@@ -21,10 +21,17 @@
 
   function pageCard(p) {
     var title = p.title || '(untitled)';
-    var sub = Webkit.el('div', { class: 'row-sub' }, [
+    var subParts = [
       Webkit.el('span', { class: 'row-id' }, p.id),
       document.createTextNode(' · v' + p.version + ' · updated ' + (p.updated_at || ''))
-    ]);
+    ];
+    // A page with a deck says so; the card still links to /p/{id}, which
+    // the server sends on to the deck view when there is no brief.
+    if (p.has_deck) {
+      subParts.push(document.createTextNode(' '));
+      subParts.push(Webkit.el('wk-badge', { variant: 'c' }, p.has_brief ? 'deck' : 'deck only'));
+    }
+    var sub = Webkit.el('div', { class: 'row-sub' }, subParts);
     var main = Webkit.el('div', { class: 'row-main' }, [
       Webkit.el('div', { class: 'row-title' }, title),
       sub

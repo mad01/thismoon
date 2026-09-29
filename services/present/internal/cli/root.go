@@ -28,6 +28,8 @@ chrome (header, theme, controls) comes from the shared webkit package.
 Subcommands:
   serve   Run the local HTTP server that serves pages.
   mcp     Run the MCP stdio server exposing present_* tools to Claude Code.
+  deck    Drive a page's slide deck in the open browser tab (start, stop,
+          next, prev, goto).
   share   Push a local page to the shared instance (--shared-url, --author-key).
   key     Mint an author key for the shared instance.`,
 	// Let main print the error once; cobra stays quiet on both usage and errors.

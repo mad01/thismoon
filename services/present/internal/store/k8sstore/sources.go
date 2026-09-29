@@ -60,3 +60,29 @@ func (s *Store) DeleteGraphSource(ctx context.Context, id string) error {
 	_, err := s.mutate(ctx, id, func(rec *record) { rec.GraphSource = nil })
 	return err
 }
+
+func (s *Store) SaveDeckSource(ctx context.Context, id string, src []byte) error {
+	_, err := s.mutate(ctx, id, func(rec *record) { rec.DeckSource = src })
+	return err
+}
+
+func (s *Store) LoadDeckSource(ctx context.Context, id string) ([]byte, error) {
+	rec, _, err := s.get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if rec.DeckSource == nil {
+		return nil, store.ErrNotFound
+	}
+	return rec.DeckSource, nil
+}
+
+func (s *Store) HasDeckSource(ctx context.Context, id string) bool {
+	rec, _, err := s.get(ctx, id)
+	return err == nil && rec.DeckSource != nil
+}
+
+func (s *Store) DeleteDeckSource(ctx context.Context, id string) error {
+	_, err := s.mutate(ctx, id, func(rec *record) { rec.DeckSource = nil })
+	return err
+}

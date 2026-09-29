@@ -23,6 +23,8 @@ type fakeShared struct {
 	pages map[string]Bundle
 	seq   int
 	ts    *httptest.Server
+	// legacy makes the fake answer like an instance from before decks.
+	legacy bool
 }
 
 func newFakeShared(t *testing.T, key string) *fakeShared {
@@ -59,7 +61,12 @@ func (f *fakeShared) reply(w http.ResponseWriter, status int, id string, b Bundl
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(Result{ID: id, URL: f.ts.URL + "/p/" + id, Version: 1, Ephemeral: b.Ephemeral, ExpiresAt: exp})
+	_ = json.NewEncoder(w).
+		Encode(Result{
+			ID: id, URL: f.ts.URL + "/p/" + id, Version: 1, Ephemeral: b.Ephemeral, ExpiresAt: exp,
+			// An instance from before decks never sets has_deck.
+			HasDeck: !f.legacy && b.Deck != "",
+		})
 }
 
 func (f *fakeShared) create(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +146,10 @@ func TestStatusMapping(t *testing.T) {
 	if _, err := New(f.ts.URL, "wrong").Replace(ctx, res.ID, b); !errors.Is(err, ErrForbidden) {
 		t.Errorf("other key: %v, want ErrForbidden", err)
 	}
-	if _, err := New(f.ts.URL, "right").Replace(ctx, strings.Repeat("f", 32), b); !errors.Is(err, ErrNotFound) {
+	if _, err := New(f.ts.URL, "right").Replace(ctx, strings.Repeat("f", 32), b); !errors.Is(
+		err,
+		ErrNotFound,
+	) {
 		t.Errorf("unknown id: %v, want ErrNotFound", err)
 	}
 	if who, err := New(f.ts.URL, "right").WhoAmI(ctx); err != nil || who != "hash-of-right" {
@@ -162,7 +172,10 @@ func TestShareCreatesThenReplacesAndRecovers(t *testing.T) {
 	}
 	ctx := context.Background()
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
-	p, _ := st.Create(ctx, store.Draft{Title: "Local", Content: "<p>l</p>", Doc: []byte(`{"sections":[]}`)})
+	p, _ := st.Create(
+		ctx,
+		store.Draft{Title: "Local", Content: "<p>l</p>", Doc: []byte(`{"sections":[]}`)},
+	)
 
 	info, err := Share(ctx, st, c, p.ID, true, now)
 	if err != nil {
@@ -175,7 +188,8 @@ func TestShareCreatesThenReplacesAndRecovers(t *testing.T) {
 	if got.Shared == nil || got.Shared.ID != info.ID {
 		t.Fatalf("local record not written: %+v", got.Shared)
 	}
-	if pushed := f.pages[info.ID]; string(pushed.Doc) != `{"sections":[]}` || pushed.Title != "Local" {
+	if pushed := f.pages[info.ID]; string(pushed.Doc) != `{"sections":[]}` ||
+		pushed.Title != "Local" {
 		t.Fatalf("pushed bundle lost content: %+v", pushed)
 	}
 
@@ -211,5 +225,65 @@ func TestShareCreatesThenReplacesAndRecovers(t *testing.T) {
 	}
 	if _, err := Share(ctx, st, c, "deadbeef00", false, now); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("share of a missing local page: %v, want ErrNotFound", err)
+	}
+}
+
+func TestBundleCarriesTheDeckAndItsSource(t *testing.T) {
+	f := newFakeShared(t, "k")
+	c := New(f.ts.URL, "k")
+	st, err := store.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	p, _ := st.Create(ctx, store.Draft{
+		Title: "Deck", Deck: "<p>slide</p>", DeckSource: []byte(`{"sections":[]}`),
+	})
+
+	info, err := Share(ctx, st, c, p.ID, false, now)
+	if err != nil {
+		t.Fatalf("share: %v", err)
+	}
+	pushed := f.pages[info.ID]
+	if pushed.Deck != "<p>slide</p>" || string(pushed.DeckSource) != `{"sections":[]}` {
+		t.Fatalf("pushed bundle lost the deck: %+v", pushed)
+	}
+	if pushed.Content != "" || len(pushed.Doc) != 0 {
+		t.Fatalf("a deck-only page must push no brief: %+v", pushed)
+	}
+}
+
+// A shared instance from before decks ignores the deck fields and answers
+// without has_deck; the share still lands and is recorded, and the caller
+// hears that the deck was dropped.
+func TestShareReportsADeckTheInstanceDropped(t *testing.T) {
+	f := newFakeShared(t, "k")
+	f.legacy = true
+	c := New(f.ts.URL, "k")
+	st, err := store.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	p, _ := st.Create(ctx, store.Draft{
+		Title: "Deck", Deck: "<wk-section>1</wk-section>", DeckSource: []byte(`{"sections":[]}`),
+	})
+	info, err := Share(ctx, st, c, p.ID, false, now)
+	if !errors.Is(err, ErrDeckDropped) {
+		t.Fatalf("share to a legacy instance: err = %v, want ErrDeckDropped", err)
+	}
+	if info.URL == "" || !strings.Contains(err.Error(), info.URL) {
+		t.Errorf("error should name the link: %v (info %+v)", err, info)
+	}
+	if got, _ := st.Get(ctx, p.ID); got.Shared == nil || got.Shared.ID != info.ID {
+		t.Errorf("share not recorded despite the copy existing: %+v", got.Shared)
+	}
+
+	// A current instance answers has_deck and the share is clean.
+	f.legacy = false
+	if _, err := Share(ctx, st, c, p.ID, false, now); err != nil {
+		t.Errorf("share to a current instance: %v", err)
 	}
 }

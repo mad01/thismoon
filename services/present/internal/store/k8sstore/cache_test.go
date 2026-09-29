@@ -57,7 +57,7 @@ func runCacheConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		f := newFixture(t)
 		ctx := context.Background()
 		p, err := f.st.Create(ctx, store.Draft{
-			Title: "T", Content: "<p>v1</p>", Graph: "cy.init();",
+			Title: "T", Content: "<p>v1</p>", Deck: "<wk-section>s</wk-section>", Graph: "cy.init();",
 			References: []store.Reference{{Title: "r", URL: "https://r"}},
 			Doc:        []byte(`{"sections":[]}`),
 		})
@@ -71,10 +71,10 @@ func runCacheConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		if err != nil {
 			t.Fatalf("GetMeta: %v", err)
 		}
-		if m.Content != "" || m.Graph != "" || m.References != nil {
+		if m.Content != "" || m.Deck != "" || m.Graph != "" || m.References != nil {
 			t.Fatalf("cached meta carries bodies: %+v", m)
 		}
-		if m.Title != "T" || !m.HasGraph || !m.HasRefs || !m.HasDoc {
+		if m.Title != "T" || !m.HasGraph || !m.HasRefs || !m.HasDoc || !m.HasDeck {
 			t.Fatalf("cached meta lost metadata: %+v", m)
 		}
 

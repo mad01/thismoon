@@ -127,3 +127,48 @@ func TestSizeLimitPassesReadsAndDeletesThrough(t *testing.T) {
 		t.Fatalf("Update of a missing page: err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestSizeLimitCountsTheDeckToo(t *testing.T) {
+	limited, fs := limitedFS(t)
+	ctx := context.Background()
+
+	big := "<wk-section>" + strings.Repeat("s", limitBytes) + "</wk-section>"
+	if _, err := limited.Create(ctx, Draft{Title: "Big deck", Deck: big}); !errors.Is(
+		err, ErrTooLarge,
+	) {
+		t.Fatalf("create with an oversized deck: err = %v, want ErrTooLarge", err)
+	}
+	bigSrc := []byte(`{"sections":[{"h":"` + strings.Repeat("d", limitBytes) + `"}]}`)
+	if _, err := limited.Create(ctx, Draft{
+		Title: "Big deck source", Deck: "<wk-section>x</wk-section>", DeckSource: bigSrc,
+	}); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("create with an oversized deck source: err = %v, want ErrTooLarge", err)
+	}
+
+	p, err := limited.Create(ctx, Draft{Title: "T", Content: "<p>v1</p>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := limited.Update(ctx, p.ID, Patch{Deck: &big}); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("update adding an oversized deck: err = %v, want ErrTooLarge", err)
+	}
+	if got, _ := fs.Get(ctx, p.ID); got.HasDeck || got.Version != 1 {
+		t.Fatalf("a refused update must not change the page: %+v", got)
+	}
+	if err := limited.SaveDeckSource(ctx, p.ID, bigSrc); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("SaveDeckSource over the limit: err = %v, want ErrTooLarge", err)
+	}
+	if _, err := fs.LoadDeckSource(ctx, p.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a refused SaveDeckSource must write nothing: err = %v", err)
+	}
+
+	small := []byte(`{"sections":[]}`)
+	if err := limited.SaveDeckSource(ctx, p.ID, small); err != nil {
+		t.Fatalf("SaveDeckSource under the limit: %v", err)
+	}
+	// The deck source now counts against the page's budget.
+	almost := "<p>" + strings.Repeat("y", limitBytes-len(small)-64) + "</p>"
+	if _, err := limited.Update(ctx, p.ID, Patch{Content: &almost}); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("update that fits only without its deck source: err = %v, want ErrTooLarge", err)
+	}
+}

@@ -279,6 +279,27 @@ func TestWithoutExpiredHidesExpiredPages(t *testing.T) {
 	if _, err := s.LoadDoc(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("LoadDoc dead: err = %v, want ErrNotFound", err)
 	}
+	if err := raw.SaveDeckSource(ctx, dead.ID, []byte(`{}`)); err != nil {
+		t.Fatalf("raw SaveDeckSource: %v", err)
+	}
+	if s.HasDeckSource(ctx, dead.ID) {
+		t.Error("HasDeckSource dead: true, want false")
+	}
+	if _, err := s.LoadDeckSource(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("LoadDeckSource dead: err = %v, want ErrNotFound", err)
+	}
+	if err := s.SaveDeckSource(ctx, dead.ID, []byte(`{}`)); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SaveDeckSource dead: err = %v, want ErrNotFound", err)
+	}
+	if err := s.DeleteDeckSource(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("DeleteDeckSource dead: err = %v, want ErrNotFound", err)
+	}
+	if err := s.SaveDeckSource(ctx, live.ID, []byte(`{}`)); err != nil {
+		t.Errorf("SaveDeckSource live: %v", err)
+	}
+	if !s.HasDeckSource(ctx, live.ID) {
+		t.Error("HasDeckSource live: false, want true")
+	}
 	if err := s.SetShared(ctx, dead.ID, nil); !errors.Is(err, ErrNotFound) {
 		t.Errorf("SetShared dead: err = %v, want ErrNotFound", err)
 	}

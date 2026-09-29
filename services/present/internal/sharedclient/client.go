@@ -21,6 +21,11 @@ var (
 	ErrUnauthorized = errors.New("shared instance rejected the author key (401)")
 	ErrForbidden    = errors.New("page belongs to another author on the shared instance (403)")
 	ErrNotFound     = errors.New("page not found on the shared instance (404)")
+	// ErrDeckDropped means the push succeeded but the instance kept only
+	// the brief: it predates decks and ignored the deck fields.
+	ErrDeckDropped = errors.New(
+		"the shared instance predates decks and kept only the brief; upgrade it and share again",
+	)
 )
 
 // requestTimeout bounds one call; a shared instance that hangs must not
@@ -49,14 +54,17 @@ type Reference struct {
 	URL   string `json:"url"`
 }
 
-// Bundle is the page a client pushes: the rendered artifacts plus the
-// canonical sources, exactly what the local store holds for it.
+// Bundle is the page a client pushes: the rendered artifacts (the brief,
+// the deck, the graph) plus the canonical sources, exactly what the local
+// store holds for it.
 type Bundle struct {
 	Title       string          `json:"title"`
 	Content     string          `json:"content"`
+	Deck        string          `json:"deck"`
 	Graph       string          `json:"graph"`
 	References  []Reference     `json:"references"`
 	Doc         json.RawMessage `json:"doc,omitempty"`
+	DeckSource  json.RawMessage `json:"deck_source,omitempty"`
 	GraphSource json.RawMessage `json:"graph_source,omitempty"`
 	Ephemeral   bool            `json:"ephemeral"`
 }
@@ -68,6 +76,9 @@ type Result struct {
 	Version   int        `json:"version"`
 	Ephemeral bool       `json:"ephemeral"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// HasDeck is whether the copy holds the deck the bundle carried; an
+	// instance from before decks never sets it.
+	HasDeck bool `json:"has_deck"`
 }
 
 // Create pushes a new page and returns where it landed.
@@ -154,5 +165,9 @@ func statusError(resp *http.Response) error {
 		return ErrNotFound
 	}
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	return fmt.Errorf("shared instance returned %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	return fmt.Errorf(
+		"shared instance returned %d: %s",
+		resp.StatusCode,
+		strings.TrimSpace(string(msg)),
+	)
 }

@@ -33,7 +33,7 @@ func TestShareToolRegisteredOnlyLocallyWithASharer(t *testing.T) {
 	got := toolNames(t, s)
 	want := []string{
 		"present_create", "present_read", "present_source", "present_update",
-		"present_list", "present_open", "present_share", "present_doctor",
+		"present_list", "present_open", "present_deck", "present_share", "present_doctor",
 	}
 	slices.Sort(got)
 	slices.Sort(want)

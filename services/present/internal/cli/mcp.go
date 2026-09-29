@@ -24,7 +24,9 @@ Tools exposed:
   present_read    Read a page's current content by id.
   present_update  Update a page by id (auto-reloads open tabs).
   present_list    List all pages.
-  present_open    Open a page in the browser (once per page).
+  present_open    Open a page in the browser (once per page; deck: true for
+                  its slide deck).
+  present_deck    Drive an open slide deck: start, stop, next, prev, goto.
   present_share   Push a page to the shared instance (only with --shared-url
                   and --author-key set).
   present_doctor  Run the doctor checks and return the report.

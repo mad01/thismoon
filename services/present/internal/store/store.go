@@ -30,17 +30,27 @@ type Reference struct {
 	URL   string `json:"url"`
 }
 
-// Page is a single presentation. Content is the HTML body fragment injected
-// into the core template; Graph is an optional Cytoscape init script.
+// Page is a single presentation. Content is the HTML body fragment of the
+// brief, the scrollable rendition; Deck is the HTML body fragment of the
+// slide deck, the second rendition a page may carry under the same id;
+// Graph is an optional Cytoscape init script both renditions share. A page
+// has at least one of Content and Deck.
 type Page struct {
 	ID         string      `json:"id"`
 	Title      string      `json:"title"`
 	Content    string      `json:"-"`
+	Deck       string      `json:"-"`
 	Graph      string      `json:"-"`
 	References []Reference `json:"-"`
 	Version    int         `json:"version"`
 	HasGraph   bool        `json:"has_graph"`
 	HasRefs    bool        `json:"has_refs"`
+	// HasBrief and HasDeck say which renditions the page carries. Both are
+	// persisted so metadata reads can answer without loading a body; a
+	// meta.json written before decks existed has no has_brief key, and the
+	// store derives it from the content file then.
+	HasBrief bool `json:"has_brief"`
+	HasDeck  bool `json:"has_deck"`
 	// HasDoc reports whether a canonical Doc source (doc.json) is persisted for
 	// this page. It is derived from disk at read time, not stored in meta.json —
 	// the file's existence is the single source of truth — so it never goes
@@ -76,19 +86,21 @@ type SharedInfo struct {
 	SharedAt  time.Time  `json:"shared_at"`
 }
 
-// Draft is the input to Create: everything a new page carries. Doc and
-// GraphSource are the canonical JSON the artifacts were rendered from and are
-// persisted alongside the page; nil means the input was legacy HTML or JS and
-// no source exists.
+// Draft is the input to Create: everything a new page carries. Doc,
+// DeckSource, and GraphSource are the canonical JSON the artifacts were
+// rendered from and are persisted alongside the page; nil means the input
+// was legacy HTML or JS and no source exists.
 type Draft struct {
 	// ID is optional. A shared instance mints a capability id and passes it
 	// here; when empty the store mints a local id.
 	ID          string
 	Title       string
 	Content     string
+	Deck        string
 	Graph       string
 	References  []Reference
 	Doc         []byte
+	DeckSource  []byte
 	GraphSource []byte
 	Author      string
 	Ephemeral   bool
@@ -102,6 +114,7 @@ type Draft struct {
 type Patch struct {
 	Title      *string
 	Content    *string
+	Deck       *string
 	Graph      *string
 	References *[]Reference
 	Ephemeral  *bool
@@ -138,6 +151,10 @@ type Store interface {
 	LoadGraphSource(ctx context.Context, id string) ([]byte, error)
 	HasGraphSource(ctx context.Context, id string) bool
 	DeleteGraphSource(ctx context.Context, id string) error
+	SaveDeckSource(ctx context.Context, id string, src []byte) error
+	LoadDeckSource(ctx context.Context, id string) ([]byte, error)
+	HasDeckSource(ctx context.Context, id string) bool
+	DeleteDeckSource(ctx context.Context, id string) error
 
 	// SetShared records where a page was pushed, or clears the record when
 	// info is nil. It touches metadata only and does not bump the version.
@@ -157,6 +174,7 @@ var _ Store = (*FS)(nil)
 const (
 	metaFile    = "meta.json"
 	contentFile = "content.html"
+	deckFile    = "deck.html"
 	graphFile   = "graph.js"
 	refsFile    = "refs.json"
 )
@@ -187,11 +205,14 @@ func (s *FS) Create(_ context.Context, d Draft) (Page, error) {
 		ID:         id,
 		Title:      d.Title,
 		Content:    d.Content,
+		Deck:       d.Deck,
 		Graph:      d.Graph,
 		References: d.References,
 		Version:    1,
 		HasGraph:   d.Graph != "",
 		HasRefs:    len(d.References) > 0,
+		HasBrief:   d.Content != "",
+		HasDeck:    d.Deck != "",
 		CreatedAt:  now,
 		UpdatedAt:  now,
 		Author:     d.Author,
@@ -205,6 +226,11 @@ func (s *FS) Create(_ context.Context, d Draft) (Page, error) {
 	}
 	if d.GraphSource != nil {
 		if err := s.saveSource(p.ID, graphSourceFile, d.GraphSource); err != nil {
+			return Page{}, err
+		}
+	}
+	if d.DeckSource != nil {
+		if err := s.saveSource(p.ID, deckSourceFile, d.DeckSource); err != nil {
 			return Page{}, err
 		}
 	}
@@ -229,6 +255,13 @@ func (s *FS) Get(_ context.Context, id string) (Page, error) {
 		return Page{}, fmt.Errorf("read content: %w", err)
 	}
 	p.Content = string(content)
+	if p.HasDeck {
+		deck, err := os.ReadFile(filepath.Join(dir, deckFile))
+		if err != nil {
+			return Page{}, fmt.Errorf("read deck: %w", err)
+		}
+		p.Deck = string(deck)
+	}
 	if p.HasGraph {
 		graph, err := os.ReadFile(filepath.Join(dir, graphFile))
 		if err != nil {
@@ -274,9 +307,23 @@ func (s *FS) readMeta(id string) (Page, error) {
 	if err != nil {
 		return Page{}, fmt.Errorf("read meta: %w", err)
 	}
+	return s.decodeMeta(id, metaBytes)
+}
+
+// decodeMeta decodes one page's meta.json. A file from before decks existed
+// carries no has_brief key; every page then had a brief, and the flag is
+// read off the content file until the next write persists it.
+func (s *FS) decodeMeta(id string, metaBytes []byte) (Page, error) {
 	var p Page
 	if err := json.Unmarshal(metaBytes, &p); err != nil {
 		return Page{}, fmt.Errorf("decode meta: %w", err)
+	}
+	var probe struct {
+		HasBrief *bool `json:"has_brief"`
+	}
+	if err := json.Unmarshal(metaBytes, &probe); err == nil && probe.HasBrief == nil {
+		info, err := os.Stat(filepath.Join(s.pageDir(id), contentFile))
+		p.HasBrief = err == nil && info.Size() > 0
 	}
 	return p, nil
 }
@@ -306,6 +353,9 @@ func (p *Page) Apply(patch Patch) {
 	if patch.Content != nil {
 		p.Content = *patch.Content
 	}
+	if patch.Deck != nil {
+		p.Deck = *patch.Deck
+	}
 	if patch.Graph != nil {
 		p.Graph = *patch.Graph
 	}
@@ -321,6 +371,8 @@ func (p *Page) Apply(patch Patch) {
 	}
 	p.HasGraph = p.Graph != ""
 	p.HasRefs = len(p.References) > 0
+	p.HasBrief = p.Content != ""
+	p.HasDeck = p.Deck != ""
 }
 
 // Delete removes a page and everything under its directory (content, sources,
@@ -384,8 +436,8 @@ func (s *FS) ListMeta(_ context.Context) ([]Page, error) {
 			}
 			return nil, err
 		}
-		var p Page
-		if err := json.Unmarshal(metaBytes, &p); err != nil {
+		p, err := s.decodeMeta(e.Name(), metaBytes)
+		if err != nil {
 			continue
 		}
 		p.HasDoc = s.hasSource(p.ID, docFile)
@@ -422,8 +474,8 @@ func (s *FS) Ping(context.Context) error {
 	return nil
 }
 
-// write persists a page's meta, content, and graph files atomically enough for
-// a single-writer local tool.
+// write persists a page's meta, content, deck, graph, and refs files
+// atomically enough for a single-writer local tool.
 func (s *FS) write(p Page) error {
 	dir := s.pageDir(p.ID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -434,6 +486,11 @@ func (s *FS) write(p Page) error {
 	}
 	if err := os.WriteFile(filepath.Join(dir, contentFile), []byte(p.Content), 0o644); err != nil {
 		return fmt.Errorf("write content: %w", err)
+	}
+	if p.HasDeck {
+		if err := os.WriteFile(filepath.Join(dir, deckFile), []byte(p.Deck), 0o644); err != nil {
+			return fmt.Errorf("write deck: %w", err)
+		}
 	}
 	if p.HasGraph {
 		if err := os.WriteFile(filepath.Join(dir, graphFile), []byte(p.Graph), 0o644); err != nil {

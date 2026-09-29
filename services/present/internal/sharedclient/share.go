@@ -48,6 +48,11 @@ func Share(
 	if err := st.SetShared(ctx, id, &info); err != nil {
 		return store.SharedInfo{}, fmt.Errorf("record share: %w", err)
 	}
+	// The copy exists and is recorded either way; a deck the instance
+	// silently dropped is still reported, with the link it landed under.
+	if b.Deck != "" && !res.HasDeck {
+		return info, fmt.Errorf("%w (%s)", ErrDeckDropped, info.URL)
+	}
 	return info, nil
 }
 
@@ -70,7 +75,7 @@ func Unshare(ctx context.Context, st store.Store, c *Client, id string) error {
 
 // bundleOf assembles the push body from the local page and its sources.
 func bundleOf(ctx context.Context, st store.Store, p store.Page) (Bundle, error) {
-	b := Bundle{Title: p.Title, Content: p.Content, Graph: p.Graph}
+	b := Bundle{Title: p.Title, Content: p.Content, Deck: p.Deck, Graph: p.Graph}
 	for _, r := range p.References {
 		b.References = append(b.References, Reference{Title: r.Title, URL: r.URL})
 	}
@@ -80,6 +85,13 @@ func bundleOf(ctx context.Context, st store.Store, p store.Page) (Bundle, error)
 		b.Doc = doc
 	case !errors.Is(err, store.ErrNotFound):
 		return Bundle{}, fmt.Errorf("load doc: %w", err)
+	}
+	deck, err := st.LoadDeckSource(ctx, p.ID)
+	switch {
+	case err == nil:
+		b.DeckSource = deck
+	case !errors.Is(err, store.ErrNotFound):
+		return Bundle{}, fmt.Errorf("load deck source: %w", err)
 	}
 	src, err := st.LoadGraphSource(ctx, p.ID)
 	switch {
