@@ -81,7 +81,7 @@ address, managed as launchd agents by t-man.
 | [deps](services/deps/README.md) | Supply-chain scanner: checks dependencies against OSV.dev, flags advisories | web · CLI · MCP | proven |
 | [events](services/events/README.md) | Local event and audit log, archive-only JSONL store | web · CLI · MCP | proven |
 | [keeper-of-facts](services/keeper-of-facts/README.md) | Assertion store (`kof`): evidence-pinned claims about code that go stale with it | web · CLI · MCP | proven |
-| [present](services/present/README.md) | Single-page HTML briefings, authored as structured JSON | web · CLI · MCP | proven |
+| [present](services/present/README.md) | Single-page HTML briefings and slide decks, authored as structured JSON | web · CLI · MCP | proven |
 | [speak](services/speak/README.md) | Reads markdown aloud through a local TTS model | web · CLI · MCP | proven |
 | [status](services/status/README.md) | Status page with 30-day uptime history for the fleet | web · CLI | proven |
 | [catalog](services/catalog/README.md) | Reads `service-info.yaml` across your repos, serves a service catalog | web · CLI | evaluating |

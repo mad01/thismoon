@@ -109,6 +109,11 @@ pages live in the API server rather than in a pod, so a roll loses nothing.
 
 CRD changes stay additive within `v1alpha1`: apply `deploy/base` first, then
 roll the Deployment, and objects written by the old build keep deserializing.
+The slide deck feature added the optional `spec.deck` and `spec.deckSource`
+fields this way; a cluster still on the older definition serves the brief
+of a pushed page but silently drops its deck, because the API server prunes
+fields the schema does not know, so apply the base before the first deck is
+shared there.
 
 ## removing
 

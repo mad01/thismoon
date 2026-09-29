@@ -1,6 +1,6 @@
 ---
 name: present
-description: Generate a scrollable briefing page with fixation reading, Cytoscape.js graphs, and inline metric charts for digesting work summaries or research
+description: Generate a scrollable briefing page with fixation reading, Cytoscape.js graphs, and inline metric charts for digesting work summaries or research, or a slide deck beside it for talking the same material through
 ---
 
 # Present — Scrollable Briefing Pages
@@ -8,7 +8,7 @@ description: Generate a scrollable briefing page with fixation reading, Cytoscap
 Generate scrollable HTML briefing pages served live over localhost by the **present MCP**, or on a shared instance others reach by link. You pass structured JSON; the server renders it into the full page with warm-neutral theme, fixation-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
 
 ## Trigger
-When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes").
+When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes"), or asks for slides or a deck on it ("make a deck of this", "slides for the review").
 
 ## How it works
 
@@ -49,8 +49,10 @@ Graph = {                                // the `graph` argument — one per pag
   direction?: "TB" | "LR"
 }
 
-PageRef = {id, url, version}             // present_create return — hold `id` all session
+PageRef = {id, url, has_deck, deck_url?, version}   // present_create return — hold `id` all session
 ```
+
+A page carries a brief (the `content` Doc above), a deck (a second Doc passed as `deck`, one section per slide), or both under one id. See **Slide decks** below.
 
 **Flow:** gather content → build `Doc` (+ optional `Graph`) → `present_create` → hold `PageRef.id` → iterate via `present_update(id, ...)`.
 
@@ -90,12 +92,13 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 
 | Tool | Use |
 |------|-----|
-| `present_create(title, content, graph?, references?)` | Create a page. `content` is a Doc JSON object. `graph` is a Graph JSON object. `references` is `[{title, url}]`. |
-| `present_source(id)` | Get the editable source: Doc JSON (`content_format: "doc"`) and graph JSON (`graph_format: "json"`), ready to modify and pass back to `present_update`. **Use this to edit a page from a new session.** Legacy pages return raw HTML/JS instead. |
-| `present_read(id)` | Fetch the rendered page (HTML). For editing, prefer `present_source`. |
-| `present_update(id, title?, content?, graph?, references?)` | Patch a page. Omit fields to leave unchanged. Pass `graph: ""` to remove a graph, `references: []` to clear refs. |
-| `present_list()` | List all pages (id, title, url, version, updated, has_doc). `has_doc: true` means the page is source-editable via `present_source`. |
-| `present_open(id)` | Open in browser — **once per page**. |
+| `present_create(title, content?, deck?, graph?, references?)` | Create a page. `content` is a Doc JSON object (the brief). `deck` is a second Doc JSON object (the slides). At least one of the two. `graph` is a Graph JSON object. `references` is `[{title, url}]`. Returns `deck_url` when there is a deck. |
+| `present_source(id)` | Get the editable source: Doc JSON (`content_format: "doc"`), the deck's Doc JSON (`deck`, empty without one), and graph JSON (`graph_format: "json"`), ready to modify and pass back to `present_update`. **Use this to edit a page from a new session.** Legacy pages return raw HTML/JS instead. |
+| `present_read(id)` | Fetch the rendered page (HTML, plus the deck's HTML). For editing, prefer `present_source`. |
+| `present_update(id, title?, content?, deck?, graph?, references?)` | Patch a page. Omit fields to leave unchanged. Pass `graph: ""` to remove a graph, `deck: ""` to remove the deck, `references: []` to clear refs. A page keeps at least one of content and deck. |
+| `present_list()` | List all pages (id, title, url, version, updated, has_doc, has_brief, has_deck, deck_url). `has_doc: true` means the page is source-editable via `present_source`. |
+| `present_open(id, deck?)` | Open in browser — **once per page**. `deck: true` opens the slide deck instead of the brief. |
+| `present_deck(id, action, slide?)` | Drive the deck that is open in the browser: `start` or `stop` presenting, `next`, `prev`, `goto` a 1-based `slide`. Local instance only. |
 | `present_share(id, ephemeral?)` | Push the page to the shared instance this machine is configured for and return `{url, ephemeral, expires_at, shared_at}`. Only registered when a shared instance is configured; sharing again replaces the copy under the same link, `ephemeral` makes it expire 30 days after the last share. |
 
 > **Workflow rule:** `present_create` returns `{id, url, version}`. The `id` is
@@ -106,6 +109,9 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 > When the user asks to share a page, call `present_share` with the id and
 > return the link; if the tool is missing or fails with a network error,
 > tell the user to use the Share button on the page or run `present share <id>`.
+> A brief and its deck share one id and one share link: never create a
+> second page for the deck of an existing brief; pass `deck` to
+> `present_update` on the same id.
 
 ## Doc format (the `content` argument)
 
@@ -223,6 +229,108 @@ Assign each section a 4-char `id`: one letter + three digits (e.g. `"A001"`) or 
 ```
 
 Use this pattern for: review findings, bug lists, options comparison, enumerable sets of any kind.
+
+## Slide decks (the `deck` argument)
+
+A deck is a second Doc under the same page id, shown one section at a time at `deck_url` (`/p/<id>/deck`). It uses the Doc schema above unchanged: `summary`, `meta`, and `chips` make the title slide, every entry in `sections` is one slide, and the page's `references` make the last slide. The page's one `graph` is shared with the brief, so a `{"t": "graph"}` block in a deck section shows the same graph on that slide. Pass `deck` to `present_create` beside `content`, or alone for a deck-only page, and to `present_update` to replace it (`deck: ""` removes it). The deck is never generated from the brief: you write it, and it says less.
+
+### When to make one
+
+Make a deck when the material will be talked through: a review in a meeting, an incident retrospective, a decision the room has to make. A brief someone reads alone stays a brief. When both exist, the deck is the version for the room and the brief is where the detail lives; the deck view has a Brief link for exactly that hand-off, so nothing on a slide needs to be complete.
+
+### Deck rules
+
+A good deck is not a shorter brief. Apply these when writing `deck`:
+
+1. **One idea per slide.** The section heading `h` states the point as a claim, "Cache cut p99 latency by 40%", never a topic, "Latency".
+2. **Slide budget.** A `list` of 3 to 5 items under ten words each, or one `p` of at most two sentences. Never a long paragraph and a list on the same slide. Six lines of body is the ceiling; a slide that scrolls has too much on it.
+3. **Deck length.** 5 to 12 slides. More than that is two decks, or material that belongs in the brief.
+4. **Title slide.** `summary` is the one sentence the audience should remember. `meta` is date, occasion, and audience. `chips` carry two or three headline numbers with `style: "stat"`.
+5. **One highlight per slide.** Bold exactly one phrase, or use one `@chip(stat:...)` for the number that matters. Two bold phrases highlight neither.
+6. **Data gets its own slide.** One `chart` block per slide, with the heading saying what the chart shows. A `kv` block for up to four figures. A `table` only when the comparison is the point, at most four columns and five rows.
+7. **The graph gets its own slide.** A `{"t": "graph"}` block with nothing but the heading; it is the page's one visual, so let it fill the slide.
+8. **Code only when the code is the point.** At most eight lines; otherwise name the file or function in prose.
+9. **One callout per deck at most**, `sev: "warn"`, for the single risk or blocker.
+10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
+11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
+12. **Keep the ids.** When the brief uses section `id` badges (A001, RC01), keep them on the matching slides so the room can refer to a finding by id.
+
+### Example deck
+
+An incident review, six slides plus the references the page already carries:
+
+```json
+{
+  "summary": "A stale DNS cache took checkout down for 41 minutes; the fix is a TTL cap and a health check that would have caught it in 3.",
+  "meta": "2026-09-29 · Incident review · Platform and payments",
+  "chips": [
+    {"text": "41 min outage", "style": "stat"},
+    {"text": "3 min to detect after fix", "style": "stat"},
+    {"text": "2 actions", "style": "stat"}
+  ],
+  "sections": [
+    {
+      "h": "Checkout returned 502s for 41 minutes on Tuesday",
+      "id": "I001",
+      "blocks": [
+        {"t": "list", "items": [
+          "14:02 first 502s at the edge",
+          "14:09 paged, **checkout only**, other services fine",
+          "14:43 resolved after a resolver restart"
+        ]}
+      ]
+    },
+    {
+      "h": "Error rate by minute",
+      "blocks": [
+        {"t": "chart", "kind": "area", "title": "Checkout 5xx per minute", "unit": "req",
+         "series": [{"name": "5xx", "color": "terracotta", "points": [
+           {"x": "14:00", "y": 0}, {"x": "14:05", "y": 310}, {"x": "14:15", "y": 940},
+           {"x": "14:30", "y": 890}, {"x": "14:45", "y": 12}, {"x": "15:00", "y": 0}
+         ]}]}
+      ]
+    },
+    {
+      "h": "The resolver kept a dead upstream for 40 minutes",
+      "id": "RC01",
+      "blocks": [
+        {"t": "p", "text": "The payments gateway rotated its IP; our resolver cached the old record with a **3600 second TTL** and no health check noticed."},
+        {"t": "kv", "kv": [{"k": "TTL cached", "v": "3600 s"}, {"k": "Upstream rotation", "v": "no notice"}, {"k": "Health check", "v": "none on DNS"}]}
+      ]
+    },
+    {
+      "h": "Where the request died",
+      "blocks": [{"t": "graph"}]
+    },
+    {
+      "h": "Two changes close the gap",
+      "blocks": [
+        {"t": "list", "items": [
+          "Cap resolver TTL at 60 s for external upstreams @chip(b:merged)",
+          "Synthetic checkout probe every 30 s, pages after 3 failures @chip(a:in review)"
+        ]},
+        {"t": "callout", "sev": "warn", "text": "The probe pages the payments rota, not platform; confirm the rota is staffed before enabling."}
+      ]
+    },
+    {
+      "h": "Next",
+      "id": "N001",
+      "blocks": [
+        {"t": "list", "ordered": true, "items": [
+          "Payments approves the probe PR by Thursday",
+          "Platform enables the TTL cap in all regions Friday"
+        ]}
+      ]
+    }
+  ]
+}
+```
+
+The brief for the same incident holds the full timeline, the log excerpts, and the alternatives considered; the deck points at it.
+
+### In the room
+
+The reader opens the deck from the brief's Slides link or at `deck_url`, and moves with Right, Space, or PageDown (next), Left, PageUp, or Backspace (previous), Home and End. F or P starts presenting (chrome hidden, one slide filling the window, browser fullscreen when allowed); pressed in fullscreen it ends, pressed while presenting without fullscreen (after a reload) it asks for fullscreen again; Escape always ends it. The URL's `#3` names the slide, so a link can open on one. An update to the deck reloads the open tab on the same slide, still presenting if it was, so you can edit a deck mid-talk. You can drive the open deck too: `present_deck(id, "start")`, then `"next"`, `"prev"`, `"goto"` with a `slide`, and `"stop"`; every open tab of the deck follows within a second. Open the deck first with `present_open(id, deck: true)`.
 
 ## Graph format (the `graph` argument)
 
