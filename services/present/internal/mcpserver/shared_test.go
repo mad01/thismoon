@@ -47,7 +47,7 @@ func TestToolSetsPerMode(t *testing.T) {
 	}{
 		{ModeLocal, []string{
 			"present_create", "present_read", "present_source", "present_update",
-			"present_list", "present_open", "present_doctor",
+			"present_list", "present_open", "present_deck", "present_doctor",
 		}},
 		{ModeShared, []string{
 			"present_create", "present_read", "present_source", "present_update", "present_doctor",

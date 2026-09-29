@@ -14,6 +14,7 @@ import (
 const (
 	docFile         = "doc.json"   // Doc source for content.html
 	graphSourceFile = "graph.json" // GraphInput source for graph.js
+	deckSourceFile  = "deck.json"  // Doc source for deck.html
 )
 
 // saveSource writes raw source bytes into a page directory. The store does not
@@ -109,4 +110,26 @@ func (s *FS) HasGraphSource(_ context.Context, id string) bool {
 // DeleteGraphSource removes a page's persisted graph source, if any.
 func (s *FS) DeleteGraphSource(_ context.Context, id string) error {
 	return s.deleteSource(id, graphSourceFile)
+}
+
+// SaveDeckSource writes the canonical Doc JSON a page's deck.html was
+// rendered from.
+func (s *FS) SaveDeckSource(_ context.Context, id string, src []byte) error {
+	return s.saveSource(id, deckSourceFile, src)
+}
+
+// LoadDeckSource reads a page's stored deck Doc JSON. It returns ErrNotFound
+// when the page has no deck.json.
+func (s *FS) LoadDeckSource(_ context.Context, id string) ([]byte, error) {
+	return s.loadSource(id, deckSourceFile)
+}
+
+// HasDeckSource reports whether a page has a persisted deck source.
+func (s *FS) HasDeckSource(_ context.Context, id string) bool {
+	return s.hasSource(id, deckSourceFile)
+}
+
+// DeleteDeckSource removes a page's persisted deck source, if any.
+func (s *FS) DeleteDeckSource(_ context.Context, id string) error {
+	return s.deleteSource(id, deckSourceFile)
 }

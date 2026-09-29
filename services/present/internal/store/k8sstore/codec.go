@@ -17,8 +17,10 @@ import (
 type pageSpec struct {
 	Title       string      `json:"title"`
 	Content     string      `json:"content"`
+	Deck        string      `json:"deck,omitempty"`
 	Graph       string      `json:"graph,omitempty"`
 	Doc         string      `json:"doc,omitempty"`
+	DeckSource  string      `json:"deckSource,omitempty"`
 	GraphSource string      `json:"graphSource,omitempty"`
 	References  []reference `json:"references,omitempty"`
 	Version     int64       `json:"version"`
@@ -46,11 +48,12 @@ type sharedInfo struct {
 	SharedAt  string `json:"sharedAt"`
 }
 
-// record is a page as the store handles it: the Page plus the two sources
+// record is a page as the store handles it: the Page plus the three sources
 // the Store interface exposes through separate methods.
 type record struct {
 	Page        store.Page
 	Doc         []byte
+	DeckSource  []byte
 	GraphSource []byte
 }
 
@@ -60,8 +63,10 @@ func specOf(rec record) pageSpec {
 	spec := pageSpec{
 		Title:       p.Title,
 		Content:     p.Content,
+		Deck:        p.Deck,
 		Graph:       p.Graph,
 		Doc:         string(rec.Doc),
+		DeckSource:  string(rec.DeckSource),
 		GraphSource: string(rec.GraphSource),
 		Version:     int64(p.Version),
 		Author:      p.Author,
@@ -141,11 +146,14 @@ func fromObject(u *unstructured.Unstructured) (record, error) {
 		ID:        u.GetName(),
 		Title:     spec.Title,
 		Content:   spec.Content,
+		Deck:      spec.Deck,
 		Graph:     spec.Graph,
 		Version:   int(spec.Version),
 		HasGraph:  spec.Graph != "",
 		HasRefs:   len(spec.References) > 0,
 		HasDoc:    spec.Doc != "",
+		HasBrief:  spec.Content != "",
+		HasDeck:   spec.Deck != "",
 		Author:    spec.Author,
 		Ephemeral: spec.Ephemeral,
 	}
@@ -177,13 +185,16 @@ func fromObject(u *unstructured.Unstructured) (record, error) {
 	if spec.GraphSource != "" {
 		rec.GraphSource = []byte(spec.GraphSource)
 	}
+	if spec.DeckSource != "" {
+		rec.DeckSource = []byte(spec.DeckSource)
+	}
 	return rec, nil
 }
 
 // withoutBodies drops the parts of a page that can be large, keeping the
 // flags that say whether it has them.
 func withoutBodies(p store.Page) store.Page {
-	p.Content, p.Graph, p.References = "", "", nil
+	p.Content, p.Deck, p.Graph, p.References = "", "", "", nil
 	return p
 }
 

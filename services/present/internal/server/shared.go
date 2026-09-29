@@ -26,14 +26,17 @@ var sharedIndexShellHTML []byte
 // sources on top, so the request may be a little larger.
 const maxBundleBytes = 2 * present.MaxPageBytes
 
-// bundle is the page a client pushes: the rendered artifacts plus the
-// canonical sources, exactly what the local store holds for the page.
+// bundle is the page a client pushes: the rendered artifacts (the brief,
+// the deck, the graph) plus the canonical sources, exactly what the local
+// store holds for the page.
 type bundle struct {
 	Title       string          `json:"title"`
 	Content     string          `json:"content"`
+	Deck        string          `json:"deck"`
 	Graph       string          `json:"graph"`
 	References  []apiReference  `json:"references"`
 	Doc         json.RawMessage `json:"doc,omitempty"`
+	DeckSource  json.RawMessage `json:"deck_source,omitempty"`
 	GraphSource json.RawMessage `json:"graph_source,omitempty"`
 	Ephemeral   bool            `json:"ephemeral"`
 }
@@ -45,6 +48,10 @@ type sharedPage struct {
 	Version   int        `json:"version"`
 	Ephemeral bool       `json:"ephemeral"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// HasDeck tells the pushing side the deck arrived: an instance from
+	// before decks answers without the key, and the client reads that as
+	// the deck having been dropped.
+	HasDeck bool `json:"has_deck"`
 }
 
 // handleHowTo serves the shared instance's root page.
@@ -70,9 +77,11 @@ func (s *Server) handleSharedCreate(w http.ResponseWriter, r *http.Request) {
 		ID:          store.NewSharedID(),
 		Title:       b.Title,
 		Content:     b.Content,
+		Deck:        b.Deck,
 		Graph:       b.Graph,
 		References:  toStoreRefs(b.References),
 		Doc:         rawOrNil(b.Doc),
+		DeckSource:  rawOrNil(b.DeckSource),
 		GraphSource: rawOrNil(b.GraphSource),
 		Author:      hash,
 		Ephemeral:   b.Ephemeral,
@@ -108,6 +117,7 @@ func (s *Server) handleSharedReplace(w http.ResponseWriter, r *http.Request) {
 	p, err = s.store.Update(r.Context(), id, store.Patch{
 		Title:      &b.Title,
 		Content:    &b.Content,
+		Deck:       &b.Deck,
 		Graph:      &b.Graph,
 		References: &refs,
 		Ephemeral:  &b.Ephemeral,
@@ -128,22 +138,40 @@ func (s *Server) handleSharedReplace(w http.ResponseWriter, r *http.Request) {
 
 // replaceSources makes the stored sources match the bundle: a source the
 // bundle carries is saved, one it omits is removed so a stale copy cannot
-// mislead a later re-render.
+// mislead a later re-render. Removals go first: the size cap measures the
+// page on every save and must not count a source this replace is dropping.
 func (s *Server) replaceSources(r *http.Request, id string, b bundle) error {
 	ctx := r.Context()
-	if doc := rawOrNil(b.Doc); doc != nil {
+	doc, deck, graph := rawOrNil(b.Doc), rawOrNil(b.DeckSource), rawOrNil(b.GraphSource)
+	if doc == nil {
+		if err := s.store.DeleteDoc(ctx, id); err != nil {
+			return fmt.Errorf("clear doc: %w", err)
+		}
+	}
+	if deck == nil {
+		if err := s.store.DeleteDeckSource(ctx, id); err != nil {
+			return fmt.Errorf("clear deck source: %w", err)
+		}
+	}
+	if graph == nil {
+		if err := s.store.DeleteGraphSource(ctx, id); err != nil {
+			return fmt.Errorf("clear graph source: %w", err)
+		}
+	}
+	if doc != nil {
 		if err := s.store.SaveDoc(ctx, id, doc); err != nil {
 			return fmt.Errorf("save doc: %w", err)
 		}
-	} else if err := s.store.DeleteDoc(ctx, id); err != nil {
-		return fmt.Errorf("clear doc: %w", err)
 	}
-	if src := rawOrNil(b.GraphSource); src != nil {
-		if err := s.store.SaveGraphSource(ctx, id, src); err != nil {
+	if deck != nil {
+		if err := s.store.SaveDeckSource(ctx, id, deck); err != nil {
+			return fmt.Errorf("save deck source: %w", err)
+		}
+	}
+	if graph != nil {
+		if err := s.store.SaveGraphSource(ctx, id, graph); err != nil {
 			return fmt.Errorf("save graph source: %w", err)
 		}
-	} else if err := s.store.DeleteGraphSource(ctx, id); err != nil {
-		return fmt.Errorf("clear graph source: %w", err)
 	}
 	return nil
 }
@@ -182,6 +210,7 @@ func (s *Server) writeSharedPage(w http.ResponseWriter, r *http.Request, status 
 		Version:   p.Version,
 		Ephemeral: p.Ephemeral,
 		ExpiresAt: p.ExpiresAt,
+		HasDeck:   p.HasDeck,
 	})
 }
 

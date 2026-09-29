@@ -84,6 +84,10 @@ type Server struct {
 	mcp      http.Handler
 	sharer   *sharedclient.Client
 	shell    []byte
+	// deckCtl relays remote deck commands when the store can; nil on a
+	// store that cannot (the cluster store), which leaves the command route
+	// unregistered and the deck view without remote control.
+	deckCtl store.DeckController
 
 	watcher      PageWatcher
 	heartbeat    time.Duration
@@ -126,7 +130,9 @@ func New(st store.Store, opts Options) *Server {
 	if heartbeat <= 0 {
 		heartbeat = DefaultHeartbeat
 	}
+	deckCtl, _ := st.(store.DeckController)
 	return &Server{
+		deckCtl:     deckCtl,
 		watcher:     opts.Watcher,
 		heartbeat:   heartbeat,
 		streamsDone: make(chan struct{}),
@@ -144,21 +150,26 @@ func New(st store.Store, opts Options) *Server {
 }
 
 // Handler builds the HTTP routes for the server's mode, wrapped in
-// forwarded-header defaults and request logging. The page view, its JSON,
-// the version poll, delete, assets, and webkit are common, and so is the
-// version event stream whenever a watcher is configured; local mode adds
+// forwarded-header defaults and request logging. The page view, the deck
+// view, their JSON, the version poll, delete, assets, and webkit are common,
+// and so is the version event stream whenever a watcher is configured and
+// the deck command poll whenever the store relays commands; local mode adds
 // the index, its listing, and the markdown import; shared mode the how-to
 // root, the write API, whoami, and the MCP endpoint. A route the mode does
 // not register is a plain 404.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /p/{id}", s.handlePage)
+	mux.HandleFunc("GET /p/{id}/deck", s.handleDeckPage)
 	mux.HandleFunc("GET /api/p/{id}", s.handleAPIPage)
 	mux.HandleFunc("GET /app.js", handleAppJS)
 	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
 	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
 	if s.watcher != nil {
 		mux.HandleFunc("GET /p/{id}/events", s.handleEvents)
+	}
+	if s.deckCtl != nil {
+		mux.HandleFunc("GET /p/{id}/deck/command", s.handleDeckCommand)
 	}
 	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", s.assetsHandler())
@@ -264,6 +275,8 @@ type apiPageMeta struct {
 	Title     string `json:"title"`
 	Version   int    `json:"version"`
 	UpdatedAt string `json:"updated_at"`
+	HasBrief  bool   `json:"has_brief"`
+	HasDeck   bool   `json:"has_deck"`
 }
 
 // apiPages is the paginated index payload the client renders.
@@ -321,6 +334,8 @@ func (s *Server) handleAPIPages(w http.ResponseWriter, r *http.Request) {
 			Title:     p.Title,
 			Version:   p.Version,
 			UpdatedAt: p.UpdatedAt.Format("2006-01-02 15:04 MST"),
+			HasBrief:  p.HasBrief,
+			HasDeck:   p.HasDeck,
 		})
 	}
 
@@ -376,13 +391,20 @@ func clampPage(page, totalPages int) int {
 // handlePage serves the static shell for an existing page. The browser fetches
 // the page data from GET /api/p/{id} and renders the body client-side. We still
 // resolve the id here so an unknown page is a 404 rather than an empty shell.
+// A page that has a deck and no brief has nothing to show here, so it sends
+// the browser on to the deck view; the metadata carries both flags.
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.store.Get(r.Context(), r.PathValue("id")); err != nil {
+	p, err := s.store.GetMeta(r.Context(), r.PathValue("id"))
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.NotFound(w, r)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !p.HasBrief && p.HasDeck {
+		http.Redirect(w, r, "/p/"+p.ID+"/deck", http.StatusFound)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -399,20 +421,26 @@ type apiReference struct {
 }
 
 // apiPage is the page data the frontend renders. Content is the stored,
-// authoring-time-compiled HTML body fragment; Graph is the stored Cytoscape
-// init script. The frontend mounts Content and executes Graph. SpeakURL is
-// the speak service the page registers its text with for read-aloud; empty
-// means the page renders no read-aloud at all.
+// authoring-time-compiled HTML body fragment of the brief and Deck the same
+// for the slide deck (empty when the page has none); Graph is the stored
+// Cytoscape init script both share. The frontend mounts whichever rendition
+// its URL names and executes Graph. SpeakURL is the speak service the brief
+// registers its text with for read-aloud; empty means no read-aloud at all.
+// DeckControl says whether the deck view can poll /p/{id}/deck/command for
+// remote commands on this server.
 type apiPage struct {
-	ID         string         `json:"id"`
-	Title      string         `json:"title"`
-	Version    int            `json:"version"`
-	HasGraph   bool           `json:"has_graph"`
-	Content    string         `json:"content"`
-	Graph      string         `json:"graph"`
-	References []apiReference `json:"references"`
-	Share      apiShare       `json:"share"`
-	SpeakURL   string         `json:"speak_url"`
+	ID          string         `json:"id"`
+	Title       string         `json:"title"`
+	Version     int            `json:"version"`
+	HasGraph    bool           `json:"has_graph"`
+	HasDeck     bool           `json:"has_deck"`
+	Content     string         `json:"content"`
+	Deck        string         `json:"deck"`
+	Graph       string         `json:"graph"`
+	References  []apiReference `json:"references"`
+	Share       apiShare       `json:"share"`
+	SpeakURL    string         `json:"speak_url"`
+	DeckControl bool           `json:"deck_control"`
 }
 
 // handleAPIPage returns a page as JSON for client-side rendering.
@@ -427,15 +455,18 @@ func (s *Server) handleAPIPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := apiPage{
-		ID:         p.ID,
-		Title:      p.Title,
-		Version:    p.Version,
-		HasGraph:   p.HasGraph,
-		Content:    p.Content,
-		Graph:      p.Graph,
-		References: make([]apiReference, 0, len(p.References)),
-		Share:      s.shareState(p),
-		SpeakURL:   s.speakURL,
+		ID:          p.ID,
+		Title:       p.Title,
+		Version:     p.Version,
+		HasGraph:    p.HasGraph,
+		HasDeck:     p.HasDeck,
+		Content:     p.Content,
+		Deck:        p.Deck,
+		Graph:       p.Graph,
+		References:  make([]apiReference, 0, len(p.References)),
+		Share:       s.shareState(p),
+		SpeakURL:    s.speakURL,
+		DeckControl: s.deckCtl != nil,
 	}
 	for _, ref := range p.References {
 		out.References = append(out.References, apiReference{Title: ref.Title, URL: ref.URL})

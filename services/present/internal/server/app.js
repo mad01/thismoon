@@ -2,10 +2,12 @@
 // present page view — client-side render. The backend serves a static shell
 // (chrome only) plus JSON at /api/p/{id}; this script fetches the page data and
 // builds the DOM. The Doc->HTML compile happens once at authoring time (Go), so
-// `content` is trusted authored HTML we mount as-is; the Cytoscape graph (plus
-// its edge-flow animation), metric charts, references, and read-aloud are
-// initialized client-side. webkit.js loads before this file, so
-// Webkit.el/escapeHtml/poll and the wk-* custom elements are available.
+// `content` (the brief) and `deck` (the slide deck) are trusted authored HTML
+// we mount as-is; the Cytoscape graph (plus its edge-flow animation), metric
+// charts, references, and read-aloud are initialized client-side. The same
+// shell serves both renditions: /p/{id} mounts the brief, /p/{id}/deck splits
+// the deck into slides (renderDeck below). webkit.js loads before this file,
+// so Webkit.el/escapeHtml/poll and the wk-* custom elements are available.
 (function () {
   // ── Graph layout engines ──
   // The layout option objects live here rather than in the generated graph
@@ -474,8 +476,27 @@
 
   var root = document.getElementById('root');
 
+  // readAloud builds the page's read-aloud element, or returns null without
+  // a speak URL (a shared instance, say). Any earlier element goes first, so
+  // a re-render never leaves two. The element reads its targets on connect,
+  // so callers create it once the content is mounted.
+  function readAloud(data) {
+    var old = document.querySelector('wk-read-aloud');
+    if (old) old.remove();
+    if (!data.speak_url) return null;
+    var ra = document.createElement('wk-read-aloud');
+    ra.setAttribute('targets', '.brief-summary, wk-section');
+    ra.setAttribute('prepare', '');
+    ra.setAttribute('name', data.title || 'present');
+    ra.setAttribute('endpoint', data.speak_url);
+    return ra;
+  }
+
+  // The graph is shared by the brief and the deck, and only the rendition
+  // that placed a graph block has the container, so a page's graph script is
+  // run only where #cy-graph exists (Cytoscape throws on a null container).
   function initGraphAndFlow() {
-    if (typeof initGraph === 'function') initGraph();
+    if (typeof initGraph === 'function' && document.getElementById('cy-graph')) initGraph();
     showEngine();
     startGraphFlow();
   }
@@ -514,14 +535,8 @@
     // text there (prepared mode) and shows its status bar where it sits, so
     // it goes right under the summary, or above the first section on a page
     // without one. No speak URL (a shared instance, say) means no element.
-    var oldRA = document.querySelector('wk-read-aloud');
-    if (oldRA) oldRA.remove();
-    if (data.speak_url) {
-      var ra = document.createElement('wk-read-aloud');
-      ra.setAttribute('targets', '.brief-summary, wk-section');
-      ra.setAttribute('prepare', '');
-      ra.setAttribute('name', data.title || 'present');
-      ra.setAttribute('endpoint', data.speak_url);
+    var ra = readAloud(data);
+    if (ra) {
       // before() rather than brief.insertBefore(): a legacy raw-HTML page can
       // wrap its sections, and insertBefore throws when the anchor is not a
       // direct child, which would blank the page.
@@ -534,6 +549,16 @@
 
     // Highlight code blocks / enhance prose in the freshly injected content.
     if (window.Webkit && typeof Webkit.enhanceProse === 'function') Webkit.enhanceProse(brief);
+  }
+
+  // showViewLink unhides the header link to the page's other rendition: the
+  // brief offers Slides when the page has a deck, the deck offers Brief when
+  // the page has one. Both anchors sit hidden in the shell's header.
+  function showViewLink(elID, href) {
+    var a = document.getElementById(elID);
+    if (!a) return;
+    a.href = href;
+    a.removeAttribute('hidden');
   }
 
   // wireShare attaches the Share button and its modal. The button is hidden
@@ -690,10 +715,347 @@
     openStream();
   }
 
+
+  // ── Deck view ── the deck's compiled fragment holds the same markup the
+  // brief does (title hero, an optional wk-toc, one wk-section per section),
+  // so the slides come from its top-level nodes: everything before the first
+  // section is the title slide, each section is one slide, the toc is dropped
+  // (the counter and the keys replace it), and the references make the last
+  // slide. Only the active slide is displayed; the graph is initialised the
+  // first time its slide shows, because Cytoscape sizes itself from a
+  // visible container.
+  function makeSlide(nodes, cls) {
+    var body = Webkit.el('div', { class: 'slide-body' });
+    nodes.forEach(function (n) { body.appendChild(n); });
+    var slide = Webkit.el('section', { class: 'slide ' + cls }, [body]);
+    if (body.querySelector('#cy-graph, .present-chart')) slide.classList.add('has-viz');
+    return slide;
+  }
+
+  function splitSlides(html, refs) {
+    var scratch = document.createElement('div');
+    scratch.innerHTML = html || '';
+    var hero = [], slides = [], seenSection = false;
+    Array.prototype.slice.call(scratch.childNodes).forEach(function (n) {
+      if (n.nodeType !== 1) {
+        if (!seenSection && n.nodeType === 3 && n.textContent.trim()) hero.push(n);
+        return;
+      }
+      var tag = n.tagName.toLowerCase();
+      if (tag === 'wk-toc') { seenSection = true; return; }
+      if (tag !== 'wk-section' && !seenSection) { hero.push(n); return; }
+      seenSection = true;
+      slides.push(makeSlide([n], 'slide-section'));
+    });
+    if (hero.length) slides.unshift(makeSlide(hero, 'slide-title'));
+    if (refs) slides.push(makeSlide([refs], 'slide-refs'));
+    if (!slides.length) slides.push(makeSlide([Webkit.el('p', {}, 'This deck has no slides yet.')], 'slide-title'));
+    return slides;
+  }
+
+  // slideFromHash reads the 1-based slide number a URL fragment names.
+  function slideFromHash() {
+    var m = (location.hash || '').match(/^#(\d+)$/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  // deckMemory keeps where a tab is in a deck (slide and whether it is
+  // presenting) in sessionStorage, so the reload an update triggers, or a
+  // reload by hand, comes back on the same slide in the same mode instead of
+  // at the title slide with the chrome showing. sessionStorage is per tab,
+  // so a fresh tab still starts at the beginning. The hash carries the slide
+  // too and wins when present; the memory covers the mode, and the slide
+  // when the tab reached the deck without a hash.
+  function deckMemory(id) {
+    var key = 'present-deck:' + id;
+    function read() {
+      try { return JSON.parse(sessionStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; }
+    }
+    function write(patch) {
+      var m = read();
+      for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) m[k] = patch[k];
+      try { sessionStorage.setItem(key, JSON.stringify(m)); } catch (e) {}
+    }
+    return {
+      slide: function () { var n = parseInt(read().slide, 10); return n > 0 ? n : 0; },
+      presenting: function () { return read().presenting === true; },
+      // seq is the last remote command this tab saw; -1 when it never polled,
+      // which tells the poll this is a fresh tab and not one reloading.
+      seq: function () { var n = read().seq; return typeof n === 'number' ? n : -1; },
+      save: function (slide, presenting) { write({ slide: slide, presenting: presenting }); },
+      saveSeq: function (seq) { write({ seq: seq }); }
+    };
+  }
+
+  function renderDeck(data) {
+    document.title = data.title || 'present';
+    // The shell's header names the brief; the deck view relabels it in place
+    // (wk-header renders once, so the attribute alone would not do).
+    var headerTitle = document.querySelector('wk-header .topbar-title');
+    if (headerTitle) headerTitle.textContent = 'Deck';
+    var slides = splitSlides(data.deck, referencesSection(data.references || []));
+    var deck = Webkit.el('div', { class: 'brief deck', id: 'deck' }, slides);
+    var counter = Webkit.el('span', { class: 'deck-counter', 'aria-live': 'polite' });
+    var presentBtn = Webkit.el('button', { class: 'btn btn-ghost', type: 'button', 'data-deck': 'present', title: 'Present (F): hide the chrome and fill the window' }, 'Present');
+    var bar = Webkit.el('div', { class: 'deck-bar', role: 'toolbar', 'aria-label': 'Slides' }, [
+      Webkit.el('button', { class: 'btn btn-ghost deck-arrow', type: 'button', 'data-deck': 'prev', title: 'Previous slide (Left)', 'aria-label': 'Previous slide' }, '‹'),
+      counter,
+      Webkit.el('button', { class: 'btn btn-ghost deck-arrow', type: 'button', 'data-deck': 'next', title: 'Next slide (Right or Space)', 'aria-label': 'Next slide' }, '›'),
+      presentBtn
+    ]);
+    root.innerHTML = '';
+    root.appendChild(deck);
+    root.appendChild(bar);
+
+    // The graph script (re)defines initGraph(); it runs when its slide shows.
+    var prev = document.getElementById('present-graph-script');
+    if (prev) prev.remove();
+    if (data.graph) {
+      var sc = document.createElement('script');
+      sc.id = 'present-graph-script';
+      sc.textContent = data.graph;
+      document.body.appendChild(sc);
+    }
+    initPresentCharts();
+    deck.querySelectorAll('a[href]:not([href^="#"])').forEach(function (a) {
+      a.target = '_blank'; a.rel = 'noopener';
+    });
+    if (window.Webkit && typeof Webkit.enhanceProse === 'function') Webkit.enhanceProse(deck);
+
+    // Read-aloud sits on the title slide, under the summary when there is
+    // one, and registers every slide's section the way the brief does, so
+    // each slide carries its own play control while the status bar stays
+    // on the first slide.
+    var ra = readAloud(data);
+    if (ra) {
+      var titleBody = deck.querySelector('.slide-title .slide-body');
+      var summary = titleBody && titleBody.querySelector('.brief-summary');
+      if (summary) summary.insertAdjacentElement('afterend', ra);
+      else if (titleBody) titleBody.appendChild(ra);
+      else deck.appendChild(ra);
+    }
+
+    var current = -1;
+    // graphReady says the graph is drawn for the current theme; a theme
+    // change off screen clears it so the next showing redraws. The controls
+    // wrap the container once and stay, whatever the theme does.
+    var graphReady = false;
+    var controlsReady = false;
+    var presenting = false;
+    var memory = deckMemory(data.id);
+    function remember() { memory.save(current + 1, presenting); }
+
+    function graphSlide(slide) { return !!slide.querySelector('#cy-graph'); }
+
+    // refreshVisuals fits the graph and charts on the active slide to their
+    // container, which changes when the slide first shows and when
+    // presenting toggles the layout.
+    function refreshVisuals() {
+      var slide = slides[current];
+      if (!slide) return;
+      if (graphSlide(slide)) {
+        if (!graphReady) {
+          graphReady = true;
+          if (!controlsReady) { controlsReady = true; setupGraphControls(); }
+          initGraphAndFlow();
+        } else if (window._cyInstance) {
+          var c = window._cyInstance;
+          setTimeout(function () { c.resize(); c.fit(undefined, 30); c.center(); }, 60);
+        }
+      }
+      slide.querySelectorAll('.present-chart').forEach(function (b) { if (b._chart) b._chart.resize(); });
+    }
+
+    function show(i) {
+      if (i < 0) i = 0;
+      if (i > slides.length - 1) i = slides.length - 1;
+      if (i === current) return;
+      current = i;
+      slides.forEach(function (sl, j) {
+        sl.classList.toggle('active', j === i);
+        if (j === i) sl.scrollTop = 0;
+      });
+      counter.textContent = (i + 1) + ' / ' + slides.length;
+      if (slideFromHash() !== i + 1) history.replaceState(null, '', '#' + (i + 1));
+      remember();
+      refreshVisuals();
+    }
+    function next() { show(current + 1); }
+    function previous() { show(current - 1); }
+
+    // Presenting hides the chrome through a class on <html> and asks for
+    // browser fullscreen on top when the browser allows it (a key or a click
+    // does, a remote command does not; the class alone still fills the
+    // window). Leaving fullscreen through the browser ends presenting too.
+    // ownFullscreen is true once this document's own fullscreen request was
+    // granted. A document loaded by a reload inherits the previous one's
+    // fullscreen and then watches the browser leave it; that exit is not the
+    // reader ending the presentation and must not end it here, or the reload
+    // an update triggers would come back with the chrome showing.
+    var ownFullscreen = false;
+    function setPresenting(on) {
+      if (presenting === on) return;
+      presenting = on;
+      document.documentElement.classList.toggle('presenting', on);
+      presentBtn.textContent = on ? 'Exit' : 'Present';
+      remember();
+      var d = document.documentElement;
+      if (on && d.requestFullscreen) {
+        try {
+          d.requestFullscreen().then(function () { ownFullscreen = true; }).catch(function () {});
+        } catch (e) {}
+      } else if (!on && document.fullscreenElement && document.exitFullscreen) {
+        ownFullscreen = false;
+        try { document.exitFullscreen().catch(function () {}); } catch (e) {}
+      }
+      setTimeout(refreshVisuals, 150);
+    }
+    document.addEventListener('fullscreenchange', function () {
+      if (document.fullscreenElement || !ownFullscreen) return;
+      ownFullscreen = false;
+      if (presenting) setPresenting(false);
+    });
+    // F and P start presenting and, in fullscreen, end it. In between sits
+    // the state a reload leaves behind: presenting without fullscreen,
+    // because the request needed a gesture. A press there is the gesture,
+    // so it asks for fullscreen and stays presenting; if the browser still
+    // refuses, the press ends presenting as it would anywhere else.
+    function pressPresent() {
+      var d = document.documentElement;
+      if (presenting && !document.fullscreenElement && d.requestFullscreen) {
+        var req;
+        try { req = d.requestFullscreen(); } catch (e) { setPresenting(false); return; }
+        if (req && req.then) req.then(function () { ownFullscreen = true; }).catch(function () { setPresenting(false); });
+        return;
+      }
+      setPresenting(!presenting);
+    }
+
+    bar.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-deck]');
+      if (!btn) return;
+      var action = btn.getAttribute('data-deck');
+      if (action === 'prev') previous();
+      else if (action === 'next') next();
+      else if (action === 'present') setPresenting(!presenting);
+    });
+
+    // Keys: Right, Space, PageDown next; Left, PageUp, Backspace previous;
+    // Home and End jump; F or P toggle presenting; Escape ends it. Modifier
+    // combinations, typing in a field, an open modal, and the graph's own
+    // fullscreen popup (which owns Escape) are left alone. Space on a focused
+    // button is the button's click, not a page turn.
+    function graphPopupOpen() { return !!document.querySelector('.cy-wrapper.cy-fullscreen'); }
+    document.addEventListener('keydown', function (e) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (document.querySelector('wk-modal:not([hidden])')) return;
+      var onButton = t && (t.tagName === 'BUTTON' || t.tagName === 'A' || t.tagName === 'WK-BUTTON');
+      switch (e.key) {
+        case 'ArrowRight': case 'PageDown': e.preventDefault(); next(); break;
+        case ' ': if (onButton) return; e.preventDefault(); next(); break;
+        case 'ArrowLeft': case 'PageUp': case 'Backspace': e.preventDefault(); previous(); break;
+        case 'Home': e.preventDefault(); show(0); break;
+        case 'End': e.preventDefault(); show(slides.length - 1); break;
+        case 'f': case 'F': case 'p': case 'P': e.preventDefault(); pressPresent(); break;
+        case 'Escape': if (presenting && !graphPopupOpen()) setPresenting(false); break;
+      }
+    });
+    window.addEventListener('hashchange', function () {
+      var n = slideFromHash();
+      if (n) show(n - 1);
+    });
+
+    // A theme change rebuilds the graph; that only works while its slide is
+    // on screen, so off screen it is rebuilt on the slide's next showing.
+    document.addEventListener('wk-themechange', function () {
+      var slide = slides[current];
+      if (slide && graphSlide(slide) && graphReady) initGraphAndFlow();
+      else graphReady = false;
+      initPresentCharts();
+    });
+
+    // Read the remembered mode before the first show() writes the memory.
+    var resumePresenting = memory.presenting();
+    show(Math.max(slideFromHash() || memory.slide(), 1) - 1);
+    // Presenting comes back after a reload without browser fullscreen: the
+    // request needs a gesture, so it is refused and caught, and the class
+    // alone fills the window until the reader presses F, which asks again.
+    if (resumePresenting) setPresenting(true);
+    if (data.deck_control) watchDeckCommands(data.id, {
+      start: function () { setPresenting(true); },
+      stop: function () { setPresenting(false); },
+      next: next,
+      prev: previous,
+      goto: function (n) { show(n - 1); }
+    }, memory);
+  }
+
+  // watchDeckCommands follows the remote control: present_deck and `present
+  // deck` append to the page's kept commands, and the view polls for
+  // everything after the last sequence number it applied and runs them in
+  // order, so two commands inside one poll interval both land. A fresh tab
+  // (one that never saw a command) runs only the newest command and only
+  // when it was sent moments ago, which is the agent opening the deck and
+  // sending start back to back; older history is never replayed. The
+  // sequence number is remembered with the slide, so a reload continues
+  // from where the poll was. The poll pauses while the tab is hidden and
+  // catches up when it shows again.
+  var COMMAND_POLL_MS = 1000;
+  var COMMAND_FRESH_MS = 10000;
+  function watchDeckCommands(id, apply, memory) {
+    var base = '/p/' + encodeURIComponent(id) + '/deck/command';
+    var known = memory.seq();
+    var timer = null;
+    var stopped = false;
+    function run(cmd) {
+      var fn = apply[cmd.action];
+      if (fn) fn(cmd.slide);
+    }
+    function onData(data) {
+      if (!data || typeof data.seq !== 'number') return;
+      var cmds = data.commands || [];
+      if (known < 0) {
+        var last = cmds.length ? cmds[cmds.length - 1] : null;
+        if (last && Date.now() - Date.parse(last.at) < COMMAND_FRESH_MS) run(last);
+        known = data.seq;
+      } else {
+        cmds.forEach(function (c) {
+          if (typeof c.seq === 'number' && c.seq > known) { known = c.seq; run(c); }
+        });
+      }
+      memory.saveSeq(known);
+    }
+    function tick() {
+      fetch(base + '?after=' + known, { headers: { accept: 'application/json' } })
+        .then(function (r) { if (!r.ok) throw new Error('request failed (' + r.status + ')'); return r.json(); })
+        .then(function (data) { if (!stopped) onData(data); })
+        .catch(function () {});
+    }
+    function start() {
+      if (timer) return;
+      stopped = false;
+      tick();
+      timer = setInterval(tick, COMMAND_POLL_MS);
+    }
+    function stop() {
+      stopped = true;
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stop(); else start();
+    });
+    if (!document.hidden) start();
+  }
+
+  // pageId reads the page id from the URL; deckView says whether this is the
+  // /p/{id}/deck rendition of it.
   function pageId() {
     var m = location.pathname.match(/^\/p\/([^/]+)/);
     return m ? m[1] : '';
   }
+  var deckView = /^\/p\/[^/]+\/deck\/?$/.test(location.pathname);
 
   var id = pageId();
   if (!id) return;
@@ -701,15 +1063,27 @@
   fetch('/api/p/' + encodeURIComponent(id), { headers: { accept: 'application/json' } })
     .then(function (r) { if (!r.ok) throw new Error('load failed (' + r.status + ')'); return r.json(); })
     .then(function (data) {
-      render(data);
+      var base = '/p/' + encodeURIComponent(id);
+      // The server redirects a URL whose rendition is gone, but a replica
+      // whose page cache trails an update can still serve the old view;
+      // the page data is a direct read, so it is the last word.
+      if (deckView && !data.has_deck && data.content) { location.replace(base); return; }
+      if (!deckView && !data.content && data.has_deck) { location.replace(base + '/deck'); return; }
+      if (deckView) {
+        renderDeck(data);
+        if (data.content) showViewLink('briefLink', base);
+      } else {
+        render(data);
+        if (data.has_deck) showViewLink('deckLink', base + '/deck');
+        // Recolor the graph + charts when the webkit theme toggle fires
+        // (the deck view registers its own listener).
+        document.addEventListener('wk-themechange', function () {
+          initGraphAndFlow();
+          initPresentCharts();
+        });
+      }
       wireShare(data.share);
-      var known = data.version;
-      // Recolor the graph + charts when the webkit theme toggle fires.
-      document.addEventListener('wk-themechange', function () {
-        initGraphAndFlow();
-        initPresentCharts();
-      });
-      watchVersion(id, known);
+      watchVersion(id, data.version);
     })
     .catch(function (err) {
       root.innerHTML = '';

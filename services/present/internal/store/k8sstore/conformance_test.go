@@ -27,9 +27,10 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		ctx := context.Background()
 		exp := f.now.Add(time.Hour)
 		p, err := f.st.Create(ctx, store.Draft{
-			Title: "T", Content: "<p>x</p>", Graph: "cy.init();",
+			Title: "T", Content: "<p>x</p>", Deck: "<wk-section>s</wk-section>", Graph: "cy.init();",
 			References:  []store.Reference{{Title: "r", URL: "https://r"}},
 			Doc:         []byte(`{"sections":[]}`),
+			DeckSource:  []byte(`{"sections":[{"h":"s"}]}`),
 			GraphSource: []byte(`{"nodes":[]}`),
 			Author:      "abc", Ephemeral: true, ExpiresAt: &exp,
 		})
@@ -44,6 +45,7 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 			t.Fatalf("Get: %v", err)
 		}
 		if got.Title != "T" || got.Content != "<p>x</p>" || got.Graph != "cy.init();" ||
+			got.Deck != "<wk-section>s</wk-section>" || !got.HasDeck ||
 			!got.HasGraph || !got.HasRefs || !got.HasDoc || got.Version != 1 ||
 			got.Author != "abc" || !got.Ephemeral || got.ExpiresAt == nil || !got.ExpiresAt.Equal(exp) ||
 			len(got.References) != 1 || got.References[0].URL != "https://r" {
@@ -59,13 +61,54 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 			string(src) != `{"nodes":[]}` {
 			t.Fatalf("LoadGraphSource = %q, %v", src, err)
 		}
+		if src, err := f.st.LoadDeckSource(ctx, p.ID); err != nil ||
+			string(src) != `{"sections":[{"h":"s"}]}` {
+			t.Fatalf("LoadDeckSource = %q, %v", src, err)
+		}
+	})
+
+	t.Run("DeckOnlyPage", func(t *testing.T) {
+		f := newFixture(t)
+		ctx := context.Background()
+		p, err := f.st.Create(ctx, store.Draft{Title: "Deck", Deck: "<wk-section>1</wk-section>"})
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		got, err := f.st.Get(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.HasBrief || got.Content != "" || !got.HasDeck ||
+			got.Deck != "<wk-section>1</wk-section>" {
+			t.Fatalf("deck-only round trip: %+v", got)
+		}
+		empty := ""
+		deck := "<wk-section>2</wk-section>"
+		content := "<p>brief</p>"
+		got, err = f.st.Update(ctx, p.ID, store.Patch{Content: &content, Deck: &deck})
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if !got.HasBrief || got.Deck != deck || !got.HasDeck || got.Version != 2 {
+			t.Fatalf("after adding a brief and replacing the deck: %+v", got)
+		}
+		got, err = f.st.Update(ctx, p.ID, store.Patch{Deck: &empty})
+		if err != nil {
+			t.Fatalf("Update clearing the deck: %v", err)
+		}
+		if got.HasDeck || got.Deck != "" || got.Version != 3 {
+			t.Fatalf("after clearing the deck: %+v", got)
+		}
+		if got, _ := f.st.Get(ctx, p.ID); got.HasDeck || got.Deck != "" {
+			t.Fatalf("cleared deck came back on Get: %+v", got)
+		}
 	})
 
 	t.Run("GetMetaDropsBodies", func(t *testing.T) {
 		f := newFixture(t)
 		ctx := context.Background()
 		p, err := f.st.Create(ctx, store.Draft{
-			Title: "T", Content: "<p>x</p>", Graph: "cy.init();",
+			Title: "T", Content: "<p>x</p>", Deck: "<wk-section>s</wk-section>", Graph: "cy.init();",
 			References: []store.Reference{{Title: "r", URL: "https://r"}},
 			Doc:        []byte(`{"sections":[]}`),
 		})
@@ -76,10 +119,11 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		if err != nil {
 			t.Fatalf("GetMeta: %v", err)
 		}
-		if m.Content != "" || m.Graph != "" || m.References != nil {
+		if m.Content != "" || m.Deck != "" || m.Graph != "" || m.References != nil {
 			t.Fatalf("GetMeta carries bodies: %+v", m)
 		}
-		if m.Title != "T" || m.Version != 1 || !m.HasGraph || !m.HasRefs || !m.HasDoc {
+		if m.Title != "T" || m.Version != 1 || !m.HasGraph || !m.HasRefs || !m.HasDoc ||
+			!m.HasDeck {
 			t.Fatalf("GetMeta lost metadata: %+v", m)
 		}
 		if _, err := f.st.GetMeta(ctx, store.NewSharedID()); !errors.Is(err, store.ErrNotFound) {
@@ -123,6 +167,14 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 			if f.st.HasDoc(ctx, id) {
 				t.Errorf("HasDoc(%q) = true", id)
 			}
+			if f.st.HasDeckSource(ctx, id) {
+				t.Errorf("HasDeckSource(%q) = true", id)
+			}
+			if err := f.st.SaveDeckSource(ctx, id, []byte(`{}`)); !errors.Is(
+				err, store.ErrNotFound,
+			) {
+				t.Errorf("SaveDeckSource(%q): %v, want ErrNotFound", id, err)
+			}
 		}
 	})
 
@@ -152,9 +204,22 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		if err := f.st.SaveGraphSource(ctx, p.ID, []byte(`{}`)); err != nil {
 			t.Fatalf("SaveGraphSource: %v", err)
 		}
+		if f.st.HasDeckSource(ctx, p.ID) {
+			t.Fatal("HasDeckSource before any save: true")
+		}
+		if _, err := f.st.LoadDeckSource(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("LoadDeckSource before any save: %v, want ErrNotFound", err)
+		}
+		if err := f.st.SaveDeckSource(ctx, p.ID, []byte(`{"d":1}`)); err != nil {
+			t.Fatalf("SaveDeckSource: %v", err)
+		}
 		got, _ = f.st.Get(ctx, p.ID)
-		if got.Version != 2 || !got.HasDoc || !f.st.HasGraphSource(ctx, p.ID) {
+		if got.Version != 2 || !got.HasDoc || !f.st.HasGraphSource(ctx, p.ID) ||
+			!f.st.HasDeckSource(ctx, p.ID) {
 			t.Fatalf("after source saves: %+v", got)
+		}
+		if src, err := f.st.LoadDeckSource(ctx, p.ID); err != nil || string(src) != `{"d":1}` {
+			t.Fatalf("LoadDeckSource = %q, %v", src, err)
 		}
 		if err := f.st.DeleteDoc(ctx, p.ID); err != nil {
 			t.Fatalf("DeleteDoc: %v", err)
@@ -162,11 +227,18 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 		if err := f.st.DeleteGraphSource(ctx, p.ID); err != nil {
 			t.Fatalf("DeleteGraphSource: %v", err)
 		}
-		if f.st.HasDoc(ctx, p.ID) || f.st.HasGraphSource(ctx, p.ID) {
+		if err := f.st.DeleteDeckSource(ctx, p.ID); err != nil {
+			t.Fatalf("DeleteDeckSource: %v", err)
+		}
+		if f.st.HasDoc(ctx, p.ID) || f.st.HasGraphSource(ctx, p.ID) ||
+			f.st.HasDeckSource(ctx, p.ID) {
 			t.Fatal("sources must be gone after delete")
 		}
 		if _, err := f.st.LoadDoc(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("LoadDoc after delete: %v, want ErrNotFound", err)
+		}
+		if _, err := f.st.LoadDeckSource(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("LoadDeckSource after delete: %v, want ErrNotFound", err)
 		}
 		off := false
 		got, _ = f.st.Update(ctx, p.ID, store.Patch{Ephemeral: &off})

@@ -208,6 +208,7 @@ type apiPagesBody struct {
 		Title     string `json:"title"`
 		Version   int    `json:"version"`
 		UpdatedAt string `json:"updated_at"`
+		HasDeck   bool   `json:"has_deck"`
 	} `json:"pages"`
 	Page       int  `json:"page"`
 	Size       int  `json:"size"`

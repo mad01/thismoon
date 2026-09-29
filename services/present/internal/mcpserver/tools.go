@@ -68,6 +68,16 @@ var createAnnotations = &mcp.ToolAnnotations{
 	OpenWorldHint:   new(false),
 }
 
+// deckDescription is the part of the create and update descriptions that
+// teaches a client what a deck is; the two tools share it so they cannot
+// drift apart.
+const deckDescription = "A page can also carry a slide deck beside its content, or instead of it: pass a second Doc JSON object as `deck`. " +
+	"The deck is authored on its own, never converted from the content: each section is one slide, the title with the deck's summary, meta, and chips is the title slide, and references make the last slide. " +
+	"Write it like a good deck, not a shorter brief: one idea per slide with the heading stating the claim, a list of 3 to 5 short items or one paragraph of at most two sentences per slide, " +
+	"exactly one bold phrase or one @chip(stat:...) per slide as the highlight, a chart or the graph alone on its own slide, 5 to 12 slides in all, " +
+	"at most one warn callout in the deck, and a closing `Next` slide with at most three actions. Detail belongs in the content; the deck view links to it. " +
+	"The deck is served at the returned deck_url, and present_source returns its Doc for editing. "
+
 func registerTools(s *mcp.Server, h *handlers) {
 	if h.mode == ModeShared {
 		mcp.AddTool(s, &mcp.Tool{
@@ -75,6 +85,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			Description: "Create a page on this shared instance and return its id and URL. " +
 				"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
 				"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
+				deckDescription + "At least one of `content` and `deck` is required. " +
 				"Set `ephemeral` to have the page expire 30 days after its last update; otherwise it stays until deleted. " +
 				"The author key this connection sends as its bearer token becomes the page's author; only it can update the page. " +
 				"Keep the returned URL: nothing on this instance lists pages.",
@@ -86,14 +97,16 @@ func registerTools(s *mcp.Server, h *handlers) {
 			Description: "Create a new presentation page and return its id and URL. " +
 				"Provide a Doc JSON object as `content`; the server renders it to HTML with the correct CSS classes and structure. " +
 				"Pass an optional Graph JSON object as `graph` (structured nodes/edges) and optional `references` (source links displayed at the bottom). " +
+				deckDescription + "At least one of `content` and `deck` is required. " +
 				"Keep the returned id; it is the handle for present_update/present_read/present_open.",
 			Annotations: createAnnotations,
 		}, withHint(h.handleCreate))
 	}
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "present_read",
-		Description: "Read a presentation's current title, rendered HTML content, graph JS, version, and URL by id. For editing, prefer present_source: it returns the structured source in the format present_update accepts.",
+		Name: "present_read",
+		Description: "Read a presentation's current title, rendered HTML content, rendered deck HTML, graph JS, version, and URLs by id. " +
+			"For editing, prefer present_source: it returns the structured source in the format present_update accepts.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
@@ -102,8 +115,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_source",
-		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc) and the structured graph JSON (graph_format=json), plus references. " +
-			"Both come back in exactly the format present_update accepts, so you can modify them and pass them straight back. Use this to mutate a page from a new or restored session. " +
+		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc), the structured graph JSON (graph_format=json), the deck's Doc JSON (`deck`, empty when the page has no deck), plus references. " +
+			"All come back in exactly the format present_update accepts, so you can modify them and pass them straight back. Use this to mutate a page from a new or restored session. " +
 			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
@@ -114,8 +127,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "present_update",
 		Description: "Update an existing presentation. The `id` parameter is REQUIRED: it is the page id returned by present_create. " +
-			"Provide a Doc JSON object as `content` and/or a Graph JSON object as `graph`. " +
-			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph. " +
+			"Provide a Doc JSON object as `content`, a Graph JSON object as `graph`, and/or a Doc JSON object as `deck`. " +
+			deckDescription +
+			"Only the fields you provide are changed (omit a field to leave it as-is); pass an empty string to clear the graph or to remove the deck. " +
+			"A page always keeps at least one of content and deck: an update that would remove the last one is refused. " +
 			"Bumps the page version so any open browser tab auto-reloads, so you don't need to call present_open again after an update.",
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
@@ -139,6 +154,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		mcp.AddTool(s, &mcp.Tool{
 			Name: "present_open",
 			Description: "Open a presentation in the default browser (macOS `open`). " +
+				"Set `deck` to open the page's slide deck instead of its content. " +
 				"Call this AT MOST ONCE per presentation: after the tab is open, present_update triggers an automatic reload, " +
 				"so don't call present_open again for subsequent edits. " +
 				"If this fails (sandbox or PATH issue), return the URL from present_create to the user instead.",
@@ -148,6 +164,26 @@ func registerTools(s *mcp.Server, h *handlers) {
 				OpenWorldHint:   new(false),
 			},
 		}, withHint(h.handleOpen))
+
+		// Remote control needs a store that relays commands to open tabs;
+		// only the filesystem store does, and only local mode runs on it
+		// unwrapped.
+		if _, ok := h.deckController(); ok {
+			mcp.AddTool(s, &mcp.Tool{
+				Name: "present_deck",
+				Description: "Drive the slide deck of a page that is open in the browser: `start` and `stop` presenting " +
+					"(the chrome hides and one slide fills the window; browser fullscreen needs a click, the F key, or the Present button), " +
+					"`next`, `prev`, or `goto` a 1-based `slide`. Every open tab of the deck follows within a second. " +
+					"The reader can also use the keyboard: Right, Space, or PageDown for the next slide, Left or PageUp for the previous, " +
+					"Home and End for the first and last, F or P to start presenting (pressed while presenting they go fullscreen again after a reload, and in fullscreen they stop), Esc to stop. " +
+					"Open the deck first with present_open(deck: true) or its deck_url.",
+				Annotations: &mcp.ToolAnnotations{
+					DestructiveHint: new(false),
+					IdempotentHint:  false,
+					OpenWorldHint:   new(false),
+				},
+			}, withHint(h.handleDeck))
+		}
 
 		if h.sharer != nil {
 			mcp.AddTool(s, &mcp.Tool{
@@ -203,6 +239,20 @@ func (h *handlers) url(req *mcp.CallToolRequest, id string) string {
 	return base + "/p/" + id
 }
 
+// deckURL is the public URL of a page's slide deck: the page URL with the
+// deck view's suffix.
+func deckURL(pageURL string) string {
+	return pageURL + "/deck"
+}
+
+// deckController returns the store's remote-control surface when it has
+// one. The filesystem store does; a wrapped or cluster store does not, and
+// then neither present_deck nor its handler exist.
+func (h *handlers) deckController() (store.DeckController, bool) {
+	dc, ok := h.store.(store.DeckController)
+	return dc, ok
+}
+
 // expiry returns when an ephemeral page touched now expires, or nil.
 func (h *handlers) expiry(ephemeral bool) *time.Time {
 	if !ephemeral {
@@ -229,6 +279,24 @@ func resolveContent(s string, title string) (htmlOut string, docJSON []byte, err
 		return c.HTML, c.JSON, nil
 	}
 	return s, nil, nil
+}
+
+// resolveDeck compiles a deck's Doc JSON to the HTML fragment deck.html holds
+// and returns it with the canonical Doc JSON deck.json holds. Unlike content,
+// a deck has no legacy form: anything but a Doc object is refused.
+func resolveDeck(s string, title string) (htmlOut string, docJSON []byte, err error) {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return "", nil, nil
+	}
+	if s[0] != '{' {
+		return "", nil, errors.New("deck: want Doc JSON (an object with sections, one per slide)")
+	}
+	c, err := render.Compile([]byte(s), title)
+	if err != nil {
+		return "", nil, fmt.Errorf("deck: %w", err)
+	}
+	return c.HTML, c.JSON, nil
 }
 
 // resolveGraph detects whether s is a GraphInput JSON object or a legacy JS
@@ -267,10 +335,18 @@ type refInput struct {
 
 type createInput struct {
 	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content"              jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string. Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey, title?, unit?, xunit?, series:[{name?, color?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey; inline metric chart, many per page), code (text + lang?, verbatim code block with copy button, no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
+	Content    string     `json:"content,omitempty"    jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string; omit it for a page that is a slide deck only (then deck is required). Doc block types: p, h3, callout (sev: info|warn), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey, title?, unit?, xunit?, series:[{name?, color?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey; inline metric chart, many per page), code (text + lang?, verbatim code block with copy button, no inline markdown), html (raw passthrough). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
+	Deck       string     `json:"deck,omitempty"       jsonschema:"optional slide deck as a Doc JSON string with the same shape and block types as content: every section is one slide, summary/meta/chips fill the title slide, references make the last slide. Authored on its own, not converted from content. Keep it minimal: heading = the claim, 3 to 5 short list items or two sentences per slide, one bold phrase or stat chip per slide, one chart or the graph alone per slide, 5 to 12 slides, detail stays in content. Served at deck_url; the page's graph is shared with the content."`
 	Graph      string     `json:"graph,omitempty"      jsonschema:"optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?}], edges:[{from,to,type?,label?,weight?,flow?}], layout?, direction?} or a legacy JS string. Node types: center, module, leaf, registry. Edge types: consumes (solid), publishes (dashed). Edge weight (a number, e.g. requests per second) drives line width and tints the busiest edges; flow: true animates dashes from source to target. Layouts: dagre (default, layered DAG), elk (ELK layered; folds a long chain into rows to fit the container), elk-layered | elk-mrtree | elk-stress | elk-radial | elk-force (other ELK algorithms, no folding), cose (no hierarchy). Direction (dagre and elk): TB or LR; omit for auto (LR when the graph has few nodes)."`
 	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
 }
+
+// errNoRendition is the create-time refusal of a page with nothing to show.
+var errNoRendition = errors.New("content or deck is required")
+
+// errLastRendition is the update-time refusal of a patch that would leave
+// the page with nothing to show.
+var errLastRendition = errors.New("update would leave the page with neither content nor deck")
 
 // sharedCreateInput is createInput plus the one choice a shared page adds.
 type sharedCreateInput struct {
@@ -280,14 +356,26 @@ type sharedCreateInput struct {
 
 type pageOutput struct {
 	ID        string `json:"id"`
-	URL       string `json:"url"`
+	URL       string `json:"url"                  jsonschema:"where the page opens: its content, or its deck when the page has no content"`
+	HasDeck   bool   `json:"has_deck"`
+	DeckURL   string `json:"deck_url,omitempty"   jsonschema:"where the slide deck opens; set when the page has one"`
 	Version   int    `json:"version"`
 	Ephemeral bool   `json:"ephemeral,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
-func pageOutputFor(p store.Page, url string) pageOutput {
-	out := pageOutput{ID: p.ID, URL: url, Version: p.Version, Ephemeral: p.Ephemeral}
+// pageOutputFor describes p at pageURL. A page without content opens on its
+// deck, so its URL is the deck's.
+func pageOutputFor(p store.Page, pageURL string) pageOutput {
+	out := pageOutput{
+		ID: p.ID, URL: pageURL, HasDeck: p.HasDeck, Version: p.Version, Ephemeral: p.Ephemeral,
+	}
+	if p.HasDeck {
+		out.DeckURL = deckURL(pageURL)
+		if !p.HasBrief {
+			out.URL = out.DeckURL
+		}
+	}
 	if p.ExpiresAt != nil {
 		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)
 	}
@@ -319,9 +407,16 @@ func (h *handlers) create(
 	in createInput,
 	ephemeral bool,
 ) (*mcp.CallToolResult, pageOutput, error) {
+	if strings.TrimSpace(in.Content) == "" && strings.TrimSpace(in.Deck) == "" {
+		return nil, pageOutput{}, errNoRendition
+	}
 	content, docJSON, err := resolveContent(in.Content, in.Title)
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("content: %w", err)
+	}
+	deck, deckJSON, err := resolveDeck(in.Deck, in.Title)
+	if err != nil {
+		return nil, pageOutput{}, err
 	}
 	graph, graphJSON, err := resolveGraph(in.Graph)
 	if err != nil {
@@ -333,9 +428,11 @@ func (h *handlers) create(
 	d := store.Draft{
 		Title:       in.Title,
 		Content:     content,
+		Deck:        deck,
 		Graph:       graph,
 		References:  toStoreRefs(in.References),
 		Doc:         docJSON,
+		DeckSource:  deckJSON,
 		GraphSource: graphJSON,
 	}
 	if h.mode == ModeShared {
@@ -389,10 +486,13 @@ type readOutput struct {
 	ID         string     `json:"id"`
 	Title      string     `json:"title"`
 	Content    string     `json:"content"`
+	Deck       string     `json:"deck"                 jsonschema:"rendered HTML of the slide deck; empty when the page has none"`
+	HasDeck    bool       `json:"has_deck"`
 	Graph      string     `json:"graph"`
 	References []refInput `json:"references,omitempty"`
 	Version    int        `json:"version"`
 	URL        string     `json:"url"`
+	DeckURL    string     `json:"deck_url,omitempty"`
 	UpdatedAt  string     `json:"updated_at"`
 }
 
@@ -405,10 +505,12 @@ func (h *handlers) handleRead(
 	if err != nil {
 		return nil, readOutput{}, err
 	}
+	urls := pageOutputFor(p, h.url(req, p.ID))
 	return nil, readOutput{
-		ID: p.ID, Title: p.Title, Content: p.Content, Graph: p.Graph,
+		ID: p.ID, Title: p.Title, Content: p.Content, Deck: p.Deck, HasDeck: p.HasDeck, Graph: p.Graph,
 		References: fromStoreRefs(p.References),
-		Version:    p.Version, URL: h.url(req, p.ID), UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		Version:    p.Version, URL: urls.URL, DeckURL: urls.DeckURL,
+		UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}, nil
 }
 
@@ -423,11 +525,13 @@ type sourceOutput struct {
 	Title         string     `json:"title"`
 	ContentFormat string     `json:"content_format"         jsonschema:"doc = structured Doc JSON (editable, pass back to present_update); html = legacy raw HTML (no Doc source persisted)"`
 	Content       string     `json:"content"`
+	Deck          string     `json:"deck,omitempty"         jsonschema:"the slide deck's Doc JSON (editable, pass back to present_update as deck); empty when the page has no deck"`
 	GraphFormat   string     `json:"graph_format,omitempty" jsonschema:"json = structured GraphInput JSON (editable); js = legacy raw JS; empty = page has no graph"`
 	Graph         string     `json:"graph,omitempty"`
 	References    []refInput `json:"references,omitempty"`
 	Version       int        `json:"version"`
 	URL           string     `json:"url"`
+	DeckURL       string     `json:"deck_url,omitempty"`
 }
 
 func (h *handlers) handleSource(
@@ -439,10 +543,11 @@ func (h *handlers) handleSource(
 	if err != nil {
 		return nil, sourceOutput{}, err
 	}
+	urls := pageOutputFor(p, h.url(req, p.ID))
 	out := sourceOutput{
 		ID: p.ID, Title: p.Title,
 		References: fromStoreRefs(p.References),
-		Version:    p.Version, URL: h.url(req, p.ID),
+		Version:    p.Version, URL: urls.URL, DeckURL: urls.DeckURL,
 	}
 	doc, err := h.store.LoadDoc(ctx, in.ID)
 	switch {
@@ -452,6 +557,19 @@ func (h *handlers) handleSource(
 		out.ContentFormat, out.Content = "html", p.Content
 	default:
 		return nil, sourceOutput{}, err
+	}
+	if p.HasDeck {
+		// A deck always comes from a Doc, so a missing source is a page
+		// written by something other than these tools; hand back nothing
+		// rather than the rendered HTML, which present_update would refuse.
+		src, err := h.store.LoadDeckSource(ctx, in.ID)
+		switch {
+		case err == nil:
+			out.Deck = string(src)
+		case errors.Is(err, store.ErrNotFound):
+		default:
+			return nil, sourceOutput{}, err
+		}
 	}
 	if p.HasGraph {
 		src, err := h.store.LoadGraphSource(ctx, in.ID)
@@ -473,6 +591,7 @@ type updateInput struct {
 	ID         string      `json:"id"                   jsonschema:"page id to update"`
 	Title      *string     `json:"title,omitempty"      jsonschema:"new title; omit to leave unchanged"`
 	Content    *string     `json:"content,omitempty"    jsonschema:"new page content as a Doc JSON string or legacy HTML string; omit to leave unchanged"`
+	Deck       *string     `json:"deck,omitempty"       jsonschema:"new slide deck as a Doc JSON string (one section per slide, heading = the claim, 3 to 5 short items or two sentences per slide, one highlight per slide, 5 to 12 slides); omit to leave unchanged, empty string to remove the deck"`
 	Graph      *string     `json:"graph,omitempty"      jsonschema:"new graph as structured JSON string or legacy JS string; omit to leave unchanged, empty string to remove"`
 	References *[]refInput `json:"references,omitempty" jsonschema:"replace the references list; omit to leave unchanged, empty array to clear"`
 }
@@ -484,6 +603,8 @@ type updateInput struct {
 type sourcePlan struct {
 	doc        []byte
 	clearDoc   bool
+	deck       []byte
+	clearDeck  bool
 	graph      []byte
 	clearGraph bool
 }
@@ -493,22 +614,31 @@ func (h *handlers) handleUpdate(
 	req *mcp.CallToolRequest,
 	in updateInput,
 ) (*mcp.CallToolResult, pageOutput, error) {
-	// On a shared instance only the author may write. The check comes
-	// first, before any rendering: an update from the wrong key must cost
-	// this instance nothing but a store read.
-	var cur store.Page
+	// The current page is read first, before any rendering: on a shared
+	// instance only the author may write, and an update from the wrong key
+	// must cost this instance nothing but a store read; in either mode the
+	// patch is judged against what the page holds now.
+	cur, err := h.store.Get(ctx, in.ID)
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
 	if h.mode == ModeShared {
-		var err error
-		if cur, err = h.store.Get(ctx, in.ID); err != nil {
-			return nil, pageOutput{}, err
-		}
 		if err := author.Check(cur.Author, header(req)); err != nil {
 			return nil, pageOutput{}, err
 		}
 	}
-	patch, plan, err := resolveUpdate(in)
+	patch, plan, err := resolveUpdate(in, cur.Title)
 	if err != nil {
 		return nil, pageOutput{}, err
+	}
+	// A page that has something to show keeps something to show. The check
+	// runs on a copy: the store applies the real patch. A page from before
+	// decks that has neither rendition (empty content was accepted then)
+	// still takes title, graph, and reference updates.
+	next := cur
+	next.Apply(patch)
+	if (cur.HasBrief || cur.HasDeck) && !next.HasBrief && !next.HasDeck {
+		return nil, pageOutput{}, errLastRendition
 	}
 	// An ephemeral page's 30 days start over on every update.
 	if h.mode == ModeShared && cur.Ephemeral {
@@ -530,9 +660,11 @@ func (h *handlers) handleUpdate(
 
 // resolveUpdate renders the inputs an update carries into the patch for the
 // page and the plan for its sources. It touches no store, so a malformed
-// Doc or Graph fails before anything is written.
-func resolveUpdate(in updateInput) (store.Patch, sourcePlan, error) {
-	title := ""
+// Doc or Graph fails before anything is written. curTitle is the page's
+// title as stored: a Doc renders its title into the hero, so an update that
+// leaves the title alone must still compile under it.
+func resolveUpdate(in updateInput, curTitle string) (store.Patch, sourcePlan, error) {
+	title := curTitle
 	if in.Title != nil {
 		title = *in.Title
 	}
@@ -544,13 +676,21 @@ func resolveUpdate(in updateInput) (store.Patch, sourcePlan, error) {
 			return store.Patch{}, sourcePlan{}, fmt.Errorf("content: %w", err)
 		}
 		patch.Content = &content
-		switch {
-		case docJSON != nil:
-			plan.doc = docJSON
-		case strings.TrimSpace(*in.Content) != "":
-			// Content replaced with legacy HTML: any prior doc.json is now stale.
-			plan.clearDoc = true
+		// A Doc refreshes doc.json. Legacy HTML, or an empty string that
+		// removes the brief, leaves no Doc the content came from, so any
+		// prior doc.json is stale and must go, or a later re-render or
+		// present_source would bring the old brief back.
+		plan.doc, plan.clearDoc = docJSON, docJSON == nil
+	}
+	if in.Deck != nil {
+		deck, deckJSON, err := resolveDeck(*in.Deck, title)
+		if err != nil {
+			return store.Patch{}, sourcePlan{}, err
 		}
+		patch.Deck = &deck
+		// A deck is replaced from a Doc or removed; either way the old
+		// deck.json must not outlive it.
+		plan.deck, plan.clearDeck = deckJSON, deckJSON == nil
 	}
 	if in.Graph != nil {
 		graph, graphJSON, err := resolveGraph(*in.Graph)
@@ -571,26 +711,39 @@ func resolveUpdate(in updateInput) (store.Patch, sourcePlan, error) {
 
 // applySourcePlan persists the source changes an update implies. It runs
 // after the page is written, so a page that failed to update leaves its
-// sources alone.
+// sources alone. Deletes go first: a store that measures the page on every
+// save (the shared instance's size cap) must not count a source the same
+// update is removing, or an update that shrinks the page could be refused
+// halfway through.
 func (h *handlers) applySourcePlan(ctx context.Context, id string, plan sourcePlan) error {
-	switch {
-	case plan.doc != nil:
-		if err := h.store.SaveDoc(ctx, id, plan.doc); err != nil {
-			return fmt.Errorf("save doc: %w", err)
-		}
-	case plan.clearDoc:
+	if plan.clearDoc {
 		if err := h.store.DeleteDoc(ctx, id); err != nil {
 			return fmt.Errorf("clear doc: %w", err)
 		}
 	}
-	switch {
-	case plan.graph != nil:
-		if err := h.store.SaveGraphSource(ctx, id, plan.graph); err != nil {
-			return fmt.Errorf("save graph source: %w", err)
+	if plan.clearDeck {
+		if err := h.store.DeleteDeckSource(ctx, id); err != nil {
+			return fmt.Errorf("clear deck source: %w", err)
 		}
-	case plan.clearGraph:
+	}
+	if plan.clearGraph {
 		if err := h.store.DeleteGraphSource(ctx, id); err != nil {
 			return fmt.Errorf("clear graph source: %w", err)
+		}
+	}
+	if plan.doc != nil {
+		if err := h.store.SaveDoc(ctx, id, plan.doc); err != nil {
+			return fmt.Errorf("save doc: %w", err)
+		}
+	}
+	if plan.deck != nil {
+		if err := h.store.SaveDeckSource(ctx, id, plan.deck); err != nil {
+			return fmt.Errorf("save deck source: %w", err)
+		}
+	}
+	if plan.graph != nil {
+		if err := h.store.SaveGraphSource(ctx, id, plan.graph); err != nil {
+			return fmt.Errorf("save graph source: %w", err)
 		}
 	}
 	return nil
@@ -604,7 +757,10 @@ type listItem struct {
 	URL       string `json:"url"`
 	Version   int    `json:"version"`
 	UpdatedAt string `json:"updated_at"`
-	HasDoc    bool   `json:"has_doc"    jsonschema:"true when the page has a persisted Doc source; present_source returns it ready for editing"`
+	HasDoc    bool   `json:"has_doc"            jsonschema:"true when the page has a persisted Doc source; present_source returns it ready for editing"`
+	HasBrief  bool   `json:"has_brief"          jsonschema:"true when the page has content (the scrollable brief)"`
+	HasDeck   bool   `json:"has_deck"           jsonschema:"true when the page has a slide deck"`
+	DeckURL   string `json:"deck_url,omitempty" jsonschema:"where the slide deck opens; set when the page has one"`
 }
 
 type listOutput struct {
@@ -622,10 +778,11 @@ func (h *handlers) handleList(
 	}
 	out := listOutput{Pages: make([]listItem, 0, len(pages))}
 	for _, p := range pages {
+		urls := pageOutputFor(p, h.url(req, p.ID))
 		out.Pages = append(out.Pages, listItem{
-			ID: p.ID, Title: p.Title, URL: h.url(req, p.ID),
+			ID: p.ID, Title: p.Title, URL: urls.URL,
 			Version: p.Version, UpdatedAt: p.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			HasDoc: p.HasDoc,
+			HasDoc: p.HasDoc, HasBrief: p.HasBrief, HasDeck: p.HasDeck, DeckURL: urls.DeckURL,
 		})
 	}
 	return nil, out, nil
@@ -634,7 +791,8 @@ func (h *handlers) handleList(
 // ── open ──
 
 type openInput struct {
-	ID string `json:"id" jsonschema:"page id to open in the browser"`
+	ID   string `json:"id"             jsonschema:"page id to open in the browser"`
+	Deck bool   `json:"deck,omitempty" jsonschema:"open the page's slide deck instead of its content"`
 }
 
 type openOutput struct {
@@ -648,14 +806,61 @@ func (h *handlers) handleOpen(
 	in openInput,
 ) (*mcp.CallToolResult, openOutput, error) {
 	// Confirm the page exists before launching a browser at a dead URL.
-	if _, err := h.store.Get(ctx, in.ID); err != nil {
+	p, err := h.store.Get(ctx, in.ID)
+	if err != nil {
 		return nil, openOutput{}, err
 	}
-	url := h.url(req, in.ID)
+	urls := pageOutputFor(p, h.url(req, in.ID))
+	url := urls.URL
+	if in.Deck {
+		if !p.HasDeck {
+			return nil, openOutput{}, store.ErrNoDeck
+		}
+		url = urls.DeckURL
+	}
 	if err := h.open(url); err != nil {
 		return nil, openOutput{URL: url, Opened: false}, fmt.Errorf("open %s: %w", url, err)
 	}
 	return nil, openOutput{URL: url, Opened: true}, nil
+}
+
+// ── deck ──
+
+type deckInput struct {
+	ID     string `json:"id"              jsonschema:"page id whose deck is open in the browser"`
+	Action string `json:"action"          jsonschema:"start | stop | next | prev | goto"`
+	Slide  int    `json:"slide,omitempty" jsonschema:"1-based slide number; required for goto, ignored otherwise"`
+}
+
+type deckOutput struct {
+	Seq     int64  `json:"seq"             jsonschema:"sequence number of the command; every open deck tab applies commands newer than the one it last saw"`
+	Action  string `json:"action"`
+	Slide   int    `json:"slide,omitempty"`
+	DeckURL string `json:"deck_url"`
+}
+
+// handleDeck records a remote command for the page's open deck tabs. The
+// tool is registered only when the store relays commands, but the handler
+// checks again so a call can never reach a store that does not.
+func (h *handlers) handleDeck(
+	ctx context.Context,
+	req *mcp.CallToolRequest,
+	in deckInput,
+) (*mcp.CallToolResult, deckOutput, error) {
+	dc, ok := h.deckController()
+	if !ok {
+		return nil, deckOutput{}, errors.New("this store cannot relay deck commands")
+	}
+	cmd, err := dc.SendDeckCommand(ctx, in.ID, in.Action, in.Slide)
+	if err != nil {
+		return nil, deckOutput{}, err
+	}
+	notify.EmitEvent("present", "info", "deck command: "+cmd.Action, "",
+		map[string]string{"id": in.ID, "action": cmd.Action})
+	return nil, deckOutput{
+		Seq: cmd.Seq, Action: cmd.Action, Slide: cmd.Slide,
+		DeckURL: deckURL(h.url(req, in.ID)),
+	}, nil
 }
 
 // ── doctor ──

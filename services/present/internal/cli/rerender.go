@@ -24,7 +24,9 @@ For each page:
   - if a Doc source (doc.json) exists, the page is re-rendered from that source
     (a true re-render that picks up renderer/template changes);
   - otherwise the stored content.html is upgraded in place via a deterministic
-    legacy-class → wk-* tag rewrite.
+    legacy-class → wk-* tag rewrite;
+  - a slide deck (deck.json) and a structured graph (graph.json) are
+    re-rendered from their sources the same way.
 
 Pages whose markup is already current are left unchanged. Modified pages get a
 bumped version so any open browser tab live-reloads.`,
@@ -70,14 +72,16 @@ const (
 	outcomeFromDoc   = "re-rendered-from-doc"
 	outcomeUpgraded  = "upgraded-legacy-html"
 	outcomeGraph     = "re-rendered-graph"
+	outcomeDeck      = "re-rendered-deck"
 	outcomeUnchanged = "unchanged"
 )
 
 // rerenderOne re-renders a single page and returns its outcome. A page with a
 // persisted Doc is re-rendered from source; otherwise its stored HTML is run
-// through the legacy upgrader. A graph with a persisted source (graph.json) is
-// re-rendered too; legacy JS graphs are left as-is. Files are overwritten and
-// the version bumped only when the rendered output actually changed.
+// through the legacy upgrader. A deck (deck.json) and a graph with a persisted
+// source (graph.json) are re-rendered too; legacy JS graphs are left as-is.
+// Files are overwritten and the version bumped only when the rendered output
+// actually changed.
 func rerenderOne(ctx context.Context, st store.Store, id string) (string, error) {
 	p, err := st.Get(ctx, id)
 	if err != nil {
@@ -88,7 +92,8 @@ func rerenderOne(ctx context.Context, st store.Store, id string) (string, error)
 		newContent string
 		fromDoc    bool
 	)
-	if st.HasDoc(ctx, id) {
+	switch {
+	case st.HasDoc(ctx, id):
 		fromDoc = true
 		raw, err := st.LoadDoc(ctx, id)
 		if err != nil {
@@ -99,8 +104,21 @@ func rerenderOne(ctx context.Context, st store.Store, id string) (string, error)
 			return "", err
 		}
 		newContent = c.HTML
-	} else {
+	case p.HasBrief:
 		newContent = render.UpgradeLegacyHTML(p.Content)
+	}
+
+	newDeck := p.Deck
+	if st.HasDeckSource(ctx, id) {
+		raw, err := st.LoadDeckSource(ctx, id)
+		if err != nil {
+			return "", fmt.Errorf("load deck source: %w", err)
+		}
+		c, err := render.Compile(raw, p.Title)
+		if err != nil {
+			return "", fmt.Errorf("render deck: %w", err)
+		}
+		newDeck = c.HTML
 	}
 
 	newGraph := p.Graph
@@ -123,10 +141,13 @@ func rerenderOne(ctx context.Context, st store.Store, id string) (string, error)
 	if newContent != p.Content {
 		patch.Content = &newContent
 	}
+	if newDeck != p.Deck {
+		patch.Deck = &newDeck
+	}
 	if newGraph != p.Graph {
 		patch.Graph = &newGraph
 	}
-	if patch.Content == nil && patch.Graph == nil {
+	if patch.Content == nil && patch.Deck == nil && patch.Graph == nil {
 		return outcomeUnchanged, nil
 	}
 	if _, err := st.Update(ctx, id, patch); err != nil {
@@ -140,11 +161,20 @@ func rerenderOne(ctx context.Context, st store.Store, id string) (string, error)
 	case patch.Content != nil:
 		outcome = outcomeUpgraded
 	}
-	if patch.Graph != nil {
-		if outcome == "" {
-			return outcomeGraph, nil
-		}
-		outcome += "+graph"
-	}
+	outcome = joinOutcome(outcome, patch.Deck != nil, outcomeDeck, "+deck")
+	outcome = joinOutcome(outcome, patch.Graph != nil, outcomeGraph, "+graph")
 	return outcome, nil
+}
+
+// joinOutcome appends a changed artifact to the outcome: the full name when
+// it is the first change reported, the short suffix after another one.
+func joinOutcome(outcome string, changed bool, alone, suffix string) string {
+	switch {
+	case !changed:
+		return outcome
+	case outcome == "":
+		return alone
+	default:
+		return outcome + suffix
+	}
 }

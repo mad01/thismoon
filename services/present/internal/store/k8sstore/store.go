@@ -100,12 +100,15 @@ func (s *Store) Create(ctx context.Context, d store.Draft) (store.Page, error) {
 			ID:         d.ID,
 			Title:      d.Title,
 			Content:    d.Content,
+			Deck:       d.Deck,
 			Graph:      d.Graph,
 			References: d.References,
 			Version:    1,
 			HasGraph:   d.Graph != "",
 			HasRefs:    len(d.References) > 0,
 			HasDoc:     d.Doc != nil,
+			HasBrief:   d.Content != "",
+			HasDeck:    d.Deck != "",
 			CreatedAt:  now,
 			UpdatedAt:  now,
 			Author:     d.Author,
@@ -113,6 +116,7 @@ func (s *Store) Create(ctx context.Context, d store.Draft) (store.Page, error) {
 			ExpiresAt:  d.ExpiresAt,
 		},
 		Doc:         d.Doc,
+		DeckSource:  d.DeckSource,
 		GraphSource: d.GraphSource,
 	}
 	mint := rec.Page.ID == ""

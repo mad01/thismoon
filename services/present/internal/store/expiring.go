@@ -136,6 +136,31 @@ func (e *expiring) DeleteGraphSource(ctx context.Context, id string) error {
 	return e.Store.DeleteGraphSource(ctx, id)
 }
 
+func (e *expiring) SaveDeckSource(ctx context.Context, id string, src []byte) error {
+	if err := e.live(ctx, id); err != nil {
+		return err
+	}
+	return e.Store.SaveDeckSource(ctx, id, src)
+}
+
+func (e *expiring) LoadDeckSource(ctx context.Context, id string) ([]byte, error) {
+	if err := e.live(ctx, id); err != nil {
+		return nil, err
+	}
+	return e.Store.LoadDeckSource(ctx, id)
+}
+
+func (e *expiring) HasDeckSource(ctx context.Context, id string) bool {
+	return e.live(ctx, id) == nil && e.Store.HasDeckSource(ctx, id)
+}
+
+func (e *expiring) DeleteDeckSource(ctx context.Context, id string) error {
+	if err := e.live(ctx, id); err != nil {
+		return err
+	}
+	return e.Store.DeleteDeckSource(ctx, id)
+}
+
 func (e *expiring) SetShared(ctx context.Context, id string, info *SharedInfo) error {
 	if err := e.live(ctx, id); err != nil {
 		return err
