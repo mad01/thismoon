@@ -1,6 +1,6 @@
 # present
 
-A small CLI + MCP server for serving single-page HTML briefing pages over localhost, and the same binary run as a shared instance others reach by link.
+A small CLI + MCP server for serving single-page HTML briefing pages over localhost, and the same binary run as a shared instance others reach by link. A page can also carry a slide deck beside its brief, or instead of it, for the same material talked through in a room.
 
 Pages are created, read, updated, and listed through the MCP tools; deleting one is a button in the web index rather than a tool. Each page keeps its rendered HTML body next to the Doc JSON it was rendered from. The browser does the assembly: `present serve` returns a chrome-only shell, fetches the page as JSON, and builds the DOM, so there is no template on disk to edit. An open tab reloads itself after an update: a shared instance on the cluster store pushes the new version over server-sent events, and everywhere else the tab polls for it.
 
@@ -24,6 +24,7 @@ Typically `present serve` runs as a background launchd agent (via t-man); Claude
 ```bash
 present version           # bare git sha the binary was built from
 present version -o json   # build metadata: version, commit, tag, build_time - probed by `ralph outdated`
+present deck <id> next    # drive the deck open in the browser: start, stop, next, prev, goto <n>
 ```
 
 | Flag | Env | Default |
@@ -37,6 +38,18 @@ present version -o json   # build metadata: version, commit, tag, build_time - p
 | `--speak-url` (serve only) | `PRESENT_SPEAK_URL` | `http://speak.this`; empty turns read-aloud off |
 
 Pages are read aloud through the speak service. On load a page registers its text with speak and shows an audio bar under the summary: how many parts are ready, a button to prepare them all, and a download of the page's audio once they are; each section gets its own play, state badge, and download. Code blocks and tables are left out. Without speak reachable the page shows no read-aloud controls; with `--speak-url ""` it never asks.
+
+### Slide decks
+
+A page has two possible renditions under one id: the brief, which is the scrollable page above, and a deck, a second Doc whose sections are slides. Either can exist without the other, and nothing is converted between them: an agent writes the deck for the room, shorter than the brief, and the brief stays where the detail lives. `present_create` takes the deck as a `deck` argument beside or instead of `content`, and `present_update` replaces or removes it.
+
+The deck opens at `/p/<id>/deck`; a page with both shows a Slides link in the brief's header and a Brief link in the deck's, and a page with only a deck sends `/p/<id>` there. The title slide comes from the deck's title, summary, meta line, and chips; every section is one slide; the references make the last one. A bar at the bottom holds the arrows, the counter, and a Present button, and the URL's `#3` names the slide, so a link can open the deck on a slide.
+
+Keys: Right, Space, or PageDown for the next slide; Left, PageUp, or Backspace for the previous one; Home and End for the first and last. F or P starts presenting: the header and the bar go away, one slide fills the window at a larger size, and the browser is asked for fullscreen. Escape ends it, as does leaving fullscreen through the browser, and so does F or P pressed in fullscreen; pressed while presenting without fullscreen, which is where a reload leaves you, they ask for fullscreen again. A reload, the one an update triggers included, comes back on the same slide in the same mode: the tab remembers where it was, and a fresh tab starts at the title slide. Read-aloud works on a deck the way it does on a brief: the bar sits on the title slide and every slide carries its own play control. Sharing a page that has a deck to a shared instance built before decks keeps the copy and its link but reports that the deck was dropped; upgrade the instance and share again.
+
+The deck can be driven from outside the tab too. `present deck <id> start|stop|next|prev|goto <n>` and the `present_deck` tool write the page's last command into its directory, and every open tab of the deck follows within a second. Tabs opened later ignore commands sent before they loaded. This works on the local instance only; a shared instance serves decks but takes no remote commands.
+
+Sharing carries the deck: a shared copy has the same renditions as the local page, opens on its brief or its deck the same way, and answers the same keys.
 
 ### Shared mode
 
@@ -82,12 +95,13 @@ The tools write the page store directly, so they work with `present serve` down;
 
 | Tool | Purpose |
 |------|---------|
-| `present_create(title, content, graph?)` | Create a page; returns `{id, url, version, server_running}` |
-| `present_read(id)` | Read a page's rendered title/content/graph/version/url |
-| `present_source(id)` | Get the editable source (Doc JSON + graph JSON) in the format `present_update` accepts; use to mutate a page from a new session |
-| `present_update(id, title?, content?, graph?)` | Patch a page (omitted fields unchanged); bumps version → open tabs auto-reload |
-| `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source |
-| `present_open(id)` | Open a page in the browser (call once per page) |
+| `present_create(title, content?, deck?, graph?, references?)` | Create a page; at least one of `content` and `deck`; returns `{id, url, has_deck, deck_url?, version}` |
+| `present_read(id)` | Read a page's rendered title/content/deck/graph/version/urls |
+| `present_source(id)` | Get the editable source (Doc JSON, deck Doc JSON, graph JSON) in the format `present_update` accepts; use to mutate a page from a new session |
+| `present_update(id, title?, content?, deck?, graph?, references?)` | Patch a page (omitted fields unchanged; `deck: ""` removes the deck); bumps version → open tabs auto-reload |
+| `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source, `has_brief`/`has_deck` say which renditions exist |
+| `present_open(id, deck?)` | Open a page in the browser (call once per page); `deck: true` opens the slide deck |
+| `present_deck(id, action, slide?)` | Drive the open deck: `start`, `stop`, `next`, `prev`, `goto`. Local instance only |
 | `present_share(id, ephemeral?)` | Push a page to the configured shared instance; returns `{url, ephemeral, expires_at, shared_at}`. Registered only when `--shared-url` and `--author-key` are set |
 | `present_doctor()` | Run the `present doctor` checks and return the report |
 
@@ -123,16 +137,19 @@ make -C services/present kind-test   # build, load, apply deploy/overlays/kind, 
 ```
 ~/.config/present/
   pages/<id>/
-    meta.json            # id, title, version, timestamps
-    content.html         # rendered body fragment
+    meta.json            # id, title, version, has_brief, has_deck, timestamps
+    content.html         # rendered body fragment of the brief
     doc.json             # canonical Doc source (when created from Doc JSON)
+    deck.html            # rendered fragment of the slide deck (when the page has one)
+    deck.json            # canonical deck Doc source
+    deck-command.json    # the last 32 remote commands for open deck tabs
     graph.js             # optional cytoscape init script
     graph.json           # canonical graph source (when created from graph JSON)
 ```
 
-`present rerender [id...]` re-renders pages from their stored sources to pick
-up renderer/template changes (e.g. after a webkit bump); pages without sources
-get a deterministic legacy-HTML upgrade instead.
+`present rerender [id...]` re-renders pages, decks included, from their stored
+sources to pick up renderer/template changes (e.g. after a webkit bump); pages
+without sources get a deterministic legacy-HTML upgrade instead.
 
 ## Develop
 

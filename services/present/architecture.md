@@ -38,7 +38,8 @@ internal/cli/        cobra command tree: serve, mcp, rerender, share, unshare,
                      client from --shared-url/--author-key (nil when either
                      is missing)
 internal/store/      Store interface + FS, the filesystem implementation over
-                     pages/<id>/; id generation; expiry wrapper
+                     pages/<id>/; id generation; expiry wrapper; deck.go, the
+                     deck remote control the filesystem store alone provides
 internal/store/k8sstore/  Store over Page custom resources (dynamic client),
                      the CRD (embedded, copied to deploy/base), the page
                      cache, the sweeper
@@ -53,7 +54,8 @@ internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrad
 internal/mdimport/   markdown file to title + Doc + optional graph (goldmark), pure
 internal/mermaid/    Mermaid flowchart source to GraphInput, pure; mdimport calls
                      it for a fenced mermaid block
-internal/server/     HTTP handlers per mode; embeds shell.html, index_shell.html,
+internal/server/     HTTP handlers per mode (deck.go holds the deck shell and
+                     command routes); embeds shell.html, index_shell.html,
                      shared_index_shell.html, app.js, index.js
 internal/mcpserver/  MCP wiring and the present_* tools, one tool set per mode
 kit/notify           best-effort event emit to events.this (shared)
@@ -80,6 +82,17 @@ rerender` pushes a renderer or webkit change through existing pages by
 re-rendering from those sources (pages without sources get a deterministic
 legacy-HTML upgrade).
 
+A page can carry a second rendition, the deck (docs/adr/0019). The tools take
+it as `deck`, a Doc of its own whose sections are slides, and compile it
+through the same `Compile` step to `deck.html` with its source in
+`deck.json`; nothing is derived from the brief, and a page may hold the
+brief, the deck, or both, never neither. The two share the id, the title,
+the one graph, the references, and the share record, so `present_source`
+hands both Docs back, `present rerender` re-renders both, and one share
+pushes both (the bundle carries `deck` and `deck_source` beside `content`
+and `doc`). The store persists `has_brief` and `has_deck` in the metadata
+so listings can say which renditions exist without loading a body.
+
 The exception is the markdown import, a local-mode route the index offers as
 a button and a drop target. The browser reads the file and posts it to
 `POST /api/import`; `internal/mdimport` maps the markdown onto a title and
@@ -105,6 +118,28 @@ references, and read-aloud. It then watches the page's version and reloads
 when it moves, so an update reaches every open tab. The index works the same
 way: `GET /` serves `index_shell.html` and `index.js` builds the list from
 `GET /api/pages`. There is no server-side template layer.
+
+The deck view is the same shell and script at `GET /p/{id}/deck`, told apart
+by its own URL. `app.js` splits the compiled `deck` fragment into slides in
+the browser: the nodes before the first section make the title slide, every
+section is one slide, the table of contents is dropped, and the references
+close the deck. One slide shows at a time, the URL hash names it, the keys
+move (Right, Space, PageDown; Left, PageUp, Backspace; Home, End), and F or
+P starts presenting, a class on the document that hides the chrome and lets
+the slide fill the window, with browser fullscreen requested on top when a
+key or click allows it. The graph initialises the first time its slide
+shows, because Cytoscape sizes itself from a visible container. A deck-only
+page redirects `GET /p/{id}` to the deck, and a page without a deck redirects
+the deck route to the brief.
+
+Remote control keeps the two processes as separate as everything else:
+`present_deck` and `present deck` write the page's `deck-command.json`
+through `store.DeckController`, which only the filesystem store implements,
+and a visible deck tab polls `GET /p/{id}/deck/command` once a second,
+records the sequence number it first sees, and applies every later one
+(start, stop, next, prev, goto). The route and the tool exist only when the
+store relays commands, so a shared instance, whose store is wrapped or
+lives in the cluster, serves decks with the keys alone.
 
 Read-aloud is the page view's one dependency outside present: the speak
 service named by `--speak-url` (default `http://speak.this`), which the page
@@ -155,8 +190,11 @@ instance and clears the record.
 ~/.config/present/pages/<id>/
   meta.json      id, title, version, has_* flags, timestamps, and the
                  shared record once the page was pushed somewhere
-  content.html   rendered HTML body fragment
+  content.html   rendered HTML body fragment of the brief
   doc.json       canonical Doc source (when authored as Doc JSON)
+  deck.html      rendered fragment of the deck (when has_deck)
+  deck.json      canonical deck Doc source
+  deck-command.json  the last 32 remote commands for open deck tabs
   graph.js       rendered Cytoscape init (when has_graph)
   graph.json     canonical graph source (when authored as JSON)
   refs.json      optional [{title,url},...]
@@ -210,7 +248,10 @@ touches present.
 ## Interfaces
 
 Web: `GET /` (index shell), `GET /api/pages`, `GET /index.js`, `GET /p/{id}`
-(page shell), `GET /api/p/{id}` (with a `share` block in local mode),
+(page shell; 302 to the deck for a deck-only page), `GET /p/{id}/deck` (the
+deck shell; a page without a deck redirects to the brief), `GET /p/{id}/deck/command` (the last remote
+command, local filesystem store only), `GET /api/p/{id}` (with a `share`
+block in local mode and the `deck`, `has_deck`, and `deck_control` fields),
 `GET /app.js`, `GET /p/{id}/version`, `DELETE /p/{id}` (the only delete
 surface), `POST /api/import` (local mode; body `{"name", "markdown"}` as
 JSON, answers `201 {"id", "url"}`, 415 without the JSON content type, 403
@@ -222,13 +263,14 @@ body `{"ephemeral": bool}`, answers the share block, 404 for an unknown page,
 `GET /webkit/version` from the webkit Go package.
 
 CLI: `present serve`, `present mcp`, `present rerender [id...]`,
+`present deck <id> <start|stop|next|prev|goto> [slide]`,
 `present share <id> [--ephemeral]`, `present unshare <id>`,
 `present key new`, `present version [-o json]`.
 
 MCP tools: `present_create`, `present_read`, `present_source`,
-`present_update`, `present_list`, `present_open` (macOS `open`), and
-`present_share` when a shared instance is configured. Deliberately no delete
-tool.
+`present_update`, `present_list`, `present_open` (macOS `open`),
+`present_deck` on the local filesystem store, and `present_share` when a
+shared instance is configured. Deliberately no delete tool.
 
 Shared mode drops `GET /`'s index for a static how-to page, drops
 `GET /api/pages` and `GET /index.js`, and adds `POST /api/pages` (create

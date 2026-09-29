@@ -2,7 +2,8 @@
 
 present serves scrollable briefing pages: an agent publishes one as Doc JSON
 through the present_* MCP tools, the renderer compiles it to HTML at
-authoring time, and an open tab follows later updates live.
+authoring time, and an open tab follows later updates live. A page can carry
+a slide deck beside its brief, or instead of it, at /p/<id>/deck.
 
 ## how it runs
 
@@ -26,8 +27,11 @@ Local pages live under pages/<id>/ in the workdir: {{.StorePath}} on a fresh
 install, ~/.config/present where a pages/ directory already exists (pages are
 never migrated). doc.json and graph.json beside the rendered content.html are
 the editable sources present_source returns, present_update takes back, and
-`present rerender` re-renders from; a raw-HTML page has neither. A shared
-instance keeps pages as Page resources, so `kubectl get pages` is its store.
+`present rerender` re-renders from; a raw-HTML page has neither. A deck adds
+deck.html and deck.json the same way, and deck-command.json holds the last
+remote command (present_deck, `present deck`) that open deck tabs poll. A
+shared instance keeps pages as Page resources, so `kubectl get pages` is its
+store.
 
 ## failure modes
 
@@ -48,6 +52,13 @@ so a typoed t leaves a gap. Read-aloud goes through speak (--speak-url, default
 http://speak.this; empty turns it off) and skips code and tables: play buttons
 but no audio bar mean registration in flight, nothing speakable, or speak
 refused it and the page reads live; no buttons at all mean speak is down.
+
+A deck tab that ignores `present deck` or present_deck: the MCP and serve
+resolved different workdirs (same check as above), the tab was opened after
+the command was sent (only later commands apply), or the deck is on a shared
+instance, which has no remote control; the keys still work there. A slide
+that overflows or scrolls carries too much: the skill's deck rules say a
+heading and 3 to 5 short items or two sentences per slide.
 
 ## sharing a page
 
