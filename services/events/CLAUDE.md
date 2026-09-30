@@ -40,9 +40,9 @@ page or any other producer. Every write funnels through serve, so there are no
 file locks.
 
 Producers reach serve three ways: the `events` CLI (`events emit`), the
-`events_emit` MCP tool, or a direct `POST /api/events`, the path other tools
-in this repo use, since they can't import this module's `internal/` packages
-across component boundaries.
+`events_emit` MCP tool, or a direct `POST /api/events`. That's the path other
+tools in this repo use, since they can't import this module's `internal/`
+packages across component boundaries.
 
 ## Data model & storage
 
@@ -128,7 +128,7 @@ leaked before the `testing.Testing()` guards existed). `events purge --source X
   `{id, url}`: records an event; `source` and `title` are required.
 - `events_doctor()` → the `kit/doctor` report: run the same checks as `events
   doctor` (serve reachable, store readable, no version skew) and return them as
-  JSON, for a client that can call a tool but has no shell.
+  JSON. It's for a client that can call a tool but has no shell.
 - No `events_purge` tool. Purge is deliberately CLI + API only, so deletion
   stays human-triggered.
 
