@@ -268,26 +268,6 @@ theme). Do not add those controls manually.
   themes. `graph.go` emits one `node[tone="x"]` selector per tone the graph
   uses, after the type selectors so the tone wins, and refuses an unknown
   tone. Module `color` stays the border-only index it was.
-- **Edge labels size the rank gap in app.js.** The dagre and ELK adapters
-  pass node sizes to the engines but never edge label sizes. So the
-  `cytoscape()` shim holds the page's layout back (`name: 'null'` at
-  creation) and hands the engine and direction to `runLayout`. Its first
-  pass places the nodes and then measures the widest and tallest edge label
-  with `boundingBox({includeLabels: true})`. That measurement is zero before
-  any layout, when every edge has zero length. When it widens the rank gap,
-  a second pass runs. `rankGap` widens `rankSep` (dagre) and
-  `nodeNodeBetweenLayers` (ELK layered) to the label's width in LR or height
-  in TB, plus clearance. The template wraps edge labels at 100px so that gap
-  stays bounded. The engine control goes through the same `runLayout`.
-- **Blocked edges are routed around the boxes.** Cytoscape draws every edge
-  as one curve, so an edge spanning several ranks cuts through the boxes
-  between them and drops its label on one. After the first pass, `runLayout`
-  finds every edge whose straight line crosses a node. The second pass runs
-  without those edges: dagre otherwise threads dummy nodes beside the column
-  for each and bends it. Then `routeAroundNodes` restyles each as three
-  `segments`: out to the side with more room, along the column, back in. The
-  label lands on the outer segment. Cytoscape's `taxi` style cannot do this;
-  a U-turn between two nodes on the same axis collapses to a straight line.
 
 ### Webkit
 

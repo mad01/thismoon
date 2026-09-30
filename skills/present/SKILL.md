@@ -410,7 +410,7 @@ Use tones for meaning, not decoration: two or three per graph, the same tone for
 | `consumes` | Solid line (explicit) |
 | `publishes` | Dashed line |
 
-Edges can have an optional `label` string. Long labels wrap at about the width of a node box. The layered layouts (dagre, elk) widen the gap between ranks so the labels fit between the boxes instead of under them. An edge whose straight line would cut through other boxes is routed around them, with its label on the outer segment.
+Edges can have an optional `label` string. Keep it to a few words: labels sit on the edge and are not accounted for by the layout.
 
 ### Edge weight and flow
 

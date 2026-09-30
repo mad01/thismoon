@@ -135,7 +135,6 @@ function initGraph() {
 {{- end}}
       { selector: 'edge[label]', style: {
           'label': 'data(label)', 'font-size': '10px', 'color': c.leafText,
-          'text-wrap': 'wrap', 'text-max-width': '100px',
           'text-background-color': c.bg, 'text-background-opacity': 0.8,
           'text-background-padding': '2px'
       }}
