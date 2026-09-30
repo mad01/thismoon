@@ -1,6 +1,6 @@
 ---
 name: humanizer
-version: 2.12.0
+version: 2.13.0
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
@@ -35,6 +35,7 @@ Always start by calling the local `humanizer` MCP tools — they do the pattern 
 
 1. Call `humanizer_detect` on the input text. Returns a list of findings with `rule_id` (e.g. `Humanizer.Sycophancy`), `severity` (`suggestion|warning|error`), `line`, `match`, and a `message` that suggests the fix. Use `min_severity=error` when the input is long and you want only the highest-confidence tells first.
 2. Call `humanizer_detect_statistical` on the same text for whole-sample signals that span rules can't see: robotically uniform sentence length, low contraction rate, missing semicolons in long text, low type-token ratio, **any em-dash in short text** (catches the single-dash Slack-draft case), heading-heavy outline scaffolding, and anaphora (3+ consecutive sentences with the same opening word). Most checks gate on a minimum sample size, so very short snippets return little. Run it alongside `humanizer_detect` for full coverage.
+   Findings in the `clarity` category (SentenceLength, ParagraphLength, ParagraphReadingEase, PlainWords, AcronymFirstUse) are readability fixes, not AI tells. Apply them when the goal is a clearer document; skip them when the user only asked for the AI-tell pass.
 3. If the user provided their own writing sample for voice matching, call `humanizer_voice_diff(draft=input_text, sample=user_sample)`. The returned deltas tell you which metrics to move — sentence length, contraction rate, em-dash density, hyphenated-pair rate, Flesch reading ease.
 4. If a finding is ambiguous, call `humanizer_rules_explain(rule_id)` for the rationale and a before/after example.
 5. Call `humanizer_lint` to catch invisible watermark carriers — zero-width and format Unicode, bidi overrides, tag characters, and exotic space homoglyphs — that the prose rules can't see. These often ride along in pasted or model-generated text. When it reports carriers, call `humanizer_fix(text)` and use its `cleaned_text` as the base you rewrite from (the default is non-intrusive; it strips invisibles and normalizes spaces without changing visible characters). For statistical (token-sampling) watermarks a scrub can't reach, `humanizer_rewrite(text, strength)` returns a rewrite prompt you then apply.
