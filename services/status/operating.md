@@ -1,6 +1,6 @@
 # operating status
 
-status is the fleet status page: one process, `status serve`, discovers every
+status is the fleet status page. One process, `status serve`, discovers every
 t-man-managed launchd job, probes it once a minute, and serves a dashboard
 with a 30-day uptime strip per service (default {{.BaseURL}}). It observes
 only; starting, restarting, and removing services stays with t-man.
@@ -16,7 +16,7 @@ port gets a `launchctl print` PID check. Every 10 minutes the poller also
 fetches each up service's `/version` and runs the on-disk binary's own
 `version` command, comparing the running build against the installed one.
 Machines usually also route http://status.this to the dashboard via the local
-domain front door; if the localhost port answers but the .this host does not,
+domain front door. If the localhost port answers but the .this host does not,
 the router is the problem, not this service.
 
 ## where config and state live
@@ -42,7 +42,7 @@ t-man, `status serve` in a spare terminal also works.
 
 A service shown down that is actually up: the probe target does not match how
 the service really listens. The HTTP probe hits the `--port` value found in
-the plist, so a port moved in machine-private config, or a service that
+the plist. So a port moved in machine-private config, or a service that
 answers its real routes but returns 500 on `/`, reads as down. Check the
 plist's ProgramArguments against the port the service binds.
 

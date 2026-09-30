@@ -4,9 +4,9 @@
 
 status is one Go process, `status serve`, run as a launchd agent under t-man.
 It listens on 127.0.0.1:7426 and is reached as `http://status.this/` through
-d-man. Inside it, two halves share a snapshot: a poller (`Monitor`) that
+d-man. Inside it, two halves share a snapshot. A poller (`Monitor`)
 discovers, probes, and records every t-man-managed service once a minute, and
-HTTP handlers that serve the latest snapshot to the dashboard. The boundary
+HTTP handlers serve the latest snapshot to the dashboard. The boundary
 is observation only; starting, restarting, and removing services stays with
 t-man, and status never probes anything that is not a local t-man-managed
 launchd job.
