@@ -1,0 +1,14 @@
+# humanizer-id: Humanizer.SentenceLength
+# humanizer-name: Long sentence
+# humanizer-category: clarity
+# humanizer-summary: A sentence that runs past 30 words.
+# humanizer-rationale: A reader holds one sentence in working memory at a time. Past about 30 words the clauses stop fitting and the sentence gets re-read. Split at the joint between two ideas, usually a comma or an "and".
+# humanizer-before: When the build finishes and the service has restarted, open the settings page, choose the account you want to connect, paste the token that the provider issued, and then confirm the change before the session expires.
+# humanizer-after: When the build finishes and the service has restarted, open the settings page. Choose the account you want to connect and paste the token the provider issued. Confirm before the session expires.
+# humanizer-reference: https://vale.sh/explorer/Std (Std.Readability.SentenceLength)
+extends: occurrence
+message: "Long sentence (%v words). Split it at the joint between two ideas."
+level: warning
+scope: sentence
+max: 30
+token: '[\w''./-]+'

@@ -19,7 +19,7 @@ type ruleSummary struct {
 }
 
 type rulesListInput struct {
-	Category string `json:"category,omitempty" jsonschema:"optional: filter by category (content, language, style, communication)"`
+	Category string `json:"category,omitempty" jsonschema:"optional: filter by category (content, language, style, communication, clarity)"`
 }
 
 type rulesListOutput struct {
@@ -49,7 +49,7 @@ func registerRulesTools(s *mcp.Server) {
 		Name: "humanizer_rules_list",
 		Description: "List every supported humanizer detection rule with its ID, category, default severity, and a one-line summary. " +
 			"Use to discover what humanizer_detect can find, or to build a targeted rules=[...] filter. " +
-			"Categories: content (significance inflation, promo language), language (AI vocab, negative parallelism), style (em-dashes, bold), communication (sycophancy, filler).",
+			"Categories: content (significance inflation, promo language), language (AI vocab, negative parallelism), style (em-dashes, bold), communication (sycophancy, filler), clarity (long sentences, dense paragraphs, plain words).",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(false),
 			ReadOnlyHint:  true,

@@ -7,7 +7,7 @@
 # humanizer-after: The cross functional team delivered a high quality, data driven report on our client facing tools.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Hyphenated_word_pair_overuse
 extends: occurrence
-message: "Hyphenated-pair density is high (%s hits in this block) — vary spacing, consistent hyphenation reads as AI."
+message: "Hyphenated-pair density is high (%v hits in this block) — vary spacing, consistent hyphenation reads as AI."
 level: suggestion
 max: 3
 token: '\b(?:third-party|cross-functional|client-facing|data-driven|decision-making|well-known|high-quality|real-time|long-term|end-to-end|detail-oriented|results-driven|forward-thinking|cutting-edge|best-in-class|mission-critical|action-oriented|solution-focused)\b'

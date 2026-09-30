@@ -1,0 +1,50 @@
+# humanizer-id: Humanizer.PlainWords
+# humanizer-name: Plain words
+# humanizer-category: clarity
+# humanizer-summary: Formal or long words with an everyday equivalent (ascertain, commence, sufficient, numerous).
+# humanizer-rationale: The formal word is not wrong, it is slower. Every reader knows "start"; some readers pause on "initiate". Plain-language guides from Microsoft, Red Hat and the US government all swap these the same way. Words that AIVocabulary already flags (utilize, facilitate, leverage) are left out so one word gets one finding.
+# humanizer-before: Ascertain that sufficient capacity exists, then initiate the rollout approximately one hour later and assist the numerous teams that depend on it.
+# humanizer-after: Check that there is enough capacity, then start the rollout about an hour later and help the many teams that depend on it.
+# humanizer-reference: https://vale.sh/explorer/RedHat (RedHat.SimpleWords)
+extends: substitution
+message: "Plain word: use '%s' instead of '%s'."
+level: suggestion
+ignorecase: true
+action:
+  name: replace
+swap:
+  'accomplish(?:es|ed)?': do
+  'additional': extra
+  'the aforementioned': those
+  'amongst': among
+  'approximately': about
+  'ascertain(?:s|ed)?': find out
+  'assistance': help
+  'commence(?:s|d)?': start
+  'consequently': so
+  'demonstrate(?:s|d)?': show
+  'exhibit(?:s|ed)?': show
+  'expedite(?:s|d)?': speed up
+  'frequently': often
+  'furthermore': also
+  'hence': so
+  'henceforth': from now on
+  'initiate(?:s|d)?': start
+  'insufficient': not enough
+  'moreover': also
+  'nevertheless': even so
+  'notwithstanding': despite
+  'numerous': many
+  'obtain(?:s|ed)?': get
+  'possess(?:es|ed)?': have
+  'regarding': about
+  'remainder': rest
+  'reside(?:s|d)? in': is in
+  'subsequently': later
+  'sufficient': enough
+  'therefore': so
+  'thus': so
+  'transmit(?:s|ted)?': send
+  'upon': on
+  'utili[sz]ation': use
+  'whilst': while
