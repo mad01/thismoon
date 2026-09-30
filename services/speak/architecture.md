@@ -5,15 +5,16 @@
 speak is two independent surfaces built from one component. `speak serve`, a
 t-man launchd agent on port 7425 behind `http://speak.this/`, serves the
 document audio routes present pages register with and play from, an
-OpenAI-style `/v1/audio/speech`, and a static landing page; audio plays in
+OpenAI-style `/v1/audio/speech`, and a static landing page. Audio plays in
 the browser on present, mostly from a disk cache serve fills ahead of
 playback. `speak mcp`
 is a stdio MCP server that plays audio on the machine's speakers via
 `afplay`; it needs the provider but not serve. Both synthesize
-through the TTS provider a config file selects: the local Kokoro engine
-(mlx-audio on `127.0.0.1:8765`, a recipe-managed sidecar in the consuming repo,
-docs/adr/0006) by default, or OpenRouter, OpenAI, a LiteLLM proxy or the
-Gemini Developer API. The release artifact here is the Go program alone.
+through the TTS provider a config file selects. The provider is the local
+Kokoro engine (mlx-audio on `127.0.0.1:8765`, a recipe-managed sidecar in the
+consuming repo, docs/adr/0006) by default. It can also be OpenRouter, OpenAI,
+a LiteLLM proxy or the Gemini Developer API. The release artifact here is the
+Go program alone.
 
 ## Structure
 
@@ -79,8 +80,8 @@ generating or retrying. When parts failed, it shows a Retry button
 the ready parts into one download for the whole page or one section
 (`?section=N`).
 
-Why ahead of time: remote speech models answer with the whole clip at once
-and take seconds to tens of seconds per part (Gemini 3.1 Flash TTS through
+Why ahead of time: remote speech models answer with the whole clip at once.
+They take seconds to tens of seconds per part (Gemini 3.1 Flash TTS through
 OpenRouter measured 21.6s for 120 words), so synthesizing on play means
 waiting on play. From the cache a part answers in about a millisecond.
 
@@ -111,16 +112,17 @@ error body naming the reason and emits an `error` event through
 `kit/notify`. `GET /enginez` reports that health, running a test synthesis
 when nothing fresh is recorded. `GET /healthz` proves only that serve is up.
 
-MCP path: `speak_text`/`speak_file` extract plain text from the input,
+MCP path: `speak_text`/`speak_file` extract plain text from the input and
 split it into sentences (`chunk.SplitSentences`, hand-rolled because Go
-`regexp` has no lookbehind) and group them into parts with `chunk.Live`: one
-sentence, then up to 250 characters, then up to 600, never across a file
-section. They synthesize the first part before replying (so a backend that
-cannot speak comes back as an `UNAVAILABLE` error reply) and start a worker
-goroutine that keeps the next two parts synthesizing while one plays, writes
-each clip under the state directory's `audio/`, and plays it with `afplay`.
-Pause sends `SIGSTOP` to the afplay child and releases the lock; resume
-re-acquires it and sends `SIGCONT`; stop saves the part index so resume
+`regexp` has no lookbehind). They then group the sentences into parts with
+`chunk.Live`: one sentence, then up to 250 characters, then up to 600, never
+across a file section. They synthesize the first part before replying (so a
+backend that cannot speak comes back as an `UNAVAILABLE` error reply). They
+also start a worker goroutine that keeps the next two parts synthesizing
+while one plays, writes each clip under the state directory's `audio/`, and
+plays it with `afplay`.
+Pause sends `SIGSTOP` to the afplay child and releases the lock. Resume
+re-acquires it and sends `SIGCONT`. Stop saves the part index so resume
 restarts the worker from there, cancelling syntheses in flight (a stop
 during the first part's synthesis replies `Stopped before the first part was
 ready.`).

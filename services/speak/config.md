@@ -102,8 +102,8 @@ it reaches the browser or afplay. A provider whose base URL is not loopback
 is remote: the text being read leaves this machine. There is no automatic
 fallback from one provider to another.
 
-One attempt at a remote provider may take up to 90 seconds, since remote
-speech models answer with the whole clip at once and can take tens of
+One attempt at a remote provider may take up to 90 seconds. That is because
+remote speech models answer with the whole clip at once and can take tens of
 seconds for a long part. They also stall now and then at random, so a remote
 request that times out or gets a server error is retried once, making up to
 two attempts. A caller with a shorter deadline, such as a 10-second health
@@ -137,7 +137,7 @@ Kokoro default to every provider) becomes the provider's default.
 A file that exists but cannot be parsed, has an unknown field (a key pasted
 in as `api_key`, say), or selects a provider with no block is not ignored.
 speak starts anyway, logs the problem to stderr, and fails every synthesis
-with that reason as a `config` error: the landing page's engine line, the
+with that reason as a `config` error. The landing page's engine line, the
 speech endpoint, the MCP tools and `speak doctor` all show it. The same goes for a
 block that cannot be used, such as one whose key variable is unset. speak
 never falls back to another provider quietly.
@@ -158,7 +158,7 @@ subcommands.
   probe for the web surface.
 - `--state-dir` (string; env `SPEAK_STATE_DIR`): directory holding speak's
   state. `speak mcp` writes per-part audio files under `audio/` and the
-  cross-process `playback.lock`; `speak serve` keeps its audio cache under
+  cross-process `playback.lock`. `speak serve` keeps its audio cache under
   `cache/`, deleting clips unused for 30 days and then the least recently
   used while the cache is over 2 GiB.
 
@@ -167,9 +167,9 @@ subcommands.
 1. `SPEAK_STATE_DIR`, when set.
 2. `~/.local/share/speak`, when it holds an `audio/` directory, so an install
    that has actually played something keeps its audio and lock across
-   upgrades. `audio/` is what settles it, not the parent directory:
-   the mlx-audio engine installs its virtualenv and logs under the same path,
-   so on a machine with the TTS engine but no playback history the directory
+   upgrades. `audio/` is what settles it, not the parent directory. The
+   mlx-audio engine installs its virtualenv and logs under the same path. So
+   on a machine with the TTS engine but no playback history the directory
    exists while the state does not, and that machine lands in (3).
 3. `$XDG_STATE_HOME/speak` when `XDG_STATE_HOME` holds an absolute path,
    otherwise `~/.local/state/speak`. This is where a fresh install lands.
@@ -199,7 +199,7 @@ an error, never a path relative to the working directory.
 Neither the speak-web launchd agent nor an MCP host carries a login shell's
 environment. The speak recipe's `speak-env.sh` wrapper bridges that: it runs
 `speak config env` (the names of the variables the active provider reads,
-nothing for the local engine), pulls exactly those from the ralph-managed
+nothing for the local engine). It pulls exactly those from the ralph-managed
 secrets file (`~/.config/ralph/secrets.sh`, legacy `~/.secrets.sh`), and
 execs speak with its arguments. speak-web starts through it; point an MCP
 registration at it as well. Pick the provider with the file or
@@ -218,8 +218,8 @@ allowed origin is reflected back in `Access-Control-Allow-Origin` alongside
 route including the `OPTIONS` preflight. A request with no `Origin` header
 is refused the same way when the browser marks it cross-site
 (`Sec-Fetch-Site: cross-site`) and it is not a top-level load of the page
-(`GET /`), such as a foreign page's `<audio>` or `<iframe>` pointing at an
-audio URL. Same-origin fetches, following a
+(`GET /`). One example is a foreign page's `<audio>` or `<iframe>` pointing
+at an audio URL. Same-origin fetches, following a
 link to the page, curl and the CLI are unaffected.
 
 The allowlist is fixed: no flag or environment variable widens it.

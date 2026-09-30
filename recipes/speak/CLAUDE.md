@@ -30,7 +30,7 @@ ralph merges the recipe with the identity `thismoon/speak`. The package
   repo's speak MCP registration. It runs `speak config env` (the names of the
   variables the active provider reads; nothing for the local engine), pulls
   exactly those from `~/.config/ralph/secrets.sh` (legacy `~/.secrets.sh`) in
-  a subshell, and execs `~/code/bin/speak` with its arguments, the same
+  a subshell, and execs `~/code/bin/speak` with its arguments. This is the same
   one-variable-at-a-time pattern as present's `present-shared-env.sh`. Select
   the provider with the config file or `SPEAK_PROVIDER`: a `--provider` flag
   after the subcommand is invisible to the wrapper's query.
@@ -63,7 +63,7 @@ Machine-specific wiring is deliberately not here (see `docs/adr/0006`):
 ## sandbox-watch
 
 `sandbox-watch` is the fleet-wide notifier for **every** sandboxed t-man
-service, which is why it lives with speak-web rather than with the engine: it
+service, which is why it lives with speak-web rather than with the engine. It
 is wanted on every machine that runs a sandboxed service. One watcher covers
 all of them — when another t-man service gets a `--sandbox-profile`, append
 its process name to `SANDBOX_WATCH_PROCESSES` in this recipe and give the
@@ -71,11 +71,11 @@ service an `--extra-log sandbox=...` pointing at the denials log.
 
 The watch list is deliberately a plain hardcoded default: extra names on a
 machine that never runs those services are harmless (they simply never match).
-Each entry is matched as a **prefix of the denial's process name** — `python`
-catches `python3.14`, and nothing matches on the denial's target path (an
+Each entry is matched as a **prefix of the denial's process name**. `python`
+catches `python3.14`, and nothing matches on the denial's target path. (An
 earlier version substring-matched the whole message, so unrelated system
 daemons leaked in whenever a watched name appeared inside a path or property
-name).
+name.)
 
 ### Triaging a denial
 
@@ -88,10 +88,10 @@ When `sandbox-watch` notifies (or you read `sandbox-denials.log`), the line is
 2. **Expected/benign** — an app probing a credential/config path it never uses
    (dotenv loaders, AWS/GCP SDK credential chains, `~/.netrc` lookups all scan
    every candidate as discovery). The block is correct; the notification is
-   noise. Add an ERE pattern to the ignore list — fleet-wide defaults live in
-   `sandbox-ignore.conf` beside the script (edit via a commit to this repo);
-   machine-specific silences go in `~/.config/sandbox-watch/ignore.conf`
-   (never edit the sources-cache copy in place — local edits dirty the clone
+   noise. Add an ERE pattern to the ignore list. Fleet-wide defaults live in
+   `sandbox-ignore.conf` beside the script (edit via a commit to this repo).
+   Machine-specific silences go in `~/.config/sandbox-watch/ignore.conf`
+   (never edit the sources-cache copy in place, local edits dirty the clone
    and die on the next sync). The next poll logs matches `IGNORED` and stops
    notifying. Keep the list tight and comment every entry
    with *why it's benign*; a silenced credential read you didn't expect is
@@ -103,7 +103,7 @@ When `sandbox-watch` notifies (or you read `sandbox-denials.log`), the line is
 
 Rule of thumb: **never silence or allow a denial you can't explain.** The safe
 default is to leave it alerting until you understand it. `(with no-report)` in
-a profile is the heavier alternative to `sandbox-ignore.conf` — it stops the
+a profile is the heavier alternative to `sandbox-ignore.conf`. It stops the
 denial reaching the log at all, so prefer the ignore-list (keeps an `IGNORED`
 audit line) unless a denial is so frequent it floods the log.
 

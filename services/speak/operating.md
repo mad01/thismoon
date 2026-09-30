@@ -4,7 +4,7 @@ speak turns text and markdown into audio through a TTS provider: the local
 Kokoro engine (mlx-audio) by default, or OpenRouter, OpenAI, a LiteLLM
 proxy or the Gemini API. It is two independent surfaces in one binary: `speak serve` is the
 audio API present pages read aloud through plus a CORS-guarded `/v1/audio/speech`,
-with audio playing in the browser; `speak mcp` is a stdio MCP server that plays
+with audio playing in the browser. `speak mcp` is a stdio MCP server that plays
 audio on the machine's speakers with afplay. Both need the provider; neither needs the other.
 
 ## how it runs
@@ -16,12 +16,12 @@ local engine at http://127.0.0.1:8765, a separate process supervised as the
 t-man agent speak-tts. Remote providers read their key from an environment
 variable; speak-web and MCP hosts start through the recipe's speak-env.sh,
 which pulls it from the secrets file. Machines
-usually also route http://speak.this to serve via the local domain front door;
-if the localhost port answers but the .this host does not, the router is the
+usually also route http://speak.this to serve via the local domain front door.
+If the localhost port answers but the .this host does not, the router is the
 problem, not this service.
 
 serve prepares a registered page ahead of playback: a present page registers
-its text on load, and Generate all TTS for page or a play queues its parts
+its text on load. Generate all TTS for page or a play queues its parts
 (up to 600 characters each, three at a time) into a disk cache. The newest
 request goes first. Playing a part that is not ready moves it to the front
 and waits for it. A remote model answers a part in seconds to tens of
@@ -29,8 +29,8 @@ seconds, all at once, so audio that was not prepared starts late.
 
 `speak mcp` does not go through serve or its cache. Playback lives in the mcp
 process itself: each tool call groups the text's sentences into parts (one
-sentence first, then up to 250 and 600 characters), synthesizes the first
-part before replying, and plays each with afplay while the next two
+sentence first, then up to 250 and 600 characters). It synthesizes the first
+part before replying and plays each with afplay while the next two
 synthesize. The only dependency the two surfaces share is the provider.
 
 ## where state lives
@@ -40,7 +40,7 @@ Disk state lives under the state directory (--state-dir, SPEAK_STATE_DIR):
 ~/.local/state/speak. serve writes `cache/`, one audio file per part, named by
 a hash of provider, model, voice, speed and text. At serve start and daily it
 deletes files unused for 30 days, then the least recently used until the
-cache is under 2 GiB; serve's startup log line names the directory. mcp
+cache is under 2 GiB. serve's startup log line names the directory. mcp
 writes per-part audio in `audio/` (reaped after 24 hours on start) and
 `playback.lock` plus a `.owner` sidecar naming the current lock holder.
 
@@ -53,12 +53,12 @@ playback.
 ## failure modes
 
 Start with `speak doctor`, one line per check, FAIL lines naming the cause.
-config parses the file; one provider line per block fails for the active
-block's problem (an unset key, say) and only notes an inactive one's;
-tts-engine-reachable pings a local engine; tts-synthesis speaks a short test
-phrase, since a running provider can still fail to speak; voices checks the
-default voice is one the provider offers; store-readable opens the state
-dir; service-reachable and version-skew probe the optional web surface at
+config parses the file. One provider line per block fails for the active
+block's problem (an unset key, say) and only notes an inactive one's.
+tts-engine-reachable pings a local engine. tts-synthesis speaks a short test
+phrase, since a running provider can still fail to speak. voices checks the
+default voice is one the provider offers. store-readable opens the state
+dir. service-reachable and version-skew probe the optional web surface at
 {{.BaseURL}}. Only those last two failing leaves the MCP tools able to
 speak. The `speak_doctor` tool returns the same checks as JSON.
 
@@ -89,7 +89,7 @@ still show every failure.
 
 "did not answer within 1m30s" (30s on the local engine, less under a
 caller's shorter deadline) means the provider was reached but was slow, not
-that the network failed; "not reachable" is a failed connection. A remote
+that the network failed. "not reachable" is a failed connection. A remote
 request that timed out is retried once, and " (2 attempts)" at the end means
 it stalled twice in a row. Stalls are usually random: a background part
 then gets up to 3 attempts of its own, and playing the part again or
@@ -114,18 +114,18 @@ read-aloud and the speech proxy is down. t-man supervises it as speak-web:
 `t-man restart speak-web`. Playback tools are unaffected.
 
 A page's speech request gets 403 or a CORS error: serve answers only an
-Origin whose host is loopback or ends in .this, and refuses a cross-site
+Origin whose host is loopback or ends in .this. It refuses a cross-site
 request that sends no Origin unless it opens speak's own landing page. Open
 the requesting page through its .this host or its localhost port; the
 allowlist has no override. curl and the CLI send no Origin and are unaffected.
 
 Calls succeed but nothing is audible: afplay plays on the system default
-output device, so check the volume and output device, then `speak_status`
+output device. So check the volume and output device, then `speak_status`
 for tts_health and `last_result`, the error that ended the worker.
 
 BUSY reply: one playback session at a time, serialized across processes by a
 lock on `playback.lock`; a second caller gets "BUSY | ..." naming the holder.
-Pause releases the lock and resume re-acquires it; stop saves the part
+Pause releases the lock and resume re-acquires it. Stop saves the part
 index for resume and cancels syntheses in flight, and a stop during the
 first part's synthesis replies "Stopped before the first part was ready."
 Clear a stuck session by stopping it from the owning
