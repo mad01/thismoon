@@ -4,9 +4,9 @@ macOS open bridge: a CLI and MCP server over the system `open` command.
 
 Opening things out of an agent session used to mean a shell call: a
 permission prompt and hand-quoted paths for something as small as "open
-this link." opener makes the open command a first-class tool: URLs, files,
-apps, and Finder reveal as structured operations that validate before they
-launch.
+this link." Now opener makes the open command a first-class tool: URLs,
+files, apps, and Finder reveal as structured operations that validate
+before they launch.
 
 The binary is named opener so it can never shadow `/usr/bin/open` on a
 PATH that puts personal bins first.
