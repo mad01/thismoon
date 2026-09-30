@@ -286,7 +286,7 @@ func TestRenderDocMinimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderDoc: %v", err)
 	}
-	if !strings.Contains(out, `<h1 class="brief-title">Title</h1>`) {
+	if !strings.Contains(out, `<h1 class="brief-title" data-fixation>Title</h1>`) {
 		t.Error("title not rendered")
 	}
 	if !strings.Contains(out, `data-fixation`) {
@@ -332,9 +332,9 @@ func TestRenderDocWithAllBlocks(t *testing.T) {
 		{"chip", `<wk-badge variant="a">tag</wk-badge>`},
 		{"chip-row", `class="chip-row"`},
 		{"section", `<wk-section`},
-		{"section-heading", `<wk-section-heading>`},
+		{"section-heading", `<wk-section-heading data-fixation>`},
 		{"paragraph", `<p data-fixation>para</p>`},
-		{"h3", `<wk-section-subheading>`},
+		{"h3", `<wk-section-subheading data-fixation>`},
 		{"callout", `<wk-callout variant="info"`},
 		{"table-wrap", `<wk-table><table>`},
 		{"kv", `<wk-kv>`},
@@ -390,7 +390,7 @@ func TestRenderDocTOC(t *testing.T) {
 	// section-heading carries the section-id span too.
 	if !strings.Contains(
 		out,
-		`<wk-section-heading><wk-section-id>A1</wk-section-id>Alpha</wk-section-heading>`,
+		`<wk-section-heading data-fixation><wk-section-id>A1</wk-section-id>Alpha</wk-section-heading>`,
 	) {
 		t.Errorf("section heading markup wrong: %s", out)
 	}
@@ -612,5 +612,73 @@ func TestRenderDocSankeyBlock(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output", want)
 		}
+	}
+}
+
+// TestRenderDocFixationCoverage pins which rendered elements carry
+// data-fixation, the attribute the webkit header's fixation walk targets:
+// every element that holds prose the reader scans, and none of the labels
+// and chips that are not prose.
+func TestRenderDocFixationCoverage(t *testing.T) {
+	doc := Doc{
+		Summary: "the summary",
+		Meta:    "2026-09-30 · meta",
+		Chips:   []Chip{{Text: "chip", Style: "a"}},
+		Sections: []Section{
+			{Heading: "First", ID: "A001", Blocks: []Block{
+				{T: "p", Text: "para"},
+				{T: "h3", Text: "sub"},
+				{T: "callout", Text: "note"},
+				{T: "table", Cols: []string{"Col"}, Rows: [][]string{{"cell"}}},
+				{T: "kv", KV: []KVPair{{K: "key", V: "value"}}},
+				{T: "list", Items: []string{"item"}},
+				{T: "panel", Title: "Panel", Subtitle: "sub"},
+			}},
+			{Heading: "Second", Blocks: []Block{{T: "p", Text: "more"}}},
+		},
+	}
+	out, err := RenderDoc(doc, "The Title")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+
+	fixated := []struct{ name, want string }{
+		{"title", `<h1 class="brief-title" data-fixation>The Title</h1>`},
+		{"summary", `<div class="brief-summary" data-fixation>`},
+		{"toc list", `<ul data-fixation>`},
+		{"section heading", `<wk-section-heading data-fixation>`},
+		{"subheading", `<wk-section-subheading data-fixation>sub</wk-section-subheading>`},
+		{"paragraph", `<p data-fixation>para</p>`},
+		{"callout", `<wk-callout data-fixation>note</wk-callout>`},
+		{"table body", `<tbody data-fixation>`},
+	}
+	for _, c := range fixated {
+		if !strings.Contains(out, c.want) {
+			t.Errorf("%s: missing %q", c.name, c.want)
+		}
+	}
+
+	// The shell's fixation-targets attribute adds kv values, list items,
+	// panel titles and subtitles by element; the renderer leaves those bare.
+	// Table headers, the meta line, chips, and section ids are labels, not
+	// prose, and stay out of the walk.
+	bare := []struct{ name, want string }{
+		{"table header", `<th>Col</th>`},
+		{"meta", `<div class="brief-meta">`},
+		{"chip", `<wk-badge variant="a">chip</wk-badge>`},
+		{"kv value", `<wk-kv-value>value</wk-kv-value>`},
+		{"list item", `<li>item</li>`},
+		{"section id", `<wk-section-id>A001</wk-section-id>`},
+	}
+	for _, c := range bare {
+		if !strings.Contains(out, c.want) {
+			t.Errorf("%s: missing %q", c.name, c.want)
+		}
+	}
+	if n := strings.Count(out, "data-fixation"); n != 10 {
+		t.Errorf(
+			"data-fixation count = %d, want 10 (title, summary, toc, 2 headings, subheading, 2 paragraphs, callout, table body)",
+			n,
+		)
 	}
 }

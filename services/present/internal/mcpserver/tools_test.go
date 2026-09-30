@@ -322,7 +322,7 @@ func TestCreateWithDocJSON(t *testing.T) {
 	if !strings.Contains(read.Content, `<wk-callout variant="warn"`) {
 		t.Error("callout with severity not rendered")
 	}
-	if !strings.Contains(read.Content, `<wk-section-heading>`) {
+	if !strings.Contains(read.Content, `<wk-section-heading data-fixation>`) {
 		t.Error("section heading not rendered")
 	}
 }
@@ -671,7 +671,7 @@ func TestCreateWithDocJSONString(t *testing.T) {
 	if !strings.Contains(read.Content, `class="brief-summary"`) {
 		t.Error("doc JSON string should be detected and rendered as Doc")
 	}
-	if !strings.Contains(read.Content, `<wk-section-heading>`) {
+	if !strings.Contains(read.Content, `<wk-section-heading data-fixation>`) {
 		t.Error("section heading not rendered from doc JSON string")
 	}
 }
@@ -700,7 +700,7 @@ func TestUpdateWithDocJSON(t *testing.T) {
 	}
 
 	_, read, _ := h.handleRead(ctx, nil, readInput{ID: created.ID})
-	if !strings.Contains(read.Content, `<wk-section-heading>`) {
+	if !strings.Contains(read.Content, `<wk-section-heading data-fixation>`) {
 		t.Error("updated content should be rendered from doc JSON")
 	}
 	if strings.Contains(read.Content, "<p>old</p>") {

@@ -129,7 +129,10 @@ func TestCreateDeckOnlyPage(t *testing.T) {
 	if read.Content != "" || !read.HasDeck || read.DeckURL != wantDeck || read.URL != wantDeck {
 		t.Errorf("read = %+v, want empty content and deck urls", read)
 	}
-	if !strings.Contains(read.Deck, "<wk-section-heading>First</wk-section-heading>") ||
+	if !strings.Contains(
+		read.Deck,
+		"<wk-section-heading data-fixation>First</wk-section-heading>",
+	) ||
 		!strings.Contains(read.Deck, `class="brief-title"`) {
 		t.Errorf("deck html not rendered from the Doc:\n%s", read.Deck)
 	}
@@ -642,7 +645,7 @@ func TestUpdateWithoutTitleKeepsTheTitleInTheHero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const hero = `<h1 class="brief-title">Kept title</h1>`
+	const hero = `<h1 class="brief-title" data-fixation>Kept title</h1>`
 	if !strings.Contains(p.Deck, hero) {
 		t.Errorf("deck hero lost the title: %q", p.Deck[:min(len(p.Deck), 120)])
 	}

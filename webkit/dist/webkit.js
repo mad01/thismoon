@@ -1535,7 +1535,8 @@ var Webkit = (() => {
     "BUTTON",
     "SELECT",
     "TEXTAREA",
-    "WK-BADGE"
+    "WK-BADGE",
+    "WK-SECTION-ID"
   ]);
   function fixateTextNode(node) {
     const segments = fixationSegments(node.data);

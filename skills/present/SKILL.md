@@ -194,7 +194,7 @@ Chip styles: `stat` (gray), `a` (warm), `b` (green), `c` (blue), `outline`.
 ### Notes
 
 - **TOC is auto-generated** from section headings when there are 2+ sections. Do not write TOC markup.
-- **`data-fixation`** is applied automatically to paragraphs, summaries, callouts, kv-values, and panel titles.
+- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, and table bodies. The page shell adds kv values, list items, and panel titles by element. Chips, section ids, table headers, and the meta line stay out of the fixation walk.
 - **Unknown block types** produce an HTML comment error — they don't break the page.
 - **Use `code` blocks for multi-line code**, not `p` with backticks (inline `code` is for short identifiers) and not `html` with a hand-written `<pre>`.
 
