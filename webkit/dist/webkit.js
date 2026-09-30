@@ -1715,30 +1715,13 @@ var Webkit = (() => {
       text = "not prepared";
     }
     const title = sec.reason && variant !== "error" && variant !== "ok" ? `${text} (last failure: ${sec.reason})` : text;
-    return {
-      variant,
-      text,
-      title,
-      retry: sec.failed > 0,
-      download: sec.parts > 0 && sec.ready === sec.parts
-    };
+    return { variant, text, title, retry: sec.failed > 0 };
   }
   function prepareQuery(section, failedOnly) {
     const q = [];
     if (section > 0) q.push(`section=${section}`);
     if (failedOnly) q.push("failed=1");
     return q.length ? "?" + q.join("&") : "";
-  }
-  function audioExt(mime) {
-    const type = mime.split(";")[0].trim().toLowerCase();
-    return type === "audio/mpeg" || type === "audio/mp3" ? ".mp3" : ".wav";
-  }
-  function downloadName(name, section, mime) {
-    let base = name.trim().replace(/\.(md|markdown|txt)$/i, "");
-    base = Array.from(base).map((ch) => /[\p{L}\p{N}\-_.]/u.test(ch) ? ch : "-").join("");
-    base = base.replace(/^[-.]+|[-.]+$/g, "") || "speak";
-    if (section > 0) base += `-section-${section}`;
-    return base + audioExt(mime);
   }
   var POLL_MS = 2e3;
   var POLL_MAX_MS = 6e4;
@@ -2029,7 +2012,7 @@ var Webkit = (() => {
   function reasonOf(err) {
     return err instanceof Error ? err.message : String(err);
   }
-  async function fetchClip(cfg, url, init2) {
+  async function fetchAudio(cfg, url, init2) {
     let res;
     try {
       res = await fetch(url, init2);
@@ -2044,10 +2027,7 @@ var Webkit = (() => {
       throw new SpeechError("the speech service broke off the audio mid-response", res.status);
     }
     if (!blob.size) throw new SpeechError("the speech service returned empty audio", res.status);
-    return blob;
-  }
-  async function fetchAudio(cfg, url, init2) {
-    return URL.createObjectURL(await fetchClip(cfg, url, init2));
+    return URL.createObjectURL(blob);
   }
   async function requestJSON(cfg, method, path, body) {
     const headers = { accept: "application/json" };
@@ -2100,15 +2080,15 @@ var Webkit = (() => {
     showToast("Read-aloud failed: " + reason);
     document.dispatchEvent(new CustomEvent("wk-read-aloud-error", { detail: { reason } }));
   }
-  function showToast(text, error = true) {
+  function showToast(text) {
     let host = document.querySelector("wk-toast-host");
     if (!host) {
       host = document.createElement("wk-toast-host");
       document.body.appendChild(host);
     }
     const toast = document.createElement("wk-toast");
-    if (error) toast.setAttribute("variant", "err");
-    toast.setAttribute("role", error ? "alert" : "status");
+    toast.setAttribute("variant", "err");
+    toast.setAttribute("role", "alert");
     toast.textContent = text;
     host.appendChild(toast);
     setTimeout(() => toast.remove(), ERROR_TOAST_MS);
@@ -2394,16 +2374,6 @@ var Webkit = (() => {
     b.title = title;
     return b;
   }
-  function saveBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 6e4);
-  }
   var Preparer = class {
     constructor(host, cfg, name, sections, anchors) {
       this.host = host;
@@ -2509,7 +2479,6 @@ var Webkit = (() => {
       setText(c.badge, view.text);
       setTitle(c.badge, view.title);
       c.retry.hidden = !view.retry;
-      c.download.hidden = !view.download;
     }
     buildControls(i) {
       const section = i + 1;
@@ -2518,18 +2487,14 @@ var Webkit = (() => {
       const retry = textButton("Retry", "Try this section's failed parts again");
       retry.hidden = true;
       retry.addEventListener("click", () => void this.prepare(retry, section, true));
-      const download = textButton("Download", "Download this section as one audio file");
-      download.hidden = true;
-      download.addEventListener("click", () => void this.download(download, section));
-      this.anchors[i].after(download, retry, badge);
-      return { badge, retry, download };
+      this.anchors[i].after(retry, badge);
+      return { badge, retry };
     }
     removeControls(i) {
       const c = this.controls[i];
       if (!c) return;
       c.badge.remove();
       c.retry.remove();
-      c.download.remove();
       this.controls[i] = null;
     }
     /** Runs an action with its button disabled, then renders the status again
@@ -2560,22 +2525,6 @@ var Webkit = (() => {
         } catch (err) {
           if (isGone(err)) void this.docGone();
           else showToast("Prepare audio: " + reasonOf(err));
-        }
-      });
-    }
-    /** Downloads the joined audio of one section (1-based). speak answers
-     * 409 while parts are missing; that message is a notice, not a failure. */
-    download(btn, section) {
-      return this.busy(btn, async () => {
-        const st = this.status;
-        if (!st) return;
-        try {
-          const url = `${this.cfg.endpoint}/doc/${encodeURIComponent(st.id)}/audio?section=${section}`;
-          const blob = await fetchClip(this.cfg, url, { cache: "no-store" });
-          saveBlob(blob, downloadName(st.name, section, blob.type));
-        } catch (err) {
-          if (isGone(err)) void this.docGone();
-          else showToast("Download audio: " + reasonOf(err), !(err instanceof SpeechError && err.status === 409));
         }
       });
     }
@@ -2627,7 +2576,7 @@ var Webkit = (() => {
     }
     /** speak no longer knows the document (it restarted): registers the page
      * again so the keys resolve, and picks up polling. One attempt, shared by
-     * whoever noticed first (a poll, a download, a playing part); when it
+     * whoever noticed first (a poll, a playing part); when it
      * fails, the page falls back to reading live. Resolves to whether prepared
      * mode goes on. */
     docGone() {

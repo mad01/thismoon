@@ -1,6 +1,6 @@
 // prepare.ts — pure helpers for <wk-read-aloud prepare> (no DOM), unit-testable
-// from node: the registration request and its answer, what the page bar and
-// the section badges say about a document's audio, and the download filename.
+// from node: the registration request and its answer, and what the page bar
+// and the section badges say about a document's audio.
 // Mirrors the JSON speak serve answers (services/speak/internal/web/docs.go:
 // DocStatus, SectionStatus, PartCounts); change both together.
 
@@ -213,8 +213,6 @@ export interface SectionView {
   title: string;
   /** Failed parts remain for "Retry". */
   retry: boolean;
-  /** Every part is ready, so the section downloads as one file. */
-  download: boolean;
 }
 
 /** A section's audio state, most useful fact first: work in progress, then
@@ -243,11 +241,7 @@ export function sectionView(sec: SectionStatus): SectionView {
   const title = sec.reason && variant !== 'error' && variant !== 'ok'
     ? `${text} (last failure: ${sec.reason})`
     : text;
-  return {
-    variant, text, title,
-    retry: sec.failed > 0,
-    download: sec.parts > 0 && sec.ready === sec.parts,
-  };
+  return { variant, text, title, retry: sec.failed > 0 };
 }
 
 /** The query for POST /doc/{id}/prepare: one section (1-based) or the whole
@@ -257,28 +251,6 @@ export function prepareQuery(section: number, failedOnly: boolean): string {
   if (section > 0) q.push(`section=${section}`);
   if (failedOnly) q.push('failed=1');
   return q.length ? '?' + q.join('&') : '';
-}
-
-/** The file extension for a clip's MIME type: speak joins to WAV unless the
- * provider gave MP3. */
-export function audioExt(mime: string): string {
-  const type = mime.split(';')[0].trim().toLowerCase();
-  return type === 'audio/mpeg' || type === 'audio/mp3' ? '.mp3' : '.wav';
-}
-
-/**
- * The name a downloaded file gets: the document's name made filename-safe
- * the way speak's own Content-Disposition does (that header is not readable
- * cross-origin), with "-section-N" for one section (1-based; 0 is the whole
- * document) and the extension the blob's type calls for. A name ending in
- * .md, .markdown or .txt loses that extension; a page title keeps its dots.
- */
-export function downloadName(name: string, section: number, mime: string): string {
-  let base = name.trim().replace(/\.(md|markdown|txt)$/i, '');
-  base = Array.from(base).map(ch => (/[\p{L}\p{N}\-_.]/u.test(ch) ? ch : '-')).join('');
-  base = base.replace(/^[-.]+|[-.]+$/g, '') || 'speak';
-  if (section > 0) base += `-section-${section}`;
-  return base + audioExt(mime);
 }
 
 /** How often prepared mode asks speak about the document while parts are in
