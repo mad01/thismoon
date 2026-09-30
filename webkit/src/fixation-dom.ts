@@ -13,10 +13,11 @@ import { fixationSegments } from './fixation.js';
 export const FIXATION_RUN = 'wk-fixation-run';
 
 // Subtrees the walk leaves alone: code and bold text are already set apart,
-// form controls and badges hold labels rather than prose, and SVG has no
-// HTML text.
+// form controls, badges, and section ids hold labels rather than prose, and
+// SVG has no HTML text.
 const FIXATION_SKIP = new Set([
   'CODE', 'B', 'STRONG', 'SCRIPT', 'STYLE', 'SVG', 'BUTTON', 'SELECT', 'TEXTAREA', 'WK-BADGE',
+  'WK-SECTION-ID',
 ]);
 
 /** Replaces one text node with a run of its segments; a node with nothing
