@@ -15,18 +15,21 @@ config sections share one shape.
 
 Until this decision, belt also read two configs it does not own. When its
 own `internal_names` section was absent, it loaded the `guard:` section of
-the suspenders config as a fallback, and when the section was present it
-replaced that fallback wholesale, so a partial section (say, only
-`allow_phrases`) silently blanked the rest of the name set while suspenders
-kept blocking at commit time. The read was one-directional: suspenders never
-saw belt-only keys, so an exemption written on the belt side did nothing at
-commit time, and the shipped example config even described the belt section
-as feeding the suspenders guard, which it never did. The coupling promised a
-unification it could not deliver: the two tools' name derivations had
-already drifted (case handling, minimum length, wildcard expansion) while
-the shared-file story suggested they agreed. belt's second foreign read, the
-Claude settings deny lists, was unconditional and undocumented as a config
-surface of its own.
+the suspenders config as a fallback. When its own section was present, it
+replaced that fallback wholesale. So a partial section (say, only
+`allow_phrases`) silently blanked the rest of the name set, while
+suspenders kept blocking at commit time.
+
+The read was one-directional: suspenders never saw belt-only keys, so an
+exemption written on the belt side did nothing at commit time. The shipped
+example config even described the belt section as feeding the suspenders
+guard, which it never did. The coupling promised a unification it could not
+deliver: the two tools' name derivations had already drifted (case handling,
+minimum length, wildcard expansion) while the shared-file story suggested
+they agreed.
+
+belt's second foreign read, the Claude settings deny lists, was
+unconditional and undocumented as a config surface of its own.
 
 ## Decision
 

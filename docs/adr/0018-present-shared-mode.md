@@ -21,25 +21,29 @@ second codebase to keep in step with the local one.
 ## Decision
 
 present gains a shared mode, `present serve --shared`, and it is the same
-binary: one process that serves pages by id alone, takes writes only from
-callers presenting an author key, and mounts the MCP tools over HTTP. It
-runs as a Kubernetes Deployment with several stateless replicas, so
-present is the one component that ships a container image
+binary. It is one process that serves pages by id alone, takes writes only
+from callers presenting an author key, and mounts the MCP tools over HTTP.
+It runs as a Kubernetes Deployment with several stateless replicas. That
+makes present the one component that ships a container image
 (`ghcr.io/mad01/present`, linux/amd64 and linux/arm64, cosign-signed) as a
-second artifact kind; ADR-0007 still governs the tarballs, which stay
-darwin/arm64. Pages persist as `Page` custom resources in the pod's
-namespace: every replica talks to the API server directly, resourceVersion
-guards every write, and each replica sweeps expired ephemeral pages
-on a timer, so there is no controller and no leader, and the only
-dependency is the cluster itself. A shared page is reachable only by its
-32-hex random id, a capability URL; shared mode serves no index and no
-listing, on the web or as an MCP tool. Authorship is the SHA-256 of the
-bearer key presented at create, stored on the resource and required on
-update and delete, so there are no accounts and nothing to revoke. An
-ephemeral page carries an expiry 30 days after its last write and the
-sweeper deletes it; any other page stays until its author deletes it.
-`--bind` keeps ADR-0011's loopback default, and shared mode refuses to
-start until a bind is named, so exposure is always a stated choice.
+second artifact kind. ADR-0007 still governs the tarballs, which stay
+darwin/arm64.
+
+Pages persist as `Page` custom resources in the pod's namespace. Every
+replica talks to the API server directly, resourceVersion guards every
+write, and each replica sweeps expired ephemeral pages on a timer. As a
+result, there is no controller and no leader, and the only dependency is the
+cluster itself.
+
+A shared page is reachable only by its 32-hex random id, a capability URL;
+shared mode serves no index and no listing, on the web or as an MCP tool.
+Authorship is the SHA-256 of the bearer key presented at create, stored on
+the resource and required on update and delete, so there are no accounts and
+nothing to revoke. An ephemeral page carries an expiry 30 days after its
+last write and the sweeper deletes it; any other page stays until its author
+deletes it. `--bind` keeps ADR-0011's loopback default, and shared mode
+refuses to start until a bind is named, so exposure is always a stated
+choice.
 
 Two alternatives were weighed for the store. A cloud object bucket would
 have handled expiry with a lifecycle rule and carried no size cap, at the
