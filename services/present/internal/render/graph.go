@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"text/template"
 )
 
@@ -24,6 +25,7 @@ type GraphNode struct {
 	Label string `json:"label"`
 	Type  string `json:"type,omitempty"`  // center, module, leaf (default), registry
 	Color int    `json:"color,omitempty"` // index into modBorder[] for type=module (0-3)
+	Tone  string `json:"tone,omitempty"`  // a graphTones key: box background, border, and text as one family, over the type's colors
 }
 
 // GraphEdge is an edge in the graph.
@@ -40,6 +42,21 @@ type GraphEdge struct {
 // which an edge counts as hot and gets the accent tint.
 const hotWeightShare = 2.0 / 3.0
 
+// graphTones are the node tones a graph may name. Each is a background,
+// border, and text triple the template defines for both themes, so a tinted
+// box keeps its contrast when the reader flips to dark. The order is the
+// order the palette lists them in.
+var graphTones = []string{"neutral", "green", "red", "blue", "amber", "purple"}
+
+func validTone(tone string) bool {
+	for _, t := range graphTones {
+		if t == tone {
+			return true
+		}
+	}
+	return false
+}
+
 var graphTemplate = template.Must(template.New("graph").Parse(graphTemplateSrc))
 
 // The flow dash pattern [10, 6] has period 16; app.js's startGraphFlow marches
@@ -51,12 +68,26 @@ const graphTemplateSrc = `function getGraphColors() {
         leafBg:'#252320', leafBorder:'#4A453D', leafText:'#F5F3EF',
         modBorder:['#E8956A','#7AAAE8','#6BC48A','#8B6BB0'],
         edge:'#4A453D', edgeArrow:'#6B6459', hot:'#E8956A',
-        registryBg:'#35322C', registryBorder:'#4A453D', registryText:'#B8B2A7' }
+        registryBg:'#35322C', registryBorder:'#4A453D', registryText:'#B8B2A7',
+        tones: {
+          neutral: { bg:'#35322C', border:'#5A544B', text:'#E6E1D8' },
+          green:   { bg:'#1F3A2B', border:'#6BC48A', text:'#C8EBD5' },
+          red:     { bg:'#3F2A22', border:'#E8956A', text:'#F3CDBB' },
+          blue:    { bg:'#1F2E42', border:'#7AAAE8', text:'#C8DAF3' },
+          amber:   { bg:'#3E3418', border:'#D9AE55', text:'#F0DEB0' },
+          purple:  { bg:'#32283F', border:'#A98BCB', text:'#DDD0EA' } } }
     : { bg:'#FFFFFF', centerBg:'#FFF5F0', centerBorder:'#C4704B', centerText:'#252320',
         leafBg:'#FFFFFF', leafBorder:'#D8D4CD', leafText:'#252320',
         modBorder:['#C4704B','#5B8EC4','#4A9E6B','#8B6BB0'],
         edge:'#D8D4CD', edgeArrow:'#B8B2A7', hot:'#C4704B',
-        registryBg:'#EEECE8', registryBorder:'#D8D4CD', registryText:'#6B6459' };
+        registryBg:'#EEECE8', registryBorder:'#D8D4CD', registryText:'#6B6459',
+        tones: {
+          neutral: { bg:'#EEECE8', border:'#C9C4BB', text:'#3D3A34' },
+          green:   { bg:'#E6F4EC', border:'#4A9E6B', text:'#1F5C38' },
+          red:     { bg:'#FBEAE3', border:'#C4704B', text:'#7A3A1F' },
+          blue:    { bg:'#E7EFF9', border:'#5B8EC4', text:'#2A4E75' },
+          amber:   { bg:'#FBF1DC', border:'#C9973A', text:'#6B4E12' },
+          purple:  { bg:'#EFE8F5', border:'#8B6BB0', text:'#4E3A6B' } } };
 }
 
 function initGraph() {
@@ -86,6 +117,11 @@ function initGraph() {
 {{- range .ModuleStyles}}
       { selector: '{{.Selector}}', style: { 'border-color': c.modBorder[{{.ColorIndex}}] }},
 {{- end}}
+{{- range .Tones}}
+      { selector: 'node[tone="{{.}}"]', style: {
+          'background-color': c.tones.{{.}}.bg, 'border-color': c.tones.{{.}}.border, 'color': c.tones.{{.}}.text
+      }},
+{{- end}}
       { selector: 'edge', style: {
           'width': 2, 'line-color': c.edge, 'target-arrow-color': c.edgeArrow,
           'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
@@ -99,6 +135,7 @@ function initGraph() {
 {{- end}}
       { selector: 'edge[label]', style: {
           'label': 'data(label)', 'font-size': '10px', 'color': c.leafText,
+          'text-wrap': 'wrap', 'text-max-width': '100px',
           'text-background-color': c.bg, 'text-background-opacity': 0.8,
           'text-background-padding': '2px'
       }}
@@ -110,6 +147,7 @@ function initGraph() {
 type graphData struct {
 	ElementsJSON string
 	ModuleStyles []moduleStyle
+	Tones        []string // the tones the graph uses, in palette order
 	LayoutOpts   string
 	HasWeight    bool
 	MaxWeight    string // JS number literal for the mapData upper bound
@@ -132,18 +170,10 @@ func RenderGraph(g GraphInput) (string, error) {
 		return "", fmt.Errorf("marshal elements: %w", err)
 	}
 
-	seen := map[int]bool{}
-	var styles []moduleStyle
-	for _, n := range g.Nodes {
-		if n.Type == "module" && !seen[n.Color] {
-			seen[n.Color] = true
-			styles = append(styles, moduleStyle{
-				Selector:   fmt.Sprintf(`node[type="module"][color="%d"]`, n.Color),
-				ColorIndex: n.Color,
-			})
-		}
+	tones, err := usedTones(g.Nodes)
+	if err != nil {
+		return "", err
 	}
-
 	layout, err := layoutOptions(g)
 	if err != nil {
 		return "", err
@@ -152,7 +182,8 @@ func RenderGraph(g GraphInput) (string, error) {
 	var buf bytes.Buffer
 	if err := graphTemplate.Execute(&buf, graphData{
 		ElementsJSON: string(elemJSON),
-		ModuleStyles: styles,
+		ModuleStyles: moduleStyles(g.Nodes),
+		Tones:        tones,
 		LayoutOpts:   layout,
 		HasWeight:    maxW > 0,
 		MaxWeight:    strconv.FormatFloat(maxW, 'f', -1, 64),
@@ -160,6 +191,50 @@ func RenderGraph(g GraphInput) (string, error) {
 		return "", fmt.Errorf("render graph: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// moduleStyles returns one border-color selector per module color the graph
+// uses, in first-use order.
+func moduleStyles(nodes []GraphNode) []moduleStyle {
+	seen := map[int]bool{}
+	var styles []moduleStyle
+	for _, n := range nodes {
+		if n.Type == "module" && !seen[n.Color] {
+			seen[n.Color] = true
+			styles = append(styles, moduleStyle{
+				Selector:   fmt.Sprintf(`node[type="module"][color="%d"]`, n.Color),
+				ColorIndex: n.Color,
+			})
+		}
+	}
+	return styles
+}
+
+// usedTones returns the tones the nodes name, in palette order, or an error
+// naming the first tone the palette does not define.
+func usedTones(nodes []GraphNode) ([]string, error) {
+	used := map[string]bool{}
+	for _, n := range nodes {
+		if n.Tone == "" {
+			continue
+		}
+		if !validTone(n.Tone) {
+			return nil, fmt.Errorf(
+				"node %q: unknown tone %q (want one of %s)",
+				n.ID,
+				n.Tone,
+				strings.Join(graphTones, ", "),
+			)
+		}
+		used[n.Tone] = true
+	}
+	var tones []string
+	for _, t := range graphTones {
+		if used[t] {
+			tones = append(tones, t)
+		}
+	}
+	return tones, nil
 }
 
 // lrNodeThreshold is the node count at or below which an unset direction
@@ -240,6 +315,9 @@ func buildElements(g GraphInput) []cyElement {
 		}
 		if n.Type == "module" {
 			d["color"] = fmt.Sprintf("%d", n.Color)
+		}
+		if n.Tone != "" {
+			d["tone"] = n.Tone
 		}
 		elems = append(elems, cyElement{Data: d})
 	}
