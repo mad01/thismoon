@@ -95,20 +95,21 @@ so listings can say which renditions exist without loading a body.
 
 The exception is the markdown import, a local-mode route the index offers as
 a button and a drop target. The browser reads the file and posts it to
-`POST /api/import`; `internal/mdimport` maps the markdown onto a title and
-a Doc, and the first fenced mermaid flowchart onto a graph through
-`internal/mermaid`; the same `Compile` steps render them, and the store gets exactly what
-an MCP create would have written, `doc.json` included, so the page is
-editable through `present_source` afterwards. Local serve authenticates
-nothing, so the handler narrows who can reach it in three ways: it requires
-`Content-Type: application/json`, which a cross-origin form or plain fetch
-cannot send without a CORS preflight the server never answers; it refuses a
-request the browser marks `Sec-Fetch-Site: cross-site`; and when an
-`Origin` header is present it accepts only http(s) on localhost, a loopback
-address, or a `.this` host, never comparing against the request's own Host,
-because a DNS name pointed at 127.0.0.1 would agree with itself. It also
-applies the shared instance's size cap so an imported page can always be
-shared later.
+`POST /api/import`. Then `internal/mdimport` maps the markdown onto a title
+and a Doc, and the first fenced mermaid flowchart onto a graph through
+`internal/mermaid`. The same `Compile` steps render them. The store gets
+exactly what an MCP create would have written, `doc.json` included, so the
+page is editable through `present_source` afterwards.
+
+Local serve authenticates nothing, so the handler narrows who can reach it
+in three ways. It requires `Content-Type: application/json`, which a
+cross-origin form or plain fetch cannot send without a CORS preflight the
+server never answers. It refuses a request the browser marks
+`Sec-Fetch-Site: cross-site`. When an `Origin` header is present it
+accepts only http(s) on localhost, a loopback address, or a `.this` host. It
+never compares against the request's own Host, because a DNS name pointed at
+127.0.0.1 would agree with itself. It also applies the shared instance's
+size cap so an imported page can always be shared later.
 
 The read path renders client-side (docs/adr/0005). `GET /p/{id}` serves the
 embedded chrome-only `shell.html`; the browser loads `app.js`, fetches the
@@ -144,17 +145,19 @@ lives in the cluster, serves decks with the keys alone.
 Read-aloud is the page view's one dependency outside present: the speak
 service named by `--speak-url` (default `http://speak.this`), which the page
 JSON carries as `speak_url`. With a URL, `app.js` places webkit's
-`<wk-read-aloud>` element in prepared mode right under the summary, and the
+`<wk-read-aloud>` element in prepared mode right under the summary. The
 browser talks to speak directly: it registers the page's readable blocks
-with `POST /read`, speak answers with a part key per block, and the element
+with `POST /read`, and speak answers with a part key per block. The element
 shows how many parts are ready and prepares them on request. speak keeps
-that registry in memory, so after a restart the element registers the page again.
+that registry in memory, so after a restart the element registers the page
+again.
+
 When speak refuses the registration the page reads live, one request per
 part, starting with a single sentence and ramping up to several, with no
-status bar; when speak is unreachable the page has no read-aloud at all;
-with the URL empty, which the shared manifest sets, the element is never
-created. Code blocks and tables are never read. present
-itself never calls speak.
+status bar. When speak is unreachable the page has no read-aloud at all.
+With the URL empty, which the shared manifest sets, the element is never
+created. Code blocks and tables are never read. present itself never calls
+speak.
 
 Where the server has a change feed, the tab watches over server-sent events:
 `GET /p/{id}/events` sends the version on connect, again whenever the page
@@ -204,26 +207,31 @@ source file for that field; nothing else lands on disk.
 
 A shared instance in Kubernetes swaps the filesystem for `--store k8s`: one
 `Page` custom resource per page (`present.thismoon.mad01.dev/v1alpha1`,
-namespaced), holding the same fields plus the rendered artifacts and the
-canonical sources as strings in its spec. Replicas read and write it through
-the API server with client-go's dynamic client; a write is a read-modify-
-write guarded by resourceVersion and retried on conflict, so two replicas
-never clobber each other. `version` is an explicit spec field rather than
-`metadata.generation`, because source saves would bump the generation and
-make open tabs reload for nothing. Each replica also runs an informer over
-the namespace's pages. Its cache keeps metadata only, because a transform
-drops content, graph, and references before the informer stores an object,
-so its memory stays small however large pages get. Once synced it answers
-the version poll every open tab makes, so a poll costs no API request; the
-answer can trail a write made through another replica by the watch delay.
-Full reads and every write still go to the API server. Ephemeral pages carry
-a label the sweeper selects on; each replica sweeps on an interval, judging
-expiry from the cache, and deletes each expired page under a resourceVersion
-precondition, so a page that changed after the cache saw it survives until
-the next sweep. A delete of an already-gone object counts as done, so no
-leader is needed. A page is one object, so the store refuses a page over
-1 MiB before it reaches the API server. The CRD is embedded in the binary
-and a test keeps `deploy/base/crd.yaml` byte-identical to it.
+namespaced). Each resource holds the same fields plus the rendered artifacts
+and the canonical sources as strings in its spec. Replicas read and write it
+through the API server with client-go's dynamic client. A write is a
+read-modify-write guarded by resourceVersion and retried on conflict, so two
+replicas never clobber each other. `version` is an explicit spec field
+rather than `metadata.generation`, because source saves would bump the
+generation and make open tabs reload for nothing.
+
+Each replica also runs an informer over the namespace's pages. Its cache
+keeps metadata only, because a transform drops content, graph, and
+references before the informer stores an object, so its memory stays small
+however large pages get. Once synced it answers the version poll every open
+tab makes, so a poll costs no API request. The answer can trail a write made
+through another replica by the watch delay. Full reads and every write still
+go to the API server.
+
+Ephemeral pages carry a label the sweeper selects on. Each replica sweeps on
+an interval, judging expiry from the cache, and deletes each expired page
+under a resourceVersion precondition. The precondition means a page that
+changed after the cache saw it survives until the next sweep. A delete of an
+already-gone object counts as done, so no leader is needed.
+
+A page is one object, so the store refuses a page over 1 MiB before it
+reaches the API server. The CRD is embedded in the binary and a test keeps
+`deploy/base/crd.yaml` byte-identical to it.
 
 ## Deployment
 

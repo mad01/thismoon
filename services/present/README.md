@@ -45,7 +45,11 @@ A page has two possible renditions under one id: the brief, which is the scrolla
 
 The deck opens at `/p/<id>/deck`; a page with both shows a Slides link in the brief's header and a Brief link in the deck's, and a page with only a deck sends `/p/<id>` there. The title slide comes from the deck's title, summary, meta line, and chips; every section is one slide; the references make the last one. A bar at the bottom holds the arrows, the counter, and a Present button, and the URL's `#3` names the slide, so a link can open the deck on a slide.
 
-Keys: Right, Space, or PageDown for the next slide; Left, PageUp, or Backspace for the previous one; Home and End for the first and last. F or P starts presenting: the header and the bar go away, one slide fills the window at a larger size, and the browser is asked for fullscreen. Escape ends it, as does leaving fullscreen through the browser, and so does F or P pressed in fullscreen; pressed while presenting without fullscreen, which is where a reload leaves you, they ask for fullscreen again. A reload, the one an update triggers included, comes back on the same slide in the same mode: the tab remembers where it was, and a fresh tab starts at the title slide. Read-aloud works on a deck the way it does on a brief: the bar sits on the title slide and every slide carries its own play control. Sharing a page that has a deck to a shared instance built before decks keeps the copy and its link but reports that the deck was dropped; upgrade the instance and share again.
+Keys: Right, Space, or PageDown for the next slide; Left, PageUp, or Backspace for the previous one; Home and End for the first and last. F or P starts presenting: the header and the bar go away, one slide fills the window at a larger size, and the browser is asked for fullscreen. Escape ends it, as does leaving fullscreen through the browser, and so does F or P pressed in fullscreen. Pressed while presenting without fullscreen, which is where a reload leaves you, F or P asks for fullscreen again. A reload, the one an update triggers included, comes back on the same slide in the same mode. The tab remembers where it was, and a fresh tab starts at the title slide.
+
+Read-aloud works on a deck the way it does on a brief: the bar sits on the title slide and every slide carries its own play control.
+
+Sharing a page that has a deck to a shared instance built before decks keeps the copy and its link but reports that the deck was dropped. Upgrade the instance and share again.
 
 The deck can be driven from outside the tab too. `present deck <id> start|stop|next|prev|goto <n>` and the `present_deck` tool write the page's last command into its directory, and every open tab of the deck follows within a second. Tabs opened later ignore commands sent before they loaded. This works on the local instance only; a shared instance serves decks but takes no remote commands.
 
@@ -72,7 +76,11 @@ With both variables set, `present serve` shows a Share button in every page's he
 
 ### Importing a markdown file
 
-The index page (`GET /`) has an "Import markdown" button, and a `.md`, `.markdown`, or `.txt` file dropped anywhere on that page does the same: the browser reads it and posts it to `POST /api/import`, the server converts it to a page, and you land on the new page. Headings become the title and sections, paragraphs, lists, code blocks, tables, and blockquotes map to their present blocks; raw HTML, horizontal rules, and footnotes are dropped, nested lists are flattened, and the first fenced `mermaid` flowchart becomes the page's graph (later ones, and other mermaid diagram types, stay code blocks). A file is refused when the page it renders to (the HTML plus the Doc source) would pass 1 MiB, the cap a shared instance enforces, so an imported page can always be shared; that is about 250 to 500 KiB of markdown, less for markup-heavy files. The same endpoint works from a shell on the local instance:
+The index page (`GET /`) has an "Import markdown" button, and a `.md`, `.markdown`, or `.txt` file dropped anywhere on that page does the same. The browser reads it and posts it to `POST /api/import`, the server converts it to a page, and you land on the new page. Headings become the title and sections, and paragraphs, lists, code blocks, tables, and blockquotes map to their present blocks. Raw HTML, horizontal rules, and footnotes are dropped, and nested lists are flattened. The first fenced `mermaid` flowchart becomes the page's graph (later ones, and other mermaid diagram types, stay code blocks).
+
+A file is refused when the page it renders to (the HTML plus the Doc source) would pass 1 MiB. That is the cap a shared instance enforces, so an imported page can always be shared. It works out to about 250 to 500 KiB of markdown, less for markup-heavy files.
+
+The same endpoint works from a shell on the local instance:
 
 ```bash
 jq -Rs '{name: "notes.md", markdown: .}' notes.md \
