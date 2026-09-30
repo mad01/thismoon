@@ -24,19 +24,21 @@ put every producer in a write race.
 ## Why this shape
 
 Single-writer first: `events serve` is the only process that touches the
-files; the CLI and MCP tools are thin HTTP clients, and other components emit
+files. The CLI and MCP tools are thin HTTP clients, and other components emit
 by POSTing JSON. Every write funnels through one process, so there are no file
-locks. The store is an append-only per-source JSONL log: one file per
-source, one JSON event per line, an O(1) append per event, with a per-source
-ring cap in memory and atomic compaction once a file outgrows it. The result
-is bounded disk and memory, and plain files that outlive the service if it is
-removed.
-Event IDs are time-sortable, so lexical order is time order and the ID doubles
-as the polling cursor. Above all, events is archive-only by design: it records
-and displays, and it never fires a notification — alerting stays with the
-producer (deps fires its own banner), while events keeps the durable record.
+locks. The store is an append-only per-source JSONL log: one file per source,
+one JSON event per line, an O(1) append per event. It keeps a per-source ring
+cap in memory, with atomic compaction once a file outgrows it. The result is
+bounded disk and memory, and plain files that outlive the service if it is
+removed. Event IDs are time-sortable, so lexical order is time order and the
+ID doubles as the polling cursor.
+
+Above all, events is archive-only by design: it records and displays, and it
+never fires a notification. Alerting stays with the producer (deps fires its
+own banner), while events keeps the durable record.
+
 The timeline renders client-side from the JSON API, the repo-wide convention
-recorded in `docs/adr/0005` — events was already built that way before the
+recorded in `docs/adr/0005`. events was already built that way before the
 convention landed.
 
 ## Non-goals
