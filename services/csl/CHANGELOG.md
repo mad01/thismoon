@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.1](https://github.com/mad01/thismoon/compare/csl/v0.25.0...csl/v0.25.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **csl:** hold the sync lock in every index writer ([#161](https://github.com/mad01/thismoon/issues/161)) ([9dd17e6](https://github.com/mad01/thismoon/commit/9dd17e6ad8cd8dff2378e76ea2c144c9ec0d598c))
+* **csl:** split sym: alternations into one symbol term per name ([#162](https://github.com/mad01/thismoon/issues/162)) ([2a9cea1](https://github.com/mad01/thismoon/commit/2a9cea106725eb9ecf8d40e9410eccf465778e07))
+
 ## [0.25.0](https://github.com/mad01/thismoon/compare/csl/v0.24.0...csl/v0.25.0) (2026-09-17)
 
 
