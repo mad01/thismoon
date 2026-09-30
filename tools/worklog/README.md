@@ -4,11 +4,11 @@ Resumable, ticket/topic-keyed cross-session work state: a CLI and MCP server.
 
 Long tasks that span several repos and get picked up days later need a stable
 home for "where was I." Claude Code's per-directory memory loses that when you
-start in a tmp dir: work across three repos from `/tmp/foo`, stop, and the
+start in a tmp dir. Work across three repos from `/tmp/foo`, stop, and the
 memory is orphaned under a tmp slug you can never find again. worklog keys
-work on the **task** (a ticket id or a topic) instead, groups per-repo context
-underneath it, and keeps the whole thing in a local git history you can
-search.
+work on the **task** (a ticket id or a topic) instead and groups per-repo
+context underneath it. It keeps the whole thing in a local git history you
+can search.
 
 ## How it works
 
@@ -29,7 +29,7 @@ remote:
 ```
 
 From then on every checkpoint commits and pushes automatically (a failed
-push degrades to a warning; the write always lands locally), a fresh machine
+push degrades to a warning; the write always lands locally). A fresh machine
 clones the store on first use, and `worklog sync` fast-forward pulls then
 pushes when you switch machines. One writer at a time is the assumption:
 sync before switching, there is no merge strategy.

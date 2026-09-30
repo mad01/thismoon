@@ -1,7 +1,7 @@
 # worklog, resumable cross-session work state (CLI + MCP)
 
 Go CLI + MCP server. Keeps the state of a long, cross-repo task in a stable,
-searchable place so a later session can pick it up, keyed by **ticket id or
+searchable place so a later session can pick it up. Keyed by **ticket id or
 topic**, never by working directory. Claude Code auto-memory keys on the
 working directory: start in `/tmp/foo`, work across three repos, stop, and the
 memory is orphaned under a tmp slug you can never find again. worklog keys on
@@ -29,14 +29,15 @@ The CLI and the MCP server (`worklog mcp`) are two thin frontends over
 and `SetStatus` methods, so behavior never diverges between an agent call and
 a manual `worklog` invocation.
 
-`checkpoint` creates the item if missing, auto-detects the current repo from
-cwd (the CLI via `os.Getwd()`, the MCP tool via an explicit `cwd` argument;
-see Gotchas), restamps `updated`, rewrites the "Where I am" section, prepends
-a "Log" entry, appends a per-repo note, and git-commits the change.
+`checkpoint` creates the item if missing and auto-detects the current repo
+from cwd (the CLI via `os.Getwd()`, the MCP tool via an explicit `cwd`
+argument; see Gotchas). It also restamps `updated`, rewrites the "Where I am"
+section, prepends a "Log" entry, appends a per-repo note, and git-commits the
+change.
 
 ### `scan` and the ticket firewall
 
-`scan` (package `internal/scan`) reads local Claude session transcripts and
+`scan` (package `internal/scan`) reads local Claude session transcripts. It
 emits one compact JSON digest per recent session (repos, tickets, title, first/
 last prompts) so `/worklog-backfill` can cluster and import past work without
 pulling raw transcripts into context. Window via `--since Nd` or a Go duration;
@@ -47,9 +48,9 @@ override the transcript root with `$CLAUDE_PROJECTS_DIR` (used by tests).
 issue/PR URLs (`github.com/<o>/<r>/issues|pull/<n>` → `#n`), and bare `#NN`
 (addresses issue #55). It also tags each session's `context` (`personal`,
 `internal`, `mixed`, `unknown`) from cwd and **filters `tickets[]` to that
-world** by key prefix so personal and internal refs never co-mingle: a
-personal item carries Linear `MAD-NN` (and legacy `#NN`) but never a Jira key;
-an internal item carries Jira keys but never a Linear/github personal ref. The
+world** by key prefix so personal and internal refs never co-mingle. A
+personal item carries Linear `MAD-NN` (and legacy `#NN`) but never a Jira key.
+An internal item carries Jira keys but never a Linear/github personal ref. The
 firewall mirrors the global internal/external separation.
 
 The firewall strings live in worklog's config file (`--config`, else
@@ -70,7 +71,7 @@ another machine's sessions. Unconfigured, the firewall routes nothing: every
 session is `context: "unknown"` with all its ticket refs surfaced for review.
 Only the two path-shape keys (`checkout_roots`, `repo_path_markers`) have
 defaults. GOPATH-style checkouts of non-github.com hosts count as internal
-(host derived from the path segment after a checkout root); that split is
+(host derived from the path segment after a checkout root). That split is
 derived, never enumerated (same principle as belt's public/internal remote
 check), which is why it can ship with a default when the marker lists cannot.
 The machine's values ship via the consuming repo's config overlay
@@ -80,10 +81,10 @@ The machine's values ship via the consuming repo's config overlay
 
 One directory per work item under `~/code/worklog/` (override with
 `$WORKLOG_DIR`). The store is a **git repo, local-first**: with no
-`remote.url` in the config it has no upstream at all, and with one it clones
+`remote.url` in the config it has no upstream at all. With one, it clones
 from and pushes to a private per-machine repo. Which machine gets which URL
-is decided when the machine is provisioned — the config overlay installs the
-right one — so a work machine's store, internal references included, only
+is decided when the machine is provisioned. The config overlay installs the
+right one, so a work machine's store, internal references included, only
 ever reaches its own private repo. csl indexes the store for free.
 
 ```
@@ -127,7 +128,7 @@ worklog version [-o json]
 
 `worklog version` prints the bare git commit that built the binary, the token
 sibling tools also print so ralph and status can probe any of them for the
-build they are running; `-o json` prints the full build metadata object. The
+build they are running. `-o json` prints the full build metadata object. The
 cobra `worklog --version` flag prints the same token in cobra's own phrasing.
 
 ## MCP tools
@@ -145,9 +146,9 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
   process itself runs from `/` (see Gotchas); `repo` overrides detection.
   `where` is the ONLY context a fresh session gets when resuming. Write it
   for a reader with zero prior knowledge: goal, repo paths, conclusions
-  reached and why, working tool/query examples with exact parameters,
-  anti-patterns that waste time, links to tickets/docs/PRs, decisions made and
-  their reasoning, and concrete next steps.
+  reached and why, working tool/query examples with exact parameters, and
+  anti-patterns that waste time. Also include links to tickets/docs/PRs,
+  decisions made and their reasoning, and concrete next steps.
 - `worklog_list(status?, repo?)` → `{items: itemView[]}`. Filter by status
   (`active`, `paused`, or `done`) or repo, newest first.
 - `worklog_search(query)` → `{items: itemView[]}`. Substring match against key
@@ -177,7 +178,7 @@ the CLI (see How it works). `worklog_checkpoint`, `worklog_list`,
   warning; the write always lands locally.
 - **`remote.upstreams` is retired.** The profile-keyed upstream map, resolved
   by reading ralph's `config.local.toml`, is gone: a machine's class is
-  written once at provisioning time and does not change between runs, so the
+  written once at provisioning time and does not change between runs. So the
   overlay installs the machine's own `url` (same conclusion as ADR-0010 for
   the guard tools). A config still carrying `upstreams` with no `url` gets a
   stderr warning rather than a store that quietly stopped pushing.

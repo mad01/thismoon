@@ -11,12 +11,12 @@ working directory.
 
 The file is optional and so is every key in it. With no file at all worklog
 runs on its built-in defaults. A file that **is** there and cannot be read or
-parsed stops the command instead: it carries this machine's ticket-firewall
+parsed stops the command instead. It carries this machine's ticket-firewall
 strings and the store's push remote, and dropping those silently looks
 exactly like working software. `worklog config` is the one exception — it
 prints the problem and the defaults, since explaining a broken config is
 what it is for. It also prints the resolved file path, whether it loaded, and
-the settings in effect once worklog has applied its defaults; the command's
+the settings in effect once worklog has applied its defaults. The command's
 `--help` carries the full annotated reference shown under Example below.
 
 A handful of other settings are environment-variable-only, with no config
@@ -35,7 +35,7 @@ The three classification keys have **no built-in values**. They describe one
 person's machine layout — which ticket prefixes and which directories are
 personal — so a compiled-in guess would misfile another machine's sessions
 rather than admit it does not know. With none of them set the firewall has
-nothing to route by: every session comes back with `context: "unknown"` and
+nothing to route by. Every session comes back with `context: "unknown"` and
 all of its ticket references surfaced together for human review, which is
 the same handling a genuinely mixed session already gets. Nothing is
 misfiled, and nothing is dropped.
@@ -73,8 +73,8 @@ Configures a git upstream for the store. With no `remote` section, or with
 profile label to URL, resolved at runtime by reading ralph's
 `config.local.toml` for the machine's profiles. That read is gone.
 Provisioning writes a machine's class once and nothing changes it between
-runs, so picking the upstream is a provisioning concern, not
-a runtime one — the same conclusion ADR-0010 reached for the guard tools.
+runs, so picking the upstream is a provisioning concern, not a runtime
+one. That is the same conclusion ADR-0010 reached for the guard tools.
 The layer that installs this file writes the URL for the machine it installs
 on. A config still carrying `upstreams` with no `url` resolves to no remote,
 so worklog warns on stderr rather than going quietly local-only; replace the

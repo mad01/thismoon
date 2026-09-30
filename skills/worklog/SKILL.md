@@ -53,26 +53,26 @@ little.
    short stable topic slug. Confirm with the user if ambiguous.
 2. **Gather state.** The `where` field must include ALL of the following that
    apply:
-   - **Goal** — what the task is trying to achieve and why
-   - **Repos** — full paths (host + local disk path), which code search tool
+   - **Goal**: what the task is trying to achieve and why
+   - **Repos**: full paths (host + local disk path), which code search tool
      covers each host, any repos not yet cloned that will be needed
-   - **Conclusions and findings** — every conclusion reached, with the evidence
+   - **Conclusions and findings**: every conclusion reached, with the evidence
      and reasoning. Not just "X is confirmed" but "X is confirmed because
      querying Y returned Z during incident window W"
-   - **Working tool/query examples** — exact tool names, parameters, query
+   - **Working tool/query examples**: exact tool names, parameters, query
      strings that produced results. A resuming session should be able to copy
      these verbatim, not re-derive them through trial and error
-   - **Anti-patterns** — things that were tried and failed, with WHY they
+   - **Anti-patterns**: things that were tried and failed, with WHY they
      failed. Prevents the next session from repeating dead ends
-   - **Decisions made** — what was decided and the reasoning. Include who
+   - **Decisions made**: what was decided and the reasoning. Include who
      decided and when if relevant
-   - **Links** — tickets, RFCs, Google Docs, PRs, tracker comment IDs, SLO IDs,
+   - **Links**: tickets, RFCs, Google Docs, PRs, tracker comment IDs, SLO IDs,
      dashboard URLs. Anything a resuming session would need to look up
-   - **External content that can't be re-fetched easily** — if the session
-     generated replacement text, draft wording, or received important data from
-     a tool that requires auth/context to reproduce, capture the substance
+   - **External content that can't be re-fetched easily**: replacement text
+     the session generated, draft wording, or important data received from a
+     tool that requires auth/context to reproduce. Capture the substance
      inline rather than just referencing it
-   - **Next steps** — concrete, actionable, ordered by priority. Include
+   - **Next steps**: concrete, actionable, ordered by priority. Include
      prerequisites (e.g., "clone repo X before starting step 3")
 3. **Call `worklog_checkpoint`** with:
    - `key`
