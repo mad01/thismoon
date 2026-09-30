@@ -2,10 +2,10 @@
 
 macOS system clipboard bridge: a CLI and MCP server over pbcopy/pbpaste.
 
-Copying text out of an agent session used to mean piping through the shell:
-a permission prompt and a quoting hazard for something as small as "put this
-command on my clipboard." clipboard makes the pasteboard a first-class tool:
-structured copy and paste with no shell in the middle.
+Copying text out of an agent session used to mean piping through the shell.
+That meant a permission prompt and a quoting hazard for something as small
+as "put this command on my clipboard." Now clipboard makes the pasteboard a
+first-class tool: structured copy and paste with no shell in the middle.
 
 ## Install
 
