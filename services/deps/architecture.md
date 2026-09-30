@@ -6,7 +6,7 @@ deps is the supply-chain scanner service: it discovers every external
 dependency across the catalog-registered repos and checks each pinned version
 against the OSV.dev advisory database. At runtime `deps serve --port 7429`
 (loopback only, fronted by d-man as `http://deps.this/`, run as a t-man agent)
-is the single long-running process: it owns the scan store, runs the scan
+is the single long-running process. It owns the scan store, runs the scan
 loop, serves the web page and JSON API, and is the only process that reaches
 the network. The `deps` CLI and `deps mcp` hold no state; both are thin HTTP
 clients to the serve API and report "serve not reachable" when it is down.
@@ -51,10 +51,10 @@ event to the events service.
 
 Scheduling checks staleness rather than counting ticks: serve heartbeats every
 15 minutes and runs a full check whenever the last scan is older than
-`--interval` (default 24h), so a wake from sleep catches up promptly. Failures
+`--interval` (default 24h). So a wake from sleep catches up promptly. Failures
 back off exponentially up to 6 hours. Resolution flows the other way: a
 `POST /api/resolve` (from the web page, CLI, or `deps_resolve`) adds advisory
-keys to the resolved set; because the key embeds the exact version, an
+keys to the resolved set. Because the key embeds the exact version, an
 acknowledged advisory resurfaces when the package is bumped.
 
 ## Storage

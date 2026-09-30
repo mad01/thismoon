@@ -20,7 +20,7 @@ $ deps check
 
 One background agent (`deps serve`) owns a JSON file of scan results, runs the
 web page, checks OSV, and fires the notifications. Everything else (the CLI, the
-Claude Code tools, the web page) talks to that agent, so you see the same
+Claude Code tools, the web page) talks to that agent. So you see the same
 findings everywhere and only one process touches the network or the file.
 
 The repos it scans come from the catalog registry
@@ -31,7 +31,7 @@ whether any of those exact versions has a known advisory. Git worktrees and
 nested checkouts are skipped, so a repo isn't scanned twice.
 
 A flagged finding carries the advisory id, severity, and the version that fixes
-it. You can **resolve** (acknowledge) one to drop it from the active list; it
+it. You can **resolve** (acknowledge) one to drop it from the active list. It
 comes back if the package version changes or a new advisory lands on it, since
 the resolve is tied to that exact version.
 
@@ -39,7 +39,7 @@ the resolve is tied to that exact version.
 checks staleness rather than counting ticks, so if the Mac was asleep past the
 daily mark it runs the missed scan shortly after waking. When a scan fails
 (usually because you're offline and OSV is unreachable), it backs off
-exponentially up to six hours instead of retrying every few minutes, and resets
+exponentially up to six hours instead of retrying every few minutes. It resets
 on the next success.
 
 Notifications are coalesced: one banner summarizing everything newly flagged in a
@@ -109,7 +109,7 @@ The discovery config is at `~/.config/deps/config.toml` (or under
 `$XDG_CONFIG_HOME/deps/`, symlinked from `recipes/deps/config.toml`). The repo
 set comes from the catalog registry; this file trims it. Both lists are glob
 patterns, matched a segment at a time against every trailing run of path
-segments, so a pattern can name a repo by basename, by org/repo, or by a
+segments. So a pattern can name a repo by basename, by org/repo, or by a
 deeper suffix. Edits take effect on the next scan without a restart; a pattern
 that doesn't compile fails the scan naming it.
 
