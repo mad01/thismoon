@@ -221,9 +221,12 @@ func inlineMd(s string) template.HTML {
 		return fmt.Sprintf(`<wk-badge>%s</wk-badge>`, html.EscapeString(p[2]))
 	})
 
-	// Links: [text](url). A url outside the allowlist stays literal text.
+	// Links: [text](url). A url outside the allowlist stays literal text, and
+	// so does one holding a placeholder token: the token would be swapped
+	// back inside the href attribute, and generated markup belongs in text
+	// content only.
 	replace(reLink, func(p []string) string {
-		if !LinkHrefAllowed(p[2]) {
+		if !LinkHrefAllowed(p[2]) || strings.Contains(p[2], "\x00") {
 			return html.EscapeString(p[0])
 		}
 		return fmt.Sprintf(`<a href="%s">%s</a>`, html.EscapeString(p[2]), html.EscapeString(p[1]))
@@ -234,7 +237,8 @@ func inlineMd(s string) template.HTML {
 		return fmt.Sprintf(`<code>%s</code>`, html.EscapeString(p[1]))
 	})
 
-	// Bold: **text**
+	// Bold: **text**. The text may hold tokens of the pieces above (a code
+	// span or a link inside the bold), which escaping leaves intact.
 	replace(reBold, func(p []string) string {
 		return fmt.Sprintf(`<strong>%s</strong>`, html.EscapeString(p[1]))
 	})
@@ -242,9 +246,18 @@ func inlineMd(s string) template.HTML {
 	// Escape the remaining text.
 	s = html.EscapeString(s)
 
-	// Restore placeholders (they contain pre-escaped HTML).
-	for _, ph := range phs {
-		s = strings.Replace(s, html.EscapeString(ph.token), ph.html, 1)
+	// Restore placeholders (they contain pre-escaped HTML). A restored piece
+	// can carry a token of its own, code inside bold say, so keep going until
+	// a pass swaps nothing. Every token occurs once, so this ends.
+	for swapped := true; swapped; {
+		swapped = false
+		for _, ph := range phs {
+			if !strings.Contains(s, ph.token) {
+				continue
+			}
+			s = strings.Replace(s, ph.token, ph.html, 1)
+			swapped = true
+		}
 	}
 
 	// Italic: *text* — applied after escaping since it doesn't need special chars.
