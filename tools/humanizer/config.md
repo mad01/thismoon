@@ -10,8 +10,8 @@ one setting that isn't a per-command flag.
 
 The `vale` binary itself is resolved from `$PATH` (Go's `exec.LookPath`).
 The underlying `rules.DetectOptions` struct has a `ValeBinary` field that
-would override this, but neither the CLI nor the MCP server exposes it:
-there is no flag or environment variable to point humanizer at a `vale`
+would override this, but neither the CLI nor the MCP server exposes it.
+There is no flag or environment variable to point humanizer at a `vale`
 binary that isn't on `PATH`.
 
 ## Cache directory

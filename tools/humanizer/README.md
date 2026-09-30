@@ -9,7 +9,7 @@ It also lints and fixes the invisible watermark carriers that get embedded in te
 Detection is purely deterministic. The tool flags patterns; rewriting is left to the calling agent. Two independent paths cover different tells:
 
 - Vale span rules: the embedded style pack matches specific phrasing and reports a line/column span.
-- Statistical detector: whole-sample checks (sentence-length uniformity, contraction rate, type-token ratio, short-text em-dash, long-text em-dash density, semicolon absence, heading density, anaphora) catch structural tells that no single sentence exhibits, each gated on a minimum sample size.
+- Statistical detector: whole-sample checks (sentence-length uniformity, contraction rate, type-token ratio, short-text em-dash, long-text em-dash density, semicolon absence, heading density, anaphora) catch structural tells that no single sentence exhibits. Each is gated on a minimum sample size.
 
 Run both for full coverage.
 
@@ -17,7 +17,7 @@ The watermark side (`lint`, `fix`, `rewrite`) is separate from the AI-writing de
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 57 rules. Most come from Wikipedia's "Signs of AI writing" and the fiction-prose tells surfaced by StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136)). The `clarity` category (long sentences, long or dense paragraphs, plain words, acronyms never spelled out) is drawn from write-good, the Red Hat and Microsoft style guides, and Vale's Std and Voices packages. ParagraphReadingEase scores per paragraph on vale 3.21 or newer; older builds score the whole document:
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 57 rules. Most come from Wikipedia's "Signs of AI writing" and the fiction-prose tells surfaced by StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136)). The `clarity` category covers long sentences, long or dense paragraphs, plain words, and acronyms never spelled out. It is drawn from write-good, the Red Hat and Microsoft style guides, and Vale's Std and Voices packages. ParagraphReadingEase scores per paragraph on vale 3.21 or newer; older builds score the whole document:
 
 AcronymFirstUse, AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmbodiedEmotionCliche, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NarratorMoralizing, NegativeParallelism, NotabilityInflation, ParagraphLength, ParagraphReadingEase, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PlainWords, PromotionalVocab, QuietAcceptanceEnding, RhetoricalTransitions, RuleOfThree, SentenceLength, SignificanceInflation, Signposting, StockSensoryImagery, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
@@ -89,11 +89,11 @@ The backend comes from the environment. `HUMANIZER_BACKEND` forces one; otherwis
 | `--model` | Override the backend's default model id (also settable via `HUMANIZER_MODEL`) |
 | `--json` | Emit the verdict as JSON (same shape as the `humanizer_judge` MCP tool) |
 
-The verdict is `likely_ai`, `likely_human`, or `mixed`, with a confidence score, concrete signals, and a one-line summary. Confidence is a 0-1 fraction reporting how sure the judge is of the verdict it gave, not how machine-written the text is: a terse changelog can be confidently human at 0.5 because the genre explains everything the judge could point at. The rubric makes the model derive that number from the signals it listed, so short or genre-bound passages score lower than long ones full of quotable evidence. Verdicts are advisory: treat flagged sections as rewrite targets alongside detect findings, not as ground truth.
+The verdict is `likely_ai`, `likely_human`, or `mixed`, with a confidence score, concrete signals, and a one-line summary. Confidence is a 0-1 fraction reporting how sure the judge is of the verdict it gave, not how machine-written the text is. A terse changelog can be confidently human at 0.5 because the genre explains everything the judge could point at. The rubric makes the model derive that number from the signals it listed, so short or genre-bound passages score lower than long ones full of quotable evidence. Verdicts are advisory: treat flagged sections as rewrite targets alongside detect findings, not as ground truth.
 
 ### scan
 
-Pull the prose out of Go source and scan it. Doc comments, cobra command fields, MCP tool descriptions, error messages, and `jsonschema` struct tags are text a reader meets in help output, tool listings, and errors, and none of it sits in a Markdown file where `detect` would find it.
+Pull the prose out of Go source and scan it. Doc comments, cobra command fields, MCP tool descriptions, error messages, and `jsonschema` struct tags are text a reader meets in help output, tool listings, and errors. None of it sits in a Markdown file where `detect` would find it.
 
 ```sh
 humanizer scan --go internal/cli/detect.go
@@ -120,7 +120,7 @@ humanizer profile draft.md --diff reference.md
 cat draft.md | humanizer profile --json
 ```
 
-Metrics: word/sentence/paragraph counts, type-token ratio (TTR), sentence length (mean, stddev, p50, p90), punctuation densities per 100 words (em-dash, semicolon, colon, parenthesis, comma, hyphenated-pair, bold), contraction rate, Flesch reading ease, top bigrams, top trigrams.
+Metrics: word/sentence/paragraph counts, type-token ratio (TTR), sentence length (mean, stddev, p50, p90), punctuation densities per 100 words (em-dash, semicolon, colon, parenthesis, comma, hyphenated-pair, bold). The profile also covers contraction rate, Flesch reading ease, top bigrams, and top trigrams.
 
 | Flag | Description |
 |---|---|
@@ -153,7 +153,7 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 ### narrative
 
-For fiction and story-shaped prose only; skip it for docs, PR descriptions, and Slack drafts. Print the StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human-written from AI-generated fiction; in the paper this narrative signal also survives span-level style editing. These features need a reader's judgment, not a regex, so the command only serves the rubric. Score a passage by running the judge prompt with the passage on stdin:
+For fiction and story-shaped prose only; skip it for docs, PR descriptions, and Slack drafts. Print the StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human-written from AI-generated fiction. In the paper this narrative signal also survives span-level style editing. These features need a reader's judgment, not a regex, so the command only serves the rubric. Score a passage by running the judge prompt with the passage on stdin:
 
 ```sh
 # human-readable rubric, grouped by theme
@@ -235,7 +235,7 @@ humanizer rewrite draft.md --backend ollama -o draft.rewritten.md
 | `-o`, `--output` | Write the result here (default: stdout) |
 | `--json-stats` | Emit the info block as JSON on stderr |
 
-The default `print-prompt` backend calls no model; it returns the prompt so you or the calling agent produce the rewrite. The `ollama` and `openai-compatible` backends send text off-process: non-loopback hosts are refused unless `--allow-remote` (or `WATERMARKS_REWRITE_ALLOW_REMOTE=1`) is set, redirects are refused so the API-key header can't be forwarded to an unvalidated host, and the key is read from `WATERMARKS_REWRITE_API_KEY` only, never a flag. Prefer a rewrite model different from the suspected origin; rewriting with the origin model can re-stamp the text.
+The default `print-prompt` backend calls no model; it returns the prompt so you or the calling agent produce the rewrite. The `ollama` and `openai-compatible` backends send text off-process: non-loopback hosts are refused unless `--allow-remote` (or `WATERMARKS_REWRITE_ALLOW_REMOTE=1`) is set. Redirects are refused so the API-key header can't be forwarded to an unvalidated host, and the key is read from `WATERMARKS_REWRITE_API_KEY` only, never a flag. Prefer a rewrite model different from the suspected origin; rewriting with the origin model can re-stamp the text.
 
 ### version
 

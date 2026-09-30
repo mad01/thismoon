@@ -55,7 +55,7 @@ CLI-only under the MCP seatbelt.
 ## Data flow
 
 Span detection (`detect` / `humanizer_detect`): the text lands in
-`rules.Detect`, which calls `EnsurePack` to extract the embedded style pack
+`rules.Detect`. It calls `EnsurePack` to extract the embedded style pack
 to the cache directory if needed, writes the text to a temp file, and runs
 `vale --output=JSON --config=<cache>/.vale.ini` via `runVale`.
 `parseValeJSON` turns vale alerts into findings; `filterAndEnrich` applies
@@ -106,10 +106,10 @@ CLI: `detect [file]` (flags `--min-severity`, `--rule`, `--statistical`,
 `--json`), `scan [path]` (`--go`, `--detect`, `--holistic`, `--kind`; it
 takes a path rather than stdin, defaulting to the current directory),
 `profile [file]` (`--diff`, `--json`), `rules list`
-(`--category`, `--json`), `rules explain <rule_id>`, `narrative`
-(`--prompt`, `--json`), `lint`, `fix`, `rewrite`, `docs`, `mcp`, and
-`version [-o json]` (the bare version token, or the four-key build
-metadata object shared across the repo's components). All text commands
+(`--category`, `--json`), `rules explain <rule_id>`, and `narrative`
+(`--prompt`, `--json`). The CLI also has `lint`, `fix`, `rewrite`, `docs`,
+`mcp`, and `version [-o json]` (the bare version token, or the four-key
+build metadata object shared across the repo's components). All text commands
 read stdin when the file argument is omitted or `-`.
 
 MCP: `humanizer mcp` starts a stdio server (MCP Go SDK) exposing thirteen
@@ -120,7 +120,7 @@ tools: `humanizer_status`, `humanizer_detect`, `humanizer_detect_file`,
 `humanizer_fix`, `humanizer_rewrite`. Handlers call the same internal
 functions as the CLI. When the consuming repo registers the server it runs under a
 seatbelt sandbox: no network, and `humanizer_detect_file`/`humanizer_scan_go`
-read only prose and Go files under the profile's workspace roots — the
+read only prose and Go files under the profile's workspace roots. The
 sandbox is the consuming repo's wiring (docs/adr/0006), not this code.
 
 Runtime dependency: `vale` must be on `$PATH` for span detection;
