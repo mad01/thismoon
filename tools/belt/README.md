@@ -68,7 +68,25 @@ belt version -o json
 
 ## Configuration
 
-Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.yaml`, under `guards.<id>` for guards and `hints.<id>` for hints (`$XDG_CONFIG_HOME` moves the directory, `--config` and `$BELT_CONFIG` move the file, and a legacy `config.toml` beside the default file is still read when no YAML file exists). Both default to enabled when the file or entry is missing. A config file that is present but fails to parse or validate is different from a missing one: belt can't tell "no rules" from "the rules didn't load", so every guarded tool call is denied with `belt[config]:` and the file to fix until it is fixed or moved aside. `allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo`, or a trailing `/*` org wildcard. For example, `guards.git-push-main` with `allow_repos: [github.com/mad01/dotfiles]` permits direct pushes to the default branch in that repo while every other repo stays fail-closed. Hints take the mirror-image key, `exclude_repos`. The one shared list is purpose-named: top-level `direct_main_repos` states which repos' workflow is direct-to-main and is read by exactly git-push-main (push allowed) and the commit-policy hint (advice silenced), never by any other check, so editing it can't disarm an unrelated guard (docs/adr/0013). The other shared list, `public_repos`, states which repos are public or headed there and is read by exactly the two internal-name guards: internal names are blocked in listed repos and allowed everywhere else, which is what lets an internal org hosted on github.com work without exemptions; a rendering without the key keeps the older rule that every github.com repo is public-bound (docs/adr/0015). An exemption that should hold on only some machines goes in those machines' rendered config file, because there is no machine-profile switch inside the config (docs/adr/0010). The rule-driven guards read three more top-level sections: `git_identity` (expected email per repo pattern), `commit_guards` (work-hours rules with `block_hours`, `always_allow`, and an `override` name), and `custom_guards` (external commands registered as named guards); `belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this).
+Toggles, `exclude_paths`, `extra_patterns`, and `allow_repos` live in `~/.config/belt/config.yaml`. Guards sit under `guards.<id>` and hints under `hints.<id>`. Both default to enabled when the file or entry is missing. `$XDG_CONFIG_HOME` moves the directory, and `--config` and `$BELT_CONFIG` move the file. A legacy `config.toml` beside the default file is still read when no YAML file exists.
+
+A config file that is present but fails to parse or validate is different from a missing one. In that case belt can't tell "no rules" from "the rules didn't load". So every guarded tool call is denied with `belt[config]:` and the file to fix, until the file is fixed or moved aside.
+
+`allow_repos` exempts specific repositories from a guard by canonical `host/owner/repo`, or a trailing `/*` org wildcard. For example, `guards.git-push-main` with `allow_repos: [github.com/mad01/dotfiles]` permits direct pushes to the default branch in that repo. Every other repo stays fail-closed. Hints take the mirror-image key, `exclude_repos`.
+
+One shared list, top-level `direct_main_repos`, is purpose-named. It states which repos' workflow is direct-to-main. It is read by exactly git-push-main (push allowed) and the commit-policy hint (advice silenced), never by any other check. That is why editing it can't disarm an unrelated guard (docs/adr/0013).
+
+The other shared list, `public_repos`, states which repos are public or headed there. It is read by exactly the two internal-name guards. Internal names are blocked in listed repos and allowed everywhere else. That split is what lets an internal org hosted on github.com work without exemptions. A rendering without the key keeps the older rule that every github.com repo is public-bound (docs/adr/0015).
+
+An exemption that should hold on only some machines goes in those machines' rendered config file, because there is no machine-profile switch inside the config (docs/adr/0010).
+
+The rule-driven guards read three more top-level sections:
+
+- `git_identity` holds the expected email per repo pattern.
+- `commit_guards` holds work-hours rules with `block_hours`, `always_allow`, and an `override` name.
+- `custom_guards` registers external commands as named guards.
+
+`belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this).
 
 ## Develop
 
