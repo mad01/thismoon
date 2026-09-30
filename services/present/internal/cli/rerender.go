@@ -68,6 +68,39 @@ func rerenderPages(ctx context.Context, st store.Store, ids []string, w io.Write
 	return nil
 }
 
+// rerenderSweep re-renders every page and logs one summary line, plus one
+// line per page that failed. serve runs it in the background at startup so a
+// binary with a newer renderer or webkit refreshes the stored pages on its
+// own; rerenderOne writes only when the output changed, so a sweep over
+// current pages is read-only.
+func rerenderSweep(ctx context.Context, st store.Store, logf func(string, ...any)) {
+	metas, err := st.ListMeta(ctx)
+	if err != nil {
+		logf("present: rerender sweep: list pages: %v", err)
+		return
+	}
+	changed, failed := 0, 0
+	for _, m := range metas {
+		if ctx.Err() != nil {
+			return
+		}
+		outcome, err := rerenderOne(ctx, st, m.ID)
+		switch {
+		case err != nil:
+			failed++
+			logf("present: rerender sweep: %s: %v", m.ID, err)
+		case outcome != outcomeUnchanged:
+			changed++
+		}
+	}
+	logf(
+		"present: rerender sweep: %d pages, %d re-rendered, %d failed",
+		len(metas),
+		changed,
+		failed,
+	)
+}
+
 const (
 	outcomeFromDoc   = "re-rendered-from-doc"
 	outcomeUpgraded  = "upgraded-legacy-html"

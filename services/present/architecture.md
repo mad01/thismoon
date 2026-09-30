@@ -80,7 +80,8 @@ version bump. `present_source` returns the stored `doc.json`/`graph.json` so
 a later session can round-trip them back through `present_update`. `present
 rerender` pushes a renderer or webkit change through existing pages by
 re-rendering from those sources (pages without sources get a deterministic
-legacy-HTML upgrade).
+legacy-HTML upgrade), and a local `present serve` runs that sweep itself in
+the background at startup.
 
 A page can carry a second rendition, the deck (docs/adr/0019). The tools take
 it as `deck`, a Doc of its own whose sections are slides, and compile it

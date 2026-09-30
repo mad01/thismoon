@@ -67,6 +67,109 @@
   }
   window.presentGraphLayout = presentGraphLayout;
 
+  // ── Graph style ──
+  // The page's graph script carries data only (elements, engine, direction);
+  // the Cytoscape style is built here at load, so a palette, box, or tone
+  // change reaches every stored graph the next time it is opened, with no
+  // rerender. getGraphColors reads the theme at call time and the page
+  // rebuilds the instance on wk-themechange. graph.go validates tones and
+  // module colors against the same lists (graphTones, moduleColors).
+  var GRAPH_TONES = ['neutral', 'green', 'red', 'blue', 'amber', 'purple'];
+  var MODULE_COLORS = 4;
+  function getGraphColors() {
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return dark
+      ? { bg: '#1A1916', centerBg: '#3A2A20', centerBorder: '#E8956A', centerText: '#F5F3EF',
+          leafBg: '#252320', leafBorder: '#4A453D', leafText: '#F5F3EF',
+          modBorder: ['#E8956A', '#7AAAE8', '#6BC48A', '#8B6BB0'],
+          edge: '#4A453D', edgeArrow: '#6B6459', hot: '#E8956A',
+          registryBg: '#35322C', registryBorder: '#4A453D', registryText: '#B8B2A7',
+          tones: {
+            neutral: { bg: '#35322C', border: '#5A544B', text: '#E6E1D8' },
+            green:   { bg: '#1F3A2B', border: '#6BC48A', text: '#C8EBD5' },
+            red:     { bg: '#3F2A22', border: '#E8956A', text: '#F3CDBB' },
+            blue:    { bg: '#1F2E42', border: '#7AAAE8', text: '#C8DAF3' },
+            amber:   { bg: '#3E3418', border: '#D9AE55', text: '#F0DEB0' },
+            purple:  { bg: '#32283F', border: '#A98BCB', text: '#DDD0EA' } } }
+      : { bg: '#FFFFFF', centerBg: '#FFF5F0', centerBorder: '#C4704B', centerText: '#252320',
+          leafBg: '#FFFFFF', leafBorder: '#D8D4CD', leafText: '#252320',
+          modBorder: ['#C4704B', '#5B8EC4', '#4A9E6B', '#8B6BB0'],
+          edge: '#D8D4CD', edgeArrow: '#B8B2A7', hot: '#C4704B',
+          registryBg: '#EEECE8', registryBorder: '#D8D4CD', registryText: '#6B6459',
+          tones: {
+            neutral: { bg: '#EEECE8', border: '#C9C4BB', text: '#3D3A34' },
+            green:   { bg: '#E6F4EC', border: '#4A9E6B', text: '#1F5C38' },
+            red:     { bg: '#FBEAE3', border: '#C4704B', text: '#7A3A1F' },
+            blue:    { bg: '#E7EFF9', border: '#5B8EC4', text: '#2A4E75' },
+            amber:   { bg: '#FBF1DC', border: '#C9973A', text: '#6B4E12' },
+            purple:  { bg: '#EFE8F5', border: '#8B6BB0', text: '#4E3A6B' } } };
+  }
+  // Elements come as the array graph.go emits or as {nodes, edges}.
+  function elementList(elements) {
+    if (Array.isArray(elements)) return elements;
+    return [].concat((elements && elements.nodes) || [], (elements && elements.edges) || []);
+  }
+  function presentGraphStyle(elements) {
+    var c = getGraphColors();
+    var maxW = 0;
+    elementList(elements).forEach(function (e) {
+      var w = e && e.data && e.data.weight;
+      if (typeof w === 'number' && w > maxW) maxW = w;
+    });
+    var style = [
+      { selector: 'node', style: {
+          'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
+          'font-size': '12px', 'text-valign': 'center', 'text-halign': 'center',
+          // The height follows the wrapped label so a long name grows the
+          // box instead of spilling past it; the width stays fixed so the
+          // layouts keep their even columns. Body plus padding is 144px wide.
+          'width': '120px', 'height': 'label', 'padding': '12px', 'shape': 'roundrectangle',
+          'background-color': c.leafBg, 'border-width': 2,
+          'border-color': c.leafBorder, 'color': c.leafText
+      }},
+      { selector: 'node[type="center"]', style: {
+          'background-color': c.centerBg, 'border-color': c.centerBorder,
+          'border-width': 3, 'color': c.centerText, 'font-weight': 'bold'
+      }},
+      { selector: 'node[type="registry"]', style: {
+          'background-color': c.registryBg, 'border-color': c.registryBorder,
+          'border-style': 'dashed', 'color': c.registryText
+      }}
+    ];
+    for (var i = 0; i < MODULE_COLORS; i++) {
+      style.push({ selector: 'node[type="module"][color="' + i + '"]', style: { 'border-color': c.modBorder[i] } });
+    }
+    // A tone comes after the type selectors so it wins over their colors.
+    GRAPH_TONES.forEach(function (t) {
+      style.push({ selector: 'node[tone="' + t + '"]', style: {
+        'background-color': c.tones[t].bg, 'border-color': c.tones[t].border, 'color': c.tones[t].text } });
+    });
+    style.push(
+      { selector: 'edge', style: {
+          'width': 2, 'line-color': c.edge, 'target-arrow-color': c.edgeArrow,
+          'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
+          'arrow-scale': 0.8
+      }},
+      { selector: 'edge[type="publishes"]', style: { 'line-style': 'dashed' } },
+      // startGraphFlow marches line-dash-offset over this pattern's period
+      // (16), so keep the two in step.
+      { selector: 'edge[flow]', style: { 'line-style': 'dashed', 'line-dash-pattern': [10, 6] } }
+    );
+    if (maxW > 0) {
+      style.push(
+        { selector: 'edge[weight]', style: { 'width': 'mapData(weight, 0, ' + maxW + ', 1.5, 7)' } },
+        { selector: 'edge[hot]', style: { 'line-color': c.hot, 'target-arrow-color': c.hot } }
+      );
+    }
+    style.push({ selector: 'edge[label]', style: {
+        'label': 'data(label)', 'font-size': '10px', 'color': c.leafText,
+        'text-background-color': c.bg, 'text-background-opacity': 0.8,
+        'text-background-padding': '2px'
+    }});
+    return style;
+  }
+  window.presentGraphStyle = presentGraphStyle;
+
   // The engine the reader picked with the graph control; null means the
   // page's authored engine. It outlives a theme recolor, which rebuilds the
   // Cytoscape instance through the shim below.
@@ -85,10 +188,14 @@
     if (btn) btn.textContent = currentEngine();
   }
 
-  // Capture the Cytoscape instance the injected graph script creates, apply
-  // the reader's engine choice, and make the dagre and elk layout
-  // registrations explicit/idempotent (same shim the old template carried
-  // inline).
+  // Capture the Cytoscape instance the injected graph script creates, give it
+  // the current style, apply the reader's engine choice, and make the dagre
+  // and elk layout registrations explicit/idempotent (same shim the old
+  // template carried inline). The style is filled in when the script passes
+  // none (data-only scripts) and replaced when the script's layout came from
+  // presentGraphLayout: that script was rendered by an earlier template with
+  // the style inline, and the current one supersedes it. A raw JS graph with
+  // its own style and layout is left alone.
   (function () {
     var orig = window.cytoscape;
     if (!orig) return;
@@ -100,6 +207,9 @@
     var wrapped = function () {
       var opts = arguments[0];
       var isPage = !!(opts && opts.container);
+      if (isPage && (!opts.style || (opts.layout && opts.layout.presentEngine))) {
+        opts.style = presentGraphStyle(opts.elements);
+      }
       if (isPage && opts.layout) {
         baseLayout = opts.layout;
         if (engineOverride) opts.layout = presentGraphLayout(engineOverride, layoutDirection(baseLayout));
@@ -309,8 +419,8 @@
   }
 
   // ── Graph edge flow ── marches the dash pattern of every edge with data.flow
-  // from source to target; speed follows data.weight. The graph template styles
-  // those edges with line-dash-pattern [10, 6], so the period here is 16. The
+  // from source to target; speed follows data.weight. presentGraphStyle gives
+  // those edges line-dash-pattern [10, 6], so the period here is 16. The
   // loop pauses while the graph is off screen or the tab is hidden, and under
   // Reduce Motion it draws one static frame.
   var flowStop = null;

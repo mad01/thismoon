@@ -43,7 +43,7 @@ var (
 	errTooManyEdges = fmt.Errorf("mermaid: flowchart has more than %d edges", maxEdges)
 )
 
-// moduleColors is how many module border colours the graph template defines
+// moduleColors is how many module border colours app.js's graph style defines
 // (modBorder in render/graph.go); subgraph indexes wrap around it.
 const moduleColors = 4
 

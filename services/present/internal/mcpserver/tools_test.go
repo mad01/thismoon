@@ -618,8 +618,8 @@ func TestCreateWithStructuredGraph(t *testing.T) {
 	}
 
 	_, read, _ := h.handleRead(ctx, nil, readInput{ID: created.ID})
-	if !strings.Contains(read.Graph, "getGraphColors") {
-		t.Error("graph missing getGraphColors function")
+	if !strings.Contains(read.Graph, "presentGraphLayout(") {
+		t.Error("graph missing the presentGraphLayout call")
 	}
 	if !strings.Contains(read.Graph, "initGraph") {
 		t.Error("graph missing initGraph function")

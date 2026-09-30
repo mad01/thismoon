@@ -23,7 +23,6 @@ func TestRenderGraphMinimal(t *testing.T) {
 	}
 
 	checks := []string{
-		"function getGraphColors()",
 		"function initGraph()",
 		"cytoscape(",
 		`layout: presentGraphLayout('dagre', 'LR')`,
@@ -135,11 +134,13 @@ func TestRenderGraphModuleNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderGraph: %v", err)
 	}
-	if !strings.Contains(out, `c.modBorder[0]`) {
-		t.Error("module color 0 style not generated")
-	}
-	if !strings.Contains(out, `c.modBorder[2]`) {
-		t.Error("module color 2 style not generated")
+	for _, want := range []string{
+		`{"data":{"color":"0","id":"m0","label":"Mod0","type":"module"}}`,
+		`{"data":{"color":"2","id":"m1","label":"Mod1","type":"module"}}`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in graph output", want)
+		}
 	}
 }
 
@@ -168,27 +169,30 @@ func TestRenderGraphEdgeTypes(t *testing.T) {
 	}
 }
 
-func TestRenderGraphThemeColors(t *testing.T) {
+// TestRenderGraphIsDataOnly pins that the script carries no style: app.js's
+// presentGraphStyle supplies it at load, so a palette change needs no
+// rerender of stored pages.
+func TestRenderGraphIsDataOnly(t *testing.T) {
 	g := GraphInput{
-		Nodes: []GraphNode{{ID: "a", Label: "A", Type: "center"}},
+		Nodes: []GraphNode{
+			{ID: "a", Label: "A", Type: "center", Tone: "green"},
+			{ID: "b", Label: "B", Type: "module", Color: 1},
+		},
+		Edges: []GraphEdge{{From: "a", To: "b", Weight: 3, Flow: true, Label: "x"}},
 	}
 
 	out, err := RenderGraph(g)
 	if err != nil {
 		t.Fatalf("RenderGraph: %v", err)
 	}
-
-	darkColors := []string{"#1A1916", "#3A2A20", "#E8956A"}
-	lightColors := []string{"#FFFFFF", "#FFF5F0", "#C4704B"}
-
-	for _, c := range darkColors {
-		if !strings.Contains(out, c) {
-			t.Errorf("dark theme color %s missing", c)
+	for _, banned := range []string{"style:", "getGraphColors", "#", "background-color", "mapData("} {
+		if strings.Contains(out, banned) {
+			t.Errorf("graph output carries %q, expected data only:\n%s", banned, out)
 		}
 	}
-	for _, c := range lightColors {
-		if !strings.Contains(out, c) {
-			t.Errorf("light theme color %s missing", c)
+	for _, want := range []string{"function initGraph()", "elements: [", "layout: presentGraphLayout("} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in graph output", want)
 		}
 	}
 }
@@ -209,8 +213,8 @@ func TestRenderGraphRegistryNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderGraph: %v", err)
 	}
-	if !strings.Contains(out, `type="registry"`) {
-		t.Error("registry node style selector missing")
+	if !strings.Contains(out, `{"data":{"id":"r","label":"Registry","type":"registry"}}`) {
+		t.Error("registry node data missing")
 	}
 }
 
@@ -231,9 +235,6 @@ func TestRenderGraphFlowAndWeight(t *testing.T) {
 		// the heaviest edge is hot and flows; the light one is neither
 		`{"data":{"flow":1,"hot":1,"source":"a","target":"b","weight":1200}}`,
 		`{"data":{"source":"b","target":"c","weight":150}}`,
-		`mapData(weight, 0, 1200, 1.5, 7)`,
-		`'line-dash-pattern': [10, 6]`,
-		`'target-arrow-color': c.hot`,
 	}
 	for _, want := range checks {
 		if !strings.Contains(out, want) {
@@ -252,9 +253,6 @@ func TestRenderGraphNoWeightSkipsWidthMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderGraph: %v", err)
 	}
-	if strings.Contains(out, "mapData(") {
-		t.Error("width mapping emitted for a graph without weights")
-	}
 	if strings.Contains(out, `"hot"`) {
 		t.Error("hot tint emitted for a graph without weights")
 	}
@@ -268,7 +266,6 @@ func TestRenderGraphTones(t *testing.T) {
 		Nodes: []GraphNode{
 			{ID: "a", Label: "Doom", Tone: "neutral"},
 			{ID: "b", Label: "Laya decides", Type: "center", Tone: "green"},
-			{ID: "c", Label: "Safety check", Tone: "red"},
 			{ID: "d", Label: "Plain"},
 		},
 	}
@@ -281,21 +278,10 @@ func TestRenderGraphTones(t *testing.T) {
 		`{"data":{"id":"a","label":"Doom","tone":"neutral"}}`,
 		`{"data":{"id":"b","label":"Laya decides","tone":"green","type":"center"}}`,
 		`{"data":{"id":"d","label":"Plain"}}`,
-		`selector: 'node[tone="neutral"]'`,
-		`selector: 'node[tone="green"]'`,
-		`selector: 'node[tone="red"]'`,
-		`c.tones.green.bg`, `c.tones.green.border`, `c.tones.green.text`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in graph output", want)
 		}
-	}
-	if strings.Contains(out, `node[tone="blue"]`) {
-		t.Error("unused tone got a selector")
-	}
-	// A tone must win over the type's colors, so its selector comes later.
-	if strings.Index(out, `node[tone="green"]`) < strings.Index(out, `node[type="center"]`) {
-		t.Error("tone selector precedes the type selector")
 	}
 }
 
