@@ -13,10 +13,10 @@ present pages are agent-written briefings that lived on one machine, served
 on loopback with no authentication, which is what ADR-0011's binding rule
 and ADR-0007's darwin-only artifacts assume. The pages turned out to be
 worth showing to other people: a research summary or a review page is
-handed over by link, and a link to localhost is no link at all. The
-question was how to put a page somewhere others can reach it without
-turning present into a publishing platform with accounts, and without a
-second codebase to keep in step with the local one.
+handed over by link. A link to localhost is no link at all. The question
+was how to put a page somewhere others can reach it. It had to be done
+without turning present into a publishing platform with accounts, and
+without a second codebase to keep in step with the local one.
 
 ## Decision
 
@@ -47,7 +47,7 @@ choice.
 
 Two alternatives were weighed for the store. A cloud object bucket would
 have handled expiry with a lifecycle rule and carried no size cap, at the
-price of cloud credentials and a fake for tests; a relational database
+price of cloud credentials and a fake for tests. A relational database
 would have been the most infrastructure for the least gain at this scale.
 Custom resources won because they add no dependency beyond the
 cluster, test against kind in CI, and make `kubectl get pages` the
@@ -64,7 +64,7 @@ refused on write.
   needs a new served version and a conversion story; a test keeps the
   embedded copy and `deploy/base/crd.yaml` byte-identical.
 - A lost author key orphans its pages until they expire or an operator
-  deletes the resources; a leaked key is the author until every page is
+  deletes the resources. A leaked key is the author until every page is
   re-shared under a new one. Reads need no key by design, so the
   instance belongs on an internal network and its access logs, which carry
   page ids, are secrets.
@@ -73,4 +73,4 @@ refused on write.
   minutes to any PR that touches present.
 - Machine-private wiring for the shared instance, the hostname, the
   gateway, and each machine's author key, stays in the consuming repo per
-  ADR-0006; this repo ships the base manifests and example overlays only.
+  ADR-0006. This repo ships the base manifests and example overlays only.

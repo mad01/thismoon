@@ -14,11 +14,11 @@ every other host was exempt. That rule was derived, never enumerated, and
 it held while internal code lived on internal hosts.
 
 It stops holding when the internal world is itself on github.com. A work
-org hosted there is where every internal name lives by definition, and
-the host rule denies them in their own repos: a push whose commit message
+org hosted there is where every internal name lives by definition. The
+host rule denies them in their own repos: a push whose commit message
 names a sibling service, a PR body, a file edit. The cure under the host
-rule is an `allow_repos` org wildcard on every guard in every rendering,
-which turns the exemption list into the real policy while the rule keeps
+rule is an `allow_repos` org wildcard on every guard in every rendering.
+That turns the exemption list into the real policy while the rule keeps
 saying the opposite. Private personal repos on github.com have the same
 problem in smaller print.
 

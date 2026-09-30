@@ -16,7 +16,7 @@ here runs on every machine that points at the source.
 
 Separately, the service recipes reference `packages.t_man` in `depends_on`.
 At the time of this decision, t-man's own recipe lived outside this repo, in
-the private repo that wires up a machine, so a service recipe hard-depending
+the private repo that wires up a machine. So a service recipe hard-depending
 on it named an item key its own source didn't define, and that fails ralph
 validation on a machine that consumes only this source. The alternative,
 dropping the dep and relying on the `command -v t-man` runtime guards, keeps
@@ -34,8 +34,9 @@ Recipes split into two layers:
   original text allowed a gate when it was "a property of the service").
 - **Private layer** (the consuming repo) carries the `[[recipe_sources]]`
   stanza and pin, MCP registration (`servers.json`), host filtering and
-  enables, env vars, secrets, and per-machine config overlays as companion
-  recipes that add their own items, never by patching public recipe fields.
+  enables, env vars, secrets, and per-machine config overlays. It carries
+  them as companion recipes that add their own items, never by patching
+  public recipe fields.
 
 Cross-source `depends_on` on **platform foundations** (t-man and d-man) is
 allowed and kept. These are prerequisites of the `*.this` platform, not
@@ -68,8 +69,8 @@ split, and the ban on cross-source deps for anything that is not a platform
 foundation, still govern every recipe added since.
 
 This repo is also headed toward a public release, which flips the default
-assumption in the original Context: a fresh machine with no private
-consuming repo at all becomes the common case, not the hypothetical one.
+assumption in the original Context. A fresh machine with no private consuming
+repo at all becomes the common case, not the hypothetical one.
 
 ## Amendment (2026-09-08)
 
@@ -77,14 +78,14 @@ The public layer no longer carries `profiles` at all. The original decision
 allowed a gate when it described the service rather than a machine, and
 five recipes used that allowance (catalog, prs, reminder, wire, deps). In
 practice every one of those gates was a machine-class decision, and the
-consuming repos had to mirror each one by hand: the work-side overlay had to
+consuming repos had to mirror each one by hand. The work-side overlay had to
 know which thismoon recipes were personal-only, and the base config had to
 restate the gate whenever it switched a recipe off.
 
 The gate moved to where the decision lives. ralph now reads an
 `overrides.toml` from any active recipe source (mad01/ralph#42), so the
 layering is: this repo declares what exists, the consuming base config sets
-the defaults with `[recipes_config.overrides."thismoon/<name>"]`, and a
+the defaults with `[recipes_config.overrides."thismoon/<name>"]`. And a
 profile-gated role source ships an `overrides.toml` that switches recipes off
 (or on) for its machines only. Precedence per key is base config, then active
 sources, then the machine-local overlay.

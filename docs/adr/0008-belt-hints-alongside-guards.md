@@ -33,7 +33,7 @@ Denying was considered for both and rejected. A recursive grep in an indexed
 repo returns the right answer; it costs some context and latency. Blocking it
 would put a tooling preference in the same enforcement tier as a leaked
 hostname, and a false positive would stall a session over a style rule. The
-audit reinforced this: the behaviour is habit, not ignorance, and a deny that
+audit reinforced this: the behaviour is habit, not ignorance. A deny that
 fires on a very common command has a much worse failure mode than the problem
 it corrects.
 
@@ -54,7 +54,7 @@ belt carries two concepts:
   `additionalContext` block. A hint has no denial path in its signature, so
   it cannot block a tool call even by mistake.
 
-Two hints ship with this decision: `kof-assertions` surfaces stored
+Two hints ship with this decision. `kof-assertions` surfaces stored
 assertions matching the subject of a csl search, and `prefer-csl` hands back
 the translated zoekt query after a multi-file sweep in an indexed repo.
 
@@ -73,7 +73,7 @@ and risks breaking anything that parses the output.
 - Hints default to enabled when config is missing, matching guards. The
   failure modes are not symmetric: a missing config silently disables nothing
   in either case, but an over-eager hint costs context on every matching tool
-  call, so relevance gating lives in the hint rather than in the config.
+  call. So relevance gating lives in the hint rather than in the config.
 - Hook registration stays machine-private in the consuming repo (ADR-0006).
   The `hooks.PostToolUse` entries are not added here.
 - A hint that fires too often becomes wallpaper and stops being read, which

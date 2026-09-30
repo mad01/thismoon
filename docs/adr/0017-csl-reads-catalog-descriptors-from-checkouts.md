@@ -10,29 +10,29 @@
 
 `csl repo` and `csl_repo_lookup` resolve a repo by its org/repo name. The
 name is often not what a person has in mind: they think "the platform
-team's repos" or "everything in the shop system", and the catalog service
+team's repos" or "everything in the shop system". The catalog service
 already holds that identity, as Backstage-shaped Component entities read
 from `service-info.yaml` files. The question was where csl should get owner
-and system from: ask the running catalog service over HTTP, or read the
-descriptor from each checkout during the discovery walk it already does.
+and system from. It could ask the running catalog service over HTTP, or read
+the descriptor from each checkout during the discovery walk it already does.
 
 ## Decision
 
 csl reads the descriptor itself. A repo's identity is the first Component
 in the root `catalog-info.yaml` (Backstage's name) or `service-info.yaml`
-(the catalog service's), and a repo whose descriptor is not at the root can
+(the catalog service's). A repo whose descriptor is not at the root can
 point csl at it with a root `.csl-catalog.yaml` (`descriptor: <repo-relative
 path>`). The reader is a csl-internal file-format package with no dependency
 on the catalog service's code and no validation beyond what csl uses.
 
 Three things drove it. Discovery must work with nothing running: csl's
-discovery feeds every search, index, and MCP path, and a dependency on a
+discovery feeds every search, index, and MCP path. A dependency on a
 service at lookup time would turn "which repo" into a distributed question
 with a new failure mode. Freshness comes for free: the descriptor is read
 from the same working tree the walk found, so a renamed system shows up on
 the next `csl repo` with no refresh step. And the two catalogs disagree on
 scope: the catalog service indexes what its registry names, while csl indexes
-what is checked out under `dirs`; a checkout the catalog does not know still
+what is checked out under `dirs`. A checkout the catalog does not know still
 carries its descriptor, and reading the file answers for it too.
 
 The cost is a second, lenient parser of the same file shape next to the
