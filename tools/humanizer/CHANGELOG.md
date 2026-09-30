@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/mad01/thismoon/compare/humanizer/v0.13.0...humanizer/v0.13.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **humanizer:** report an unreadable scan root instead of an empty result ([#154](https://github.com/mad01/thismoon/issues/154)) ([83b397f](https://github.com/mad01/thismoon/commit/83b397fa5670ad673c3f0ce6eec2fbc5876e8227))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/humanizer/v0.12.0...humanizer/v0.13.0) (2026-09-30)
 
 
