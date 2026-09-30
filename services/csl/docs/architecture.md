@@ -122,7 +122,7 @@ Each repo has one entry in `state.json`:
 }
 ```
 
-The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`. `search.CheckStaleness()` diffs the current fingerprint against the stored one; any difference means the shard is out of date. The index format version (`indexFormatVersion` in `internal/search/index.go`) is a constant that bumps whenever the shard contents produced from an unchanged tree change, so an upgrade that adds to what a shard holds re-indexes every repo once instead of serving old shards forever.
+The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`. `search.CheckStaleness()` diffs the current fingerprint against the stored one; any difference means the shard is out of date. The index format version (`indexFormatVersion` in `internal/search/index.go`) is a constant that bumps whenever the shard contents produced from an unchanged tree change. So an upgrade that adds to what a shard holds re-indexes every repo once instead of serving old shards forever.
 
 ### Shard validation
 
@@ -130,7 +130,7 @@ The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain 
 
 ### Symbols
 
-`search.IndexRepo` adds every file as an `index.Document` whose `Symbols` and `SymbolsMetaData` come from `internal/symbols.Extract`: it parses the file with the tree-sitter grammar `internal/grammar` maps its name to and walks a per-language rule table (Go, TypeScript, Python, Java, protobuf, markdown headings, bash functions) collecting definition names, a kind in zoekt's ctags vocabulary, and the enclosing declaration (a Go receiver type, a class, a protobuf message or service). Ranges are byte offsets on rune boundaries, sorted and non-overlapping, the invariants the shard builder checks. A file whose extraction fails is logged and indexed without symbols. zoekt's own ctags run stays disabled (`DisableCTags: true`), so no ctags binary is needed; `sym:` queries match only these sections, and every content match near a symbol picks up zoekt's symbol ranking, which is why a definition's file sorts above its call sites.
+`search.IndexRepo` adds every file as an `index.Document` whose `Symbols` and `SymbolsMetaData` come from `internal/symbols.Extract`. It parses the file with the tree-sitter grammar `internal/grammar` maps its name to. Then it walks a per-language rule table (Go, TypeScript, Python, Java, protobuf, markdown headings, bash functions). It collects definition names, a kind in zoekt's ctags vocabulary, and the enclosing declaration (a Go receiver type, a class, a protobuf message or service). Ranges are byte offsets on rune boundaries, sorted and non-overlapping, the invariants the shard builder checks. A file whose extraction fails is logged and indexed without symbols. zoekt's own ctags run stays disabled (`DisableCTags: true`), so no ctags binary is needed. `sym:` queries match only these sections. Every content match near a symbol picks up zoekt's symbol ranking, which is why a definition's file sorts above its call sites.
 
 ### What's indexed
 
@@ -173,7 +173,7 @@ The vector index lives beside the lexical one:
 Each store records, per file, a content hash and the chunk vectors, plus two
 store-wide invariants: the chunker version and the vector dimensionality.
 `IndexRepoSemantic` skips any file whose content hash is unchanged, so
-re-runs are incremental; a mismatch on either invariant drops the whole
+re-runs are incremental. A mismatch on either invariant drops the whole
 store and re-embeds the repo, so vectors produced under different rules are
 never mixed.
 
@@ -185,17 +185,17 @@ csl bundles no model and links no inference runtime.
 
 An earlier design embedded in-process through ONNX Runtime with a
 compiled-in all-MiniLM-L6-v2 model. It worked, but every property that
-mattered was fixed at build time: the model (trained on prose, not code),
-its 512-token context (which forced ~900-character chunks that cut
-functions mid-body), and a native-library dependency that complicated every
-build. Moving the model behind an HTTP boundary inverts all three:
+mattered was fixed at build time. Those were the model (trained on prose,
+not code), its 512-token context (which forced ~900-character chunks that
+cut functions mid-body), and a native-library dependency that complicated
+every build. Moving the model behind an HTTP boundary inverts all three:
 
 - **The model is per-machine config** (`semantic.ollama_url`,
   `semantic.embed_model`, `semantic.dim`), not a build decision. A laptop
   can run a heavier code-trained model while a constrained machine points
   at a lighter one — same binary.
 - **Long-context models fit whole declarations.** The chunk budget is 6000
-  characters, and requests pin `num_ctx`/`num_batch` at 8192 tokens so
+  characters. Requests pin `num_ctx`/`num_batch` at 8192 tokens so
   nothing is silently truncated (and oversized batches don't crash the
   runner, which Ollama's 2048-token default physical batch does).
 - **Ollama owns model lifetime and the GPU.** csl asks for a 20-minute
@@ -210,8 +210,8 @@ preflights this and says what to pull). Lexical search never touches
 Ollama, so the dependency is scoped to the features that need it.
 
 The daemon loads the vector stores at startup when `semantic.enabled:
-true` and serves semantic queries from memory over the same gRPC socket;
-without the daemon, callers load stores in-process for the one query. See
+true` and serves semantic queries from memory over the same gRPC socket.
+Without the daemon, callers load stores in-process for the one query. See
 [semantic.md](semantic.md) for the chunking/query pipeline and model
 selection.
 
@@ -239,7 +239,7 @@ The MCP handler lives in `internal/mcpserver/tools_hybrid.go`; the CLI command i
 
 Repo names come from the `[remote "origin"]` URL in `.git/config`. Both SSH (`git@host:org/repo.git`) and HTTPS (`https://host/org/repo.git`) forms are parsed. If no origin is set, the name is the parent directory plus repo directory, joined by `/`.
 
-This walker is deliberately csl's own rather than the shared [`kit/repofind`](../../../kit/repofind/README.md) package the belt and suspenders guards use: indexing rescans every checkout on the machine often enough that reading `.git/config` directly (no `git` subprocess) matters, and csl also needs the host for grouping. Only `ExpandHome` is shared. Two things outside csl depend on this layer's output shape: the shard files are named `<org>%2F<repo>_v<N>.zoekt`, and belt's `prefer-csl` hint reads the shard directory listing (never a csl process) to decide whether a swept path lies in an indexed repo — so shard naming is a small external contract, not a private detail.
+This walker is deliberately csl's own rather than the shared [`kit/repofind`](../../../kit/repofind/README.md) package the belt and suspenders guards use. Indexing rescans every checkout on the machine often enough that reading `.git/config` directly (no `git` subprocess) matters, and csl also needs the host for grouping. Only `ExpandHome` is shared. Two things outside csl depend on this layer's output shape. The shard files are named `<org>%2F<repo>_v<N>.zoekt`, and belt's `prefer-csl` hint reads the shard directory listing (never a csl process) to decide whether a swept path lies in an indexed repo. So shard naming is a small external contract, not a private detail.
 
 ## Testing
 

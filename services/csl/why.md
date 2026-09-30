@@ -4,8 +4,8 @@
 
 A single developer machine accumulates dozens of git checkouts across a few
 source directories. Answering "where is this function defined" or "which repos
-call this API" with `grep -r` over all of them is slow, and for a coding agent
-it is worse: the default reach for `find`, `ls`, and raw `grep` guesses at
+call this API" with `grep -r` over all of them is slow. For a coding agent it
+is worse: the default reach for `find`, `ls`, and raw `grep` guesses at
 paths, misses repos, and dumps walls of output into the context window. Repo
 discovery has the same shape: "is this repo checked out, on what branch, is
 it dirty, is its index current" are questions an agent otherwise answers by
@@ -14,14 +14,14 @@ guessing.
 ## Why its own service
 
 Search is the substrate the rest of the platform's code work leans on, not a
-feature of any one component; csl predates the monorepo and came in as a clean
+feature of any one component. csl predates the monorepo and came in as a clean
 import from `github.com/mad01/code-search-local`. Hosted code search would mean shipping
 local checkouts to a cloud service, which the platform's local-only stance
-rules out. zoekt itself is an engine, not a finished tool: csl adds the parts
+rules out. zoekt itself is an engine, not a finished tool. csl adds the parts
 an agent and a human actually need on top of it: repo discovery and host
-filtering, index freshness tracking, a CLI, a localhost web UI, and an MCP
-server so agents search, resolve repo paths, and read files without shelling
-out.
+filtering, index freshness tracking, a CLI, and a localhost web UI. It also
+adds an MCP server so agents search, resolve repo paths, and read files
+without shelling out.
 
 ## Why this shape
 

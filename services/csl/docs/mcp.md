@@ -21,7 +21,7 @@ The registration stores the command name (not an absolute path), so `csl` must b
 
 ## Tools
 
-Sixteen tools are registered, grouped into four areas: `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other fourteen.
+Sixteen tools are registered, grouped into four areas. The areas are `csl_repo_*` for repo management, `csl_search` / `csl_semantic_search` / `csl_hybrid_search` / `csl_count` / `csl_query_validate` for search, `csl_read` / `csl_ls` / `csl_outline` / `csl_show_file` / `csl_index_info` for file reads and info, and `csl_doctor` for diagnosing csl itself. `csl_semantic_search` and `csl_hybrid_search` are registered only when `semantic.enabled` is true in `config.yaml`; with it off the server advertises the other fourteen.
 
 | Tool | Purpose |
 |---|---|
@@ -46,7 +46,7 @@ Sixteen tools are registered, grouped into four areas: `csl_repo_*` for repo man
 
 Resolve a repo name, or its catalog identity, to its absolute local checkout path.
 
-**When to call:** the user mentions a repo by name and you need its path before `cd`-ing, reading, or grepping inside it; or the user asks a question shaped like "which repos does team X own" or "what's in system Y".
+**When to call:** the user mentions a repo by name and you need its path before `cd`-ing, reading, or grepping inside it. Or the user asks a question shaped like "which repos does team X own" or "what's in system Y".
 
 **Input:**
 
@@ -382,9 +382,9 @@ Search code across locally checked-out repos using zoekt query syntax.
 }
 ```
 
-A search that matches nothing carries `zero_result_hint`: the query as zoekt parsed it with the filters folded in, how many repos the filters covered and how many of those are indexed, index age, and `notes` naming known traps (`a | b`, uppercase `OR`, a query made only of parameter names such as `output_mode`). For a query with two or more AND terms it also runs one count per term (the first six) under the same filters and reports `term_counts`, files per term, so a `0` names the term that killed the query.
+A search that matches nothing carries `zero_result_hint`: the query as zoekt parsed it with the filters folded in, how many repos the filters covered and how many of those are indexed. It also carries index age and `notes` naming known traps (`a | b`, uppercase `OR`, a query made only of parameter names such as `output_mode`). For a query with two or more AND terms it also runs one count per term (the first six) under the same filters. It reports `term_counts`, files per term, so a `0` names the term that killed the query.
 
-**Relaxation.** When some terms match no file and others do, `csl_search` reruns once with the zero-file terms removed, same filters and limit, first page only, and returns those results with two extra fields: `relaxed_query`, the query the results come from, and `dropped_terms`. Do not add a dropped term back. Nothing is rerun when every term matches on its own (the fix is the `a|b` form, which asks a different question), when `offset` is above zero, or when more than six terms were in play; the hint says which case applies. Successful searches are unchanged: both fields are absent.
+**Relaxation.** When some terms match no file and others do, `csl_search` reruns once with the zero-file terms removed, same filters and limit, first page only. It returns those results with two extra fields: `relaxed_query`, the query the results come from, and `dropped_terms`. Do not add a dropped term back. Nothing is rerun when every term matches on its own (the fix is the `a|b` form, which asks a different question). The same holds when `offset` is above zero, or when more than six terms were in play; the hint says which case applies. Successful searches are unchanged: both fields are absent.
 
 ```json
 {
@@ -399,7 +399,7 @@ A search that matches nothing carries `zero_result_hint`: the query as zoekt par
 }
 ```
 
-**Malformed queries.** A query that is empty, made only of quote characters, has an unbalanced double quote, contains an empty `""` phrase, or ends in a lone backslash is refused before any search runs; the error names the problem and the fix. `csl_query_validate` reports the same shapes as `valid: false`.
+**Malformed queries.** A query that is empty, made only of quote characters, or has an unbalanced double quote is refused before any search runs. So is one that contains an empty `""` phrase or ends in a lone backslash. The error names the problem and the fix. `csl_query_validate` reports the same shapes as `valid: false`.
 
 **Query syntax:**
 
@@ -420,7 +420,7 @@ Use [`csl_query_validate`](#csl_query_validate) to debug complex queries.
 
 ### `csl_semantic_search`
 
-Find code by meaning across locally checked-out repos using vector embeddings. This is the counterpart to [`csl_search`](#csl_search): lexical search matches exact text and regex, semantic search matches intent, so it finds synonyms and paraphrases of a description even when the words don't appear in the code.
+Find code by meaning across locally checked-out repos using vector embeddings. This is the counterpart to [`csl_search`](#csl_search): lexical search matches exact text and regex, semantic search matches intent. So it finds synonyms and paraphrases of a description even when the words don't appear in the code.
 
 **When to call:** you don't know the exact symbol or wording — natural-language questions like "where do we retry failed HTTP requests" or "code that parses config files". Reach for `csl_search` instead when you know the literal string, symbol, or pattern.
 
@@ -581,7 +581,7 @@ The line scanner buffers up to 1 MB per line, so files with very long minified l
 
 ### `csl_show_file`
 
-Show a file section to the user: builds a deep link into the csl web UI's file-view page and opens it in the browser via `/usr/bin/open`. The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button; it reads the file live from disk, so `csl web` must be running.
+Show a file section to the user: builds a deep link into the csl web UI's file-view page and opens it in the browser via `/usr/bin/open`. The page renders the section like a search match, with controls to widen the context up to the full file and a copy-local-path button. It reads the file live from disk, so `csl web` must be running.
 
 **When to call:** the user should look at a piece of code being referenced, instead of pasting it into chat or making them hunt for the file in an editor. To read file content for yourself, use `csl_read`.
 
@@ -704,7 +704,7 @@ Validate a zoekt query and return its parsed tree, or a parse error with a fixin
 }
 ```
 
-The malformed shapes (empty, only quotes, unbalanced double quote, empty `""` phrase, lone trailing backslash) come back with the same problem and fix `csl_search` refuses them with; any other parse error carries zoekt's message.
+The malformed shapes (empty, only quotes, unbalanced double quote, empty `""` phrase, lone trailing backslash) come back with the same problem and fix `csl_search` refuses them with. Any other parse error carries zoekt's message.
 
 ### `csl_doctor`
 
@@ -735,7 +735,7 @@ Run csl's self-checks and return the report as JSON: config, repos discovered, s
 }
 ```
 
-A check can also come back `skipped`, which counts as a pass with something to report: a machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`; `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing); `index-freshness` is `skipped` on a machine with repos but no index yet; `catalog-descriptors` is `ok` with a note when no repo carries a descriptor, and `skipped` when `repos-discovered` already failed. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
+A check can also come back `skipped`, which counts as a pass with something to report. A machine with no config file yet gets `config-loads` as `skipped` with the path to create in `detail`. `repos-discovered` is `skipped` with the dropped counts when `index.hosts` or the exclude list removed repos (plain `ok` when nothing was dropped, `fail` naming the filter when a loaded config discovers nothing). `index-freshness` is `skipped` on a machine with repos but no index yet. `catalog-descriptors` is `ok` with a note when no repo carries a descriptor, and `skipped` when `repos-discovered` already failed. When a repo the user expects is missing, the CLI has the detail this tool does not: `csl repo --list --skipped` lists each dropped repo with its reason. Read-only: unlike `csl doctor --repair`, the tool never rewrites state. The web-UI checks failing means `csl web` is down or out of date, not that search is broken. For the git health of the repos csl indexes, use [`csl_repo_health`](#csl_repo_health) instead.
 
 ## Response formats
 

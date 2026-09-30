@@ -79,7 +79,7 @@ After every search, stale repos (new commits, dirty tree, branch switched) are r
 | `sym:Name` | Restrict to symbol definitions (functions, types, methods, classes); content hits carry `kind` |
 | `case:yes` | Case-sensitive this term |
 
-`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format: one `repo/path` header per file, `LINE:COL:text` for a matching line (`COL` is the 1-based column where the match starts, as with ripgrep `--column`; the MCP text form prints `LINE:text` without it), `LINE-text` for a context line, and a blank line between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
+`content` mode prints ripgrep `--heading` style, the same grammar as the `csl_search` MCP tool's text format. Each file gets one `repo/path` header. A matching line prints as `LINE:COL:text` (`COL` is the 1-based column where the match starts, as with ripgrep `--column`; the MCP text form prints `LINE:text` without it). A context line prints as `LINE-text`, and a blank line sits between files. Hits that sit within each other's context window merge into one block, so every line prints once; `--` separates blocks that are not adjacent in the file. A `sym:` hit's line ends with `kind=<kind>` (plus `parent=<name>` when nested). `--json` keeps one entry per matching line, each with its own `before`/`after` context.
 
 Regex metacharacters inside the pattern need shell-escaping too. Validate a tricky query first with [`csl query`](#csl-query).
 
@@ -259,7 +259,7 @@ csl outline [flags] <repo> [path]
 
 ### Description
 
-Prints every definition the tree-sitter extractor finds in `<repo>`, or under `[path]` inside it, grouped by file and ranked by the number of other files in the repo that mention the name as a whole identifier. Files appear in the order of their best symbol; each symbol is one line, `LINE kind name (parent)  refs=N`. `<repo>` is a case-insensitive regex that must match exactly one discovered repo. `[path]` narrows which files define; references are always counted across the whole repo. Test files stay out of both sides unless `--include-tests` is set, and fields, enumerators, and markdown headings stay out unless `--kinds` names them. The command reads the working tree directly, so it needs no index. The MCP tool `csl_outline` returns the same object and text; the reference-count rule is in [mcp.md](mcp.md#csl_outline).
+Prints every definition the tree-sitter extractor finds in `<repo>`, or under `[path]` inside it, grouped by file. Definitions are ranked by the number of other files in the repo that mention the name as a whole identifier. Files appear in the order of their best symbol; each symbol is one line, `LINE kind name (parent)  refs=N`. `<repo>` is a case-insensitive regex that must match exactly one discovered repo. `[path]` narrows which files define; references are always counted across the whole repo. Test files stay out of both sides unless `--include-tests` is set, and fields, enumerators, and markdown headings stay out unless `--kinds` names them. The command reads the working tree directly, so it needs no index. The MCP tool `csl_outline` returns the same object and text; the reference-count rule is in [mcp.md](mcp.md#csl_outline).
 
 ### Flags
 
@@ -307,7 +307,7 @@ Without flags, `csl repo` opens an interactive picker and prints the absolute pa
 
 With a query argument, it skips the picker and prints the path of the single repo whose `org/repo` name contains the query (case-insensitive). Zero or multiple matches exit non-zero; the multi-match error lists the candidates. Combined with `--list`/`--json`/`--toon`, a query filters the output instead of erroring.
 
-`--component`, `--owner`, and `--system` narrow the set to repos whose root catalog descriptor (`catalog-info.yaml` or `service-info.yaml`, a Backstage-shaped Component; see [configuration](configuration.md#catalog-descriptor)) has a matching `metadata.name`, `spec.owner`, or `spec.system` (case-insensitive substring; a repo with no descriptor never matches, whatever the pattern). They compose with the positional query and with `--list`/`--json`/`--toon` (all set filters must match). On their own, without a positional query, they open the picker over the narrowed set; when exactly one repo is left they print its path directly instead. A query that matches nothing (positional or catalog filters) errors with `no repos match query "<set fields>"`, naming the fields that were set.
+`--component`, `--owner`, and `--system` narrow the set to repos whose root catalog descriptor (`catalog-info.yaml` or `service-info.yaml`, a Backstage-shaped Component; see [configuration](configuration.md#catalog-descriptor)) has a matching `metadata.name`, `spec.owner`, or `spec.system` (case-insensitive substring). A repo with no descriptor never matches, whatever the pattern. They compose with the positional query and with `--list`/`--json`/`--toon` (all set filters must match). On their own, without a positional query, they open the picker over the narrowed set; when exactly one repo is left they print its path directly instead. A query that matches nothing (positional or catalog filters) errors with `no repos match query "<set fields>"`, naming the fields that were set.
 
 `--skipped` answers the opposite question: which repos the walk found under `dirs` and then dropped, and why. Each line is `name<TAB>path<TAB>reason`, where the reason is one of `host <h> not in index.hosts`, `no remote (index.hosts is set)`, or `excluded by hooks.post_merge.exclude`. It implies `--list`, composes with `--json`/`--toon` (each entry then also carries `remote` and `host`, which is where an SSH alias shows up as the host), and a query filters it the same way. When a filter drops every repo, the plain commands fail with a message that names the filter and the counts and points here.
 
@@ -380,7 +380,7 @@ csl index --clean           # delete the entire index directory
 
 ### Description
 
-By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, `git status --porcelain`, and the index format version, so any commit, checkout, or working-tree change triggers a re-index, and so does an upgrade that changes what a shard holds (every repo re-indexes once).
+By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, `git status --porcelain`, and the index format version, so any commit, checkout, or working-tree change triggers a re-index. So does an upgrade that changes what a shard holds (every repo re-indexes once).
 
 `--repair` opens every `*.zoekt` shard, parses its metadata, and removes any that fail to read. Run `csl index` after repair to rebuild affected repos.
 
@@ -472,9 +472,9 @@ csl doctor [--repair]
 | Check | What it verifies |
 |-------|------------------|
 | `config-loads` | the config file parses and, when it exists, sets at least one `dirs` entry. No config file is not a failure: the check passes and the report leads with the path to create |
-| `repos-discovered` | a loaded config discovers at least one repo. Plain `ok` when every walked repo made it in; `ok` with the dropped counts (`N dropped by index.hosts (K with no remote), J excluded`) when a filter removed some; FAIL naming the filter when the walk found repos and dropped them all, or found none |
+| `repos-discovered` | a loaded config discovers at least one repo. Plain `ok` when every walked repo made it in; `ok` with the dropped counts (`N dropped by index.hosts (K with no remote), J excluded`) when a filter removed some. FAIL naming the filter when the walk found repos and dropped them all, or found none |
 | `state-file-loads` | `state.json` parses; with `--repair`, a corrupt file is backed up and reset |
-| `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count. A machine with repos but none of them indexed yet passes with a note (the first search builds it), and when discovery yielded nothing this check steps aside with "no repos to check" rather than failing twice |
+| `index-freshness` | every discovered repo's index matches its working tree; fails with the stale count. A machine with repos but none of them indexed yet passes with a note (the first search builds it). When discovery yielded nothing, this check steps aside with "no repos to check" rather than failing twice |
 | `index-shards-valid` | every `.zoekt` shard opens cleanly |
 | `search-server-responsive` | a running search server answers on its socket (a stopped server passes — it auto-starts) |
 | `catalog-descriptors` | every catalog descriptor discovery found reads cleanly. Passes with a note when no repo carries one (`--owner`/`--system` lookups then match nothing); FAILs naming each repo and descriptor it couldn't read or follow; skipped when `repos-discovered` already failed |
@@ -670,7 +670,7 @@ csl docs --claude-md >> ~/.claude/CLAUDE.md
 
 ### Description
 
-Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the section that teaches Claude Code when to reach for the `csl_*` MCP tools: csl-first for discovery and search, lexical by default with semantic and hybrid gated on the vector index, the repo health flow, and the zoekt query rules. The text is the fenced block under "Add this to your CLAUDE.md" in the README; a test holds the two byte-identical and checks the block names every tool `csl mcp` registers.
+Without flags, prints `operating.md` rendered with the paths this install resolves (state directory, daemon log, web base URL): how csl runs, where state lives, failure modes, and first moves. With `--claude-md`, prints the section that teaches Claude Code when to reach for the `csl_*` MCP tools. It covers csl-first for discovery and search, lexical by default with semantic and hybrid gated on the vector index, the repo health flow, and the zoekt query rules. The text is the fenced block under "Add this to your CLAUDE.md" in the README; a test holds the two byte-identical and checks the block names every tool `csl mcp` registers.
 
 ### Flags
 

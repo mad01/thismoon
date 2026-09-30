@@ -64,7 +64,7 @@ dirs:
 ```
 
 That is the whole file for lexical search. Tildes are expanded and missing
-directories are skipped. Leave `index.hosts` out until you need it: it is an
+directories are skipped. Leave `index.hosts` out until you need it. It is an
 allowlist of git remote hosts, and any repo it does not match, including every
 checkout with no remote, drops out of the index. Step 3 shows how to check
 what got picked up and what got dropped.
@@ -88,8 +88,8 @@ mad01/thismoon	/Users/you/code/src/github.com/mad01/thismoon
 
 Names come from the `origin` remote URL. A checkout with no remote is named
 `<parent-dir>/<repo-dir>`. `csl repo --json` adds the `remote` and `host`
-fields, which is how to see what a host filter would match against, plus
-`component`, `owner`, and `system` for any repo that carries a catalog
+fields, which is how to see what a host filter would match against. It also
+adds `component`, `owner`, and `system` for any repo that carries a catalog
 descriptor at its root (`catalog-info.yaml` or `service-info.yaml`).
 
 When a repo you expected is missing, work down this list:
@@ -151,7 +151,7 @@ csl search "func Walk" --output-mode content --context-lines 2
 csl search "TODO" --repo thismoon --lang go
 ```
 
-Queries are zoekt syntax, which looks like grep but is not: space-separated
+Queries are zoekt syntax, which looks like grep but is not. Space-separated
 terms must all appear in the same file, OR is `|` with no spaces around it, and
 `f:` takes a regex rather than a glob. `csl query "<pattern>"` shows how a
 query parsed when the results surprise you.
@@ -165,12 +165,12 @@ csl doctor
 One `ok` or `FAIL` line per check: config, repos discovered, state file, index
 freshness, shard integrity, the search server, and two web probes. The
 repos-discovered line carries the dropped counts whenever a filter removed
-something, and it is the one search check a fresh config can fail: a loaded
+something. It is the one search check a fresh config can fail: a loaded
 config that discovers no repos, with the line naming the filter responsible.
 Before the first search, index-freshness notes that nothing is indexed yet and
 passes. The two web probes, web-ui-reachable and web-ui-version-skew, FAIL
-until step 8 starts the web UI, and doctor exits non-zero because of them;
-search and the MCP server are unaffected, so on a CLI-only install read those
+until step 8 starts the web UI, and doctor exits non-zero because of them.
+Search and the MCP server are unaffected, so on a CLI-only install read those
 two lines as "not running" rather than "broken". `csl docs` prints the
 operating notes behind each check.
 
@@ -205,8 +205,8 @@ repo-sync() { csl sync; }
 
 `bash` is accepted too. Machines provisioned through the ralph recipe in this
 repo get the same two functions generated into
-`~/.config/ralph/generated/generated_functions.sh`, which the source line in
-ralph's managed rc-file block loads on every shell start; a test keeps the
+`~/.config/ralph/generated/generated_functions.sh`. The source line in ralph's
+managed rc-file block loads that file on every shell start. A test keeps the
 recipe bodies and the `shell-init` output identical.
 
 ## 7. Register the MCP server
@@ -236,13 +236,13 @@ csl docs --claude-md >> ~/.claude/CLAUDE.md
 
 The same text sits in the [README](../README.md#add-this-to-your-claudemd) if
 you would rather paste it into a project `CLAUDE.md`. Registering the server
-only makes the tools available; the CLAUDE.md section is what stops Claude
+only makes the tools available. The CLAUDE.md section is what stops Claude
 from reaching for `grep` and `find` first, and it keeps the agent on lexical
 search unless you enable semantic search in step 9.
 
 If you also run [belt](../../../tools/belt/README.md), the thismoon hook set
-for Claude Code, its `prefer-csl` hint closes the loop from the other side:
-when the agent runs a multi-file `grep` or `find` inside a repo csl indexes,
+for Claude Code, its `prefer-csl` hint closes the loop from the other side.
+When the agent runs a multi-file `grep` or `find` inside a repo csl indexes,
 the hook hands back the equivalent `csl_search` call with the pattern already
 translated to zoekt syntax. It reads csl's shard listing from disk and
 launches no csl process. The hint is on by default once belt's hooks are
@@ -279,9 +279,9 @@ t-man status csl-web
 Use the shim path. t-man bakes the resolved command path into the launchd
 plist, so the path has to be the right one at add time. A bare `csl` resolves
 to a Homebrew binary first when one exists, and the path `mise which csl` prints
-carries the version number, so an agent registered with either would keep
+carries the version number. So an agent registered with either would keep
 running the old build after `mise upgrade csl`. The shim points at whatever
-version mise currently has: after an upgrade, `t-man restart csl-web` picks it
+version mise currently has. After an upgrade, `t-man restart csl-web` picks it
 up, and the web-ui-version-skew check in `csl doctor` tells you when the
 running process is behind the binary on PATH. A Homebrew install can use
 `brew services start mad01/tap/csl` instead of t-man.

@@ -1,7 +1,7 @@
 # operating csl
 
 csl is local code search: it indexes every git checkout under the configured
-directories with zoekt and answers queries from one binary through three
+directories with zoekt. It answers queries from one binary through three
 surfaces: the `csl` CLI, an MCP stdio server (`csl mcp`), and a loopback web
 UI (`csl web`). Lexical search always works; semantic and hybrid search are
 optional and backed by a local Ollama server.
@@ -27,21 +27,21 @@ headings with `LINE:match` lines, csl_read prints `LINE:text`, and tools
 without a renderer of their own fall back to `key: value` lines. Pass
 `response_format` on a call (`json` for the structured object; `jsonl`, `csv`,
 `markdown-kv`, `xml`, or `toon`, Token-Oriented Object Notation) or set
-`mcp.response_format` in config.yaml; the parameter wins, and an unknown value
+`mcp.response_format` in config.yaml. The parameter wins, and an unknown value
 in either place is an error that names its source.
 
 `csl outline <repo> [path]` and the csl_outline tool are the one query path
-that skips the index: they walk the working tree with the indexer's skip
-rules, extract definitions with the tree-sitter grammars, and rank them by
-how many other files hold the name as a whole identifier. Nothing has to be
-indexed or running, and the outline is always current. An outline that looks
-thin is usually the scope: fields, enumerators, and markdown headings are out
-unless `kinds` names them (the empty-result line says how many were skipped),
-test files are out unless include_tests is set, only languages with a grammar
-(Go, TypeScript, Python, Java, protobuf, bash, markdown) contribute
-definitions, and a `path` narrows the definitions but never the reference
-count. A `files_capped` result stopped at max_files (20000) and covers the
-first files in path order only.
+that skips the index. They walk the working tree with the indexer's skip
+rules and extract definitions with the tree-sitter grammars. Then they rank
+them by how many other files hold the name as a whole identifier. Nothing
+has to be indexed or running, and the outline is always current. An outline
+that looks thin is usually the scope. Fields, enumerators, and markdown
+headings are out unless `kinds` names them (the empty-result line says how
+many were skipped), and test files are out unless include_tests is set. Only
+languages with a grammar (Go, TypeScript, Python, Java, protobuf, bash,
+markdown) contribute definitions, and a `path` narrows the definitions but
+never the reference count. A `files_capped` result stopped at max_files
+(20000) and covers the first files in path order only.
 
 ## where state lives
 
@@ -62,8 +62,8 @@ does not parse is an error. Everything csl writes sits under {{.StorePath}}:
 ## failure modes
 
 Start with `csl doctor` (or the csl_doctor tool, same checks as JSON): one
-ok/FAIL line per check — config, repos discovered, state file, index
-freshness, shard integrity, and search-server responsiveness, plus two
+ok/FAIL line per check. The checks are config, repos discovered, state file,
+index freshness, shard integrity, and search-server responsiveness, plus two
 web-only checks (web-ui-reachable, web-ui-version-skew) that can fail while
 search keeps working. The config check fails on a file that does not parse,
 or one that parses and sets no `dirs` — the usual cause of "csl finds nothing
@@ -81,10 +81,10 @@ term (term_counts) and reruns once without the terms that match nothing;
 that result carries relaxed_query and dropped_terms. A query of only
 quotes or with an unbalanced quote is refused with the fix. Run `csl query
 "<pattern>"` (or csl_query_validate) to see how the query parsed and the
-term split. If the query is fine, the repo may not be
-indexed: `csl repo <name> --list` resolves it, and an empty result means the
-repo is not checked out, not under the configured dirs, or dropped by
-index.hosts or the exclude list (`csl repo --list --skipped` says which, and why).
+term split. If the query is fine, the repo may not be indexed:
+`csl repo <name> --list` resolves it. An empty result means the repo is not
+checked out, not under the configured dirs, or dropped by index.hosts or the
+exclude list (`csl repo --list --skipped` says which, and why).
 
 Stale index: a repo's fingerprint (HEAD, branch, dirty state) no longer
 matches `state.json`. Searches still answer from the old shards, then
