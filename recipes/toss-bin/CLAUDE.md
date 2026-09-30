@@ -28,6 +28,6 @@ protected paths ships `~/.config/toss-bin/config.yaml` from the consuming
 repo (docs/adr/0006); without it the built-in deny-list applies. There is
 no MCP registration and no service. The cutover PR in dotfiles deletes the
 `toss-bin/` source directory, the `[packages.toss_bin]` stanza in the
-packages recipe, and the `rm` function in shell-aliases in one change, plus
-the stale `~/.local/bin` copy is simply overwritten by the first
-`ralph up` from this source.
+packages recipe, and the `rm` function in shell-aliases in one change. The
+stale `~/.local/bin` copy is simply overwritten by the first `ralph up` from
+this source.

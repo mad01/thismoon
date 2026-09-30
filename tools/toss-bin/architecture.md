@@ -39,8 +39,8 @@ are the sole argument), then `--validate` (prints `OK:`/`BLOCKED:` per path
 and exits), then `toss()`.
 
 For each path, `toss()` refuses `.` and `..`, runs `PathSafety.validate()`
-when safe mode is on, and stats the path without following a final symlink —
-so broken symlinks count as existing and a link to a directory moves as a
+when safe mode is on, and stats the path without following a final symlink.
+So broken symlinks count as existing and a link to a directory moves as a
 link. Directories require `-r` (or `-d`); `--dry-run` prints the would-be
 destination and stops there. The dated trash directory is created on the
 first real move; name conflicts append `.1`, `.2`, ... before the
