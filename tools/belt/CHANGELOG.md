@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/mad01/thismoon/compare/belt/v2.4.0...belt/v2.4.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **belt:** fail closed on an unresolvable cd before git push ([#160](https://github.com/mad01/thismoon/issues/160)) ([f439af1](https://github.com/mad01/thismoon/commit/f439af1bc742906b71583a8805e8622bd94e2243))
+
 ## [2.4.0](https://github.com/mad01/thismoon/compare/belt/v2.3.0...belt/v2.4.0) (2026-09-09)
 
 
