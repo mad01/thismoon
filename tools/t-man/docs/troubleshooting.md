@@ -31,8 +31,8 @@ t-man logs my-service --stderr
 ```
 
 Common causes you will see here: the binary is missing or not executable, a
-required env var is unset, the working directory does not exist, or the port is
-already in use.
+required env var is unset, or the working directory does not exist. Another is
+that the port is already in use.
 
 **3. Follow the logs while it crashes** so you catch the restart in real time:
 

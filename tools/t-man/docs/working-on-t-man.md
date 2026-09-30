@@ -56,7 +56,7 @@ make test            # go test ./... -timeout 30s
 go test ./internal/service/   # one package
 ```
 
-The launchd layer is tested without a real launchd: the launchctl client takes
+The launchd layer is tested without a real launchd. The launchctl client takes
 an injectable command runner, and the `Manager` is an interface, so plist
 generation and the reconcile logic are exercised with fakes. The plist
 generation tests compare against golden files under `testdata/plists/`.

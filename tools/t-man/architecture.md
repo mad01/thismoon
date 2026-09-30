@@ -45,7 +45,7 @@ read-compare-apply:
 3. Apply only on a mismatch. The update path in
    `internal/platform/launchd/manager.go` renders the new plist to a temp
    file, `launchctl unload`s the old one, atomically renames the temp file
-   into place, and `launchctl load -w`s it; if the load fails it restores the
+   into place, and `launchctl load -w`s it. If the load fails it restores the
    old plist and reloads that.
 
 Applied changes and failures POST an event to the local events service via
