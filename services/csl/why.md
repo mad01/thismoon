@@ -26,19 +26,22 @@ out.
 ## Why this shape
 
 Three decisions carry the design. The index is zoekt's trigram index:
-grep-like queries across dozens of checkouts return in milliseconds, and every
+grep-like queries across dozens of checkouts return in milliseconds. Every
 surface (CLI, MCP, web) is a thin shell over the same internal search code.
+
 Queries go through a short-lived background search process spawned on
-demand from the same executable: it keeps the zoekt shards mmap'd across
-calls so repeat queries are fast, idle-exits after ten minutes, and every
-caller falls back to opening shards in-process if it is unreachable — there is
-no separately managed server. Freshness is a per-repo fingerprint of
-HEAD, branch, and `git status`; a stale repo is reindexed in the background
-after results return, so the current query stays fast and the next one
-reflects the latest state. A consequence worth naming: code chunking compiles
-tree-sitter grammars via cgo, so csl cannot be cross-compiled with
-`CGO_ENABLED=0`; release artifacts build natively on a macOS arm64 runner,
-and the fleet installs it from source.
+demand from the same executable. It keeps the zoekt shards mmap'd across
+calls so repeat queries are fast, and it idle-exits after ten minutes. Every
+caller falls back to opening shards in-process if it is unreachable. There is
+no separately managed server.
+
+Freshness is a per-repo fingerprint of HEAD, branch, and `git status`. A
+stale repo is reindexed in the background after results return, so the
+current query stays fast and the next one reflects the latest state.
+
+A consequence worth naming: code chunking compiles tree-sitter grammars via
+cgo, so csl cannot be cross-compiled with `CGO_ENABLED=0`. Release artifacts
+build natively on a macOS arm64 runner, and the fleet installs it from source.
 
 ## Non-goals
 
