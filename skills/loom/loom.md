@@ -5,8 +5,8 @@ staging interleaves and a stray `git add -A` sweeps another session's
 half-finished work into an unrelated commit. The old answer was a commit
 queue — every session described its commit as a request file and one
 committer session landed them serially. Worktrees remove the shared tree
-instead: each session owns an isolated checkout of its own branch, commits
-locally whenever it likes, and the only thing left to coordinate is which
+instead: each session owns an isolated checkout of its own branch and commits
+locally whenever it likes. The only thing left to coordinate is which
 branch lands on the default branch, in what order. That sequencing role is
 the **weaver**.
 
@@ -60,7 +60,7 @@ The weaver classifies each worktree from git alone:
 
 Default order is oldest ready branch first. When one branch builds on
 another, the dependent branch is rebased onto its parent by its owner and
-becomes ready only after the parent lands — dependencies are stated by the
+becomes ready only after the parent lands. Dependencies are stated by the
 user, not stored anywhere.
 
 Per ready branch, in its own worktree:
@@ -99,7 +99,7 @@ administrative entries left by a worktree removed by hand.
 
 Before removing a worktree, harvest anything durable that points into it:
 evidence-pinned assertions (kof) record absolute paths, so a pin made in a
-worktree dies with it — re-pin against the canonical checkout.
+worktree dies with it. Re-pin against the canonical checkout.
 
 ## Known frictions
 
