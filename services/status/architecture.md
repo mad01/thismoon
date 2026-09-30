@@ -39,22 +39,23 @@ the plist has a `--port`, otherwise a `launchctl print` PID check) while
 `check.Runs` samples launchd's cumulative respawn counter. Outcomes are
 recorded into the history store, pruned at 90 days, and saved.
 
-Still inside the cycle, `refreshMeta` fetches `/version` and
-`/webkit/version` from up HTTP services and runs the installed executable's
-own `version` command, normally every 10 minutes but every cycle while the
-two shas disagree. `/version` carries the shared build metadata object, so
-the same fetch also picks up the running build's release tag and build time,
-which the dashboard shows beside the sha; anything the payload omits stays
-empty and renders as nothing. Only the bare version token is compared for
-drift. `countDrift` requires the mismatch to hold for two
-consecutive cycles before `Drift` flags, so a mismatch seen mid-install
-clears instead of alerting. The cycle then builds a sorted `Snapshot` (routed
-web services first, then other HTTP services, then PID-checked jobs) and
-swaps it in under the lock. The cycle closes by comparing against the
-previous snapshot: up/down flips and drift flips each emit an event through
-`internal/notify`, drift and crash-loop alerts also post one coalesced macOS
-banner, and the respawn counters feed `crashloop.Tracker`, which fires at 50
-restarts within an hour and then holds a 6-hour per-service cooldown.
+Still inside the cycle, `refreshMeta` fetches `/version` and `/webkit/version`
+from up HTTP services and runs the installed executable's own `version`
+command. It does this normally every 10 minutes, but every cycle while the two
+shas disagree. `/version` carries the shared build metadata object, so the
+same fetch also picks up the running build's release tag and build time. The
+dashboard shows both beside the sha. Anything the payload omits stays empty
+and renders as nothing. Only the bare version token is compared for drift.
+`countDrift` requires the mismatch to hold for two consecutive cycles before
+`Drift` flags, so a mismatch seen mid-install clears instead of alerting.
+
+The cycle then builds a sorted `Snapshot` (routed web services first, then
+other HTTP services, then PID-checked jobs) and swaps it in under the lock.
+The cycle closes by comparing against the previous snapshot. Up/down flips and
+drift flips each emit an event through `internal/notify`, and drift and
+crash-loop alerts also post one coalesced macOS banner. The respawn counters
+feed `crashloop.Tracker`, which fires at 50 restarts within an hour and then
+holds a 6-hour per-service cooldown.
 
 Requests are the short half: `GET /` serves the shell, `app.js` fetches
 `GET /api/status`, and the handler encodes `Monitor.Snapshot()` as JSON.
