@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.11.0](https://github.com/mad01/thismoon/compare/present/v1.10.0...present/v1.11.0) (2026-09-30)
+
+
+### Features
+
+* **present:** build the graph style in app.js, not in the stored script ([190c54e](https://github.com/mad01/thismoon/commit/190c54e4d1dd9a244a1027dfd8a118c90a6cfddb))
+* **present:** re-render stored pages in the background when serve starts ([7177931](https://github.com/mad01/thismoon/commit/71779317306568a5e8b3fe2d1d1d953f38ead557))
+* **present:** style graphs in app.js and re-render pages when serve starts ([09aafd3](https://github.com/mad01/thismoon/commit/09aafd3deae51617800617563fa483a3de462cad))
+
+
+### Bug Fixes
+
+* **present:** render inline markup nested inside bold ([0a1deac](https://github.com/mad01/thismoon/commit/0a1deac206d7710be8b6c10bfa3e81f30218629f))
+* **present:** render inline markup nested inside bold ([b2953bd](https://github.com/mad01/thismoon/commit/b2953bd9df866fcf8a0593fbcda67eee1a30f631))
+
+
+### Reverts
+
+* **present:** drop the label-aware layout and edge routing ([#168](https://github.com/mad01/thismoon/issues/168)) ([4afff66](https://github.com/mad01/thismoon/commit/4afff660a2a1e015544ef3b3e90e04721783d1be))
+
 ## [1.10.0](https://github.com/mad01/thismoon/compare/present/v1.9.1...present/v1.10.0) (2026-09-30)
 
 
