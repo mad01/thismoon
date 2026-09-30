@@ -89,7 +89,7 @@ The scrollable rendition of a present page: the Doc compiled to `content.html`, 
 _Avoid_: page content (ambiguous once a deck exists), article, document
 
 **Deck**:
-The slide rendition of a present page: a second Doc, authored on its own and compiled to `deck.html` beside the brief under the same page id, shown one section at a time. Never derived from the brief; either rendition can exist without the other.
+The slide rendition of a present page. A second Doc, authored on its own and compiled to `deck.html` beside the brief under the same page id, shown one section at a time. Never derived from the brief; either rendition can exist without the other.
 _Avoid_: slideshow, presentation (present's pages are all presentations), version (the revision counter)
 
 **Slide**:
@@ -97,5 +97,5 @@ One section of a deck as the deck view shows it. The deck Doc's title, summary, 
 _Avoid_: page (a page is the whole id), frame
 
 **Presenting**:
-The deck view's state with the chrome hidden and one slide filling the window, entered and left with the Present button, the F or P key, Escape, or a remote command from the present_deck tool or `present deck`.
+The deck view's state with the chrome hidden and one slide filling the window. It is entered and left with the Present button, the F or P key, Escape, or a remote command from the present_deck tool or `present deck`.
 _Avoid_: fullscreen (the browser's own fullscreen is one optional layer on top), slideshow mode

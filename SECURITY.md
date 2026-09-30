@@ -3,8 +3,8 @@
 thismoon is a toolbox of local services and CLI tools for one macOS machine.
 Everything runs on the machine that installed it and works on local data. A bug
 that lets a component read, change, or run more than its own docs say it should
-still counts as a security issue, and so does anything that sends local data
-off the machine.
+still counts as a security issue. So does anything that sends local data off
+the machine.
 
 ## Reporting a vulnerability
 

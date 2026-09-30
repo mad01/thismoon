@@ -2,7 +2,7 @@
 
 Shared git repo discovery and remote parsing. This package is the common
 file-tree layer under the suspenders pre-commit guard and the belt write-time
-firewall: both derive their internal-name block lists by walking checkouts,
+firewall. Both derive their internal-name block lists by walking checkouts,
 and the two lists only agree because both tools walk and parse identically.
 That agreement is the package's reason to exist: treat its semantics as a
 compatibility surface, not an implementation detail.
@@ -20,9 +20,9 @@ compatibility surface, not an implementation detail.
 
 ## The name-derivation contract
 
-Consumers turn discovered repos into blocked names the same way: each repo
+Consumers turn discovered repos into blocked names the same way. Each repo
 contributes its **org segment**, its **repo segment**, and its **checkout
-directory basename** as three separate names — never the combined
+directory basename** as three separate names, never the combined
 `org/repo`. Segments are lowercased and deduplicated. suspenders applies
 this in its guard (`tools/suspenders/internal/guard`), belt in
 `write-internal-names` (`tools/belt/internal/guard/writenames.go`, which

@@ -24,7 +24,7 @@ covers both paths, what each one gives you, and how to verify the result.
 | Updates | `brew upgrade` or `mise upgrade`, per tool, on releases | `ralph up`, whole fleet, on every merge to main |
 
 A single tool standalone is fully functional. The fleet makes each tool
-better: [status](../services/status/README.md) watches every service with a
+better. [status](../services/status/README.md) watches every service with a
 30-day uptime history, every service reports problems to one audit log at
 `events.this`, and [belt](../tools/belt/README.md) turns
 [kof](../services/keeper-of-facts/README.md)'s assertions into hints inside
@@ -56,9 +56,9 @@ brew services start mad01/tap/csl   # web UI on http://127.0.0.1:7424
 ```
 
 You get the binary on your PATH and, for services, a `brew services` launchd
-job. Everything the tool does on its own works: the web UI on its localhost
-port, the CLI, and the MCP stdio server if you register it with your agent
-(see [Wire up your agent](#wire-up-your-agent)).
+job. Everything the tool does on its own works. That covers the web UI on
+its localhost port, the CLI, and the MCP stdio server if you register it
+with your agent (see [Wire up your agent](#wire-up-your-agent)).
 
 What this path doesn't set up: no `.this` hostname (that comes from d-man),
 no t-man agent, no status monitoring, no shared event log, and no
@@ -82,7 +82,7 @@ make install-all                    # everything
 
 [mise](https://mise.jdx.dev) reaches the same release tarballs through its
 `github` backend. Every component releases from this one repository under
-its own tag prefix (`csl/v0.18.2`, `keeper-of-facts/v0.13.0`), so mise
+its own tag prefix (`csl/v0.18.2`, `keeper-of-facts/v0.13.0`). So mise
 needs a tool alias per component and a `version_prefix` that picks the
 component's tags out of the shared feed. Two commands put csl on your PATH:
 
@@ -103,7 +103,7 @@ csl = { version = "latest", version_prefix = "csl/" }
 ```
 
 The alias is the binary name and the prefix is the component's directory
-name under `services/` or `tools/`, so both commands take the same word for
+name under `services/` or `tools/`. So both commands take the same word for
 every component below except keeper-of-facts, whose binary is `kof`:
 
 | Component | Alias | `version_prefix` |
@@ -146,7 +146,7 @@ hold your checkouts, and the walkthrough from there to the MCP server and a
 t-man-supervised web UI is
 [services/csl/docs/getting-started.md](../services/csl/docs/getting-started.md).
 When you register a mise-installed tool with t-man, give it the shim path
-(`$HOME/.local/share/mise/shims/<tool>`): t-man bakes the resolved command
+(`$HOME/.local/share/mise/shims/<tool>`). t-man bakes the resolved command
 into the launchd plist, and a versioned install path stays on the old build
 after `mise upgrade`.
 
@@ -271,7 +271,7 @@ sudo t-man --daemon add --name d-man -- \
 ```
 
 That's the only sudo the platform needs. Afterwards the daemon watches its
-routes file, so edits apply on save, and it watches its own binary, so a
+routes file, so edits apply on save. It also watches its own binary, so a
 rebuild by `ralph up` makes it exit and launchd relaunch the new build. The
 full walkthrough, including the optional block-page CA, is in
 [recipes/d-man/SETUP.md](../recipes/d-man/SETUP.md).
@@ -288,7 +288,7 @@ open http://status.this/
 `status.this` shows a card per t-man-managed service with a 30-day uptime
 strip. Green across the board means the fleet is up.
 
-Green from `csl doctor` does not mean csl is indexing anything: an
+Green from `csl doctor` does not mean csl is indexing anything. An
 unconfigured csl is a valid starting state and passes every check as long as
 the `csl-web` agent ralph registered is up (the two web probes fail without
 it). Which
@@ -365,7 +365,7 @@ vocabulary, and the full rollout order including the private overlay layer.
 
 The MCP column in the [README](../README.md) component tables marks which
 components ship an MCP server. Each of those serves MCP over stdio through a
-subcommand (`csl mcp`, for example); register that command as a stdio server
+subcommand (`csl mcp`, for example). Register that command as a stdio server
 in your agent's MCP configuration and the agent reads the same local data
 you do. For Claude Code that's one command per tool:
 
@@ -377,32 +377,32 @@ claude mcp add --scope user csl -- csl mcp
 Code registers the tool for the current directory only. Registration alone
 does not change what the agent reaches for: each MCP-bearing component's
 README carries a CLAUDE.md section that tells the agent when to use its
-tools, and the csl one keeps the agent on lexical search until the semantic
+tools. The csl one keeps the agent on lexical search until the semantic
 index exists (`csl docs --claude-md >> ~/.claude/CLAUDE.md` appends it).
 
 Registration is deliberately not part of the public recipes. Which agents
 run on a machine, with which servers and which config, is machine-private
-wiring, and it lives in your own config repo as small companion recipes
+wiring. It lives in your own config repo as small companion recipes
 layered over these ([docs/adr/0006](adr/0006-recipe-layering-and-platform-deps.md)).
 The same split covers belt's Claude Code hooks and per-machine config files
 like csl's index list: the public recipe installs the binary, your private
 overlay wires it up.
 
 Every piece of that wiring has a worked example in
-[`examples/dotfiles/`](../examples/dotfiles/):
+[`examples/dotfiles/`](../examples/dotfiles/).
 [`recipes/mcp-registration/`](../examples/dotfiles/recipes/mcp-registration/)
-for the MCP server set,
-[`recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/) for
+is for the MCP server set, and
+[`recipes/claude-hooks/`](../examples/dotfiles/recipes/claude-hooks/) is for
 the settings block that turns belt's guards and hints on (explained hook by
-hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md); the
+hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)). The
 `prefer-csl` hint is the one that matters for csl, handing a multi-file
-`grep` in an indexed repo back as the equivalent `csl_search` call), and
-[`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) for the
+`grep` in an indexed repo back as the equivalent `csl_search` call.
+[`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) is for the
 instruction file that teaches the agent when to reach for which tool. The
 seven skills under `skills/` need no registration; their recipes symlink
 them into `~/.claude/skills`, and they load when invoked by name
 (`/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`, `/loom`, `/present`,
-`/worklog`) or when a task matches; the MCP-backed ones assume their server
+`/worklog`) or when a task matches. The MCP-backed ones assume their server
 from this section is registered.
 
 ## Updating
@@ -422,6 +422,6 @@ merge.
 **mise:** `mise upgrade <alias>` re-resolves the newest tag under the
 component's prefix. Restart the t-man agent yourself if the tool runs as a
 service. The restart only helps when the agent was registered with the mise
-shim path (`$HOME/.local/share/mise/shims/<tool>`); a plist that names a
+shim path (`$HOME/.local/share/mise/shims/<tool>`). A plist that names a
 versioned install directory keeps running the old build, and re-adding the
 agent with the shim path is the fix.

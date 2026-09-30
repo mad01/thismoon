@@ -46,11 +46,11 @@ docs/RELEASING.md       release process (release-please, tags, artifacts, verifi
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
-- Every `CLAUDE.md` in the repo has a sibling `AGENTS.md` symlink pointing at it, so non-Claude agents (Codex and others that read `AGENTS.md`) discover the same instructions; new components get the symlink alongside the `CLAUDE.md`.
+- Every `CLAUDE.md` in the repo has a sibling `AGENTS.md` symlink pointing at it, so non-Claude agents (Codex and others that read `AGENTS.md`) discover the same instructions. New components get the symlink alongside the `CLAUDE.md`.
 
 ## Skills
 
-The repo ships seven agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand; the paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+The repo ships seven agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
@@ -58,7 +58,7 @@ The repo ships seven agent skills under `skills/`, one directory per skill. Each
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
 | `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
 | `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus `humanizer_judge` (LLM backend, Haiku 4.5 via a LiteLLM proxy or OpenRouter) for holistic judgment |
-| `loom` | Coordinates parallel sessions on one repo with git worktrees: each session claims its own worktree under `~/.worktrees/` and commits there, and a single weaver session rebases the finished branches and lands them in order. | nothing (guidance only; creates worktrees under `~/.worktrees/`) |
+| `loom` | Coordinates parallel sessions on one repo with git worktrees: each session claims its own worktree under `~/.worktrees/` and commits there. A single weaver session rebases the finished branches and lands them in order. | nothing (guidance only; creates worktrees under `~/.worktrees/`) |
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
@@ -68,9 +68,9 @@ Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing 
 
 Full reference: `docs/RELEASING.md`. The short version for working here:
 
-- release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps; merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release, and the artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle, natively on a macOS arm64 runner (csl builds with cgo for its tree-sitter grammars; everything else stays CGO_ENABLED=0).
+- release-please (manifest mode) runs on merge to main, keyed by the `packages` map in `release-please-config.json`. Conventional commits scoped by path drive per-component bumps. Merging a release PR cuts the `name/vX.Y.Z` tag + GitHub Release. The artifacts matrix builds darwin/arm64 tarballs with checksums.txt + cosign keyless bundle, natively on a macOS arm64 runner. csl builds with cgo for its tree-sitter grammars; everything else stays CGO_ENABLED=0.
 - Release PRs can sit unmerged; merge = release. Never hand-edit `.release-please-manifest.json`.
-- The workflow authenticates with a token minted from the `mad01-release-please` GitHub App (secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, via actions/create-github-app-token). "Error adding to tree" or a missing release PR usually means the App lost Contents or Pull requests write access on this repo, or the private-key secret no longer matches the App.
+- The workflow authenticates with a token minted from the `mad01-release-please` GitHub App (secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, via actions/create-github-app-token). "Error adding to tree" or a missing release PR usually means the App lost Contents or Pull requests write access on this repo. Or the private-key secret no longer matches the App.
 - New component → must be added to `release-please-config.json`; CI fails the PR otherwise.
 
 ## Shipping a change to machines
@@ -96,7 +96,7 @@ in order; each step earned its place:
 3. **Drop webkit versioning.** Delete `webkit_version.go`, remove the `webkit`
    field from `/version`, delete the `update-webkit` Makefile target — there is
    no pin here, the service compiles against the webkit committed beside it.
-4. **Rewrite docs.** `service-info.yaml` gets `spec.system: thismoon`; strip
+4. **Rewrite docs.** `service-info.yaml` gets `spec.system: thismoon`. Strip
    pin/bump language from the service CLAUDE.md; scan for names and hosts that
    must not appear in a public repo (help text and code comments too, not just
    docs).
@@ -107,14 +107,14 @@ in order; each step earned its place:
    `release-please-config.json` — CI fails the PR if a Makefile-bearing
    component is missing from it.
 7. **Recipe beside the service.** `recipes/<svc>/recipe.toml` with a
-   sources-cache `working_dir` (see Conventions), then the scratch-config
+   sources-cache `working_dir` (see Conventions). Then the scratch-config
    `ralph up --dry-run` gate: commit first, move the real sources cache aside,
    remove the test cache between runs, and put a `config.local.toml` with the
    right profiles beside the scratch config.
 8. **Two commits per service:** one for the import, one for the recipe.
 
 Cutover happens in the consuming repo (dotfiles): delete the old source dir +
-recipe in one PR, keep item keys identical so ralph state carries over, then a
+recipe in one PR, keep item keys identical so ralph state carries over. Then a
 single `ralph up` swaps the fleet. After it, pull the sources cache manually if
 the recipes are newly merged, and verify each service's `/version` — ralph can
 report ok while leaving the old binary in place.

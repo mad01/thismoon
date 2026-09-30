@@ -17,15 +17,15 @@ notes, and dashboards stay on your disk.
 
 One of the things I use daily is the reading support. The shared web chrome
 has a fixation toggle that bolds the first half of every word to pull your
-eye along the line, and present can read a page aloud section by section at
+eye along the line. present can read a page aloud section by section at
 a speed you pick, with speak preparing the audio ahead of you. For a long
 briefing that combination is easier on the eyes and the attention, and it
 genuinely helps if you read with dyslexia. speak's MCP tools extend it to
-agents: an agent can hand it a markdown file and it reads the whole thing
+agents. An agent can hand it a markdown file and it reads the whole thing
 aloud on the speakers, so you can take in a long doc by ear.
 
 This is a personal project in the plainest sense: each tool grew out of a
-problem I hit building my own things — an agent that pushed straight to
+problem I hit building my own things. An agent that pushed straight to
 master, internal names that nearly reached a public commit, sessions
 re-deriving what a previous session had already worked out. I experiment
 here first, run everything daily on my own machines, and plan to keep
@@ -35,11 +35,11 @@ record of what has stuck on mine.
 
 > [!NOTE]
 > I run this as one system: [ralph](https://github.com/mad01/ralph) installs
-> and updates everything, and the core set (ralph, t-man, d-man, csl, belt,
+> and updates everything. The core set (ralph, t-man, d-man, csl, belt,
 > suspenders, humanizer, worklog, events, present, toss-bin) is what I use
 > daily, wired together. Every tool works standalone, but some run degraded
-> that way: belt does nothing until its hooks are wired, events is only as
-> useful as what reports into it, and the cross-tool loops (search hints,
+> that way: belt does nothing until its hooks are wired, and events is only
+> as useful as what reports into it. The cross-tool loops (search hints,
 > guard audit trails, memory injection) exist only in the full setup. The
 > remaining services are easier to leave out. If you take just one thing,
 > csl is the best standalone pick.
@@ -102,9 +102,9 @@ CLI tools under `tools/`, installed to your local bin.
 | [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | experimental |
 
 The MCP column is the AI half of the toolbox. Register those components as
-stdio MCP servers and your agent gets the code search, the audit log, and the
-work-state checkpoints you already use, reading the same files you do rather
-than a copy of them.
+stdio MCP servers. Then your agent gets the code search, the audit log, and
+the work-state checkpoints you already use, reading the same files you do
+rather than a copy of them.
 
 ## Skills
 
@@ -165,9 +165,9 @@ companion recipes that layer on top: which `.this` names exist, MCP
 registration, secrets, config overlays (see `docs/adr/0006`). A change to a service ships by merging to main; the next
 `ralph up` on each machine rebuilds and restarts it.
 
-The longer version of this story — what the fleet adds over standalone
-tools, the ralph vocabulary, and the rollout order — is
-[docs/HOW-IT-FITS-TOGETHER.md](docs/HOW-IT-FITS-TOGETHER.md), and
+The longer version of this story, what the fleet adds over standalone
+tools, the ralph vocabulary, and the rollout order, is
+[docs/HOW-IT-FITS-TOGETHER.md](docs/HOW-IT-FITS-TOGETHER.md).
 [`examples/dotfiles/`](examples/dotfiles/) is a working private config repo
 to start from, including an example global `CLAUDE.md`.
 
