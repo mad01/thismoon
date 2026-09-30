@@ -55,8 +55,8 @@ the sha installed on disk.
 `/version` returns the shared four-key build metadata object, so the same
 probe also yields the release `tag` and `build_time` of the running build.
 Both are best-effort: a service that answers with only `{"version":"<sha>"}`
-reports its version and leaves the other two empty, and the dashboard renders
-an empty field as nothing rather than a placeholder. Only the bare `version`
+reports its version and leaves the other two empty. The dashboard renders an
+empty field as nothing rather than a placeholder. Only the bare `version`
 token feeds the drift comparison.
 
 ### Version drift
@@ -64,9 +64,9 @@ token feeds the drift comparison.
 A running process serving an older sha than its on-disk binary means an
 install happened without a restart (the "ralph reports ok, old binary keeps
 running" failure). When running and installed shas disagree, the service is
-re-probed every cycle (the 10-minute meta cadence is bypassed) and the
-mismatch must hold for 2 consecutive cycles before it counts — a mismatch
-observed mid-`ralph up` clears instead of alerting. Confirmed drift shows
+re-probed every cycle (the 10-minute meta cadence is bypassed). The mismatch
+must hold for 2 consecutive cycles before it counts. A mismatch observed
+mid-`ralph up` clears instead of alerting. Confirmed drift shows
 "Stale binary" (amber) on the dashboard, fires one coalesced macOS banner,
 and records a `warn` event with `running`/`installed` tags; recovery records
 an `info` event. Services whose binary can't answer `version` (or without a

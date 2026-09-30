@@ -9,8 +9,8 @@ is flag, then environment variable, then built-in default.
 
 The list of services status checks is not configuration at all: every cycle
 it scans `~/Library/LaunchAgents` and `/Library/LaunchDaemons` for plists
-with `TManMetadata.ManagedBy == "t-man"`. There is no service list to edit —
-a new `t-man add` shows up on the next probe cycle, and there is no flag or
+with `TManMetadata.ManagedBy == "t-man"`. There is no service list to edit.
+A new `t-man add` shows up on the next probe cycle, and there is no flag or
 env var to point the scan at different directories.
 
 ## Flags
