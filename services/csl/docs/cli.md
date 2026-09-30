@@ -382,6 +382,8 @@ csl index --clean           # delete the entire index directory
 
 By default, `csl index` diffs the current repo fingerprints against `state.json` and re-indexes only the repos whose fingerprint changed. The fingerprint covers HEAD, branch, `git status --porcelain`, and the index format version, so any commit, checkout, or working-tree change triggers a re-index. So does an upgrade that changes what a shard holds (every repo re-indexes once).
 
+Every `csl index` write, including `--repo` and `--drain`, takes the sync lock shared with `csl sync` and the `csl web` background refresh. While one of those holds it, the command fails fast and names the holder's PID instead of writing beside it. Wait for it to finish, or check `csl doctor` if no sync should be running.
+
 `--repair` opens every `*.zoekt` shard, parses its metadata, and removes any that fail to read. Run `csl index` after repair to rebuild affected repos.
 
 ### Flags

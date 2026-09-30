@@ -393,6 +393,9 @@ func TestAcquireSyncLock_RefusesLiveLock(t *testing.T) {
 	if !errors.Is(err, ErrLocked) {
 		t.Errorf("error should match ErrLocked, got: %v", err)
 	}
+	if want := "PID " + strconv.Itoa(os.Getpid()); !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to name the holder as %q", err, want)
+	}
 }
 
 func TestLocked(t *testing.T) {
@@ -415,49 +418,58 @@ func TestLocked(t *testing.T) {
 	}
 }
 
-func TestRemoveStaleLock_DeadProcess(t *testing.T) {
+func TestLiveHolder_DeadProcess(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "test.lock")
 	_ = os.WriteFile(lockPath, []byte("99999999\n"), 0o600)
 
-	if !removeStaleLock(lockPath) {
-		t.Error("removeStaleLock should return true for dead PID")
+	if _, live := liveHolder(lockPath); live {
+		t.Error("liveHolder should report a dead PID as not live")
 	}
 	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
 		t.Error("lock file should be removed")
 	}
 }
 
-func TestRemoveStaleLock_LiveProcess(t *testing.T) {
+func TestLiveHolder_VanishedLock(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "gone.lock")
+
+	if pid, live := liveHolder(lockPath); live || pid != 0 {
+		t.Errorf("liveHolder(missing) = (%d, %v), want (0, false)", pid, live)
+	}
+}
+
+func TestLiveHolder_LiveProcess(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "test.lock")
 	_ = os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 
-	if removeStaleLock(lockPath) {
-		t.Error("removeStaleLock should return false for live PID")
+	pid, live := liveHolder(lockPath)
+	if !live || pid != os.Getpid() {
+		t.Errorf("liveHolder(live) = (%d, %v), want (%d, true)", pid, live, os.Getpid())
 	}
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Error("lock file should still exist")
 	}
 }
 
-func TestRemoveStaleLock_EmptyFile(t *testing.T) {
+func TestLiveHolder_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "test.lock")
 	_ = os.WriteFile(lockPath, []byte(""), 0o600)
 
-	if !removeStaleLock(lockPath) {
-		t.Error("removeStaleLock should return true for empty lock (old format)")
+	if _, live := liveHolder(lockPath); live {
+		t.Error("liveHolder should report an empty lock (old format) as stale")
 	}
 }
 
-func TestRemoveStaleLock_GarbageContent(t *testing.T) {
+func TestLiveHolder_GarbageContent(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "test.lock")
 	_ = os.WriteFile(lockPath, []byte("not-a-pid\n"), 0o600)
 
-	if !removeStaleLock(lockPath) {
-		t.Error("removeStaleLock should return true for garbage content")
+	if _, live := liveHolder(lockPath); live {
+		t.Error("liveHolder should report garbage content as stale")
 	}
 }
 

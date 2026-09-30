@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
 	"github.com/mad01/thismoon/services/csl/internal/semantic"
-	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
 
 var (
@@ -47,7 +47,11 @@ re-embed happens automatically when the model or chunker version changes).
 Use --status to view the current index state.
 Use --repair to validate and fix corrupted shard files.
 Use --clean to delete the entire index directory.
-Use --drain to batch-index repos queued by post-merge hooks.`,
+Use --drain to batch-index repos queued by post-merge hooks.
+
+Every index write takes the sync lock shared with csl sync and the csl web
+refresher. While one of those runs, the command fails fast instead of racing
+it: wait for it to finish, then retry.`,
 	RunE: runIndex,
 }
 
@@ -154,30 +158,9 @@ func runIndex(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	w := cmd.ErrOrStderr()
-	fmt.Fprintf(w, "Indexing %d repo(s)...\n", len(toIndex))
-
-	err = search.IndexRepos(
-		indexDir,
-		toIndex,
-		cfg.AllowedHiddenDirs(),
-		func(i, total int, repo finder.Repo) {
-			fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
-		},
-	)
+	err = indexStale(cmd, indexDir, toIndex, cfg.AllowedHiddenDirs(), staleness.Current)
 	if err != nil {
-		return fmt.Errorf("indexing failed: %w", err)
-	}
-
-	// Update state.
-	for _, repo := range toIndex {
-		if fp, ok := staleness.Current[repo.Path]; ok {
-			fp.IndexedAt = time.Now()
-			state.SetRepo(repo.Path, fp)
-		}
-	}
-	if err := state.Save(indexDir); err != nil {
-		return fmt.Errorf("failed to save index state: %w", err)
+		return err
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "indexed %d repo(s)\n", len(toIndex))
@@ -274,19 +257,95 @@ func printIndexStatus(
 	return nil
 }
 
-// runIndexSingle re-indexes one repo by absolute path. Used by the post-merge
-// git hook: cheap, no global scan, fingerprint state still updated so the next
-// `csl index` won't redundantly re-process this repo.
-func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
-	if syncer.Locked(indexDir) {
-		fmt.Fprintf(
-			cmd.ErrOrStderr(),
-			"csl sync in progress, skipping auto-index for %s\n",
-			repoPath,
-		)
-		return nil
-	}
+// indexWrite describes one write of shards and state.json: the repos to
+// rebuild, optional progress output, and where each repo's fresh fingerprint
+// comes from. A full run reuses the fingerprints its staleness check already
+// computed; single-repo and queue-drain runs probe git after indexing.
+type indexWrite struct {
+	repos       []finder.Repo
+	hiddenDirs  []string
+	progress    func(i, total int, repo finder.Repo)
+	fingerprint func(repo finder.Repo) (search.RepoState, bool)
+}
 
+// writeIndex rebuilds the shards for w.repos and records their fingerprints
+// in state.json. The caller holds the sync lock (see withIndexLock), and the
+// state is reloaded under it: a sync may have saved state.json after this
+// command loaded it for the staleness check, and those entries must survive.
+func writeIndex(indexDir string, w indexWrite) error {
+	if err := search.IndexRepos(indexDir, w.repos, w.hiddenDirs, w.progress); err != nil {
+		return fmt.Errorf("indexing failed: %w", err)
+	}
+	state, err := search.LoadState(indexDir)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	for _, repo := range w.repos {
+		fp, ok := w.fingerprint(repo)
+		if !ok {
+			continue
+		}
+		fp.IndexedAt = now
+		state.SetRepo(repo.Path, fp)
+	}
+	if err := state.Save(indexDir); err != nil {
+		return fmt.Errorf("failed to save index state: %w", err)
+	}
+	return nil
+}
+
+// fingerprintFrom serves fingerprints out of a staleness check's Current map.
+func fingerprintFrom(
+	current map[string]search.RepoState,
+) func(finder.Repo) (search.RepoState, bool) {
+	return func(repo finder.Repo) (search.RepoState, bool) {
+		fp, ok := current[repo.Path]
+		return fp, ok
+	}
+}
+
+// fingerprintNow probes git for repo's fingerprint after an ad-hoc index; a
+// repo git cannot describe keeps its old state.json entry.
+func fingerprintNow(repo finder.Repo) (search.RepoState, bool) {
+	fp, err := search.Fingerprint(repo.Path)
+	return fp, err == nil
+}
+
+// progressLine prints one "[i/total] name" line per indexed repo to w.
+func progressLine(w io.Writer) func(i, total int, repo finder.Repo) {
+	return func(i, total int, repo finder.Repo) {
+		fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
+	}
+}
+
+// indexStale rebuilds the shards for toIndex under the sync lock, recording
+// the fingerprints the staleness check already computed so a full run never
+// probes git twice per repo. A held lock fails the command fast.
+func indexStale(
+	cmd *cobra.Command,
+	indexDir string,
+	toIndex []finder.Repo,
+	hiddenDirs []string,
+	current map[string]search.RepoState,
+) error {
+	w := cmd.ErrOrStderr()
+	return withIndexLock(indexDir, func() error {
+		fmt.Fprintf(w, "Indexing %d repo(s)...\n", len(toIndex))
+		return writeIndex(indexDir, indexWrite{
+			repos:       toIndex,
+			hiddenDirs:  hiddenDirs,
+			progress:    progressLine(w),
+			fingerprint: fingerprintFrom(current),
+		})
+	})
+}
+
+// runIndexSingle re-indexes one repo by absolute path without the global
+// scan, updating its state.json entry so the next `csl index` skips it. Like
+// every other writer it holds the sync lock, failing fast while csl sync or
+// the web refresher runs instead of writing beside them.
+func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
 	abs, err := filepath.Abs(repoPath)
 	if err != nil {
 		return fmt.Errorf("resolve repo path %s: %w", repoPath, err)
@@ -302,100 +361,95 @@ func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	state, err := search.LoadState(indexDir)
+	err = withIndexLock(indexDir, func() error {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Indexing %s\n", repo.Name)
+		return writeIndex(indexDir, indexWrite{
+			repos:       []finder.Repo{repo},
+			hiddenDirs:  cfg.AllowedHiddenDirs(),
+			fingerprint: fingerprintNow,
+		})
+	})
 	if err != nil {
 		return err
-	}
-
-	w := cmd.ErrOrStderr()
-	fmt.Fprintf(w, "Indexing %s\n", repo.Name)
-
-	if err := search.IndexRepos(indexDir, []finder.Repo{repo}, cfg.AllowedHiddenDirs(), nil); err != nil {
-		return fmt.Errorf("indexing failed: %w", err)
-	}
-
-	fp, fpErr := search.Fingerprint(repo.Path)
-	if fpErr == nil {
-		fp.IndexedAt = time.Now()
-		state.SetRepo(repo.Path, fp)
-		if err := state.Save(indexDir); err != nil {
-			return fmt.Errorf("failed to save index state: %w", err)
-		}
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "indexed %s\n", repo.Name)
 	return nil
 }
 
-// runIndexDrain batch-indexes repos queued by post-merge hooks.
-// Claims the queue atomically so concurrent drains don't collide.
+// runIndexDrain batch-indexes the repos queued by post-merge hooks. The sync
+// lock is taken before the queue is claimed, so a drain that loses to a
+// running sync fails fast and leaves the queue for that sync to drain.
 func runIndexDrain(cmd *cobra.Command, indexDir string) error {
 	queuePath, err := queue.DefaultPath()
 	if err != nil {
 		return err
 	}
 
-	claimedPath, repoPaths, err := queue.Claim(queuePath)
-	if err != nil {
-		return fmt.Errorf("claim queue: %w", err)
-	}
-	if len(repoPaths) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "queue empty, nothing to index")
-		return nil
-	}
-
-	w := cmd.ErrOrStderr()
-	fmt.Fprintf(w, "Draining %d repo(s) from queue...\n", len(repoPaths))
-
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	state, err := search.LoadState(indexDir)
+	return withIndexLock(indexDir, func() error {
+		return drainQueue(cmd, indexDir, queuePath, cfg.AllowedHiddenDirs())
+	})
+}
+
+// drainQueue claims the queue and indexes every repo in it that still
+// inspects as a git repo. The caller holds the sync lock.
+func drainQueue(cmd *cobra.Command, indexDir, queuePath string, hiddenDirs []string) error {
+	out, w := cmd.OutOrStdout(), cmd.ErrOrStderr()
+
+	claimedPath, repoPaths, err := queue.Claim(queuePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("claim queue: %w", err)
 	}
-
-	var repos []finder.Repo
-	for _, p := range repoPaths {
-		repo, err := finder.Inspect(p)
-		if err != nil {
-			fmt.Fprintf(w, "  skip %s — %v\n", p, err)
-			continue
-		}
-		repos = append(repos, repo)
-	}
-
-	if len(repos) == 0 {
-		_ = queue.Release(claimedPath)
-		fmt.Fprintln(cmd.OutOrStdout(), "no valid repos in queue")
+	if len(repoPaths) == 0 {
+		fmt.Fprintln(out, "queue empty, nothing to index")
 		return nil
 	}
 
-	if err := search.IndexRepos(indexDir, repos, cfg.AllowedHiddenDirs(), func(i, total int, repo finder.Repo) {
-		fmt.Fprintf(w, "  [%d/%d] %s\n", i+1, total, repo.Name)
-	}); err != nil {
-		return fmt.Errorf("indexing failed (claimed file: %s): %w", claimedPath, err)
+	fmt.Fprintf(w, "Draining %d repo(s) from queue...\n", len(repoPaths))
+
+	repos := inspectQueued(w, repoPaths)
+	if len(repos) == 0 {
+		_ = queue.Release(claimedPath)
+		fmt.Fprintln(out, "no valid repos in queue")
+		return nil
 	}
 
-	for _, repo := range repos {
-		fp, fpErr := search.Fingerprint(repo.Path)
-		if fpErr == nil {
-			fp.IndexedAt = time.Now()
-			state.SetRepo(repo.Path, fp)
-		}
-	}
-	if err := state.Save(indexDir); err != nil {
-		return fmt.Errorf("save state: %w", err)
+	err = writeIndex(indexDir, indexWrite{
+		repos:       repos,
+		hiddenDirs:  hiddenDirs,
+		progress:    progressLine(w),
+		fingerprint: fingerprintNow,
+	})
+	if err != nil {
+		return fmt.Errorf("%w (claimed file: %s)", err, claimedPath)
 	}
 
 	if err := queue.Release(claimedPath); err != nil {
 		fmt.Fprintf(w, "warning: remove claimed file %s: %v\n", claimedPath, err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "indexed %d repo(s)\n", len(repos))
+	fmt.Fprintf(out, "indexed %d repo(s)\n", len(repos))
 	return nil
+}
+
+// inspectQueued resolves queued repo paths, reporting and skipping the ones
+// that no longer inspect as git repos.
+func inspectQueued(w io.Writer, repoPaths []string) []finder.Repo {
+	var repos []finder.Repo
+	for _, p := range repoPaths {
+		repo, err := finder.Inspect(p)
+		if err != nil {
+			fmt.Fprintf(w, "  skip %s: %v\n", p, err)
+			continue
+		}
+		repos = append(repos, repo)
+	}
+	return repos
 }
 
 // filterReposByName keeps repos whose name contains the given substring
