@@ -25,6 +25,17 @@
 
 .brief { max-width: var(--page-width, 1080px); margin: 0 auto; padding: 2rem 1.5rem 6rem; animation: briefEnter 0.35s ease-out; }
 
+/* Softer ink for the page body. webkit's primary text is near-black in
+   light mode and near-white in dark, which reads harsh in a monospace face,
+   more so with fixation's bold halves. The brief's summary and lists already
+   sit at the secondary ink; this moves the rest of the content (paragraphs,
+   titles, headings, table cells, kv values) one palette step toward it while
+   the header chrome keeps webkit's default. The root re-resolves its own
+   color: elements that only inherit (the title, section headings) would
+   otherwise keep the computed color body derived from the unchanged variable. */
+#root { --text-1: var(--wg600); color: var(--text-1); }
+[data-theme="dark"] #root { --text-1: var(--wg300); }
+
 .brief-title {
   font-size: 2.125rem;
   font-weight: 400;

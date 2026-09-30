@@ -357,7 +357,7 @@ func init() {
 	)
 }
 
-const docTemplateSrc = `<h1 class="brief-title">{{.Title}}</h1>
+const docTemplateSrc = `<h1 class="brief-title" data-fixation>{{.Title}}</h1>
 {{- with .Meta}}
 <div class="brief-meta">{{.}}</div>
 {{- end}}
@@ -374,7 +374,7 @@ const docTemplateSrc = `<h1 class="brief-title">{{.Title}}</h1>
 {{- if gt (len .Sections) 1}}
 <wk-toc>
   <wk-toc-title>Sections</wk-toc-title>
-  <ul>
+  <ul data-fixation>
 {{- range .Sections}}
     <li><a href="#{{sectionID .Heading}}">{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{.Heading}}</a></li>
 {{- end}}
@@ -383,7 +383,7 @@ const docTemplateSrc = `<h1 class="brief-title">{{.Title}}</h1>
 {{- end}}
 {{- range .Sections}}
 <wk-section id="{{sectionID .Heading}}">
-  <wk-section-heading>{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{.Heading}}</wk-section-heading>
+  <wk-section-heading data-fixation>{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{.Heading}}</wk-section-heading>
 {{- range .Blocks}}
   {{renderBlock .}}
 {{- end}}
@@ -392,13 +392,13 @@ const docTemplateSrc = `<h1 class="brief-title">{{.Title}}</h1>
 
 const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text}}</p>{{end}}
 
-{{define "block-h3"}}<wk-section-subheading>{{.Text}}</wk-section-subheading>{{end}}
+{{define "block-h3"}}<wk-section-subheading data-fixation>{{.Text}}</wk-section-subheading>{{end}}
 
 {{define "block-callout"}}<wk-callout{{with .Severity}} variant="{{.}}"{{end}} data-fixation>{{inlineMd .Text}}</wk-callout>{{end}}
 
 {{define "block-table"}}<wk-table><table>
   <thead><tr>{{range .Cols}}<th>{{.}}</th>{{end}}</tr></thead>
-  <tbody>
+  <tbody data-fixation>
 {{- range .Rows}}
     <tr>{{range .}}<td>{{inlineMd .}}</td>{{end}}</tr>
 {{- end}}
