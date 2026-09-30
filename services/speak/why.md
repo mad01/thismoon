@@ -40,15 +40,17 @@ playback lock file serializes it across processes instead.
 
 Remote providers pushed serve to prepare audio ahead. Gemini 3.1 Flash TTS
 through OpenRouter took 3.2 seconds for a 7-word sentence and 21.6 for 120
-words, and it answers with the whole clip at once, so there is no streaming
-to start playback early. Asking for one sentence at a time on play meant a
-wait on every press and a gap whenever a short sentence ended before the
-next, longer one arrived. So a page registers its text with serve, which
-synthesizes the parts into a disk cache when the page asks or plays, and a
-play press replays them: a 4-part document took 18 seconds to prepare, then
-each part came back in about a millisecond. What is not registered, text
-selections and the MCP tools, groups sentences into parts that start at one
-sentence and keeps two parts synthesizing ahead of the one playing.
+words. It answers with the whole clip at once, so there is no streaming to
+start playback early. Asking for one sentence at a time on play meant a wait
+on every press and a gap whenever a short sentence ended before the next,
+longer one arrived.
+
+So a page registers its text with serve, which synthesizes the parts into a
+disk cache when the page asks or plays. A play press replays them: a 4-part
+document took 18 seconds to prepare, then each part came back in about a
+millisecond. What is not registered, text selections and the MCP tools,
+groups sentences into parts that start at one sentence and keeps two parts
+synthesizing ahead of the one playing.
 
 speak has no reading page of its own. It served one, an upload form that
 rendered a markdown file and played it, until the reading controls moved into

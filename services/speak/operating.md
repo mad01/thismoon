@@ -72,16 +72,17 @@ the first part before replying, so a dead engine comes back as an error
 reply starting UNAVAILABLE; speak_resume retries that session once fixed.
 
 serve retries a part that failed upstream by itself, up to 3 attempts, 15s
-then 45s apart; meanwhile its section badge on the present page reads
+then 45s apart. Meanwhile its section badge on the present page reads
 "retrying" and its title names the last failure. A part out of attempts is
 failed, with a reason starting "failed after 3 attempts", and its section
-gets a Retry button; "Retry failed (n)" re-queues only the failed parts,
+gets a Retry button. "Retry failed (n)" re-queues only the failed parts,
 "Generate all TTS for page" the failed and the not prepared ones, and a play
-tries it again.
+tries the failed part again.
+
 After an auth, quota, network, config or model failure, or a part whose
-last attempt timed out too, serve stops preparing in the background (queued
-and retrying parts go back to not prepared) rather than spend requests on
-the same error; parts someone plays still run. Fix the cause, or for a
+last attempt timed out too, serve stops preparing in the background. Rather
+than spend requests on the same error, it moves queued and retrying parts
+back to not prepared. Parts someone plays still run. Fix the cause, or for a
 stalling provider wait a while, then Generate all TTS for page. events.this
 gets at most one preparation-failure event a minute; the badge and health
 still show every failure.
