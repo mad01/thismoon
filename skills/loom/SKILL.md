@@ -10,7 +10,7 @@ has two roles; the worktree layout, state model, and integration rules live
 in `loom.md` beside this file. Read it before acting in either role.
 
 Pick the role from the arguments or context: `claim` (or a task that needs
-its own worktree) makes this session a worktree owner; `weave` (or the user
+its own worktree) makes this session a worktree owner. `weave` (or the user
 saying this session integrates) makes it the weaver. `status` surveys the
 loom without taking a role.
 
@@ -32,8 +32,8 @@ loom without taking a role.
    then classify each worktree per `loom.md` — in flight, ready, abandoned,
    or integrated. No worktrees: say so and stop.
 2. For each ready branch, in order: rebase it onto the default branch tip
-   in its own worktree, re-run the gates, then land it by repo policy —
-   push + PR for PR-only repos, fast-forward merge for direct-main repos.
+   in its own worktree, re-run the gates, then land it by repo policy.
+   Push + PR for PR-only repos, fast-forward merge for direct-main repos.
    A rebase conflict hands the branch back to its owner; it is not yours
    to resolve.
 3. After a branch lands: remove its worktree, delete the branch, update
