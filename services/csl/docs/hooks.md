@@ -15,7 +15,7 @@ Configure `csl-reindex` under suspenders' `post_merge` (see the [suspenders docs
 printf '%s\n' "$(git rev-parse --show-toplevel)" >> "${HOME}/.config/csl/reindex.queue"
 ```
 
-**Check that path against your install.** The queue lives in csl's state directory, which is `~/.config/csl` on every machine that ran csl before config and state were split, and `$XDG_STATE_HOME/csl` (else `~/.local/state/csl`) on a fresh one. `csl docs` prints the directory in effect. On a fresh install the line above has to be repointed, or suspenders will fill a queue csl never drains — a silently stale index, since indexing still happens on the next search, just later than intended.
+**Check that path against your install.** The queue lives in csl's state directory, which is `~/.config/csl` on every machine that ran csl before config and state were split, and `$XDG_STATE_HOME/csl` (else `~/.local/state/csl`) on a fresh one. `csl docs` prints the directory in effect. On a fresh install the line above has to be repointed, or suspenders will fill a queue csl never drains. That leaves a silently stale index, since indexing still happens on the next search, just later than intended.
 
 ### Migrating off csl-managed hooks
 

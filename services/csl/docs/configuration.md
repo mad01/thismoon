@@ -13,7 +13,7 @@ Resolved in this order:
 
 A leading `~` is expanded in both the flag and the environment variable, so they work under launchd where no shell expands them first.
 
-The file is optional. With none, csl runs on defaults — no repos configured — and every surface names the path to create rather than failing; a file that exists but cannot be parsed is an error, since that machine was configured (ADR-0011).
+The file is optional. With none, csl runs on defaults, no repos configured, and every surface names the path to create rather than failing. A file that exists but cannot be parsed is an error, since that machine was configured (ADR-0011).
 
 Loaded by the CLI and the MCP server on every invocation that needs to discover repos (`search`, `count`, `read`, `repo`, `doctor`, `index`, and most `csl_*` MCP tools).
 
@@ -135,7 +135,7 @@ mcp:
 
 Semantic (vector) search runs alongside the lexical zoekt index and is off by default. Embedding goes through a local [Ollama](https://ollama.com) server, so semantic features need Ollama running with the model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`); lexical search has no Ollama dependency. Build the index with `csl index --semantic-all`.
 
-Enabling it locally is a matter of corpus size: building the vector index scales with the number of repos, so as a rough guide it stays practical up to ~250 repos. Past that, keep the machine lexical-only or run the bulk build on a bigger machine — see [when local semantic search is worth it](semantic.md#when-local-semantic-search-is-worth-it).
+Enabling it locally is a matter of corpus size. Building the vector index scales with the number of repos, so as a rough guide it stays practical up to ~250 repos. Past that, keep the machine lexical-only or run the bulk build on a bigger machine — see [when local semantic search is worth it](semantic.md#when-local-semantic-search-is-worth-it).
 
 - `semantic.enabled: true` lets the daemon connect the embedder and load the vector index at startup, so the `csl_semantic_search` MCP tool and the web toggle answer from a warm daemon.
 - `semantic.sync: true` makes `csl sync` re-embed changed repos after the lexical reindex. The pass is incremental (only changed files) and best-effort: if Ollama or the model is unavailable, the lexical sync still succeeds. Leave it off to refresh embeddings manually with `csl index --semantic`.
@@ -192,7 +192,7 @@ All paths below are relative to that directory.
 |---|---|
 | `search-index/` | Zoekt index directory. Contains `*.zoekt` shard files and `state.json`. |
 | `search-index/state.json` | Per-repo fingerprints used to decide which repos need re-indexing. |
-| `search-index/.csl-sync.lock` | Lock file coordinating index writers across processes: a manual `csl sync` and the background refresh in `csl web` take it before pulling or indexing, and the ad-hoc builds (`csl search` reindex, the web fallback's first build) hold it or skip, so no two writers race each other on working trees, shards, or `state.json`. |
+| `search-index/.csl-sync.lock` | Lock file coordinating index writers across processes. A manual `csl sync` and the background refresh in `csl web` take it before pulling or indexing. The ad-hoc builds (`csl search` reindex, the web fallback's first build) hold it or skip, so no two writers race each other on working trees, shards, or `state.json`. |
 | `semantic-index/` | Per-repo vector stores (`<org>_<repo>.gob`), written by `csl index --semantic*`. No model files live here — embedding goes through Ollama. |
 | `reindex.queue` | Repo paths appended by the suspenders `csl-reindex` post-merge hook, drained by `csl sync` or `csl index --drain`. |
 | `search-daemon.sock` | Unix socket the in-memory gRPC search daemon listens on. |
@@ -219,7 +219,7 @@ Each repo indexed by `csl` produces one or more `*.zoekt` shard files. The shard
 }
 ```
 
-The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`. Any change to committed state, branch, or working tree produces a new fingerprint, so `csl` knows to re-index that repo; so does a csl upgrade that changes what a shard holds, which re-indexes every repo once.
+The fingerprint is `sha256(HEAD + "\n" + branch + "\n" + git status --porcelain + "\n" + index format version)`. Any change to committed state, branch, or working tree produces a new fingerprint, so `csl` knows to re-index that repo. So does a csl upgrade that changes what a shard holds, which re-indexes every repo once.
 
 ### Daemon lifecycle
 
@@ -252,4 +252,4 @@ csl index --clean           # removes search-index/ from the state directory
 csl search "anything"       # rebuilds the index on next search
 ```
 
-`--clean` removes both the shards and `state.json`, so the next search re-indexes every configured repo. The config file is not touched, and neither is the semantic index — to reset that too, remove `semantic-index/` from the state directory and rebuild with `csl index --semantic-all` (or just rebuild: a model/dim/chunker change re-embeds automatically without the manual delete).
+`--clean` removes both the shards and `state.json`, so the next search re-indexes every configured repo. The config file is not touched, and neither is the semantic index. To reset that too, remove `semantic-index/` from the state directory and rebuild with `csl index --semantic-all` (or just rebuild: a model/dim/chunker change re-embeds automatically without the manual delete).

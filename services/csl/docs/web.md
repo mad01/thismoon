@@ -13,7 +13,7 @@ install or build separately.
 
 ## Pages
 
-- **Search** (`/`) — a **Lexical ⇄ Semantic** mode toggle, a query box, a
+- **Search** (`/`): a **Lexical ⇄ Semantic** mode toggle, a query box, a
   Files ⇄ Matches view toggle, and a row of quick-filter chips. Results are
   grouped by repo, then file. Each file links to its source on the git host;
   each hit can be expanded inline to show surrounding lines. Large result sets
@@ -21,28 +21,29 @@ install or build separately.
   the server-side file cap is reached, a note explains the result was truncated
   and suggests narrowing the query.
 
-- **Health** (`/health`) — the fleet git-health report: every checkout's
+- **Health** (`/health`): the fleet git-health report: every checkout's
   branch, dirty counts, and commits ahead/behind the last-fetched upstream,
   with a suggested action per repo and a copy-path button. A toggle switches
   between repos needing attention (the default) and the full fleet. Backed by
   `GET /api/repo_health`; the same report is exposed as the `csl_repo_health`
   MCP tool.
-- **Refresh** (`/refresh`) — the background index refresh: whether the
-  periodic loop is enabled, its interval, the last and next run, and one row
-  per repo with the last refresh outcome (up to date, updated, skipped dirty,
-  failed, …) and when it was last indexed. A **refresh all** button and a
-  per-repo **refresh** button trigger a manual pull + reindex; the page polls
-  while a refresh runs. Backed by `GET /api/refresh_status` and
+- **Refresh** (`/refresh`): the background index refresh: whether the
+  periodic loop is enabled, its interval, and the last and next run. It also
+  shows one row per repo with the last refresh outcome (up to date, updated,
+  skipped dirty, failed, …) and when it was last indexed. A **refresh all**
+  button and a per-repo **refresh** button trigger a manual pull + reindex;
+  the page polls while a refresh runs. Backed by `GET /api/refresh_status` and
   `POST /api/refresh`. The loop itself lives in the `csl web` process (see
   below); repos on non-default branches or with uncommitted tracked changes
   are never pulled.
-- **File view** (`/file?repo=&file=&start=&end=`) — renders one file section
-  like a search match: numbered lines with the requested range highlighted,
-  controls to widen the context stepwise or jump to the full file, a
-  copy-local-path button, and a link to the file on its git host. The URL
-  carries all state and every load reads the content live from disk; there is
-  no server-side record of the view. The `csl_show_file` MCP tool builds and
-  opens these links so an agent can point the user at a piece of code.
+- **File view** (`/file?repo=&file=&start=&end=`): renders one file section
+  like a search match. It shows numbered lines with the requested range
+  highlighted and controls to widen the context stepwise or jump to the full
+  file. It also has a copy-local-path button and a link to the file on its
+  git host. The URL carries all state and every load reads the content live
+  from disk; there is no server-side record of the view. The `csl_show_file`
+  MCP tool builds and opens these links so an agent can point the user at a
+  piece of code.
 
 The Search page's empty state (no query) shows a categorized set of example queries. Each
 example deep-links to the Search page (`/?q=<query>`) and runs automatically.
@@ -259,20 +260,20 @@ Returns `ok`. Useful for readiness checks when running as a service.
 
 ## Background index refresh
 
-While `csl web` runs, it keeps the index current on its own: a loop wakes
+While `csl web` runs, it keeps the index current on its own. A loop wakes
 every minute and, when the last full cycle is older than
-`refresh.interval_minutes` (default 15), runs the same engine as `csl sync` —
-pull every discovered repo (parallel, ff-only) and reindex the ones that
-changed. Comparing timestamps instead of counting ticks means a Mac waking
-from sleep catches up on the next wake instead of skipping a cycle; failed
-cycles back off exponentially (up to an hour) so an offline stretch doesn't
-hammer remotes.
+`refresh.interval_minutes` (default 15), runs the same engine as `csl sync`.
+It pulls every discovered repo (parallel, ff-only) and reindexes the ones
+that changed. Comparing timestamps instead of counting ticks means a Mac
+waking from sleep catches up on the next wake instead of skipping a cycle.
+Failed cycles back off exponentially (up to an hour) so an offline stretch
+doesn't hammer remotes.
 
 The same safety rules as `csl sync` apply: repos on non-default branches, in
 detached HEAD, with uncommitted tracked changes, or without a remote are
-skipped, and both entry points take the shared sync lock
-(`search-index/.csl-sync.lock` in the state directory) before touching anything — a
-manual sync fails fast while a refresh runs, and a refresh cycle steps aside
+skipped. Both entry points take the shared sync lock
+(`search-index/.csl-sync.lock` in the state directory) before touching anything.
+A manual sync fails fast while a refresh runs, and a refresh cycle steps aside
 while a manual sync runs. Disable the loop with `refresh.enabled: false`; the
 manual buttons on the `/refresh` page keep working.
 

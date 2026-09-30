@@ -17,13 +17,13 @@ or per-directory override.
 file runs on defaults: `csl web` serves an empty UI, `csl repo --list` prints
 an empty list, `csl doctor` passes, and each of them names the file to create.
 Nothing has to exist before csl starts. What is not tolerated is a file that
-exists and cannot be parsed — that machine was configured, and running on
+exists and cannot be parsed. That machine was configured, and running on
 defaults there would hide the mistake, so those commands fail naming the file
 (ADR-0011).
 
 The same distinction runs through the empty-result messages: with no config
-file you are told which file to create, while a config that is present and
-still discovers no repos is reported as an error, because a configured
+file you are told which file to create. A config that is present and still
+discovers no repos is instead reported as an error, because a configured
 machine finding nothing is a misconfiguration rather than a starting state.
 
 `csl config` prints the resolved path, whether the file loaded, and the
@@ -31,10 +31,10 @@ effective settings after defaults are applied. `csl config --help` carries
 an annotated reference of every key, generated from the same source this
 page documents.
 
-Precedence is simple: config file values win when set, compiled-in defaults
-fill every unset key, and a small number of CLI flags override specific
-config values for a single invocation (`csl sync --concurrency`, `csl web
---port`). Flags never persist back to the file.
+Precedence is simple: config file values win when set, and compiled-in
+defaults fill every unset key. A small number of CLI flags override specific
+config values for a single invocation (`csl sync --concurrency`,
+`csl web --port`). Flags never persist back to the file.
 
 ## Where state lives
 
@@ -51,7 +51,7 @@ and the `operating.md` doc (`csl docs`) both name the directory in effect.
 
 The index is what settles it, not the directory. The fleet recipe symlinks
 `config.yaml` into `~/.config/csl` on every machine, so the directory exists
-even where csl has never indexed anything; treating that as evidence would
+even where csl has never indexed anything. Treating that as evidence would
 leave every provisioned machine on the pre-split path forever. A machine with
 the config symlink and no index lands in the state directory like any fresh
 install.
@@ -75,7 +75,7 @@ that still sets them loads unchanged — unknown keys are ignored — but
   the listed hosts are indexed; repos with no remote are excluded whenever
   the list is non-empty. An empty or omitted list indexes every discovered
   repo. The host is the literal text between `@` and `:` (SSH) or after
-  `://` (HTTPS) in the remote URL, so a checkout cloned through an SSH alias
+  `://` (HTTPS) in the remote URL. So a checkout cloned through an SSH alias
   such as `git@gh-work:org/repo.git` has host `gh-work` and must be listed
   by that name. `csl repo --list` shows only the survivors;
   `csl repo --list --skipped` lists the dropped repos with the reason for
@@ -156,7 +156,7 @@ zoekt index, which has no disable switch. Embedding goes through a local
   value always wins.
 
   `csl web --port` binds a different port for that one process. Inside it
-  the links follow the flag, but other processes (the MCP server, `csl
+  the links follow the flag. But other processes (the MCP server, `csl
   doctor` in another shell) only see `CSL_PORT` and this key, so pin one of
   those when the UI permanently moves.
 
@@ -192,8 +192,8 @@ zoekt index, which has no disable switch. Embedding goes through a local
   working directory.
 - `EVENTS_BASE_URL` (default `http://127.0.0.1:7430`): base URL of the
   local events service that `csl sync` and reindex runs archive activity
-  to. The archive call is best-effort and synchronous with a short timeout;
-  if the events service is down or the variable points nowhere reachable,
+  to. The archive call is best-effort and synchronous with a short timeout.
+  If the events service is down or the variable points nowhere reachable,
   the event is simply dropped and the command still succeeds. Never set
   during `go test` — test runs skip the call entirely.
 

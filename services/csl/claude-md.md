@@ -13,7 +13,7 @@ Tools:
 - Default to `csl_search`. Lexical search always works and needs nothing running.
 - `csl_semantic_search` and `csl_hybrid_search` need the semantic index built (`csl index --semantic-all`) and Ollama running. Until then semantic answers `available=false` and hybrid degrades to lexical-only. Reach for them on "where do we handle X" questions only when `csl_index_info` reports `semantic.built: true`; otherwise stay lexical.
 - Use `csl_read` for file contents you need yourself and `csl_show_file` to put a file section in front of the user (it needs `csl web` running).
-- Start with `csl_outline` when the question is how a repo or a package is structured: it lists the definitions ranked by how many other files reference them, so the main types and entry points come first. Narrow with `path`, pass `kinds` for fields or markdown headings (out by default), then read the top hits with `csl_read`.
+- Start with `csl_outline` when the question is how a repo or a package is structured. It lists the definitions ranked by how many other files reference them, so the main types and entry points come first. Narrow with `path`, pass `kinds` for fields or markdown headings (out by default), then read the top hits with `csl_read`.
 - Tools return `text` by default. Set `mcp.response_format` in `config.yaml` to change the default, and pass `response_format: "json"` on a call when you need the structured object.
 - If a tool errors or comes back unexpectedly empty, call `csl_doctor` before retrying.
 - If `csl_repo_lookup` finds no match for the repo you are working in, it sits outside csl's configured `dirs`: use `grep`, `find`, or `Glob` there instead. Plain `grep` is also fine for piping and filtering command output.
@@ -21,7 +21,7 @@ Tools:
 ### Repo discovery
 - Use `csl_repo_lookup` or `csl_repo_info` to find repos. Do not use `find`, `ls`, `Glob`, or shell to manually search for repo directories.
 - `csl_repo_info` returns git health (branch, dirty files, index staleness, suggested action). Call it before starting work on a repo to decide whether to commit, stash, pull, or reindex.
-- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed. It also returns `component`, `owner`, and `system` when a repo carries a catalog descriptor, and takes `component`/`owner`/`system` filters (case-insensitive regex, same rules as `name`) for "which repos does team X own" or "which repos are in system Y" questions; a repo with no descriptor never matches those filters.
+- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed. It also returns `component`, `owner`, and `system` when a repo carries a catalog descriptor. It takes `component`/`owner`/`system` filters (case-insensitive regex, same rules as `name`) for "which repos does team X own" or "which repos are in system Y" questions. A repo with no descriptor never matches those filters.
 - If lookup returns empty `matches` and a non-empty `dropped`, csl found the checkout but a config filter (`index.hosts` or the exclude list) removed it; report the `reason` to the user. Empty both means the repo is not checked out locally or not under csl's configured dirs; say so, don't guess paths.
 - Use `csl_repo_pull` before creating branches on repos that may be behind (it has safety checks for dirty state).
 - Use `csl_repo_reindex` after significant changes so `csl_search` results stay current.

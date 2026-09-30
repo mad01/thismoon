@@ -74,11 +74,12 @@ to one entry per (repo, path), and fuse the ranked lists with RRF in
 lexical-only.
 
 `csl outline` and `csl_outline` are the one query path that skips the
-index: they walk the working tree with the indexer's rules
-(`search.WalkRepo`), extract definitions with `internal/symbols`, and rank
-them by how many other files hold each name as a whole identifier, counted
-in one tokenizing pass over the repo (package-private Go names count inside
-their directory; a name defined in several files shares its mentions).
+index. They walk the working tree with the indexer's rules
+(`search.WalkRepo`) and extract definitions with `internal/symbols`. Then
+they rank them by how many other files hold each name as a whole
+identifier, counted in one tokenizing pass over the repo. Package-private Go
+names count inside their directory, and a name defined in several files
+shares its mentions.
 
 ## Storage
 
@@ -112,7 +113,7 @@ The CLI mirrors the same paths: `search`, `count`, `query`, `read`, `outline`, `
 `csl_repo_lookup` also takes `component`, `owner`, and `system` filters
 (case-insensitive regex, matched against the repo's root catalog descriptor)
 and returns those fields on each match alongside `name`, `path`, `remote`,
-and `host`; a repo with no descriptor never matches the three catalog
+and `host`. A repo with no descriptor never matches the three catalog
 filters. Config is
 `~/.config/csl/config.yaml` (dirs, `index.hosts`, `semantic.*`,
 `sync.concurrency`, `daemon.idle_timeout_minutes`) plus per-repo `.cslignore`

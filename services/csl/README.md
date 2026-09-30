@@ -2,7 +2,7 @@
 
 Local code search over your git checkouts. A CLI, a localhost web UI, and an MCP stdio server for Claude Code, all backed by [zoekt](https://github.com/sourcegraph/zoekt). For people who want fast cross-repo `grep`, and for agents that need to search, resolve repo paths, and read files without shelling out.
 
-`csl` walks the directories you configure, indexes every git repo it finds, and searches them with zoekt's trigram index. You get `grep`-like queries across dozens of checkouts in milliseconds, without shipping your code to a cloud service. A short-lived search daemon spawns on demand from the same binary, keeps zoekt shards mmap'd across queries, and exits after ten minutes of idleness; there is no server to manage separately.
+`csl` walks the directories you configure, indexes every git repo it finds, and searches them with zoekt's trigram index. You get `grep`-like queries across dozens of checkouts in milliseconds, without shipping your code to a cloud service. A short-lived search daemon spawns on demand from the same binary, keeps zoekt shards mmap'd across queries, and exits after ten minutes of idleness. There is no server to manage separately.
 
 ## How it works
 
@@ -19,7 +19,7 @@ mise use -g "csl[version_prefix=csl/]"
 
 With Homebrew, once the repository is public: `brew install mad01/tap/csl`. Both give you a binary with the tree-sitter grammars compiled in, so neither needs Go or a C toolchain.
 
-Building from source needs the Go toolchain pinned in the repo's `go.mod` (1.26.2) and the Xcode Command Line Tools, because code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out, which is also why `go install .../csl@latest` isn't a supported install path:
+Building from source needs the Go toolchain pinned in the repo's `go.mod` (1.26.2) and the Xcode Command Line Tools, because code chunking compiles tree-sitter grammars via cgo with no build-tag opt-out. That is also why `go install .../csl@latest` isn't a supported install path:
 
 ```sh
 git clone https://github.com/mad01/thismoon.git
@@ -39,7 +39,7 @@ The walkthrough from install to configured index to MCP server to a supervised w
 
 ## Configuration
 
-csl runs without a config file. `csl web`, `csl repo --list`, and `csl doctor` all work on a fresh machine and tell you which file to create. To index anything, create `config.yaml` in the config directory (`$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset), listing the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
+csl runs without a config file. `csl web`, `csl repo --list`, and `csl doctor` all work on a fresh machine and tell you which file to create. To index anything, create `config.yaml` in the config directory (`$XDG_CONFIG_HOME/csl`, or `~/.config/csl` when that variable is unset). It lists the directories that contain your git checkouts (`--config` or `CSL_CONFIG` point csl at a different file, and `csl config` always prints the one in effect):
 
 ```yaml
 dirs:
@@ -82,7 +82,7 @@ daemon:
 
 `csl` walks each directory concurrently and records every directory whose immediate child is `.git`; it doesn't descend into nested repos once it finds a `.git`. When `index.hosts` is set, only repos whose origin remote matches a listed host are indexed; use this to avoid indexing repos covered by another search tool. `csl repo --list` shows what survived discovery, `csl repo --list --skipped` shows what was dropped and why, and `csl repo --json` adds each repo's `remote` and `host`; the checklist for a repo that should be there and isn't is in [docs/getting-started.md](docs/getting-started.md#3-check-what-csl-discovered).
 
-Discovery also reads a Backstage-shaped catalog descriptor from each repo's root (`catalog-info.yaml`, `service-info.yaml`, or a `.csl-catalog.yaml` pointer for a non-standard layout), so `csl repo` and `csl_repo_lookup` can find repos by who owns them, not just by name. `csl repo --json` adds `component`, `owner`, and `system` when a repo carries one; `--component`/`--owner`/`--system` filter on them. See [configuration](docs/configuration.md) for the file formats.
+Discovery also reads a Backstage-shaped catalog descriptor from each repo's root (`catalog-info.yaml`, `service-info.yaml`, or a `.csl-catalog.yaml` pointer for a non-standard layout). So `csl repo` and `csl_repo_lookup` can find repos by who owns them, not just by name. `csl repo --json` adds `component`, `owner`, and `system` when a repo carries one; `--component`/`--owner`/`--system` filter on them. See [configuration](docs/configuration.md) for the file formats.
 
 `hooks.post_merge.enabled` also gates the deprecated `csl hooks install` (see Usage); leave it unset unless you're deliberately using the legacy hook installer.
 
@@ -116,7 +116,7 @@ For a browser UI instead of the CLI:
 csl web --port 7424     # serve the search UI on http://localhost:7424 (loopback only; csl.this with d-man)
 ```
 
-A localhost web UI over the same index: a search box (lexical/semantic/hybrid) with example queries, an Examples tab with more, and results grouped by repo and file. Each hit links to the file on its git host and can be expanded inline. The web process is also the only long-lived part of csl: while it runs it pulls and reindexes every repo on a 15-minute loop (`refresh` in the config), serves the `/refresh` page, and backs the `csl_show_file` links the MCP server hands to the user. To keep it running, register it with a process manager such as t-man, giving the command as an absolute path: `t-man add --name csl-web -- "$HOME/.local/share/mise/shims/csl" web --port 7424` for a mise install. [docs/getting-started.md](docs/getting-started.md#8-optional-the-web-ui-as-a-background-service) explains the path choice.
+A localhost web UI over the same index: a search box (lexical/semantic/hybrid) with example queries, an Examples tab with more, and results grouped by repo and file. Each hit links to the file on its git host and can be expanded inline. The web process is also the only long-lived part of csl. While it runs it pulls and reindexes every repo on a 15-minute loop (`refresh` in the config), serves the `/refresh` page, and backs the `csl_show_file` links the MCP server hands to the user. To keep it running, register it with a process manager such as t-man, giving the command as an absolute path: `t-man add --name csl-web -- "$HOME/.local/share/mise/shims/csl" web --port 7424` for a mise install. [docs/getting-started.md](docs/getting-started.md#8-optional-the-web-ui-as-a-background-service) explains the path choice.
 
 ## Endpoints
 
@@ -139,7 +139,7 @@ claude mcp add --scope user csl -- csl mcp
 claude mcp list   # expect: csl: csl mcp - ✓ Connected
 ```
 
-`--scope user` makes the server available in every project; without it Claude Code registers csl for the current directory only. The registration stores the bare command name, so `csl` must be on the PATH of whatever launches Claude Code; a mise user who starts Claude Code from the Dock should register `"$HOME/.local/share/mise/shims/csl" mcp` instead. The ralph recipe does not register the server, because which agents run on a machine is machine-private wiring: run the command above once, or ship it from your own companion recipe (`docs/adr/0006` at the repo root, worked example under `examples/dotfiles/recipes/mcp-registration/`). Nothing needs to be running first, since the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration). Without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
+`--scope user` makes the server available in every project; without it Claude Code registers csl for the current directory only. The registration stores the bare command name, so `csl` must be on the PATH of whatever launches Claude Code. A mise user who starts Claude Code from the Dock should register `"$HOME/.local/share/mise/shims/csl" mcp` instead. The ralph recipe does not register the server, because which agents run on a machine is machine-private wiring. Run the command above once, or ship it from your own companion recipe (`docs/adr/0006` at the repo root, worked example under `examples/dotfiles/recipes/mcp-registration/`). Nothing needs to be running first, since the search daemon auto-starts on the first query and idles out on its own (see How it works). What does need to exist is `dirs` in the config file (see Configuration). Without at least one directory to walk, there's nothing to index. If a tool call comes back empty or erroring, run `csl doctor`.
 
 The MCP server exposes sixteen `csl_*` tools:
 
@@ -153,11 +153,11 @@ The two semantic tools are registered only when `semantic.enabled` is true in `c
 
 See [docs/mcp.md](docs/mcp.md) for the per-tool reference (inputs, return shape, defaults). Every tool takes a `response_format` parameter, `text` by default and `json` for the structured object; the other formats and the precedence rule are in the same document under Response formats.
 
-To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint hands a multi-file `grep` or `find` inside an indexed repo back as the equivalent `csl_search` call, so the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
+To skip the per-call permission prompt, add `"mcp__csl__*"` to `permissions.allow` in `~/.claude/settings.json`. If [belt](../../tools/belt/README.md) is registered as well, its `prefer-csl` hint hands a multi-file `grep` or `find` inside an indexed repo back as the equivalent `csl_search` call. So the agent gets steered from both sides (`hints.prefer-csl.enabled`, on by default; details in `tools/belt/docs/hooks.md`).
 
 ### Add this to your CLAUDE.md
 
-Registering the MCP server makes the tools available, but Claude will still reach for `find`, `ls`, `Glob`, or raw `grep` by default. Paste the snippet below into `~/.claude/CLAUDE.md` (user-level) or a project `CLAUDE.md` so Claude prefers `csl_*` tools for local repo work, or let the binary do it: `csl docs --claude-md >> ~/.claude/CLAUDE.md` prints the same text. It names all sixteen tools and keeps the agent on lexical search until you have built the semantic index. The binary embeds this block and a test holds the two copies byte-identical and checks every registered tool is named, so this is the copy to edit; the fleet example under `examples/dotfiles/CLAUDE.md.example` restates it.
+Registering the MCP server makes the tools available, but Claude will still reach for `find`, `ls`, `Glob`, or raw `grep` by default. Paste the snippet below into `~/.claude/CLAUDE.md` (user-level) or a project `CLAUDE.md` so Claude prefers `csl_*` tools for local repo work, or let the binary do it: `csl docs --claude-md >> ~/.claude/CLAUDE.md` prints the same text. It names all sixteen tools and keeps the agent on lexical search until you have built the semantic index. The binary embeds this block and a test holds the two copies byte-identical and checks every registered tool is named, so this is the copy to edit. The fleet example under `examples/dotfiles/CLAUDE.md.example` restates it.
 
 ```markdown
 ## Local Code Search (csl)
@@ -175,7 +175,7 @@ Tools:
 - Default to `csl_search`. Lexical search always works and needs nothing running.
 - `csl_semantic_search` and `csl_hybrid_search` need the semantic index built (`csl index --semantic-all`) and Ollama running. Until then semantic answers `available=false` and hybrid degrades to lexical-only. Reach for them on "where do we handle X" questions only when `csl_index_info` reports `semantic.built: true`; otherwise stay lexical.
 - Use `csl_read` for file contents you need yourself and `csl_show_file` to put a file section in front of the user (it needs `csl web` running).
-- Start with `csl_outline` when the question is how a repo or a package is structured: it lists the definitions ranked by how many other files reference them, so the main types and entry points come first. Narrow with `path`, pass `kinds` for fields or markdown headings (out by default), then read the top hits with `csl_read`.
+- Start with `csl_outline` when the question is how a repo or a package is structured. It lists the definitions ranked by how many other files reference them, so the main types and entry points come first. Narrow with `path`, pass `kinds` for fields or markdown headings (out by default), then read the top hits with `csl_read`.
 - Tools return `text` by default. Set `mcp.response_format` in `config.yaml` to change the default, and pass `response_format: "json"` on a call when you need the structured object.
 - If a tool errors or comes back unexpectedly empty, call `csl_doctor` before retrying.
 - If `csl_repo_lookup` finds no match for the repo you are working in, it sits outside csl's configured `dirs`: use `grep`, `find`, or `Glob` there instead. Plain `grep` is also fine for piping and filtering command output.
@@ -183,7 +183,7 @@ Tools:
 ### Repo discovery
 - Use `csl_repo_lookup` or `csl_repo_info` to find repos. Do not use `find`, `ls`, `Glob`, or shell to manually search for repo directories.
 - `csl_repo_info` returns git health (branch, dirty files, index staleness, suggested action). Call it before starting work on a repo to decide whether to commit, stash, pull, or reindex.
-- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed. It also returns `component`, `owner`, and `system` when a repo carries a catalog descriptor, and takes `component`/`owner`/`system` filters (case-insensitive regex, same rules as `name`) for "which repos does team X own" or "which repos are in system Y" questions; a repo with no descriptor never matches those filters.
+- `csl_repo_lookup` returns `remote` and `host` fields; use them to branch behavior per git host when needed. It also returns `component`, `owner`, and `system` when a repo carries a catalog descriptor. It takes `component`/`owner`/`system` filters (case-insensitive regex, same rules as `name`) for "which repos does team X own" or "which repos are in system Y" questions. A repo with no descriptor never matches those filters.
 - If lookup returns empty `matches` and a non-empty `dropped`, csl found the checkout but a config filter (`index.hosts` or the exclude list) removed it; report the `reason` to the user. Empty both means the repo is not checked out locally or not under csl's configured dirs; say so, don't guess paths.
 - Use `csl_repo_pull` before creating branches on repos that may be behind (it has safety checks for dirty state).
 - Use `csl_repo_reindex` after significant changes so `csl_search` results stay current.
