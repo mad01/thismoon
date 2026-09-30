@@ -24,8 +24,8 @@ fallback, checked after the `KOF_*` name, so a machine mid-way through the
   `~/.local/share/keep` store into this directory if one exists; it refuses
   to start if both stores hold data, rather than guess which one is current.
 - `--port` (int, default `7431`, env `KOF_PORT`, legacy env `KEEP_PORT`): the
-  port `kof serve` listens on, and the port every other command (the MCP
-  server, the CLI's `assert`/`list`/`get`/`check`/`retract`/`recall`)
+  port `kof serve` listens on. It is also the port every other command (the
+  MCP server, the CLI's `assert`/`list`/`get`/`check`/`retract`/`recall`)
   connects to as an HTTP client. `serve` binds to `127.0.0.1` only:
   assertions are personal and the API has no authentication, so it must
   never be reachable off localhost.
