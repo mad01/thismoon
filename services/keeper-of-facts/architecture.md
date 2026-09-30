@@ -2,11 +2,11 @@
 
 ## Overview
 
-keeper-of-facts (kof) is the assertion store service: an agent session deposits a one-sentence
-assertion about how a system behaves, pinned to evidence, and `kof check`
-flips it stale when the pinned code changes. At runtime
-`kof serve --port 7431` (loopback only, fronted by d-man as
-`http://kof.this/`, run as a t-man agent) is the single writer: it owns the
+keeper-of-facts (kof) is the assertion store service: an agent session
+deposits a one-sentence assertion about how a system behaves, pinned to
+evidence. `kof check` flips the assertion stale when the pinned code changes.
+At runtime `kof serve --port 7431` (loopback only, fronted by d-man as
+`http://kof.this/`, run as a t-man agent) is the single writer. It owns the
 store, resolves and hashes every evidence pin, and serves the web page, the
 JSON API, and `/webkit/`. `kof mcp` and the mutating CLI commands hold no
 state; both are thin HTTP clients to the serve API. The web page is read-only.
@@ -38,7 +38,7 @@ pins point at.
 Assert: `kof_assert` or `kof assert` sends `POST /api/assertions` through
 `internal/client`. The server resolves each evidence pin with `internal/pin`:
 it reads the named line range from the repo working tree, hashes the raw bytes
-into `content_sha256`, records the HEAD commit, and derives the repo's
+into `content_sha256`, and records the HEAD commit. It derives the repo's
 canonical `host/org/name` identity from its origin remote (empty when there is
 none). The server also stamps an author into the provenance (`KOF_AUTHOR`,
 else the OS username), never trusting the request for it. An assertion with zero

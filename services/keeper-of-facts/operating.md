@@ -15,7 +15,7 @@ that API: the CLI commands (`assert`, `list`, `get`, `check`, `retract`,
 `recall`) and the MCP server, a stdio shim spawned as `kof mcp`. The shim
 being up says nothing about the service: every tool call it handles is a live
 HTTP request to serve, and it fails when serve is down. Machines usually also
-route http://kof.this to serve via the local domain front door; if the
+route http://kof.this to serve via the local domain front door. If the
 localhost port answers but the .this host does not, the router is the problem,
 not this service.
 

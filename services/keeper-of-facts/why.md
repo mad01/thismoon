@@ -5,19 +5,20 @@
 An agent session works out something non-obvious about a system (how a
 service behaves, which approach was a dead end) and the finding evaporates
 when the session ends. Writing it into docs or notes only trades one failure
-for another: the code moves on and the note goes quietly wrong, with nothing
-to signal that it is now misleading the next reader. keeper-of-facts (kof) stores each finding as a one-sentence
-assertion pinned to the code that proves it, and `kof check` flips the
-assertion stale the moment the pinned lines change — the note tells you when
-it is due for another look instead of asking to be trusted blind.
+for another. The code moves on and the note goes quietly wrong, with nothing
+to signal that it is now misleading the next reader. keeper-of-facts (kof)
+stores each finding as a one-sentence assertion pinned to the code that
+proves it. `kof check` flips the assertion stale the moment the pinned lines
+change. The note tells you when it is due for another look instead of asking
+to be trusted blind.
 
 ## Why its own service
 
 The value is the check loop, and the check loop needs a process that can read
-the working trees the evidence pins point at: pin resolution and re-hashing
+the working trees the evidence pins point at. Pin resolution and re-hashing
 happen inside `kof serve`, the one process with a coherent view of those
 files. Assertions are also mutated from three surfaces (the MCP tools, the
-CLI, and `kof check` itself), so a single writer has to own the store to keep
+CLI, and `kof check` itself). So a single writer has to own the store to keep
 them from racing on the file. A plain notes file or a generic store has no
 notion of evidence and no way to detect that its contents have drifted from
 the code they describe.

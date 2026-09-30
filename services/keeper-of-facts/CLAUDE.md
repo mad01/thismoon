@@ -1,9 +1,10 @@
 # keeper-of-facts (kof), assertion store with evidence pins
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, all over
-one append-only JSONL store. An agent session deposits a one-sentence assertion about how a
-system behaves and pins it to evidence: a line range in a repo working tree,
-hashed the moment the session records it. `kof check` re-hashes those pins and flips
+one append-only JSONL store. An agent session deposits a one-sentence assertion
+about how a system behaves. It pins the assertion to evidence: a line range in
+a repo working tree, hashed the moment the session records it.
+`kof check` re-hashes those pins and flips
 an assertion stale when the pinned code has changed. **The MCP tools (driven by
 Claude) are the primary surface**; the `kof` CLI mirrors them. The web page at
 `http://kof.this/` is a **read-only** view of the same store.
@@ -46,7 +47,7 @@ So the MCP, the CLI, and the web page all see the same data, and there are no
 file locks. Pin resolution and hashing happen inside serve, which is the process
 with a coherent view of the working tree the pins point at.
 
-The one sanctioned exception: serve polls the log files every 2 seconds and
+The one sanctioned exception: serve polls the log files every 2 seconds. It
 reloads the store when another **process** changed them on disk (a git pull of
 a synced workdir, a manual append). The reload never repairs the files and
 keeps the old in-memory data on any parse error. kof processes themselves
@@ -83,8 +84,9 @@ Pin{
 
 - **Kinds** name what a session learned: `code-behavior` (how code acts),
   `dead-end` (an approach that failed), `preference` (a user's stated
-  preference), `decision` (a choice and its reason), `machine-state` (a fact
-  about the local host), `open-thread` (a question left unanswered).
+  preference). The other three are `decision` (a choice and its reason),
+  `machine-state` (a fact about the local host), and `open-thread` (a question
+  left unanswered).
 - **Confidence** is the session's own grading: `verified` (checked against a
   primary source), `derived` (reasoned from evidence), `hint` (a weak signal
   worth recording).
@@ -96,7 +98,7 @@ Pin{
   stale, so kof refuses to store one.
 
 Persisted as an append-only JSONL log: every mutation appends one complete
-record as one line, and load resolves the newest record per id (greater
+record as one line. Load resolves the newest record per id (greater
 `updated_at` wins; a tie goes to the later line). Two files under the workdir:
 
 - `assertions.jsonl` — everything except machine-scoped records; the file
@@ -133,7 +135,7 @@ assertion goes stale and `stale_reason` records the first failing pin, e.g.
 `content changed (main.go:10-20)`.
 
 Hashing is over the line range, not the surrounding code, so it is conservative
-by design: an edit **above** a pin shifts its lines down and flips the assertion
+by design. An edit **above** a pin shifts its lines down and flips the assertion
 stale even when the pinned code itself only moved. A stale assertion means "the
 evidence needs another look", not "the claim is wrong". Re-asserting with fresh
 pins is the way to record the moved evidence.
@@ -191,9 +193,9 @@ kof version [-o json]
 and `repo_path` is the absolute path to the repo working tree.
 `kof check` with no id walks the whole store (skipping retracted ones) and
 prints how many flipped. `kof version` prints the bare git commit that built
-the binary, the token sibling tools also print so ralph and status can probe any
-of them for the build they are running; `-o json` prints the full build
-metadata object.
+the binary. That's the token sibling tools also print so ralph and status can
+probe any of them for the build they are running. `-o json` prints the full
+build metadata object.
 
 ## MCP tools
 
@@ -202,7 +204,7 @@ Thin client over the API above (`internal/client`), served on stdio by
 
 - `kof_assert(kind, subject, statement, confidence, session_id, pins, cost_tokens?, links?)`: create; `pins` is a list of objects (`repo_path` — absolute path to the working tree, `file`, `start_line`, `end_line`), at least one
 - `kof_query(subject?, kind?, status?)`: list, newest first; `subject` is a prefix match
-- `kof_recall(question)`: ask the keeper what it knows relevant to a free-form question — a one-shot isolated `claude -p` haiku judge (`internal/recall`) ranks the whole store and returns the relevant assertions in rank order; no embeddings (MAD-265). Judge failure errors name the kof_query fallback. Needs `claude` on serve's PATH.
+- `kof_recall(question)`: ask the keeper what it knows relevant to a free-form question. A one-shot isolated `claude -p` haiku judge (`internal/recall`) ranks the whole store and returns the relevant assertions in rank order; no embeddings (MAD-265). Judge failure errors name the kof_query fallback. Needs `claude` on serve's PATH.
 - `kof_get(id)`: one assertion, full detail
 - `kof_retract(id, note)`: terminal withdrawal with a counter-evidence note
 - `kof_check(id?)`: re-hash one assertion's pins, or all when `id` is omitted; returns the fresh/stale/flipped counts
