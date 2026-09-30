@@ -43,7 +43,8 @@ Block =                                  // discriminated on `t`
   | {t: "code", text, lang?}             | {t: "html", text}
 
 Graph = {                                // the `graph` argument — one per page
-  nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?}],
+  nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?,
+           tone?: "neutral" | "green" | "red" | "blue" | "amber" | "purple"}],
   edges: [{from, to, type?: "consumes" | "publishes", label?, weight?, flow?}],
   layout: "dagre" | "elk" | "elk-layered" | "elk-mrtree" | "elk-stress" | "elk-radial" | "elk-force" | "cose",
   direction?: "TB" | "LR"
@@ -362,6 +363,29 @@ Pass a structured object — the server generates the full Cytoscape JS includin
 | `leaf` | Plain node (default if type omitted) |
 | `registry` | Dashed border |
 
+### Node tones
+
+`tone` tints a node's box. Background, border, and text move together as one color family, in both light and dark mode, so the reader can tell groups apart at a glance (inputs grey, the model's own steps green, a guard red). A tone overrides the type's colors and keeps its other traits (a center node stays bold, a registry node stays dashed).
+
+| Tone | Reads as |
+|------|----------|
+| `neutral` | Grey; surroundings, inputs, outputs |
+| `green` | The system's own steps; healthy |
+| `red` | Guards, checks, failures |
+| `blue` | External services, storage |
+| `amber` | Pending, degraded, manual steps |
+| `purple` | Humans, decisions, review |
+
+```json
+{"nodes": [
+  {"id": "game", "label": "Doom", "tone": "neutral"},
+  {"id": "see", "label": "What Laya sees", "tone": "green"},
+  {"id": "check", "label": "Safety check", "tone": "red"}
+]}
+```
+
+Use tones for meaning, not decoration: two or three per graph, the same tone for the same kind of thing. An unknown tone fails the call.
+
 ### Edge types
 
 | Type | Visual |
@@ -370,7 +394,7 @@ Pass a structured object — the server generates the full Cytoscape JS includin
 | `consumes` | Solid line (explicit) |
 | `publishes` | Dashed line |
 
-Edges can have an optional `label` string.
+Edges can have an optional `label` string. Long labels wrap at about the width of a node box. The layered layouts (dagre, elk) widen the gap between ranks so the labels fit between the boxes instead of under them. An edge whose straight line would cut through other boxes is routed around them, with its label on the outer segment.
 
 ### Edge weight and flow
 

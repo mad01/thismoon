@@ -262,3 +262,61 @@ func TestRenderGraphNoWeightSkipsWidthMapping(t *testing.T) {
 		t.Error("flow edge missing")
 	}
 }
+
+func TestRenderGraphTones(t *testing.T) {
+	g := GraphInput{
+		Nodes: []GraphNode{
+			{ID: "a", Label: "Doom", Tone: "neutral"},
+			{ID: "b", Label: "Laya decides", Type: "center", Tone: "green"},
+			{ID: "c", Label: "Safety check", Tone: "red"},
+			{ID: "d", Label: "Plain"},
+		},
+	}
+
+	out, err := RenderGraph(g)
+	if err != nil {
+		t.Fatalf("RenderGraph: %v", err)
+	}
+	for _, want := range []string{
+		`{"data":{"id":"a","label":"Doom","tone":"neutral"}}`,
+		`{"data":{"id":"b","label":"Laya decides","tone":"green","type":"center"}}`,
+		`{"data":{"id":"d","label":"Plain"}}`,
+		`selector: 'node[tone="neutral"]'`,
+		`selector: 'node[tone="green"]'`,
+		`selector: 'node[tone="red"]'`,
+		`c.tones.green.bg`, `c.tones.green.border`, `c.tones.green.text`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in graph output", want)
+		}
+	}
+	if strings.Contains(out, `node[tone="blue"]`) {
+		t.Error("unused tone got a selector")
+	}
+	// A tone must win over the type's colors, so its selector comes later.
+	if strings.Index(out, `node[tone="green"]`) < strings.Index(out, `node[type="center"]`) {
+		t.Error("tone selector precedes the type selector")
+	}
+}
+
+func TestRenderGraphUnknownToneFails(t *testing.T) {
+	g := GraphInput{Nodes: []GraphNode{{ID: "a", Label: "A", Tone: "teal"}}}
+	_, err := RenderGraph(g)
+	if err == nil || !strings.Contains(err.Error(), `unknown tone "teal"`) {
+		t.Fatalf("want unknown tone error, got %v", err)
+	}
+}
+
+func TestRenderGraphEdgeLabelsWrap(t *testing.T) {
+	g := GraphInput{
+		Nodes: []GraphNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}},
+		Edges: []GraphEdge{{From: "a", To: "b", Label: "health, ammo, enemies, walls"}},
+	}
+	out, err := RenderGraph(g)
+	if err != nil {
+		t.Fatalf("RenderGraph: %v", err)
+	}
+	if !strings.Contains(out, `'text-wrap': 'wrap', 'text-max-width': '100px'`) {
+		t.Error("edge labels do not wrap")
+	}
+}
