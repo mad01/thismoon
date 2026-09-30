@@ -80,25 +80,28 @@ produces a file worse than it read (pre-existing foreign breakage is
 preserved and warned, not aborted).
 
 `internal/proxy` is one `httputil.ReverseProxy` whose `Rewrite` picks the
-backend by `Host` (502 on miss). A host on the config `blocklist` is served the
-local block page (`internal/blockpage`, an embedded dependency-free retro
-arcade, one game picked at random per visit) on every path instead of being
-proxied — the check sits at the top of
-`ServeHTTP`, before the route lookup. `normalizeHost` strips case / trailing dot
-/ port so `present.this`, `present.this.`, `PRESENT.this:80` all match.
-`ModifyResponse` rewrites a backend self-redirect `Location` back to the
-client's hostname so redirects don't leak `127.0.0.1:<port>`. The proxy also
-answers `GET /__this/sites.json` itself (any host) for the webkit ⌘K site
-picker. Pages behind d-man reach it same-origin; a page on a localhost port
-gets it cross-origin only when its `Origin` is loopback or ends in `.this`
-(`internal/proxy/cors.go`, reflected with `Vary: Origin`). **Never widen that
-to `*`** — the response enumerates the local services running on this
-machine. The list is live-filtered: each fetch probes every port-backed
-route's backend (`GET /`, anything `<500` = up) and lists only the ones
-responding, so a service gated off or not running on a host never shows up.
-The probe result is cached `sitesTTL` (30s) and a mutex makes a burst of
-fetches share one probe round; `routes.toml` stays the full catalog of
-possible sites, and the picker shows only the ones actually present.
+backend by `Host` (502 on miss). A host on the config `blocklist` is served
+the local block page on every path instead of being proxied. The block page is
+`internal/blockpage`, an embedded dependency-free retro arcade that picks one
+game at random per visit. The check sits at the top of `ServeHTTP`, before the
+route lookup. `normalizeHost` strips case / trailing dot / port so
+`present.this`, `present.this.`, `PRESENT.this:80` all match. `ModifyResponse`
+rewrites a backend self-redirect `Location` back to the client's hostname so
+redirects don't leak `127.0.0.1:<port>`.
+
+The proxy also answers `GET /__this/sites.json` itself (any host) for the
+webkit ⌘K site picker. Pages behind d-man reach it same-origin. A page on a
+localhost port gets it cross-origin only when its `Origin` is loopback or ends
+in `.this` (`internal/proxy/cors.go`, reflected with `Vary: Origin`). **Never
+widen that to `*`**. The response enumerates the local services running on
+this machine.
+
+The list is live-filtered: each fetch probes every port-backed route's backend
+(`GET /`, anything `<500` = up) and lists only the ones responding. So a
+service gated off or not running on a host never shows up. The probe result is
+cached `sitesTTL` (30s) and a mutex makes a burst of fetches share one probe
+round. `routes.toml` stays the full catalog of possible sites, and the picker
+shows only the ones actually present.
 
 ### Sudo model (the whole point)
 Two one-time sudos: `t-man --daemon add` (root daemon for `:80`/`:443` +
