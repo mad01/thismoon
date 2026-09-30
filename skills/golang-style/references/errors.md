@@ -84,7 +84,7 @@ if err := n.Notify(title, body); err != nil {
 ## CLI vs library layering
 
 - **Library packages** (`store`, `render`, `config`) return descriptive errors and never call `os.Exit` or `log.Fatal`.
-- **The HTTP client** turns a transport error into a user-facing one with `%w` so the cause is still there: `events`' `client.do` wraps a dead-server dial with "events serve not reachable … (t-man status events): %w".
+- **The HTTP client** turns a transport error into a user-facing one with `%w` so the cause is still there. `events`' `client.do` wraps a dead-server dial with "events serve not reachable … (t-man status events): %w".
 - **`os.Exit`/`log.Fatal` only in `main`** (here, only in the `cmd/<tool>/main.go` shim).
 
 ## Always check errors — but don't litter `_ =` to silence the linter

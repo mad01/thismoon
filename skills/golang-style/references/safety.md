@@ -4,7 +4,7 @@ Zero values, nil, defer, copying, context, and concurrency discipline. Backed by
 
 ## Make the zero value useful
 
-A freshly declared value should be usable. `var b strings.Builder`, `var mu sync.Mutex`, and `var buf bytes.Buffer` all work with no init. Design your own types the same way where you can. `keeper-of-facts` stores an assertion's status (`fresh`, set at creation) rather than deriving it, so a zero `Assertion` is never silently fresh — be explicit when the zero value would be ambiguous, and start enums at a real value rather than letting `0` mean something.
+A freshly declared value should be usable. `var b strings.Builder`, `var mu sync.Mutex`, and `var buf bytes.Buffer` all work with no init. Design your own types the same way where you can. `keeper-of-facts` stores an assertion's status (`fresh`, set at creation) rather than deriving it, so a zero `Assertion` is never silently fresh. Be explicit when the zero value would be ambiguous, and start enums at a real value rather than letting `0` mean something.
 
 ## Nil slices and maps
 

@@ -64,7 +64,7 @@ linters:
 
 ### errcheck: exclude the genuinely-uninteresting functions
 
-errcheck flags every unchecked error return. For functions whose error is genuinely not actionable — writing to `os.Stderr`/`os.Stdout`, closing a file in a `defer`, removing a temp file — exclude them **once** here rather than discarding with `_ =` at every call site (see `errors.md`):
+errcheck flags every unchecked error return. Some functions return errors that are genuinely not actionable, such as writing to `os.Stderr`/`os.Stdout`, closing a file in a `defer`, or removing a temp file. Exclude them **once** here rather than discarding with `_ =` at every call site (see `errors.md`):
 
 ```yaml
 version: "2"
@@ -82,7 +82,7 @@ linters:
 
 This is golangci-lint **v2** schema (`version: "2"` + `linters.settings.errcheck`). A v1 `linters-settings:` config fails under v2 with a JSON parse error. In this monorepo the dotfiles tools share one `.golangci.yml` at the repo root (golangci-lint searches upward from each tool's subdir); standalone repos each carry their own.
 
-This keeps the bare call form readable and reserves `_ =` for genuine one-offs. Excluding `(*os.File).Close` means a failed flush-on-close on a *writable* file won't be caught — acceptable for these CLI tools; if a tool writes data it must not lose, check that specific `Close` explicitly instead.
+This keeps the bare call form readable and reserves `_ =` for genuine one-offs. Excluding `(*os.File).Close` means a failed flush-on-close on a *writable* file won't be caught, acceptable for these CLI tools. If a tool writes data it must not lose, check that specific `Close` explicitly instead.
 
 ## Gap to fix: no `-race` in the test targets
 

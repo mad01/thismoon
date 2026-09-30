@@ -18,7 +18,7 @@ Write Go the way this codebase already writes it: stdlib-first, compact, explici
 
 **Split with `golang-pro`:** `golang-pro` owns concurrent systems (goroutine patterns, channel pipelines, deep generics, pprof, gRPC, microservices). This skill owns *how code is structured and written*: naming, formatting, function and package design, error handling, safety, and the repo's HTTP/CLI/store/MCP patterns. When a task is "build a concurrent worker pool", use `golang-pro`. When it is "is this package laid out right, are the errors wrapped, is this function shaped well", use this skill.
 
-**Where the two disagree, this skill wins.** `golang-pro` is vendored beside this skill (`skills/golang-pro`, from jeffallan/claude-skills) and its generic advice conflicts with house style in three places: it teaches functional options (banned here — config structs), `var _ Iface` satisfaction asserts (not house style, see `language.md`), and a `pkg/` public-library layout (house layout is `cmd/` + `internal/` only). Take its concurrency, generics, and profiling content; ignore those three.
+**Where the two disagree, this skill wins.** `golang-pro` is vendored beside this skill (`skills/golang-pro`, from jeffallan/claude-skills) and its generic advice conflicts with house style in three places. It teaches functional options (banned here, config structs), `var _ Iface` satisfaction asserts (not house style, see `language.md`), and a `pkg/` public-library layout (house layout is `cmd/` + `internal/` only). Take its concurrency, generics, and profiling content; ignore those three.
 
 ## House style in one screen
 
@@ -79,7 +79,7 @@ Load the file that matches the task.
 
 ## Workflow
 
-**Writing:** scaffold the layout (`structure.md`) → name things (`naming.md`) → shape functions and constructors (`functions.md`) → wire the surface (`http.md` / `cli.md` / `store.md` / `mcp.md`) → handle errors (`errors.md`) → cover the safety checklist (`safety.md`) and language-level idioms (`language.md`) → add hermetic tests (`testing.md`) → format and lint (`formatting.md`).
+**Writing:** scaffold the layout (`structure.md`) → name things (`naming.md`) → shape functions and constructors (`functions.md`) → wire the surface (`http.md` / `cli.md` / `store.md` / `mcp.md`) → handle errors (`errors.md`). Then cover the safety checklist (`safety.md`) and language-level idioms (`language.md`) → add hermetic tests (`testing.md`) → format and lint (`formatting.md`).
 
 **Reviewing:** read the diff against the checklist below; cite the specific house pattern the code should match, with a file path from this repo as the example.
 

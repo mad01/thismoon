@@ -9,11 +9,11 @@ Expected failures (missing file, bad input, network error) return an `error`. `p
 - A must-succeed primitive failing: the ID generators panic when `crypto/rand` fails (`present/internal/store/id.go`: `panic("present: crypto/rand failed: " + err.Error())`) — same pattern in `keeper-of-facts` and `events`.
 - A build-time asset missing at startup: `d-man`'s blockpage panics when its embedded `index.html` isn't in the binary (`blockpage.go`).
 
-Panic messages are package-prefixed like sentinel errors. Never panic on user input or I/O results, and never use panic/recover as control flow. The codebase has no `recover` — if you think you need one (a server that must survive a misbehaving handler), it goes at one top-level boundary only, and `net/http` already provides that for handlers.
+Panic messages are package-prefixed like sentinel errors. Never panic on user input or I/O results, and never use panic/recover as control flow. The codebase has no `recover`. If you think you need one (a server that must survive a misbehaving handler), it goes at one top-level boundary only, and `net/http` already provides that for handlers.
 
 ## `init()` for cobra wiring only; no mutable package globals
 
-`func init()` appears in exactly one place: `internal/cli` files registering subcommands and flags on the root command (`t-man/internal/cli/add.go` is the pattern; `cli.md`'s builder-function style is the alternative — either is fine, don't mix both in one tool). Rules:
+`func init()` appears in exactly one place: `internal/cli` files registering subcommands and flags on the root command (`t-man/internal/cli/add.go` is the pattern; `cli.md`'s builder-function style is the alternative). Either is fine; don't mix both in one tool. Rules:
 
 - No I/O, environment reads, or computation in `init()` — it runs before `main`, has no error return, and makes startup order magic.
 - Package-level `var`s are limited to cobra command/flag definitions, `Version`, and immutable lookup tables (`csl` writes its `extLabels` map once, then only reads it). No package-level mutable state that business logic writes to — state lives in a struct created by `New(...)` (see `functions.md`).
@@ -21,7 +21,7 @@ Panic messages are package-prefixed like sentinel errors. Never panic on user in
 
 ## Enums: `iota` for internal states, strings for stored values
 
-- Small internal state sets use a typed constant block with `iota`, where the zero value is a real, safe default: `suspenders`' `hookAbsent hookState = iota` — a zero `hookState` means "no hook file", which is exactly what an unset value should mean.
+- Small internal state sets use a typed constant block with `iota`, where the zero value is a real, safe default: `suspenders`' `hookAbsent hookState = iota`. A zero `hookState` means "no hook file", which is exactly what an unset value should mean.
 - Anything serialized (JSON stores, APIs, config) uses typed string constants instead, so files stay readable and reordering constants can't corrupt persisted data. `keeper-of-facts` stores assertion status as a string (`fresh`/`stale`/`retracted`) and `events` its level (`info`/`warn`/`error`), not as ints.
 - If the zero value would be ambiguous, either make the first constant an explicit invalid/unknown state or start real values at `iota + 1` — don't let `0` silently mean something.
 
