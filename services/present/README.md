@@ -157,7 +157,9 @@ make -C services/present kind-test   # build, load, apply deploy/overlays/kind, 
 
 `present rerender [id...]` re-renders pages, decks included, from their stored
 sources to pick up renderer/template changes (e.g. after a webkit bump); pages
-without sources get a deterministic legacy-HTML upgrade instead.
+without sources get a deterministic legacy-HTML upgrade instead. A local
+`present serve` runs the same sweep in the background at startup, so after an
+upgrade the restart alone brings every page current.
 
 ## Develop
 
@@ -173,9 +175,8 @@ There is no on-disk template to edit.
 
 Chrome (header, theme toggle, font/size/fixation controls) comes from the
 in-module `webkit` package (served at `GET /webkit/`). Don't re-add those
-controls locally. A webkit change ships at the next build; run
-`present rerender` afterwards to re-render all pages through the updated
-renderer.
+controls locally. A webkit change ships at the next build, and the restarted
+`present serve` re-renders all pages through the updated renderer on its own.
 
 MCP + sandbox. The MCP server runs inside a seatbelt profile
 (`recipes/present/present.sb`): outbound HTTPS and DNS only (for

@@ -64,9 +64,11 @@ present/
 `doc.json`, `deck.json`, and `graph.json` are the editable sources: `present_source` returns
 them for mutation from a later session, and `present rerender` re-renders
 `content.html`/`deck.html`/`graph.js` from them after renderer or template changes (e.g. a
-webkit bump). Pages created from raw HTML/JS have no source files; rerender
-falls back to a deterministic legacy-HTML upgrade and leaves legacy JS graphs
-untouched.
+webkit bump). A local `present serve` runs the same sweep in the background at
+startup (`--rerender`, on by default). So a binary upgrade refreshes every stored
+page once the service restarts, and the command stays for on-demand use. Pages
+created from raw HTML/JS have no source files; rerender falls back to a
+deterministic legacy-HTML upgrade and leaves legacy JS graphs untouched.
 
 ## Shared instance in Kubernetes
 
@@ -99,8 +101,11 @@ make resign   # re-apply adhoc signature (macOS)
 the current renderer: from `doc.json`/`deck.json`/`graph.json` when present, otherwise a
 deterministic legacy-HTML class→wk-* upgrade. Unchanged pages are skipped;
 changed ones get a version bump so open tabs live-reload (outcomes name what
-moved: `re-rendered-from-doc`, `re-rendered-deck`, `+deck`, `+graph`). Run it
-after a webkit bump or renderer change that alters emitted markup.
+moved: `re-rendered-from-doc`, `re-rendered-deck`, `+deck`, `+graph`). A local
+`present serve` runs the same sweep in the background when it starts
+(`rerenderSweep`; `--rerender=false` turns it off) and logs one summary line.
+The fleet needs no manual run after an upgrade. A shared instance never sweeps:
+its pages arrive rendered and it runs several replicas.
 
 `present deck <id> <start|stop|next|prev|goto> [slide]` drives the deck open in
 the browser: it writes the page's `deck-command.json` with the next sequence
@@ -253,21 +258,29 @@ theme). Do not add those controls manually.
   parses it back). Charts are inline blocks, many per page, unlike the
   single `graph` argument. The entry animation plays once per block and is
   skipped under `prefers-reduced-motion`; a theme recolor rebuilds silently.
-- **Graph edge flow is split between the template and app.js.** A `GraphEdge`
-  with `weight` gets a `mapData` width over `[0, max weight]`. In the top third
-  of the range, it also gets a `hot: 1` data flag that `graph.go` styles with
-  the accent tint. `flow: true` emits `flow: 1` and the dashed pattern `[10, 6]`.
-  `startGraphFlow` in `app.js` then marches `line-dash-offset` over that
-  period (16) on `cy.edges('[flow]')`, at 6 to 20 px/s by weight, pausing via
-  IntersectionObserver and `visibilitychange`, and drawing a single static
-  frame under `prefers-reduced-motion`. Change the pattern in one place and
-  the other must follow.
-- **Node tones live in the graph template.** A `GraphNode.tone` (`neutral`,
-  `green`, `red`, `blue`, `amber`, `purple`; `graphTones` in `graph.go`) is a
-  background, border, and text triple `getGraphColors()` defines for both
-  themes. `graph.go` emits one `node[tone="x"]` selector per tone the graph
-  uses, after the type selectors so the tone wins, and refuses an unknown
-  tone. Module `color` stays the border-only index it was.
+- **Graph edge flow is split between graph.go and app.js.** A `GraphEdge` in
+  the top third of the weight range gets a `hot: 1` data flag from `graph.go`,
+  and `flow: true` emits `flow: 1`. `presentGraphStyle` gives hot edges the
+  accent tint, weighted edges a `mapData` width over `[0, max weight]`, and
+  flow edges the dashed pattern `[10, 6]`. `startGraphFlow` in `app.js` then
+  marches `line-dash-offset` over that period (16) on `cy.edges('[flow]')`, at
+  6 to 20 px/s by weight, pausing via IntersectionObserver and
+  `visibilitychange`, and drawing a single static frame under
+  `prefers-reduced-motion`. Change the pattern in one place and the other
+  must follow.
+- **The graph script is data only; the style lives in app.js.** `graph.go`
+  emits `initGraph()` with the elements and a `presentGraphLayout(engine,
+  direction)` call, nothing else. The `cytoscape()` shim in `app.js` fills in
+  `presentGraphStyle(elements)`. That builds the palette (`getGraphColors`,
+  both themes), the node and edge rules, the four module border colors, and
+  the six tone triples. It also sets the `mapData` width over the heaviest
+  edge weight it finds in the elements. So a palette, box, or tone change
+  reaches every stored graph the next time the page loads, with no rerender.
+  The shim also replaces the inline style of a script an earlier template
+  rendered, recognised by a layout from `presentGraphLayout`. A raw JS graph
+  with its own style and layout is left alone. `graph.go` still validates
+  tones (`graphTones`) and refuses an unknown one; keep that list and
+  `GRAPH_TONES` in app.js in step.
 
 ### Webkit
 

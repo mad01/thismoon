@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -278,5 +279,47 @@ func TestRerenderReportsDeckBesideContent(t *testing.T) {
 	after, _ := st.Get(t.Context(), p.ID)
 	if !strings.Contains(after.Content, "Brief") || !strings.Contains(after.Deck, "Slide") {
 		t.Errorf("content or deck not re-rendered: content %q deck %q", after.Content, after.Deck)
+	}
+}
+
+// TestRerenderSweepRefreshesStalePagesOnce checks the startup sweep: a page
+// whose stored HTML predates the renderer is re-rendered, a current page is
+// left alone, and a second sweep changes nothing.
+func TestRerenderSweepRefreshesStalePagesOnce(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.NewFS(dir)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	staleID := seedLegacyPage(t, st, "<p>stale html from an older renderer</p>")
+	docJSON := []byte(`{"sections":[{"h":"S","blocks":[{"t":"p","text":"fresh"}]}]}`)
+	if err := st.SaveDoc(t.Context(), staleID, docJSON); err != nil {
+		t.Fatalf("SaveDoc: %v", err)
+	}
+	stale, _ := st.Get(t.Context(), staleID)
+
+	var lines []string
+	logf := func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+
+	rerenderSweep(t.Context(), st, logf)
+	after, _ := st.Get(t.Context(), staleID)
+	if !strings.Contains(after.Content, "<p data-fixation>fresh</p>") {
+		t.Errorf("stale page not re-rendered from its doc:\n%s", after.Content)
+	}
+	if after.Version != stale.Version+1 {
+		t.Errorf("version = %d, want %d", after.Version, stale.Version+1)
+	}
+	if len(lines) != 1 || !strings.HasSuffix(lines[0], "1 pages, 1 re-rendered, 0 failed") {
+		t.Errorf("first sweep log = %q", lines)
+	}
+
+	lines = nil
+	rerenderSweep(t.Context(), st, logf)
+	again, _ := st.Get(t.Context(), staleID)
+	if again.Version != after.Version {
+		t.Errorf("second sweep bumped the version to %d", again.Version)
+	}
+	if len(lines) != 1 || !strings.HasSuffix(lines[0], "1 pages, 0 re-rendered, 0 failed") {
+		t.Errorf("second sweep log = %q", lines)
 	}
 }

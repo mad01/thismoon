@@ -42,6 +42,7 @@ var (
 	flagNamespace string
 	flagSweep     time.Duration
 	flagSpeakURL  string
+	flagRerender  bool
 )
 
 var serveCmd = &cobra.Command{
@@ -91,6 +92,8 @@ func init() {
 	serveCmd.Flags().StringVar(&flagSpeakURL, "speak-url", defaultSpeakURL(),
 		"speak service the page view prepares read-aloud audio with; "+
 			"empty turns read-aloud off (env PRESENT_SPEAK_URL)")
+	serveCmd.Flags().BoolVar(&flagRerender, "rerender", true,
+		"re-render stored pages through this binary's renderer in the background at startup (local mode)")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -163,6 +166,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	addr := bindAddr(flagBind, flagPort)
 	log.Printf("present: serving %s on http://%s (%s mode) speak-url=%q",
 		where, addr, mode, flagSpeakURL)
+	if flagRerender && !flagShared {
+		// A local serve owns its workdir, so it brings the stored pages up to
+		// this binary's renderer while it starts serving; a shared instance
+		// has several replicas and its pages are pushed to it rendered.
+		go rerenderSweep(ctx, st, log.Printf)
+	}
 	return serveUntilSignal(ctx, addr, srv.Handler(), srv.CloseStreams)
 }
 
