@@ -4,17 +4,17 @@
 
 belt is a tool that runs as Claude Code hooks. Claude Code invokes
 `belt hook <event>` (PreToolUse) or `belt hint <event>` (PostToolUse,
-SessionStart, UserPromptSubmit) with the event payload on stdin; belt runs
+SessionStart, UserPromptSubmit) with the event payload on stdin. belt runs
 the guards or hints registered for that event and writes its decision or
-advice as JSON on stdout — or, for the guards, nothing when everything is
-allowed, which is the common case. Each invocation inspects exactly one event
-and exits. belt keeps no daemon, registers no hooks itself, and ships no
+advice as JSON on stdout. For the guards, it writes nothing when everything
+is allowed, which is the common case. Each invocation inspects exactly one
+event and exits. belt keeps no daemon, registers no hooks itself, and ships no
 config of its own; hook registration and the config overlay live in the
 consuming repo's companion recipe (docs/adr/0006).
 
 The two halves are asymmetric by design (docs/adr/0008): a guard can return
 `permissionDecision: deny` and stop a tool call, while the `Hint` interface
-has no denial path at all — a hint returns advice text or nil.
+has no denial path at all. A hint returns advice text or nil.
 
 ## Structure
 
@@ -62,47 +62,48 @@ produces no output at all.
 
 The hint path mirrors it: `belt hint search|bash|external-text|session-start|
 prompt` maps the payload onto a `hint.Input` (tool name, request, response,
-session id, transcript path, cwd) and runs every enabled hint for the event —
-hints do not short-circuit, each speaks or stays silent independently. Advice
+session id, transcript path, cwd) and runs every enabled hint for the event.
+Hints do not short-circuit, each speaks or stays silent independently. Advice
 is emitted as `hookSpecificOutput.additionalContext` with the invoking
 event's name, except the prompt event, which writes plain stdout text because
 UserPromptSubmit adds stdout to context directly. Every fired hint POSTs an
 info event, so hint volume is measurable from the events timeline.
 
 The check path: `belt check <event> [command]` builds the same `guard.Input`
-from argv instead of stdin and prints one verdict line per guard, so a guard
+from argv instead of stdin. It prints one verdict line per guard, so a guard
 decision can be inspected without a live Claude Code session.
 
 ## Storage
 
 belt writes one thing: per-session seen markers under
-`~/.cache/belt/seen-<session-id>`, one hint id per line, which is how the
+`~/.cache/belt/seen-<session-id>`, one hint id per line. That is how the
 once-per-session hints (kof-deposit, humanizer-check) and the per-session
 dedupe (kof-assertions, kof-consult) remember what a session already saw.
 Every failure path around that store degrades to "not seen".
 
 Everything else is read-only. Config comes from these surfaces. A missing
-file yields zero values; a present file that fails to parse, or a listed
+file yields zero values. A present file that fails to parse, or a listed
 include that is missing or broken, is an error `config.Load()` returns and
 every hook denies on:
 
 - `~/.config/belt/config.yaml`: per-guard toggles, exclude paths, extra patterns, `claude_settings`, guard rules, the `internal_names` section, and the two purpose-named repo lists `direct_main_repos` and `public_repos` (legacy `config.toml` read when the YAML file is absent)
-- the shared names files `internal_names.include` lists (`~`-expanded paths belt's own config names, docs/adr/0016): `blocked_words`, `allowlist`, and `allow_phrases` only, decoded strictly so a stray key is an error; the lists are appended to the section's own, and a listed file that is missing denies exactly like a broken config.yaml
+- the shared names files `internal_names.include` lists (`~`-expanded paths belt's own config names, docs/adr/0016): `blocked_words`, `allowlist`, and `allow_phrases` only, decoded strictly so a stray key is an error. The lists are appended to the section's own, and a listed file that is missing denies exactly like a broken config.yaml
 - `~/.claude/settings.json` + `settings.local.json`: the `permissions.deny` Bash entries for script-deny-list, read live on every invocation unless `claude_settings.enabled: false` turns the read off
 
-No other tool's config is read — neither the suspenders config nor the
+No other tool's config is read. Neither the suspenders config nor the
 ralph machine config is a fallback for anything, and belt has no
-machine-profile concept (docs/adr/0010); the provisioning layer renders one
+machine-profile concept (docs/adr/0010). The provisioning layer renders one
 belt config per machine class.
 
-The hints also read the world they advise about: the csl shard
-listing in `~/.config/csl/search-index/` (prefer-csl, no csl process
-launched), the agent-memory index files in `~/.config/agent-memory[-work]/`
-(agent-memory), the session transcript file named in the payload (kof-deposit,
-humanizer-check), the git repo a commit ran in — branch, origin remote, and
-an optional repo-root `.belt.yaml` overlay, via git execs (commit-policy;
-overlay is hints-only and never denies, docs/adr/0012) — and the local kof
-serve API on `KOF_PORT` with a 400 ms budget (kof-consult, kof-assertions).
+The hints also read the world they advise about: the csl shard listing in
+`~/.config/csl/search-index/` (prefer-csl, no csl process launched) and the
+agent-memory index files in `~/.config/agent-memory[-work]/` (agent-memory).
+They read the session transcript file named in the payload (kof-deposit,
+humanizer-check) and the git repo a commit ran in. From that repo they read
+the branch, origin remote, and an optional repo-root `.belt.yaml` overlay,
+via git execs (commit-policy; overlay is hints-only and never denies,
+docs/adr/0012). They also read the local kof serve API on `KOF_PORT` with a
+400 ms budget (kof-consult, kof-assertions).
 
 Denials and hints are recorded remotely: a POST to the local events service
 (`http://127.0.0.1:7430/api/events`, overridable via `EVENTS_BASE_URL`).
@@ -113,14 +114,14 @@ Persisting them is that service's job, not belt's.
 CLI commands: `belt hook bash|write` and `belt hint
 search|bash|external-text|session-start|prompt` (the hook entrypoints),
 `belt check bash "<command>"` and `belt check write --file <path> --content
-<text>` (dry runs), `belt doctor` (installed build, resolved config,
+<text>` (dry runs), and `belt doctor` (installed build, resolved config,
 guard/hint state, custom-guard reachability, active overrides, kof
-reachability, and the blocked-name set), `belt override` (list/set/clear the
-named switches commit-guard rules honor), `belt config` (config locations +
-the settings in effect; the annotated setting reference is in its `--help`),
-`belt docs` (the embedded operating doc), and `belt version [-o json]` (bare
-version token, or the four-key build metadata object shared across the
-repo's components).
+reachability, and the blocked-name set). The CLI also has `belt override`
+(list/set/clear the named switches commit-guard rules honor) and `belt config`
+(config locations + the settings in effect; the annotated setting reference
+is in its `--help`). The remaining two are `belt docs` (the embedded operating
+doc) and `belt version [-o json]` (bare version token, or the four-key build
+metadata object shared across the repo's components).
 
 Hook contract: event payload on stdin, decision or advice on stdout, exit 0
 in every case. Config surfaces are read-only, listed above. There is no web

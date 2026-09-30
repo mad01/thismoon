@@ -32,11 +32,11 @@ shape has consequences worth knowing before reading about any single hook:
 
 ## Wiring belt into Claude Code
 
-belt registers nothing itself. There is no `belt install`; the consuming
+belt registers nothing itself. There is no `belt install`. The consuming
 config repo owns the hook entries in `~/.claude/settings.json`, because which
-matchers to use (and whether to wire belt up at all) is a machine decision,
-not a property of the binary (`docs/adr/0006` in the repo root). A complete
-hooks block looks like this:
+matchers to use (and whether to wire belt up at all) is a machine decision.
+It is not a property of the binary (`docs/adr/0006` in the repo root). A
+complete hooks block looks like this:
 
 ```json
 {
@@ -126,18 +126,18 @@ Three wiring rules that are easy to get wrong:
 - **Only the MCP server that talks to github.com belongs on the
   `hook external-text` matcher.** The guard behind it
   (publish-internal-names) resolves the call's `owner`/`repo` pair as a
-  github.com repo; the host is fixed in the code, so a server for another
+  github.com repo. The host is fixed in the code. So a server for another
   host would have its repos judged as if they lived on github.com. With a
-  `public_repos` list the resolved repo is checked against it and an
-  unlisted one passes; without the list every resolved repo is
-  public-bound, and an internal GitHub Enterprise server routed there would
-  deny every internal PR body that names an internal repo. Either way the
-  matcher names github.com tools only.
+  `public_repos` list the resolved repo is checked against it. An unlisted
+  one passes. Without the list every resolved repo is public-bound, and an
+  internal GitHub Enterprise server routed there would deny every internal
+  PR body that names an internal repo. Either way the matcher names
+  github.com tools only.
 
 `belt doctor` verifies the binary and the config, but it does not check
 whether `~/.claude/settings.json` actually points at belt. A correctly
-configured belt that is simply not wired up looks identical to a healthy one:
-run one `git push origin main` dry-run through `belt check bash` and one real
+configured belt that is simply not wired up looks identical to a healthy one.
+Run one `git push origin main` dry-run through `belt check bash` and one real
 session if you want proof the wiring is live.
 
 ## Other harnesses
@@ -145,25 +145,25 @@ session if you want proof the wiring is live.
 belt is not Claude-Code-exclusive: any harness that execs a command per tool
 event and reads its stdout can run it. What to expect per harness:
 
-- **Claude Code** — the full set: both guard events and all eight hints, wired
+- **Claude Code** gets the full set: both guard events and all eight hints, wired
   as shown above.
-- **Codex** — reads the same hooks schema from `~/.codex/hooks.json`, so the
+- **Codex** reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
   wires the six tool-event entries (`hook bash`, `hook write`,
   `hook external-text`, `hint search`, `hint bash`, `hint external-text`);
   the session-boundary
   events are not wired there, so the agent-memory and kof-consult injections
   and the kof-deposit nudge stay Claude-only. Two Codex-specific rules:
-  define hooks in `hooks.json` only — a duplicate `[[hooks.PreToolUse]]`
-  block in `config.toml` runs belt twice per call — and Codex trusts hooks
-  by content hash, so a new or changed entry must be re-trusted inside Codex
+  define hooks in `hooks.json` only. A duplicate `[[hooks.PreToolUse]]`
+  block in `config.toml` runs belt twice per call. Codex trusts hooks by
+  content hash, so a new or changed entry must be re-trusted inside Codex
   before it fires.
-- **pi** — has no hooks schema either, but its permission extension can
+- **pi** has no hooks schema either, but its permission extension can
   exec `belt check bash <command>`, `belt check write --file … --content …`,
   and `belt check external-text --tool <name> --input <json>` per tool
-  call and block on exit code 1; the guards are the same, the verdict
+  call and block on exit code 1. The guards are the same, the verdict
   travels as the exit code and the `DENY` line instead of hook JSON.
-- **opencode** — not wired today: opencode has no Claude-style hooks schema,
+- **opencode** is not wired today: opencode has no Claude-style hooks schema,
   so belt does not run there. Its native `permission` config covers the
   allow/deny surface instead.
 
@@ -222,12 +222,12 @@ The work-hours nudge: discourages personal-repo commits during configured
 hours.
 
 - **Fires on** every `git commit`; every `commit_guards` rule is evaluated.
-- **A rule matches when**, in order: the
-  repo is not in `always_allow`, the repo matches `repos` (an empty list here
-  matches nothing — the opposite of `git_identity`), the rule's override
-  switch is not set, and local time is inside `block_hours` on a `block_days`
-  day (default mon–fri; a window whose end is before its start crosses
-  midnight).
+- **A rule matches when**, in order: the repo is not in `always_allow`, and
+  the repo matches `repos` (an empty list here matches nothing, the opposite
+  of `git_identity`). It also requires that the rule's override switch is
+  not set and that local time is inside `block_hours` on a `block_days` day
+  (default mon-fri). A window whose end is before its start crosses
+  midnight.
 - **Then**: `mode: soft` (the default) emits a warn event and lets the commit
   through; `mode: hard` denies, naming the override switch
   (`belt override set <name> --reason "..."`) in the reason so a legitimate
@@ -252,16 +252,16 @@ then run the file" bypass.
   and `find -exec`/`-execdir`/`-ok` runs through the same patterns — those
   are the routes a prefix matcher never sees.
 - **A file written and run in one command** (`echo '…' > s.sh && bash
-  s.sh`, `tee` included) gets the whole command text scanned: at check time
+  s.sh`, `tee` included) gets the whole command text scanned. At check time
   the file does not exist yet, so the command line is where its future
   content lives.
 - **`curl | bash` is denied outright** (`wget` too): nothing can read what
   would run. Download to a file first, then run the file.
 - **Patterns come from** the `permissions.deny` `Bash(...)` entries of
   `~/.claude/settings.json` and `settings.local.json`, read live on every
-  invocation so the guard and the permission system cannot drift
-  (`claude_settings.enabled: false` in the belt config turns that read off,
-  leaving only the extra patterns), plus
+  invocation so the guard and the permission system cannot drift.
+  `claude_settings.enabled: false` in the belt config turns that read off,
+  leaving only the extra patterns. Patterns also come from
   `guards.script-deny-list.extra_patterns` for things the settings file only
   lists under "ask" (like `rm -rf`). An extra pattern starting `re:` is
   compiled as a case-insensitive regex — the escape hatch for flag
@@ -290,18 +290,18 @@ Blocks Write/Edit content that would put internal org, repo, or host names
 into a public repo.
 
 - **Fires on** Write and Edit calls whose target file sits in a public-bound
-  repo: one matching the config's `public_repos` list (exact
-  `host/owner/repo` or a `/*` org wildcard), or, for a rendering without
-  that list, any repo with a `github.com` origin remote. Non-repo paths and
-  unlisted repos are exempt; `belt doctor` says which of the two modes is
-  in effect (`docs/adr/0015` in the repo root).
-- **The blocked-name set is derived, not listed**: for every git repo under
+  repo. A public-bound repo is one matching the config's `public_repos` list
+  (exact `host/owner/repo` or a `/*` org wildcard), or, for a rendering
+  without that list, any repo with a `github.com` origin remote. Non-repo
+  paths and unlisted repos are exempt; `belt doctor` says which of the two
+  modes is in effect (`docs/adr/0015` in the repo root).
+- **The blocked-name set is derived, not listed**. For every git repo under
   `internal_names.workspace_dirs`, the org segment, repo segment, and
   checkout directory basename each become a separate blocked name (never the
-  combined `org/repo`); `blocked_words` adds names outright; `allowlist`
+  combined `org/repo`). `blocked_words` adds names outright; `allowlist`
   removes safe ones; anything under three characters is dropped. This is the
   same derivation the suspenders pre-commit guard uses, so the session layer
-  and the git layer agree whenever their configs do — and a config file that
+  and the git layer agree whenever their configs do. A config file that
   enumerated internal names would itself be the leak.
 - **Exemptions**: `exclude_paths` for paths that deliberately carry internal
   references, `allow_repos`
@@ -309,7 +309,7 @@ into a public repo.
   so a second checkout of the same repo is covered too. For a single
   sanctioned compound that contains a blocked name (a private companion
   repo's own name), `internal_names.allow_phrases` neutralizes exactly that
-  phrase in the checked content before matching — the bare name elsewhere in
+  phrase in the checked content before matching. The bare name elsewhere in
   the same write still denies, so nothing leaves the blocked set.
 - **Why it exists**: internal names reached `git commit` twice before the
   pre-commit hook caught them; this guard moves the check to the moment of
@@ -323,16 +323,16 @@ into a public repo.
 Blocks internal org, repo, and host names on their way to a public
 github.com remote: the outbound half of the firewall write-internal-names
 starts. Where that guard checks the file being written, this one checks what
-an agent publishes around the code: PR and issue text, comments, branch and
-tag names, commit messages, and content pushed through the gh MCP without a
-local commit. Same name set, same `allow_phrases`, one guard id on two
-events.
+an agent publishes around the code. That covers PR and issue text, comments,
+branch and tag names, commit messages, and content pushed through the gh MCP
+without a local commit. Same name set, same `allow_phrases`, one guard id on
+two events.
 
 - **Fires on the `bash` event** for `git push` to a github.com remote (the
   names of the pushed refs plus the messages of the commits the remote does
-  not have yet), `git commit -m`/`-F`, `git tag`, branch creation
-  (`checkout -b`, `switch -c`, `branch <name>`, `worktree add -b`), and the
-  gh subcommands that write: `pr create/edit/comment/review/merge/close/
+  not have yet). It also fires for `git commit -m`/`-F`, `git tag`, branch
+  creation (`checkout -b`, `switch -c`, `branch <name>`, `worktree add -b`),
+  and the gh subcommands that write: `pr create/edit/comment/review/merge/close/
   reopen`, `issue create/edit/comment/close/reopen/develop`, `release
   create/edit`, `repo create/edit/rename`, `gist create/edit/rename`,
   `label create/edit`, and every `gh api`. `pr view`, `pr list`, `pr
@@ -341,14 +341,14 @@ events.
   routes there whose operation is not a read verb (`get`, `list`, `search`,
   `read`, `fetch` at either end of the name). Every string in the call's
   input except the top-level owner/repo pair is scanned, nested lists and
-  objects included, so a PR body, a `head` branch name, a label list, a
+  objects included. So a PR body, a `head` branch name, a label list, a
   reviewer team slug, and a `push_files` content entry all count.
-- **The target repo decides, the same way as for write-internal-names**:
-  the push remote, the gh `-R` target, the repo a gh call names itself
+- **The target repo decides, the same way as for write-internal-names**.
+  The push remote, the gh `-R` target, the repo a gh call names itself
   (`gh api repos/{owner}/{repo}/...`, `gh repo create OWNER/REPO`), the cwd
-  origin, or the MCP call's owner/repo resolves to a canonical identity,
-  and that identity is public-bound when it matches `public_repos` (or,
-  for a rendering without the list, when its host is github.com). An
+  origin, or the MCP call's owner/repo resolves to a canonical identity.
+  That identity is public-bound when it matches `public_repos` (or, for a
+  rendering without the list, when its host is github.com). An
   internal org that lives on github.com is therefore simply not listed,
   and its pushes, PR bodies, and API calls pass with no exemption. Another
   host, and `gh api --hostname` pointing elsewhere, never counts.
@@ -357,16 +357,16 @@ events.
   among the arguments, so `gh api -X POST gists` counts), `gh repo create`
   without `--private` or `--internal`, and the MCP equivalents
   (`create_gist`, `update_gist`, `create_repository` unless `private` is
-  true) are public by nature: no `public_repos` entry could name them, so
+  true) are public by nature. No `public_repos` entry could name them, so
   they are guarded under both modes, whatever the cwd's origin is. Every
   other unnamed target (a raw `gh api` outside `repos/` and `gists`, an MCP
-  call without owner/repo) is guarded under the legacy host rule and passes
+  call without owner/repo) is guarded under the legacy host rule. It passes
   with a list, being by definition not on it. `gh api orgs/<org>/...` stays
   on the passing side on purpose: the whole command text is scanned, so
   guarding it would deny every call into an internal org.
 - **Outgoing commits**: for each pushed branch the base is its
   remote-tracking ref when one exists, else the remote's HEAD
-  (`refs/remotes/<remote>/HEAD`); with neither, only ref names are checked
+  (`refs/remotes/<remote>/HEAD`). With neither, only ref names are checked
   rather than all of history. Messages come from `git log -z` bounded to
   the last 200 commits, and the deny names the commit (`commit 1a2b3c4
   message`). A bare `git push` resolves its target through `@{push}`, else
@@ -375,7 +375,7 @@ events.
   remove a name.
 - **Command text, not one flag**: commits, tags, and gh calls are scanned
   against the whole bash command, so a heredoc body (which spans several
-  line segments) is covered, and the files a call reads (`--body-file`,
+  line segments) is covered. The files a call reads (`--body-file`,
   `-F`, `--notes-file`, `--input`, `key=@path`, gist file arguments) are
   read from disk and scanned too. A file that does not exist yet
   contributes nothing; the same command is usually writing it, and then its
@@ -390,10 +390,10 @@ events.
   events on the events service, the rollout setting while the derived name
   set is tuned against real PR text and branch names.
 - **Why it exists**: suspenders scans the staged diff and belt the written
-  file, but a commit message, a branch name, a PR body, and a gh MCP call
+  file. But a commit message, a branch name, a PR body, and a gh MCP call
   reached the remote unchecked, and an agent produces all four.
 - **Fails open** the way write-internal-names does: with no name source
-  configured the set is empty and nothing is denied, and a public repo
+  configured the set is empty and nothing is denied. A public repo
   missing from `public_repos` is not guarded until it is added; `belt
   doctor` prints the set both guards use and the mode in effect. Git it
   cannot run (no repo in the cwd) resolves to "not public" for git
@@ -408,7 +408,7 @@ external command, no Go required.
   (`{"command","cwd"}` for bash, `{"file_path","content","cwd"}` for write).
 - Exit 0 allows. Exit 1 denies, with stdout line one as the reason. Exit 2 or
   higher, a five-second timeout, or a failure to start all **allow with a
-  warn event** — a broken external guard must never block work, but it also
+  warn event**. A broken external guard must never block work, but it also
   must not fail silently.
 - An optional `match` substring gates when the external runs at all;
   `mode: soft` downgrades denials to warn events. `belt doctor` lists each
@@ -432,22 +432,22 @@ narrowest to widest; take the lowest rung that solves your problem.
    git-identity, the override switch name for a hard commit-guard rule.
 2. **Flip the rule's override switch** (commit-guard rules only, today):
    `belt override set <name> --reason "..."` suppresses every rule naming
-   that override for a timed window — 10 minutes by default, `--for 2h` to
-   size it, `belt override extend <name>` to push it forward, and it expires
-   on its own, so a forgotten override cannot disarm a rule for days. Set
-   and extend require a non-blank `--reason`, archived to the events service
-   when it is running.
+   that override for a timed window. The window is 10 minutes by default,
+   with `--for 2h` to size it and `belt override extend <name>` to push it
+   forward. It expires on its own, so a forgotten override cannot disarm
+   a rule for days. Set and extend require a non-blank `--reason`, archived
+   to the events service when it is running.
    `belt override` and `belt doctor` list every override with its state and
    remaining time. The switch is one file under
    `~/.config/belt/overrides/<name>` carrying its RFC 3339 expiry — nothing
    hidden (an empty file from an older belt counts as untimed and active
    until cleared). A block the override suppresses still leaves a warn event
    on the events timeline, so the exception stays auditable. The name itself
-   is a label you invent in the rule's `override:` field — name the
+   is a label you invent in the rule's `override:` field. Name the
    exception, not the rule, and let several rules share one name when one
    switch should stand them all down. The rule and the CLI connect by exact
-   string match with no cross-check, so a typo'd `set` is a silent no-op:
-   copy the name from the deny reason, which always prints the exact string
+   string match with no cross-check, so a typo'd `set` is a silent no-op.
+   Copy the name from the deny reason, which always prints the exact string
    the blocking rule reads.
 3. **Allow the repo.** For repo-scoped denials, put the repo on the guard's
    allowlist instead of weakening the guard everywhere — see "Scoping a
@@ -463,8 +463,8 @@ narrowest to widest; take the lowest rung that solves your problem.
    wiring in place and the decision in one config file.
 
 To see the state behind any decision: `belt doctor` shows enabled guards and
-hints, active overrides, and the resolved allowlists; `belt check bash
-"<command>"` dry-runs a verdict without a live session; and soft-mode rules
+hints, active overrides, and the resolved allowlists. `belt check bash
+"<command>"` dry-runs a verdict without a live session. Soft-mode rules
 and fail-open custom guards leave `warn` events on the events timeline
 rather than denying, so "it allowed something odd" is answered there.
 
@@ -479,10 +479,10 @@ repo in the org. (Until belt v2, `allow_repos` was the exception and matched
 exact strings only, so a `/*` entry there silently never matched.)
 
 `direct_main_repos` is the one shared list, named for the workflow fact it
-states — these repos' workflow is direct-to-main — and read by exactly the
+states. These repos' workflow is direct-to-main. It is read by exactly the
 two checks whose subject is that workflow: `git-push-main` (push allowed)
 and the `commit-policy` hint (advice silenced). It deliberately reaches
-nothing else: a shared list gets edited for the cheap reason (quiet a
+nothing else. A shared list gets edited for the cheap reason (quiet a
 nudge) and must not silently grant the expensive one (disarm the
 internal-name firewall or identity enforcement). See docs/adr/0013 for the
 reversibility criterion behind that line.
@@ -505,10 +505,10 @@ skimmed.
 Configuration-wise almost every hint is one switch: `hints.<id>.enabled` in
 the belt config, default on. The repo-aware hints (commit-policy,
 lint-policy, prefer-csl, kof-assertions, kof-consult) also read an
-`exclude_repos` list
-(hints opt repos out with `exclude_repos`; `allow_repos` belongs to guards,
-and each key on the wrong kind is a validation error), and commit-policy
-additionally honors the shared `direct_main_repos` list. Everything else
+`exclude_repos` list. Hints opt repos out with `exclude_repos`;
+`allow_repos` belongs to guards, and each key on the wrong kind is a
+validation error. commit-policy additionally honors the shared
+`direct_main_repos` list. Everything else
 about hint behavior is fixed
 (see Fixed constants below). The guards carry the richer per-guard keys —
 each guard section above names its own, and [config.md](../config.md)
@@ -538,8 +538,8 @@ Surfaces the current repo's stored assertions before any searching happens.
 
 - **Resolves** the session's working directory to a repo via its origin
   remote, queries the local keeper-of-facts (kof) service for assertions
-  about that repo, and injects up to five — matched on the repo-name
-  boundary, so `thismoon` does not drag in `thismoon-arcade`.
+  about that repo, and injects up to five. They are matched on the
+  repo-name boundary, so `thismoon` does not drag in `thismoon-arcade`.
 - **Why**: prior sessions' conclusions about a repo should arrive before the
   session re-derives them.
 - **Silent when** outside a repo, when kof is down (400 ms budget), and for
@@ -552,7 +552,7 @@ After a csl search, surfaces stored assertions about the code the search hit.
 
 - **Extracts** hit paths and repo from the search result, derives a subject
   from the deepest common directory, then queries the repo wide and ranks by
-  shared path segments — assertions are labelled at component level while
+  shared path segments. Assertions are labelled at component level while
   search hits go deeper, and querying the hit's own subject would find
   nothing.
 - **Caps** at three, drops retracted assertions, includes stale ones but
@@ -568,8 +568,8 @@ hands back the equivalent `csl_search` call.
 
 - **Fires when** a `grep`/`rg`/`ag`/`find`/`fd` command recurses or touches
   multiple files inside an indexed repo (checked against csl's shard listing
-  on disk — no csl process is launched, because this runs on every Bash
-  call).
+  on disk). No csl process is launched, because this runs on every Bash
+  call.
 - **Deliberately silent** on pipe filters (`cmd | grep x`), single-file
   greps, and paths outside an indexed repo — those are not what csl replaces.
 - **The advice is runnable**: the pattern arrives translated to zoekt syntax
@@ -582,29 +582,29 @@ hands back the equivalent `csl_search` call.
 ### commit-policy (bash)
 
 After a `git commit` lands on main or master of a repo that is not opted
-out, states the branch + PR commit policy and hands back the recovery: `git
+out, states the branch + PR commit policy and hands back the recovery. `git
 switch -c <branch>` carries the commit along, `git branch -f main
 origin/main` drops the local default branch back onto the remote.
 
 - **Fires when** a commit in the command (compound commands and `git -C`
-  included) ran with the repo's current branch on main or master, and the
-  repo's canonical origin identity is on neither the shared
+  included) ran with the repo's current branch on main or master. The
+  repo's canonical origin identity must also be on neither the shared
   `direct_main_repos` list (this hint is one of its two readers,
   docs/adr/0013) nor `hints.commit-policy.exclude_repos`.
 - **Deliberately silent** on feature branches, opted-out repos, detached
-  HEAD, and repos with no resolvable origin remote — a scratch `git init`
+  HEAD, and repos with no resolvable origin remote. A scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
   protect.
 - **Repo-local overlay**: a `.belt.yaml` at the repo root lets the repo
-  version its own policy (docs/adr/0012) —
-  `hints.commit-policy.exclude` opts the repo out or back in over the
-  machine's lists, `protected_branches` replaces the default
-  `main`/`master` set (exact names or trailing-`*` prefixes like
-  `release/*`; a replacement set that matches nothing also silences the
-  hint, so `exclude: false` opts back in only for the branches the set
-  names), and `message` appends a repo-authored line to the advice.
+  version its own policy (docs/adr/0012). `hints.commit-policy.exclude`
+  opts the repo out or back in over the machine's lists, and
+  `protected_branches` replaces the default `main`/`master` set (exact
+  names or trailing-`*` prefixes like `release/*`). A replacement set that
+  matches nothing also silences the hint, so `exclude: false` opts back in
+  only for the branches the set names. `message` appends a repo-authored
+  line to the advice.
   Hints-only by construction (the loader lives in `internal/hint`, which
-  guards cannot import), and never denying: a broken file draws one line
+  guards cannot import), and never denying. A broken file draws one line
   of advisory text per commit until fixed, a foreign or empty file is a
   no-op.
 - **Why**: the git-push-main guard denies at the push, which is late — the
@@ -626,14 +626,14 @@ unpushed.
   only picks the moment.
 - **Deliberately silent** when the trigger command itself names the
   toolchain outside quoted strings (`make lint && git commit` has nothing
-  to be reminded of; a suppressed trigger does not spend the session's
-  nudge, so a later bare commit still draws it), when the repo declares no
-  message, on opted-out repos (overlay `exclude` or
+  to be reminded of). A suppressed trigger does not spend the session's
+  nudge, so a later bare commit still draws it. Also silent when the repo
+  declares no message, on opted-out repos (overlay `exclude` or
   `hints.lint-policy.exclude_repos`), on repos with no resolvable origin,
-  and in sessions without a session id — no id means the once-per-session
+  and in sessions without a session id. No id means the once-per-session
   cap cannot hold, and advice on every commit is worse than none.
 - **Repo-local overlay**: the same `.belt.yaml` mechanics as commit-policy
-  (docs/adr/0012) — `message` declares the policy and is required for the
+  (docs/adr/0012). `message` declares the policy and is required for the
   hint to speak at all; `exclude` opts the repo out or back in over the
   machine's `exclude_repos`. A broken file draws one line of advisory text
   per commit until fixed.
@@ -666,9 +666,9 @@ Once per session, after an MCP call publishes text somewhere other people
 read, points at `humanizer_detect` while the wording is still editable.
 
 - **Fires when** a matched MCP tool call publishes (the matcher is the
-  consuming repo's choice; belt drops read-verb operations itself), the
-  session has not already run any humanizer tool, and the nudge has not fired
-  before.
+  consuming repo's choice; belt drops read-verb operations itself). It fires
+  only if the session has not already run any humanizer tool and the nudge
+  has not fired before.
 - **The advice quotes** the opening of the just-published text, so the
   instruction cannot read as generic boilerplate.
 - **Why**: instruction prose covers PR descriptions and docs, so those get
@@ -697,13 +697,13 @@ cannot afford discovery:
   to learn which repos are indexed, and names the repo containing a swept
   path as `<parent-dir>/<repo-dir>` to match csl's shard naming.
 
-The one place belt does walk is derivation time, not hook time: the
+The one place belt does walk is derivation time, not hook time. The
 blocked-name set behind `write-internal-names` comes from scanning
 `internal_names.workspace_dirs` with the shared
-[`kit/repofind`](../../../kit/repofind/README.md) package — the same walker
-and the same org/repo/dirname derivation the suspenders pre-commit guard
-uses, which is what keeps the session layer and the git layer agreeing on
-what is blocked.
+[`kit/repofind`](../../../kit/repofind/README.md) package. It is the same
+walker and the same org/repo/dirname derivation the suspenders pre-commit
+guard uses. That is what keeps the session layer and the git layer
+agreeing on what is blocked.
 
 ## Fixed constants
 
