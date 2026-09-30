@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  audioExt, barView, BlockCollector, blockText, downloadName, inProgress, pageLine, parseDocStatus,
+  barView, BlockCollector, blockText, inProgress, pageLine, parseDocStatus,
   parseRegistration, POLL_MAX_MS, POLL_MS, pollDelay, prepareQuery, readRequest, sectionView,
   statusOfSection,
 } from '../src/prepare.ts';
@@ -195,9 +195,9 @@ test('barView: actions follow the counts', () => {
 
 test('sectionView: most useful fact first', () => {
   assert.deepEqual(sectionView(section(1, { parts: 3, ready: 3 })),
-    { variant: 'ok', text: 'audio ready', title: 'audio ready', retry: false, download: true });
+    { variant: 'ok', text: 'audio ready', title: 'audio ready', retry: false });
   assert.deepEqual(sectionView(section(1, { parts: 3, ready: 1, generating: 1, queued: 1 })),
-    { variant: 'info', text: 'generating 2 of 3', title: 'generating 2 of 3', retry: false, download: false });
+    { variant: 'info', text: 'generating 2 of 3', title: 'generating 2 of 3', retry: false });
   assert.equal(sectionView(section(1, { parts: 3, ready: 3, generating: 1 })).text, 'audio ready');
   assert.equal(sectionView(section(1, { parts: 3, queued: 3 })).text, 'queued, 0 of 3 ready');
   const retrying = sectionView(section(1, { parts: 3, ready: 1, retrying: 1, reason: 'retrying after 1 attempt: boom' }));
@@ -206,7 +206,7 @@ test('sectionView: most useful fact first', () => {
   assert.equal(retrying.title, 'retrying, 1 of 3 ready (last failure: retrying after 1 attempt: boom)');
   assert.equal(sectionView(section(1, { parts: 3, ready: 1, idle: 2 })).text, '1 of 3 ready');
   assert.deepEqual(sectionView(section(1, { parts: 3, idle: 3 })),
-    { variant: 'outline', text: 'not prepared', title: 'not prepared', retry: false, download: false });
+    { variant: 'outline', text: 'not prepared', title: 'not prepared', retry: false });
 });
 
 test('sectionView: a failure keeps speak\'s reason as is', () => {
@@ -215,7 +215,6 @@ test('sectionView: a failure keeps speak\'s reason as is', () => {
   assert.equal(failed.text, 'failed after 3 attempts: no engine');
   assert.equal(failed.title, failed.text);
   assert.equal(failed.retry, true);
-  assert.equal(failed.download, false);
   assert.equal(sectionView(section(2, { parts: 2, failed: 2, reason: 'no engine' })).text, 'failed: no engine');
   assert.equal(sectionView(section(2, { parts: 2, failed: 2 })).text, 'failed: unknown reason');
 });
@@ -227,20 +226,3 @@ test('prepareQuery: section and failed flags', () => {
   assert.equal(prepareQuery(3, true), '?section=3&failed=1');
 });
 
-test('audioExt: mp3 for mpeg, wav for everything else', () => {
-  assert.equal(audioExt('audio/mpeg'), '.mp3');
-  assert.equal(audioExt('audio/mp3; charset=binary'), '.mp3');
-  assert.equal(audioExt('audio/wav'), '.wav');
-  assert.equal(audioExt('audio/x-wav'), '.wav');
-  assert.equal(audioExt(''), '.wav');
-});
-
-test('downloadName: filename-safe name, section suffix, extension from the type', () => {
-  assert.equal(downloadName('Q3 review: what shipped', 0, 'audio/wav'), 'Q3-review--what-shipped.wav');
-  assert.equal(downloadName('Q3 review', 2, 'audio/mpeg'), 'Q3-review-section-2.mp3');
-  assert.equal(downloadName('notes.md', 0, 'audio/wav'), 'notes.wav');
-  assert.equal(downloadName('v1.2 plan', 0, 'audio/wav'), 'v1.2-plan.wav', 'a title keeps its dots');
-  assert.equal(downloadName('Städer & åar', 0, 'audio/wav'), 'Städer---åar.wav');
-  assert.equal(downloadName('---', 0, 'audio/wav'), 'speak.wav');
-  assert.equal(downloadName('', 1, 'audio/wav'), 'speak-section-1.wav');
-});

@@ -65,18 +65,17 @@ match. Attributes:
   parts are synthesized ahead of playback and the page shows how far that got
   (prepared mode, below).
 - `name` — the document name speak files the page under (default: the page
-  title); it names the downloads.
+  title).
 
 Backend contract: the endpoint must serve an OpenAI-compatible
 `POST {endpoint}/v1/audio/speech` accepting `{model, input, voice, speed}` and
 returning a WAV body, with CORS allowed (the d-man `speak` route provides both
 via mlx-audio + the route's `cors = true` flag). Cached mode (below) also needs
 `GET {endpoint}/audio/{key}`, and prepared mode speak serve's document API
-(`POST /read`, `GET /doc/{id}`, `POST /doc/{id}/prepare`, `GET
-/doc/{id}/audio`); speak serve provides all of them. On connect the
-element probes `GET {endpoint}/` with a 1.5s timeout — if unreachable it
-injects nothing, so pages degrade gracefully on hosts without the speak
-service.
+(`POST /read`, `GET /doc/{id}`, `POST /doc/{id}/prepare`); speak serve
+provides all of them. On connect the element probes `GET {endpoint}/` with a
+1.5s timeout — if unreachable it injects nothing, so pages degrade gracefully
+on hosts without the speak service.
 
 Playback: a session plays a list of parts, one speech request each, keeping
 two parts in flight ahead of the one playing. While the playing part's clip is
@@ -135,13 +134,9 @@ retrying, not prepared, failed), the failure reason, and the buttons
 failed parts remain) and "Retry failed (N)" (`?failed=1`, shown when
 something failed). Each section with parts gets a `wk-badge.wk-ra-state`
 beside its play buttons (audio ready, generating i of n, queued, retrying,
-failed with speak's reason, or not prepared), a "Retry" button while it has
-failed parts (`?section=N&failed=1`) and a "Download" button once it is
-fully ready (`GET /doc/{id}/audio?section=N`; speak's 409 while parts are
-missing shows as a notice toast). Downloads go fetch, blob, object URL,
-click, since speak refuses a cross-origin `<a download>`; the file is
-`<name>-section-N.wav`, `.mp3` when the clip is `audio/mpeg`. The status is
-polled every 2s while any part is queued, generating or retrying, and again
+failed with speak's reason, or not prepared) and a "Retry" button while it
+has failed parts (`?section=N&failed=1`). The status is polled every 2s
+while any part is queued, generating or retrying, and again
 after a prepare call and whenever a session fetches a part; while speak
 doesn't answer, the poll backs off, doubling to once a minute, and the next
 prepare click or fetched part brings the 2s cadence back. A 404 from

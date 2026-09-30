@@ -10,7 +10,7 @@
 // synthesized live, a few sentences per request.
 
 import {
-  barView, BlockCollector, DocStatus, downloadName, inProgress, parseDocStatus, parseRegistration,
+  barView, BlockCollector, DocStatus, inProgress, parseDocStatus, parseRegistration,
   pollDelay, prepareQuery, readRequest, Registration, SectionStatus, sectionView, statusOfSection,
 } from './prepare.js';
 import {
@@ -318,8 +318,8 @@ function reasonOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Fetches a clip (a part, or a joined download) as a blob. */
-async function fetchClip(cfg: SpeakConfig, url: string, init?: RequestInit): Promise<Blob> {
+/** Fetches a part's clip; resolves to an object URL. */
+async function fetchAudio(cfg: SpeakConfig, url: string, init?: RequestInit): Promise<string> {
   let res: Response;
   try {
     res = await fetch(url, init);
@@ -334,11 +334,7 @@ async function fetchClip(cfg: SpeakConfig, url: string, init?: RequestInit): Pro
     throw new SpeechError('the speech service broke off the audio mid-response', res.status);
   }
   if (!blob.size) throw new SpeechError('the speech service returned empty audio', res.status);
-  return blob;
-}
-
-async function fetchAudio(cfg: SpeakConfig, url: string, init?: RequestInit): Promise<string> {
-  return URL.createObjectURL(await fetchClip(cfg, url, init));
+  return URL.createObjectURL(blob);
 }
 
 /** One JSON request to speak's document API (registration, status, prepare);
@@ -406,17 +402,16 @@ function failSession(s: Session, err: unknown): void {
   document.dispatchEvent(new CustomEvent('wk-read-aloud-error', { detail: { reason } }));
 }
 
-/** Shows a toast, red for a failure (the default) or the neutral one for a
- * notice, reusing the page's <wk-toast-host> or adding one. */
-function showToast(text: string, error = true): void {
+/** Shows a failure toast, reusing the page's <wk-toast-host> or adding one. */
+function showToast(text: string): void {
   let host = document.querySelector('wk-toast-host');
   if (!host) {
     host = document.createElement('wk-toast-host');
     document.body.appendChild(host);
   }
   const toast = document.createElement('wk-toast');
-  if (error) toast.setAttribute('variant', 'err');
-  toast.setAttribute('role', error ? 'alert' : 'status');
+  toast.setAttribute('variant', 'err');
+  toast.setAttribute('role', 'alert');
   toast.textContent = text;
   host.appendChild(toast);
   setTimeout(() => toast.remove(), ERROR_TOAST_MS);
@@ -799,20 +794,6 @@ function textButton(label: string, title: string): HTMLButtonElement {
   return b;
 }
 
-/** Saves a fetched clip through a temporary object URL. A cross-origin
- * <a download> sends no Origin and speak refuses it, so downloads go
- * fetch → blob → object URL → click. */
-function saveBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
-
 /** The page bar: the audio line, the failure reason behind it, and the
  * page-wide actions. Lives inside the <wk-read-aloud> element. */
 interface Bar {
@@ -828,7 +809,6 @@ interface Bar {
 interface SectionControls {
   badge: HTMLElement;
   retry: HTMLButtonElement;
-  download: HTMLButtonElement;
 }
 
 /**
@@ -836,7 +816,7 @@ interface SectionControls {
  * text with speak as a document (POST /read), stamps the blocks with the
  * part keys speak answers so cached mode plays them, and shows how far
  * synthesis got: a bar in the element for the page and a badge per section,
- * with prepare, retry and download actions. Polls the document while parts
+ * with prepare and retry actions. Polls the document while parts
  * are in progress. A document speak has forgotten (it restarted) is
  * registered again; if that fails the stamps come off, a toast says so once,
  * and the page reads live from then on.
@@ -957,7 +937,6 @@ class Preparer {
     setText(c.badge, view.text);
     setTitle(c.badge, view.title);
     c.retry.hidden = !view.retry;
-    c.download.hidden = !view.download;
   }
 
   private buildControls(i: number): SectionControls {
@@ -967,13 +946,10 @@ class Preparer {
     const retry = textButton('Retry', "Try this section's failed parts again");
     retry.hidden = true;
     retry.addEventListener('click', () => void this.prepare(retry, section, true));
-    const download = textButton('Download', 'Download this section as one audio file');
-    download.hidden = true;
-    download.addEventListener('click', () => void this.download(download, section));
     // Floats stack right to left in DOM order: the play controls stay
-    // rightmost, then download, retry and the badge.
-    this.anchors[i].after(download, retry, badge);
-    return { badge, retry, download };
+    // rightmost, then retry and the badge.
+    this.anchors[i].after(retry, badge);
+    return { badge, retry };
   }
 
   private removeControls(i: number): void {
@@ -981,7 +957,6 @@ class Preparer {
     if (!c) return;
     c.badge.remove();
     c.retry.remove();
-    c.download.remove();
     this.controls[i] = null;
   }
 
@@ -1014,23 +989,6 @@ class Preparer {
       } catch (err) {
         if (isGone(err)) void this.docGone();
         else showToast('Prepare audio: ' + reasonOf(err));
-      }
-    });
-  }
-
-  /** Downloads the joined audio of one section (1-based). speak answers
-   * 409 while parts are missing; that message is a notice, not a failure. */
-  private download(btn: HTMLButtonElement, section: number): Promise<void> {
-    return this.busy(btn, async () => {
-      const st = this.status;
-      if (!st) return;
-      try {
-        const url = `${this.cfg.endpoint}/doc/${encodeURIComponent(st.id)}/audio?section=${section}`;
-        const blob = await fetchClip(this.cfg, url, { cache: 'no-store' });
-        saveBlob(blob, downloadName(st.name, section, blob.type));
-      } catch (err) {
-        if (isGone(err)) void this.docGone();
-        else showToast('Download audio: ' + reasonOf(err), !(err instanceof SpeechError && err.status === 409));
       }
     });
   }
@@ -1087,7 +1045,7 @@ class Preparer {
 
   /** speak no longer knows the document (it restarted): registers the page
    * again so the keys resolve, and picks up polling. One attempt, shared by
-   * whoever noticed first (a poll, a download, a playing part); when it
+   * whoever noticed first (a poll, a playing part); when it
    * fails, the page falls back to reading live. Resolves to whether prepared
    * mode goes on. */
   docGone(): Promise<boolean> {
@@ -1215,7 +1173,7 @@ export class WkReadAloud extends HTMLElement {
 
     // Prepared mode registers the page with speak after the buttons are up:
     // a click before it answers reads live, the next one plays cached. The
-    // document is named for the status bar and the downloads.
+    // name is what speak files the document under.
     if (this.hasAttribute('prepare') && sections.length) {
       const name = this.getAttribute('name') || document.title || 'page';
       const preparer = new Preparer(this, cfg, name, sections, anchors);
