@@ -77,7 +77,7 @@ These belong to `present serve` alone:
   their objects linger.
 - `--speak-url` (string, default `http://speak.this`; env
   `PRESENT_SPEAK_URL`): the speak service the page view registers a page's
-  text with, so its audio can be prepared ahead of playback and downloaded.
+  text with, so its audio can be prepared ahead of playback.
   The value reaches the browser as `speak_url` in the page JSON. An empty
   value turns read-aloud off: the page creates no read-aloud element and
   never probes speak. The shared manifest sets it empty, since no speak
