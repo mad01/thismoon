@@ -5,7 +5,7 @@
 opener is a tool: one Go program installed to `~/code/bin/opener` bridging
 the macOS open command. At runtime it is a short-lived CLI or an MCP stdio
 server (`opener mcp`); nothing stays running between invocations, and there
-is no store — every operation is one exec of /usr/bin/open, and Launch
+is no store. Every operation is one exec of /usr/bin/open, and Launch
 Services owns everything after that.
 
 ## Structure
@@ -27,15 +27,15 @@ behave identically.
 ## Data flow
 
 Every verb validates first, then execs: URL takes one or more inputs and
-requires a scheme on each, rejecting the whole batch if any lacks one; File,
+requires a scheme on each, rejecting the whole batch if any lacks one. File,
 With, and Reveal expand a leading ~, require the result absolute (the MCP
-server process runs from /), and stat it; App requires a non-empty name.
-Validation failures never exec. The exec maps verbs to flags — URL passes
+server process runs from /), and stat it. App requires a non-empty name.
+Validation failures never exec. The exec maps verbs to flags. URL passes
 every target bare in one exec, File passes the target bare, App is
-`-a <name>`, With is
-`-a <app> <path>`, Reveal is `-R <path>` — with stderr captured onto the
-error, so "Unable to find application" surfaces verbatim. Errors cross the
-boundary wrapped by `agentdoc.Hint`, pointing at `opener docs`.
+`-a <name>`, With is `-a <app> <path>`, Reveal is `-R <path>`. Stderr is
+captured onto the error, so "Unable to find application" surfaces
+verbatim. Errors cross the boundary wrapped by `agentdoc.Hint`, pointing
+at `opener docs`.
 
 ## Interfaces
 

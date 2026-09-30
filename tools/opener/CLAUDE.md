@@ -29,7 +29,7 @@ diverges between an agent call and a manual invocation. Every verb
 validates before it execs: URLs must carry a scheme; paths get ~ expanded,
 must be absolute (the MCP server process runs from `/`), and must exist.
 The exec targets /usr/bin/open by absolute path, since MCP hosts spawn
-processes with a minimal PATH; stderr rides the returned error, so Launch
+processes with a minimal PATH. Stderr rides the returned error, so Launch
 Services failures ("Unable to find application named ...") surface
 verbatim.
 

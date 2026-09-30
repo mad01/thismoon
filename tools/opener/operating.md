@@ -16,7 +16,7 @@ can never shadow /usr/bin/open on a PATH that puts personal bins first.
 ## failure modes
 
 "path is not absolute": deliberate. The MCP server process runs from /, so
-a relative path never means what the caller intended — pass a full path or
+a relative path never means what the caller intended. Pass a full path or
 a ~-prefixed one (the ~ is expanded before the stat).
 
 "no such file or directory" on a path that exists in the conversation: the
