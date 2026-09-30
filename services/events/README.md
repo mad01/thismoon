@@ -10,7 +10,7 @@ records and displays, it never fires notifications.
 
 One background process, `events serve`, owns the per-source JSONL store and
 runs the web page and JSON API. The `events` CLI and the MCP tools are thin
-HTTP clients to it; nothing else touches the files, so serve must be running
+HTTP clients to it. Nothing else touches the files, so serve must be running
 for anything else to work, and there's no lock contention.
 
 Producers reach it three ways: `events emit` on the CLI, the `events_emit` MCP

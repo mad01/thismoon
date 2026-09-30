@@ -15,7 +15,7 @@ event and gives the human and the agent one filterable timeline to read.
 An event log is cross-cutting by nature: every component produces events, so
 it cannot live inside any one of them. The monorepo makes this concrete:
 components cannot import each other's internal packages, so the only way for
-sibling tools to write to a shared log is over HTTP, which means a running
+sibling tools to write to a shared log is over HTTP. This means a running
 process must own the store and expose `POST /api/events`. That same process
 serves the timeline and the MCP tools, so the CLI, the web page, and the agent
 all read the identical log. A file-based log without an owning process would

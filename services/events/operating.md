@@ -14,7 +14,7 @@ commands (`emit`, `list`, `purge`) and the MCP server, a stdio shim spawned
 as `events mcp`. The shim being up says nothing about the service: every tool
 call it handles is a live HTTP request to serve, and it fails when serve is
 down. Machines usually also route http://events.this to serve via the local
-domain front door; if the localhost port answers but the .this host does not,
+domain front door. If the localhost port answers but the .this host does not,
 the router is the problem, not this service.
 
 Producers are other processes. Sibling tools cannot import this component's
@@ -51,9 +51,9 @@ the emit. Check `events_sources` first: when the source is absent entirely,
 no emit has ever landed, so fix the producer, not the store.
 
 Empty query result: check the filters before concluding loss. `source` must
-match exactly, `since` is an exclusive id cursor that returns nothing when it
-already points at the newest event, and the per-source cap drops the oldest
-events once a source passes 500.
+match exactly, and `since` is an exclusive id cursor that returns nothing
+when it already points at the newest event. The per-source cap drops the
+oldest events once a source passes 500.
 
 ## version skew
 

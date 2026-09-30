@@ -5,7 +5,7 @@
 events is the local event log service: producers record what happened on the
 machine and humans and agents read one filterable timeline. At runtime
 `events serve --port 7430` (loopback only, fronted by d-man as
-`http://events.this/`, run as a t-man agent) is the single writer: it owns the
+`http://events.this/`, run as a t-man agent) is the single writer. It owns the
 per-source store and serves the timeline, the JSON API, and `/webkit/`. The
 `events` CLI and `events mcp` hold no state; both are thin HTTP clients to the
 serve API. events is archive-only: it records and displays, never fires a
@@ -27,8 +27,8 @@ internal/
 
 `internal/server` mounts the shared chrome with `webkit.Mount(mux)`. The
 timeline is client-rendered and paged: `index.html` fetches `/api/events` in
-200-event pages, loads older pages with `?before=<oldestLoadedId>` as a
-sentinel at the bottom scrolls into view, and live-tails with
+200-event pages and loads older pages with `?before=<oldestLoadedId>` as a
+sentinel at the bottom scrolls into view. It live-tails with
 `?since=<newestId>` every 7 seconds (docs/adr/0005; events was client-side
 before that convention landed). Active filters are passed to the API so
 matches older than the loaded window still surface.
@@ -36,11 +36,11 @@ matches older than the loaded window still surface.
 ## Data flow
 
 The emit path has three entrances that converge on one handler: `events emit`
-(CLI), the `events_emit` MCP tool, and a direct `POST /api/events`, which is
+(CLI), the `events_emit` MCP tool, and a direct `POST /api/events`. That is
 how sibling components in this repo emit since they cannot import each other's
 internal Go packages. The server validates the payload through
 `internal/event` (source and title required, source sanitized, level one of
-info/warn/error), stamps `Time` server-side in UTC, and mints a time-sortable
+info/warn/error) and stamps `Time` server-side in UTC. It mints a time-sortable
 ID (zero-padded unix nanos plus two random bytes) so lexical order is time
 order. The store then appends the event to that source's mutex-guarded ring
 buffer and appends one line to the source's JSONL file.
@@ -50,10 +50,9 @@ level, substring, and `since`/`before` cursors and returns newest first;
 `events_query` and `events list` call it over HTTP. Both cursors are event
 IDs, which makes polling for new activity (`since`, exclusive lower bound)
 and paging back through history (`before`, exclusive upper bound) a lexical
-comparison. Purge is the one
-subtractive path: `DELETE /api/events?source=` drops a whole source or only
-events at or before a cursor, and it is deliberately reachable from the CLI
-and HTTP API only, never as an MCP tool.
+comparison. Purge is the one subtractive path: `DELETE /api/events?source=`
+drops a whole source or only events at or before a cursor. It is deliberately
+reachable from the CLI and HTTP API only, never as an MCP tool.
 
 ## Storage
 
@@ -61,9 +60,9 @@ The store lives under `~/.local/share/events/` (overridable with
 `EVENTS_WORKDIR`) as one JSONL file per source:
 `sources/<source>.jsonl`, one JSON event per line, oldest first. Each source
 keeps the newest 500 events in its in-memory ring (appends past the cap drop
-the oldest); an append is an O(1) line write, and when a file outgrows 1.5x
-the cap it is compacted, rewritten atomically (temp file, then rename) from
-the capped in-memory slice. A global cap (default 1500) bounds how many
+the oldest). An append is an O(1) line write. When a file outgrows 1.5x the
+cap it is compacted, rewritten atomically (temp file, then rename) from the
+capped in-memory slice. A global cap (default 1500) bounds how many
 events one query returns across sources. The files are plain JSONL and
 outlive the service if it is removed.
 
