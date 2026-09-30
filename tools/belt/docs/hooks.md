@@ -184,6 +184,16 @@ Blocks `git push` to `main` or `master` before it happens.
   commands (`cd x && git push`). Bare `git push` and `HEAD` refspecs resolve
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
   directory.
+- **Follows `cd`.** The guard walks the command's segments and tracks
+  `cd`/`pushd`, so a push is judged in the directory it runs in, not the
+  session cwd. Absolute and relative targets resolve as written. A leading
+  `~`, `$HOME`, or `${HOME}` expands to the home directory, and a bare `cd`
+  goes home. A target only a shell can resolve (another variable, `cd -`, a
+  command substitution, a glob) leaves the directory unknown. A push to
+  `main` or `master` after such a cd is denied, with a hint to use an
+  absolute path or `git -C`. belt never runs git in its own process
+  directory to fill the gap: that once let a push into a non-exempt repo
+  ride an exempt session cwd.
 - **Allows when** the push directory's origin remote resolves to a repo on
   `guards.git-push-main.allow_repos` — an exact `host/owner/repo` or a
   trailing `/*` org wildcard, the same patterns `git_identity[].repos` takes.
@@ -195,7 +205,7 @@ Blocks `git push` to `main` or `master` before it happens.
   this guard reads the target.
 - **Fails closed.** An unresolved repo or an empty allowlist means the push
   is denied — a machine with no config at all denies every push to
-  main/master.
+  main/master. So is a push after a cd the guard could not resolve.
 
 ### git-identity
 
@@ -380,7 +390,8 @@ two events.
   read from disk and scanned too. A file that does not exist yet
   contributes nothing; the same command is usually writing it, and then its
   text is in the command. `cd` is tracked across `&&` segments and `git -C`
-  is honored, as in git-push-main.
+  is honored, as in git-push-main. A cd target only a shell can resolve
+  leaves the repo unknown, and an unknown repo scans nothing.
 - **Exemptions**: `allow_repos` by canonical identity, matched against the
   push remote, the gh target, or the MCP owner/repo. It is the same list
   shape as write-internal-names and a deliberate duplicate of it

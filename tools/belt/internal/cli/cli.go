@@ -197,6 +197,16 @@ func checkCmd(paths pathsFunc) *cobra.Command {
 			" --input '{\"owner\":\"o\",\"repo\":\"r\",\"title\":\"t\",\"body\":\"text\"}'",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The guards treat an empty cwd as unknown and fail closed, so a
+			// dry-run names the process cwd explicitly rather than leaving it
+			// to be guessed.
+			if cwd == "" {
+				wd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve working directory: %w", err)
+				}
+				cwd = wd
+			}
 			in := guard.Input{
 				Event:    args[0],
 				Cwd:      cwd,
