@@ -1,15 +1,15 @@
 # How it fits together
 
 Every component in this repo works standalone: `brew install` one and stop
-reading. This page is for the other path: what the pieces add up to when they
-run as a fleet, the vocabulary the recipes are written in, and the order to
-roll it out. The step-by-step install lives in
+reading. This page is for the other path. It covers what the pieces add up to
+when they run as a fleet, the vocabulary the recipes are written in, and the
+order to roll it out. The step-by-step install lives in
 [GETTING-STARTED.md](GETTING-STARTED.md); a worked private-config repo lives
 in [`examples/dotfiles/`](../examples/dotfiles/).
 
 ## Why a fleet instead of a pile of tools
 
-The components are designed around one idea: **you and your agent should work
+The components are designed around one idea. **You and your agent should work
 against the same local data, and the connections between tools should fire
 without anyone remembering to use them.** Standalone, each tool is a thing
 you invoke. Together, they invoke each other.
@@ -17,10 +17,10 @@ you invoke. Together, they invoke each other.
 A concrete session on a fully wired machine:
 
 1. You open Claude Code in a repo. Before you type anything, belt's
-   SessionStart hooks inject two things: the shared agent-memory index (facts
-   you told any agent to remember, on any machine) and the repo's stored
-   keeper-of-facts (kof) assertions: conclusions previous sessions derived
-   about this code, each pinned to the lines that prove it.
+   SessionStart hooks inject two things. One is the shared agent-memory index
+   (facts you told any agent to remember, on any machine). The other is the
+   repo's stored keeper-of-facts (kof) assertions: conclusions previous
+   sessions derived about this code, each pinned to the lines that prove it.
 2. The agent searches with `csl_search`, the same zoekt index you query in
    the browser at `csl.this`. belt's search hint surfaces any kof assertions
    about the code the search just hit, and marks the ones whose pinned lines
@@ -107,7 +107,7 @@ detail.
   which of them run on a machine class is decided in your config (an
   override on `thismoon/<name>`) or in a profile-gated source's
   `overrides.toml`. Profiles answer "what kind of machine is this", and not
-  only for ralph: belt reads the same file at runtime, so its
+  only for ralph. belt reads the same file at runtime, so its
   `git-push-main` guard steps aside on `personal` machines and blocks on
   everything else. **Set profiles before the first `ralph up`**: a machine
   with none silently skips every profile-gated recipe and source, and
@@ -133,10 +133,11 @@ order is written down somewhere.
    daemon ([GETTING-STARTED.md](GETTING-STARTED.md), step 5). Verify with
    `ralph doctor`, `t-man list`, and `status.this`.
 6. **Layer your companion recipes**, one pattern at a time, each with a
-   worked example in `examples/dotfiles/recipes/`: MCP registration (which
-   servers your agent sees), the belt config plus the Claude Code hooks
-   block (`claude-hooks/`, which is what turns the guards and hints on),
-   per-service config overlays, and secrets.
+   worked example in `examples/dotfiles/recipes/`. They cover MCP
+   registration (which servers your agent sees) and the belt config plus
+   the Claude Code hooks block (`claude-hooks/`, which is what turns the
+   guards and hints on). They also cover per-service config overlays and
+   secrets.
 7. **Give the agent its instructions**: adapt
    [`examples/dotfiles/CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example)
    into your `~/.claude/CLAUDE.md`. It is an anonymized version of a real
@@ -161,18 +162,18 @@ them. They cover the same risks at different moments:
 | Reference | [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md) | [tools/suspenders/README.md](../tools/suspenders/README.md) |
 
 Each tool reads only its own config (docs/adr/0010), but the two
-internal-name sections share one shape and one derivation: both build the
+internal-name sections share one shape and one derivation. Both build the
 blocked set from your checkouts rather than enumerating names in a file (a
-list of internal names would itself be the leak), so identical config blocks
+list of internal names would itself be the leak). So identical config blocks
 produce identical block lists. belt is the early, agent-only layer;
 suspenders is the backstop that also covers you. Two things to know going
 in: belt's hooks do nothing until your settings register them (step 6
-above), and both name guards ship with nothing to match until you configure
+above). Both name guards ship with nothing to match until you configure
 their sections: belt's `internal_names` and suspenders' `guard:`. Both
 layers also ship a documented escape ladder (override switches, allowlists,
-per-repo files, kill switches) in the two references above, because a guard
-you cannot get past when it is wrong teaches you to bypass the right blocks
-too.
+per-repo files, kill switches) in the two references above. That is because
+a guard you cannot get past when it is wrong teaches you to bypass the right
+blocks too.
 
 ## The memory stack
 
@@ -195,7 +196,7 @@ on remembering to use them.
 ## Skills
 
 Seven agent skills ship in `skills/` at the repo root, one directory per
-skill; each recipe symlinks its skill into `~/.claude/skills` and
+skill. Each recipe symlinks its skill into `~/.claude/skills` and
 `~/.agents/skills`, so a provisioned machine has them in every session (for
 Claude Code and Codex both). Invoke one by name (`/golang-pro`, `/golang-style`, `/handoff`,
 `/humanizer`, `/loom`, `/present`, `/worklog`) or let the agent load it when

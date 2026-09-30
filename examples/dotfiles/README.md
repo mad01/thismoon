@@ -53,7 +53,7 @@ Each kind of machine-private wiring has a worked example in `recipes/`:
    `~/.config/ralph/sources/thismoon` and discovers every `recipes/*/recipe.toml`
    there, merged under the identity `thismoon/<recipe>`.
 2. Your local `recipes/` load as usual. Overlay recipes keep only the items the
-   machine owns — the binary always ships from the thismoon source, the overlay
+   machine owns. The binary always ships from the thismoon source. The overlay
    layers wiring on top: `recipes/d-man/` symlinks a personal `routes.toml`,
    `recipes/config-overlay/` a service's config, `recipes/secrets-env/` a
    secret resolved at runtime, `recipes/mcp-registration/` an MCP server (with a
@@ -73,7 +73,7 @@ enable = false
    `recipes/secrets-env/recipe.toml`, which only applies on a `personal` host);
    the override above gates a recipe that ships from a source. A second,
    profile-gated source (a work overlay repo, say) can carry the same table in
-   an `overrides.toml` at its root, so its machines get their own answer
+   an `overrides.toml` at its root. So its machines get their own answer
    without this repo restating it.
 
 ## Runtime profiles: block-list switching (d-man)
@@ -135,8 +135,8 @@ next to your ralph config and set your machine's profiles, then run
 `ralph up --dry-run`.
 
 One-time steps stay manual by design: the d-man daemon registration needs sudo
-once per machine (`recipes/d-man/SETUP.md` in this repo), trusting the d-man
+once per machine (`recipes/d-man/SETUP.md` in this repo). Trusting the d-man
 block-page CA needs `sudo d-man ca install` once (only if you use a block
-list), and the `secrets-env` pattern needs a `~/.config/myservice/secrets.env`
+list). The `secrets-env` pattern needs a `~/.config/myservice/secrets.env`
 created by hand from the committed `.example` (the recipe never writes the
 value).
