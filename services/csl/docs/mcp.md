@@ -275,6 +275,8 @@ Rebuild the zoekt index for a single repo.
 
 **When to call:** after a significant edit or checkout, when `csl_repo_info` reports `action: needs_reindex`, or when fresh results are needed sooner than the background re-indexer would catch up.
 
+**Locked index:** the tool takes the same sync lock as `csl sync` and the `csl web` refresh. While one of those is writing, the call returns an error naming the holder's PID and asking for a retry once it finishes.
+
 **Input:**
 
 | Field | Type | Required | Description |

@@ -274,7 +274,8 @@ detached HEAD, with uncommitted tracked changes, or without a remote are
 skipped. Both entry points take the shared sync lock
 (`search-index/.csl-sync.lock` in the state directory) before touching anything.
 A manual sync fails fast while a refresh runs, and a refresh cycle steps aside
-while a manual sync runs. Disable the loop with `refresh.enabled: false`; the
+while a manual sync runs. `csl index` and `csl_repo_reindex` take the same
+lock and fail fast the same way. Disable the loop with `refresh.enabled: false`; the
 manual buttons on the `/refresh` page keep working.
 
 ## Running as a service

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -67,10 +66,5 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		Err:         w,
 		TTY:         isTTY,
 	})
-	if errors.Is(err, syncer.ErrLocked) {
-		return fmt.Errorf(
-			"another sync or background refresh is running — retry when it finishes: %w", err,
-		)
-	}
-	return err
+	return lockedHint(err)
 }

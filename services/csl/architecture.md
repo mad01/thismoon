@@ -89,7 +89,8 @@ Everything lives under `~/.config/csl/`:
 - `search-index/`: the lexical index. `state.json` records each repo's
   fingerprint, HEAD, branch, dirty flag, and `indexed_at`; one or more
   `<hash>.zoekt` shard files sit alongside it per repo. `.csl-sync.lock`
-  guards concurrent `csl sync` runs.
+  guards every writer: `csl sync`, the `csl web` refresh, `csl index`, and
+  `csl_repo_reindex`.
 - `semantic-index/`: one gob-encoded vector store per repo (`<repo>.gob`,
   written atomically via temp file and rename) plus a semantic state file.
   Embeddings come from Ollama at query/index time; no model files land here.

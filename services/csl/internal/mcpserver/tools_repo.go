@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
+	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
 
 // repoLookupInput is the typed input for the csl_repo_lookup tool. Every
@@ -135,7 +137,8 @@ func registerRepoTools(s *mcp.Server) {
 		Description: "Reindex a specific repo in the local zoekt search index. " +
 			"Use after making significant changes to ensure csl_search results are current, " +
 			"or when csl_repo_info reports needs_reindex. " +
-			"The call blocks until indexing finishes and returns the measured duration: typically sub-second for small repos, a few seconds for large ones.",
+			"The call blocks until indexing finishes and returns the measured duration: typically sub-second for small repos, a few seconds for large ones. " +
+			"It takes the same index lock as csl sync and the csl web refresher; while one of those is writing, the call fails with a retry hint instead of racing it.",
 		// Rebuilding the shards overwrites the repo's existing index entry
 		// (destructive) from local state only (closed world); running it twice
 		// on an unchanged tree leaves the same index behind.
@@ -530,21 +533,10 @@ func handleRepoReindex(
 	}
 
 	start := time.Now()
-	if err := search.IndexRepo(indexDir, repo, cfg.AllowedHiddenDirs()); err != nil {
-		return nil, repoReindexOutput{}, fmt.Errorf("index %s: %w", repo.Name, err)
+	if err := reindexLocked(indexDir, repo, cfg.AllowedHiddenDirs()); err != nil {
+		return nil, repoReindexOutput{}, err
 	}
 	dur := time.Since(start)
-
-	// Update state
-	state, err := search.LoadState(indexDir)
-	if err == nil {
-		fp, err := search.Fingerprint(repo.Path)
-		if err == nil {
-			fp.IndexedAt = time.Now()
-			state.SetRepo(repo.Path, fp)
-			_ = state.Save(indexDir)
-		}
-	}
 
 	notify.EmitEventSync("csl", "info",
 		"reindexed "+repo.Name, "",
@@ -559,4 +551,44 @@ func handleRepoReindex(
 		Reindexed: true,
 		Duration:  dur.Truncate(time.Millisecond).String(),
 	}, nil
+}
+
+// reindexLocked rebuilds repo's shards and records its fingerprint in
+// state.json under the cross-process sync lock, so the tool never writes
+// beside csl sync, the csl web refresher, or a csl index run. A held lock is
+// a tool error that says what is happening and to retry later, never a silent
+// skip. A repo git cannot fingerprint keeps its old state.json entry.
+func reindexLocked(indexDir string, repo finder.Repo, hiddenDirs []string) error {
+	unlock, err := syncer.Lock(indexDir)
+	if errors.Is(err, syncer.ErrLocked) {
+		return fmt.Errorf(
+			"index %s: %w; a sync or background refresh is writing the index, so wait for it to finish and call csl_repo_reindex again, or call csl_doctor if none should be running",
+			repo.Name,
+			err,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("index %s: acquire sync lock: %w", repo.Name, err)
+	}
+	defer unlock()
+
+	if err := search.IndexRepo(indexDir, repo, hiddenDirs); err != nil {
+		return fmt.Errorf("index %s: %w", repo.Name, err)
+	}
+	state, err := search.LoadState(indexDir)
+	if err != nil {
+		return fmt.Errorf("index %s: %w", repo.Name, err)
+	}
+	fp, fpErr := search.Fingerprint(repo.Path)
+	if fpErr != nil {
+		// Not a git checkout: the shards are rebuilt, and there is no
+		// fingerprint for the staleness check to compare against.
+		return nil
+	}
+	fp.IndexedAt = time.Now()
+	state.SetRepo(repo.Path, fp)
+	if err := state.Save(indexDir); err != nil {
+		return fmt.Errorf("index %s: save state: %w", repo.Name, err)
+	}
+	return nil
 }
