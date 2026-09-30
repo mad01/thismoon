@@ -166,6 +166,22 @@ All text fields support these patterns (the server renders them to HTML):
 
 Chip styles: `stat` (gray), `a` (warm), `b` (green), `c` (blue), `outline`.
 
+### Linking to code and sources
+
+Prose that names a file, function, PR, ticket, or commit links to it. The label is the short form the reader scans; the URL carries the repo and the path. Never write a bare `org/repo/path/to/file.go` in a text field.
+
+```json
+{"t": "p", "text": "The rank gap is widened in [app.js:26](https://github.com/mad01/thismoon/blob/1e2f309/services/present/internal/server/app.js#L26-L48), see [PR #164](https://github.com/mad01/thismoon/pull/164)."}
+```
+
+Rules:
+
+1. **Label with the short form.** `graph.go:47`, `RenderGraph`, `PR #164`, `MAD-357`. The reader sees where, the link says exactly where.
+2. **Permalink at a commit, not a branch.** Build GitHub links from `git remote get-url origin` and `git rev-parse HEAD`: `https://github.com/<org>/<repo>/blob/<sha>/<path>#L<start>-L<end>`. A branch link points at the wrong lines as soon as the file changes.
+3. **Local pages can link into csl.** `csl_show_file(repo, file, start_line, end_line)` returns a `csl.this` link that opens those lines in the local code viewer. Use it for a page that stays on this machine; use GitHub links for a page that will be shared.
+
+`http`, `https`, `mailto`, relative, and fragment URLs render as links. Anything else stays literal text.
+
 ### Block types
 
 | Type | Fields | Description |
@@ -508,7 +524,7 @@ Node names are matched by exact string, so reuse the same spelling on every link
 
 ## References
 
-The `references` parameter takes `[{title, url}]` — source links rendered at the bottom of the page by the server. Always include references when the brief draws on external sources.
+The `references` parameter takes `[{title, url}]` — source links rendered at the bottom of the page by the server. Always include references when the brief draws on external sources. Inline links point at the line or PR a sentence is about; references list the sources the whole page drew on. The same URL can appear in both.
 
 ```json
 [
