@@ -48,7 +48,7 @@ it, applies this overlay, and runs the cluster tests over a port-forward.
 `overlays/ingress` adds an Ingress driven by two `present-host` ConfigMap
 literals. `host` is replaced into the Ingress host, the `tls` hosts, and the
 `external-dns.alpha.kubernetes.io/hostname` annotation that creates the DNS
-record; `ingressClass` goes into `spec.ingressClassName` and has to name a
+record. `ingressClass` goes into `spec.ingressClassName` and has to name a
 class your cluster runs, or no controller claims the Ingress. The `tls` block
 names `present-tls`, which cert-manager or a pre-created secret supplies, and
 the controller sets `X-Forwarded-Proto` and `X-Forwarded-Host` for page URLs.
@@ -58,8 +58,8 @@ the controller sets `X-Forwarded-Proto` and `X-Forwarded-Host` for page URLs.
 `virtualservice.yaml`, which ships pointing at `istio-system/internal-gateway`;
 Istio sets the forwarded headers already.
 
-Whichever overlay you pick, open tabs hold a server-sent event stream each,
-so the proxy in front must pass responses through unbuffered and keep an
+Whichever overlay you pick, open tabs hold a server-sent event stream each.
+So the proxy in front must pass responses through unbuffered and keep an
 idle stream open for longer than the 25 second heartbeat. ingress-nginx
 honours the `X-Accel-Buffering: no` header present sends and times out
 after 60 seconds by default, and Istio routes carry no timeout unless you
@@ -67,7 +67,7 @@ set one. Serve the hostname over HTTP/2, as TLS ingresses do: browsers
 allow six HTTP/1.1 connections per host, and every visible tab spends one.
 
 Redefining the ConfigMap from an overlay layered on top of these changes
-nothing, because the replacements already ran here: re-declare them beside
+nothing, because the replacements already ran here. Re-declare them beside
 your own literals, or patch the Ingress and VirtualService fields directly.
 
 ## applying
@@ -104,15 +104,15 @@ still shows up.
 ## upgrading
 
 Bump the image tag in your overlay and apply again. The rolling update starts
-a new pod before retiring an old one, so the hostname keeps answering, and
-pages live in the API server rather than in a pod, so a roll loses nothing.
+a new pod before retiring an old one, so the hostname keeps answering.
+Pages live in the API server rather than in a pod, so a roll loses nothing.
 
 CRD changes stay additive within `v1alpha1`: apply `deploy/base` first, then
 roll the Deployment, and objects written by the old build keep deserializing.
 The slide deck feature added the optional `spec.deck` and `spec.deckSource`
-fields this way; a cluster still on the older definition serves the brief
+fields this way. A cluster still on the older definition serves the brief
 of a pushed page but silently drops its deck, because the API server prunes
-fields the schema does not know, so apply the base before the first deck is
+fields the schema does not know. So apply the base before the first deck is
 shared there.
 
 ## removing
@@ -133,7 +133,7 @@ running under a different account.
 A forbidden error naming the `watch` verb, repeating in the logs, means the
 Role lacks `watch` on `pages`. The instance still serves, but the page cache
 only refreshes when client-go relists after each failed watch, up to 30
-seconds apart, so an open tab can take that long to see an update. Apply
+seconds apart. So an open tab can take that long to see an update. Apply
 `deploy/base`; the next retry picks the Role up without a restart.
 
 `the server could not find the requested resource` means the CRD is missing.

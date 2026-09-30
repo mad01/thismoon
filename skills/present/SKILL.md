@@ -8,7 +8,7 @@ description: Generate a scrollable briefing page with fixation reading, Cytoscap
 Generate scrollable HTML briefing pages served live over localhost by the **present MCP**, or on a shared instance others reach by link. You pass structured JSON; the server renders it into the full page with warm-neutral theme, fixation-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
 
 ## Trigger
-When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes"), or asks for slides or a deck on it ("make a deck of this", "slides for the review").
+When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes"). Or when the user asks for slides or a deck on it ("make a deck of this", "slides for the review").
 
 ## How it works
 
@@ -107,7 +107,7 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 > If `present_open` fails (sandbox or no `open` binary), the URL from
 > `present_create` is the direct link — return it to the user instead.
 > When the user asks to share a page, call `present_share` with the id and
-> return the link; if the tool is missing or fails with a network error,
+> return the link. If the tool is missing or fails with a network error,
 > tell the user to use the Share button on the page or run `present share <id>`.
 > A brief and its deck share one id and one share link: never create a
 > second page for the deck of an existing brief; pass `deck` to
@@ -236,7 +236,7 @@ A deck is a second Doc under the same page id, shown one section at a time at `d
 
 ### When to make one
 
-Make a deck when the material will be talked through: a review in a meeting, an incident retrospective, a decision the room has to make. A brief someone reads alone stays a brief. When both exist, the deck is the version for the room and the brief is where the detail lives; the deck view has a Brief link for exactly that hand-off, so nothing on a slide needs to be complete.
+Make a deck when the material will be talked through: a review in a meeting, an incident retrospective, a decision the room has to make. A brief someone reads alone stays a brief. When both exist, the deck is the version for the room and the brief is where the detail lives. The deck view has a Brief link for exactly that hand-off, so nothing on a slide needs to be complete.
 
 ### Deck rules
 
@@ -330,7 +330,7 @@ The brief for the same incident holds the full timeline, the log excerpts, and t
 
 ### In the room
 
-The reader opens the deck from the brief's Slides link or at `deck_url`, and moves with Right, Space, or PageDown (next), Left, PageUp, or Backspace (previous), Home and End. F or P starts presenting (chrome hidden, one slide filling the window, browser fullscreen when allowed); pressed in fullscreen it ends, pressed while presenting without fullscreen (after a reload) it asks for fullscreen again; Escape always ends it. The URL's `#3` names the slide, so a link can open on one. An update to the deck reloads the open tab on the same slide, still presenting if it was, so you can edit a deck mid-talk. You can drive the open deck too: `present_deck(id, "start")`, then `"next"`, `"prev"`, `"goto"` with a `slide`, and `"stop"`; every open tab of the deck follows within a second. Open the deck first with `present_open(id, deck: true)`.
+The reader opens the deck from the brief's Slides link or at `deck_url`, and moves with Right, Space, or PageDown (next), Left, PageUp, or Backspace (previous), Home and End. F or P starts presenting (chrome hidden, one slide filling the window, browser fullscreen when allowed). Pressed in fullscreen it ends, pressed while presenting without fullscreen (after a reload) it asks for fullscreen again; Escape always ends it. The URL's `#3` names the slide, so a link can open on one. An update to the deck reloads the open tab on the same slide, still presenting if it was, so you can edit a deck mid-talk. You can drive the open deck too: `present_deck(id, "start")`, then `"next"`, `"prev"`, `"goto"` with a `slide`, and `"stop"`; every open tab of the deck follows within a second. Open the deck first with `present_open(id, deck: true)`.
 
 ## Graph format (the `graph` argument)
 
@@ -399,10 +399,10 @@ Put the number in `label` too when the reader should see it; the width alone onl
 
 ### Layout
 
-- `dagre` (default) — layered DAG layout for trees and hierarchies; accounts for node size and minimizes edge crossings
-- `elk` — ELK layered with wrapping: the same kind of layered drawing, but a long chain of steps folds into rows (or columns, top-down) until the drawing fits the container's aspect ratio instead of shrinking into a thin strip. Use it for pipelines and flows with many steps in sequence
-- `elk-layered`, `elk-mrtree`, `elk-stress`, `elk-radial`, `elk-force` — the other ELK algorithms, without folding: plain layered, tree, stress-majorization, radial, and force-directed
-- `cose` — for general graphs with no clear hierarchy
+- `dagre` (default): layered DAG layout for trees and hierarchies; accounts for node size and minimizes edge crossings
+- `elk`: ELK layered with wrapping, the same kind of layered drawing. But a long chain of steps folds into rows (or columns, top-down) until the drawing fits the container's aspect ratio instead of shrinking into a thin strip. Use it for pipelines and flows with many steps in sequence
+- `elk-layered`, `elk-mrtree`, `elk-stress`, `elk-radial`, `elk-force`: the other ELK algorithms, without folding: plain layered, tree, stress-majorization, radial, and force-directed
+- `cose`: for general graphs with no clear hierarchy
 
 `dagre` and `elk` take an optional `direction`: `TB` (top-down) or `LR` (left-to-right). Omit it for auto — small graphs (≤8 nodes) draw left-to-right to fill the wide container, larger ones top-down.
 

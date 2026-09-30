@@ -37,13 +37,13 @@ present deck <id> next    # drive the deck open in the browser: start, stop, nex
 | `--author-key` | `PRESENT_AUTHOR_KEY` | unset; prefer the env var over the flag |
 | `--speak-url` (serve only) | `PRESENT_SPEAK_URL` | `http://speak.this`; empty turns read-aloud off |
 
-Pages are read aloud through the speak service. On load a page registers its text with speak and shows an audio bar under the summary: how many parts are ready and a button to prepare them all; each section gets its own play button and state badge. Code blocks and tables are left out. Without speak reachable the page shows no read-aloud controls; with `--speak-url ""` it never asks.
+Pages are read aloud through the speak service. On load a page registers its text with speak and shows an audio bar under the summary: how many parts are ready and a button to prepare them all. Each section gets its own play button and state badge. Code blocks and tables are left out. Without speak reachable the page shows no read-aloud controls; with `--speak-url ""` it never asks.
 
 ### Slide decks
 
-A page has two possible renditions under one id: the brief, which is the scrollable page above, and a deck, a second Doc whose sections are slides. Either can exist without the other, and nothing is converted between them: an agent writes the deck for the room, shorter than the brief, and the brief stays where the detail lives. `present_create` takes the deck as a `deck` argument beside or instead of `content`, and `present_update` replaces or removes it.
+A page has two possible renditions under one id: the brief, which is the scrollable page above, and a deck, a second Doc whose sections are slides. Either can exist without the other, and nothing is converted between them. An agent writes the deck for the room, shorter than the brief, and the brief stays where the detail lives. `present_create` takes the deck as a `deck` argument beside or instead of `content`, and `present_update` replaces or removes it.
 
-The deck opens at `/p/<id>/deck`; a page with both shows a Slides link in the brief's header and a Brief link in the deck's, and a page with only a deck sends `/p/<id>` there. The title slide comes from the deck's title, summary, meta line, and chips; every section is one slide; the references make the last one. A bar at the bottom holds the arrows, the counter, and a Present button, and the URL's `#3` names the slide, so a link can open the deck on a slide.
+The deck opens at `/p/<id>/deck`. A page with both shows a Slides link in the brief's header and a Brief link in the deck's, and a page with only a deck sends `/p/<id>` there. The title slide comes from the deck's title, summary, meta line, and chips; every section is one slide; the references make the last one. A bar at the bottom holds the arrows, the counter, and a Present button, and the URL's `#3` names the slide, so a link can open the deck on a slide.
 
 Keys: Right, Space, or PageDown for the next slide; Left, PageUp, or Backspace for the previous one; Home and End for the first and last. F or P starts presenting: the header and the bar go away, one slide fills the window at a larger size, and the browser is asked for fullscreen. Escape ends it, as does leaving fullscreen through the browser, and so does F or P pressed in fullscreen. Pressed while presenting without fullscreen, which is where a reload leaves you, F or P asks for fullscreen again. A reload, the one an update triggers included, comes back on the same slide in the same mode. The tab remembers where it was, and a fresh tab starts at the title slide.
 
@@ -57,7 +57,7 @@ Sharing carries the deck: a shared copy has the same renditions as the local pag
 
 ### Shared mode
 
-`present serve --shared --bind 0.0.0.0` runs the same binary as a network-facing shared instance, meant for a few replicas in Kubernetes behind one hostname. There is no index and no listing: a page is reachable only by the 32-hex id present minted for it. Every write carries an author key as a bearer token (the server keeps only its hash, and only that key can update or delete the page), reads need nothing, and a page created as ephemeral disappears 30 days after its last write. The root serves a how-to page, `POST /api/pages` and `PUT /api/p/<id>` take pushed pages, and the present tools are served over HTTP at `/mcp` (`present_create` with an `ephemeral` flag, `present_read`, `present_source`, `present_update`, `present_doctor`). Page URLs follow the `X-Forwarded-Host` and `X-Forwarded-Proto` headers the ingress sets.
+`present serve --shared --bind 0.0.0.0` runs the same binary as a network-facing shared instance, meant for a few replicas in Kubernetes behind one hostname. There is no index and no listing: a page is reachable only by the 32-hex id present minted for it. Every write carries an author key as a bearer token (the server keeps only its hash, and only that key can update or delete the page). Reads need nothing, and a page created as ephemeral disappears 30 days after its last write. The root serves a how-to page, `POST /api/pages` and `PUT /api/p/<id>` take pushed pages, and the present tools are served over HTTP at `/mcp` (`present_create` with an `ephemeral` flag, `present_read`, `present_source`, `present_update`, `present_doctor`). Page URLs follow the `X-Forwarded-Host` and `X-Forwarded-Proto` headers the ingress sets.
 
 ### Sharing a page
 
@@ -72,7 +72,7 @@ present share <id> --ephemeral                    # the copy expires 30 days aft
 present unshare <id>                              # removes the copy
 ```
 
-With both variables set, `present serve` shows a Share button in every page's header (a modal with the expiry checkbox, the link, and a Copy button; the button reads "Shared" once a copy exists) and `present mcp` registers a `present_share` tool. Sharing a page again replaces the copy under the same link. Only your author key can change or remove the copy; if you lose it, mint a new one and share each page again. `present doctor` checks the instance and the key once you have set both variables.
+With both variables set, `present serve` shows a Share button in every page's header (a modal with the expiry checkbox, the link, and a Copy button), and `present mcp` registers a `present_share` tool. The button reads "Shared" once a copy exists. Sharing a page again replaces the copy under the same link. Only your author key can change or remove the copy; if you lose it, mint a new one and share each page again. `present doctor` checks the instance and the key once you have set both variables.
 
 ### Importing a markdown file
 
@@ -184,7 +184,7 @@ except `~/code/bin` and `~/.config/present`, writes confined to
 `~/.config/present` and temp. The wrapper reads `PRESENT_SHARED_URL` and
 `PRESENT_AUTHOR_KEY` from the ralph-managed secrets file, so `present_share`
 works with an `https://` shared URL and fails with a connection error on a
-plain-http one; the Share button and `present share` run outside the
+plain-http one. The Share button and `present share` run outside the
 sandbox and take any URL. If any other MCP tool fails, check sandbox
 denials:
 

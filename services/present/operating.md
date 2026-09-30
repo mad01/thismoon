@@ -1,14 +1,14 @@
 # operating present
 
 present serves scrollable briefing pages: an agent publishes one as Doc JSON
-through the present_* MCP tools, the renderer compiles it to HTML at
+through the present_* MCP tools. The renderer compiles it to HTML at
 authoring time, and an open tab follows later updates live. A page can carry
 a slide deck beside its brief, or instead of it, at /p/<id>/deck.
 
 ## how it runs
 
 Locally, two processes share one workdir and never talk: `present serve` is
-the HTTP server on loopback only (default {{.BaseURL}}); `present mcp` is a
+the HTTP server on loopback only (default {{.BaseURL}}). `present mcp` is a
 stdio shim that writes page files into the workdir and serves no HTTP, so
 present_create succeeds with serve down and its URL stays dead until serve
 runs. Both read --workdir/PRESENT_WORKDIR and --port/PRESENT_PORT and log them.
@@ -37,8 +37,8 @@ store.
 
 Start with `present doctor`. Locally it checks store readable, serve
 reachable, version skew, and the shared instance when one is configured (one
-GET /api/whoami with the key; a FAIL names it and whether it was unreachable
-or refused the key). On a shared instance present_doctor checks only that the
+GET /api/whoami with the key). A FAIL names it and whether it was unreachable
+or refused the key. On a shared instance present_doctor checks only that the
 store answers, because the tools run inside the serving process. Store
 readable is load-bearing: the tools write it directly, so create and update
 work with serve down.
@@ -49,21 +49,21 @@ garbage tokens mean a backtick code span nested inside **bold** in a text
 field, so un-nest it through present_source and present_update. Multi-line
 code goes in a t=code block; an unknown block type renders as an HTML comment,
 so a typoed t leaves a gap. Read-aloud goes through speak (--speak-url, default
-http://speak.this; empty turns it off) and skips code and tables: play buttons
+http://speak.this; empty turns it off) and skips code and tables. Play buttons
 but no audio bar mean registration in flight, nothing speakable, or speak
-refused it and the page reads live; no buttons at all mean speak is down.
+refused it and the page reads live. No buttons at all mean speak is down.
 
 A deck tab that ignores `present deck` or present_deck: the MCP and serve
-resolved different workdirs (same check as above), the tab was opened after
-the command was sent (only later commands apply), or the deck is on a shared
-instance, which has no remote control; the keys still work there. A slide
+resolved different workdirs (same check as above). Or the tab was opened
+after the command was sent (only later commands apply). Or the deck is on a
+shared instance, which has no remote control; the keys still work there. A slide
 that overflows or scrolls carries too much: the skill's deck rules say a
 heading and 3 to 5 short items or two sentences per slide.
 
 ## sharing a page
 
 A local present pushes a page to a shared instance when both --shared-url and
---author-key (PRESENT_SHARED_URL, PRESENT_AUTHOR_KEY) are set; with one of
+--author-key (PRESENT_SHARED_URL, PRESENT_AUTHOR_KEY) are set. With one of
 them it warns at startup and sharing stays off. Three entry points do the same
 push: the Share button in the page header, `present share <id> [--ephemeral]`,
 and the present_share tool. Each records the copy in the local meta.json, the
@@ -77,7 +77,7 @@ every page again. On any shared write path, whatever store the instance runs
 on, a page over 1 MiB is refused: 413 over HTTP, a tool error over MCP.
 
 Deleting a local page that has a shared copy removes the copy first when
---shared-url and --author-key are set, and refuses the local delete with 502
+--shared-url and --author-key are set. It refuses the local delete with 502
 when the instance is unreachable, so the two cannot drift apart. Without
 those settings the local page goes, the copy stays, and a log line names the
 orphaned URL. On the shared side 401 means no author key arrived and 403 that

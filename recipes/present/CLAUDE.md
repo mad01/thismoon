@@ -57,10 +57,10 @@ Machine-specific wiring is deliberately not here (MAD-199 tracks the pattern):
 ## Sandbox containment
 
 The MCP server runs inside a seatbelt profile. The dotfiles overlay registers
-`present-mcp-sandbox.sh` (not the bare binary); the wrapper `cd`-s to `/`
-(getcwd in a read-denied cwd is an EPERM), scrubs the environment with `env -i`
-(only `HOME`, the three `PRESENT_*` config vars, and, when set, the two sharing
-vars pass through), and execs `~/code/bin/present mcp` under
+`present-mcp-sandbox.sh` (not the bare binary). The wrapper `cd`-s to `/`
+(getcwd in a read-denied cwd is an EPERM). It scrubs the environment with
+`env -i` (only `HOME`, the three `PRESENT_*` config vars, and, when set, the
+two sharing vars pass through). Then it execs `~/code/bin/present mcp` under
 `sandbox-exec -f present.sb` (the profile lives beside the wrapper in this
 directory).
 
@@ -68,7 +68,7 @@ directory).
 - **Egress shaped, not zero** — `present mcp` never serves; it dials the local
   events port (`localhost:7430`) and, for `present_share`, outbound `:443` plus
   DNS. Seatbelt can't filter by hostname, so a plain-http shared URL (a kind
-  port-forward, say) fails inside the sandbox on purpose; the Share button and
+  port-forward, say) fails inside the sandbox on purpose. The Share button and
   `present share` run outside it and take any URL.
 - **$HOME reads default-denied**; allow-list is `~/code/bin` (the binary) and
   `~/.config/present` (page store).
@@ -81,7 +81,7 @@ secrets file (`~/.config/ralph/secrets.sh`, legacy `~/.secrets.sh` as a
 fallback), one `export` each; `present key new` mints the key. Both launchers
 source `present-shared-env.sh`, which reads exactly those two exports in a
 subshell (a var already in the environment wins) so neither the plist nor
-`servers.json` carries a secret, and the login shell sources the same file for
+`servers.json` carries a secret. The login shell sources the same file for
 `present share`. With the pair unset nothing changes: sharing stays off.
 
 `present_open` execs `/usr/bin/open`, which inherits the sandbox — the browser
