@@ -120,13 +120,17 @@ internal-name guards block internal names. Purpose-named like
 `direct_main_repos` and read by exactly the two checks whose subject is
 that fact, `write-internal-names` and `publish-internal-names`; nothing
 else consults it. Patterns are canonical `host/owner/repo` or a trailing
-`/*` org wildcard. A repo on the list is guarded unless that guard's own
-`allow_repos` carves it out (a private repo inside a listed org); a repo
-not on it allows internal names in files, commits, branch names, and PR
-text alike, so an internal org that happens to live on github.com never
-needs an exemption. Leaving the key out entirely keeps the rule the guards
-started with, every github.com repo is public-bound, so a rendering that
-predates the key stays strict rather than silently unguarded; `belt
+`/*` org wildcard.
+
+A repo on the list is guarded unless that guard's own `allow_repos`
+carves it out (a private repo inside a listed org). A repo not on it
+allows internal names in files, commits, branch names, and PR text alike.
+As a result, an internal org that happens to live on github.com never
+needs an exemption.
+
+Leaving the key out entirely keeps the rule the guards started with:
+every github.com repo is public-bound. So a rendering that predates the key
+stays strict rather than silently unguarded; `belt
 doctor` prints which of the two modes is in effect. An empty present list
 (`public_repos: []`) guards nothing. docs/adr/0015 records the decision.
 
