@@ -8,7 +8,7 @@ func TestAllRulesHaveMetadata(t *testing.T) {
 		t.Fatalf("expected at least 20 rules, got %d", len(rs))
 	}
 	validCats := map[string]bool{
-		"content": true, "language": true, "style": true, "communication": true,
+		"content": true, "language": true, "style": true, "communication": true, "clarity": true,
 	}
 	for _, r := range rs {
 		if r.ID == "" {

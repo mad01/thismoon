@@ -7,7 +7,7 @@
 # humanizer-after: Shipped the new feature today.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: occurrence
-message: "Hashtag stuffing (%s hashtags in this block) — keep one or two at most."
+message: "Hashtag stuffing (%v hashtags in this block) — keep one or two at most."
 level: suggestion
 max: 3
 token: '#[A-Za-z][A-Za-z0-9_]+'

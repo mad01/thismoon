@@ -7,7 +7,7 @@
 # humanizer-after: It blends OKRs, KPIs, and visual strategy tools like the Business Model Canvas.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Overuse_of_boldface
 extends: occurrence
-message: "Bold span appears %s times in this block — reserve bold for genuine emphasis."
+message: "Bold span appears %v times in this block — reserve bold for genuine emphasis."
 level: warning
 scope: raw
 max: 3

@@ -79,7 +79,7 @@ through the environment (see Environment variables) and fails without one.
 ### `rules list`
 
 - `--category` (string, default `""`): filter by category (`content`,
-  `language`, `style`, `communication`).
+  `language`, `style`, `communication`, `clarity`).
 - `--json` (bool, default `false`): emit the rule list as JSON.
 
 ### `lint`

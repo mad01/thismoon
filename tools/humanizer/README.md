@@ -17,9 +17,9 @@ The watermark side (`lint`, `fix`, `rewrite`) is separate from the AI-writing de
 
 ### Style pack
 
-The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 52 rules covering patterns from Wikipedia's "Signs of AI writing" plus the fiction-prose tells surfaced by StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136)):
+The Humanizer style pack ships embedded in the binary under `internal/rules/vale/styles/Humanizer/`. It contains 57 rules. Most come from Wikipedia's "Signs of AI writing" and the fiction-prose tells surfaced by StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136)). The `clarity` category (long sentences, long or dense paragraphs, plain words, acronyms never spelled out) is drawn from write-good, the Red Hat and Microsoft style guides, and Vale's Std and Voices packages. ParagraphReadingEase scores per paragraph on vale 3.21 or newer; older builds score the whole document:
 
-AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmbodiedEmotionCliche, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NarratorMoralizing, NegativeParallelism, NotabilityInflation, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PromotionalVocab, QuietAcceptanceEnding, RhetoricalTransitions, RuleOfThree, SignificanceInflation, Signposting, StockSensoryImagery, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
+AcronymFirstUse, AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOveruse, ChatGPTArtifacts, CitationArtifacts, ClosingRitualPhrases, CollaborativeArtifacts, ContractionAvoidance, CopulaAvoidance, CurlyQuotes, DashSubstitute, EmbodiedEmotionCliche, EmDashOveruse, EmojiDecoration, ExcessiveHedging, FalseBothSidesHedge, FalseConcession, FalseRanges, FalseVulnerability, FillerBoilerplate, FillerPhrases, FiveParagraphStructure, FormulaicChallenges, FragmentedHeader, GenericConclusion, HashtagStuffing, HyphenatedPairOveruse, InfomercialHooks, InlineHeaderList, KnowledgeCutoff, LetsConstructions, NarratorMoralizing, NegativeParallelism, NotabilityInflation, ParagraphLength, ParagraphReadingEase, ParticipialTailExtended, PassiveVoice, PersuasiveAuthority, PlainWords, PromotionalVocab, QuietAcceptanceEnding, RhetoricalTransitions, RuleOfThree, SentenceLength, SignificanceInflation, Signposting, StockSensoryImagery, SuperficialIng, Sycophancy, TailingNegation, TitleCaseHeadings, UnfilledPlaceholders, UTMParameters, VagueAttribution
 
 Rule metadata (ID, category, severity, rationale, before/after examples) comes from `# humanizer-*` comment headers in each YAML file, served by both the CLI (`rules explain`) and the MCP tools.
 
@@ -146,7 +146,7 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 | Flag | Description |
 |---|---|
-| `--category` | Filter by category: `content`, `language`, `style`, `communication` |
+| `--category` | Filter by category: `content`, `language`, `style`, `communication`, `clarity` |
 | `--json` | Emit the rule list as JSON |
 
 `rules explain` prints the rule ID, name, category, severity, summary, rationale, before/after examples, and reference link.

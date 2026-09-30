@@ -1,0 +1,20 @@
+# humanizer-id: Humanizer.ParagraphLength
+# humanizer-name: Long paragraph
+# humanizer-category: clarity
+# humanizer-summary: A paragraph that runs past 150 words.
+# humanizer-rationale: A wall of text is the first thing a reader skips. One paragraph should carry one idea; when it carries three, the reader has to find the seams. Break it where the topic shifts.
+# humanizer-before: |
+#   The install step builds the binary from source, copies it into the local bin directory, signs it with the local identity, and then restarts the service through the process manager so the new build picks up the changed configuration. After that it checks the version endpoint to confirm the running process reports the commit it just built, because the process manager can report success while an old binary keeps running if the restart raced the copy. If the version does not match, it retries the restart once, waits for the health check to pass, and compares again, and only then writes the build stamp that the next run reads to decide whether a rebuild is needed at all. The stamp records the tree hash of the component directory rather than the commit, so an unrelated commit elsewhere in the repo does not trigger a rebuild, and a change to the component's own files always does, even when it was committed together with something else. Finally it prints a one-line summary with the version, the path, and the elapsed time.
+# humanizer-after: |
+#   The install step builds the binary from source, copies it into the local bin directory, signs it, and restarts the service through the process manager.
+#
+#   It then checks the version endpoint to confirm the running process reports the commit it just built. The process manager can report success while an old binary keeps running, so a mismatch triggers one more restart and a second check before the build stamp is written.
+#
+#   The stamp records the tree hash of the component directory, not the commit. An unrelated commit never triggers a rebuild; a change to the component's own files always does.
+# humanizer-reference: https://vale.sh/docs/topics/styles/#occurrence
+extends: occurrence
+message: "Long paragraph (%v words). Split it so each paragraph carries one idea."
+level: warning
+scope: paragraph
+max: 150
+token: \b\w+\b

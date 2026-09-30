@@ -1,0 +1,18 @@
+# humanizer-id: Humanizer.ParagraphReadingEase
+# humanizer-name: Dense paragraph
+# humanizer-category: clarity
+# humanizer-summary: A multi-sentence paragraph of 40+ words whose Flesch reading ease falls below 30.
+# humanizer-rationale: Reading ease drops with long words and long sentences. A paragraph under 30 sits at postgraduate difficulty; most technical prose can sit above 40 without losing precision. The voice profile scores the whole document; this rule points at the paragraph that drags it down.
+# humanizer-before: The reconciliation controller's idempotency guarantees necessitate deterministic serialization of heterogeneous configuration representations, so implementers should prioritize canonicalization before persistence to eliminate nondeterministic divergence. Consequently, heterogeneous representations converge on an equivalent canonical serialization irrespective of originating configuration provenance. Subsequent reconciliation iterations therefore encounter identical persisted representations and terminate immediately.
+# humanizer-after: The controller must produce the same result when it runs twice. To get there, turn every config into one canonical form before you save it, so two runs never diverge.
+# humanizer-reference: https://vale.sh/explorer/Voices (Direct.Ease)
+extends: metric
+message: "Dense paragraph (reading ease %s). Shorter words and shorter sentences bring it up."
+level: suggestion
+scope: paragraph
+# A paragraph under 40 words is a lead-in or a label, and a single-sentence paragraph is a
+# list or a long sentence (SentenceLength owns that); neither scores meaningfully, so the
+# formula short-circuits them above the floor.
+formula: |
+  words < 40 || sentences < 2 ? 100.0 : 206.835 - (1.015 * (words / sentences)) - (84.6 * (syllables / words))
+condition: "< 30"

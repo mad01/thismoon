@@ -83,7 +83,7 @@ var rulesExplainCmd = &cobra.Command{
 
 func init() {
 	rulesListCmd.Flags().
-		StringVar(&rulesListCategory, "category", "", "filter by category (content|language|style|communication)")
+		StringVar(&rulesListCategory, "category", "", "filter by category (content|language|style|communication|clarity)")
 	rulesListCmd.Flags().BoolVar(&rulesListJSON, "json", false, "emit rules as JSON")
 	rulesCmd.AddCommand(rulesListCmd)
 	rulesCmd.AddCommand(rulesExplainCmd)
