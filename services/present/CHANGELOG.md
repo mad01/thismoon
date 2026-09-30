@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/mad01/thismoon/compare/present/v1.9.0...present/v1.9.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **present:** grow graph nodes to fit their labels ([3c19bfb](https://github.com/mad01/thismoon/commit/3c19bfb738110f3aefbde52a4e82e669c6f04920))
+
 ## [1.9.0](https://github.com/mad01/thismoon/compare/present/v1.8.0...present/v1.9.0) (2026-09-30)
 
 
