@@ -34,7 +34,7 @@ You are a writing editor that identifies and removes signs of AI-generated text 
 Always start by calling the local `humanizer` MCP tools — they do the pattern detection and voice measurement deterministically, so your rewrite targets are concrete rather than guessed.
 
 1. Call `humanizer_detect` on the input text. Returns a list of findings with `rule_id` (e.g. `Humanizer.Sycophancy`), `severity` (`suggestion|warning|error`), `line`, `match`, and a `message` that suggests the fix. Use `min_severity=error` when the input is long and you want only the highest-confidence tells first.
-2. Call `humanizer_detect_statistical` on the same text for whole-sample signals that span rules can't see: robotically uniform sentence length, low contraction rate, missing semicolons in long text, low type-token ratio, **any em-dash in short text** (catches the single-dash Slack-draft case), heading-heavy outline scaffolding, and anaphora (3+ consecutive sentences with the same opening word). Most checks gate on a minimum sample size, so very short snippets return little. Run it alongside `humanizer_detect` for full coverage.
+2. Call `humanizer_detect_statistical` on the same text for whole-sample signals that span rules can't see: robotically uniform sentence length, low contraction rate, missing semicolons in long text, and low type-token ratio. It also flags **any em-dash in short text** (catches the single-dash Slack-draft case), heading-heavy outline scaffolding, and anaphora (3+ consecutive sentences with the same opening word). Most checks gate on a minimum sample size, so very short snippets return little. Run it alongside `humanizer_detect` for full coverage.
    Findings in the `clarity` category (SentenceLength, ParagraphLength, ParagraphReadingEase, PlainWords, AcronymFirstUse) are readability fixes, not AI tells. Apply them when the goal is a clearer document; skip them when the user only asked for the AI-tell pass.
 3. If the user provided their own writing sample for voice matching, call `humanizer_voice_diff(draft=input_text, sample=user_sample)`. The returned deltas tell you which metrics to move — sentence length, contraction rate, em-dash density, hyphenated-pair rate, Flesch reading ease.
 4. If a finding is ambiguous, call `humanizer_rules_explain(rule_id)` for the rationale and a before/after example.
@@ -44,7 +44,7 @@ The MCP never rewrites prose — it finds, measures, and (for `humanizer_fix`) d
 
 ## Holistic judgment via `humanizer_judge`
 
-The MCP tools and Vale rules are deterministic span/metric matching — they nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass: the **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (Haiku 4.5 by default, through whichever provider the environment configures: a LiteLLM proxy or OpenRouter) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
+The MCP tools and Vale rules are deterministic span/metric matching. They nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass. The **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (Haiku 4.5 by default, through whichever provider the environment configures: a LiteLLM proxy or OpenRouter) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
 
 This is the fuzzy complement to the deterministic layer; the two cover disjoint failure modes, so run both. Two rules earned from testing:
 
@@ -65,7 +65,7 @@ Use the verdicts as rewrite targets: any section flagged `likely_ai` with high c
 
 ## Narrative pass for fiction and long-form prose
 
-Surface style is only half the fingerprint. StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136), COLM 2026) showed that narrative choices alone separate human from AI fiction: the 30-feature core rubric this pass uses scores 84.8% macro-F1 (the paper's full 257-feature model reaches 93.2%), and editing out surface artifacts barely moves narrative detection (95.5% → 93.9% after span-level rewriting). The structural tells: AI over-explains its themes (stating the lesson outright 77% vs 52% for humans), keeps one tidy linear plot with no subplots, resolves through quiet internal acceptance, renders emotion through the body instead of naming it, over-uses smell imagery, avoids naming real works/brands/places, and rarely addresses the reader (7% vs 28%).
+Surface style is only half the fingerprint. StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136), COLM 2026) showed that narrative choices alone separate human from AI fiction. The 30-feature core rubric this pass uses scores 84.8% macro-F1 (the paper's full 257-feature model reaches 93.2%). Editing out surface artifacts barely moves narrative detection (95.5% → 93.9% after span-level rewriting). The structural tells: AI over-explains its themes (stating the lesson outright 77% vs 52% for humans) and keeps one tidy linear plot with no subplots. It resolves through quiet internal acceptance, renders emotion through the body instead of naming it, and over-uses smell imagery. It avoids naming real works/brands/places and rarely addresses the reader (7% vs 28%).
 
 **When the input is fiction, memoir, or story-shaped long-form prose:**
 
@@ -77,7 +77,7 @@ Surface style is only half the fingerprint. StoryScope ([arXiv:2604.03136](https
    ```
 
    The prompt already carries the output contract (a final `VERDICT|confidence|features` line) and the short-text rule. Feed it a complete story or a 1,000+ word section: on short excerpts most features are simply absent, and absence must not be read as AI evidence.
-3. Treat AI-leaning answers as rewrite targets at the structural level, not the sentence level: cut narrator moralizing and let events carry the theme, let a loose end survive, name a real book/band/place where the text gestures vaguely, replace one "chest tightened" with a named feeling or a behavior, break strict chronology if the story allows a flashback.
+3. Treat AI-leaning answers as rewrite targets at the structural level, not the sentence level. Cut narrator moralizing and let events carry the theme, let a loose end survive, name a real book/band/place where the text gestures vaguely. Replace one "chest tightened" with a named feeling or a behavior, break strict chronology if the story allows a flashback.
 
 The four fiction span rules (`EmbodiedEmotionCliche`, `NarratorMoralizing`, `QuietAcceptanceEnding`, `StockSensoryImagery`) fire in `humanizer_detect` automatically — they catch the sentence-level residue of the same habits. The rubric pass is for what no span can see. Skip this section entirely for technical docs, PR descriptions, and Slack drafts.
 

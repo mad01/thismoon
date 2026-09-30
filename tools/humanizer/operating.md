@@ -15,7 +15,7 @@ same internal functions: the CLI (`humanizer detect`, `scan`, `profile`,
 that the MCP host spawns per session. Both call the same code in-process, so
 CLI and MCP results never diverge.
 
-Span detection is the one part that is not pure Go: it runs the `vale` prose
+Span detection is the one part that is not pure Go. It runs the `vale` prose
 linter as a subprocess, resolved from PATH, against a Humanizer style pack
 embedded in the binary and extracted to a cache directory on first use. The
 statistical detector, voice profiler, and watermark scrub (`lint`/`fix`) are
