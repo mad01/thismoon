@@ -147,9 +147,8 @@ JSON carries as `speak_url`. With a URL, `app.js` places webkit's
 `<wk-read-aloud>` element in prepared mode right under the summary, and the
 browser talks to speak directly: it registers the page's readable blocks
 with `POST /read`, speak answers with a part key per block, and the element
-shows how many parts are ready, prepares them on request, and downloads the
-page's or one section's audio once every part exists. speak keeps that
-registry in memory, so after a restart the element registers the page again.
+shows how many parts are ready and prepares them on request. speak keeps
+that registry in memory, so after a restart the element registers the page again.
 When speak refuses the registration the page reads live, one request per
 part, starting with a single sentence and ramping up to several, with no
 status bar; when speak is unreachable the page has no read-aloud at all;
