@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/mad01/thismoon/compare/present/v1.8.0...present/v1.9.0) (2026-09-30)
+
+
+### Features
+
+* **present:** add slide decks beside briefs ([09f8868](https://github.com/mad01/thismoon/commit/09f8868013dd39b1a30ad900445df25300a8ce12))
+
 ## [1.8.0](https://github.com/mad01/thismoon/compare/present/v1.7.0...present/v1.8.0) (2026-09-28)
 
 
