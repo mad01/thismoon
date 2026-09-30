@@ -49,30 +49,35 @@ mode, is mounted by present and talks to the document routes here.
 
 Web path: `GET /` serves the embedded static `index.html`, which fetches
 `GET /enginez` client-side for its engine line. A present page registers its
-text with `POST /read` (`application/json`, max 5 MB): the text split into
-the sections it plays by and the blocks that show them. serve plans each
-section's parts (`chunk.Prepared`: the first up to 250 characters, then up
-to 600; a block longer than a part splits at sentences) and answers each
-section's part keys in play order and each block's keys in the same order,
-which the page stamps on as `data-ra-parts` and `data-ra-chunk`. serve keeps
-the document in memory (32 at most; an evicted one stops preparing, and
-eviction takes the least recently used document with no part queued,
-generating or retrying before any that has, so a page view registering text
-never drops a document being prepared) and queues nothing: the same texts
-plan to the same keys and document id on every view, and play or prepare
-starts their synthesis. `POST /doc/{id}/prepare` queues the idle parts in
-reading order, ahead of older documents' queued parts; a play button fetches
-the section's parts from `GET /audio/{key}` with two in flight, and a part
-not ready yet jumps the queue and the request waits for it. A part that
-fails upstream gets up to 3 attempts, 15s then 45s apart, and reads
-`retrying` in between; auth, quota, network, config and model failures are
-not retried and stop the background queue, as does a part whose last
+text with `POST /read` (`application/json`, max 5 MB). It sends the text
+split into the sections it plays by and the blocks that show them. serve
+plans each section's parts (`chunk.Prepared`: the first up to 250
+characters, then up to 600; a block longer than a part splits at sentences).
+It answers each section's part keys in play order and each block's keys in
+the same order, which the page stamps on as `data-ra-parts` and
+`data-ra-chunk`.
+
+serve keeps the document in memory and queues nothing. The same texts plan
+to the same keys and document id on every view, and play or prepare starts
+their synthesis. serve holds 32 documents at most, and an evicted one stops
+preparing. Eviction takes the least recently used document with no part queued,
+generating or retrying before any that has. That way a page view registering
+text never drops a document being prepared.
+
+`POST /doc/{id}/prepare` queues the idle parts in reading order, ahead of
+older documents' queued parts. A play button fetches the section's parts
+from `GET /audio/{key}` with two in flight. A part not ready yet jumps the
+queue, and the request waits for it.
+
+A part that fails upstream gets up to 3 attempts, 15s then 45s apart, and
+reads `retrying` in between. Auth, quota, network, config and model failures
+are not retried and stop the background queue, as does a part whose last
 attempt timed out. `<wk-read-aloud>` on the present page shows each
-section's audio state with a Retry button (`POST
-/doc/{id}/prepare?section=N&failed=1`) when parts failed, polling
-`GET /doc/{id}` while parts are queued, generating or retrying.
-`GET /doc/{id}/audio` joins the ready parts into one download for the whole
-page or one section (`?section=N`).
+section's audio state and polls `GET /doc/{id}` while parts are queued,
+generating or retrying. When parts failed, it shows a Retry button
+(`POST /doc/{id}/prepare?section=N&failed=1`). `GET /doc/{id}/audio` joins
+the ready parts into one download for the whole page or one section
+(`?section=N`).
 
 Why ahead of time: remote speech models answer with the whole clip at once
 and take seconds to tens of seconds per part (Gemini 3.1 Flash TTS through
@@ -81,26 +86,30 @@ waiting on play. From the cache a part answers in about a millisecond.
 
 Speech path: `internal/web/speech.go` decodes the OpenAI-style request and
 synthesizes through the active provider (`internal/provider`, built once at
-startup from `internal/config`), which maps a voice it does not offer to its
-default and calls its backend client: `internal/ttsclient` against an
-OpenAI-style `/v1/audio/speech`, or `internal/gemini` against the Gemini
-API's `generateContent`. Raw PCM answers get a WAV header (`tts.Normalize`).
+startup from `internal/config`). The provider maps a voice it does not offer
+to its default and calls its backend client. The backend client is
+`internal/ttsclient` against an OpenAI-style `/v1/audio/speech`, or
+`internal/gemini` against the Gemini API's `generateContent`. Raw PCM
+answers get a WAV header (`tts.Normalize`).
+
 The clip is stored in the audio cache, so the same request (provider, model,
-resolved voice, speed, text) answers from disk next time; text selections,
-which have no prepared parts, still gain from that on a replay. `cors.go` decides who may fetch, for every route: an `Origin` on
-loopback or under `.this` is reflected back with `Vary: Origin`, and any
-other `Origin`, or a cross-site request without one that is not a top-level
-load of `GET /` (`Sec-Fetch-Site`, `Sec-Fetch-Dest`), gets 403. The served
-wrapper in `server.go` answers every `OPTIONS` preflight itself, 204 with
-the permission for an allowed origin and 403 for any other, so a sibling
-page can post JSON to `/read` or `/doc/{id}/prepare` without those routes
-handling OPTIONS.
-Pages on other local origins such as present briefings keep working while a
-page from the internet cannot start a synthesis. Every outcome feeds one `tts.Health`: a failure is answered
-with a JSON error body naming the reason and emits an `error` event through
+resolved voice, speed, text) answers from disk next time. Text selections,
+which have no prepared parts, still gain from that on a replay.
+
+`cors.go` decides who may fetch, for every route. An `Origin` on loopback or
+under `.this` is reflected back with `Vary: Origin`. Any other `Origin` gets
+403, and so does a cross-site request without one that is not a top-level
+load of `GET /` (`Sec-Fetch-Site`, `Sec-Fetch-Dest`). The served wrapper in
+`server.go` answers every `OPTIONS` preflight itself: 204 with the
+permission for an allowed origin and 403 for any other. That lets a sibling
+page post JSON to `/read` or `/doc/{id}/prepare` without those routes
+handling OPTIONS. Pages on other local origins such as present briefings
+keep working while a page from the internet cannot start a synthesis.
+
+Every outcome feeds one `tts.Health`. A failure is answered with a JSON
+error body naming the reason and emits an `error` event through
 `kit/notify`. `GET /enginez` reports that health, running a test synthesis
-when nothing fresh is recorded; `GET /healthz` proves only that serve is
-up.
+when nothing fresh is recorded. `GET /healthz` proves only that serve is up.
 
 MCP path: `speak_text`/`speak_file` extract plain text from the input,
 split it into sentences (`chunk.SplitSentences`, hand-rolled because Go
