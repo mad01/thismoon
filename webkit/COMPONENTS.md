@@ -128,22 +128,25 @@ section; it hides again when playback ends.
 
 Prepared status: with the page registered, the element renders a bar inside
 itself (`.wk-ra-bar`; `wk-read-aloud` turns visible where the consumer placed
-it): "Audio: N of M parts ready" and what the rest are doing (preparing,
-retrying, not prepared, failed), the failure reason, and the buttons
-"Generate all TTS for page" (`POST /doc/{id}/prepare`, enabled while idle or
-failed parts remain) and "Retry failed (N)" (`?failed=1`, shown when
-something failed). Each section with parts gets a `wk-badge.wk-ra-state`
+it). The bar shows "Audio: N of M parts ready", what the rest are doing
+(preparing, retrying, not prepared, failed), and the failure reason. Its
+buttons are "Generate all TTS for page" (`POST /doc/{id}/prepare`, enabled
+while idle or failed parts remain) and "Retry failed (N)" (`?failed=1`, shown
+when something failed). Each section with parts gets a `wk-badge.wk-ra-state`
 beside its play buttons (audio ready, generating i of n, queued, retrying,
-failed with speak's reason, or not prepared) and a "Retry" button while it
-has failed parts (`?section=N&failed=1`). The status is polled every 2s
-while any part is queued, generating or retrying, and again
-after a prepare call and whenever a session fetches a part; while speak
-doesn't answer, the poll backs off, doubling to once a minute, and the next
-prepare click or fetched part brings the 2s cadence back. A 404 from
-`GET /doc/{id}`, or from a part during playback, means speak restarted: the
-page registers again, stamps anew (keys may differ) and playback resumes from
-the same part; if that registration fails the stamps come off, one toast says
-so, and the page reads live from then on.
+failed with speak's reason, or not prepared). It also gets a "Retry" button
+while it has failed parts (`?section=N&failed=1`).
+
+The status is polled every 2s while any part is queued, generating or
+retrying, and again after a prepare call and whenever a session fetches a
+part. While speak doesn't answer, the poll backs off, doubling to once a
+minute, and the next prepare click or fetched part brings the 2s cadence
+back.
+
+A 404 from `GET /doc/{id}`, or from a part during playback, means speak
+restarted. The page then registers again, stamps anew (keys may differ) and
+playback resumes from the same part. If that registration fails, the stamps
+come off, one toast says so, and the page reads live from then on.
 
 Selection speaker: independent of `targets`, selecting any text on the page
 (outside the header/controls) shows a floating play button at the selection's
