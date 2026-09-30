@@ -1,8 +1,8 @@
 # operating catalog
 
 catalog is a self-hosted systems catalog. It reads service-info.yaml files
-from the repos listed in a registry, builds an in-memory index of Systems and
-Components, and serves a localhost web UI plus a CLI to browse, search, and
+from the repos listed in a registry and builds an in-memory index of Systems
+and Components. It serves a localhost web UI plus a CLI to browse, search, and
 validate them. It never owns the data: entity files stay in their source
 repos, and nothing is cached to disk between runs.
 
@@ -11,7 +11,7 @@ repos, and nothing is cached to disk between runs.
 `catalog web` is a single process serving the UI and JSON API on loopback
 (default {{.BaseURL}}), typically supervised as the `catalog-web` agent under
 t-man. It scans the repos at startup, holds the result in memory, and rescans
-on demand: the header's Refresh button (or POST /api/refresh) swaps in a
+on demand. The header's Refresh button (or POST /api/refresh) swaps in a
 fresh scan while in-flight requests finish against the old one. The CLI
 commands (`list`, `validate`, `config`) never talk to that process: each
 invocation rescans the repos itself and exits. So the worst staleness is one
@@ -36,11 +36,11 @@ to overwrite an existing one.
 
 ## failure modes
 
-Start with `catalog doctor`: it checks that the registry is readable, that
+Start with `catalog doctor`. It checks that the registry is readable, that
 the registry parses and a full scan succeeds (the same load `list` runs), and
-that the web process answers without version skew, one line per check with
-FAIL lines naming the cause. The two web checks (service-reachable,
-version-skew) concern only the web UI: the CLI and `catalog validate` work
+that the web process answers without version skew. It prints one line per
+check, with FAIL lines naming the cause. The two web checks (service-reachable,
+version-skew) concern only the web UI. The CLI and `catalog validate` work
 without a web process, so those FAILs on a machine that never runs
 `catalog web` mean nothing is wrong.
 

@@ -15,7 +15,7 @@ Resolution order, first match wins:
 
 A leading `~` is expanded wherever it comes from: the flag, the environment
 variable, the default, and each `sources[].path` inside the registry.
-Earlier releases expanded only the default, so a `--registry ~/...` passed by
+Earlier releases expanded only the default. So a `--registry ~/...` passed by
 a launchd agent (which never runs a shell) reached `os.ReadFile` as a
 literal `~` path and crash-looped, while the same command worked in a
 terminal. A home directory that cannot be resolved is now an error before

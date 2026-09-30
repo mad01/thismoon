@@ -6,7 +6,7 @@ The entity model, registry, validate flow, and how to work on catalog by hand.
 
 catalog uses two kinds: **System** and **Component**. A System is a logical grouping declared at a repo root. A Component is a buildable or deployable unit (a CLI, MCP server, library, app, or service) that links back to its System via `spec.system`.
 
-Names must be globally unique across all Systems and Components combined — a System and a Component can't share a name. When a repo name and its binary would collide, keep the System as the repo name and give the Component a distinct form: use the binary name if it differs (`kitty-session` → `ks`) or a `-cli` suffix otherwise (`ralph` → `ralph-cli`).
+Names must be globally unique across all Systems and Components combined — a System and a Component can't share a name. When a repo name and its binary would collide, keep the System as the repo name and give the Component a distinct form. Use the binary name if it differs (`kitty-session` → `ks`) or a `-cli` suffix otherwise (`ralph` → `ralph-cli`).
 
 ## service-info.yaml
 

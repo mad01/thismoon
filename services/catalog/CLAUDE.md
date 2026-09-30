@@ -82,7 +82,7 @@ terminal. `catalog web` also reads `CATALOG_PORT` behind `--port`.
 Every `metadata.name` must be unique across **all Systems and Components
 combined**. A System and a Component may not share a name. When a repo and its
 binary would collide (repo `ralph`, binary `ralph`), keep the System as the repo
-name and give the Component a distinct name: the binary name if it differs
+name and give the Component a distinct name. Use the binary name if it differs
 (`kitty-session` → `ks`), otherwise a `-cli` suffix (`ralph` → `ralph-cli`).
 `catalog validate` enforces this; run it before merging to catch a duplicate.
 
@@ -162,11 +162,11 @@ spec:
 
 catalog doesn't own or copy this data: `service-info.yaml` files stay in
 their source repos, and every `list`/`validate`/`web` run (or
-`POST /api/refresh`) rescans them fresh into memory; nothing is cached to disk
-between runs. The one write path is the UI's Add form (`WriteServiceInfo`),
-which refuses to overwrite an existing `service-info.yaml` so an accidental
-add can't clobber hand-written metadata, and is restricted to directories
-inside a registered source root.
+`POST /api/refresh`) rescans them fresh into memory. Nothing is cached to disk
+between runs. The one write path is the UI's Add form (`WriteServiceInfo`).
+It refuses to overwrite an existing `service-info.yaml` so an accidental add
+can't clobber hand-written metadata, and is restricted to directories inside
+a registered source root.
 
 ## Build / install / test
 
@@ -224,9 +224,9 @@ catalog version [-o json]
   registry is a data file, and `catalog list` already prints what it produces.
   `catalog config --help` documents the registry format and `--registry`.
 - `catalog version`: prints the bare version token (the git commit it was built
-  from), the token sibling tools also print so ralph and status can probe any of
-  them for the build they are running; `-o json` prints the full build metadata
-  object.
+  from). It's the token sibling tools also print, so ralph and status can probe
+  any of them for the build they are running. `-o json` prints the full build
+  metadata object.
 
 ## Shared UI: webkit
 
