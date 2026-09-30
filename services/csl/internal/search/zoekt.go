@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/sourcegraph/zoekt"
 	"github.com/sourcegraph/zoekt/index"
-	"github.com/sourcegraph/zoekt/query"
 	zoektsearch "github.com/sourcegraph/zoekt/search"
 
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
@@ -140,17 +140,10 @@ func SearchWith(
 	opts SearchOptions,
 	repoNames map[string]string,
 ) ([]Match, error) {
-	qStr := BuildQueryString(opts)
-	q, err := query.Parse(qStr)
+	q, err := parseQuery(BuildQueryString(opts))
 	if err != nil {
-		return nil, fmt.Errorf(
-			"query parse error: %w\n\nHint: run 'csl query %q' to validate your query",
-			err,
-			opts.Pattern,
-		)
+		return nil, parseFailure(err, opts.Pattern)
 	}
-	q = query.Map(q, query.ExpandFileContent)
-	q = query.Simplify(q)
 
 	limit := opts.Limit
 	if limit <= 0 {
@@ -212,12 +205,10 @@ func CountWith(
 		qStr += " lang:" + opts.Lang
 	}
 
-	q, err := query.Parse(qStr)
+	q, err := parseQuery(qStr)
 	if err != nil {
-		return nil, 0, fmt.Errorf("query parse error: %w", err)
+		return nil, 0, parseFailure(err, opts.Pattern)
 	}
-	q = query.Map(q, query.ExpandFileContent)
-	q = query.Simplify(q)
 
 	result, err := searcher.Search(ctx, q, &zoekt.SearchOptions{})
 	if err != nil {
@@ -252,31 +243,35 @@ func CountWith(
 	return results, total, nil
 }
 
-// ValidateQuery parses a query and returns information about it.
+// ValidateQuery parses a query through the same pipeline a search runs and
+// returns the tree zoekt would search, or why the query cannot run.
 func ValidateQuery(pattern string) QueryInfo {
-	q, err := query.Parse(pattern)
+	q, err := parseQuery(pattern)
 	if err != nil {
-		hint := ""
-		errStr := err.Error()
-		if strings.Contains(errStr, "missing closing") || strings.Contains(errStr, "missing )") {
-			hint = "Escape special regex characters with backslash, e.g. \"func \\(Walk\""
-		} else if strings.Contains(errStr, "invalid") {
-			hint = "Check your query syntax. Use 'csl search --help' for examples."
-		}
-		return QueryInfo{
-			Valid: false,
-			Error: errStr,
-			Hint:  hint,
-		}
+		return invalidQuery(err)
 	}
-
-	q = query.Map(q, query.ExpandFileContent)
-	q = query.Simplify(q)
-
 	return QueryInfo{
 		Valid:  true,
 		Parsed: q.String(),
 	}
+}
+
+// invalidQuery describes a query parseQuery rejected: a refused sym: term
+// with its fix, or zoekt's parse error with a hint when the message is a
+// known one.
+func invalidQuery(err error) QueryInfo {
+	var shape *SymbolShapeError
+	if errors.As(err, &shape) {
+		return QueryInfo{Error: shape.problem(), Hint: shape.Fix}
+	}
+	hint := ""
+	errStr := err.Error()
+	if strings.Contains(errStr, "missing closing") || strings.Contains(errStr, "missing )") {
+		hint = "Escape special regex characters with backslash, e.g. \"func \\(Walk\""
+	} else if strings.Contains(errStr, "invalid") {
+		hint = "Check your query syntax. Use 'csl search --help' for examples."
+	}
+	return QueryInfo{Error: errStr, Hint: hint}
 }
 
 // BuildQueryString combines SearchOptions into the zoekt query string a
