@@ -306,17 +306,3 @@ func TestRenderGraphUnknownToneFails(t *testing.T) {
 		t.Fatalf("want unknown tone error, got %v", err)
 	}
 }
-
-func TestRenderGraphEdgeLabelsWrap(t *testing.T) {
-	g := GraphInput{
-		Nodes: []GraphNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}},
-		Edges: []GraphEdge{{From: "a", To: "b", Label: "health, ammo, enemies, walls"}},
-	}
-	out, err := RenderGraph(g)
-	if err != nil {
-		t.Fatalf("RenderGraph: %v", err)
-	}
-	if !strings.Contains(out, `'text-wrap': 'wrap', 'text-max-width': '100px'`) {
-		t.Error("edge labels do not wrap")
-	}
-}

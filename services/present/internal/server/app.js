@@ -23,106 +23,6 @@
   // engine control.
   var GRAPH_ENGINES = ['dagre', 'elk', 'elk-layered', 'elk-mrtree', 'elk-stress', 'elk-radial', 'elk-force', 'cose'];
 
-  // The widest and tallest edge label on the page's graph, in model pixels,
-  // measured by measureEdgeLabels after the first layout pass (an edge between
-  // two unplaced nodes has no label geometry yet). Neither dagre nor ELK sees
-  // edge labels (the adapters pass node sizes only), so the layered engines
-  // get their rank gap widened here: a label sits at the midpoint of its edge,
-  // in the gap between two ranks, and needs the gap to hold it with this much
-  // clearance on each side. Zero (no labels) keeps the tuned defaults.
-  var edgeLabelSpace = { w: 0, h: 0 };
-  var EDGE_LABEL_CLEARANCE = 12;
-  function rankGap(dir, base) {
-    var need = (dir === 'LR' ? edgeLabelSpace.w : edgeLabelSpace.h) + 2 * EDGE_LABEL_CLEARANCE;
-    return Math.max(base, Math.ceil(need));
-  }
-  function measureEdgeLabels(cy) {
-    var w = 0, h = 0;
-    cy.edges('[label]').forEach(function (e) {
-      var bb = labelBox(e);
-      if (bb.w > w) w = bb.w;
-      if (bb.h > h) h = bb.h;
-    });
-    return { w: isFinite(w) ? w : 0, h: isFinite(h) ? h : 0 };
-  }
-
-  // Cytoscape draws every edge as one curve between its endpoints, so an
-  // edge that spans several ranks cuts through the boxes in between and its
-  // label lands on one of them. After a layout, an edge whose straight line
-  // crosses another node is redrawn as three segments: out of its source to
-  // the side (up or down in LR), along the column past the boxes with the
-  // label on that outer segment, and back in at the target. Each such edge
-  // gets its own lane so two of them do not share a line.
-  var ROUTE_CLEARANCE = 24;
-  var ROUTE_LANE = 16;
-  function segmentHitsBox(p, q, bb) { // Liang-Barsky clip of p→q against bb
-    var t0 = 0, t1 = 1, dx = q.x - p.x, dy = q.y - p.y;
-    function clip(pk, qk) {
-      if (pk === 0) return qk >= 0;
-      var r = qk / pk;
-      if (pk < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
-      else { if (r < t0) return false; if (r < t1) t1 = r; }
-      return true;
-    }
-    return clip(-dx, p.x - bb.x1) && clip(dx, bb.x2 - p.x) && clip(-dy, p.y - bb.y1) && clip(dy, bb.y2 - p.y);
-  }
-  function labelBox(e) {
-    return e.boundingBox({ includeNodes: false, includeEdges: false, includeLabels: true,
-      includeSourceLabels: false, includeTargetLabels: false, includeOverlays: false });
-  }
-  function blockedEdges(cy) {
-    var nodes = cy.nodes();
-    return cy.edges().filter(function (e) {
-      var s = e.source(), t = e.target();
-      return nodes.some(function (n) {
-        return n !== s && n !== t && segmentHitsBox(s.position(), t.position(), n.boundingBox({ includeLabels: false }));
-      });
-    });
-  }
-  function routeAroundNodes(cy, dir) {
-    var gbb = cy.nodes().boundingBox({ includeLabels: false });
-    var lane = 0;
-    cy.edges().removeStyle('curve-style edge-distances segment-weights segment-distances');
-    blockedEdges(cy).forEach(function (e) {
-      var sp = e.source().position(), tp = e.target().position();
-      var sb = e.source().boundingBox({ includeLabels: false }), lb = labelBox(e);
-      // The side with more room, as a unit vector, and how far out to run.
-      var side, out;
-      if (dir === 'LR') {
-        side = { x: 0, y: sp.y <= (gbb.y1 + gbb.y2) / 2 ? -1 : 1 };
-        out = sb.h / 2 + lb.h / 2 + ROUTE_CLEARANCE + lane * ROUTE_LANE;
-      } else {
-        side = { x: sp.x <= (gbb.x1 + gbb.x2) / 2 ? -1 : 1, y: 0 };
-        out = sb.w / 2 + lb.w / 2 + ROUTE_CLEARANCE + lane * ROUTE_LANE;
-      }
-      lane++;
-      // segment-distances are signed along the edge's own perpendicular,
-      // (-dy, dx) for the source→target vector; project the side onto it.
-      var dx = tp.x - sp.x, dy = tp.y - sp.y, len = Math.sqrt(dx * dx + dy * dy) || 1;
-      var d = Math.ceil(out) * ((-dy / len) * side.x + (dx / len) * side.y >= 0 ? 1 : -1);
-      e.style({ 'curve-style': 'segments', 'edge-distances': 'node-position',
-        'segment-weights': [0, 1], 'segment-distances': [d, d] });
-    });
-  }
-  // Runs the engine, then routes the blocked edges once the nodes are placed
-  // (ELK finishes asynchronously, so this waits for layoutstop). The first
-  // pass also measures the edge labels; when that widens the rank gap, or
-  // when some edges are blocked, the engine runs a second time with the new
-  // gap and without those edges. Dagre otherwise threads a chain of dummy
-  // nodes beside the column for each of them, which bends the column the
-  // routed edge is meant to run alongside.
-  function runLayout(cy, engine, dir) {
-    var before = JSON.stringify(edgeLabelSpace);
-    cy.one('layoutstop', function () {
-      edgeLabelSpace = measureEdgeLabels(cy);
-      var blocked = blockedEdges(cy);
-      if (!blocked.length && JSON.stringify(edgeLabelSpace) === before) { routeAroundNodes(cy, dir); return; }
-      cy.one('layoutstop', function () { routeAroundNodes(cy, dir); });
-      cy.elements().not(blocked).layout(presentGraphLayout(engine, dir)).run();
-    });
-    cy.layout(presentGraphLayout(engine, dir)).run();
-  }
-
   function presentGraphLayout(engine, direction) {
     var dir = direction === 'LR' ? 'LR' : 'TB';
     var opts;
@@ -133,11 +33,10 @@
     } else {
       engine = 'dagre';
       // Gaps tuned for the 140x50 node boxes: nodeSep separates siblings
-      // within a rank, rankSep separates ranks (where edges and labels run),
-      // widened when the labels need more (rankGap).
+      // within a rank, rankSep separates ranks (where edges and labels run).
       opts = {
         name: 'dagre', rankDir: dir,
-        nodeSep: dir === 'LR' ? 20 : 25, rankSep: rankGap(dir, dir === 'LR' ? 80 : 60), edgeSep: 10,
+        nodeSep: dir === 'LR' ? 20 : 25, rankSep: dir === 'LR' ? 80 : 60, edgeSep: 10,
         padding: 30, nodeDimensionsIncludeLabels: true
       };
     }
@@ -155,7 +54,7 @@
       'elk.spacing.nodeNode': 25
     };
     if (algorithm === 'layered') {
-      elk['elk.layered.spacing.nodeNodeBetweenLayers'] = rankGap(dir, dir === 'LR' ? 80 : 60);
+      elk['elk.layered.spacing.nodeNodeBetweenLayers'] = dir === 'LR' ? 80 : 60;
       elk['elk.spacing.edgeNode'] = 20;
     }
     if (engine === 'elk') {
@@ -189,9 +88,7 @@
   // Capture the Cytoscape instance the injected graph script creates, apply
   // the reader's engine choice, and make the dagre and elk layout
   // registrations explicit/idempotent (same shim the old template carried
-  // inline). The layout the script passed is held back and run through
-  // runLayout after the instance exists, which measures the edge labels and
-  // routes the edges that would cut through boxes.
+  // inline).
   (function () {
     var orig = window.cytoscape;
     if (!orig) return;
@@ -203,14 +100,12 @@
     var wrapped = function () {
       var opts = arguments[0];
       var isPage = !!(opts && opts.container);
-      var deferred = isPage && !!opts.layout;
-      if (deferred) {
+      if (isPage && opts.layout) {
         baseLayout = opts.layout;
-        opts.layout = { name: 'null' };
+        if (engineOverride) opts.layout = presentGraphLayout(engineOverride, layoutDirection(baseLayout));
       }
       var cy = orig.apply(this, arguments);
       if (isPage) window._cyInstance = cy;
-      if (deferred) runLayout(cy, currentEngine(), layoutDirection(baseLayout));
       return cy;
     };
     for (var k in orig) if (orig.hasOwnProperty(k)) wrapped[k] = orig[k];
@@ -501,7 +396,7 @@
     showEngine();
 
     function runEngine(c, engine) {
-      runLayout(c, engine, layoutDirection(baseLayout));
+      c.layout(presentGraphLayout(engine, layoutDirection(baseLayout))).run();
     }
     // An ELK layout is shaped by the container's aspect ratio, so a resize
     // re-runs it; dagre and cose keep their drawing and just refit.
