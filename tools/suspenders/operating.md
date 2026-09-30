@@ -2,7 +2,7 @@
 
 suspenders is an offline pre-commit gate for git. It scans staged content for
 secrets (content rules with entropy gating, plus filename rules for key and
-token files) and, when the guard is enabled, blocks staged changes that
+token files). When the guard is enabled, it also blocks staged changes that
 reference internal org or repo names from a public repo. It is CLI-only: no
 service, no web page, and no MCP surface. The only network call is a
 best-effort event to the local events service when a commit is blocked.
@@ -15,7 +15,7 @@ thin script that calls `{{.Bin}} hook run pre-commit`. A pre-existing foreign
 hook is backed up as `pre-commit.backup` and chained first. The pipeline per
 commit: external hooks from config, then the guard, then the scan; any failing
 step blocks the commit. Staged content is read from the git index (`git show
-:<path>`), so the scan sees exactly what would be committed, and a staged file
+:<path>`), so the scan sees exactly what would be committed. A staged file
 it cannot read fails the scan instead of being skipped.
 
 `{{.Bin}} scan --staged` runs the same checks outside git; `{{.Bin}} scan
@@ -65,7 +65,7 @@ outdated script.
 
 Config broken or missing: a config file that fails to parse, or a names file
 listed under `guard.include` that is missing or broken, fails every command
-that reads it, including the hook run: a commit is blocked rather than
+that reads it. That includes the hook run: a commit is blocked rather than
 checked against nothing. No config file at all is fine; the defaults apply.
 `--all` reporting `config sets no dirs` means the file lists `dirs: []`, so
 there is nothing to walk.

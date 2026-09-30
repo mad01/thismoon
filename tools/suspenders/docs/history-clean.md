@@ -37,7 +37,7 @@ Before any rewrite, suspenders runs `git bundle create .git/suspenders-backup-<t
 
 ### 4. Confirm the blast radius
 
-Unless you pass `--yes`, the command prints exactly what it is about to do (the refs it will rewrite, the strings it will replace, redacted, and the files it will redact) and waits for a `y`. Pass `--dry-run` instead to run the export and transform with the output thrown away: you get the same counts a real run would produce, and nothing changes.
+Unless you pass `--yes`, the command prints exactly what it is about to do. It lists the refs it will rewrite, the strings it will replace, redacted, and the files it will redact. Then it waits for a `y`. Pass `--dry-run` instead to run the export and transform with the output thrown away: you get the same counts a real run would produce, and nothing changes.
 
 ### 5. Export
 

@@ -110,11 +110,11 @@ One detail decides how you write a pattern: **capture group 1 is the secret.** I
 
    For a quick check without staging, commit the file and run `suspenders scan` (no flag), which scans tracked files via `ScanDir`.
 
-5. Update the docs. Add the rule to the right table in [README → Detection rules](../README.md#detection-rules), and bump the rule count in three places if it changed: the README intro and Features list, and `CLAUDE.md`'s opening line. The counts are stated as prose, so they do not update themselves.
+5. Update the docs. Add the rule to the right table in [README → Detection rules](../README.md#detection-rules). Then bump the rule count in three places if it changed: the README intro and Features list, and `CLAUDE.md`'s opening line. The counts are stated as prose, so they do not update themselves.
 
 ## Tune an existing rule
 
-Same loop, narrower edit. Change the `Pattern`, `Severity`, `MinEntropy`, or `Filter` on the entry in `DefaultRules`, then re-run its cases in `TestDefaultRulesDetection` and `TestEntropyGating`. If you loosen a pattern, add a negative case that pins the thing it must still not match; if you tighten it, add a positive case for the real token it must still catch. The test is the contract — write the case that would have failed before your change.
+Same loop, narrower edit. Change the `Pattern`, `Severity`, `MinEntropy`, or `Filter` on the entry in `DefaultRules`, then re-run its cases in `TestDefaultRulesDetection` and `TestEntropyGating`. If you loosen a pattern, add a negative case that pins the thing it must still not match. If you tighten it, add a positive case for the real token it must still catch. The test is the contract — write the case that would have failed before your change.
 
 ## Debug a false positive
 
@@ -137,7 +137,7 @@ A false positive is a finding on something that is not a secret. Walk it down in
    - A rule that is wrong for this repo but fine elsewhere → add a `rules` ignore in `.suspenders.yaml` (the rule still runs, its findings are dropped here).
    - A rule that should never run anywhere → `scan.exclude_rules` in the global config removes it entirely.
 
-3. If the rule itself is too broad, fix the pattern. Common causes: the capture group is missing so entropy scores the wrong span; `MinEntropy` is too low for a generic assignment rule; the rule needs a `Filter` to veto a known non-secret shape (follow `notKnownHashOrPublicKey`); or it needs an `ExcludeFiles` entry for a file full of high-entropy hashes (lockfiles already on `high-entropy-string`). Pin the fix with a negative test case before you commit.
+3. If the rule itself is too broad, fix the pattern. Common causes: the capture group is missing so entropy scores the wrong span; `MinEntropy` is too low for a generic assignment rule. The rule may also need a `Filter` to veto a known non-secret shape (follow `notKnownHashOrPublicKey`), or an `ExcludeFiles` entry for a file full of high-entropy hashes (lockfiles already on `high-entropy-string`). Pin the fix with a negative test case before you commit.
 
 ## Debug a false negative
 
@@ -145,7 +145,7 @@ A false negative is a real secret the scan missed. The gate order is the checkli
 
 1. Is the file even scanned? `ScanDir` and `ScanStaged` only see git-tracked or staged files. Binary files (a null byte in the first 512 bytes) and files over 1 MB are skipped. A secret in an untracked file will not be caught until it is staged.
 2. Does the regex match at all? Test it directly: `grep -nE 'your-pattern' file`, or add a `wantMatch: true` case and run `go test ./internal/scanner -run TestDefaultRulesDetection`. If the regex misses, the rest is moot.
-3. Did a gate drop it? In `scanContent` order: an `ExcludeFiles` glob removed the rule for this filename; `SkipOverlapping` deferred to another rule that then got filtered; `MinEntropy` rejected the token as too low-entropy; a `Filter` vetoed it; or an allowlist / `.suspenders.yaml` ignore is suppressing it. Add a print or a focused test through `ScanFile` to see which.
+3. Did a gate drop it? In `scanContent` order: an `ExcludeFiles` glob removed the rule for this filename; `SkipOverlapping` deferred to another rule that then got filtered. Later gates: `MinEntropy` rejected the token as too low-entropy; a `Filter` vetoed it; or an allowlist / `.suspenders.yaml` ignore is suppressing it. Add a print or a focused test through `ScanFile` to see which.
 4. Is it a brand-new secret shape? If no rule covers it, that is an "add a detection rule" task, not a bug. See above.
 
 ## Working on the hooks
@@ -170,4 +170,4 @@ make lint               # golangci-lint
 make test-integration   # Docker; run when hook behaviour changed
 ```
 
-`make test` and `make lint` are the floor for any change. Add `make test-integration` when you touched hook generation or install. This repo's own `.suspenders.yaml` suppresses findings from its fixture-bearing files (the tests, `rules.go`, the README) — keep those fixtures real example tokens, do not swap them for dummies, or the rule tests lose their teeth.
+`make test` and `make lint` are the floor for any change. Add `make test-integration` when you touched hook generation or install. This repo's own `.suspenders.yaml` suppresses findings from its fixture-bearing files (the tests, `rules.go`, the README). Keep those fixtures real example tokens, do not swap them for dummies, or the rule tests lose their teeth.
