@@ -58,21 +58,24 @@ idempotent, and never re-checked. There is no un-retract and no removal path.
 ## Storage
 
 The store is an append-only JSONL log under `~/.local/share/kof` (overridable
-with `KOF_WORKDIR`). Every mutation appends one complete record as one line;
-load resolves the newest record per id (greater `updated_at` wins, a tie goes
-to the later line), so history is never rewritten in place. Two files:
-`assertions.jsonl` holds everything except machine-scoped records, and
-`local.jsonl` holds records whose subject starts with `machine:` and never
+with `KOF_WORKDIR`). Every mutation appends one complete record as one line.
+Load resolves the newest record per id (greater `updated_at` wins, a tie goes
+to the later line), so history is never rewritten in place.
+
+Two files: `assertions.jsonl` holds everything except machine-scoped records,
+and `local.jsonl` holds records whose subject starts with `machine:` and never
 leaves the machine. Routing happens at write time and subjects are immutable,
-so a record never moves between files. The serve process polls the files every
-two seconds and reloads the store when another process changed them on disk (a
-git pull of a synced workdir, a manual append); the reload never repairs the
-files and keeps the old data on any parse error, so serve remains the single
-kof writer. A pre-JSONL `assertions.json` array is
-migrated on startup and kept as `assertions.json.migrated`. Each record
-carries the assertion (kind, subject, statement, confidence, provenance,
-status, links) and its pins (repo path, file, line range, content hash, HEAD
-commit, resolved-at).
+so a record never moves between files.
+
+The serve process polls the files every two seconds. It reloads the store
+when another process changed them on disk (a git pull of a synced workdir, a
+manual append). The reload never repairs the files and keeps the old data on
+any parse error, so serve remains the single kof writer.
+
+A pre-JSONL `assertions.json` array is migrated on startup and kept as
+`assertions.json.migrated`. Each record carries the assertion (kind, subject,
+statement, confidence, provenance, status, links) and its pins (repo path,
+file, line range, content hash, HEAD commit, resolved-at).
 
 ## Interfaces
 

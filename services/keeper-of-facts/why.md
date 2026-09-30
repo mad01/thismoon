@@ -24,18 +24,20 @@ the code they describe.
 
 ## Why this shape
 
-Evidence is mandatory: every assertion carries at least one evidence
-pin, a hashed line range in a repo working tree, and kof refuses to store an
-assertion with zero pins because such an assertion could never go stale. The
-server resolves and hashes pins at write time and rejects any it cannot
-ground. The store is an append-only JSONL log: every mutation appends
-one complete record, and load resolves the newest record per id: history is
-never rewritten in place, and machine-scoped subjects are routed to a separate
-local file at write time so they never leave the machine. The two
-failure states are deliberately different: stale is reversible (the pinned
-content changed; it flips back fresh if the content matches again), while
-retract is terminal and requires a counter-evidence note. Checking is
-conservative on purpose — an edit above a pin shifts its lines and flips the
+Evidence is mandatory: every assertion carries at least one evidence pin, a
+hashed line range in a repo working tree. kof refuses to store an assertion
+with zero pins because such an assertion could never go stale. The server
+resolves and hashes pins at write time and rejects any it cannot ground.
+
+The store is an append-only JSONL log: every mutation appends one complete
+record, and load resolves the newest record per id. History is never
+rewritten in place. Machine-scoped subjects are routed to a separate local
+file at write time so they never leave the machine.
+
+The two failure states are deliberately different. Stale is reversible (the
+pinned content changed; it flips back fresh if the content matches again),
+while retract is terminal and requires a counter-evidence note. Checking is
+conservative on purpose. An edit above a pin shifts its lines and flips the
 assertion stale even though the code only moved, because stale means
 "re-verify", not "wrong".
 
