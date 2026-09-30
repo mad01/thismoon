@@ -9,10 +9,9 @@ through; `speak mcp` reads on the speakers for agents.
 Documents are read on present. A present page registers its text with speak
 on load; speak synthesizes the parts into a disk cache when the page asks
 (Generate all TTS for page) or plays them, section by section, retrying a
-part the provider fails on, and a replay starts from ready audio; once every
-part of a section is ready, that section can be downloaded as one audio
-file. The same service handles `/v1/audio/speech` so other local
-tools can request speech without touching the provider directly. speak's own
+part the provider fails on, and a replay starts from ready audio. The same
+service handles `/v1/audio/speech` so other local tools can request speech
+without touching the provider directly. speak's own
 page is a landing page: the engine state and the routes.
 
 ## Providers

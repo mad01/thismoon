@@ -266,15 +266,15 @@ script beyond the engine fetch, so serving it never costs a synthesis.
 
 ### The reading UI lives in webkit and present
 
-The audio badges, Retry, Generate all TTS for page and the section download
-that used to be speak's page are webkit's `<wk-read-aloud prepare>` (prepared
-mode, see `webkit/COMPONENTS.md`), mounted by present. speak's part of that
-contract is the document API above: the component registers through `POST
-/read`, stamps the keys, polls `GET /doc/{id}` every 2s while parts are
-queued, generating or retrying, re-queues through `POST /doc/{id}/prepare`
-(`?section=N`, `?failed=1`), plays from `GET /audio/{key}` and downloads a
-section through `GET /doc/{id}/audio?section=N`. The whole-document form of
-that route, without `?section`, stays served but no button calls it.
+The audio badges, Retry and Generate all TTS for page that used to be
+speak's page are webkit's `<wk-read-aloud prepare>` (prepared mode, see
+`webkit/COMPONENTS.md`), mounted by present. speak's part of that contract
+is the document API above: the component registers through `POST /read`,
+stamps the keys, polls `GET /doc/{id}` every 2s while parts are queued,
+generating or retrying, re-queues through `POST /doc/{id}/prepare`
+(`?section=N`, `?failed=1`) and plays from `GET /audio/{key}`.
+`GET /doc/{id}/audio`, whole document or `?section=N`, stays served but no
+button calls it.
 
 ### Version check
 
