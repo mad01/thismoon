@@ -40,12 +40,12 @@ renders the managed block and splices it between its two markers in
 via temp file plus atomic rename. The same routes build the proxy's route map.
 
 A request on `:80` enters `internal/proxy.ServeHTTP`: `normalizeHost` strips
-case, trailing dot, and port; a blocklisted host is answered directly with the
+case, trailing dot, and port. A blocklisted host is answered directly with the
 embedded block page from `internal/blockpage` (one game per visit, plus
-optional plugin games read per request from `games_dir`); d-man answers
+optional plugin games read per request from `games_dir`). d-man answers
 `/__this/sites.json` itself, live-filtered by probing each port-backed backend
 (30 s cache, shared probe round) and reflecting only a loopback or `.this`
-`Origin` back as `Access-Control-Allow-Origin`; everything else goes through the
+`Origin` back as `Access-Control-Allow-Origin`. Everything else goes through the
 `ReverseProxy` `Rewrite` to the backend resolved from the `Host` header (502
 on miss), with `ModifyResponse` rewriting backend self-redirects back to the
 `.this` hostname. The `:443` listener shares the same handler and mints a

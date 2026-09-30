@@ -19,7 +19,7 @@ Everything else about the order is unchanged.
 
 With none of those present, the per-user path is reported as missing and
 d-man runs on built-in defaults: no routes, no block list, suffix `this`. A
-leading `~` in any resolved path is expanded before the file is opened; a
+leading `~` in any resolved path is expanded before the file is opened. A
 home directory that cannot be resolved at all is an error rather than a path
 relative to the working directory, and the `--config` default falls back to
 `/etc/d-man/routes.toml`.
@@ -107,7 +107,7 @@ configured host. Pages behind the front door fetch it same-origin and need
 no CORS header at all. For the localhost-port case (a page opened at
 `http://127.0.0.1:<port>` rather than through `<name>.this`), d-man reflects
 the request `Origin` in `Access-Control-Allow-Origin` alongside
-`Vary: Origin`, but only when that origin is an `http`/`https` URL whose
+`Vary: Origin`. It does so only when that origin is an `http`/`https` URL whose
 host is loopback (`localhost`, `127.0.0.0/8`, `::1`, on any port) or ends in
 `.this`. Any other origin gets no CORS headers, so a page from the internet
 cannot read the list of services running on this machine.
