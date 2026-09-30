@@ -5,13 +5,14 @@
 An agent session executes tool calls faster than a human reviews them, and
 the permission system judges the literal command, not its effect. `bash
 cleanup.sh` looks harmless even when the script runs a deny-listed command; a
-`git push origin main` on a guarded machine goes straight through; a
+`git push origin main` on a guarded machine goes straight through. A
 Write can drop an internal org name into a public repo long before git sees
 it. The concrete trigger is recorded in this component's CLAUDE.md: a July
 2026 session retrospective in which a session pushed straight to master and
-tried to self-merge, and internal names reached `git commit` twice before the
-pre-commit hook caught them. A git hook fires at the last possible moment;
-by then the mistake is already made and only barely contained.
+tried to self-merge. In the same retrospective, internal names reached
+`git commit` twice before the pre-commit hook caught them. A git hook fires
+at the last possible moment; by then the mistake is already made and only
+barely contained.
 
 ## Why its own tool
 
@@ -54,7 +55,7 @@ exclude paths live in the consuming repo's companion recipe (docs/adr/0006).
 
 belt is a guardrail against habit, not an adversary-proof sandbox. The
 command parser is token-based rather than a full shell parser, so quoting
-tricks, subshells, and reordered flags slip through by design; gaps get
+tricks, subshells, and reordered flags slip through by design. Gaps get
 patched as `extra_patterns` instead of growing a parser. It does not replace
 the permission system or suspenders — it front-runs them, and the git-side
 checks still stand behind it. It registers no hooks itself and enables no

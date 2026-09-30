@@ -24,7 +24,7 @@ over the variable, and a leading `~` is expanded. A relocated file is read as
 YAML with no legacy fallback.
 
 A legacy `~/.config/belt/config.toml` beside the default YAML file is read
-only when the YAML file does not exist at all; if the YAML file exists but
+only when the YAML file does not exist at all. If the YAML file exists but
 fails to parse, belt does not fall back to the TOML file.
 
 **Absent and invalid are different answers.** No config file means the
@@ -32,8 +32,8 @@ built-in defaults: every guard and hint enabled, no rules configured. A
 config file that is present but fails to parse or validate is an error, and
 every `belt hook` invocation then denies with the reason
 `belt[config]: belt cannot read its config …` naming the file. Belt is a
-guard: it cannot tell "no rules configured" from "the rules did not load",
-and treating the second as the first is how one typo silently disarms
+guard: it cannot tell "no rules configured" from "the rules did not load".
+Treating the second as the first is how one typo silently disarms
 `write-internal-names` and every commit rule at once. The way out is to fix
 the file — or move it aside, which is the explicit way to ask for the
 defaults. `belt doctor` and `belt config` keep working in that state and
@@ -49,13 +49,13 @@ nothing:
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list` and `publish-internal-names`, the two that read a
   toggle mode. Use `enabled: false` to switch a different guard off;
-- any list key on a built-in id that does not read it — each id declares
+- any list key on a built-in id that does not read it. Each id declares
   the toggle fields it reads (the `GuardFields`/`HintFields` tables in the
   config package), and the error names the fields that do work there.
   Guards exempt repos with `allow_repos`, hints opt them out with
   `exclude_repos`, so each key on the other kind is always rejected. Ids
   the binary does not know (custom guards, or a config targeting a newer
-  belt) stay lax on purpose: rejecting unknown keys would turn ordinary
+  belt) stay lax on purpose. Rejecting unknown keys would turn ordinary
   config/binary rollout skew into a machine-wide deny.
 
 Overrides stay in `~/.config/belt/overrides/` (or the `XDG_CONFIG_HOME`
@@ -65,17 +65,17 @@ that directory are ignored rather than read as malformed overrides.
 
 The belt config is standalone: belt never reads another tool's config file,
 and there is no machine-profile concept in it (docs/adr/0010 records the
-decision). The provisioning layer renders one config per machine class, so
+decision). The provisioning layer renders one config per machine class. So
 a guard or rule that should exist only on some machines is simply absent
-(or disabled) in the other classes' files — `git-push-main`, for example,
+(or disabled) in the other classes' files. `git-push-main`, for example,
 ships enabled and denies every push to main until a machine's rendered
 config disables it or allowlists a repo.
 
 Exactly one non-belt surface is read, visible in `belt doctor`: the Claude
 Code settings. The Bash deny patterns behind `script-deny-list` come from
 the `permissions.deny` entries of `~/.claude/settings.json` and
-`~/.claude/settings.local.json` on every invocation — read live, never
-cached and never copied into the belt config, so the guard and the Claude
+`~/.claude/settings.local.json` on every invocation. They are read live,
+never cached and never copied into the belt config, so the guard and the Claude
 Code permission system can never drift apart. This read has its own switch,
 `claude_settings.enabled` (see Keys); `belt config` shows the patterns as
 `claude_deny` in its output, and `belt config --help` prints the full
@@ -84,7 +84,7 @@ annotated key reference reproduced in the Example section below.
 `internal_names` has no fallback: an absent or empty section means an empty
 name set, and `write-internal-names` then has nothing to match (`belt
 doctor` calls this out). The section is deliberately shape-compatible with
-the `guard:` section of the suspenders config, and since docs/adr/0016 the
+the `guard:` section of the suspenders config. Since docs/adr/0016 the
 three name lists can also live in one shared names file that both tools
 list under their own `include` key. That file is where the two tools' name
 configs stay in step; neither reads the other's config.
@@ -93,10 +93,10 @@ Run `belt config` to see which files loaded (or failed to) and every setting
 belt is actually running with, after every default and fallback is applied.
 Run `belt doctor` to see the state those settings produce: enabled guards and
 hints, active overrides, and the resolved blocked-name list. The report ends
-with a warnings section and exits 1 when it is not empty: a broken config or
-include, a script guard with no deny patterns, an internal-name guard with no
-names, or a toggle nothing answers to. A machine with no config at all exits
-1 for the middle two by design.
+with a warnings section and exits 1 when it is not empty. It flags a broken
+config or include, a script guard with no deny patterns, an internal-name
+guard with no names, or a toggle nothing answers to. A machine with no config
+at all exits 1 for the middle two by design.
 
 ## Keys
 
@@ -109,7 +109,7 @@ trailing `/*` org wildcard. Exactly two checks read it — the two whose
 subject is that workflow: `git-push-main` (the push is allowed there) and
 the `commit-policy` hint (the branch + PR advice is silenced there). No
 other check consults it, so editing this list can never disarm an
-unrelated guard; a repo that needs an exemption from anything else uses
+unrelated guard. A repo that needs an exemption from anything else uses
 that check's own `allow_repos`/`exclude_repos` (docs/adr/0013 records the
 reversibility criterion behind this).
 
@@ -145,7 +145,7 @@ means an empty name set (see Where config lives).
   `allowlist`, and `allow_phrases` and nothing else; any other key is an
   error naming the file. The three lists are appended to the section's own.
   A listed file that is missing or fails to parse is a config error with the
-  same consequence as a broken `config.yaml`: every `belt hook` call denies
+  same consequence as a broken `config.yaml`. Every `belt hook` call denies
   with `belt[config]:` naming the include file until it is fixed or the
   entry is removed. `belt doctor` prints one line per include with its state
   (loaded with counts, MISSING, or BROKEN) and `belt config` lists each in
@@ -163,8 +163,8 @@ means an empty name set (see Where config lives).
   deduplicated, and drops anything under three characters.
 - `internal_names.allow_phrases` (list of string, default: empty): exact
   phrases (case-insensitive) neutralized in the checked content before name
-  matching. Use it when a sanctioned compound contains a blocked name — a
-  private companion repo's own name, say — so writing the compound passes
+  matching. Use it when a sanctioned compound contains a blocked name, a
+  private companion repo's own name, say. So writing the compound passes
   while the bare name anywhere else in the same content still denies.
   Unlike `allowlist`, nothing leaves the blocked set.
 
@@ -223,9 +223,9 @@ wildcard).
   segment (no `/`, no leading dot). Several rules may share one name; the
   rule field and the CLI argument connect by exact string match, and a set
   name no rule references does nothing, silently. A hard denial names its
-  override in the deny reason (the safe place to copy it from), a
+  override in the deny reason (the safe place to copy it from). A
   suppressed block leaves a warn event on the events timeline, and the
-  override expires on its own — `belt override extend <name>` pushes it
+  override expires on its own. `belt override extend <name>` pushes it
   forward when the exception outlives the window.
 
 ### custom_guards
@@ -293,8 +293,8 @@ entries match the same way as `git_identity[].repos` and
     empty): patterns denied inside scripts beyond the live Claude-settings
     deny list, e.g. `rm -rf` (the settings file only lists bare `rm` under
     "ask"). An entry starting `re:` compiles the rest as a case-insensitive
-    regex — the escape hatch for flag reordering and argument wildcards the
-    literal form cannot express; anchor it yourself when word boundaries
+    regex, the escape hatch for flag reordering and argument wildcards the
+    literal form cannot express. Anchor it yourself when word boundaries
     matter.
   - `guards.script-deny-list.exclude_paths` (list of string, default:
     empty): script locations to skip. A `~/`- or `/`-prefixed entry matches
@@ -315,13 +315,13 @@ entries match the same way as `git_identity[].repos` and
     toggle for both of the guard's events (`bash` and `external-text`).
   - `guards.publish-internal-names.mode` (string, default `hard`): `soft`
     downgrades every denial to a warn event on the events service and lets
-    the call proceed, the rollout setting while the derived name set is
-    being tuned against real PR text and branch names.
+    the call proceed. It is the rollout setting while the derived name set
+    is being tuned against real PR text and branch names.
   - `guards.publish-internal-names.allow_repos` (list of string, default:
     empty): canonical `host/owner/repo` entries (or a trailing `/*` org
     wildcard) carved out of the guard even though `public_repos` (or the
-    legacy host rule) marks them public-bound: matched against the push
-    remote, the gh `-R` target, the repo a `gh api` endpoint or `gh repo
+    legacy host rule) marks them public-bound. They are matched against the
+    push remote, the gh `-R` target, the repo a `gh api` endpoint or `gh repo
     create` argument names, the cwd origin, and the MCP call's owner/repo.
     Needed only for a private repo inside a listed org, or under the legacy
     rule; a repo that is simply not on `public_repos` needs nothing. Per
@@ -343,12 +343,11 @@ entries match the same way as `git_identity[].repos` and
 A map keyed by hint id. All eight hints default to enabled when the file or
 their entry is missing. The repo-aware hints (`commit-policy`,
 `lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`) also read
-`exclude_repos`;
-the rest take only `enabled`, and any other key on a known id is a
-validation error (guards exempt repos with `allow_repos`, hints opt them
-out with `exclude_repos` — each key on the wrong kind is rejected).
+`exclude_repos`. The rest take only `enabled`. Any other key on a known id
+is a validation error (guards exempt repos with `allow_repos`, hints opt
+them out with `exclude_repos`, so each key on the wrong kind is rejected).
 Exclusion matches the canonical `host/owner/repo` identity resolved from
-the repo's origin remote everywhere a working tree is reachable; only
+the repo's origin remote everywhere a working tree is reachable. Only
 `kof-assertions`, which sees index-side results with no path, matches the
 pattern tail (host dropped, case-insensitive).
 
@@ -370,14 +369,14 @@ pattern tail (host dropped, case-insensitive).
     entry.
   - Repo-local overlay: a `.belt.yaml` at the commit repo's root can carry
     `hints.commit-policy` with `exclude` (bool, overriding the machine
-    lists in either direction), `protected_branches` (replacing the default
-    `main`/`master` set; exact names or trailing-`*` prefixes — note a
-    replacement set that matches nothing also silences the hint, so
-    `exclude: false` is an opt-in only for the branches the set names), and
-    `message` (one line appended to the advice). The overlay is hints-only
-    and can never deny — a broken file degrades to one line of advisory
-    text, unknown ids and keys are ignored (docs/adr/0012). It is not part
-    of this machine config file.
+    lists in either direction). It can also carry `protected_branches`
+    (replacing the default `main`/`master` set; exact names or trailing-`*`
+    prefixes). Note a replacement set that matches nothing also silences
+    the hint, so `exclude: false` is an opt-in only for the branches the
+    set names. `message` is one line appended to the advice. The overlay is
+    hints-only and can never deny — a broken file degrades to one line of
+    advisory text, unknown ids and keys are ignored (docs/adr/0012). It is
+    not part of this machine config file.
 - **lint-policy**
   - `hints.lint-policy.enabled` (bool, default `true`): PostToolUse (bash),
     relays the commit repo's declared lint/format policy after a `git
@@ -387,7 +386,7 @@ pattern tail (host dropped, case-insensitive).
   - `hints.lint-policy.exclude_repos` (list of string, default: empty):
     repos opted out of this hint.
   - Repo-local overlay: the hint speaks only for repos whose root
-    `.belt.yaml` carries `hints.lint-policy.message` — that message is the
+    `.belt.yaml` carries `hints.lint-policy.message`. That message is the
     whole advice (the repo names its own fmt/lint commands; belt ships no
     language table and executes nothing). `exclude` opts the repo out or
     back in over the machine list (docs/adr/0012).
@@ -527,9 +526,9 @@ hints:
 Activating the `vacation` override above so the `commit_guards` rule stops
 applying. An override is timed: 10 minutes by default, sized with `--for`,
 extendable, and self-expiring. The switch is one file under
-`~/.config/belt/overrides/` carrying its RFC 3339 expiry (an empty file
-from an older belt counts as untimed and stays active until cleared —
-re-set it with `--for` to make it expire).
+`~/.config/belt/overrides/` carrying its RFC 3339 expiry. An empty file
+from an older belt counts as untimed and stays active until cleared.
+Re-set it with `--for` to make it expire.
 
 ```bash
 belt override set vacation --for 2h --reason "half-day off"  # active for two hours
