@@ -8,9 +8,9 @@ variables, resolved once at process start by `present serve` and
 
 There is no config file to locate or parse. `present serve` and
 `present mcp` each resolve `--workdir`/`PRESENT_WORKDIR` and
-`--port`/`PRESENT_PORT` on their own; because they must agree to work
-together (the MCP tools write pages into the workdir, and the URLs they
-return point at the port `serve` listens on), a divergence between the two
+`--port`/`PRESENT_PORT` on their own. They must agree to work together
+(the MCP tools write pages into the workdir, and the URLs they return
+point at the port `serve` listens on). So a divergence between the two
 processes is a configuration error to check for, not a bug. Both processes
 log their resolved `workdir=… port=… base-url=…` to stderr at startup.
 
@@ -59,14 +59,14 @@ These belong to `present serve` alone:
 - `--shared` (bool, default `false`; env `PRESENT_SHARED`): run as a shared
   instance: no index or listing, pages by id only, an author key on every
   write, and the MCP tools over HTTP at `/mcp`. `--base-url` then acts as a
-  display override for the URLs writes return; left empty, each URL is
+  display override for the URLs writes return. Left empty, each URL is
   derived from the request's `X-Forwarded-Proto` and `X-Forwarded-Host`
   headers, or from its `Host` when nothing in front forwarded them.
 - `--store` (string, default `fs`; env `PRESENT_STORE`): where pages live.
   `fs` is the workdir. `k8s` keeps each page as a `Page` custom resource
   (`present.thismoon.mad01.dev/v1alpha1`) in `--namespace`, reached through
   the in-cluster credentials when running in a pod and the default
-  kubeconfig otherwise; it is the store a shared instance with several
+  kubeconfig otherwise. It is the store a shared instance with several
   replicas uses and is refused without `--shared`.
 - `--namespace` (string; env `PRESENT_NAMESPACE`): namespace the `k8s`
   store keeps pages in. Unset, it is the pod's own namespace, else the
@@ -87,13 +87,13 @@ These belong to `present serve` alone:
 
 The store moved out of `~/.config` — pages are state, not configuration —
 but **existing pages are never migrated**. The resolution is deliberately
-sticky: a machine that has published pages keeps reading them where they
+sticky. A machine that has published pages keeps reading them where they
 are, so upgrading never orphans a page or breaks the URLs handed out for it.
 
 What makes a machine count as "has published pages" is a `pages/` directory
 inside `~/.config/present`, not the directory itself. Provisioning puts the
 render template and assets there on every machine, so the directory alone
-says nothing about whether anything was ever published — a machine with the
+says nothing about whether anything was ever published. A machine with the
 template but no `pages/` lands in the XDG state directory like any fresh
 install.
 
@@ -126,7 +126,7 @@ there is no automatic migration to undo.
   `time.ParseDuration` syntax (`10m`, `1h30m`). An unparseable value warns
   once on stderr and the default is used instead.
 - `PRESENT_SPEAK_URL`: default for `--speak-url`. The one variable here
-  where an empty value counts as set: `PRESENT_SPEAK_URL=` turns read-aloud
+  where an empty value counts as set. `PRESENT_SPEAK_URL=` turns read-aloud
   off rather than falling back to `http://speak.this`, which is how the
   Kubernetes manifest disables it without touching the container args.
 
@@ -182,8 +182,8 @@ present share <id>                                # the same push from a shell
 
 Both variables have to reach every process that shares: `present serve` for
 the Share button, `present mcp` for `present_share`, and the shell that runs
-`present share`. On a ralph-provisioned machine one place covers all three:
-the recipe's serve launcher and MCP wrapper read exactly these two exports
+`present share`. On a ralph-provisioned machine one place covers all three.
+The recipe's serve launcher and MCP wrapper read exactly these two exports
 from the ralph-managed secrets file, and the login shell sources it. A
 shared instance never sets them; it is where pages land, not where they
 come from.
