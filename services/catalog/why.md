@@ -4,7 +4,7 @@
 
 A single developer machine accumulates repos and tools faster than anyone can
 remember them. What exists, who owns it, which repo a component lives in,
-whether it is production or winding down: none of that has a home once the
+whether it is production or winding down. None of that has a home once the
 count passes a handful of repos. The answers exist, but only as folklore, and
 folklore drifts. catalog gives that inventory one address: `service-info.yaml`
 files describing Systems and Components live in the repos themselves, and
@@ -14,7 +14,7 @@ catalog indexes them into a browsable, searchable localhost UI and CLI.
 
 The data is spread across many repos, so no single repo's tooling can own the
 index. The obvious off-the-shelf answer, Backstage, is a hosted platform with
-its own backend, database, and plugin system; running it to catalog one
+its own backend, database, and plugin system. Running it to catalog one
 machine's repos is out of proportion to the problem. catalog borrows Backstage's entity
 shape (`kind`, `metadata`, `spec`) so the files read familiarly, and stops
 there. It also needs two distinct surfaces that no existing component
@@ -23,7 +23,7 @@ and pre-merge checks can call against specific paths.
 
 ## Why this shape
 
-The load-bearing decision is that catalog never owns the data: entity files
+The load-bearing decision is that catalog never owns the data. Entity files
 stay in their source repos, and every `list`/`validate`/`web` run rescans
 them fresh into memory, with nothing cached to disk. The repos are the source
 of truth, so the catalog cannot drift from them; the worst staleness is one
@@ -40,6 +40,6 @@ dependency graph; there is no frontend build toolchain.
 
 catalog is not Backstage: no plugins, no scaffolding templates, no CI/CD or
 deployment views, no multi-user anything. It does not track runtime state
-(that is status's job) and it does not copy or migrate entity files; the one
+(that is status's job) and it does not copy or migrate entity files. The one
 write path is the Add form, which refuses to overwrite an existing
 `service-info.yaml`. Recipes and install descriptors are not entities.

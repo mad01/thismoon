@@ -12,7 +12,7 @@ No `profiles` gate: public recipes here never carry one (docs/adr/0006,
 2026-09-08 amendment). Which machine classes run the catalog is decided in
 the consuming layers, keyed on the namespaced recipe name
 `[recipes_config.overrides."thismoon/catalog"]` (quoted; remote recipes get
-`<source>/<name>` identities): the base config leaves it on, and a
+`<source>/<name>` identities). The base config leaves it on, and a
 profile-gated role source withholds it for its machines with the same table
 in its `overrides.toml`.
 

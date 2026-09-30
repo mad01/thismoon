@@ -7,7 +7,7 @@ runs as the `catalog-web` launchd agent under t-man, listens on 127.0.0.1:7575
 (loopback pinned; the UI is unauthenticated), and is reached as
 `http://catalog.this/` when d-man routes the hostname. The service's boundary
 is narrow: it reads `service-info.yaml` files from the repos listed in a
-registry, holds the resulting entity index in memory, and writes exactly one
+registry and holds the resulting entity index in memory. It writes exactly one
 thing back to disk, a new `service-info.yaml` via the Add form.
 
 ## Structure
@@ -51,7 +51,7 @@ catalog in under the write lock while in-flight requests finish against the
 old one. CLI runs need no refresh; `list` and `validate` scan per invocation.
 
 The write path is `POST /api/entities` (the Add form): the handler rejects a
-target directory outside every registered source root with 403, then
+target directory outside every registered source root with 403. Then
 `WriteServiceInfo` writes the file and refuses to overwrite an existing one.
 
 ## Storage
@@ -60,7 +60,8 @@ catalog persists no state of its own; the index is rebuilt in memory on every
 run or refresh. On disk it touches two things: the registry it reads
 (`~/.config/catalog/registry.yaml` by default, a YAML `sources` list of repo
 paths with `~` expanded at load), and the `service-info.yaml` files inside
-those repos, read on every scan and written only by the Add form.
+those repos. Those files are read on every scan and written only by the Add
+form.
 
 ## Interfaces
 

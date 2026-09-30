@@ -1,16 +1,16 @@
 # catalog
 
 A minimal, self-hosted take on the Backstage software catalog for the repos and
-tools in this fleet. catalog reads `service-info.yaml` files from your repos,
-builds an in-memory index of **Systems** and **Components**, and serves a
+tools in this fleet. catalog reads `service-info.yaml` files from your repos
+and builds an in-memory index of **Systems** and **Components**. It serves a
 localhost web UI (plus a CLI) to browse and search them by name or owner. It
 borrows Backstage's entity shape (`kind`, `metadata`, `spec`) so the files read
 familiarly. It's not Backstage.
 
 ## How it works
 
-catalog walks the repos listed in your registry, reads each
-`service-info.yaml`, and rebuilds an in-memory index of Systems and Components
+catalog walks the repos listed in your registry and reads each
+`service-info.yaml`. It rebuilds an in-memory index of Systems and Components
 on every `list`/`validate`/`web` run (or Refresh in the UI /
 `POST /api/refresh`). Nothing is cached to disk between runs. See
 [`CLAUDE.md`](CLAUDE.md) for the entity model and the full sync workflow.
