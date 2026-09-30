@@ -35,10 +35,10 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
 - `page-width` — number, sets `--page-width` (default 1080).
 - `fixation-targets` — selector override.
 - `help` — a `?` control that opens a feature-guide modal (dismiss on X, Esc, or
-  a click outside). It documents the controls this header renders, adds a
-  read-aloud/speed section when `speed` is present, and appends the innerHTML of
-  any `<template data-wk-help>` in the page so a consumer can add its own
-  sections (e.g. speak's landing page).
+  a click outside). It documents the controls this header renders and adds a
+  read-aloud/speed section when `speed` is present. It also appends the
+  innerHTML of any `<template data-wk-help>` in the page so a consumer can add
+  its own sections (e.g. speak's landing page).
 
 Light-DOM children it relocates into the bar:
 - `<a data-nav [class=active]>…</a>` → nav links area.
@@ -80,7 +80,7 @@ on hosts without the speak service.
 Playback: a session plays a list of parts, one speech request each, keeping
 two parts in flight ahead of the one playing. While the playing part's clip is
 still being fetched, the play button carries `.wk-ra-wait` (a slow pulse; a
-still dim under reduced motion), so a long wait reads as work, not a hang.
+still dim under reduced motion). So a long wait reads as work, not a hang.
 One session at a time: starting another section stops the current one; the
 section button toggles pause/resume. While a section plays, a restart button
 appears next to its play/pause control and rewinds to the start of the
@@ -89,18 +89,18 @@ section; it hides again when playback ends.
 - **Uncached mode** (present pages, any section without `data-ra-chunk`):
   section text is extracted skipping `pre/table/svg/button/wk-badge`
   subtrees, split into sentences (`Intl.Segmenter`), and grouped into parts
-  that ramp up: one sentence first, so the first sound comes after one short
-  request, then up to 250 characters, then up to 600 (`LIVE_RAMP` in
+  that ramp up. One sentence goes first, so the first sound comes after one
+  short request, then up to 250 characters, then up to 600 (`LIVE_RAMP` in
   `src/sentences.ts`, which mirrors speak's `internal/chunk`; change both
   together). A sentence without terminal punctuation (a heading, a list item)
   gets a period in the request so it doesn't run into the next. Each part is
   a `POST /v1/audio/speech` with the speed in the body. The playing part's
   sentences are wrapped in `.wk-ra-sentence.wk-ra-active` (soft
   `--ra-highlight` background) and kept in view.
-- **Cached mode**: a section whose blocks carry
+- **Cached mode**: applies to a section whose blocks carry
   `data-ra-chunk="<key> [<key> ...]"` (the keys of the pre-synthesized parts
-  that read the block, as prepared mode stamps them) plays the keys in the
-  section's own `data-ra-parts` list (play order, repeats kept), or the
+  that read the block, as prepared mode stamps them). Such a section plays the
+  keys in its own `data-ra-parts` list (play order, repeats kept), or the
   blocks' keys in document order, each once, when that is absent. Each is
   fetched with `GET {endpoint}/audio/{key}`. Every block whose list holds the
   playing key gets `[data-ra-chunk].wk-ra-active`; no sentence spans. Cached
@@ -119,7 +119,7 @@ section; it hides again when playback ends.
   text is dropped. The request is
   `POST {endpoint}/read` with `{name, sections: [{blocks: [text, ...]},
   ...]}`; speak answers, per section, the keys that read each block and the
-  section's play order, and the element stamps `data-ra-chunk` and
+  section's play order. The element stamps `data-ra-chunk` and
   `data-ra-parts` itself, so cached mode takes over: `GET /audio/{key}`
   synthesizes a part on demand, and registration alone starts nothing. When
   registration fails (unreachable, non-2xx, an answer that doesn't mirror
@@ -150,16 +150,16 @@ come off, one toast says so, and the page reads live from then on.
 
 Selection speaker: independent of `targets`, selecting any text on the page
 (outside the header/controls) shows a floating play button at the selection's
-edge that reads just the selected text, in parts like uncached mode — same
+edge. It reads just the selected text, in parts like uncached mode, same
 pause/resume toggle, no highlight spans (the selection itself is the visual).
 Esc clears the selection, the float button, and any selection playback. One
 element on the page enables this even with no `targets` attribute.
 
 Failures: a clip that cannot be fetched or played ends the session and says
 why, never silently. The button turns red (`.wk-ra-error`, reason in its
-title) until the next click, a `<wk-toast variant="err">` names the reason
-(the element adds a `<wk-toast-host>` when the page has none), and the
-element dispatches `wk-read-aloud-error` on `document` with `{detail:
+title) until the next click, and a `<wk-toast variant="err">` names the reason
+(the element adds a `<wk-toast-host>` when the page has none). The element
+also dispatches `wk-read-aloud-error` on `document` with `{detail:
 {reason}}` so the page can react. The reason is the backend's
 `{"error": {"message"}}` body when it sends one (speak does), else the status
 code; an unreachable endpoint, empty audio, and a broken-off stream each get
@@ -169,13 +169,13 @@ Fixation: the two work together, in any order. Fixation wraps each text node
 that holds a word in `span.wk-fixation-run` with a `<b>` per word start, and
 takes those spans off again on toggle-off; nothing else under a target moves.
 So the play buttons, the badge and the text buttons injected into a section
-that is also a fixation target (present's summary) keep their listeners, the
+that is also a fixation target (present's summary) keep their listeners. The
 `data-ra-chunk`/`data-ra-parts` stamps and the `.wk-ra-active` highlight
 stay, and a playing session, live or cached, carries on through the toggle.
 Fixation's walk skips `button`, `select`, `textarea`, `wk-badge`, `svg`,
 `code`, `b` and `strong` subtrees, so the controls' labels and the badge are
 never half-bolded. A live session is planned on plain text: read-aloud takes
-fixation's runs off the section before it wraps the sentences, and fixation's
+fixation's runs off the section before it wraps the sentences. Fixation's
 observer bolds the text inside the whole-sentence spans again before the
 next paint, so a sentence span never cuts through a word.
 
@@ -264,7 +264,7 @@ section.
   (headings, paragraphs, lists, tables, blockquotes, links, images, inline and
   fenced code). It is a **class**, not a custom element — put it on any block
   wrapping server-rendered HTML. Uses the palette vars for hierarchy and line
-  spacing. Fenced code blocks are decorated client-side: on DOM ready,
+  spacing. Fenced code blocks are decorated client-side. On DOM ready,
   `webkit.js` highlights every `.wk-prose pre > code[class*="language-"]` with
   Prism, then injects a `.wk-code-controls` row holding a `.wk-code-lang` badge
   (derived from the `language-*` class) and a `.wk-code-copy` button (clipboard
