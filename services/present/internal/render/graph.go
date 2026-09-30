@@ -68,7 +68,10 @@ function initGraph() {
       { selector: 'node', style: {
           'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
           'font-size': '12px', 'text-valign': 'center', 'text-halign': 'center',
-          'width': '140px', 'height': '50px', 'shape': 'roundrectangle',
+          // The height follows the wrapped label so a long name grows the
+          // box instead of spilling past it; the width stays fixed so the
+          // layouts keep their even columns. Body plus padding is 144px wide.
+          'width': '120px', 'height': 'label', 'padding': '12px', 'shape': 'roundrectangle',
           'background-color': c.leafBg, 'border-width': 2,
           'border-color': c.leafBorder, 'color': c.leafText
       }},
