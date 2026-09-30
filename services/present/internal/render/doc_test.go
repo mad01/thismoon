@@ -682,3 +682,40 @@ func TestRenderDocFixationCoverage(t *testing.T) {
 		)
 	}
 }
+
+// TestInlineMdNestedMarkup covers inline markup inside a bold span, which
+// used to leak the renderer's placeholder tokens (" PH0 ") into the page.
+func TestInlineMdNestedMarkup(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"**run `make build` first**", "<strong>run <code>make build</code> first</strong>"},
+		{
+			"**`resource.k8s.io/v1` is served**",
+			"<strong><code>resource.k8s.io/v1</code> is served</strong>",
+		},
+		{
+			"**see [the PR](https://example.com/pr/1)**",
+			`<strong>see <a href="https://example.com/pr/1">the PR</a></strong>`,
+		},
+		{
+			"**@chip(b:done)** and `x`",
+			`<strong><wk-badge variant="b">done</wk-badge></strong> and <code>x</code>`,
+		},
+		{
+			"[@chip(a:x)](https://example.com)",
+			`<a href="https://example.com"><wk-badge variant="a">x</wk-badge></a>`,
+		},
+		{
+			"plain **bold** and `code` apart",
+			"plain <strong>bold</strong> and <code>code</code> apart",
+		},
+	}
+	for _, c := range cases {
+		if got := string(inlineMd(c.in)); got != c.want {
+			t.Errorf("inlineMd(%q)\n got %s\nwant %s", c.in, got, c.want)
+		}
+		if got := string(inlineMd(c.in)); strings.Contains(got, "PH") ||
+			strings.Contains(got, "\x00") {
+			t.Errorf("inlineMd(%q) leaks a placeholder: %s", c.in, got)
+		}
+	}
+}
