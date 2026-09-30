@@ -168,7 +168,7 @@ anything the build didn't record.
 
 ## Exit codes
 
-`d-man` exits non-zero on a config or hosts error: an invalid routes file
-(bad hostname, unknown `cname` target, `cname` cycle, port out of range), or a
-hosts write that would corrupt the file or lacks permission. The error prints to
-stderr.
+`d-man` exits non-zero on a config or hosts error. That means an invalid routes
+file (bad hostname, unknown `cname` target, `cname` cycle, port out of range),
+or a hosts write that would corrupt the file or lacks permission. The error
+prints to stderr.

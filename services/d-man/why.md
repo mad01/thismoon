@@ -5,10 +5,10 @@
 A machine running the `*.this` platform accumulates local services, each on
 its own port: present on 7423, csl on 7424, and so on. Reaching them as
 `127.0.0.1:<port>` means memorizing ports and breaking every saved link when
-one moves. The obvious fixes fail on macOS 26 (Tahoe): `mDNSResponder`
+one moves. The obvious fixes fail on macOS 26 (Tahoe). `mDNSResponder`
 hijacks DNS queries for any non-IANA TLD and answers them itself, so a local
-DNS server registered under `/etc/resolver/this` never receives the query,
-and `*.localhost` names resolve only in Chrome and Firefox, not in Safari or
+DNS server registered under `/etc/resolver/this` never receives the query.
+And `*.localhost` names resolve only in Chrome and Firefox, not in Safari or
 `curl`. There was no way to type `http://present.this/` and have it work in
 every client.
 
@@ -31,11 +31,11 @@ Three decisions carry the design. `/etc/hosts` instead of DNS:
 listed explicitly (no wildcard), acceptable because the routes file is
 already an explicit list. One `routes.toml` drives both jobs, the managed
 hosts block and the Host-header reverse proxy, so names and backends can't
-drift apart; the hosts writer is fail-safe (it only replaces text between
-its own markers, backs up first, writes atomically), and an invalid edit is
+drift apart. The hosts writer is fail-safe (it only replaces text between
+its own markers, backs up first, writes atomically). An invalid edit is
 logged and ignored while the last good routes stay live. And sudo is
 confined to one-time setup: after the root launchd registration via t-man,
-the service watches `routes.toml` and its own executable, so route edits
+the service watches `routes.toml` and its own executable. So route edits
 apply live and upgrades relaunch through launchd's KeepAlive with no
 further privilege.
 

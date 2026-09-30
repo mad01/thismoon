@@ -15,7 +15,7 @@ make -C ~/code/src/github.com/mad01/thismoon/services/d-man install
 
 This installs `~/code/bin/d-man`. The routes file
 (`~/.config/d-man/routes.toml`) is machine-personal and comes from the
-consuming repo's overlay recipe, which symlinks it into place — write one by
+consuming repo's overlay recipe, which symlinks it into place. Write one by
 hand if you are not using an overlay (format: `services/d-man/README.md`).
 
 ## 2. Register the daemon (the only sudo)

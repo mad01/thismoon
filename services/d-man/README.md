@@ -54,7 +54,7 @@ After that, changing routes is just editing `routes.toml`: the daemon watches it
 (fsnotify) and re-syncs `/etc/hosts` plus reloads the proxy automatically, so
 you need neither sudo nor a restart. If an edit is invalid (bad hostname,
 unknown `cname` target, a `cname` cycle), it's logged and ignored, and the
-previous good routes stay live; check `t-man logs d-man` for the validation
+previous good routes stay live. Check `t-man logs d-man` for the validation
 error, and confirm the daemon is watching the file you edited
 (`t-man logs d-man` shows `config=…` on start).
 
@@ -160,7 +160,7 @@ games_dir = "~/.config/d-man/games"
 
 Any flat `<name>.js` file in that directory (lowercase letters, digits, `-`,
 `_`) is loaded into the page after the built-in games and joins the rotation by
-calling `ARCADE.register(name, factory)`, the same one-file contract the
+calling `ARCADE.register(name, factory)`. It's the same one-file contract the
 bundled games use (see `internal/blockpage/assets/smash.js` for a complete
 example). The directory is read per request, so dropping a file in takes effect
 on the next page load; a missing directory simply means no extra games.

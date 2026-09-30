@@ -63,8 +63,8 @@ using a wildcard.
    mapping each `<name>.<suffix>` (and each `blocklist` host) → `127.0.0.1`.
 2. reverse proxy: `127.0.0.1:80`, route by `Host` header to the backend port.
 
-`serve` also runs a second listener on `127.0.0.1:443` sharing the same handler,
-so a blocked host reaches the block page over **both** http and https (the
+`serve` also runs a second listener on `127.0.0.1:443` sharing the same handler.
+So a blocked host reaches the block page over **both** http and https (the
 `:443` listener mints a trusted leaf per SNI from `internal/tlsca`). No scheme
 redirect is involved — each port serves the page directly.
 
@@ -75,7 +75,7 @@ fails fast on illegal hostnames before any I/O.
 
 `internal/hosts` is pure `Validate`/`Render`/`Splice` plus the `Sync` shell.
 It is fail-safe: it only ever replaces text between the two markers, backs up
-to `/etc/hosts.d-man.bak`, and writes via atomic temp+rename, so it never
+to `/etc/hosts.d-man.bak`, and writes via atomic temp+rename. So it never
 produces a file worse than it read (pre-existing foreign breakage is
 preserved and warned, not aborted).
 
@@ -161,7 +161,7 @@ d-man docs                                # print the embedded operating doc: fa
 - **The CA files are root-owned** (`ca-key.pem` is `0600`). The root daemon (or
   `sudo d-man ca install`) creates them, so even though they live under the
   user's config directory (`~/.config/d-man/ca/`, or under `XDG_CONFIG_HOME`),
-  a non-root process cannot read the key — that is the point: the key mints
+  a non-root process cannot read the key. That is the point: the key mints
   system-trusted certs, so only root should hold it. A non-root `serve` for
   testing must therefore use its own `--ca-dir`.
 - **`httputil.ReverseProxy` handles WebSocket upgrades natively**, so no

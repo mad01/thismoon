@@ -2,11 +2,11 @@
 
 d-man is the layer that makes `.this` hostnames work at all: every other
 component's `http://<name>.this/` URL resolves and routes through it. One
-long-running process, `d-man serve`, does two jobs from one routes file: it
+long-running process, `d-man serve`, does two jobs from one routes file. It
 keeps a marker-delimited managed block in /etc/hosts mapping every configured
-host to 127.0.0.1, and it runs a reverse proxy on 127.0.0.1:80 that picks the
+host to 127.0.0.1, and runs a reverse proxy on 127.0.0.1:80 that picks the
 backend port by Host header. A second listener on 127.0.0.1:443 shares the
-same handler and mints a per-host certificate from a local CA, so hosts on the
+same handler. It mints a per-host certificate from a local CA, so hosts on the
 block list reach the block page over https too. d-man has no `.this` address
 of its own; when it is down, every `.this` host is down at once.
 
@@ -45,8 +45,8 @@ live, so a typo breaks nothing but also changes nothing until fixed.
 
 Start with `d-man docs` for this doc, then `d-man doctor`: three read-only
 checks, one line each. config-loads parses and validates the resolved routes
-file; hosts-entries-present confirms the managed /etc/hosts block exists and
-names every configured host; proxy-answers fetches d-man's own
+file. hosts-entries-present confirms the managed /etc/hosts block exists and
+names every configured host. proxy-answers fetches d-man's own
 /__this/sites.json on 127.0.0.1:80, the one path serve answers itself on any
 host. Doctor checks the wiring this machine has, not the wiring it should
 have.
@@ -60,9 +60,9 @@ A proxy-answers FAIL with connection refused means serve is down; an answer
 that is not the sites list means another process holds the port.
 
 The command-K site picker is empty on a page not behind d-man: the picker
-falls back to fetching /__this/sites.json cross-origin, and d-man answers
-that only for this machine's own origins — a page whose Origin is loopback
-or ends in .this. Any other origin gets no CORS headers and the browser
+falls back to fetching /__this/sites.json cross-origin. d-man answers that
+only for this machine's own origins, a page whose Origin is loopback or
+ends in .this. Any other origin gets no CORS headers and the browser
 drops the response. Open the page through its .this host or its localhost
 port; there is no setting that widens this.
 
