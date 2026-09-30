@@ -3,13 +3,13 @@
 worklog keeps resumable cross-session work state: one item per long task,
 keyed by ticket id or topic slug, never by working directory. A later
 session, on any machine with the store, asks "where was I" against the item
-key and gets back the "Where I am" snapshot the last session wrote, plus an
+key. It gets back the "Where I am" snapshot the last session wrote, plus an
 append-only log and per-repo notes.
 
 ## how it runs
 
 There is no serve process. The CLI and the MCP server are two thin frontends
-over the same store code: `{{.Bin}} mcp` is a stdio process the MCP host
+over the same store code. `{{.Bin}} mcp` is a stdio process the MCP host
 spawns, and every tool call reads or writes the store directly on disk,
 exactly as the CLI commands do. Nothing has to stay running, and an MCP tool
 call and a manual `{{.Bin}} show` always see the same state.
@@ -46,7 +46,7 @@ working directory, so being in the repo you worked in proves nothing.
 `{{.Bin}} list` shows every item newest first; `{{.Bin}} search <word>`
 substring-matches keys and content. Try the ticket id, then a topic word.
 
-Every command fails with a config error: a config file that exists but
+Every command fails with a config error. A config file that exists but
 cannot be read or parsed stops worklog rather than being ignored, because it
 carries the store's push remote. `{{.Bin}} config` is the exception — it
 prints the problem and the defaults. Stopped pushing after an upgrade with

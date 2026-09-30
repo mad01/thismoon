@@ -6,7 +6,7 @@ worklog is a tool: one Go program installed to `~/code/bin/worklog` that
 keeps resumable work state for long, cross-repo tasks, keyed by ticket id or
 topic. At runtime it is a short-lived CLI or an MCP stdio server
 (`worklog mcp`); nothing stays running between invocations. All state is a
-markdown tree under a local git repo; every operation is a read or write of
+markdown tree under a local git repo. Every operation is a read or write of
 that tree, and the tool's boundary is that directory plus (for `scan`) a
 read-only pass over local Claude Code session transcripts.
 
@@ -31,9 +31,9 @@ so an agent tool call and a manual CLI run always see identical behavior.
 ## Data flow
 
 Checkpoint: `worklog checkpoint <key>` (or `worklog_checkpoint`) reaches
-`store.Checkpoint`. It loads the item or creates it, detects the current
+`store.Checkpoint`. It loads the item or creates it. It detects the current
 repo via `DetectRepo` (the CLI feeds it `os.Getwd()`; the MCP handler passes
-an explicit `cwd` argument, since the server process runs from `/`), then
+an explicit `cwd` argument, since the server process runs from `/`). It then
 restamps `updated`, rewrites the "Where I am" section (`replaceSection`),
 prepends a "Log" entry (`prependLog`), appends a per-repo note
 (`appendRepoNote`), writes the item, and git-commits the store.
@@ -46,9 +46,9 @@ active items first). `show` returns an item's CONTEXT.md or one repo note;
 Scan: `worklog scan --since 14d` runs `scan.Scan` over
 `~/.claude/projects/*/*.jsonl` (root override: `$CLAUDE_PROJECTS_DIR`).
 `digestFile` reduces each transcript to a compact session digest (repos,
-tickets, first/last prompts); `classifyCwd` tags the session personal or
+tickets, first/last prompts). `classifyCwd` tags the session personal or
 internal from its paths, and `resolveTickets` filters extracted ticket keys
-to that world — the ticket firewall. Output is JSON on stdout; scan never
+to that world, the ticket firewall. Output is JSON on stdout; scan never
 writes to the store.
 
 ## Storage
