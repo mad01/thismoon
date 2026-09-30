@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.10.0](https://github.com/mad01/thismoon/compare/present/v1.9.1...present/v1.10.0) (2026-09-30)
+
+
+### Features
+
+* **present:** node tones and label-aware graph layout ([#164](https://github.com/mad01/thismoon/issues/164)) ([ad13a68](https://github.com/mad01/thismoon/commit/ad13a6808aa662f3385f253b20e178921ceb8299))
+
+
+### Bug Fixes
+
+* **present:** fixation on titles, toc, and tables; softer body ink ([843e99c](https://github.com/mad01/thismoon/commit/843e99cce06423f31da356d7d3c933ad8b480527))
+* **present:** fixation on titles, toc, and tables; softer body ink ([370e31d](https://github.com/mad01/thismoon/commit/370e31dde0438ce49d32177eb0b2198b95007cda))
+
 ## [1.9.1](https://github.com/mad01/thismoon/compare/present/v1.9.0...present/v1.9.1) (2026-09-30)
 
 
