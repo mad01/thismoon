@@ -1,6 +1,9 @@
 package goscan
 
 import (
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -270,5 +273,26 @@ func TestParseKind(t *testing.T) {
 	}
 	if _, ok := ParseKind("prose"); ok {
 		t.Error("ParseKind(prose) reported a known kind")
+	}
+}
+
+func TestScanUnreadableRoot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read anything")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("// Package a has prose.\npackage a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	files, err := Scan(dir, Options{})
+	if err == nil {
+		t.Fatalf("expected an error for an unreadable root, got %d files", len(files))
+	}
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("expected a permission error, got %v", err)
 	}
 }

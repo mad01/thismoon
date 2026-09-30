@@ -92,7 +92,9 @@ func (o Options) recursive() bool {
 // testdata and dot-directories are skipped, as are generated files (a
 // .pb.go name or a "Code generated ... DO NOT EDIT." header). Test files
 // are included: they carry prose too. Files with no prose are left out of
-// the result.
+// the result. A root directory that cannot be listed is an error, so a
+// sandbox denial surfaces instead of passing as an empty result; an
+// unreadable subdirectory is skipped.
 func Scan(path string, opts Options) ([]File, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -111,6 +113,9 @@ func Scan(path string, opts Options) ([]File, error) {
 	var out []File
 	err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if p == path {
+				return fmt.Errorf("goscan: read %s: %w", path, err)
+			}
 			return nil // unreadable subtree: skip it, don't abort the walk
 		}
 		if d.IsDir() {
