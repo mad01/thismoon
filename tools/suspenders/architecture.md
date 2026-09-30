@@ -5,7 +5,7 @@
 suspenders is a tool that scans git repositories for secrets and internal
 references, orchestrates pre-commit and post-merge hooks, and can rewrite git
 history to remove a secret that already landed. Everything runs against local
-git data on the machine where the commit happens; there are no network calls
+git data on the machine where the commit happens. There are no network calls
 apart from a best-effort event POST to the local events service when a commit
 is blocked. The boundary is git itself: suspenders reads the working tree, the
 index, and the object database, and writes only hook scripts and (during a
@@ -34,8 +34,8 @@ tests/integration/   Docker-based end-to-end hook tests
 
 Scan: `commands/scan.go` loads config, resolves the per-repo `.suspenders.yaml`,
 and calls `scanner.ScanDir` over git-tracked files (from `git ls-files`) or
-`scanner.ScanStaged`, which reads content from the index via `git show :<path>`
-so the scan sees exactly what would be committed
+`scanner.ScanStaged`, which reads content from the index via `git show :<path>`.
+That way the scan sees exactly what would be committed
 (tools/suspenders/docs/adr/0001). Every line runs through all rules, then
 entropy gates, allowlists, and inline `suspenders:ignore` markers; findings are
 redacted before printing. When the guard is enabled, `guard.CheckDir` (or

@@ -1,6 +1,6 @@
 # suspenders, offline git secret scanner and hook orchestrator
 
-A Go CLI tool for offline git secret scanning and hook orchestration. Detects checked-in secrets using 84 built-in content rules plus 7 filename rules, manages pre-commit and post-merge hooks across repositories, and guards against leaking internal repository names into public repos. `suspenders history scan` runs the same checks over every commit on the public branch (attributed to the introducing commit); `suspenders history clean` rewrites history to remove flagged strings via a native fast-export/fast-import pipeline (see docs/adr/0002). Strings can be blanket-replaced with `***REDACTED***` or mapped to specific replacements via a replace table (`--replace-map` / config `history.replace_table`); table entries are processed longest-key-first to avoid partial matches. Files that are secrets wholesale (key/token files) are redacted in place via `--redact-file` globs / config `history.redact_files`: the blob content becomes `***REDACTED***` in every commit while the path stays in the tree; auto-collected file-name findings feed this list.
+A Go CLI tool for offline git secret scanning and hook orchestration. Detects checked-in secrets using 84 built-in content rules plus 7 filename rules, manages pre-commit and post-merge hooks across repositories, and guards against leaking internal repository names into public repos. `suspenders history scan` runs the same checks over every commit on the public branch (attributed to the introducing commit); `suspenders history clean` rewrites history to remove flagged strings via a native fast-export/fast-import pipeline (see docs/adr/0002). Strings can be blanket-replaced with `***REDACTED***` or mapped to specific replacements via a replace table (`--replace-map` / config `history.replace_table`); table entries are processed longest-key-first to avoid partial matches. Files that are secrets wholesale (key/token files) are redacted in place via `--redact-file` globs / config `history.redact_files`. The blob content becomes `***REDACTED***` in every commit while the path stays in the tree. Auto-collected file-name findings feed this list.
 
 ## Module layout
 
@@ -66,8 +66,8 @@ Makefile                     part of module github.com/mad01/thismoon (no own go
 
 Repository discovery and remote parsing live in the shared
 `github.com/mad01/thismoon/kit/repofind` package (Find with 32 concurrent
-workers, IsRepo, InsideWorkTree, ParseRemote) — shared with belt so the
-pre-commit guard and the write-time firewall derive the same names, and both
+workers, IsRepo, InsideWorkTree, ParseRemote). It is shared with belt so the
+pre-commit guard and the write-time firewall derive the same names. Both
 read their hand-written name lists from the same names files through
 `github.com/mad01/thismoon/kit/internalnames` (docs/adr/0016). Blocked-
 commit events go through `github.com/mad01/thismoon/kit/notify`
@@ -99,9 +99,9 @@ Any non-zero exit from a step blocks the git operation (for pre-commit) or logs 
 - Hook scripts use PATH-based binary resolution (`suspenders` not absolute path)
 - Hook scripts call `suspenders hook run <event>`, not `suspenders scan` directly
 - Hook scripts chain to `<event>.backup` (foreign hook preserved at install) before running suspenders
-- Per-repo overrides via `.suspenders.yaml` or `.suspenders.yml` (ignore rules, paths, patterns, allowlist, and a `guard` section whose allowlist/blocked_words append to the global guard config); resolved from the scan root or the enclosing git top-level (`repoConfigPath` in commands/scan.go)
+- Per-repo overrides via `.suspenders.yaml` or `.suspenders.yml` (ignore rules, paths, patterns, allowlist, and a `guard` section whose allowlist/blocked_words append to the global guard config). Resolved from the scan root or the enclosing git top-level (`repoConfigPath` in commands/scan.go)
 - Guard allowlist filtering and name dedup are case-insensitive, matching the case-insensitive matcher
-- Guard name sources: `guard.include` lists shared names files whose `blocked_words`, `allowlist`, and `allow_phrases` append to the config's own lists at load time (`loadIncludes` in config.go); a listed file that is missing, has an unknown key, or does not parse fails the load like a broken config, so the hook fails closed. Per-repo overrides layer on top of the merged lists.
+- Guard name sources: `guard.include` lists shared names files whose `blocked_words`, `allowlist`, and `allow_phrases` append to the config's own lists at load time (`loadIncludes` in config.go). A listed file that is missing, has an unknown key, or does not parse fails the load like a broken config, so the hook fails closed. Per-repo overrides layer on top of the merged lists.
 - `guard.allow_phrases` are blanked out of the checked content (single space) before name matching, in `Matcher.Find`, so the staged-diff check, `scan`, and both history commands honor them the same way
 - Guard exemption: repos inside `guard.workspace_dirs` or whose org/repo name matches a top-level `exclude` glob are never guard-blocked (`guardExempt` in commands/hook.go, used by hook run, scan, and history); name collection is unaffected
 - Repository discovery via the shared `kit/repofind` package, which walks dirs concurrently and extracts org/repo from remotes; each repo contributes its org and repo name as separate blocked names
@@ -166,7 +166,7 @@ make lint                # run golangci-lint
 make fmt                 # format source with golines & gofumpt
 ```
 
-Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/thismoon/buildinfo` package by `buildinfo.mk` (short HEAD commit, full commit, the newest `suspenders/v*` tag, and the build time), read by `suspenders version` and printed at the top of `suspenders doctor`.
+Build metadata is embedded via `-ldflags` into the shared `github.com/mad01/thismoon/buildinfo` package by `buildinfo.mk` (short HEAD commit, full commit, the newest `suspenders/v*` tag, and the build time). It is read by `suspenders version` and printed at the top of `suspenders doctor`.
 
 ## Commands
 

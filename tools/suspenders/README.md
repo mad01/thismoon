@@ -1,8 +1,8 @@
 # suspenders
 
-A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, runs user-defined hook scripts, and can rewrite git history to remove a secret that already made it into a commit.
+A fast, offline git secret scanner and hook orchestrator. Suspenders detects checked-in tokens, passwords, API keys, private keys, and certificates across your repositories. It installs git hooks that block secrets before they reach a remote, guards against leaking internal repository names into public repos, and runs user-defined hook scripts. It can also rewrite git history to remove a secret that already made it into a commit.
 
-Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config, and both derive their internal-name list the same way from the same shared names files (`guard.include` here, `internal_names.include` in belt; docs/adr/0016), so the two layers agree by construction. belt only sees what an agent does; suspenders also catches what you type.
+Named for the layer it adds: belt ([`tools/belt`](../belt/)) holds up the agent session, denying risky tool calls before anything reaches git; suspenders holds up git itself. Each tool reads only its own config. Both derive their internal-name list the same way from the same shared names files (`guard.include` here, `internal_names.include` in belt; docs/adr/0016), so the two layers agree by construction. belt only sees what an agent does; suspenders also catches what you type.
 
 ## Quickstart
 
@@ -164,7 +164,7 @@ Discovery runs through the shared [`kit/repofind`](../../kit/repofind/README.md)
 - `dirs` answers "which repos do I manage": `hook install --all` installs hooks into every repo found here (minus `exclude` globs).
 - `guard.workspace_dirs` answers "which names are internal": every repo found here contributes its org segment, repo segment, and checkout directory basename as three separate blocked names, never the combined `org/repo` form.
 
-belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section (same derivation, standalone configs, docs/adr/0010), and both tools list the same shared names files for their hand-written entries (`guard.include` here, docs/adr/0016). That is what keeps the write-time and commit-time block lists in step without anyone copying entries between two configs. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
+belt's `write-internal-names` guard runs the same walk over the same package from its own `internal_names` config section (same derivation, standalone configs, docs/adr/0010). Both tools list the same shared names files for their hand-written entries (`guard.include` here, docs/adr/0016). That is what keeps the write-time and commit-time block lists in step without anyone copying entries between two configs. The block list is derived fresh on every run and never persisted: a config file enumerating internal names would itself be the leak.
 
 ## Install
 
@@ -204,7 +204,7 @@ suspenders scan --staged --fail-on-findings
 
 The `--fail-on-findings` flag causes an exit code of 1 when secrets are detected.
 
-When the guard is enabled (see [Internal-reference guard](#internal-reference-guard)), `scan` also reports blocked names found in tracked files, with file and line: internal repo names and `blocked_words` entries such as a company or brand name. A staged scan checks the staged diff instead, matching what the pre-commit hook would block.
+When the guard is enabled (see [Internal-reference guard](#internal-reference-guard)), `scan` also reports blocked names found in tracked files, with file and line. These are internal repo names and `blocked_words` entries such as a company or brand name. A staged scan checks the staged diff instead, matching what the pre-commit hook would block.
 
 ### Manage hooks
 
@@ -314,7 +314,7 @@ suspenders hook run post-merge
 
 ### Explain the guard for a repo
 
-`doctor` shows why the guard decides what it decides: the installed build, the global config, any per-repo overrides from `.suspenders.yaml`, whether the repo is guard-exempt, and the full blocked-name list derived from the workspace dirs and blocked words. Use it when a commit was blocked (or wasn't) and the reason isn't obvious. The list is derived fresh on every run and never written anywhere.
+`doctor` shows why the guard decides what it decides. It prints the installed build, the global config, any per-repo overrides from `.suspenders.yaml`, whether the repo is guard-exempt, and the full blocked-name list derived from the workspace dirs and blocked words. Use it when a commit was blocked (or wasn't) and the reason isn't obvious. The list is derived fresh on every run and never written anywhere.
 
 ```sh
 suspenders doctor                # current directory
@@ -596,13 +596,13 @@ Blocked words are matched case-insensitively as literal strings, so an entry can
 
 The hand-written lists (`blocked_words`, `allowlist`, `allow_phrases`) can live in names files outside either tool's config, listed under `guard.include`. A names file holds exactly those three keys. Each listed file's lists are appended to the config's own at load time, in include order, and per-repo `.suspenders.yaml` overrides layer on top of the merged result. belt lists the same files under `internal_names.include`, so one edit reaches both guards (docs/adr/0016); `workspace_dirs` stays in each tool's own config because the directories differ per tool and per machine.
 
-A listed file that is missing, carries an unknown key, or does not parse fails the load the way a broken config does: `hook run`, `scan`, and `doctor` stop with an error naming the file. A misspelled key or a lost file would otherwise guard nothing. `suspenders doctor` prints each include with the counts it contributed, and `suspenders config` shows the merged lists.
+A listed file that is missing, carries an unknown key, or does not parse fails the load the way a broken config does. `hook run`, `scan`, and `doctor` stop with an error naming the file. A misspelled key or a lost file would otherwise guard nothing. `suspenders doctor` prints each include with the counts it contributed, and `suspenders config` shows the merged lists.
 
 #### Allow phrases
 
 `guard.allow_phrases` lists exact phrases, matched case-insensitively, that are blanked out of the checked content before name matching. A sanctioned compound that contains a blocked name, such as a private companion repo named `dotfiles-<name>`, then passes, while the bare name anywhere else on the same line still blocks. The replacement is a single space, so the words around the phrase keep their boundaries. Every check honors the phrases the same way: the staged diff, `scan` over the working tree, and `history scan` and `history clean`.
 
-The same block list runs in three other places: `suspenders scan` checks every tracked file in the working tree (reported with file and line), `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` and repos matching the top-level `exclude` globs are skipped everywhere; internal and explicitly excluded repos may reference internal names.
+The same block list runs in three other places. `suspenders scan` checks every tracked file in the working tree (reported with file and line). `history scan` checks every commit's added lines and message, and `history clean` collects the matches as replacement strings when rewriting history. Repos inside `workspace_dirs` and repos matching the top-level `exclude` globs are skipped everywhere; internal and explicitly excluded repos may reference internal names.
 
 ### External hooks
 
