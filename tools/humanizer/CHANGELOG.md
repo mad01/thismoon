@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/mad01/thismoon/compare/humanizer/v0.12.0...humanizer/v0.13.0) (2026-09-30)
+
+
+### Features
+
+* **humanizer:** add a clarity category with five readability rules ([#153](https://github.com/mad01/thismoon/issues/153)) ([6253d65](https://github.com/mad01/thismoon/commit/6253d653a51b0f8790cbe1cbddc83f9381ef03c8))
+
 ## [0.12.0](https://github.com/mad01/thismoon/compare/humanizer/v0.11.0...humanizer/v0.12.0) (2026-09-12)
 
 
