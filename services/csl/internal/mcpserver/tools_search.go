@@ -132,6 +132,7 @@ func registerSearchTools(s *mcp.Server) {
 			"Defaults to returning unique matching file paths (files_with_matches); set output_mode to 'content' to get matching lines with optional context. " +
 			"Query syntax: literal substring, regex, \"quoted phrase\", AND (space), OR (|), NOT (-), repo:name, f:\\.go$, lang:go, case:yes. " +
 			"sym:Name matches symbol definitions only (function, method, type, class, field names as tree-sitter extracts them) and skips call sites and comments; in content mode each sym: hit carries kind (and parent for nested definitions). Plain queries already rank a definition's file above its call sites. " +
+			"Two names: sym:Foo|Bar (or sym:Foo or sym:Bar); sym:Foo|sym:Bar is one regexp and is refused with the fix. " +
 			"AND is strict: all terms must appear in the SAME FILE. Use 1-2 terms and narrow with repo:/f:/lang: filters, not 3+ chained terms. " +
 			"Use | or lowercase 'or' for OR; uppercase OR is treated as a literal string, and spaces around | break it (a | b is three AND terms, not OR). " +
 			"Filter prefixes: repo: (not r:), f: (not file:). Prefer the dedicated repo/lang/file params over inline filter syntax: the repo param is case-insensitive, while an inline repo: filter is raw zoekt (case-sensitive regex). " +
@@ -163,7 +164,7 @@ func registerSearchTools(s *mcp.Server) {
 		Name: "csl_query_validate",
 		Description: "Validate a zoekt query and return its parsed tree or a parse error with a fixing hint. " +
 			"Use whenever a query returns zero results or behaves unexpectedly: the parsed tree shows exactly how zoekt interpreted your terms, and terms/filters show the split csl_search's zero-result diagnosis works from (each term must match in the same file; filters are never dropped). " +
-			"A malformed query (empty, only quotes, unbalanced quote) reports valid=false with the fix, the same check csl_search applies before searching. " +
+			"A malformed query (empty, only quotes, unbalanced quote) or a sym: term zoekt cannot run (sym:(Foo|Bar)+, sym:Foo|sym:Bar) reports valid=false with the fix, the same check csl_search applies before searching. " +
 			"Also useful for debugging regex escaping like \\.go$.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,

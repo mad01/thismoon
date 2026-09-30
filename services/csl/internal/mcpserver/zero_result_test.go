@@ -370,3 +370,30 @@ func hasNote(notes []string, substr string) bool {
 	}
 	return false
 }
+
+// TestHandleQueryValidate_RefusedSymbolShape: a sym: term zoekt's symbol
+// matcher cannot run and csl cannot split is valid=false with the fix, the
+// same refusal csl_search returns instead of zoekt's internal error.
+func TestHandleQueryValidate_RefusedSymbolShape(t *testing.T) {
+	_, out, err := handleQueryValidate(
+		context.Background(),
+		nil,
+		queryValidateInput{Query: "sym:(Hello|Point)+"},
+	)
+	if err != nil {
+		t.Fatalf("refused sym: shape returned an error, want valid=false: %v", err)
+	}
+	if out.Valid || !strings.Contains(out.Error, "repeats an alternation") ||
+		!strings.Contains(out.Hint, "sym:Foo or sym:Bar") {
+		t.Errorf("validate(sym:(Hello|Point)+) = %+v, want valid=false with the fix", out)
+	}
+
+	_, out, err = handleQueryValidate(
+		context.Background(),
+		nil,
+		queryValidateInput{Query: "sym:Hello|Point"},
+	)
+	if err != nil || !out.Valid || !strings.Contains(out.Parsed, `sym:case_substr:"Point"`) {
+		t.Errorf("validate(sym:Hello|Point) = %+v, %v; want the split tree", out, err)
+	}
+}

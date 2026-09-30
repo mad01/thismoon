@@ -2,8 +2,11 @@ package search
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -726,18 +729,7 @@ func stringFromInt(i int) string {
 // name still works, and the file defining the name ranks above a file that
 // only calls it.
 func TestSearch_SymbolQuery(t *testing.T) {
-	dir := t.TempDir()
-	files := map[string]string{
-		"main.go":   "package main\n\n// Hello greets.\nfunc Hello() string { return \"hello\" }\n",
-		"caller.go": "package main\n\nfunc use() { _ = Hello(); _ = Hello() }\n",
-		"point.go":  "package main\n\ntype Point struct{ X int }\n\nfunc (p *Point) Hello() string { return \"\" }\n",
-	}
-	for rel, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", rel, err)
-		}
-	}
-	indexDir, _, repoNames := indexTestRepo(t, dir)
+	indexDir, repoNames := indexSymbolFixture(t)
 	ctx := context.Background()
 
 	matches, err := Search(ctx, indexDir, SearchOptions{
@@ -798,6 +790,108 @@ func TestSearch_SymbolQuery(t *testing.T) {
 	}
 	if plain[0].File == "caller.go" {
 		t.Errorf("plain query ranked the call site first: %+v", plain)
+	}
+}
+
+// indexSymbolFixture indexes a repo with a function Hello, a struct Point
+// with a method Hello, and a caller that only uses Hello, and returns the
+// index dir and repo names Search takes.
+func indexSymbolFixture(t *testing.T) (indexDir string, repoNames map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.go":   "package main\n\n// Hello greets.\nfunc Hello() string { return \"hello\" }\n",
+		"caller.go": "package main\n\nfunc use() { _ = Hello(); _ = Hello() }\n",
+		"point.go":  "package main\n\ntype Point struct{ X int }\n\nfunc (p *Point) Hello() string { return \"\" }\n",
+	}
+	for rel, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	indexDir, _, repoNames = indexTestRepo(t, dir)
+	return indexDir, repoNames
+}
+
+// symbolHit is the part of a match the alternation test compares.
+type symbolHit struct {
+	File   string
+	Line   int
+	Kind   string
+	Parent string
+}
+
+// symbolHits projects matches onto symbolHit, ordered by file then line so
+// the comparison does not depend on ranking.
+func symbolHits(matches []Match) []symbolHit {
+	hits := make([]symbolHit, 0, len(matches))
+	for _, m := range matches {
+		hits = append(hits, symbolHit{File: m.File, Line: m.Line, Kind: m.Kind, Parent: m.Parent})
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].File != hits[j].File {
+			return hits[i].File < hits[j].File
+		}
+		return hits[i].Line < hits[j].Line
+	})
+	return hits
+}
+
+// TestSearch_SymbolAlternation: sym:Hello|Point returns every definition of
+// either name with its kind and parent, exactly as sym:Hello or sym:Point
+// does, instead of failing with zoekt's "found *index.orMatchTree inside
+// query.Symbol". The shape csl cannot split is refused before zoekt sees it.
+func TestSearch_SymbolAlternation(t *testing.T) {
+	indexDir, repoNames := indexSymbolFixture(t)
+	ctx := context.Background()
+	hello := symbolHit{File: "main.go", Line: 4, Kind: "function"}
+	point := symbolHit{File: "point.go", Line: 3, Kind: "struct"}
+	method := symbolHit{File: "point.go", Line: 5, Kind: "method", Parent: "Point"}
+	greets := symbolHit{File: "main.go", Line: 3} // the content hit of the AND term
+
+	tests := []struct {
+		query string
+		want  []symbolHit
+	}{
+		{"sym:Hello|Point", []symbolHit{hello, point, method}},
+		{"sym:(Hello|Point)", []symbolHit{hello, point, method}},
+		{"sym:Hello or sym:Point", []symbolHit{hello, point, method}},
+		{"sym:Hello|Point greets", []symbolHit{greets, hello}},
+		{"sym:Hel(lo|p)", []symbolHit{hello, method}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.query, func(t *testing.T) {
+			matches, err := Search(ctx, indexDir, SearchOptions{
+				Pattern:    tc.query,
+				OutputMode: "content",
+				Limit:      50,
+			}, repoNames)
+			if err != nil {
+				t.Fatalf("Search: %v", err)
+			}
+			if got := symbolHits(matches); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("hits = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+
+	_, total, err := Count(ctx, indexDir, CountOptions{Pattern: "sym:Hello|Point"})
+	if err != nil || total != 3 {
+		t.Errorf("Count sym:Hello|Point = %d, %v; want 3 matching lines", total, err)
+	}
+
+	_, err = Search(ctx, indexDir, SearchOptions{
+		Pattern:    "sym:(Hello|Point)+",
+		OutputMode: "content",
+		Limit:      50,
+	}, repoNames)
+	var shape *SymbolShapeError
+	if !errors.As(err, &shape) {
+		t.Fatalf("Search sym:(Hello|Point)+ error = %v, want a *SymbolShapeError", err)
+	}
+	if strings.Contains(err.Error(), "orMatchTree") ||
+		!strings.Contains(err.Error(), "sym:Foo or sym:Bar") {
+		t.Errorf("refusal = %q, want the fix and no zoekt internals", err)
 	}
 }
 

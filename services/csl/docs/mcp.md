@@ -692,7 +692,7 @@ Validate a zoekt query and return its parsed tree, or a parse error with a fixin
 }
 ```
 
-`terms` are the top-level AND terms, each of which must match in the same file; `filters` are the atoms that only narrow (`repo:`, `f:`, `lang:`, `sym:`, `case:`, `-term`). This is the split the zero-result diagnosis in `csl_search` counts and relaxes over. A query made only of `csl_search` parameter names is valid but carries the trap in `hint`.
+`terms` are the top-level AND terms, each of which must match in the same file; `filters` are the atoms that only narrow (`repo:`, `f:`, `lang:`, `sym:`, `case:`, `-term`). This is the split the zero-result diagnosis in `csl_search` counts and relaxes over. A query made only of `csl_search` parameter names is valid but carries the trap in `hint`. A `sym:` term zoekt's symbol matcher cannot run, such as `sym:(Foo|Bar)+` or `sym:Foo|sym:Bar`, is `valid=false` with the fix in `hint`.
 
 **Output (invalid):**
 
