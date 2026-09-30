@@ -17,34 +17,38 @@ by then the mistake is already made and only barely contained.
 
 suspenders already guards the git side, but a git hook cannot see a tool
 call. Only a Claude Code PreToolUse hook runs at the point where a session is
-about to execute something, and that requires a tool Claude Code can invoke
-with the payload on stdin and a deny decision on stdout. belt is that layer:
+about to execute something. That requires a tool Claude Code can invoke with
+the payload on stdin and a deny decision on stdout. belt is that layer:
 suspenders holds up commits, belt holds up the session before anything
-reaches git. It stays separate from suspenders because the two run in
-different lifecycles, and each owns its own config: the write-internal-names
-guard reads the `internal_names` section of belt's own file, plus the shared
-names files that section lists under `include`, and never the suspenders
-config. What the two share is the derivation (both build their name list
-through the same `kit/repofind` discovery) and, when both list it, one names
-file each points at from its own config (docs/adr/0016), so identical inputs
-produce identical lists.
+reaches git.
+
+belt stays separate from suspenders because the two run in different
+lifecycles, and each owns its own config. The write-internal-names guard
+reads the `internal_names` section of belt's own file, plus the shared names
+files that section lists under `include`, and never the suspenders config.
+What the two share is the derivation: both build their name list through the
+same `kit/repofind` discovery. They also share one names file when both list
+it, and each points at that file from its own config (docs/adr/0016).
+So identical inputs produce identical lists.
 
 ## Why this shape
 
-A deny travels as data, never as a failing process: belt exits 0 and puts
+A deny travels as data, never as a failing process. belt exits 0 and puts
 the decision in `hookSpecificOutput.permissionDecision`, because a guard hook
-must not break tool calls on its own bugs. Config is read live at hook time:
-belt's own file, rendered per machine class by the provisioning layer, plus
-the Claude settings deny list shared with the permission system behind its
-own switch; every file is optional and a missing one yields zero values.
-There is no machine-profile concept at runtime — a guard that should not
-exist on a machine class is simply absent (or disabled) in that class's
-rendered config. Machine-private wiring
-stays out of this repo: the recipe here builds and installs only, while hook
-registration and the config overlay with its exclude paths live in the
-consuming repo's companion recipe (docs/adr/0006). Every deny reason carries
-a `belt[<guard-id>]:` prefix, so a block is always attributable to the guard
+must not break tool calls on its own bugs. Every deny reason carries a
+`belt[<guard-id>]:` prefix, so a block is always attributable to the guard
 that fired.
+
+Config is read live at hook time: belt's own file, rendered per machine class
+by the provisioning layer, plus the Claude settings deny list. That list is
+shared with the permission system and sits behind its own switch. Every file
+is optional and a missing one yields zero values. There is no machine-profile
+concept at runtime. A guard that should not exist on a machine class is
+simply absent (or disabled) in that class's rendered config.
+
+Machine-private wiring stays out of this repo. The recipe here builds and
+installs only, while hook registration and the config overlay with its
+exclude paths live in the consuming repo's companion recipe (docs/adr/0006).
 
 ## Non-goals
 
