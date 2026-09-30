@@ -353,7 +353,7 @@ The reader opens the deck from the brief's Slides link or at `deck_url`, and mov
 
 ## Graph format (the `graph` argument)
 
-Pass a structured object — the server generates the full Cytoscape JS including theme-aware colors.
+Pass a structured object. The server stores the nodes and edges; the page styles and lays them out when it loads, so a style change reaches existing pages without a rerender.
 
 ```json
 {
