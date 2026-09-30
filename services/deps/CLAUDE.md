@@ -2,8 +2,8 @@
 
 Go CLI, HTTP server with an embedded webkit web UI, and an MCP server, over one
 JSON store. `deps` discovers every external dependency across the catalog-
-registered repos (Go modules, npm), checks each version against the OSV.dev
-advisory database, surfaces findings at `http://deps.this/`, and fires a macOS
+registered repos (Go modules, npm) and checks each version against the OSV.dev
+advisory database. It surfaces findings at `http://deps.this/` and fires a macOS
 notification when a package is flagged. **The MCP tools (driven by Claude) and
 the web page are the primary surfaces**; the `deps` CLI mirrors them.
 
@@ -56,10 +56,10 @@ no file locks.
   New catalogued repos auto-enroll.
 - Each repo is walked for `go.mod` (→ `go list -m -json all`, resolved graph,
   v-prefix stripped for OSV), `package-lock.json` (lockfile v2/v3), and
-  `requirements.txt` (exact `name==version` pins only — unpinned names and
+  `requirements.txt` (exact `name==version` pins only). Unpinned names and
   ranges have no OSV-checkable version and are skipped; names are PEP 503
-  normalized), and `Package.resolved` (v2/v3, remote pins with an exact
-  version — branch pins are skipped). The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
+  normalized. The walk also covers `Package.resolved` (v2/v3, remote pins with
+  an exact version), and branch pins are skipped. The shared walker skips `.git/vendor/node_modules/testdata`, **git worktrees and nested
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
   mark direct vs transitive.

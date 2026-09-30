@@ -3,7 +3,7 @@
 ## The problem
 
 The repos on this machine pin hundreds of external packages (Go modules, npm
-lockfiles, exact Python pins, Swift resolved files), and a version that was
+lockfiles, exact Python pins, Swift resolved files). A version that was
 clean when it was pinned can grow an advisory later. On a single developer
 machine there is no CI fleet re-checking old lockfiles, so a vulnerability in
 an already-pinned version sits unnoticed until something else surfaces it. The
@@ -13,13 +13,13 @@ and says something only when a package is actually flagged.
 ## Why its own service
 
 Advisory checking is a cross-repo concern: the repo set comes from the catalog
-registry, so a repo enrolls the moment it is catalogued, and the findings only
+registry, so a repo enrolls the moment it is catalogued. The findings only
 make sense as one inventory across all of them. It also needs a long-running
 process — a daily scan with wake-from-sleep catch-up and offline backoff is
 not something a one-shot tool can provide. Per-ecosystem scanners run one repo
-and one ecosystem at a time; deps checks every checkout against OSV.dev, one
+and one ecosystem at a time. deps checks every checkout against OSV.dev, one
 API whose ecosystem strings cover Go, npm, PyPI, and Swift with no mapping
-layer, and gives the human, the web page, and the agent the same findings from
+layer. It gives the human, the web page, and the agent the same findings from
 the same scan.
 
 ## Why this shape
@@ -28,11 +28,11 @@ The load-bearing decision is single-writer: `deps serve` alone owns the scan
 store, reaches the network, and fires notifications, while the CLI and the MCP
 tools are thin HTTP clients to it. Every reader sees the same data and no file
 locks exist. Acknowledgment is version-scoped: a resolve is keyed by
-ecosystem, name, exact version, and advisory id, so an acknowledged finding
+ecosystem, name, exact version, and advisory id. So an acknowledged finding
 resurfaces automatically when the package version changes or a new advisory
-lands — silence never becomes permanent. Scheduling checks staleness
+lands. Silence never becomes permanent. Scheduling checks staleness
 rather than counting ticks: a Mac asleep past the daily mark runs the missed
-scan shortly after waking, scan failures back off exponentially instead of
+scan shortly after waking. Scan failures back off exponentially instead of
 hammering an unreachable API, and notifications coalesce into one banner per
 scan rather than one per advisory. For Go, import-graph reachability dims
 advisories on modules no code compiles in, and it fails open so a real

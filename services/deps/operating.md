@@ -2,9 +2,9 @@
 
 deps is a supply-chain scanner. It discovers every external dependency across
 the catalog-registered repos (Go modules, npm lockfiles, exact Python pins,
-Swift resolved files), checks each pinned version against the OSV.dev advisory
-database, and fires one coalesced macOS notification when packages are newly
-flagged. Findings live on a local web page (default {{.BaseURL}}).
+Swift resolved files). It checks each pinned version against the OSV.dev
+advisory database and fires one coalesced macOS notification when packages
+are newly flagged. Findings live on a local web page (default {{.BaseURL}}).
 
 ## how it runs
 
@@ -15,7 +15,7 @@ API: the CLI commands (`scan`, `check`, `resolve`, `notify`) and the MCP
 server, a stdio shim spawned as `deps mcp`. The shim being up says nothing
 about the service: every deps_* tool call is a live HTTP request to serve, and
 it fails when serve is down. Machines usually also route http://deps.this to
-serve via the local domain front door; if the localhost port answers but the
+serve via the local domain front door. If the localhost port answers but the
 .this host does not, the router is the problem, not this service.
 
 ## where state lives
@@ -49,7 +49,7 @@ exists, then `t-man restart deps`. For a quick test without t-man, `deps
 serve` in a spare terminal also works.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
-graph (`go list -m -json all`), which includes modules no binary imports, so
+graph (`go list -m -json all`), which includes modules no binary imports. So
 an advisory can flag a version that is never compiled. deps computes
 import-graph reachability (`go list -deps -json ./...`) and marks such deps
 not imported: the web page dims them in a separate "Not compiled in" section

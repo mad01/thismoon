@@ -2,8 +2,8 @@
 
 deps has two separate configuration surfaces: root flags/environment
 variables that locate the store, the registry, and the discovery config
-file, and the discovery config file itself, which trims the repo set that
-`deps serve` scans.
+file. The other is the discovery config file itself, which trims the repo
+set that `deps serve` scans.
 
 ## Where config lives
 
