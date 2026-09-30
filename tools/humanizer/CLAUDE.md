@@ -120,6 +120,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
   - A `metric` formula is a tengo expression, so a gate like `words < 40 || sentences < 2 ? 100.0 : ...` works. The short-circuit value must be a float; an int result breaks vale's `%f` condition formatting.
   - Vale reports a paragraph-scoped `metric` alert on the paragraph's last line, not its first.
 - **The MCP sandbox roots are the consuming repo's.** The seatbelt profile that gates `humanizer_detect_file` (and denies all network) is registered by the consuming repo's wrapper, not this code; new runtime file or network needs require a profile change there.
+- **A directory scan needs directory reads in the profile.** `humanizer_scan_go` on a directory lists it with `ReadDir`, which the seatbelt sees as `file-read-data` on the directory vnode, separate from the per-file extension allows. Since 2026-09-30 the profile grants that on the code roots with a `vnode-type DIRECTORY` filter; before that a directory scan came back as zero files with no error. `goscan.Scan` now returns the root's read error (a permission error maps to the "not readable under the MCP sandbox" hint), so a missing allow is loud.
 
 ## See also
 
