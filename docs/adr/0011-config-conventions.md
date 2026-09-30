@@ -11,25 +11,26 @@ reviewed against current CLI and MCP practice.
 ## Context
 
 Twenty components grew their configuration independently, and the inventory
-found the drift that predicts: one service's port is a bare literal in a
-flag default while the rest read a `facts.go` constant; one component
-honors `XDG_CONFIG_HOME` and one honors `XDG_CACHE_HOME` while eighteen
-hardcode `~/.config`; a config file is relocatable by flag in three
-components, by environment variable in two, and not at all in two more.
+found the drift that predicts. One service's port is a bare literal in a
+flag default while the rest read a `facts.go` constant. One component honors
+`XDG_CONFIG_HOME` and one honors `XDG_CACHE_HOME` while eighteen hardcode
+`~/.config`. A config file is relocatable by flag in three components, by
+environment variable in two, and not at all in two more.
 `expandTilde` exists in thirteen copies across two implementations, and two
 of them fall back to a cwd-relative path when the home directory cannot be
 resolved. That is how a tool running under a stripped environment wrote a
-`.config/` tree into whatever directory it happened to start in, and how
-another read a config from `/.config/...` with a working directory of `/`.
+`.config/` tree into whatever directory it happened to start in. That is
+also how another read a config from `/.config/...` with a working directory
+of `/`.
 
 None of this was decided. Each choice made sense where it landed, and
 nothing wrote down the rule the next component should follow, so every new
 component picked from the spread it found. This ADR is the missing rule.
 
 Not every difference is drift. The parse-failure posture in particular is
-deliberate and stays: a guard tool that shrugs off a broken config stops
-guarding, while a service that refuses to start on one takes down a
-timeline nobody was looking at.
+deliberate and stays. A guard tool that shrugs off a broken config stops
+guarding, while a service that refuses to start on one takes down a timeline
+nobody was looking at.
 
 ## Decision
 
@@ -42,7 +43,7 @@ cannot disagree about which port the service uses.
 compiled default. The environment read happens inside the flag's default so
 cobra resolves the whole chain in one pass, and `kit/envdefault` is that
 read. A value that is set but unparseable warns once on stderr and falls
-back: a typo in a port number is worth a word, and not worth refusing to
+back. A typo in a port number is worth a word, and not worth refusing to
 start over.
 
 **Config location.** Every component with a config file accepts both
@@ -53,14 +54,14 @@ cannot be resolved is an error. A relative path is never a fallback.
 
 **Directory kinds.** Config, cache, and state are separate. Nothing but
 configuration belongs under `~/.config/<tool>`. State honors
-`XDG_STATE_HOME` and falls back to `~/.local/state/<component>`, and
+`XDG_STATE_HOME` and falls back to `~/.local/state/<component>`.
 `confdir.StateDir` takes a legacy directory plus a probe (an artifact only
 the component itself writes) and prefers the legacy directory when that
 probe is present. csl keeps its index and present keeps its page store where
 they already are, while a fresh install lands in the right place. The probe
 is not optional detail: provisioning creates these directories on every
 machine (a config symlink under `~/.config/<tool>`, an engine virtualenv
-under `~/.local/share/<tool>`), so a bare directory test reads as "state
+under `~/.local/share/<tool>`). So a bare directory test reads as "state
 lives here" on machines that have none and pins the whole fleet to the
 legacy path forever.
 
@@ -81,7 +82,7 @@ origins, never `*`.
 
 **MCP.** Instructions are always generated from `agentdoc.Facts`. Every
 server exposes a read-only `<name>_doctor` tool, because a client with no
-shell can call a tool but cannot run `<bin> doctor`, and that was the only
+shell can call a tool but cannot run `<bin> doctor`. That was the only
 recovery path the instructions used to name. Every `mcp` command's help
 prints `agentdoc.RegistrationSnippet`. `--base-url` is display-only: it
 decorates the links tools return and does not route traffic, and its help
@@ -101,9 +102,9 @@ reason above.
 - `kit` gains three packages and is a cross-repo compatibility surface, so
   their exported signatures are additive-only from here.
 - Honoring XDG moves where a fresh install puts state. The legacy directory
-  and its probe are what keep that from being a data-loss event, and they
-  are load-bearing for csl and present specifically, whose state has lived
-  under `~/.config` since before the convention existed. Choosing the probe
+  and its probe are what keep that from being a data-loss event. They are
+  load-bearing for csl and present specifically, whose state has lived under
+  `~/.config` since before the convention existed. Choosing the probe
   is a judgement per component: it has to be something the component writes
   and provisioning does not.
 - Two components send `Access-Control-Allow-Origin: *` today: speak's TTS

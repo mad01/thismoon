@@ -13,8 +13,8 @@ belt and suspenders block the same internal names at different moments, and
 both derive the blocked set the same way: repos discovered under
 `workspace_dirs` plus `blocked_words`, minus `allowlist`. ADR-0010 made each
 tool read only its own config and said the two name sections would stay in
-step through "shared code and shared shape", with the provisioning layer
-rendering one authored block into both files.
+step through "shared code and shared shape". The provisioning layer would
+render one authored block into both files.
 
 The render step was never built. Instead the consuming repos carried the
 block four times: belt personal, belt work, suspenders personal, suspenders
@@ -26,11 +26,11 @@ copies live in two repos, and any one machine sees only its own class.
 
 Two shapes were on the table. A provision-time render (the ADR-0010 plan)
 keeps both tools standalone but turns the installed configs into generated
-files rather than symlinks to versioned ones, adds a render step to debug,
-and needs marker-line templating because the provisioning scripts have no
-YAML library. A read-time shared file has none of that, but it must not
-become the cross-read ADR-0010 banned: the maintainer's constraint for this
-decision was that belt and suspenders never read each other's config.
+files rather than symlinks to versioned ones. It also adds a render step to
+debug and needs marker-line templating because the provisioning scripts
+have no YAML library. A read-time shared file has none of that, but it must
+not become the cross-read ADR-0010 banned. The maintainer's constraint for
+this decision was that belt and suspenders never read each other's config.
 
 ## Decision
 
@@ -58,8 +58,9 @@ every key in the shared file.
 
 ADR-0010's rule stands: neither tool reads the other's config, and neither
 file is a fallback for the other. What changes is the count of explicit,
-non-own surfaces belt reads: the Claude settings deny list and now the names
-files it lists, each named in its config, each reported by `belt doctor`.
+non-own surfaces belt reads. They are the Claude settings deny list and now
+the names files it lists, each named in its config, each reported by
+`belt doctor`.
 
 ## Consequences
 
@@ -68,7 +69,7 @@ files it lists, each named in its config, each reported by `belt doctor`.
   machine class; a work overlay adds a second file and one include line when
   a work-only name appears.
 - Rollout order matters. The binary must reach a machine before the
-  rendering that drops its inline lists: an older belt ignores `include`,
+  rendering that drops its inline lists. An older belt ignores `include`,
   and the result is an empty name set, which `belt doctor` reports as a
   warning rather than a deny. Merging the binary first and running the
   provisioning tool before the config change removes the window.

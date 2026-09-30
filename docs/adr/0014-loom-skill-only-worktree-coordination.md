@@ -19,8 +19,8 @@ coordinator should be a skill, a CLI tool, or a service with a store.
 
 Skill-only. The coordinator is a role (the weaver) plus conventions, and
 every piece of coordinator state is derived from git at the moment it is
-needed: `git worktree list` for what exists, `git status` for what is in
-flight, `git log <default>..branch` for what is ready, `git branch
+needed. That means `git worktree list` for what exists, `git status` for
+what is in flight, `git log <default>..branch` for what is ready, `git branch
 --merged` for what is done. There is no store, no queue, no daemon, and no
 port.
 
@@ -28,9 +28,9 @@ Two things drove it. The platform has no lock, lease, or queue primitive,
 deliberately: wire's non-goals refuse queue semantics and work routing, and
 worklog's remote assumes a single writer. A coordinator service would have
 introduced the first one for a workflow that a role covers. And the
-decision is cheap to revisit: because the model defines state as
+decision is cheap to revisit. Because the model defines state as
 derived-from-git, a later CLI or service would automate the same derivation
-rather than migrate a store, so nothing about going skill-first is load-
+rather than migrate a store. So nothing about going skill-first is load-
 bearing if real complexity (cross-machine looms, enforced ordering) ever
 shows up.
 

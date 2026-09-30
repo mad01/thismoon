@@ -10,16 +10,16 @@
 
 The commit-policy hint made a repo property configurable only in the wrong
 place. Whether a repo's main is committed to directly or via PR is decided
-by the repo (thismoon went PR-only, dotfiles stays direct), but the
+by the repo (thismoon went PR-only, dotfiles stays direct). But the
 machine-rendered belt config (ADR-0010) is the only surface, so every
-machine's rendering must enumerate other repos' policies, and a repo cannot
+machine's rendering must enumerate other repos' policies. And a repo cannot
 version its own policy next to the code it applies to.
 
 The obvious fix, a repo-root config file belt reads, collides with what
 belt is. A checked-out repo is untrusted input: any clone could carry a
 config that disables `write-internal-names` or allowlists itself for main
 pushes. And belt's own fail-closed rule cuts the other way: a
-present-but-broken machine config denies every guarded call, so if a repo
+present-but-broken machine config denies every guarded call. So if a repo
 file inherited that semantic, a malformed file in any cloned repo would
 shut down the machine's tooling.
 
@@ -36,8 +36,8 @@ touches, with two hard rules:
   loosening or tightening enforcement stays with the machine rendering.
   The loader lives in `internal/hint`, which `internal/guard` cannot import
   without a cycle, so the boundary is structural, not conventional.
-- **Never deny.** A missing file is defaults, a foreign or empty file is a
-  no-op, and a file that fails to parse degrades to one line of advisory
+- **Never deny.** A missing file is defaults, and a foreign or empty file is
+  a no-op. A file that fails to parse degrades to one line of advisory
   text naming the file, the fail-visible channel a hint already has. The
   machine config's broken-config-denies-everything semantic explicitly does
   not apply to repo files.
@@ -56,8 +56,8 @@ are advisory.
   a repo file costs exactly what an ignored hint costs, and the guard tier
   is unaffected.
 - Unknown hint ids and unknown keys in `.belt.yaml` are ignored rather
-  than rejected, because a repo may target a newer belt than the machine runs,
-  and nagging on every commit about keys the binary does not know would
+  than rejected, because a repo may target a newer belt than the machine runs.
+  And nagging on every commit about keys the binary does not know would
   make upgrades noisy in the wrong direction. This inverts the machine
   config's validate-loudly rule on purpose: that rule protects the
   operator's beliefs about enforcement; a repo file carries no enforcement.
