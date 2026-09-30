@@ -1,14 +1,14 @@
 # speak
 
 A Go CLI that turns text into speech for this machine through a configurable
-text-to-speech (TTS) provider: a local Kokoro engine by default, or
-OpenRouter, OpenAI, a LiteLLM proxy or the Gemini Developer API. `speak
-serve` at `http://speak.this/` is the audio service present pages read aloud
-through; `speak mcp` reads on the speakers for agents.
+text-to-speech (TTS) provider. The provider is a local Kokoro engine by
+default, or OpenRouter, OpenAI, a LiteLLM proxy or the Gemini Developer API.
+`speak serve` at `http://speak.this/` is the audio service present pages read
+aloud through; `speak mcp` reads on the speakers for agents.
 
 Documents are read on present. A present page registers its text with speak
-on load; speak synthesizes the parts into a disk cache when the page asks
-(Generate all TTS for page) or plays them, section by section, retrying a
+on load. speak synthesizes the parts into a disk cache when the page asks
+(Generate all TTS for page) or plays them, section by section. It retries a
 part the provider fails on, and a replay starts from ready audio. The same
 service handles `/v1/audio/speech` so other local tools can request speech
 without touching the provider directly. speak's own
@@ -154,7 +154,7 @@ claude mcp add --scope user speak -- speak mcp
 
 On a ralph-managed machine, skip the manual command above. Registering the server with a client is machine-private wiring that ships from the consuming repo's companion recipe (see [docs/adr/0006](../../docs/adr/0006-recipe-layering-and-platform-deps.md)).
 
-Only one server-side session plays at a time; playback is serialised across
+Only one server-side session plays at a time. Playback is serialised across
 processes by an `flock` on `playback.lock` in the state directory, so a second
 caller gets a `BUSY | …` reply instead of talking over the first.
 
@@ -182,7 +182,7 @@ All three are root flags: `serve`, `mcp`, and `doctor` resolve them the same way
 | `--state-dir` | `SPEAK_STATE_DIR` | `~/.local/share/speak` where it holds `audio/`, else `~/.local/state/speak` |
 
 `speak serve` answers cross-origin requests only from this machine's own
-pages: an `Origin` on loopback or under `.this` is reflected back, and any
+pages: an `Origin` on loopback or under `.this` is reflected back. Any
 other origin, or a cross-site request that sends none, gets 403, so a
 foreign page cannot start a synthesis. curl and the CLI are unaffected. See
 [config.md](config.md) for the full surface.
