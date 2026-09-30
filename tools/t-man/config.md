@@ -3,14 +3,14 @@
 ## Where config lives
 
 t-man has no config file. It reads no YAML, TOML, or JSON on startup, and it
-keeps no on-disk state of its own: every run gets its desired state from
+keeps no on-disk state of its own. Every run gets its desired state from
 command-line flags, and the launchd plist it writes doubles as both the
 service definition and the record of what was last applied.
 
 - **Per-invocation flags** are the whole configuration surface. `t-man add`
   builds a `service.Definition` in memory from its flags, hands it to the
   reconciler, and forgets it once the command exits. There is nothing to
-  edit between runs; the next `add` for the same service supplies the flags
+  edit between runs. The next `add` for the same service supplies the flags
   again (typically from a ralph recipe or an install script), and t-man
   diffs the result against the plist on disk.
 - **The generated plist** is the one persisted artifact:
@@ -18,8 +18,8 @@ service definition and the record of what was last applied.
   `/Library/LaunchDaemons/<name>.plist` for daemons added with `--daemon`.
   It carries a `TManMetadata` dict with a SHA256 hash of the definition, so
   an unchanged `add` is a no-op and a changed one rewrites the plist. The
-  file is marked `DO NOT EDIT MANUALLY`: hand edits are not read back into
-  anything and would just be overwritten (or silently ignored, if the
+  file is marked `DO NOT EDIT MANUALLY`. Hand edits are not read back into
+  anything. They would just be overwritten (or silently ignored, if the
   `TManMetadata` marker gets stripped so t-man stops recognizing the plist
   as its own).
 - **Precedence**: for any given service, flags passed to the current `add`
@@ -40,7 +40,7 @@ service definition and the record of what was last applied.
   not just `add`.
 
 `--agent` and `--daemon` are one choice spelled two ways, so t-man resolves
-them together rather than treating them as unrelated switches: passing
+them together rather than treating them as unrelated switches. Passing
 either one alone picks the mode it names, and passing both is fine as long
 as they agree (`--agent=false --daemon`). A pair that says the same thing twice
 (`--agent --daemon`, or `--agent=false --daemon=false`) is rejected with an
@@ -70,8 +70,8 @@ error naming both values.
 - `--sandbox-profile` (string, default `""`): path to a seatbelt profile
   (`.sb` file). When set, the service's `ProgramArguments` wrap the command
   in `/usr/bin/sandbox-exec -D HOME=<home> -f <profile>`. Both the resolved
-  path and a SHA256 digest of the profile's content feed the reconcile hash,
-  so editing the profile file (without changing any flag) still triggers a
+  path and a SHA256 digest of the profile's content feed the reconcile hash.
+  So editing the profile file (without changing any flag) still triggers a
   plist rewrite and service bounce on the next `add`.
 - `--extra-log` (repeatable `NAME=PATH`, default none): registers an
   additional named log file for `t-man logs --source NAME`, for output a

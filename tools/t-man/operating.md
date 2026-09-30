@@ -12,7 +12,7 @@ Every managed service gets RunAtLoad and KeepAlive set true: launchd starts
 it at load and relaunches it whenever it exits. t-man shells out to the
 legacy launchctl verbs (load -w, unload, start, stop, list, print) and does
 no process supervision or health checking itself. `add` is idempotent: a
-SHA256 hash of the full definition is stored inside the plist, an unchanged
+SHA256 hash of the full definition is stored inside the plist. An unchanged
 re-add is a no-op, and a changed one rewrites the plist and bounces the
 service.
 
@@ -40,10 +40,10 @@ it starts. Read `{{.Bin}} status <name>` for the exact command, workdir, and
 log paths, then `{{.Bin}} logs <name> --stderr` (crash loops print why
 there). If the logs are empty, ask launchd for the exit reason:
 `launchctl print gui/$(id -u)/<name>` and read the `last exit code` and
-`state` fields. Then run the plist's command by hand from its workdir; a
+`state` fields. Then run the plist's command by hand from its workdir. A
 command that works in the shell but not under launchd is almost always
 missing environment (launchd starts services with a minimal PATH and none
-of the shell profile), fixed with `add --env` / `--path`.
+of the shell profile). Fix it with `add --env` / `--path`.
 
 A service sits in "spawn scheduled" with `last exit code = 78: EX_CONFIG`
 while its binary runs fine by hand: the macOS Background Task Management
@@ -58,7 +58,7 @@ services can wedge from one rebuild — check `{{.Bin}} list` for others
 before calling it fixed.
 
 t-man reports the service running but its behavior is stale: launchd keeps
-the old process across a rebuild and reinstall, so the binary on disk is new
+the old process across a rebuild and reinstall. So the binary on disk is new
 while the process serving is old. Compare the service's `GET /version` (or
 its own `version` command) with the freshly installed binary;
 `{{.Bin}} restart <name>` picks up the new one.
@@ -73,7 +73,7 @@ it skips plists it does not recognise as its own.
 
 `{{.Bin}} version -o json` reports the build of the t-man binary on PATH.
 Each managed plist records under TManMetadata.Version the build that last
-wrote it; a difference only means the service has not been re-added since a
+wrote it. A difference only means the service has not been re-added since a
 t-man upgrade, and the next `add` refreshes it. t-man runs no long-lived
 process of its own, so there is no serve-side build to compare against.
 

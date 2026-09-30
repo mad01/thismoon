@@ -119,9 +119,9 @@ and `KeepAlive` are always set to true on the generated plist.
 ## Gotchas
 
 - **Runtime debugging lives in `operating.md`** (embedded in the binary,
-  printed by `t-man docs`): where supervised services' logs land, the
-  crash-loop first moves, the stale-binary-after-rebuild check, and why a
-  service can be missing from `list`. Keep those facts there, not here.
+  printed by `t-man docs`). It covers where supervised services' logs land,
+  the crash-loop first moves, the stale-binary-after-rebuild check, and why
+  a service can be missing from `list`. Keep those facts there, not here.
 - **No declarative manifest.** t-man builds a `Definition` from `add` flags;
   there is no YAML/JSON service file it reads at runtime. `service-info.yaml`
   in this directory is catalog metadata, not service config.

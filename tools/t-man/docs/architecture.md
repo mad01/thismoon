@@ -123,6 +123,6 @@ t-man is the bottom layer for a set of local `.this` services — a present
 server, a text-to-speech service, a status page, code search, and a catalog,
 among others. Each registers itself as a t-man agent; one front-door daemon
 runs as a root LaunchDaemon. When you reason about why one of those services is
-down, t-man is where the launchd truth lives: the plist it wrote, the logs it
-points at, and the hash that decides whether the last `add` actually changed
-anything.
+down, t-man is where the launchd truth lives. That truth is the plist it wrote,
+the logs it points at, and the hash that decides whether the last `add`
+actually changed anything.
