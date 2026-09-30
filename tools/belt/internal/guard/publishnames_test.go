@@ -585,6 +585,15 @@ func TestPublishInternalNamesRealGitPush(t *testing.T) {
 	}); d == nil {
 		t.Error("git -C form must resolve the repo the push runs in")
 	}
+	// A cd only a shell can resolve leaves the push directory unknown. The
+	// guard must not fill the gap with belt's own process cwd, which here is
+	// the repo holding the offending commit: unknown scans nothing.
+	t.Chdir(repo)
+	if d := g.Check(Input{
+		Event: EventBash, Command: "cd $ELSEWHERE && git push -u origin feat", Cwd: other,
+	}); d != nil {
+		t.Errorf("unresolvable cd must not be judged in the process cwd, got %s", d.Reason)
+	}
 }
 
 func TestParseGh(t *testing.T) {

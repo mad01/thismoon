@@ -117,12 +117,18 @@ func gitUserEmail(dir string) string {
 }
 
 // gitOutput runs one git command in dir and returns its trimmed stdout, or ""
-// on any failure — a guard helper must degrade to "unknown", never error.
+// on any failure. A guard helper degrades to "unknown", never errors, and
+// never guesses: an empty dir means the caller could not tell where the
+// command runs, and running git in belt's own process directory instead would
+// judge the session's repo in place of the target one. That is how a `cd` with
+// a target only a shell can resolve once let a push into a non-exempt repo
+// ride an exempt session cwd.
 func gitOutput(dir string, args ...string) string {
-	cmd := exec.Command("git", args...)
-	if dir != "" {
-		cmd.Dir = dir
+	if dir == "" {
+		return ""
 	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

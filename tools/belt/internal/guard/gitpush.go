@@ -42,12 +42,12 @@ func (g *GitPushMain) Event() string { return EventBash }
 
 // Check scans every git push in the command (compound commands included) and
 // denies when one targets main or master. It walks the command's segments in
-// order, tracking the shell's working directory across `cd`/`pushd` so a bare
-// push (no `git -C`) is evaluated against the directory the push actually runs
-// in — not the session cwd. Without this a `cd <other-repo> && git push origin
+// order, tracking the shell's working directory across `cd`/`pushd`, so a bare
+// push (no `git -C`) is judged against the directory the push runs in rather
+// than the session cwd. Without that, `cd <other-repo> && git push origin
 // main` from an exempt repo's cwd would be checked against the exempt repo and
-// wrongly allowed. An unresolvable `cd` target (a variable, `cd -`) makes the
-// running cwd unknown, and an unresolved repo already fails closed downstream.
+// wrongly allowed. A cd whose target cannot be resolved without a shell leaves
+// the directory unknown, and checkPush then fails closed instead of guessing.
 func (g *GitPushMain) Check(in Input) *Denial {
 	cwd := in.Cwd
 	for _, seg := range splitSegments(in.Command) {
@@ -61,60 +61,139 @@ func (g *GitPushMain) Check(in Input) *Denial {
 			if dir == "" {
 				dir = cwd
 			}
-			branch := push.targetBranch(func(string) string { return g.resolveBranch(dir) })
-			if !defaultBranches[branch] {
-				continue
+			if d := g.checkPush(push, dir); d != nil {
+				return d
 			}
-			if g.pushExempt(dir) {
-				continue
-			}
-			return Reasonf(
-				GitPushMainID,
-				"pushing to %q is blocked on this machine (direct pushes to the default branch are never allowed here). "+
-					"Create a feature branch and open a PR instead: git checkout -b <branch> && git push -u origin <branch>.",
-				branch,
-			)
 		}
 	}
 	return nil
 }
 
+// checkPush judges one push against the directory it runs in. An empty dir
+// means that directory could not be determined, and the push is handed to
+// unknownDirDenial rather than resolved against a guessed location.
+func (g *GitPushMain) checkPush(push gitPush, dir string) *Denial {
+	if dir == "" {
+		return unknownDirDenial(push)
+	}
+	branch := push.targetBranch(func() string { return g.resolveBranch(dir) })
+	if !defaultBranches[branch] || g.pushExempt(dir) {
+		return nil
+	}
+	return Reasonf(
+		GitPushMainID,
+		"pushing to %q is blocked on this machine (direct pushes to the default branch are never allowed here). "+
+			"Create a feature branch and open a PR instead: git checkout -b <branch> && git push -u origin <branch>.",
+		branch,
+	)
+}
+
+// unknownDirDenial decides a push whose directory could not be determined:
+// the cd before it had a target only a shell can resolve. Neither the current
+// branch nor the repo can be resolved without running git somewhere it does
+// not belong, so the push is denied unless its refspecs name a non-default
+// branch outright, which is safe wherever it runs.
+func unknownDirDenial(push gitPush) *Denial {
+	needsBranch := false
+	branch := push.targetBranch(func() string {
+		needsBranch = true
+		return ""
+	})
+	if !needsBranch && !defaultBranches[branch] {
+		return nil
+	}
+	return Reasonf(
+		GitPushMainID,
+		"cannot tell which repo this push runs in: the cd before it has a target only a shell can "+
+			"resolve (a variable, cd -, a substitution). Use an absolute path, ~, or $HOME in the cd, "+
+			"or git -C <dir> on the push, so the target repo can be checked.",
+	)
+}
+
 // parseCd reports whether a segment's tokens are a `cd`/`pushd` invocation and,
-// if so, returns its target path. A cd with no argument (`cd`, home) or an
-// unresolvable target (`cd -`, `cd $VAR`, `cd "$(...)"`) returns a target that
-// resolveDir turns into an unknown cwd, so a later bare push fails closed.
+// if so, returns its target as written. A cd with no argument goes home, so it
+// returns "~"; resolveDir decides what any target means.
 func parseCd(tokens []string) (string, bool) {
 	if len(tokens) == 0 || (tokens[0] != "cd" && tokens[0] != "pushd") {
 		return "", false
 	}
 	// Skip cd option flags (`cd -P`, `cd -L`); the first non-flag token is the
-	// target. No target at all (bare `cd`) is an unknown destination.
+	// target.
 	for _, tok := range tokens[1:] {
 		if tok == "-P" || tok == "-L" || tok == "-e" || tok == "-@" {
 			continue
 		}
 		return tok, true
 	}
-	return "", true
+	return "~", true
 }
 
-// resolveDir applies a `cd` target to the current directory. It returns "" —
-// an unknown cwd, which forces the fail-closed path — for anything it cannot
-// resolve statically: an empty target (bare `cd`), `cd -`, or a target that
-// still contains a shell metacharacter (a variable, glob, or substitution).
-// Absolute targets replace the cwd; relative targets join onto it, but only
-// when the current cwd is itself known.
+// unresolvableChars are the shell characters a cd target may still carry
+// after belt's own expansion. Any of them means a shell would rewrite the
+// target into something belt cannot see, so the destination is unknown.
+const unresolvableChars = "$*?~`\"'"
+
+// resolveDir applies a `cd` target to the current directory and returns the
+// new one, or "" for a destination it cannot determine statically: `cd -`, a
+// target expandCdTarget rejects, or a relative target from an unknown cwd.
+// An unknown cwd is what makes a later push fail closed (see checkPush).
 func resolveDir(cwd, target string) string {
-	if target == "" || strings.ContainsAny(target, "$*?~`") || target == "-" {
+	if target == "-" {
 		return ""
 	}
-	if path.IsAbs(target) {
+	target = expandCdTarget(target)
+	switch {
+	case target == "":
+		return ""
+	case path.IsAbs(target):
 		return path.Clean(target)
-	}
-	if cwd == "" {
+	case cwd == "":
 		return ""
 	}
 	return path.Clean(path.Join(cwd, target))
+}
+
+// expandCdTarget performs the expansions the shell would on a cd target, as
+// far as they can be done without a shell: a surrounding quote pair is
+// dropped, a leading $HOME or ${HOME} becomes the home directory unless
+// single-quoted, and so does an unquoted leading ~. A target that still
+// carries a shell metacharacter or a stray quote afterwards returns "".
+func expandCdTarget(target string) string {
+	quote, inner := unquote(target)
+	if quote != '\'' {
+		inner = expandHomeVar(inner)
+	}
+	if quote == 0 {
+		inner = config.ExpandHome(inner)
+	}
+	if strings.ContainsAny(inner, unresolvableChars) {
+		return ""
+	}
+	return inner
+}
+
+// unquote strips one pair of matching surrounding quotes and reports which
+// quote it was, 0 for none.
+func unquote(s string) (byte, string) {
+	n := len(s)
+	if n >= 2 && (s[0] == '"' || s[0] == '\'') && s[n-1] == s[0] {
+		return s[0], s[1 : n-1]
+	}
+	return 0, s
+}
+
+// expandHomeVar rewrites a leading $HOME or ${HOME} to the home directory,
+// through the same helper a leading ~ goes through. A longer variable
+// ($HOMEBREW_PREFIX, say) is left alone for the metacharacter check to
+// reject.
+func expandHomeVar(target string) string {
+	for _, v := range []string{"${HOME}", "$HOME"} {
+		rest, ok := strings.CutPrefix(target, v)
+		if ok && (rest == "" || rest[0] == '/') {
+			return config.ExpandHome("~" + rest)
+		}
+	}
+	return target
 }
 
 // segmentPushes extracts the git push invocations from a single segment,
@@ -151,11 +230,11 @@ type gitPush struct {
 }
 
 // targetBranch resolves which branch the push lands on. For explicit refspecs
-// the destination side (after ':') decides; bare pushes and HEAD resolve to
-// the current branch of the repo.
-func (p gitPush) targetBranch(currentBranch func(dir string) string) string {
+// the destination side (after ':') decides; bare pushes and HEAD ask
+// currentBranch for the branch checked out in the push directory.
+func (p gitPush) targetBranch(currentBranch func() string) string {
 	if !p.explicit {
-		return currentBranch(p.dir)
+		return currentBranch()
 	}
 	for _, spec := range p.refspecs {
 		spec = strings.TrimPrefix(spec, "+")
@@ -164,7 +243,7 @@ func (p gitPush) targetBranch(currentBranch func(dir string) string) string {
 		}
 		spec = strings.TrimPrefix(spec, "refs/heads/")
 		if spec == "HEAD" {
-			spec = currentBranch(p.dir)
+			spec = currentBranch()
 		}
 		if defaultBranches[spec] {
 			return spec
