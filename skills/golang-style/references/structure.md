@@ -25,7 +25,7 @@ Split packages by what they *do*, not by type. Real package names from the repo:
 
 **Never create `util`, `common`, `helpers`, or `base`.** A cross-cutting helper stays unexported in the package that uses it (`store.contains`, `proxy.normalizeHost`). If two types must reference each other, they belong in the same package, not a shared "base" one.
 
-> Backing: Effective Go and the Google guide both say package names should describe what the package provides; the Uber guide and Code Review Comments call out generic catch-all packages as an anti-pattern.
+> Backing: Effective Go and the Google guide both say package names should describe what the package provides. The Uber guide and Code Review Comments call out generic catch-all packages as an anti-pattern.
 
 ## One module = one root package; split only when it earns it
 
