@@ -21,11 +21,11 @@ to the deck alone.
 
 ## Decision
 
-For decks, a slide carries its layout in the Doc. A section may name a
-`layout` (`default`, `center`, `statement`, `section`). `notes` and
-`reveal` follow as section fields in a later step of the same ticket,
-decided and pending. A slide holding one stat or one quote alone is the
-big-number or quote slide, with no field to learn.
+For decks, a slide carries its layout in the Doc. A section `layout`
+(`default`, `center`, `statement`, `section`), speaker `notes`, and
+`reveal` follow as section fields in stage 2 of the same ticket, decided
+and pending, and so does the rule that a slide holding one stat or one
+quote alone is the big-number or quote slide, with no field to learn.
 
 The deck's chrome is deck-level: `logo`, `logo_position`, `progress`,
 `presenter`, and `footer` sit beside `summary`, `meta`, and `chips`. The

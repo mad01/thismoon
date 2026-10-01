@@ -63,5 +63,6 @@ control.
   contents) has no place in a deck and the view drops it. Speaker notes
   and per-slide layouts stay out of scope; a slide is a section. Superseded
   for decks by `0020-present-slide-layouts-and-chrome.md` (2026-10-01):
-  slides carry layout, notes, and reveal as section fields, and the deck
-  carries its chrome; the brief's contract is unchanged.
+  the deck carries its chrome, and slides carry layout, notes, and reveal
+  as section fields (decided, lands in stage 2); the brief's contract is
+  unchanged.
