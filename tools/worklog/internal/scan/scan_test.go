@@ -81,6 +81,77 @@ func TestScanDigestsAndFilters(t *testing.T) {
 	}
 }
 
+// TestSessionTitle pins the ai-title contract: Claude Code writes the title
+// under "aiTitle" and rewrites the line as the session evolves, so the last
+// one wins. The older "title" key is still read so legacy fixtures resolve.
+func TestSessionTitle(t *testing.T) {
+	// userLine gives each fixture the session id and timestamp Scan needs to
+	// emit a session at all.
+	const userLine = `{"type":"user","sessionId":"S1","cwd":"/tmp/x","timestamp":"2026-06-16T09:00:00.000Z","message":{"role":"user","content":"hi"}}`
+	now := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{
+			name: "aiTitle key is read",
+			lines: []string{
+				`{"type":"ai-title","aiTitle":"Herding space and agent naming","sessionId":"S1"}`,
+				userLine,
+			},
+			want: "Herding space and agent naming",
+		},
+		{
+			name: "last ai-title line wins",
+			lines: []string{
+				`{"type":"ai-title","aiTitle":"first draft","sessionId":"S1"}`,
+				userLine,
+				`{"type":"ai-title","aiTitle":"scan title fix","sessionId":"S1"}`,
+			},
+			want: "scan title fix",
+		},
+		{
+			name: "legacy title key still resolves",
+			lines: []string{
+				`{"type":"ai-title","title":"worklog design","sessionId":"S1"}`,
+				userLine,
+			},
+			want: "worklog design",
+		},
+		{
+			name: "empty ai-title line keeps the earlier title",
+			lines: []string{
+				`{"type":"ai-title","aiTitle":"kept","sessionId":"S1"}`,
+				userLine,
+				`{"type":"ai-title","aiTitle":"","sessionId":"S1"}`,
+			},
+			want: "kept",
+		},
+		{
+			name:  "no ai-title line",
+			lines: []string{userLine},
+			want:  "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSession(t, root, "proj", "s", tc.lines)
+			sessions, err := Scan(root, 14*24*time.Hour, now, configured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sessions) != 1 {
+				t.Fatalf("sessions = %d, want 1", len(sessions))
+			}
+			if got := sessions[0].Title; got != tc.want {
+				t.Errorf("title = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveTicketsFirewall(t *testing.T) {
 	cases := []struct {
 		name    string
