@@ -134,13 +134,6 @@ func TestNextCalendarRun(t *testing.T) {
 			wantOK:  true,
 		},
 		{
-			name:    "day and weekday must both match",
-			entries: []CalendarEntry{{Day: ip(13), Weekday: ip(5), Hour: ip(13), Minute: ip(13)}},
-			now:     on(2026, time.October, 1, 0, 0),
-			want:    on(2026, time.November, 13, 13, 13), // first Friday the 13th after now
-			wantOK:  true,
-		},
-		{
 			name: "earliest entry wins",
 			entries: []CalendarEntry{
 				{Hour: ip(17), Minute: ip(0)},

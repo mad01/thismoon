@@ -87,10 +87,11 @@ error naming both values.
 - `--calendar` (repeatable, default none): `StartCalendarInterval` entries
   written in launchd's own fields: `minute=0,hour=6,day=1`. Keys are
   `minute` (0-59), `hour` (0-23), `day` (1-31), `weekday` (0-7, Sunday is 0
-  or 7), `month` (1-12). A key left out is a wildcard; every key given must
-  match. Any value may be a range (`hour=9-17`, `day=1-7`); ranged keys
-  expand to their cross product, and only `weekday` may run downward to wrap
-  (`weekday=5-1`). Combines with `--schedule`.
+  or 7), `month` (1-12). A key left out is a wildcard. `day` and `weekday`
+  cannot share an entry, because launchd fires on either one matching; give
+  them as two entries. Any value may be a range (`hour=9-17`, `day=1-7`);
+  ranged keys expand to their cross product, and only `weekday` may run
+  downward to wrap (`weekday=5-1`). Combines with `--schedule`.
 
 The calendar entries from both flags are sorted, deduplicated, and capped
 at 200 per job, with Sunday stored as 0. The hash therefore does not depend

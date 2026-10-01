@@ -98,11 +98,19 @@ func TestParseCalendarFields(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "all fields",
-			spec: "minute=0,hour=7,day=1,weekday=1,month=1",
-			want: []CalendarEntry{
-				{Minute: ip(0), Hour: ip(7), Day: ip(1), Weekday: ip(1), Month: ip(1)},
-			},
+			name: "every field that may share an entry",
+			spec: "minute=0,hour=7,day=1,month=1",
+			want: []CalendarEntry{{Minute: ip(0), Hour: ip(7), Day: ip(1), Month: ip(1)}},
+		},
+		{
+			name:    "day with weekday is refused",
+			spec:    "day=13,weekday=5,hour=13,minute=13",
+			wantErr: "both day and weekday",
+		},
+		{
+			name:    "day range with weekday range is refused",
+			spec:    "day=1-7,weekday=1-5,hour=6,minute=0",
+			wantErr: "both day and weekday",
 		},
 		{
 			name: "mixed case and spaces",
@@ -356,6 +364,11 @@ func TestDefinitionValidate_Schedule(t *testing.T) {
 			wantErr: "keep_alive",
 		},
 		{name: "too many entries", def: Definition{Calendar: tooMany}, wantErr: "more than the 200"},
+		{
+			name:    "day with weekday",
+			def:     Definition{Calendar: []CalendarEntry{{Day: ip(13), Weekday: ip(5), Hour: ip(13)}}},
+			wantErr: "both day and weekday",
+		},
 	}
 
 	for _, tt := range tests {

@@ -18,9 +18,11 @@ const daysInWeek = 7
 
 // CalendarEntry is one StartCalendarInterval dict: the job fires every
 // minute whose wall-clock fields match every field that is set. A nil field
-// is a wildcard, the same as a missing key in the plist. All set fields must
-// match (unlike cron, Day and Weekday are not alternatives), and Weekday
-// accepts 0 or 7 for Sunday as launchd does.
+// is a wildcard, the same as a missing key in the plist. Weekday accepts 0
+// or 7 for Sunday as launchd does. launchd treats Day and Weekday as
+// alternatives (either one matching fires the job), so an entry that sets
+// both is refused; that keeps every remaining field a conjunction, which is
+// what the next-run math assumes.
 type CalendarEntry struct {
 	Minute  *int `json:"minute,omitempty"`
 	Hour    *int `json:"hour,omitempty"`
@@ -59,8 +61,9 @@ func lookupCalendarField(name string) (calendarField, bool) {
 	return calendarField{}, false
 }
 
-// validate checks every set field against its launchd range and rejects an
-// entry that sets nothing, which would fire every minute.
+// validate checks every set field against its launchd range, rejects an
+// entry that sets nothing (it would fire every minute), and rejects one that
+// sets both day and weekday, which launchd would fire on either match.
 func (e CalendarEntry) validate() error {
 	set := 0
 	for _, f := range calendarFields {
@@ -75,6 +78,12 @@ func (e CalendarEntry) validate() error {
 	}
 	if set == 0 {
 		return fmt.Errorf("calendar entry sets no field (it would fire every minute)")
+	}
+	if e.Day != nil && e.Weekday != nil {
+		return fmt.Errorf(
+			"calendar entry sets both day and weekday: launchd fires when either one " +
+				"matches, so give them as two entries, one with day and one with weekday",
+		)
 	}
 	return nil
 }
@@ -142,6 +151,7 @@ func lessKey(a, b [5]int) bool {
 // a range ("hour=9-17", "weekday=1-5"); ranged fields expand to their cross
 // product, capped at MaxCalendarEntries. A weekday range may wrap
 // ("weekday=5-1" is fri, sat, sun, mon); every other field must run upward.
+// day and weekday cannot appear together (see CalendarEntry).
 func ParseCalendarFields(spec string) ([]CalendarEntry, error) {
 	values, err := parseFieldValues(spec)
 	if err != nil {

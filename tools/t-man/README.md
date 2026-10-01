@@ -296,10 +296,12 @@ t-man add --name hourly-sync --every 1h -- $HOME/code/bin/sync
 ```
 
 Calendar fields: `minute` 0-59, `hour` 0-23, `day` 1-31, `weekday` 0-7 (0 and
-7 are both Sunday), `month` 1-12. A field left out is a wildcard, and every
-field given must match. So `day=13,weekday=5` means Friday the 13th, where
-cron would read it as the 13th or any Friday. An entry that sets no field is
-rejected, since it would fire every minute; use `--every 1m` for that.
+7 are both Sunday), `month` 1-12. A field left out is a wildcard. An entry
+that sets no field is rejected, since it would fire every minute; use
+`--every 1m` for that. An entry that sets both `day` and `weekday` is
+rejected too: launchd fires such an entry when either one matches (the 13th
+or any Friday, not Friday the 13th), which would make the next-run column
+lie, so give the two conditions as two entries instead.
 
 After expansion the entries are sorted and deduplicated, with Sunday always
 written as 0. The same schedule written two ways therefore produces the
