@@ -91,17 +91,45 @@ func nextDay(t time.Time, day int) time.Time {
 }
 
 // nextHour moves t to the wanted hour today when it is still ahead,
-// otherwise to midnight tomorrow. Within the day it adds elapsed time rather
-// than rebuilding the wall clock with time.Date, which may pick the wrong
-// offset for an hour a DST change repeats or skips; the loop re-checks the
-// wall clock after the jump, so a jump that crosses a change converges on
-// the next real occurrence of the hour.
+// otherwise to midnight tomorrow. Two candidates compete for the same-day
+// jump, because each is wrong on one side of a DST change: the wall time
+// rebuilt with time.Date is right across a spring-forward gap (adding
+// elapsed hours would overshoot by one), while t plus the elapsed hours is
+// right across a fall-back repeat (time.Date picks the later copy of a
+// repeated hour). The earliest candidate after t that reads the wanted hour
+// wins. When neither does, the gap swallowed the hour, and the earliest
+// forward candidate is returned for the loop to move on from.
 func nextHour(t time.Time, hour int) time.Time {
-	if t.Hour() < hour {
-		ahead := time.Duration(hour-t.Hour())*time.Hour - time.Duration(t.Minute())*time.Minute
-		return t.Add(ahead)
+	if t.Hour() >= hour {
+		return startOfDay(t.Year(), t.Month(), t.Day()+1, t.Location())
 	}
-	return startOfDay(t.Year(), t.Month(), t.Day()+1, t.Location())
+	rebuilt := time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, t.Location())
+	elapsed := t.Add(
+		time.Duration(hour-t.Hour())*time.Hour - time.Duration(t.Minute())*time.Minute,
+	)
+	return pickHour(t, hour, rebuilt, elapsed)
+}
+
+// pickHour returns the earliest candidate after t whose wall clock reads
+// hour, else the earliest candidate after t, else the zero time (which the
+// caller's forward guard turns into the next minute).
+func pickHour(t time.Time, hour int, candidates ...time.Time) time.Time {
+	var best, forward time.Time
+	for _, c := range candidates {
+		if !c.After(t) {
+			continue
+		}
+		if forward.IsZero() || c.Before(forward) {
+			forward = c
+		}
+		if c.Hour() == hour && (best.IsZero() || c.Before(best)) {
+			best = c
+		}
+	}
+	if !best.IsZero() {
+		return best
+	}
+	return forward
 }
 
 // nextMinute moves t to the wanted minute of this hour when it is still

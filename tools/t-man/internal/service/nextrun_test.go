@@ -209,8 +209,15 @@ func TestNextCalendarRun_DST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadLocation: %v", err)
 	}
+	newYork, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
 	utc := func(month time.Month, day, hour, minute int) time.Time {
 		return time.Date(2026, month, day, hour, minute, 0, 0, time.UTC)
+	}
+	utc2027 := func(month time.Month, day, hour, minute int) time.Time {
+		return time.Date(2027, month, day, hour, minute, 0, 0, time.UTC)
 	}
 
 	tests := []struct {
@@ -273,6 +280,56 @@ func TestNextCalendarRun_DST(t *testing.T) {
 			loc:   stockholm,
 			now:   utc(time.March, 29, 0, 10), // 01:10 CET
 			want:  utc(time.March, 30, 0, 30), // 02:30 CEST on the 30th
+		},
+		{
+			// An hour after the spring-forward gap must not overshoot into
+			// the next day: 04:00 CEST is 02:00 UTC, three wall hours but
+			// only two real hours after 01:10 CET.
+			name:  "stockholm spring forward, hour after the gap is today",
+			entry: CalendarEntry{Hour: ip(4), Minute: ip(0)},
+			loc:   stockholm,
+			now:   utc(time.March, 29, 0, 10), // 01:10 CET
+			want:  utc(time.March, 29, 2, 0),  // 04:00 CEST
+		},
+		{
+			// 2027-03-28: CET ends at 01:00 UTC. A daily 07:30 viewed the
+			// evening before must land on the 28th at 07:30 CEST (05:30 UTC),
+			// not skip to the 29th.
+			name:  "stockholm spring forward, daily slot the morning after",
+			entry: CalendarEntry{Hour: ip(7), Minute: ip(30)},
+			loc:   stockholm,
+			now:   utc2027(time.March, 27, 19, 0), // 20:00 CET on the 27th
+			want:  utc2027(time.March, 28, 5, 30),
+		},
+		{
+			// 2027-03-14: EST ends at 07:00 UTC (02:00 EST becomes 03:00 EDT).
+			// A daily 09:00 viewed Saturday evening lands on Sunday 09:00 EDT
+			// (13:00 UTC), not Monday.
+			name:  "new york spring forward, daily slot the morning after",
+			entry: CalendarEntry{Hour: ip(9), Minute: ip(0)},
+			loc:   newYork,
+			now:   utc2027(time.March, 13, 23, 0), // 18:00 EST on the 13th
+			want:  utc2027(time.March, 14, 13, 0),
+		},
+		{
+			// Fall back: 02:00 shows twice. From 00:10 CEST the next 02:00 on
+			// the wall is the first copy, 02:00 CEST (00:00 UTC); time.Date
+			// alone would pick 02:00 CET an hour later.
+			name:  "stockholm fall back, hour jump takes the first copy",
+			entry: CalendarEntry{Hour: ip(2), Minute: ip(0)},
+			loc:   stockholm,
+			now:   utc(time.October, 24, 22, 10), // 00:10 CEST
+			want:  utc(time.October, 25, 0, 0),
+		},
+		{
+			// Chicago fall back: 02:00 CDT never shows (01:59 CDT becomes
+			// 01:00 CST). From 01:10 CDT the next 02:00 is 02:00 CST, 08:00
+			// UTC; elapsed time alone would land on 01:00 CST.
+			name:  "chicago fall back, hour jump skips the hidden hour",
+			entry: CalendarEntry{Hour: ip(2), Minute: ip(0)},
+			loc:   chicago,
+			now:   utc(time.November, 1, 6, 10), // 01:10 CDT
+			want:  utc(time.November, 1, 8, 0),
 		},
 	}
 
