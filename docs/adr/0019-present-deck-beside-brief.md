@@ -64,5 +64,4 @@ control.
   and per-slide layouts stay out of scope; a slide is a section. Superseded
   for decks by `0020-present-slide-layouts-and-chrome.md` (2026-10-01):
   the deck carries its chrome, and slides carry layout, notes, and reveal
-  as section fields (decided, lands in stage 2); the brief's contract is
-  unchanged.
+  as section fields; the brief's contract is unchanged.
