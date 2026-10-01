@@ -6,6 +6,8 @@
 package hint
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -14,12 +16,14 @@ import (
 // Event names match `belt hint <event>` and the hook matcher they are
 // registered under. Search, bash, and external-text run on PostToolUse;
 // session-start runs on SessionStart, where there is no tool call — the input
-// carries only the session's cwd and id.
+// carries only the session's cwd and id. session-start aliases the config
+// constant because the config file names it (custom_hints.<name>.event) and
+// validates it there: one source for what a legal custom-hint event is.
 const (
-	EventSearch       = "search"        // matcher: the csl search MCP tools
-	EventBash         = "bash"          // matcher: Bash
-	EventSessionStart = "session-start" // hook: SessionStart
-	EventPrompt       = "prompt"        // hook: UserPromptSubmit
+	EventSearch       = "search"                     // matcher: the csl search MCP tools
+	EventBash         = "bash"                       // matcher: Bash
+	EventSessionStart = config.HintEventSessionStart // hook: SessionStart
+	EventPrompt       = "prompt"                     // hook: UserPromptSubmit
 	// matcher: the MCP tools that write human-read text off this machine.
 	// Which tools those are is consuming-repo wiring (docs/adr/0006); belt
 	// only drops the read-only calls a broad matcher would sweep in.
@@ -63,9 +67,11 @@ type Hint interface {
 }
 
 // All returns every registered hint, enabled or not, in registration order.
-// Introspection (belt doctor) needs the disabled ones too.
+// Introspection (belt doctor) needs the disabled ones too. Built-in hints
+// come first in fixed order; custom hints follow, alphabetical by name so
+// the order is deterministic across runs.
 func All(cfg config.Config) []Hint {
-	return []Hint{
+	hints := []Hint{
 		NewAgentMemory(cfg),
 		NewCommitPolicy(cfg),
 		NewLintPolicy(cfg),
@@ -75,6 +81,10 @@ func All(cfg config.Config) []Hint {
 		NewHumanizer(cfg),
 		NewPreferCSL(cfg),
 	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.CustomHints)) {
+		hints = append(hints, NewCustom(name, cfg))
+	}
+	return hints
 }
 
 // ForEvent returns the enabled hints for an event, in fixed order.

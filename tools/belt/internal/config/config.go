@@ -67,6 +67,25 @@ const (
 	ModeSoft = "soft"
 )
 
+// HintEventSessionStart is the one hint event a custom hint may register on
+// today. It lives here for the same reason the guard events do: the config
+// file names it (custom_hints.<name>.event) and this package validates what
+// it reads; internal/hint aliases it.
+const HintEventSessionStart = "session-start"
+
+// CustomHintEvents lists the events custom_hints.<name>.event accepts. The
+// field is a string rather than a bool so prompt and post-tool events can
+// join this list later without a schema break; until they do, validation
+// rejects them by name so a config does not register a hint on an event the
+// binary never runs it on.
+var CustomHintEvents = []string{HintEventSessionStart}
+
+// CustomHintTimeout is the default budget for one external hint run, the
+// same budget the kof hints give kof serve: a session-start hook runs before
+// the first prompt, and a slow external must cost nothing but this budget.
+// custom_hints.<name>.timeout_ms overrides it per hint.
+const CustomHintTimeout = 400 * time.Millisecond
+
 // SoftModeGuards lists the built-in guards that read a `mode:` toggle.
 // Every other guard ignores it, so setting mode: soft on one of them is a
 // config error rather than a quietly ignored key — the shape that lets an
@@ -104,6 +123,7 @@ type Config struct {
 	GitIdentity    []GitIdentity          // git-identity rules, first matching rule wins
 	CommitGuards   []CommitGuard          // commit-guard rules, every rule is checked
 	CustomGuards   map[string]CustomGuard // external-command guards keyed by guard name
+	CustomHints    map[string]CustomHint  // external-command hints keyed by hint name
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -153,6 +173,35 @@ type CustomGuard struct {
 
 // Soft reports whether the guard warns instead of denying.
 func (g CustomGuard) Soft() bool { return g.Mode == "soft" }
+
+// CustomHint is one externally-implemented hint: a named command belt execs
+// with the hook payload fields as JSON on stdin. Its trimmed stdout becomes
+// the advice, prefixed belt[<name>]: like every built-in hint. A non-zero
+// exit, a timeout, or empty stdout is silence plus a warn event, so a broken
+// external never breaks a session. The entry carries its own enabled and
+// exclude_repos keys because the entry is where the hint is defined; a
+// hints.<name> toggle of the same name is honored too, for symmetry with the
+// built-ins.
+type CustomHint struct {
+	Enabled *bool    `toml:"enabled"       yaml:"enabled,omitempty"`
+	Event   string   `toml:"event"         yaml:"event"`   // one of CustomHintEvents; required, validated at load
+	Command []string `toml:"command"       yaml:"command"` // external tool + args; required, validated at load
+	// TimeoutMS replaces the default CustomHintTimeout budget for this hint.
+	// Zero (unset) means the default.
+	TimeoutMS int `toml:"timeout_ms"    yaml:"timeout_ms,omitempty"`
+	// ExcludeRepos opts repos out of this hint, same canonical
+	// host/owner/repo patterns as the built-in hints' exclude_repos.
+	ExcludeRepos []string `toml:"exclude_repos" yaml:"exclude_repos,omitempty"`
+}
+
+// Timeout is the budget one run of the external gets: timeout_ms when set,
+// else the shared default.
+func (h CustomHint) Timeout() time.Duration {
+	if h.TimeoutMS > 0 {
+		return time.Duration(h.TimeoutMS) * time.Millisecond
+	}
+	return CustomHintTimeout
+}
 
 // Toggle enables or disables a single guard or hint by id, with optional
 // path exclusions, extra deny patterns beyond the shared sources, and a
@@ -314,8 +363,13 @@ func (c Config) GuardEnabled(id string) bool {
 
 // HintEnabled reports whether a hint is enabled. Hints default to on for the
 // same reason guards do, though the stakes differ: a disabled guard silently
-// stops denying, while a disabled hint only stops advising.
+// stops denying, while a disabled hint only stops advising. A custom hint's
+// own enabled field wins over a hints: toggle of the same name, as a custom
+// guard's does.
 func (c Config) HintEnabled(id string) bool {
+	if ch, ok := c.CustomHints[id]; ok && ch.Enabled != nil {
+		return *ch.Enabled
+	}
 	return enabled(c.Hints, id)
 }
 
@@ -341,9 +395,12 @@ func (c Config) RepoAllowed(guardID, repo string) bool {
 // an empty repo is never excluded. The shared direct_main_repos list is
 // deliberately not consulted here — only commit-policy reads it, via
 // DirectMain, because the workflow fact it states is about commits and
-// pushes, not about the other hints.
+// pushes, not about the other hints. A custom hint reads the list on its
+// own entry as well as the hints: toggle of the same name; both opt out, so
+// their union is the opted-out set.
 func (c Config) HintRepoExcluded(hintID, repo string) bool {
-	return RepoMatches(c.Hints[hintID].ExcludeRepos, repo)
+	patterns := slices.Concat(c.CustomHints[hintID].ExcludeRepos, c.Hints[hintID].ExcludeRepos)
+	return RepoMatches(patterns, repo)
 }
 
 // HintRepoExcludedTail is HintRepoExcluded for the one hint that knows a
@@ -612,6 +669,7 @@ func LoadFrom(p Paths) (Config, error) {
 		GitIdentity:     f.GitIdentity,
 		CommitGuards:    f.CommitGuards,
 		CustomGuards:    f.CustomGuards,
+		CustomHints:     f.CustomHints,
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
@@ -681,6 +739,7 @@ type File struct {
 	GitIdentity     []GitIdentity          `toml:"git_identity"      yaml:"git_identity"`
 	CommitGuards    []CommitGuard          `toml:"commit_guards"     yaml:"commit_guards"`
 	CustomGuards    map[string]CustomGuard `toml:"custom_guards"     yaml:"custom_guards"`
+	CustomHints     map[string]CustomHint  `toml:"custom_hints"      yaml:"custom_hints"`
 }
 
 // Source reports which belt config file was read and what happened.
@@ -763,6 +822,7 @@ func (f File) validate() error {
 			errs = append(errs, fmt.Errorf("custom_guards.%s.%w", name, err))
 		}
 	}
+	errs = append(errs, customHintErrors(f.CustomHints)...)
 	errs = append(errs, toggleModeErrors("guards", f.Guards)...)
 	errs = append(errs, toggleModeErrors("hints", f.Hints)...)
 	errs = append(errs, toggleFieldErrors("guards", f.Guards, GuardFields)...)
@@ -785,14 +845,53 @@ func (f File) validate() error {
 	return errors.Join(errs...)
 }
 
+// customHintErrors rejects the custom_hints entries that would load and then
+// advise nothing: an event the binary never runs custom hints on, a missing
+// command, a negative budget, and a name that shadows a built-in hint. The
+// shadow check reads HintFields, the one table that lists every built-in
+// hint id; a shadowing entry would register a second hint under an id the
+// toggles and doctor already attribute to the built-in.
+func customHintErrors(hints map[string]CustomHint) []error {
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(hints)) {
+		ch := hints[name]
+		if _, builtin := HintFields[name]; builtin {
+			errs = append(errs, fmt.Errorf(
+				"custom_hints.%s shadows the built-in hint of that name (pick another name)", name,
+			))
+		}
+		if !slices.Contains(CustomHintEvents, ch.Event) {
+			errs = append(errs, fmt.Errorf(
+				"custom_hints.%s.event is %q (supported: %s)",
+				name,
+				ch.Event,
+				strings.Join(CustomHintEvents, ", "),
+			))
+		}
+		if len(ch.Command) == 0 || strings.TrimSpace(ch.Command[0]) == "" {
+			errs = append(errs, fmt.Errorf("custom_hints.%s.command is empty", name))
+		}
+		if ch.TimeoutMS < 0 {
+			errs = append(errs, fmt.Errorf(
+				"custom_hints.%s.timeout_ms is %d (must be 0 for the default, or positive)",
+				name,
+				ch.TimeoutMS,
+			))
+		}
+	}
+	return errs
+}
+
 // GuardFields and HintFields declare which optional Toggle keys each
 // built-in id reads (`enabled` is universal, `mode` is owned by
 // SoftModeGuards). validate() rejects a set key missing from the id's row —
 // the key would parse and then do nothing. Ids absent from the tables stay
-// lax on purpose: custom guard names are user-defined, and a rendered
-// config may target a newer belt than this binary (config and binary ship
-// from different repos), so rejecting keys this binary does not know would
-// turn ordinary rollout skew into a machine-wide deny.
+// lax on purpose: custom guard and hint names are user-defined, and a
+// rendered config may target a newer belt than this binary (config and
+// binary ship from different repos), so rejecting keys this binary does not
+// know would turn ordinary rollout skew into a machine-wide deny. HintFields
+// doubles as the list of built-in hint ids a custom hint may not shadow; a
+// hint package test pins it to hint.All.
 var (
 	GuardFields = map[string][]string{
 		"git-push-main":          {"allow_repos"},

@@ -136,10 +136,17 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) []string {
 	}
 
 	fmt.Fprintln(w, "\nhints:")
+	var customHints []*hint.Custom
 	for _, h := range hint.All(cfg) {
+		if c, ok := h.(*hint.Custom); ok {
+			customHints = append(customHints, c)
+			continue
+		}
 		fmt.Fprintf(w, "  %-22s %-7s %s%s\n",
 			h.ID(), h.Event(), enabledWord(cfg.HintEnabled(h.ID())), toggleNote(cfg.Hints[h.ID()]))
 	}
+
+	printCustomHints(w, cfg, customHints)
 
 	base, count, probeErr := probe()
 	fmt.Fprintln(w, "\nkof serve — backs the kof-* hints:")
@@ -406,8 +413,39 @@ func printCustomGuards(w io.Writer, cfg config.Config, customs []*guard.Custom) 
 		// under is what decides whether it ever runs.
 		fmt.Fprintf(w, "  %-22s %-7s %-5s %-9s command: %s%s%s\n",
 			c.ID(), c.Event(), mode, enabledWord(cfg.GuardEnabled(c.ID())),
-			strings.Join(cg.Command, " "), matchNote(cg.Match), reachabilityNote(cg.Command))
+			strings.Join(cg.Command, " "), matchNote(cg.Match),
+			reachabilityNote(cg.Command, "guard allows with a warn event"))
 	}
+}
+
+// printCustomHints renders the config-registered external hints beside the
+// built-ins, with the same health fact doctor checks for custom guards:
+// whether the command resolves to something executable. An unreachable
+// command means the hint warns and stays silent on every session, which is
+// indistinguishable from a hint with nothing to say.
+func printCustomHints(w io.Writer, cfg config.Config, customs []*hint.Custom) {
+	fmt.Fprintln(w, "\ncustom hints — external commands from custom_hints in the belt config:")
+	if len(customs) == 0 {
+		fmt.Fprintln(w, "  (none configured)")
+		return
+	}
+	for _, c := range customs {
+		ch := c.Config()
+		fmt.Fprintf(w, "  %-22s %-13s %-9s budget: %s  command: %s%s%s\n",
+			c.ID(), c.Event(), enabledWord(cfg.HintEnabled(c.ID())), c.Timeout(),
+			strings.Join(ch.Command, " "), excludeReposNote(cfg, c.ID()),
+			reachabilityNote(ch.Command, "hint stays silent with a warn event"))
+	}
+}
+
+// excludeReposNote counts the repos opted out of a custom hint across both
+// places the list may sit, so the line matches what HintRepoExcluded reads.
+func excludeReposNote(cfg config.Config, id string) string {
+	n := len(cfg.CustomHints[id].ExcludeRepos) + len(cfg.Hints[id].ExcludeRepos)
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("  (exclude_repos: %d)", n)
 }
 
 func matchNote(match string) string {
@@ -417,17 +455,18 @@ func matchNote(match string) string {
 	return fmt.Sprintf("  match: %q", match)
 }
 
-// reachabilityNote flags a command PATH cannot resolve: the guard would warn
-// and allow on every call, i.e. check nothing.
-func reachabilityNote(command []string) string {
+// reachabilityNote flags a command that cannot run: an absolute path that
+// is missing or not executable, or a bare name PATH cannot resolve. The
+// consequence names what the owner then does on every call, since for a
+// guard that is "check nothing" and for a hint "say nothing".
+func reachabilityNote(command []string, consequence string) string {
 	if len(command) == 0 {
-		return "  MISCONFIGURED (empty command — guard checks nothing)"
+		return "  MISCONFIGURED (empty command — " + consequence + ")"
 	}
 	if _, err := exec.LookPath(command[0]); err != nil {
-		return fmt.Sprintf(
-			"  UNREACHABLE (%q not on PATH — guard allows with a warn event)",
-			command[0],
-		)
+		// The LookPath error already quotes the command and says why: not
+		// on PATH, missing, or not executable.
+		return fmt.Sprintf("  UNREACHABLE (%v — %s)", err, consequence)
 	}
 	return ""
 }

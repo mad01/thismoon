@@ -120,6 +120,26 @@ custom_guards:
     match: git commit
     mode: hard
 
+# Named external hints: belt execs the command with the hook payload fields
+# as JSON on stdin ({"event","cwd","session_id","transcript_path"} for
+# session-start) and relays its stdout, trailing whitespace trimmed and
+# multi-line allowed, as advice prefixed belt[<name>]:. A non-zero exit, a
+# run past the budget (400ms unless timeout_ms says otherwise), a start
+# failure, or empty stdout is silence plus a warn event: a broken external
+# never breaks a session. event is required and must be session-start
+# today (prompt and post-tool events can join later); a name that shadows
+# a built-in hint, a missing command, or an unsupported event is a config
+# error. This is where a machine-private hint (a daily journal, say) is
+# registered without a second SessionStart hook or a compiled-in hint.
+custom_hints:
+  daily-journal:
+    enabled: true
+    event: session-start
+    command: [journal, open-actions, --since, yesterday]
+    timeout_ms: 400
+    exclude_repos:
+      - github.com/you/scratch
+
 guards:
   git-push-main:
     enabled: true
@@ -296,6 +316,7 @@ type effectiveConfig struct {
 	GitIdentity    []config.GitIdentity          `yaml:"git_identity,omitempty"`
 	CommitGuards   []config.CommitGuard          `yaml:"commit_guards,omitempty"`
 	CustomGuards   map[string]config.CustomGuard `yaml:"custom_guards,omitempty"`
+	CustomHints    map[string]config.CustomHint  `yaml:"custom_hints,omitempty"`
 	Guards         map[string]config.Toggle      `yaml:"guards"`
 	Hints          map[string]config.Toggle      `yaml:"hints"`
 	ClaudeDeny     []string                      `yaml:"claude_deny"`
@@ -314,6 +335,7 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		GitIdentity:    cfg.GitIdentity,
 		CommitGuards:   cfg.CommitGuards,
 		CustomGuards:   cfg.CustomGuards,
+		CustomHints:    cfg.CustomHints,
 		Guards:         make(map[string]config.Toggle, len(guards)),
 		Hints:          make(map[string]config.Toggle, len(hints)),
 		ClaudeDeny:     cfg.ClaudeDeny,
@@ -325,6 +347,9 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		e.Guards[g.ID()] = withEnabled(cfg.Guards[g.ID()], cfg.GuardEnabled(g.ID()))
 	}
 	for _, h := range hints {
+		if _, ok := h.(*hint.Custom); ok {
+			continue // rendered under custom_hints with their full definition
+		}
 		e.Hints[h.ID()] = withEnabled(cfg.Hints[h.ID()], cfg.HintEnabled(h.ID()))
 	}
 	return e
