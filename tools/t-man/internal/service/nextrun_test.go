@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 	"time"
+	_ "time/tzdata" // the DST cases need real zone rules wherever the tests run
 )
 
 // stockholm is a fixed-offset zone so the tests pin that results come back
@@ -192,5 +193,103 @@ func TestDefinitionNextRun(t *testing.T) {
 	plain := Definition{}
 	if _, ok := plain.NextRun(now); ok {
 		t.Error("unscheduled NextRun() reported a time")
+	}
+}
+
+// TestNextCalendarRun_DST pins the clock arithmetic across daylight-saving
+// changes, where rebuilding a wall time with time.Date can pick the wrong
+// offset. Instants are given in UTC so the ambiguous local hour is
+// unambiguous in the fixture.
+func TestNextCalendarRun_DST(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	stockholm, err := time.LoadLocation("Europe/Stockholm")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	utc := func(month time.Month, day, hour, minute int) time.Time {
+		return time.Date(2026, month, day, hour, minute, 0, 0, time.UTC)
+	}
+
+	tests := []struct {
+		name  string
+		entry CalendarEntry
+		loc   *time.Location
+		now   time.Time // a UTC instant, viewed in loc
+		want  time.Time // a UTC instant
+	}{
+		{
+			// 2026-11-01: CDT ends at 06:00 UTC (02:00 CDT becomes 01:00 CST).
+			// 07:10 UTC is 01:10 CST, the second pass through 01:xx; the next
+			// 01:30 on the wall is 01:30 CST, not the 01:30 CDT already gone.
+			name:  "chicago fall back, second pass stays after now",
+			entry: CalendarEntry{Minute: ip(30)},
+			loc:   chicago,
+			now:   utc(time.November, 1, 7, 10),
+			want:  utc(time.November, 1, 7, 30),
+		},
+		{
+			name:  "chicago fall back, first pass is the ordinary case",
+			entry: CalendarEntry{Minute: ip(30)},
+			loc:   chicago,
+			now:   utc(time.November, 1, 6, 10), // 01:10 CDT
+			want:  utc(time.November, 1, 6, 30), // 01:30 CDT
+		},
+		{
+			// 2026-10-25: CEST ends at 01:00 UTC (03:00 CEST becomes 02:00 CET).
+			// 00:10 UTC is 02:10 CEST, the first pass; 02:55 comes 45 minutes
+			// later as CEST, not an hour and 45 minutes later as CET.
+			name:  "stockholm fall back, first pass is not an hour late",
+			entry: CalendarEntry{Minute: ip(55)},
+			loc:   stockholm,
+			now:   utc(time.October, 25, 0, 10),
+			want:  utc(time.October, 25, 0, 55),
+		},
+		{
+			// 03:00 CEST never shows on the wall: the clock goes from 02:59
+			// CEST to 02:00 CET. The next 03:00 is 03:00 CET at 02:00 UTC.
+			name:  "stockholm fall back, hour jump lands on the real 03:00",
+			entry: CalendarEntry{Hour: ip(3), Minute: ip(0)},
+			loc:   stockholm,
+			now:   utc(time.October, 24, 22, 10), // 00:10 CEST
+			want:  utc(time.October, 25, 2, 0),
+		},
+		{
+			// 2026-03-29: CET ends at 01:00 UTC (02:00 CET becomes 03:00 CEST).
+			// 02:30 does not exist; the next :30 on the wall is 03:30 CEST.
+			name:  "stockholm spring forward skips the missing half hour",
+			entry: CalendarEntry{Minute: ip(30)},
+			loc:   stockholm,
+			now:   utc(time.March, 29, 0, 50), // 01:50 CET
+			want:  utc(time.March, 29, 1, 30), // 03:30 CEST
+		},
+		{
+			// A daily 02:30 slot on the spring-forward day does not exist; the
+			// next one is the following day's.
+			name:  "stockholm spring forward, missing slot waits a day",
+			entry: CalendarEntry{Hour: ip(2), Minute: ip(30)},
+			loc:   stockholm,
+			now:   utc(time.March, 29, 0, 10), // 01:10 CET
+			want:  utc(time.March, 30, 0, 30), // 02:30 CEST on the 30th
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := tt.now.In(tt.loc)
+			got, ok := NextCalendarRun([]CalendarEntry{tt.entry}, now)
+			if !ok {
+				t.Fatalf("NextCalendarRun() found nothing")
+			}
+			if !got.After(now) {
+				t.Errorf("NextCalendarRun() = %v is not after now %v", got, now)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("NextCalendarRun() = %v (%v UTC), want %v UTC",
+					got, got.UTC().Format("15:04"), tt.want.Format("15:04"))
+			}
+		})
 	}
 }

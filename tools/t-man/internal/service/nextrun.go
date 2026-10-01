@@ -35,29 +35,42 @@ func NextCalendarRun(entries []CalendarEntry, now time.Time) (next time.Time, ok
 // next finds the first minute after now matching the entry. It walks the
 // clock field by field, jumping each mismatched field to its next candidate
 // (the next month, the next day, the wanted hour, the wanted minute) so the
-// loop runs a handful of iterations rather than one per minute. Every branch
-// moves t strictly forward, so the horizon is the only exit for an entry
-// that never matches.
+// loop runs a handful of iterations rather than one per minute. A jump that
+// does not land strictly after t (a wall time that a DST change made
+// ambiguous or absent) is replaced by the next minute, so t only ever moves
+// forward and the horizon is the only exit for an entry that never matches.
 func (e CalendarEntry) next(now time.Time) (time.Time, bool) {
 	t := now.Truncate(time.Minute).Add(time.Minute)
 	horizon := now.AddDate(nextRunHorizonYears, 0, 0)
 	for t.Before(horizon) {
-		switch {
-		case e.Month != nil && int(t.Month()) != *e.Month:
-			t = startOfDay(t.Year(), t.Month()+1, 1, t.Location())
-		case e.Day != nil && t.Day() != *e.Day:
-			t = nextDay(t, *e.Day)
-		case e.Weekday != nil && int(t.Weekday()) != *e.Weekday%7:
-			t = startOfDay(t.Year(), t.Month(), t.Day()+1, t.Location())
-		case e.Hour != nil && t.Hour() != *e.Hour:
-			t = nextHour(t, *e.Hour)
-		case e.Minute != nil && t.Minute() != *e.Minute:
-			t = nextMinute(t, *e.Minute)
-		default:
+		candidate, matched := e.advance(t)
+		if matched {
 			return t, true
 		}
+		if !candidate.After(t) {
+			candidate = t.Add(time.Minute)
+		}
+		t = candidate
 	}
 	return time.Time{}, false
+}
+
+// advance reports matched when every set field agrees with t's wall clock;
+// otherwise it returns the first mismatched field's next candidate time.
+func (e CalendarEntry) advance(t time.Time) (candidate time.Time, matched bool) {
+	switch {
+	case e.Month != nil && int(t.Month()) != *e.Month:
+		return startOfDay(t.Year(), t.Month()+1, 1, t.Location()), false
+	case e.Day != nil && t.Day() != *e.Day:
+		return nextDay(t, *e.Day), false
+	case e.Weekday != nil && int(t.Weekday()) != *e.Weekday%7:
+		return startOfDay(t.Year(), t.Month(), t.Day()+1, t.Location()), false
+	case e.Hour != nil && t.Hour() != *e.Hour:
+		return nextHour(t, *e.Hour), false
+	case e.Minute != nil && t.Minute() != *e.Minute:
+		return nextMinute(t, *e.Minute), false
+	}
+	return t, true
 }
 
 // startOfDay is midnight on the given date; time.Date normalises overflow,
@@ -78,19 +91,25 @@ func nextDay(t time.Time, day int) time.Time {
 }
 
 // nextHour moves t to the wanted hour today when it is still ahead,
-// otherwise to midnight tomorrow.
+// otherwise to midnight tomorrow. Within the day it adds elapsed time rather
+// than rebuilding the wall clock with time.Date, which may pick the wrong
+// offset for an hour a DST change repeats or skips; the loop re-checks the
+// wall clock after the jump, so a jump that crosses a change converges on
+// the next real occurrence of the hour.
 func nextHour(t time.Time, hour int) time.Time {
 	if t.Hour() < hour {
-		return time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, t.Location())
+		ahead := time.Duration(hour-t.Hour())*time.Hour - time.Duration(t.Minute())*time.Minute
+		return t.Add(ahead)
 	}
 	return startOfDay(t.Year(), t.Month(), t.Day()+1, t.Location())
 }
 
 // nextMinute moves t to the wanted minute of this hour when it is still
-// ahead, otherwise to the top of the next hour.
+// ahead, otherwise to the top of the next hour, by adding elapsed time for
+// the same reason as nextHour.
 func nextMinute(t time.Time, minute int) time.Time {
 	if t.Minute() < minute {
-		return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), minute, 0, 0, t.Location())
+		return t.Add(time.Duration(minute-t.Minute()) * time.Minute)
 	}
-	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, 0, 0, 0, t.Location())
+	return t.Add(time.Duration(60-t.Minute()) * time.Minute)
 }
