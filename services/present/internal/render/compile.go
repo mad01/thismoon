@@ -15,20 +15,40 @@ type Compiled struct {
 	JSON []byte
 }
 
-// Compile parses Doc JSON and compiles it under title. It is the one step
-// every write path runs, whether the Doc arrives from an MCP tool, from a
-// stored doc.json being re-rendered, or from a converter.
+// Compile parses Doc JSON and compiles it as a brief under title. It is the
+// one step every brief write path runs, whether the Doc arrives from an MCP
+// tool, from a stored doc.json being re-rendered, or from a converter.
 func Compile(data []byte, title string) (Compiled, error) {
+	return compile(data, title, RenderDoc)
+}
+
+// CompileDeck parses Doc JSON and compiles it as a deck under title: the
+// same Doc, rendered with the deck chrome the brief ignores. Every deck
+// write path runs it, the MCP tools and the re-render alike.
+func CompileDeck(data []byte, title string) (Compiled, error) {
+	return compile(data, title, RenderDeck)
+}
+
+func compile(
+	data []byte,
+	title string,
+	render func(Doc, string) (string, error),
+) (Compiled, error) {
 	var doc Doc
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return Compiled{}, fmt.Errorf("parse doc: %w", err)
 	}
-	return CompileDoc(doc, title)
+	return compileDoc(doc, title, render)
 }
 
-// CompileDoc renders d under title and returns the artifacts a page stores.
+// CompileDoc renders d as a brief under title and returns the artifacts a
+// page stores.
 func CompileDoc(d Doc, title string) (Compiled, error) {
-	out, err := RenderDoc(d, title)
+	return compileDoc(d, title, RenderDoc)
+}
+
+func compileDoc(d Doc, title string, render func(Doc, string) (string, error)) (Compiled, error) {
+	out, err := render(d, title)
 	if err != nil {
 		return Compiled{}, err
 	}

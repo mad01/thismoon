@@ -297,7 +297,7 @@ func resolveDeck(s string, title string) (htmlOut string, docJSON []byte, err er
 	if s[0] != '{' {
 		return "", nil, errors.New("deck: want Doc JSON (an object with sections, one per slide)")
 	}
-	c, err := render.Compile([]byte(s), title)
+	c, err := render.CompileDeck([]byte(s), title)
 	if err != nil {
 		return "", nil, fmt.Errorf("deck: %w", err)
 	}

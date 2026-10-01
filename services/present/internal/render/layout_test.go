@@ -279,7 +279,7 @@ func TestBlockColsJSONRoundTrip(t *testing.T) {
 }
 
 func TestRenderDocDeckChrome(t *testing.T) {
-	plain, err := RenderDoc(
+	plain, err := RenderDeck(
 		Doc{Meta: "m", Sections: []Section{{Heading: "S", Blocks: []Block{{T: "p", Text: "x"}}}}},
 		"T",
 	)
@@ -293,7 +293,7 @@ func TestRenderDocDeckChrome(t *testing.T) {
 		t.Errorf("fragment without chrome must start with the title: %q", plain[:40])
 	}
 
-	out, err := RenderDoc(Doc{
+	withChrome := Doc{
 		Meta:         "2026-10-01 · review",
 		Presenter:    "Alex, platform",
 		Footer:       "Incident review",
@@ -301,7 +301,27 @@ func TestRenderDocDeckChrome(t *testing.T) {
 		LogoPosition: "top-right",
 		Progress:     "bar",
 		Sections:     []Section{{Heading: "S", Blocks: []Block{{T: "p", Text: "x"}}}},
-	}, "T")
+	}
+	// The brief ignores the chrome fields: no island, no byline, the same
+	// bytes as a Doc without them.
+	brief, err := RenderDoc(withChrome, "T")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(brief, "deck-chrome") || strings.Contains(brief, "brief-presenter") {
+		t.Errorf("the brief rendered deck chrome: %s", brief)
+	}
+	bare := withChrome
+	bare.Presenter, bare.Footer, bare.Logo, bare.LogoPosition, bare.Progress = "", "", "", "", ""
+	if want, _ := RenderDoc(bare, "T"); brief != want {
+		t.Errorf(
+			"brief with chrome fields differs from the brief without them:\n%s\n%s",
+			brief,
+			want,
+		)
+	}
+
+	out, err := RenderDeck(withChrome, "T")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +342,7 @@ func TestRenderDocDeckChrome(t *testing.T) {
 	}
 
 	// One field alone is enough for the island, and only that key is written.
-	out, err = RenderDoc(
+	out, err = RenderDeck(
 		Doc{
 			Logo:     "none",
 			Sections: []Section{{Heading: "S", Blocks: []Block{{T: "p", Text: "x"}}}},
@@ -342,7 +362,7 @@ func TestRenderDocDeckChrome(t *testing.T) {
 
 // A chrome string must never break out of its script island.
 func TestRenderDocDeckChromeScriptSafe(t *testing.T) {
-	out, err := RenderDoc(Doc{
+	out, err := RenderDeck(Doc{
 		Footer:   "</script><script>alert(1)</script>",
 		Sections: []Section{{Heading: "S", Blocks: []Block{{T: "p", Text: "x"}}}},
 	}, "T")
@@ -410,6 +430,30 @@ func TestCompileKeepsDeckChrome(t *testing.T) {
 	}
 	if _, err := Compile([]byte(`{"progress":"ring","sections":[]}`), "T"); err == nil {
 		t.Error("Compile accepted an unknown progress value")
+	}
+}
+
+// CompileDeck renders the chrome the brief's Compile leaves out, over the
+// same canonical JSON.
+func TestCompileDeckRendersChrome(t *testing.T) {
+	deck, err := CompileDeck([]byte(`{"presenter":"A","sections":[]}`), "T")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(deck.HTML, `<div class="brief-presenter">A</div>`) ||
+		!strings.Contains(deck.HTML, "deck-chrome") {
+		t.Errorf("CompileDeck did not render the chrome: %s", deck.HTML)
+	}
+	if string(deck.JSON) != `{"sections":[],"presenter":"A"}` {
+		t.Errorf("CompileDeck canonical JSON = %s", deck.JSON)
+	}
+	brief, err := Compile([]byte(`{"presenter":"A","sections":[]}`), "T")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(brief.HTML, "brief-presenter") ||
+		strings.Contains(brief.HTML, "deck-chrome") {
+		t.Errorf("Compile rendered deck chrome in the brief: %s", brief.HTML)
 	}
 }
 
