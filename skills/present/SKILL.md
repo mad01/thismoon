@@ -234,6 +234,10 @@ One example of each, as they go in a section's `blocks`:
 | `h` | string | Section heading (used for TOC anchor) |
 | `id` | string? | 4-char visible ID badge: either one letter + three digits (e.g. `"A001"`) or two letters + two digits (e.g. `"RC01"`). Rendered as a pill next to the heading and in the TOC. Use when presenting multiple items that need to be referenced by ID. |
 | `blocks` | array | Content blocks |
+| `tone` | string? | A palette role name (see **Colors available**). In a brief it gives the section a band in that colour; on a slide it tints the surface and the heading rule. An unknown name is refused |
+| `layout` | string? | Deck only, ignored by the brief: `default`, `center` (centred at today's sizes), `statement` (the heading is the slide, large and centred, blocks as a line under it), `section` (a divider: large heading and id on a tone band). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
+| `notes` | string? | Deck only: speaker notes with inline markdown. Never on the slide, never read aloud; the deck shows them in a drawer on the N key or the Notes button |
+| `reveal` | bool? | Deck only: the slide's list items and top-level blocks appear one per Next, Prev hides the last one, a jump lands with all shown. The progress dots and the URL hash track slides, not steps |
 
 ### Notes
 
@@ -292,6 +296,7 @@ Five optional fields sit at the top of the deck Doc beside `summary`, `meta`, an
 | `progress` | `dots` | `bar`, `none`. One dot per slide, done ones filled, the current one ringed, each a button that jumps there. Above 24 slides the dots give way to a thin bar |
 | `presenter` | none | Free text: a byline under the meta line on the title slide and in the footer. Put the date in it when wanted; there is no date field |
 | `footer` | the deck title | Text on the left of the bottom strip; `"none"` suppresses it. The footer line appears only when `presenter` or `footer` is set |
+| `transition` | `fade` | How the view moves between slides: `fade` (a 200 ms crossfade), `slide` (the crossfade with a 24 px nudge in the direction of travel), `none` (a cut). Reveal steps, the chart draw-in, and the graph fade follow it; Reduce Motion makes every change a cut |
 
 ```json
 {
@@ -324,10 +329,12 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
 12. **Keep the ids.** When the brief uses section `id` badges (A001, RC01), keep them on the matching slides so the room can refer to a finding by id.
 13. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart` beside its caption in `columns`. A `details` block belongs in the brief: a slide that needs one has too much on it.
+14. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
+15. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 
 ### Example deck
 
-An incident review, seven slides plus the references the page already carries, with a presenter byline:
+An incident review, seven slides plus the references the page already carries, with a presenter byline. `services/present/internal/render/testdata/sample-deck.json` in the repo is a longer one that uses every layout, tone, notes, reveal, block, and chrome field:
 
 ```json
 {
@@ -343,6 +350,8 @@ An incident review, seven slides plus the references the page already carries, w
     {
       "h": "Checkout returned 502s for 41 minutes on Tuesday",
       "id": "I001",
+      "reveal": true,
+      "notes": "Pause after the first line. Ask who was on call before showing the rest.",
       "blocks": [
         {"t": "list", "items": [
           "14:02 first 502s at the edge",
@@ -381,6 +390,7 @@ An incident review, seven slides plus the references the page already carries, w
     },
     {
       "h": "Two changes close the gap",
+      "tone": "green",
       "blocks": [
         {"t": "list", "items": [
           "Cap resolver TTL at 60 s for external upstreams @chip(b:merged)",
@@ -407,7 +417,7 @@ The brief for the same incident holds the full timeline, the log excerpts, and t
 
 ### In the room
 
-The reader opens the deck from the brief's Slides link or at `deck_url`, and moves with Right, Space, or PageDown (next), Left, PageUp, or Backspace (previous), Home and End. F or P starts presenting (chrome hidden, one slide filling the window, browser fullscreen when allowed). Pressed in fullscreen it ends, pressed while presenting without fullscreen (after a reload) it asks for fullscreen again; Escape always ends it. The URL's `#3` names the slide, so a link can open on one. An update to the deck reloads the open tab on the same slide, still presenting if it was, so you can edit a deck mid-talk. You can drive the open deck too: `present_deck(id, "start")`, then `"next"`, `"prev"`, `"goto"` with a `slide`, and `"stop"`; every open tab of the deck follows within a second. Open the deck first with `present_open(id, deck: true)`. The header's Audio toggle hides the read-aloud bar, play buttons, and badges. A deck opens with them hidden, so the room never sees them unless the reader turns them on; a brief keeps its own choice.
+The reader opens the deck from the brief's Slides link or at `deck_url`, and moves with Right, Space, or PageDown (next), Left, PageUp, or Backspace (previous), Home and End. On a `reveal` slide Next shows the next step and Prev hides the last one; Home, End, a dot, or a link lands with every step shown. N opens the speaker notes drawer. F or P starts presenting (chrome hidden, one slide filling the window, browser fullscreen when allowed). Pressed in fullscreen it ends, pressed while presenting without fullscreen (after a reload) it asks for fullscreen again; Escape always ends it. The URL's `#3` names the slide, so a link can open on one. An update to the deck reloads the open tab on the same slide, still presenting if it was, so you can edit a deck mid-talk. You can drive the open deck too: `present_deck(id, "start")`, then `"next"`, `"prev"`, `"goto"` with a `slide`, and `"stop"`; every open tab of the deck follows within a second. Open the deck first with `present_open(id, deck: true)`. The header's Audio toggle hides the read-aloud bar, play buttons, and badges. A deck opens with them hidden, so the room never sees them unless the reader turns them on; a brief keeps its own choice.
 
 ## Graph format (the `graph` argument)
 

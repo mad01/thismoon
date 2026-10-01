@@ -21,11 +21,14 @@ to the deck alone.
 
 ## Decision
 
-For decks, a slide carries its layout in the Doc. A section `layout`
-(`default`, `center`, `statement`, `section`), speaker `notes`, and
-`reveal` follow as section fields in stage 2 of the same ticket, decided
-and pending, and so does the rule that a slide holding one stat or one
-quote alone is the big-number or quote slide, with no field to learn.
+For decks, a slide carries its layout in the Doc. A section may name a
+`layout` (`default`, `center`, `statement`, `section`), speaker `notes`
+that the view keeps in a drawer, and `reveal`, which shows the slide's
+items one per Next. A slide holding one stat or one quote alone is the
+big-number or quote slide, with no field to learn. The deck's `transition`
+(fade, slide, none) is one deck-level knob through the View Transitions
+API. Reveal steps, the chart draw-in, and the graph fade follow it, and
+Reduce Motion collapses everything to a cut.
 
 The deck's chrome is deck-level: `logo`, `logo_position`, `progress`,
 `presenter`, and `footer` sit beside `summary`, `meta`, and `chips`. The
@@ -41,8 +44,7 @@ remembers its own choice under its own key.
 
 What is Doc-wide, and therefore shared with the brief: the `columns`,
 `stat`, `quote`, and `details` blocks, the `ok` and `error` callout
-severities, and, in the later step, `tone`, a palette role validated
-against `webkit.Roles()`. A container holds plain blocks only, never a
+severities, and `tone`, a palette role validated against `webkit.Roles()`. A container holds plain blocks only, never a
 graph or another container. Speaker notes as a presenter view and an image
 block stay out.
 
