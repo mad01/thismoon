@@ -53,7 +53,10 @@ func calendarToPlist(entries []service.CalendarEntry) CalendarIntervals {
 }
 
 // calendarFromPlist is the inverse of calendarToPlist, so a parsed plist
-// hashes identically to the definition that produced it.
+// hashes identically to the definition that produced it. The entries are
+// normalized on the way in: a plist t-man wrote is already in that form, and
+// a hand-edited one (Weekday 7, duplicates, another order) reconciles once
+// to the canonical plist instead of printing oddities forever.
 func calendarFromPlist(intervals CalendarIntervals) []service.CalendarEntry {
 	if len(intervals) == 0 {
 		return nil
@@ -64,7 +67,7 @@ func calendarFromPlist(intervals CalendarIntervals) []service.CalendarEntry {
 			Minute: c.Minute, Hour: c.Hour, Day: c.Day, Weekday: c.Weekday, Month: c.Month,
 		}
 	}
-	return out
+	return service.NormalizeCalendar(out)
 }
 
 // RunState is what launchd reports about one managed service right now,

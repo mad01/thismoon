@@ -57,12 +57,18 @@ func foldCalendar(entries []CalendarEntry) []segment {
 	return segments
 }
 
+// newSegment copies an entry's fields as strings, writing Sunday as 0 so a
+// weekday of 7 (valid for launchd, never written by t-man) folds and names
+// like any other Sunday.
 func newSegment(e CalendarEntry) segment {
 	var s segment
 	for i, f := range calendarFields {
 		if v := *f.get(&e); v != nil {
 			s.values[i] = strconv.Itoa(*v)
 		}
+	}
+	if e.Weekday != nil {
+		s.values[slotWeekday] = strconv.Itoa(*e.Weekday % daysInWeek)
 	}
 	return s
 }
@@ -193,7 +199,8 @@ func weekdayNames(folded string) string {
 	return strings.Join(parts, ",")
 }
 
+// dayName renders a weekday number as its three-letter name; 7 is Sunday.
 func dayName(n string) string {
 	d, _ := strconv.Atoi(n)
-	return strings.ToLower(time.Weekday(d).String()[:3])
+	return strings.ToLower(time.Weekday(d % daysInWeek).String()[:3])
 }
