@@ -544,7 +544,5 @@ Pages name colours by palette role, never by value, so a page looks right under 
 | `primary` | The accent; `terracotta` is accepted as its alias on panel accents |
 | `red`, `green`, `amber`, `yellow`, `blue`, `purple` | Semantic colours: panel accents, callout meaning |
 | `series-1` to `series-4` | Chart series, in the palette's order; the legacy chart names `terracotta`, `blue`, `green`, `purple` map to the same slots |
-| `bg`, `paper`, `chip` | Surfaces, for a slide or section background |
-| `tone-neutral-bg`, `tone-green-bg`, `tone-red-bg`, `tone-blue-bg`, `tone-amber-bg`, `tone-purple-bg` | Tinted surfaces matching the graph tones |
 
-Graph node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purple`) are the same families as the tone surfaces above.
+Graph node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purple`) are named on the node's `tone` field, not here.
