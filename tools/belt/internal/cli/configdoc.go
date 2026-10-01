@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -335,7 +337,7 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		GitIdentity:    cfg.GitIdentity,
 		CommitGuards:   cfg.CommitGuards,
 		CustomGuards:   cfg.CustomGuards,
-		CustomHints:    cfg.CustomHints,
+		CustomHints:    effectiveCustomHints(cfg),
 		Guards:         make(map[string]config.Toggle, len(guards)),
 		Hints:          make(map[string]config.Toggle, len(hints)),
 		ClaudeDeny:     cfg.ClaudeDeny,
@@ -348,11 +350,33 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 	}
 	for _, h := range hints {
 		if _, ok := h.(*hint.Custom); ok {
-			continue // rendered under custom_hints with their full definition
+			continue // rendered under custom_hints, resolved by effectiveCustomHints
 		}
 		e.Hints[h.ID()] = withEnabled(cfg.Hints[h.ID()], cfg.HintEnabled(h.ID()))
 	}
 	return e
+}
+
+// effectiveCustomHints resolves each custom hint the way the built-ins are
+// resolved under hints: enabled pinned to the state belt would use, the
+// opt-outs merged from the entry and the hints: toggle of the same name
+// (HintRepoExcluded reads both), and the budget made explicit. Without
+// this a hints.<name> toggle on a custom hint would vanish from the view,
+// since custom ids are skipped under hints: and the entry alone does not
+// carry it.
+func effectiveCustomHints(cfg config.Config) map[string]config.CustomHint {
+	if len(cfg.CustomHints) == 0 {
+		return nil
+	}
+	out := make(map[string]config.CustomHint, len(cfg.CustomHints))
+	for id, ch := range cfg.CustomHints {
+		on := cfg.HintEnabled(id)
+		ch.Enabled = &on
+		ch.ExcludeRepos = slices.Concat(ch.ExcludeRepos, cfg.Hints[id].ExcludeRepos)
+		ch.TimeoutMS = int(ch.Timeout() / time.Millisecond)
+		out[id] = ch
+	}
+	return out
 }
 
 // unknownToggleWarnings lists guard and hint keys the config file sets that

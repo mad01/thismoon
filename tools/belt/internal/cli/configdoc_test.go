@@ -207,6 +207,68 @@ func TestConfigHelpCarriesTheReference(t *testing.T) {
 	}
 }
 
+// TestConfigRendersEffectiveCustomHints pins the custom-hint half of the
+// effective view: a hints.<name> toggle on a custom hint is honored at run
+// time, so the rendered custom_hints entry must show the enabled state and
+// the merged opt-outs belt would use, with the budget made explicit, and
+// the custom id must not appear a second time under hints:.
+func TestConfigRendersEffectiveCustomHints(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.yaml", `
+custom_hints:
+  journal:
+    event: session-start
+    command: [journal]
+    exclude_repos:
+      - github.com/you/entry
+  plain:
+    event: session-start
+    command: [plain]
+hints:
+  journal:
+    enabled: false
+    exclude_repos:
+      - github.com/you/toggle
+`)
+	out := runConfigDocString(t, doctorPaths(dir))
+
+	_, body, ok := strings.Cut(out, "\n\n")
+	if !ok {
+		t.Fatalf("no blank line between header and body:\n%s", out)
+	}
+	var got effectiveConfig
+	if err := yaml.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("body is not valid YAML: %v\n%s", err, body)
+	}
+
+	journal, ok := got.CustomHints["journal"]
+	if !ok {
+		t.Fatalf("custom_hints = %v, want a journal entry", got.CustomHints)
+	}
+	if journal.Enabled == nil || *journal.Enabled {
+		t.Errorf("journal enabled = %v, want false from the hints: toggle", journal.Enabled)
+	}
+	wantRepos := []string{"github.com/you/entry", "github.com/you/toggle"}
+	if strings.Join(journal.ExcludeRepos, ",") != strings.Join(wantRepos, ",") {
+		t.Errorf("journal exclude_repos = %v, want %v", journal.ExcludeRepos, wantRepos)
+	}
+	if journal.TimeoutMS != 400 {
+		t.Errorf("journal timeout_ms = %d, want the explicit default 400", journal.TimeoutMS)
+	}
+	plain := got.CustomHints["plain"]
+	if plain.Enabled == nil || !*plain.Enabled {
+		t.Errorf("plain enabled = %v, want the explicit default true", plain.Enabled)
+	}
+	for _, id := range []string{"journal", "plain"} {
+		if _, dup := got.Hints[id]; dup {
+			t.Errorf("custom hint %q rendered under hints: as well", id)
+		}
+	}
+	if strings.Contains(out, `unknown hint "journal"`) {
+		t.Errorf("custom hint toggle reported as unknown:\n%s", out)
+	}
+}
+
 // TestConfigRendersIncludedNames pins the include surface in `belt config`:
 // each listed names file gets a header line with its state, and the body
 // prints the merged lists (what belt runs with) plus the include entries
