@@ -66,28 +66,57 @@ const pathDelimiters = "`;&|<>()[]{}=,"
 // pathTokens splits s on whitespace and shell delimiters and keeps the tokens
 // that start with "/" or "~/". A double or single quote that opens a token
 // holds it together up to the matching quote, so a quoted path with a space
-// survives whole; a quote inside a word (an apostrophe in prose) is just a
-// character. Trailing dots (prose, or Go's /...) are dropped so the last
-// segment stays a clean directory name.
+// survives whole. A quoted span that is not itself a path (a bash -c or ssh
+// command, an unclosed quote, a Rust lifetime, the '90s in prose) is scanned
+// again so the paths inside it still surface; one level is enough. A quote
+// inside a word (an apostrophe in prose) is just a character. Trailing dots
+// (prose, or Go's /...) are dropped so the last segment stays a clean
+// directory name.
 func pathTokens(s string) []string {
-	var out []string
+	return scanPaths(s, nil, true)
+}
+
+// isPathToken reports whether t is rooted the way a path token must be and
+// names something under the root; a bare "/" or a "//" comment marker is not
+// a path.
+func isPathToken(t string) bool {
+	rooted := strings.HasPrefix(t, "/") || strings.HasPrefix(t, "~/")
+	return rooted && strings.Trim(t, "/") != ""
+}
+
+// scanPaths appends the path tokens in s to out. rescan allows one more pass
+// over a quoted span that is not itself a path; the nested pass runs with it
+// off.
+func scanPaths(s string, out []string, rescan bool) []string {
 	var tok strings.Builder
 	var quote rune
 	flush := func() {
 		t := strings.TrimRight(tok.String(), ".")
 		tok.Reset()
-		if t != "" && (strings.HasPrefix(t, "/") || strings.HasPrefix(t, "~/")) {
+		if t != "" && isPathToken(t) {
 			out = append(out, t)
+		}
+	}
+	// closeQuote ends a quoted span, at its closing quote or at the end of
+	// the string. A span that is itself a path carries on as the token; any
+	// other span is scanned again for the paths inside it.
+	closeQuote := func() {
+		quote = 0
+		if isPathToken(tok.String()) {
+			return
+		}
+		span := tok.String()
+		tok.Reset()
+		if rescan {
+			out = scanPaths(span, out, false)
 		}
 	}
 	for _, r := range s {
 		switch {
+		case quote != 0 && r == quote:
+			closeQuote()
 		case quote != 0:
-			if r == quote {
-				quote = 0
-			} else {
-				tok.WriteRune(r)
-			}
+			tok.WriteRune(r)
 		case (r == '"' || r == '\'') && tok.Len() == 0:
 			quote = r
 		case unicode.IsSpace(r) || strings.ContainsRune(pathDelimiters, r):
@@ -95,6 +124,9 @@ func pathTokens(s string) []string {
 		default:
 			tok.WriteRune(r)
 		}
+	}
+	if quote != 0 {
+		closeQuote()
 	}
 	flush()
 	return out
