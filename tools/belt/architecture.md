@@ -31,8 +31,9 @@ internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     commit-policy, lint-policy, kof-assertions, kof-consult,
-                    kof-deposit, agent-memory, humanizer-check), plus csl
-                    shard lookup, search-response parsing, and the
+                    kof-deposit, agent-memory, humanizer-check), the Custom
+                    hint that execs config-registered external commands,
+                    plus csl shard lookup, search-response parsing, and the
                     per-session seen store
 internal/config/    config.Load(): the belt config plus the gated
                     Claude-settings deny list, into one Config
@@ -43,8 +44,8 @@ internal/notify/    best-effort event emission to the local events service
 ```
 
 Each guard and hint lives in its own file and implements its interface;
-`ForEvent` returns the enabled ones for an event in fixed order (built-in
-guards first, custom guards alphabetically).
+`ForEvent` returns the enabled ones for an event in fixed order (built-ins
+first, then the custom guards or custom hints alphabetically by name).
 
 ## Data flow
 
@@ -103,7 +104,9 @@ humanizer-check) and the git repo a commit ran in. From that repo they read
 the branch, origin remote, and an optional repo-root `.belt.yaml` overlay,
 via git execs (commit-policy; overlay is hints-only and never denies,
 docs/adr/0012). They also read the local kof serve API on `KOF_PORT` with a
-400 ms budget (kof-consult, kof-assertions).
+400 ms budget (kof-consult, kof-assertions). A custom hint execs the command
+its `custom_hints` entry names, with the same 400 ms default budget
+(`timeout_ms` overrides it), and relays the command's stdout.
 
 Denials and hints are recorded remotely: a POST to the local events service
 (`http://127.0.0.1:7430/api/events`, overridable via `EVENTS_BASE_URL`).
@@ -115,8 +118,8 @@ CLI commands: `belt hook bash|write` and `belt hint
 search|bash|external-text|session-start|prompt` (the hook entrypoints),
 `belt check bash "<command>"` and `belt check write --file <path> --content
 <text>` (dry runs), and `belt doctor` (installed build, resolved config,
-guard/hint state, custom-guard reachability, active overrides, kof
-reachability, and the blocked-name set). The CLI also has `belt override`
+guard/hint state, custom guard and custom hint reachability, active
+overrides, kof reachability, and the blocked-name set). The CLI also has `belt override`
 (list/set/clear the named switches commit-guard rules honor) and `belt config`
 (config locations + the settings in effect; the annotated setting reference
 is in its `--help`). The remaining two are `belt docs` (the embedded operating

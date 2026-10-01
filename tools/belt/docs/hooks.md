@@ -153,7 +153,10 @@ event and reads its stdout can run it. What to expect per harness:
   `hook external-text`, `hint search`, `hint bash`, `hint external-text`);
   the session-boundary
   events are not wired there, so the agent-memory and kof-consult injections
-  and the kof-deposit nudge stay Claude-only. Two Codex-specific rules:
+  and the kof-deposit nudge stay Claude-only. Custom hints ride the same
+  `belt hint session-start` entrypoint, so a Codex setup that adds the
+  SessionStart entry to its hooks file gets them with no further wiring.
+  Two Codex-specific rules:
   define hooks in `hooks.json` only. A duplicate `[[hooks.PreToolUse]]`
   block in `config.toml` runs belt twice per call. Codex trusts hooks by
   content hash, so a new or changed entry must be re-trusted inside Codex
@@ -523,7 +526,8 @@ validation error. commit-policy additionally honors the shared
 about hint behavior is fixed
 (see Fixed constants below). The guards carry the richer per-guard keys —
 each guard section above names its own, and [config.md](../config.md)
-specifies them all.
+specifies them all. A `custom_hints` entry registers an external command as
+a session-start hint beside the built-ins (see Custom hints below).
 
 ### agent-memory (session-start)
 
@@ -686,6 +690,40 @@ read, points at `humanizer_detect` while the wording is still editable.
   linted; a Slack message or short issue comment gets skipped for feeling too
   small. Length is not what makes AI tells visible.
 
+### Custom hints (session-start)
+
+A `custom_hints.<name>` config entry registers a hint implemented as any
+external command, no Go required. It is the hint-side twin of custom
+guards, built for context that belongs to one machine. The first case is a
+private daily journal that should open every session on one machine class.
+That machine's rendered config registers it, with no second SessionStart
+hook in the Claude settings and no compiled-in hint in a public repo.
+
+- belt execs the command with the hook payload fields as JSON on stdin
+  (`{"event","cwd","session_id","transcript_path"}` for session-start).
+- stdout is the advice: trailing whitespace trimmed, multiple lines kept,
+  emitted under `belt[<name>]:` like every built-in. A non-zero exit, a run
+  past the budget, a failure to start, or empty stdout all **end in silence
+  with a warn event**, so a broken external never breaks a session and
+  never fails silently either.
+- The budget is the kof hints' 400 ms by default; `timeout_ms` sizes it per
+  hint. A session-start hook runs before the first prompt, so the budget is
+  the whole cost a slow external can impose.
+- `enabled` and `exclude_repos` sit on the entry and work like the
+  built-ins' (a `hints.<name>` toggle of the same name is honored too).
+  `event` accepts `session-start` only today; it is a string so prompt and
+  post-tool events can be added later, and anything else is a config error
+  naming the supported values, as is an empty `command` or a name that
+  shadows a built-in hint.
+- `belt doctor` lists each custom hint beside the built-ins with its event,
+  budget, command, opt-out count, and whether the command resolves to
+  something executable. An unreachable command means the hint warns and
+  stays silent on every session, which looks identical to a hint with
+  nothing to say.
+- Custom hints run after the built-ins, alphabetical by name, through the
+  same `belt hint session-start` entrypoint, so any harness that wires that
+  entry runs them.
+
 ## How belt resolves repos
 
 Several guards and hints above need to know "which repo is this, and is it
@@ -726,6 +764,7 @@ missing key:
 | kof query budget | 400 ms | kof-consult, kof-assertions |
 | events POST budget | 1 s | every deny and hint event |
 | custom guard timeout | 5 s | custom guards |
+| custom hint default budget | 400 ms | custom hints (`timeout_ms` overrides it per hint) |
 | script size cap | 1 MiB | script-deny-list |
 | memory facts per store | 30 | agent-memory |
 | assertions per fire | 3 / 5 | kof-assertions / kof-consult |
@@ -756,3 +795,9 @@ In symptom order:
 5. **A hint fired once and never again.** That is the once-per-session
    contract (kof-deposit, humanizer-check, lint-policy) or the per-session
    dedupe (kof-assertions, kof-consult). A new session resets both.
+6. **A custom hint is silent.** `belt doctor` says whether its command
+   resolves to something executable. Every silent outcome (a failed run,
+   one past its budget, or empty stdout) leaves a `warn` event on the
+   events timeline naming the cause. A silent custom hint with no event
+   behind it was never run: check that the entry is enabled, on the
+   `session-start` event, and not opted out for the session's repo.

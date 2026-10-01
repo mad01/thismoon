@@ -45,6 +45,9 @@ nothing:
 
 - a `custom_guards.<name>.event` that is not `bash` or `write` (including a
   missing one) — the guard would register on an event that never fires;
+- a `custom_hints.<name>` entry whose `event` is not `session-start` (the
+  only event custom hints run on today), whose `command` is empty, or whose
+  name is a built-in hint id, since the entry would shadow the built-in;
 - a `mode:` anywhere other than `hard` or `soft`;
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list` and `publish-internal-names`, the two that read a
@@ -255,6 +258,43 @@ or absent `command` makes the entry a no-op.
   higher, a 5-second timeout, or a failure to start the process all allow
   with a warn event, so a broken external guard never blocks work.
 
+### custom_hints
+
+A map keyed by hint name; each entry registers an externally-implemented
+hint. belt execs the command with the hook payload fields as JSON on stdin,
+and the command's stdout becomes the advice. Where `custom_guards` answers
+with an exit code, a custom hint answers with text. belt trims trailing
+whitespace, keeps multiple lines, and emits the result under the usual
+`belt[<name>]:` prefix. A non-zero exit, a run past the budget, a failure
+to start, or empty stdout all end in silence plus a warn event on the
+events service. A broken external never breaks a session. The entry is how
+a machine-private hint (a daily journal, say) rides the session-start hook
+under belt's toggles and budget. It lives in that machine's rendered
+config, not in belt and not in a second SessionStart hook.
+
+- `custom_hints.<name>` (the key): any name that is not a built-in hint id.
+  A name that shadows one is a config error, since the toggles and `belt
+  doctor` already attribute that id to the built-in.
+- `custom_hints.<name>.enabled` (bool pointer, default: unset): when set,
+  wins over any `hints.<name>.enabled` toggle of the same name. Left unset,
+  the hint falls back to that toggle (which itself defaults to enabled).
+- `custom_hints.<name>.event` (string, required): `"session-start"`, the
+  only event custom hints run on today. The field is a string so prompt
+  and post-tool events can be added later without a schema break; until
+  then any other value, and a missing one, is a config error naming the
+  supported values.
+- `custom_hints.<name>.command` (list of string, required): the external
+  program and its arguments. Runs with the invoking user's full
+  environment; an empty list is a config error. For session-start the
+  stdin payload is `{"event","cwd","session_id","transcript_path"}`.
+- `custom_hints.<name>.timeout_ms` (int, default `400`): the budget for one
+  run, the same budget the kof hints give kof serve. Zero means the
+  default; a negative value is a config error.
+- `custom_hints.<name>.exclude_repos` (list of string, default: empty):
+  repos opted out of this hint, matched like every other `exclude_repos`
+  against the session cwd's origin remote. A `hints.<name>.exclude_repos`
+  list of the same name is honored too; either one opts out.
+
 ### guards
 
 A map keyed by built-in guard id (`git-push-main`, `git-identity`,
@@ -340,8 +380,8 @@ entries match the same way as `git_identity[].repos` and
 
 ### hints
 
-A map keyed by hint id. All eight hints default to enabled when the file or
-their entry is missing. The repo-aware hints (`commit-policy`,
+A map keyed by built-in hint id or a `custom_hints` name. All eight
+built-in hints default to enabled when the file or their entry is missing. The repo-aware hints (`commit-policy`,
 `lint-policy`, `prefer-csl`, `kof-assertions`, `kof-consult`) also read
 `exclude_repos`. The rest take only `enabled`. Any other key on a known id
 is a validation error (guards exempt repos with `allow_repos`, hints opt
@@ -404,6 +444,14 @@ pattern tail (host dropped, case-insensitive).
 - `hints.humanizer-check.enabled` (bool, default `true`): fires after an MCP
   call publishes text off the machine, pointing at `humanizer_detect` while
   the wording is still editable.
+- **custom hint entries**
+  - `hints.<name>.enabled` (bool, default `true`): a secondary toggle for a
+    custom hint, used only when that hint's own
+    `custom_hints.<name>.enabled` is left unset.
+  - `hints.<name>.exclude_repos` (list of string, default: empty): opt-outs
+    added to the entry's own `exclude_repos`. The other toggle fields have
+    no effect on custom hints. `belt config` renders custom hints under
+    `custom_hints:` with their full definition, not under `hints:`.
 
 ## Environment variables
 
@@ -473,6 +521,15 @@ custom_guards:
     command: [branch-lint, check]
     match: git commit
     mode: hard
+
+custom_hints:
+  daily-journal:
+    enabled: true
+    event: session-start
+    command: [journal, open-actions, --since, yesterday]
+    timeout_ms: 400
+    exclude_repos:
+      - github.com/you/scratch
 
 guards:
   git-push-main:
