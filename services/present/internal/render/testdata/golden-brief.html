@@ -1,0 +1,70 @@
+<h1 class="brief-title" data-fixation>jira-42: Checkout outage</h1>
+<div class="brief-meta">2026-09-29 · Incident review · jira-42</div>
+<div class="brief-summary" data-fixation>A stale DNS cache took checkout down for <strong>41 minutes</strong>; see <a href="https://example.com/brief">the brief</a>.</div>
+<div class="chip-row">
+  <wk-badge variant="stat">41 min</wk-badge>
+  <wk-badge variant="a">payments</wk-badge>
+  <wk-badge>plain</wk-badge>
+</div>
+<wk-toc>
+  <wk-toc-title>Sections</wk-toc-title>
+  <ul data-fixation>
+    <li><a href="#what-happened-and-when"><wk-section-id>I001</wk-section-id>What happened and when</a></li>
+    <li><a href="#where-the-request-died">Where the request died</a></li>
+  </ul>
+</wk-toc>
+<wk-section id="what-happened-and-when">
+  <wk-section-heading data-fixation><wk-section-id>I001</wk-section-id>What happened and when</wk-section-heading>
+  <p data-fixation>Checkout returned 502s from 14:02 to 14:43.</p>
+  <wk-section-subheading data-fixation>Timeline</wk-section-subheading>
+  <ul class="brief-list">
+  <li>14:02 first 502s</li>
+  <li>14:09 paged <wk-badge variant="b">checkout</wk-badge></li>
+</ul>
+  <ol class="brief-list">
+  <li>restart</li>
+  <li>verify</li>
+</ol>
+  <wk-callout variant="info" data-fixation>Other services were fine.</wk-callout>
+  <wk-callout variant="warn" data-fixation>The rota was not staffed.</wk-callout>
+  <wk-callout data-fixation>A plain callout.</wk-callout>
+  <wk-table><table>
+  <thead><tr><th>Time</th><th>Event</th></tr></thead>
+  <tbody data-fixation>
+    <tr><td>14:02</td><td>first <code>502</code></td></tr>
+    <tr><td>14:43</td><td>resolved</td></tr>
+  </tbody>
+</table></wk-table>
+  <wk-kv><wk-kv-row><wk-kv-label>TTL</wk-kv-label><wk-kv-value>3600 s</wk-kv-value></wk-kv-row>
+<wk-kv-row><wk-kv-label>Health check</wk-kv-label><wk-kv-value>none</wk-kv-value></wk-kv-row>
+</wk-kv>
+  <wk-panel style="border-left: 3px solid var(--blue)">
+  <wk-panel-title>Resolver</wk-panel-title>
+  <wk-panel-subtitle>kept a dead upstream</wk-panel-subtitle>
+</wk-panel>
+  <wk-panel>
+  <wk-panel-title>Bare panel</wk-panel-title>
+</wk-panel>
+  <wk-progress>
+  <wk-progress-bar><wk-progress-fill style="width:62.5%"></wk-progress-fill></wk-progress-bar>
+  <wk-progress-label>62.5%</wk-progress-label>
+</wk-progress>
+</wk-section>
+<wk-section id="where-the-request-died">
+  <wk-section-heading data-fixation>Where the request died</wk-section-heading>
+  <wk-panel>
+  <div id="cy-graph" class="cy-container"></div>
+</wk-panel>
+  <div class="present-chart" data-chart-title="5xx per minute">
+  <div class="present-chart-canvas"><canvas></canvas></div>
+  <script type="application/json" class="chart-spec">{"kind":"area","title":"5xx per minute","unit":"req","series":[{"name":"5xx","color":"terracotta","points":[{"x":"14:00","y":0},{"x":"14:15","y":940}]}]}</script>
+</div>
+  <div class="present-chart">
+  <div class="present-chart-canvas"><canvas></canvas></div>
+  <script type="application/json" class="chart-spec">{"kind":"sankey","series":null,"flows":[{"from":"edge","to":"api","value":12}]}</script>
+</div>
+  <pre class="wk-code-block"><code class="language-go">if a &lt; b &amp;&amp; c &gt; d {
+	return
+}</code></pre>
+  <custom>raw</custom>
+</wk-section>
