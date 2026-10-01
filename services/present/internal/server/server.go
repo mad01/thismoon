@@ -163,6 +163,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /p/{id}/deck", s.handleDeckPage)
 	mux.HandleFunc("GET /api/p/{id}", s.handleAPIPage)
 	mux.HandleFunc("GET /app.js", handleAppJS)
+	mux.HandleFunc("GET /logo.png", handleLogo)
 	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
 	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
 	if s.watcher != nil {

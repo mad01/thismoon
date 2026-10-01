@@ -842,16 +842,25 @@
     return slide;
   }
 
+  // splitSlides returns the slides and the deck's chrome. The chrome is the
+  // JSON island the renderer puts at the head of the fragment when the deck
+  // sets a chrome field (logo, logo_position, progress, presenter, footer);
+  // it is pulled out of the hero before the title slide is built, and an
+  // absent island means every default.
   function splitSlides(html, refs) {
     var scratch = document.createElement('div');
     scratch.innerHTML = html || '';
-    var hero = [], slides = [], seenSection = false;
+    var hero = [], slides = [], seenSection = false, chrome = {};
     Array.prototype.slice.call(scratch.childNodes).forEach(function (n) {
       if (n.nodeType !== 1) {
         if (!seenSection && n.nodeType === 3 && n.textContent.trim()) hero.push(n);
         return;
       }
       var tag = n.tagName.toLowerCase();
+      if (tag === 'script' && n.classList.contains('deck-chrome')) {
+        try { chrome = JSON.parse(n.textContent) || {}; } catch (e) { chrome = {}; }
+        return;
+      }
       if (tag === 'wk-toc') { seenSection = true; return; }
       if (tag !== 'wk-section' && !seenSection) { hero.push(n); return; }
       seenSection = true;
@@ -860,7 +869,81 @@
     if (hero.length) slides.unshift(makeSlide(hero, 'slide-title'));
     if (refs) slides.push(makeSlide([refs], 'slide-refs'));
     if (!slides.length) slides.push(makeSlide([Webkit.el('p', {}, 'This deck has no slides yet.')], 'slide-title'));
-    return slides;
+    return { slides: slides, chrome: chrome };
+  }
+
+  // ── Deck chrome ── the view's furniture around the slides, built from the
+  // chrome island: a strip along the bottom edge with the footer line on
+  // the left in the text-3 role, the progress marker in the centre, and the
+  // logo on the right (a bottom-left logo swaps sides with the footer; a
+  // top corner logo is its own fixed element). Defaults are the embedded
+  // logo and dots; the footer line is opt-in, shown only when the deck sets
+  // presenter or footer. The strip sits outside every read-aloud and
+  // fixation target, and inside it the dots are buttons and the logo an
+  // image with an empty alt, which both walks skip anyway. The marker
+  // tracks slides: one dot per slide, done ones filled in the primary role,
+  // the current one ringed, the rest hollow in the border role, each a
+  // button that jumps there. Past DOTS_MAX slides the dots give way to a
+  // thin bar; progress "bar" asks for it at any length.
+  var DOTS_MAX = 24;
+  function deckChrome(chrome, title, count, goTo) {
+    chrome = chrome || {};
+    var position = chrome.logo_position || 'bottom-right';
+    var logo = chrome.logo === 'none' ? null
+      : Webkit.el('img', { class: 'deck-logo', src: chrome.logo || '/logo.png', alt: '' });
+    var corner = logo && position.indexOf('top-') === 0 ? logo : null;
+    if (corner) corner.classList.add('deck-logo-corner', 'deck-logo-' + position);
+    var stripLogo = corner ? null : logo;
+
+    var footer = null;
+    if (chrome.presenter || chrome.footer) {
+      var text = chrome.footer === 'none' ? '' : (chrome.footer || title || '');
+      var line = [text, chrome.presenter || ''].filter(Boolean).join(' · ');
+      if (line) footer = Webkit.el('div', { class: 'deck-footer' }, line);
+    }
+
+    var progress = chrome.progress || 'dots';
+    if (progress === 'dots' && count > DOTS_MAX) progress = 'bar';
+    var marker = null, dots = [], fill = null;
+    if (progress === 'dots') {
+      for (var i = 0; i < count; i++) {
+        var label = 'slide ' + (i + 1) + ' of ' + count;
+        dots.push(Webkit.el('button', { class: 'deck-dot', type: 'button', 'data-slide': String(i), title: label, 'aria-label': label }));
+      }
+      marker = Webkit.el('div', { class: 'deck-dots', role: 'group', 'aria-label': 'Slides' }, dots);
+      marker.addEventListener('click', function (e) {
+        var b = e.target.closest('.deck-dot');
+        if (b) goTo(parseInt(b.getAttribute('data-slide'), 10));
+      });
+    } else if (progress === 'bar') {
+      fill = Webkit.el('div', { class: 'deck-progress-fill' });
+      marker = Webkit.el('div', { class: 'deck-progress', role: 'progressbar', 'aria-label': 'Deck progress', 'aria-valuemin': '1', 'aria-valuemax': String(count) }, [fill]);
+    }
+
+    var strip = null;
+    if (footer || marker || stripLogo) {
+      var swap = position === 'bottom-left';
+      strip = Webkit.el('div', { class: 'deck-strip' }, [
+        Webkit.el('div', { class: 'deck-strip-start' }, swap ? [stripLogo] : [footer]),
+        Webkit.el('div', { class: 'deck-strip-centre' }, [marker]),
+        Webkit.el('div', { class: 'deck-strip-end' }, swap ? [footer] : [stripLogo])
+      ]);
+    }
+    return {
+      strip: strip,
+      corner: corner,
+      update: function (i) {
+        dots.forEach(function (d, j) {
+          d.classList.toggle('done', j < i);
+          d.classList.toggle('current', j === i);
+          if (j === i) d.setAttribute('aria-current', 'true'); else d.removeAttribute('aria-current');
+        });
+        if (fill) {
+          fill.style.width = ((i + 1) / count * 100) + '%';
+          marker.setAttribute('aria-valuenow', String(i + 1));
+        }
+      }
+    };
   }
 
   // slideFromHash reads the 1-based slide number a URL fragment names.
@@ -903,7 +986,8 @@
     // (wk-header renders once, so the attribute alone would not do).
     var headerTitle = document.querySelector('wk-header .topbar-title');
     if (headerTitle) headerTitle.textContent = 'Deck';
-    var slides = splitSlides(data.deck, referencesSection(data.references || []));
+    var split = splitSlides(data.deck, referencesSection(data.references || []));
+    var slides = split.slides;
     var deck = Webkit.el('div', { class: 'brief deck', id: 'deck' }, slides);
     var counter = Webkit.el('span', { class: 'deck-counter', 'aria-live': 'polite' });
     var presentBtn = Webkit.el('button', { class: 'btn btn-ghost', type: 'button', 'data-deck': 'present', title: 'Present (F): hide the chrome and fill the window' }, 'Present');
@@ -916,6 +1000,19 @@
     root.innerHTML = '';
     root.appendChild(deck);
     root.appendChild(bar);
+
+    // The chrome strip goes after the bar; with a strip the bar moves up
+    // above it, the deck leaves room for both, and the presenting slide
+    // keeps its bottom padding clear of it (an html class drives that; it is not
+    // named after the strip, or the strip rules would hit the html element).
+    var chrome = deckChrome(split.chrome, data.title, slides.length, function (i) { show(i); });
+    document.documentElement.classList.toggle('has-deck-strip', !!chrome.strip);
+    if (chrome.strip) {
+      root.appendChild(chrome.strip);
+      deck.classList.add('has-strip');
+      bar.classList.add('raised');
+    }
+    if (chrome.corner) root.appendChild(chrome.corner);
 
     // The graph script (re)defines initGraph(); it runs when its slide shows.
     var prev = document.getElementById('present-graph-script');
@@ -986,6 +1083,7 @@
         if (j === i) sl.scrollTop = 0;
       });
       counter.textContent = (i + 1) + ' / ' + slides.length;
+      chrome.update(i);
       if (slideFromHash() !== i + 1) history.replaceState(null, '', '#' + (i + 1));
       remember();
       refreshVisuals();
