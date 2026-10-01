@@ -130,7 +130,7 @@ func TestRenderDocNormalizesNestedBlocks(t *testing.T) {
 	)
 	for _, want := range []string{
 		"a and b", "<code class=\"language-text\">a &amp; b</code>",
-		"A to B", "c and d", "e and f", "g and h", "i and j", "k and l",
+		"<wk-stat-value>A → B</wk-stat-value>", "c and d", "e and f", "g and h", "i and j", "k and l",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in: %s", want, out)
@@ -410,5 +410,28 @@ func TestCompileKeepsDeckChrome(t *testing.T) {
 	}
 	if _, err := Compile([]byte(`{"progress":"ring","sections":[]}`), "T"); err == nil {
 		t.Error("Compile accepted an unknown progress value")
+	}
+}
+
+// A stat's value is shown verbatim: the symbols a figure carries are the
+// point. The label and the sub line are prose and normalise like any other.
+func TestRenderDocStatValueVerbatim(t *testing.T) {
+	out := renderBlocks(
+		t,
+		Block{T: "stat", Value: "4×", Label: "faster & cheaper", Subtitle: "A → B"},
+		Block{T: "stat", Value: "≈ 40%", Label: "of requests"},
+	)
+	for _, want := range []string{
+		`<wk-stat-value>4×</wk-stat-value>`, `<wk-stat-value>≈ 40%</wk-stat-value>`,
+		`faster and cheaper`, `<wk-stat-sub data-fixation>A to B</wk-stat-sub>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in: %s", want, out)
+		}
+	}
+	for _, bad := range []string{"4times", "approximately 40%"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("stat value was normalised to %q: %s", bad, out)
+		}
 	}
 }
