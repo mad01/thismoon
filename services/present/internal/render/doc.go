@@ -91,7 +91,8 @@ type Block struct {
 	// columns, and details.
 	Columns [][]Block `json:"-"`
 
-	// t=stat: a large figure (Value) over a Label, with an optional Subtitle line.
+	// t=stat: a large figure (Value, shown verbatim) over a Label, with an
+	// optional Subtitle line.
 	Value string `json:"value,omitempty"`
 
 	// t=quote: Text is the quotation, Cite the attribution.
@@ -637,7 +638,8 @@ func normalizeBlocks(blocks []Block, depth int) {
 		b.Title = normalizeNames(b.Title)
 		b.Subtitle = normalizeNames(b.Subtitle)
 		b.Label = normalizeNames(b.Label)
-		b.Value = normalizeNames(b.Value)
+		// A stat's Value is a figure shown verbatim: its symbols are the
+		// point ("4×", "≈ 40%"), so it is not normalized like prose.
 		b.Cite = normalizeNames(b.Cite)
 		b.Summary = normalizeNames(b.Summary)
 		for k := range b.Items {
