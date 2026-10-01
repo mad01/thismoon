@@ -188,7 +188,7 @@ Rules:
 |------|--------|-------------|
 | `p` | `text` | Paragraph with fixation reading |
 | `h3` | `text` | Subsection heading |
-| `callout` | `text`, `sev?` | Highlighted callout. Severity: `info` (blue border), `warn` (amber border), or omit for default |
+| `callout` | `text`, `sev?` | Highlighted callout. Severity: `info` (blue border), `warn` (amber border), `ok` (green border), `error` (red border), or omit for default |
 | `table` | `cols`, `rows` | Data table. Cells support inline markdown |
 | `kv` | `kv: [{k, v}]` | Key-value pairs. Values support inline markdown |
 | `list` | `items`, `ordered?` | Bulleted or numbered list. Items support inline markdown |
@@ -198,6 +198,34 @@ Rules:
 | `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline — use as many as you like per page. See **Chart format** below |
 | `code` | `text`, `lang?` | Fenced code block with language badge and copy button. `text` is verbatim code (NO inline markdown — backticks, `**`, `<` all render literally). `lang` sets the badge and syntax highlighting: `go`, `bash`, `json`, `python`, `typescript`, `yaml`, `sql` highlight; anything else (or omitted) renders plain with a `text` badge |
 | `html` | `text` | Raw HTML passthrough for one-off custom content |
+| `columns` | `cols: [[blocks], [blocks]]` | Two or three equal-width columns of blocks, one column under 700 px. A column holds any block but `graph`, `columns`, and `details`. Three `stat` blocks in it make a row of figures; a `chart` beside a `p` puts the caption next to the chart |
+| `stat` | `value`, `label`, `sub?` | A large figure over a label in a framed tile. `value` is shown verbatim (no inline markdown) and stays out of fixation; `label` and `sub` take inline markdown |
+| `quote` | `text`, `cite?` | A quotation with a left rule and the attribution under it |
+| `details` | `summary`, `blocks` | A collapsible block, closed by default, with `summary` as the clickable line. Holds any block but `graph`, `columns`, and `details`. Read-aloud reads it and opens it while a part inside plays. The home for a long timeline or raw numbers |
+
+### Layout blocks
+
+One example of each, as they go in a section's `blocks`:
+
+```json
+[
+  {"t": "columns", "cols": [
+    [{"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"}],
+    [{"t": "stat", "value": "3 min", "label": "to detect after the fix"}],
+    [{"t": "stat", "value": "2", "label": "actions"}]
+  ]},
+  {"t": "columns", "cols": [
+    [{"t": "chart", "kind": "area", "title": "Checkout 5xx per minute", "series": [{"points": [{"x": "14:00", "y": 0}, {"x": "14:15", "y": 940}]}]}],
+    [{"t": "p", "text": "The spike starts eleven minutes before the first page."}]
+  ]},
+  {"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"},
+  {"t": "quote", "text": "We never saw the resolver because nothing watched it.", "cite": "On-call engineer, retrospective"},
+  {"t": "details", "summary": "Full timeline, 14:00 to 15:00", "blocks": [
+    {"t": "list", "items": ["14:02 first 502s at the edge", "14:09 paged", "14:43 resolved"]}
+  ]},
+  {"t": "callout", "sev": "ok", "text": "The TTL cap is live in every region."}
+]
+```
 
 ### Section fields
 
@@ -210,10 +238,10 @@ Rules:
 ### Notes
 
 - **TOC is auto-generated** from section headings when there are 2+ sections. Do not write TOC markup.
-- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, and table bodies. The page shell adds kv values, list items, and panel titles by element. Chips, section ids, table headers, and the meta line stay out of the fixation walk.
+- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, table bodies, stat labels and sub lines, quote text, and details summaries. The page shell adds kv values, list items, and panel titles by element. Chips, section ids, table headers, the meta line, and a stat's value stay out of the fixation walk.
 - **Unknown block types** produce an HTML comment error — they don't break the page.
 - **Use `code` blocks for multi-line code**, not `p` with backticks (inline `code` is for short identifiers) and not `html` with a hand-written `<pre>`.
-- **Read-aloud skips tables, kv blocks, and code blocks.** When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.
+- **Read-aloud skips tables, kv blocks, and code blocks.** A `stat` reads as its value, label, and sub line; a `details` block reads like prose and opens while a part inside it plays. When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.
 - **Inline markup nests.** A code span, a link, or a chip inside `**bold**` renders as expected.
 
 ### Presenting multiple items
@@ -253,6 +281,28 @@ Use this pattern for: review findings, bug lists, options comparison, enumerable
 
 A deck is a second Doc under the same page id, shown one section at a time at `deck_url` (`/p/<id>/deck`). It uses the Doc schema above unchanged: `summary`, `meta`, and `chips` make the title slide, every entry in `sections` is one slide, and the page's `references` make the last slide. The page's one `graph` is shared with the brief, so a `{"t": "graph"}` block in a deck section shows the same graph on that slide. Pass `deck` to `present_create` beside `content`, or alone for a deck-only page, and to `present_update` to replace it (`deck: ""` removes it). The deck is never generated from the brief: you write it, and it says less.
 
+### Deck-level fields
+
+Five optional fields sit at the top of the deck Doc beside `summary`, `meta`, and `chips`. They are the deck view's chrome rather than slide content, so the brief ignores them. A deck that sets none of them shows the repo logo in the bottom-right corner and one dot per slide under the bar, with no footer line.
+
+| Field | Default | Values |
+|-------|---------|--------|
+| `logo` | shown (the embedded repo logo) | `"none"` hides it; an `http(s)` URL replaces it |
+| `logo_position` | `bottom-right` | `bottom-left`, `top-left`, `top-right` |
+| `progress` | `dots` | `bar`, `none`. One dot per slide, done ones filled, the current one ringed, each a button that jumps there. Above 24 slides the dots give way to a thin bar |
+| `presenter` | none | Free text: a byline under the meta line on the title slide and in the footer. Put the date in it when wanted; there is no date field |
+| `footer` | the deck title | Text on the left of the bottom strip; `"none"` suppresses it. The footer line appears only when `presenter` or `footer` is set |
+
+```json
+{
+  "summary": "...",
+  "presenter": "Alex, platform · 2026-10-01",
+  "footer": "Incident review, checkout 502s",
+  "progress": "bar",
+  "sections": [ ... ]
+}
+```
+
 ### When to make one
 
 Make a deck when the material will be talked through: a review in a meeting, an incident retrospective, a decision the room has to make. A brief someone reads alone stays a brief. When both exist, the deck is the version for the room and the brief is where the detail lives. The deck view has a Brief link for exactly that hand-off, so nothing on a slide needs to be complete.
@@ -273,15 +323,17 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
 12. **Keep the ids.** When the brief uses section `id` badges (A001, RC01), keep them on the matching slides so the room can refer to a finding by id.
+13. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart` beside its caption in `columns`. A `details` block belongs in the brief: a slide that needs one has too much on it.
 
 ### Example deck
 
-An incident review, six slides plus the references the page already carries:
+An incident review, seven slides plus the references the page already carries, with a presenter byline:
 
 ```json
 {
   "summary": "A stale DNS cache took checkout down for 41 minutes; the fix is a TTL cap and a health check that would have caught it in 3.",
   "meta": "2026-09-29 · Incident review · Platform and payments",
+  "presenter": "Alex, platform",
   "chips": [
     {"text": "41 min outage", "style": "stat"},
     {"text": "3 min to detect after fix", "style": "stat"},
@@ -297,6 +349,12 @@ An incident review, six slides plus the references the page already carries:
           "14:09 paged, **checkout only**, other services fine",
           "14:43 resolved after a resolver restart"
         ]}
+      ]
+    },
+    {
+      "h": "The number that matters",
+      "blocks": [
+        {"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"}
       ]
     },
     {

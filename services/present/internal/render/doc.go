@@ -685,8 +685,10 @@ func chartSpec(b Block) template.JS {
 }
 
 // accentAliases are accent names older pages carry that are not palette
-// roles. Each is declared in webkit.css as an alias of the role it names, so
-// the stored var() keeps resolving under every family.
+// roles. Each is declared in webkit.css beside the role it stands for, so the
+// stored var() keeps resolving under every family: terracotta keeps the
+// light-mode primary and is pinned separately in dark, where the default
+// primary is a lighter shade.
 var accentAliases = map[string]string{"terracotta": "primary"}
 
 // validAccent reports whether name may follow a panel's accent field: a
