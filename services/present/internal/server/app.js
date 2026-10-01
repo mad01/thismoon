@@ -1215,6 +1215,11 @@
       var n = slides[current] && slides[current]._notes;
       if (n) body.appendChild(n.cloneNode(true));
       else body.appendChild(Webkit.el('p', { class: 'deck-notes-empty' }, 'No notes for this slide.'));
+      // The drawer sits outside the deck, so the deck's link pass never
+      // reaches it; a link in the notes must not navigate the presenting tab.
+      body.querySelectorAll('a[href]:not([href^="#"])').forEach(function (a) {
+        a.target = '_blank'; a.rel = 'noopener';
+      });
     }
     function toggleNotes(on) {
       if (!hasNotes) return;
