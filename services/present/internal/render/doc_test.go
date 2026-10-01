@@ -571,6 +571,35 @@ func TestRenderDocUnknownBlockType(t *testing.T) {
 	}
 }
 
+// A panel accent is a palette role name, validated against webkit's
+// vocabulary so a page cannot store a var() no family resolves; terracotta
+// stays accepted as the alias of primary older pages carry.
+func TestRenderDocPanelAccent(t *testing.T) {
+	render := func(accent string) (string, error) {
+		return RenderDoc(Doc{Sections: []Section{{
+			Heading: "S",
+			Blocks:  []Block{{T: "panel", Title: "P", Accent: accent}},
+		}}}, "T")
+	}
+	for _, accent := range []string{"primary", "blue", "series-3", "tone-amber-bg", "terracotta"} {
+		out, err := render(accent)
+		if err != nil {
+			t.Errorf("accent %q: %v", accent, err)
+			continue
+		}
+		if want := `border-left: 3px solid var(--` + accent + `)`; !strings.Contains(out, want) {
+			t.Errorf("accent %q: output lacks %q", accent, want)
+		}
+	}
+	if out, err := render(""); err != nil || strings.Contains(out, "border-left") {
+		t.Errorf("no accent: err=%v, border rendered=%v", err, strings.Contains(out, "border-left"))
+	}
+	_, err := render("wg600")
+	if err == nil || !strings.Contains(err.Error(), `unknown accent "wg600"`) {
+		t.Errorf("unknown accent: err = %v, want unknown accent", err)
+	}
+}
+
 func TestChartPointNumericX(t *testing.T) {
 	var pts []ChartPoint
 	err := json.Unmarshal([]byte(`[{"x": 12.5, "y": 3}, {"x": "Mon", "y": 4}, {"y": 5}]`), &pts)

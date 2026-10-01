@@ -31,6 +31,25 @@ func TestPageShellPerMode(t *testing.T) {
 	}
 }
 
+// Every shell links the themes page webkit serves, so a reader can pick a
+// palette family from any present view, shared instances included.
+func TestShellsLinkThemesPage(t *testing.T) {
+	const link = `<a data-nav href="/webkit/themes">Themes</a>`
+	for name, shell := range map[string][]byte{
+		"page":         pageShell(ModeLocal),
+		"page-shared":  pageShell(ModeShared),
+		"index":        indexShellHTML,
+		"shared-index": sharedIndexShellHTML,
+	} {
+		if !strings.Contains(string(shell), link) {
+			t.Errorf("%s shell has no themes link", name)
+		}
+	}
+	if strings.Contains(string(shellHTML), "var(--wg") {
+		t.Error("shell.html reads a ramp token; the palette only guarantees roles")
+	}
+}
+
 func TestSharedChromeHasNoSitePicker(t *testing.T) {
 	f := setupShared(t)
 	p, err := f.raw.Create(t.Context(), store.Draft{Title: "T", Content: "<p>x</p>"})

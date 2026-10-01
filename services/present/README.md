@@ -37,6 +37,8 @@ present deck <id> next    # drive the deck open in the browser: start, stop, nex
 | `--author-key` | `PRESENT_AUTHOR_KEY` | unset; prefer the env var over the flag |
 | `--speak-url` (serve only) | `PRESENT_SPEAK_URL` | `http://speak.this`; empty turns read-aloud off |
 
+The header's theme toggle switches light and dark. Its Themes link opens a picker with eight palette families (webkit's default, Catppuccin, Nord, Solarized, Gruvbox, Rosé Pine, Tokyo Night, One), one choice per mode, plus a follow-the-system option. The browser keeps the choice for this host, and an open page recolours as soon as it changes.
+
 Pages are read aloud through the speak service. On load a page registers its text with speak and shows an audio bar under the summary: how many parts are ready and a button to prepare them all. Each section gets its own play button and state badge. Code blocks and tables are left out. Without speak reachable the page shows no read-aloud controls; with `--speak-url ""` it never asks.
 
 ### Slide decks

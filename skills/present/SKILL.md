@@ -5,7 +5,7 @@ description: Generate a scrollable briefing page with fixation reading, Cytoscap
 
 # Present — Scrollable Briefing Pages
 
-Generate scrollable HTML briefing pages served live over localhost by the **present MCP**, or on a shared instance others reach by link. You pass structured JSON; the server renders it into the full page with warm-neutral theme, fixation-reading toggle, font/size controls, light/dark mode, and Cytoscape support.
+Generate scrollable HTML briefing pages served live over localhost by the **present MCP**, or on a shared instance others reach by link. You pass structured JSON; the server renders it into the full page with a reader-chosen palette (light and dark mode, several theme families picked on the Themes page), fixation-reading toggle, font/size controls, and Cytoscape support. Never put a colour literal in a page: name a role (see **Colors available**) and the page follows whatever palette the reader picked.
 
 ## Trigger
 When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes"). Or when the user asks for slides or a deck on it ("make a deck of this", "slides for the review").
@@ -192,7 +192,7 @@ Rules:
 | `table` | `cols`, `rows` | Data table. Cells support inline markdown |
 | `kv` | `kv: [{k, v}]` | Key-value pairs. Values support inline markdown |
 | `list` | `items`, `ordered?` | Bulleted or numbered list. Items support inline markdown |
-| `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a CSS variable name (terracotta, blue, green, purple, amber) |
+| `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a palette role name (`primary`, `blue`, `green`, `purple`, `amber`, `red`, `yellow`, `series-1` to `series-4`; `terracotta` still works as an alias of `primary`). An unknown name is refused |
 | `progress` | `pct`, `label?` | Progress bar (0-100) |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
 | `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline — use as many as you like per page. See **Chart format** below |
@@ -376,7 +376,7 @@ Pass a structured object. The server stores the nodes and edges; the page styles
 
 | Type | Visual |
 |------|--------|
-| `center` | Highlighted root (terracotta border, bold label) |
+| `center` | Highlighted root (accent border, bold label) |
 | `module` | Colored border from palette. Set `color` (0-3) for different colors |
 | `leaf` | Plain node (default if type omitted) |
 | `registry` | Dashed border |
@@ -491,9 +491,9 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 | `series` | array | One or more `{name?, color?, points}` series. Every kind except `sankey` |
 | `flows` | array | `{from, to, value}` links, `sankey` only. See **Sankey format** below |
 
-Each series: `name` (legend label, shown when 2+ series), `color` (one of `terracotta`, `blue`, `green`, `purple`; omit to auto-assign by index), and `points` — an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
+Each series: `name` (legend label, shown when 2+ series), `color` (`series-1` to `series-4`, or the legacy names `terracotta`, `blue`, `green`, `purple` for the same four slots; omit to auto-assign by index), and `points` — an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
 
-Charts use the same palette as the graph and recolor automatically on theme toggle. Hover shows a tooltip on every kind but `sparkline`; the entry animation plays once per render and is skipped when the reader has Reduce Motion on.
+Charts use the same palette as the graph and recolor automatically when the reader switches mode or family. Hover shows a tooltip on every kind but `sparkline`; the entry animation plays once per render and is skipped when the reader has Reduce Motion on.
 
 ### Which kind
 
@@ -537,4 +537,14 @@ The `references` parameter takes `[{title, url}]` — source links rendered at t
 
 ## Colors available
 
-Accent names for panel borders and chip references: `terracotta`, `blue`, `green`, `purple`, `amber`, `red`, `yellow`.
+Pages name colours by palette role, never by value, so a page looks right under every theme family the reader can pick (the Themes link in the page header). Roles a page may reference:
+
+| Role | Use |
+|------|-----|
+| `primary` | The accent; `terracotta` is accepted as its alias on panel accents |
+| `red`, `green`, `amber`, `yellow`, `blue`, `purple` | Semantic colours: panel accents, callout meaning |
+| `series-1` to `series-4` | Chart series, in the palette's order; the legacy chart names `terracotta`, `blue`, `green`, `purple` map to the same slots |
+| `bg`, `paper`, `chip` | Surfaces, for a slide or section background |
+| `tone-neutral-bg`, `tone-green-bg`, `tone-red-bg`, `tone-blue-bg`, `tone-amber-bg`, `tone-purple-bg` | Tinted surfaces matching the graph tones |
+
+Graph node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purple`) are the same families as the tone surfaces above.

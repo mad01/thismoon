@@ -189,19 +189,24 @@ webkit assets:
 ```
 
 The boot script is blocking (no `defer`/`async`) on purpose: it must set
-`data-theme` before first paint to avoid a flash of the wrong theme.
+`data-theme` and `data-palette` before first paint to avoid a flash of the
+wrong theme or family.
 
 ### Header markup (present)
 
 The brief template uses:
 ```html
-<wk-header back-href="/" back-label="← All" title="Brief"></wk-header>
+<wk-header back-href="/" back-label="← All" title="Brief"><a data-nav href="/webkit/themes">Themes</a></wk-header>
 ```
 
 The index template uses:
 ```html
-<wk-header brand="present"></wk-header>
+<wk-header brand="present"><a data-nav href="/webkit/themes">Themes</a></wk-header>
 ```
+
+The Themes nav link opens webkit's palette picker, served by this binary at
+`/webkit/themes` like the other webkit assets; every shell carries it, the
+shared instance's included.
 
 `webkit.js` injects the full control set (font · fixation · size ± · reload ·
 theme). Do not add those controls manually.
@@ -222,9 +227,25 @@ theme). Do not add those controls manually.
   to it). webkit.js adds the language badge, copy button, and Prism highlight.
 - The index listing uses `<a class="wk-card">` + `<wk-page-header>` for the
   page list entries.
-- Theme changes fire `document` event `wk-themechange` with `detail.theme`:
-  present's brief template listens there to recolor the Cytoscape graph and
-  rebuild any metric charts (`initPresentCharts`).
+- Theme changes fire `document` event `wk-themechange` with `detail.theme`,
+  `detail.palette`, and `detail.mode`: present's brief template listens there
+  to recolor the Cytoscape graph and rebuild any metric charts
+  (`initPresentCharts`). The event fires on the header toggle, when the themes
+  page in another tab changes a family or the mode, and when the system
+  appearance flips in system mode, so an open brief recolours without a
+  reload.
+- **Colours are palette roles, read at call time.** `getGraphColors` and
+  `getChartColors` in `app.js` hold no literals: each entry is one `cssVar`
+  lookup of a role webkit emits as a literal hex for every family
+  (`--graph-leaf-bg`, `--tone-green-border`, `--series-2`, `--chart-grid`,
+  and so on; the full set is in `webkit/src/themes.mjs`). Stored pages carry
+  no colours, so a theme change is a reload at most, never a rerender. A
+  chart series names its colour by the legacy names (`terracotta`, `blue`,
+  `green`, `purple`) or by role (`series-1` to `series-4`); both map to the
+  same index. A panel's `accent` is validated against `webkit.Roles()` (plus
+  `terracotta`, an alias of `primary` that webkit still declares) and rendered
+  as `var(--<role>)`, so it follows the family too. The body ink override in
+  `shell.html` reads `--text-body` instead of a ramp step.
 - Present's briefing blocks (sections, toc, kv, progress, callout) are NOW
   webkit components: the Doc renderer emits `<wk-section>` / `<wk-toc>` /
   `<wk-kv>` / `<wk-progress>` / `<wk-callout>` (alongside `<wk-table>` /
@@ -272,8 +293,8 @@ theme). Do not add those controls manually.
   emits `initGraph()` with the elements and a `presentGraphLayout(engine,
   direction)` call, nothing else. The `cytoscape()` shim in `app.js` fills in
   `presentGraphStyle(elements)`. That builds the palette (`getGraphColors`,
-  both themes), the node and edge rules, the four module border colors, and
-  the six tone triples. It also sets the `mapData` width over the heaviest
+  one role lookup per colour), the node and edge rules, the four module border
+  colors, and the six tone triples. It also sets the `mapData` width over the heaviest
   edge weight it finds in the elements. So a palette, box, or tone change
   reaches every stored graph the next time the page loads, with no rerender.
   The shim also replaces the inline style of a script an earlier template
@@ -314,7 +335,7 @@ confirms which embedded webkit assets the running present server serves.
 - **`has_brief` is persisted, and derived for old pages.** `meta.json` carries `has_brief` and `has_deck` so `GetMeta`/`ListMeta` (and the k8s metadata cache, which drops bodies) can say which renditions exist without loading them. A `meta.json` written before decks has no `has_brief` key, and the filesystem store reads it off `content.html`'s size until the next write persists it.
 - **The shared bundle and the CRD grew.** `POST /api/pages` and `PUT /api/p/{id}` take `deck` and `deck_source` beside `content`/`doc` (`sharedclient.Bundle` mirrors them; `replaceSources` saves or deletes the deck source like the others). The size cap measures the deck and its source too, and the `Page` custom resource gained optional `spec.deck` and `spec.deckSource`. Existing objects stay valid, but apply `deploy/base` before a deck reaches a cluster or the API server drops the unknown fields.
 - **Client render uses webkit's shared helpers.** `app.js` builds the DOM with `Webkit.el` / `Webkit.escapeHtml` and polls `/p/{id}/version` for live-reload via `Webkit.poll` (webkit shared helpers). Decision recorded in `docs/adr/0005-webkit-client-side-rendering.md`.
-- **Theme/controls state is global (webkit), not per-page.** Light/dark/font/size/fixation are stored under global `localStorage` keys (`webkit-theme`/`webkit-font`/`webkit-size`/`webkit-fixation`), shared across all present pages, default light. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
+- **Theme/controls state is global (webkit), not per-page.** Mode, palette family, font, size, and fixation are stored under global `localStorage` keys (`webkit-theme`, `webkit-palette-light`, `webkit-palette-dark`, `webkit-font`, `webkit-size`, `webkit-fixation`), shared across all present pages, default light with the default family; `webkit-theme` may also be `system`. (The old per-page `brief-theme:<pathname>` keys are gone.) **The page view is served from the embedded `shell.html`, not the workdir**: there is no on-disk template. `serve` and `mcp` no longer seed `~/.config/present/template.html` — the file and the `render.Render`/`EnsureTemplate` layer have been removed. A shell or `app.js` change ships by rebuild + `t-man restart present`.
 - **Codesign for MCP.** macOS kills adhoc-signed binaries with stale provenance xattrs; `make install` re-signs.
 - **`present_share` reaches the shared instance only over HTTPS from the MCP sandbox.** The consuming repo registers `present mcp` through the seatbelt wrapper (`recipes/present/present.sb`), which allows outbound `:443` plus DNS and nothing else, and the wrapper passes `PRESENT_SHARED_URL`/`PRESENT_AUTHOR_KEY` through from the ralph-managed secrets file. A plain-http shared URL (a kind port-forward, say) fails there with a connection error. The Share button (served by `present serve`, launched through `present-serve.sh` with the same two vars) and `present share` run outside the sandbox and take any URL.
 - **`SetShared` never bumps the version.** Sharing writes only the `shared` record in `meta.json`, so `/p/{id}/version` stays put and the open tab does not reload. The page view learns about a share from the `share` block in `GET /api/p/{id}` on load and from the `POST /p/{id}/share` response it just made.
