@@ -134,6 +134,14 @@ shows, because Cytoscape sizes itself from a visible container. A deck-only
 page redirects `GET /p/{id}` to the deck, and a page without a deck redirects
 the deck route to the brief.
 
+The browser builds the deck's chrome (logo, progress marker, footer line)
+too. When the deck Doc sets a chrome field, the renderer puts one JSON
+script island at the head of the fragment. `app.js` pulls it out before the
+title slide is built and makes a strip along the bottom edge from it. The
+island is all the store holds for it, so a deck that sets no field renders
+as before. The defaults (logo shown, one dot per slide, no footer) come from
+the view.
+
 Remote control keeps the two processes as separate as everything else:
 `present_deck` and `present deck` write the page's `deck-command.json`
 through `store.DeckController`, which only the filesystem store implements.
@@ -263,7 +271,9 @@ page without a deck redirects to the brief) and `GET /p/{id}/deck/command`
 (the last remote command, local filesystem store only). `GET /api/p/{id}`
 answers with a `share` block in local mode and the `deck`, `has_deck`, and
 `deck_control` fields. The remaining page routes are `GET /app.js`,
-`GET /p/{id}/version`, and `DELETE /p/{id}` (the only delete surface).
+`GET /logo.png` (the embedded repo logo the deck chrome shows, served
+no-cache with a content ETag), `GET /p/{id}/version`, and `DELETE /p/{id}`
+(the only delete surface).
 `POST /api/import` is local mode only. The body is `{"name", "markdown"}` as
 JSON. It answers `201 {"id", "url"}`, 415 without the JSON content type, or
 403 cross-site. It answers 413 when the rendered page would pass the 1 MiB
