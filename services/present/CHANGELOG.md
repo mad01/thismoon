@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.13.0](https://github.com/mad01/thismoon/compare/present/v1.12.0...present/v1.13.0) (2026-10-01)
+
+
+### Features
+
+* **present:** columns, stat, quote, and details blocks plus deck chrome fields ([fdf9071](https://github.com/mad01/thismoon/commit/fdf9071bc441c7228cc1ac98285593e298b3ed36))
+* **present:** deck chrome strip with logo, progress marker, and footer ([7d3eeba](https://github.com/mad01/thismoon/commit/7d3eeba417c377552bb332cabc3e0c39237d9fd6))
+* **present:** open decks with the read-aloud controls hidden ([d8abbe2](https://github.com/mad01/thismoon/commit/d8abbe2e7c57f79ad81d382b0d1a946550315fa4))
+* **present:** section layout, tone, notes, and reveal, and the deck transition ([bcff794](https://github.com/mad01/thismoon/commit/bcff7945abff925b935d7b79c50e3f6b4dd24bca))
+* **present:** slide layouts, notes drawer, reveal steps, and view transitions in the deck ([a0d19c7](https://github.com/mad01/thismoon/commit/a0d19c70a223674f0b0d968aa16251b32738931e))
+
+
+### Bug Fixes
+
+* **present:** a link in the speaker notes opens a new tab ([db706c1](https://github.com/mad01/thismoon/commit/db706c1885ce691d44e305eca6fc47fade72823a))
+* **present:** a progress dot gives up focus after it jumps ([c19a6f8](https://github.com/mad01/thismoon/commit/c19a6f83aa21876756db2bca6774ed4495363c69))
+* **present:** a stat's value is shown verbatim ([622cdbd](https://github.com/mad01/thismoon/commit/622cdbdeea3a904c805e18baf84a2d81117d8cf5))
+* **present:** only the live chrome paints during a crossfade, and a skipped transition stays quiet ([cb158e5](https://github.com/mad01/thismoon/commit/cb158e5fb3b213bf20fa1babe537c7d2e557814e))
+* **present:** Space on a deck bar button is that button's click again ([98e75a5](https://github.com/mad01/thismoon/commit/98e75a53e18e42f0add45bbea2128e0008aabcac))
+* **present:** the chart draw-in follows the deck's transition ([c75e9af](https://github.com/mad01/thismoon/commit/c75e9af54646562a3809aea21a8fb1f41e86e009))
+* **present:** the chrome island and the presenter byline belong to the deck rendition ([6ce085c](https://github.com/mad01/thismoon/commit/6ce085c5cf709fdcb3afc60330ede748c8813c25))
+* **present:** the chrome stays painted through a slide transition ([1577227](https://github.com/mad01/thismoon/commit/157722701ce627e595735d4fbb705766e4248f33))
+* **present:** the deck knows where it is going while a transition is pending ([99653f7](https://github.com/mad01/thismoon/commit/99653f79e9699bacf449214e5eef82d69a27fd30))
+
 ## [1.12.0](https://github.com/mad01/thismoon/compare/present/v1.11.0...present/v1.12.0) (2026-10-01)
 
 
