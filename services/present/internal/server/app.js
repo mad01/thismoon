@@ -1272,6 +1272,9 @@
       html.classList.toggle('deck-vt', animate);
       if (!animate) { apply(); refreshVisuals(); return; }
       var vt = document.startViewTransition(apply);
+      // A transition skipped by a quicker next one rejects ready with an
+      // AbortError nobody needs to hear about; finished settles either way.
+      vt.ready.catch(function () {});
       vt.finished.then(refreshVisuals, refreshVisuals);
     }
     // A step on a slide still being entered is recorded on the pending

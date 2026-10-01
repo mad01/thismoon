@@ -294,6 +294,10 @@ div.deck-strip { view-transition-name: deck-strip; }
 ::view-transition-group(deck-logo), ::view-transition-old(deck-logo), ::view-transition-new(deck-logo),
 ::view-transition-group(deck-bar), ::view-transition-old(deck-bar), ::view-transition-new(deck-bar),
 ::view-transition-group(deck-notes), ::view-transition-old(deck-notes), ::view-transition-new(deck-notes) { animation: none; mix-blend-mode: normal; }
+/* With no animation both snapshots would paint for the whole crossfade (two
+   ringed dots, the old drawer peeking under the new one); only the live new
+   state shows. */
+::view-transition-old(deck-strip), ::view-transition-old(deck-logo), ::view-transition-old(deck-bar), ::view-transition-old(deck-notes) { display: none; }
 ::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 ::view-transition-old(deck-slide), ::view-transition-new(deck-slide) { animation-duration: 0.2s; animation-timing-function: ease-out; mix-blend-mode: normal; }
 html.deck-vt .slide.active, html[data-transition="none"] .slide.active { animation: none; }
