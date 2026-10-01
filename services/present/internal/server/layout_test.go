@@ -13,6 +13,7 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"chrome.transition", "data-transition", "startViewTransition", "deck-vt", "deck-next", "deck-prev",
 		"'layoutstop'", "classList.add('ready')", "buildChart(b, { duration: transition === 'none' ? 0 : 400 })", "builtOnly",
 		"var pending = null;", "function at() { return pending ? pending.i : current; }", "pending.steps = n",
+		"vt.ready.catch(function () {});",
 	} {
 		if !contains(app, want) {
 			t.Errorf("app.js lacks %q", want)
@@ -26,6 +27,7 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"::view-transition-old(deck-slide)", "html.deck-vt .slide.active, html[data-transition=\"none\"] .slide.active { animation: none; }",
 		"div.deck-strip { view-transition-name: deck-strip; }", ".deck-notes-drawer { view-transition-name: deck-notes; }",
 		"::view-transition-old(deck-logo), ::view-transition-new(deck-logo),",
+		"::view-transition-old(deck-strip), ::view-transition-old(deck-logo), ::view-transition-old(deck-bar), ::view-transition-old(deck-notes) { display: none; }",
 		`html[data-transition="slide"].deck-next::view-transition-new(deck-slide)`,
 		"prefers-reduced-motion", ".cy-container.ready",
 	} {
