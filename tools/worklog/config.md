@@ -28,9 +28,9 @@ file equivalent; see Environment variables.
 
 Ticket-firewall strings for `worklog scan`, which classifies a session as
 personal or internal and keeps ticket ids from the two worlds from
-co-mingling. The paths it classifies by are the session's working directory
-and the checkout paths its tool calls name. A key set in the file replaces
-its default outright; it does not extend it.
+co-mingling. The paths it classifies by are each line's working directory
+and the git checkouts that tool-call paths resolve to. A key set in the file
+replaces its default outright; it does not extend it.
 
 The three classification keys have **no built-in values**. They describe one
 person's machine layout — which ticket prefixes and which directories are
@@ -45,8 +45,8 @@ misfiled, and nothing is dropped.
   routed to the personal (Linear) ticket world. Any other prefix is treated
   as internal (Jira). Unset means no key is personal.
 - `scan.personal_path_markers` ([]string, no default): a session path (a
-  line's working directory or a path named in a tool call) containing one of
-  these strings is classified personal.
+  line's working directory, or the git checkout a tool-call path resolves
+  to) containing one of these strings is classified personal.
 - `scan.internal_path_markers` ([]string, no default): a session path
   containing one of these strings is classified internal.
 - `scan.checkout_roots` ([]string, default `[/code/src/]`): GOPATH-style
@@ -56,7 +56,8 @@ misfiled, and nothing is dropped.
   which is why it can ship with a default when the marker lists cannot.
 - `scan.repo_path_markers` ([]string, default `[/code/, /workspace/]`): a
   path matching none of these reports no repo at all (for example, a session
-  run from a temp directory whose tool calls never reach a checkout). Repo
+  run from a temp directory whose tool calls never reach a checkout). A
+  tool-call path must also resolve to a directory with a `.git` entry. Repo
   detection is not part of the firewall, so it works out of the box.
 
 ### `remote`

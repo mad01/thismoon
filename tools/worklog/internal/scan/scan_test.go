@@ -268,10 +268,10 @@ func toolLine(t *testing.T, cwd, ts, tool string, input map[string]any) string {
 }
 
 // TestToolPathsAndDays covers what the digest reads beyond cwd: checkout paths
-// named in tool-call inputs, and the per-day split of user messages. Tool-call
-// paths only count when they exist on this machine, and only a directory with
-// a .git entry counts as a repo, so the checkouts are real directories under a
-// temp home (HOME is pointed there for the ~/ case).
+// named in tool-call inputs, and the per-day split of user messages. A
+// tool-call path only counts when it resolves to a directory with a .git
+// entry on this machine, so the checkouts are real directories under a temp
+// home (HOME is pointed there for the ~/ case).
 func TestToolPathsAndDays(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -290,6 +290,7 @@ func TestToolPathsAndDays(t *testing.T) {
 	}
 	tmp := mkdir(".tmp/k3j9x")
 	bin := mkdir("code/bin")
+	mkdir("workspace/docs") // exists under the internal marker, no .git
 	dotfiles := checkout("code/src/github.com/mad01/dotfiles")
 	ralph := checkout("code/src/github.com/mad01/ralph")
 	billing := checkout("workspace/billing-api")
@@ -311,6 +312,7 @@ func TestToolPathsAndDays(t *testing.T) {
 		lines        []string
 		wantRepos    []string
 		wantContext  string
+		wantTickets  []string
 		wantMessages int
 		wantDays     map[string]DayActivity
 	}{
@@ -369,7 +371,43 @@ func TestToolPathsAndDays(t *testing.T) {
 			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
 		},
 		{
-			name: "mentioned paths that are not on disk are ignored",
+			// Reviewer's case A: the directory exists under the internal marker
+			// but is no checkout, so it must not set context or drop the
+			// Linear key by filing the session internal.
+			name: "an existing non-checkout under a marker sets no context",
+			now:  utc,
+			lines: []string{
+				userLine(t, tmp, "2026-06-16T09:00:00Z", "track MAD-999"),
+				toolLine(t, tmp, "2026-06-16T09:01:00Z", "Write", map[string]any{
+					"file_path": tmp + "/notes.md",
+					"content":   "Scratch notes go in ~/workspace/docs",
+				}),
+			},
+			wantContext:  "unknown",
+			wantTickets:  []string{"MAD-999"},
+			wantMessages: 1,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
+		},
+		{
+			// Reviewer's case B: a made-up suffix under a real checkout must
+			// classify the checkout, not the token's marker-shaped tail.
+			name: "a made-up suffix under a real checkout classifies the checkout",
+			now:  utc,
+			lines: []string{
+				userLine(t, dotfiles, "2026-06-16T09:00:00Z", "edit the doc"),
+				toolLine(t, dotfiles, "2026-06-16T09:01:00Z", "Edit", map[string]any{
+					"file_path":  dotfiles + "/README.md",
+					"old_string": "x",
+					"new_string": "see " + dotfiles + "/no/such/workspace/file.md",
+				}),
+			},
+			wantRepos:    []string{"dotfiles"},
+			wantContext:  "personal",
+			wantMessages: 1,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
+		},
+		{
+			name: "paths that resolve to no checkout are ignored",
 			now:  utc,
 			lines: []string{
 				userLine(t, dotfiles, "2026-06-16T09:00:00Z", "document the markers"),
@@ -428,6 +466,7 @@ func TestToolPathsAndDays(t *testing.T) {
 			},
 			wantRepos:    []string{"dotfiles", "ralph"},
 			wantContext:  "personal",
+			wantTickets:  []string{"MAD-123"},
 			wantMessages: 2,
 			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 2}},
 		},
@@ -450,6 +489,9 @@ func TestToolPathsAndDays(t *testing.T) {
 			if s.Context != tc.wantContext {
 				t.Errorf("context = %q, want %q", s.Context, tc.wantContext)
 			}
+			if !slices.Equal(s.Tickets, tc.wantTickets) {
+				t.Errorf("tickets = %v, want %v", s.Tickets, tc.wantTickets)
+			}
 			if s.UserMessages != tc.wantMessages {
 				t.Errorf("user messages = %d, want %d", s.UserMessages, tc.wantMessages)
 			}
@@ -457,6 +499,41 @@ func TestToolPathsAndDays(t *testing.T) {
 				t.Errorf("days = %v, want %v", s.Days, tc.wantDays)
 			}
 		})
+	}
+}
+
+// TestAbsoluteMarkerMatchesTildePath pins that a tool-call path is classified
+// after expansion: an internal_path_markers entry written as an absolute path
+// must match a ~/ path into the same checkout.
+func TestAbsoluteMarkerMatchesTildePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, "workspace/billing-api/.git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		LinearPrefixes:      []string{"MAD"},
+		InternalPathMarkers: []string{filepath.Join(home, "workspace") + "/"},
+	}
+	root := t.TempDir()
+	writeSession(t, root, "proj", "s", []string{
+		userLine(t, "/tmp/abc", "2026-06-16T09:00:00Z", "look at the service"),
+		toolLine(t, "/tmp/abc", "2026-06-16T09:01:00Z", "Read",
+			map[string]any{"file_path": "~/workspace/billing-api/README.md"}),
+	})
+	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
+	sessions, err := Scan(root, 14*24*time.Hour, now, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d, want 1", len(sessions))
+	}
+	if got := sessions[0].Context; got != "internal" {
+		t.Errorf("context = %q, want internal (absolute marker vs ~/ path)", got)
+	}
+	if got := sessions[0].Repos; !slices.Equal(got, []string{"billing-api"}) {
+		t.Errorf("repos = %v, want [billing-api]", got)
 	}
 }
 
