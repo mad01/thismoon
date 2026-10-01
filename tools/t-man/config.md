@@ -78,9 +78,33 @@ error naming both values.
   service writes outside stdout/stderr (for example, a sandbox denial
   ledger). The name must match the same character set as service names and
   cannot be `stdout` or `stderr`.
+- `--schedule` (string, default `""`): makes the service a scheduled job
+  that fires at the given wall-clock times: a comma-separated list of
+  `HH:MM`, each with an optional day prefix and `@`. The prefix is a weekday
+  name (`mon@07:30`), a range (`mon-fri@07:30`), or a set: `weekdays`
+  (mon-fri), `weekend` (sat-sun), `daily` (no prefix). A range may wrap
+  (`fri-mon@09:00`). Each day becomes its own `StartCalendarInterval` entry.
+- `--calendar` (repeatable, default none): `StartCalendarInterval` entries
+  written in launchd's own fields: `minute=0,hour=6,day=1`. Keys are
+  `minute` (0-59), `hour` (0-23), `day` (1-31), `weekday` (0-7, Sunday is 0
+  or 7), `month` (1-12). A key left out is a wildcard. `day` and `weekday`
+  cannot share an entry, because launchd fires on either one matching; give
+  them as two entries. Any value may be a range (`hour=9-17`, `day=1-7`);
+  ranged keys expand to their cross product, and only `weekday` may run
+  downward to wrap (`weekday=5-1`). Combines with `--schedule`.
 
-`RunAtLoad` and `KeepAlive` are not configurable; every service t-man
-manages gets both set to `true`.
+The calendar entries from both flags are sorted, deduplicated, and capped
+at 200 per job, with Sunday stored as 0. The hash therefore does not depend
+on which spelling produced them.
+- `--every` (duration, default `""`): makes the service a scheduled job that
+  fires every interval, counted from load: a Go duration in whole seconds
+  (`1h`, `30m`). Becomes `StartInterval`. Cannot be combined with
+  `--schedule` or `--calendar`.
+
+`RunAtLoad` and `KeepAlive` are not flags. A long-lived service (no schedule
+flag) gets both set to `true`, and a scheduled job gets both set to `false`.
+A definition that pairs a schedule with `KeepAlive` is rejected, because
+launchd would relaunch the job as soon as it exited.
 
 ### `list` flags
 
@@ -123,8 +147,14 @@ input: nothing in this section is meant to be hand-authored.
 - `WorkingDirectory` (string, omitted if empty): from `--workdir`.
 - `EnvironmentVariables` (map, omitted if empty): from `--env` and
   `--path`.
-- `RunAtLoad` (bool): always `true`.
-- `KeepAlive` (bool): always `true`.
+- `RunAtLoad` (bool): `true` for a long-lived service, `false` for a
+  scheduled job.
+- `KeepAlive` (bool): `true` for a long-lived service, `false` for a
+  scheduled job.
+- `StartCalendarInterval` (array of dicts, omitted when unscheduled): the
+  calendar entries from `--schedule` and `--calendar`, each dict holding
+  only the fields that were set.
+- `StartInterval` (integer, omitted when zero): the seconds from `--every`.
 - `StandardOutPath` / `StandardErrorPath` (string): the resolved log paths.
 - `TManMetadata.Hash` (string): SHA256 of the JSON-marshalled Definition;
   the idempotency check compares this against a freshly computed hash.

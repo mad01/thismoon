@@ -36,11 +36,13 @@ Everything t-man knows about a service lives in one struct,
 | `Args` | rest after `--` | |
 | `WorkingDir` | `--workdir` | Must exist and be absolute |
 | `Environment` | `--env`, `--path` | Map of KEY=VALUE |
-| `RunAtLoad` | always true | |
-| `KeepAlive` | always true | launchd restarts the process if it exits |
+| `RunAtLoad` | derived | true for a long-lived service, false for a scheduled job |
+| `KeepAlive` | derived | true for a long-lived service (launchd restarts it when it exits), false for a scheduled job; a schedule plus KeepAlive fails validation |
 | `StandardOutPath` / `StandardErrPath` | derived from `--logs` | |
 | `SandboxProfile` / `SandboxProfileSHA256` | `--sandbox-profile` | Path plus content digest |
 | `ExtraLogs` | `--extra-log` | Name → path, for logs written outside stdout/stderr |
+| `Calendar` | `--schedule`, `--calendar` | `StartCalendarInterval` entries; each field nil means wildcard |
+| `IntervalSeconds` | `--every` | `StartInterval`; mutually exclusive with `Calendar` |
 
 There is no separate config file. The definition is assembled from flags every
 time you run `add`. If you want to change a service, you re-run `add` with the

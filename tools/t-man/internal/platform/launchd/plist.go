@@ -47,7 +47,22 @@ type LaunchdPlist struct {
 	KeepAlive            bool              `plist:"KeepAlive"`
 	StandardOutPath      string            `plist:"StandardOutPath,omitempty"`
 	StandardErrorPath    string            `plist:"StandardErrorPath,omitempty"`
-	TManMetadata         TManMetadata      `plist:"TManMetadata"`
+	// StartCalendarInterval and StartInterval are the two launchd triggers
+	// for a scheduled job; t-man always writes the calendar form as an array
+	// of dicts and reads the single-dict form launchd also accepts.
+	StartCalendarInterval CalendarIntervals `plist:"StartCalendarInterval,omitempty"`
+	StartInterval         int               `plist:"StartInterval,omitempty"`
+	TManMetadata          TManMetadata      `plist:"TManMetadata"`
+}
+
+// plistOwnership is the one slice of a plist the ownership check reads.
+// Decoding only this keeps the check independent of every other key's
+// shape, so an unrelated plist in the directory (a dict-form
+// StartCalendarInterval, a KeepAlive dict) can never fail it.
+type plistOwnership struct {
+	TManMetadata struct {
+		ManagedBy string `plist:"ManagedBy"`
+	} `plist:"TManMetadata"`
 }
 
 // GeneratePlist creates a launchd plist from a service definition
@@ -93,14 +108,16 @@ func GeneratePlist(def *service.Definition, version string) ([]byte, error) {
 
 	// Create the plist structure
 	plistData := &LaunchdPlist{
-		Label:                def.Name,
-		ProgramArguments:     programArgs,
-		WorkingDirectory:     def.WorkingDir,
-		EnvironmentVariables: def.Environment,
-		RunAtLoad:            def.RunAtLoad,
-		KeepAlive:            def.KeepAlive,
-		StandardOutPath:      def.StandardOutPath,
-		StandardErrorPath:    def.StandardErrPath,
+		Label:                 def.Name,
+		ProgramArguments:      programArgs,
+		WorkingDirectory:      def.WorkingDir,
+		EnvironmentVariables:  def.Environment,
+		RunAtLoad:             def.RunAtLoad,
+		KeepAlive:             def.KeepAlive,
+		StandardOutPath:       def.StandardOutPath,
+		StandardErrorPath:     def.StandardErrPath,
+		StartCalendarInterval: calendarToPlist(def.Calendar),
+		StartInterval:         def.IntervalSeconds,
 		TManMetadata: TManMetadata{
 			Hash:                 hash,
 			ManagedBy:            ManagedByValue,
@@ -160,14 +177,20 @@ func ParsePlist(data []byte) (*LaunchdPlist, error) {
 	return &plistData, nil
 }
 
-// IsManagedByTMan checks if a plist is managed by t-man
+// IsManagedByTMan checks if a plist is managed by t-man. It decodes only
+// the ownership metadata, so it answers for any well-formed plist.
 func IsManagedByTMan(data []byte) (bool, error) {
-	plistData, err := ParsePlist(data)
-	if err != nil {
-		return false, err
+	if len(data) == 0 {
+		return false, fmt.Errorf("plist data cannot be empty")
 	}
 
-	return plistData.TManMetadata.ManagedBy == ManagedByValue, nil
+	var owner plistOwnership
+	decoder := plist.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&owner); err != nil {
+		return false, fmt.Errorf("failed to decode plist: %w", err)
+	}
+
+	return owner.TManMetadata.ManagedBy == ManagedByValue, nil
 }
 
 // HasMarkerComment checks if the plist content contains the t-man marker comment

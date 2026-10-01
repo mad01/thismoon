@@ -8,10 +8,13 @@ plain CLI with no daemon of its own, so "t-man supervises X" always means
 
 ## how it runs
 
-Every managed service gets RunAtLoad and KeepAlive set true: launchd starts
-it at load and relaunches it whenever it exits. t-man shells out to the
-legacy launchctl verbs (load -w, unload, start, stop, list, print) and does
-no process supervision or health checking itself. `add` is idempotent: a
+A long-lived service (the default) gets RunAtLoad and KeepAlive set true:
+launchd starts it at load and relaunches it whenever it exits. A scheduled
+job (added with --schedule, --calendar, or --every) gets neither. launchd
+starts it from its StartCalendarInterval or StartInterval trigger and lets
+it exit, and `{{.Bin}} list` reads it as scheduled between runs. t-man shells
+out to the legacy launchctl verbs (load -w, unload, start, stop, list,
+print) and does no process supervision or health checking itself. `add` is idempotent: a
 SHA256 hash of the full definition is stored inside the plist. An unchanged
 re-add is a no-op, and a changed one rewrites the plist and bounces the
 service.
@@ -62,6 +65,16 @@ the old process across a rebuild and reinstall. So the binary on disk is new
 while the process serving is old. Compare the service's `GET /version` (or
 its own `version` command) with the freshly installed binary;
 `{{.Bin}} restart <name>` picks up the new one.
+
+A scheduled job shows scheduled rather than running: that is its idle
+state between runs, not a failure. `{{.Bin}} list` adds NEXT RUN, LAST RUN,
+and EXIT columns whenever a scheduled job exists; a non-zero EXIT is the
+signal, and `{{.Bin}} logs <name> --stderr` has the reason. LAST RUN is the
+newest write to the job's logs (launchd keeps no run timestamp), so a job
+that prints nothing never moves it. `{{.Bin}} run <name>` fires the job once
+to reproduce a failure without waiting for the next slot. A job that did
+not run while the machine slept runs once after wake; several missed slots
+collapse into that one run.
 
 A service is missing from `{{.Bin}} list`: registration is machine-private,
 done at provisioning time with `t-man add`, so a missing entry means that

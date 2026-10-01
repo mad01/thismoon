@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/mad01/thismoon/tools/t-man/internal/procstat"
@@ -52,6 +53,10 @@ func runList(cmd *cobra.Command, args []string) error {
 		return printListWithResources(getContext(), manager, services)
 	}
 
+	if anyScheduled(services) {
+		return printListWithSchedule(getContext(), manager, services, time.Now())
+	}
+
 	// Print table header
 	fmt.Printf("%-30s %-15s %-50s\n", "NAME", "STATUS", "COMMAND")
 	fmt.Println(strings.Repeat("-", 95))
@@ -63,6 +68,60 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// anyScheduled reports whether the list holds at least one scheduled job,
+// which is when the schedule columns earn their width.
+func anyScheduled(services []*service.Definition) bool {
+	for _, svc := range services {
+		if svc.Scheduled() {
+			return true
+		}
+	}
+	return false
+}
+
+// printListWithSchedule prints the list table with NEXT RUN, LAST RUN, and
+// EXIT columns, so a scheduled job's idle state reads as waiting for its
+// next run rather than as down. Long-lived services show "-" in them.
+func printListWithSchedule(
+	ctx context.Context,
+	manager *launchd.Manager,
+	services []*service.Definition,
+	now time.Time,
+) error {
+	fmt.Printf(scheduleRowFormat, "NAME", "STATUS", "NEXT RUN", "LAST RUN", "EXIT", "COMMAND")
+	fmt.Println(strings.Repeat("-", 124))
+
+	for _, svc := range services {
+		state, err := manager.RunState(ctx, svc)
+		if err != nil {
+			state = nil
+		}
+		fmt.Print(formatScheduleRow(svc, state, now))
+	}
+
+	return nil
+}
+
+// scheduleRowFormat lays out one line of the schedule-aware list table.
+const scheduleRowFormat = "%-30s %-12s %-16s %-16s %4s  %-40s\n"
+
+// formatScheduleRow renders one service's line of the schedule-aware list.
+// state is nil when launchd could not be asked, which prints as unknown.
+func formatScheduleRow(svc *service.Definition, state *launchd.RunState, now time.Time) string {
+	status, exit := "unknown", "-"
+	if state != nil {
+		status = state.Status
+		if svc.Scheduled() {
+			exit = formatExitCode(state.LastExitCode)
+		}
+	}
+	return fmt.Sprintf(
+		scheduleRowFormat,
+		svc.Name, status, formatNextRun(svc, now), formatLastRun(svc), exit,
+		formatCommand(svc, 40),
+	)
 }
 
 // printListWithResources prints the list table with PID, RSS, CPU%, and

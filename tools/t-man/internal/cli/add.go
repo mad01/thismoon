@@ -22,6 +22,7 @@ var (
 	addLogDir         string
 	addSandboxProfile string
 	addExtraLogs      []string
+	addSchedule       scheduleFlags
 )
 
 // addCmd represents the add command
@@ -34,7 +35,12 @@ This command is compatible with serviceman CLI syntax:
   t-man add --name myservice -- /path/to/executable arg1 arg2
 
 The command and its arguments must come after the -- separator. A command path
-may start with ~/, which expands to your home directory.`,
+may start with ~/, which expands to your home directory.
+
+Without a schedule the service is long-lived: launchd starts it at load and
+restarts it whenever it exits. With --schedule, --calendar, or --every it is a
+scheduled job instead: launchd runs it at those times and lets it exit, and
+"scheduled" is its normal status between runs.`,
 	Example: `  # Add a simple service
   t-man add --name myapp -- /usr/local/bin/myapp
 
@@ -42,7 +48,23 @@ may start with ~/, which expands to your home directory.`,
   t-man add --name webapp --workdir /var/www --path /usr/local/bin -- node server.js
 
   # Add with custom log directory
-  t-man add --name myservice --logs /var/log/myservice -- /usr/bin/myapp`,
+  t-man add --name myservice --logs /var/log/myservice -- /usr/bin/myapp
+
+  # Run a job every morning at 07:30, and on Fridays at 17:00 too
+  t-man add --name digest --schedule 07:30,fri@17:00 -- /usr/local/bin/digest
+
+  # Office days only: a weekday set, or a range (ranges may wrap: fri-mon)
+  t-man add --name standup --schedule weekdays@08:50 -- /usr/local/bin/standup
+  t-man add --name standup --schedule mon-fri@08:50 -- /usr/local/bin/standup
+
+  # Run a job on the first of every month using launchd's own fields
+  t-man add --name rollup --calendar day=1,hour=6,minute=0 -- /usr/local/bin/rollup
+
+  # Every hour on the hour during office hours (a range expands to 45 entries)
+  t-man add --name poll --calendar hour=9-17,weekday=1-5,minute=0 -- /usr/local/bin/poll
+
+  # Run a job every hour
+  t-man add --name audit --every 1h -- /usr/local/bin/audit`,
 	RunE: runAdd,
 }
 
@@ -60,6 +82,12 @@ func init() {
 		StringVar(&addSandboxProfile, "sandbox-profile", "", "Wrap the service in sandbox-exec with this seatbelt profile (.sb file)")
 	addCmd.Flags().
 		StringArrayVar(&addExtraLogs, "extra-log", []string{}, "Additional named log file (NAME=PATH, repeatable), viewable with 'logs --source NAME'")
+	addCmd.Flags().
+		StringVar(&addSchedule.clock, "schedule", "", "Run as a scheduled job at HH:MM daily; comma list, optional day prefix: mon@07:30, mon-fri@07:30, weekdays@, weekend@, daily@")
+	addCmd.Flags().
+		StringArrayVar(&addSchedule.calendar, "calendar", []string{}, "Run as a scheduled job on launchd calendar fields (minute=0,hour=7,day=1,weekday=1,month=1; a field may be a range such as hour=9-17; repeatable)")
+	addCmd.Flags().
+		StringVar(&addSchedule.every, "every", "", "Run as a scheduled job every interval (Go duration such as 1h or 30m)")
 
 	_ = addCmd.MarkFlagRequired("name")
 }
@@ -158,13 +186,20 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		Args:            commandArgs,
 		WorkingDir:      addWorkdir,
 		Environment:     envMap,
-		RunAtLoad:       true, // Default to auto-start
-		KeepAlive:       true, // Default to auto-restart
 		StandardOutPath: stdoutPath,
 		StandardErrPath: stderrPath,
 		SandboxProfile:  sandboxProfile,
 		ExtraLogs:       extraLogs,
 	}
+	if err := addSchedule.apply(def); err != nil {
+		return err
+	}
+
+	// A long-lived service starts at load and is restarted by launchd; a
+	// scheduled job does neither, launchd fires it from its triggers only
+	longLived := !def.Scheduled()
+	def.RunAtLoad = longLived
+	def.KeepAlive = longLived
 
 	// Validate the definition
 	if err := def.Validate(); err != nil {
@@ -195,6 +230,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		}
 		if def.SandboxProfile != "" {
 			fmt.Printf("Sandbox Profile: %s\n", def.SandboxProfile)
+		}
+		if def.Scheduled() {
+			fmt.Printf("Schedule: %s\n", def.ScheduleString())
 		}
 		return nil
 	}

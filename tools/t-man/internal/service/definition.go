@@ -36,6 +36,14 @@ type Definition struct {
 	// `t-man logs <name> --source <source>`. Round-tripped through the plist
 	// (TManMetadata) so reconcile compares it like any other field.
 	ExtraLogs map[string]string `json:"extra_logs,omitempty"`
+	// Calendar makes the service a scheduled job: launchd starts it at every
+	// wall-clock minute matching any entry (StartCalendarInterval). Mutually
+	// exclusive with IntervalSeconds. Round-tripped through the plist and
+	// part of Hash() like every other field.
+	Calendar []CalendarEntry `json:"calendar,omitempty"`
+	// IntervalSeconds makes the service a scheduled job that launchd starts
+	// every N seconds from load (StartInterval). Zero means no interval.
+	IntervalSeconds int `json:"interval_seconds,omitempty"`
 }
 
 // PopulateSandboxDigest reads the sandbox profile file and records its
@@ -142,6 +150,10 @@ func (d *Definition) Validate() error {
 		if !filepath.IsAbs(path) {
 			return fmt.Errorf("extra log path must be an absolute path: %s=%s", source, path)
 		}
+	}
+
+	if err := d.validateSchedule(); err != nil {
+		return err
 	}
 
 	// Validate working directory if specified
