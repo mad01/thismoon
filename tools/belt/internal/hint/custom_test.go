@@ -2,12 +2,17 @@ package hint
 
 import (
 	"encoding/json"
+	"errors"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 )
@@ -56,6 +61,7 @@ func TestCustomHintOutcomes(t *testing.T) {
 	fails := writeHintScript(t, dir, "fails.sh", "echo partial\nexit 1")
 	silent := writeHintScript(t, dir, "silent.sh", "exit 0")
 	whitespace := writeHintScript(t, dir, "whitespace.sh", "printf '  \\n\\n'")
+	indented := writeHintScript(t, dir, "indented.sh", "printf '  - first\\n  - second\\n\\n'")
 
 	tests := []struct {
 		name     string
@@ -67,6 +73,12 @@ func TestCustomHintOutcomes(t *testing.T) {
 			"exit 0 with output advises, trailing whitespace trimmed, lines kept",
 			[]string{speaks},
 			"open actions:\n  - review the release PR",
+			"",
+		},
+		{
+			"leading indentation on line one is kept",
+			[]string{indented},
+			"  - first\n  - second",
 			"",
 		},
 		{"non-zero exit is silent with a warn", []string{fails}, "", "failed"},
@@ -121,6 +133,101 @@ func TestCustomHintTimeout(t *testing.T) {
 	if len(warned) != 1 || !strings.Contains(warned[0], "timed out after 50ms") {
 		t.Errorf("timeout warning missing: %v", warned)
 	}
+}
+
+// TestCustomHintKeepsOutputWhenAChildLingers pins the ErrWaitDelay path: an
+// external that prints, exits 0, and leaves a background child holding
+// stdout is a successful run whose output is the advice, not a failure.
+func TestCustomHintKeepsOutputWhenAChildLingers(t *testing.T) {
+	dir := t.TempDir()
+	lingers := writeHintScript(t, dir, "lingers.sh", "echo open actions: none\nsleep 2 &\n")
+	var warned []string
+	h := newCustomHint(config.CustomHint{Command: []string{lingers}}, &warned)
+
+	got := h.Check(Input{Event: EventSessionStart, Cwd: dir, SessionID: "s"})
+
+	if got == nil || got.Text != "open actions: none" {
+		t.Errorf("Check = %+v, want the output printed before the child lingered", got)
+	}
+	if len(warned) > 0 {
+		t.Errorf("a lingering child is not a failure, got warnings %v", warned)
+	}
+}
+
+// TestCustomHintWarnDoesNotHoldTheSession pins the warn path's bound: an
+// events endpoint that accepts but never answers must not stretch the hint
+// past its budget plus the grace periods, since hints run serially on the
+// session-start hook. The script is launched once untimed first, because a
+// fresh script's first launch can be slow under load and this test is
+// about the warn, not the exec.
+func TestCustomHintWarnDoesNotHoldTheSession(t *testing.T) {
+	dir := t.TempDir()
+	fails := writeHintScript(t, dir, "fails.sh", "exit 1")
+	_ = exec.Command(fails).Run()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	cfg := config.Config{CustomHints: map[string]config.CustomHint{"test-hint": {
+		Event:     EventSessionStart,
+		Command:   []string{fails},
+		TimeoutMS: 400,
+	}}}
+	h := NewCustom("test-hint", cfg)
+	h.resolveRepo = func(string) string { return "" }
+	h.emit = func(string, string, string, string, map[string]string) {
+		close(started)
+		<-release // the endpoint that never answers
+	}
+
+	start := time.Now()
+	got := h.Check(Input{Event: EventSessionStart, Cwd: dir, SessionID: "s"})
+	elapsed := time.Since(start)
+
+	if got != nil {
+		t.Errorf("exit 1 should be silent, got %+v", got)
+	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("the warn was never emitted")
+	}
+	if limit := 400*time.Millisecond + 200*time.Millisecond; elapsed > limit {
+		t.Errorf("Check took %s with a hung events endpoint, want under %s", elapsed, limit)
+	}
+}
+
+// TestCustomHintTimeoutKillsGrandchildren pins the process-group kill: a
+// grandchild the script started (the curl inside a journal script, say)
+// must be gone after the timeout, not left to outlive the hook.
+func TestCustomHintTimeoutKillsGrandchildren(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "grandchild.pid")
+	hangs := writeHintScript(t, dir, "hangs.sh", "sleep 30 &\necho $! > "+pidfile+"\nwait")
+	var warned []string
+	h := newCustomHint(config.CustomHint{Command: []string{hangs}, TimeoutMS: 1000}, &warned)
+
+	if got := h.Check(Input{Event: EventSessionStart, Cwd: dir, SessionID: "s"}); got != nil {
+		t.Errorf("timeout should be silent, got %+v", got)
+	}
+
+	raw, err := os.ReadFile(pidfile)
+	if err != nil {
+		t.Fatalf("grandchild pid never recorded; the script did not reach line two"+
+			" inside the budget: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatalf("pidfile %q: %v", raw, err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return // gone, as it should be
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("grandchild %d is still alive after the timeout", pid)
 }
 
 func TestCustomHintPayload(t *testing.T) {

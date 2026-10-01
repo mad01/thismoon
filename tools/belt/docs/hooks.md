@@ -701,14 +701,18 @@ hook in the Claude settings and no compiled-in hint in a public repo.
 
 - belt execs the command with the hook payload fields as JSON on stdin
   (`{"event","cwd","session_id","transcript_path"}` for session-start).
-- stdout is the advice: trailing whitespace trimmed, multiple lines kept,
-  emitted under `belt[<name>]:` like every built-in. A non-zero exit, a run
+- stdout is the advice: trailing whitespace trimmed, multiple lines and
+  leading indentation kept, emitted under `belt[<name>]:` like every
+  built-in. A non-zero exit, a run
   past the budget, a failure to start, or empty stdout all **end in silence
   with a warn event**, so a broken external never breaks a session and
   never fails silently either.
 - The budget is the kof hints' 400 ms by default; `timeout_ms` sizes it per
   hint. A session-start hook runs before the first prompt, so the budget is
-  the whole cost a slow external can impose.
+  the whole cost a slow external can impose, plus a short grace for closing
+  the pipe and landing the warn event. On timeout belt kills the external's
+  whole process group, so a hung grandchild (a `curl` inside the script)
+  does not outlive the hook either.
 - `enabled` and `exclude_repos` sit on the entry and work like the
   built-ins' (a `hints.<name>` toggle of the same name is honored too).
   `event` accepts `session-start` only today; it is a string so prompt and

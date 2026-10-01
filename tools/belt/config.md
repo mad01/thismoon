@@ -264,8 +264,8 @@ A map keyed by hint name; each entry registers an externally-implemented
 hint. belt execs the command with the hook payload fields as JSON on stdin,
 and the command's stdout becomes the advice. Where `custom_guards` answers
 with an exit code, a custom hint answers with text. belt trims trailing
-whitespace, keeps multiple lines, and emits the result under the usual
-`belt[<name>]:` prefix. A non-zero exit, a run past the budget, a failure
+whitespace, keeps multiple lines and any leading indentation, and emits the
+result under the usual `belt[<name>]:` prefix. A non-zero exit, a run past the budget, a failure
 to start, or empty stdout all end in silence plus a warn event on the
 events service. A broken external never breaks a session. The entry is how
 a machine-private hint (a daily journal, say) rides the session-start hook
