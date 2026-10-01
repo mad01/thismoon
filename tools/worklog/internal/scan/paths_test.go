@@ -28,6 +28,26 @@ func TestPathTokens(t *testing.T) {
 			"cd ~/code/src/github.com/acme/widgets",
 			[]string{"~/code/src/github.com/acme/widgets"},
 		},
+		{
+			"double-quoted path with a space",
+			`cd "` + widgets + ` two" && ls`,
+			[]string{widgets + " two"},
+		},
+		{
+			"single-quoted path with a space",
+			`ls '` + widgets + ` two'`,
+			[]string{widgets + " two"},
+		},
+		{
+			"flag assignment with a quoted path",
+			`--dir="` + widgets + ` two"`,
+			[]string{widgets + " two"},
+		},
+		{
+			"apostrophe in prose keeps the path",
+			"the repo's README at " + widgets + "/README.md",
+			[]string{widgets + "/README.md"},
+		},
 		{"url is not a path", "see https://github.com/acme/widgets/pull/5", nil},
 		{"repo slug is not a path", "acme/widgets", nil},
 		{"two paths", "cp " + widgets + "/a /tmp/b", []string{widgets + "/a", "/tmp/b"}},

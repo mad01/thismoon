@@ -60,25 +60,43 @@ func collectStrings(v any, out []string) []string {
 }
 
 // pathDelimiters are the characters besides whitespace that end a path token
-// in shell text: quotes, operators, brackets, and the = of --flag=/path.
-const pathDelimiters = "\"'`;&|<>()[]{}=,"
+// in shell text: operators, brackets, backticks, and the = of --flag=/path.
+const pathDelimiters = "`;&|<>()[]{}=,"
 
 // pathTokens splits s on whitespace and shell delimiters and keeps the tokens
-// that start with "/" or "~/". Trailing dots (prose, or Go's /...) are
-// dropped so the last segment stays a clean directory name.
+// that start with "/" or "~/". A double or single quote that opens a token
+// holds it together up to the matching quote, so a quoted path with a space
+// survives whole; a quote inside a word (an apostrophe in prose) is just a
+// character. Trailing dots (prose, or Go's /...) are dropped so the last
+// segment stays a clean directory name.
 func pathTokens(s string) []string {
-	fields := strings.FieldsFunc(s, func(r rune) bool {
-		return unicode.IsSpace(r) || strings.ContainsRune(pathDelimiters, r)
-	})
 	var out []string
-	for _, f := range fields {
-		if !strings.HasPrefix(f, "/") && !strings.HasPrefix(f, "~/") {
-			continue
-		}
-		if f = strings.TrimRight(f, "."); f != "" {
-			out = append(out, f)
+	var tok strings.Builder
+	var quote rune
+	flush := func() {
+		t := strings.TrimRight(tok.String(), ".")
+		tok.Reset()
+		if t != "" && (strings.HasPrefix(t, "/") || strings.HasPrefix(t, "~/")) {
+			out = append(out, t)
 		}
 	}
+	for _, r := range s {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				tok.WriteRune(r)
+			}
+		case (r == '"' || r == '\'') && tok.Len() == 0:
+			quote = r
+		case unicode.IsSpace(r) || strings.ContainsRune(pathDelimiters, r):
+			flush()
+		default:
+			tok.WriteRune(r)
+		}
+	}
+	flush()
 	return out
 }
 
