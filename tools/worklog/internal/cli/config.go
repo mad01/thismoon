@@ -25,8 +25,9 @@ scan:                        # ticket-firewall strings for 'worklog scan',
   linear_prefixes:           # TEAM-NN key prefixes routed to the personal
     - MAD                    # (Linear) world. Any other key is read as
                              # internal (Jira).
-  personal_path_markers:     # a session path (a line's cwd or a path in a
-    - github.com/you/        # tool call) containing one of these is personal
+  personal_path_markers:     # a session path (a line's cwd or the checkout a
+    - github.com/you/        # tool-call path resolves to) containing one of
+                             # these is personal
   internal_path_markers:     # a session path containing one of these is
     - /workspace/            # internal
   checkout_roots:            # GOPATH-style checkout roots. The path segment

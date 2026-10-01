@@ -58,27 +58,35 @@ Paths come from two sources. Every line's `cwd` counts, and so does every
 absolute or `~/`-rooted path inside an assistant turn's `tool_use` inputs: a
 Read or Edit `file_path`, a Bash `cd <dir>` or `git -C <dir>`, a
 `worklog_checkpoint` cwd, an Agent prompt that names a checkout. The input
-object is walked generically, so no tool needs its own rule. A tool-call path
-counts only if it still exists on this machine, probed at the checkout it
-resolves to. A path the session merely mentioned is ignored, say an example
-in a doc it wrote or a fixture in a test it edited. That way prose can't
-steer the firewall. Most agent sessions start in a throwaway directory and only
-reach real checkouts through tool calls, which is why cwd alone left them
-with no repos and `context: "unknown"`. The two sources pool with no
-precedence between them. A session
-that touches both worlds through either source is `mixed`, which surfaces
-every ticket for review instead of filing it by whichever source won. For
-`repos`, a cwd reports its own basename. A tool-call path resolves to the
+object is walked generically, so no tool needs its own rule. Most agent
+sessions start in a throwaway directory and only reach real checkouts through
+tool calls, which is why cwd alone left them with no repos and `context:
+"unknown"`.
+
+A tool-call path counts only when it resolves to a git checkout on this
+machine. The path is expanded against the home directory and cut to the
 checkout it sits in: host/org/repo under a checkout root, otherwise the
-segment after a repo path marker. That directory is listed only when it has
-a `.git` entry, so `~/code/bin/<tool>` invocations don't produce a repo named
-`bin`. A csl `repo` argument such as `owner/name` is a slug, not a path, and
-isn't read.
+segment after a repo path marker. It is kept only if that directory has a
+`.git` entry. That checkout directory, never the raw token, is what gets
+classified and listed under `repos`. So a doc example like `~/workspace/foo/bar`, a scratch
+directory that exists but is no checkout, a made-up suffix under a real
+checkout, or `~/code/bin/<tool>` all name no world and no repo. Prose can
+still point at a real checkout, which is what makes an Agent prompt count. A
+csl `repo` argument such as `owner/name` is a slug, not a path, and isn't
+read.
+
+cwd and tool paths pool with no precedence between them. A session that
+touches both worlds through either source is `mixed`, which surfaces every
+ticket for review instead of filing it by whichever source won. For `repos`,
+a cwd reports its own basename, while a tool-call path reports the
+checkout's.
 
 `days` splits `user_messages` by calendar date, keyed in the local timezone,
 so a daily consumer can attribute a session that ran across several days:
-`"days": {"2026-09-30": {"user_messages": 3}}`. A day with tool activity but
-no user turn is present with a zero count.
+`"days": {"2026-09-30": {"user_messages": 3}}`. Every dated line creates its
+day whatever its type (assistant, attachment, system, queue-operation), so a
+day can carry a zero count. A session is only emitted when it has a dated
+line, so the key is always present.
 
 The firewall strings live in worklog's config file (`--config`, else
 `$WORKLOG_CONFIG`, else `config.yaml` under `$XDG_CONFIG_HOME`/`~/.config`):

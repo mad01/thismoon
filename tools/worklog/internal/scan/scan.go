@@ -40,9 +40,11 @@ type Session struct {
 	UserMessages int      `json:"user_messages"`
 	// Days splits activity by calendar date so a daily consumer can attribute
 	// a multi-day session's turns. Keys are dates in the location Scan was
-	// given (the CLI passes time.Now(), so local dates). A day with tool
-	// activity but no user turn is still present with a zero count. Omitted
-	// when no line carried a timestamp.
+	// given (the CLI passes time.Now(), so local dates). Every dated line of
+	// any type (assistant, attachment, system, queue-operation) creates its
+	// day, so a day can carry a zero count. A session is only emitted when it
+	// has a dated line, so the key is always present; omitempty is a
+	// formality.
 	Days         map[string]DayActivity `json:"days,omitempty"`
 	FirstPrompts []string               `json:"first_prompts,omitempty"`
 	LastPrompts  []string               `json:"last_prompts,omitempty"`
@@ -303,23 +305,36 @@ type scanner struct {
 	seen map[string]bool
 }
 
-// onDisk reports whether a path exists on this machine, memoised per scan. A
-// tool-call path that names a checkout still here is one the session used; a
-// path that doesn't (an example in a doc it wrote, a fixture in a test it
-// edited) is one it merely mentioned, and those must not steer the firewall.
-// cwd lines are never probed: a cwd is where the session really ran.
+// onDisk reports whether an absolute path exists on this machine, memoised
+// per scan.
 func (sc *scanner) onDisk(p string) bool {
-	if hit, ok := sc.seen[p]; ok {
-		return hit
+	hit, ok := sc.seen[p]
+	if !ok {
+		_, err := os.Stat(p)
+		hit = err == nil
+		sc.seen[p] = hit
 	}
-	full, err := confdir.Expand(p)
-	hit := false
-	if err == nil {
-		_, statErr := os.Stat(full)
-		hit = statErr == nil
-	}
-	sc.seen[p] = hit
 	return hit
+}
+
+// checkout resolves a tool-call path to the git checkout it sits in, or ""
+// when there is none. The path is expanded against the home directory, cut
+// to its checkout by checkoutDir, and kept only when that directory has a
+// .git entry here. That directory, never the raw token, is what the digest
+// classifies and lists: a doc example, a scratch directory that exists but
+// is no checkout, or a made-up suffix under a real checkout can name no
+// world the checkout itself does not. cwd lines are never resolved this way:
+// a cwd is where the session really ran.
+func (sc *scanner) checkout(p string) string {
+	full, err := confdir.Expand(p)
+	if err != nil {
+		return ""
+	}
+	dir := checkoutDir(sc.cfg, full)
+	if dir == "" || !sc.onDisk(path.Join(dir, ".git")) {
+		return ""
+	}
+	return dir
 }
 
 func (sc *scanner) digestFile(path, project string) (Session, bool, error) {
@@ -402,8 +417,8 @@ func (d *digest) add(r record) {
 }
 
 // addTime widens the session window to ts and returns the day key ts falls
-// on, or "" for a line without a timestamp. The day is recorded even when
-// nothing else on the line counts, so a day of pure tool activity shows up.
+// on, or "" for a line without a timestamp. Every dated line creates its day
+// whatever its type, so a day can end up with a zero count.
 func (d *digest) addTime(ts time.Time) string {
 	if ts.IsZero() {
 		return ""
@@ -439,22 +454,14 @@ func (d *digest) addUser(content json.RawMessage, day string) {
 	extractIssues(txt, d.issues)
 }
 
-// addToolPaths classifies every checkout path an assistant turn's tool calls
-// name. These count exactly like cwd lines: a session started in a tmp dir
-// that edits files under a checkout belongs to that checkout's world and
-// lists that checkout as a repo. A path is probed at the checkout it resolves
-// to when it resolves to one (a file inside may be gone by scan time, the
-// checkout rarely is), else as given. The repo list takes only checkouts
-// with a .git entry, so ~/code/bin and other plain directories under a repo
-// path marker never show up as repos.
+// addToolPaths folds in every git checkout an assistant turn's tool calls
+// reach (see checkout). A checkout counts exactly like a cwd line: a session
+// started in a tmp dir that edits files under one belongs to its world and
+// lists it as a repo.
 func (d *digest) addToolPaths(content json.RawMessage) {
 	for _, p := range toolInputPaths(content) {
-		dir := checkoutDir(d.cfg, p)
-		if !d.onDisk(cmp.Or(dir, p)) {
-			continue
-		}
-		d.classify(p)
-		if dir != "" && d.onDisk(path.Join(dir, ".git")) {
+		if dir := d.checkout(p); dir != "" {
+			d.classify(dir)
 			d.repos.add(filepath.Base(dir))
 		}
 	}
