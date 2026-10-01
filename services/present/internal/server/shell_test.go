@@ -72,3 +72,42 @@ func TestSharedChromeHasNoSitePicker(t *testing.T) {
 		t.Error("local page shell lost the cmdk control")
 	}
 }
+
+// The deck view opens with the read-aloud controls hidden and the brief with
+// them shown, each remembering its own choice: both shells list the header's
+// audio toggle, and the deck shell names its own storage key and default on
+// <html>, which webkit's boot.js and the header read, while the brief shell
+// names neither and so gets webkit's defaults.
+func TestDeckShellAudioDefault(t *testing.T) {
+	const marker = `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off">`
+	for name, mode := range map[string]Mode{"local": ModeLocal, "shared": ModeShared} {
+		brief := string(pageShell(mode))
+		deck := string(deckShell(pageShell(mode)))
+		if !strings.Contains(brief, "size,audio,speed,") {
+			t.Errorf("%s: shell header does not list the audio toggle beside speed", name)
+		}
+		if strings.Contains(brief, "data-audio") {
+			t.Errorf("%s: brief shell names an audio key or default; it must take webkit's", name)
+		}
+		if !strings.Contains(deck, marker) {
+			t.Errorf("%s: deck shell lacks the audio marker %q", name, marker)
+		}
+		if strings.Count(deck, "data-audio-key") != 1 {
+			t.Errorf("%s: deck shell names the audio key %d times", name, strings.Count(deck, "data-audio-key"))
+		}
+	}
+
+	ts, st := setup(t)
+	both, err := st.Create(t.Context(), store.Draft{
+		Title: "Both", Content: "<p>brief</p>", Deck: "<h1 class=\"brief-title\">Both</h1>",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, body := get(t, ts.URL+"/p/"+both.ID+"/deck"); !strings.Contains(body, marker) {
+		t.Error("GET /p/{id}/deck does not serve the deck shell")
+	}
+	if _, body := get(t, ts.URL+"/p/"+both.ID); strings.Contains(body, "data-audio") {
+		t.Error("GET /p/{id} serves the deck's audio default")
+	}
+}

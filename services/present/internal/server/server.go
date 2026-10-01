@@ -84,6 +84,9 @@ type Server struct {
 	mcp      http.Handler
 	sharer   *sharedclient.Client
 	shell    []byte
+	// deckShell is shell with the deck view's audio default on <html>; see
+	// deckShell in deck.go.
+	deckShell []byte
 	// deckCtl relays remote deck commands when the store can; nil on a
 	// store that cannot (the cluster store), which leaves the command route
 	// unregistered and the deck view without remote control.
@@ -146,6 +149,7 @@ func New(st store.Store, opts Options) *Server {
 		mcp:         opts.MCP,
 		sharer:      opts.Sharer,
 		shell:       pageShell(opts.Mode),
+		deckShell:   deckShell(pageShell(opts.Mode)),
 	}
 }
 

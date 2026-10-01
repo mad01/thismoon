@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"log"
@@ -9,6 +10,21 @@ import (
 
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
+
+// deckShell is the page shell for the deck view. The deck opens with the
+// read-aloud controls hidden where the brief opens with them shown, and each
+// view remembers its own choice: the shell names the storage key and the
+// default on <html>, where webkit's boot.js reads them before paint and the
+// header reads them when it wires its audio toggle. The marker it keys on is
+// pinned by a test, like pageShell's.
+func deckShell(shell []byte) []byte {
+	return bytes.Replace(
+		shell,
+		[]byte(`<html lang="en">`),
+		[]byte(`<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off">`),
+		1,
+	)
+}
 
 // handleDeckPage serves the static shell for a page's slide deck. The same
 // shell and app.js serve the brief; the client tells the two views apart by
@@ -36,7 +52,7 @@ func (s *Server) handleDeckPage(w http.ResponseWriter, r *http.Request) {
 	// no-store for the same reason the brief sets it: the version poll
 	// reloads on a bump, and a cached shell would reload forever.
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(s.shell)
+	_, _ = w.Write(s.deckShell)
 }
 
 // deckCommands is the poll's answer: the newest sequence number the page
