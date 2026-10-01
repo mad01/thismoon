@@ -6,6 +6,7 @@ package scan
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -258,11 +259,24 @@ type record struct {
 	GitBranch string `json:"gitBranch"`
 	Timestamp string `json:"timestamp"`
 	SessionID string `json:"sessionId"`
-	Title     string `json:"title"`
-	Message   *struct {
+	// Claude Code writes the session title as {"type":"ai-title","aiTitle":…}
+	// and rewrites that line as the session evolves. Title is the key the
+	// first fixtures used; both are read so older transcripts still resolve.
+	AITitle string `json:"aiTitle"`
+	Title   string `json:"title"`
+	Message *struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+}
+
+// sessionTitle returns the title an ai-title line carries, or "" for any
+// other line or an ai-title line with neither key set.
+func (r record) sessionTitle() string {
+	if r.Type != "ai-title" {
+		return ""
+	}
+	return cmp.Or(r.AITitle, r.Title)
 }
 
 func digestFile(cfg Config, path, project string) (Session, bool, error) {
@@ -288,8 +302,10 @@ func digestFile(cfg Config, path, project string) (Session, bool, error) {
 		if r.SessionID != "" {
 			s.SessionID = r.SessionID
 		}
-		if r.Type == "ai-title" && r.Title != "" {
-			s.Title = r.Title
+		// The last ai-title line wins: Claude Code rewrites it as a session
+		// evolves, so the latest one names the work best.
+		if t := r.sessionTitle(); t != "" {
+			s.Title = t
 		}
 		if ts := parseTime(r.Timestamp); !ts.IsZero() {
 			if s.Started.IsZero() || ts.Before(s.Started) {
