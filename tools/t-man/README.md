@@ -307,7 +307,9 @@ After expansion the entries are sorted and deduplicated, with Sunday always
 written as 0. The same schedule written two ways therefore produces the
 same plist and the same hash: `weekdays@07:30`, `mon-fri@07:30`, five
 listed days, and `--calendar weekday=1-5,hour=7,minute=30` all land on one
-hash. Re-adding with the other spelling is a no-op. `status` folds the entries back for display. The
+hash. A full week spelled out (`sun-sat@07:30`, `weekday=0-7`) folds to the
+single daily entry, the same as plain `07:30`. Re-adding with the other
+spelling is a no-op. `status` folds the entries back for display. The
 five entries from `weekdays@07:30` read as `mon-fri 07:30`, and the 45 from
 the office-hours example read as `mon-fri hour=9-17,minute=0`.
 

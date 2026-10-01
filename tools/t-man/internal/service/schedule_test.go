@@ -50,6 +50,8 @@ func TestParseClockSchedule(t *testing.T) {
 		{name: "weekday range", spec: "mon-fri@07:30", want: timed(7, 30, 1, 2, 3, 4, 5)},
 		{name: "weekday range wraps", spec: "fri-mon@09:00", want: timed(9, 0, 0, 1, 5, 6)},
 		{name: "single-day range", spec: "wed-wed@07:30", want: timed(7, 30, 3)},
+		{name: "full week folds to daily", spec: "sun-sat@07:30", want: []CalendarEntry{at(-1, 7, 30)}},
+		{name: "wrapped full week folds to daily", spec: "mon-sun@07:30", want: []CalendarEntry{at(-1, 7, 30)}},
 		{name: "weekdays set", spec: "Weekdays@07:30", want: timed(7, 30, 1, 2, 3, 4, 5)},
 		{name: "weekend set", spec: "weekend@09:00", want: timed(9, 0, 0, 6)},
 		{
@@ -125,9 +127,14 @@ func TestParseCalendarFields(t *testing.T) {
 		{name: "weekday range wraps", spec: "weekday=5-1,hour=9,minute=0", want: timed(9, 0, 0, 1, 5, 6)},
 		{name: "weekday 7 folds onto 0", spec: "weekday=7,hour=9,minute=0", want: timed(9, 0, 0)},
 		{
-			name: "weekday 0-7 is the whole week",
+			name: "weekday 0-7 is the whole week, folded to daily",
 			spec: "weekday=0-7,hour=9,minute=0",
-			want: timed(9, 0, 0, 1, 2, 3, 4, 5, 6),
+			want: []CalendarEntry{at(-1, 9, 0)},
+		},
+		{
+			name: "six of seven days stay listed",
+			spec: "weekday=1-6,hour=9,minute=0",
+			want: timed(9, 0, 1, 2, 3, 4, 5, 6),
 		},
 		{
 			name: "hour range",
@@ -207,6 +214,53 @@ func TestNormalizeCalendar(t *testing.T) {
 	}
 	if NormalizeCalendar(nil) != nil || NormalizeCalendar([]CalendarEntry{}) != nil {
 		t.Error("NormalizeCalendar() of nothing is not nil")
+	}
+}
+
+func TestNormalizeCalendar_FoldsFullWeeks(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []CalendarEntry
+		want []CalendarEntry
+	}{
+		{
+			name: "seven days become the daily entry",
+			in:   timed(7, 30, 0, 1, 2, 3, 4, 5, 6),
+			want: []CalendarEntry{at(-1, 7, 30)},
+		},
+		{
+			name: "seven days with sunday as 7",
+			in:   timed(7, 30, 1, 2, 3, 4, 5, 6, 7),
+			want: []CalendarEntry{at(-1, 7, 30)},
+		},
+		{
+			name: "seven days beside an identical daily entry collapse to one",
+			in:   append(timed(7, 30, 0, 1, 2, 3, 4, 5, 6), at(-1, 7, 30)),
+			want: []CalendarEntry{at(-1, 7, 30)},
+		},
+		{
+			name: "seven days at one time leave another time alone",
+			in:   append(timed(7, 30, 0, 1, 2, 3, 4, 5, 6), at(5, 17, 0)),
+			want: []CalendarEntry{at(-1, 7, 30), at(5, 17, 0)},
+		},
+		{
+			name: "six days do not fold",
+			in:   timed(7, 30, 1, 2, 3, 4, 5, 6),
+			want: timed(7, 30, 1, 2, 3, 4, 5, 6),
+		},
+		{
+			name: "a repeated day does not count twice",
+			in:   timed(7, 30, 0, 1, 2, 3, 4, 5, 5, 5),
+			want: timed(7, 30, 0, 1, 2, 3, 4, 5),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeCalendar(tt.in)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NormalizeCalendar() =\n%v\nwant\n%v", got, tt.want)
+			}
+		})
 	}
 }
 

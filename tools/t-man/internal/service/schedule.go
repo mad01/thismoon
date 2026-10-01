@@ -112,20 +112,39 @@ func deref(p *int) int {
 	return *p
 }
 
-// NormalizeCalendar returns the entries sorted by key, with Sunday written
-// as 0 and duplicates dropped, so the same schedule written two ways
-// (mon-fri, weekdays, five separate days) hashes the same. Empty in, nil out.
+// NormalizeCalendar returns the entries in canonical form: Sunday written
+// as 0, duplicates dropped, seven entries that cover every weekday folded
+// into the one entry without a weekday, and the result sorted by key. The
+// same schedule written two ways (mon-fri, weekdays, five separate days;
+// sun-sat, weekday=0-7, daily) then hashes the same. Empty in, nil out.
 func NormalizeCalendar(entries []CalendarEntry) []CalendarEntry {
 	if len(entries) == 0 {
 		return nil
 	}
-	seen := make(map[[5]int]bool, len(entries))
+	out := dedupe(sundayAsZero(entries))
+	out = dedupe(foldFullWeeks(out))
+	sort.Slice(out, func(i, j int) bool { return lessKey(out[i].key(), out[j].key()) })
+	return out
+}
+
+// sundayAsZero rewrites a weekday of 7 as 0.
+func sundayAsZero(entries []CalendarEntry) []CalendarEntry {
 	out := make([]CalendarEntry, 0, len(entries))
 	for _, e := range entries {
 		if e.Weekday != nil && *e.Weekday == daysInWeek {
 			sunday := 0
 			e.Weekday = &sunday
 		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// dedupe drops entries whose key was already seen, keeping first-seen order.
+func dedupe(entries []CalendarEntry) []CalendarEntry {
+	seen := make(map[[5]int]bool, len(entries))
+	out := make([]CalendarEntry, 0, len(entries))
+	for _, e := range entries {
 		k := e.key()
 		if seen[k] {
 			continue
@@ -133,7 +152,31 @@ func NormalizeCalendar(entries []CalendarEntry) []CalendarEntry {
 		seen[k] = true
 		out = append(out, e)
 	}
-	sort.Slice(out, func(i, j int) bool { return lessKey(out[i].key(), out[j].key()) })
+	return out
+}
+
+// foldFullWeeks replaces a set of entries that differ only in weekday and
+// cover all seven days with the one entry that has no weekday. The input
+// must already be deduplicated with Sunday as 0, so a count of seven means
+// seven distinct days.
+func foldFullWeeks(entries []CalendarEntry) []CalendarEntry {
+	type rest [4]int
+	restOf := func(e CalendarEntry) rest {
+		return rest{deref(e.Hour), deref(e.Minute), deref(e.Day), deref(e.Month)}
+	}
+	days := make(map[rest]int)
+	for _, e := range entries {
+		if e.Weekday != nil {
+			days[restOf(e)]++
+		}
+	}
+	out := make([]CalendarEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.Weekday != nil && days[restOf(e)] == daysInWeek {
+			e.Weekday = nil // the seven collapse to one copy; dedupe keeps the first
+		}
+		out = append(out, e)
+	}
 	return out
 }
 
