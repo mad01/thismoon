@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/mad01/thismoon/compare/belt/v2.4.1...belt/v2.5.0) (2026-10-01)
+
+
+### Features
+
+* **belt:** custom_hints, config-registered external session-start hints ([#172](https://github.com/mad01/thismoon/issues/172)) ([3b160ca](https://github.com/mad01/thismoon/commit/3b160ca6119cfa6278ec646277868b4c53e58280))
+
 ## [2.4.1](https://github.com/mad01/thismoon/compare/belt/v2.4.0...belt/v2.4.1) (2026-09-30)
 
 

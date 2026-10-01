@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/mad01/thismoon/compare/present/v1.11.0...present/v1.12.0) (2026-10-01)
+
+
+### Features
+
+* **present:** read graph and chart colours from the palette roles ([22f16c8](https://github.com/mad01/thismoon/commit/22f16c8a6bc85c9320c6d247c4a87cd086696ed2))
+
 ## [1.11.0](https://github.com/mad01/thismoon/compare/present/v1.10.0...present/v1.11.0) (2026-09-30)
 
 
