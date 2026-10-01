@@ -295,8 +295,9 @@ section.
   `pre.wk-code-block > code[class*="language-"]`. Both render as a
   terminal-style window: a header bar with palette-toned macOS traffic dots,
   the language badge, and the copy button, over the code body. The block's
-  `--code-*` palette follows the page theme — paper-on-cream in light mode,
-  deep warm grays (`--wg900`/`--wg800`) in dark mode. Use `language-text` when the
+  `--code-*` roles come from the generated palette: paper-on-cream in the
+  default light variant, the page background in dark, and each family's own
+  token colours. Use `language-text` when the
   language is unknown — it still gets the badge and copy button, just no
   highlighting. This is what present's `{"t": "code"}` Doc block renders to.
   ```html

@@ -420,32 +420,52 @@ webkit.css defines the palette as CSS custom properties on `:root` and overrides
 
 **Semantic tokens (use these in consumer CSS):**
 
-| Token | Light | Dark |
-|-------|-------|------|
-| `--primary` | `--terracotta` (`#C4704B`) | `#E8956A` |
-| `--bg` | `--cream` (`#FAF9F7`) | `--wg900` (`#1A1916`) |
-| `--paper` | `#FFFFFF` | `--wg800` (`#252320`) |
-| `--text-1` | `--wg800` | `--wg200` |
-| `--text-2` | `--wg500` | `--wg300` |
-| `--text-3` | `--wg400` | `--wg400` |
-| `--border` | `--wg200` | `--wg700` |
-| `--chip-active-bg` | `--terracotta` | `#E8956A` |
-| `--progress-fill` | `--terracotta` | `#E8956A` |
+| Role | Light | Dark |
+|------|-------|------|
+| `--bg` | `#FAF9F7` | `#1A1916` |
+| `--paper` | `#FFFFFF` | `#252320` |
+| `--chip` | `#EEECE8` | `#35322C` |
+| `--border` | `#D8D4CD` | `#35322C` |
+| `--border-hover` | `#B8B2A7` | `#4A453D` |
+| `--text-1` / `--text-2` / `--text-3` | `#252320` / `#6B6459` / `#8C8578` | `#D8D4CD` / `#B8B2A7` / `#8C8578` |
+| `--primary` / `--on-primary` | `#C4704B` / `#FFFFFF` | `#E8956A` / `#FFFFFF` |
+| `--red` `--green` `--amber` `--yellow` `--blue` `--purple` | the semantic set | the same values (decision 7) |
+| `--series-1` to `--series-4` | `#C4704B` `#5B8EC4` `#4A9E6B` `#8B6BB0` | `#E8956A` `#7AAAE8` `#6BC48A` `#8B6BB0` |
 
-**Palette primitives (available for bespoke CSS):**
+Those are the default family's values. Every other family declares the same
+roles under its own `[data-palette="<name>"][data-theme="<mode>"]` block, so a
+rule that reads a role follows the reader's choice.
 
-`--cream`, `--off-white`, `--wg100`…`--wg900` (warm gray scale), `--terracotta`, `--amber`, `--green`, `--yellow`, `--red`, `--blue`, `--purple`
+**Derived roles (generated, literal, available for bespoke CSS):**
+
+- surfaces and fills: `--card-bg`, `--chip-bg`, `--chip-active-bg`,
+  `--chip-active-text`, `--progress-bg`, `--progress-fill`, `--primary-soft`
+- inks: `--text-body`, `--on-<colour>` for each semantic colour
+- tags: `--tag-a`, `--tag-b`, `--tag-c` and their `-text` partners
+- overlays: `--ra-highlight`, `--focus-ring`, `--topbar-bg`, `--scrim`
+- code: `--code-bg`, `--code-header-bg`, `--code-border`, `--code-keyword`,
+  `--code-string`, `--code-number`, `--code-symbol`
+- canvas: the `--graph-*` box and edge colours, the
+  `--tone-<name>-bg` / `-border` / `-text` triples, `--chart-grid`,
+  `--chart-text`, `--chart-label`
+
+The old ramp primitives (`--cream`, `--off-white`, `--wg100` to `--wg900`,
+`--terracotta-light`) are gone. `--terracotta` and `--green-light` stay as
+aliases of `--primary` and the derived light green, for the consumers that
+haven't moved to roles.
 
 **`localStorage` state keys (global, shared across a tool's pages):**
 
 | Key | Values |
 |-----|--------|
-| `webkit-theme` | `light` \| `dark` |
+| `webkit-theme` | `light` \| `dark` \| `system` (follows `prefers-color-scheme`) |
+| `webkit-palette-light` | a family name from `themes.json`; absent = `default` |
+| `webkit-palette-dark` | a family name from `themes.json`; absent = `default` |
 | `webkit-font` | `Fira Code` \| `Inter` \| `Lexend` \| `Work Sans` |
 | `webkit-size` | integer 12–24 |
 | `webkit-fixation` | `true` \| `false` |
 
-**Theme-change event:** `wk-themechange` fires on `document` with `detail.theme` set to the new value. Listen there to recolor dynamic visuals.
+**Theme-change event:** `wk-themechange` fires on `document` with `detail.theme` (the resolved mode), `detail.palette` (the family for it), and `detail.mode` (what the reader chose, `system` included). Listen there to recolor dynamic visuals. It fires on the header toggle, on a change made in another tab of the origin (the themes page at `/webkit/themes`), and on a system appearance change in system mode.
 
 ```js
 document.addEventListener('wk-themechange', e => {
