@@ -1163,11 +1163,12 @@
       var t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (document.querySelector('wk-modal:not([hidden])')) return;
-      // Space on a focused foreign button is that button's click, not a
-      // page turn; the deck's own buttons (the bar, the progress dots) are
-      // not foreign, so Space turns the page from them too.
+      // Space on a focused button is that button's click, not a page turn:
+      // Prev goes back and Present presents. The progress dots are the one
+      // exception, so a dot reached by Tab turns the page rather than
+      // re-jumping to itself (Enter still activates it).
       var onButton = t && (t.tagName === 'BUTTON' || t.tagName === 'A' || t.tagName === 'WK-BUTTON') &&
-        !t.closest('.deck-bar, .deck-strip');
+        !t.closest('.deck-strip');
       switch (e.key) {
         case 'ArrowRight': case 'PageDown': e.preventDefault(); next(); break;
         case ' ': if (onButton) return; e.preventDefault(); next(); break;
