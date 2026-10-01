@@ -24,6 +24,8 @@ func TestDeckLayoutWiring(t *testing.T) {
 		".slide.solo-stat", ".slide.solo-quote", ".slide[data-tone]", ".brief:not(.deck) wk-section[data-tone]",
 		".deck .fragment { visibility: hidden; }", ".deck-notes-drawer", "view-transition-name: deck-slide",
 		"::view-transition-old(deck-slide)", "html.deck-vt .slide.active, html[data-transition=\"none\"] .slide.active { animation: none; }",
+		"div.deck-strip { view-transition-name: deck-strip; }", ".deck-notes-drawer { view-transition-name: deck-notes; }",
+		"::view-transition-old(deck-logo), ::view-transition-new(deck-logo),",
 		`html[data-transition="slide"].deck-next::view-transition-new(deck-slide)`,
 		"prefers-reduced-motion", ".cy-container.ready",
 	} {

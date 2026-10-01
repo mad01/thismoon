@@ -282,6 +282,18 @@ html[data-transition="none"] .deck .fragment.shown { animation: none; }
    and browsers without the API keep that one-sided fade-up. Reduce Motion
    collapses the pseudo-elements to a cut; show skips the API there too. */
 .slide.active { view-transition-name: deck-slide; }
+/* The presenting slide's snapshot is an opaque full-window layer painted
+   over the root's, so anything fixed over the slide would vanish for the
+   crossfade; the strip, the corner logo, the bar, and the drawer carry
+   names of their own, with no animation, and stay painted throughout. */
+div.deck-strip { view-transition-name: deck-strip; }
+.deck-logo-corner { view-transition-name: deck-logo; }
+.deck-bar { view-transition-name: deck-bar; }
+.deck-notes-drawer { view-transition-name: deck-notes; }
+::view-transition-group(deck-strip), ::view-transition-old(deck-strip), ::view-transition-new(deck-strip),
+::view-transition-group(deck-logo), ::view-transition-old(deck-logo), ::view-transition-new(deck-logo),
+::view-transition-group(deck-bar), ::view-transition-old(deck-bar), ::view-transition-new(deck-bar),
+::view-transition-group(deck-notes), ::view-transition-old(deck-notes), ::view-transition-new(deck-notes) { animation: none; mix-blend-mode: normal; }
 ::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 ::view-transition-old(deck-slide), ::view-transition-new(deck-slide) { animation-duration: 0.2s; animation-timing-function: ease-out; mix-blend-mode: normal; }
 html.deck-vt .slide.active, html[data-transition="none"] .slide.active { animation: none; }
