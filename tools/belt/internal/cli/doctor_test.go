@@ -262,6 +262,61 @@ func TestDoctorReportsRulelessGuardsAsNoOps(t *testing.T) {
 	}
 }
 
+// TestDoctorReportsCustomHints pins the custom hints section beside the
+// built-in hints: one line per entry with its event, enabled state, budget,
+// command, opt-out count, and the reachability check that tells a hint
+// with nothing to say apart from one whose command cannot run.
+func TestDoctorReportsCustomHints(t *testing.T) {
+	dir := t.TempDir()
+	reachable := filepath.Join(dir, "journal.sh")
+	if err := os.WriteFile(reachable, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notExecutable := writeFile(t, dir, "plain.txt", "not a program")
+	writeFile(t, dir, "config.yaml", `
+custom_hints:
+  daily-journal:
+    event: session-start
+    command: [`+reachable+`, --since, yesterday]
+    timeout_ms: 250
+    exclude_repos:
+      - github.com/you/scratch
+  off-path:
+    enabled: false
+    event: session-start
+    command: [definitely-not-on-path-xyz]
+  not-executable:
+    event: session-start
+    command: [`+notExecutable+`]
+`)
+	out := runDoctorString(t, doctorPaths(dir))
+
+	for _, want := range []string{
+		"custom hints — external commands from custom_hints",
+		"daily-journal          session-start enabled   budget: 250ms  command: " +
+			reachable + " --since yesterday  (exclude_repos: 1)",
+		"off-path               session-start DISABLED  budget: 400ms",
+		"not-executable",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "  daily-journal") && strings.Contains(line, "UNREACHABLE"):
+			t.Errorf("executable command flagged unreachable: %s", line)
+		case strings.HasPrefix(line, "  off-path") && !strings.Contains(line, "UNREACHABLE"):
+			t.Errorf("command off PATH not flagged: %s", line)
+		case strings.HasPrefix(line, "  not-executable") && !strings.Contains(line, "UNREACHABLE"):
+			t.Errorf("non-executable file not flagged: %s", line)
+		}
+	}
+	if strings.Contains(out, `unknown hint "daily-journal"`) {
+		t.Errorf("custom hint reported as an unknown toggle:\n%s", out)
+	}
+}
+
 func TestDoctorReportsLegacyTOMLAndParseErrors(t *testing.T) {
 	t.Run("legacy toml", func(t *testing.T) {
 		dir := t.TempDir()

@@ -37,6 +37,8 @@ Eight hints add advisory context the agent reads next to a tool result or at ses
 - `kof-deposit`: once per session, nudges a session that did substantial work but never recorded a kof assertion to deposit what it derived before the conclusions evaporate with the context.
 - `humanizer-check`: once per session, after a tool call publishes text to a system other people read, points at `humanizer_detect` while the wording can still be edited. A session that already ran a humanizer tool is left alone.
 
+Beyond the built-ins, a `custom_hints` config section registers named hints that shell out to an external command when a session starts. The hook payload fields arrive as JSON on stdin, and the command's stdout becomes the advice under the usual `belt[<name>]:` prefix. A non-zero exit, a run past the budget (400 ms unless `timeout_ms` says otherwise), or empty stdout means silence plus a warn event. A broken external never breaks a session. This is the escape hatch for context that belongs to one machine, such as a private daily journal. The hint lives in that machine's rendered config rather than in a second SessionStart hook or a compiled-in hint.
+
 ## Install
 
 Built and installed by ralph (`recipes/belt/recipe.toml`); hook registration lives in the consuming repo's Claude settings recipe. A worked config file and hooks block, the shape the maintainer's fleet installs, is in `examples/dotfiles/recipes/claude-hooks/` at the repo root. To build and install manually:
@@ -84,11 +86,12 @@ The other shared list, `public_repos`, states which repos are public or headed t
 
 An exemption that should hold on only some machines goes in those machines' rendered config file, because there is no machine-profile switch inside the config (docs/adr/0010).
 
-The rule-driven guards read three more top-level sections:
+The rule-driven guards and the external hints read four more top-level sections:
 
 - `git_identity` holds the expected email per repo pattern.
 - `commit_guards` holds work-hours rules with `block_hours`, `always_allow`, and an `override` name.
 - `custom_guards` registers external commands as named guards.
+- `custom_hints` registers external commands as named session-start hints.
 
 `belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this).
 

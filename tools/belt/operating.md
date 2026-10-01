@@ -42,8 +42,10 @@ or validate makes every `belt hook` invocation deny with
 `belt[config]: belt cannot read its config …`. belt cannot tell "no rules
 configured" from "the rules did not load". Guessing the permissive one
 would silently disarm every guard. Validation covers the values that parse
-and then do nothing: a `custom_guards.<name>.event` outside bash/write, and
-`mode:` values other than hard/soft or set on a guard that ignores them. A
+and then do nothing: a `custom_guards.<name>.event` outside bash/write, a
+`custom_hints.<name>` entry with an event other than session-start, an
+empty command, or a built-in hint's name, and `mode:` values other than
+hard/soft or set on a guard that ignores them. A
 names file listed under internal_names.include that is missing or fails to
 parse is the same error, and the deny names the include file.
 
@@ -85,7 +87,11 @@ hatch, not rewording the commit command. set/extend archive the reason as
 a warn event, a suppressed block leaves one too, and it expires on its own.
 
 Silence from the kof-backed hints is normal when the kof service is down or
-its store is empty; the doctor kof line tells those states apart.
+its store is empty; the doctor kof line tells those states apart. A custom
+hint (custom_hints in the belt config) that fails, runs past its budget, or
+prints nothing stays silent and leaves a warn event naming the cause. The
+doctor custom hints section says whether its command resolves to something
+executable at all.
 
 ## version skew
 

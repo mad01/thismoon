@@ -102,3 +102,15 @@ hints:
   # enables the hint or opts repos out.
   lint-policy:
     enabled: true
+
+# Named external hints (optional): a machine-private hint registered by this
+# machine class's rendering rather than by a second SessionStart hook or a
+# compiled-in hint. belt execs the command at session start with the hook
+# payload fields as JSON on stdin and relays its stdout as advice under
+# belt[<name>]:. A failed run, a run past the budget (400ms unless
+# timeout_ms says otherwise), or empty stdout is silence plus a warn event.
+# custom_hints:
+#   daily-journal:
+#     event: session-start
+#     command: [journal, open-actions, --since, yesterday]
+#     timeout_ms: 400

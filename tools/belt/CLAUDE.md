@@ -16,7 +16,7 @@ belt/
     hook/             - payload parsing + output emission per event (deny JSON, additionalContext JSON, or plain stdout for prompt)
     guard/            - the guards (git-push-main, git-identity, commit-guard, script-deny-list, write-internal-names, publish-internal-names) + config-registered custom guards
     mcptool/          - MCP tool-name reading (server/operation split, read-only verb rule) shared by the humanizer hint and the publish guard
-    hint/             - the hints (prefer-csl, commit-policy, lint-policy, kof-assertions, kof-consult, kof-deposit, agent-memory, humanizer-check) + csl index lookup, response parsing, session dedupe
+    hint/             - the hints (prefer-csl, commit-policy, lint-policy, kof-assertions, kof-consult, kof-deposit, agent-memory, humanizer-check) + config-registered custom hints, csl index lookup, response parsing, session dedupe
     config/           - belt config (internal_names + its include files, claude_settings, toggles, guard rules) + gated Claude-settings deny list
   Makefile            - package path github.com/mad01/thismoon/tools/belt (monorepo module, no own go.mod)
 
@@ -33,7 +33,7 @@ form would be killed before the POST lands).
 
 The config is standalone and has no machine-profile concept (docs/adr/0010). belt never reads another tool's file, and an absent `internal_names` section means an empty name set. The provisioning layer renders one config per machine class. A guard or rule meant for only some machines is simply absent (or disabled) in the other classes' files. Exactly one non-belt surface is read: the `permissions.deny` Bash entries of `~/.claude/settings.json` + `settings.local.json`. They are read live for the script guard (shared source of truth with the permission system), gated by `claude_settings.enabled` (default true).
 
-A missing config file yields the armed defaults with no error. A config file that is present and fails to parse or validate is an error `config.Load` returns. So is a names file listed under `internal_names.include` that is missing or broken. `belt hook` turns either into a `belt[config]:` deny on every tool call. belt cannot distinguish "no rules" from "the rules did not load", so it blocks rather than run unarmed (`doctor` and `config` still print, flagging that the state shown is the defaults). Validation covers the keys that parse and then do nothing: a `custom_guards.<name>.event` outside `bash`/`write`, and `mode:` values that are neither `hard` nor `soft` or that sit on a guard outside `config.SoftModeGuards`.
+A missing config file yields the armed defaults with no error. A config file that is present and fails to parse or validate is an error `config.Load` returns. So is a names file listed under `internal_names.include` that is missing or broken. `belt hook` turns either into a `belt[config]:` deny on every tool call. belt cannot distinguish "no rules" from "the rules did not load", so it blocks rather than run unarmed (`doctor` and `config` still print, flagging that the state shown is the defaults). Validation covers the keys that parse and then do nothing: a `custom_guards.<name>.event` outside `bash`/`write`, a `custom_hints.<name>` entry whose event is not `session-start`, whose command is empty, or whose name shadows a built-in hint, and `mode:` values that are neither `hard` nor `soft` or that sit on a guard outside `config.SoftModeGuards`.
 
 ### Guards
 
@@ -65,6 +65,8 @@ Adding a guard: implement the `Guard` interface in `internal/guard/`, register i
 
 Adding a hint: implement the `Hint` interface in `internal/hint/`, register it in `hint.All` (`ForEvent` filters that list by event), and add a `[hints.<id>]` toggle to the consuming repo's config overlay. A hint returns `*Advice` or nil — there is no way for it to deny.
 
+**Custom hints** are the hint-side twin of custom guards. A `custom_hints` entry in the belt config registers a named hint that execs an external command. The command gets the hook payload fields as JSON on stdin (`{"event","cwd","session_id","transcript_path"}` for session-start). Its stdout becomes the advice, prefixed `belt[<name>]:`, with trailing whitespace trimmed and multiple lines kept. A non-zero exit, a run past the budget (400 ms by default, `timeout_ms` per hint), a start failure, or empty stdout is silence plus a warn event. A broken external therefore never breaks a session. `event` accepts `session-start` today. It stays a string so prompt and post-tool events can join without a schema break, and validation rejects anything else by name. Validation also rejects an empty `command` and a name that shadows a built-in hint. `config.HintFields` is the list it checks, and a hint package test pins that table to `hint.All`. `enabled` and `exclude_repos` sit on the entry, and a `hints.<name>` toggle of the same name is honored too. Custom hints run after the built-ins, alphabetical by name, through the same `belt hint session-start` entrypoint, so every hook setup that wires that entry runs them. `belt doctor` lists them with their budget and an executable check. The first consumer is a machine-private hint (a daily journal) that a private config overlay registers on one machine class. That is what keeps it out of this public repo.
+
 ## Build / install / test
 
 ```bash
@@ -84,7 +86,7 @@ belt hint prompt         # UserPromptSubmit entrypoint: advice as plain stdout t
 belt check bash "git push origin main"                # dry-run, one verdict line per guard
 belt check write --file <path> --content "text"
 belt check external-text --tool mcp__gh_com__create_pull_request --input '{"owner":"o","repo":"r","body":"text"}'
-belt doctor              # build metadata + resolved config: surfaces loaded (includes too), guard/hint state, custom guards + reachability, overrides, kof reachability, blocked names; ends with a warnings section and exits 1 when it is not empty
+belt doctor              # build metadata + resolved config: surfaces loaded (includes too), guard/hint state, custom guards and custom hints + reachability, overrides, kof reachability, blocked names; ends with a warnings section and exits 1 when it is not empty
 belt override            # list overrides with state (remaining time / expired / legacy / malformed); set <name> [--for 10m], extend, clear (a commit_guards rule naming one stops applying while active)
 belt config              # config file locations + every setting in effect, incl. resolved fallbacks and claude deny patterns (annotated reference in --help)
 belt docs                # print the embedded operating doc: execution model, failure modes, first moves

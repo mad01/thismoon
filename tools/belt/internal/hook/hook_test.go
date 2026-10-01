@@ -172,3 +172,49 @@ func TestRunHintPromptEmitsPlainText(t *testing.T) {
 		t.Errorf("prompt advice %q must not be wrapped in the JSON envelope", got)
 	}
 }
+
+// TestRunHintSessionStartRunsCustomHints pins the wiring every harness
+// shares: a custom hint registered on session-start rides `belt hint
+// session-start` and lands in the SessionStart additionalContext envelope
+// with the usual prefix. Any harness that wires that entry (Claude Code
+// today, Codex once its hooks file carries it) gets the hint with no extra
+// wiring. HOME and the events URL are pointed away from the machine so the
+// built-in session-start hints stay silent and nothing is archived.
+func TestRunHintSessionStartRunsCustomHints(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("EVENTS_BASE_URL", "http://127.0.0.1:1")
+	dir := t.TempDir()
+	script := filepath.Join(dir, "journal.sh")
+	body := "#!/bin/sh\necho 'yesterday: 2 open actions'\necho '  - review the release PR'\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	load := func() (config.Config, error) {
+		return config.Config{CustomHints: map[string]config.CustomHint{
+			"daily-journal": {
+				Event:     "session-start",
+				Command:   []string{script},
+				TimeoutMS: 10_000, // a fresh script's first launch can be slow under load
+			},
+		}}, nil
+	}
+	p, err := json.Marshal(map[string]string{"session_id": "s1", "cwd": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	RunHint("session-start", load, bytes.NewReader(p), &out)
+
+	var a adviceDecision
+	if err := json.Unmarshal(out.Bytes(), &a); err != nil {
+		t.Fatalf("decode advice from %q: %v", out.String(), err)
+	}
+	if a.HookSpecificOutput.HookEventName != "SessionStart" {
+		t.Errorf("hookEventName = %q, want SessionStart", a.HookSpecificOutput.HookEventName)
+	}
+	want := "belt[daily-journal]: yesterday: 2 open actions\n  - review the release PR"
+	if got := a.HookSpecificOutput.AdditionalContext; !strings.Contains(got, want) {
+		t.Errorf("additionalContext = %q, want it to contain %q", got, want)
+	}
+}
