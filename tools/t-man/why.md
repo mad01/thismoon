@@ -53,8 +53,10 @@ in `~/Library/LaunchAgents` and `/Library/LaunchDaemons`.
 
 t-man is launchd-only, matching a platform that is macOS through and through
 (docs/adr/0007); there is no cross-platform abstraction waiting behind the
-Manager interface. It does no process supervision of its own: `RunAtLoad`
-and `KeepAlive` are set true and launchd does the restarting. It does no
+Manager interface. It does no process supervision of its own: a long-lived
+service gets `RunAtLoad` and `KeepAlive` and launchd does the restarting, a
+scheduled job gets a launchd calendar or interval trigger and launchd does
+the firing. It does no
 health checking: the `--port` probe convention belongs to the surrounding
 tooling (the status service reads `ProgramArguments` from the plist), not to
 t-man, which neither parses nor enforces it. And it does not adopt or manage

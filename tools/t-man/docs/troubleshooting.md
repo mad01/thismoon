@@ -7,9 +7,12 @@ dropping down to `launchctl` when you need more detail.
 ## A service will not stay up
 
 This is the most common failure: you `add` a service, it appears in `list`, but
-it keeps restarting or shows as stopped. `KeepAlive` is always on, so launchd
-relaunches the process every time it exits. If the process exits immediately,
-you get a tight crash loop.
+it keeps restarting or shows as stopped. A long-lived service has `KeepAlive`
+on, so launchd relaunches the process every time it exits. If the process
+exits immediately, you get a tight crash loop. (A job added with a schedule
+shows `scheduled` between runs; that is not this failure. Its `EXIT` column in
+`list` and `t-man run <name>` are the tools for a job that fails when it
+fires.)
 
 Work through it in this order:
 

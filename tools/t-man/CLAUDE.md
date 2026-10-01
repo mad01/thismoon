@@ -24,7 +24,7 @@ and adopts serviceman plists for migration.
 ```
 cmd/t-man/main.go            entry point → cli.Execute()
 internal/cli/                cobra commands (root, add, list, top, remove, control, logs, version — build metadata from the shared buildinfo package)
-internal/service/            Definition struct, Hash(), Manager interface
+internal/service/            Definition struct, Hash(), Manager interface; schedule parsing (schedule.go) and next-run math (nextrun.go)
 internal/platform/launchd/   plist generation, launchctl wrapper, the launchd Manager
 internal/procstat/           PID → RSS/CPU%/uptime via one ps call (launchd-agnostic)
 internal/reconcile/          read-compare-apply reconciler + state comparison; emits events via the shared kit/notify
@@ -41,7 +41,7 @@ Makefile                     part of module github.com/mad01/thismoon (no own go
 2. **Compare** `current.Hash()` against `desired.Hash()`. The hash is the
    SHA256 of the definition marshalled to JSON (`internal/service/definition.go`),
    so every field participates: command, args, env, workdir, log paths,
-   sandbox profile digest, extra logs.
+   sandbox profile digest, extra logs, schedule.
 3. **Apply** only on a mismatch: write the new plist to a temp file in the
    same directory, `launchctl unload` the old one, atomically rename the temp
    file into place, `launchctl load -w`. If the reload fails, restore the old
@@ -94,12 +94,13 @@ machines ralph builds it via `recipes/t-man/` from the sources cache.
 | Command | Aliases | What it does |
 |---------|---------|--------------|
 | `add --name N -- CMD [args]` | | Create or update a service (idempotent) |
-| `list` | `ls` | List managed services (NAME / STATUS / COMMAND); `--resources` adds PID / RSS / CPU% / UPTIME |
+| `list` | `ls` | List managed services (NAME / STATUS / COMMAND); `--resources` adds PID / RSS / CPU% / UPTIME; NEXT RUN / LAST RUN / EXIT columns appear when any listed job is scheduled |
 | `top` | | Live resource view of managed services, sorted by RSS; `--interval` (default 2s), Ctrl-C quits |
 | `remove N` | `rm`, `delete` | Unload and delete a service |
 | `start N` / `stop N` | | Control a running service (launchctl start/stop) |
 | `restart N` | | Re-register the service: unload + load, not stop/start — this is what clears the launchd "spawn scheduled" EX_CONFIG wedge after a binary replacement |
-| `status N` | | Detailed info for one service |
+| `run N` | | Fire a scheduled job once, now (`launchctl start`); refuses a long-lived service and points to `start` |
+| `status N` | | Detailed info for one service; a scheduled job also gets its schedule, next run, last run, and last exit code |
 | `logs N` | | Tail stdout + stderr (and named extra logs) |
 | `logs sandbox [N]` | | Collect `sandbox`/`sandbox-*` extra logs across services |
 | `docs` | | Print the embedded operating doc (runtime debugging for supervised services) |
@@ -113,8 +114,15 @@ same value (`--agent --daemon`) is an error.
 
 `add` flags: `--name` (required), `--desc`, `--workdir`, `--env KEY=VALUE`
 (repeatable), `--path` (colon-separated PATH additions), `--logs DIR`,
-`--sandbox-profile PATH.sb`, `--extra-log NAME=PATH` (repeatable). `RunAtLoad`
-and `KeepAlive` are always set to true on the generated plist.
+`--sandbox-profile PATH.sb`, `--extra-log NAME=PATH` (repeatable), and the
+schedule trio `--schedule HH:MM[,weekday@HH:MM...]`, `--calendar
+minute=0,hour=7[,day=1,weekday=1,month=1]` (repeatable), `--every DURATION`.
+Without a schedule the plist gets `RunAtLoad` and `KeepAlive` true (a
+long-lived service); with one it gets both false and a
+`StartCalendarInterval` array or a `StartInterval` (a scheduled job).
+`--schedule` and `--calendar` both add calendar entries and combine;
+`--every` excludes them. All three parse in `internal/service/schedule.go`,
+the one place any future config reader should call too.
 
 ## Gotchas
 
@@ -130,6 +138,20 @@ and `KeepAlive` are always set to true on the generated plist.
 - **Editing a sandbox `.sb` profile changes the hash.** The profile's content
   digest feeds `Definition.Hash()`, so the next `t-man add` re-renders the
   plist and bounces the service. An unchanged re-add stays a no-op.
+- **A scheduled job's idle state is `scheduled`, not down.** The only place
+  t-man decides a service is down is the status mapping in
+  `internal/platform/launchd/schedule.go` (`runStateFor`). It rewrites
+  launchd's stopped/error/waiting to `scheduled` when the definition has a
+  schedule and no live PID. There is no restart loop in t-man to gate:
+  KeepAlive is launchd's, and `Validate()` refuses it on a scheduled job.
+- **Last run is a proxy.** launchd keeps no run timestamp, so `LAST RUN` is
+  the newest mtime of the job's stdout/stderr files
+  (`Definition.LastLogWrite`); a run that writes nothing leaves it
+  unchanged. Last exit code comes from `launchctl print` (`last exit code =`)
+  or the `launchctl list` status column. Next run for an interval job is
+  unknowable without launchd's load time, so it prints the cadence.
+- **launchd runs one missed calendar slot after wake** and coalesces several
+  into one run. Jobs must be idempotent; the README says so to users.
 - **Daemon mode needs root for every command**, not just `add`: `checkSudo()`
   guards `add`, `remove`, `list`, `logs`, and the control commands when
   `--daemon` is set.

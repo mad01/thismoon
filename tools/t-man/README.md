@@ -26,6 +26,7 @@ Feature summary:
 - Environment variable management
 - Custom working directories and log paths
 - Service control: start, stop, restart, status
+- Scheduled jobs: `--schedule`, `--calendar`, and `--every` map to launchd's `StartCalendarInterval` and `StartInterval`; `list` and `status` show next run, last run, and last exit code; `run` fires a job once on demand
 - Resource monitoring: `list --resources` columns and a live `top` view (PID, RSS, CPU%, uptime)
 - Log viewing with tail support
 - Dry-run mode for safe testing
@@ -163,6 +164,9 @@ Flags:
 | `--logs` | `~/Library/Logs/<name>/` (agent) or `/var/log/<name>/` (daemon) | Log directory |
 | `--sandbox-profile` | | Seatbelt profile (`.sb`); wraps the service in `sandbox-exec -f <profile>` |
 | `--extra-log NAME=PATH` | | Additional named log file (repeatable); view with `logs --source NAME` |
+| `--schedule TIMES` | | Run as a scheduled job at `HH:MM` daily; comma list, optional weekday prefix (`07:30,fri@17:00`) |
+| `--calendar FIELDS` | | Run as a scheduled job on launchd calendar fields (`day=1,hour=6,minute=0`; repeatable) |
+| `--every DURATION` | | Run as a scheduled job every interval (`1h`, `30m`) |
 
 Examples:
 
@@ -234,6 +238,82 @@ $ t-man add --name myapp -- /usr/local/bin/myapp
 $ t-man add --name myapp --env PORT=8080 -- /usr/local/bin/myapp
 ✓ Service 'myapp' updated
 ```
+
+### Scheduled jobs
+
+A service added without a schedule is long-lived: launchd starts it at load
+and restarts it whenever it exits. Add `--schedule`, `--calendar`, or
+`--every` and it becomes a scheduled job instead. launchd starts it at the
+given times and lets it exit. Nothing restarts it before the next trigger: a
+scheduled job gets `RunAtLoad` and `KeepAlive` set to false. `add` rejects a
+schedule combined with `KeepAlive`, which would relaunch the job the moment
+it finished.
+
+Three flags describe when it runs. `--schedule` and `--calendar` both add
+calendar entries and may be combined; `--every` is the interval form and
+excludes them.
+
+| Flag | Form | launchd key |
+|------|------|-------------|
+| `--schedule` | `HH:MM` daily, a comma list, an optional weekday prefix: `07:30`, `07:30,fri@17:00` | `StartCalendarInterval` |
+| `--calendar` | launchd's own fields, comma-separated, repeatable: `day=1,hour=6,minute=0` | `StartCalendarInterval` |
+| `--every` | a Go duration in whole seconds: `1h`, `30m`, `90s` | `StartInterval` |
+
+```bash
+# One headless pass every morning
+t-man add --name work-digest --schedule 07:30 -- $HOME/code/bin/digest --yesterday
+
+# Weekly rollup on Monday mornings
+t-man add --name weekly-rollup --schedule mon@08:00 -- $HOME/code/bin/rollup --week
+
+# First of the month at 06:00; day and month are only reachable with --calendar
+t-man add --name monthly-audit --calendar day=1,hour=6,minute=0 -- $HOME/code/bin/audit
+
+# Every hour, counted from when launchd loaded the job
+t-man add --name hourly-sync --every 1h -- $HOME/code/bin/sync
+```
+
+Calendar fields: `minute` 0-59, `hour` 0-23, `day` 1-31, `weekday` 0-7 (0 and
+7 are both Sunday), `month` 1-12. A field left out is a wildcard, and every
+field given must match. So `day=13,weekday=5` means Friday the 13th, where
+cron would read it as the 13th or any Friday. An entry that sets no field is
+rejected, since it would fire every minute; use `--every 1m` for that.
+
+Between runs a scheduled job is not running, and that is its healthy state.
+`t-man list` reads it as `scheduled` and, as soon as one scheduled job
+exists, adds three columns:
+
+```
+NAME                           STATUS       NEXT RUN         LAST RUN         EXIT  COMMAND
+----------------------------------------------------------------------------------------------------------------------------
+present                        running      -                -                   -  /usr/local/bin/present serve --port 7423
+work-digest                    scheduled    2026-10-02 07:30 2026-10-01 07:31    0  /Users/you/code/bin/digest --yesterday
+```
+
+`NEXT RUN` is computed from the calendar entries. An interval job shows its
+cadence (`within 1h00m`) because only launchd knows when its timer started.
+`LAST RUN` is the newest write to the job's stdout or stderr log, the closest
+thing to a run timestamp launchd offers; a run that prints nothing leaves it
+unchanged. `EXIT` is the last exit code launchd reported. `t-man status
+<name>` prints the same four facts as lines.
+
+To run a job once outside its schedule, for testing:
+
+```bash
+t-man run work-digest
+t-man logs work-digest -f
+```
+
+`run` refuses a long-lived service and points to `start`. `start`, `stop`,
+`restart`, and `remove` work on scheduled jobs the same way they do on
+services; `restart` re-registers the job, which resets an interval timer.
+
+Two launchd behaviors to design a job around. If the machine is asleep when
+a calendar slot passes, launchd runs the job once after wake. Several missed
+slots collapse into that single run, so a job has to tolerate running late
+and can't count on one run per slot. And launchd counts an interval from
+load rather than from the previous run, so `--every 1h` starts a fresh hour
+at every login. Keep scheduled jobs idempotent.
 
 ### List services
 
@@ -315,6 +395,9 @@ t-man stop myapp
 
 # Restart a service
 t-man restart myapp
+
+# Fire a scheduled job once, now (refused for a long-lived service)
+t-man run work-digest
 ```
 
 ### Check service status
@@ -338,6 +421,17 @@ Stdout: /Users/you/Library/Logs/myapp/stdout.log
 Stderr: /Users/you/Library/Logs/myapp/stderr.log
 Run at load: true
 Keep alive: true
+```
+
+For a scheduled job the schedule facts follow the log paths:
+
+```
+Schedule: minute=30,hour=7
+Next run: 2026-10-02 07:30
+Last run: 2026-10-01 07:31 (newest log write)
+Last exit code: 0
+Run at load: false
+Keep alive: false
 ```
 
 ### View logs

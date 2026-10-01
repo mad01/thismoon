@@ -78,9 +78,24 @@ error naming both values.
   service writes outside stdout/stderr (for example, a sandbox denial
   ledger). The name must match the same character set as service names and
   cannot be `stdout` or `stderr`.
+- `--schedule` (string, default `""`): makes the service a scheduled job
+  that fires at the given wall-clock times: a comma-separated list of
+  `HH:MM`, each with an optional weekday prefix (`07:30`, `mon@07:30,fri@17:00`).
+  Becomes `StartCalendarInterval` entries.
+- `--calendar` (repeatable, default none): one `StartCalendarInterval` entry
+  per value, written in launchd's own fields: `minute=0,hour=6,day=1`. Keys
+  are `minute` (0-59), `hour` (0-23), `day` (1-31), `weekday` (0-7, Sunday is
+  0 or 7), `month` (1-12). A key left out is a wildcard; every key given
+  must match. Combines with `--schedule`.
+- `--every` (duration, default `""`): makes the service a scheduled job that
+  fires every interval, counted from load: a Go duration in whole seconds
+  (`1h`, `30m`). Becomes `StartInterval`. Cannot be combined with
+  `--schedule` or `--calendar`.
 
-`RunAtLoad` and `KeepAlive` are not configurable; every service t-man
-manages gets both set to `true`.
+`RunAtLoad` and `KeepAlive` are not flags. A long-lived service (no schedule
+flag) gets both set to `true`, and a scheduled job gets both set to `false`.
+A definition that pairs a schedule with `KeepAlive` is rejected, because
+launchd would relaunch the job as soon as it exited.
 
 ### `list` flags
 
@@ -123,8 +138,14 @@ input: nothing in this section is meant to be hand-authored.
 - `WorkingDirectory` (string, omitted if empty): from `--workdir`.
 - `EnvironmentVariables` (map, omitted if empty): from `--env` and
   `--path`.
-- `RunAtLoad` (bool): always `true`.
-- `KeepAlive` (bool): always `true`.
+- `RunAtLoad` (bool): `true` for a long-lived service, `false` for a
+  scheduled job.
+- `KeepAlive` (bool): `true` for a long-lived service, `false` for a
+  scheduled job.
+- `StartCalendarInterval` (array of dicts, omitted when unscheduled): the
+  calendar entries from `--schedule` and `--calendar`, each dict holding
+  only the fields that were set.
+- `StartInterval` (integer, omitted when zero): the seconds from `--every`.
 - `StandardOutPath` / `StandardErrorPath` (string): the resolved log paths.
 - `TManMetadata.Hash` (string): SHA256 of the JSON-marshalled Definition;
   the idempotency check compares this against a freshly computed hash.
