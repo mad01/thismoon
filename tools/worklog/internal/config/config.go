@@ -62,16 +62,17 @@ type Scan struct {
 	// LinearPrefixes lists the TEAM-NN key prefixes routed to the personal
 	// (Linear) world; any other key is treated as internal (Jira).
 	LinearPrefixes []string `yaml:"linear_prefixes"`
-	// PersonalPathMarkers mark a session cwd as personal when contained in it.
+	// PersonalPathMarkers mark a session path (a line's cwd or a path named in
+	// a tool call) as personal when contained in it.
 	PersonalPathMarkers []string `yaml:"personal_path_markers"`
-	// InternalPathMarkers mark a session cwd as internal when contained in it.
+	// InternalPathMarkers mark a session path as internal when contained in it.
 	// GOPATH-style checkouts of non-github.com hosts are internal regardless.
 	InternalPathMarkers []string `yaml:"internal_path_markers"`
 	// CheckoutRoots are the path fragments under which GOPATH-style checkouts
 	// live; the segment directly after a root is read as the git host.
 	CheckoutRoots []string `yaml:"checkout_roots"`
-	// RepoPathMarkers mark a session cwd as a repo checkout at all; a cwd
-	// matching none of them (e.g. a tmp dir) reports no repo.
+	// RepoPathMarkers mark a path as a repo checkout at all; a cwd or tool-call
+	// path matching none of them (e.g. a tmp dir) reports no repo.
 	RepoPathMarkers []string `yaml:"repo_path_markers"`
 }
 

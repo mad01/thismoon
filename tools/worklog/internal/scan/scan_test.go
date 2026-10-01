@@ -1,8 +1,11 @@
 package scan
 
 import (
+	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -202,7 +205,7 @@ func TestResolveTicketsFirewall(t *testing.T) {
 	}
 }
 
-func TestClassifyCwd(t *testing.T) {
+func TestClassifyPath(t *testing.T) {
 	cfg := configured.WithDefaults()
 	cases := []struct {
 		name     string
@@ -224,10 +227,234 @@ func TestClassifyCwd(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, i := classifyCwd(cfg, tc.cwd)
+			p, i := classifyPath(cfg, tc.cwd)
 			if p != tc.personal || i != tc.internal {
-				t.Errorf("classifyCwd(%q) = (%v, %v), want (%v, %v)",
+				t.Errorf("classifyPath(%q) = (%v, %v), want (%v, %v)",
 					tc.cwd, p, i, tc.personal, tc.internal)
+			}
+		})
+	}
+}
+
+// line encodes one transcript line the way Claude Code writes it.
+func line(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	b, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// userLine is a user turn with a plain-string prompt.
+func userLine(t *testing.T, cwd, ts, text string) string {
+	t.Helper()
+	return line(t, map[string]any{
+		"type": "user", "sessionId": "S1", "cwd": cwd, "timestamp": ts,
+		"message": map[string]any{"role": "user", "content": text},
+	})
+}
+
+// toolLine is an assistant turn carrying one tool_use block.
+func toolLine(t *testing.T, cwd, ts, tool string, input map[string]any) string {
+	t.Helper()
+	return line(t, map[string]any{
+		"type": "assistant", "sessionId": "S1", "cwd": cwd, "timestamp": ts,
+		"message": map[string]any{"role": "assistant", "content": []any{
+			map[string]any{"type": "text", "text": "on it"},
+			map[string]any{"type": "tool_use", "id": "t1", "name": tool, "input": input},
+		}},
+	})
+}
+
+// TestToolPathsAndDays covers what the digest reads beyond cwd: checkout paths
+// named in tool-call inputs, and the per-day split of user messages. Tool-call
+// paths only count when they exist on this machine, and only a directory with
+// a .git entry counts as a repo, so the checkouts are real directories under a
+// temp home (HOME is pointed there for the ~/ case).
+func TestToolPathsAndDays(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	mkdir := func(rel string) string {
+		t.Helper()
+		p := filepath.Join(home, rel)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	checkout := func(rel string) string {
+		t.Helper()
+		mkdir(rel + "/.git")
+		return filepath.Join(home, rel)
+	}
+	tmp := mkdir(".tmp/k3j9x")
+	bin := mkdir("code/bin")
+	dotfiles := checkout("code/src/github.com/mad01/dotfiles")
+	ralph := checkout("code/src/github.com/mad01/ralph")
+	billing := checkout("workspace/billing-api")
+	utc := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
+	plusTwo := utc.In(time.FixedZone("UTC+2", 2*60*60))
+	twoDays := []string{
+		// 23:30 UTC on the 15th is 01:30 on the 16th at UTC+2.
+		userLine(t, dotfiles, "2026-06-15T23:30:00Z", "start"),
+		userLine(t, dotfiles, "2026-06-16T10:00:00Z", "continue"),
+		// A day with tool activity but no user turn still gets an entry.
+		toolLine(t, dotfiles, "2026-06-17T06:00:00Z", "Read",
+			map[string]any{"file_path": dotfiles + "/README.md"}),
+		userLine(t, dotfiles, "2026-06-17T09:00:00Z", "<command-stdout>noise</command-stdout>"),
+		userLine(t, dotfiles, "2026-06-17T09:30:00Z", "wrap up"),
+	}
+	cases := []struct {
+		name         string
+		now          time.Time
+		lines        []string
+		wantRepos    []string
+		wantContext  string
+		wantMessages int
+		wantDays     map[string]DayActivity
+	}{
+		{
+			name: "tmp cwd, tool inputs name the checkouts",
+			now:  utc,
+			lines: []string{
+				userLine(t, tmp, "2026-06-16T09:00:00Z", "fix the scanner"),
+				// The file need not exist: the probe is at the checkout.
+				toolLine(t, tmp, "2026-06-16T09:01:00Z", "Read",
+					map[string]any{"file_path": dotfiles + "/recipes/mise/config.toml"}),
+				// A ~/ path expands against HOME for the probe.
+				toolLine(
+					t,
+					tmp,
+					"2026-06-16T09:02:00Z",
+					"Bash",
+					map[string]any{
+						"command":     "cd ~/code/src/github.com/mad01/ralph && make build",
+						"description": "Build",
+					},
+				),
+				toolLine(t, tmp, "2026-06-16T09:03:00Z", "Bash",
+					map[string]any{"command": "git -C " + dotfiles + " status --short"}),
+				// Not paths: a csl repo slug and a URL name no checkout.
+				toolLine(t, tmp, "2026-06-16T09:04:00Z", "mcp__csl__csl_read",
+					map[string]any{"repo": "mad01/thismoon", "file": "README.md"}),
+				toolLine(
+					t,
+					tmp,
+					"2026-06-16T09:05:00Z",
+					"WebFetch",
+					map[string]any{
+						"url":    "https://github.com/mad01/ralph/pull/5",
+						"prompt": "sum up",
+					},
+				),
+			},
+			wantRepos:    []string{"dotfiles", "ralph"},
+			wantContext:  "personal",
+			wantMessages: 1,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
+		},
+		{
+			name: "cwd and tool paths disagree: mixed",
+			now:  utc,
+			lines: []string{
+				userLine(t, dotfiles, "2026-06-16T09:00:00Z", "compare against the billing repo"),
+				toolLine(t, dotfiles, "2026-06-16T09:01:00Z", "Agent", map[string]any{
+					"prompt": "Read " + billing + "/README.md and report back.", "subagent_type": "Explore",
+				}),
+			},
+			wantRepos:    []string{"billing-api", "dotfiles"},
+			wantContext:  "mixed",
+			wantMessages: 1,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
+		},
+		{
+			name: "mentioned paths that are not on disk are ignored",
+			now:  utc,
+			lines: []string{
+				userLine(t, dotfiles, "2026-06-16T09:00:00Z", "document the markers"),
+				toolLine(t, dotfiles, "2026-06-16T09:01:00Z", "Write", map[string]any{
+					"file_path": dotfiles + "/config.md",
+					"content":   "internal example: /Users/example/workspace/foo/bar and ~/workspace/acme/svc",
+				}),
+				toolLine(t, dotfiles, "2026-06-16T09:02:00Z", "Bash",
+					map[string]any{"command": "ls " + ralph + "-gone"}),
+				// Exists, sits under a repo path marker, but has no .git.
+				toolLine(t, dotfiles, "2026-06-16T09:03:00Z", "Bash",
+					map[string]any{"command": bin + "/worklog version"}),
+			},
+			wantRepos:    []string{"dotfiles"},
+			wantContext:  "personal",
+			wantMessages: 1,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
+		},
+		{
+			name:         "lines across two dates, keyed in now's location",
+			now:          plusTwo,
+			lines:        twoDays,
+			wantRepos:    []string{"dotfiles"},
+			wantContext:  "personal",
+			wantMessages: 3,
+			wantDays: map[string]DayActivity{
+				"2026-06-16": {UserMessages: 2},
+				"2026-06-17": {UserMessages: 1},
+			},
+		},
+		{
+			name:         "same lines keyed in UTC",
+			now:          utc,
+			lines:        twoDays,
+			wantRepos:    []string{"dotfiles"},
+			wantContext:  "personal",
+			wantMessages: 3,
+			wantDays: map[string]DayActivity{
+				"2026-06-15": {UserMessages: 1},
+				"2026-06-16": {UserMessages: 1},
+				"2026-06-17": {UserMessages: 1},
+			},
+		},
+		{
+			name: "cwd-only session unchanged",
+			now:  utc,
+			lines: []string{
+				userLine(t, dotfiles, "2026-06-16T09:00:00Z", "work on MAD-123"),
+				userLine(t, ralph, "2026-06-16T10:00:00Z", "now the ralph side"),
+				userLine(
+					t,
+					"/tmp/abc",
+					"2026-06-16T10:30:00Z",
+					"<command-stdout>noise</command-stdout>",
+				),
+			},
+			wantRepos:    []string{"dotfiles", "ralph"},
+			wantContext:  "personal",
+			wantMessages: 2,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 2}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSession(t, root, "proj", "s", tc.lines)
+			sessions, err := Scan(root, 14*24*time.Hour, tc.now, configured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sessions) != 1 {
+				t.Fatalf("sessions = %d, want 1", len(sessions))
+			}
+			s := sessions[0]
+			if !slices.Equal(s.Repos, tc.wantRepos) {
+				t.Errorf("repos = %v, want %v", s.Repos, tc.wantRepos)
+			}
+			if s.Context != tc.wantContext {
+				t.Errorf("context = %q, want %q", s.Context, tc.wantContext)
+			}
+			if s.UserMessages != tc.wantMessages {
+				t.Errorf("user messages = %d, want %d", s.UserMessages, tc.wantMessages)
+			}
+			if !maps.Equal(s.Days, tc.wantDays) {
+				t.Errorf("days = %v, want %v", s.Days, tc.wantDays)
 			}
 		})
 	}
@@ -249,13 +476,13 @@ func TestConfigOverrides(t *testing.T) {
 		t.Errorf("jira keys = %v, want [MAD-34]", got)
 	}
 
-	if p, _ := classifyCwd(cfg, "/Users/x/code/src/github.com/someone/repo"); !p {
+	if p, _ := classifyPath(cfg, "/Users/x/code/src/github.com/someone/repo"); !p {
 		t.Error("configured personal marker not honored")
 	}
-	if _, i := classifyCwd(cfg, "/Users/x/dayjob/repo"); !i {
+	if _, i := classifyPath(cfg, "/Users/x/dayjob/repo"); !i {
 		t.Error("configured internal marker not honored")
 	}
-	if p, _ := classifyCwd(cfg, "/Users/x/code/src/github.com/mad01/dotfiles"); p {
+	if p, _ := classifyPath(cfg, "/Users/x/code/src/github.com/mad01/dotfiles"); p {
 		t.Error("a path matching no configured marker should not be personal")
 	}
 }
@@ -271,7 +498,7 @@ func TestUnconfiguredClassificationIsInert(t *testing.T) {
 		t.Fatalf("classification defaults present, want none: %+v", cfg)
 	}
 
-	personal, internal := classifyCwd(cfg, "/Users/x/code/src/github.com/mad01/dotfiles")
+	personal, internal := classifyPath(cfg, "/Users/x/code/src/github.com/mad01/dotfiles")
 	if personal || internal {
 		t.Errorf("classifyCwd = (%v, %v), want both false", personal, internal)
 	}
@@ -302,10 +529,10 @@ func TestUnconfiguredClassificationIsInert(t *testing.T) {
 
 func TestCheckoutRootsOverride(t *testing.T) {
 	cfg := Config{CheckoutRoots: []string{"/checkouts/"}}.WithDefaults()
-	if _, i := classifyCwd(cfg, "/Users/x/checkouts/git.internal.example/org/repo"); !i {
+	if _, i := classifyPath(cfg, "/Users/x/checkouts/git.internal.example/org/repo"); !i {
 		t.Error("configured checkout root not honored for internal-host detection")
 	}
-	if _, i := classifyCwd(cfg, "/Users/x/code/src/git.internal.example/org/repo"); i {
+	if _, i := classifyPath(cfg, "/Users/x/code/src/git.internal.example/org/repo"); i {
 		t.Error("default checkout root should be replaced by the configured one")
 	}
 }

@@ -36,8 +36,8 @@ stay searchable and readable without the tool.
 `scan` digests local session transcripts into compact JSON so past work
 can be imported without pulling raw transcripts into context, and it
 enforces a ticket firewall. Each session is tagged personal or internal
-from its path, and extracted ticket ids are filtered to that world so the
-two never co-mingle in one item. The firewall's machine-specific strings
+from the paths it touches, and extracted ticket ids are filtered to that
+world so the two never co-mingle in one item. The firewall's machine-specific strings
 ship as a configuration overlay from the consuming repo, per the two-layer
 recipe split (docs/adr/0006). They have no built-in values at all. A
 compiled-in guess about which prefixes and paths are personal would misfile
