@@ -1148,6 +1148,14 @@
     }
 
     var current = -1;
+    // pending is the slide a transition is moving to, and the steps it will
+    // show, set before the View Transitions API defers apply(). Everything
+    // that asks "where are we" reads it first, so two remote commands in one
+    // poll (next, next) land two slides on, and a step pressed mid-crossfade
+    // counts on the slide being entered.
+    var pending = null;
+    function at() { return pending ? pending.i : current; }
+    function shownSteps() { return pending ? pending.steps : step; }
     // graphReady says the graph is drawn for the current theme; a theme
     // change off screen clears it so the next showing redraws. The controls
     // wrap the container once and stay, whatever the theme does.
@@ -1228,18 +1236,25 @@
     function show(i, stepsMode) {
       if (i < 0) i = 0;
       if (i > slides.length - 1) i = slides.length - 1;
-      if (i === current) return;
+      var from = at();
+      if (i === from) return;
       var html = document.documentElement;
       var first = current < 0;
-      html.classList.toggle('deck-next', i > current);
-      html.classList.toggle('deck-prev', !first && i < current);
+      html.classList.toggle('deck-next', i > from);
+      html.classList.toggle('deck-prev', !first && i < from);
+      // target is this call's own record: a step pressed before apply runs
+      // bumps its steps, and a later show() replaces pending without
+      // touching it, so each deferred apply lands what was asked of it.
+      var target = { i: i, steps: stepsMode === 'none' ? 0 : stepTotal(slides[i]) };
+      pending = target;
       function apply() {
         current = i;
+        if (pending === target) pending = null;
         slides.forEach(function (sl, j) {
           sl.classList.toggle('active', j === i);
           if (j === i) sl.scrollTop = 0;
         });
-        applySteps(slides[i], stepsMode === 'none' ? 0 : stepTotal(slides[i]));
+        applySteps(slides[i], target.steps);
         updateCounter();
         chrome.update(i);
         if (notesOpen) renderNotes();
@@ -1252,15 +1267,22 @@
       var vt = document.startViewTransition(apply);
       vt.finished.then(refreshVisuals, refreshVisuals);
     }
+    // A step on a slide still being entered is recorded on the pending
+    // target and lands with it; on the current slide it shows at once.
+    function stepTo(n) {
+      if (pending) { pending.steps = n; return; }
+      applySteps(slides[current], n);
+      updateCounter();
+    }
     function next() {
-      var slide = slides[current];
-      if (slide && slide._steps && step < slide._steps.length) { applySteps(slide, step + 1); updateCounter(); return; }
-      show(current + 1, 'none');
+      var i = at(), slide = slides[i], shown = shownSteps();
+      if (slide && slide._steps && shown < slide._steps.length) { stepTo(shown + 1); return; }
+      show(i + 1, 'none');
     }
     function previous() {
-      var slide = slides[current];
-      if (slide && slide._steps && step > 0) { applySteps(slide, step - 1); updateCounter(); return; }
-      show(current - 1, 'all');
+      var i = at(), slide = slides[i], shown = shownSteps();
+      if (slide && slide._steps && shown > 0) { stepTo(shown - 1); return; }
+      show(i - 1, 'all');
     }
 
     // Presenting hides the chrome through a class on <html> and asks for

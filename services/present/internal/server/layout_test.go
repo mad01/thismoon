@@ -12,6 +12,7 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"deck-notes", "toggleNotes", "case 'n': case 'N'", "fragment", "data-step",
 		"chrome.transition", "data-transition", "startViewTransition", "deck-vt", "deck-next", "deck-prev",
 		"'layoutstop'", "classList.add('ready')", "buildChart(b, { duration: 400 })", "builtOnly",
+		"var pending = null;", "function at() { return pending ? pending.i : current; }", "pending.steps = n",
 	} {
 		if !contains(app, want) {
 			t.Errorf("app.js lacks %q", want)
