@@ -2,6 +2,8 @@ package render
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -477,5 +479,176 @@ func TestRenderDocStatValueVerbatim(t *testing.T) {
 		if strings.Contains(out, bad) {
 			t.Errorf("stat value was normalised to %q: %s", bad, out)
 		}
+	}
+}
+
+func renderSections(t *testing.T, d Doc) string {
+	t.Helper()
+	out, err := RenderDoc(d, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	return out
+}
+
+func oneSection(s Section) Doc {
+	if s.Blocks == nil {
+		s.Blocks = []Block{{T: "p", Text: "x"}}
+	}
+	return Doc{Sections: []Section{s}}
+}
+
+// A section's layout, tone, and reveal ride as attributes on wk-section,
+// emitted only when set (and layout only when not the default), and the
+// tone also sets the --slide-accent variable as a var() of the role, never
+// a literal.
+func TestRenderDocSectionLayoutFields(t *testing.T) {
+	out := renderSections(
+		t,
+		oneSection(Section{Heading: "S", Layout: "statement", Tone: "blue", Reveal: true}),
+	)
+	want := `<wk-section id="s" data-layout="statement" data-tone="blue" style="--slide-accent: var(--blue)" data-reveal="true">`
+	if !strings.Contains(out, want) {
+		t.Errorf("missing %q in: %s", want, out)
+	}
+	for _, layout := range []string{"", "default"} {
+		out := renderSections(t, oneSection(Section{Heading: "S", Layout: layout}))
+		if !strings.Contains(out, `<wk-section id="s">`) {
+			t.Errorf("layout %q: attributes emitted: %s", layout, out)
+		}
+	}
+	for _, layout := range []string{"center", "section"} {
+		out := renderSections(t, oneSection(Section{Heading: "S", Layout: layout}))
+		if !strings.Contains(out, `data-layout="`+layout+`"`) {
+			t.Errorf("layout %q not emitted: %s", layout, out)
+		}
+	}
+	for _, tone := range []string{"primary", "green", "series-2", "tone-amber-bg", "paper"} {
+		out := renderSections(t, oneSection(Section{Heading: "S", Tone: tone}))
+		if !strings.Contains(out, `data-tone="`+tone+`" style="--slide-accent: var(--`+tone+`)"`) {
+			t.Errorf("tone %q: %s", tone, out)
+		}
+	}
+}
+
+// Notes render as an inert template at the end of the section: inline
+// markdown inside, no data-fixation, and outside the read-aloud walk by
+// construction (a template's content is not among its child nodes).
+func TestRenderDocSectionNotes(t *testing.T) {
+	out := renderSections(t, oneSection(Section{
+		Heading: "S", Notes: "Pause here & ask **who** owns the rota.",
+		Blocks: []Block{{T: "p", Text: "x"}},
+	}))
+	want := "<p data-fixation>x</p>\n  <template class=\"deck-notes\">Pause here and ask <strong>who</strong> owns the rota.</template>\n</wk-section>"
+	if !strings.Contains(out, want) {
+		t.Errorf("notes:\n got %s\nwant to contain %s", out, want)
+	}
+	if n := strings.Count(out, "data-fixation"); n != 3 {
+		t.Errorf(
+			"data-fixation count = %d, want 3 (title, heading, paragraph); notes must not be fixated",
+			n,
+		)
+	}
+	if strings.Contains(renderSections(t, oneSection(Section{Heading: "S"})), "deck-notes") {
+		t.Error("a section without notes emitted a notes template")
+	}
+}
+
+func TestRenderDocSectionValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		sec  Section
+		want string
+	}{
+		{"layout", Section{Heading: "S", Layout: "split"}, `section "S": unknown layout "split"`},
+		{"tone", Section{Heading: "S", Tone: "wg600"}, `section "S": unknown tone "wg600"`},
+		{"tone alias", Section{Heading: "S", Tone: "terracotta"}, `unknown tone "terracotta"`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := RenderDoc(oneSection(c.sec), "T")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+// The transition travels in the chrome island only when set and not fade,
+// the default the deck view assumes; a deck that names fade or nothing
+// keeps the bytes it had.
+func TestRenderDocTransition(t *testing.T) {
+	base := oneSection(Section{Heading: "S"})
+	for _, tr := range []string{"", "fade"} {
+		d := base
+		d.Transition = tr
+		if out, _ := RenderDeck(d, "T"); strings.Contains(out, "deck-chrome") {
+			t.Errorf("transition %q emitted an island: %s", tr, out)
+		}
+	}
+	for _, tr := range []string{"slide", "none"} {
+		d := base
+		d.Transition = tr
+		out, err := RenderDeck(d, "T")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(
+			out,
+			`<script type="application/json" class="deck-chrome">{"transition":"`+tr+`"}</script>`,
+		) {
+			t.Errorf("transition %q: %s", tr, out)
+		}
+	}
+	d := base
+	d.Transition = "zoom"
+	if _, err := RenderDoc(d, "T"); err == nil ||
+		!strings.Contains(err.Error(), `transition "zoom"`) {
+		t.Errorf("err = %v, want unknown transition", err)
+	}
+	c, err := Compile(
+		[]byte(
+			`{"transition":"slide","sections":[{"h":"S","layout":"center","tone":"green","notes":"n","reveal":true,"blocks":[]}]}`,
+		),
+		"T",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(c.JSON); got != `{"sections":[{"h":"S","blocks":[],"layout":"center","tone":"green","notes":"n","reveal":true}],"transition":"slide"}` {
+		t.Errorf("canonical JSON = %s", got)
+	}
+}
+
+// The sample deck under testdata exercises every layout, tone, notes,
+// reveal, block type, and chrome field; the skill and the browser check use
+// it, so it must always compile.
+func TestSampleDeckRenders(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "sample-deck.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := CompileDeck(raw, "Sample deck")
+	if err != nil {
+		t.Fatalf("CompileDeck sample deck: %v", err)
+	}
+	for _, want := range []string{
+		`"transition":"slide"`, `"presenter":"Alex, platform · 2026-10-01"`,
+		`data-layout="statement"`, `data-layout="section"`, `data-layout="center"`,
+		`data-tone="blue" style="--slide-accent: var(--blue)"`, `data-tone="amber"`, `data-tone="green"`, `data-tone="tone-neutral-bg"`,
+		`data-reveal="true"`, `<template class="deck-notes">`,
+		`<wk-columns cols="3">`, `<wk-stat-value>41 min</wk-stat-value>`, `<blockquote>`, `<details>`,
+		`<wk-callout variant="ok"`, `<wk-callout variant="error"`, `class="present-chart"`, `id="cy-graph"`,
+		`<wk-kv>`, `class="language-bash"`,
+	} {
+		if !strings.Contains(c.HTML, want) {
+			t.Errorf("sample deck lacks %q", want)
+		}
+	}
+	if n := len(c.Doc.Sections); n != 11 {
+		t.Errorf("sample deck has %d sections, want 11", n)
+	}
+	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 3 {
+		t.Errorf("reveal sections = %d, want 3", n)
 	}
 }

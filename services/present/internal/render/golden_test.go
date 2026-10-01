@@ -119,3 +119,56 @@ func TestCompileDocGoldenJSON(t *testing.T) {
 		t.Errorf("canonical JSON differs from %s\n got: %s\nwant: %s", path, c.JSON, want)
 	}
 }
+
+// goldenStage1Doc adds the stage 1 additions of MAD-365 (the container
+// blocks, stat, quote, the ok callout, the deck chrome fields) and none of
+// the stage 2 section fields or the transition. Its deck rendition is
+// pinned in testdata/golden-stage1.html, captured before stage 2, so a deck
+// written against stage 1 re-renders to the same bytes too (the brief
+// rendition of the same Doc is the golden above plus the blocks).
+var goldenStage1Doc = Doc{
+	Summary:      "Stage 1 blocks and chrome.",
+	Meta:         "2026-10-01 · golden",
+	Presenter:    "Alex, platform",
+	Footer:       "Stage 1 golden",
+	Logo:         "none",
+	LogoPosition: "top-left",
+	Progress:     "bar",
+	Sections: []Section{
+		{
+			Heading: "Blocks",
+			ID:      "B001",
+			Blocks: []Block{
+				{T: "columns", Columns: [][]Block{
+					{{T: "stat", Value: "41 min", Label: "outage", Subtitle: "Tuesday"}},
+					{{T: "p", Text: "beside it"}},
+				}},
+				{T: "quote", Text: "We never saw it.", Cite: "On-call"},
+				{T: "details", Summary: "Timeline", Blocks: []Block{{T: "list", Items: []string{"14:02", "14:43"}}}},
+				{T: "callout", Severity: "ok", Text: "Live."},
+				{T: "callout", Severity: "error", Text: "Not yet."},
+			},
+		},
+		{Heading: "Second", Blocks: []Block{{T: "p", Text: "x"}}},
+	},
+}
+
+func TestRenderDocGoldenStage1(t *testing.T) {
+	out, err := RenderDeck(goldenStage1Doc, "Stage 1")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	path := filepath.Join("testdata", "golden-stage1.html")
+	if os.Getenv("PRESENT_UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if out != string(want) {
+		t.Errorf("rendered fragment differs from %s; a Doc without the stage 2 fields must render byte-identically\n got:\n%s\nwant:\n%s", path, out, want)
+	}
+}

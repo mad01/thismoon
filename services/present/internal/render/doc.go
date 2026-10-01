@@ -42,19 +42,37 @@ type Doc struct {
 	Progress     string `json:"progress,omitempty"`      // dots (default), bar, none
 	Presenter    string `json:"presenter,omitempty"`     // byline under the meta line on the title slide and in the footer
 	Footer       string `json:"footer,omitempty"`        // footer text; "" = the deck title, "none" suppresses the line
+
+	// Transition is how the deck view moves between slides: fade (the
+	// default), slide (a 24 px nudge in the direction of travel), or none (a
+	// cut). It rides in the chrome island only when set and not fade, so a
+	// deck without it keeps its stored bytes.
+	Transition string `json:"transition,omitempty"`
 }
 
 // Deck chrome vocabularies, validated at compile time like a panel accent.
 var (
 	logoPositions = []string{"bottom-right", "bottom-left", "top-left", "top-right"}
 	progressKinds = []string{"dots", "bar", "none"}
+	transitions   = []string{"fade", "slide", "none"}
+	layouts       = []string{"default", "center", "statement", "section"}
 )
+
+// chromeTransition is the transition value the island carries: empty for
+// the default fade, which the deck view assumes when the island says
+// nothing.
+func (d Doc) chromeTransition() string {
+	if d.Transition == "fade" {
+		return ""
+	}
+	return d.Transition
+}
 
 // hasChrome reports whether any deck chrome field is set, which is when the
 // renderer emits the chrome island.
 func (d Doc) hasChrome() bool {
 	return d.Logo != "" || d.LogoPosition != "" || d.Progress != "" || d.Presenter != "" ||
-		d.Footer != ""
+		d.Footer != "" || d.chromeTransition() != ""
 }
 
 // Chip is an inline tag rendered in a chip-row.
@@ -68,6 +86,23 @@ type Section struct {
 	Heading string  `json:"h"`
 	ID      string  `json:"id,omitempty"`
 	Blocks  []Block `json:"blocks"`
+
+	// Slide fields, all optional. The deck view reads Layout, Notes, and
+	// Reveal and the brief ignores them; Tone is honoured by both. Unset
+	// fields emit nothing, so a section without them renders as before.
+	Layout string `json:"layout,omitempty"` // default, center, statement, section
+	Tone   string `json:"tone,omitempty"`   // a palette role (webkit.Roles): tints the slide, bands the brief's section
+	Notes  string `json:"notes,omitempty"`  // speaker notes, inline markdown, shown in the deck's drawer
+	Reveal bool   `json:"reveal,omitempty"` // list items and top-level blocks appear one per Next
+}
+
+// dataLayout is the data-layout attribute value: the layout when it is set
+// and not the default.
+func (s Section) dataLayout() string {
+	if s.Layout == "default" {
+		return ""
+	}
+	return s.Layout
 }
 
 // Block is a discriminated union on T.
@@ -473,6 +508,7 @@ func init() {
 		"chartSpec":    chartSpec,
 		"renderBlock":  func(b Block) template.HTML { return renderBlockAt(b, 0) },
 		"renderNested": func(b Block) template.HTML { return renderBlockAt(b, 1) },
+		"dataLayout":   func(s Section) string { return s.dataLayout() },
 	}
 
 	blockTemplates = template.Must(
@@ -512,10 +548,13 @@ const docTemplateSrc = `{{with .Chrome}}<script type="application/json" class="d
 </wk-toc>
 {{- end}}
 {{- range .Sections}}
-<wk-section id="{{sectionID .Heading}}">
+<wk-section id="{{sectionID .Heading}}"{{with dataLayout .}} data-layout="{{.}}"{{end}}{{with .Tone}} data-tone="{{.}}" style="--slide-accent: var(--{{.}})"{{end}}{{if .Reveal}} data-reveal="true"{{end}}>
   <wk-section-heading data-fixation>{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{.Heading}}</wk-section-heading>
 {{- range .Blocks}}
   {{renderBlock .}}
+{{- end}}
+{{- with .Notes}}
+  <template class="deck-notes">{{inlineMd .}}</template>
 {{- end}}
 </wk-section>
 {{- end}}`
@@ -621,6 +660,7 @@ func (d *Doc) normalize() {
 	}
 	for i := range d.Sections {
 		d.Sections[i].Heading = normalizeNames(d.Sections[i].Heading)
+		d.Sections[i].Notes = normalizeNames(d.Sections[i].Notes)
 		normalizeBlocks(d.Sections[i].Blocks, 0)
 	}
 }
@@ -773,6 +813,31 @@ func validateChrome(d Doc) error {
 	if d.Logo != "" && d.Logo != "none" && !logoURLAllowed(d.Logo) {
 		return fmt.Errorf(`logo %q: want "none" or an http(s) URL`, d.Logo)
 	}
+	if d.Transition != "" && !slices.Contains(transitions, d.Transition) {
+		return fmt.Errorf(
+			"transition %q: want one of %s", d.Transition, strings.Join(transitions, ", "),
+		)
+	}
+	return nil
+}
+
+// validateSection refuses a layout outside its vocabulary and a tone that is
+// not a palette role. A tone is a role name only: the panel accent's legacy
+// alias is not one, because the slide reads the role as var(--<tone>) and
+// an alias would pin the page to one family's choice.
+func validateSection(s Section) error {
+	if s.Layout != "" && !slices.Contains(layouts, s.Layout) {
+		return fmt.Errorf(
+			"section %q: unknown layout %q (want one of %s)",
+			s.Heading, s.Layout, strings.Join(layouts, ", "),
+		)
+	}
+	if s.Tone != "" && !webkit.IsRole(s.Tone) {
+		return fmt.Errorf(
+			"section %q: unknown tone %q (want one of %s)",
+			s.Heading, s.Tone, strings.Join(webkit.Roles(), ", "),
+		)
+	}
 	return nil
 }
 
@@ -781,6 +846,9 @@ func validateDoc(d Doc) error {
 		return err
 	}
 	for _, s := range d.Sections {
+		if err := validateSection(s); err != nil {
+			return err
+		}
 		if err := validateBlocks(s.Blocks, 0); err != nil {
 			return err
 		}
@@ -801,7 +869,8 @@ func chromeSpec(d Doc) template.JS {
 		Progress     string `json:"progress,omitempty"`
 		Presenter    string `json:"presenter,omitempty"`
 		Footer       string `json:"footer,omitempty"`
-	}{d.Logo, d.LogoPosition, d.Progress, d.Presenter, d.Footer}
+		Transition   string `json:"transition,omitempty"`
+	}{d.Logo, d.LogoPosition, d.Progress, d.Presenter, d.Footer, d.chromeTransition()}
 	out, err := json.Marshal(spec)
 	if err != nil {
 		return "{}"
