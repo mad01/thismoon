@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/t-man/v0.5.3...t-man/v0.6.0) (2026-10-01)
+
+
+### Features
+
+* **t-man:** scheduled jobs via launchd calendar and interval triggers ([#173](https://github.com/mad01/thismoon/issues/173)) ([9e62d42](https://github.com/mad01/thismoon/commit/9e62d42e0ef900603e68445b3e41d10d4bc33380))
+
 ## [0.5.3](https://github.com/mad01/thismoon/compare/t-man/v0.5.2...t-man/v0.5.3) (2026-09-11)
 
 

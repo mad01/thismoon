@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/worklog/v0.10.0...worklog/v0.11.0) (2026-10-01)
+
+
+### Features
+
+* **worklog:** read checkout paths from tool calls and split scan activity by day ([c0d21e4](https://github.com/mad01/thismoon/commit/c0d21e475e1d730e0b216d04285ef5f7443f61f7))
+
+
+### Bug Fixes
+
+* **worklog:** count a tool path only when it resolves to a git checkout ([223dd62](https://github.com/mad01/thismoon/commit/223dd62cf90d98a62e6c1e409bdd5137470cac8e))
+* **worklog:** keep quoted paths whole in the scan tokeniser ([691195e](https://github.com/mad01/thismoon/commit/691195e3958bf2e0a1d119eb812a86ea850b62e9))
+* **worklog:** read the aiTitle key so scan emits session titles ([43f3fd2](https://github.com/mad01/thismoon/commit/43f3fd2a91a6dda0fffd1d7de84d407c3533613a))
+* **worklog:** rescan quoted spans that are not paths in the scan tokeniser ([02e1c79](https://github.com/mad01/thismoon/commit/02e1c794b53ee7d9fa3c7281149ba1630f9614f3))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/worklog/v0.9.0...worklog/v0.10.0) (2026-09-12)
 
 
