@@ -8,6 +8,7 @@ import { WkReadAloud } from './read-aloud.js';
 import { rankSites } from './fuzzy.js';
 import type { Site, SiteMatch } from './fuzzy.js';
 import { initProse } from './prose.js';
+import { bootSnippetFor } from './boot.snippet.js';
 
 export { toFixation } from './fixation.js';
 export { segmentSentences } from './sentences.js';
@@ -125,6 +126,13 @@ export interface ThemeState {
 export type ThemeChangeDetail = ThemeState;
 
 const DARK_SCHEME = '(prefers-color-scheme: dark)';
+/** Family names the stylesheet carries, injected at build time (see globals.d.ts). */
+const FAMILIES: readonly string[] = JSON.parse(WEBKIT_FAMILIES) as string[];
+
+/** Whether name is a family the embedded collection ships. */
+export function isFamily(name: string): boolean {
+  return FAMILIES.includes(name);
+}
 
 function systemTheme(): Theme {
   return typeof matchMedia === 'function' && matchMedia(DARK_SCHEME).matches ? 'dark' : 'light';
@@ -136,9 +144,10 @@ export function themeMode(): ThemeMode {
   return v === 'dark' || v === 'system' ? v : 'light';
 }
 
-/** The stored palette family for a mode, 'default' when none is set. */
+/** The stored palette family for a mode; 'default' when none is set or the name is not a shipped family. */
 export function paletteFor(theme: Theme): string {
-  return localStorage.getItem(PALETTE_KEY_PREFIX + theme) || 'default';
+  const v = localStorage.getItem(PALETTE_KEY_PREFIX + theme);
+  return v && isFamily(v) ? v : 'default';
 }
 
 /** The persisted theme choice, resolved. */
@@ -173,9 +182,9 @@ export function setThemeMode(mode: ThemeMode): ThemeState {
   return applyTheme();
 }
 
-/** Persists the palette family for one mode ('default' or '' clears it) and applies it. */
+/** Persists the palette family for one mode and applies it; 'default', '', or an unknown name clears the key. */
 export function setPalette(theme: Theme, family: string): ThemeState {
-  if (!family || family === 'default') localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
+  if (!family || family === 'default' || !isFamily(family)) localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
   else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
   return applyTheme();
 }
@@ -924,12 +933,13 @@ initVersionPoll();
 initProse();
 
 // ── FOUC guard ──
-// Single canonical pre-paint snippet, sourced from src/boot.snippet.js so the
-// JS export and the served dist/boot.js (GET /webkit/boot.js) cannot drift.
-// Consumers inline this in <head> once, BEFORE the (deferred) webkit.js loads,
-// so persisted theme + size don't flash. Prefer the served asset via
+// Single canonical pre-paint snippet, sourced from src/boot.snippet.js and
+// built for the same family list build.mjs gives dist/boot.js, so the JS
+// export and the served file (GET /webkit/boot.js) cannot drift. Consumers
+// inline this in <head> once, BEFORE the (deferred) webkit.js loads, so the
+// persisted theme, palette, and size don't flash. Prefer the served asset via
 // webkit.BootScript() (Go) or <script src="/webkit/boot.js"></script>.
-export { bootSnippet } from './boot.snippet.js';
+export const bootSnippet: string = bootSnippetFor(FAMILIES);
 
 // ── Backward-compat shim: Webkit.init(cfg) builds a <wk-header> ──
 

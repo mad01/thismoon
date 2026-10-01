@@ -17,7 +17,7 @@ import (
 // existing page. Change a value here only when the default palette is meant
 // to change.
 var defaultLight = map[string]string{
-	"primary": "#C4704B", "bg": "#FAF9F7", "paper": "#FFFFFF",
+	"primary": "#C4704B", "on-primary": "#FFFFFF", "bg": "#FAF9F7", "paper": "#FFFFFF",
 	"text-1": "#252320", "text-2": "#6B6459", "text-3": "#8C8578",
 	"border": "#D8D4CD", "border-hover": "#B8B2A7",
 	"card-bg": "#FFFFFF", "chip-bg": "#EEECE8",
@@ -51,7 +51,9 @@ var defaultLight = map[string]string{
 }
 
 var defaultDark = map[string]string{
-	"primary": "#E8956A", "bg": "#1A1916", "paper": "#252320",
+	// on-primary stays white: the old rules put #fff on every accent fill in
+	// dark too, while --chip-active-text alone was the dark bg literal.
+	"primary": "#E8956A", "on-primary": "#FFFFFF", "bg": "#1A1916", "paper": "#252320",
 	"text-1": "#D8D4CD", "text-2": "#B8B2A7", "text-3": "#8C8578",
 	"border": "#35322C", "border-hover": "#4A453D",
 	"card-bg": "#252320", "chip-bg": "#35322C",
@@ -60,12 +62,14 @@ var defaultDark = map[string]string{
 	"tag-a": "#3A2E20", "tag-a-text": "#E8B86A", "tag-b": "#1E3A2A", "tag-b-text": "#6BC48A",
 	"tag-c": "#1E2A3A", "tag-c-text": "#7AAAE8", "ra-highlight": "#4A3328",
 	"green-light": "#6BC48A", "primary-soft": "#d4855f",
-	// The semantic colours keep their light values: the old dark block never
-	// overrode them (decision 7 of the design).
+	// The semantic colours, the terracotta alias, and the focus ring keep
+	// their light values: the old dark block never overrode them (decision 7
+	// of the design).
 	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
-	"blue": "#5B8EC4", "purple": "#8B6BB0",
-	"text-body": "#B8B2A7",
-	"topbar-bg": "rgba(26,25,22,0.88)", "scrim": "rgba(37,35,32,0.45)",
+	"blue": "#5B8EC4", "purple": "#8B6BB0", "terracotta": "#C4704B",
+	"focus-ring": "rgba(196,112,75,0.15)",
+	"text-body":  "#B8B2A7",
+	"topbar-bg":  "rgba(26,25,22,0.88)", "scrim": "rgba(37,35,32,0.45)",
 	"code-bg": "#1A1916", "code-header-bg": "#252320", "code-border": "#35322C",
 	"code-keyword": "#E8956A", "code-string": "#6BC48A", "code-number": "#E8B86A", "code-symbol": "#7AAAE8",
 	"graph-bg": "#1A1916", "graph-center-bg": "#3A2A20", "graph-center-border": "#E8956A",
@@ -295,6 +299,33 @@ func TestHandlerServesThemesJSON(t *testing.T) {
 	if len(got.Families) != len(wantFamilies) || len(got.Roles) != len(webkit.Roles()) {
 		t.Errorf("themes.json has %d families and %d roles, want %d and %d",
 			len(got.Families), len(got.Roles), len(wantFamilies), len(webkit.Roles()))
+	}
+}
+
+// boot.js and webkit.js carry the family list, so a stored palette name that
+// no family matches falls back to default before paint and in the runtime
+// API alike; the list is injected at build time and must match the embedded
+// collection.
+func TestBundlesEmbedFamilyList(t *testing.T) {
+	boot := serve(t, "/webkit/boot.js").Body.String()
+	js := serve(t, "/webkit/webkit.js").Body.String()
+	if strings.Contains(js, "JSON.parse(WEBKIT_FAMILIES)") {
+		t.Error(
+			"webkit.js still reads the WEBKIT_FAMILIES placeholder; the build did not inject the list",
+		)
+	}
+	for _, f := range webkit.Themes() {
+		if quoted := `"` + f.Name + `"`; !strings.Contains(boot, quoted) {
+			t.Errorf("boot.js does not list family %s", quoted)
+		}
+		// The bundle carries the list as a JSON string literal, so match the
+		// bare name rather than a quoted one.
+		if !strings.Contains(js, f.Name) {
+			t.Errorf("webkit.js does not list family %q", f.Name)
+		}
+	}
+	if !strings.Contains(boot, ".indexOf(p)!==-1") {
+		t.Error("boot.js does not check the stored palette name against the list")
 	}
 }
 

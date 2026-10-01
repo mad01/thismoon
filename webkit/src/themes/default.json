@@ -53,7 +53,7 @@
   },
   "dark": {
     "variant": "Warm gray",
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them; the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used.",
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them; the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring and the terracotta alias keep the light-mode values the old stylesheet never overrode in dark.",
     "bg": "#1A1916",
     "paper": "#252320",
     "chip": "#35322C",
@@ -63,7 +63,7 @@
     "text-2": "#B8B2A7",
     "text-3": "#8C8578",
     "primary": "#E8956A",
-    "on-primary": "#1A1916",
+    "on-primary": "#FFFFFF",
     "red": "#C45B4B",
     "green": "#4A9E6B",
     "amber": "#D97706",
@@ -72,6 +72,9 @@
     "purple": "#8B6BB0",
     "series": ["#E8956A", "#7AAAE8", "#6BC48A", "#8B6BB0"],
     "overrides": {
+      "chip-active-text": "#1A1916",
+      "focus-ring": "rgba(196,112,75,0.15)",
+      "terracotta": "#C4704B",
       "primary-soft": "#d4855f",
       "green-light": "#6BC48A",
       "text-body": "#B8B2A7",

@@ -106,7 +106,7 @@
   --text-2: #B8B2A7;
   --text-3: #8C8578;
   --primary: #E8956A;
-  --on-primary: #1A1916;
+  --on-primary: #FFFFFF;
   --red: #C45B4B;
   --green: #4A9E6B;
   --amber: #D97706;
@@ -139,7 +139,7 @@
   --on-yellow: #FFFFFF;
   --on-blue: #FFFFFF;
   --on-purple: #FFFFFF;
-  --focus-ring: rgba(232,149,106,0.15);
+  --focus-ring: rgba(196,112,75,0.15);
   --topbar-bg: rgba(26,25,22,0.88);
   --scrim: rgba(37,35,32,0.45);
   --code-bg: #1A1916;
@@ -191,7 +191,7 @@
   --shadow-sm: 0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25);
-  --terracotta: #E8956A;
+  --terracotta: #C4704B;
 }
 [data-palette="catppuccin"][data-theme="light"] {
   --bg: #e6e9ef;

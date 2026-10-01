@@ -1489,6 +1489,7 @@ var Webkit = (() => {
     enhanceProse: () => enhanceProse,
     escapeHtml: () => escapeHtml,
     init: () => init,
+    isFamily: () => isFamily,
     openCmdK: () => openCmdK,
     openFeatureGuide: () => openFeatureGuide,
     paletteFor: () => paletteFor,
@@ -3330,6 +3331,12 @@ var Webkit = (() => {
     }
   }
 
+  // src/boot.snippet.js
+  function bootSnippetFor(families) {
+    const list = JSON.stringify(Array.from(families));
+    return "(function(){try{var t=localStorage.getItem('webkit-theme')||'light';if(t==='system'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t!=='dark'){t='light';}document.documentElement.setAttribute('data-theme',t);var p=localStorage.getItem('webkit-palette-'+t);if(p&&p!=='default'&&" + list + ".indexOf(p)!==-1){document.documentElement.setAttribute('data-palette',p);}var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}}catch(e){}})();";
+  }
+
   // src/render.ts
   var HTML_ENTITIES = {
     "&": "&amp;",
@@ -3379,9 +3386,6 @@ var Webkit = (() => {
       }
     };
   }
-
-  // src/boot.snippet.js
-  var bootSnippet = "(function(){try{var t=localStorage.getItem('webkit-theme')||'light';if(t==='system'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t!=='dark'){t='light';}document.documentElement.setAttribute('data-theme',t);var p=localStorage.getItem('webkit-palette-'+t);if(p&&p!=='default'){document.documentElement.setAttribute('data-palette',p);}var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}}catch(e){}})();";
 
   // src/webkit.ts
   var THEME_KEY = "webkit-theme";
@@ -3433,6 +3437,10 @@ var Webkit = (() => {
     return icon === "refresh" ? SVG_REFRESH : SVG_ADD;
   }
   var DARK_SCHEME = "(prefers-color-scheme: dark)";
+  var FAMILIES = JSON.parse('["default","catppuccin","gruvbox","nord","one","rose-pine","solarized","tokyo-night"]');
+  function isFamily(name) {
+    return FAMILIES.includes(name);
+  }
   function systemTheme() {
     return typeof matchMedia === "function" && matchMedia(DARK_SCHEME).matches ? "dark" : "light";
   }
@@ -3441,7 +3449,8 @@ var Webkit = (() => {
     return v === "dark" || v === "system" ? v : "light";
   }
   function paletteFor(theme) {
-    return localStorage.getItem(PALETTE_KEY_PREFIX + theme) || "default";
+    const v = localStorage.getItem(PALETTE_KEY_PREFIX + theme);
+    return v && isFamily(v) ? v : "default";
   }
   function themeState() {
     const mode = themeMode();
@@ -3465,7 +3474,7 @@ var Webkit = (() => {
     return applyTheme();
   }
   function setPalette(theme, family) {
-    if (!family || family === "default") localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
+    if (!family || family === "default" || !isFamily(family)) localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
     else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
     return applyTheme();
   }
@@ -4065,6 +4074,7 @@ var Webkit = (() => {
   }
   initVersionPoll();
   initProse();
+  var bootSnippet = bootSnippetFor(FAMILIES);
   function init(cfg) {
     const config = {
       mount: cfg?.mount ?? "#webkit-header",
