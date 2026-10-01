@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mad01/thismoon/tools/t-man/internal/platform/launchd"
 	"github.com/spf13/cobra"
@@ -31,6 +32,18 @@ var restartCmd = &cobra.Command{
 	RunE:  hintRunE(runRestart),
 }
 
+// runCmd represents the run command
+var runCmd = &cobra.Command{
+	Use:   "run <service-name>",
+	Short: "Run a scheduled job once, now",
+	Long: `Run a scheduled job once, outside its schedule, for testing.
+
+Only jobs added with --schedule, --calendar, or --every qualify; a long-lived
+service is controlled with start, stop, and restart instead.`,
+	Args: cobra.ExactArgs(1),
+	RunE: hintRunE(runRun),
+}
+
 // statusCmd represents the status command
 var statusCmd = &cobra.Command{
 	Use:   "status <service-name>",
@@ -43,6 +56,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)
+	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(statusCmd)
 }
 
@@ -112,6 +126,41 @@ func runRestart(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// runRun fires a scheduled job once. launchctl start runs a loaded job
+// immediately whatever its triggers say, and a job without KeepAlive exits
+// when it is done, so this is the one-shot the schedule would have fired.
+func runRun(cmd *cobra.Command, args []string) error {
+	if err := checkSudo(); err != nil {
+		return err
+	}
+
+	serviceName := args[0]
+	manager := launchd.NewManager(GetVersion(), !daemonMode)
+
+	svc, err := manager.Get(getContext(), serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to get service: %w", err)
+	}
+	if !svc.Scheduled() {
+		return fmt.Errorf(
+			"service '%s' is not a scheduled job; use 't-man start %s' for a long-lived service",
+			serviceName, serviceName,
+		)
+	}
+
+	if dryRun {
+		fmt.Printf("Dry run mode - would run job once: %s\n", serviceName)
+		return nil
+	}
+
+	if err := manager.Start(getContext(), serviceName); err != nil {
+		return fmt.Errorf("failed to run job: %w", err)
+	}
+
+	fmt.Printf("✓ Job '%s' started; follow it with 't-man logs %s -f'\n", serviceName, serviceName)
+	return nil
+}
+
 func runStatus(cmd *cobra.Command, args []string) error {
 	if err := checkSudo(); err != nil {
 		return err
@@ -128,9 +177,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get status
-	status, err := manager.Status(getContext(), serviceName)
-	if err != nil {
-		status = "unknown"
+	status := "unknown"
+	state, err := manager.RunState(getContext(), svc)
+	if err == nil {
+		status = state.Status
 	}
 
 	// Print service information
@@ -165,6 +215,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		for _, source := range sortedKeys(svc.ExtraLogs) {
 			fmt.Printf("  %s: %s\n", source, svc.ExtraLogs[source])
 		}
+	}
+
+	for _, line := range scheduleStatusLines(svc, state, time.Now()) {
+		fmt.Println(line)
 	}
 
 	fmt.Printf("Run at load: %v\n", svc.RunAtLoad)
