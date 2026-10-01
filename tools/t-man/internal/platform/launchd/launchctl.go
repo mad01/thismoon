@@ -67,6 +67,10 @@ type ServiceStatus struct {
 	PID    string
 	Status string
 	Loaded bool
+	// LastExitCode is the last exit status launchd reported, verbatim: "0",
+	// "78: EX_CONFIG", or "(never exited)" from print, a bare number from
+	// list. Empty when launchd did not report one.
+	LastExitCode string
 }
 
 // List returns all loaded services
@@ -117,10 +121,11 @@ func statusFromListEntry(svc *ServiceStatus) *ServiceStatus {
 	}
 
 	return &ServiceStatus{
-		Label:  svc.Label,
-		PID:    svc.PID,
-		Status: status,
-		Loaded: true,
+		Label:        svc.Label,
+		PID:          svc.PID,
+		Status:       status,
+		Loaded:       true,
+		LastExitCode: svc.Status,
 	}
 }
 
@@ -163,7 +168,8 @@ func parseListOutput(output string) ([]ServiceStatus, error) {
 
 // parsePrintOutput parses the output of 'launchctl print'.
 // It uses the first top-level "state = " line and ignores nested ones
-// (e.g. inside "resource coalition" blocks) by tracking brace depth.
+// (e.g. inside "resource coalition" blocks) by tracking brace depth. The
+// top-level "pid = " and "last exit code = " lines are read the same way.
 func parsePrintOutput(label, output string) (*ServiceStatus, error) {
 	status := &ServiceStatus{
 		Label:  label,
@@ -192,6 +198,10 @@ func parsePrintOutput(label, output string) (*ServiceStatus, error) {
 
 		if after, ok := strings.CutPrefix(trimmed, "pid = "); ok && depth <= 1 {
 			status.PID = after
+		}
+
+		if after, ok := strings.CutPrefix(trimmed, "last exit code = "); ok && depth <= 1 {
+			status.LastExitCode = after
 		}
 	}
 

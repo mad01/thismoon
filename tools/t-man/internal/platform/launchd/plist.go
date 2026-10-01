@@ -47,7 +47,12 @@ type LaunchdPlist struct {
 	KeepAlive            bool              `plist:"KeepAlive"`
 	StandardOutPath      string            `plist:"StandardOutPath,omitempty"`
 	StandardErrorPath    string            `plist:"StandardErrorPath,omitempty"`
-	TManMetadata         TManMetadata      `plist:"TManMetadata"`
+	// StartCalendarInterval and StartInterval are the two launchd triggers
+	// for a scheduled job; t-man always writes the calendar form as an array
+	// of dicts, which launchd accepts alongside the single-dict form.
+	StartCalendarInterval []CalendarInterval `plist:"StartCalendarInterval,omitempty"`
+	StartInterval         int                `plist:"StartInterval,omitempty"`
+	TManMetadata          TManMetadata       `plist:"TManMetadata"`
 }
 
 // GeneratePlist creates a launchd plist from a service definition
@@ -93,14 +98,16 @@ func GeneratePlist(def *service.Definition, version string) ([]byte, error) {
 
 	// Create the plist structure
 	plistData := &LaunchdPlist{
-		Label:                def.Name,
-		ProgramArguments:     programArgs,
-		WorkingDirectory:     def.WorkingDir,
-		EnvironmentVariables: def.Environment,
-		RunAtLoad:            def.RunAtLoad,
-		KeepAlive:            def.KeepAlive,
-		StandardOutPath:      def.StandardOutPath,
-		StandardErrorPath:    def.StandardErrPath,
+		Label:                 def.Name,
+		ProgramArguments:      programArgs,
+		WorkingDirectory:      def.WorkingDir,
+		EnvironmentVariables:  def.Environment,
+		RunAtLoad:             def.RunAtLoad,
+		KeepAlive:             def.KeepAlive,
+		StandardOutPath:       def.StandardOutPath,
+		StandardErrorPath:     def.StandardErrPath,
+		StartCalendarInterval: calendarToPlist(def.Calendar),
+		StartInterval:         def.IntervalSeconds,
 		TManMetadata: TManMetadata{
 			Hash:                 hash,
 			ManagedBy:            ManagedByValue,

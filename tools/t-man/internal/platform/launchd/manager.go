@@ -350,19 +350,32 @@ func (m *Manager) Restart(ctx context.Context, name string) error {
 	return m.launchctl.Load(ctx, plistPath)
 }
 
-// Status returns the status of a service
+// Status returns the status of a service: what launchd reports, except that
+// a scheduled job idle between runs reads "scheduled" rather than stopped.
 func (m *Manager) Status(ctx context.Context, name string) (string, error) {
 	// Verify service exists and is managed by t-man
-	if _, err := m.Get(ctx, name); err != nil {
-		return "", err
-	}
-
-	status, err := m.launchctl.GetStatus(ctx, name)
+	def, err := m.Get(ctx, name)
 	if err != nil {
 		return "", err
 	}
 
-	return status.Status, nil
+	state, err := m.RunState(ctx, def)
+	if err != nil {
+		return "", err
+	}
+
+	return state.Status, nil
+}
+
+// RunState asks launchd about one managed service and maps the answer to
+// the vocabulary list and status print. The caller already holds the
+// definition, so this does not re-read the plist.
+func (m *Manager) RunState(ctx context.Context, def *service.Definition) (*RunState, error) {
+	status, err := m.launchctl.GetStatus(ctx, def.Name)
+	if err != nil {
+		return nil, err
+	}
+	return runStateFor(def, status), nil
 }
 
 // RunningPIDs returns the PID of every running launchd job visible to a
@@ -422,6 +435,8 @@ func (m *Manager) plistToDefinition(plist *LaunchdPlist) *service.Definition {
 		SandboxProfile:       plist.TManMetadata.SandboxProfile,
 		SandboxProfileSHA256: plist.TManMetadata.SandboxProfileSHA256,
 		ExtraLogs:            plist.TManMetadata.ExtraLogs,
+		Calendar:             calendarFromPlist(plist.StartCalendarInterval),
+		IntervalSeconds:      plist.StartInterval,
 	}
 }
 
