@@ -15,11 +15,15 @@ is light DOM (no Shadow DOM).
 - **JS only for behavior.** Only `<wk-header>` needs a custom-element class
   (controls + persistence + event). Others may be defined as no-op elements for
   semantics but require no JS.
-- **Palette unchanged.** Keep present's palette/vars already in `webkit.css`
-  (`--terracotta`, warm-grays, `--page-width`, light+dark). The component visuals
-  (`.panel`, `.data-table`, `.chip*`, `.callout`, etc.) were ported verbatim into
-  `webkit.css` from present's original page template and from csl/catalog
-  `internal/web/assets/static/app.css` (`.card`, `.search-bar`, `.kind-badge`).
+- **Palette is generated.** The colour roles (`--bg`, `--paper`, `--primary`,
+  `--on-primary`, the semantic colours, tags, code tokens, graph and chart
+  roles) come from the theme collection under `src/themes/`, one block per
+  family and mode at the top of `webkit.css`. Component rules read roles only;
+  a literal or a ramp name in a rule would stop following the family. The
+  component visuals (`.panel`, `.data-table`, `.chip*`, `.callout`, etc.) were
+  ported verbatim into `webkit.css` from present's original page template and
+  from csl/catalog `internal/web/assets/static/app.css` (`.card`, `.search-bar`,
+  `.kind-badge`).
 
 ## Components
 
@@ -47,8 +51,12 @@ Light-DOM children it relocates into the bar:
 
 Behavior (ported from the current `Webkit.init`): font/fixation/size/reload/theme
 controls wired to GLOBAL keys `webkit-theme|font|size|fixation` (default light,
-size 16 clamp 12–24, fixation persisted). On theme toggle it sets `data-theme`,
-saves, and **dispatches `new CustomEvent('wk-themechange', {detail:{theme}})` on
+size 16 clamp 12–24, fixation persisted). The theme toggle flips between light
+and dark and writes an explicit mode; `system` and the palette family per mode
+(`webkit-palette-light`, `webkit-palette-dark`) are chosen on the themes page at
+`/webkit/themes`. Every change goes through `applyTheme`, which sets
+`data-theme` and `data-palette` on `<html>` and **dispatches
+`new CustomEvent('wk-themechange', {detail:{theme, palette, mode}})` on
 `document`** (consumers listen to recolor graphs, replacing the `onThemeChange`
 callback). Keep a thin `Webkit.init(cfg)` shim that creates a `<wk-header>` from a
 config object for backward-compat, but markup is the primary API.
@@ -339,23 +347,26 @@ section.
 Update `<wk-header>` default `fixation-targets` to be component-aware, e.g.
 `[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td`.
 
-## FOUC guard — `Webkit.bootSnippet`
+## FOUC guard — `/webkit/boot.js`
 `webkit.js` is deferred, so theme + font-size are only applied after it runs —
-persisted dark/large preferences flash on load otherwise. The bundle exports a
-single canonical pre-paint snippet so every consumer inlines the SAME guard
-instead of hand-rolling it:
+persisted dark/large preferences flash on load otherwise. The kit serves one
+canonical pre-paint snippet so every consumer loads the SAME guard instead of
+hand-rolling it:
 
 ```html
 <head>
-  <!-- inline ONE guard before any stylesheet; mirrors Webkit.bootSnippet -->
-  <script>(function(){try{var t=localStorage.getItem('webkit-theme')||'light';document.documentElement.setAttribute('data-theme',t);var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}}catch(e){}})();</script>
+  <!-- ONE blocking guard before any stylesheet; built from src/boot.snippet.js -->
+  <script src="/webkit/boot.js"></script>
   <link rel="stylesheet" href="/webkit/webkit.css">
 </head>
 ```
 
-It reads `webkit-theme` → `data-theme` and `webkit-size` (clamped 12–24) →
-`html` font-size before paint. The same string is available at runtime as
-`Webkit.bootSnippet` (single source of truth — server templates can inject it).
+It resolves `webkit-theme` (`system` through `prefers-color-scheme`) into
+`data-theme`, the family key for that mode into `data-palette`, and
+`webkit-size` (clamped 12–24) into the `html` font-size before paint. The same
+string is available at runtime as `Webkit.bootSnippet` and in Go as
+`webkit.BootScript()`; all three come from `src/boot.snippet.js`, so never
+paste the IIFE inline (the gallery's hand-pasted copy drifted once).
 
 ## Version check + cache busting
 `GET /webkit/version` → JSON `{"module":"github.com/mad01/thismoon/webkit","version":"<hash>"}`,

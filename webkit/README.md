@@ -6,13 +6,17 @@ embed everywhere — so the tools look and behave the same.
 
 ## What it ships
 
-- **`dist/webkit.css`** — palette (light + dark), sticky header chrome, layout
+- **`dist/webkit.css`** — the palette (eight theme families, each light and
+  dark, generated from `src/themes/*.json`), sticky header chrome, layout
   container (`.wrap`, `max-width: var(--page-width, 1080px)`), and all component
   styles.
 - **`dist/webkit.js`** — registers `<wk-header>` as a custom element; wires
-  controls and persists state in `localStorage`; exports `Webkit.bootSnippet`
+  controls and persists state in `localStorage`; exports the theme API
+  (`themeState`, `setThemeMode`, `setPalette`, `resetTheme`), `Webkit.bootSnippet`
   (FOUC (Flash of Unstyled Content) guard) and a thin `Webkit.init(config)` shim
   for backward compatibility.
+- **`dist/themes.json`, `dist/themes.html`, `dist/themes.js`** — the resolved
+  theme collection and the picker page served at `GET /webkit/themes`.
 
 Both are compiled from `src/` (TypeScript + CSS) and **committed** so Go
 consumers can `go:embed` them without a node toolchain.
@@ -127,19 +131,36 @@ There is no bump step: consumers are packages of the same module and compile
 against the committed webkit source. Rebuild and reinstall the consumer binary
 and the new assets ship with it.
 
+## Themes
+
+A theme is a family with a light and a dark variant, authored as one JSON file
+under `src/themes/`. A variant is about twenty colours; the file also carries
+a licence and a source. The build derives the rest (tags, code tokens, graph
+and chart colours) and emits a palette block per variant at the top of
+`webkit.css`. Every tool that embeds webkit therefore ships every family. The
+reader picks a family per mode on `/webkit/themes`, which every consumer
+serves, and the browser keeps the choice for that host. Go callers get the
+collection from `webkit.Themes()` and the role vocabulary from
+`webkit.Roles()`.
+
 ## State
 
-Global `localStorage` keys shared across a tool's pages, default theme light:
+Global `localStorage` keys shared across a tool's pages, default theme light
+with the default family:
 
 | Key | Meaning |
 |-----|---------|
-| `webkit-theme` | `light` or `dark` |
+| `webkit-theme` | `light`, `dark`, or `system` (follows the OS appearance) |
+| `webkit-palette-light` | family name for light mode; absent = default |
+| `webkit-palette-dark` | family name for dark mode; absent = default |
 | `webkit-font` | font family choice |
 | `webkit-size` | font size (12–24 px) |
 | `webkit-fixation` | fixation reading on/off |
 
-Theme changes dispatch `new CustomEvent('wk-themechange', {detail:{theme}})` on
-`document` — listen there to recolor graphs or other dynamic visuals.
+Theme changes dispatch `new CustomEvent('wk-themechange', {detail:{theme, palette, mode}})`
+on `document` — listen there to recolor graphs or other dynamic visuals. The
+event also fires when another tab of the same origin changes the theme and
+when the system appearance flips in system mode.
 
 ## Gallery
 
@@ -157,7 +178,7 @@ go test ./...     # asserts Handler() serves embedded assets; checks wk-header a
 
 `make build` is the default path: npm install-time code (postinstall scripts
 and the dependency tree) runs inside a throwaway Linux VM (Apple `container`),
-not on your machine. Only `dist/webkit.js` + `dist/webkit.css` come out, and
+not on your machine. Only the `dist/` artifacts come out, and
 the output is byte-identical to a host build. One-time setup: install
 [apple/container](https://github.com/apple/container/releases) and run
 `container system start`. The general containerized-build guide is

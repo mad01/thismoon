@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Themes</title>
+<script src="/webkit/boot.js"></script>
+<link rel="stylesheet" href="/webkit/webkit.css">
+</head>
+<body>
+<wk-header back-href="/" back-label="← Back" title="Themes" controls="font,fixation,size,reload,theme,help"></wk-header>
+<main class="wrap">
+  <wk-page-header>
+    <wk-title>Themes</wk-title>
+    <wk-subtitle>Pick a palette family for light and for dark. The toggle in the header switches between the two; every card is a live sample of that family's variant.</wk-subtitle>
+  </wk-page-header>
+  <div class="wk-theme-controls">
+    <label><input type="checkbox" id="wk-theme-system"> Follow the system appearance</label>
+    <wk-button variant="ghost" id="wk-theme-reset" role="button" tabindex="0">Reset to defaults</wk-button>
+    <span class="wk-theme-status" id="wk-theme-status"></span>
+    <span class="wk-theme-note">Saved in this browser for this host only.</span>
+  </div>
+  <div class="wk-theme-grid">
+    <section>
+      <h2 class="wk-theme-col-title">Light</h2>
+      <div id="wk-theme-light"><p class="wk-theme-empty">Loading…</p></div>
+    </section>
+    <section>
+      <h2 class="wk-theme-col-title">Dark</h2>
+      <div id="wk-theme-dark"><p class="wk-theme-empty">Loading…</p></div>
+    </section>
+  </div>
+</main>
+<script src="/webkit/webkit.js"></script>
+<script src="/webkit/themes.js"></script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 // webkit.ts — shared web-chrome bundle (globalName: Webkit)
-// Exports: init (backward-compat shim), toFixation, bootSnippet
+// Exports: init (backward-compat shim), toFixation, bootSnippet, and the theme
+// API (themeState, applyTheme, setThemeMode, setPalette, resetTheme)
 
 import { unwrapFixation, wrapFixation } from './fixation-dom.js';
 import { clampSize, SIZE_STEP, SIZE_DEFAULT } from './size.js';
@@ -40,6 +41,8 @@ export interface WebkitConfig {
 
 // ── Storage keys (global, not per-page) ──
 const THEME_KEY  = 'webkit-theme';
+/** Per-mode palette family: `webkit-palette-light` / `webkit-palette-dark`; absent = default. */
+const PALETTE_KEY_PREFIX = 'webkit-palette-';
 const FONT_KEY   = 'webkit-font';
 const SIZE_KEY   = 'webkit-size';
 const FIXATION_KEY = 'webkit-fixation';
@@ -100,6 +103,104 @@ function escAttr(s: string): string {
 function iconSvg(icon: 'refresh' | 'add'): string {
   return icon === 'refresh' ? SVG_REFRESH : SVG_ADD;
 }
+
+// ── Theme: mode + palette family ──
+// The mode key keeps light|dark and gains system; two palette keys name the
+// family per mode. boot.js resolves the same keys before first paint; this
+// module re-resolves them on the toggle, on a storage event from another tab
+// of the same origin (the themes page, say), and when the system appearance
+// changes in system mode. Every change ends in applyTheme, which sets the two
+// html attributes and dispatches wk-themechange with the resolved values.
+
+export type Theme = 'light' | 'dark';
+export type ThemeMode = Theme | 'system';
+export interface ThemeState {
+  /** What the reader chose: an explicit mode, or system. */
+  mode: ThemeMode;
+  /** The mode in effect (system resolved through prefers-color-scheme). */
+  theme: Theme;
+  /** The palette family for that mode; 'default' when none is stored. */
+  palette: string;
+}
+export type ThemeChangeDetail = ThemeState;
+
+const DARK_SCHEME = '(prefers-color-scheme: dark)';
+
+function systemTheme(): Theme {
+  return typeof matchMedia === 'function' && matchMedia(DARK_SCHEME).matches ? 'dark' : 'light';
+}
+
+/** The stored mode; anything unknown reads as light, as boot.js does. */
+export function themeMode(): ThemeMode {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === 'dark' || v === 'system' ? v : 'light';
+}
+
+/** The stored palette family for a mode, 'default' when none is set. */
+export function paletteFor(theme: Theme): string {
+  return localStorage.getItem(PALETTE_KEY_PREFIX + theme) || 'default';
+}
+
+/** The persisted theme choice, resolved. */
+export function themeState(): ThemeState {
+  const mode = themeMode();
+  const theme = mode === 'system' ? systemTheme() : mode;
+  return { mode, theme, palette: paletteFor(theme) };
+}
+
+function setThemeAttributes(s: ThemeState): void {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', s.theme);
+  if (s.palette === 'default') root.removeAttribute('data-palette');
+  else root.setAttribute('data-palette', s.palette);
+}
+
+/**
+ * Re-applies the persisted mode and family to <html> (what boot.js did before
+ * paint) and tells the page through wk-themechange, so graphs and charts
+ * recolour. Returns the state applied.
+ */
+export function applyTheme(): ThemeState {
+  const s = themeState();
+  setThemeAttributes(s);
+  document.dispatchEvent(new CustomEvent<ThemeChangeDetail>('wk-themechange', { detail: s }));
+  return s;
+}
+
+/** Persists a mode (light, dark, or system) and applies it. */
+export function setThemeMode(mode: ThemeMode): ThemeState {
+  localStorage.setItem(THEME_KEY, mode);
+  return applyTheme();
+}
+
+/** Persists the palette family for one mode ('default' or '' clears it) and applies it. */
+export function setPalette(theme: Theme, family: string): ThemeState {
+  if (!family || family === 'default') localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
+  else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
+  return applyTheme();
+}
+
+/** Removes the mode and both palette keys and applies the defaults (light, default family). */
+export function resetTheme(): ThemeState {
+  localStorage.removeItem(THEME_KEY);
+  localStorage.removeItem(PALETTE_KEY_PREFIX + 'light');
+  localStorage.removeItem(PALETTE_KEY_PREFIX + 'dark');
+  return applyTheme();
+}
+
+function initThemeSync(): void {
+  // A change made in another tab of this origin (the themes page beside a
+  // brief) lands here; `key === null` is localStorage.clear().
+  window.addEventListener('storage', e => {
+    if (e.key === null || e.key === THEME_KEY || e.key.startsWith(PALETTE_KEY_PREFIX)) applyTheme();
+  });
+  if (typeof matchMedia === 'function') {
+    matchMedia(DARK_SCHEME).addEventListener('change', () => {
+      if (themeMode() === 'system') applyTheme();
+    });
+  }
+}
+initThemeSync();
 
 function applyFont(name: string, selectEl: HTMLSelectElement): void {
   // Fall back the NAME, not just the stack: a persisted font that is no longer
@@ -295,8 +396,9 @@ class WkHeader extends HTMLElement {
   }
 
   private _applyTheme(): void {
-    const saved = (localStorage.getItem(THEME_KEY) ?? 'light') as 'light' | 'dark';
-    document.documentElement.setAttribute('data-theme', saved);
+    // Same resolution as boot.js, without the event: nothing is listening yet
+    // and the attributes are normally already in place.
+    setThemeAttributes(themeState());
   }
 
   private _wire(): void {
@@ -409,25 +511,26 @@ class WkHeader extends HTMLElement {
       });
     }
 
-    // Theme
+    // Theme. The toggle stays two-state and writes an explicit mode, which is
+    // also the way out of system mode; system itself is chosen on the themes
+    // page. The toggle reflects every change, its own or another tab's,
+    // through the event.
     const themeBtn = this.querySelector('#webkit-theme');
-    const reflectTheme = (theme: 'light' | 'dark'): void => {
+    const reflectTheme = (theme: Theme): void => {
       themeBtn?.setAttribute('aria-pressed', String(theme === 'dark'));
       themeBtn?.setAttribute(
         'aria-label',
         theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
       );
     };
-    // Reflect the initial (persisted) theme on the toggle.
-    reflectTheme((document.documentElement.getAttribute('data-theme') as 'light' | 'dark') ?? 'light');
+    reflectTheme((document.documentElement.getAttribute('data-theme') as Theme | null) ?? 'light');
+    document.addEventListener('wk-themechange', ((e: CustomEvent<ThemeChangeDetail>) => {
+      reflectTheme(e.detail.theme);
+    }) as EventListener);
 
     themeBtn?.addEventListener('click', () => {
       const current = document.documentElement.getAttribute('data-theme');
-      const next: 'light' | 'dark' = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem(THEME_KEY, next);
-      reflectTheme(next);
-      document.dispatchEvent(new CustomEvent('wk-themechange', { detail: { theme: next } }));
+      setThemeMode(current === 'dark' ? 'light' : 'dark');
     });
   }
 }
@@ -673,8 +776,16 @@ const CONTROL_HELP: Partial<Record<Control, ControlHelp>> = {
   fixation: { term: 'Fixation',    desc: 'Bolds the first half of every word so your eyes anchor on each one — a reading aid that helps many dyslexic readers move through text faster.' },
   speed:    { term: 'Speed',       desc: 'Playback speed for read-aloud — steps through 0.75× · 1× · 1.25× · 1.5× · 2×.' },
   reload:   { term: 'Reload',      desc: 'Reload the page.' },
-  theme:    { term: 'Theme',       desc: 'Toggle light and dark.' },
+  theme:    { term: 'Theme',       desc: 'Toggle light and dark. The themes page picks a palette family per mode, or follows the system.' },
 };
+
+/** The themes page link, shown under the control rows when the header has a theme toggle. */
+function helpThemesHtml(): string {
+  return (
+    `<div class="wk-help-row"><div class="wk-help-term">Themes</div>` +
+    `<div class="wk-help-desc"><a href="/webkit/themes">Choose a palette family for light and dark, or follow the system appearance.</a></div></div>`
+  );
+}
 
 // Row order in the guide, independent of the header's control order.
 const HELP_ORDER: Control[] = ['cmdk', 'font', 'size', 'fixation', 'speed', 'reload', 'theme'];
@@ -748,6 +859,7 @@ function openHelp(controls: Control[]): void {
   if (body) {
     body.innerHTML =
       helpRowsHtml(controls) +
+      (controls.includes('theme') ? helpThemesHtml() : '') +
       (controls.includes('speed') ? helpReadAloudHtml() : '') +
       helpExtraHtml();
   }

@@ -18,7 +18,8 @@ COPY tsconfig.json build.mjs ./
 COPY src ./src
 RUN npm run build
 
-# Export stage: only the build artifacts (webkit.js, webkit.css, boot.js),
+# Export stage: only the build artifacts (webkit.js, webkit.css, boot.js,
+# themes.json, themes.html, themes.js),
 # extracted with
 #   container build --target export --output type=local,dest=./dist
 FROM scratch AS export

@@ -2,7 +2,9 @@
 // font/fixation/size/reload/theme controls — used by the mad01 local web tools
 // (present, csl, catalog). The CSS/JS are authored in TypeScript under src/ and
 // compiled to dist/ (committed), which is embedded here so consumers need no
-// node toolchain. Mount Handler() at "GET /webkit/" to serve them.
+// node toolchain. Mount Handler() at "GET /webkit/" to serve them. The palette
+// is a collection of theme families (src/themes/*.json) compiled into the
+// stylesheet; Themes() and Roles() expose the same collection to Go.
 package webkit
 
 import (
@@ -10,6 +12,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -27,6 +30,19 @@ const modulePath = "github.com/mad01/thismoon/webkit"
 // browsers hold stale CSS/JS until a force-refresh). It also doubles as the
 // value returned by GET /webkit/version so the in-page poll can detect a deploy.
 var assetHash = hashFS(distFS, "dist")
+
+// themesHTML is the themes page (GET /webkit/themes): the palette picker every
+// consumer serves, so a reader picks a family per mode at the same path on
+// every tool. It is a static page that reads dist/themes.json in the browser.
+var themesHTML = mustRead("dist/themes.html")
+
+func mustRead(path string) []byte {
+	b, err := distFS.ReadFile(path)
+	if err != nil {
+		panic(fmt.Sprintf("webkit: embedded %s missing: %v", path, err))
+	}
+	return b
+}
 
 // hashFS walks fsys under root in a stable (lexical) file order and folds every
 // file's path and contents into one SHA-256, returning a short hex prefix.
@@ -80,6 +96,14 @@ func Handler() http.Handler {
 			})
 			return
 		}
+		// The themes page is a document, not an asset: no-cache without the
+		// ETag, the same treatment NoCacheHTML gives consumer pages.
+		if r.URL.Path == "/webkit/themes" {
+			NoCacheHTML(w)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(themesHTML)
+			return
+		}
 		etag := `"` + assetHash + `"`
 		if r.Header.Get("If-None-Match") == etag {
 			w.WriteHeader(http.StatusNotModified)
@@ -110,8 +134,9 @@ func BootScript() template.HTML {
 	return template.HTML(`<script src="/webkit/boot.js"></script>`)
 }
 
-// FS returns the embedded dist filesystem (webkit.css, webkit.js) for callers
-// that prefer to read the assets directly rather than serve them over HTTP.
+// FS returns the embedded dist filesystem (webkit.css, webkit.js, boot.js,
+// themes.json, and the themes page) for callers that prefer to read the assets
+// directly rather than serve them over HTTP.
 func FS() fs.FS {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {

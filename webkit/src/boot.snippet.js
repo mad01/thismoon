@@ -7,11 +7,18 @@
 //
 // Plain runnable IIFE (no module syntax) so dist/boot.js works as a classic
 // blocking <script src> in <head>, before any paint and before webkit.js.
-// Mirrors THEME_KEY / SIZE_KEY and the clampSize bounds in src/webkit.ts.
+// Mirrors THEME_KEY / PALETTE_KEY_PREFIX / SIZE_KEY and the clampSize bounds
+// in src/webkit.ts, and the mode and family resolution of applyTheme there:
+// `system` follows prefers-color-scheme, and the family key for the resolved
+// mode becomes data-palette (absent for the default family).
 export const bootSnippet =
   "(function(){try{" +
   "var t=localStorage.getItem('webkit-theme')||'light';" +
+  "if(t==='system'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}" +
+  "if(t!=='dark'){t='light';}" +
   "document.documentElement.setAttribute('data-theme',t);" +
+  "var p=localStorage.getItem('webkit-palette-'+t);" +
+  "if(p&&p!=='default'){document.documentElement.setAttribute('data-palette',p);}" +
   "var s=parseInt(localStorage.getItem('webkit-size'),10);" +
   "if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}" +
   "}catch(e){}})();";
