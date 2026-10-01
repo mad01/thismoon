@@ -147,7 +147,7 @@ func rerenderOne(ctx context.Context, st store.Store, id string) (string, error)
 		if err != nil {
 			return "", fmt.Errorf("load deck source: %w", err)
 		}
-		c, err := render.Compile(raw, p.Title)
+		c, err := render.CompileDeck(raw, p.Title)
 		if err != nil {
 			return "", fmt.Errorf("render deck: %w", err)
 		}

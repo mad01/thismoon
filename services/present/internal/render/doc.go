@@ -31,10 +31,12 @@ type Doc struct {
 	Sections []Section `json:"sections"`
 
 	// Deck chrome: the view's furniture around the slides, read by the deck
-	// view only (the brief ignores every one of them). All optional; a Doc
-	// that sets none renders as it did before they existed. They travel to
+	// view only; the brief ignores every one of them, and RenderDoc emits
+	// nothing for them. All optional; a Doc that sets none renders as it did
+	// before they existed. In the deck rendition (RenderDeck) they travel to
 	// the browser as one JSON script island at the head of the fragment,
-	// emitted only when at least one is set.
+	// emitted only when at least one is set, and the presenter becomes a
+	// byline under the meta line.
 	Logo         string `json:"logo,omitempty"`          // "" = the embedded repo logo, "none" hides it, an http(s) URL replaces it
 	LogoPosition string `json:"logo_position,omitempty"` // bottom-right (default), bottom-left, top-left, top-right
 	Progress     string `json:"progress,omitempty"`      // dots (default), bar, none
@@ -486,9 +488,9 @@ const docTemplateSrc = `{{with .Chrome}}<script type="application/json" class="d
 {{- with .Meta}}
 <div class="brief-meta">{{.}}</div>
 {{- end}}
-{{- with .Presenter}}
+{{- if .Deck}}{{with .Presenter}}
 <div class="brief-presenter">{{.}}</div>
-{{- end}}
+{{- end}}{{end}}
 {{- with .Summary}}
 <div class="brief-summary" data-fixation>{{inlineMd .}}</div>
 {{- end}}
@@ -807,8 +809,20 @@ func chromeSpec(d Doc) template.JS {
 	return template.JS(out)
 }
 
-// RenderDoc converts a Doc to an HTML body fragment.
+// RenderDoc converts a Doc to the brief's HTML body fragment. The deck
+// chrome fields are validated but emit nothing: the brief ignores them.
 func RenderDoc(d Doc, title string) (string, error) {
+	return renderDoc(d, title, false)
+}
+
+// RenderDeck converts a Doc to the deck's HTML body fragment: the brief's
+// markup plus the chrome island at its head and the presenter byline under
+// the meta line, each only when the Doc sets the field.
+func RenderDeck(d Doc, title string) (string, error) {
+	return renderDoc(d, title, true)
+}
+
+func renderDoc(d Doc, title string, deck bool) (string, error) {
 	if err := validateDoc(d); err != nil {
 		return "", fmt.Errorf("render doc: %w", err)
 	}
@@ -818,10 +832,14 @@ func RenderDoc(d Doc, title string) (string, error) {
 	type docWithTitle struct {
 		Doc
 		Title  string
+		Deck   bool
 		Chrome template.JS
 	}
+	data := docWithTitle{Doc: d, Title: title, Deck: deck}
+	if deck {
+		data.Chrome = chromeSpec(d)
+	}
 	var buf bytes.Buffer
-	data := docWithTitle{Doc: d, Title: title, Chrome: chromeSpec(d)}
 	if err := docTemplate.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("render doc: %w", err)
 	}
