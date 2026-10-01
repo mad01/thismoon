@@ -9,6 +9,45 @@ import {
   AUTHORED_ROLES, REFERENCE_ROLES, TONES,
   mix, alpha, luminance, deriveVariant, validateFamily, resolveFamily, renderCSS, loadFamilies,
 } from '../src/themes.mjs';
+import { bootSnippetFor } from '../src/boot.snippet.js';
+
+const shippedDir = new URL('../src/themes', import.meta.url).pathname;
+
+// Runs the boot snippet against a fake document, storage, and media query,
+// and returns the html attributes it set.
+function runBoot(families, store, systemDark = false) {
+  const attrs = {};
+  const document = { documentElement: { setAttribute: (k, v) => { attrs[k] = v; }, style: {} } };
+  const localStorage = { getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null) };
+  const window = { matchMedia: () => ({ matches: systemDark }) };
+  new Function('document', 'localStorage', 'window', bootSnippetFor(families))(document, localStorage, window);
+  return attrs;
+}
+
+test('boot: a shipped family becomes data-palette; default, unknown, or malformed names leave it unset', () => {
+  const fams = ['default', 'nord'];
+  assert.deepEqual(runBoot(fams, { 'webkit-theme': 'dark', 'webkit-palette-dark': 'nord' }), { 'data-theme': 'dark', 'data-palette': 'nord' });
+  assert.deepEqual(runBoot(fams, { 'webkit-theme': 'dark', 'webkit-palette-dark': 'default' }), { 'data-theme': 'dark' });
+  assert.deepEqual(runBoot(fams, { 'webkit-theme': 'dark', 'webkit-palette-dark': 'dracula' }), { 'data-theme': 'dark' });
+  assert.deepEqual(runBoot(fams, { 'webkit-theme': 'dark', 'webkit-palette-dark': 'Nord"x' }), { 'data-theme': 'dark' });
+  assert.deepEqual(runBoot(fams, { 'webkit-palette-light': 'nord', 'webkit-palette-dark': 'default' }), { 'data-theme': 'light', 'data-palette': 'nord' });
+});
+
+test('boot: system resolves through prefers-color-scheme and reads that mode\'s family', () => {
+  const fams = ['default', 'nord', 'one'];
+  const store = { 'webkit-theme': 'system', 'webkit-palette-light': 'one', 'webkit-palette-dark': 'nord' };
+  assert.deepEqual(runBoot(fams, store, true), { 'data-theme': 'dark', 'data-palette': 'nord' });
+  assert.deepEqual(runBoot(fams, store, false), { 'data-theme': 'light', 'data-palette': 'one' });
+  assert.deepEqual(runBoot(fams, { 'webkit-theme': 'bogus' }), { 'data-theme': 'light' });
+});
+
+test('boot: the snippet is a classic IIFE carrying the family list verbatim', () => {
+  const fams = loadFamilies(shippedDir).map(f => f.name);
+  const src = bootSnippetFor(fams);
+  assert.ok(src.startsWith('(function(){try{'));
+  assert.ok(src.includes(JSON.stringify(fams)));
+  assert.ok(!/\b(import|export)\b/.test(src));
+});
 
 const variant = {
   variant: 'Test',
@@ -102,7 +141,7 @@ test('renderCSS: default doubles as :root and the bare dark selector, others are
 });
 
 test('the shipped collection loads: default first, both variants, licence and source on every file', () => {
-  const families = loadFamilies(new URL('../src/themes', import.meta.url).pathname);
+  const families = loadFamilies(shippedDir);
   assert.equal(families[0].name, 'default');
   assert.ok(families[0].light && families[0].dark);
   assert.ok(families.length >= 8);

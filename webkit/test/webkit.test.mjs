@@ -38,7 +38,9 @@ test('clampSize: passes through values within range', () => {
   assert.equal(clampSize(24), 24);
 });
 
-import { bootSnippet } from '../src/boot.snippet.js';
+import { bootSnippetFor } from '../src/boot.snippet.js';
+
+const bootSnippet = bootSnippetFor(['default']);
 
 // The boot snippet can't import size.ts (it must stay a plain classic-script
 // string), so it hardcodes the clamp bounds. This pins them to the real
