@@ -71,38 +71,39 @@
   // The page's graph script carries data only (elements, engine, direction);
   // the Cytoscape style is built here at load, so a palette, box, or tone
   // change reaches every stored graph the next time it is opened, with no
-  // rerender. getGraphColors reads the theme at call time and the page
-  // rebuilds the instance on wk-themechange. graph.go validates tones and
-  // module colors against the same lists (graphTones, moduleColors).
+  // rerender. getGraphColors reads the palette roles at call time and the
+  // page rebuilds the instance on wk-themechange, which fires on the toggle,
+  // on a family change made on the themes page in another tab, and on a
+  // system appearance change. graph.go validates tones and module colors
+  // against the same lists (graphTones, moduleColors).
   var GRAPH_TONES = ['neutral', 'green', 'red', 'blue', 'amber', 'purple'];
   var MODULE_COLORS = 4;
+  function cssVar(name, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  // Every colour is a palette role read from the stylesheet at call time, so
+  // the graph follows the family the reader picked (webkit emits each role
+  // as a literal hex, which Cytoscape needs; a var() would not resolve).
+  function role(name) {
+    return cssVar('--' + name, '#808080');
+  }
   function getGraphColors() {
-    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    return dark
-      ? { bg: '#1A1916', centerBg: '#3A2A20', centerBorder: '#E8956A', centerText: '#F5F3EF',
-          leafBg: '#252320', leafBorder: '#4A453D', leafText: '#F5F3EF',
-          modBorder: ['#E8956A', '#7AAAE8', '#6BC48A', '#8B6BB0'],
-          edge: '#4A453D', edgeArrow: '#6B6459', hot: '#E8956A',
-          registryBg: '#35322C', registryBorder: '#4A453D', registryText: '#B8B2A7',
-          tones: {
-            neutral: { bg: '#35322C', border: '#5A544B', text: '#E6E1D8' },
-            green:   { bg: '#1F3A2B', border: '#6BC48A', text: '#C8EBD5' },
-            red:     { bg: '#3F2A22', border: '#E8956A', text: '#F3CDBB' },
-            blue:    { bg: '#1F2E42', border: '#7AAAE8', text: '#C8DAF3' },
-            amber:   { bg: '#3E3418', border: '#D9AE55', text: '#F0DEB0' },
-            purple:  { bg: '#32283F', border: '#A98BCB', text: '#DDD0EA' } } }
-      : { bg: '#FFFFFF', centerBg: '#FFF5F0', centerBorder: '#C4704B', centerText: '#252320',
-          leafBg: '#FFFFFF', leafBorder: '#D8D4CD', leafText: '#252320',
-          modBorder: ['#C4704B', '#5B8EC4', '#4A9E6B', '#8B6BB0'],
-          edge: '#D8D4CD', edgeArrow: '#B8B2A7', hot: '#C4704B',
-          registryBg: '#EEECE8', registryBorder: '#D8D4CD', registryText: '#6B6459',
-          tones: {
-            neutral: { bg: '#EEECE8', border: '#C9C4BB', text: '#3D3A34' },
-            green:   { bg: '#E6F4EC', border: '#4A9E6B', text: '#1F5C38' },
-            red:     { bg: '#FBEAE3', border: '#C4704B', text: '#7A3A1F' },
-            blue:    { bg: '#E7EFF9', border: '#5B8EC4', text: '#2A4E75' },
-            amber:   { bg: '#FBF1DC', border: '#C9973A', text: '#6B4E12' },
-            purple:  { bg: '#EFE8F5', border: '#8B6BB0', text: '#4E3A6B' } } };
+    var tones = {};
+    GRAPH_TONES.forEach(function (t) {
+      tones[t] = { bg: role('tone-' + t + '-bg'), border: role('tone-' + t + '-border'), text: role('tone-' + t + '-text') };
+    });
+    var modBorder = [];
+    for (var i = 1; i <= MODULE_COLORS; i++) modBorder.push(role('graph-module-' + i));
+    return {
+      bg: role('graph-bg'),
+      centerBg: role('graph-center-bg'), centerBorder: role('graph-center-border'), centerText: role('graph-center-text'),
+      leafBg: role('graph-leaf-bg'), leafBorder: role('graph-leaf-border'), leafText: role('graph-leaf-text'),
+      modBorder: modBorder,
+      edge: role('graph-edge'), edgeArrow: role('graph-edge-arrow'), hot: role('graph-hot'),
+      registryBg: role('graph-registry-bg'), registryBorder: role('graph-registry-border'), registryText: role('graph-registry-text'),
+      tones: tones
+    };
   }
   // Elements come as the array graph.go emits or as {nodes, edges}.
   function elementList(elements) {
@@ -234,22 +235,21 @@
   // three families: cartesian (bar, line, area, sparkline, stacked-bar,
   // horizontal-bar, scatter), radial (doughnut), and sankey (needs the vendored
   // chartjs-chart-sankey plugin).
-  function cssVar(name, fallback) {
-    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
-  }
+  var CHART_SERIES = 4;
+  // Palette roles, read at call time like the graph's: series-1 to series-4,
+  // the grid and text inks, and the surface for the gaps between stacked
+  // segments and slices.
   function getChartColors() {
-    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    var c = dark
-      ? { series: ['#E8956A', '#7AAAE8', '#6BC48A', '#8B6BB0'], grid: '#4A453D', text: '#B8B2A7', label: '#F5F3EF' }
-      : { series: ['#C4704B', '#5B8EC4', '#4A9E6B', '#8B6BB0'], grid: '#D8D4CD', text: '#6B6459', label: '#252320' };
-    // Surface color for the gaps between stacked segments and slices.
-    c.surface = cssVar('--card-bg', dark ? '#252320' : '#FFFFFF');
-    return c;
+    var series = [];
+    for (var i = 1; i <= CHART_SERIES; i++) series.push(role('series-' + i));
+    return { series: series, grid: role('chart-grid'), text: role('chart-text'), label: role('chart-label'), surface: role('card-bg') };
   }
+  // A stored spec names a series colour by its legacy name (terracotta, blue,
+  // green, purple, the default family's first four) or by its role
+  // (series-1 to series-4); both land on the same index in every family.
+  var SERIES_NAMES = { terracotta: 0, blue: 1, green: 2, purple: 3, 'series-1': 0, 'series-2': 1, 'series-3': 2, 'series-4': 3 };
   function chartSeriesColor(colors, name, i) {
-    var map = { terracotta: 0, blue: 1, green: 2, purple: 3 };
-    var idx = (name && Object.prototype.hasOwnProperty.call(map, name)) ? map[name] : (i % colors.series.length);
+    var idx = (name && Object.prototype.hasOwnProperty.call(SERIES_NAMES, name)) ? SERIES_NAMES[name] : (i % colors.series.length);
     return colors.series[idx];
   }
   function axisTitle(colors, text) {

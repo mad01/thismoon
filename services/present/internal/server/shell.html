@@ -29,12 +29,12 @@
    light mode and near-white in dark, which reads harsh in a monospace face,
    more so with fixation's bold halves. The brief's summary and lists already
    sit at the secondary ink; this moves the rest of the content (paragraphs,
-   titles, headings, table cells, kv values) one palette step toward it while
-   the header chrome keeps webkit's default. The root re-resolves its own
-   color: elements that only inherit (the title, section headings) would
-   otherwise keep the computed color body derived from the unchanged variable. */
-#root { --text-1: var(--wg600); color: var(--text-1); }
-[data-theme="dark"] #root { --text-1: var(--wg300); }
+   titles, headings, table cells, kv values) to the palette's text-body role,
+   a step between the two inks in every family, while the header chrome keeps
+   webkit's default. The root re-resolves its own color: elements that only
+   inherit (the title, section headings) would otherwise keep the computed
+   color body derived from the unchanged variable. */
+#root { --text-1: var(--text-body); color: var(--text-1); }
 
 .brief-title {
   font-size: 2.125rem;
@@ -187,7 +187,7 @@ html.presenting .deck-bar:hover, html.presenting .deck-bar:focus-within { opacit
 </style>
 </head>
 <body>
-<wk-header back-href="/" back-label="← All" title="Brief" controls="cmdk,font,fixation,size,speed,reload,theme,help" fixation-targets="[data-fixation], wk-panel-title, wk-panel-subtitle, wk-kv-value, wk-callout, wk-section p, wk-section li"><a data-extra class="btn btn-ghost" id="deckLink" hidden title="Open this page as a slide deck">Slides</a><a data-extra class="btn btn-ghost" id="briefLink" hidden title="Read this page as a brief">Brief</a><button data-extra class="btn btn-ghost" id="shareBtn" hidden>Share</button></wk-header>
+<wk-header back-href="/" back-label="← All" title="Brief" controls="cmdk,font,fixation,size,speed,reload,theme,help" fixation-targets="[data-fixation], wk-panel-title, wk-panel-subtitle, wk-kv-value, wk-callout, wk-section p, wk-section li"><a data-nav href="/webkit/themes">Themes</a><a data-extra class="btn btn-ghost" id="deckLink" hidden title="Open this page as a slide deck">Slides</a><a data-extra class="btn btn-ghost" id="briefLink" hidden title="Read this page as a brief">Brief</a><button data-extra class="btn btn-ghost" id="shareBtn" hidden>Share</button></wk-header>
 <main id="root"></main>
 <wk-modal hidden id="share-modal">
   <wk-modal-panel role="dialog" aria-modal="true" aria-labelledby="share-heading">

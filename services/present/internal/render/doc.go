@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/mad01/thismoon/webkit"
 )
 
 // Doc is the structured input format for page content. The model passes this
@@ -66,7 +68,7 @@ type Block struct {
 	// t=panel
 	Title    string `json:"title,omitempty"`
 	Subtitle string `json:"sub,omitempty"`
-	Accent   string `json:"accent,omitempty"` // CSS variable name, e.g. terracotta
+	Accent   string `json:"accent,omitempty"` // a palette role (webkit.Roles) or the alias terracotta
 
 	// t=progress
 	Percent float64 `json:"pct,omitempty"`
@@ -520,8 +522,39 @@ func chartSpec(b Block) template.JS {
 	return template.JS(out)
 }
 
+// accentAliases are accent names older pages carry that are not palette
+// roles. Each is declared in webkit.css as an alias of the role it names, so
+// the stored var() keeps resolving under every family.
+var accentAliases = map[string]string{"terracotta": "primary"}
+
+// validAccent reports whether name may follow a panel's accent field: a
+// palette role every family resolves, or a legacy alias.
+func validAccent(name string) bool {
+	_, alias := accentAliases[name]
+	return alias || webkit.IsRole(name)
+}
+
+// validateAccents returns an error naming the first panel accent the palette
+// does not define, the way validateTones does for graph nodes.
+func validateAccents(d Doc) error {
+	for _, s := range d.Sections {
+		for _, b := range s.Blocks {
+			if b.T == "panel" && b.Accent != "" && !validAccent(b.Accent) {
+				return fmt.Errorf(
+					"panel %q: unknown accent %q (want one of %s)",
+					b.Title, b.Accent, strings.Join(webkit.Roles(), ", "),
+				)
+			}
+		}
+	}
+	return nil
+}
+
 // RenderDoc converts a Doc to an HTML body fragment.
 func RenderDoc(d Doc, title string) (string, error) {
+	if err := validateAccents(d); err != nil {
+		return "", fmt.Errorf("render doc: %w", err)
+	}
 	d.normalize()
 	title = normalizeNames(title)
 
