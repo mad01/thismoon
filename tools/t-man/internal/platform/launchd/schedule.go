@@ -1,6 +1,10 @@
 package launchd
 
-import "github.com/mad01/thismoon/tools/t-man/internal/service"
+import (
+	"fmt"
+
+	"github.com/mad01/thismoon/tools/t-man/internal/service"
+)
 
 // CalendarInterval is one StartCalendarInterval dict as launchd reads it. A
 // nil field is omitted from the plist, which launchd treats as a wildcard.
@@ -12,13 +16,34 @@ type CalendarInterval struct {
 	Month   *int `plist:"Month,omitempty"`
 }
 
+// CalendarIntervals is StartCalendarInterval as t-man reads and writes it.
+// launchd accepts a single dict or an array of dicts, so decoding takes
+// either; encoding always produces the array form.
+type CalendarIntervals []CalendarInterval
+
+// UnmarshalPlist implements plist.Unmarshaler: an array of dicts decodes as
+// is, and a single dict becomes a one-element list.
+func (c *CalendarIntervals) UnmarshalPlist(unmarshal func(any) error) error {
+	var many []CalendarInterval
+	if err := unmarshal(&many); err == nil {
+		*c = many
+		return nil
+	}
+	var one CalendarInterval
+	if err := unmarshal(&one); err != nil {
+		return fmt.Errorf("StartCalendarInterval is neither a dict nor an array of dicts: %w", err)
+	}
+	*c = CalendarIntervals{one}
+	return nil
+}
+
 // calendarToPlist maps definition entries onto the plist shape. A nil input
 // stays nil so an unscheduled service renders no StartCalendarInterval key.
-func calendarToPlist(entries []service.CalendarEntry) []CalendarInterval {
+func calendarToPlist(entries []service.CalendarEntry) CalendarIntervals {
 	if len(entries) == 0 {
 		return nil
 	}
-	out := make([]CalendarInterval, len(entries))
+	out := make(CalendarIntervals, len(entries))
 	for i, e := range entries {
 		out[i] = CalendarInterval{
 			Minute: e.Minute, Hour: e.Hour, Day: e.Day, Weekday: e.Weekday, Month: e.Month,
@@ -29,7 +54,7 @@ func calendarToPlist(entries []service.CalendarEntry) []CalendarInterval {
 
 // calendarFromPlist is the inverse of calendarToPlist, so a parsed plist
 // hashes identically to the definition that produced it.
-func calendarFromPlist(intervals []CalendarInterval) []service.CalendarEntry {
+func calendarFromPlist(intervals CalendarIntervals) []service.CalendarEntry {
 	if len(intervals) == 0 {
 		return nil
 	}

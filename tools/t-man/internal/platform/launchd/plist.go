@@ -49,10 +49,20 @@ type LaunchdPlist struct {
 	StandardErrorPath    string            `plist:"StandardErrorPath,omitempty"`
 	// StartCalendarInterval and StartInterval are the two launchd triggers
 	// for a scheduled job; t-man always writes the calendar form as an array
-	// of dicts, which launchd accepts alongside the single-dict form.
-	StartCalendarInterval []CalendarInterval `plist:"StartCalendarInterval,omitempty"`
-	StartInterval         int                `plist:"StartInterval,omitempty"`
-	TManMetadata          TManMetadata       `plist:"TManMetadata"`
+	// of dicts and reads the single-dict form launchd also accepts.
+	StartCalendarInterval CalendarIntervals `plist:"StartCalendarInterval,omitempty"`
+	StartInterval         int               `plist:"StartInterval,omitempty"`
+	TManMetadata          TManMetadata      `plist:"TManMetadata"`
+}
+
+// plistOwnership is the one slice of a plist the ownership check reads.
+// Decoding only this keeps the check independent of every other key's
+// shape, so an unrelated plist in the directory (a dict-form
+// StartCalendarInterval, a KeepAlive dict) can never fail it.
+type plistOwnership struct {
+	TManMetadata struct {
+		ManagedBy string `plist:"ManagedBy"`
+	} `plist:"TManMetadata"`
 }
 
 // GeneratePlist creates a launchd plist from a service definition
@@ -167,14 +177,20 @@ func ParsePlist(data []byte) (*LaunchdPlist, error) {
 	return &plistData, nil
 }
 
-// IsManagedByTMan checks if a plist is managed by t-man
+// IsManagedByTMan checks if a plist is managed by t-man. It decodes only
+// the ownership metadata, so it answers for any well-formed plist.
 func IsManagedByTMan(data []byte) (bool, error) {
-	plistData, err := ParsePlist(data)
-	if err != nil {
-		return false, err
+	if len(data) == 0 {
+		return false, fmt.Errorf("plist data cannot be empty")
 	}
 
-	return plistData.TManMetadata.ManagedBy == ManagedByValue, nil
+	var owner plistOwnership
+	decoder := plist.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&owner); err != nil {
+		return false, fmt.Errorf("failed to decode plist: %w", err)
+	}
+
+	return owner.TManMetadata.ManagedBy == ManagedByValue, nil
 }
 
 // HasMarkerComment checks if the plist content contains the t-man marker comment

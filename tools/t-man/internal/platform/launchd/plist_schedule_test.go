@@ -59,7 +59,7 @@ func TestGeneratePlist_CalendarSchedule(t *testing.T) {
 
 	data, parsed, got := roundTrip(t, def)
 
-	want := []CalendarInterval{
+	want := CalendarIntervals{
 		{Hour: ip(7), Minute: ip(30)},
 		{Weekday: ip(1), Hour: ip(9), Minute: ip(0)},
 	}
