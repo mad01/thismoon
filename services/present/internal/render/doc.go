@@ -8,10 +8,13 @@ package render
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"html/template"
+	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,6 +29,30 @@ type Doc struct {
 	Meta     string    `json:"meta,omitempty"`
 	Chips    []Chip    `json:"chips,omitempty"`
 	Sections []Section `json:"sections"`
+
+	// Deck chrome: the view's furniture around the slides, read by the deck
+	// view only (the brief ignores every one of them). All optional; a Doc
+	// that sets none renders as it did before they existed. They travel to
+	// the browser as one JSON script island at the head of the fragment,
+	// emitted only when at least one is set.
+	Logo         string `json:"logo,omitempty"`          // "" = the embedded repo logo, "none" hides it, an http(s) URL replaces it
+	LogoPosition string `json:"logo_position,omitempty"` // bottom-right (default), bottom-left, top-left, top-right
+	Progress     string `json:"progress,omitempty"`      // dots (default), bar, none
+	Presenter    string `json:"presenter,omitempty"`     // byline under the meta line on the title slide and in the footer
+	Footer       string `json:"footer,omitempty"`        // footer text; "" = the deck title, "none" suppresses the line
+}
+
+// Deck chrome vocabularies, validated at compile time like a panel accent.
+var (
+	logoPositions = []string{"bottom-right", "bottom-left", "top-left", "top-right"}
+	progressKinds = []string{"dots", "bar", "none"}
+)
+
+// hasChrome reports whether any deck chrome field is set, which is when the
+// renderer emits the chrome island.
+func (d Doc) hasChrome() bool {
+	return d.Logo != "" || d.LogoPosition != "" || d.Progress != "" || d.Presenter != "" ||
+		d.Footer != ""
 }
 
 // Chip is an inline tag rendered in a chip-row.
@@ -43,20 +70,37 @@ type Section struct {
 
 // Block is a discriminated union on T.
 type Block struct {
-	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, code, html
+	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, code, html, columns, stat, quote, details
 
-	// t=p, t=callout, t=h3, t=code, t=html
+	// t=p, t=callout, t=h3, t=code, t=html, t=quote
 	Text string `json:"text,omitempty"`
 
 	// t=code
 	Lang string `json:"lang,omitempty"` // language badge + Prism grammar hint; empty = "text"
 
 	// t=callout
-	Severity string `json:"sev,omitempty"` // info, warn
+	Severity string `json:"sev,omitempty"` // info, warn, ok, error
 
-	// t=table
+	// t=table. Cols shares its wire key with a columns block's Columns; the
+	// custom (un)marshal below tells them apart by T.
 	Cols []string   `json:"cols,omitempty"`
 	Rows [][]string `json:"rows,omitempty"`
+
+	// t=columns: two or three columns of blocks, equal widths, one column on
+	// a narrow screen. Wire key cols. A column may hold any block but graph,
+	// columns, and details.
+	Columns [][]Block `json:"-"`
+
+	// t=stat: a large figure (Value) over a Label, with an optional Subtitle line.
+	Value string `json:"value,omitempty"`
+
+	// t=quote: Text is the quotation, Cite the attribution.
+	Cite string `json:"cite,omitempty"`
+
+	// t=details: a collapsible Summary line over Blocks, closed by default.
+	// The body may hold any block but graph, columns, and details.
+	Summary string  `json:"summary,omitempty"`
+	Blocks  []Block `json:"blocks,omitempty"`
 
 	// t=kv
 	KV []KVPair `json:"kv,omitempty"`
@@ -80,6 +124,50 @@ type Block struct {
 	XUnit  string        `json:"xunit,omitempty"`  // x-axis unit label (scatter only)
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
 	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
+}
+
+// blockFields is Block without its methods, so the (un)marshalers below can
+// hand the plain struct to encoding/json without recursing into themselves.
+type blockFields Block
+
+// UnmarshalJSON reads cols by block type: a table's cols are its header
+// strings, a columns block's cols are its arrays of blocks. Every other
+// field decodes as the struct tags say.
+func (b *Block) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		blockFields
+		Cols json.RawMessage `json:"cols"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*b = Block(raw.blockFields)
+	if len(raw.Cols) == 0 || string(raw.Cols) == "null" {
+		return nil
+	}
+	if b.T == "columns" {
+		if err := json.Unmarshal(raw.Cols, &b.Columns); err != nil {
+			return fmt.Errorf("columns block: cols must be arrays of blocks: %w", err)
+		}
+		return nil
+	}
+	if err := json.Unmarshal(raw.Cols, &b.Cols); err != nil {
+		return fmt.Errorf("%s block: cols must be strings: %w", b.T, err)
+	}
+	return nil
+}
+
+// MarshalJSON writes a columns block's Columns under cols; every other block
+// marshals exactly as before, so the canonical JSON the store keeps for an
+// existing page does not move.
+func (b Block) MarshalJSON() ([]byte, error) {
+	if b.T != "columns" {
+		return json.Marshal(blockFields(b))
+	}
+	return json.Marshal(struct {
+		blockFields
+		Cols [][]Block `json:"cols,omitempty"`
+	}{blockFields(b), b.Columns})
 }
 
 // KVPair is a label-value pair within a kv block.
@@ -341,40 +429,64 @@ var (
 	blockTemplates *template.Template
 )
 
+// maxBlockDepth is how deep blocks nest. A container (columns, details)
+// holds plain blocks only, so a nested block sits at depth 1 and nothing
+// sits below it.
+const maxBlockDepth = 1
+
+// isContainer reports whether b holds other blocks.
+func isContainer(b Block) bool {
+	return b.T == "columns" || b.T == "details"
+}
+
+func renderError(msg string) template.HTML {
+	return template.HTML(fmt.Sprintf(`<!-- render error: %s -->`, html.EscapeString(msg)))
+}
+
+// renderBlockAt renders one block at a nesting depth. Past the depth limit,
+// or a container below the top level, it emits an error comment instead of
+// recursing: validateBlocks refuses such a Doc before it gets here, so this
+// is the guard for a Block built in Go that skipped validation.
+func renderBlockAt(b Block, depth int) template.HTML {
+	if depth > maxBlockDepth || (depth > 0 && isContainer(b)) {
+		return renderError(b.T + " block nested too deep")
+	}
+	var buf bytes.Buffer
+	if err := blockTemplates.ExecuteTemplate(&buf, "block-"+b.T, b); err != nil {
+		return renderError(err.Error())
+	}
+	return template.HTML(buf.String())
+}
+
 func init() {
+	// renderBlock and renderNested read blockTemplates when a template runs,
+	// never at parse time, so the block templates can call them to render
+	// the blocks a container holds.
 	funcs := template.FuncMap{
-		"inlineMd":  inlineMd,
-		"sectionID": sectionID,
-		"langClass": langClass,
-		"rawHTML":   func(s string) template.HTML { return template.HTML(s) },
-		"chartSpec": chartSpec,
-		"renderBlock": func(b Block) template.HTML {
-			return "" // placeholder, replaced below
-		},
+		"inlineMd":     inlineMd,
+		"sectionID":    sectionID,
+		"langClass":    langClass,
+		"rawHTML":      func(s string) template.HTML { return template.HTML(s) },
+		"chartSpec":    chartSpec,
+		"renderBlock":  func(b Block) template.HTML { return renderBlockAt(b, 0) },
+		"renderNested": func(b Block) template.HTML { return renderBlockAt(b, 1) },
 	}
 
 	blockTemplates = template.Must(
 		template.New("blocks").Funcs(funcs).Parse(blockTemplatesSrc),
 	)
-
-	funcs["renderBlock"] = func(b Block) template.HTML {
-		var buf bytes.Buffer
-		if err := blockTemplates.ExecuteTemplate(&buf, "block-"+b.T, b); err != nil {
-			return template.HTML(
-				fmt.Sprintf(`<!-- render error: %s -->`, html.EscapeString(err.Error())),
-			)
-		}
-		return template.HTML(buf.String())
-	}
-
 	docTemplate = template.Must(
 		template.New("doc").Funcs(funcs).Parse(docTemplateSrc),
 	)
 }
 
-const docTemplateSrc = `<h1 class="brief-title" data-fixation>{{.Title}}</h1>
+const docTemplateSrc = `{{with .Chrome}}<script type="application/json" class="deck-chrome">{{.}}</script>
+{{end}}<h1 class="brief-title" data-fixation>{{.Title}}</h1>
 {{- with .Meta}}
 <div class="brief-meta">{{.}}</div>
+{{- end}}
+{{- with .Presenter}}
+<div class="brief-presenter">{{.}}</div>
 {{- end}}
 {{- with .Summary}}
 <div class="brief-summary" data-fixation>{{inlineMd .}}</div>
@@ -458,7 +570,39 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 
 {{define "block-code"}}<pre class="wk-code-block"><code class="language-{{langClass .Lang}}">{{.Text}}</code></pre>{{end}}
 
-{{define "block-html"}}{{rawHTML .Text}}{{end}}`
+{{define "block-html"}}{{rawHTML .Text}}{{end}}
+
+{{define "block-columns"}}<wk-columns cols="{{len .Columns}}">
+{{- range .Columns}}
+  <wk-col>
+{{- range .}}
+    {{renderNested .}}
+{{- end}}
+  </wk-col>
+{{- end}}
+</wk-columns>{{end}}
+
+{{define "block-stat"}}<wk-stat>
+  <wk-stat-value>{{.Value}}</wk-stat-value>
+  <wk-stat-label data-fixation>{{inlineMd .Label}}</wk-stat-label>
+{{- with .Subtitle}}
+  <wk-stat-sub data-fixation>{{inlineMd .}}</wk-stat-sub>
+{{- end}}
+</wk-stat>{{end}}
+
+{{define "block-quote"}}<blockquote>
+  <p data-fixation>{{inlineMd .Text}}</p>
+{{- with .Cite}}
+  <cite>{{inlineMd .}}</cite>
+{{- end}}
+</blockquote>{{end}}
+
+{{define "block-details"}}<details>
+  <summary data-fixation>{{inlineMd .Summary}}</summary>
+{{- range .Blocks}}
+  {{renderNested .}}
+{{- end}}
+</details>{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
 // names like JIRA render as words, not spelled-out acronyms. Code blocks are
@@ -467,36 +611,54 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 func (d *Doc) normalize() {
 	d.Summary = normalizeNames(d.Summary)
 	d.Meta = normalizeNames(d.Meta)
+	d.Presenter = normalizeNames(d.Presenter)
+	d.Footer = normalizeNames(d.Footer)
 	for i := range d.Chips {
 		d.Chips[i].Text = normalizeNames(d.Chips[i].Text)
 	}
 	for i := range d.Sections {
 		d.Sections[i].Heading = normalizeNames(d.Sections[i].Heading)
-		for j := range d.Sections[i].Blocks {
-			b := &d.Sections[i].Blocks[j]
-			if b.T == "code" {
-				continue
-			}
-			b.Text = normalizeNames(b.Text)
-			b.Title = normalizeNames(b.Title)
-			b.Subtitle = normalizeNames(b.Subtitle)
-			b.Label = normalizeNames(b.Label)
-			for k := range b.Items {
-				b.Items[k] = normalizeNames(b.Items[k])
-			}
-			for k := range b.KV {
-				b.KV[k].K = normalizeNames(b.KV[k].K)
-				b.KV[k].V = normalizeNames(b.KV[k].V)
-			}
-			for k := range b.Cols {
-				b.Cols[k] = normalizeNames(b.Cols[k])
-			}
-			for k := range b.Rows {
-				for l := range b.Rows[k] {
-					b.Rows[k][l] = normalizeNames(b.Rows[k][l])
-				}
+		normalizeBlocks(d.Sections[i].Blocks, 0)
+	}
+}
+
+// normalizeBlocks normalizes every text field of blocks in place, following
+// a container into the blocks it holds down to maxBlockDepth.
+func normalizeBlocks(blocks []Block, depth int) {
+	if depth > maxBlockDepth {
+		return
+	}
+	for j := range blocks {
+		b := &blocks[j]
+		if b.T == "code" {
+			continue
+		}
+		b.Text = normalizeNames(b.Text)
+		b.Title = normalizeNames(b.Title)
+		b.Subtitle = normalizeNames(b.Subtitle)
+		b.Label = normalizeNames(b.Label)
+		b.Value = normalizeNames(b.Value)
+		b.Cite = normalizeNames(b.Cite)
+		b.Summary = normalizeNames(b.Summary)
+		for k := range b.Items {
+			b.Items[k] = normalizeNames(b.Items[k])
+		}
+		for k := range b.KV {
+			b.KV[k].K = normalizeNames(b.KV[k].K)
+			b.KV[k].V = normalizeNames(b.KV[k].V)
+		}
+		for k := range b.Cols {
+			b.Cols[k] = normalizeNames(b.Cols[k])
+		}
+		for k := range b.Rows {
+			for l := range b.Rows[k] {
+				b.Rows[k][l] = normalizeNames(b.Rows[k][l])
 			}
 		}
+		for k := range b.Columns {
+			normalizeBlocks(b.Columns[k], depth+1)
+		}
+		normalizeBlocks(b.Blocks, depth+1)
 	}
 }
 
@@ -534,25 +696,116 @@ func validAccent(name string) bool {
 	return alias || webkit.IsRole(name)
 }
 
-// validateAccents returns an error naming the first panel accent the palette
-// does not define, the way validateTones does for graph nodes.
-func validateAccents(d Doc) error {
-	for _, s := range d.Sections {
-		for _, b := range s.Blocks {
-			if b.T == "panel" && b.Accent != "" && !validAccent(b.Accent) {
+// validateBlocks returns an error for the first block the renderer refuses:
+// a panel accent the palette does not define (the way validateTones does for
+// graph nodes), a columns block with other than two or three columns, a
+// details block without a summary or without blocks, and a graph or a
+// container below the top level, since a container holds plain blocks only.
+func validateBlocks(blocks []Block, depth int) error {
+	for _, b := range blocks {
+		if depth > 0 && (isContainer(b) || b.T == "graph") {
+			return fmt.Errorf("%s block: not allowed inside a columns or details block", b.T)
+		}
+		switch b.T {
+		case "panel":
+			if b.Accent != "" && !validAccent(b.Accent) {
 				return fmt.Errorf(
 					"panel %q: unknown accent %q (want one of %s)",
 					b.Title, b.Accent, strings.Join(webkit.Roles(), ", "),
 				)
+			}
+		case "columns":
+			if n := len(b.Columns); n < 2 || n > 3 {
+				return fmt.Errorf("columns block: want 2 or 3 columns in cols, got %d", n)
+			}
+			for _, col := range b.Columns {
+				if err := validateBlocks(col, depth+1); err != nil {
+					return err
+				}
+			}
+		case "details":
+			if strings.TrimSpace(b.Summary) == "" {
+				return errors.New("details block: summary is required")
+			}
+			if len(b.Blocks) == 0 {
+				return fmt.Errorf("details %q: blocks is empty", b.Summary)
+			}
+			if err := validateBlocks(b.Blocks, depth+1); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
+// logoURLAllowed reports whether s is an absolute http or https URL, the
+// only kind of logo a Doc may point at beside the embedded one.
+func logoURLAllowed(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+// validateChrome refuses a deck chrome field outside its vocabulary, like an
+// unknown graph tone: an unknown logo_position or progress value, and a logo
+// that is neither "none" nor an http(s) URL.
+func validateChrome(d Doc) error {
+	if d.LogoPosition != "" && !slices.Contains(logoPositions, d.LogoPosition) {
+		return fmt.Errorf(
+			"logo_position %q: want one of %s", d.LogoPosition, strings.Join(logoPositions, ", "),
+		)
+	}
+	if d.Progress != "" && !slices.Contains(progressKinds, d.Progress) {
+		return fmt.Errorf(
+			"progress %q: want one of %s",
+			d.Progress,
+			strings.Join(progressKinds, ", "),
+		)
+	}
+	if d.Logo != "" && d.Logo != "none" && !logoURLAllowed(d.Logo) {
+		return fmt.Errorf(`logo %q: want "none" or an http(s) URL`, d.Logo)
+	}
+	return nil
+}
+
+func validateDoc(d Doc) error {
+	if err := validateChrome(d); err != nil {
+		return err
+	}
+	for _, s := range d.Sections {
+		if err := validateBlocks(s.Blocks, 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// chromeSpec marshals the deck chrome fields to the JSON island the deck
+// view reads, under the same script-context rules as chartSpec. Empty when
+// no field is set, so the template emits no island.
+func chromeSpec(d Doc) template.JS {
+	if !d.hasChrome() {
+		return ""
+	}
+	spec := struct {
+		Logo         string `json:"logo,omitempty"`
+		LogoPosition string `json:"logo_position,omitempty"`
+		Progress     string `json:"progress,omitempty"`
+		Presenter    string `json:"presenter,omitempty"`
+		Footer       string `json:"footer,omitempty"`
+	}{d.Logo, d.LogoPosition, d.Progress, d.Presenter, d.Footer}
+	out, err := json.Marshal(spec)
+	if err != nil {
+		return "{}"
+	}
+	return template.JS(out)
+}
+
 // RenderDoc converts a Doc to an HTML body fragment.
 func RenderDoc(d Doc, title string) (string, error) {
-	if err := validateAccents(d); err != nil {
+	if err := validateDoc(d); err != nil {
 		return "", fmt.Errorf("render doc: %w", err)
 	}
 	d.normalize()
@@ -560,10 +813,12 @@ func RenderDoc(d Doc, title string) (string, error) {
 
 	type docWithTitle struct {
 		Doc
-		Title string
+		Title  string
+		Chrome template.JS
 	}
 	var buf bytes.Buffer
-	if err := docTemplate.Execute(&buf, docWithTitle{Doc: d, Title: title}); err != nil {
+	data := docWithTitle{Doc: d, Title: title, Chrome: chromeSpec(d)}
+	if err := docTemplate.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("render doc: %w", err)
 	}
 	return buf.String(), nil
