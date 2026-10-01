@@ -223,7 +223,7 @@ func (f calendarField) parseValues(raw string) ([]int, error) {
 
 // parseValue parses one integer and checks it against the field's range.
 func (f calendarField) parseValue(raw string) (int, error) {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	n, err := parseDigits(strings.TrimSpace(raw))
 	if err != nil {
 		return 0, fmt.Errorf("calendar %s must be an integer: %q", f.name, raw)
 	}
@@ -423,13 +423,22 @@ func parseClock(clock string) (hour, minute int, err error) {
 	if !ok || len(h) != 2 || len(m) != 2 {
 		return 0, 0, fmt.Errorf("schedule time must be HH:MM: %q", clock)
 	}
-	if hour, err = strconv.Atoi(h); err != nil {
+	if hour, err = parseDigits(h); err != nil {
 		return 0, 0, fmt.Errorf("schedule time must be HH:MM: %q", clock)
 	}
-	if minute, err = strconv.Atoi(m); err != nil {
+	if minute, err = parseDigits(m); err != nil {
 		return 0, 0, fmt.Errorf("schedule time must be HH:MM: %q", clock)
 	}
 	return hour, minute, nil
+}
+
+// parseDigits parses an unsigned decimal. strconv.Atoi would also take a
+// sign, which has no place in a clock field ("+7:30", "hour=+5").
+func parseDigits(s string) (int, error) {
+	if s == "" || strings.Trim(s, "0123456789") != "" {
+		return 0, strconv.ErrSyntax
+	}
+	return strconv.Atoi(s)
 }
 
 // parseWeekday maps a weekday name or its three-letter form to launchd's
