@@ -432,8 +432,8 @@
     } else {
       cfg = cartesianConfig(kind, spec, colors, animate);
     }
-    if (animate && opts && opts.duration && cfg.options && cfg.options.animation) {
-      cfg.options.animation.duration = opts.duration;
+    if (animate && opts && opts.duration !== undefined && cfg.options) {
+      cfg.options.animation = opts.duration > 0 ? { duration: opts.duration, easing: 'easeOutQuart' } : false;
     }
     block._chart = new Chart(canvas, cfg);
   }
@@ -1184,8 +1184,10 @@
         }
       }
       if (typeof Chart !== 'undefined') registerSankey();
+      // The draw-in follows the deck's transition: 400 ms, or none for a
+      // deck that cuts (Reduce Motion already turns it off in buildChart).
       slide.querySelectorAll('.present-chart').forEach(function (b) {
-        if (!b._built) { if (typeof Chart !== 'undefined') buildChart(b, { duration: 400 }); }
+        if (!b._built) { if (typeof Chart !== 'undefined') buildChart(b, { duration: transition === 'none' ? 0 : 400 }); }
         else if (b._chart) b._chart.resize();
       });
     }
