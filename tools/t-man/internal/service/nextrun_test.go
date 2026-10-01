@@ -9,7 +9,7 @@ import (
 // in now's location rather than UTC.
 var stockholm = time.FixedZone("CEST", 2*60*60)
 
-func at(year int, month time.Month, day, hour, minute int) time.Time {
+func on(year int, month time.Month, day, hour, minute int) time.Time {
 	return time.Date(year, month, day, hour, minute, 0, 0, stockholm)
 }
 
@@ -24,106 +24,120 @@ func TestNextCalendarRun(t *testing.T) {
 		{
 			name:    "later today",
 			entries: []CalendarEntry{{Hour: ip(7), Minute: ip(30)}},
-			now:     at(2026, time.October, 1, 6, 0),
-			want:    at(2026, time.October, 1, 7, 30),
+			now:     on(2026, time.October, 1, 6, 0),
+			want:    on(2026, time.October, 1, 7, 30),
 			wantOK:  true,
 		},
 		{
 			name:    "already passed today wraps to tomorrow",
 			entries: []CalendarEntry{{Hour: ip(7), Minute: ip(30)}},
-			now:     at(2026, time.October, 1, 9, 0),
-			want:    at(2026, time.October, 2, 7, 30),
+			now:     on(2026, time.October, 1, 9, 0),
+			want:    on(2026, time.October, 2, 7, 30),
 			wantOK:  true,
 		},
 		{
 			name:    "exactly on the slot is strictly after",
 			entries: []CalendarEntry{{Hour: ip(7), Minute: ip(30)}},
-			now:     at(2026, time.October, 1, 7, 30),
-			want:    at(2026, time.October, 2, 7, 30),
+			now:     on(2026, time.October, 1, 7, 30),
+			want:    on(2026, time.October, 2, 7, 30),
 			wantOK:  true,
 		},
 		{
 			name:    "seconds into the slot minute still count as passed",
 			entries: []CalendarEntry{{Hour: ip(7), Minute: ip(30)}},
-			now:     at(2026, time.October, 1, 7, 30).Add(20 * time.Second),
-			want:    at(2026, time.October, 2, 7, 30),
+			now:     on(2026, time.October, 1, 7, 30).Add(20 * time.Second),
+			want:    on(2026, time.October, 2, 7, 30),
 			wantOK:  true,
 		},
 		{
 			name:    "minute wildcard hour only fires at the top of the hour",
 			entries: []CalendarEntry{{Hour: ip(7)}},
-			now:     at(2026, time.October, 1, 7, 0),
-			want:    at(2026, time.October, 1, 7, 1),
+			now:     on(2026, time.October, 1, 7, 0),
+			want:    on(2026, time.October, 1, 7, 1),
 			wantOK:  true,
 		},
 		{
 			name:    "minute only fires every hour",
 			entries: []CalendarEntry{{Minute: ip(30)}},
-			now:     at(2026, time.October, 1, 7, 45),
-			want:    at(2026, time.October, 1, 8, 30),
+			now:     on(2026, time.October, 1, 7, 45),
+			want:    on(2026, time.October, 1, 8, 30),
 			wantOK:  true,
 		},
 		{
 			name:    "minute wraps across midnight",
 			entries: []CalendarEntry{{Minute: ip(15)}},
-			now:     at(2026, time.October, 1, 23, 50),
-			want:    at(2026, time.October, 2, 0, 15),
+			now:     on(2026, time.October, 1, 23, 50),
+			want:    on(2026, time.October, 2, 0, 15),
 			wantOK:  true,
 		},
 		{
 			name:    "weekday later this week",
 			entries: []CalendarEntry{{Weekday: ip(5), Hour: ip(17), Minute: ip(0)}},
-			now:     at(2026, time.October, 1, 12, 0), // a Thursday
-			want:    at(2026, time.October, 2, 17, 0),
+			now:     on(2026, time.October, 1, 12, 0), // a Thursday
+			want:    on(2026, time.October, 2, 17, 0),
 			wantOK:  true,
 		},
 		{
 			name:    "weekday wraps to next week",
 			entries: []CalendarEntry{{Weekday: ip(1), Hour: ip(7), Minute: ip(0)}},
-			now:     at(2026, time.October, 1, 12, 0), // Thursday
-			want:    at(2026, time.October, 5, 7, 0),  // next Monday
+			now:     on(2026, time.October, 1, 12, 0), // Thursday
+			want:    on(2026, time.October, 5, 7, 0),  // next Monday
 			wantOK:  true,
 		},
 		{
 			name:    "weekday seven is sunday",
 			entries: []CalendarEntry{{Weekday: ip(7), Hour: ip(9), Minute: ip(0)}},
-			now:     at(2026, time.October, 1, 12, 0),
-			want:    at(2026, time.October, 4, 9, 0),
+			now:     on(2026, time.October, 1, 12, 0),
+			want:    on(2026, time.October, 4, 9, 0),
 			wantOK:  true,
 		},
 		{
 			name:    "day of month wraps into next month",
 			entries: []CalendarEntry{{Day: ip(1), Hour: ip(0), Minute: ip(0)}},
-			now:     at(2026, time.October, 1, 0, 0),
-			want:    at(2026, time.November, 1, 0, 0),
+			now:     on(2026, time.October, 1, 0, 0),
+			want:    on(2026, time.November, 1, 0, 0),
 			wantOK:  true,
 		},
 		{
 			name:    "day 31 skips short months",
 			entries: []CalendarEntry{{Day: ip(31), Hour: ip(12), Minute: ip(0)}},
-			now:     at(2026, time.November, 1, 0, 0),
-			want:    at(2026, time.December, 31, 12, 0),
+			now:     on(2026, time.November, 1, 0, 0),
+			want:    on(2026, time.December, 31, 12, 0),
 			wantOK:  true,
 		},
 		{
 			name:    "month wraps into next year",
 			entries: []CalendarEntry{{Month: ip(1), Day: ip(1), Hour: ip(0), Minute: ip(0)}},
-			now:     at(2026, time.October, 1, 0, 0),
-			want:    at(2027, time.January, 1, 0, 0),
+			now:     on(2026, time.October, 1, 0, 0),
+			want:    on(2027, time.January, 1, 0, 0),
 			wantOK:  true,
 		},
 		{
 			name:    "february 29 waits for a leap year",
 			entries: []CalendarEntry{{Month: ip(2), Day: ip(29), Hour: ip(8), Minute: ip(0)}},
-			now:     at(2026, time.October, 1, 0, 0),
-			want:    at(2028, time.February, 29, 8, 0),
+			now:     on(2026, time.October, 1, 0, 0),
+			want:    on(2028, time.February, 29, 8, 0),
+			wantOK:  true,
+		},
+		{
+			name:    "weekdays set evaluated on a saturday",
+			entries: timed(7, 30, 1, 2, 3, 4, 5),
+			now:     on(2026, time.October, 3, 10, 0), // Saturday
+			want:    on(2026, time.October, 5, 7, 30), // Monday
+			wantOK:  true,
+		},
+		{
+			name:    "weekend set evaluated on a friday evening",
+			entries: timed(9, 0, 0, 6),
+			now:     on(2026, time.October, 2, 20, 0), // Friday
+			want:    on(2026, time.October, 3, 9, 0),  // Saturday
 			wantOK:  true,
 		},
 		{
 			name:    "day and weekday must both match",
 			entries: []CalendarEntry{{Day: ip(13), Weekday: ip(5), Hour: ip(13), Minute: ip(13)}},
-			now:     at(2026, time.October, 1, 0, 0),
-			want:    at(2026, time.November, 13, 13, 13), // first Friday the 13th after now
+			now:     on(2026, time.October, 1, 0, 0),
+			want:    on(2026, time.November, 13, 13, 13), // first Friday the 13th after now
 			wantOK:  true,
 		},
 		{
@@ -132,19 +146,19 @@ func TestNextCalendarRun(t *testing.T) {
 				{Hour: ip(17), Minute: ip(0)},
 				{Hour: ip(7), Minute: ip(30)},
 			},
-			now:    at(2026, time.October, 1, 6, 0),
-			want:   at(2026, time.October, 1, 7, 30),
+			now:    on(2026, time.October, 1, 6, 0),
+			want:   on(2026, time.October, 1, 7, 30),
 			wantOK: true,
 		},
 		{
 			name:    "never matches",
 			entries: []CalendarEntry{{Month: ip(2), Day: ip(31)}},
-			now:     at(2026, time.October, 1, 0, 0),
+			now:     on(2026, time.October, 1, 0, 0),
 			wantOK:  false,
 		},
 		{
 			name:   "no entries",
-			now:    at(2026, time.October, 1, 0, 0),
+			now:    on(2026, time.October, 1, 0, 0),
 			wantOK: false,
 		},
 	}
@@ -169,11 +183,11 @@ func TestNextCalendarRun(t *testing.T) {
 }
 
 func TestDefinitionNextRun(t *testing.T) {
-	now := at(2026, time.October, 1, 6, 0)
+	now := on(2026, time.October, 1, 6, 0)
 
 	calendar := Definition{Calendar: []CalendarEntry{{Hour: ip(7), Minute: ip(30)}}}
 	got, ok := calendar.NextRun(now)
-	if !ok || !got.Equal(at(2026, time.October, 1, 7, 30)) {
+	if !ok || !got.Equal(on(2026, time.October, 1, 7, 30)) {
 		t.Errorf("calendar NextRun() = %v, %v", got, ok)
 	}
 

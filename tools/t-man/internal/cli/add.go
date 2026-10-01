@@ -53,8 +53,15 @@ scheduled job instead: launchd runs it at those times and lets it exit, and
   # Run a job every morning at 07:30, and on Fridays at 17:00 too
   t-man add --name digest --schedule 07:30,fri@17:00 -- /usr/local/bin/digest
 
+  # Office days only: a weekday set, or a range (ranges may wrap: fri-mon)
+  t-man add --name standup --schedule weekdays@08:50 -- /usr/local/bin/standup
+  t-man add --name standup --schedule mon-fri@08:50 -- /usr/local/bin/standup
+
   # Run a job on the first of every month using launchd's own fields
   t-man add --name rollup --calendar day=1,hour=6,minute=0 -- /usr/local/bin/rollup
+
+  # Every hour on the hour during office hours (a range expands to 45 entries)
+  t-man add --name poll --calendar hour=9-17,weekday=1-5,minute=0 -- /usr/local/bin/poll
 
   # Run a job every hour
   t-man add --name audit --every 1h -- /usr/local/bin/audit`,
@@ -76,9 +83,9 @@ func init() {
 	addCmd.Flags().
 		StringArrayVar(&addExtraLogs, "extra-log", []string{}, "Additional named log file (NAME=PATH, repeatable), viewable with 'logs --source NAME'")
 	addCmd.Flags().
-		StringVar(&addSchedule.clock, "schedule", "", "Run as a scheduled job at HH:MM daily; comma list, optional weekday prefix (mon@07:30)")
+		StringVar(&addSchedule.clock, "schedule", "", "Run as a scheduled job at HH:MM daily; comma list, optional day prefix: mon@07:30, mon-fri@07:30, weekdays@, weekend@, daily@")
 	addCmd.Flags().
-		StringArrayVar(&addSchedule.calendar, "calendar", []string{}, "Run as a scheduled job on launchd calendar fields (minute=0,hour=7,day=1,weekday=1,month=1; repeatable)")
+		StringArrayVar(&addSchedule.calendar, "calendar", []string{}, "Run as a scheduled job on launchd calendar fields (minute=0,hour=7,day=1,weekday=1,month=1; a field may be a range such as hour=9-17; repeatable)")
 	addCmd.Flags().
 		StringVar(&addSchedule.every, "every", "", "Run as a scheduled job every interval (Go duration such as 1h or 30m)")
 

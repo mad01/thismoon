@@ -164,8 +164,8 @@ Flags:
 | `--logs` | `~/Library/Logs/<name>/` (agent) or `/var/log/<name>/` (daemon) | Log directory |
 | `--sandbox-profile` | | Seatbelt profile (`.sb`); wraps the service in `sandbox-exec -f <profile>` |
 | `--extra-log NAME=PATH` | | Additional named log file (repeatable); view with `logs --source NAME` |
-| `--schedule TIMES` | | Run as a scheduled job at `HH:MM` daily; comma list, optional weekday prefix (`07:30,fri@17:00`) |
-| `--calendar FIELDS` | | Run as a scheduled job on launchd calendar fields (`day=1,hour=6,minute=0`; repeatable) |
+| `--schedule TIMES` | | Run as a scheduled job at `HH:MM` daily; comma list, optional day prefix (`07:30,fri@17:00`, `mon-fri@08:50`, `weekdays@`, `weekend@`) |
+| `--calendar FIELDS` | | Run as a scheduled job on launchd calendar fields (`day=1,hour=6,minute=0`; a field may be a range, `hour=9-17`; repeatable) |
 | `--every DURATION` | | Run as a scheduled job every interval (`1h`, `30m`) |
 
 Examples:
@@ -255,9 +255,20 @@ excludes them.
 
 | Flag | Form | launchd key |
 |------|------|-------------|
-| `--schedule` | `HH:MM` daily, a comma list, an optional weekday prefix: `07:30`, `07:30,fri@17:00` | `StartCalendarInterval` |
-| `--calendar` | launchd's own fields, comma-separated, repeatable: `day=1,hour=6,minute=0` | `StartCalendarInterval` |
+| `--schedule` | `HH:MM` daily, a comma list, an optional day prefix: `07:30`, `07:30,fri@17:00`, `mon-fri@08:50`, `weekdays@08:50` | `StartCalendarInterval` |
+| `--calendar` | launchd's own fields, comma-separated, repeatable, with ranges: `day=1,hour=6,minute=0`, `hour=9-17,weekday=1-5,minute=0` | `StartCalendarInterval` |
 | `--every` | a Go duration in whole seconds: `1h`, `30m`, `90s` | `StartInterval` |
+
+The day prefix of `--schedule` is a weekday name (`mon`, or `monday`), a
+range (`mon-fri`), or a set. The sets are `weekdays` (mon-fri), `weekend`
+(sat-sun), and `daily` (the same as no prefix). A range may wrap, so
+`fri-mon` is Friday through Monday. launchd takes one weekday per calendar
+entry, so a set or range expands to one entry per day. A `--calendar` field
+may be a range too (`hour=9-17`, `day=1-7`, `weekday=1-5`, and `weekday=5-1`
+wraps). Ranged fields expand to their cross product, so
+`hour=9-17,weekday=1-5` is 45 entries. One job may carry at most 200
+entries, and `add` refuses a larger expansion with the count it would have
+produced.
 
 ```bash
 # One headless pass every morning
@@ -265,6 +276,17 @@ t-man add --name work-digest --schedule 07:30 -- $HOME/code/bin/digest --yesterd
 
 # Weekly rollup on Monday mornings
 t-man add --name weekly-rollup --schedule mon@08:00 -- $HOME/code/bin/rollup --week
+
+# Office days only, two spellings of the same schedule
+t-man add --name standup-notes --schedule weekdays@08:50 -- $HOME/code/bin/standup
+t-man add --name standup-notes --schedule mon-fri@08:50 -- $HOME/code/bin/standup
+
+# Weekend mornings, and a range that wraps past Sunday
+t-man add --name weekend-sync --schedule weekend@09:00 -- $HOME/code/bin/sync
+t-man add --name long-weekend --schedule fri-mon@09:00 -- $HOME/code/bin/sync
+
+# Every hour on the hour during office hours: 45 calendar entries
+t-man add --name poll --calendar hour=9-17,weekday=1-5,minute=0 -- $HOME/code/bin/poll
 
 # First of the month at 06:00; day and month are only reachable with --calendar
 t-man add --name monthly-audit --calendar day=1,hour=6,minute=0 -- $HOME/code/bin/audit
@@ -278,6 +300,14 @@ Calendar fields: `minute` 0-59, `hour` 0-23, `day` 1-31, `weekday` 0-7 (0 and
 field given must match. So `day=13,weekday=5` means Friday the 13th, where
 cron would read it as the 13th or any Friday. An entry that sets no field is
 rejected, since it would fire every minute; use `--every 1m` for that.
+
+After expansion the entries are sorted and deduplicated, with Sunday always
+written as 0. The same schedule written two ways therefore produces the
+same plist and the same hash: `weekdays@07:30`, `mon-fri@07:30`, five
+listed days, and `--calendar weekday=1-5,hour=7,minute=30` all land on one
+hash. Re-adding with the other spelling is a no-op. `status` folds the entries back for display. The
+five entries from `weekdays@07:30` read as `mon-fri 07:30`, and the 45 from
+the office-hours example read as `mon-fri hour=9-17,minute=0`.
 
 Between runs a scheduled job is not running, and that is its healthy state.
 `t-man list` reads it as `scheduled` and, as soon as one scheduled job
@@ -426,7 +456,7 @@ Keep alive: true
 For a scheduled job the schedule facts follow the log paths:
 
 ```
-Schedule: minute=30,hour=7
+Schedule: mon-fri 07:30
 Next run: 2026-10-02 07:30
 Last run: 2026-10-01 07:31 (newest log write)
 Last exit code: 0

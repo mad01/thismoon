@@ -80,13 +80,21 @@ error naming both values.
   cannot be `stdout` or `stderr`.
 - `--schedule` (string, default `""`): makes the service a scheduled job
   that fires at the given wall-clock times: a comma-separated list of
-  `HH:MM`, each with an optional weekday prefix (`07:30`, `mon@07:30,fri@17:00`).
-  Becomes `StartCalendarInterval` entries.
-- `--calendar` (repeatable, default none): one `StartCalendarInterval` entry
-  per value, written in launchd's own fields: `minute=0,hour=6,day=1`. Keys
-  are `minute` (0-59), `hour` (0-23), `day` (1-31), `weekday` (0-7, Sunday is
-  0 or 7), `month` (1-12). A key left out is a wildcard; every key given
-  must match. Combines with `--schedule`.
+  `HH:MM`, each with an optional day prefix and `@`. The prefix is a weekday
+  name (`mon@07:30`), a range (`mon-fri@07:30`), or a set: `weekdays`
+  (mon-fri), `weekend` (sat-sun), `daily` (no prefix). A range may wrap
+  (`fri-mon@09:00`). Each day becomes its own `StartCalendarInterval` entry.
+- `--calendar` (repeatable, default none): `StartCalendarInterval` entries
+  written in launchd's own fields: `minute=0,hour=6,day=1`. Keys are
+  `minute` (0-59), `hour` (0-23), `day` (1-31), `weekday` (0-7, Sunday is 0
+  or 7), `month` (1-12). A key left out is a wildcard; every key given must
+  match. Any value may be a range (`hour=9-17`, `day=1-7`); ranged keys
+  expand to their cross product, and only `weekday` may run downward to wrap
+  (`weekday=5-1`). Combines with `--schedule`.
+
+The calendar entries from both flags are sorted, deduplicated, and capped
+at 200 per job, with Sunday stored as 0. The hash therefore does not depend
+on which spelling produced them.
 - `--every` (duration, default `""`): makes the service a scheduled job that
   fires every interval, counted from load: a Go duration in whole seconds
   (`1h`, `30m`). Becomes `StartInterval`. Cannot be combined with

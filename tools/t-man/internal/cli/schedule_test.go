@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,43 @@ func TestScheduleFlagsApply(t *testing.T) {
 			},
 		},
 		{
+			name:  "weekday set expands to one entry per day",
+			flags: scheduleFlags{clock: "weekdays@08:50"},
+			wantCalendar: []service.CalendarEntry{
+				{Weekday: ip(1), Hour: ip(8), Minute: ip(50)},
+				{Weekday: ip(2), Hour: ip(8), Minute: ip(50)},
+				{Weekday: ip(3), Hour: ip(8), Minute: ip(50)},
+				{Weekday: ip(4), Hour: ip(8), Minute: ip(50)},
+				{Weekday: ip(5), Hour: ip(8), Minute: ip(50)},
+			},
+		},
+		{
+			name:  "calendar range cross product",
+			flags: scheduleFlags{calendar: []string{"hour=9-10,weekday=1-2,minute=0"}},
+			wantCalendar: []service.CalendarEntry{
+				{Weekday: ip(1), Hour: ip(9), Minute: ip(0)},
+				{Weekday: ip(1), Hour: ip(10), Minute: ip(0)},
+				{Weekday: ip(2), Hour: ip(9), Minute: ip(0)},
+				{Weekday: ip(2), Hour: ip(10), Minute: ip(0)},
+			},
+		},
+		{
+			name:  "overlapping flags dedupe",
+			flags: scheduleFlags{clock: "mon-fri@07:30", calendar: []string{"weekday=1-5,hour=7,minute=30"}},
+			wantCalendar: []service.CalendarEntry{
+				{Weekday: ip(1), Hour: ip(7), Minute: ip(30)},
+				{Weekday: ip(2), Hour: ip(7), Minute: ip(30)},
+				{Weekday: ip(3), Hour: ip(7), Minute: ip(30)},
+				{Weekday: ip(4), Hour: ip(7), Minute: ip(30)},
+				{Weekday: ip(5), Hour: ip(7), Minute: ip(30)},
+			},
+		},
+		{
+			name:    "cap exceeded",
+			flags:   scheduleFlags{calendar: []string{"minute=0-59,hour=0-23"}},
+			wantErr: "more than the 200 allowed",
+		},
+		{
 			name:  "schedule and calendar combine",
 			flags: scheduleFlags{clock: "07:30", calendar: []string{"day=1,hour=6,minute=0"}},
 			wantCalendar: []service.CalendarEntry{
@@ -81,11 +119,13 @@ func TestScheduleFlagsApply(t *testing.T) {
 			if err != nil {
 				t.Fatalf("apply() error = %v", err)
 			}
-			if got := def.ScheduleString(); got != (&service.Definition{
-				Calendar: tt.wantCalendar, IntervalSeconds: tt.wantInterval,
-			}).ScheduleString() {
-				t.Errorf("apply() schedule = %q, want calendar %v interval %d",
-					got, tt.wantCalendar, tt.wantInterval)
+			want := &service.Definition{
+				Calendar:        service.NormalizeCalendar(tt.wantCalendar),
+				IntervalSeconds: tt.wantInterval,
+			}
+			if !reflect.DeepEqual(def.Calendar, want.Calendar) ||
+				def.IntervalSeconds != want.IntervalSeconds {
+				t.Errorf("apply() = %q, want %q", def.ScheduleString(), want.ScheduleString())
 			}
 			if def.Scheduled() != (len(tt.wantCalendar) > 0 || tt.wantInterval > 0) {
 				t.Errorf("Scheduled() = %v after apply(%+v)", def.Scheduled(), tt.flags)
@@ -238,7 +278,7 @@ func TestScheduleStatusLines(t *testing.T) {
 
 	got := scheduleStatusLines(job, &launchd.RunState{Status: "scheduled", LastExitCode: "0"}, now)
 	want := []string{
-		"Schedule: minute=30,hour=7",
+		"Schedule: daily 07:30",
 		"Next run: 2026-10-02 07:30",
 		"Last run: 2026-10-01 07:31 (newest log write)",
 		"Last exit code: 0",
@@ -259,5 +299,38 @@ func TestScheduleStatusLines(t *testing.T) {
 	}
 	if got[2] != "Last run: - (newest log write)" || got[3] != "Last exit code: unknown" {
 		t.Errorf("interval lines = %v", got[2:])
+	}
+}
+
+// TestScheduleFlagsApply_SameScheduleHashesSame pins that the hash does not
+// depend on which flag or spelling produced the schedule.
+func TestScheduleFlagsApply_SameScheduleHashesSame(t *testing.T) {
+	ways := []scheduleFlags{
+		{clock: "weekdays@07:30"},
+		{clock: "mon-fri@07:30"},
+		{clock: "fri@07:30,mon@07:30,tue@07:30,wed@07:30,thu@07:30"},
+		{calendar: []string{"weekday=1-5,hour=7,minute=30"}},
+		{calendar: []string{"weekday=1-3,hour=7,minute=30", "weekday=4-5,hour=7,minute=30"}},
+		{clock: "mon-wed@07:30", calendar: []string{"weekday=4-5,hour=7,minute=30"}},
+	}
+	var first string
+	for _, flags := range ways {
+		def := &service.Definition{Name: "job", Command: "/usr/bin/true"}
+		if err := flags.apply(def); err != nil {
+			t.Fatalf("apply(%+v) error = %v", flags, err)
+		}
+		h, err := def.Hash()
+		if err != nil {
+			t.Fatalf("Hash() error = %v", err)
+		}
+		if first == "" {
+			first = h
+		}
+		if h != first {
+			t.Errorf("apply(%+v) hashes %s, want %s (schedule %q)", flags, h, first, def.ScheduleString())
+		}
+		if got := def.ScheduleString(); got != "mon-fri 07:30" {
+			t.Errorf("apply(%+v) ScheduleString() = %q, want mon-fri 07:30", flags, got)
+		}
 	}
 }

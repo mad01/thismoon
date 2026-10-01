@@ -25,6 +25,8 @@ type scheduleFlags struct {
 // apply fills def's schedule fields from the flags. --schedule and
 // --calendar both add calendar entries and may be combined; --every is the
 // interval form and excludes them, since a definition takes one trigger kind.
+// The combined calendar is normalized so the same schedule written two ways
+// hashes the same.
 func (f scheduleFlags) apply(def *service.Definition) error {
 	if f.every != "" && (f.clock != "" || len(f.calendar) > 0) {
 		return fmt.Errorf("--every cannot be combined with --schedule or --calendar")
@@ -44,12 +46,13 @@ func (f scheduleFlags) apply(def *service.Definition) error {
 		def.Calendar = append(def.Calendar, entries...)
 	}
 	for _, spec := range f.calendar {
-		entry, err := service.ParseCalendarFields(spec)
+		entries, err := service.ParseCalendarFields(spec)
 		if err != nil {
 			return fmt.Errorf("invalid --calendar: %w", err)
 		}
-		def.Calendar = append(def.Calendar, entry)
+		def.Calendar = append(def.Calendar, entries...)
 	}
+	def.Calendar = service.NormalizeCalendar(def.Calendar)
 	return nil
 }
 

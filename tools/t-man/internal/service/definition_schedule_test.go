@@ -111,3 +111,34 @@ func TestDefinitionLastLogWrite(t *testing.T) {
 		t.Errorf("LastLogWrite() with one file = %v, %v; want %v", got, ok, older)
 	}
 }
+
+// TestDefinitionHash_SameScheduleWrittenThreeWays pins what NormalizeCalendar
+// buys: a weekday set, a range, and five listed days produce one hash.
+func TestDefinitionHash_SameScheduleWrittenThreeWays(t *testing.T) {
+	ways := map[string]func() ([]CalendarEntry, error){
+		"weekdays set":  func() ([]CalendarEntry, error) { return ParseClockSchedule("weekdays@07:30") },
+		"weekday range": func() ([]CalendarEntry, error) { return ParseClockSchedule("mon-fri@07:30") },
+		"listed days": func() ([]CalendarEntry, error) {
+			return ParseClockSchedule("fri@07:30,thu@07:30,wed@07:30,tue@07:30,mon@07:30")
+		},
+		"calendar range": func() ([]CalendarEntry, error) { return ParseCalendarFields("weekday=1-5,hour=7,minute=30") },
+	}
+	hashes := map[string]string{}
+	for name, parse := range ways {
+		entries, err := parse()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		def := Definition{Name: "job", Command: "/usr/bin/true", Calendar: entries}
+		h, err := def.Hash()
+		if err != nil {
+			t.Fatalf("%s: Hash() error: %v", name, err)
+		}
+		hashes[name] = h
+	}
+	for name, h := range hashes {
+		if h != hashes["weekdays set"] {
+			t.Errorf("%s hashes %s, weekdays set hashes %s", name, h, hashes["weekdays set"])
+		}
+	}
+}

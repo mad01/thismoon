@@ -115,14 +115,23 @@ same value (`--agent --daemon`) is an error.
 `add` flags: `--name` (required), `--desc`, `--workdir`, `--env KEY=VALUE`
 (repeatable), `--path` (colon-separated PATH additions), `--logs DIR`,
 `--sandbox-profile PATH.sb`, `--extra-log NAME=PATH` (repeatable), and the
-schedule trio `--schedule HH:MM[,weekday@HH:MM...]`, `--calendar
-minute=0,hour=7[,day=1,weekday=1,month=1]` (repeatable), `--every DURATION`.
+schedule trio `--schedule [days@]HH:MM[,...]` (days: a weekday, a range
+such as `mon-fri` or the wrapping `fri-mon`, or `weekdays`, `weekend`,
+`daily`), `--calendar minute=0,hour=7[,day=1,weekday=1,month=1]` (repeatable;
+any field may be a range such as `hour=9-17`, expanded as a cross product
+capped at 200 entries), `--every DURATION`.
 Without a schedule the plist gets `RunAtLoad` and `KeepAlive` true (a
 long-lived service); with one it gets both false and a
 `StartCalendarInterval` array or a `StartInterval` (a scheduled job).
 `--schedule` and `--calendar` both add calendar entries and combine;
 `--every` excludes them. All three parse in `internal/service/schedule.go`,
-the one place any future config reader should call too.
+the one place any future config reader should call too. Sets and ranges
+expand to one entry per day (launchd takes one Weekday per dict).
+`service.NormalizeCalendar` sorts, dedupes, and writes Sunday as 0, so the
+same schedule spelled two ways hashes the same. `apply` in
+`internal/cli/schedule.go` normalizes the union of both flags. Display
+folding (`mon-fri 07:30` for five entries) lives in
+`internal/service/schedulefmt.go` and never feeds the hash.
 
 ## Gotchas
 
