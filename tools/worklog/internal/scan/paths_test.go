@@ -48,6 +48,37 @@ func TestPathTokens(t *testing.T) {
 			"the repo's README at " + widgets + "/README.md",
 			[]string{widgets + "/README.md"},
 		},
+		{
+			"bash -c command in double quotes",
+			`bash -c "cd ` + widgets + ` && make test"`,
+			[]string{widgets},
+		},
+		{
+			"ssh command in single quotes",
+			`ssh host 'cd /srv/app && git pull'`,
+			[]string{"/srv/app"},
+		},
+		{
+			"unterminated double quote",
+			`echo "cd ` + widgets + ` && make`,
+			[]string{widgets},
+		},
+		{
+			"rust lifetime quote",
+			"fn f(s: &'a str) {} // see " + widgets,
+			[]string{widgets},
+		},
+		{
+			"decade apostrophe in prose",
+			"the '90s layout still lives in " + widgets,
+			[]string{widgets},
+		},
+		{
+			"quoted path then a command",
+			`"` + widgets + ` two" && cd /tmp/x`,
+			[]string{widgets + " two", "/tmp/x"},
+		},
+		{"comment marker is not a path", "// see " + widgets, []string{widgets}},
 		{"url is not a path", "see https://github.com/acme/widgets/pull/5", nil},
 		{"repo slug is not a path", "acme/widgets", nil},
 		{"two paths", "cp " + widgets + "/a /tmp/b", []string{widgets + "/a", "/tmp/b"}},
