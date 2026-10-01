@@ -35,7 +35,8 @@ make check      # tsc --noEmit typecheck only (host, no build)
 
 ## Dev loop
 
-1. Edit `src/webkit.css` (component styles) and/or `src/webkit.ts` (behaviour).
+1. Edit `src/webkit.css` (component styles), `src/webkit.ts` (behaviour), or a
+   theme file under `src/themes/` (colours; rules read roles only).
 2. Rebuild: `make build` (sandboxed) or `make build-local` (host).
 3. Review `git diff dist/` — the bundle rides into every consumer binary via `go:embed`.
 4. Open `examples/gallery.html` directly in a browser (no server needed) to see all components.
@@ -57,6 +58,9 @@ make check      # tsc --noEmit typecheck only (host, no build)
 - `webkit.Handler() http.Handler` — mount at `GET /webkit/` in any consumer
 - `webkit.FS() fs.FS` — for direct file access
 - `GET /webkit/webkit.css` and `GET /webkit/webkit.js` — the compiled assets
+- `GET /webkit/boot.js` — the pre-paint theme and size guard
+- `GET /webkit/themes` — the palette picker page; `GET /webkit/themes.json` the resolved theme collection it reads
+- `webkit.Themes()`, `webkit.Roles()`, `webkit.IsRole(name)` — the same collection and its role vocabulary in Go
 - `GET /webkit/version` — JSON `{"module":"github.com/mad01/thismoon/webkit","version":"<hash>"}` where `<hash>` is a short SHA-256 over the embedded `dist/` bytes, served `no-store`; the same hash is the asset `ETag`
 
 `webkit.NoCacheHTML(w http.ResponseWriter)` sets `Cache-Control: no-cache` on consumer HTML responses so a webkit bump shows up on the next page navigation rather than after a force-refresh.

@@ -7,9 +7,12 @@ build: ## sandboxed build: npm ci + npm run build in a throwaway Apple-container
 	rm -rf .build-out
 	container build -f Dockerfile.build --target export \
 	  --output type=local,dest=./.build-out .
-	cp .build-out/*/webkit.js  dist/webkit.js
-	cp .build-out/*/webkit.css dist/webkit.css
-	cp .build-out/*/boot.js    dist/boot.js
+	cp .build-out/*/webkit.js   dist/webkit.js
+	cp .build-out/*/webkit.css  dist/webkit.css
+	cp .build-out/*/boot.js     dist/boot.js
+	cp .build-out/*/themes.json dist/themes.json
+	cp .build-out/*/themes.html dist/themes.html
+	cp .build-out/*/themes.js   dist/themes.js
 	rm -rf .build-out
 	@echo "webkit: dist/ rebuilt in container — review 'git diff dist/' before commit"
 

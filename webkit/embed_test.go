@@ -33,8 +33,8 @@ func TestHandlerServesCSS(t *testing.T) {
 	// Component spec: every component must be styled by its selector in webkit.css.
 	// Adding a row here first (RED) drives porting the component's CSS (GREEN).
 	for _, want := range []string{
-		// palette
-		"--page-width", "--terracotta", "--mono",
+		// non-colour tokens; the palette itself is pinned in themes_test.go
+		"--page-width", "--mono",
 		// existing components
 		"wk-card", "wk-panel", "wk-badge", "wk-search", "wk-table",
 		// interactive: filter chip + segmented control
@@ -98,6 +98,9 @@ func TestHandlerServesJS(t *testing.T) {
 		"/webkit/version",
 		// shared client render helpers (CSR migration): escapeHtml + el + poll
 		"escapeHtml", "createTextNode", "&amp;", "request failed (",
+		// theme API: mode + palette keys, storage and system sync, the help link
+		"webkit-palette-", "prefers-color-scheme", `addEventListener("storage"`, "/webkit/themes",
+		"setPalette", "setThemeMode", "resetTheme", "data-palette",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("webkit.js missing expected token %q", want)
@@ -199,9 +202,11 @@ func TestHandlerServesBootJS(t *testing.T) {
 		t.Errorf("Content-Type = %q, want to contain \"javascript\"", ct)
 	}
 	body := rec.Body.String()
-	// Must be the runnable IIFE (no module syntax) that applies persisted theme.
+	// Must be the runnable IIFE (no module syntax) that applies the persisted
+	// mode (system through prefers-color-scheme) and palette family.
 	for _, want := range []string{
 		"(function(){", "webkit-theme", "data-theme", "webkit-size", "fontSize",
+		"system", "prefers-color-scheme", "webkit-palette-", "data-palette",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("boot.js missing expected token %q", want)

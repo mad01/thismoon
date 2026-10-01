@@ -1483,6 +1483,7 @@ var Webkit = (() => {
   // src/webkit.ts
   var webkit_exports = {};
   __export(webkit_exports, {
+    applyTheme: () => applyTheme,
     bootSnippet: () => bootSnippet,
     el: () => el,
     enhanceProse: () => enhanceProse,
@@ -1490,9 +1491,15 @@ var Webkit = (() => {
     init: () => init,
     openCmdK: () => openCmdK,
     openFeatureGuide: () => openFeatureGuide,
+    paletteFor: () => paletteFor,
     poll: () => poll,
+    resetTheme: () => resetTheme,
     segmentSentences: () => segmentSentences,
+    setPalette: () => setPalette,
+    setThemeMode: () => setThemeMode,
     stopReadAloud: () => stopReadAloud,
+    themeMode: () => themeMode,
+    themeState: () => themeState,
     toFixation: () => toFixation
   });
 
@@ -3374,10 +3381,11 @@ var Webkit = (() => {
   }
 
   // src/boot.snippet.js
-  var bootSnippet = "(function(){try{var t=localStorage.getItem('webkit-theme')||'light';document.documentElement.setAttribute('data-theme',t);var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}}catch(e){}})();";
+  var bootSnippet = "(function(){try{var t=localStorage.getItem('webkit-theme')||'light';if(t==='system'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t!=='dark'){t='light';}document.documentElement.setAttribute('data-theme',t);var p=localStorage.getItem('webkit-palette-'+t);if(p&&p!=='default'){document.documentElement.setAttribute('data-palette',p);}var s=parseInt(localStorage.getItem('webkit-size'),10);if(!isNaN(s)){s=Math.max(12,Math.min(24,s));document.documentElement.style.fontSize=s+'px';}}catch(e){}})();";
 
   // src/webkit.ts
   var THEME_KEY = "webkit-theme";
+  var PALETTE_KEY_PREFIX = "webkit-palette-";
   var FONT_KEY = "webkit-font";
   var SIZE_KEY = "webkit-size";
   var FIXATION_KEY = "webkit-fixation";
@@ -3424,6 +3432,60 @@ var Webkit = (() => {
   function iconSvg(icon) {
     return icon === "refresh" ? SVG_REFRESH : SVG_ADD;
   }
+  var DARK_SCHEME = "(prefers-color-scheme: dark)";
+  function systemTheme() {
+    return typeof matchMedia === "function" && matchMedia(DARK_SCHEME).matches ? "dark" : "light";
+  }
+  function themeMode() {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === "dark" || v === "system" ? v : "light";
+  }
+  function paletteFor(theme) {
+    return localStorage.getItem(PALETTE_KEY_PREFIX + theme) || "default";
+  }
+  function themeState() {
+    const mode = themeMode();
+    const theme = mode === "system" ? systemTheme() : mode;
+    return { mode, theme, palette: paletteFor(theme) };
+  }
+  function setThemeAttributes(s) {
+    const root = document.documentElement;
+    root.setAttribute("data-theme", s.theme);
+    if (s.palette === "default") root.removeAttribute("data-palette");
+    else root.setAttribute("data-palette", s.palette);
+  }
+  function applyTheme() {
+    const s = themeState();
+    setThemeAttributes(s);
+    document.dispatchEvent(new CustomEvent("wk-themechange", { detail: s }));
+    return s;
+  }
+  function setThemeMode(mode) {
+    localStorage.setItem(THEME_KEY, mode);
+    return applyTheme();
+  }
+  function setPalette(theme, family) {
+    if (!family || family === "default") localStorage.removeItem(PALETTE_KEY_PREFIX + theme);
+    else localStorage.setItem(PALETTE_KEY_PREFIX + theme, family);
+    return applyTheme();
+  }
+  function resetTheme() {
+    localStorage.removeItem(THEME_KEY);
+    localStorage.removeItem(PALETTE_KEY_PREFIX + "light");
+    localStorage.removeItem(PALETTE_KEY_PREFIX + "dark");
+    return applyTheme();
+  }
+  function initThemeSync() {
+    window.addEventListener("storage", (e) => {
+      if (e.key === null || e.key === THEME_KEY || e.key.startsWith(PALETTE_KEY_PREFIX)) applyTheme();
+    });
+    if (typeof matchMedia === "function") {
+      matchMedia(DARK_SCHEME).addEventListener("change", () => {
+        if (themeMode() === "system") applyTheme();
+      });
+    }
+  }
+  initThemeSync();
   function applyFont(name, selectEl) {
     if (!(name in FONT_STACKS)) name = "Fira Code";
     document.body.style.fontFamily = FONT_STACKS[name];
@@ -3561,8 +3623,7 @@ var Webkit = (() => {
       this.innerHTML = `<div class="topbar"><div class="topbar-inner"><div class="topbar-left">${leftParts.join("")}</div><div class="topbar-controls">${controlParts.join("")}</div></div></div>`;
     }
     _applyTheme() {
-      const saved = localStorage.getItem(THEME_KEY) ?? "light";
-      document.documentElement.setAttribute("data-theme", saved);
+      setThemeAttributes(themeState());
     }
     _wire() {
       const fixationTargets = this.getAttribute("fixation-targets") ?? DEFAULT_FIXATION_TARGETS;
@@ -3646,13 +3707,12 @@ var Webkit = (() => {
         );
       };
       reflectTheme(document.documentElement.getAttribute("data-theme") ?? "light");
+      document.addEventListener("wk-themechange", ((e) => {
+        reflectTheme(e.detail.theme);
+      }));
       themeBtn?.addEventListener("click", () => {
         const current = document.documentElement.getAttribute("data-theme");
-        const next = current === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", next);
-        localStorage.setItem(THEME_KEY, next);
-        reflectTheme(next);
-        document.dispatchEvent(new CustomEvent("wk-themechange", { detail: { theme: next } }));
+        setThemeMode(current === "dark" ? "light" : "dark");
       });
     }
   };
@@ -3907,8 +3967,11 @@ var Webkit = (() => {
     fixation: { term: "Fixation", desc: "Bolds the first half of every word so your eyes anchor on each one \u2014 a reading aid that helps many dyslexic readers move through text faster." },
     speed: { term: "Speed", desc: "Playback speed for read-aloud \u2014 steps through 0.75\xD7 \xB7 1\xD7 \xB7 1.25\xD7 \xB7 1.5\xD7 \xB7 2\xD7." },
     reload: { term: "Reload", desc: "Reload the page." },
-    theme: { term: "Theme", desc: "Toggle light and dark." }
+    theme: { term: "Theme", desc: "Toggle light and dark. The themes page picks a palette family per mode, or follows the system." }
   };
+  function helpThemesHtml() {
+    return `<div class="wk-help-row"><div class="wk-help-term">Themes</div><div class="wk-help-desc"><a href="/webkit/themes">Choose a palette family for light and dark, or follow the system appearance.</a></div></div>`;
+  }
   var HELP_ORDER = ["cmdk", "font", "size", "fixation", "speed", "reload", "theme"];
   var helpOverlay = null;
   var helpPrevFocus = null;
@@ -3957,7 +4020,7 @@ var Webkit = (() => {
     if (!helpOverlay || helpIsOpen()) return;
     const body = helpOverlay.querySelector("wk-modal-body");
     if (body) {
-      body.innerHTML = helpRowsHtml(controls) + (controls.includes("speed") ? helpReadAloudHtml() : "") + helpExtraHtml();
+      body.innerHTML = helpRowsHtml(controls) + (controls.includes("theme") ? helpThemesHtml() : "") + (controls.includes("speed") ? helpReadAloudHtml() : "") + helpExtraHtml();
     }
     helpPrevFocus = document.activeElement;
     helpOverlay.removeAttribute("hidden");
