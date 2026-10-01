@@ -27,9 +27,10 @@ file equivalent; see Environment variables.
 ### `scan`
 
 Ticket-firewall strings for `worklog scan`, which classifies a session as
-personal or internal from its working directory and keeps ticket ids from
-the two worlds from co-mingling. A key set in the file replaces its default
-outright; it does not extend it.
+personal or internal and keeps ticket ids from the two worlds from
+co-mingling. The paths it classifies by are the session's working directory
+and the checkout paths its tool calls name. A key set in the file replaces
+its default outright; it does not extend it.
 
 The three classification keys have **no built-in values**. They describe one
 person's machine layout — which ticket prefixes and which directories are
@@ -43,19 +44,20 @@ misfiled, and nothing is dropped.
 - `scan.linear_prefixes` ([]string, no default): `TEAM-NN` key prefixes
   routed to the personal (Linear) ticket world. Any other prefix is treated
   as internal (Jira). Unset means no key is personal.
-- `scan.personal_path_markers` ([]string, no default): a session working
-  directory containing one of these strings is classified personal.
-- `scan.internal_path_markers` ([]string, no default): a session working
-  directory containing one of these strings is classified internal.
+- `scan.personal_path_markers` ([]string, no default): a session path (a
+  line's working directory or a path named in a tool call) containing one of
+  these strings is classified personal.
+- `scan.internal_path_markers` ([]string, no default): a session path
+  containing one of these strings is classified internal.
 - `scan.checkout_roots` ([]string, default `[/code/src/]`): GOPATH-style
   checkout root fragments. The path segment immediately after a matching
   root is read as the git host; a non-`github.com` host counts as internal.
   This split is derived from the path, never enumerated as a marker list,
   which is why it can ship with a default when the marker lists cannot.
 - `scan.repo_path_markers` ([]string, default `[/code/, /workspace/]`): a
-  working directory matching none of these reports no repo at all (for
-  example, a session run from a temp directory). Repo detection is not part
-  of the firewall, so it works out of the box.
+  path matching none of these reports no repo at all (for example, a session
+  run from a temp directory whose tool calls never reach a checkout). Repo
+  detection is not part of the firewall, so it works out of the box.
 
 ### `remote`
 

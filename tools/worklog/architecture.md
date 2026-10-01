@@ -46,10 +46,12 @@ active items first). `show` returns an item's CONTEXT.md or one repo note;
 Scan: `worklog scan --since 14d` runs `scan.Scan` over
 `~/.claude/projects/*/*.jsonl` (root override: `$CLAUDE_PROJECTS_DIR`).
 `digestFile` reduces each transcript to a compact session digest (repos,
-tickets, first/last prompts). `classifyCwd` tags the session personal or
-internal from its paths, and `resolveTickets` filters extracted ticket keys
-to that world, the ticket firewall. Output is JSON on stdout; scan never
-writes to the store.
+tickets, title, per-day activity, first/last prompts). Paths come from each
+line's cwd and from the checkout paths named in tool-call inputs
+(`toolInputPaths`, `checkoutDir`). `classifyPath` tags the session personal
+or internal from them, and `resolveTickets` filters extracted ticket keys to
+that world, the ticket firewall. Output is JSON on stdout; scan never writes
+to the store.
 
 ## Storage
 

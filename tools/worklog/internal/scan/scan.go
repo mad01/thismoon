@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -26,17 +27,30 @@ type Session struct {
 	Started   time.Time `json:"started"`
 	Ended     time.Time `json:"ended"`
 	Title     string    `json:"title,omitempty"`
-	// Context is the ticket world this session belongs to, derived from cwd:
-	// "personal" (github.com/mad01 → Linear MAD-NN, plus legacy mad01/issues
-	// #NN), "internal" (work → Jira TEAM-NN), "mixed", or "unknown". The two
-	// worlds must never cross-reference, so Tickets is filtered to match Context.
+	// Context is the ticket world this session belongs to, derived from the
+	// paths it touched (cwd lines and the checkout paths named in tool-call
+	// inputs): "personal" (github.com/mad01 → Linear MAD-NN, plus legacy
+	// mad01/issues #NN), "internal" (work → Jira TEAM-NN), "mixed", or
+	// "unknown". The two worlds must never cross-reference, so Tickets is
+	// filtered to match Context.
 	Context      string   `json:"context"`
 	Repos        []string `json:"repos,omitempty"`
 	Branches     []string `json:"branches,omitempty"`
 	Tickets      []string `json:"tickets,omitempty"`
 	UserMessages int      `json:"user_messages"`
-	FirstPrompts []string `json:"first_prompts,omitempty"`
-	LastPrompts  []string `json:"last_prompts,omitempty"`
+	// Days splits activity by calendar date so a daily consumer can attribute
+	// a multi-day session's turns. Keys are dates in the location Scan was
+	// given (the CLI passes time.Now(), so local dates). A day with tool
+	// activity but no user turn is still present with a zero count. Omitted
+	// when no line carried a timestamp.
+	Days         map[string]DayActivity `json:"days,omitempty"`
+	FirstPrompts []string               `json:"first_prompts,omitempty"`
+	LastPrompts  []string               `json:"last_prompts,omitempty"`
+}
+
+// DayActivity is one calendar day's share of a session.
+type DayActivity struct {
+	UserMessages int `json:"user_messages"`
 }
 
 var (
@@ -136,33 +150,34 @@ func ticketContext(personal, internal bool) string {
 	}
 }
 
-// classifyCwd reports which ticket world a working directory belongs to. A path
-// can match neither (e.g. a tmp dir), which leaves the session "unknown".
-// Beyond the configured markers, GOPATH-style checkouts of any non-github.com
-// host count as internal — that split is derived, never enumerated (same
-// principle as belt's public/internal remote check).
-func classifyCwd(cfg Config, cwd string) (personal, internal bool) {
+// classifyPath reports which ticket world a path belongs to, whether it is a
+// line's cwd or a checkout path named in a tool call. A path can match
+// neither (e.g. a tmp dir), which leaves the session "unknown". Beyond the
+// configured markers, GOPATH-style checkouts of any non-github.com host count
+// as internal: that split is derived, never enumerated (same principle as
+// belt's public/internal remote check).
+func classifyPath(cfg Config, p string) (personal, internal bool) {
 	for _, m := range cfg.PersonalPathMarkers {
-		if strings.Contains(cwd, m) {
+		if strings.Contains(p, m) {
 			personal = true
 			break
 		}
 	}
 	for _, m := range cfg.InternalPathMarkers {
-		if strings.Contains(cwd, m) {
+		if strings.Contains(p, m) {
 			internal = true
 			break
 		}
 	}
-	return personal, internal || internalHostCheckout(cfg, cwd)
+	return personal, internal || internalHostCheckout(cfg, p)
 }
 
-// internalHostCheckout reports whether cwd sits under a GOPATH-style checkout
+// internalHostCheckout reports whether p sits under a GOPATH-style checkout
 // of a non-github.com git host: a host-shaped segment (contains a dot)
 // directly under a checkout root that isn't github.com.
-func internalHostCheckout(cfg Config, cwd string) bool {
+func internalHostCheckout(cfg Config, p string) bool {
 	for _, root := range cfg.CheckoutRoots {
-		_, rest, ok := strings.Cut(cwd, root)
+		_, rest, ok := strings.Cut(p, root)
 		if !ok {
 			continue
 		}
@@ -215,7 +230,8 @@ func ProjectsDir() (string, error) {
 
 // Scan returns digests of every session whose last activity is within the
 // window ending at now, newest first. Zero-value cfg fields fall back to the
-// built-in defaults.
+// built-in defaults. Per-day activity is keyed by the calendar date in now's
+// location, so a caller passing time.Now() gets local dates.
 func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Session, error) {
 	if root == "" {
 		d, err := ProjectsDir()
@@ -224,7 +240,7 @@ func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Sessio
 		}
 		root = d
 	}
-	cfg = cfg.WithDefaults()
+	sc := &scanner{cfg: cfg.WithDefaults(), loc: now.Location(), seen: map[string]bool{}}
 	cutoff := now.Add(-since)
 	projects, err := os.ReadDir(root)
 	if err != nil {
@@ -240,7 +256,7 @@ func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Sessio
 		}
 		files, _ := filepath.Glob(filepath.Join(root, p.Name(), "*.jsonl"))
 		for _, f := range files {
-			s, ok, err := digestFile(cfg, f, p.Name())
+			s, ok, err := sc.digestFile(f, p.Name())
 			if err != nil {
 				return nil, err
 			}
@@ -279,87 +295,207 @@ func (r record) sessionTitle() string {
 	return cmp.Or(r.AITitle, r.Title)
 }
 
-func digestFile(cfg Config, path, project string) (Session, bool, error) {
+// scanner holds what every transcript digest shares: the firewall config, the
+// location that keys per-day activity, and the on-disk probes already made.
+type scanner struct {
+	cfg  Config
+	loc  *time.Location
+	seen map[string]bool
+}
+
+// onDisk reports whether a path exists on this machine, memoised per scan. A
+// tool-call path that names a checkout still here is one the session used; a
+// path that doesn't (an example in a doc it wrote, a fixture in a test it
+// edited) is one it merely mentioned, and those must not steer the firewall.
+// cwd lines are never probed: a cwd is where the session really ran.
+func (sc *scanner) onDisk(p string) bool {
+	if hit, ok := sc.seen[p]; ok {
+		return hit
+	}
+	full, err := confdir.Expand(p)
+	hit := false
+	if err == nil {
+		_, statErr := os.Stat(full)
+		hit = statErr == nil
+	}
+	sc.seen[p] = hit
+	return hit
+}
+
+func (sc *scanner) digestFile(path, project string) (Session, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Session{}, false, err
 	}
 	defer f.Close()
 
-	s := Session{Project: project}
-	repos, branches := newSet(), newSet()
-	linear, jira, issues := newSet(), newSet(), newSet()
-	var prompts []string
-	var hasPersonal, hasInternal bool
-
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
-	for sc.Scan() {
+	d := newDigest(sc, project)
+	lines := bufio.NewScanner(f)
+	lines.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
+	for lines.Scan() {
 		var r record
-		if json.Unmarshal(sc.Bytes(), &r) != nil {
+		if json.Unmarshal(lines.Bytes(), &r) != nil {
 			continue
 		}
-		if r.SessionID != "" {
-			s.SessionID = r.SessionID
-		}
-		// The last ai-title line wins: Claude Code rewrites it as a session
-		// evolves, so the latest one names the work best.
-		if t := r.sessionTitle(); t != "" {
-			s.Title = t
-		}
-		if ts := parseTime(r.Timestamp); !ts.IsZero() {
-			if s.Started.IsZero() || ts.Before(s.Started) {
-				s.Started = ts
-			}
-			if ts.After(s.Ended) {
-				s.Ended = ts
-			}
-		}
-		if r.Cwd != "" {
-			p, i := classifyCwd(cfg, r.Cwd)
-			hasPersonal = hasPersonal || p
-			hasInternal = hasInternal || i
-		}
-		if repo := repoName(cfg, r.Cwd); repo != "" {
-			repos.add(repo)
-		}
-		if r.GitBranch != "" {
-			branches.add(r.GitBranch)
-		}
-		if r.Type == "user" && r.Message != nil {
-			if txt := userText(r.Message.Content); txt != "" {
-				s.UserMessages++
-				prompts = append(prompts, txt)
-				extractKeys(cfg, txt, linear, jira)
-				extractIssues(txt, issues)
-			}
-		}
+		d.add(r)
 	}
-	if err := sc.Err(); err != nil {
+	if err := lines.Err(); err != nil {
 		return Session{}, false, err
 	}
-	if s.SessionID == "" || s.Ended.IsZero() {
-		return Session{}, false, nil
-	}
-	s.Context = ticketContext(hasPersonal, hasInternal)
-	s.Repos, s.Branches = repos.sorted(), branches.sorted()
-	s.Tickets = resolveTickets(s.Context, linear, jira, issues)
-	s.FirstPrompts, s.LastPrompts = head(prompts, 3), tail(prompts, 3)
-	return s, true, nil
+	s, ok := d.session()
+	return s, ok, nil
 }
 
-// repoName returns the repo basename for a checkout path, or "" for tmp/other
-// paths that aren't repos (nothing in cfg.RepoPathMarkers matches).
-func repoName(cfg Config, cwd string) string {
-	if cwd == "" {
-		return ""
+// digest accumulates one transcript's lines into a Session.
+type digest struct {
+	*scanner
+	s                    Session
+	repos, branches      *set
+	linear, jira, issues *set
+	prompts              []string
+	personal, internal   bool
+	days                 map[string]DayActivity
+}
+
+func newDigest(sc *scanner, project string) *digest {
+	return &digest{
+		scanner:  sc,
+		s:        Session{Project: project},
+		repos:    newSet(),
+		branches: newSet(),
+		linear:   newSet(),
+		jira:     newSet(),
+		issues:   newSet(),
+		days:     map[string]DayActivity{},
 	}
-	for _, m := range cfg.RepoPathMarkers {
-		if strings.Contains(cwd, m) {
-			return filepath.Base(cwd)
+}
+
+// add folds one transcript line into the digest.
+func (d *digest) add(r record) {
+	if r.SessionID != "" {
+		d.s.SessionID = r.SessionID
+	}
+	// The last ai-title line wins: Claude Code rewrites it as a session
+	// evolves, so the latest one names the work best.
+	if t := r.sessionTitle(); t != "" {
+		d.s.Title = t
+	}
+	day := d.addTime(parseTime(r.Timestamp))
+	if r.Cwd != "" {
+		d.classify(r.Cwd)
+		if repo := repoName(d.cfg, r.Cwd); repo != "" {
+			d.repos.add(repo)
 		}
 	}
-	return ""
+	if r.GitBranch != "" {
+		d.branches.add(r.GitBranch)
+	}
+	if r.Message == nil {
+		return
+	}
+	switch r.Type {
+	case "user":
+		d.addUser(r.Message.Content, day)
+	case "assistant":
+		d.addToolPaths(r.Message.Content)
+	}
+}
+
+// addTime widens the session window to ts and returns the day key ts falls
+// on, or "" for a line without a timestamp. The day is recorded even when
+// nothing else on the line counts, so a day of pure tool activity shows up.
+func (d *digest) addTime(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	if d.s.Started.IsZero() || ts.Before(d.s.Started) {
+		d.s.Started = ts
+	}
+	if ts.After(d.s.Ended) {
+		d.s.Ended = ts
+	}
+	day := ts.In(d.loc).Format(time.DateOnly)
+	if _, ok := d.days[day]; !ok {
+		d.days[day] = DayActivity{}
+	}
+	return day
+}
+
+// addUser counts a user turn and mines it for ticket references. Command and
+// system noise injected as user turns (see clip) is dropped before counting.
+func (d *digest) addUser(content json.RawMessage, day string) {
+	txt := userText(content)
+	if txt == "" {
+		return
+	}
+	d.s.UserMessages++
+	if day != "" {
+		a := d.days[day]
+		a.UserMessages++
+		d.days[day] = a
+	}
+	d.prompts = append(d.prompts, txt)
+	extractKeys(d.cfg, txt, d.linear, d.jira)
+	extractIssues(txt, d.issues)
+}
+
+// addToolPaths classifies every checkout path an assistant turn's tool calls
+// name. These count exactly like cwd lines: a session started in a tmp dir
+// that edits files under a checkout belongs to that checkout's world and
+// lists that checkout as a repo. A path is probed at the checkout it resolves
+// to when it resolves to one (a file inside may be gone by scan time, the
+// checkout rarely is), else as given. The repo list takes only checkouts
+// with a .git entry, so ~/code/bin and other plain directories under a repo
+// path marker never show up as repos.
+func (d *digest) addToolPaths(content json.RawMessage) {
+	for _, p := range toolInputPaths(content) {
+		dir := checkoutDir(d.cfg, p)
+		if !d.onDisk(cmp.Or(dir, p)) {
+			continue
+		}
+		d.classify(p)
+		if dir != "" && d.onDisk(path.Join(dir, ".git")) {
+			d.repos.add(filepath.Base(dir))
+		}
+	}
+}
+
+// classify ORs a path's world into the session's. cwd lines and tool-call
+// paths are pooled with no precedence between them: a session that touches
+// both worlds through either source is "mixed", which surfaces every ticket
+// for human review rather than filing it by whichever source happened to win.
+func (d *digest) classify(p string) {
+	personal, internal := classifyPath(d.cfg, p)
+	d.personal = d.personal || personal
+	d.internal = d.internal || internal
+}
+
+// session finalises the digest. A transcript with no session id or no dated
+// line is not a session.
+func (d *digest) session() (Session, bool) {
+	if d.s.SessionID == "" || d.s.Ended.IsZero() {
+		return Session{}, false
+	}
+	s := d.s
+	s.Context = ticketContext(d.personal, d.internal)
+	s.Repos, s.Branches = d.repos.sorted(), d.branches.sorted()
+	s.Tickets = resolveTickets(s.Context, d.linear, d.jira, d.issues)
+	s.FirstPrompts, s.LastPrompts = head(d.prompts, 3), tail(d.prompts, 3)
+	if len(d.days) > 0 {
+		s.Days = d.days
+	}
+	return s, true
+}
+
+// repoName returns the repo basename for a cwd, or "" for tmp/other paths
+// that aren't repos (nothing in cfg.RepoPathMarkers matches). A cwd inside a
+// checkout reports the directory it is in, not the checkout; tool-call paths
+// go through checkoutDir instead.
+func repoName(cfg Config, cwd string) string {
+	if cwd == "" || !underRepoMarker(cfg, cwd) {
+		return ""
+	}
+	return filepath.Base(cwd)
 }
 
 func parseTime(s string) time.Time {

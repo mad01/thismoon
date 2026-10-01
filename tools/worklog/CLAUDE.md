@@ -38,20 +38,47 @@ change.
 ### `scan` and the ticket firewall
 
 `scan` (package `internal/scan`) reads local Claude session transcripts. It
-emits one compact JSON digest per recent session (repos, tickets, title, first/
-last prompts) so `/worklog-backfill` can cluster and import past work without
-pulling raw transcripts into context. Window via `--since Nd` or a Go duration;
-override the transcript root with `$CLAUDE_PROJECTS_DIR` (used by tests).
+emits one compact JSON digest per recent session (repos, tickets, title,
+per-day activity, first/last prompts) so `/worklog-backfill` can cluster and
+import past work without pulling raw transcripts into context. Window via
+`--since Nd` or a Go duration; override the transcript root with
+`$CLAUDE_PROJECTS_DIR` (used by tests).
 
 `scan` extracts ticket ids from prompt text: uppercase project keys
 (`[A-Z]{2,}-\d+`, covering both Linear `MAD-123` and Jira `ABC-1234`), github
 issue/PR URLs (`github.com/<o>/<r>/issues|pull/<n>` → `#n`), and bare `#NN`
 (addresses issue #55). It also tags each session's `context` (`personal`,
-`internal`, `mixed`, `unknown`) from cwd and **filters `tickets[]` to that
-world** by key prefix so personal and internal refs never co-mingle. A
-personal item carries Linear `MAD-NN` (and legacy `#NN`) but never a Jira key.
-An internal item carries Jira keys but never a Linear/github personal ref. The
-firewall mirrors the global internal/external separation.
+`internal`, `mixed`, `unknown`) from the paths it touched and **filters
+`tickets[]` to that world** by key prefix so personal and internal refs never
+co-mingle. A personal item carries Linear `MAD-NN` (and legacy `#NN`) but
+never a Jira key. An internal item carries Jira keys but never a Linear/github
+personal ref. The firewall mirrors the global internal/external separation.
+
+Paths come from two sources. Every line's `cwd` counts, and so does every
+absolute or `~/`-rooted path inside an assistant turn's `tool_use` inputs: a
+Read or Edit `file_path`, a Bash `cd <dir>` or `git -C <dir>`, a
+`worklog_checkpoint` cwd, an Agent prompt that names a checkout. The input
+object is walked generically, so no tool needs its own rule. A tool-call path
+counts only if it still exists on this machine, probed at the checkout it
+resolves to. A path the session merely mentioned is ignored, say an example
+in a doc it wrote or a fixture in a test it edited. That way prose can't
+steer the firewall. Most agent sessions start in a throwaway directory and only
+reach real checkouts through tool calls, which is why cwd alone left them
+with no repos and `context: "unknown"`. The two sources pool with no
+precedence between them. A session
+that touches both worlds through either source is `mixed`, which surfaces
+every ticket for review instead of filing it by whichever source won. For
+`repos`, a cwd reports its own basename. A tool-call path resolves to the
+checkout it sits in: host/org/repo under a checkout root, otherwise the
+segment after a repo path marker. That directory is listed only when it has
+a `.git` entry, so `~/code/bin/<tool>` invocations don't produce a repo named
+`bin`. A csl `repo` argument such as `owner/name` is a slug, not a path, and
+isn't read.
+
+`days` splits `user_messages` by calendar date, keyed in the local timezone,
+so a daily consumer can attribute a session that ran across several days:
+`"days": {"2026-09-30": {"user_messages": 3}}`. A day with tool activity but
+no user turn is present with a zero count.
 
 The firewall strings live in worklog's config file (`--config`, else
 `$WORKLOG_CONFIG`, else `config.yaml` under `$XDG_CONFIG_HOME`/`~/.config`):
@@ -62,7 +89,7 @@ scan:
   personal_path_markers: ["github.com/you/"]
   internal_path_markers: ["/workspace/"]
   checkout_roots: ["/code/src/"]              # GOPATH-style roots; the next segment is read as the git host
-  repo_path_markers: ["/code/", "/workspace/"] # a cwd matching none of these reports no repo
+  repo_path_markers: ["/code/", "/workspace/"] # a cwd or tool-call path matching none of these reports no repo
 ```
 
 The three classification keys ship with **no built-in values** — they
