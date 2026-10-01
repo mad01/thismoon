@@ -1663,6 +1663,12 @@ wk-header { display: block; }
 }
 .ctrl-btn:hover { border-color: var(--border-hover); color: var(--text-1); }
 .ctrl-btn.active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+/* The audio toggle: a speaker while the read-aloud controls show, a struck
+   speaker in the muted ink while they are hidden. */
+#webkit-audio .icon-audio-off { display: none; }
+#webkit-audio[aria-pressed="false"] { color: var(--text-3); }
+#webkit-audio[aria-pressed="false"] .icon-audio-on { display: none; }
+#webkit-audio[aria-pressed="false"] .icon-audio-off { display: inline; }
 
 .ctrl-select {
   appearance: none; background: var(--chip-bg); border: 1px solid var(--border);
@@ -1674,6 +1680,8 @@ wk-header { display: block; }
 }
 .ctrl-select:hover { border-color: var(--border-hover); color: var(--text-1); }
 .ctrl-select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ctrl-select:disabled { opacity: 0.45; cursor: default; }
+.ctrl-select:disabled:hover { border-color: var(--border); color: var(--text-2); }
 
 .size-btn {
   appearance: none; background: var(--chip-bg); border: 1px solid var(--border);
@@ -2137,7 +2145,116 @@ wk-callout {
 }
 wk-callout[variant="info"]  { border-left-color: var(--blue); }
 wk-callout[variant="warn"]  { border-left-color: var(--amber); }
+wk-callout[variant="ok"]    { border-left-color: var(--green); }
 wk-callout[variant="error"] { border-left-color: var(--red); }
+
+/* ── wk-columns ── two or three equal columns of blocks (cols="2|3", two
+   when unset); one column under 700px so nothing gets squeezed. Columns are
+   transparent to the fixation and read-aloud walks. */
+
+wk-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin: 1rem 0;
+}
+wk-columns[cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+wk-col { display: block; min-width: 0; }
+wk-col > :first-child { margin-top: 0; }
+wk-col > :last-child { margin-bottom: 0; }
+@media (max-width: 700px) {
+  wk-columns, wk-columns[cols="3"] { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── wk-stat ── a large figure over a label, with an optional sub line. The
+   value is a figure, not prose: fixation leaves it alone. */
+
+wk-stat {
+  display: block;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-xs);
+}
+wk-stat-value {
+  display: block;
+  font-size: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+wk-stat-label {
+  display: block;
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+wk-stat-sub {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+/* ── blockquote in a section ── a quotation with an optional <cite>
+   attribution; the .wk-prose rule further down covers rendered markdown. */
+
+wk-section blockquote {
+  margin: 1rem 0;
+  padding: 0.25rem 0 0.25rem 1.125rem;
+  border-left: 3px solid var(--primary);
+}
+wk-section blockquote p {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--text-1);
+}
+wk-section blockquote cite {
+  display: block;
+  margin-top: 0.5rem;
+  font-style: normal;
+  font-size: 0.8125rem;
+  color: var(--text-3);
+}
+
+/* ── details in a section ── native disclosure, closed by default, framed
+   like a panel. The marker is drawn by the summary so it matches the kit. */
+
+wk-section details {
+  margin: 1rem 0;
+  padding: 0 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+wk-section details > summary {
+  padding: 0.75rem 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-1);
+  cursor: pointer;
+  list-style: none;
+}
+wk-section details > summary::-webkit-details-marker { display: none; }
+wk-section details > summary::before {
+  content: '';
+  display: inline-block;
+  width: 0.375rem; height: 0.375rem;
+  margin: 0 0.625rem 0.125rem 0.125rem;
+  border-right: 1.5px solid var(--text-3);
+  border-bottom: 1.5px solid var(--text-3);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+wk-section details[open] > summary::before { transform: rotate(45deg); }
+wk-section details[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; }
+wk-section details > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+wk-section details > :last-child:not(summary) { margin-bottom: 0.875rem; }
 
 /* ── wk-progress ── */
 
@@ -2729,6 +2846,14 @@ wk-toast[variant="err"] { background: var(--red); color: var(--on-red); }
    the page's audio bar and shows where the consumer placed it. */
 wk-read-aloud { display: none; }
 wk-read-aloud:has(> .wk-ra-bar) { display: block; }
+
+/* The header's audio toggle sets data-audio on <html>; off hides every
+   control read-aloud injects (play and restart buttons, the page bar, the
+   section badges, the selection button) without touching the registration
+   or the stamps, so turning it back on costs nothing. */
+html[data-audio="off"] .wk-ra-btn,
+html[data-audio="off"] .wk-ra-bar,
+html[data-audio="off"] wk-badge.wk-ra-state { display: none; }
 
 .wk-ra-btn {
   appearance: none; float: right; background: var(--chip-bg); border: 1px solid var(--border);

@@ -62,9 +62,13 @@ Badges: `<wk-badge variant="a|b|c|outline|stat|accent|filter">`;
 Content blocks: `<wk-kv>` / `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`
 (`variant="card"` adds border + rounded corners + uppercased labels),
 `<wk-section>` / `<wk-section-heading>` / `<wk-section-id>` /
-`<wk-section-subheading>` (ruled heading), `<wk-callout variant="info|warn">`,
+`<wk-section-subheading>` (ruled heading), `<wk-callout variant="info|warn|ok|error">`,
 `<wk-progress>` / `<wk-progress-bar>` / `<wk-progress-fill>` /
-`<wk-progress-label>`, `<wk-toc>` / `<wk-toc-title>`.
+`<wk-progress-label>`, `<wk-toc>` / `<wk-toc-title>`, `<wk-columns cols="2|3">` /
+`<wk-col>` (equal columns, one under 700px), `<wk-stat>` / `<wk-stat-value>` /
+`<wk-stat-label>` / `<wk-stat-sub>` (figure over a label; the value is skipped by
+fixation), and inside a section the native `blockquote` (+ `cite`) and `details`
+(+ `summary`, closed by default; read-aloud opens it while a part inside plays).
 
 Overlays: `<wk-modal [hidden]>` / `<wk-modal-panel>` / `<wk-modal-head>` /
 `<wk-modal-actions>` (fade+slide in; toggle `[hidden]` to open/close),
@@ -109,8 +113,10 @@ a role with one `cssVar` call. The generated blocks sit at the top of
 No selector is `:root`-scoped, so a subtree can carry its own palette; the
 themes page renders every card that way. The rules in `src/webkit.css` read
 roles only (`--primary`, `--on-primary`, `--topbar-bg`, `--code-bg`), never a
-ramp value. `--terracotta` and `--green-light` stay declared as aliases for
-the consumers that haven't moved to roles yet (catalog, csl).
+ramp value. `--terracotta` and `--green-light` stay declared for the
+consumers that haven't moved to roles yet (catalog, csl): terracotta keeps
+the light-mode primary and is pinned separately in dark, where the default
+primary is a lighter shade, and green-light is the derived light green.
 
 Selection is three `localStorage` keys. `webkit-theme` keeps `light` | `dark`
 and gains `system` (follows `prefers-color-scheme`); `webkit-palette-light` and
@@ -234,7 +240,12 @@ and the extraction-pattern rules live in the dotfiles repo:
 - **State keys are global per origin** (`webkit-theme`, `webkit-palette-light`,
   `webkit-palette-dark`, `webkit-font`, `webkit-size`, `webkit-fixation`,
   `webkit-ra-speed`). They persist across a tool's own pages, and a change in
-  one tab reaches the others through the `storage` event.
+  one tab reaches the others through the `storage` event. The one exception
+  is the audio toggle. Its key is `webkit-audio` by default, but a shell may
+  name a per-view key and default on `<html>` (`data-audio-key`,
+  `data-audio-default`), and boot.js and the header both read them. That is
+  how present's deck opens with the read-aloud controls hidden under
+  `webkit-audio-deck` while its brief keeps its own choice.
 - **A theme is a file; a rule reads a role.** Never put a colour literal or a
   ramp name back into `src/webkit.css`: add or derive a role in
   `src/themes.mjs` so every family gets it. A role the graph or chart code

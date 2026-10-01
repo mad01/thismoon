@@ -37,11 +37,13 @@ const SKIP_TAGS = new Set([
 // Entering/leaving one of these flushes the current segmentation run, so a
 // heading never merges into the following paragraph's first sentence.
 const BLOCK_TAGS = new Set([
-  'P', 'LI', 'TD', 'TH', 'DIV', 'SECTION', 'ARTICLE', 'BLOCKQUOTE',
+  'P', 'LI', 'TD', 'TH', 'DIV', 'SECTION', 'ARTICLE', 'BLOCKQUOTE', 'CITE',
+  'DETAILS', 'SUMMARY',
   'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'TR', 'BR',
   'WK-TITLE', 'WK-SUBTITLE', 'WK-SECTION-HEADING', 'WK-SECTION-SUBHEADING',
   'WK-CALLOUT', 'WK-KV-ROW', 'WK-PANEL-TITLE', 'WK-PANEL-SUBTITLE',
   'WK-TOC-TITLE', 'WK-PROGRESS-LABEL', 'WK-CARD',
+  'WK-COL', 'WK-STAT-VALUE', 'WK-STAT-LABEL', 'WK-STAT-SUB',
 ]);
 
 const SVG_PLAY    = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -466,6 +468,12 @@ function highlight(s: Session, idx: number): void {
   const cur = s.plan.parts[idx].highlight;
   prev.forEach(el => { if (!cur.includes(el)) el.classList.remove('wk-ra-active'); });
   cur.forEach(el => el.classList.add('wk-ra-active'));
+  // A part inside a closed <details> would light up out of sight: open the
+  // element so the highlight is on screen. It stays open afterwards.
+  cur.forEach(el => {
+    const details = el.closest('details');
+    if (details && !details.open) details.open = true;
+  });
   s.lit = cur;
   // Scroll to the first newly lit element only: a paragraph running on from
   // the previous part stays where the reader has it.
@@ -1159,6 +1167,12 @@ export class WkReadAloud extends HTMLElement {
       // A cached session applies speed in the player, so it follows the
       // control mid-clip; uncached parts take it with their next request.
       if (session?.cfg === cfg) applyRate(session);
+    }) as EventListener);
+
+    // The header's audio toggle hides every control this element injects; a
+    // session still playing would read on with nothing on screen to show it.
+    document.addEventListener('wk-audiochange', ((e: CustomEvent<{ audio: string }>) => {
+      if (e.detail.audio === 'off') stopReadAloud();
     }) as EventListener);
 
     if (!(await probe(cfg.endpoint))) return;
