@@ -221,12 +221,96 @@ html.presenting .deck-bar:hover, html.presenting .deck-bar:focus-within { opacit
 html.presenting .deck-strip, html.presenting .deck-logo-corner { z-index: 41; }
 html.presenting .deck-logo-corner { top: 1.25rem; }
 html.has-deck-strip.presenting .slide.active { padding-bottom: max(5vh, 3.25rem); }
+/* Slide layouts (data-layout, copied from the wk-section by the splitter):
+   center keeps today's sizes and centres them; statement is the heading as
+   the slide; section is a divider on a tone band. A lone stat or quote is
+   the big-number or quote slide through the solo class, no field needed.
+   A tone (data-tone with --slide-accent as var(--<role>), set by the
+   renderer) tints the slide's surface and heading rule in the deck and
+   bands the section in the brief; every colour here mixes a role, never a
+   literal. */
+.slide[data-layout="center"] .slide-body { text-align: center; }
+.slide[data-layout="center"] wk-section-heading::after { left: 50%; transform: translateX(-50%); }
+.slide[data-layout="center"] .brief-list { display: inline-block; text-align: left; }
+.slide[data-layout="statement"] .slide-body { text-align: center; }
+.slide[data-layout="statement"] wk-section-heading { font-size: 2.75rem; line-height: 1.15; letter-spacing: -0.02em; border-bottom: 0; padding-bottom: 0; margin-bottom: 1.25rem; }
+.slide[data-layout="statement"] wk-section-heading::after { content: none; }
+.slide[data-layout="statement"] wk-section p { font-size: 1.125rem; color: var(--text-2); max-width: 760px; margin: 0 auto 1rem; }
+.slide[data-layout="section"] .slide-body { text-align: center; padding: 3.5rem 2rem; border-radius: 14px; background: color-mix(in srgb, var(--slide-accent, var(--primary)) 14%, var(--bg)); }
+.slide[data-layout="section"] wk-section-heading { font-size: 2.5rem; line-height: 1.15; border-bottom: 0; padding-bottom: 0; margin-bottom: 0.75rem; }
+.slide[data-layout="section"] wk-section-heading::after { content: none; }
+.slide[data-layout="section"] wk-section-id { display: inline-block; font-size: 1.125rem; padding: 0.375rem 0.75rem; margin: 0 0 0.875rem; }
+.slide[data-layout="section"] wk-section p { font-size: 1.125rem; color: var(--text-2); margin: 0 auto; max-width: 760px; }
+.slide.solo-stat wk-stat { border: 0; background: none; box-shadow: none; padding: 0; margin: 2rem 0; text-align: center; }
+.slide.solo-stat wk-stat-value { font-size: 5.5rem; letter-spacing: -0.03em; }
+.slide.solo-stat wk-stat-label { font-size: 1.125rem; margin-top: 0.75rem; }
+.slide.solo-stat wk-stat-sub { font-size: 0.9375rem; }
+.slide.solo-quote blockquote { border: 0; padding: 0; margin: 2rem auto; max-width: 820px; text-align: center; }
+.slide.solo-quote blockquote p { font-size: 1.75rem; line-height: 1.4; }
+.slide.solo-quote blockquote cite { font-size: 1rem; margin-top: 1rem; }
+.slide[data-tone] { background: color-mix(in srgb, var(--slide-accent) 10%, var(--bg)); border-radius: 14px; padding: 1.5rem 2rem; }
+.slide[data-tone] wk-section-heading { border-bottom-color: color-mix(in srgb, var(--slide-accent) 40%, var(--border)); }
+.slide[data-tone] wk-section-heading::after { background: var(--slide-accent); }
+html.presenting .slide.active[data-tone] { background: color-mix(in srgb, var(--slide-accent) 10%, var(--bg)); border-radius: 0; }
+.brief:not(.deck) wk-section[data-tone] { border-left: 3px solid var(--slide-accent); padding-left: 1.125rem; }
+.brief:not(.deck) wk-section[data-tone] wk-section-heading::after { background: var(--slide-accent); }
+/* Reveal steps: hidden by visibility, not display, so read-aloud and
+   fixation see the whole slide. A step fades up 8px when shown; hiding on
+   Prev is instant. The deck's transition value governs the motion. */
+.deck .fragment { visibility: hidden; }
+.deck .fragment.shown { visibility: visible; animation: fragmentIn 0.2s ease-out; }
+@keyframes fragmentIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+html[data-transition="none"] .deck .fragment.shown { animation: none; }
+/* Speaker notes: a drawer at the lower left, outside every slide, over the
+   chrome and, while presenting, over the fixed slide. */
+.deck-notes-drawer {
+  position: fixed; left: 1.25rem; bottom: 4.75rem; z-index: 45;
+  width: min(28rem, calc(100vw - 2.5rem)); max-height: 40vh; overflow: auto;
+  padding: 0.875rem 1rem; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-md); color: var(--text-2); font-size: 0.875rem; line-height: 1.6;
+}
+.deck-notes-drawer[hidden] { display: none; }
+.deck-notes-title { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin-bottom: 0.375rem; }
+.deck-notes-empty { color: var(--text-3); margin: 0; }
+.deck-notes-drawer strong { color: var(--text-1); }
+/* Slide transitions through the View Transitions API. The active slide
+   alone carries the name, so the header, the bar, the strip, and the drawer
+   never take part; the root pseudo-elements get no animation. Old and new
+   snapshots crossfade over 200 ms; with transition "slide" the direction
+   classes on html (set by show) add a 24 px nudge along the way, horizontal
+   only. deck-vt turns the fallback entry keyframe off while the API runs,
+   and browsers without the API keep that one-sided fade-up. Reduce Motion
+   collapses the pseudo-elements to a cut; show skips the API there too. */
+.slide.active { view-transition-name: deck-slide; }
+::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(deck-slide), ::view-transition-new(deck-slide) { animation-duration: 0.2s; animation-timing-function: ease-out; mix-blend-mode: normal; }
+html.deck-vt .slide.active, html[data-transition="none"] .slide.active { animation: none; }
+@keyframes deckInFromRight { from { opacity: 0; transform: translateX(24px); } }
+@keyframes deckInFromLeft { from { opacity: 0; transform: translateX(-24px); } }
+@keyframes deckOutToLeft { to { opacity: 0; transform: translateX(-24px); } }
+@keyframes deckOutToRight { to { opacity: 0; transform: translateX(24px); } }
+html[data-transition="slide"].deck-next::view-transition-old(deck-slide) { animation-name: deckOutToLeft; }
+html[data-transition="slide"].deck-next::view-transition-new(deck-slide) { animation-name: deckInFromRight; }
+html[data-transition="slide"].deck-prev::view-transition-old(deck-slide) { animation-name: deckOutToRight; }
+html[data-transition="slide"].deck-prev::view-transition-new(deck-slide) { animation-name: deckInFromLeft; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+/* The graph fades in once its first layout has stopped (app.js adds ready),
+   opacity only so the canvas composites once; the brief gets the same. */
+.cy-container { opacity: 0; transition: opacity 0.2s ease-out; }
+.cy-container.ready { opacity: 1; }
+html[data-transition="none"] .cy-container { transition: none; }
 @media (max-width: 600px) {
   .slide-title .brief-title { font-size: 1.875rem; }
   .slide.active { min-height: calc(100vh - 10rem); }
   html.presenting .slide.active { padding: 1.5rem 1rem; }
   html.has-deck-strip.presenting .slide.active { padding-bottom: 3.25rem; }
   .deck-strip { left: 0.75rem; right: 0.75rem; }
+  .slide[data-layout="statement"] wk-section-heading { font-size: 1.875rem; }
+  .slide[data-layout="section"] wk-section-heading { font-size: 1.75rem; }
+  .slide.solo-stat wk-stat-value { font-size: 3.5rem; }
+  .slide.solo-quote blockquote p { font-size: 1.25rem; }
 }
 #share-result code { word-break: break-all; }
 #share-status { color: var(--text-3); }
