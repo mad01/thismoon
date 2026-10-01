@@ -215,8 +215,26 @@
         baseLayout = opts.layout;
         if (engineOverride) opts.layout = presentGraphLayout(engineOverride, layoutDirection(baseLayout));
       }
+      // The page's layout runs after the instance exists, so the ready
+      // listener below sees it stop: a synchronous layout started by the
+      // constructor would finish before any listener could be attached.
+      var layout = isPage ? opts.layout : null;
+      if (layout) delete opts.layout;
       var cy = orig.apply(this, arguments);
-      if (isPage) window._cyInstance = cy;
+      if (isPage) {
+        window._cyInstance = cy;
+        // The container fades in once its first layout has stopped (the
+        // shell's .cy-container.ready rule); a later rebuild (theme change)
+        // keeps the class, so only the first showing fades. The timer covers
+        // a layout that never reports stopping.
+        var container = opts.container;
+        if (!container.classList.contains('ready')) {
+          var ready = function () { container.classList.add('ready'); };
+          cy.one('layoutstop', ready);
+          setTimeout(ready, 1500);
+        }
+        if (layout) cy.layout(layout).run();
+      }
       return cy;
     };
     for (var k in orig) if (orig.hasOwnProperty(k)) wrapped[k] = orig[k];
@@ -386,35 +404,49 @@
     if (!n) { n = document.createElement('p'); n.className = 'present-chart-note'; block.appendChild(n); }
     n.textContent = text;
   }
-  function initPresentCharts() {
+  // buildChart builds (or rebuilds, on a theme change) one chart block. The
+  // entry animation plays once per block, the first time it is built, and
+  // opts.duration caps it: the brief plays Chart.js's 700 ms at mount, the
+  // deck 400 ms on the first showing of the slide.
+  function buildChart(block, opts) {
+    var specEl = block.querySelector('.chart-spec');
+    var canvas = block.querySelector('canvas');
+    if (!specEl || !canvas) return;
+    var spec;
+    try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
+    if (block._chart) { block._chart.destroy(); block._chart = null; }
+    var kind = spec.kind || 'bar';
+    block.classList.toggle('is-sparkline', kind === 'sparkline');
+    var colors = getChartColors();
+    var animate = !reducedMotion && !block._built;
+    block._built = true;
+    var cfg;
+    if (kind === 'doughnut') {
+      cfg = doughnutConfig(spec, colors, animate);
+    } else if (kind === 'sankey') {
+      if (!sankeyAvailable()) {
+        chartNote(block, 'Sankey needs the chartjs-chart-sankey asset: run make cache in services/present.');
+        return;
+      }
+      cfg = sankeyConfig(spec, colors, animate);
+    } else {
+      cfg = cartesianConfig(kind, spec, colors, animate);
+    }
+    if (animate && opts && opts.duration && cfg.options && cfg.options.animation) {
+      cfg.options.animation.duration = opts.duration;
+    }
+    block._chart = new Chart(canvas, cfg);
+  }
+  // initPresentCharts builds every chart block under root (the document by
+  // default); with opts.builtOnly it rebuilds only the ones already built,
+  // which is what a theme change wants in the deck, where a chart on a slide
+  // not yet shown waits for its first showing.
+  function initPresentCharts(root, opts) {
     if (typeof Chart === 'undefined') return;
     registerSankey();
-    document.querySelectorAll('.present-chart').forEach(function (block) {
-      var specEl = block.querySelector('.chart-spec');
-      var canvas = block.querySelector('canvas');
-      if (!specEl || !canvas) return;
-      var spec;
-      try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
-      if (block._chart) { block._chart.destroy(); block._chart = null; }
-      var kind = spec.kind || 'bar';
-      block.classList.toggle('is-sparkline', kind === 'sparkline');
-      var colors = getChartColors();
-      // Entry animation plays once per block; a theme recolor rebuilds silently.
-      var animate = !reducedMotion && !block._built;
-      block._built = true;
-      var cfg;
-      if (kind === 'doughnut') {
-        cfg = doughnutConfig(spec, colors, animate);
-      } else if (kind === 'sankey') {
-        if (!sankeyAvailable()) {
-          chartNote(block, 'Sankey needs the chartjs-chart-sankey asset: run make cache in services/present.');
-          return;
-        }
-        cfg = sankeyConfig(spec, colors, animate);
-      } else {
-        cfg = cartesianConfig(kind, spec, colors, animate);
-      }
-      block._chart = new Chart(canvas, cfg);
+    (root || document).querySelectorAll('.present-chart').forEach(function (block) {
+      if (opts && opts.builtOnly && !block._built) return;
+      buildChart(block, opts);
     });
   }
 
@@ -864,12 +896,62 @@
       if (tag === 'wk-toc') { seenSection = true; return; }
       if (tag !== 'wk-section' && !seenSection) { hero.push(n); return; }
       seenSection = true;
-      slides.push(makeSlide([n], 'slide-section'));
+      var slide = makeSlide([n], 'slide-section');
+      decorateSlide(slide, n);
+      slides.push(slide);
     });
     if (hero.length) slides.unshift(makeSlide(hero, 'slide-title'));
     if (refs) slides.push(makeSlide([refs], 'slide-refs'));
     if (!slides.length) slides.push(makeSlide([Webkit.el('p', {}, 'This deck has no slides yet.')], 'slide-title'));
     return { slides: slides, chrome: chrome };
+  }
+
+  // sectionBlocks is a section's top-level blocks: every element child but
+  // the heading and the notes template.
+  function sectionBlocks(section) {
+    return Array.prototype.slice.call(section.children).filter(function (c) {
+      var t = c.tagName.toLowerCase();
+      return t !== 'wk-section-heading' && !(t === 'template' && c.classList.contains('deck-notes'));
+    });
+  }
+
+  // decorateSlide carries a section's layout onto its slide: the
+  // data-layout, data-tone (with its --slide-accent variable), and
+  // data-reveal attributes the renderer put on the wk-section; a solo class
+  // when the only block is a stat or a quote, which is the big-number or
+  // quote slide with no field to set; the speaker notes template, read from
+  // its inert content; and, for a reveal slide, the steps: every item of a
+  // top-level list and every other top-level block, in order, each marked
+  // as a fragment the view shows one per Next.
+  function decorateSlide(slide, section) {
+    ['data-layout', 'data-tone', 'data-reveal'].forEach(function (a) {
+      if (section.hasAttribute(a)) slide.setAttribute(a, section.getAttribute(a));
+    });
+    var accent = section.style.getPropertyValue('--slide-accent');
+    if (accent) slide.style.setProperty('--slide-accent', accent);
+    var blocks = sectionBlocks(section);
+    if (blocks.length === 1) {
+      var tag = blocks[0].tagName.toLowerCase();
+      if (tag === 'wk-stat') slide.classList.add('solo', 'solo-stat');
+      else if (tag === 'blockquote') slide.classList.add('solo', 'solo-quote');
+    }
+    var notes = null;
+    Array.prototype.slice.call(section.children).forEach(function (c) {
+      if (c.tagName === 'TEMPLATE' && c.classList.contains('deck-notes')) notes = c.content;
+    });
+    slide._notes = notes;
+    if (section.hasAttribute('data-reveal')) {
+      var steps = [];
+      blocks.forEach(function (b) {
+        var items = (b.tagName === 'UL' || b.tagName === 'OL')
+          ? Array.prototype.slice.call(b.children).filter(function (c) { return c.tagName === 'LI'; })
+          : [];
+        if (items.length) items.forEach(function (li) { steps.push(li); });
+        else steps.push(b);
+      });
+      steps.forEach(function (el, k) { el.classList.add('fragment'); el.setAttribute('data-step', String(k + 1)); });
+      slide._steps = steps;
+    }
   }
 
   // ── Deck chrome ── the view's furniture around the slides, built from the
@@ -995,15 +1077,33 @@
     var deck = Webkit.el('div', { class: 'brief deck', id: 'deck' }, slides);
     var counter = Webkit.el('span', { class: 'deck-counter', 'aria-live': 'polite' });
     var presentBtn = Webkit.el('button', { class: 'btn btn-ghost', type: 'button', 'data-deck': 'present', title: 'Present (F): hide the chrome and fill the window' }, 'Present');
+    // Speaker notes: a drawer outside every slide (so a slide transition
+    // never includes it), toggled by the N key and, when any slide has
+    // notes, a bar button. It shows the current slide's notes, read from
+    // the template the renderer put in the section.
+    var hasNotes = slides.some(function (sl) { return !!sl._notes; });
+    var notesBtn = hasNotes
+      ? Webkit.el('button', { class: 'btn btn-ghost', type: 'button', 'data-deck': 'notes', title: 'Speaker notes (N)', 'aria-pressed': 'false' }, 'Notes')
+      : null;
     var bar = Webkit.el('div', { class: 'deck-bar', role: 'toolbar', 'aria-label': 'Slides' }, [
       Webkit.el('button', { class: 'btn btn-ghost deck-arrow', type: 'button', 'data-deck': 'prev', title: 'Previous slide (Left)', 'aria-label': 'Previous slide' }, '‹'),
       counter,
       Webkit.el('button', { class: 'btn btn-ghost deck-arrow', type: 'button', 'data-deck': 'next', title: 'Next slide (Right or Space)', 'aria-label': 'Next slide' }, '›'),
+      notesBtn,
       presentBtn
     ]);
+    var drawer = Webkit.el('aside', { class: 'deck-notes-drawer', hidden: '', 'aria-label': 'Speaker notes' }, [
+      Webkit.el('div', { class: 'deck-notes-title' }, 'Notes'),
+      Webkit.el('div', { class: 'deck-notes-body' })
+    ]);
+    // The transition between slides: fade unless the island says slide or
+    // none. The html attribute drives the shell's keyframes.
+    var transition = split.chrome.transition === 'slide' || split.chrome.transition === 'none' ? split.chrome.transition : 'fade';
+    document.documentElement.setAttribute('data-transition', transition);
     root.innerHTML = '';
     root.appendChild(deck);
     root.appendChild(bar);
+    root.appendChild(drawer);
 
     // The chrome strip goes after the bar; with a strip the bar moves up
     // above it, the deck leaves room for both, and the presenting slide
@@ -1027,7 +1127,8 @@
       sc.textContent = data.graph;
       document.body.appendChild(sc);
     }
-    initPresentCharts();
+    // Charts are built the first time their slide shows (refreshVisuals),
+    // so the draw-in plays where it can be seen.
     deck.querySelectorAll('a[href]:not([href^="#"])').forEach(function (a) {
       a.target = '_blank'; a.rel = 'noopener';
     });
@@ -1074,26 +1175,93 @@
           setTimeout(function () { c.resize(); c.fit(undefined, 30); c.center(); }, 60);
         }
       }
-      slide.querySelectorAll('.present-chart').forEach(function (b) { if (b._chart) b._chart.resize(); });
+      if (typeof Chart !== 'undefined') registerSankey();
+      slide.querySelectorAll('.present-chart').forEach(function (b) {
+        if (!b._built) { if (typeof Chart !== 'undefined') buildChart(b, { duration: 400 }); }
+        else if (b._chart) b._chart.resize();
+      });
     }
 
-    function show(i) {
+    // Reveal steps: how many of the current slide's fragments are shown.
+    // Next shows one more before moving on, Prev hides the last shown one
+    // before moving back, and a jump (goto, a dot, the hash, Home and End)
+    // lands with every step shown. The hash and the dots track slides only.
+    var step = 0;
+    function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
+    function applySteps(slide, n) {
+      step = n;
+      if (!slide || !slide._steps) return;
+      slide._steps.forEach(function (el, k) { el.classList.toggle('shown', k < n); });
+    }
+    function updateCounter() {
+      var total = stepTotal(slides[current]);
+      counter.textContent = (current + 1) + ' / ' + slides.length + (total ? ' · ' + step + '/' + total : '');
+    }
+
+    var notesOpen = false;
+    function renderNotes() {
+      var body = drawer.querySelector('.deck-notes-body');
+      body.innerHTML = '';
+      var n = slides[current] && slides[current]._notes;
+      if (n) body.appendChild(n.cloneNode(true));
+      else body.appendChild(Webkit.el('p', { class: 'deck-notes-empty' }, 'No notes for this slide.'));
+    }
+    function toggleNotes(on) {
+      if (!hasNotes) return;
+      notesOpen = on === undefined ? !notesOpen : on;
+      drawer.hidden = !notesOpen;
+      if (notesBtn) notesBtn.setAttribute('aria-pressed', String(notesOpen));
+      if (notesOpen) renderNotes();
+    }
+
+    // show moves to slide i. stepsMode says how a reveal slide lands: 'none'
+    // (arriving by Next, nothing shown yet) or 'all' (any other way). The
+    // change itself is apply(); with the transition none, Reduce Motion on,
+    // no View Transitions API, or on the first showing it runs at once,
+    // otherwise the browser crossfades the old and new slide snapshots
+    // (the active slide carries the view-transition-name; the chrome, the
+    // bar, and the drawer sit outside it and never move). The direction
+    // classes pick the keyframes for the slide transition, and deck-vt
+    // turns the fallback entry keyframe off while the API runs. Visuals
+    // refresh once the transition has finished, so the graph's first
+    // layout and a chart's draw-in start after the crossfade.
+    function show(i, stepsMode) {
       if (i < 0) i = 0;
       if (i > slides.length - 1) i = slides.length - 1;
       if (i === current) return;
-      current = i;
-      slides.forEach(function (sl, j) {
-        sl.classList.toggle('active', j === i);
-        if (j === i) sl.scrollTop = 0;
-      });
-      counter.textContent = (i + 1) + ' / ' + slides.length;
-      chrome.update(i);
-      if (slideFromHash() !== i + 1) history.replaceState(null, '', '#' + (i + 1));
-      remember();
-      refreshVisuals();
+      var html = document.documentElement;
+      var first = current < 0;
+      html.classList.toggle('deck-next', i > current);
+      html.classList.toggle('deck-prev', !first && i < current);
+      function apply() {
+        current = i;
+        slides.forEach(function (sl, j) {
+          sl.classList.toggle('active', j === i);
+          if (j === i) sl.scrollTop = 0;
+        });
+        applySteps(slides[i], stepsMode === 'none' ? 0 : stepTotal(slides[i]));
+        updateCounter();
+        chrome.update(i);
+        if (notesOpen) renderNotes();
+        if (slideFromHash() !== i + 1) history.replaceState(null, '', '#' + (i + 1));
+        remember();
+      }
+      var animate = !first && transition !== 'none' && !reducedMotion && typeof document.startViewTransition === 'function';
+      html.classList.toggle('deck-vt', animate);
+      if (!animate) { apply(); refreshVisuals(); return; }
+      var vt = document.startViewTransition(apply);
+      vt.finished.then(refreshVisuals, refreshVisuals);
     }
-    function next() { show(current + 1); }
-    function previous() { show(current - 1); }
+    function next() {
+      var slide = slides[current];
+      if (slide && slide._steps && step < slide._steps.length) { applySteps(slide, step + 1); updateCounter(); return; }
+      show(current + 1, 'none');
+    }
+    function previous() {
+      var slide = slides[current];
+      if (slide && slide._steps && step > 0) { applySteps(slide, step - 1); updateCounter(); return; }
+      show(current - 1, 'all');
+    }
 
     // Presenting hides the chrome through a class on <html> and asks for
     // browser fullscreen on top when the browser allows it (a key or a click
@@ -1149,6 +1317,7 @@
       var action = btn.getAttribute('data-deck');
       if (action === 'prev') previous();
       else if (action === 'next') next();
+      else if (action === 'notes') toggleNotes();
       else if (action === 'present') setPresenting(!presenting);
     });
 
@@ -1176,6 +1345,7 @@
         case 'Home': e.preventDefault(); show(0); break;
         case 'End': e.preventDefault(); show(slides.length - 1); break;
         case 'f': case 'F': case 'p': case 'P': e.preventDefault(); pressPresent(); break;
+        case 'n': case 'N': e.preventDefault(); toggleNotes(); break;
         case 'Escape': if (presenting && !graphPopupOpen()) setPresenting(false); break;
       }
     });
@@ -1190,7 +1360,7 @@
       var slide = slides[current];
       if (slide && graphSlide(slide) && graphReady) initGraphAndFlow();
       else graphReady = false;
-      initPresentCharts();
+      initPresentCharts(document, { builtOnly: true });
     });
 
     // Read the remembered mode before the first show() writes the memory.
