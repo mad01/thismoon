@@ -640,13 +640,19 @@ func TestSampleDeckRenders(t *testing.T) {
 		`<wk-columns cols="3">`, `<wk-stat-value>41 min</wk-stat-value>`, `<blockquote>`, `<details>`,
 		`<wk-callout variant="ok"`, `<wk-callout variant="error"`, `class="present-chart"`, `id="cy-graph"`,
 		`<wk-kv>`, `class="language-bash"`,
+		`"logo":"https://raw.githubusercontent.com/mad01/thismoon/main/docs/assets/logo.png"`,
+		`"logo_position":"top-right"`, `"progress":"dots"`, `"footer":"Incident review, checkout 502s"`,
+		`<wk-section-subheading data-fixation>Per region</wk-section-subheading>`, `<wk-table><table>`,
+		`<wk-progress>`, `<wk-panel style="border-left: 3px solid var(--red)">`,
+		`<wk-callout variant="info"`, `<wk-callout variant="warn"`, `<p class="brief-meta">Figures as of`,
+		`<a href="https://example.com/runbook">runbook</a>`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 11 {
-		t.Errorf("sample deck has %d sections, want 11", n)
+	if n := len(c.Doc.Sections); n != 13 {
+		t.Errorf("sample deck has %d sections, want 13", n)
 	}
 	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 3 {
 		t.Errorf("reveal sections = %d, want 3", n)
