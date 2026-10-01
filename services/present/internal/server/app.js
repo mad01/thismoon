@@ -913,7 +913,11 @@
       marker = Webkit.el('div', { class: 'deck-dots', role: 'group', 'aria-label': 'Slides' }, dots);
       marker.addEventListener('click', function (e) {
         var b = e.target.closest('.deck-dot');
-        if (b) goTo(parseInt(b.getAttribute('data-slide'), 10));
+        if (!b) return;
+        goTo(parseInt(b.getAttribute('data-slide'), 10));
+        // Focus would stay on the dot, where a later Space is the button's
+        // own click and jumps back to it.
+        b.blur();
       });
     } else if (progress === 'bar') {
       fill = Webkit.el('div', { class: 'deck-progress-fill' });
@@ -1159,7 +1163,11 @@
       var t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (document.querySelector('wk-modal:not([hidden])')) return;
-      var onButton = t && (t.tagName === 'BUTTON' || t.tagName === 'A' || t.tagName === 'WK-BUTTON');
+      // Space on a focused foreign button is that button's click, not a
+      // page turn; the deck's own buttons (the bar, the progress dots) are
+      // not foreign, so Space turns the page from them too.
+      var onButton = t && (t.tagName === 'BUTTON' || t.tagName === 'A' || t.tagName === 'WK-BUTTON') &&
+        !t.closest('.deck-bar, .deck-strip');
       switch (e.key) {
         case 'ArrowRight': case 'PageDown': e.preventDefault(); next(); break;
         case ' ': if (onButton) return; e.preventDefault(); next(); break;
