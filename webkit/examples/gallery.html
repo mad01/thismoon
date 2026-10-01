@@ -44,6 +44,8 @@
         <li><a href="#section-kv">09 wk-kv</a></li>
         <li><a href="#section-section">10 wk-section</a></li>
         <li><a href="#section-callout">11 wk-callout</a></li>
+        <li><a href="#section-columns">11b wk-columns + wk-stat</a></li>
+        <li><a href="#section-quote">11c blockquote + details</a></li>
         <li><a href="#section-progress">12 wk-progress</a></li>
         <li><a href="#section-prose">13 .wk-prose</a></li>
         <li><a href="#section-modal">14 wk-modal + wk-form</a></li>
@@ -317,6 +319,70 @@
     <wk-callout>Default callout — left border in primary color. Fixation-aware.</wk-callout>
     <wk-callout variant="info">Info callout — blue left border. Use for tips and supplementary context.</wk-callout>
     <wk-callout variant="warn">Warn callout — amber left border. Use for caveats and breaking changes.</wk-callout>
+    <wk-callout variant="ok">Ok callout — green left border. Use for a resolved state or a confirmed fix.</wk-callout>
+    <wk-callout variant="error">Error callout — red left border. Use for a failure or an active incident.</wk-callout>
+  </section>
+
+  <!-- ── wk-columns + wk-stat ── -->
+  <section id="section-columns" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-columns + wk-stat</h2>
+    <wk-section>
+      <wk-section-heading>Three stat tiles in a row</wk-section-heading>
+      <wk-columns cols="3">
+        <wk-col>
+          <wk-stat>
+            <wk-stat-value>41 min</wk-stat-value>
+            <wk-stat-label>checkout outage</wk-stat-label>
+            <wk-stat-sub>Tuesday 14:02 to 14:43</wk-stat-sub>
+          </wk-stat>
+        </wk-col>
+        <wk-col>
+          <wk-stat>
+            <wk-stat-value>3 min</wk-stat-value>
+            <wk-stat-label>to detect after the fix</wk-stat-label>
+          </wk-stat>
+        </wk-col>
+        <wk-col>
+          <wk-stat>
+            <wk-stat-value>2</wk-stat-value>
+            <wk-stat-label>actions</wk-stat-label>
+          </wk-stat>
+        </wk-col>
+      </wk-columns>
+      <wk-section-subheading>Two columns: prose beside a list</wk-section-subheading>
+      <wk-columns>
+        <wk-col>
+          <p>Equal widths, a grid gap, and one column under 700px. A column holds any block but a graph or another container; narrow the window to see the collapse.</p>
+        </wk-col>
+        <wk-col>
+          <ul style="padding-left:1.25rem;color:var(--text-2);font-size:0.875rem;line-height:1.7;">
+            <li>Cap resolver TTL at 60 s</li>
+            <li>Synthetic checkout probe every 30 s</li>
+            <li>Rota handover before enabling</li>
+          </ul>
+        </wk-col>
+      </wk-columns>
+    </wk-section>
+  </section>
+
+  <!-- ── blockquote + details in a section ── -->
+  <section id="section-quote" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">blockquote + details (inside wk-section)</h2>
+    <wk-section>
+      <wk-section-heading>Quote and disclosure</wk-section-heading>
+      <blockquote>
+        <p>We never saw the resolver because nothing watched it.</p>
+        <cite>On-call engineer, retrospective</cite>
+      </blockquote>
+      <details>
+        <summary>Full timeline, 14:00 to 15:00</summary>
+        <ul style="padding-left:1.25rem;color:var(--text-2);font-size:0.875rem;line-height:1.7;">
+          <li>14:02 first 502s at the edge</li>
+          <li>14:09 paged</li>
+          <li>14:43 resolved</li>
+        </ul>
+      </details>
+    </wk-section>
   </section>
 
   <!-- ── wk-progress ── -->

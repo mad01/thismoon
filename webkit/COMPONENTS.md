@@ -43,6 +43,14 @@ Replaces `Webkit.init()`. Renders the sticky `.topbar` with `.topbar-inner`
   read-aloud/speed section when `speed` is present. It also appends the
   innerHTML of any `<template data-wk-help>` in the page so a consumer can add
   its own sections (e.g. speak's landing page).
+- `audio` — a pressed/unpressed toggle that shows or hides every read-aloud
+  control by setting `data-audio` on `<html>` (`off` hides `.wk-ra-btn`,
+  `.wk-ra-bar`, and `wk-badge.wk-ra-state`); the speed selector dims while
+  off and `<wk-read-aloud>` ends a playing session. The choice is per view: a
+  shell names the storage key and default on `<html>` as `data-audio-key`
+  (default `webkit-audio`) and `data-audio-default` (`on` unless `off`), which
+  `boot.js` resolves before paint. present's deck shell opens off under
+  `webkit-audio-deck`; its brief keeps webkit's defaults.
 
 Light-DOM children it relocates into the bar:
 - `<a data-nav [class=active]>…</a>` → nav links area.
@@ -249,10 +257,36 @@ section.
     <p>More text.</p>
   </wk-section>
   ```
-- `<wk-callout [variant="info|warn|error"]>` — left-bordered callout block. Default border
+- `<wk-callout [variant="info|warn|ok|error"]>` — left-bordered callout block. Default border
   color is `--primary`; `variant="info"` uses `--blue`; `variant="warn"` uses
-  `--amber`; `variant="error"` uses `--red`. Example:
+  `--amber`; `variant="ok"` uses `--green`; `variant="error"` uses `--red`. Example:
   `<wk-callout variant="info">Info callout.</wk-callout>`
+- `<wk-columns [cols="2|3"]>` with `<wk-col>` children — two or three equal-width
+  columns of blocks (two when `cols` is unset), with a grid gap, collapsing to one
+  column under 700px. Transparent to the fixation and read-aloud walks; a column
+  boundary ends a read-aloud sentence run. Example:
+  ```html
+  <wk-columns cols="3">
+    <wk-col><wk-stat>…</wk-stat></wk-col>
+    <wk-col><p>Prose beside it.</p></wk-col>
+    <wk-col><ul><li>A list.</li></ul></wk-col>
+  </wk-columns>
+  ```
+- `<wk-stat>` with `<wk-stat-value>`, `<wk-stat-label>`, and an optional
+  `<wk-stat-sub>` — a framed tile with a large figure over a label. The value is
+  skipped by the fixation walk (a figure is not prose); read-aloud reads value,
+  label, and sub as three short sentences. Example:
+  `<wk-stat><wk-stat-value>41 min</wk-stat-value><wk-stat-label>checkout outage</wk-stat-label><wk-stat-sub>Tuesday 14:02 to 14:43</wk-stat-sub></wk-stat>`
+- `wk-section blockquote` with a `<p>` and an optional `<cite>` — a quotation
+  with a primary-coloured left rule and the attribution under it in `--text-3`.
+  Native elements, styled only inside a `<wk-section>` (rendered markdown has its
+  own rule under `.wk-prose`). Example:
+  `<blockquote><p>We never saw the resolver.</p><cite>On-call engineer</cite></blockquote>`
+- `wk-section details` with a `<summary>` — a native disclosure framed like a
+  panel, closed by default, with a kit-drawn marker that turns when open. No JS;
+  read-aloud opens it while a part inside plays so the highlight is visible.
+  Example:
+  `<details><summary>Full timeline</summary><ul><li>14:02 first 502s</li></ul></details>`
 - `<wk-progress>` with `<wk-progress-bar>`, `<wk-progress-fill>`, `<wk-progress-label>` —
   horizontal progress bar. Consumer sets fill width inline. Example:
   `<wk-progress><wk-progress-bar><wk-progress-fill style="width:63%"></wk-progress-fill></wk-progress-bar><wk-progress-label>63%</wk-progress-label></wk-progress>`

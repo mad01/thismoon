@@ -38,7 +38,8 @@ The fixation text-walk works in place: each text node under a target that holds 
 | `font` | Font family selector (Fira Code, Inter, Lexend, Work Sans) |
 | `fixation` | Fixation reading toggle |
 | `size` | Font size −/+ buttons (12–24 px, 2 px steps) |
-| `speed` | Speech speed selector (0.75×, 1×, 1.25×, 1.5×, 2×) |
+| `audio` | Read-aloud controls toggle: shows or hides every control `<wk-read-aloud>` injects by setting `data-audio` on `<html>`; remembered per view (see below) |
+| `speed` | Speech speed selector (0.75×, 1×, 1.25×, 1.5×, 2×); dims while `audio` is off |
 | `reload` | Page reload button |
 | `theme` | Light/dark toggle |
 | `help` | `?` button — opens the feature-guide modal (X / Esc / click-outside to close) |
@@ -47,6 +48,9 @@ The fixation text-walk works in place: each text node under a target that holds 
 
 - `wk-themechange` — `CustomEvent<{ theme: 'light' | 'dark' }>` — fires when the theme toggle is clicked. Listen on `document` to recolor dynamic visuals (Cytoscape graphs, charts).
 - `wk-speedchange` — `CustomEvent<{ speed: number }>` — fires when the speech speed selector changes. `<wk-read-aloud>` listens for this automatically; subsequent TTS clips use the new speed.
+- `wk-audiochange` — `CustomEvent<{ audio: 'on' | 'off' }>` — fires when the audio toggle changes, or another tab changes the same key. `<wk-read-aloud>` ends a playing session on `off`.
+
+**Audio toggle scope.** The `audio` control keeps its choice under the storage key a shell names on `<html>` with `data-audio-key` (default `webkit-audio`). When nothing is stored, `data-audio-default` applies (`on` unless `off`). `boot.js` resolves the same two before paint and sets `data-audio`, so the controls never flash. The attributes sit on `<html>` rather than on the header because the boot script runs before the header exists. present's deck shell sets `webkit-audio-deck` and `off`, and its brief uses the defaults. So a deck opens with the controls hidden while a brief keeps its own choice.
 - `wk-cmdk:open` — dispatched by the ⌘K button to ask the global site-picker controller to open. Dispatch this event yourself to open the picker programmatically.
 
 **`Webkit.init(config)` shim:** the legacy `Webkit.init()` call is still supported and builds a `<wk-header>` from a config object. Prefer the markup form for new pages.
@@ -450,9 +454,10 @@ rule that reads a role follows the reader's choice.
   `--chart-text`, `--chart-label`
 
 The old ramp primitives (`--cream`, `--off-white`, `--wg100` to `--wg900`,
-`--terracotta-light`) are gone. `--terracotta` and `--green-light` stay as
-aliases of `--primary` and the derived light green, for the consumers that
-haven't moved to roles.
+`--terracotta-light`) are gone. `--terracotta` and `--green-light` stay for
+the consumers that haven't moved to roles: terracotta keeps the light-mode
+primary and is pinned separately in dark, where the default primary is a
+lighter shade, and green-light is the derived light green.
 
 **`localStorage` state keys (global, shared across a tool's pages):**
 
@@ -464,6 +469,7 @@ haven't moved to roles.
 | `webkit-font` | `Fira Code` \| `Inter` \| `Lexend` \| `Work Sans` |
 | `webkit-size` | integer 12–24 |
 | `webkit-fixation` | `true` \| `false` |
+| `webkit-audio`, or the key a shell names in `data-audio-key` on `<html>` | `on` \| `off` (per view; absent = `data-audio-default`, `on` unless `off`) |
 
 **Theme-change event:** `wk-themechange` fires on `document` with `detail.theme` (the resolved mode), `detail.palette` (the family for it), and `detail.mode` (what the reader chose, `system` included). Listen there to recolor dynamic visuals. It fires on the header toggle, on a change made in another tab of the origin (the themes page at `/webkit/themes`), and on a system appearance change in system mode.
 

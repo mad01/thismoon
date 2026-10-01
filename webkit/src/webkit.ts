@@ -17,7 +17,7 @@ export { enhanceProse } from './prose.js';
 export { escapeHtml, el, poll } from './render.js';
 export type { ElChild, ElAttrs, PollHandle } from './render.js';
 
-export type Control = 'cmdk' | 'fixation' | 'font' | 'size' | 'speed' | 'reload' | 'theme' | 'help';
+export type Control = 'cmdk' | 'fixation' | 'font' | 'size' | 'audio' | 'speed' | 'reload' | 'theme' | 'help';
 
 export interface WebkitConfig {
   mount?: string;
@@ -63,6 +63,7 @@ const DEFAULT_FIXATION_TARGETS =
 // ── SVG assets ──
 
 const SVG_FIXATION = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`;
+const SVG_AUDIO    = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path class="icon-audio-on" d="M15.5 8.5a5 5 0 0 1 0 7"/><path class="icon-audio-off" d="M22 9l-6 6"/><path class="icon-audio-off" d="M16 9l6 6"/></svg>`;
 const SVG_SUN    = `<svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>`;
 const SVG_MOON   = `<svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>`;
 const SVG_RELOAD  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
@@ -211,6 +212,53 @@ function initThemeSync(): void {
 }
 initThemeSync();
 
+// ── Audio: whether the read-aloud controls show ──
+// One attribute on <html>, data-audio; "off" hides every control
+// <wk-read-aloud> injects (a rule in webkit.css) without touching its
+// registration or stamps, so turning it back on costs nothing. The state is
+// per view and remembered: a shell may name the storage key and the default
+// on <html> (data-audio-key, data-audio-default), which boot.js reads before
+// paint and this module reads again, so a deck can open with the controls
+// hidden while a brief keeps its own choice. Every change ends in applyAudio,
+// which sets the attribute and dispatches wk-audiochange, mirroring theme.
+
+export type Audio = 'on' | 'off';
+export interface AudioChangeDetail { audio: Audio; }
+const AUDIO_KEY = 'webkit-audio';
+
+function audioConfig(): { key: string; fallback: Audio } {
+  const root = document.documentElement;
+  return {
+    key: root.getAttribute('data-audio-key') || AUDIO_KEY,
+    fallback: root.getAttribute('data-audio-default') === 'off' ? 'off' : 'on',
+  };
+}
+
+/** The persisted choice for this view, or the view's default. */
+export function audioState(): Audio {
+  const { key, fallback } = audioConfig();
+  const v = localStorage.getItem(key);
+  return v === 'on' || v === 'off' ? v : fallback;
+}
+
+function setAudioAttribute(a: Audio): Audio {
+  document.documentElement.setAttribute('data-audio', a);
+  return a;
+}
+
+/** Re-applies the persisted choice to <html> and tells the page through wk-audiochange. */
+export function applyAudio(): Audio {
+  const a = setAudioAttribute(audioState());
+  document.dispatchEvent(new CustomEvent<AudioChangeDetail>('wk-audiochange', { detail: { audio: a } }));
+  return a;
+}
+
+/** Persists a choice for this view and applies it. */
+export function setAudio(a: Audio): Audio {
+  localStorage.setItem(audioConfig().key, a);
+  return applyAudio();
+}
+
 function applyFont(name: string, selectEl: HTMLSelectElement): void {
   // Fall back the NAME, not just the stack: a persisted font that is no longer
   // in FONT_STACKS would otherwise leave the select blank and rewrite the
@@ -345,6 +393,15 @@ class WkHeader extends HTMLElement {
           needsDivider = true;
           break;
 
+        case 'audio':
+          controlParts.push(divider());
+          controlParts.push(
+            `<button class="ctrl-btn" id="webkit-audio" aria-label="Hide read-aloud controls" aria-pressed="true">` +
+            SVG_AUDIO + ` Audio</button>`
+          );
+          needsDivider = true;
+          break;
+
         case 'speed':
           controlParts.push(divider());
           controlParts.push(
@@ -441,6 +498,29 @@ class WkHeader extends HTMLElement {
       speedEl.addEventListener('change', () => {
         localStorage.setItem(SPEED_KEY, speedEl.value);
         document.dispatchEvent(new CustomEvent('wk-speedchange', { detail: { speed: parseFloat(speedEl.value) } }));
+      });
+    }
+
+    // Audio: whether the read-aloud controls show, per view (see audioState).
+    // boot.js already set data-audio before paint; the button reflects it,
+    // every change (its own or another tab's) comes back through the event,
+    // and the speed control dims while the controls it serves are hidden.
+    const audioBtn = this.querySelector('#webkit-audio');
+    if (audioBtn) {
+      const reflectAudio = (a: Audio): void => {
+        const on = a === 'on';
+        audioBtn.setAttribute('aria-pressed', String(on));
+        audioBtn.setAttribute('aria-label', on ? 'Hide read-aloud controls' : 'Show read-aloud controls');
+        audioBtn.setAttribute('title', on ? 'Hide the read-aloud controls' : 'Show the read-aloud controls');
+        if (speedEl) speedEl.disabled = !on;
+      };
+      reflectAudio(setAudioAttribute(audioState()));
+      document.addEventListener('wk-audiochange', ((e: CustomEvent<AudioChangeDetail>) => {
+        reflectAudio(e.detail.audio);
+      }) as EventListener);
+      audioBtn.addEventListener('click', () => setAudio(audioState() === 'on' ? 'off' : 'on'));
+      window.addEventListener('storage', e => {
+        if (e.key === null || e.key === audioConfig().key) applyAudio();
       });
     }
 
@@ -564,6 +644,10 @@ const NOOP_ELEMENTS = [
   'wk-section', 'wk-section-heading', 'wk-section-id', 'wk-section-subheading',
   // callout
   'wk-callout',
+  // columns of blocks
+  'wk-columns', 'wk-col',
+  // stat tile
+  'wk-stat', 'wk-stat-value', 'wk-stat-label', 'wk-stat-sub',
   // progress bar
   'wk-progress', 'wk-progress-bar', 'wk-progress-fill', 'wk-progress-label',
   // table of contents
@@ -783,6 +867,7 @@ const CONTROL_HELP: Partial<Record<Control, ControlHelp>> = {
   font:     { term: 'Font',        desc: 'Switch typeface. Lexend and Work Sans are tuned for easier reading.' },
   size:     { term: '− / +',  desc: 'Shrink or enlarge the text. Your size is remembered across pages.' },
   fixation: { term: 'Fixation',    desc: 'Bolds the first half of every word so your eyes anchor on each one — a reading aid that helps many dyslexic readers move through text faster.' },
+  audio:    { term: 'Audio',       desc: 'Show or hide the read-aloud controls: the play buttons, the status bar, and the section badges. Remembered per view; a deck opens with them hidden, a brief with them shown.' },
   speed:    { term: 'Speed',       desc: 'Playback speed for read-aloud — steps through 0.75× · 1× · 1.25× · 1.5× · 2×.' },
   reload:   { term: 'Reload',      desc: 'Reload the page.' },
   theme:    { term: 'Theme',       desc: 'Toggle light and dark. The themes page picks a palette family per mode, or follows the system.' },
@@ -797,7 +882,7 @@ function helpThemesHtml(): string {
 }
 
 // Row order in the guide, independent of the header's control order.
-const HELP_ORDER: Control[] = ['cmdk', 'font', 'size', 'fixation', 'speed', 'reload', 'theme'];
+const HELP_ORDER: Control[] = ['cmdk', 'font', 'size', 'fixation', 'audio', 'speed', 'reload', 'theme'];
 
 let helpOverlay: HTMLElement | null = null;
 let helpPrevFocus: Element | null = null;

@@ -38,7 +38,10 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 | `<wk-table>` | CSS-only | Wraps a descendant `<table>` as a data table |
 | `<wk-kv>`, `<wk-kv-row>`, `<wk-kv-label>`, `<wk-kv-value>` | CSS-only | Key/value list; `variant="card"` adds border + rounded corners |
 | `<wk-section>`, `<wk-section-heading>`, `<wk-section-id>`, `<wk-section-subheading>` | CSS-only | Document section with a ruled heading |
-| `<wk-callout variant="info\|warn">` | CSS-only | Left-bordered callout block |
+| `<wk-callout variant="info\|warn\|ok\|error">` | CSS-only | Left-bordered callout block |
+| `<wk-columns cols="2\|3">`, `<wk-col>` | CSS-only | Two or three equal columns of blocks; one column under 700px |
+| `<wk-stat>`, `<wk-stat-value>`, `<wk-stat-label>`, `<wk-stat-sub>` | CSS-only | Stat tile: a large figure over a label; the value stays out of fixation |
+| `wk-section blockquote` (+ `<cite>`), `wk-section details` (+ `<summary>`) | CSS-only | Quote with attribution and a closed-by-default disclosure, styled inside a section |
 | `<wk-progress>`, `<wk-progress-bar>`, `<wk-progress-fill>`, `<wk-progress-label>` | CSS-only | Horizontal progress bar |
 | `<wk-toc>`, `<wk-toc-title>` | CSS-only | Table of contents block |
 | `.wk-prose` | CSS + JS | Rich-markdown container; fenced code is Prism-highlighted client-side with a language badge + copy button |
@@ -156,6 +159,7 @@ with the default family:
 | `webkit-font` | font family choice |
 | `webkit-size` | font size (12–24 px) |
 | `webkit-fixation` | fixation reading on/off |
+| `webkit-audio` | read-aloud controls shown or hidden; a shell may name a per-view key on `<html>` (`data-audio-key`) with its own default (`data-audio-default`) |
 
 Theme changes dispatch `new CustomEvent('wk-themechange', {detail:{theme, palette, mode}})`
 on `document` — listen there to recolor graphs or other dynamic visuals. The

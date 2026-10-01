@@ -94,3 +94,51 @@ test('speakable: collapses whitespace', () => {
 test('speakable: quote-only input becomes empty', () => {
   assert.equal(speakable('“”'), '');
 });
+
+// The audio toggle's default is per view: a shell names the storage key and
+// the default on <html> (data-audio-key, data-audio-default), and boot.js
+// resolves data-audio from them before paint, so a deck opens with the
+// read-aloud controls hidden and a brief with them shown, whatever the other
+// view stored. The snippet is run against stubs for the three globals it
+// touches; what it set on <html> is the result.
+function bootAudio({ stored = {}, attrs = {} } = {}) {
+  const set = {};
+  const root = {
+    getAttribute: name => (name in attrs ? attrs[name] : null),
+    setAttribute: (name, value) => { set[name] = value; },
+    style: {},
+  };
+  new Function('document', 'localStorage', 'window', bootSnippet)(
+    { documentElement: root },
+    { getItem: key => (key in stored ? stored[key] : null) },
+    {},
+  );
+  return set['data-audio'];
+}
+
+test('bootSnippet: audio is on when nothing is stored and the shell names no default', () => {
+  assert.equal(bootAudio(), 'on');
+});
+
+test('bootSnippet: audio follows the stored value under the default key', () => {
+  assert.equal(bootAudio({ stored: { 'webkit-audio': 'on' } }), 'on');
+  assert.equal(bootAudio({ stored: { 'webkit-audio': 'off' } }), 'off');
+});
+
+test('bootSnippet: a deck shell opens off under its own key', () => {
+  const deck = { 'data-audio-key': 'webkit-audio-deck', 'data-audio-default': 'off' };
+  assert.equal(bootAudio({ attrs: deck }), 'off');
+  // The brief's stored choice is another key and does not reach the deck.
+  assert.equal(bootAudio({ attrs: deck, stored: { 'webkit-audio': 'on' } }), 'off');
+  assert.equal(bootAudio({ attrs: deck, stored: { 'webkit-audio-deck': 'on' } }), 'on');
+});
+
+test('bootSnippet: a brief opens on whatever the deck stored', () => {
+  assert.equal(bootAudio({ stored: { 'webkit-audio-deck': 'off' } }), 'on');
+});
+
+test('bootSnippet: an unknown stored value falls back to the view default', () => {
+  assert.equal(bootAudio({ stored: { 'webkit-audio': 'maybe' } }), 'on');
+  const deck = { 'data-audio-key': 'webkit-audio-deck', 'data-audio-default': 'off' };
+  assert.equal(bootAudio({ attrs: deck, stored: { 'webkit-audio-deck': '' } }), 'off');
+});

@@ -41,6 +41,15 @@ func TestHandlerServesCSS(t *testing.T) {
 		"wk-badge[variant=\"filter\"]", "wk-badge[active]", "wk-search:has(", "wk-seg",
 		// content blocks
 		"wk-kv", "wk-section", "wk-callout", "wk-progress", "wk-toc",
+		// layout blocks (MAD-365): columns, stat tile, quote and disclosure
+		// in a section, the ok callout
+		"wk-columns", "wk-columns[cols=\"3\"]", "wk-col", "wk-stat", "wk-stat-value",
+		"wk-stat-label", "wk-stat-sub", "wk-section blockquote", "wk-section blockquote cite",
+		"wk-section details", "wk-section details > summary", "wk-callout[variant=\"ok\"]",
+		// the header's audio toggle: the off state hides the read-aloud controls,
+		// the icon swaps, the speed selector dims
+		"html[data-audio=\"off\"] .wk-ra-btn", "#webkit-audio[aria-pressed=\"false\"]",
+		".ctrl-select:disabled",
 		// rich markdown / prose + code block (issue #37)
 		".wk-prose", ".wk-code-block", ".wk-code-lang", ".wk-code-copy", ".token.keyword",
 		// standalone code block (outside .wk-prose): padding + code reset + token colors
@@ -81,6 +90,11 @@ func TestHandlerServesJS(t *testing.T) {
 		"Webkit", "init", "wk-header",
 		"wk-seg", "wk-kv", "wk-section", "wk-callout",
 		"wk-progress", "wk-toc", "wk-modal", "wk-form", "wk-toast",
+		// layout blocks (MAD-365): the no-op registrations, the read-aloud
+		// and fixation tag lists, the open-on-play rule for details
+		"wk-columns", "wk-col", "wk-stat-value", "WK-STAT-VALUE", "WK-COL", `closest("details")`,
+		// the audio toggle: control id, storage key, html attributes, event
+		"webkit-audio", "data-audio-key", "data-audio-default", "wk-audiochange",
 		"wk-read-aloud", "v1/audio/speech",
 		// prepared mode: the attribute, speak's document API, the status UI classes
 		`hasAttribute("prepare")`, `"/read"`, "/prepare", "data-ra-chunk", "wk-ra-bar", "wk-ra-state",
