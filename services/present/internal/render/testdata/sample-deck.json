@@ -1,0 +1,95 @@
+{
+  "summary": "A stale DNS cache took checkout down for **41 minutes**; the fix is a TTL cap and a probe that would have caught it in 3.",
+  "meta": "2026-10-01 · Incident review · Platform and payments",
+  "chips": [{"text": "41 min outage", "style": "stat"}, {"text": "3 min to detect", "style": "stat"}, {"text": "2 actions", "style": "stat"}],
+  "presenter": "Alex, platform · 2026-10-01",
+  "footer": "Incident review, checkout 502s",
+  "progress": "dots",
+  "transition": "slide",
+  "sections": [
+    {
+      "h": "Checkout returned 502s for 41 minutes",
+      "id": "I001",
+      "reveal": true,
+      "notes": "Pause after the first line. Ask who was on call before showing the rest.",
+      "blocks": [
+        {"t": "list", "items": ["14:02 first 502s at the edge", "14:09 paged, **checkout only**, other services fine", "14:43 resolved after a resolver restart"]}
+      ]
+    },
+    {
+      "h": "Latency is the product",
+      "layout": "statement",
+      "notes": "The one line to remember. Everything on the next slides follows from it.",
+      "blocks": [{"t": "p", "text": "Every other metric on this page follows from it."}]
+    },
+    {
+      "h": "Part two: the fix",
+      "id": "P002",
+      "layout": "section",
+      "tone": "blue",
+      "blocks": [{"t": "p", "text": "Two changes, one rota, and a probe that pages the right people."}]
+    },
+    {
+      "h": "Three numbers",
+      "layout": "center",
+      "blocks": [
+        {"t": "columns", "cols": [
+          [{"t": "stat", "value": "41 min", "label": "outage"}],
+          [{"t": "stat", "value": "3 min", "label": "to detect after the fix"}],
+          [{"t": "stat", "value": "2", "label": "actions"}]
+        ]}
+      ]
+    },
+    {
+      "h": "The number that matters",
+      "blocks": [{"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"}]
+    },
+    {
+      "h": "In their words",
+      "blocks": [{"t": "quote", "text": "We never saw the resolver because nothing watched it.", "cite": "On-call engineer, retrospective"}]
+    },
+    {
+      "h": "Error rate by minute",
+      "tone": "amber",
+      "blocks": [
+        {"t": "columns", "cols": [
+          [{"t": "chart", "kind": "area", "title": "Checkout 5xx per minute", "unit": "req", "series": [{"name": "5xx", "color": "terracotta", "points": [{"x": "14:00", "y": 0}, {"x": "14:05", "y": 310}, {"x": "14:15", "y": 940}, {"x": "14:30", "y": 890}, {"x": "14:45", "y": 12}, {"x": "15:00", "y": 0}]}]}],
+          [{"t": "p", "text": "The spike starts eleven minutes before the first page."}]
+        ]}
+      ]
+    },
+    {
+      "h": "Where the request died",
+      "blocks": [{"t": "graph"}]
+    },
+    {
+      "h": "Two changes close the gap",
+      "reveal": true,
+      "tone": "green",
+      "notes": "Confirm the payments rota is staffed before enabling the probe.",
+      "blocks": [
+        {"t": "p", "text": "Both changes are small and both ship this week."},
+        {"t": "list", "items": ["Cap resolver TTL at 60 s for external upstreams @chip(b:merged)", "Synthetic checkout probe every 30 s, pages after 3 failures @chip(a:in review)"]},
+        {"t": "callout", "sev": "ok", "text": "The TTL cap is live in every region."}
+      ]
+    },
+    {
+      "h": "Appendix on the slide",
+      "tone": "tone-neutral-bg",
+      "blocks": [
+        {"t": "details", "summary": "Full timeline, 14:00 to 15:00", "blocks": [{"t": "list", "items": ["14:02 first 502s at the edge", "14:09 paged", "14:43 resolved"]}]},
+        {"t": "callout", "sev": "error", "text": "The probe pages nobody until the rota handover lands."},
+        {"t": "kv", "kv": [{"k": "TTL cached", "v": "3600 s"}, {"k": "Health check", "v": "none on DNS"}]},
+        {"t": "code", "lang": "bash", "text": "dig +short payments.example.com"}
+      ]
+    },
+    {
+      "h": "Next",
+      "id": "N001",
+      "reveal": true,
+      "blocks": [
+        {"t": "list", "ordered": true, "items": ["Payments approves the probe PR by Thursday", "Platform enables the TTL cap in all regions Friday", "Retro note in the runbook"]}
+      ]
+    }
+  ]
+}
