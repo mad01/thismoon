@@ -10,7 +10,7 @@
 // synthesized live, a few sentences per request.
 
 import {
-  barView, BlockCollector, DocStatus, inProgress, parseDocStatus, parseRegistration,
+  barView, BlockCollector, DocStatus, figureAlt, inProgress, parseDocStatus, parseRegistration,
   pollDelay, prepareQuery, readRequest, Registration, SectionStatus, sectionView, statusOfSection,
 } from './prepare.js';
 import {
@@ -69,13 +69,6 @@ function tagOf(el: Element): string {
   return el.tagName.toUpperCase();
 }
 
-/** An image's alt, read in the image's place as a short sentence of its
- * own, the way a caption is. Empty for anything but an <img> with a
- * non-blank alt. */
-function altText(el: Element): string {
-  return tagOf(el) === 'IMG' ? (el.getAttribute('alt') ?? '').trim() : '';
-}
-
 /** Text nodes of one section, grouped into runs split at block boundaries. */
 function collectRuns(root: Element): Text[][] {
   const runs: Text[][] = [];
@@ -91,10 +84,10 @@ function collectRuns(root: Element): Text[][] {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = tagOf(node as Element);
     if (SKIP_TAGS.has(tag)) return;
-    // An image has no text node, so its alt goes in as a run of its own: a
-    // detached node, which wrapSentences skips, so the alt is spoken but
-    // nothing on the page is highlighted for it.
-    const alt = altText(node as Element);
+    // A figure's image has no text node, so its alt goes in as a run of
+    // its own: a detached node, which wrapSentences skips, so the alt is
+    // spoken but nothing on the page is highlighted for it.
+    const alt = figureAlt(node as Element);
     if (alt) {
       flush();
       current.push(document.createTextNode(alt));
@@ -759,9 +752,9 @@ function collectBlocks(section: HTMLElement): Block[] {
     const el = node as HTMLElement;
     const tag = tagOf(el);
     if (SKIP_TAGS.has(tag)) return;
-    // An image is a block of its own whose text is its alt, so the part
-    // that reads it is stamped on the image and lights it up.
-    const alt = altText(el);
+    // A figure's image is a block of its own whose text is its alt, so the
+    // part that reads it is stamped on the image and lights it up.
+    const alt = figureAlt(el);
     if (alt) {
       blocks.cut(block);
       blocks.text(el, alt);

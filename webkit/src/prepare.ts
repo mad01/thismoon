@@ -42,6 +42,23 @@ export interface Registration {
   sections: { parts: string[]; blocks: string[][] }[];
 }
 
+/** What figureAlt needs of an element: the DOM Element API, narrowed so a
+ * test can hand in a plain object. */
+export interface AltSource {
+  tagName: string;
+  getAttribute(name: string): string | null;
+  closest(selector: string): unknown;
+}
+
+/** The alt an image in a figure contributes as a block of its own, read in
+ * the image's place: the trimmed alt of an <img> inside a <wk-figure>, else
+ * empty. A stray <img> in legacy HTML or an html block keeps the silence it
+ * always had. */
+export function figureAlt(el: AltSource): string {
+  if (el.tagName.toUpperCase() !== 'IMG' || !el.closest('wk-figure')) return '';
+  return (el.getAttribute('alt') ?? '').trim();
+}
+
 /** The text a block is registered with: its runs of text (cut where a nested
  * block or a <br> interrupted them), each whitespace-collapsed, joined with
  * single spaces so "line one<br>line two" doesn't fuse; blank runs drop out.

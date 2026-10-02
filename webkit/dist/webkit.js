@@ -1594,6 +1594,10 @@ var Webkit = (() => {
   }
 
   // src/prepare.ts
+  function figureAlt(el2) {
+    if (el2.tagName.toUpperCase() !== "IMG" || !el2.closest("wk-figure")) return "";
+    return (el2.getAttribute("alt") ?? "").trim();
+  }
   function blockText(runs) {
     return runs.map((r) => r.replace(/\s+/g, " ").trim()).filter((r) => r).join(" ");
   }
@@ -1882,9 +1886,6 @@ var Webkit = (() => {
   function tagOf(el2) {
     return el2.tagName.toUpperCase();
   }
-  function altText(el2) {
-    return tagOf(el2) === "IMG" ? (el2.getAttribute("alt") ?? "").trim() : "";
-  }
   function collectRuns(root) {
     const runs = [];
     let current = [];
@@ -1902,7 +1903,7 @@ var Webkit = (() => {
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const tag = tagOf(node);
       if (SKIP_TAGS.has(tag)) return;
-      const alt = altText(node);
+      const alt = figureAlt(node);
       if (alt) {
         flush();
         current.push(document.createTextNode(alt));
@@ -2365,7 +2366,7 @@ var Webkit = (() => {
       const el2 = node;
       const tag = tagOf(el2);
       if (SKIP_TAGS.has(tag)) return;
-      const alt = altText(el2);
+      const alt = figureAlt(el2);
       if (alt) {
         blocks.cut(block);
         blocks.text(el2, alt);

@@ -97,7 +97,7 @@ func TestHandlerServesJS(t *testing.T) {
 		"wk-columns", "wk-col", "wk-stat-value", "WK-STAT-VALUE", "WK-COL", `closest("details")`,
 		// figure (MAD-375): the no-op registrations, the read-aloud tag list,
 		// and the alt text read in an image's place
-		"wk-figure", "wk-figcaption", "WK-FIGCAPTION", `getAttribute("alt")`,
+		"wk-figure", "wk-figcaption", "WK-FIGCAPTION", `getAttribute("alt")`, `closest("wk-figure")`,
 		// the audio toggle: control id, storage key, html attributes, event
 		"webkit-audio", "data-audio-key", "data-audio-default", "wk-audiochange",
 		"wk-read-aloud", "v1/audio/speech",
