@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.15.0](https://github.com/mad01/thismoon/compare/present/v1.14.0...present/v1.15.0) (2026-10-02)
+
+
+### Features
+
+* **present:** remove the section id badge ([#190](https://github.com/mad01/thismoon/issues/190)) ([a8cda83](https://github.com/mad01/thismoon/commit/a8cda833ed61964886a3a56e133127920e3bf249))
+
+
+### Bug Fixes
+
+* **present,webkit:** retire the terracotta alias and lift dark semantic colours under 3:1 ([00fafd0](https://github.com/mad01/thismoon/commit/00fafd03a1306752815c12aa1d2cc7ad3dcd6131))
+
 ## [1.14.0](https://github.com/mad01/thismoon/compare/present/v1.13.0...present/v1.14.0) (2026-10-02)
 
 
