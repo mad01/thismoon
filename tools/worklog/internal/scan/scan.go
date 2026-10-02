@@ -8,6 +8,8 @@ import (
 	"bufio"
 	"cmp"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -306,12 +308,14 @@ type scanner struct {
 }
 
 // onDisk reports whether an absolute path exists on this machine, memoised
-// per scan.
+// per scan. Only a missing path counts as absent: a stat that fails for any
+// other reason, a parent at mode 000 say, is a path that exists but cannot
+// be read, and reading it as absent would misname what sits under it.
 func (sc *scanner) onDisk(p string) bool {
 	hit, ok := sc.seen[p]
 	if !ok {
 		_, err := os.Stat(p)
-		hit = err == nil
+		hit = !errors.Is(err, fs.ErrNotExist)
 		sc.seen[p] = hit
 	}
 	return hit
@@ -335,6 +339,31 @@ func (sc *scanner) checkout(p string) string {
 		return ""
 	}
 	return dir
+}
+
+// cwdCheckout resolves an expanded cwd to the checkout it sits in: the
+// checkout sizing first, so a cwd agrees with a tool-call path into the same
+// tree, then the nearest .git entry walking up from the cwd. The walk stops
+// where the path stops matching a repo path marker and covers the layouts
+// checkoutDir cannot size: a checkout nested two levels under a marker, or
+// one under a checkout root whose next segment is not host-shaped. A cwd
+// that no longer exists still resolves when a parent carries the entry.
+func (sc *scanner) cwdCheckout(full string) string {
+	if dir := sc.checkout(full); dir != "" {
+		return dir
+	}
+	dir := full
+	for underRepoMarker(sc.cfg, dir) {
+		if sc.onDisk(path.Join(dir, ".git")) {
+			return dir
+		}
+		parent := path.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
 }
 
 func (sc *scanner) digestFile(path, project string) (Session, bool, error) {
@@ -454,22 +483,27 @@ func (d *digest) addUser(content json.RawMessage, day string) {
 // addCwd folds a line's cwd into the digest. A cwd inside a checkout counts
 // as that checkout, exactly like a tool-call path: a session run from a
 // subdirectory lists the repo, not the subdirectory, and the checkout is
-// what the firewall classifies. A cwd that resolves to no checkout is still
-// classified as written, since it is where the session really ran, but it
-// names a repo only when this machine cannot probe it: a checkout that lives
-// on another machine keeps its basename, while the org directory above the
-// checkouts or a plain directory under a marker exists here and names
-// nothing. Claude Code records cwd absolute, so the probe needs no expansion.
+// what the firewall classifies (see cwdCheckout for how it is found). A cwd
+// in no checkout is still classified as written, since it is where the
+// session really ran, but it names a repo only when this machine cannot
+// probe it: a checkout that lives on another machine keeps its basename,
+// while the org directory above the checkouts or a plain directory under a
+// marker exists here and names nothing. The cwd is expanded once so every
+// step reads the same path.
 func (d *digest) addCwd(cwd string) {
-	if dir := d.checkout(cwd); dir != "" {
+	full, err := confdir.Expand(cwd)
+	if err != nil {
+		full = cwd
+	}
+	if dir := d.cwdCheckout(full); dir != "" {
 		d.addCheckout(dir)
 		return
 	}
-	d.classify(cwd)
-	if d.onDisk(cwd) {
+	d.classify(full)
+	if d.onDisk(full) {
 		return
 	}
-	if repo := repoName(d.cfg, cwd); repo != "" {
+	if repo := repoName(d.cfg, full); repo != "" {
 		d.repos.add(repo)
 	}
 }

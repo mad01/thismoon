@@ -515,15 +515,26 @@ func TestToolPathsAndDays(t *testing.T) {
 // (MAD-367). A cwd inside a checkout counts as that checkout, like a
 // tool-call path, so a session run from a subdirectory lists the repo and
 // not the subdirectory, and the firewall reads the checkout rather than the
-// cwd's own segments. A cwd that resolves to no checkout is classified as
-// written but names a repo only when this machine cannot probe it: a
-// checkout that lives elsewhere keeps its basename, a directory that exists
-// here and is no checkout names nothing.
+// cwd's own segments. Where the tool-call sizing misses, the nearest .git
+// entry above the cwd decides. A cwd in no checkout is classified as written
+// but names a repo only when this machine cannot probe it: a checkout that
+// lives elsewhere keeps its basename, a directory that exists here and is no
+// checkout names nothing.
 func TestCwdNamesItsCheckout(t *testing.T) {
 	home, mkdir, checkout := fakeHome(t)
 	dotfiles := checkout("code/src/github.com/mad01/dotfiles")
 	billing := checkout("workspace/billing-api")
 	docs := mkdir("workspace/docs")
+	bin := mkdir("code/bin")
+	// Layouts checkoutDir cannot size: a checkout two levels under the
+	// marker, and one under a checkout root whose next segment is no host.
+	svc := checkout("workspace/team/svc")
+	local := checkout("code/src/local/repo")
+	// A git worktree: its .git is a file pointing at the main checkout.
+	wt := mkdir("workspace/team/wt")
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name        string
 		cwd         string
@@ -552,6 +563,25 @@ func TestCwdNamesItsCheckout(t *testing.T) {
 			[]string{"dotfiles"},
 			"personal",
 		},
+		{
+			"a subdirectory of a checkout nested under the marker",
+			svc + "/cmd",
+			[]string{"svc"},
+			"internal",
+		},
+		{
+			"a deleted subdirectory of a nested checkout",
+			svc + "/gone",
+			[]string{"svc"},
+			"internal",
+		},
+		{"a worktree whose .git is a file", wt, []string{"wt"}, "internal"},
+		{
+			"a checkout under a root segment that is no host",
+			local + "/pkg",
+			[]string{"repo"},
+			"unknown",
+		},
 		// No checkout resolves for the rest. Only the cwd this machine cannot
 		// probe keeps its basename; the directories that exist here name
 		// nothing, while their world is still read off the path.
@@ -573,12 +603,8 @@ func TestCwdNamesItsCheckout(t *testing.T) {
 			nil,
 			"unknown",
 		},
-		{
-			"a plain directory under a marker names no repo",
-			mkdir("code/bin"),
-			nil,
-			"unknown",
-		},
+		{"a plain directory under a marker names no repo", bin, nil, "unknown"},
+		{"a tilde cwd is expanded before the probe", "~/code/bin", nil, "unknown"},
 		{
 			"a scratch directory under the internal marker keeps its world",
 			docs,
@@ -609,6 +635,30 @@ func TestCwdNamesItsCheckout(t *testing.T) {
 				t.Errorf("context = %q, want %q", s.Context, tc.wantContext)
 			}
 		})
+	}
+}
+
+// TestOnDiskOnlyMissingIsAbsent pins the probe's error reading: a path that
+// cannot be read (a parent at mode 000) still exists, so only a missing path
+// counts as absent. Otherwise a locked checkout would name its subdirectory
+// instead of itself. Run as root the chmod does not bite, and the stat
+// simply succeeds.
+func TestOnDiskOnlyMissingIsAbsent(t *testing.T) {
+	home := t.TempDir()
+	locked := filepath.Join(home, "locked")
+	if err := os.MkdirAll(filepath.Join(locked, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	sc := &scanner{seen: map[string]bool{}}
+	if !sc.onDisk(filepath.Join(locked, ".git")) {
+		t.Error("an unreadable path reported absent")
+	}
+	if sc.onDisk(filepath.Join(home, "missing", ".git")) {
+		t.Error("a missing path reported present")
 	}
 }
 
