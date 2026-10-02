@@ -1,9 +1,11 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -254,5 +256,39 @@ func TestListEmpty(t *testing.T) {
 	}
 	if len(pages) != 0 {
 		t.Fatalf("List on empty store = %d, want 0", len(pages))
+	}
+}
+
+// The renditions are written through a temp file and a rename, so a reader
+// in another process never sees a partial file, and no temp file outlives
+// the write.
+func TestWriteLeavesWholeFilesAndNoTemp(t *testing.T) {
+	s, err := NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Create(
+		context.Background(),
+		Draft{Title: "T", Content: "<p>c</p>", Deck: "<h1>d</h1>"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2 := "<p>c2</p>"
+	if _, err := s.Update(context.Background(), p.ID, Patch{Content: &c2}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(s.pageDir(p.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			t.Errorf("temp file left behind: %s", e.Name())
+		}
+	}
+	got, _ := s.Get(context.Background(), p.ID)
+	if got.Content != "<p>c2</p>" || got.Deck != "<h1>d</h1>" {
+		t.Errorf("page after update = %q / %q", got.Content, got.Deck)
 	}
 }

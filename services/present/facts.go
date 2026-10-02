@@ -64,6 +64,12 @@ const DefaultSweepInterval = 10 * time.Minute
 // deep inside a write.
 const MaxPageBytes = 1 << 20
 
+// MaxImageBytes caps one image file an image block brings in from this
+// machine. Images are stored beside the pages, not inside them, so the page
+// cap above does not count them; this one keeps a stray screenshot of the
+// whole screen from becoming the biggest thing in the workdir.
+const MaxImageBytes = 2 << 20
+
 // Facts returns the mechanical facts rendered into OperatingDoc, the MCP
 // instructions block, and error hints.
 func Facts() agentdoc.Facts {

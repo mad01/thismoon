@@ -15,6 +15,7 @@ import (
 	"github.com/mad01/thismoon/kit/agentdoc"
 	"github.com/mad01/thismoon/kit/doctor"
 	present "github.com/mad01/thismoon/services/present"
+	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
@@ -94,6 +95,13 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 	if now == nil {
 		now = time.Now
 	}
+	// An image block's local file lands beside the pages, where the local
+	// serve finds it; a shared instance has no workdir of pages and takes
+	// image URLs only.
+	var imgs *images.Store
+	if cfg.Mode == ModeLocal && cfg.Workdir != "" {
+		imgs = images.New(cfg.Workdir)
+	}
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Version: version},
 		&mcp.ServerOptions{Instructions: agentdoc.Instructions(facts)},
@@ -106,6 +114,7 @@ func New(version string, cfg Config) (*mcp.Server, error) {
 		open:    openURL,
 		checks:  cfg.Checks,
 		sharer:  cfg.Sharer,
+		images:  imgs,
 	})
 	return s, nil
 }

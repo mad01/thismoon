@@ -48,6 +48,12 @@ severities, and `tone`, a palette role validated against `webkit.Roles()`. A con
 graph or another container. Speaker notes as a presenter view and an image
 block stay out.
 
+Amended 2026-10-02 (MAD-374, MAD-375): a `columns` block may hold the
+page's one graph, and the `image` block exists. Its source is an http(s)
+URL. On a local instance it may also be a file, which the MCP tools copy
+into the workdir under its content hash and serve at `/img/`. A shared
+instance takes URLs only. The rest of the decision stands.
+
 ## Consequences
 
 - Every new field and block is optional. A Doc without them renders

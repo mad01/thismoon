@@ -51,7 +51,7 @@ Along the bottom edge sits the deck's chrome. The repo logo is in the right corn
 
 A section can name a `layout` for its slide: `center`, `statement`, or `section`. It can carry a `tone`, a palette role that tints the slide and bands the section in the brief. It can hold speaker `notes`, which the deck shows in a drawer on the N key, and set `reveal` to show a list one item per Next. A slide holding one stat or one quote alone becomes the big-number or quote slide on its own. The deck Doc's `transition` picks how slides change: a crossfade by default, `slide` for a nudge in the direction of travel, `none` for a cut. The browser's Reduce Motion setting makes every change a cut.
 
-A slide or a section can use four more blocks beside the ones a brief has. `columns` holds two or three equal columns of blocks and drops to one column on a narrow window. `stat` is a large figure over a label. `quote` carries its attribution. `details` is a collapsible block, closed until opened, which read-aloud opens as it reads it. Callouts come in `info`, `warn`, `ok`, and `error`.
+A slide or a section can use five more blocks beside the ones a brief has. `columns` holds two or three equal columns of blocks and drops to one column on a narrow window; the page's graph may sit in one of them. `stat` is a large figure over a label. `quote` carries its attribution. `details` is a collapsible block, closed until opened, which read-aloud opens as it reads it. `image` shows a picture with a caption: an image URL, or a file on this machine that the tool copies into the page store and serves at `/img/`. Callouts come in `info`, `warn`, `ok`, and `error`.
 
 Keys: Right, Space, or PageDown for the next slide; Left, PageUp, or Backspace for the previous one; Home and End for the first and last. F or P starts presenting: the header and the bar go away, one slide fills the window at a larger size, and the browser is asked for fullscreen. Escape ends it, as does leaving fullscreen through the browser, and so does F or P pressed in fullscreen. Pressed while presenting without fullscreen, which is where a reload leaves you, F or P asks for fullscreen again. A reload, the one an update triggers included, comes back on the same slide in the same mode. The tab remembers where it was, and a fresh tab starts at the title slide.
 
@@ -161,6 +161,7 @@ make -C services/present kind-test   # build, load, apply deploy/overlays/kind, 
     deck-command.json    # the last 32 remote commands for open deck tabs
     graph.js             # optional cytoscape init script
     graph.json           # canonical graph source (when created from graph JSON)
+  images/<sha256>.<ext>  # image files brought in from this machine, served at /img/<name>
 ```
 
 `present rerender [id...]` re-renders pages, decks included, from their stored

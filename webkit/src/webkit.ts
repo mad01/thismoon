@@ -648,6 +648,8 @@ const NOOP_ELEMENTS = [
   'wk-columns', 'wk-col',
   // stat tile
   'wk-stat', 'wk-stat-value', 'wk-stat-label', 'wk-stat-sub',
+  // figure: an image with a caption
+  'wk-figure', 'wk-figcaption',
   // progress bar
   'wk-progress', 'wk-progress-bar', 'wk-progress-fill', 'wk-progress-label',
   // table of contents

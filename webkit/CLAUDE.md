@@ -67,8 +67,10 @@ Content blocks: `<wk-kv>` / `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`
 `<wk-progress-label>`, `<wk-toc>` / `<wk-toc-title>`, `<wk-columns cols="2|3">` /
 `<wk-col>` (equal columns, one under 700px), `<wk-stat>` / `<wk-stat-value>` /
 `<wk-stat-label>` / `<wk-stat-sub>` (figure over a label; the value is skipped by
-fixation), and inside a section the native `blockquote` (+ `cite`) and `details`
-(+ `summary`, closed by default; read-aloud opens it while a part inside plays).
+fixation), `<wk-figure>` / `<wk-figcaption>` (an image with a caption; read-aloud
+reads the image's `alt` in its place), and inside a section the native
+`blockquote` (+ `cite`) and `details` (+ `summary`, closed by default; read-aloud
+opens it while a part inside plays).
 
 Overlays: `<wk-modal [hidden]>` / `<wk-modal-panel>` / `<wk-modal-head>` /
 `<wk-modal-actions>` (fade+slide in; toggle `[hidden]` to open/close),

@@ -1594,6 +1594,10 @@ var Webkit = (() => {
   }
 
   // src/prepare.ts
+  function figureAlt(el2) {
+    if (el2.tagName.toUpperCase() !== "IMG" || !el2.closest("wk-figure")) return "";
+    return (el2.getAttribute("alt") ?? "").trim();
+  }
   function blockText(runs) {
     return runs.map((r) => r.replace(/\s+/g, " ").trim()).filter((r) => r).join(" ");
   }
@@ -1872,7 +1876,9 @@ var Webkit = (() => {
     "WK-COL",
     "WK-STAT-VALUE",
     "WK-STAT-LABEL",
-    "WK-STAT-SUB"
+    "WK-STAT-SUB",
+    "WK-FIGURE",
+    "WK-FIGCAPTION"
   ]);
   var SVG_PLAY = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
   var SVG_PAUSE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
@@ -1897,6 +1903,13 @@ var Webkit = (() => {
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const tag = tagOf(node);
       if (SKIP_TAGS.has(tag)) return;
+      const alt = figureAlt(node);
+      if (alt) {
+        flush();
+        current.push(document.createTextNode(alt));
+        flush();
+        return;
+      }
       const isBlock = BLOCK_TAGS.has(tag);
       if (isBlock) flush();
       Array.from(node.childNodes).forEach(walk);
@@ -2353,6 +2366,12 @@ var Webkit = (() => {
       const el2 = node;
       const tag = tagOf(el2);
       if (SKIP_TAGS.has(tag)) return;
+      const alt = figureAlt(el2);
+      if (alt) {
+        blocks.cut(block);
+        blocks.text(el2, alt);
+        return;
+      }
       if (!BLOCK_TAGS.has(tag)) {
         Array.from(el2.childNodes).forEach((child) => walk(child, block));
         return;
@@ -3832,6 +3851,9 @@ var Webkit = (() => {
     "wk-stat-value",
     "wk-stat-label",
     "wk-stat-sub",
+    // figure: an image with a caption
+    "wk-figure",
+    "wk-figcaption",
     // progress bar
     "wk-progress",
     "wk-progress-bar",

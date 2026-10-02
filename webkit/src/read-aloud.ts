@@ -10,7 +10,7 @@
 // synthesized live, a few sentences per request.
 
 import {
-  barView, BlockCollector, DocStatus, inProgress, parseDocStatus, parseRegistration,
+  barView, BlockCollector, DocStatus, figureAlt, inProgress, parseDocStatus, parseRegistration,
   pollDelay, prepareQuery, readRequest, Registration, SectionStatus, sectionView, statusOfSection,
 } from './prepare.js';
 import {
@@ -44,6 +44,7 @@ const BLOCK_TAGS = new Set([
   'WK-CALLOUT', 'WK-KV-ROW', 'WK-PANEL-TITLE', 'WK-PANEL-SUBTITLE',
   'WK-TOC-TITLE', 'WK-PROGRESS-LABEL', 'WK-CARD',
   'WK-COL', 'WK-STAT-VALUE', 'WK-STAT-LABEL', 'WK-STAT-SUB',
+  'WK-FIGURE', 'WK-FIGCAPTION',
 ]);
 
 const SVG_PLAY    = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -83,6 +84,16 @@ function collectRuns(root: Element): Text[][] {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = tagOf(node as Element);
     if (SKIP_TAGS.has(tag)) return;
+    // A figure's image has no text node, so its alt goes in as a run of
+    // its own: a detached node, which wrapSentences skips, so the alt is
+    // spoken but nothing on the page is highlighted for it.
+    const alt = figureAlt(node as Element);
+    if (alt) {
+      flush();
+      current.push(document.createTextNode(alt));
+      flush();
+      return;
+    }
     const isBlock = BLOCK_TAGS.has(tag);
     if (isBlock) flush();
     Array.from(node.childNodes).forEach(walk);
@@ -741,6 +752,14 @@ function collectBlocks(section: HTMLElement): Block[] {
     const el = node as HTMLElement;
     const tag = tagOf(el);
     if (SKIP_TAGS.has(tag)) return;
+    // A figure's image is a block of its own whose text is its alt, so the
+    // part that reads it is stamped on the image and lights it up.
+    const alt = figureAlt(el);
+    if (alt) {
+      blocks.cut(block);
+      blocks.text(el, alt);
+      return;
+    }
     if (!BLOCK_TAGS.has(tag)) {
       Array.from(el.childNodes).forEach(child => walk(child, block));
       return;

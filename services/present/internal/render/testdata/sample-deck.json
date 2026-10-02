@@ -171,7 +171,20 @@
       "h": "Where the request died",
       "blocks": [
         {
-          "t": "graph"
+          "t": "columns",
+          "cols": [
+            [
+              {
+                "t": "graph"
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "text": "The resolver sits between the gateway and payments. Every request after 14:02 followed its stale record to a host that was gone."
+              }
+            ]
+          ]
         }
       ]
     },
@@ -237,6 +250,30 @@
           "title": "Resolver",
           "sub": "cached a dead upstream for 3600 s",
           "accent": "red"
+        }
+      ]
+    },
+    {
+      "h": "What the dashboard showed",
+      "blocks": [
+        {
+          "t": "columns",
+          "cols": [
+            [
+              {
+                "t": "image",
+                "src": "https://raw.githubusercontent.com/mad01/thismoon/main/docs/assets/logo.png",
+                "alt": "The on-call dashboard at 14:15, every checkout panel red",
+                "caption": "The on-call dashboard at 14:15."
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "text": "Every checkout panel went red at once; the gateway's own panels stayed green, which is what pointed at DNS."
+              }
+            ]
+          ]
         }
       ]
     },

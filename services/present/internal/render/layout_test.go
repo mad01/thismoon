@@ -170,11 +170,6 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			},
 			"details block: not allowed inside",
 		},
-		{
-			"graph in columns",
-			Block{T: "columns", Columns: [][]Block{one, {{T: "graph"}}}},
-			"graph block: not allowed inside",
-		},
 		{"empty details", Block{T: "details", Summary: "s"}, "blocks is empty"},
 		{"details without summary", Block{T: "details", Blocks: one}, "summary is required"},
 		{
@@ -189,7 +184,7 @@ func TestRenderDocBlockValidation(t *testing.T) {
 		{
 			"graph in details",
 			Block{T: "details", Summary: "s", Blocks: []Block{{T: "graph"}}},
-			"graph block: not allowed inside",
+			"graph block: not allowed inside a details block",
 		},
 		{
 			"panel accent in a column",
@@ -210,6 +205,70 @@ func TestRenderDocBlockValidation(t *testing.T) {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
+	}
+}
+
+// The page's one graph may sit in a column, beside a paragraph say, and
+// renders there in the one container the page view mounts it in (MAD-374).
+func TestRenderDocGraphInColumns(t *testing.T) {
+	out := renderBlocks(t, Block{T: "columns", Columns: [][]Block{
+		{{T: "graph"}},
+		{{T: "p", Text: "beside it"}},
+	}})
+	graph := strings.Index(out, `<div id="cy-graph" class="cy-container"></div>`)
+	col := strings.Index(out, "<wk-col>")
+	if graph < 0 || col < 0 || graph < col {
+		t.Errorf("graph not rendered inside a column: %s", out)
+	}
+	if n := strings.Count(out, `id="cy-graph"`); n != 1 {
+		t.Errorf("cy-graph count = %d, want 1", n)
+	}
+}
+
+// A page has one graph, so a Doc that places it twice, at the top level or
+// in a column, is refused before anything renders two containers.
+func TestRenderDocGraphOncePerPage(t *testing.T) {
+	graph := Block{T: "graph"}
+	inColumn := Block{T: "columns", Columns: [][]Block{{graph}, {{T: "p", Text: "x"}}}}
+	cases := []struct {
+		name string
+		doc  Doc
+	}{
+		{
+			"twice in one section",
+			Doc{Sections: []Section{{Heading: "S", Blocks: []Block{graph, graph}}}},
+		},
+		{
+			"across sections",
+			Doc{Sections: []Section{
+				{Heading: "S", Blocks: []Block{graph}},
+				{Heading: "U", Blocks: []Block{graph}},
+			}},
+		},
+		{
+			"top level and in a column",
+			Doc{Sections: []Section{{Heading: "S", Blocks: []Block{graph, inColumn}}}},
+		},
+		{
+			"in two columns",
+			Doc{Sections: []Section{{Heading: "S", Blocks: []Block{inColumn, inColumn}}}},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := RenderDoc(c.doc, "T")
+			if err == nil || !strings.Contains(err.Error(), "found 2") {
+				t.Errorf("err = %v, want the second graph refused", err)
+			}
+		})
+	}
+	for _, ok := range []Doc{
+		{Sections: []Section{{Heading: "S", Blocks: []Block{graph}}}},
+		{Sections: []Section{{Heading: "S", Blocks: []Block{inColumn}}}},
+	} {
+		if _, err := RenderDoc(ok, "T"); err != nil {
+			t.Errorf("one graph refused: %v", err)
+		}
 	}
 }
 
@@ -646,15 +705,23 @@ func TestSampleDeckRenders(t *testing.T) {
 		`<wk-progress>`, `<wk-panel style="border-left: 3px solid var(--red)">`,
 		`<wk-callout variant="info"`, `<wk-callout variant="warn"`, `<p class="brief-meta">Figures as of`,
 		`<a href="https://example.com/runbook">runbook</a>`,
+		`<wk-figure>`, `alt="The on-call dashboard at 14:15, every checkout panel red" loading="lazy">`,
+		`<wk-figcaption data-fixation>The on-call dashboard at 14:15.</wk-figcaption>`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 13 {
-		t.Errorf("sample deck has %d sections, want 13", n)
+	if n := len(c.Doc.Sections); n != 14 {
+		t.Errorf("sample deck has %d sections, want 14", n)
 	}
 	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 3 {
 		t.Errorf("reveal sections = %d, want 3", n)
+	}
+	// The four columns blocks: the row of figures, the chart beside its
+	// caption, the graph beside a paragraph (MAD-374), and the image beside
+	// its paragraph (MAD-375).
+	if n := strings.Count(c.HTML, "<wk-columns "); n != 4 {
+		t.Errorf("columns blocks = %d, want 4", n)
 	}
 }

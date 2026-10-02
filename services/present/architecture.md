@@ -210,6 +210,10 @@ instance and clears the record.
   graph.js       rendered Cytoscape init (when has_graph)
   graph.json     canonical graph source (when authored as JSON)
   refs.json      optional [{title,url},...]
+~/.config/present/images/<sha256>.<ext>
+                 image files the image blocks brought in from this machine
+                 (png, jpg, gif, webp), named by content, served at /img/<name>,
+                 removed when no page references them any more
 ```
 
 Plain files, one directory per page. Raw HTML/JS input deletes the now-stale

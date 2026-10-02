@@ -6,19 +6,25 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
 // Share pushes local page id to the shared instance and records where it
 // landed on the local page. A page shared before is replaced under its
 // shared id, which keeps the link stable and restarts an ephemeral page's
-// clock; if the instance has purged it meanwhile, it is created afresh.
+// clock; if the instance has purged it meanwhile, it is created afresh. A
+// page whose images live in the local store is refused before anything is
+// pushed: the copy would show broken images, and nothing says so.
 func Share(
 	ctx context.Context, st store.Store, c *Client, id string, ephemeral bool, now time.Time,
 ) (store.SharedInfo, error) {
 	p, err := st.Get(ctx, id)
 	if err != nil {
 		return store.SharedInfo{}, err
+	}
+	if len(images.Referenced(p.Content)) > 0 || len(images.Referenced(p.Deck)) > 0 {
+		return store.SharedInfo{}, ErrLocalImages
 	}
 	b, err := bundleOf(ctx, st, p)
 	if err != nil {

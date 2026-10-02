@@ -172,6 +172,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		// has several replicas and its pages are pushed to it rendered.
 		go rerenderSweep(ctx, st, log.Printf)
 	}
+	if !flagShared {
+		// Images an update dropped or a failed write left behind go at
+		// startup; the delete handler sweeps the rest as pages go.
+		go srv.SweepImages(ctx)
+	}
 	return serveUntilSignal(ctx, addr, srv.Handler(), srv.CloseStreams)
 }
 

@@ -58,6 +58,10 @@ wk-kv-value code, code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', m
 .brief a:not(.topbar-link):not(wk-toc a):hover { text-decoration-color: var(--primary); }
 
 .cy-container { width: 100%; height: 520px; border-radius: 8px; overflow: hidden; }
+/* The graph in a column (MAD-374): shorter than the full-width one, so the
+   paragraph beside it sits level with the drawing; the presenting rule
+   below still wins on a slide. */
+wk-col .cy-container { height: 400px; }
 
 .cy-wrapper { position: relative; }
 .cy-controls {
@@ -131,7 +135,7 @@ wk-kv-value code, code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', m
 @media (max-width: 600px) {
   .brief { padding: 1rem 1rem 4rem; }
   .brief-title { font-size: 1.625rem; }
-  .cy-container { height: 380px; }
+  .cy-container, wk-col .cy-container { height: 380px; }
   .cy-controls .size-btn { width: 2rem; height: 2rem; }
   .cy-wrapper.cy-fullscreen { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .cy-wrapper.cy-fullscreen .cy-container { border-radius: 0; }
@@ -179,6 +183,12 @@ html.presenting .slide.active:not(.has-viz) .slide-body { zoom: var(--deck-zoom,
 html.presenting .slide.has-viz .cy-container { height: 62vh; }
 html.presenting .slide.has-viz .present-chart-canvas { height: 52vh; }
 html.presenting .slide.has-viz wk-section-heading { font-size: 1.75rem; }
+/* An image on a slide (MAD-375) stays inside it: bounded by the viewport's
+   height and scaled with its aspect kept, centred when it stands alone.
+   In a column it fills the column's width up to its own size. */
+.slide wk-figure img { max-height: 55vh; width: auto; max-width: 100%; object-fit: contain; margin: 0 auto; }
+.slide wk-col wk-figure img { margin: 0; }
+html.presenting .slide.has-viz wk-figure img { max-height: 62vh; }
 html.presenting .deck-bar { opacity: 0; z-index: 41; }
 html.presenting .deck-bar:hover, html.presenting .deck-bar:focus-within { opacity: 1; }
 /* Deck chrome: a strip along the bottom edge built by app.js from the

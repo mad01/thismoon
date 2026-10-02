@@ -5,6 +5,30 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { group, joinParts, LIVE_RAMP, MAX_PART_CHARS, partKeys } from '../src/sentences.ts';
+import { figureAlt } from '../src/prepare.ts';
+
+// A stand-in for an element: tag, one attribute, and whether it sits in a
+// wk-figure.
+function element(tagName, alt, inFigure) {
+  return {
+    tagName,
+    getAttribute: name => (name === 'alt' ? alt : null),
+    closest: selector => (inFigure && selector === 'wk-figure' ? {} : null),
+  };
+}
+
+test('figureAlt: an image in a figure reads its alt, trimmed', () => {
+  assert.equal(figureAlt(element('IMG', ' The dashboard at 14:15 ', true)), 'The dashboard at 14:15');
+  assert.equal(figureAlt(element('img', 'lower-case tag', true)), 'lower-case tag');
+});
+
+test('figureAlt: an image outside a figure, or without alt, stays silent', () => {
+  assert.equal(figureAlt(element('IMG', 'legacy html image', false)), '');
+  assert.equal(figureAlt(element('IMG', '', true)), '');
+  assert.equal(figureAlt(element('IMG', '   ', true)), '');
+  assert.equal(figureAlt(element('IMG', null, true)), '');
+  assert.equal(figureAlt(element('P', 'not an image', true)), '');
+});
 
 const SENTENCE_100 = 'x'.repeat(99) + '.';
 

@@ -29,9 +29,11 @@ never migrated). doc.json and graph.json beside the rendered content.html are
 the editable sources present_source returns, present_update takes back, and
 `present rerender` re-renders from; a raw-HTML page has neither. A deck adds
 deck.html and deck.json the same way, and deck-command.json holds the last
-remote command (present_deck, `present deck`) that open deck tabs poll. A
-shared instance keeps pages as Page resources, so `kubectl get pages` is its
-store.
+remote command (present_deck, `present deck`) that open deck tabs poll. An
+image block whose src was a file on this machine puts a copy under
+images/<sha256>.<ext> beside pages/, served at /img/<name>; deleting the last
+page that shows it removes the copy. A shared instance keeps pages as Page
+resources, so `kubectl get pages` is its store, and takes image URLs only.
 
 ## failure modes
 

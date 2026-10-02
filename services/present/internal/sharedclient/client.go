@@ -26,6 +26,12 @@ var (
 	ErrDeckDropped = errors.New(
 		"the shared instance predates decks and kept only the brief; upgrade it and share again",
 	)
+	// ErrLocalImages means the page shows images stored on this machine,
+	// which a shared instance has no way to serve.
+	ErrLocalImages = errors.New(
+		"the page uses images stored on this machine, which a shared instance cannot serve; " +
+			"point its image blocks at http or https URLs and share again",
+	)
 )
 
 // requestTimeout bounds one call; a shared instance that hangs must not
