@@ -1547,7 +1547,6 @@ var Webkit = (() => {
     "SELECT",
     "TEXTAREA",
     "WK-BADGE",
-    "WK-SECTION-ID",
     "WK-STAT-VALUE"
   ]);
   function fixateTextNode(node) {
@@ -3839,7 +3838,6 @@ var Webkit = (() => {
     // section block
     "wk-section",
     "wk-section-heading",
-    "wk-section-id",
     "wk-section-subheading",
     // callout
     "wk-callout",

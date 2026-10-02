@@ -23,7 +23,7 @@ The only interactive custom element. Renders the sticky topbar with brand, nav, 
 | `page-width` | `1080` | Sets `--page-width` on `:root` |
 | `fixation-targets` | `[data-fixation], wk-panel-title, wk-panel-subtitle, wk-card, .callout, main p, main li, main td` | CSS selector for fixation text-walk |
 
-The fixation text-walk works in place: each text node under a target that holds a word becomes a `span.wk-fixation-run` with a `<b>` around the first half of every word. Toggling fixation off unwraps those spans again. Elements, attributes, classes and listeners under a target are left as they are, so content another component injected (read-aloud's buttons and badges, its `data-ra-chunk` stamps and highlights) survives the toggle. The walk skips `code`, `b`, `strong`, `button`, `select`, `textarea`, `wk-badge`, `wk-section-id`, `svg`, `script` and `style` subtrees: chips, section ids and control labels aren't prose. A `MutationObserver` re-walks new content while fixation is on, so client-rendered pages need no extra call. Read-aloud plans a live session on plain text: it takes the runs off the section before wrapping sentences. The observer bolds the text inside the whole-sentence spans again before the next paint.
+The fixation text-walk works in place: each text node under a target that holds a word becomes a `span.wk-fixation-run` with a `<b>` around the first half of every word. Toggling fixation off unwraps those spans again. Elements, attributes, classes and listeners under a target are left as they are, so content another component injected (read-aloud's buttons and badges, its `data-ra-chunk` stamps and highlights) survives the toggle. The walk skips `code`, `b`, `strong`, `button`, `select`, `textarea`, `wk-badge`, `svg`, `script` and `style` subtrees: chips and control labels aren't prose. A `MutationObserver` re-walks new content while fixation is on, so client-rendered pages need no extra call. Read-aloud plans a live session on plain text: it takes the runs off the section before wrapping sentences. The observer bolds the text inside the whole-sentence spans again before the next paint.
 
 **Light-DOM children relocated by the element:**
 
@@ -251,14 +251,14 @@ Key/value list. `variant="card"` adds a border, rounded corners, and uppercased 
 </wk-kv>
 ```
 
-### `<wk-section>` / `<wk-section-heading>` / `<wk-section-id>` / `<wk-section-subheading>`
+### `<wk-section>` / `<wk-section-heading>` / `<wk-section-subheading>`
 
-Document section with a ruled, primary-underlined heading. `<wk-section-id>` renders a monospaced numbered badge.
+Document section with a ruled, primary-underlined heading.
 
 ```html
 <wk-section>
   <wk-section-heading>
-    <wk-section-id>01</wk-section-id>Overview
+    Overview
   </wk-section-heading>
   <p>Body paragraph.</p>
   <wk-section-subheading>Details</wk-section-subheading>
@@ -302,7 +302,7 @@ Table of contents block. Links inside are styled in `--primary`.
 <wk-toc>
   <wk-toc-title>Contents</wk-toc-title>
   <ul>
-    <li><a href="#overview"><wk-section-id>01</wk-section-id> Overview</a></li>
+    <li><a href="#overview">01 Overview</a></li>
     <li><a href="#usage">02 Usage</a></li>
   </ul>
 </wk-toc>

@@ -61,7 +61,7 @@ Badges: `<wk-badge variant="a|b|c|outline|stat|accent|filter">`;
 
 Content blocks: `<wk-kv>` / `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`
 (`variant="card"` adds border + rounded corners + uppercased labels),
-`<wk-section>` / `<wk-section-heading>` / `<wk-section-id>` /
+`<wk-section>` / `<wk-section-heading>` /
 `<wk-section-subheading>` (ruled heading), `<wk-callout variant="info|warn|ok|error">`,
 `<wk-progress>` / `<wk-progress-bar>` / `<wk-progress-fill>` /
 `<wk-progress-label>`, `<wk-toc>` / `<wk-toc-title>`, `<wk-columns cols="2|3">` /

@@ -2069,19 +2069,10 @@ wk-section-heading::after {
   background: var(--primary);
   border-radius: 1px;
 }
-wk-section-id {
-  font-family: var(--mono);
-  font-size: 0.875rem;
-  font-weight: 700;
-  background: var(--chip-bg);
-  color: var(--primary);
-  padding: 0.1875rem 0.5rem;
-  border-radius: 4px;
-  margin-right: 0.625rem;
-  vertical-align: baseline;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
+/* wk-section-id is retired (MAD-377) and nothing in the repo emits it. A page
+   stored on a shared present instance may still carry the element until it is
+   shared again, so this rule hides it. */
+wk-section-id { display: none; }
 wk-section p {
   font-size: 0.9375rem;
   line-height: 1.75;
@@ -2311,7 +2302,6 @@ wk-toc a {
   transition: color 0.15s;
 }
 wk-toc a:hover { text-decoration: underline; }
-wk-toc wk-section-id { font-size: 0.75rem; }
 
 /* ── wk-seg (segmented control) ── */
 

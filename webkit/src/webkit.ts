@@ -641,7 +641,7 @@ const NOOP_ELEMENTS = [
   // key/value rows
   'wk-kv', 'wk-kv-row', 'wk-kv-label', 'wk-kv-value',
   // section block
-  'wk-section', 'wk-section-heading', 'wk-section-id', 'wk-section-subheading',
+  'wk-section', 'wk-section-heading', 'wk-section-subheading',
   // callout
   'wk-callout',
   // columns of blocks
