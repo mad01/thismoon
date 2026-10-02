@@ -225,22 +225,17 @@ func collectStrings(v any) string {
 
 // --- bash: git push, git commit, branch and tag creation, gh ---------------
 
-// bashPublications walks the command's segments, tracking `cd` like
-// git-push-main does, and collects what each git or gh invocation would
-// publish. A heredoc body spans several segments, which is why the command
-// text (not one segment) is what gets scanned for commit and gh text.
+// bashPublications walks the command's segments with the same cd-tracking
+// walk every git guard uses (walkSegments) and collects what each git or gh
+// invocation would publish. A heredoc body spans several segments, which is
+// why the command text (not one segment) is what gets scanned for commit and
+// gh text.
 func (g *PublishInternalNames) bashPublications(in Input) []publication {
 	if in.Command == "" {
 		return nil
 	}
 	var pubs []publication
-	cwd := in.Cwd
-	for _, seg := range splitSegments(in.Command) {
-		tokens := strings.Fields(seg.text)
-		if dir, ok := parseCd(tokens); ok {
-			cwd = resolveDir(cwd, dir)
-			continue
-		}
+	walkSegments(in.Command, in.Cwd, func(tokens []string, cwd string) {
 		for i, tok := range tokens {
 			switch tok {
 			case "git":
@@ -256,7 +251,7 @@ func (g *PublishInternalNames) bashPublications(in Input) []publication {
 			}
 			break // one invocation per segment, as gitCommandsAt does
 		}
-	}
+	})
 	return pubs
 }
 

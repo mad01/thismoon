@@ -40,26 +40,17 @@ func (g *GitPushMain) ID() string    { return GitPushMainID }
 func (g *GitPushMain) Event() string { return EventBash }
 
 // Check scans every git push in the command (compound commands included) and
-// denies when one targets main or master. It walks the command's segments in
-// order, tracking the shell's working directory across `cd`/`pushd`, so a bare
-// push (no `git -C`) is judged against the directory the push runs in rather
-// than the session cwd. Without that, `cd <other-repo> && git push origin
-// main` from an exempt repo's cwd would be checked against the exempt repo and
-// wrongly allowed. A cd or git -C whose target cannot be resolved without a
-// shell leaves the directory unknown, and checkPush then fails closed instead
-// of guessing.
+// denies when one targets main or master. Each push is judged in the
+// directory it runs in (gitCommandsAt tracks `cd`/`pushd` and resolves `git
+// -C`), not the session cwd. Without that, `cd <other-repo> && git push
+// origin main` from an exempt repo's cwd would be checked against the exempt
+// repo and wrongly allowed. A cd or git -C whose target cannot be resolved
+// without a shell leaves the directory unknown, and checkPush then fails
+// closed instead of guessing.
 func (g *GitPushMain) Check(in Input) *Denial {
-	cwd := in.Cwd
-	for _, seg := range splitSegments(in.Command) {
-		tokens := strings.Fields(seg.text)
-		if dir, ok := parseCd(tokens); ok {
-			cwd = resolveDir(cwd, dir)
-			continue
-		}
-		for _, push := range findGitPushes(seg.text, cwd) {
-			if d := g.checkPush(push); d != nil {
-				return d
-			}
+	for _, c := range gitCommandsAt(in.Command, in.Cwd, "push") {
+		if d := g.checkPush(parsePushArgs(c)); d != nil {
+			return d
 		}
 	}
 	return nil
@@ -104,24 +95,6 @@ func unknownDirDenial(push gitPush) *Denial {
 			"shell can resolve (a variable, cd -, a substitution). Use an absolute path, ~, or $HOME "+
 			"instead, so the target repo can be checked.",
 	)
-}
-
-// parseCd reports whether a segment's tokens are a `cd`/`pushd` invocation and,
-// if so, returns its target as written. A cd with no argument goes home, so it
-// returns "~"; resolveDir decides what any target means.
-func parseCd(tokens []string) (string, bool) {
-	if len(tokens) == 0 || (tokens[0] != "cd" && tokens[0] != "pushd") {
-		return "", false
-	}
-	// Skip cd option flags (`cd -P`, `cd -L`); the first non-flag token is the
-	// target.
-	for _, tok := range tokens[1:] {
-		if tok == "-P" || tok == "-L" || tok == "-e" || tok == "-@" {
-			continue
-		}
-		return tok, true
-	}
-	return "~", true
 }
 
 // pushExempt reports whether the repo at dir may take a direct default-
@@ -180,17 +153,6 @@ func (p gitPush) targetBranch(currentBranch func() string) string {
 var pushFlagsWithValue = map[string]bool{
 	"-o": true, "--push-option": true, "--receive-pack": true, "--exec": true,
 	"--repo": true,
-}
-
-// findGitPushes extracts git push invocations from a shell command via the
-// shared token-based git parser (see gitCommandsAt); cwd is where a bare
-// invocation runs.
-func findGitPushes(command, cwd string) []gitPush {
-	var pushes []gitPush
-	for _, c := range gitCommandsAt(command, cwd, "push") {
-		pushes = append(pushes, parsePushArgs(c))
-	}
-	return pushes
 }
 
 // parsePushArgs reads the remote and refspecs out of a parsed push.

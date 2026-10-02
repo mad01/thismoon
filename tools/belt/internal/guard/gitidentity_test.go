@@ -179,10 +179,11 @@ func TestGitIdentityFirstRuleWins(t *testing.T) {
 	}
 }
 
-// TestGitIdentityDirResolution pins which directory the resolvers see
-// (MAD-370): the session cwd for a bare commit, the `git -C` target otherwise,
-// with ~ and $HOME expanded the way the shell would. A -C target only a shell
-// can resolve leaves the directory unknown, and the guard fails open without
+// TestGitIdentityDirResolution pins which directory the resolvers see: the
+// session cwd for a bare commit, the directory a `cd`/`pushd` before it
+// landed in (MAD-366), the `git -C` target otherwise, with ~ and $HOME
+// expanded the way the shell would (MAD-370). A target only a shell can
+// resolve leaves the directory unknown, and the guard fails open without
 // asking the resolvers about a guessed location.
 func TestGitIdentityDirResolution(t *testing.T) {
 	t.Setenv("HOME", "/Users/tester")
@@ -213,6 +214,19 @@ func TestGitIdentityDirResolution(t *testing.T) {
 			"/session/cwd",
 			"/Users/tester/code/worklog",
 		},
+		{
+			"cd then bare commit",
+			`cd /other/repo && git commit -m "x"`,
+			"/session/cwd",
+			"/other/repo",
+		},
+		{
+			"tilde cd into a worktree",
+			`cd ~/.worktrees/repo/slug && git commit -m "x"`,
+			"/session/cwd",
+			"/Users/tester/.worktrees/repo/slug",
+		},
+		{"unresolvable cd fails open", `cd $TARGET && git commit -m "x"`, "/session/cwd", ""},
 		{"unresolvable -C fails open", `git -C $TARGET commit -m "x"`, "/session/cwd", ""},
 	}
 	for _, tt := range tests {

@@ -217,7 +217,9 @@ Blocks `git push` to `main` or `master` before it happens.
 Blocks `git commit` when the repo's effective `git config user.email` is not
 the one configured for that repo.
 
-- **Fires on** every `git commit` in the command.
+- **Fires on** every `git commit` in the command, judged in the directory it
+  runs in: a tracked `cd`/`pushd`, a `git -C` target (`~` and `$HOME`
+  expanded), else the session cwd.
 - **Decides by** the first `git_identity` rule whose `repos` patterns match
   (exact `host/owner/repo` or a trailing `/*` org wildcard; an empty `repos`
   list covers every repo).
@@ -227,16 +229,17 @@ the one configured for that repo.
   after push. Rules are repo-scoped rather than machine-scoped on purpose: a
   work machine committing to a personal repo in the evening still gets the
   personal email enforced, because the repo decides.
-- **Fails open**: no rules configured, no rule covering the repo, an
-  unresolvable repo, or an unresolvable email all allow. `mode: soft` turns a
-  deny into a warn event.
+- **Fails open**: no rules configured, no rule covering the repo, a commit
+  directory only a shell can name, an unresolvable repo, or an unresolvable
+  email all allow. `mode: soft` turns a deny into a warn event.
 
 ### commit-guard
 
 The work-hours nudge: discourages personal-repo commits during configured
 hours.
 
-- **Fires on** every `git commit`; every `commit_guards` rule is evaluated.
+- **Fires on** every `git commit`, judged in the directory it runs in as for
+  git-identity; every `commit_guards` rule is evaluated.
 - **A rule matches when**, in order: the repo is not in `always_allow`, and
   the repo matches `repos` (an empty list here matches nothing, the opposite
   of `git_identity`). It also requires that the rule's override switch is
@@ -249,7 +252,8 @@ hours.
   exception is one command away.
 - **Why it exists**: a soft boundary between work hours and personal projects
   that a human can consciously step over but not absent-mindedly drift over.
-- **Fails open**: unresolved repos and malformed windows block nothing.
+- **Fails open**: unresolved repos, a commit directory only a shell can name,
+  and malformed windows block nothing.
 
 ### script-deny-list
 
@@ -603,15 +607,21 @@ out, states the branch + PR commit policy and hands back the recovery. `git
 switch -c <branch>` carries the commit along, `git branch -f main
 origin/main` drops the local default branch back onto the remote.
 
-- **Fires when** a commit in the command (compound commands and `git -C`
-  included) ran with the repo's current branch on main or master. The
-  repo's canonical origin identity must also be on neither the shared
-  `direct_main_repos` list (this hint is one of its two readers,
-  docs/adr/0013) nor `hints.commit-policy.exclude_repos`.
+- **Fires when** a commit in the command ran with its repo's current branch
+  on main or master. The branch is read in the directory the commit ran in:
+  a tracked `cd`/`pushd`, a `git -C` target (`~` and `$HOME` expanded), else
+  the session cwd. That is what keeps a loom session quiet: the session cwd
+  sits on main while every commit runs inside `cd ~/.worktrees/<repo>/<slug>
+  && git commit`, on the worktree's own branch. The repo's canonical origin
+  identity must also be on neither the shared `direct_main_repos` list (this
+  hint is one of its two readers, docs/adr/0013) nor
+  `hints.commit-policy.exclude_repos`.
 - **Deliberately silent** on feature branches, opted-out repos, detached
   HEAD, and repos with no resolvable origin remote. A scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
-  protect.
+  protect. Silent too on a commit whose directory only a shell can name (a
+  variable, `cd -`, a substitution): a hint that cannot tell says nothing,
+  where the push guard fails closed.
 - **Repo-local overlay**: a `.belt.yaml` at the repo root lets the repo
   version its own policy (docs/adr/0012). `hints.commit-policy.exclude`
   opts the repo out or back in over the machine's lists, and
@@ -635,9 +645,9 @@ After a `git commit` in a repo that declares a lint/format policy, relays
 that policy, once per session per repo, while the commit is still
 unpushed.
 
-- **Fires when** a commit in the command (compound commands and `git -C`
-  included) ran in a repo whose root `.belt.yaml` carries a
-  `hints.lint-policy.message` line. The message is the whole advice: belt
+- **Fires when** a commit in the command ran in a repo whose root
+  `.belt.yaml` carries a `hints.lint-policy.message` line. The directory the
+  commit ran in is resolved as for commit-policy. The message is the whole advice: belt
   ships no language→linter table and executes nothing — the repo states its
   own toolchain (`run make fmt && make lint per component`, say) and belt
   only picks the moment.

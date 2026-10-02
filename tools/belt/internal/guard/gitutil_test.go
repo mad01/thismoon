@@ -14,11 +14,12 @@ func invocationDirs(cmds []gitInvocation) []string {
 	return dirs
 }
 
-// TestGitCommandsAt pins where the parser places an invocation: cwd for a
-// bare one, the -C target for the rest, expanded the way the shell would
-// (resolveDir) so ~, $HOME, and the absolute path all name one directory
-// (MAD-370). A target only a shell can expand is unknown ("") rather than a
-// path git would never see.
+// TestGitCommandsAt pins where the parser places an invocation: the tracked
+// shell directory for a bare one (cwd, or where a `cd`/`pushd` before it
+// landed, MAD-366), the -C target for the rest, expanded the way the shell
+// would (resolveDir) so ~, $HOME, and the absolute path all name one
+// directory (MAD-370). A target only a shell can expand is unknown ("")
+// rather than a path git would never see.
 func TestGitCommandsAt(t *testing.T) {
 	t.Setenv("HOME", "/Users/tester")
 	const home = "/Users/tester"
@@ -111,6 +112,71 @@ func TestGitCommandsAt(t *testing.T) {
 			"/session",
 			"commit",
 			[]string{"/a", "/session"},
+		},
+		{
+			"cd then bare commit",
+			"cd /other/repo && git commit -m x",
+			"/session",
+			"commit",
+			[]string{"/other/repo"},
+		},
+		{
+			"cd relative then bare commit",
+			"cd repo && git commit -m x",
+			"/session",
+			"commit",
+			[]string{"/session/repo"},
+		},
+		{
+			"tilde cd then bare commit",
+			"cd ~/.worktrees/repo/slug && git commit -m x",
+			"/session",
+			"commit",
+			[]string{home + "/.worktrees/repo/slug"},
+		},
+		{
+			"HOME cd then bare commit",
+			"cd $HOME/repo && git commit -m x",
+			"/session",
+			"commit",
+			[]string{home + "/repo"},
+		},
+		{
+			"pushd then bare commit",
+			"pushd /other/repo && git commit -m x",
+			"/session",
+			"commit",
+			[]string{"/other/repo"},
+		},
+		{"bare cd goes home", "cd && git commit -m x", "/session", "commit", []string{home}},
+		{
+			"cd then relative -C",
+			"cd /other && git -C repo commit -m x",
+			"/session",
+			"commit",
+			[]string{"/other/repo"},
+		},
+		{
+			"variable cd is unknown",
+			"cd $TARGET && git commit -m x",
+			"/session",
+			"commit",
+			[]string{""},
+		},
+		{"cd dash is unknown", "cd - && git commit -m x", "/session", "commit", []string{""}},
+		{
+			"absolute -C after variable cd",
+			"cd $TARGET && git -C /other/repo commit -m x",
+			"/session",
+			"commit",
+			[]string{"/other/repo"},
+		},
+		{
+			"cd persists across segments",
+			"cd /a; git commit -m x; git commit -m y",
+			"/session",
+			"commit",
+			[]string{"/a", "/a"},
 		},
 		{"other subcommand ignored", "git -C /a status", "/session", "commit", nil},
 		{"quoted mention ignored", `echo "git commit -m x"`, "/session", "commit", nil},

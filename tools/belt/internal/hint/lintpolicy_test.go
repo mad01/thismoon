@@ -203,11 +203,11 @@ func TestLintPolicyOncePerSession(t *testing.T) {
 	})
 }
 
-// TestLintPolicyDirResolution pins which directory the resolvers see
-// (MAD-370): the session cwd for a bare commit, the `git -C` target
-// otherwise, with ~ and $HOME expanded the way the shell would. A target only
-// a shell can resolve leaves the directory unknown, and the hint stays quiet
-// without a lookup.
+// TestLintPolicyDirResolution pins which directory the resolvers see: the
+// session cwd for a bare commit, the directory a `cd` before it landed in
+// (MAD-366), the `git -C` target otherwise, with ~ and $HOME expanded the way
+// the shell would (MAD-370). A target only a shell can resolve leaves the
+// directory unknown, and the hint stays quiet without a lookup.
 func TestLintPolicyDirResolution(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -226,6 +226,13 @@ func TestLintPolicyDirResolution(t *testing.T) {
 			"/session/cwd",
 			home + "/code/worklog",
 		},
+		{
+			"cd then bare commit",
+			"cd /other/repo && git commit -m 'x'",
+			"/session/cwd",
+			"/other/repo",
+		},
+		{"unresolvable cd stays quiet", "cd $TARGET && git commit -m 'x'", "/session/cwd", ""},
 		{"unresolvable -C stays quiet", "git -C $TARGET commit -m 'x'", "/session/cwd", ""},
 	}
 	for _, tt := range tests {

@@ -56,16 +56,24 @@ func (h *CommitPolicy) Event() string { return EventBash }
 // (docs/adr/0012). A repo with no resolvable origin stays silent — unlike
 // the push guard there is nothing upstream to protect, and a scratch
 // `git init` repo lives its whole life on its default branch.
+//
+// The branch is read in the directory the commit ran in (GitCommitDirs: a
+// tracked cd, a git -C target, else the session cwd), so a commit inside a
+// linked worktree is judged by the worktree's branch, not the session
+// checkout's. git answers for the worktree on its own; nothing
+// worktree-specific is needed once the directory is right.
 func (h *CommitPolicy) Check(in Input) *Advice {
 	if in.Command == "" {
 		return nil
 	}
 	for _, dir := range guard.GitCommitDirs(in.Command, in.Cwd) {
 		if dir == "" {
-			// The commit ran in a directory only a shell can name (a
-			// variable, a substitution). A hint that cannot tell stays
-			// quiet; it does not fall back to the session cwd, which may
-			// be a different repo on a different branch.
+			// The commit ran in a directory only a shell can name: a cd or
+			// git -C with a variable, `cd -`, or a substitution. A hint
+			// that cannot tell stays quiet, where the push guard fails
+			// closed. Falling back to the session cwd would be the wrong
+			// guess: in a loom session that is the canonical checkout on
+			// main while the commit ran on a worktree branch.
 			continue
 		}
 		overlay, err := loadRepoOverlay(h.resolveRoot(dir))

@@ -18,18 +18,57 @@ type gitInvocation struct {
 }
 
 // gitCommandsAt extracts bare `git <sub>` invocations from a shell command,
-// compound commands included, each with the directory it runs in. cwd is
-// where a bare invocation runs; a `git -C` target is resolved against it.
-// The parser is deliberately token-based (see splitSegments): quoted strings
+// compound commands included, each with the directory it runs in. The walk
+// starts in cwd, the session working directory, and tracks `cd`/`pushd`
+// across segments, so a bare invocation after `cd <repo> &&` is placed in
+// that repo and a `git -C` target resolves against it (parseGitCmd). An
+// invocation's dir is "" when a cd or -C target before it needs a shell to
+// resolve; each caller decides what unknown means, and no git-backed
+// resolver fills the gap with belt's own process directory (gitOutput). The
+// parser is deliberately token-based (see splitSegments): quoted strings
 // containing the words do not tokenize to a bare `git` and are ignored.
 func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	var cmds []gitInvocation
-	for _, seg := range splitSegments(command) {
-		if c, ok := segmentGitCommand(strings.Fields(seg.text), cwd); ok && c.sub == sub {
+	walkSegments(command, cwd, func(tokens []string, dir string) {
+		if c, ok := segmentGitCommand(tokens, dir); ok && c.sub == sub {
 			cmds = append(cmds, c)
 		}
-	}
+	})
 	return cmds
+}
+
+// walkSegments calls fn for every segment of a compound shell command that is
+// not a `cd`/`pushd`, with the segment's tokens and the directory the shell is
+// in when it runs: cwd to begin with, then whatever the cd segments before it
+// resolved to (resolveDir), and "" once one of them could not be resolved
+// statically.
+func walkSegments(command, cwd string, fn func(tokens []string, dir string)) {
+	for _, seg := range splitSegments(command) {
+		tokens := strings.Fields(seg.text)
+		if target, ok := parseCd(tokens); ok {
+			cwd = resolveDir(cwd, target)
+			continue
+		}
+		fn(tokens, cwd)
+	}
+}
+
+// parseCd reports whether a segment's tokens are a `cd`/`pushd` invocation and,
+// if so, returns its target as written. A cd with no argument goes home, so it
+// returns "~"; resolveDir decides what any target means.
+func parseCd(tokens []string) (string, bool) {
+	if len(tokens) == 0 || (tokens[0] != "cd" && tokens[0] != "pushd") {
+		return "", false
+	}
+	// Skip cd option flags (`cd -P`, `cd -L`); the first non-flag token is the
+	// target.
+	for _, tok := range tokens[1:] {
+		if tok == "-P" || tok == "-L" || tok == "-e" || tok == "-@" {
+			continue
+		}
+		return tok, true
+	}
+	return "~", true
 }
 
 // segmentGitCommand parses the first bare `git` in one segment's tokens: one
@@ -216,10 +255,10 @@ func gitOutput(dir string, args ...string) string {
 }
 
 // GitCommitDirs returns the directory every `git commit` in a shell command
-// runs in: the `git -C` target when one is given, resolved as parseGitCmd
-// does, else cwd. An entry is "" when the directory cannot be told without a
-// shell. Exported for the commit-policy and lint-policy hints, which watch
-// the same invocations the commit guards check.
+// runs in, placed as gitCommandsAt places it: a tracked `cd`/`pushd`, a `git
+// -C` target, else cwd. An entry is "" when the directory cannot be told
+// without a shell. Exported for the commit-policy and lint-policy hints,
+// which watch the same invocations the commit guards check.
 func GitCommitDirs(command, cwd string) []string {
 	var dirs []string
 	for _, c := range gitCommandsAt(command, cwd, "commit") {
