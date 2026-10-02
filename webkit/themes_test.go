@@ -63,9 +63,10 @@ var defaultDark = map[string]string{
 	"primary-soft": "#d4855f",
 	// The semantic colours and the focus ring keep their light values: the
 	// old dark block never overrode them (decision 7 of the design). Purple
-	// is the one exception, brightened so purple text meets 3:1 on the chip
-	// surface; graph-module-4 keeps the old purple.
-	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
+	// is brightened so purple text meets 3:1 on the chip surface
+	// (graph-module-4 keeps the old purple), and red is lifted so the page
+	// ink reads 4.5 on the danger button and the error toast (MAD-376).
+	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C9695A",
 	"blue": "#5B8EC4", "purple": "#B294D8",
 	"focus-ring": "rgba(196,112,75,0.15)",
 	"text-body":  "#B8B2A7",

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 
 import {
   AUTHORED_ROLES, REFERENCE_ROLES, TONES,
-  mix, alpha, luminance, deriveVariant, validateFamily, resolveFamily, renderCSS, loadFamilies, buildThemes,
+  mix, alpha, luminance, contrast, deriveVariant, validateFamily, resolveFamily, renderCSS, loadFamilies, buildThemes,
 } from '../src/themes.mjs';
 import { bootSnippetFor } from '../src/boot.snippet.js';
 
@@ -70,11 +70,31 @@ test('alpha: rgba string with the channels and the opacity', () => {
   assert.equal(alpha('#FAF9F7', 0.88), 'rgba(250,249,247,0.88)');
 });
 
-test('luminance: black is 0, white is 1, mid grey below 0.4', () => {
+test('luminance: black is 0, white is 1, a mid green sits between', () => {
   assert.equal(luminance('#000000'), 0);
   assert.equal(luminance('#ffffff'), 1);
-  assert.ok(luminance('#4A9E6B') < 0.4);
-  assert.ok(luminance('#a3be8c') > 0.4);
+  assert.ok(luminance('#4A9E6B') > 0.2 && luminance('#4A9E6B') < 0.3);
+});
+
+test('contrast: 21 for black on white, 1 for a colour on itself, the same from either side', () => {
+  assert.equal(contrast('#000000', '#ffffff'), 21);
+  assert.equal(contrast('#808080', '#808080'), 1);
+  assert.equal(contrast('#777777', '#ffffff'), contrast('#ffffff', '#777777'));
+  assert.ok(Math.abs(contrast('#777777', '#ffffff') - 4.48) < 0.01);
+});
+
+// The ink rule takes whichever of white and the mode's deepest ink reads with
+// more contrast on the fill: on pure red white reaches 4.0 and the dark bg
+// 4.8, on pure blue white reaches 8.6 and the bg 2.2.
+test('onColour: white or the deepest ink, whichever reads better on the fill', () => {
+  const dark = deriveVariant(variant, 'dark');
+  assert.equal(dark['on-red'], variant.bg, 'the page background beats white on red');
+  assert.equal(dark['on-blue'], '#FFFFFF', 'white beats the page background on blue');
+  assert.equal(dark['on-yellow'], variant.bg, 'the page background on a pale fill');
+  const lightVariant = { ...variant, bg: '#f0f0f0', 'text-1': '#101010' };
+  const light = deriveVariant(lightVariant, 'light');
+  assert.equal(light['on-yellow'], lightVariant['text-1'], 'text-1 is the deepest ink in light mode');
+  assert.equal(light['on-blue'], '#FFFFFF');
 });
 
 test('deriveVariant: authored roles come through, series fan out, derived roles follow the rules', () => {
@@ -93,9 +113,6 @@ test('deriveVariant: authored roles come through, series fan out, derived roles 
   assert.equal(r['topbar-bg'], 'rgba(16,16,16,0.88)');
   assert.equal(r['scrim'], 'rgba(32,32,32,0.45)', 'dark scrim is paper at 45%');
   assert.ok(!('terracotta' in r), 'the terracotta alias is gone; present resolves it to primary');
-  assert.equal(r['on-red'], '#FFFFFF', 'white on a dark fill');
-  assert.equal(r['on-yellow'], variant.bg, 'the deepest ink on a pale fill in dark mode');
-  assert.equal(deriveVariant(variant, 'light')['on-yellow'], variant['text-1'], 'and text-1 in light mode');
 });
 
 test('deriveVariant: overrides win over derivation but not over authored roles', () => {

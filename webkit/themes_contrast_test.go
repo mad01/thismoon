@@ -3,6 +3,7 @@ package webkit_test
 import (
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/webkit"
@@ -23,7 +24,8 @@ const minTextContrast = 3.0
 
 // minInkContrast is the WCAG 2.x floor for body text, the bar the on-<role>
 // ink clears on its fill: the danger button and the toasts set on-<role> on
-// the matching semantic colour.
+// the matching semantic colour. The build picks white or the variant's page
+// background for a dark fill, whichever reads better on it (MAD-376).
 const minInkContrast = 4.5
 
 // inkFloorExceptions names the dark fills whose ink cannot reach 4.5 once the
@@ -31,14 +33,34 @@ const minInkContrast = 4.5
 // base02 chip has a relative luminance of 0.031, so a colour needs at least
 // 3.0 * (0.031 + 0.05) - 0.05 = 0.193 to read on it, while white ink at 4.5
 // needs a fill at or under 1.05 / 4.5 - 0.05 = 0.183; the two bands do not
-// meet. The family's dark ink (base03, luminance 0.020) would need a fill at
-// 4.5 * (0.020 + 0.05) - 0.05 = 0.265, far past the published hue, so these
-// three keep white ink at the floors measured on the lifted values.
+// meet. The family's dark ink (base03, luminance 0.020) needs a fill at
+// 4.5 * (0.020 + 0.05) - 0.05 = 0.265. Blue is lifted to reach it, while
+// red, orange, and violet would have to leave the published hues, so these
+// three keep white ink at the floors measured on the lifted values. On
+// violet base03 would read 3.93 by WCAG, but far worse by APCA, so the family
+// pins white there to match red and orange.
 var inkFloorExceptions = map[string]float64{
-	"solarized/red":    3.9, // #e04c49, measured 3.96
-	"solarized/amber":  3.9, // #dd5218, measured 3.97
-	"solarized/purple": 3.8, // #777cc8, measured 3.82
+	"solarized/red":    3.9, // #e04c49, measured 3.96; base03 reads 3.79
+	"solarized/amber":  3.9, // #dd5218, measured 3.97; base03 reads 3.79
+	"solarized/purple": 3.8, // #777cc8, measured 3.82; base03 reads 3.93
 }
+
+// lightInks are the on-<colour> inks every light variant compiled to before
+// the ink rule changed, in the order red, green, amber, yellow, blue, purple.
+// MAD-376 moved dark only: where the rule would now pick the text ink in
+// light, the family pins white under its light overrides, so these hold.
+var lightInks = map[string][6]string{
+	"default":     {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"},
+	"catppuccin":  {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"},
+	"gruvbox":     {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"},
+	"nord":        {"#FFFFFF", "#2e3440", "#FFFFFF", "#2e3440", "#FFFFFF", "#FFFFFF"},
+	"one":         {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"},
+	"rose-pine":   {"#FFFFFF", "#FFFFFF", "#464261", "#464261", "#FFFFFF", "#FFFFFF"},
+	"solarized":   {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"},
+	"tokyo-night": {"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"},
+}
+
+var inkRoles = []string{"red", "green", "amber", "yellow", "blue", "purple"}
 
 func TestDarkSemanticColoursReadAsText(t *testing.T) {
 	for _, f := range webkit.Themes() {
@@ -57,35 +79,58 @@ func TestDarkSemanticColoursReadAsText(t *testing.T) {
 	}
 }
 
-// liftedFills are the dark semantic colours this repo moved off the published
-// palette for the text floor above. Lifting a fill lowers the contrast of the
-// white ink the build derives for it, so each of these pins on-<role> to the
-// family's own background ink where that reaches 4.5, and the rest are the
-// named exceptions. The published fills are not held to 4.5 here: the
-// derivation's white-under-0.4 rule leaves them between 2.4 and 4.3 across
-// the collection, a separate decision from this one.
-var liftedFills = map[string][]string{
-	"gruvbox":   {"red"},
-	"nord":      {"red"},
-	"rose-pine": {"green"},
-	"solarized": {"red", "amber", "purple"},
-}
-
-func TestDarkInkReadsOnLiftedFill(t *testing.T) {
-	for family, roles := range liftedFills {
-		dark := findTheme(t, family).Dark
-		if dark == nil {
-			t.Fatalf("%s has no dark variant", family)
+// Every dark variant's on-<role> ink, yellow included, reads as body text on
+// its fill, with the exception map as the only carve-out. An exception whose
+// pair now clears the floor is stale and fails too, and so does a key the
+// loop never visits, so the map can neither outlive its reason nor hide a
+// misspelt family or role.
+func TestDarkInkReadsOnFill(t *testing.T) {
+	visited := map[string]bool{}
+	for _, f := range webkit.Themes() {
+		if f.Dark == nil {
+			continue
 		}
-		for _, role := range roles {
-			fill, ink := dark.Roles[role], dark.Roles["on-"+role]
+		for _, role := range inkRoles {
+			fill, ink := f.Dark.Roles[role], f.Dark.Roles["on-"+role]
+			got := contrast(t, ink, fill)
 			floor := minInkContrast
-			if exception, ok := inkFloorExceptions[family+"/"+role]; ok {
+			key := f.Name + "/" + role
+			if exception, ok := inkFloorExceptions[key]; ok {
+				visited[key] = true
+				if got >= minInkContrast {
+					t.Errorf("%s dark: --on-%s reads %.2f on --%s; drop its exception",
+						f.Name, role, got, role)
+				}
 				floor = exception
 			}
-			if got := contrast(t, ink, fill); got < floor {
+			if got < floor {
 				t.Errorf("%s dark: --on-%s %s on --%s %s = %.2f, want >= %.1f",
-					family, role, ink, role, fill, got, floor)
+					f.Name, role, ink, role, fill, got, floor)
+			}
+		}
+	}
+	for key := range inkFloorExceptions {
+		if !visited[key] {
+			t.Errorf("inkFloorExceptions[%q] names no dark family and ink role", key)
+		}
+	}
+}
+
+// The light inks are byte for byte what they were before the ink rule
+// changed; a family the table does not know fails until its values are added.
+func TestLightInksUnchanged(t *testing.T) {
+	for _, f := range webkit.Themes() {
+		if f.Light == nil {
+			continue
+		}
+		want, ok := lightInks[f.Name]
+		if !ok {
+			t.Errorf("%s: no pinned light inks; add its compiled values", f.Name)
+			continue
+		}
+		for i, role := range inkRoles {
+			if got := f.Light.Roles["on-"+role]; !strings.EqualFold(got, want[i]) {
+				t.Errorf("%s light: --on-%s = %s, want %s", f.Name, role, got, want[i])
 			}
 		}
 	}

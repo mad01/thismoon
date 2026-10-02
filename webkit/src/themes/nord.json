@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "Snow Storm",
-    "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light",
+    "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light. on-amber and on-purple are pinned to white: the ink rule would take nord0 on them, a light-mode change left to MAD-378",
     "bg": "#e5e9f0",
     "paper": "#eceff4",
     "chip": "#d8dee9",
@@ -22,11 +22,15 @@
     "yellow": "#ebcb8b",
     "blue": "#5e81ac",
     "purple": "#b48ead",
-    "series": ["#5e81ac", "#88c0d0", "#a3be8c", "#b48ead"]
+    "series": ["#5e81ac", "#88c0d0", "#a3be8c", "#b48ead"],
+    "overrides": {
+      "on-amber": "#FFFFFF",
+      "on-purple": "#FFFFFF"
+    }
   },
   "dark": {
     "variant": "Polar Night",
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11, and on-red is nord0 since white ink falls to 2.7 on the lifted fill (MAD-372)",
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2 (MAD-372). amber (nord12) and purple (nord15) are lifted from 63% to 65% so nord0 ink reads 4.5 on them, where white sat at 2.8 (MAD-376). The roles derived from the three stay pinned to the published values, and the ink rule picks nord0 for on-red, on-amber, and on-purple",
     "bg": "#2e3440",
     "paper": "#3b4252",
     "chip": "#434c5e",
@@ -39,16 +43,25 @@
     "on-primary": "#2e3440",
     "red": "#d08b91",
     "green": "#a3be8c",
-    "amber": "#d08770",
+    "amber": "#d38d78",
     "yellow": "#ebcb8b",
     "blue": "#81a1c1",
-    "purple": "#b48ead",
+    "purple": "#b894b1",
     "series": ["#88c0d0", "#81a1c1", "#a3be8c", "#b48ead"],
     "overrides": {
-      "on-red": "#2e3440",
+      "tag-a": "#595058",
+      "tag-a-text": "#debbb2",
+      "code-number": "#d08770",
+      "graph-module-4": "#b48ead",
       "tone-red-bg": "#4d4655",
       "tone-red-border": "#bf616a",
-      "tone-red-text": "#dab6bd"
+      "tone-red-text": "#dab6bd",
+      "tone-amber-bg": "#504c56",
+      "tone-amber-border": "#d08770",
+      "tone-amber-text": "#e1c5bf",
+      "tone-purple-bg": "#4c4d5f",
+      "tone-purple-border": "#b48ead",
+      "tone-purple-text": "#d6c8d8"
     }
   }
 }

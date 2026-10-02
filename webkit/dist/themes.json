@@ -124,7 +124,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did."
+    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did. That includes on-green, on-amber, on-yellow, and on-blue. The old rules put white on every fill, and the ink rule would now take text-1 on those four, a light-mode change left to MAD-378."
    },
    "dark": {
     "variant": "Warm gray",
@@ -139,7 +139,7 @@
      "text-3": "#8C8578",
      "primary": "#E8956A",
      "on-primary": "#FFFFFF",
-     "red": "#C45B4B",
+     "red": "#C9695A",
      "green": "#4A9E6B",
      "amber": "#D97706",
      "yellow": "#C4960B",
@@ -164,12 +164,12 @@
      "tag-b-text": "#6BC48A",
      "tag-c": "#1E2A3A",
      "tag-c-text": "#7AAAE8",
-     "on-red": "#FFFFFF",
-     "on-green": "#FFFFFF",
-     "on-amber": "#FFFFFF",
-     "on-yellow": "#FFFFFF",
-     "on-blue": "#FFFFFF",
-     "on-purple": "#FFFFFF",
+     "on-red": "#1A1916",
+     "on-green": "#1A1916",
+     "on-amber": "#1A1916",
+     "on-yellow": "#1A1916",
+     "on-blue": "#1A1916",
+     "on-purple": "#1A1916",
      "focus-ring": "rgba(196,112,75,0.15)",
      "topbar-bg": "rgba(26,25,22,0.88)",
      "scrim": "rgba(37,35,32,0.45)",
@@ -223,7 +223,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark."
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, with two exceptions. Purple is brightened so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple). Red is lifted from 53% to 57% lightness so the page ink reads 4.5 on the danger button and the error toast. White ink reached 4.25 on the old red, and no darker red clears 3:1 as text on the chip, so the ink goes dark and the fill goes up. The tone roles keep the old literals (MAD-376). The graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark."
    }
   },
   {
@@ -328,7 +328,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach"
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. on-yellow is pinned to white: the ink rule would take the text ink on it, a light-mode change left to MAD-378"
    },
    "dark": {
     "variant": "Mocha",
@@ -574,10 +574,10 @@
      "tag-c-text": "#b7c0a5",
      "on-red": "#282828",
      "on-green": "#282828",
-     "on-amber": "#FFFFFF",
+     "on-amber": "#282828",
      "on-yellow": "#282828",
-     "on-blue": "#FFFFFF",
-     "on-purple": "#FFFFFF",
+     "on-blue": "#282828",
+     "on-purple": "#282828",
      "focus-ring": "rgba(254,128,25,0.15)",
      "topbar-bg": "rgba(40,40,40,0.88)",
      "scrim": "rgba(60,56,54,0.45)",
@@ -631,7 +631,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red, and on-red is dark0 since white ink falls to 2.7 on the lifted fill (MAD-372)"
+    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red, and the ink rule picks dark0 for on-red since white ink falls to 2.7 on the lifted fill (MAD-372)"
    }
   },
   {
@@ -736,7 +736,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light"
+    "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light. on-amber and on-purple are pinned to white: the ink rule would take nord0 on them, a light-mode change left to MAD-378"
    },
    "dark": {
     "variant": "Polar Night",
@@ -753,10 +753,10 @@
      "on-primary": "#2e3440",
      "red": "#d08b91",
      "green": "#a3be8c",
-     "amber": "#d08770",
+     "amber": "#d38d78",
      "yellow": "#ebcb8b",
      "blue": "#81a1c1",
-     "purple": "#b48ead",
+     "purple": "#b894b1",
      "series-1": "#88c0d0",
      "series-2": "#81a1c1",
      "series-3": "#a3be8c",
@@ -778,10 +778,10 @@
      "tag-c-text": "#b7c8db",
      "on-red": "#2e3440",
      "on-green": "#2e3440",
-     "on-amber": "#FFFFFF",
+     "on-amber": "#2e3440",
      "on-yellow": "#2e3440",
-     "on-blue": "#FFFFFF",
-     "on-purple": "#FFFFFF",
+     "on-blue": "#2e3440",
+     "on-purple": "#2e3440",
      "focus-ring": "rgba(136,192,208,0.15)",
      "topbar-bg": "rgba(46,52,64,0.88)",
      "scrim": "rgba(59,66,82,0.45)",
@@ -835,7 +835,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11, and on-red is nord0 since white ink falls to 2.7 on the lifted fill (MAD-372)"
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2 (MAD-372). amber (nord12) and purple (nord15) are lifted from 63% to 65% so nord0 ink reads 4.5 on them, where white sat at 2.8 (MAD-376). The roles derived from the three stay pinned to the published values, and the ink rule picks nord0 for on-red, on-amber, and on-purple"
    }
   },
   {
@@ -940,7 +940,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan"
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. on-green and on-yellow are pinned to white: the ink rule would take mono-1 on them, a light-mode change left to MAD-378"
    },
    "dark": {
     "variant": "One Dark",
@@ -980,12 +980,12 @@
      "tag-b-text": "#a2bb9c",
      "tag-c": "#334659",
      "tag-c-text": "#86b1d7",
-     "on-red": "#FFFFFF",
+     "on-red": "#21252b",
      "on-green": "#21252b",
-     "on-amber": "#FFFFFF",
+     "on-amber": "#21252b",
      "on-yellow": "#21252b",
-     "on-blue": "#FFFFFF",
-     "on-purple": "#FFFFFF",
+     "on-blue": "#21252b",
+     "on-purple": "#21252b",
      "focus-ring": "rgba(97,175,239,0.15)",
      "topbar-bg": "rgba(33,37,43,0.88)",
      "scrim": "rgba(40,44,52,0.45)",
@@ -1184,7 +1184,7 @@
      "tag-b-text": "#89a9c2",
      "tag-c": "#384150",
      "tag-c-text": "#bed7e6",
-     "on-red": "#FFFFFF",
+     "on-red": "#191724",
      "on-green": "#191724",
      "on-amber": "#191724",
      "on-yellow": "#191724",
@@ -1243,7 +1243,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine, and on-green is base since white ink falls to 3.7 on Moon's pine (MAD-372)"
+    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine, and the ink rule picks base for on-green since white ink falls to 3.7 on Moon's pine (MAD-372)"
    }
   },
   {
@@ -1367,7 +1367,7 @@
      "green": "#859900",
      "amber": "#dd5218",
      "yellow": "#b58900",
-     "blue": "#268bd2",
+     "blue": "#3295da",
      "purple": "#777cc8",
      "series-1": "#268bd2",
      "series-2": "#2aa198",
@@ -1389,10 +1389,10 @@
      "tag-c": "#0d475f",
      "tag-c-text": "#5d96ba",
      "on-red": "#FFFFFF",
-     "on-green": "#FFFFFF",
+     "on-green": "#002b36",
      "on-amber": "#FFFFFF",
-     "on-yellow": "#FFFFFF",
-     "on-blue": "#FFFFFF",
+     "on-yellow": "#002b36",
+     "on-blue": "#002b36",
      "on-purple": "#FFFFFF",
      "focus-ring": "rgba(38,139,210,0.15)",
      "topbar-bg": "rgba(0,43,54,0.88)",
@@ -1447,7 +1447,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02. The roles derived from them stay pinned to the published values. Their white ink sits between 3.8 and 4.0, under 4.5. A fill light enough to read on base02 is too light for white ink at 4.5, and base03 ink does no better, so the ink stays white (MAD-372)"
+    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02 (MAD-372). blue is lifted from 49% to 53% so base03 ink reads 4.5 on it (MAD-376). The roles derived from the four stay pinned to the published values. A fill light enough to read on base02 is too light for white ink at 4.5. base03 ink needs a fill at luminance 0.265, which red, orange, and violet reach only by leaving the published hues. So those three keep white ink under 4.5: 4.0 on red and orange, where base03 reads 3.8, and 3.8 on violet. On violet base03 reads 3.9 by the Web Content Accessibility Guidelines (WCAG) ratio but far worse by the Advanced Perceptual Contrast Algorithm (APCA), so on-purple is pinned white to match its siblings"
    }
   },
   {
@@ -1592,11 +1592,11 @@
      "tag-b-text": "#afccb0",
      "tag-c": "#2d3650",
      "tag-c-text": "#9db6f6",
-     "on-red": "#FFFFFF",
+     "on-red": "#16161e",
      "on-green": "#16161e",
      "on-amber": "#16161e",
      "on-yellow": "#16161e",
-     "on-blue": "#FFFFFF",
+     "on-blue": "#16161e",
      "on-purple": "#16161e",
      "focus-ring": "rgba(122,162,247,0.15)",
      "topbar-bg": "rgba(22,22,30,0.88)",

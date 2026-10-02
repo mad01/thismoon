@@ -93,10 +93,24 @@ export function luminance(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** Ink for text on a fill: white on a dark colour, the variant's deepest ink on a pale one. */
+/** WCAG 2.x contrast ratio between two colours, 1 (the same colour) to 21 (black on white). */
+export function contrast(a, b) {
+  const la = luminance(a), lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * Ink for text on a fill: white or the variant's deepest ink, whichever reads
+ * with more contrast on it. The deepest ink is text-1 in light and bg in dark;
+ * in dark, text-1 is pale and never beats white. A luminance threshold used to
+ * pick white for every fill under 0.4, which left the dark semantic fills
+ * between 2.4 and 4.3 (MAD-376). The Go contrast test holds every dark ink to
+ * 4.5 on its fill, and a family pins on-<colour> under overrides where the
+ * rule must not decide.
+ */
 function onColour(fill, variant, mode) {
-  if (luminance(fill) < 0.4) return '#FFFFFF';
-  return mode === 'light' ? variant['text-1'] : variant.bg;
+  const deep = mode === 'light' ? variant['text-1'] : variant.bg;
+  return contrast('#FFFFFF', fill) >= contrast(deep, fill) ? '#FFFFFF' : deep;
 }
 
 // ── Derivation ──
