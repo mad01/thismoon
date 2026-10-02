@@ -41,6 +41,9 @@ Block =                                  // discriminated on `t`
   | {t: "panel", title, sub?, accent?}   | {t: "progress", pct, label?}
   | {t: "graph"}                         | {t: "chart", kind, series | flows, title?, unit?, xunit?}
   | {t: "code", text, lang?}             | {t: "html", text}
+  | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
+  | {t: "quote", text, cite?}            | {t: "details", summary, blocks}
+  | {t: "image", src, alt, caption?}
 
 Graph = {                                // the `graph` argument — one per page
   nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?,
@@ -135,6 +138,7 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
         {"t": "progress", "pct": 75, "label": "75%"},
         {"t": "graph"},
         {"t": "code", "lang": "go", "text": "func main() {\n\tfmt.Println(\"hello\")\n}"},
+        {"t": "image", "src": "~/Desktop/dashboard.png", "alt": "The on-call dashboard at 14:15, every checkout panel red", "caption": "The dashboard at 14:15."},
         {"t": "html", "text": "<custom>escape hatch</custom>"}
       ]
     }
@@ -201,6 +205,7 @@ Rules:
 | `stat` | `value`, `label`, `sub?` | A large figure over a label in a framed tile. `value` is shown verbatim (no inline markdown) and stays out of fixation; `label` and `sub` take inline markdown |
 | `quote` | `text`, `cite?` | A quotation with a left rule and the attribution under it |
 | `details` | `summary`, `blocks` | A collapsible block, closed by default, with `summary` as the clickable line. Holds any block but `graph`, `columns`, and `details`. Read-aloud reads it and opens it while a part inside plays. The home for a long timeline or raw numbers |
+| `image` | `src`, `alt`, `caption?` | An image with a caption under it. `src` is an `http(s)` URL, or on this machine an absolute or `~` path to a png, jpeg, gif, or webp file of at most 2 MiB. The tool copies the file into the page store and rewrites `src` to the `/img/<hash>.<ext>` path it is served at, which is what `present_source` returns. A relative path is refused. `alt` is required: read-aloud reads it in the image's place, and the caption after it. Goes inside `columns` and `details`. A shared instance takes image URLs only, and a page with stored images can't be shared until they are URLs |
 
 ### Layout blocks
 
@@ -220,6 +225,10 @@ One example of each, as they go in a section's `blocks`:
   {"t": "columns", "cols": [
     [{"t": "graph"}],
     [{"t": "p", "text": "The resolver sits between the gateway and payments; every request after 14:02 followed its stale record."}]
+  ]},
+  {"t": "columns", "cols": [
+    [{"t": "image", "src": "/Users/alex/Desktop/dashboard.png", "alt": "The on-call dashboard at 14:15, every checkout panel red", "caption": "The dashboard at 14:15."}],
+    [{"t": "p", "text": "Every checkout panel went red at once while the gateway's own panels stayed green."}]
   ]},
   {"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"},
   {"t": "quote", "text": "We never saw the resolver because nothing watched it.", "cite": "On-call engineer, retrospective"},
@@ -245,10 +254,10 @@ One example of each, as they go in a section's `blocks`:
 ### Notes
 
 - **TOC is auto-generated** from section headings when there are 2+ sections. Do not write TOC markup.
-- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, table bodies, stat labels and sub lines, quote text, and details summaries. The page shell adds kv values, list items, and panel titles by element. Chips, section ids, table headers, the meta line, and a stat's value stay out of the fixation walk.
+- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, table bodies, stat labels and sub lines, quote text, details summaries, and image captions. The page shell adds kv values, list items, and panel titles by element. Chips, section ids, table headers, the meta line, a stat's value, and an image stay out of the fixation walk.
 - **Unknown block types** produce an HTML comment error — they don't break the page.
 - **Use `code` blocks for multi-line code**, not `p` with backticks (inline `code` is for short identifiers) and not `html` with a hand-written `<pre>`.
-- **Read-aloud skips tables, kv blocks, and code blocks.** A `stat` reads as its value, label, and sub line; a `details` block reads like prose and opens while a part inside it plays. When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.
+- **Read-aloud skips tables, kv blocks, and code blocks.** A `stat` reads as its value, label, and sub line; a `details` block reads like prose and opens while a part inside it plays. An `image` reads as its `alt` and then its caption, so write the `alt` as the sentence a listener needs in place of the picture. When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.
 - **Inline markup nests.** A code span, a link, or a chip inside `**bold**` renders as expected.
 
 ### Presenting multiple items
@@ -325,7 +334,7 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 9. **One callout per deck at most**, `sev: "warn"`, for the single risk or blocker.
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
-12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart` or the `graph` beside its caption in `columns`. A `details` block belongs in the brief: a slide that needs one has too much on it.
+12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 

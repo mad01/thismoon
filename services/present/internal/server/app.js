@@ -870,7 +870,9 @@
     var body = Webkit.el('div', { class: 'slide-body' });
     nodes.forEach(function (n) { body.appendChild(n); });
     var slide = Webkit.el('section', { class: 'slide ' + cls }, [body]);
-    if (body.querySelector('#cy-graph, .present-chart')) slide.classList.add('has-viz');
+    // A visual (the graph, a chart, an image) sizes the slide by the
+    // viewport instead of zooming the body while presenting.
+    if (body.querySelector('#cy-graph, .present-chart, wk-figure')) slide.classList.add('has-viz');
     return slide;
   }
 

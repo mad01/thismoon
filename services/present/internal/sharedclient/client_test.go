@@ -287,3 +287,37 @@ func TestShareReportsADeckTheInstanceDropped(t *testing.T) {
 		t.Errorf("share to a current instance: %v", err)
 	}
 }
+
+// A page that shows images from the local store is refused before anything
+// reaches the instance: the copy could not serve them.
+func TestShareRefusesLocalImages(t *testing.T) {
+	f := newFakeShared(t, "k")
+	c := New(f.ts.URL, "k")
+	st, err := store.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	img := `<img src="/img/` + strings.Repeat("ab", 32) + `.png" alt="a">`
+	for name, d := range map[string]store.Draft{
+		"brief": {Title: "B", Content: "<p>x</p>" + img},
+		"deck":  {Title: "D", Content: "<p>x</p>", Deck: "<h1>d</h1>" + img},
+	} {
+		p, _ := st.Create(ctx, d)
+		if _, err := Share(ctx, st, c, p.ID, false, time.Now()); !errors.Is(err, ErrLocalImages) {
+			t.Errorf("%s: err = %v, want ErrLocalImages", name, err)
+		}
+		if got, _ := st.Get(ctx, p.ID); got.Shared != nil {
+			t.Errorf("%s: a refused share was recorded: %+v", name, got.Shared)
+		}
+	}
+	if len(f.pages) != 0 {
+		t.Errorf("the instance received %d pages, want none", len(f.pages))
+	}
+	p, _ := st.Create(ctx, store.Draft{
+		Title: "URL", Content: `<img src="https://example.com/a.png" alt="a">`,
+	})
+	if _, err := Share(ctx, st, c, p.ID, false, time.Now()); err != nil {
+		t.Errorf("a page with an image URL refused: %v", err)
+	}
+}

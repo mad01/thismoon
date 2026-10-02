@@ -18,6 +18,7 @@ import (
 	present "github.com/mad01/thismoon/services/present"
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/baseurl"
+	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
@@ -50,7 +51,9 @@ func withHint[In, Out any](
 
 // handlers carries the dependencies shared by all present tools. baseURL is
 // the fixed URL prefix locally and the display override on a shared
-// instance, where an empty value means derive from the request.
+// instance, where an empty value means derive from the request. images is
+// where an image block's local file lands; nil on a shared instance, which
+// takes image URLs only.
 type handlers struct {
 	store   store.Store
 	mode    Mode
@@ -59,6 +62,7 @@ type handlers struct {
 	open    func(url string) error
 	checks  func(ctx context.Context) []doctor.Check
 	sharer  *sharedclient.Client
+	images  *images.Store
 }
 
 // createAnnotations is shared by both create tools.
@@ -76,7 +80,7 @@ const deckDescription = "A page can also carry a slide deck beside its content, 
 	"Write it like a good deck, not a shorter brief: one idea per slide with the heading stating the claim, a list of 3 to 5 short items or one paragraph of at most two sentences per slide, " +
 	"exactly one bold phrase or one @chip(stat:...) per slide as the highlight, a chart or the graph alone on its own slide, 5 to 12 slides in all, " +
 	"at most one warn callout in the deck, and a closing `Next` slide with at most three actions. Detail belongs in the content; the deck view links to it. " +
-	"Which block when: one `stat` or one `quote` alone on a slide for the one figure or the one line to remember; two or three `stat` blocks in a `columns` block for a row of figures; a `chart` or the `graph` beside its caption in `columns`; a `details` block belongs in the content, not on a slide. " +
+	"Which block when: one `stat` or one `quote` alone on a slide for the one figure or the one line to remember; two or three `stat` blocks in a `columns` block for a row of figures; a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`; a `details` block belongs in the content, not on a slide. " +
 	"Deck-level chrome, all optional, read by the deck view only: `logo` (absent = the embedded repo logo, \"none\" hides it, an http(s) URL replaces it), " +
 	"`logo_position` (bottom-right default, bottom-left, top-left, top-right), `progress` (dots default, bar, none; dots give way to a bar above 24 slides), " +
 	"`presenter` (a byline under the meta line on the title slide and in the footer), and `footer` (footer text; absent = the deck title, \"none\" suppresses it). " +
@@ -343,7 +347,7 @@ type refInput struct {
 
 type createInput struct {
 	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content,omitempty"    jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string; omit it for a page that is a slide deck only (then deck is required). Doc block types: p, h3, callout (sev: info|warn|ok|error), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey, title?, unit?, xunit?, series:[{name?, color?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey; inline metric chart, many per page), code (text + lang?, verbatim code block with copy button, no inline markdown), html (raw passthrough), columns (cols: 2 or 3 arrays of blocks; equal widths, one column on a narrow screen; three stats in it make a row of figures, a chart beside a p puts the caption next to the chart), stat (value, label, sub?; a large figure over a label, value shown verbatim), quote (text, cite?), details (summary + blocks; collapsible, closed by default, for a long timeline or raw numbers). A columns or details block holds any block but columns and details; the page's one graph may sit in a column (never in details), and a Doc places it at most once. Section fields beside h, id, blocks: tone (a palette role; bands the section in the brief, tints the slide in a deck), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
+	Content    string     `json:"content,omitempty"    jsonschema:"page content as a Doc JSON string {summary?, meta?, chips?, sections:[{h, blocks:[{t,...}]}]} or a legacy HTML string; omit it for a page that is a slide deck only (then deck is required). Doc block types: p, h3, callout (sev: info|warn|ok|error), table (cols+rows), kv ([{k,v}]), list (items, ordered?), panel (title, sub?, accent?), progress (pct, label?), graph (placement marker), chart (kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey, title?, unit?, xunit?, series:[{name?, color?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey; inline metric chart, many per page), code (text + lang?, verbatim code block with copy button, no inline markdown), html (raw passthrough), columns (cols: 2 or 3 arrays of blocks; equal widths, one column on a narrow screen; three stats in it make a row of figures, a chart beside a p puts the caption next to the chart), stat (value, label, sub?; a large figure over a label, value shown verbatim), quote (text, cite?), details (summary + blocks; collapsible, closed by default, for a long timeline or raw numbers), image (src, alt, caption?; src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB, which the tool copies into the page store and rewrites to the /img/<hash>.<ext> path it is served at, so present_source returns that path; alt is required because read-aloud reads it in the image's place; a shared instance takes image URLs only). A columns or details block holds any block but columns and details; the page's one graph may sit in a column (never in details), and a Doc places it at most once. Section fields beside h, id, blocks: tone (a palette role; bands the section in the brief, tints the slide in a deck), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool). Text fields support inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text). Prefer the Doc format for compact structured input."`
 	Deck       string     `json:"deck,omitempty"       jsonschema:"optional slide deck as a Doc JSON string with the same shape and block types as content: every section is one slide, summary/meta/chips fill the title slide, references make the last slide. Authored on its own, not converted from content. Keep it minimal: heading = the claim, 3 to 5 short list items or two sentences per slide, one bold phrase or stat chip per slide, one chart or the graph alone per slide, 5 to 12 slides, detail stays in content. Optional deck-level chrome fields beside summary/meta/chips: logo (absent = embedded repo logo, none, or an http(s) URL), logo_position (bottom-right|bottom-left|top-left|top-right), progress (dots|bar|none), presenter, footer (absent = the deck title, none suppresses it; the footer line shows only when presenter or footer is set), transition (fade default|slide|none). Per section: layout (default|center|statement|section), tone (palette role), notes (speaker notes shown in a drawer, N key), reveal (true: items and blocks appear one per Next). A lone stat or quote on a slide is the big-number or quote slide. Served at deck_url; the page's graph is shared with the content."`
 	Graph      string     `json:"graph,omitempty"      jsonschema:"optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?,tone?}], edges:[{from,to,type?,label?,weight?,flow?}], layout?, direction?} or a legacy JS string. Node types: center, module, leaf, registry. Node tones (box background, border, and text as one family, theme-aware): neutral, green, red, blue, amber, purple. Edge types: consumes (solid), publishes (dashed). Edge weight (a number, e.g. requests per second) drives line width and tints the busiest edges; flow: true animates dashes from source to target. Layouts: dagre (default, layered DAG), elk (ELK layered; folds a long chain into rows to fit the container), elk-layered | elk-mrtree | elk-stress | elk-radial | elk-force (other ELK algorithms, no folding), cose (no hierarchy). Direction (dagre and elk): TB or LR; omit for auto (LR when the graph has few nodes)."`
 	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
@@ -418,17 +422,32 @@ func (h *handlers) create(
 	if strings.TrimSpace(in.Content) == "" && strings.TrimSpace(in.Deck) == "" {
 		return nil, pageOutput{}, errNoRendition
 	}
-	content, docJSON, err := resolveContent(in.Content, in.Title)
+	// Image files named by the Docs become stored images first, so the
+	// Docs compile against the paths the page will keep; the files are
+	// written only once both Docs compiled.
+	ing := h.newImageIngest()
+	contentSrc, err := ing.doc(in.Content)
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("content: %w", err)
 	}
-	deck, deckJSON, err := resolveDeck(in.Deck, in.Title)
+	deckSrc, err := ing.doc(in.Deck)
+	if err != nil {
+		return nil, pageOutput{}, fmt.Errorf("deck: %w", err)
+	}
+	content, docJSON, err := resolveContent(contentSrc, in.Title)
+	if err != nil {
+		return nil, pageOutput{}, fmt.Errorf("content: %w", err)
+	}
+	deck, deckJSON, err := resolveDeck(deckSrc, in.Title)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
 	graph, graphJSON, err := resolveGraph(in.Graph)
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("graph: %w", err)
+	}
+	if err := ing.commit(); err != nil {
+		return nil, pageOutput{}, err
 	}
 	// The structured sources ride along (nil for legacy HTML/JS input) so a
 	// future renderer/template change can re-render the page from source and
@@ -635,8 +654,16 @@ func (h *handlers) handleUpdate(
 			return nil, pageOutput{}, err
 		}
 	}
+	ing := h.newImageIngest()
+	in, err = ing.update(in)
+	if err != nil {
+		return nil, pageOutput{}, err
+	}
 	patch, plan, err := resolveUpdate(in, cur.Title)
 	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	if err := ing.commit(); err != nil {
 		return nil, pageOutput{}, err
 	}
 	// A page that has something to show keeps something to show. The check

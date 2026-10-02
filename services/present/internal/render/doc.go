@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/webkit"
 )
 
@@ -107,7 +108,7 @@ func (s Section) dataLayout() string {
 
 // Block is a discriminated union on T.
 type Block struct {
-	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, code, html, columns, stat, quote, details
+	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, code, html, columns, stat, quote, details, image
 
 	// t=p, t=callout, t=h3, t=code, t=html, t=quote
 	Text string `json:"text,omitempty"`
@@ -139,6 +140,14 @@ type Block struct {
 	// The body may hold any block but graph, columns, and details.
 	Summary string  `json:"summary,omitempty"`
 	Blocks  []Block `json:"blocks,omitempty"`
+
+	// t=image: Src is an http(s) URL or the served path of an image in the
+	// local store (the MCP tools turn a file on this machine into one before
+	// the Doc is compiled); Alt is required, since read-aloud reads it in
+	// the image's place; Caption is optional prose under the image.
+	Src     string `json:"src,omitempty"`
+	Alt     string `json:"alt,omitempty"`
+	Caption string `json:"caption,omitempty"`
 
 	// t=kv
 	KV []KVPair `json:"kv,omitempty"`
@@ -644,7 +653,14 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{- range .Blocks}}
   {{renderNested .}}
 {{- end}}
-</details>{{end}}`
+</details>{{end}}
+
+{{define "block-image"}}<wk-figure>
+  <img src="{{.Src}}" alt="{{.Alt}}" loading="lazy">
+{{- with .Caption}}
+  <wk-figcaption data-fixation>{{inlineMd .}}</wk-figcaption>
+{{- end}}
+</wk-figure>{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
 // names like JIRA render as words, not spelled-out acronyms. Code blocks are
@@ -668,42 +684,77 @@ func (d *Doc) normalize() {
 // normalizeBlocks normalizes every text field of blocks in place, following
 // a container into the blocks it holds down to maxBlockDepth.
 func normalizeBlocks(blocks []Block, depth int) {
-	if depth > maxBlockDepth {
+	_ = eachBlock(blocks, depth, func(b *Block) error {
+		normalizeBlock(b)
+		return nil
+	})
+}
+
+// normalizeBlock normalizes one block's prose fields. A code block's text
+// is verbatim, and a stat's Value is a figure shown verbatim: its symbols
+// are the point ("4×", "≈ 40%"), so neither is normalized like prose.
+func normalizeBlock(b *Block) {
+	if b.T == "code" {
 		return
 	}
-	for j := range blocks {
-		b := &blocks[j]
-		if b.T == "code" {
-			continue
+	b.Text = normalizeNames(b.Text)
+	b.Title = normalizeNames(b.Title)
+	b.Subtitle = normalizeNames(b.Subtitle)
+	b.Label = normalizeNames(b.Label)
+	b.Cite = normalizeNames(b.Cite)
+	b.Summary = normalizeNames(b.Summary)
+	b.Alt = normalizeNames(b.Alt)
+	b.Caption = normalizeNames(b.Caption)
+	for k := range b.Items {
+		b.Items[k] = normalizeNames(b.Items[k])
+	}
+	for k := range b.KV {
+		b.KV[k].K = normalizeNames(b.KV[k].K)
+		b.KV[k].V = normalizeNames(b.KV[k].V)
+	}
+	for k := range b.Cols {
+		b.Cols[k] = normalizeNames(b.Cols[k])
+	}
+	for k := range b.Rows {
+		for l := range b.Rows[k] {
+			b.Rows[k][l] = normalizeNames(b.Rows[k][l])
 		}
-		b.Text = normalizeNames(b.Text)
-		b.Title = normalizeNames(b.Title)
-		b.Subtitle = normalizeNames(b.Subtitle)
-		b.Label = normalizeNames(b.Label)
-		// A stat's Value is a figure shown verbatim: its symbols are the
-		// point ("4×", "≈ 40%"), so it is not normalized like prose.
-		b.Cite = normalizeNames(b.Cite)
-		b.Summary = normalizeNames(b.Summary)
-		for k := range b.Items {
-			b.Items[k] = normalizeNames(b.Items[k])
+	}
+}
+
+// EachBlock calls fn on every block of the Doc in document order, the
+// blocks a container holds included, and stops at the first error. The
+// MCP tools use it to rewrite image sources before a Doc is compiled.
+func (d *Doc) EachBlock(fn func(*Block) error) error {
+	for i := range d.Sections {
+		if err := eachBlock(d.Sections[i].Blocks, 0, fn); err != nil {
+			return err
 		}
-		for k := range b.KV {
-			b.KV[k].K = normalizeNames(b.KV[k].K)
-			b.KV[k].V = normalizeNames(b.KV[k].V)
-		}
-		for k := range b.Cols {
-			b.Cols[k] = normalizeNames(b.Cols[k])
-		}
-		for k := range b.Rows {
-			for l := range b.Rows[k] {
-				b.Rows[k][l] = normalizeNames(b.Rows[k][l])
-			}
+	}
+	return nil
+}
+
+// eachBlock visits blocks and what their containers hold, down to
+// maxBlockDepth, the depth the renderer follows.
+func eachBlock(blocks []Block, depth int, fn func(*Block) error) error {
+	if depth > maxBlockDepth {
+		return nil
+	}
+	for i := range blocks {
+		b := &blocks[i]
+		if err := fn(b); err != nil {
+			return err
 		}
 		for k := range b.Columns {
-			normalizeBlocks(b.Columns[k], depth+1)
+			if err := eachBlock(b.Columns[k], depth+1, fn); err != nil {
+				return err
+			}
 		}
-		normalizeBlocks(b.Blocks, depth+1)
+		if err := eachBlock(b.Blocks, depth+1, fn); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // chartSpec marshals a chart block to the JSON spec the client-side chart
@@ -802,14 +853,47 @@ func validateBlocks(blocks []Block, depth int) error {
 			if err := validateBlocks(b.Blocks, depth+1); err != nil {
 				return err
 			}
+		case "image":
+			if err := validateImage(b); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// logoURLAllowed reports whether s is an absolute http or https URL, the
-// only kind of logo a Doc may point at beside the embedded one.
-func logoURLAllowed(s string) bool {
+// validateImage refuses an image without alt, which read-aloud reads in the
+// image's place, and a src that is neither an http(s) URL nor the served
+// path of a stored image.
+func validateImage(b Block) error {
+	if strings.TrimSpace(b.Alt) == "" {
+		return fmt.Errorf(
+			"image %q: alt is required (read-aloud reads it in the image's place)",
+			b.Src,
+		)
+	}
+	if !ImageSrcAllowed(b.Src) {
+		return fmt.Errorf(
+			"image %q: src must be an http or https URL or a stored image path %s<sha256 hex>.<png|jpg|gif|webp>",
+			b.Src,
+			images.Prefix,
+		)
+	}
+	return nil
+}
+
+// ImageSrcAllowed reports whether an image block may point at src: an
+// absolute http or https URL, or the served path of an image in the local
+// store. A file path is neither; the MCP tools turn a file on this machine
+// into a stored image before the Doc reaches the renderer.
+func ImageSrcAllowed(src string) bool {
+	_, stored := images.NameOf(src)
+	return stored || IsHTTPURL(src)
+}
+
+// IsHTTPURL reports whether s is an absolute http or https URL, the only
+// kind of URL a logo or an image may point at.
+func IsHTTPURL(s string) bool {
 	u, err := url.Parse(s)
 	if err != nil {
 		return false
@@ -833,7 +917,7 @@ func validateChrome(d Doc) error {
 			strings.Join(progressKinds, ", "),
 		)
 	}
-	if d.Logo != "" && d.Logo != "none" && !logoURLAllowed(d.Logo) {
+	if d.Logo != "" && d.Logo != "none" && !IsHTTPURL(d.Logo) {
 		return fmt.Errorf(`logo %q: want "none" or an http(s) URL`, d.Logo)
 	}
 	if d.Transition != "" && !slices.Contains(transitions, d.Transition) {

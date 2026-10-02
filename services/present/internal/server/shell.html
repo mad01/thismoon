@@ -183,6 +183,12 @@ html.presenting .slide.active:not(.has-viz) .slide-body { zoom: var(--deck-zoom,
 html.presenting .slide.has-viz .cy-container { height: 62vh; }
 html.presenting .slide.has-viz .present-chart-canvas { height: 52vh; }
 html.presenting .slide.has-viz wk-section-heading { font-size: 1.75rem; }
+/* An image on a slide (MAD-375) stays inside it: bounded by the viewport's
+   height and scaled with its aspect kept, centred when it stands alone.
+   In a column it fills the column's width up to its own size. */
+.slide wk-figure img { max-height: 55vh; width: auto; max-width: 100%; object-fit: contain; margin: 0 auto; }
+.slide wk-col wk-figure img { margin: 0; }
+html.presenting .slide.has-viz wk-figure img { max-height: 62vh; }
 html.presenting .deck-bar { opacity: 0; z-index: 41; }
 html.presenting .deck-bar:hover, html.presenting .deck-bar:focus-within { opacity: 1; }
 /* Deck chrome: a strip along the bottom edge built by app.js from the

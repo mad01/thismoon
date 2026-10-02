@@ -705,20 +705,23 @@ func TestSampleDeckRenders(t *testing.T) {
 		`<wk-progress>`, `<wk-panel style="border-left: 3px solid var(--red)">`,
 		`<wk-callout variant="info"`, `<wk-callout variant="warn"`, `<p class="brief-meta">Figures as of`,
 		`<a href="https://example.com/runbook">runbook</a>`,
+		`<wk-figure>`, `alt="The on-call dashboard at 14:15, every checkout panel red" loading="lazy">`,
+		`<wk-figcaption data-fixation>The on-call dashboard at 14:15.</wk-figcaption>`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 13 {
-		t.Errorf("sample deck has %d sections, want 13", n)
+	if n := len(c.Doc.Sections); n != 14 {
+		t.Errorf("sample deck has %d sections, want 14", n)
 	}
 	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 3 {
 		t.Errorf("reveal sections = %d, want 3", n)
 	}
-	// The three columns blocks: the row of figures, the chart beside its
-	// caption, and the graph beside a paragraph (MAD-374).
-	if n := strings.Count(c.HTML, "<wk-columns "); n != 3 {
-		t.Errorf("columns blocks = %d, want 3", n)
+	// The four columns blocks: the row of figures, the chart beside its
+	// caption, the graph beside a paragraph (MAD-374), and the image beside
+	// its paragraph (MAD-375).
+	if n := strings.Count(c.HTML, "<wk-columns "); n != 4 {
+		t.Errorf("columns blocks = %d, want 4", n)
 	}
 }

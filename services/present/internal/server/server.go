@@ -21,6 +21,7 @@ import (
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/baseurl"
+	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/mad01/thismoon/webkit"
@@ -91,6 +92,9 @@ type Server struct {
 	// store that cannot (the cluster store), which leaves the command route
 	// unregistered and the deck view without remote control.
 	deckCtl store.DeckController
+	// images is the local image store under the workdir, served at /img/;
+	// nil on a shared instance, whose pages carry image URLs only.
+	images *images.Store
 
 	watcher      PageWatcher
 	heartbeat    time.Duration
@@ -134,8 +138,13 @@ func New(st store.Store, opts Options) *Server {
 		heartbeat = DefaultHeartbeat
 	}
 	deckCtl, _ := st.(store.DeckController)
+	var imgs *images.Store
+	if opts.Mode != ModeShared && opts.Workdir != "" {
+		imgs = images.New(opts.Workdir)
+	}
 	return &Server{
 		deckCtl:     deckCtl,
+		images:      imgs,
 		watcher:     opts.Watcher,
 		heartbeat:   heartbeat,
 		streamsDone: make(chan struct{}),
@@ -158,9 +167,9 @@ func New(st store.Store, opts Options) *Server {
 // view, their JSON, the version poll, delete, assets, and webkit are common,
 // and so is the version event stream whenever a watcher is configured and
 // the deck command poll whenever the store relays commands; local mode adds
-// the index, its listing, and the markdown import; shared mode the how-to
-// root, the write API, whoami, and the MCP endpoint. A route the mode does
-// not register is a plain 404.
+// the index, its listing, the markdown import, and the stored images; shared
+// mode the how-to root, the write API, whoami, and the MCP endpoint. A
+// route the mode does not register is a plain 404.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /p/{id}", s.handlePage)
@@ -193,6 +202,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/pages", s.handleAPIPages)
 		mux.HandleFunc("GET /index.js", handleIndexJS)
 		mux.HandleFunc("POST /api/import", s.handleImport)
+		if s.images != nil {
+			mux.HandleFunc("GET /img/{name}", s.handleImage)
+		}
 		if s.sharer != nil {
 			mux.HandleFunc("POST /p/{id}/share", s.handleShare)
 		}
@@ -495,7 +507,8 @@ func handleAppJS(w http.ResponseWriter, _ *http.Request) {
 // behind a confirm dialog on loopback); shared mode requires the author's
 // key, so 401/403 come before the store is touched. Deleting a local page
 // that was shared removes its copy from the shared instance first, so the
-// two never disagree about whether the page still exists.
+// two never disagree about whether the page still exists. Once the page is
+// gone, the stored images no other page references go with it.
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	// Look up the title before deleting so the event carries it; best-effort
@@ -532,6 +545,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.sweepImages(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 	notify.EmitEvent("present", "info", "page deleted: "+title, "",
 		map[string]string{"id": id, "title": title})
@@ -582,7 +596,7 @@ func (s *Server) assetsHandler() http.Handler {
 	root := filepath.Join(s.workdir, "assets")
 	fs := http.StripPrefix("/assets/", http.FileServer(http.Dir(root)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Cache-Control", immutableCache)
 		fs.ServeHTTP(w, r)
 	})
 }

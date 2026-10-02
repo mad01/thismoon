@@ -254,6 +254,30 @@
       ]
     },
     {
+      "h": "What the dashboard showed",
+      "blocks": [
+        {
+          "t": "columns",
+          "cols": [
+            [
+              {
+                "t": "image",
+                "src": "https://raw.githubusercontent.com/mad01/thismoon/main/docs/assets/logo.png",
+                "alt": "The on-call dashboard at 14:15, every checkout panel red",
+                "caption": "The on-call dashboard at 14:15."
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "text": "Every checkout panel went red at once; the gateway's own panels stayed green, which is what pointed at DNS."
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    {
       "h": "Two things to know before Friday",
       "blocks": [
         {
