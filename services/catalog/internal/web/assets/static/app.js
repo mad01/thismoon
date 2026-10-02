@@ -3,7 +3,9 @@
 // ── Theme ────────────────────────────────────────────────────────────────
 // The webkit <wk-header> owns the theme toggle (persists `webkit-theme`, sets
 // data-theme, and dispatches `wk-themechange` on document). We only listen to
-// recolor the Cytoscape graph, which reads data-theme via graphColors().
+// recolor the Cytoscape graph, which reads the palette's graph roles in
+// graphColors(). The same event fires when the themes page in another tab
+// changes the family.
 document.addEventListener('wk-themechange', function () { buildGraph(); });
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -191,12 +193,18 @@ let cy = null;
 // rebuilt on theme toggle; null on pages without a graph.
 let graphData = null;
 
-// graphColors mirrors the present tool's terracotta/cream palette, per theme.
+// graphColors reads the palette's --graph-* roles at call time, so the graph
+// follows the family and mode the reader picked. webkit emits every role as a
+// literal hex, which Cytoscape needs: it parses colour strings itself and
+// cannot resolve a var().
 function graphColors() {
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  return dark
-    ? { center: '#3A2A20', centerBorder: '#E8956A', leaf: '#252320', leafBorder: '#4A453D', edge: '#5A554C', text: '#EDEAE3' }
-    : { center: '#FFF5F0', centerBorder: '#C4704B', leaf: '#FFFFFF', leafBorder: '#D8D4CD', edge: '#CFCAC2', text: '#2B2926' };
+  const style = getComputedStyle(document.documentElement);
+  const role = (name) => style.getPropertyValue('--graph-' + name).trim() || '#808080';
+  return {
+    center: role('center-bg'), centerBorder: role('center-border'), centerText: role('center-text'),
+    leaf: role('leaf-bg'), leafBorder: role('leaf-border'), text: role('leaf-text'),
+    edge: role('edge'), arrow: role('edge-arrow'),
+  };
 }
 
 // buildGraph (re)renders the System→Components graph into #cy-graph. No-op when
@@ -223,11 +231,11 @@ function buildGraph() {
         'text-valign': 'center', 'text-halign': 'center', shape: 'round-rectangle',
         width: 'label', height: 'label', padding: '11px',
         'background-color': c.leaf, 'border-width': 1.5, 'border-color': c.leafBorder } },
-      { selector: 'node[role="center"]', style: { 'background-color': c.center, 'border-color': c.centerBorder, 'border-width': 2, 'font-weight': 'bold' } },
+      { selector: 'node[role="center"]', style: { 'background-color': c.center, 'border-color': c.centerBorder, color: c.centerText, 'border-width': 2, 'font-weight': 'bold' } },
       { selector: 'node[role="leaf"]', style: { cursor: 'pointer' } },
       { selector: 'edge', style: {
         width: 1.5, 'line-color': c.edge, 'curve-style': 'bezier',
-        'target-arrow-shape': 'triangle', 'target-arrow-color': c.edge, 'arrow-scale': 0.85 } },
+        'target-arrow-shape': 'triangle', 'target-arrow-color': c.arrow, 'arrow-scale': 0.85 } },
     ],
     layout: { name: 'breadthfirst', directed: true, roots: [sid], padding: 26, spacingFactor: 1.1 },
     minZoom: 0.4, maxZoom: 2.5, wheelSensitivity: 0.2,

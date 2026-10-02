@@ -219,11 +219,15 @@ func TestWebkitServed(t *testing.T) {
 	}
 }
 
-// TestIndexUsesWebkit asserts the served SPA shell wires up the webkit chrome.
+// TestIndexUsesWebkit asserts the served SPA shell wires up the webkit chrome
+// and links the themes page webkit serves, so a reader can pick a palette
+// family from catalog too.
 func TestIndexUsesWebkit(t *testing.T) {
 	h := newServerWithCatalog(fixtureCatalog(), nil).Handler()
 	body := doGet(t, h, "/").Body.String()
-	for _, want := range []string{"<wk-header", "/webkit/webkit.js"} {
+	for _, want := range []string{
+		"<wk-header", "/webkit/webkit.js", `<a data-nav href="/webkit/themes">Themes</a>`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index body missing %q", want)
 		}

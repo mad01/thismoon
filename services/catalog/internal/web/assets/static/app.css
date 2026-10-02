@@ -1,19 +1,16 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
-/* Catalog-only vars. The palette (warm-grays, terracotta, --bg/--paper/--text-*,
-   --border, --primary, --card-bg, --chip-bg, shadows, --page-width, etc.) lives
-   in webkit.css; these are the entity-accent + typography tokens webkit doesn't
-   define. --sys/--comp are theme-dependent, so they re-declare under dark. */
+/* Catalog-only vars. The palette (--bg/--paper/--text-*, --border, --primary,
+   the semantic colours, --card-bg, --chip-bg, shadows, --page-width, etc.)
+   lives in webkit.css; these are the entity-accent + typography tokens webkit
+   doesn't define. The accents read palette roles, so they follow the family
+   and mode the reader picked: a System carries the accent colour, a Component
+   the semantic blue. */
 :root {
-  --sys: var(--terracotta);
+  --sys: var(--primary);
   --comp: var(--blue);
 
   --display: 'Fraunces', Georgia, 'Times New Roman', serif;
-}
-
-[data-theme="dark"] {
-  --sys: #E8956A;
-  --comp: #7FAEDC;
 }
 
 html { scroll-behavior: smooth; }
