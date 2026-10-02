@@ -8,6 +8,8 @@ import (
 	"bufio"
 	"cmp"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mad01/thismoon/kit/confdir"
@@ -242,7 +245,7 @@ func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Sessio
 		}
 		root = d
 	}
-	sc := &scanner{cfg: cfg.WithDefaults(), loc: now.Location(), seen: map[string]bool{}}
+	sc := &scanner{cfg: cfg.WithDefaults(), loc: now.Location(), seen: map[string]error{}}
 	cutoff := now.Add(-since)
 	projects, err := os.ReadDir(root)
 	if err != nil {
@@ -302,39 +305,81 @@ func (r record) sessionTitle() string {
 type scanner struct {
 	cfg  Config
 	loc  *time.Location
-	seen map[string]bool
+	seen map[string]error
 }
 
-// onDisk reports whether an absolute path exists on this machine, memoised
-// per scan.
-func (sc *scanner) onDisk(p string) bool {
-	hit, ok := sc.seen[p]
+// stat returns os.Stat's error for an absolute path, memoised per scan.
+func (sc *scanner) stat(p string) error {
+	err, ok := sc.seen[p]
 	if !ok {
-		_, err := os.Stat(p)
-		hit = err == nil
-		sc.seen[p] = hit
+		_, err = os.Stat(p)
+		sc.seen[p] = err
 	}
-	return hit
+	return err
 }
 
-// checkout resolves a tool-call path to the git checkout it sits in, or ""
-// when there is none. The path is expanded against the home directory, cut
-// to its checkout by checkoutDir, and kept only when that directory has a
-// .git entry here. That directory, never the raw token, is what the digest
+// hasGit reports whether dir carries a .git entry this machine can read, a
+// directory or a worktree's file. The probe is strict: an entry that cannot
+// be read is no proof of a checkout, so a checkout at mode 000 names nothing
+// rather than whichever subdirectory the session sat in, and a path that
+// runs through a file (ENOTDIR) is no checkout at all.
+func (sc *scanner) hasGit(dir string) bool {
+	return sc.stat(path.Join(dir, ".git")) == nil
+}
+
+// exists reports whether an absolute path is present on this machine. The
+// probe is lenient: only a missing path, or one that runs through a file,
+// counts as absent. A stat that fails for another reason, a parent at mode
+// 000 say, is a path that exists but cannot be read, and reading it as
+// absent would hand a cwd its basename as if it lived on another machine.
+func (sc *scanner) exists(p string) bool {
+	err := sc.stat(p)
+	return !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR)
+}
+
+// checkout resolves a path to the git checkout it sits in, or "" when there
+// is none. The path is expanded against the home directory, cut to its
+// checkout by checkoutDir, and kept only when that directory has a .git
+// entry here. That directory, never the raw token, is what the digest
 // classifies and lists: a doc example, a scratch directory that exists but
 // is no checkout, or a made-up suffix under a real checkout can name no
-// world the checkout itself does not. cwd lines are never resolved this way:
-// a cwd is where the session really ran.
+// world the checkout itself does not. Tool-call paths and cwd lines both go
+// through it; a cwd that resolves to nothing has a fallback (see addCwd).
 func (sc *scanner) checkout(p string) string {
 	full, err := confdir.Expand(p)
 	if err != nil {
 		return ""
 	}
 	dir := checkoutDir(sc.cfg, full)
-	if dir == "" || !sc.onDisk(path.Join(dir, ".git")) {
+	if dir == "" || !sc.hasGit(dir) {
 		return ""
 	}
 	return dir
+}
+
+// cwdCheckout resolves an expanded cwd to the checkout it sits in: the
+// checkout sizing first, so a cwd agrees with a tool-call path into the same
+// tree, then the nearest .git entry walking up from the cwd. The walk stops
+// where the path stops matching a repo path marker and covers the layouts
+// checkoutDir cannot size: a checkout nested two levels under a marker, or
+// one under a checkout root whose next segment is not host-shaped. A cwd
+// that no longer exists still resolves when a parent carries the entry.
+func (sc *scanner) cwdCheckout(full string) string {
+	if dir := sc.checkout(full); dir != "" {
+		return dir
+	}
+	dir := full
+	for underRepoMarker(sc.cfg, dir) {
+		if sc.hasGit(dir) {
+			return dir
+		}
+		parent := path.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
 }
 
 func (sc *scanner) digestFile(path, project string) (Session, bool, error) {
@@ -397,10 +442,7 @@ func (d *digest) add(r record) {
 	}
 	day := d.addTime(parseTime(r.Timestamp))
 	if r.Cwd != "" {
-		d.classify(r.Cwd)
-		if repo := repoName(d.cfg, r.Cwd); repo != "" {
-			d.repos.add(repo)
-		}
+		d.addCwd(r.Cwd)
 	}
 	if r.GitBranch != "" {
 		d.branches.add(r.GitBranch)
@@ -454,6 +496,34 @@ func (d *digest) addUser(content json.RawMessage, day string) {
 	extractIssues(txt, d.issues)
 }
 
+// addCwd folds a line's cwd into the digest. A cwd inside a checkout counts
+// as that checkout, exactly like a tool-call path: a session run from a
+// subdirectory lists the repo, not the subdirectory, and the checkout is
+// what the firewall classifies (see cwdCheckout for how it is found). A cwd
+// in no checkout is still classified as written, since it is where the
+// session really ran, but it names a repo only when this machine cannot
+// probe it: a checkout that lives on another machine keeps its basename,
+// while the org directory above the checkouts or a plain directory under a
+// marker exists here and names nothing. The cwd is expanded once so every
+// step reads the same path.
+func (d *digest) addCwd(cwd string) {
+	full, err := confdir.Expand(cwd)
+	if err != nil {
+		full = cwd
+	}
+	if dir := d.cwdCheckout(full); dir != "" {
+		d.addCheckout(dir)
+		return
+	}
+	d.classify(full)
+	if d.exists(full) {
+		return
+	}
+	if repo := repoName(d.cfg, full); repo != "" {
+		d.repos.add(repo)
+	}
+}
+
 // addToolPaths folds in every git checkout an assistant turn's tool calls
 // reach (see checkout). A checkout counts exactly like a cwd line: a session
 // started in a tmp dir that edits files under one belongs to its world and
@@ -461,10 +531,16 @@ func (d *digest) addUser(content json.RawMessage, day string) {
 func (d *digest) addToolPaths(content json.RawMessage) {
 	for _, p := range toolInputPaths(content) {
 		if dir := d.checkout(p); dir != "" {
-			d.classify(dir)
-			d.repos.add(filepath.Base(dir))
+			d.addCheckout(dir)
 		}
 	}
+}
+
+// addCheckout classifies a resolved checkout directory and lists it under
+// repos by its basename.
+func (d *digest) addCheckout(dir string) {
+	d.classify(dir)
+	d.repos.add(filepath.Base(dir))
 }
 
 // classify ORs a path's world into the session's. cwd lines and tool-call
@@ -494,10 +570,11 @@ func (d *digest) session() (Session, bool) {
 	return s, true
 }
 
-// repoName returns the repo basename for a cwd, or "" for tmp/other paths
-// that aren't repos (nothing in cfg.RepoPathMarkers matches). A cwd inside a
-// checkout reports the directory it is in, not the checkout; tool-call paths
-// go through checkoutDir instead.
+// repoName is the fallback name for a cwd this machine cannot probe (see
+// addCwd): its basename, or "" for tmp/other paths that aren't repos (nothing
+// in cfg.RepoPathMarkers matches). It reads the path alone and cannot tell a
+// checkout from a directory beside one, which is why it only applies when no
+// probe is possible.
 func repoName(cfg Config, cwd string) string {
 	if cwd == "" || !underRepoMarker(cfg, cwd) {
 		return ""

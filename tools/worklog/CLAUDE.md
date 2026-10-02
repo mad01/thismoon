@@ -77,9 +77,20 @@ read.
 
 cwd and tool paths pool with no precedence between them. A session that
 touches both worlds through either source is `mixed`, which surfaces every
-ticket for review instead of filing it by whichever source won. For `repos`,
-a cwd reports its own basename, while a tool-call path reports the
-checkout's.
+ticket for review instead of filing it by whichever source won. A cwd goes
+through the same resolver as a tool-call path. When it sits in a checkout
+this machine has, that checkout is what gets classified and listed under
+`repos`. So a session run from a subdirectory names the repo, not the
+subdirectory. Where the tool-call sizing misses, the nearest `.git` entry
+walking up from the cwd toward the marker decides. That covers a checkout
+nested two levels under a marker, or a checkout root whose next segment
+isn't a host.
+
+A cwd in no checkout is classified as written, but it names a repo only when
+this machine can't probe it. A checkout that lives on another machine keeps
+its basename. The org directory above the checkouts, the checkout root's
+parent, and a plain directory such as `~/code/bin` all exist here, so they
+name nothing.
 
 `days` splits `user_messages` by calendar date, keyed in the local timezone,
 so a daily consumer can attribute a session that ran across several days:
