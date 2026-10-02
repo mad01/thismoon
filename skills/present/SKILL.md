@@ -231,7 +231,7 @@ One example of each, as they go in a section's `blocks`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `h` | string | Section heading (used for TOC anchor) |
-| `id` | string? | Optional label, rendered as a pill next to the heading and in the TOC of the brief; a slide never shows it. Set it only when code outside the page refers to sections by id: a script that reads the Doc, a tracker that links to items. Reuse the ids that code already uses. Leave it out otherwise; there is no default pattern. |
+| `id` | string? | Optional label, rendered as a pill next to the heading and in the TOC of the brief; a slide never shows it. Set it only when code outside the page refers to sections by id: a script that reads the Doc, a tracker that links to items. The anchor stays the heading slug; the id is display only. Reuse the ids that code already uses. Leave it out otherwise; there is no default pattern. |
 | `blocks` | array | Content blocks |
 | `tone` | string? | A palette role name (see **Colors available**). In a brief it gives the section a band in that colour; on a slide it tints the surface and the heading rule. An unknown name is refused |
 | `layout` | string? | Deck only, ignored by the brief: `default`, `center` (centred at today's sizes), `statement` (the heading is the slide, large and centred, blocks as a line under it), `section` (a divider: large heading on a tone band). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
