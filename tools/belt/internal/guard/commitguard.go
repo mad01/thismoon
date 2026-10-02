@@ -67,16 +67,15 @@ func (g *CommitGuard) Check(in Input) *Denial {
 	if len(g.cfg.CommitGuards) == 0 {
 		return nil
 	}
-	commits := findGitCommands(in.Command, "commit")
-	if len(commits) == 0 {
-		return nil
-	}
-	for _, c := range commits {
-		dir := c.dir
-		if dir == "" {
-			dir = in.Cwd
+	for _, c := range gitCommandsAt(in.Command, in.Cwd, "commit") {
+		if c.dir == "" {
+			// A commit whose directory only a shell can name has no repo
+			// to match a rule against. It fails open like every other
+			// unresolved repo, rather than being judged in a guessed
+			// directory.
+			continue
 		}
-		repo := g.resolveRepo(dir)
+		repo := g.resolveRepo(c.dir)
 		if repo == "" {
 			continue
 		}

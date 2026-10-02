@@ -179,18 +179,68 @@ func TestGitIdentityFirstRuleWins(t *testing.T) {
 	}
 }
 
-func TestGitIdentityUsesDashCDir(t *testing.T) {
-	g := NewGitIdentity(config.Config{GitIdentity: []config.GitIdentity{{Email: "x@example.com"}}})
-	var gotDir string
-	g.resolveRepo = func(dir string) string {
-		gotDir = dir
-		return "github.com/mad01/thismoon"
+// TestGitIdentityDirResolution pins which directory the resolvers see
+// (MAD-370): the session cwd for a bare commit, the `git -C` target otherwise,
+// with ~ and $HOME expanded the way the shell would. A -C target only a shell
+// can resolve leaves the directory unknown, and the guard fails open without
+// asking the resolvers about a guessed location.
+func TestGitIdentityDirResolution(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	cfg := config.Config{GitIdentity: []config.GitIdentity{{Email: "x@example.com", Mode: "hard"}}}
+	tests := []struct {
+		name    string
+		command string
+		cwd     string
+		wantDir string // "" means no lookup and no denial
+	}{
+		{"bare commit uses cwd", `git commit -m "x"`, "/session/cwd", "/session/cwd"},
+		{"absolute -C", `git -C /other/repo commit -m "x"`, "/session/cwd", "/other/repo"},
+		{
+			"tilde -C",
+			`git -C ~/code/worklog commit -m "x"`,
+			"/session/cwd",
+			"/Users/tester/code/worklog",
+		},
+		{
+			"HOME -C",
+			`git -C $HOME/code/worklog commit -m "x"`,
+			"/session/cwd",
+			"/Users/tester/code/worklog",
+		},
+		{
+			"braced HOME -C",
+			`git -C ${HOME}/code/worklog commit -m "x"`,
+			"/session/cwd",
+			"/Users/tester/code/worklog",
+		},
+		{"unresolvable -C fails open", `git -C $TARGET commit -m "x"`, "/session/cwd", ""},
 	}
-	g.resolveEmail = func(string) string { return "x@example.com" }
-	g.Check(
-		Input{Event: EventBash, Command: `git -C /other/repo commit -m "x"`, Cwd: "/session/cwd"},
-	)
-	if gotDir != "/other/repo" {
-		t.Errorf("resolver dir = %q, want /other/repo", gotDir)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var warned []string
+			g := newIdentityGuard(cfg, "github.com/mad01/thismoon", "other@example.com", &warned)
+			var gotDir string
+			asked := false
+			g.resolveRepo = func(dir string) string {
+				asked, gotDir = true, dir
+				return "github.com/mad01/thismoon"
+			}
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
+			if tt.wantDir == "" {
+				if asked {
+					t.Errorf("resolver asked about %q, want no lookup", gotDir)
+				}
+				if d != nil {
+					t.Errorf("unknown directory denied: %v", d)
+				}
+				return
+			}
+			if gotDir != tt.wantDir {
+				t.Errorf("resolver dir = %q, want %q", gotDir, tt.wantDir)
+			}
+			if d == nil {
+				t.Error("want a denial for the mismatched email")
+			}
+		})
 	}
 }

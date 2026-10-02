@@ -193,26 +193,44 @@ func TestCommitPolicyDirectMainRepos(t *testing.T) {
 }
 
 // TestCommitPolicyDirResolution pins which directory the resolvers see: the
-// `git -C` dir when one is given, the session cwd otherwise.
+// session cwd for a bare commit, the `git -C` target otherwise, with ~ and
+// $HOME expanded the way the shell would (MAD-370). A target only a shell
+// can resolve leaves the directory unknown, and the hint stays quiet rather
+// than judging the session cwd.
 func TestCommitPolicyDirResolution(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	const worklog = "/Users/tester/code/worklog"
 	tests := []struct {
 		name    string
 		command string
 		cwd     string
-		wantDir string
+		wantDir string // "" means no lookup and no advice
 	}{
 		{"bare commit uses cwd", "git commit -m 'x'", "/session/cwd", "/session/cwd"},
 		{"git -C wins over cwd", "git -C /other/repo commit -m 'x'", "/session/cwd", "/other/repo"},
+		{"tilde -C", "git -C ~/code/worklog commit -m 'x'", "/session/cwd", worklog},
+		{"HOME -C", "git -C $HOME/code/worklog commit -m 'x'", "/session/cwd", worklog},
+		{"braced HOME -C", "git -C ${HOME}/code/worklog commit -m 'x'", "/session/cwd", worklog},
+		{"quoted HOME -C", `git -C "$HOME/code/worklog" commit -m 'x'`, "/session/cwd", worklog},
+		{"unresolvable -C stays silent", "git -C $TARGET commit -m 'x'", "/session/cwd", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got string
+			asked := false
 			h := newCommitPolicyHint("main", "github.com/mad01/thismoon", nil)
 			h.resolveBranch = func(dir string) string {
-				got = dir
+				asked, got = true, dir
 				return "main"
 			}
-			if a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd}); a == nil {
+			a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
+			if tt.wantDir == "" {
+				if asked || a != nil {
+					t.Fatalf("unknown directory: asked=%v advice=%+v, want silence", asked, a)
+				}
+				return
+			}
+			if a == nil {
 				t.Fatal("Check returned nil, want advice")
 			}
 			if got != tt.wantDir {

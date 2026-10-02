@@ -282,3 +282,73 @@ func TestInBlockedWindowAcrossMidnight(t *testing.T) {
 		t.Error("12:00 inside a 22:00-06:00 window")
 	}
 }
+
+// TestCommitGuardDirResolution pins which directory the repo resolver sees
+// (MAD-370): the session cwd for a bare commit, the `git -C` target otherwise,
+// with ~ and $HOME expanded the way the shell would. A -C target only a shell
+// can resolve leaves the directory unknown, and the guard fails open without
+// asking the resolver about a guessed location.
+func TestCommitGuardDirResolution(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	rule := config.CommitGuard{
+		Repos:      []string{"github.com/mad01/*"},
+		BlockHours: "09:00-17:00",
+		Mode:       "hard",
+	}
+	tests := []struct {
+		name    string
+		command string
+		cwd     string
+		wantDir string // "" means no lookup and no denial
+	}{
+		{"bare commit uses cwd", "git commit -m x", "/session/cwd", "/session/cwd"},
+		{"absolute -C", "git -C /other/repo commit -m x", "/session/cwd", "/other/repo"},
+		{
+			"tilde -C",
+			"git -C ~/code/worklog commit -m x",
+			"/session/cwd",
+			"/Users/tester/code/worklog",
+		},
+		{
+			"HOME -C",
+			"git -C $HOME/code/worklog commit -m x",
+			"/session/cwd",
+			"/Users/tester/code/worklog",
+		},
+		{
+			"braced HOME -C",
+			"git -C ${HOME}/code/worklog commit -m x",
+			"/session/cwd",
+			"/Users/tester/code/worklog",
+		},
+		{"unresolvable -C fails open", "git -C $TARGET commit -m x", "/session/cwd", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{CommitGuards: []config.CommitGuard{rule}}
+			f := newCommitGuardFixture(cfg, "", localTime(t, time.Tuesday, 10, 0))
+			var gotDir string
+			asked := false
+			f.guard.resolveRepo = func(dir string) string {
+				asked, gotDir = true, dir
+				return "github.com/mad01/thismoon"
+			}
+			d := f.guard.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
+			if tt.wantDir == "" {
+				if asked {
+					t.Errorf("resolver asked about %q, want no lookup", gotDir)
+				}
+				if d != nil {
+					t.Errorf("unknown directory denied: %v", d)
+				}
+				return
+			}
+			if gotDir != tt.wantDir {
+				t.Errorf("resolver dir = %q, want %q", gotDir, tt.wantDir)
+			}
+			if d == nil {
+				t.Error("want a denial inside the window")
+			}
+		})
+	}
+}

@@ -1,7 +1,6 @@
 package guard
 
 import (
-	"path"
 	"strings"
 
 	"github.com/mad01/thismoon/tools/belt/internal/config"
@@ -46,8 +45,9 @@ func (g *GitPushMain) Event() string { return EventBash }
 // push (no `git -C`) is judged against the directory the push runs in rather
 // than the session cwd. Without that, `cd <other-repo> && git push origin
 // main` from an exempt repo's cwd would be checked against the exempt repo and
-// wrongly allowed. A cd whose target cannot be resolved without a shell leaves
-// the directory unknown, and checkPush then fails closed instead of guessing.
+// wrongly allowed. A cd or git -C whose target cannot be resolved without a
+// shell leaves the directory unknown, and checkPush then fails closed instead
+// of guessing.
 func (g *GitPushMain) Check(in Input) *Denial {
 	cwd := in.Cwd
 	for _, seg := range splitSegments(in.Command) {
@@ -56,12 +56,8 @@ func (g *GitPushMain) Check(in Input) *Denial {
 			cwd = resolveDir(cwd, dir)
 			continue
 		}
-		for _, push := range segmentPushes(seg) {
-			dir := push.dir
-			if dir == "" {
-				dir = cwd
-			}
-			if d := g.checkPush(push, dir); d != nil {
+		for _, push := range findGitPushes(seg.text, cwd) {
+			if d := g.checkPush(push); d != nil {
 				return d
 			}
 		}
@@ -69,15 +65,15 @@ func (g *GitPushMain) Check(in Input) *Denial {
 	return nil
 }
 
-// checkPush judges one push against the directory it runs in. An empty dir
-// means that directory could not be determined, and the push is handed to
-// unknownDirDenial rather than resolved against a guessed location.
-func (g *GitPushMain) checkPush(push gitPush, dir string) *Denial {
-	if dir == "" {
+// checkPush judges one push against the directory it runs in. An empty
+// push.dir means that directory could not be determined, and the push is
+// handed to unknownDirDenial rather than resolved against a guessed location.
+func (g *GitPushMain) checkPush(push gitPush) *Denial {
+	if push.dir == "" {
 		return unknownDirDenial(push)
 	}
-	branch := push.targetBranch(func() string { return g.resolveBranch(dir) })
-	if !defaultBranches[branch] || g.pushExempt(dir) {
+	branch := push.targetBranch(func() string { return g.resolveBranch(push.dir) })
+	if !defaultBranches[branch] || g.pushExempt(push.dir) {
 		return nil
 	}
 	return Reasonf(
@@ -89,10 +85,10 @@ func (g *GitPushMain) checkPush(push gitPush, dir string) *Denial {
 }
 
 // unknownDirDenial decides a push whose directory could not be determined:
-// the cd before it had a target only a shell can resolve. Neither the current
-// branch nor the repo can be resolved without running git somewhere it does
-// not belong, so the push is denied unless its refspecs name a non-default
-// branch outright, which is safe wherever it runs.
+// the cd or git -C before it had a target only a shell can resolve. Neither
+// the current branch nor the repo can be resolved without running git
+// somewhere it does not belong, so the push is denied unless its refspecs
+// name a non-default branch outright, which is safe wherever it runs.
 func unknownDirDenial(push gitPush) *Denial {
 	needsBranch := false
 	branch := push.targetBranch(func() string {
@@ -104,9 +100,9 @@ func unknownDirDenial(push gitPush) *Denial {
 	}
 	return Reasonf(
 		GitPushMainID,
-		"cannot tell which repo this push runs in: the cd before it has a target only a shell can "+
-			"resolve (a variable, cd -, a substitution). Use an absolute path, ~, or $HOME in the cd, "+
-			"or git -C <dir> on the push, so the target repo can be checked.",
+		"cannot tell which repo this push runs in: the cd or git -C before it has a target only a "+
+			"shell can resolve (a variable, cd -, a substitution). Use an absolute path, ~, or $HOME "+
+			"instead, so the target repo can be checked.",
 	)
 }
 
@@ -128,80 +124,6 @@ func parseCd(tokens []string) (string, bool) {
 	return "~", true
 }
 
-// unresolvableChars are the shell characters a cd target may still carry
-// after belt's own expansion. Any of them means a shell would rewrite the
-// target into something belt cannot see, so the destination is unknown.
-const unresolvableChars = "$*?~`\"'"
-
-// resolveDir applies a `cd` target to the current directory and returns the
-// new one, or "" for a destination it cannot determine statically: `cd -`, a
-// target expandCdTarget rejects, or a relative target from an unknown cwd.
-// An unknown cwd is what makes a later push fail closed (see checkPush).
-func resolveDir(cwd, target string) string {
-	if target == "-" {
-		return ""
-	}
-	target = expandCdTarget(target)
-	switch {
-	case target == "":
-		return ""
-	case path.IsAbs(target):
-		return path.Clean(target)
-	case cwd == "":
-		return ""
-	}
-	return path.Clean(path.Join(cwd, target))
-}
-
-// expandCdTarget performs the expansions the shell would on a cd target, as
-// far as they can be done without a shell: a surrounding quote pair is
-// dropped, a leading $HOME or ${HOME} becomes the home directory unless
-// single-quoted, and so does an unquoted leading ~. A target that still
-// carries a shell metacharacter or a stray quote afterwards returns "".
-func expandCdTarget(target string) string {
-	quote, inner := unquote(target)
-	if quote != '\'' {
-		inner = expandHomeVar(inner)
-	}
-	if quote == 0 {
-		inner = config.ExpandHome(inner)
-	}
-	if strings.ContainsAny(inner, unresolvableChars) {
-		return ""
-	}
-	return inner
-}
-
-// unquote strips one pair of matching surrounding quotes and reports which
-// quote it was, 0 for none.
-func unquote(s string) (byte, string) {
-	n := len(s)
-	if n >= 2 && (s[0] == '"' || s[0] == '\'') && s[n-1] == s[0] {
-		return s[0], s[1 : n-1]
-	}
-	return 0, s
-}
-
-// expandHomeVar rewrites a leading $HOME or ${HOME} to the home directory,
-// through the same helper a leading ~ goes through. A longer variable
-// ($HOMEBREW_PREFIX, say) is left alone for the metacharacter check to
-// reject.
-func expandHomeVar(target string) string {
-	for _, v := range []string{"${HOME}", "$HOME"} {
-		rest, ok := strings.CutPrefix(target, v)
-		if ok && (rest == "" || rest[0] == '/') {
-			return config.ExpandHome("~" + rest)
-		}
-	}
-	return target
-}
-
-// segmentPushes extracts the git push invocations from a single segment,
-// reusing the shared token parser on just that segment's text.
-func segmentPushes(seg segment) []gitPush {
-	return findGitPushes(seg.text)
-}
-
 // pushExempt reports whether the repo at dir may take a direct default-
 // branch push: the shared direct_main_repos list (this guard is one of its
 // two readers, docs/adr/0013) or the guard's own allow_repos. Empty lists
@@ -219,7 +141,7 @@ func (g *GitPushMain) pushExempt(dir string) bool {
 
 // gitPush is one parsed `git push` invocation.
 type gitPush struct {
-	dir      string   // from git -C <dir>, if given
+	dir      string   // the directory the push runs in; "" when unknown
 	remote   string   // first positional; "" for a bare push
 	refspecs []string // positional args after the remote
 	explicit bool     // true when at least one refspec was given
@@ -261,10 +183,11 @@ var pushFlagsWithValue = map[string]bool{
 }
 
 // findGitPushes extracts git push invocations from a shell command via the
-// shared token-based git parser (see findGitCommands).
-func findGitPushes(command string) []gitPush {
+// shared token-based git parser (see gitCommandsAt); cwd is where a bare
+// invocation runs.
+func findGitPushes(command, cwd string) []gitPush {
 	var pushes []gitPush
-	for _, c := range findGitCommands(command, "push") {
+	for _, c := range gitCommandsAt(command, cwd, "push") {
 		pushes = append(pushes, parsePushArgs(c))
 	}
 	return pushes

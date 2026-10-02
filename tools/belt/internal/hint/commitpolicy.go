@@ -60,9 +60,13 @@ func (h *CommitPolicy) Check(in Input) *Advice {
 	if in.Command == "" {
 		return nil
 	}
-	for _, dir := range guard.GitCommitDirs(in.Command) {
+	for _, dir := range guard.GitCommitDirs(in.Command, in.Cwd) {
 		if dir == "" {
-			dir = in.Cwd
+			// The commit ran in a directory only a shell can name (a
+			// variable, a substitution). A hint that cannot tell stays
+			// quiet; it does not fall back to the session cwd, which may
+			// be a different repo on a different branch.
+			continue
 		}
 		overlay, err := loadRepoOverlay(h.resolveRoot(dir))
 		if err != nil {

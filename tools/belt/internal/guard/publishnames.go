@@ -244,8 +244,8 @@ func (g *PublishInternalNames) bashPublications(in Input) []publication {
 		for i, tok := range tokens {
 			switch tok {
 			case "git":
-				if c, ok := parseGitCmd(tokens[i+1:]); ok {
-					pubs = append(pubs, g.gitPublications(in.Command, c, cwd)...)
+				if c, ok := parseGitCmd(tokens[i+1:], cwd); ok {
+					pubs = append(pubs, g.gitPublications(in.Command, c)...)
 				}
 			case "gh":
 				if c, ok := parseGh(tokens[i+1:]); ok {
@@ -254,22 +254,17 @@ func (g *PublishInternalNames) bashPublications(in Input) []publication {
 			default:
 				continue
 			}
-			break // one invocation per segment, as findGitCommands does
+			break // one invocation per segment, as gitCommandsAt does
 		}
 	}
 	return pubs
 }
 
-// gitPublications dispatches one git invocation by subcommand.
-func (g *PublishInternalNames) gitPublications(
-	command string,
-	c gitInvocation,
-	cwd string,
-) []publication {
+// gitPublications dispatches one git invocation by subcommand, in the
+// directory the parser placed it. An unknown directory scans nothing: g.git
+// answers "" for an empty dir rather than running in belt's own process cwd.
+func (g *PublishInternalNames) gitPublications(command string, c gitInvocation) []publication {
 	dir := c.dir
-	if dir == "" {
-		dir = cwd
-	}
 	switch c.sub {
 	case "push":
 		return g.pushPublications(c, dir)

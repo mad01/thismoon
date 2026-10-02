@@ -48,17 +48,19 @@ func (g *GitIdentity) Check(in Input) *Denial {
 	if len(g.cfg.GitIdentity) == 0 {
 		return nil
 	}
-	for _, c := range findGitCommands(in.Command, "commit") {
-		dir := c.dir
-		if dir == "" {
-			dir = in.Cwd
+	for _, c := range gitCommandsAt(in.Command, in.Cwd, "commit") {
+		if c.dir == "" {
+			// A commit whose directory only a shell can name has neither a
+			// repo nor an email to check. It fails open like an unresolved
+			// repo, rather than being judged in a guessed directory.
+			continue
 		}
-		repo := g.resolveRepo(dir)
+		repo := g.resolveRepo(c.dir)
 		rule, ok := g.matchRule(repo)
 		if !ok {
 			continue
 		}
-		email := g.resolveEmail(dir)
+		email := g.resolveEmail(c.dir)
 		if email == "" || email == rule.Email {
 			continue
 		}
