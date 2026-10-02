@@ -194,11 +194,15 @@ Blocks `git push` to `main` or `master` before it happens.
   `~`, `$HOME`, or `${HOME}` expands to the home directory in either, so
   `git -C ~/repo` names the same repo as the absolute path, and a bare `cd`
   goes home. A target only a shell can resolve (another variable, `cd -`, a
-  command substitution, a glob) leaves the directory unknown. A push to
-  `main` or `master` from an unknown directory is denied, with a hint to
-  use an absolute path, `~`, or `$HOME`. belt never runs git in its own
-  process directory to fill the gap: that once let a push into a non-exempt
-  repo ride an exempt session cwd.
+  command substitution, a glob) leaves the directory unknown. So do `popd`
+  and a bare `pushd`, since belt keeps no directory stack, and
+  `--git-dir`/`--work-tree`, which point git at a tree only git can name. A
+  `-C` path reaches git as written: git resolves `..` physically, so
+  `link/..` is the link target's parent there, where a shell's cd is logical
+  and lands in the link's own parent. A push to `main` or `master` from an
+  unknown directory is denied, with a hint to use an absolute path, `~`, or
+  `$HOME`. belt never runs git in its own process directory to fill the gap:
+  that once let a push into a non-exempt repo ride an exempt session cwd.
 - **Allows when** the push directory's origin remote resolves to a repo on
   `guards.git-push-main.allow_repos` — an exact `host/owner/repo` or a
   trailing `/*` org wildcard, the same patterns `git_identity[].repos` takes.
@@ -229,9 +233,12 @@ the one configured for that repo.
   after push. Rules are repo-scoped rather than machine-scoped on purpose: a
   work machine committing to a personal repo in the evening still gets the
   personal email enforced, because the repo decides.
-- **Fails open**: no rules configured, no rule covering the repo, a commit
-  directory only a shell can name, an unresolvable repo, or an unresolvable
-  email all allow. `mode: soft` turns a deny into a warn event.
+- **Fails open**: no rules configured, no rule covering the repo, an
+  unresolvable repo, or an unresolvable email all allow. So does a commit
+  whose directory only a shell can name, such as
+  `cd "$(git rev-parse --show-toplevel)" && git commit`: it is not judged at
+  all, not even in the session cwd. `mode: soft` turns a deny into a warn
+  event.
 
 ### commit-guard
 
@@ -252,8 +259,10 @@ hours.
   exception is one command away.
 - **Why it exists**: a soft boundary between work hours and personal projects
   that a human can consciously step over but not absent-mindedly drift over.
-- **Fails open**: unresolved repos, a commit directory only a shell can name,
-  and malformed windows block nothing.
+- **Fails open**: unresolved repos and malformed windows block nothing, and
+  neither does a commit whose directory only a shell can name
+  (`cd "$(git rev-parse --show-toplevel)" && git commit` is not judged, not
+  even in the session cwd).
 
 ### script-deny-list
 

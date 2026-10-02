@@ -75,11 +75,12 @@ func (g *GitPushMain) checkPush(push gitPush) *Denial {
 	)
 }
 
-// unknownDirDenial decides a push whose directory could not be determined:
-// the cd or git -C before it had a target only a shell can resolve. Neither
-// the current branch nor the repo can be resolved without running git
-// somewhere it does not belong, so the push is denied unless its refspecs
-// name a non-default branch outright, which is safe wherever it runs.
+// unknownDirDenial decides a push whose directory could not be determined: a
+// cd, pushd, popd, or git -C before it with a target only a shell can
+// resolve, or a --git-dir/--work-tree pointing git elsewhere. Neither the
+// current branch nor the repo can be resolved without running git somewhere
+// it does not belong, so the push is denied unless its refspecs name a
+// non-default branch outright, which is safe wherever it runs.
 func unknownDirDenial(push gitPush) *Denial {
 	needsBranch := false
 	branch := push.targetBranch(func() string {
@@ -91,9 +92,10 @@ func unknownDirDenial(push gitPush) *Denial {
 	}
 	return Reasonf(
 		GitPushMainID,
-		"cannot tell which repo this push runs in: the cd or git -C before it has a target only a "+
-			"shell can resolve (a variable, cd -, a substitution). Use an absolute path, ~, or $HOME "+
-			"instead, so the target repo can be checked.",
+		"cannot tell which repo this push runs in: its directory comes from a cd, pushd, popd, or "+
+			"git -C only a shell can resolve (a variable, cd -, a substitution), or from --git-dir "+
+			"or --work-tree. Use an absolute path, ~, or $HOME in a cd or git -C so the target repo "+
+			"can be checked.",
 	)
 }
 

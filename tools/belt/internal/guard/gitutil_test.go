@@ -90,8 +90,15 @@ func TestGitCommandsAt(t *testing.T) {
 			[]string{"/session/sub/repo"},
 		},
 		{
-			"dot-dot -C",
+			"dot-dot -C stays as written for git",
 			"git -C ../other commit",
+			"/session/repo",
+			"commit",
+			[]string{"/session/repo/../other"},
+		},
+		{
+			"dot-dot cd is logical",
+			"cd ../other && git commit -m x",
 			"/session/repo",
 			"commit",
 			[]string{"/session/other"},
@@ -178,6 +185,42 @@ func TestGitCommandsAt(t *testing.T) {
 			"commit",
 			[]string{"/a", "/a"},
 		},
+		{
+			"popd is unknown",
+			"pushd /a && popd && git commit -m x",
+			"/session",
+			"commit",
+			[]string{""},
+		},
+		{"bare pushd is unknown", "pushd && git commit -m x", "/session", "commit", []string{""}},
+		{
+			"popd then absolute -C is known",
+			"pushd /a && popd && git -C /b commit -m x",
+			"/session",
+			"commit",
+			[]string{"/b"},
+		},
+		{
+			"--git-dir is unknown",
+			"git --git-dir /r/.git commit -m x",
+			"/session",
+			"commit",
+			[]string{""},
+		},
+		{
+			"--work-tree= is unknown",
+			"git --work-tree=/r commit -m x",
+			"/session",
+			"commit",
+			[]string{""},
+		},
+		{
+			"--git-dir then -C is still unknown",
+			"git --git-dir=/r/.git -C /x commit -m x",
+			"/session",
+			"commit",
+			[]string{""},
+		},
 		{"other subcommand ignored", "git -C /a status", "/session", "commit", nil},
 		{"quoted mention ignored", `echo "git commit -m x"`, "/session", "commit", nil},
 		{"no subcommand", "git -C /a", "/session", "commit", nil},
@@ -243,6 +286,30 @@ func TestResolveDirWithoutHome(t *testing.T) {
 	for _, target := range []string{"~", "~/code", "$HOME/code"} {
 		if got := resolveDir("/work", target); got != "" {
 			t.Errorf("resolveDir(%q) without HOME = %q, want unknown", target, got)
+		}
+	}
+}
+
+// TestPlaceDir pins the uncleaned placement a `git -C` target gets: the path
+// reaches git as typed, joined onto the tracked directory when relative, so
+// the OS resolves `..` physically the way git's chdir does.
+func TestPlaceDir(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	tests := []struct {
+		cwd, target, want string
+	}{
+		{"/work", "..", "/work/.."},
+		{"/work", "link/../repo", "/work/link/../repo"},
+		{"/", "repo", "/repo"},
+		{"/work", "/abs/../dir", "/abs/../dir"},
+		{"/work", "~/code/..", "/Users/tester/code/.."},
+		{"", "repo", ""},
+		{"/work", "-", ""},
+		{"/work", "$TARGET", ""},
+	}
+	for _, tt := range tests {
+		if got := placeDir(tt.cwd, tt.target); got != tt.want {
+			t.Errorf("placeDir(%q, %q) = %q, want %q", tt.cwd, tt.target, got, tt.want)
 		}
 	}
 }

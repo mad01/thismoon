@@ -285,6 +285,14 @@ func TestCommitPolicyWorktreeCommit(t *testing.T) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// Keep the user's and the system's gitconfig out of the fixture: a
+	// commit.gpgsign or hooksPath there would break the setup commits.
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	canonical := filepath.Join(home, "canonical")
 	worktree := filepath.Join(home, ".worktrees", "repo", "slug")
 	initRepoOnMain(t, canonical, "git@github.com:mad01/thismoon.git")

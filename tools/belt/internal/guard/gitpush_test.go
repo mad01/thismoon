@@ -299,6 +299,27 @@ func TestGitPushMainCdTracking(t *testing.T) {
 			cwd:      "/repos/dotfiles",
 			wantDeny: false,
 		},
+		{
+			name:       "popd then git -C dot fails closed",
+			command:    "pushd /repos/dotfiles && popd && git -C . push origin main",
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "bare pushd then push main fails closed",
+			command:    "pushd && git push origin main",
+			cwd:        "/repos/dotfiles",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "work-tree push fails closed even from an exempt cwd",
+			command:    "git --work-tree=/repos/dotfiles push origin main",
+			cwd:        "/repos/dotfiles",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -376,6 +397,15 @@ func TestGitPushMainRealResolver(t *testing.T) {
 	t.Setenv("HOME", home)
 	exempt := initRepo(t, home, "git@github.com:mad01/dotfiles.git")
 	other := initRepo(t, filepath.Join(home, "other"), "git@github.com:mad01/other.git")
+	// A symlink whose target sits inside the non-exempt repo: git -C resolves
+	// `link/..` physically into that repo, a shell's cd resolves it logically
+	// back to home.
+	if err := os.MkdirAll(filepath.Join(other, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(other, "sub"), filepath.Join(home, "link")); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(exempt)
 	g := NewGitPushMain(config.Config{DirectMainRepos: []string{"github.com/mad01/dotfiles"}})
 
@@ -436,6 +466,27 @@ func TestGitPushMainRealResolver(t *testing.T) {
 		{
 			"variable git -C then push main",
 			"git -C $TARGET push origin main",
+			exempt,
+			true,
+			unknownDirHint,
+		},
+		{
+			"git -C through a symlink parent lands in non-exempt",
+			"git -C ~/link/.. push origin main",
+			exempt,
+			true,
+			"",
+		},
+		{
+			"cd through a symlink parent is logical and exempt",
+			"cd ~/link/.. && git push origin main",
+			other,
+			false,
+			"",
+		},
+		{
+			"popd then git -C dot fails closed",
+			"pushd " + other + " && popd && git -C . push origin main",
 			exempt,
 			true,
 			unknownDirHint,
