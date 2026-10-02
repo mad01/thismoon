@@ -103,9 +103,8 @@ fill. Each mode has a named exception map. In dark it lists solarized's red,
 orange, and violet. In light it lists the fills whose family ink is too pale
 to win and which would have to become a different colour for white to reach
 the bar. Those are catppuccin's green, peach, and yellow, One's red, green,
-and yellow, solarized's green and yellow, and Tokyo Night's red. Where a fill
-sat just under the bar, the family moved it a few
-points of lightness with the hue held. It pinned the roles derived from that
+and yellow, and solarized's green and yellow. Where a fill sat just under
+the bar, the family moved it a few points of lightness with the hue held. It pinned the roles derived from that
 fill to the published values, so only the fill and its ink changed (MAD-372,
 MAD-376, MAD-378).
 

@@ -328,7 +328,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, so the three stay as published: white reads 3.3 on green and 3.0 on peach, and the text ink 3.1 on yellow (MAD-378)"
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378)"
    },
    "dark": {
     "variant": "Mocha",
@@ -940,7 +940,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is six to nine points of lightness away, a different colour, so the three stay as published"
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published"
    },
    "dark": {
     "variant": "One Dark",
@@ -1348,7 +1348,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta. blue and violet are darkened six points and one point of lightness so white ink reads 4.5 on them. The roles derived from both stay pinned to the published values. base01 ink reads under 1.7 on every accent, and a green or yellow dark enough for white ink is a different colour from the published pair, so both keep white at 3.2 (MAD-378)"
+    "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta. blue and violet are darkened six points and one point of lightness so white ink reads 4.5 on them. The roles derived from both stay pinned to the published values. base01 ink reads under 1.7 on every accent, and a green or yellow dark enough for white ink is a different colour from the published pair, a Lab distance of 15.3 and 14.8, so both keep white at 3.2 (MAD-378)"
    },
    "dark": {
     "variant": "Dark",
@@ -1468,7 +1468,7 @@
      "text-3": "#848cb5",
      "primary": "#2e7de9",
      "on-primary": "#e1e2e7",
-     "red": "#f52a65",
+     "red": "#e60b4b",
      "green": "#587539",
      "amber": "#b15c00",
      "yellow": "#8c6c3e",
@@ -1552,7 +1552,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan. blue and magenta are darkened four points and one point of lightness so white ink reads 4.5 on them. The roles derived from both stay pinned to the published values. Day's ink never beats white, and a red dark enough for white ink is nine points of lightness away, so red keeps white at 3.9 (MAD-378)"
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan. Day's ink never beats white, so red, blue, and magenta are darkened nine, four, and one points of lightness for white ink to read 4.5 on them, where it read 3.9, 4.0, and 4.3. Red is the largest move in the collection, a Lab distance of 9.9. The roles derived from the three stay pinned to the published values (MAD-378)"
    },
    "dark": {
     "variant": "Night",

@@ -50,11 +50,11 @@ var darkInkFloorExceptions = map[string]float64{
 // a family's text ink needs one at or above 4.5 * (ink + 0.05) - 0.05: 0.54
 // for Latte's text (0.081), 0.37 for One's mono-1 (0.043), 0.83 for
 // solarized's base01 (0.145), and 0.76 for Day's blue ink (0.129). Every fill
-// below sits between the two bands. MAD-378 moved seventeen other light fills
-// into one band or the other, hue held, by one to seven points of lightness
-// (a Lab distance under 8.5). For these nine the nearest fill in either band
+// below sits between the two bands. MAD-378 moved eighteen other light fills
+// into one band or the other, hue held, by one to nine points of lightness
+// (a Lab distance under 10). For these eight the nearest fill in either band
 // is six to thirteen points away, a different colour at a Lab distance of
-// 9.9 to 22, except One's green, which would reach mono-1 ink nine points
+// 11.6 to 22, except One's green, which would reach mono-1 ink nine points
 // lighter (8.9) but then read under 3.0 as text on paper. So they keep the
 // published value and the better of the two inks, at the floors measured.
 var lightInkFloorExceptions = map[string]float64{
@@ -66,7 +66,6 @@ var lightInkFloorExceptions = map[string]float64{
 	"one/yellow":        3.5, // #c18401, mono-1 3.55; white reads 3.20
 	"solarized/green":   3.2, // #859900, white 3.20; base01 reads 1.68
 	"solarized/yellow":  3.2, // #b58900, white 3.21; base01 reads 1.68
-	"tokyo-night/red":   3.8, // #f52a65, white 3.89; the blue ink reads 1.51
 }
 
 var inkRoles = []string{"red", "green", "amber", "yellow", "blue", "purple"}

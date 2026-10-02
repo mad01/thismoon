@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "Latte",
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, so the three stay as published: white reads 3.3 on green and 3.0 on peach, and the text ink 3.1 on yellow (MAD-378)",
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378)",
     "bg": "#e6e9ef",
     "paper": "#eff1f5",
     "chip": "#dce0e8",
