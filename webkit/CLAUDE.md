@@ -98,8 +98,9 @@ grid and text, `text-body`, the alpha surfaces (`topbar-bg`, `scrim`,
 the variant's deepest ink (`text-1` in light, `bg` in dark), whichever reads
 with more contrast on that fill. `themes_contrast_test.go` holds every dark
 ink to 4.5:1 on its fill, with solarized's named exceptions, and pins the
-light inks to the values they compiled to before that rule existed. A variant
-can pin any derived role under `overrides`. The default family does that for
+light inks to the values they compiled to before that rule existed (the
+light-mode debt is MAD-378). A variant can pin any derived role under
+`overrides`. The default family does that for
 every role whose derived value differs from the old hand-written stylesheet,
 so it stays byte-identical (pinned by `TestDefaultFamilyPinsTodaysPalette`).
 

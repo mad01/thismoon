@@ -36,11 +36,13 @@ const minInkContrast = 4.5
 // meet. The family's dark ink (base03, luminance 0.020) needs a fill at
 // 4.5 * (0.020 + 0.05) - 0.05 = 0.265. Blue is lifted to reach it, while
 // red, orange, and violet would have to leave the published hues, so these
-// three hold the floors measured on the lifted values with the better ink.
+// three keep white ink at the floors measured on the lifted values. On
+// violet base03 would read 3.93 by WCAG, but far worse by APCA, so the family
+// pins white there to match red and orange.
 var inkFloorExceptions = map[string]float64{
-	"solarized/red":    3.9, // #e04c49 under white, measured 3.96; base03 reads 3.79
-	"solarized/amber":  3.9, // #dd5218 under white, measured 3.97; base03 reads 3.79
-	"solarized/purple": 3.9, // #777cc8 under base03, measured 3.93; white reads 3.82
+	"solarized/red":    3.9, // #e04c49, measured 3.96; base03 reads 3.79
+	"solarized/amber":  3.9, // #dd5218, measured 3.97; base03 reads 3.79
+	"solarized/purple": 3.8, // #777cc8, measured 3.82; base03 reads 3.93
 }
 
 // lightInks are the on-<colour> inks every light variant compiled to before
@@ -77,19 +79,24 @@ func TestDarkSemanticColoursReadAsText(t *testing.T) {
 	}
 }
 
-// Every dark variant's on-<role> ink reads as body text on its fill, with the
-// exception map as the only carve-out. An exception whose pair now clears
-// the floor is stale and fails too, so the map never outlives its reason.
+// Every dark variant's on-<role> ink, yellow included, reads as body text on
+// its fill, with the exception map as the only carve-out. An exception whose
+// pair now clears the floor is stale and fails too, and so does a key the
+// loop never visits, so the map can neither outlive its reason nor hide a
+// misspelt family or role.
 func TestDarkInkReadsOnFill(t *testing.T) {
+	visited := map[string]bool{}
 	for _, f := range webkit.Themes() {
 		if f.Dark == nil {
 			continue
 		}
-		for _, role := range textRoles {
+		for _, role := range inkRoles {
 			fill, ink := f.Dark.Roles[role], f.Dark.Roles["on-"+role]
 			got := contrast(t, ink, fill)
 			floor := minInkContrast
-			if exception, ok := inkFloorExceptions[f.Name+"/"+role]; ok {
+			key := f.Name + "/" + role
+			if exception, ok := inkFloorExceptions[key]; ok {
+				visited[key] = true
 				if got >= minInkContrast {
 					t.Errorf("%s dark: --on-%s reads %.2f on --%s; drop its exception",
 						f.Name, role, got, role)
@@ -100,6 +107,11 @@ func TestDarkInkReadsOnFill(t *testing.T) {
 				t.Errorf("%s dark: --on-%s %s on --%s %s = %.2f, want >= %.1f",
 					f.Name, role, ink, role, fill, got, floor)
 			}
+		}
+	}
+	for key := range inkFloorExceptions {
+		if !visited[key] {
+			t.Errorf("inkFloorExceptions[%q] names no dark family and ink role", key)
 		}
 	}
 }

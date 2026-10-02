@@ -5,7 +5,7 @@
   "license": "BSD-3-Clause",
   "light": {
     "variant": "Cream",
-    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did. That includes on-green, on-amber, on-yellow, and on-blue. The old rules put white on every fill, and the ink rule would now take text-1 on those four, a light-mode change MAD-376 left for later.",
+    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did. That includes on-green, on-amber, on-yellow, and on-blue. The old rules put white on every fill, and the ink rule would now take text-1 on those four, a light-mode change left to MAD-378.",
     "bg": "#FAF9F7",
     "paper": "#FFFFFF",
     "chip": "#EEECE8",

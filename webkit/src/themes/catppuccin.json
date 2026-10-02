@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "Latte",
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. on-yellow is pinned to white: the ink rule would take the text ink on it, a light-mode change MAD-376 left for later",
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. on-yellow is pinned to white: the ink rule would take the text ink on it, a light-mode change left to MAD-378",
     "bg": "#e6e9ef",
     "paper": "#eff1f5",
     "chip": "#dce0e8",
