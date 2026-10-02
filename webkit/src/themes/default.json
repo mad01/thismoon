@@ -25,7 +25,6 @@
     "series": ["#C4704B", "#5B8EC4", "#4A9E6B", "#8B6BB0"],
     "overrides": {
       "primary-soft": "#d4855f",
-      "green-light": "#6BC48A",
       "text-body": "#4A453D",
       "ra-highlight": "#F3DDD2",
       "tag-a": "#E8D5C4",
@@ -76,7 +75,6 @@
       "focus-ring": "rgba(196,112,75,0.15)",
       "terracotta": "#C4704B",
       "primary-soft": "#d4855f",
-      "green-light": "#6BC48A",
       "text-body": "#B8B2A7",
       "ra-highlight": "#4A3328",
       "tag-a": "#3A2E20",

@@ -25,7 +25,7 @@ var defaultLight = map[string]string{
 	"progress-bg": "#EEECE8", "progress-fill": "#C4704B",
 	"tag-a": "#E8D5C4", "tag-a-text": "#8B5A2B", "tag-b": "#D4E8D4", "tag-b-text": "#2B6B3E",
 	"tag-c": "#D4DEE8", "tag-c-text": "#2B4A6B", "ra-highlight": "#F3DDD2",
-	"terracotta": "#C4704B", "green-light": "#6BC48A", "primary-soft": "#d4855f",
+	"terracotta": "#C4704B", "primary-soft": "#d4855f",
 	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
 	"blue": "#5B8EC4", "purple": "#8B6BB0",
 	"text-body": "#4A453D",
@@ -61,7 +61,7 @@ var defaultDark = map[string]string{
 	"progress-bg": "#35322C", "progress-fill": "#E8956A",
 	"tag-a": "#3A2E20", "tag-a-text": "#E8B86A", "tag-b": "#1E3A2A", "tag-b-text": "#6BC48A",
 	"tag-c": "#1E2A3A", "tag-c-text": "#7AAAE8", "ra-highlight": "#4A3328",
-	"green-light": "#6BC48A", "primary-soft": "#d4855f",
+	"primary-soft": "#d4855f",
 	// The semantic colours, the terracotta alias, and the focus ring keep
 	// their light values: the old dark block never overrode them (decision 7
 	// of the design).
@@ -251,8 +251,12 @@ func TestStylesheetCarriesEveryFamily(t *testing.T) {
 		}
 	}
 	// The ramp names are gone: a rule reading them would be invalid under
-	// another family. --terracotta stays as a declared alias of primary.
-	for _, gone := range []string{"var(--wg", "var(--cream)", "var(--off-white)", "var(--terracotta-light)"} {
+	// another family. So is --green-light, with its last reader (csl) on
+	// roles. --terracotta stays declared as an alias of primary for the panel
+	// accents present pages stored under that name.
+	for _, gone := range []string{
+		"var(--wg", "var(--cream)", "var(--off-white)", "var(--terracotta-light)", "--green-light:",
+	} {
 		if strings.Contains(css, gone) {
 			t.Errorf("webkit.css still reads the ramp token %q", gone)
 		}

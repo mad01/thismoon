@@ -454,10 +454,12 @@ rule that reads a role follows the reader's choice.
   `--chart-text`, `--chart-label`
 
 The old ramp primitives (`--cream`, `--off-white`, `--wg100` to `--wg900`,
-`--terracotta-light`) are gone. `--terracotta` and `--green-light` stay for
-the consumers that haven't moved to roles: terracotta keeps the light-mode
-primary and is pinned separately in dark, where the default primary is a
-lighter shade, and green-light is the derived light green.
+`--terracotta-light`) are gone, and so is `--green-light` now that csl, its
+last reader, paints its query tokens with the semantic colour roles. One alias
+remains: `--terracotta`, declared as `--primary` for the panel accents present
+pages stored under that name and still render as `var(--terracotta)`. The
+default family pins it to the light-mode primary in dark, where its primary is
+a lighter shade.
 
 **`localStorage` state keys (global, shared across a tool's pages):**
 
