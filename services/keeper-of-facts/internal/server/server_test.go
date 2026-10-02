@@ -431,7 +431,11 @@ func TestPageServesShell(t *testing.T) {
 	}
 	body, _ := io.ReadAll(res.Body)
 	page := string(body)
-	for _, want := range []string{`wk-header brand="kof"`, `id="app"`, "/app.js", "/webkit/webkit.js"} {
+	// The chrome links the themes page webkit serves.
+	for _, want := range []string{
+		`wk-header brand="kof"`, `id="app"`, "/app.js", "/webkit/webkit.js",
+		`<a data-nav href="/webkit/themes">Themes</a>`,
+	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("shell missing %q", want)
 		}
