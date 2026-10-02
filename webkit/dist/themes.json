@@ -145,7 +145,7 @@
      "amber": "#D97706",
      "yellow": "#C4960B",
      "blue": "#5B8EC4",
-     "purple": "#8B6BB0",
+     "purple": "#B294D8",
      "series-1": "#E8956A",
      "series-2": "#7AAAE8",
      "series-3": "#6BC48A",
@@ -225,7 +225,7 @@
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
      "terracotta": "#C4704B"
     },
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them; the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring and the terracotta alias keep the light-mode values the old stylesheet never overrode in dark."
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring and the terracotta alias keep the light-mode values the old stylesheet never overrode in dark."
    }
   },
   {

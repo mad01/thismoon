@@ -433,7 +433,7 @@ webkit.css defines the palette as CSS custom properties on `:root` and overrides
 | `--border-hover` | `#B8B2A7` | `#4A453D` |
 | `--text-1` / `--text-2` / `--text-3` | `#252320` / `#6B6459` / `#8C8578` | `#D8D4CD` / `#B8B2A7` / `#8C8578` |
 | `--primary` / `--on-primary` | `#C4704B` / `#FFFFFF` | `#E8956A` / `#FFFFFF` |
-| `--red` `--green` `--amber` `--yellow` `--blue` `--purple` | the semantic set | the same values (decision 7) |
+| `--red` `--green` `--amber` `--yellow` `--blue` `--purple` | the semantic set | the same values (decision 7), except `--purple` `#B294D8`, brightened for contrast on chips |
 | `--series-1` to `--series-4` | `#C4704B` `#5B8EC4` `#4A9E6B` `#8B6BB0` | `#E8956A` `#7AAAE8` `#6BC48A` `#8B6BB0` |
 
 Those are the default family's values. Every other family declares the same

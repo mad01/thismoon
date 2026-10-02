@@ -64,9 +64,10 @@ var defaultDark = map[string]string{
 	"primary-soft": "#d4855f",
 	// The semantic colours, the terracotta alias, and the focus ring keep
 	// their light values: the old dark block never overrode them (decision 7
-	// of the design).
+	// of the design). Purple is the one exception, brightened so purple text
+	// meets 3:1 on the chip surface; graph-module-4 keeps the old purple.
 	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
-	"blue": "#5B8EC4", "purple": "#8B6BB0", "terracotta": "#C4704B",
+	"blue": "#5B8EC4", "purple": "#B294D8", "terracotta": "#C4704B",
 	"focus-ring": "rgba(196,112,75,0.15)",
 	"text-body":  "#B8B2A7",
 	"topbar-bg":  "rgba(26,25,22,0.88)", "scrim": "rgba(37,35,32,0.45)",
@@ -258,7 +259,7 @@ func TestStylesheetCarriesEveryFamily(t *testing.T) {
 		"var(--wg", "var(--cream)", "var(--off-white)", "var(--terracotta-light)", "--green-light:",
 	} {
 		if strings.Contains(css, gone) {
-			t.Errorf("webkit.css still reads the ramp token %q", gone)
+			t.Errorf("webkit.css still carries %q", gone)
 		}
 	}
 }
