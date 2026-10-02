@@ -547,7 +547,7 @@
      "text-3": "#a89984",
      "primary": "#fe8019",
      "on-primary": "#282828",
-     "red": "#fb4934",
+     "red": "#fc7262",
      "green": "#b8bb26",
      "amber": "#fe8019",
      "yellow": "#fabd2f",
@@ -631,7 +631,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents"
+    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red (MAD-372)"
    }
   },
   {
@@ -751,7 +751,7 @@
      "text-3": "#616e88",
      "primary": "#88c0d0",
      "on-primary": "#2e3440",
-     "red": "#bf616a",
+     "red": "#d08b91",
      "green": "#a3be8c",
      "amber": "#d08770",
      "yellow": "#ebcb8b",
@@ -835,7 +835,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9"
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11 (MAD-372)"
    }
   },
   {
@@ -1160,7 +1160,7 @@
      "primary": "#ebbcba",
      "on-primary": "#191724",
      "red": "#eb6f92",
-     "green": "#31748f",
+     "green": "#3e8fb0",
      "amber": "#f6c177",
      "yellow": "#f6c177",
      "blue": "#9ccfd8",
@@ -1243,7 +1243,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn"
+    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine (MAD-372)"
    }
   },
   {
@@ -1363,12 +1363,12 @@
      "text-3": "#586e75",
      "primary": "#268bd2",
      "on-primary": "#fdf6e3",
-     "red": "#dc322f",
+     "red": "#e04c49",
      "green": "#859900",
-     "amber": "#cb4b16",
+     "amber": "#dd5218",
      "yellow": "#b58900",
      "blue": "#268bd2",
-     "purple": "#6c71c4",
+     "purple": "#777cc8",
      "series-1": "#268bd2",
      "series-2": "#2aa198",
      "series-3": "#859900",
@@ -1447,7 +1447,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01"
+    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02. The roles derived from them stay pinned to the published values (MAD-372)"
    }
   },
   {

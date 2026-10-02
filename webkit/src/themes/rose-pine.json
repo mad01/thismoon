@@ -26,7 +26,7 @@
   },
   "dark": {
     "variant": "Main",
-    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn",
+    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine (MAD-372)",
     "bg": "#191724",
     "paper": "#1f1d2e",
     "chip": "#26233a",
@@ -38,11 +38,20 @@
     "primary": "#ebbcba",
     "on-primary": "#191724",
     "red": "#eb6f92",
-    "green": "#31748f",
+    "green": "#3e8fb0",
     "amber": "#f6c177",
     "yellow": "#f6c177",
     "blue": "#9ccfd8",
     "purple": "#c4a7e7",
-    "series": ["#ebbcba", "#9ccfd8", "#31748f", "#c4a7e7"]
+    "series": ["#ebbcba", "#9ccfd8", "#31748f", "#c4a7e7"],
+    "overrides": {
+      "tag-b": "#232e41",
+      "tag-b-text": "#89a9c2",
+      "code-string": "#31748f",
+      "graph-module-3": "#31748f",
+      "tone-green-bg": "#22293c",
+      "tone-green-border": "#31748f",
+      "tone-green-text": "#9ab4cc"
+    }
   }
 }

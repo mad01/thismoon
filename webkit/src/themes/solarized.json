@@ -26,7 +26,7 @@
   },
   "dark": {
     "variant": "Dark",
-    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01",
+    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02. The roles derived from them stay pinned to the published values (MAD-372)",
     "bg": "#002b36",
     "paper": "#073642",
     "chip": "#073642",
@@ -37,12 +37,27 @@
     "text-3": "#586e75",
     "primary": "#268bd2",
     "on-primary": "#fdf6e3",
-    "red": "#dc322f",
+    "red": "#e04c49",
     "green": "#859900",
-    "amber": "#cb4b16",
+    "amber": "#dd5218",
     "yellow": "#b58900",
     "blue": "#268bd2",
-    "purple": "#6c71c4",
-    "series": ["#268bd2", "#2aa198", "#859900", "#d33682"]
+    "purple": "#777cc8",
+    "series": ["#268bd2", "#2aa198", "#859900", "#d33682"],
+    "overrides": {
+      "tag-a": "#2e3a39",
+      "tag-a-text": "#af765c",
+      "code-number": "#cb4b16",
+      "graph-module-4": "#6c71c4",
+      "tone-red-bg": "#25353f",
+      "tone-red-border": "#dc322f",
+      "tone-red-text": "#b07573",
+      "tone-amber-bg": "#22393c",
+      "tone-amber-border": "#cb4b16",
+      "tone-amber-text": "#a97f69",
+      "tone-purple-bg": "#153e54",
+      "tone-purple-border": "#6c71c4",
+      "tone-purple-text": "#838eaf"
+    }
   }
 }
