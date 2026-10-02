@@ -1,63 +1,50 @@
 package render
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
 
-func TestSectionIDRender(t *testing.T) {
-	doc := Doc{
-		Summary: "Test with section IDs",
-		Sections: []Section{
-			{Heading: "First Item", ID: "A1", Blocks: []Block{{T: "p", Text: "Content one"}}},
-			{Heading: "Second Item", ID: "A2", Blocks: []Block{{T: "p", Text: "Content two"}}},
-			{Heading: "No ID Section", Blocks: []Block{{T: "p", Text: "No id here"}}},
-		},
-	}
-	html, err := RenderDoc(doc, "Test Page")
-	if err != nil {
-		t.Fatal(err)
+// A section's id is accepted and ignored since MAD-377 removed the badge:
+// a stored doc.json or deck.json, and an MCP caller, may still carry one,
+// and neither rendition shows it. The heading and the TOC entry are the
+// bare heading text in the brief and in the deck alike.
+func TestSectionIDAcceptedAndIgnored(t *testing.T) {
+	src := `{"sections":[
+		{"h":"First Item","id":"R001","blocks":[{"t":"p","text":"one"}]},
+		{"h":"Second Item","id":"R002","blocks":[{"t":"p","text":"two"}]}]}`
+	var doc Doc
+	if err := json.Unmarshal([]byte(src), &doc); err != nil {
+		t.Fatalf("a Doc with section ids must still parse: %v", err)
 	}
 
-	if !strings.Contains(html, `<wk-section-id>A1</wk-section-id>First Item`) {
-		t.Error("section heading should contain ID badge for A1")
+	renditions := []struct {
+		name   string
+		render func(Doc, string) (string, error)
+	}{
+		{"brief", RenderDoc},
+		{"deck", RenderDeck},
 	}
-	if !strings.Contains(html, `<wk-section-id>A2</wk-section-id>Second Item`) {
-		t.Error("section heading should contain ID badge for A2")
-	}
-	if strings.Contains(html, `<wk-section-id></wk-section-id>No ID Section`) {
-		t.Error("section without ID should not render empty badge")
-	}
-	// TOC should also have ID badges
-	if !strings.Contains(html, `<wk-section-id>A1</wk-section-id>First Item</a>`) {
-		t.Error("TOC should contain ID badge for A1")
-	}
-}
-
-// The deck never shows a section's id: a badge in a slide heading tells the
-// room nothing. The brief keeps it by the heading and in the TOC, which
-// TestSectionIDRender pins.
-func TestSectionIDOmittedFromDeck(t *testing.T) {
-	doc := Doc{
-		Sections: []Section{
-			{Heading: "First Item", ID: "A1", Blocks: []Block{{T: "p", Text: "Content one"}}},
-			{Heading: "Second Item", ID: "A2", Blocks: []Block{{T: "p", Text: "Content two"}}},
-		},
-	}
-	html, err := RenderDeck(doc, "Test Page")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(html, "<wk-section-id>") {
-		t.Errorf("deck rendition carries a section id badge:\n%s", html)
-	}
-	if !strings.Contains(
-		html,
-		`<wk-section-heading data-fixation>First Item</wk-section-heading>`,
-	) {
-		t.Error("deck slide heading should be the bare heading")
-	}
-	if !strings.Contains(html, `<a href="#first-item">First Item</a>`) {
-		t.Error("deck TOC entry should be the bare heading")
+	for _, r := range renditions {
+		t.Run(r.name, func(t *testing.T) {
+			out, err := r.render(doc, "Test Page")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, gone := range []string{"wk-section-id", "R001", "R002"} {
+				if strings.Contains(out, gone) {
+					t.Errorf("%s rendition shows %q:\n%s", r.name, gone, out)
+				}
+			}
+			for _, want := range []string{
+				`<wk-section-heading data-fixation>First Item</wk-section-heading>`,
+				`<a href="#first-item">First Item</a>`,
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s rendition missing %q in:\n%s", r.name, want, out)
+				}
+			}
+		})
 	}
 }

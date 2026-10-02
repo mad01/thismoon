@@ -22,15 +22,22 @@ func TestUpgradeLegacyHTML(t *testing.T) {
 			gone: []string{`class="section"`, `<div`},
 		},
 		{
-			name: "section heading with section-id span",
+			name: "section heading drops its section-id span",
 			in:   `<h2 class="section-heading"><span class="section-id">A1</span>Heading</h2>`,
-			want: []string{
-				`<wk-section-heading>`,
-				`<wk-section-id>A1</wk-section-id>`,
-				`Heading`,
-				`</wk-section-heading>`,
-			},
-			gone: []string{`class="section-heading"`, `class="section-id"`, `<h2`, `<span`},
+			want: []string{`<wk-section-heading>Heading</wk-section-heading>`},
+			gone: []string{`class="section-heading"`, `section-id`, `A1`, `<h2`, `<span`},
+		},
+		{
+			name: "upgraded heading drops its wk-section-id badge",
+			in:   `<wk-section-heading><wk-section-id>A1</wk-section-id>Heading</wk-section-heading>`,
+			want: []string{`<wk-section-heading>Heading</wk-section-heading>`},
+			gone: []string{`wk-section-id`, `A1`},
+		},
+		{
+			name: "upgraded toc entry drops its wk-section-id badge",
+			in:   `<wk-toc><ul><li><a href="#heading"><wk-section-id>A1</wk-section-id>Heading</a></li></ul></wk-toc>`,
+			want: []string{`<a href="#heading">Heading</a>`},
+			gone: []string{`wk-section-id`, `A1`},
 		},
 		{
 			name: "section-text paragraph drops class keeps data-fixation",
