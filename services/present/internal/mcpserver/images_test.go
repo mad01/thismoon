@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -148,6 +149,10 @@ func TestCreateImageRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	good, _ := writePNG(t, files, "good.png")
+	fifo := filepath.Join(files, "pipe.png")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		name    string
@@ -159,6 +164,13 @@ func TestCreateImageRefusals(t *testing.T) {
 		{"text file", imageDoc(text), "want png, jpeg, gif, or webp"},
 		{"svg", imageDoc(svg), "want png, jpeg, gif, or webp"},
 		{"over the cap", imageDoc(big), "over the 2 MiB cap"},
+		{"fifo", imageDoc(fifo), "not a regular file"},
+		{"directory", imageDoc(files), "not a regular file"},
+		{
+			"stored path not in the store",
+			imageDoc(images.Served(images.Name([]byte("elsewhere"), "png"))),
+			"pass the file's path instead",
+		},
 		{
 			"compile fails after the read",
 			`{"sections":[{"h":"S","blocks":[{"t":"image","src":"` + good + `","alt":""}]}]}`,

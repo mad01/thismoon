@@ -114,12 +114,13 @@ func Name(data []byte, ext string) string {
 // Store is the image directory under a present workdir.
 type Store struct {
 	dir string
+	now func() time.Time
 }
 
 // New returns the Store for workdir. Nothing is created until the first
 // write, so a workdir without images stays as it is.
 func New(workdir string) *Store {
-	return &Store{dir: filepath.Join(workdir, dirName)}
+	return &Store{dir: filepath.Join(workdir, dirName), now: time.Now}
 }
 
 // Dir is the directory the store keeps its files in.
@@ -127,13 +128,46 @@ func (s *Store) Dir() string { return s.dir }
 
 func (s *Store) filePath(name string) string { return filepath.Join(s.dir, name) }
 
-// Write stores data under name. A name is its content's hash, so a file
-// that already exists holds the same bytes and is left alone.
+// Has reports whether name is stored.
+func (s *Store) Has(name string) bool {
+	if !ValidName(name) {
+		return false
+	}
+	_, err := os.Stat(s.filePath(name))
+	return err == nil
+}
+
+// extMatches reports whether a stored name's extension is the one Sniff
+// gives its bytes; jpeg and jpg are the one type.
+func extMatches(name, ext string) bool {
+	got := strings.TrimPrefix(path.Ext(name), ".")
+	if got == "jpeg" {
+		got = "jpg"
+	}
+	return got == ext
+}
+
+// Write stores data under name, whose extension must be the one the bytes
+// sniff as. A name is its content's hash, so a file that already exists
+// holds the same bytes; it is touched rather than rewritten, so a sweep
+// that runs before the page naming it is visible sees a fresh file and
+// leaves it alone.
 func (s *Store) Write(name string, data []byte) error {
 	if !ValidName(name) {
 		return fmt.Errorf("images: invalid name %q", name)
 	}
+	ext, err := Sniff(data)
+	if err != nil {
+		return err
+	}
+	if !extMatches(name, ext) {
+		return fmt.Errorf("images: name %q does not match its %s bytes", name, ext)
+	}
 	if _, err := os.Stat(s.filePath(name)); err == nil {
+		now := s.now()
+		if err := os.Chtimes(s.filePath(name), now, now); err != nil {
+			return fmt.Errorf("touch image: %w", err)
+		}
 		return nil
 	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {

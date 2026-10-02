@@ -227,7 +227,7 @@ One example of each, as they go in a section's `blocks`:
     [{"t": "p", "text": "The resolver sits between the gateway and payments; every request after 14:02 followed its stale record."}]
   ]},
   {"t": "columns", "cols": [
-    [{"t": "image", "src": "/Users/alex/Desktop/dashboard.png", "alt": "The on-call dashboard at 14:15, every checkout panel red", "caption": "The dashboard at 14:15."}],
+    [{"t": "image", "src": "~/Desktop/dashboard.png", "alt": "The on-call dashboard at 14:15, every checkout panel red", "caption": "The dashboard at 14:15."}],
     [{"t": "p", "text": "Every checkout panel went red at once while the gateway's own panels stayed green."}]
   ]},
   {"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"},

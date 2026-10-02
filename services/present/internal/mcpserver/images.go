@@ -58,7 +58,16 @@ func (g *imageIngest) doc(s string) (string, error) {
 		if g.store == nil {
 			return fmt.Errorf("image %q: %w", b.Src, errNoImageStore)
 		}
-		if _, stored := images.NameOf(b.Src); stored {
+		if name, stored := images.NameOf(b.Src); stored {
+			// A served path from an earlier page is fine while its file is
+			// here; one from another machine or a swept file would render
+			// a broken image.
+			if !g.store.Has(name) {
+				return fmt.Errorf(
+					"image %q: not in this machine's image store; pass the file's path instead",
+					b.Src,
+				)
+			}
 			return nil
 		}
 		name, err := g.take(b.Src)
@@ -149,9 +158,17 @@ func localImagePath(src string) (string, error) {
 	return path, nil
 }
 
-// readCapped reads a file of at most limit bytes and refuses a longer one
-// without reading it all.
+// readCapped reads a regular file of at most limit bytes and refuses a
+// longer one without reading it all. Anything but a regular file is
+// refused before it is opened: a FIFO would hold the tool call open.
 func readCapped(path string, limit int64) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

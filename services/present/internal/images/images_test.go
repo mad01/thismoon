@@ -174,6 +174,28 @@ func TestStoreWriteOpenIdempotent(t *testing.T) {
 	if info, err := os.Stat(f.Name()); err != nil || info.Mode().Perm() != 0o644 {
 		t.Errorf("stored file mode = %v, %v; want 0644 like the pages", info.Mode(), err)
 	}
+	if !s.Has(name) || s.Has(strings.ReplaceAll(hash, "3", "5")+".png") || s.Has("../"+name) {
+		t.Error("Has does not answer for the stored name alone")
+	}
+	// Writing a name that exists again touches it, so a sweep that runs
+	// before the page naming it is visible treats it as fresh.
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(f.Name(), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Write(name, data); err != nil {
+		t.Fatalf("third Write: %v", err)
+	}
+	if info, _ := os.Stat(f.Name()); time.Since(info.ModTime()) > time.Minute {
+		t.Errorf("Write of an existing name left mtime at %v", info.ModTime())
+	}
+	// A name whose extension is not what the bytes are is refused.
+	if err := s.Write(Name(data, "gif"), data); err == nil {
+		t.Error("Write accepted PNG bytes under a .gif name")
+	}
+	if err := s.Write(Name(jpegBytes(t), "jpeg"), jpegBytes(t)); err != nil {
+		t.Errorf("Write refused JPEG bytes under a .jpeg name: %v", err)
+	}
 	if err := s.Write("../escape.png", data); err == nil {
 		t.Error("Write accepted a traversal name")
 	}

@@ -484,11 +484,14 @@ func (s *FS) write(p Page) error {
 	if err := s.writeMeta(p); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, contentFile), []byte(p.Content), 0o644); err != nil {
+	// The renditions land whole: the serve process reads them while the
+	// MCP process writes, and a half-written one would read as a page
+	// that references nothing.
+	if err := writeFileAtomic(filepath.Join(dir, contentFile), []byte(p.Content)); err != nil {
 		return fmt.Errorf("write content: %w", err)
 	}
 	if p.HasDeck {
-		if err := os.WriteFile(filepath.Join(dir, deckFile), []byte(p.Deck), 0o644); err != nil {
+		if err := writeFileAtomic(filepath.Join(dir, deckFile), []byte(p.Deck)); err != nil {
 			return fmt.Errorf("write deck: %w", err)
 		}
 	}
@@ -505,6 +508,34 @@ func (s *FS) write(p Page) error {
 		if err := os.WriteFile(filepath.Join(dir, refsFile), refsBytes, 0o644); err != nil {
 			return fmt.Errorf("write refs: %w", err)
 		}
+	}
+	return nil
+}
+
+// writeFileAtomic writes data to a temp file beside path and renames it
+// into place, so a reader sees the old file or the new one, never a
+// partial write.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
 	}
 	return nil
 }

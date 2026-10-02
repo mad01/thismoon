@@ -545,7 +545,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.sweepImages(r.Context())
+	s.SweepImages(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 	notify.EmitEvent("present", "info", "page deleted: "+title, "",
 		map[string]string{"id": id, "title": title})
