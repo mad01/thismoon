@@ -2184,6 +2184,30 @@ wk-stat-sub {
   color: var(--text-3);
 }
 
+/* ── wk-figure ── an image with an optional wk-figcaption under it. The
+   image scales to the block it sits in and never past its own size; the
+   caption is prose, so fixation and read-aloud treat it as such, and the
+   image's alt is read aloud in its place. */
+
+wk-figure {
+  display: block;
+  margin: 1rem 0;
+}
+wk-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+wk-figcaption {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
 /* ── blockquote in a section ── a quotation with an optional <cite>
    attribution; the .wk-prose rule further down covers rendered markdown. */
 

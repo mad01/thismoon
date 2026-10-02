@@ -46,6 +46,8 @@ func TestHandlerServesCSS(t *testing.T) {
 		"wk-columns", "wk-columns[cols=\"3\"]", "wk-col", "wk-stat", "wk-stat-value",
 		"wk-stat-label", "wk-stat-sub", "wk-section blockquote", "wk-section blockquote cite",
 		"wk-section details", "wk-section details > summary", "wk-callout[variant=\"ok\"]",
+		// figure (MAD-375): an image with a caption under it
+		"wk-figure", "wk-figure img", "wk-figcaption",
 		// the header's audio toggle: the off state hides the read-aloud controls,
 		// the icon swaps, the speed selector dims
 		"html[data-audio=\"off\"] .wk-ra-btn", "#webkit-audio[aria-pressed=\"false\"]",
@@ -93,6 +95,9 @@ func TestHandlerServesJS(t *testing.T) {
 		// layout blocks (MAD-365): the no-op registrations, the read-aloud
 		// and fixation tag lists, the open-on-play rule for details
 		"wk-columns", "wk-col", "wk-stat-value", "WK-STAT-VALUE", "WK-COL", `closest("details")`,
+		// figure (MAD-375): the no-op registrations, the read-aloud tag list,
+		// and the alt text read in an image's place
+		"wk-figure", "wk-figcaption", "WK-FIGCAPTION", `getAttribute("alt")`,
 		// the audio toggle: control id, storage key, html attributes, event
 		"webkit-audio", "data-audio-key", "data-audio-default", "wk-audiochange",
 		"wk-read-aloud", "v1/audio/speech",

@@ -46,6 +46,7 @@
         <li><a href="#section-callout">11 wk-callout</a></li>
         <li><a href="#section-columns">11b wk-columns + wk-stat</a></li>
         <li><a href="#section-quote">11c blockquote + details</a></li>
+        <li><a href="#section-figure">11d wk-figure</a></li>
         <li><a href="#section-progress">12 wk-progress</a></li>
         <li><a href="#section-prose">13 .wk-prose</a></li>
         <li><a href="#section-modal">14 wk-modal + wk-form</a></li>
@@ -360,6 +361,25 @@
             <li>Synthetic checkout probe every 30 s</li>
             <li>Rota handover before enabling</li>
           </ul>
+        </wk-col>
+      </wk-columns>
+    </wk-section>
+  </section>
+
+  <!-- ── wk-figure ── -->
+  <section id="section-figure" style="margin: 2rem 0;">
+    <h2 style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:0.75rem;">wk-figure</h2>
+    <wk-section>
+      <wk-section-heading>An image with a caption</wk-section-heading>
+      <wk-columns>
+        <wk-col>
+          <wk-figure>
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect width='640' height='360' fill='%23d9d4cc'/%3E%3Ccircle cx='320' cy='180' r='90' fill='%23b85c38'/%3E%3C/svg%3E" alt="A terracotta circle on a grey field, standing in for a dashboard screenshot" loading="lazy">
+            <wk-figcaption>Error rate by minute, as the on-call dashboard showed it at 14:15.</wk-figcaption>
+          </wk-figure>
+        </wk-col>
+        <wk-col>
+          <p>The image never grows past the column or its own pixels. The caption is prose: fixation half-bolds it and read-aloud reads it after the image's alt text, which stands in for the picture.</p>
         </wk-col>
       </wk-columns>
     </wk-section>

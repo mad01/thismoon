@@ -277,6 +277,20 @@ section.
   skipped by the fixation walk (a figure is not prose); read-aloud reads value,
   label, and sub as three short sentences. Example:
   `<wk-stat><wk-stat-value>41 min</wk-stat-value><wk-stat-label>checkout outage</wk-stat-label><wk-stat-sub>Tuesday 14:02 to 14:43</wk-stat-sub></wk-stat>`
+- `<wk-figure>` wrapping an `<img>` and an optional `<wk-figcaption>` — an image
+  with a caption under it. The image is block-level, scales down to the width of
+  whatever holds it (a column, say) and never up past its own pixels, and takes
+  the kit's border and radius. The caption is prose in `--text-3` at the small
+  size: fixation half-bolds it, and read-aloud reads it as a sentence of its own.
+  Before the caption, read-aloud reads the image's `alt`, which stands in for the
+  picture: an `<img>` with a non-blank `alt` is a block of its own to the walker,
+  so give every image one. Example:
+  ```html
+  <wk-figure>
+    <img src="/img/3a7f….png" alt="Error rate by minute, peaking at 14:15" loading="lazy">
+    <wk-figcaption>The on-call dashboard at 14:15.</wk-figcaption>
+  </wk-figure>
+  ```
 - `wk-section blockquote` with a `<p>` and an optional `<cite>` — a quotation
   with a primary-coloured left rule and the attribution under it in `--text-3`.
   Native elements, styled only inside a `<wk-section>` (rendered markdown has its

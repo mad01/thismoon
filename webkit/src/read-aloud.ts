@@ -44,6 +44,7 @@ const BLOCK_TAGS = new Set([
   'WK-CALLOUT', 'WK-KV-ROW', 'WK-PANEL-TITLE', 'WK-PANEL-SUBTITLE',
   'WK-TOC-TITLE', 'WK-PROGRESS-LABEL', 'WK-CARD',
   'WK-COL', 'WK-STAT-VALUE', 'WK-STAT-LABEL', 'WK-STAT-SUB',
+  'WK-FIGURE', 'WK-FIGCAPTION',
 ]);
 
 const SVG_PLAY    = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
@@ -68,6 +69,13 @@ function tagOf(el: Element): string {
   return el.tagName.toUpperCase();
 }
 
+/** An image's alt, read in the image's place as a short sentence of its
+ * own, the way a caption is. Empty for anything but an <img> with a
+ * non-blank alt. */
+function altText(el: Element): string {
+  return tagOf(el) === 'IMG' ? (el.getAttribute('alt') ?? '').trim() : '';
+}
+
 /** Text nodes of one section, grouped into runs split at block boundaries. */
 function collectRuns(root: Element): Text[][] {
   const runs: Text[][] = [];
@@ -83,6 +91,16 @@ function collectRuns(root: Element): Text[][] {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = tagOf(node as Element);
     if (SKIP_TAGS.has(tag)) return;
+    // An image has no text node, so its alt goes in as a run of its own: a
+    // detached node, which wrapSentences skips, so the alt is spoken but
+    // nothing on the page is highlighted for it.
+    const alt = altText(node as Element);
+    if (alt) {
+      flush();
+      current.push(document.createTextNode(alt));
+      flush();
+      return;
+    }
     const isBlock = BLOCK_TAGS.has(tag);
     if (isBlock) flush();
     Array.from(node.childNodes).forEach(walk);
@@ -741,6 +759,14 @@ function collectBlocks(section: HTMLElement): Block[] {
     const el = node as HTMLElement;
     const tag = tagOf(el);
     if (SKIP_TAGS.has(tag)) return;
+    // An image is a block of its own whose text is its alt, so the part
+    // that reads it is stamped on the image and lights it up.
+    const alt = altText(el);
+    if (alt) {
+      blocks.cut(block);
+      blocks.text(el, alt);
+      return;
+    }
     if (!BLOCK_TAGS.has(tag)) {
       Array.from(el.childNodes).forEach(child => walk(child, block));
       return;
