@@ -36,6 +36,14 @@
    color body derived from the unchanged variable. */
 #root { --text-1: var(--text-body); color: var(--text-1); }
 
+/* Compatibility for stored pages (MAD-371). A panel accent named terracotta
+   now renders as var(--primary), the role it always stood for, and webkit no
+   longer declares --terracotta. Pages rendered before that change still
+   carry var(--terracotta) in their stored HTML. A local serve rewrites them
+   in its startup sweep. A shared instance never rerenders, so this rule
+   keeps the accent bar resolving there until an update rewrites the page. */
+:root { --terracotta: var(--primary); }
+
 .brief-title {
   font-size: 2.125rem;
   font-weight: 400;

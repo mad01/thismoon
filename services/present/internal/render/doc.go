@@ -518,6 +518,7 @@ func init() {
 		"renderBlock":  func(b Block) template.HTML { return renderBlockAt(b, 0) },
 		"renderNested": func(b Block) template.HTML { return renderBlockAt(b, 1) },
 		"dataLayout":   func(s Section) string { return s.dataLayout() },
+		"accentRole":   accentRole,
 	}
 
 	blockTemplates = template.Must(
@@ -596,7 +597,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{- end}}
 </ul>{{end}}{{end}}
 
-{{define "block-panel"}}<wk-panel{{with .Accent}} style="border-left: 3px solid var(--{{.}})"{{end}}>
+{{define "block-panel"}}<wk-panel{{with .Accent}} style="border-left: 3px solid var(--{{accentRole .}})"{{end}}>
   <wk-panel-title>{{.Title}}</wk-panel-title>
 {{- with .Subtitle}}
   <wk-panel-subtitle>{{inlineMd .}}</wk-panel-subtitle>
@@ -779,11 +780,12 @@ func chartSpec(b Block) template.JS {
 	return template.JS(out)
 }
 
-// accentAliases are accent names older pages carry that are not palette
-// roles. Each is declared in webkit.css beside the role it stands for, so the
-// stored var() keeps resolving under every family: terracotta keeps the
-// light-mode primary and is pinned separately in dark, where the default
-// primary is a lighter shade.
+// accentAliases are accent names older pages carry outside the palette
+// roles, each mapped to the role it stands for. The alias is accepted on
+// input and rendered as the role, so a page's HTML carries only names webkit
+// declares for every family. Pages rendered before the mapping store
+// var(--terracotta) in their HTML; shell.html declares that name as
+// --primary so they keep resolving until a rerender rewrites them (MAD-371).
 var accentAliases = map[string]string{"terracotta": "primary"}
 
 // validAccent reports whether name may follow a panel's accent field: a
@@ -791,6 +793,15 @@ var accentAliases = map[string]string{"terracotta": "primary"}
 func validAccent(name string) bool {
 	_, alias := accentAliases[name]
 	return alias || webkit.IsRole(name)
+}
+
+// accentRole returns the palette role a panel accent renders as: the role an
+// alias stands for, or the name itself.
+func accentRole(name string) string {
+	if role, ok := accentAliases[name]; ok {
+		return role
+	}
+	return name
 }
 
 // isGraph reports whether b places the page's graph.

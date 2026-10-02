@@ -454,12 +454,11 @@ rule that reads a role follows the reader's choice.
   `--chart-text`, `--chart-label`
 
 The old ramp primitives (`--cream`, `--off-white`, `--wg100` to `--wg900`,
-`--terracotta-light`) are gone, and so is `--green-light` now that csl, its
-last reader, paints its query tokens with the semantic colour roles. One alias
-remains: `--terracotta`, declared as `--primary` for the panel accents present
-pages stored under that name and still render as `var(--terracotta)`. The
-default family pins it to the light-mode primary in dark, where its primary is
-a lighter shade.
+`--terracotta-light`) are gone, and so are the aliases. `--green-light` went
+when csl, its last reader, moved its query tokens to the semantic colour
+roles. `--terracotta` went when present started rendering the panel accent
+stored under that name as `var(--primary)`; present's own shell declares the
+old name for pages a shared instance never rerenders.
 
 **`localStorage` state keys (global, shared across a tool's pages):**
 

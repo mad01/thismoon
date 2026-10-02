@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 
 import {
   AUTHORED_ROLES, REFERENCE_ROLES, TONES,
-  mix, alpha, luminance, deriveVariant, validateFamily, resolveFamily, renderCSS, loadFamilies,
+  mix, alpha, luminance, deriveVariant, validateFamily, resolveFamily, renderCSS, loadFamilies, buildThemes,
 } from '../src/themes.mjs';
 import { bootSnippetFor } from '../src/boot.snippet.js';
 
@@ -92,7 +92,7 @@ test('deriveVariant: authored roles come through, series fan out, derived roles 
   assert.equal(r['tone-neutral-bg'], variant.chip);
   assert.equal(r['topbar-bg'], 'rgba(16,16,16,0.88)');
   assert.equal(r['scrim'], 'rgba(32,32,32,0.45)', 'dark scrim is paper at 45%');
-  assert.equal(r['terracotta'], variant.primary, 'legacy alias');
+  assert.ok(!('terracotta' in r), 'the terracotta alias is gone; present resolves it to primary');
   assert.equal(r['on-red'], '#FFFFFF', 'white on a dark fill');
   assert.equal(r['on-yellow'], variant.bg, 'the deepest ink on a pale fill in dark mode');
   assert.equal(deriveVariant(variant, 'light')['on-yellow'], variant['text-1'], 'and text-1 in light mode');
@@ -159,4 +159,15 @@ test('gallery: loads dist/boot.js instead of an inline copy of the snippet', () 
   const html = readFileSync(new URL('../examples/gallery.html', import.meta.url), 'utf8');
   assert.ok(html.includes('<script src="../dist/boot.js"></script>'));
   assert.ok(!html.includes("localStorage.getItem('webkit-theme')"), 'gallery inlines the boot snippet');
+});
+
+// webkit.Themes() reads the embedded dist, so a theme file edited without a
+// rebuild would still pass the Go tests against the old collection. The
+// committed artifacts must be what the sources build to.
+test('dist carries the collection the sources build to', () => {
+  const built = buildThemes(shippedDir);
+  const distJSON = readFileSync(new URL('../dist/themes.json', import.meta.url), 'utf8');
+  assert.equal(distJSON, built.json, 'dist/themes.json is not what src/themes builds to; run make build');
+  const distCSS = readFileSync(new URL('../dist/webkit.css', import.meta.url), 'utf8');
+  assert.ok(distCSS.startsWith(built.css + '\n'), 'the palette blocks in dist/webkit.css are not what src/themes builds to; run make build');
 });

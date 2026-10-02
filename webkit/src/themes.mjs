@@ -172,11 +172,6 @@ export function deriveVariant(v, mode) {
 
   Object.assign(r, SHADOWS[mode]);
 
-  // Legacy alias: present pages store a panel accent under this name and
-  // render var(--terracotta), so it stays declared as the primary accent. The
-  // default family pins it to the light-mode value in dark (see default.json).
-  r['terracotta'] = v.primary;
-
   for (const [role, value] of Object.entries(v.overrides ?? {})) r[role] = value;
   return r;
 }

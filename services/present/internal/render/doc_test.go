@@ -573,7 +573,8 @@ func TestRenderDocUnknownBlockType(t *testing.T) {
 
 // A panel accent is a palette role name, validated against webkit's
 // vocabulary so a page cannot store a var() no family resolves; terracotta
-// stays accepted as the alias of primary older pages carry.
+// stays accepted as the alias of primary older pages carry and renders as
+// the role, so the stored HTML never names the alias.
 func TestRenderDocPanelAccent(t *testing.T) {
 	render := func(accent string) (string, error) {
 		return RenderDoc(Doc{Sections: []Section{{
@@ -581,14 +582,20 @@ func TestRenderDocPanelAccent(t *testing.T) {
 			Blocks:  []Block{{T: "panel", Title: "P", Accent: accent}},
 		}}}, "T")
 	}
-	for _, accent := range []string{"primary", "blue", "series-3", "tone-amber-bg", "terracotta"} {
+	for accent, role := range map[string]string{
+		"primary": "primary", "blue": "blue", "series-3": "series-3",
+		"tone-amber-bg": "tone-amber-bg", "terracotta": "primary",
+	} {
 		out, err := render(accent)
 		if err != nil {
 			t.Errorf("accent %q: %v", accent, err)
 			continue
 		}
-		if want := `border-left: 3px solid var(--` + accent + `)`; !strings.Contains(out, want) {
+		if want := `border-left: 3px solid var(--` + role + `)`; !strings.Contains(out, want) {
 			t.Errorf("accent %q: output lacks %q", accent, want)
+		}
+		if strings.Contains(out, "var(--terracotta)") {
+			t.Errorf("accent %q: output names the alias instead of its role", accent)
 		}
 	}
 	if out, err := render(""); err != nil || strings.Contains(out, "border-left") {

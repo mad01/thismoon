@@ -250,10 +250,14 @@ theme). Do not add those controls manually.
   no colours, so a theme change is a reload at most, never a rerender. A
   chart series names its colour by the legacy names (`terracotta`, `blue`,
   `green`, `purple`) or by role (`series-1` to `series-4`); both map to the
-  same index. A panel's `accent` is validated against `webkit.Roles()` (plus
-  `terracotta`, an alias of `primary` that webkit still declares) and rendered
-  as `var(--<role>)`, so it follows the family too. The body ink override in
-  `shell.html` reads `--text-body` instead of a ramp step.
+  same index. A panel's `accent` is validated against `webkit.Roles()`, plus
+  `terracotta` as an alias of `primary`. It renders as `var(--<role>)` with
+  the alias resolved to its role, so it follows the family too. Pages
+  rendered before that resolution store `var(--terracotta)`. A local serve
+  rewrites them in its startup rerender sweep. A shared instance never
+  rerenders, so `shell.html` declares `--terracotta` as `--primary` for them
+  (MAD-371). The body ink override in `shell.html` reads `--text-body`
+  instead of a ramp step.
 - Present's briefing blocks (sections, toc, kv, progress, callout) are NOW
   webkit components: the Doc renderer emits `<wk-section>` / `<wk-toc>` /
   `<wk-kv>` / `<wk-progress>` / `<wk-callout>` (alongside `<wk-table>` /

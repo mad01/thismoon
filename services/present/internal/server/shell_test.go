@@ -93,7 +93,11 @@ func TestDeckShellAudioDefault(t *testing.T) {
 			t.Errorf("%s: deck shell lacks the audio marker %q", name, marker)
 		}
 		if strings.Count(deck, "data-audio-key") != 1 {
-			t.Errorf("%s: deck shell names the audio key %d times", name, strings.Count(deck, "data-audio-key"))
+			t.Errorf(
+				"%s: deck shell names the audio key %d times",
+				name,
+				strings.Count(deck, "data-audio-key"),
+			)
 		}
 	}
 
@@ -109,5 +113,24 @@ func TestDeckShellAudioDefault(t *testing.T) {
 	}
 	if _, body := get(t, ts.URL+"/p/"+both.ID); strings.Contains(body, "data-audio") {
 		t.Error("GET /p/{id} serves the deck's audio default")
+	}
+}
+
+// A panel accent named terracotta renders as var(--primary) and webkit no
+// longer declares --terracotta, but pages stored before that change still
+// carry var(--terracotta), and a shared instance never rerenders them. Every
+// page shell declares the alias as primary so those accent bars keep
+// resolving (MAD-371).
+func TestShellsDeclareTerracottaAlias(t *testing.T) {
+	const rule = `:root { --terracotta: var(--primary); }`
+	for name, shell := range map[string][]byte{
+		"page":        pageShell(ModeLocal),
+		"page-shared": pageShell(ModeShared),
+		"deck":        deckShell(pageShell(ModeLocal)),
+		"deck-shared": deckShell(pageShell(ModeShared)),
+	} {
+		if !strings.Contains(string(shell), rule) {
+			t.Errorf("%s shell lacks the terracotta compatibility rule %q", name, rule)
+		}
 	}
 }

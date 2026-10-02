@@ -26,7 +26,7 @@
   },
   "dark": {
     "variant": "Polar Night",
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9",
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11, and on-red is nord0 since white ink falls to 2.7 on the lifted fill (MAD-372)",
     "bg": "#2e3440",
     "paper": "#3b4252",
     "chip": "#434c5e",
@@ -37,12 +37,18 @@
     "text-3": "#616e88",
     "primary": "#88c0d0",
     "on-primary": "#2e3440",
-    "red": "#bf616a",
+    "red": "#d08b91",
     "green": "#a3be8c",
     "amber": "#d08770",
     "yellow": "#ebcb8b",
     "blue": "#81a1c1",
     "purple": "#b48ead",
-    "series": ["#88c0d0", "#81a1c1", "#a3be8c", "#b48ead"]
+    "series": ["#88c0d0", "#81a1c1", "#a3be8c", "#b48ead"],
+    "overrides": {
+      "on-red": "#2e3440",
+      "tone-red-bg": "#4d4655",
+      "tone-red-border": "#bf616a",
+      "tone-red-text": "#dab6bd"
+    }
   }
 }

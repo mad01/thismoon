@@ -122,8 +122,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#C4704B"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did."
    },
@@ -222,10 +221,9 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#C4704B"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring and the terracotta alias keep the light-mode values the old stylesheet never overrode in dark."
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark."
    }
   },
   {
@@ -328,8 +326,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#8839ef"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach"
    },
@@ -428,8 +425,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#cba6f7"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "same ladder as Latte: bg mantle, paper base, chip surface0, border-hover surface1"
    }
@@ -534,8 +530,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#af3a03"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg light0, paper light0_hard, chip light1, border-hover light2; ink dark1, dark2, dark4; faded accents for contrast on light"
    },
@@ -552,7 +547,7 @@
      "text-3": "#a89984",
      "primary": "#fe8019",
      "on-primary": "#282828",
-     "red": "#fb4934",
+     "red": "#fc7262",
      "green": "#b8bb26",
      "amber": "#fe8019",
      "yellow": "#fabd2f",
@@ -577,7 +572,7 @@
      "tag-b-text": "#d2cb6c",
      "tag-c": "#4a4e4a",
      "tag-c-text": "#b7c0a5",
-     "on-red": "#FFFFFF",
+     "on-red": "#282828",
      "on-green": "#282828",
      "on-amber": "#FFFFFF",
      "on-yellow": "#282828",
@@ -634,10 +629,9 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#fe8019"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents"
+    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red, and on-red is dark0 since white ink falls to 2.7 on the lifted fill (MAD-372)"
    }
   },
   {
@@ -740,8 +734,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#5e81ac"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light"
    },
@@ -758,7 +751,7 @@
      "text-3": "#616e88",
      "primary": "#88c0d0",
      "on-primary": "#2e3440",
-     "red": "#bf616a",
+     "red": "#d08b91",
      "green": "#a3be8c",
      "amber": "#d08770",
      "yellow": "#ebcb8b",
@@ -783,7 +776,7 @@
      "tag-b-text": "#c8d7c0",
      "tag-c": "#495568",
      "tag-c-text": "#b7c8db",
-     "on-red": "#FFFFFF",
+     "on-red": "#2e3440",
      "on-green": "#2e3440",
      "on-amber": "#FFFFFF",
      "on-yellow": "#2e3440",
@@ -840,10 +833,9 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#88c0d0"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9"
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11, and on-red is nord0 since white ink falls to 2.7 on the lifted fill (MAD-372)"
    }
   },
   {
@@ -946,8 +938,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#4078f2"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan"
    },
@@ -1046,8 +1037,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#61afef"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "paper is the syntax background hsl(220,13%,18%); bg and chip are the One Dark UI panel steps; border the selection colour, border-hover the gutter; ink mono-1, mono-2, mono-3"
    }
@@ -1152,8 +1142,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#d7827e"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg base, paper surface, chip overlay, border highlight med, border-hover highlight high; text from the neovim palette file (older ports carry #575279); primary rose, red love, green pine, amber and yellow gold, blue foam, purple iris"
    },
@@ -1171,7 +1160,7 @@
      "primary": "#ebbcba",
      "on-primary": "#191724",
      "red": "#eb6f92",
-     "green": "#31748f",
+     "green": "#3e8fb0",
      "amber": "#f6c177",
      "yellow": "#f6c177",
      "blue": "#9ccfd8",
@@ -1196,7 +1185,7 @@
      "tag-c": "#384150",
      "tag-c-text": "#bed7e6",
      "on-red": "#FFFFFF",
-     "on-green": "#FFFFFF",
+     "on-green": "#191724",
      "on-amber": "#191724",
      "on-yellow": "#191724",
      "on-blue": "#191724",
@@ -1252,10 +1241,9 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#ebbcba"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn"
+    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine, and on-green is base since white ink falls to 3.7 on Moon's pine (MAD-372)"
    }
   },
   {
@@ -1358,8 +1346,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#268bd2"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta"
    },
@@ -1376,12 +1363,12 @@
      "text-3": "#586e75",
      "primary": "#268bd2",
      "on-primary": "#fdf6e3",
-     "red": "#dc322f",
+     "red": "#e04c49",
      "green": "#859900",
-     "amber": "#cb4b16",
+     "amber": "#dd5218",
      "yellow": "#b58900",
      "blue": "#268bd2",
-     "purple": "#6c71c4",
+     "purple": "#777cc8",
      "series-1": "#268bd2",
      "series-2": "#2aa198",
      "series-3": "#859900",
@@ -1458,10 +1445,9 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#268bd2"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01"
+    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02. The roles derived from them stay pinned to the published values. Their white ink sits between 3.8 and 4.0, under 4.5. A fill light enough to read on base02 is too light for white ink at 4.5, and base03 ink does no better, so the ink stays white (MAD-372)"
    }
   },
   {
@@ -1564,8 +1550,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#2e7de9"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan"
    },
@@ -1664,8 +1649,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#7aa2f7"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover terminal_black; text-3 comment"
    }

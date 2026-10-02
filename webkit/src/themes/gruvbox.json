@@ -26,7 +26,7 @@
   },
   "dark": {
     "variant": "Dark medium",
-    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents",
+    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red, and on-red is dark0 since white ink falls to 2.7 on the lifted fill (MAD-372)",
     "bg": "#282828",
     "paper": "#3c3836",
     "chip": "#504945",
@@ -37,12 +37,18 @@
     "text-3": "#a89984",
     "primary": "#fe8019",
     "on-primary": "#282828",
-    "red": "#fb4934",
+    "red": "#fc7262",
     "green": "#b8bb26",
     "amber": "#fe8019",
     "yellow": "#fabd2f",
     "blue": "#83a598",
     "purple": "#d3869b",
-    "series": ["#fe8019", "#83a598", "#b8bb26", "#d3869b"]
+    "series": ["#fe8019", "#83a598", "#b8bb26", "#d3869b"],
+    "overrides": {
+      "on-red": "#282828",
+      "tone-red-bg": "#573a36",
+      "tone-red-border": "#fb4934",
+      "tone-red-text": "#f1a180"
+    }
   }
 }
