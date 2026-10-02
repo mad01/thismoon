@@ -30,7 +30,6 @@ Doc = {                                  // the `content` argument
 
 Section = {
   h: string,                             // heading (TOC anchor)
-  id?: string,                           // optional label shown by the heading in the brief; see Section fields
   blocks: Block[]
 }
 
@@ -153,7 +152,7 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 | `summary` | string | Executive summary paragraph (rendered with fixation reading) |
 | `meta` | string | Meta line below title (date, category, stats) |
 | `chips` | array | Chip tags below summary |
-| `sections` | array | Content sections with headings, optional IDs, and blocks |
+| `sections` | array | Content sections with headings and blocks |
 
 ### Inline markdown
 
@@ -244,7 +243,6 @@ One example of each, as they go in a section's `blocks`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `h` | string | Section heading (used for TOC anchor) |
-| `id` | string? | Optional label, rendered as a pill next to the heading and in the TOC of the brief; a slide never shows it. Set it only when code outside the page refers to sections by id: a script that reads the Doc, a tracker that links to items. The anchor stays the heading slug; the id is display only. Reuse the ids that code already uses. Leave it out otherwise; there is no default pattern. |
 | `blocks` | array | Content blocks |
 | `tone` | string? | A palette role name (see **Colors available**). In a brief it gives the section a band in that colour; on a slide it tints the surface and the heading rule. An unknown name is refused |
 | `layout` | string? | Deck only, ignored by the brief: `default`, `center` (centred at today's sizes), `statement` (the heading is the slide, large and centred, blocks as a line under it), `section` (a divider: large heading on a tone band). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
@@ -254,7 +252,7 @@ One example of each, as they go in a section's `blocks`:
 ### Notes
 
 - **TOC is auto-generated** from section headings when there are 2+ sections. Do not write TOC markup.
-- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, table bodies, stat labels and sub lines, quote text, details summaries, and image captions. The page shell adds kv values, list items, and panel titles by element. Chips, section ids, table headers, the meta line, a stat's value, and an image stay out of the fixation walk.
+- **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, table bodies, stat labels and sub lines, quote text, details summaries, and image captions. The page shell adds kv values, list items, and panel titles by element. Chips, table headers, the meta line, a stat's value, and an image stay out of the fixation walk.
 - **Unknown block types** produce an HTML comment error — they don't break the page.
 - **Use `code` blocks for multi-line code**, not `p` with backticks (inline `code` is for short identifiers) and not `html` with a hand-written `<pre>`.
 - **Read-aloud skips tables, kv blocks, and code blocks.** A `stat` reads as its value, label, and sub line; a `details` block reads like prose and opens while a part inside it plays. An `image` reads as its `alt` and then its caption, so write the `alt` as the sentence a listener needs in place of the picture. When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.

@@ -11,7 +11,8 @@ import (
 // quote, or deck chrome fields. Its rendered fragment is pinned byte for
 // byte in testdata/golden-brief.html, captured from the renderer as it was
 // before those were added, so a stored page that never set them re-renders
-// to the same bytes and `present rerender` reports it unchanged.
+// to the same bytes and `present rerender` reports it unchanged. MAD-377
+// regenerated it when the section id badge went, so it carries no id.
 var goldenDoc = Doc{
 	Summary: "A stale DNS cache took checkout down for **41 minutes**; see [the brief](https://example.com/brief).",
 	Meta:    "2026-09-29 · Incident review · JIRA-42",
@@ -23,7 +24,6 @@ var goldenDoc = Doc{
 	Sections: []Section{
 		{
 			Heading: "What happened & when",
-			ID:      "I001",
 			Blocks: []Block{
 				{T: "p", Text: "Checkout returned 502s from 14:02 → 14:43."},
 				{T: "h3", Text: "Timeline"},
@@ -125,9 +125,7 @@ func TestCompileDocGoldenJSON(t *testing.T) {
 // the stage 2 section fields or the transition. Its deck rendition is
 // pinned in testdata/golden-stage1.html, captured before stage 2, so a deck
 // written against stage 1 re-renders to the same bytes too (the brief
-// rendition of the same Doc is the golden above plus the blocks). MAD-369
-// regenerated it when the deck dropped the section id badge, so the
-// fixture carries no B001 badge.
+// rendition of the same Doc is the golden above plus the blocks).
 var goldenStage1Doc = Doc{
 	Summary:      "Stage 1 blocks and chrome.",
 	Meta:         "2026-10-01 · golden",
@@ -139,14 +137,17 @@ var goldenStage1Doc = Doc{
 	Sections: []Section{
 		{
 			Heading: "Blocks",
-			ID:      "B001",
 			Blocks: []Block{
 				{T: "columns", Columns: [][]Block{
 					{{T: "stat", Value: "41 min", Label: "outage", Subtitle: "Tuesday"}},
 					{{T: "p", Text: "beside it"}},
 				}},
 				{T: "quote", Text: "We never saw it.", Cite: "On-call"},
-				{T: "details", Summary: "Timeline", Blocks: []Block{{T: "list", Items: []string{"14:02", "14:43"}}}},
+				{
+					T:       "details",
+					Summary: "Timeline",
+					Blocks:  []Block{{T: "list", Items: []string{"14:02", "14:43"}}},
+				},
 				{T: "callout", Severity: "ok", Text: "Live."},
 				{T: "callout", Severity: "error", Text: "Not yet."},
 			},
@@ -171,6 +172,11 @@ func TestRenderDocGoldenStage1(t *testing.T) {
 		t.Fatalf("read golden: %v", err)
 	}
 	if out != string(want) {
-		t.Errorf("rendered fragment differs from %s; a Doc without the stage 2 fields must render byte-identically (last regenerated for MAD-369, when the deck dropped the section id badge)\n got:\n%s\nwant:\n%s", path, out, want)
+		t.Errorf(
+			"rendered fragment differs from %s; a Doc without the stage 2 fields must render byte-identically\n got:\n%s\nwant:\n%s",
+			path,
+			out,
+			want,
+		)
 	}
 }

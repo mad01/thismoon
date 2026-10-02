@@ -367,7 +367,7 @@ func TestRenderDocWithAllBlocks(t *testing.T) {
 func TestRenderDocTOC(t *testing.T) {
 	doc := Doc{
 		Sections: []Section{
-			{Heading: "Alpha", ID: "A1", Blocks: []Block{{T: "p", Text: "x"}}},
+			{Heading: "Alpha", Blocks: []Block{{T: "p", Text: "x"}}},
 			{Heading: "Beta", Blocks: []Block{{T: "p", Text: "y"}}},
 		},
 	}
@@ -378,8 +378,7 @@ func TestRenderDocTOC(t *testing.T) {
 	checks := []string{
 		`<wk-toc>`,
 		`<wk-toc-title>Sections</wk-toc-title>`,
-		`<a href="#alpha">`,
-		`<wk-section-id>A1</wk-section-id>`,
+		`<a href="#alpha">Alpha</a>`,
 		`</wk-toc>`,
 	}
 	for _, want := range checks {
@@ -387,10 +386,10 @@ func TestRenderDocTOC(t *testing.T) {
 			t.Errorf("toc missing %q in: %s", want, out)
 		}
 	}
-	// section-heading carries the section-id span too.
+	// The heading is the bare heading text, like the TOC entry.
 	if !strings.Contains(
 		out,
-		`<wk-section-heading data-fixation><wk-section-id>A1</wk-section-id>Alpha</wk-section-heading>`,
+		`<wk-section-heading data-fixation>Alpha</wk-section-heading>`,
 	) {
 		t.Errorf("section heading markup wrong: %s", out)
 	}
@@ -661,7 +660,7 @@ func TestRenderDocFixationCoverage(t *testing.T) {
 		Meta:    "2026-09-30 · meta",
 		Chips:   []Chip{{Text: "chip", Style: "a"}},
 		Sections: []Section{
-			{Heading: "First", ID: "A001", Blocks: []Block{
+			{Heading: "First", Blocks: []Block{
 				{T: "p", Text: "para"},
 				{T: "h3", Text: "sub"},
 				{T: "callout", Text: "note"},
@@ -696,15 +695,14 @@ func TestRenderDocFixationCoverage(t *testing.T) {
 
 	// The shell's fixation-targets attribute adds kv values, list items,
 	// panel titles and subtitles by element; the renderer leaves those bare.
-	// Table headers, the meta line, chips, and section ids are labels, not
-	// prose, and stay out of the walk.
+	// Table headers, the meta line, and chips are labels, not prose, and
+	// stay out of the walk.
 	bare := []struct{ name, want string }{
 		{"table header", `<th>Col</th>`},
 		{"meta", `<div class="brief-meta">`},
 		{"chip", `<wk-badge variant="a">chip</wk-badge>`},
 		{"kv value", `<wk-kv-value>value</wk-kv-value>`},
 		{"list item", `<li>item</li>`},
-		{"section id", `<wk-section-id>A001</wk-section-id>`},
 	}
 	for _, c := range bare {
 		if !strings.Contains(out, c.want) {

@@ -15,7 +15,8 @@ import (
 //
 // It parses the fragment into a node tree, rewrites nodes by their class, and
 // re-serializes. It is idempotent: a fragment already in wk-* form (or one with
-// none of the legacy classes) passes through unchanged. Blocks present-specific
+// none of the legacy classes) passes through unchanged. The one exception is a
+// section id badge, dropped in either form (MAD-377). Blocks present-specific
 // chrome keeps untouched: .brief-title/.brief-meta/.brief-summary/.chip-row,
 // the Cytoscape .cy-* containers, and the .refs-list/.refs-item/.refs-url
 // references list.
@@ -64,6 +65,14 @@ func upgradeNode(n *html.Node) {
 	}
 	classes := classSet(n)
 
+	// The section id badge was a feature until MAD-377 removed it. Drop it in
+	// its legacy and its wk-* form, so a page without a Doc source loses the
+	// badge on rerender the way a re-rendered Doc does.
+	if n.Parent != nil && (n.Data == "wk-section-id" || classes["section-id"]) {
+		n.Parent.RemoveChild(n)
+		return
+	}
+
 	switch {
 	case classes["refs-section"]:
 		// <div class="section refs-section"> → <wk-section class="refs-section">.
@@ -77,10 +86,6 @@ func upgradeNode(n *html.Node) {
 
 	case classes["section-heading"]:
 		renameElement(n, "wk-section-heading")
-		dropClassAttr(n)
-
-	case classes["section-id"]:
-		renameElement(n, "wk-section-id")
 		dropClassAttr(n)
 
 	case classes["section-subheading"]:

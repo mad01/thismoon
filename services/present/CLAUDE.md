@@ -72,6 +72,11 @@ page once the service restarts, and the command stays for on-demand use. Pages
 created from raw HTML/JS have no source files; rerender falls back to a
 deterministic legacy-HTML upgrade and leaves legacy JS graphs untouched.
 
+A section `id` in a stored source is accepted and ignored. MAD-377 removed the
+badge it used to render, and the field stays only so older sources and the
+callers that still send it keep parsing. The legacy-HTML upgrade drops the
+badge element too.
+
 ## Shared instance in Kubernetes
 
 `Dockerfile` (context = repo root) builds the image; `deploy/` holds the
@@ -152,7 +157,7 @@ Limits, all consequences of present's inline syntax having no escape: a bold spa
 - `present_create(title, content?, deck?, graph?, references?)` → `{id, url, has_deck, deck_url?, version}`; at least one of `content` and `deck` is required, and `url` is the deck URL when the page has no content
   - `content`: Doc JSON object `{summary?, meta?, chips?, sections:[{h, blocks}]}` or legacy HTML string (auto-detected)
   - `deck`: a second Doc JSON object with the same schema, Doc JSON only (a non-object is refused); every section is one slide, summary/meta/chips make the title slide, references the last one. The tool description carries the authoring rules (claim headings, 3 to 5 short items or two sentences per slide, one highlight per slide, 5 to 12 slides). Detail stays in the brief; the skill has the full list. The deck Doc may also set the chrome fields `logo`, `logo_position`, `progress`, `presenter`, `footer` (all optional; `render.validateChrome` refuses an unknown position or progress value and a logo that is neither `none` nor an http(s) URL)
-  - Section fields beside `h`, `id`, `blocks`: `tone` (a role from `webkit.Roles()`, no aliases; rendered as `data-tone` plus `style="--slide-accent: var(--<role>)"`, banding the section in the brief and tinting the slide), and deck-only `layout` (default|center|statement|section, emitted as `data-layout` when not default), `notes` (an inert `<template class="deck-notes">` at the end of the section, outside both walkers by construction), `reveal` (`data-reveal`). `RenderDeck` drops the `<wk-section-id>` badge from the heading and the TOC, because a badge in a slide heading never helps the room; the brief keeps it. Deck-level `transition` (fade|slide|none) rides in the chrome island only when set and not fade. `render.validateSection` refuses an unknown layout or tone; a Doc without any of them renders byte-identically (`render/testdata/golden-stage1.html`). `render/testdata/sample-deck.json` exercises all of it and `TestSampleDeckRenders` keeps it compiling
+  - Section fields beside `h` and `blocks`: `tone` (a role from `webkit.Roles()`, no aliases; rendered as `data-tone` plus `style="--slide-accent: var(--<role>)"`, banding the section in the brief and tinting the slide), and deck-only `layout` (default|center|statement|section, emitted as `data-layout` when not default), `notes` (an inert `<template class="deck-notes">` at the end of the section, outside both walkers by construction), `reveal` (`data-reveal`). Deck-level `transition` (fade|slide|none) rides in the chrome island only when set and not fade. `render.validateSection` refuses an unknown layout or tone; a Doc without any of them renders byte-identically (`render/testdata/golden-stage1.html`). `render/testdata/sample-deck.json` exercises all of it and `TestSampleDeckRenders` keeps it compiling
   - Doc blocks: `p`, `h3`, `callout` (`sev` info|warn|ok|error), `table`, `kv`, `list`, `panel`, `progress`, `graph`, `chart`, `code`, `html`, `image` (`src`, `alt`, `caption?`; see *Images* under *Gotchas*), plus the layout blocks `columns` (`cols`: 2 or 3 arrays of blocks), `stat` (`value`, `label`, `sub?`), `quote` (`text`, `cite?`), and `details` (`summary`, `blocks`). A `columns` or `details` block holds any block but `columns` and `details`. The page's one `graph` may sit in a column but not in `details`; the deck splitter and `initGraphAndFlow` find `#cy-graph` wherever it is, and `validateDoc` refuses a Doc that places it twice. `render.validateBlocks` refuses the rest and `renderBlockAt` carries a depth guard. `cols` is one wire key for a table's header strings and a columns block's arrays, told apart by `t` in `Block.UnmarshalJSON`/`MarshalJSON`, so a stored table's canonical JSON never moves. A golden fixture (`render/testdata/golden-brief.html`) pins that a Doc without the new fields renders byte-identically
   - `graph`: Graph JSON object `{nodes, edges, layout?}` or legacy JS string (auto-detected); one per page, shared by both renditions
   - `references`: `[{title, url}]`
@@ -223,7 +228,7 @@ theme). Do not add those controls manually.
   `<wk-page-header>`, `<wk-card>`, `<wk-badge>`, `<wk-search>`,
   `<wk-table>`, `<wk-panel>` (+ `<wk-panel-title>` / `<wk-panel-subtitle>`),
   and the briefing-block components: `<wk-section>` (+ `<wk-section-heading>` /
-  `<wk-section-id>` / `<wk-section-subheading>`), `<wk-toc>` (+ `<wk-toc-title>`),
+  `<wk-section-subheading>`), `<wk-toc>` (+ `<wk-toc-title>`),
   `<wk-kv>` (+ `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`),
   `<wk-progress>` (+ `<wk-progress-bar>` / `<wk-progress-fill>` /
   `<wk-progress-label>`), `<wk-callout>` (`variant="info|warn|ok|error"`),
