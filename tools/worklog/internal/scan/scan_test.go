@@ -267,15 +267,15 @@ func toolLine(t *testing.T, cwd, ts, tool string, input map[string]any) string {
 	})
 }
 
-// TestToolPathsAndDays covers what the digest reads beyond cwd: checkout paths
-// named in tool-call inputs, and the per-day split of user messages. A
-// tool-call path only counts when it resolves to a directory with a .git
-// entry on this machine, so the checkouts are real directories under a temp
-// home (HOME is pointed there for the ~/ case).
-func TestToolPathsAndDays(t *testing.T) {
-	home := t.TempDir()
+// fakeHome points HOME at a temp dir and returns it with two builders: mkdir
+// makes a plain directory under it, checkout makes one with a .git entry.
+// A path only counts as a checkout when that entry exists on this machine,
+// so tests that exercise the resolver lay their checkouts out for real.
+func fakeHome(t *testing.T) (home string, mkdir, checkout func(rel string) string) {
+	t.Helper()
+	home = t.TempDir()
 	t.Setenv("HOME", home)
-	mkdir := func(rel string) string {
+	mkdir = func(rel string) string {
 		t.Helper()
 		p := filepath.Join(home, rel)
 		if err := os.MkdirAll(p, 0o755); err != nil {
@@ -283,11 +283,20 @@ func TestToolPathsAndDays(t *testing.T) {
 		}
 		return p
 	}
-	checkout := func(rel string) string {
+	checkout = func(rel string) string {
 		t.Helper()
 		mkdir(rel + "/.git")
 		return filepath.Join(home, rel)
 	}
+	return home, mkdir, checkout
+}
+
+// TestToolPathsAndDays covers what the digest reads beyond cwd: checkout paths
+// named in tool-call inputs, and the per-day split of user messages. The
+// checkouts are real directories under a temp home (HOME is pointed there for
+// the ~/ case).
+func TestToolPathsAndDays(t *testing.T) {
+	_, mkdir, checkout := fakeHome(t)
 	tmp := mkdir(".tmp/k3j9x")
 	bin := mkdir("code/bin")
 	mkdir("workspace/docs") // exists under the internal marker, no .git
@@ -452,7 +461,7 @@ func TestToolPathsAndDays(t *testing.T) {
 			},
 		},
 		{
-			name: "cwd-only session unchanged",
+			name: "cwd-only session at the checkout roots",
 			now:  utc,
 			lines: []string{
 				userLine(t, dotfiles, "2026-06-16T09:00:00Z", "work on MAD-123"),
@@ -497,6 +506,107 @@ func TestToolPathsAndDays(t *testing.T) {
 			}
 			if !maps.Equal(s.Days, tc.wantDays) {
 				t.Errorf("days = %v, want %v", s.Days, tc.wantDays)
+			}
+		})
+	}
+}
+
+// TestCwdNamesItsCheckout pins how a line's cwd is named and classified
+// (MAD-367). A cwd inside a checkout counts as that checkout, like a
+// tool-call path, so a session run from a subdirectory lists the repo and
+// not the subdirectory, and the firewall reads the checkout rather than the
+// cwd's own segments. A cwd that resolves to no checkout is classified as
+// written but names a repo only when this machine cannot probe it: a
+// checkout that lives elsewhere keeps its basename, a directory that exists
+// here and is no checkout names nothing.
+func TestCwdNamesItsCheckout(t *testing.T) {
+	home, mkdir, checkout := fakeHome(t)
+	dotfiles := checkout("code/src/github.com/mad01/dotfiles")
+	billing := checkout("workspace/billing-api")
+	docs := mkdir("workspace/docs")
+	cases := []struct {
+		name        string
+		cwd         string
+		wantRepos   []string
+		wantContext string
+	}{
+		{"the checkout root", dotfiles, []string{"dotfiles"}, "personal"},
+		{
+			"a subdirectory of a checkout",
+			dotfiles + "/tools/worklog",
+			[]string{"dotfiles"},
+			"personal",
+		},
+		{
+			"a subdirectory of an internal checkout",
+			billing + "/cmd/api",
+			[]string{"billing-api"},
+			"internal",
+		},
+		{
+			// The checkout is classified, not the cwd: a subdirectory whose
+			// name matches the internal marker leaves a personal checkout
+			// personal instead of mixed.
+			"a marker-shaped subdirectory classifies the checkout",
+			dotfiles + "/workspace/notes",
+			[]string{"dotfiles"},
+			"personal",
+		},
+		// No checkout resolves for the rest. Only the cwd this machine cannot
+		// probe keeps its basename; the directories that exist here name
+		// nothing, while their world is still read off the path.
+		{
+			"a checkout this machine lacks keeps its basename",
+			"/Users/x/code/src/github.com/mad01/ralph",
+			[]string{"ralph"},
+			"personal",
+		},
+		{
+			"the org directory names no repo",
+			filepath.Join(home, "code/src/github.com/mad01"),
+			nil,
+			"unknown",
+		},
+		{
+			"the checkout root's parent names no repo",
+			filepath.Join(home, "code/src"),
+			nil,
+			"unknown",
+		},
+		{
+			"a plain directory under a marker names no repo",
+			mkdir("code/bin"),
+			nil,
+			"unknown",
+		},
+		{
+			"a scratch directory under the internal marker keeps its world",
+			docs,
+			nil,
+			"internal",
+		},
+		{"a tmp dir names no repo", mkdir(".tmp/k3j9x"), nil, "unknown"},
+	}
+	now := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSession(t, root, "proj", "s", []string{
+				userLine(t, tc.cwd, "2026-06-16T09:00:00Z", "hello"),
+			})
+			sessions, err := Scan(root, 14*24*time.Hour, now, configured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sessions) != 1 {
+				t.Fatalf("sessions = %d, want 1", len(sessions))
+			}
+			s := sessions[0]
+			if !slices.Equal(s.Repos, tc.wantRepos) {
+				t.Errorf("repos = %v, want %v", s.Repos, tc.wantRepos)
+			}
+			if s.Context != tc.wantContext {
+				t.Errorf("context = %q, want %q", s.Context, tc.wantContext)
 			}
 		})
 	}
