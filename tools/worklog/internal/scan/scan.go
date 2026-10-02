@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/mad01/thismoon/kit/confdir"
@@ -244,7 +245,7 @@ func Scan(root string, since time.Duration, now time.Time, cfg Config) ([]Sessio
 		}
 		root = d
 	}
-	sc := &scanner{cfg: cfg.WithDefaults(), loc: now.Location(), seen: map[string]bool{}}
+	sc := &scanner{cfg: cfg.WithDefaults(), loc: now.Location(), seen: map[string]error{}}
 	cutoff := now.Add(-since)
 	projects, err := os.ReadDir(root)
 	if err != nil {
@@ -304,21 +305,36 @@ func (r record) sessionTitle() string {
 type scanner struct {
 	cfg  Config
 	loc  *time.Location
-	seen map[string]bool
+	seen map[string]error
 }
 
-// onDisk reports whether an absolute path exists on this machine, memoised
-// per scan. Only a missing path counts as absent: a stat that fails for any
-// other reason, a parent at mode 000 say, is a path that exists but cannot
-// be read, and reading it as absent would misname what sits under it.
-func (sc *scanner) onDisk(p string) bool {
-	hit, ok := sc.seen[p]
+// stat returns os.Stat's error for an absolute path, memoised per scan.
+func (sc *scanner) stat(p string) error {
+	err, ok := sc.seen[p]
 	if !ok {
-		_, err := os.Stat(p)
-		hit = !errors.Is(err, fs.ErrNotExist)
-		sc.seen[p] = hit
+		_, err = os.Stat(p)
+		sc.seen[p] = err
 	}
-	return hit
+	return err
+}
+
+// hasGit reports whether dir carries a .git entry this machine can read, a
+// directory or a worktree's file. The probe is strict: an entry that cannot
+// be read is no proof of a checkout, so a checkout at mode 000 names nothing
+// rather than whichever subdirectory the session sat in, and a path that
+// runs through a file (ENOTDIR) is no checkout at all.
+func (sc *scanner) hasGit(dir string) bool {
+	return sc.stat(path.Join(dir, ".git")) == nil
+}
+
+// exists reports whether an absolute path is present on this machine. The
+// probe is lenient: only a missing path, or one that runs through a file,
+// counts as absent. A stat that fails for another reason, a parent at mode
+// 000 say, is a path that exists but cannot be read, and reading it as
+// absent would hand a cwd its basename as if it lived on another machine.
+func (sc *scanner) exists(p string) bool {
+	err := sc.stat(p)
+	return !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR)
 }
 
 // checkout resolves a path to the git checkout it sits in, or "" when there
@@ -335,7 +351,7 @@ func (sc *scanner) checkout(p string) string {
 		return ""
 	}
 	dir := checkoutDir(sc.cfg, full)
-	if dir == "" || !sc.onDisk(path.Join(dir, ".git")) {
+	if dir == "" || !sc.hasGit(dir) {
 		return ""
 	}
 	return dir
@@ -354,7 +370,7 @@ func (sc *scanner) cwdCheckout(full string) string {
 	}
 	dir := full
 	for underRepoMarker(sc.cfg, dir) {
-		if sc.onDisk(path.Join(dir, ".git")) {
+		if sc.hasGit(dir) {
 			return dir
 		}
 		parent := path.Dir(dir)
@@ -500,7 +516,7 @@ func (d *digest) addCwd(cwd string) {
 		return
 	}
 	d.classify(full)
-	if d.onDisk(full) {
+	if d.exists(full) {
 		return
 	}
 	if repo := repoName(d.cfg, full); repo != "" {

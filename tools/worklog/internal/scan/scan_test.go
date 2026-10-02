@@ -300,6 +300,10 @@ func TestToolPathsAndDays(t *testing.T) {
 	tmp := mkdir(".tmp/k3j9x")
 	bin := mkdir("code/bin")
 	mkdir("workspace/docs") // exists under the internal marker, no .git
+	notes := filepath.Join(mkdir("workspace"), "notes.md")
+	if err := os.WriteFile(notes, []byte("scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	dotfiles := checkout("code/src/github.com/mad01/dotfiles")
 	ralph := checkout("code/src/github.com/mad01/ralph")
 	billing := checkout("workspace/billing-api")
@@ -461,6 +465,21 @@ func TestToolPathsAndDays(t *testing.T) {
 			},
 		},
 		{
+			// A Read of a file directly under a marker: the probe of
+			// <file>/.git fails with ENOTDIR, which is no checkout. The file
+			// must not be listed as a repo or flip the session internal.
+			name: "a file directly under a marker is not a checkout",
+			now:  utc,
+			lines: []string{
+				userLine(t, tmp, "2026-06-16T09:00:00Z", "read the notes"),
+				toolLine(t, tmp, "2026-06-16T09:01:00Z", "Read",
+					map[string]any{"file_path": notes}),
+			},
+			wantContext:  "unknown",
+			wantMessages: 1,
+			wantDays:     map[string]DayActivity{"2026-06-16": {UserMessages: 1}},
+		},
+		{
 			name: "cwd-only session at the checkout roots",
 			now:  utc,
 			lines: []string{
@@ -535,12 +554,20 @@ func TestCwdNamesItsCheckout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: elsewhere\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cases := []struct {
+	// A nested checkout at mode 000: its .git cannot be read, so it is no
+	// proof of a checkout, and a cwd under it must not name the subdirectory.
+	locked := checkout("workspace/team/locked")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	type cwdCase struct {
 		name        string
 		cwd         string
 		wantRepos   []string
 		wantContext string
-	}{
+	}
+	cases := []cwdCase{
 		{"the checkout root", dotfiles, []string{"dotfiles"}, "personal"},
 		{
 			"a subdirectory of a checkout",
@@ -613,6 +640,12 @@ func TestCwdNamesItsCheckout(t *testing.T) {
 		},
 		{"a tmp dir names no repo", mkdir(".tmp/k3j9x"), nil, "unknown"},
 	}
+	// Root reads through the mode bits, so the locked case only holds otherwise.
+	if os.Geteuid() != 0 {
+		cases = append(cases, cwdCase{
+			"a locked nested checkout names nothing", locked + "/sub", nil, "internal",
+		})
+	}
 	now := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -638,12 +671,13 @@ func TestCwdNamesItsCheckout(t *testing.T) {
 	}
 }
 
-// TestOnDiskOnlyMissingIsAbsent pins the probe's error reading: a path that
-// cannot be read (a parent at mode 000) still exists, so only a missing path
-// counts as absent. Otherwise a locked checkout would name its subdirectory
-// instead of itself. Run as root the chmod does not bite, and the stat
-// simply succeeds.
-func TestOnDiskOnlyMissingIsAbsent(t *testing.T) {
+// TestProbes pins the two readings of a failed stat. hasGit is strict: a
+// .git entry that cannot be read is no proof of a checkout, and a path that
+// runs through a file (ENOTDIR) has none. exists is lenient: only a missing
+// path or one that runs through a file counts as absent, so a cwd under a
+// mode 000 parent still reads as present. Root reads through the mode bits,
+// so the locked assertions only hold otherwise.
+func TestProbes(t *testing.T) {
 	home := t.TempDir()
 	locked := filepath.Join(home, "locked")
 	if err := os.MkdirAll(filepath.Join(locked, ".git"), 0o755); err != nil {
@@ -653,12 +687,31 @@ func TestOnDiskOnlyMissingIsAbsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
-	sc := &scanner{seen: map[string]bool{}}
-	if !sc.onDisk(filepath.Join(locked, ".git")) {
-		t.Error("an unreadable path reported absent")
+	file := filepath.Join(home, "notes.md")
+	if err := os.WriteFile(file, []byte("scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if sc.onDisk(filepath.Join(home, "missing", ".git")) {
+	sc := &scanner{seen: map[string]error{}}
+	if sc.hasGit(filepath.Join(home, "missing")) {
+		t.Error("a missing .git reported as a checkout")
+	}
+	if sc.hasGit(file) {
+		t.Error("a file reported as a checkout")
+	}
+	if sc.exists(filepath.Join(home, "missing")) {
 		t.Error("a missing path reported present")
+	}
+	if sc.exists(filepath.Join(file, "sub")) {
+		t.Error("a path through a file reported present")
+	}
+	if os.Geteuid() == 0 {
+		return
+	}
+	if sc.hasGit(locked) {
+		t.Error("an unreadable .git reported as a checkout")
+	}
+	if !sc.exists(filepath.Join(locked, "sub")) {
+		t.Error("an unreadable path reported absent")
 	}
 }
 
