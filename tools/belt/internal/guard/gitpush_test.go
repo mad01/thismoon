@@ -49,6 +49,14 @@ func TestGitPushMain(t *testing.T) {
 			"feature",
 			true,
 		},
+		{"push behind --no-pager", "git --no-pager push origin main", "feature", true},
+		{"bare push behind -p", "git -p push", "main", true},
+		{
+			"push behind --no-optional-locks and -C",
+			"git --no-optional-locks -C /some/repo push",
+			"main",
+			true,
+		},
 		{"non-push git", "git status", "main", false},
 		{"quoted mention not a push", `echo "git push origin main"`, "feature", false},
 		{"empty config fails closed", "git push origin main", "feature", true},
@@ -82,16 +90,37 @@ func TestGitPushUsesCwdForBarePush(t *testing.T) {
 	}
 }
 
-func TestGitPushPrefersDashCDir(t *testing.T) {
-	g := NewGitPushMain(config.Config{})
-	var gotDir string
-	g.resolveBranch = func(dir string) string {
-		gotDir = dir
-		return "feature"
+// TestGitPushDashCDir pins that a `git -C` target reaches the resolvers as
+// the same absolute path in every spelling the shell would expand (MAD-370):
+// a push to a direct_main_repos entry must not be denied just because the
+// path was written with ~ or $HOME.
+func TestGitPushDashCDir(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	const worklog = "/Users/tester/code/worklog"
+	tests := []struct {
+		name, command, wantDir string
+	}{
+		{"absolute", "git -C /Users/tester/code/worklog push", worklog},
+		{"tilde", "git -C ~/code/worklog push", worklog},
+		{"HOME", "git -C $HOME/code/worklog push", worklog},
+		{"braced HOME", "git -C ${HOME}/code/worklog push", worklog},
+		{"quoted HOME", `git -C "$HOME/code/worklog" push`, worklog},
+		{"bare tilde", "git -C ~ push", "/Users/tester"},
+		{"relative to cwd", "git -C code/worklog push", "/session/cwd/code/worklog"},
 	}
-	g.Check(Input{Event: EventBash, Command: "git -C /other/repo push", Cwd: "/session/cwd"})
-	if gotDir != "/other/repo" {
-		t.Errorf("resolver dir = %q, want /other/repo", gotDir)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGitPushMain(config.Config{})
+			var gotDir string
+			g.resolveBranch = func(dir string) string {
+				gotDir = dir
+				return "feature"
+			}
+			g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/session/cwd"})
+			if gotDir != tt.wantDir {
+				t.Errorf("resolver dir = %q, want %q", gotDir, tt.wantDir)
+			}
+		})
 	}
 }
 
@@ -103,9 +132,10 @@ const unknownDirHint = "cannot tell which repo this push runs in"
 // compound command instead of trusting the session cwd: a bare or explicit
 // default-branch push is evaluated against the directory the shell has cd'd
 // into, so a `cd <non-exempt> && git push origin main` cannot ride an exempt
-// session cwd. A leading ~ or $HOME expands like the shell would, and a target
-// only a shell can resolve (a variable, `cd -`) fails closed without the
-// resolvers ever being asked about an empty directory.
+// session cwd. A leading ~ or $HOME expands like the shell would, in a cd and
+// in a `git -C` target alike, and a target only a shell can resolve (a
+// variable, `cd -`) fails closed without the resolvers ever being asked about
+// an empty directory.
 func TestGitPushMainCdTracking(t *testing.T) {
 	const dotfiles = "github.com/mad01/dotfiles" // exempt
 	const other = "github.com/mad01/other-repo"  // not exempt
@@ -240,6 +270,71 @@ func TestGitPushMainCdTracking(t *testing.T) {
 			cwd:      "/repos/other",
 			wantDeny: false,
 		},
+		{
+			name:     "tilde git -C into exempt repo then push main allowed",
+			command:  "git -C ~/dotfiles push origin main",
+			cwd:      "/repos/other",
+			wantDeny: false,
+		},
+		{
+			name:     "HOME variable git -C into exempt repo then push main allowed",
+			command:  "git -C $HOME/dotfiles push origin main",
+			cwd:      "/repos/other",
+			wantDeny: false,
+		},
+		{
+			name:     "tilde git -C into non-exempt repo then push main denied",
+			command:  "git -C ~/other push origin main",
+			cwd:      "/repos/dotfiles",
+			wantDeny: true,
+		},
+		{
+			name:     "relative git -C resolves against the cd",
+			command:  "cd /repos && git -C dotfiles push origin main",
+			cwd:      "/repos/other",
+			wantDeny: false,
+		},
+		{
+			name:       "unresolvable git -C variable then push main fails closed",
+			command:    "git -C $TARGET push origin main",
+			cwd:        "/repos/dotfiles",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:     "unresolvable git -C then push feature allowed",
+			command:  "git -C $TARGET push origin my-feature",
+			cwd:      "/repos/dotfiles",
+			wantDeny: false,
+		},
+		{
+			name:       "popd then git -C dot fails closed",
+			command:    "pushd /repos/dotfiles && popd && git -C . push origin main",
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "bare pushd then push main fails closed",
+			command:    "pushd && git push origin main",
+			cwd:        "/repos/dotfiles",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "work-tree push fails closed even from an exempt cwd",
+			command:    "git --work-tree=/repos/dotfiles push origin main",
+			cwd:        "/repos/dotfiles",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
+		{
+			name:       "cd -P then push main fails closed",
+			command:    "cd -P /repos/dotfiles && git push origin main",
+			cwd:        "/repos/other",
+			wantDeny:   true,
+			wantReason: unknownDirHint,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -275,53 +370,6 @@ func TestGitPushMainCdTracking(t *testing.T) {
 				t.Errorf("reason %q does not contain %q", d.Reason, tt.wantReason)
 			}
 		})
-	}
-}
-
-// TestResolveDir covers the static cd resolution on its own: what the shell
-// would expand, belt expands the same way; what needs a shell is unknown.
-func TestResolveDir(t *testing.T) {
-	t.Setenv("HOME", "/Users/tester")
-	tests := []struct {
-		cwd, target, want string
-	}{
-		{"/work", "/abs/dir", "/abs/dir"},
-		{"/work", "sub/dir", "/work/sub/dir"},
-		{"/work", "..", "/"},
-		{"", "sub", ""},
-		{"/work", "~", "/Users/tester"},
-		{"/work", "~/code", "/Users/tester/code"},
-		{"/work", "$HOME", "/Users/tester"},
-		{"/work", "${HOME}/code", "/Users/tester/code"},
-		{"/work", `"$HOME/code"`, "/Users/tester/code"},
-		{"/work", `"/abs/dir"`, "/abs/dir"},
-		{"/work", `'/abs/dir'`, "/abs/dir"},
-		{"/work", `'$HOME/code'`, ""}, // single quotes expand nothing
-		{"/work", `"~/code"`, ""},     // a quoted tilde is literal
-		{"/work", "~other/code", ""},  // another user's home
-		{"/work", "$HOMEBREW_PREFIX/x", ""},
-		{"/work", "$TARGET", ""},
-		{"/work", `"$(pwd)"`, ""},
-		{"/work", "`pwd`", ""},
-		{"/work", "-", ""},
-		{"/work", "*/dir", ""},
-		{"/work", `"/unbalanced`, ""},
-	}
-	for _, tt := range tests {
-		if got := resolveDir(tt.cwd, tt.target); got != tt.want {
-			t.Errorf("resolveDir(%q, %q) = %q, want %q", tt.cwd, tt.target, got, tt.want)
-		}
-	}
-}
-
-// TestResolveDirWithoutHome pins that a tilde stays unknown when there is no
-// home directory to expand it to, rather than becoming a relative path.
-func TestResolveDirWithoutHome(t *testing.T) {
-	t.Setenv("HOME", "")
-	for _, target := range []string{"~", "~/code", "$HOME/code"} {
-		if got := resolveDir("/work", target); got != "" {
-			t.Errorf("resolveDir(%q) without HOME = %q, want unknown", target, got)
-		}
 	}
 }
 
@@ -364,6 +412,15 @@ func TestGitPushMainRealResolver(t *testing.T) {
 	t.Setenv("HOME", home)
 	exempt := initRepo(t, home, "git@github.com:mad01/dotfiles.git")
 	other := initRepo(t, filepath.Join(home, "other"), "git@github.com:mad01/other.git")
+	// A symlink whose target sits inside the non-exempt repo: git -C resolves
+	// `link/..` physically into that repo, a shell's cd resolves it logically
+	// back to home.
+	if err := os.MkdirAll(filepath.Join(other, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(other, "sub"), filepath.Join(home, "link")); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(exempt)
 	g := NewGitPushMain(config.Config{DirectMainRepos: []string{"github.com/mad01/dotfiles"}})
 
@@ -417,6 +474,37 @@ func TestGitPushMainRealResolver(t *testing.T) {
 			other,
 			false,
 			"",
+		},
+		{"tilde git -C into non-exempt", "git -C ~/other push origin main", exempt, true, ""},
+		{"HOME git -C into non-exempt", "git -C $HOME/other push origin main", exempt, true, ""},
+		{"tilde git -C home is exempt", "git -C ~ push origin main", other, false, ""},
+		{
+			"variable git -C then push main",
+			"git -C $TARGET push origin main",
+			exempt,
+			true,
+			unknownDirHint,
+		},
+		{
+			"git -C through a symlink parent lands in non-exempt",
+			"git -C ~/link/.. push origin main",
+			exempt,
+			true,
+			"",
+		},
+		{
+			"cd through a symlink parent is logical and exempt",
+			"cd ~/link/.. && git push origin main",
+			other,
+			false,
+			"",
+		},
+		{
+			"popd then git -C dot fails closed",
+			"pushd " + other + " && popd && git -C . push origin main",
+			exempt,
+			true,
+			unknownDirHint,
 		},
 	}
 	for _, tt := range tests {

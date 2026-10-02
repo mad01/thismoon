@@ -1,67 +1,257 @@
 package guard
 
 import (
+	"os"
 	"os/exec"
+	"path"
 	"strings"
 )
 
-// gitInvocation is one parsed git invocation from a shell command: which repo dir it
-// runs against (from git -C, if given), the subcommand, and the tokens after
-// it.
+// gitInvocation is one parsed git invocation from a shell command: the
+// directory it runs in, the subcommand, and the tokens after it. dir is ""
+// when that directory cannot be told without a shell (see parseGitCmd).
 type gitInvocation struct {
 	dir  string
 	sub  string
 	args []string
 }
 
-// findGitCommands extracts bare `git <sub>` invocations from a shell command,
-// compound commands included. The parser is deliberately token-based (see
-// splitSegments): quoted strings containing the words do not tokenize to a
-// bare `git` and are ignored.
-func findGitCommands(command, sub string) []gitInvocation {
+// gitCommandsAt extracts bare `git <sub>` invocations from a shell command,
+// compound commands included, each with the directory it runs in. The walk
+// starts in cwd, the session working directory, and tracks `cd`/`pushd`
+// across segments, so a bare invocation after `cd <repo> &&` is placed in
+// that repo and a `git -C` target resolves against it (parseGitCmd). An
+// invocation's dir is "" when a cd or -C target before it needs a shell to
+// resolve; each caller decides what unknown means, and no git-backed
+// resolver fills the gap with belt's own process directory (gitOutput). The
+// parser is deliberately token-based (see splitSegments): quoted strings
+// containing the words do not tokenize to a bare `git` and are ignored.
+func gitCommandsAt(command, cwd, sub string) []gitInvocation {
 	var cmds []gitInvocation
-	for _, seg := range splitSegments(command) {
-		tokens := strings.Fields(seg.text)
-		for i := 0; i < len(tokens); i++ {
-			if tokens[i] != "git" {
-				continue
-			}
-			if c, ok := parseGitCmd(tokens[i+1:]); ok && c.sub == sub {
-				cmds = append(cmds, c)
-			}
-			break // one git invocation per segment
+	walkSegments(command, cwd, func(tokens []string, dir string) {
+		if c, ok := segmentGitCommand(tokens, dir); ok && c.sub == sub {
+			cmds = append(cmds, c)
 		}
-	}
+	})
 	return cmds
 }
 
-// parseGitCmd parses the tokens after `git`: global flags first (-C captures
-// the repo dir), then the subcommand and its arguments. ok is false when no
-// subcommand follows the flags.
-func parseGitCmd(tokens []string) (gitInvocation, bool) {
-	var c gitInvocation
+// walkSegments calls fn for every segment of a compound shell command that
+// does not move the shell (`cd`, `pushd`, `popd`), with the segment's tokens
+// and the directory the shell is in when it runs: cwd to begin with, then
+// whatever the moves before it resolved to (resolveDir), and "" once one of
+// them could not be resolved statically.
+func walkSegments(command, cwd string, fn func(tokens []string, dir string)) {
+	for _, seg := range splitSegments(command) {
+		tokens := strings.Fields(seg.text)
+		if target, ok := parseCd(tokens); ok {
+			cwd = resolveDir(cwd, target)
+			continue
+		}
+		fn(tokens, cwd)
+	}
+}
+
+// parseCd reports whether a segment's tokens move the shell to another
+// directory and, if so, returns the target as written. A bare cd goes home,
+// so it returns "~". belt keeps no directory stack, so a bare pushd (which
+// swaps the top two stack entries) and popd (which returns to a stacked one)
+// return "-", the marker `cd -` uses for a directory only the shell
+// remembers; resolveDir turns it into unknown.
+func parseCd(tokens []string) (string, bool) {
+	if len(tokens) == 0 {
+		return "", false
+	}
+	switch tokens[0] {
+	case "popd":
+		return "-", true
+	case "cd", "pushd":
+	default:
+		return "", false
+	}
+	// Skip cd option flags (`cd -L`, `cd -e`); the first non-flag token is the
+	// target. -P is physical mode: symlinks resolve before `..` there, where
+	// the walk cleans as text, so that destination is only the shell's to know.
+	for _, tok := range tokens[1:] {
+		switch tok {
+		case "-P":
+			return "-", true
+		case "-L", "-e", "-@":
+			continue
+		}
+		return tok, true
+	}
+	if tokens[0] == "pushd" {
+		return "-", true
+	}
+	return "~", true
+}
+
+// segmentGitCommand parses the first bare `git` in one segment's tokens: one
+// invocation per segment.
+func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
+	for i, tok := range tokens {
+		if tok == "git" {
+			return parseGitCmd(tokens[i+1:], cwd)
+		}
+	}
+	return gitInvocation{}, false
+}
+
+// parseGitCmd parses the tokens after `git`: global flags first, then the
+// subcommand and its arguments. cwd is the directory the shell is in when
+// git runs. A -C target gets the expansions a cd target gets and is placed
+// under cwd (placeDir), so `git -C ~/repo`, `git -C $HOME/repo`, and the
+// absolute path all name one directory, and a target only a shell can expand
+// leaves dir "" rather than a path git would never see. Unlike a cd target
+// the path is not cleaned: git chdirs into it and the OS resolves `..`
+// physically, so `link/..` is the link target's parent there, where a
+// lexical clean would name the link's own parent and judge the wrong repo.
+// Repeated -C flags chain the way git chains them. git takes -C only as a
+// separate token, so there is no = form to parse. --git-dir and --work-tree
+// point git at a tree only git itself can name, so either form leaves dir
+// "" as well. Every other global flag before the subcommand is skipped,
+// together with its value when it takes one (gitValueFlags), so `git
+// --no-pager push` is still a push. ok is false when no subcommand follows
+// the flags.
+func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
+	c := gitInvocation{dir: cwd}
+	otherTree := false
 	i := 0
 	for i < len(tokens) {
+		tok := tokens[i]
 		switch {
-		case tokens[i] == "-C" && i+1 < len(tokens):
-			c.dir = tokens[i+1]
+		case tok == "-C" && i+1 < len(tokens):
+			c.dir = placeDir(c.dir, tokens[i+1])
 			i += 2
-		case tokens[i] == "-c" && i+1 < len(tokens):
-			i += 2
-		case tokens[i] == "--git-dir" || tokens[i] == "--work-tree":
+		case tok == "--git-dir" || tok == "--work-tree":
+			otherTree = true
 			i += 2 // separate-value form consumes the path token too
-		case strings.HasPrefix(tokens[i], "--git-dir=") || strings.HasPrefix(tokens[i], "--work-tree="):
+		case strings.HasPrefix(tok, "--git-dir=") || strings.HasPrefix(tok, "--work-tree="):
+			otherTree = true
 			i++
+		case gitValueFlags[tok]:
+			i += 2
+		case strings.HasPrefix(tok, "-"):
+			i++ // a flag without a value (--no-pager, -p, --bare) or an = form
 		default:
-			if i >= len(tokens) {
-				return gitInvocation{}, false
+			if otherTree {
+				c.dir = ""
 			}
-			c.sub = tokens[i]
+			c.sub = tok
 			c.args = tokens[i+1:]
 			return c, true
 		}
 	}
 	return gitInvocation{}, false
+}
+
+// gitValueFlags are the global git flags that take their value as the next
+// token. Their = forms are one token and skip like any other flag. -C and
+// --git-dir/--work-tree take a value too but are handled on their own in
+// parseGitCmd.
+var gitValueFlags = map[string]bool{
+	"-c": true, "--namespace": true, "--super-prefix": true,
+	"--config-env": true, "--attr-source": true,
+}
+
+// unresolvableChars are the shell characters a directory target may still
+// carry after belt's own expansion. Any of them means a shell would rewrite
+// the target into something belt cannot see, so the destination is unknown.
+const unresolvableChars = "$*?~`\"'"
+
+// resolveDir applies a `cd` target to the current directory and returns the
+// new one, or "" for a destination it cannot determine statically (see
+// placeDir). The result is cleaned lexically, which is what a shell's cd does
+// by default: `cd link/..` lands in the link's own parent, not in the link
+// target's. An unknown directory is what makes a later push fail closed (see
+// GitPushMain.checkPush) and a commit guard or hint stay quiet.
+func resolveDir(cwd, target string) string {
+	dir := placeDir(cwd, target)
+	if dir == "" {
+		return ""
+	}
+	return path.Clean(dir)
+}
+
+// placeDir expands a directory target and places it under cwd as written,
+// without cleaning it: "" for `-` (a directory only the shell remembers), a
+// target expandCdTarget rejects, or a relative target from an unknown cwd.
+// A `git -C` target uses it directly, so git sees the path as typed.
+func placeDir(cwd, target string) string {
+	if target == "-" {
+		return ""
+	}
+	target = expandCdTarget(target)
+	switch {
+	case target == "":
+		return ""
+	case path.IsAbs(target):
+		return target
+	case cwd == "":
+		return ""
+	}
+	return strings.TrimSuffix(cwd, "/") + "/" + target
+}
+
+// expandCdTarget performs the expansions the shell would on a directory
+// target, as far as they can be done without a shell: a surrounding quote
+// pair is dropped, a leading $HOME or ${HOME} becomes the home directory
+// unless single-quoted, and so does an unquoted leading ~. A target that
+// still carries a shell metacharacter or a stray quote afterwards returns "".
+func expandCdTarget(target string) string {
+	quote, inner := unquote(target)
+	if quote != '\'' {
+		inner = expandHomeVar(inner)
+	}
+	if quote == 0 {
+		inner = expandHome(inner)
+	}
+	if strings.ContainsAny(inner, unresolvableChars) {
+		return ""
+	}
+	return inner
+}
+
+// expandHome rewrites a leading ~ (bare, or followed by /) to the home
+// directory and leaves the rest of the path as written, so `~/link/..` keeps
+// its `..` for git to resolve; config.ExpandHome would clean it away. Any
+// other ~ form (~user) stays for the metacharacter check to reject, and so
+// does the ~ itself when there is no home directory to expand it to.
+func expandHome(target string) string {
+	rest, ok := strings.CutPrefix(target, "~")
+	if !ok || (rest != "" && rest[0] != '/') {
+		return target
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return target
+	}
+	return home + rest
+}
+
+// unquote strips one pair of matching surrounding quotes and reports which
+// quote it was, 0 for none.
+func unquote(s string) (byte, string) {
+	n := len(s)
+	if n >= 2 && (s[0] == '"' || s[0] == '\'') && s[n-1] == s[0] {
+		return s[0], s[1 : n-1]
+	}
+	return 0, s
+}
+
+// expandHomeVar rewrites a leading $HOME or ${HOME} to the home directory,
+// through the same helper a leading ~ goes through. A longer variable
+// ($HOMEBREW_PREFIX, say) is left alone for the metacharacter check to
+// reject.
+func expandHomeVar(target string) string {
+	for _, v := range []string{"${HOME}", "$HOME"} {
+		rest, ok := strings.CutPrefix(target, v)
+		if ok && (rest == "" || rest[0] == '/') {
+			return expandHome("~" + rest)
+		}
+	}
+	return target
 }
 
 // canonicalRepo normalizes a git remote URL to "host/owner/repo"
@@ -136,13 +326,14 @@ func gitOutput(dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// GitCommitDirs returns the `git -C` directory of every `git commit` in a
-// shell command, "" for invocations that run in the caller's cwd. Exported
-// for the commit-policy hint, which watches the same invocations the commit
-// guards check.
-func GitCommitDirs(command string) []string {
+// GitCommitDirs returns the directory every `git commit` in a shell command
+// runs in, placed as gitCommandsAt places it: a tracked `cd`/`pushd`, a `git
+// -C` target, else cwd. An entry is "" when the directory cannot be told
+// without a shell. Exported for the commit-policy and lint-policy hints,
+// which watch the same invocations the commit guards check.
+func GitCommitDirs(command, cwd string) []string {
 	var dirs []string
-	for _, c := range findGitCommands(command, "commit") {
+	for _, c := range gitCommandsAt(command, cwd, "commit") {
 		dirs = append(dirs, c.dir)
 	}
 	return dirs

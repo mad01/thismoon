@@ -809,3 +809,32 @@ func TestGhPublicByNature(t *testing.T) {
 		}
 	}
 }
+
+// TestPublishInternalNamesExpandsDashC pins that a `git -C` target written
+// with ~ or $HOME resolves to the same repo as the absolute path (MAD-370):
+// the repo the commit lands in decides, not a path git would never see.
+func TestPublishInternalNamesExpandsDashC(t *testing.T) {
+	t.Setenv("HOME", "/home/me")
+	git := map[string]string{
+		"/home/me/public|remote get-url origin":   publicOrigin,
+		"/home/me/internal|remote get-url origin": internalOrigin,
+	}
+	tests := []struct {
+		name     string
+		command  string
+		wantDeny bool
+	}{
+		{"tilde public repo denies", `git -C ~/public commit -m "internalco"`, true},
+		{"HOME public repo denies", `git -C $HOME/public commit -m "internalco"`, true},
+		{"tilde internal repo allows", `git -C ~/internal commit -m "internalco"`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := newPublishGuard(EventBash, publishFixture{git: git})
+			d := g.Check(Input{Event: EventBash, Command: tt.command, Cwd: "/elsewhere"})
+			if (d != nil) != tt.wantDeny {
+				t.Errorf("Check(%q) denial = %v, wantDeny %v", tt.command, d, tt.wantDeny)
+			}
+		})
+	}
+}

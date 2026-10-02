@@ -202,3 +202,69 @@ func TestLintPolicyOncePerSession(t *testing.T) {
 		}
 	})
 }
+
+// TestLintPolicyDirResolution pins which directory the resolvers see: the
+// session cwd for a bare commit, the directory a `cd` before it landed in
+// (MAD-366), the `git -C` target otherwise, with ~ and $HOME expanded the way
+// the shell would (MAD-370). A target only a shell can resolve leaves the
+// directory unknown, and the hint stays quiet without a lookup.
+func TestLintPolicyDirResolution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tests := []struct {
+		name    string
+		command string
+		cwd     string
+		wantDir string // "" means no lookup and no advice
+	}{
+		{"bare commit uses cwd", lintCmd, "/session/cwd", "/session/cwd"},
+		{"absolute -C", "git -C /other/repo commit -m 'x'", "/session/cwd", "/other/repo"},
+		{"tilde -C", "git -C ~/code/worklog commit -m 'x'", "/session/cwd", home + "/code/worklog"},
+		{
+			"HOME -C",
+			"git -C $HOME/code/worklog commit -m 'x'",
+			"/session/cwd",
+			home + "/code/worklog",
+		},
+		{
+			"cd then bare commit",
+			"cd /other/repo && git commit -m 'x'",
+			"/session/cwd",
+			"/other/repo",
+		},
+		{"unresolvable cd stays quiet", "cd $TARGET && git commit -m 'x'", "/session/cwd", ""},
+		{"unresolvable -C stays quiet", "git -C $TARGET commit -m 'x'", "/session/cwd", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newLintPolicyHint("github.com/mad01/thismoon", nil)
+			withLintOverlay(t, h, lintOverlay)
+			var gotDir string
+			asked := false
+			h.resolveRepo = func(dir string) string {
+				asked, gotDir = true, dir
+				return "github.com/mad01/thismoon"
+			}
+			// One session per case: the once-per-session cap would otherwise
+			// silence every case after the first.
+			a := h.Check(Input{
+				Event: EventBash, Command: tt.command, Cwd: tt.cwd, SessionID: "lint-dir-" + tt.name,
+			})
+			if tt.wantDir == "" {
+				if asked {
+					t.Errorf("resolver asked about %q, want no lookup", gotDir)
+				}
+				if a != nil {
+					t.Errorf("unknown directory advised: %+v", a)
+				}
+				return
+			}
+			if a == nil {
+				t.Fatal("Check returned nil, want advice")
+			}
+			if gotDir != tt.wantDir {
+				t.Errorf("resolver saw dir %q, want %q", gotDir, tt.wantDir)
+			}
+		})
+	}
+}

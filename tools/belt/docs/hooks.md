@@ -184,19 +184,27 @@ and the first denial wins.
 Blocks `git push` to `main` or `master` before it happens.
 
 - **Fires on** every `git push` found in the Bash command, including compound
-  commands (`cd x && git push`). Bare `git push` and `HEAD` refspecs resolve
+  commands (`cd x && git push`) and pushes behind a global flag
+  (`git --no-pager push`). Bare `git push` and `HEAD` refspecs resolve
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
   directory.
-- **Follows `cd`.** The guard walks the command's segments and tracks
-  `cd`/`pushd`, so a push is judged in the directory it runs in, not the
-  session cwd. Absolute and relative targets resolve as written. A leading
-  `~`, `$HOME`, or `${HOME}` expands to the home directory, and a bare `cd`
+- **Follows `cd` and `git -C`.** The guard walks the command's segments and
+  tracks `cd`/`pushd`, so a push is judged in the directory it runs in, not
+  the session cwd. A `git -C` target is resolved against that directory the
+  same way. Absolute and relative targets resolve as written. A leading
+  `~`, `$HOME`, or `${HOME}` expands to the home directory in either, so
+  `git -C ~/repo` names the same repo as the absolute path, and a bare `cd`
   goes home. A target only a shell can resolve (another variable, `cd -`, a
-  command substitution, a glob) leaves the directory unknown. A push to
-  `main` or `master` after such a cd is denied, with a hint to use an
-  absolute path or `git -C`. belt never runs git in its own process
-  directory to fill the gap: that once let a push into a non-exempt repo
-  ride an exempt session cwd.
+  command substitution, a glob) leaves the directory unknown. So do `popd`
+  and a bare `pushd`, since belt keeps no directory stack, `cd -P`, whose
+  physical mode resolves symlinks before `..`, and
+  `--git-dir`/`--work-tree`, which point git at a tree only git can name. A
+  `-C` path reaches git as written: git resolves `..` physically, so
+  `link/..` is the link target's parent there, where a shell's cd is logical
+  and lands in the link's own parent. A push to `main` or `master` from an
+  unknown directory is denied, with a hint to use an absolute path, `~`, or
+  `$HOME`. belt never runs git in its own process directory to fill the gap:
+  that once let a push into a non-exempt repo ride an exempt session cwd.
 - **Allows when** the push directory's origin remote resolves to a repo on
   `guards.git-push-main.allow_repos` — an exact `host/owner/repo` or a
   trailing `/*` org wildcard, the same patterns `git_identity[].repos` takes.
@@ -215,7 +223,9 @@ Blocks `git push` to `main` or `master` before it happens.
 Blocks `git commit` when the repo's effective `git config user.email` is not
 the one configured for that repo.
 
-- **Fires on** every `git commit` in the command.
+- **Fires on** every `git commit` in the command, judged in the directory it
+  runs in: a tracked `cd`/`pushd`, a `git -C` target (`~` and `$HOME`
+  expanded), else the session cwd.
 - **Decides by** the first `git_identity` rule whose `repos` patterns match
   (exact `host/owner/repo` or a trailing `/*` org wildcard; an empty `repos`
   list covers every repo).
@@ -226,15 +236,19 @@ the one configured for that repo.
   work machine committing to a personal repo in the evening still gets the
   personal email enforced, because the repo decides.
 - **Fails open**: no rules configured, no rule covering the repo, an
-  unresolvable repo, or an unresolvable email all allow. `mode: soft` turns a
-  deny into a warn event.
+  unresolvable repo, or an unresolvable email all allow. So does a commit
+  whose directory only a shell can name, such as
+  `cd "$(git rev-parse --show-toplevel)" && git commit`: it is not judged at
+  all, not even in the session cwd. `mode: soft` turns a deny into a warn
+  event.
 
 ### commit-guard
 
 The work-hours nudge: discourages personal-repo commits during configured
 hours.
 
-- **Fires on** every `git commit`; every `commit_guards` rule is evaluated.
+- **Fires on** every `git commit`, judged in the directory it runs in as for
+  git-identity; every `commit_guards` rule is evaluated.
 - **A rule matches when**, in order: the repo is not in `always_allow`, and
   the repo matches `repos` (an empty list here matches nothing, the opposite
   of `git_identity`). It also requires that the rule's override switch is
@@ -247,7 +261,10 @@ hours.
   exception is one command away.
 - **Why it exists**: a soft boundary between work hours and personal projects
   that a human can consciously step over but not absent-mindedly drift over.
-- **Fails open**: unresolved repos and malformed windows block nothing.
+- **Fails open**: unresolved repos and malformed windows block nothing, and
+  neither does a commit whose directory only a shell can name
+  (`cd "$(git rev-parse --show-toplevel)" && git commit` is not judged, not
+  even in the session cwd).
 
 ### script-deny-list
 
@@ -394,7 +411,9 @@ two events.
   contributes nothing; the same command is usually writing it, and then its
   text is in the command. `cd` is tracked across `&&` segments and `git -C`
   is honored, as in git-push-main. A cd target only a shell can resolve
-  leaves the repo unknown, and an unknown repo scans nothing.
+  leaves the repo unknown, and so do `popd`, a bare `pushd`, `cd -P`, and
+  a commit or push run with `--git-dir`/`--work-tree`; an unknown repo
+  scans nothing.
 - **Exemptions**: `allow_repos` by canonical identity, matched against the
   push remote, the gh target, or the MCP owner/repo. It is the same list
   shape as write-internal-names and a deliberate duplicate of it
@@ -601,15 +620,21 @@ out, states the branch + PR commit policy and hands back the recovery. `git
 switch -c <branch>` carries the commit along, `git branch -f main
 origin/main` drops the local default branch back onto the remote.
 
-- **Fires when** a commit in the command (compound commands and `git -C`
-  included) ran with the repo's current branch on main or master. The
-  repo's canonical origin identity must also be on neither the shared
-  `direct_main_repos` list (this hint is one of its two readers,
-  docs/adr/0013) nor `hints.commit-policy.exclude_repos`.
+- **Fires when** a commit in the command ran with its repo's current branch
+  on main or master. The branch is read in the directory the commit ran in:
+  a tracked `cd`/`pushd`, a `git -C` target (`~` and `$HOME` expanded), else
+  the session cwd. That is what keeps a loom session quiet: the session cwd
+  sits on main while every commit runs inside `cd ~/.worktrees/<repo>/<slug>
+  && git commit`, on the worktree's own branch. The repo's canonical origin
+  identity must also be on neither the shared `direct_main_repos` list (this
+  hint is one of its two readers, docs/adr/0013) nor
+  `hints.commit-policy.exclude_repos`.
 - **Deliberately silent** on feature branches, opted-out repos, detached
   HEAD, and repos with no resolvable origin remote. A scratch `git init`
   repo lives its whole life on its default branch and has no upstream to
-  protect.
+  protect. Silent too on a commit whose directory only a shell can name (a
+  variable, `cd -`, a substitution): a hint that cannot tell says nothing,
+  where the push guard fails closed.
 - **Repo-local overlay**: a `.belt.yaml` at the repo root lets the repo
   version its own policy (docs/adr/0012). `hints.commit-policy.exclude`
   opts the repo out or back in over the machine's lists, and
@@ -633,9 +658,9 @@ After a `git commit` in a repo that declares a lint/format policy, relays
 that policy, once per session per repo, while the commit is still
 unpushed.
 
-- **Fires when** a commit in the command (compound commands and `git -C`
-  included) ran in a repo whose root `.belt.yaml` carries a
-  `hints.lint-policy.message` line. The message is the whole advice: belt
+- **Fires when** a commit in the command ran in a repo whose root
+  `.belt.yaml` carries a `hints.lint-policy.message` line. The directory the
+  commit ran in is resolved as for commit-policy. The message is the whole advice: belt
   ships no language→linter table and executes nothing — the repo states its
   own toolchain (`run make fmt && make lint per component`, say) and belt
   only picks the moment.

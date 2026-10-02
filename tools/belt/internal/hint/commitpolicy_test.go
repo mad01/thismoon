@@ -2,6 +2,7 @@ package hint
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,30 +194,146 @@ func TestCommitPolicyDirectMainRepos(t *testing.T) {
 }
 
 // TestCommitPolicyDirResolution pins which directory the resolvers see: the
-// `git -C` dir when one is given, the session cwd otherwise.
+// session cwd for a bare commit, the directory a `cd`/`pushd` before it
+// landed in (MAD-366), the `git -C` target otherwise, with ~ and $HOME
+// expanded the way the shell would (MAD-370). A target only a shell can
+// resolve leaves the directory unknown, and the hint stays quiet rather than
+// judging the session cwd.
 func TestCommitPolicyDirResolution(t *testing.T) {
+	t.Setenv("HOME", "/Users/tester")
+	const worklog = "/Users/tester/code/worklog"
 	tests := []struct {
 		name    string
 		command string
 		cwd     string
-		wantDir string
+		wantDir string // "" means no lookup and no advice
 	}{
 		{"bare commit uses cwd", "git commit -m 'x'", "/session/cwd", "/session/cwd"},
 		{"git -C wins over cwd", "git -C /other/repo commit -m 'x'", "/session/cwd", "/other/repo"},
+		{"tilde -C", "git -C ~/code/worklog commit -m 'x'", "/session/cwd", worklog},
+		{"HOME -C", "git -C $HOME/code/worklog commit -m 'x'", "/session/cwd", worklog},
+		{"braced HOME -C", "git -C ${HOME}/code/worklog commit -m 'x'", "/session/cwd", worklog},
+		{"quoted HOME -C", `git -C "$HOME/code/worklog" commit -m 'x'`, "/session/cwd", worklog},
+		{
+			"cd then bare commit",
+			"cd /other/repo && git commit -m 'x'",
+			"/session/cwd",
+			"/other/repo",
+		},
+		{
+			"tilde cd into a worktree",
+			"cd ~/.worktrees/repo/slug && git commit -m 'x'",
+			"/session/cwd",
+			"/Users/tester/.worktrees/repo/slug",
+		},
+		{"unresolvable cd stays silent", "cd $TARGET && git commit -m 'x'", "/session/cwd", ""},
+		{"unresolvable -C stays silent", "git -C $TARGET commit -m 'x'", "/session/cwd", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got string
+			asked := false
 			h := newCommitPolicyHint("main", "github.com/mad01/thismoon", nil)
 			h.resolveBranch = func(dir string) string {
-				got = dir
+				asked, got = true, dir
 				return "main"
 			}
-			if a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd}); a == nil {
+			a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: tt.cwd})
+			if tt.wantDir == "" {
+				if asked || a != nil {
+					t.Fatalf("unknown directory: asked=%v advice=%+v, want silence", asked, a)
+				}
+				return
+			}
+			if a == nil {
 				t.Fatal("Check returned nil, want advice")
 			}
 			if got != tt.wantDir {
 				t.Errorf("resolver saw dir %q, want %q", got, tt.wantDir)
+			}
+		})
+	}
+}
+
+// initRepoOnMain creates a git repository at dir on branch main, with one
+// commit and the given origin URL.
+func initRepoOnMain(t *testing.T, dir, origin string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init"},
+		{"remote", "add", "origin", origin},
+	} {
+		if out, err := gitCommand(dir, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+}
+
+// TestCommitPolicyWorktreeCommit runs the hint with its real git-backed
+// resolvers against the loom layout (MAD-366): the session cwd is the
+// canonical checkout on main, and the commit runs inside a linked worktree on
+// a feature branch via `cd <worktree> && git commit`. The branch has to be
+// read where the commit ran, so the worktree commit stays quiet while a bare
+// commit in the session cwd still draws the advice.
+func TestCommitPolicyWorktreeCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Keep the user's and the system's gitconfig out of the fixture: a
+	// commit.gpgsign or hooksPath there would break the setup commits.
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	canonical := filepath.Join(home, "canonical")
+	worktree := filepath.Join(home, ".worktrees", "repo", "slug")
+	initRepoOnMain(t, canonical, "git@github.com:mad01/thismoon.git")
+	if out, err := gitCommand(canonical, "worktree", "add", "-q", "-b", "feat/x", worktree).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+
+	h := NewCommitPolicy(config.Config{})
+	tests := []struct {
+		name    string
+		command string
+		fires   bool
+	}{
+		{"commit in the worktree is quiet", "cd " + worktree + " && git commit -m x", false},
+		{
+			"tilde cd into the worktree is quiet",
+			"cd ~/.worktrees/repo/slug && git commit -m x",
+			false,
+		},
+		{"git -C the worktree is quiet", "git -C " + worktree + " commit -m x", false},
+		{"bare commit in the session cwd fires", "git commit -m x", true},
+		{
+			"cd back to the canonical checkout fires",
+			"cd " + worktree + " && cd " + canonical + " && git commit -m x",
+			true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := h.Check(Input{Event: EventBash, Command: tt.command, Cwd: canonical})
+			if got := a != nil; got != tt.fires {
+				t.Fatalf(
+					"Check(%q) fired = %v, want %v (advice: %+v)",
+					tt.command,
+					got,
+					tt.fires,
+					a,
+				)
+			}
+			if a != nil && !strings.Contains(a.Text, "landed on main") {
+				t.Errorf("advice %q does not name main", a.Text)
 			}
 		})
 	}

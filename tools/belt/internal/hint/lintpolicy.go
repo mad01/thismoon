@@ -59,9 +59,9 @@ func (h *LintPolicy) Check(in Input) *Advice {
 	if path == "" {
 		return nil
 	}
-	for _, dir := range guard.GitCommitDirs(in.Command) {
+	for _, dir := range guard.GitCommitDirs(in.Command, in.Cwd) {
 		if dir == "" {
-			dir = in.Cwd
+			continue // a directory only a shell can name: stay quiet, as commit-policy does
 		}
 		overlay, err := loadRepoOverlay(h.resolveRoot(dir))
 		if err != nil {
