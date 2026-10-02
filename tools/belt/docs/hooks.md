@@ -184,7 +184,8 @@ and the first denial wins.
 Blocks `git push` to `main` or `master` before it happens.
 
 - **Fires on** every `git push` found in the Bash command, including compound
-  commands (`cd x && git push`). Bare `git push` and `HEAD` refspecs resolve
+  commands (`cd x && git push`) and pushes behind a global flag
+  (`git --no-pager push`). Bare `git push` and `HEAD` refspecs resolve
   the current branch via `git rev-parse --abbrev-ref HEAD` in the push
   directory.
 - **Follows `cd` and `git -C`.** The guard walks the command's segments and
@@ -195,7 +196,8 @@ Blocks `git push` to `main` or `master` before it happens.
   `git -C ~/repo` names the same repo as the absolute path, and a bare `cd`
   goes home. A target only a shell can resolve (another variable, `cd -`, a
   command substitution, a glob) leaves the directory unknown. So do `popd`
-  and a bare `pushd`, since belt keeps no directory stack, and
+  and a bare `pushd`, since belt keeps no directory stack, `cd -P`, whose
+  physical mode resolves symlinks before `..`, and
   `--git-dir`/`--work-tree`, which point git at a tree only git can name. A
   `-C` path reaches git as written: git resolves `..` physically, so
   `link/..` is the link target's parent there, where a shell's cd is logical
@@ -409,7 +411,9 @@ two events.
   contributes nothing; the same command is usually writing it, and then its
   text is in the command. `cd` is tracked across `&&` segments and `git -C`
   is honored, as in git-push-main. A cd target only a shell can resolve
-  leaves the repo unknown, and an unknown repo scans nothing.
+  leaves the repo unknown, and so do `popd`, a bare `pushd`, `cd -P`, and
+  a commit or push run with `--git-dir`/`--work-tree`; an unknown repo
+  scans nothing.
 - **Exemptions**: `allow_repos` by canonical identity, matched against the
   push remote, the gh target, or the MCP owner/repo. It is the same list
   shape as write-internal-names and a deliberate duplicate of it

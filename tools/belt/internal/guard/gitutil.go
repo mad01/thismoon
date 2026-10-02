@@ -69,10 +69,14 @@ func parseCd(tokens []string) (string, bool) {
 	default:
 		return "", false
 	}
-	// Skip cd option flags (`cd -P`, `cd -L`); the first non-flag token is the
-	// target.
+	// Skip cd option flags (`cd -L`, `cd -e`); the first non-flag token is the
+	// target. -P is physical mode: symlinks resolve before `..` there, where
+	// the walk cleans as text, so that destination is only the shell's to know.
 	for _, tok := range tokens[1:] {
-		if tok == "-P" || tok == "-L" || tok == "-e" || tok == "-@" {
+		switch tok {
+		case "-P":
+			return "-", true
+		case "-L", "-e", "-@":
 			continue
 		}
 		return tok, true
@@ -106,34 +110,49 @@ func segmentGitCommand(tokens []string, cwd string) (gitInvocation, bool) {
 // Repeated -C flags chain the way git chains them. git takes -C only as a
 // separate token, so there is no = form to parse. --git-dir and --work-tree
 // point git at a tree only git itself can name, so either form leaves dir
-// "" as well. ok is false when no subcommand follows the flags.
+// "" as well. Every other global flag before the subcommand is skipped,
+// together with its value when it takes one (gitValueFlags), so `git
+// --no-pager push` is still a push. ok is false when no subcommand follows
+// the flags.
 func parseGitCmd(tokens []string, cwd string) (gitInvocation, bool) {
 	c := gitInvocation{dir: cwd}
 	otherTree := false
 	i := 0
 	for i < len(tokens) {
+		tok := tokens[i]
 		switch {
-		case tokens[i] == "-C" && i+1 < len(tokens):
+		case tok == "-C" && i+1 < len(tokens):
 			c.dir = placeDir(c.dir, tokens[i+1])
 			i += 2
-		case tokens[i] == "-c" && i+1 < len(tokens):
-			i += 2
-		case tokens[i] == "--git-dir" || tokens[i] == "--work-tree":
+		case tok == "--git-dir" || tok == "--work-tree":
 			otherTree = true
 			i += 2 // separate-value form consumes the path token too
-		case strings.HasPrefix(tokens[i], "--git-dir=") || strings.HasPrefix(tokens[i], "--work-tree="):
+		case strings.HasPrefix(tok, "--git-dir=") || strings.HasPrefix(tok, "--work-tree="):
 			otherTree = true
 			i++
+		case gitValueFlags[tok]:
+			i += 2
+		case strings.HasPrefix(tok, "-"):
+			i++ // a flag without a value (--no-pager, -p, --bare) or an = form
 		default:
 			if otherTree {
 				c.dir = ""
 			}
-			c.sub = tokens[i]
+			c.sub = tok
 			c.args = tokens[i+1:]
 			return c, true
 		}
 	}
 	return gitInvocation{}, false
+}
+
+// gitValueFlags are the global git flags that take their value as the next
+// token. Their = forms are one token and skip like any other flag. -C and
+// --git-dir/--work-tree take a value too but are handled on their own in
+// parseGitCmd.
+var gitValueFlags = map[string]bool{
+	"-c": true, "--namespace": true, "--super-prefix": true,
+	"--config-env": true, "--attr-source": true,
 }
 
 // unresolvableChars are the shell characters a directory target may still
