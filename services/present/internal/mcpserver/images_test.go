@@ -230,6 +230,13 @@ func TestUpdateStoresLocalImage(t *testing.T) {
 
 	// A Doc already on stored paths and URLs is passed to the compiler as
 	// given: the canonical JSON is what Compile makes of the input alone.
+	// The stored image it reuses is touched, so a sweep that runs before
+	// the page is written sees a fresh file.
+	stored := filepath.Join(dir, "images", images.Name(data, "png"))
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(stored, old, old); err != nil {
+		t.Fatal(err)
+	}
 	passthrough := `{"sections":[{"h":"S","blocks":[` +
 		`{"t":"image","src":"` + want + `","alt":"a"},` +
 		`{"t":"image","src":"https://example.com/b.png","alt":"b"}]}]}`
@@ -238,6 +245,9 @@ func TestUpdateStoresLocalImage(t *testing.T) {
 	}
 	if doc, _ := h.store.LoadDoc(ctx, created.ID); string(doc) != passthrough {
 		t.Errorf("doc.json = %s, want the input unchanged", doc)
+	}
+	if info, err := os.Stat(stored); err != nil || time.Since(info.ModTime()) > time.Minute {
+		t.Errorf("reused image not touched: %v, %v", info.ModTime(), err)
 	}
 }
 

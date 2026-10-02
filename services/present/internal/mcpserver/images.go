@@ -31,10 +31,14 @@ var errNoImageStore = errors.New(
 type imageIngest struct {
 	store   *images.Store // nil on a shared instance: no local files
 	pending map[string][]byte
+	// reused are the stored images the Doc names by their served path;
+	// commit touches them so a sweep running meanwhile leaves them, even
+	// when no other page references them yet.
+	reused map[string]bool
 }
 
 func (h *handlers) newImageIngest() *imageIngest {
-	return &imageIngest{store: h.images, pending: map[string][]byte{}}
+	return &imageIngest{store: h.images, pending: map[string][]byte{}, reused: map[string]bool{}}
 }
 
 // doc rewrites the local image sources in a Doc JSON string and returns the
@@ -68,6 +72,7 @@ func (g *imageIngest) doc(s string) (string, error) {
 					b.Src,
 				)
 			}
+			g.reused[name] = true
 			return nil
 		}
 		name, err := g.take(b.Src)
@@ -131,9 +136,15 @@ func (g *imageIngest) take(src string) (string, error) {
 	return name, nil
 }
 
-// commit writes the images the Doc now names. It runs once the Doc has
-// compiled and before the page is stored.
+// commit writes the images the Doc now names and touches the stored ones
+// it reuses. It runs once the Doc has compiled and before the page is
+// stored.
 func (g *imageIngest) commit() error {
+	for name := range g.reused {
+		if err := g.store.Touch(name); err != nil {
+			return fmt.Errorf("image %s: %w", images.Served(name), err)
+		}
+	}
 	for name, data := range g.pending {
 		if err := g.store.Write(name, data); err != nil {
 			return err

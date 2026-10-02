@@ -163,12 +163,8 @@ func (s *Store) Write(name string, data []byte) error {
 	if !extMatches(name, ext) {
 		return fmt.Errorf("images: name %q does not match its %s bytes", name, ext)
 	}
-	if _, err := os.Stat(s.filePath(name)); err == nil {
-		now := s.now()
-		if err := os.Chtimes(s.filePath(name), now, now); err != nil {
-			return fmt.Errorf("touch image: %w", err)
-		}
-		return nil
+	if s.Has(name) {
+		return s.Touch(name)
 	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create images dir: %w", err)
@@ -199,6 +195,20 @@ func (s *Store) Write(name string, data []byte) error {
 	return nil
 }
 
+// Touch refreshes a stored image's mtime, so a page about to reuse it
+// keeps it through a sweep that runs in between. A missing file is an
+// error: the page would name an image that is not there.
+func (s *Store) Touch(name string) error {
+	if !ValidName(name) {
+		return fmt.Errorf("images: invalid name %q", name)
+	}
+	now := s.now()
+	if err := os.Chtimes(s.filePath(name), now, now); err != nil {
+		return fmt.Errorf("touch image: %w", err)
+	}
+	return nil
+}
+
 // Open opens a stored image for serving. A malformed name is
 // os.ErrNotExist like an unknown one, so a caller answers 404 either way
 // and no name reaches the filesystem unchecked.
@@ -211,7 +221,10 @@ func (s *Store) Open(name string) (*os.File, error) {
 
 // Sweep removes every stored image whose name is not in keep and was
 // written more than a minute before now, and returns the names it
-// removed. A store that has no directory yet has nothing to sweep.
+// removed. A store that has no directory yet has nothing to sweep, and a
+// file another sweep removed between the listing and the stat or the
+// remove is nothing to report: two sweeps may run at once, at startup and
+// on a delete.
 func (s *Store) Sweep(keep map[string]bool, now time.Time) ([]string, error) {
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -227,13 +240,20 @@ func (s *Store) Sweep(keep map[string]bool, now time.Time) ([]string, error) {
 			continue
 		}
 		info, err := e.Info()
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return removed, fmt.Errorf("stat image %s: %w", name, err)
 		}
 		if now.Sub(info.ModTime()) < sweepGrace {
 			continue
 		}
-		if err := os.Remove(s.filePath(name)); err != nil {
+		err = os.Remove(s.filePath(name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
 			return removed, fmt.Errorf("remove image %s: %w", name, err)
 		}
 		removed = append(removed, name)
