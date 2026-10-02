@@ -473,8 +473,12 @@ func TestCreateWithDocPanel(t *testing.T) {
 	if !strings.Contains(read.Content, `<wk-panel`) {
 		t.Error("panel not rendered")
 	}
-	if !strings.Contains(read.Content, `var(--terracotta)`) {
-		t.Error("accent border not rendered")
+	// The alias is accepted on input and rendered as the role it stands for.
+	if !strings.Contains(read.Content, `border-left: 3px solid var(--primary)`) {
+		t.Error("accent border not rendered as the primary role")
+	}
+	if strings.Contains(read.Content, `var(--terracotta)`) {
+		t.Error("stored HTML names the terracotta alias instead of its role")
 	}
 	if !strings.Contains(read.Content, `<wk-panel-title>`) {
 		t.Error("panel title not rendered")
