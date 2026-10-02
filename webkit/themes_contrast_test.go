@@ -21,6 +21,25 @@ var (
 // the bar a semantic colour used as text clears on each surface (MAD-372).
 const minTextContrast = 3.0
 
+// minInkContrast is the WCAG 2.x floor for body text, the bar the on-<role>
+// ink clears on its fill: the danger button and the toasts set on-<role> on
+// the matching semantic colour.
+const minInkContrast = 4.5
+
+// inkFloorExceptions names the dark fills whose ink cannot reach 4.5 once the
+// fill itself clears 3.0 as text on the chip, keyed family/role. Solarized's
+// base02 chip has a relative luminance of 0.031, so a colour needs at least
+// 3.0 * (0.031 + 0.05) - 0.05 = 0.193 to read on it, while white ink at 4.5
+// needs a fill at or under 1.05 / 4.5 - 0.05 = 0.183; the two bands do not
+// meet. The family's dark ink (base03, luminance 0.020) would need a fill at
+// 4.5 * (0.020 + 0.05) - 0.05 = 0.265, far past the published hue, so these
+// three keep white ink at the floors measured on the lifted values.
+var inkFloorExceptions = map[string]float64{
+	"solarized/red":    3.9, // #e04c49, measured 3.96
+	"solarized/amber":  3.9, // #dd5218, measured 3.97
+	"solarized/purple": 3.8, // #777cc8, measured 3.82
+}
+
 func TestDarkSemanticColoursReadAsText(t *testing.T) {
 	for _, f := range webkit.Themes() {
 		if f.Dark == nil {
@@ -33,6 +52,40 @@ func TestDarkSemanticColoursReadAsText(t *testing.T) {
 					t.Errorf("%s dark: --%s %s on --%s %s = %.2f, want >= %.1f",
 						f.Name, role, ink, surface, bg, got, minTextContrast)
 				}
+			}
+		}
+	}
+}
+
+// liftedFills are the dark semantic colours this repo moved off the published
+// palette for the text floor above. Lifting a fill lowers the contrast of the
+// white ink the build derives for it, so each of these pins on-<role> to the
+// family's own background ink where that reaches 4.5, and the rest are the
+// named exceptions. The published fills are not held to 4.5 here: the
+// derivation's white-under-0.4 rule leaves them between 2.4 and 4.3 across
+// the collection, a separate decision from this one.
+var liftedFills = map[string][]string{
+	"gruvbox":   {"red"},
+	"nord":      {"red"},
+	"rose-pine": {"green"},
+	"solarized": {"red", "amber", "purple"},
+}
+
+func TestDarkInkReadsOnLiftedFill(t *testing.T) {
+	for family, roles := range liftedFills {
+		dark := findTheme(t, family).Dark
+		if dark == nil {
+			t.Fatalf("%s has no dark variant", family)
+		}
+		for _, role := range roles {
+			fill, ink := dark.Roles[role], dark.Roles["on-"+role]
+			floor := minInkContrast
+			if exception, ok := inkFloorExceptions[family+"/"+role]; ok {
+				floor = exception
+			}
+			if got := contrast(t, ink, fill); got < floor {
+				t.Errorf("%s dark: --on-%s %s on --%s %s = %.2f, want >= %.1f",
+					family, role, ink, role, fill, got, floor)
 			}
 		}
 	}
@@ -77,9 +130,12 @@ func luminance(t *testing.T, hex string) float64 {
 	if err != nil {
 		t.Fatalf("parse %q: %v", hex, err)
 	}
+	// The linear-segment cutoff is 0.04045, the value the WCAG 2.x errata
+	// settled on; the 0.03928 the original text carried gives the same
+	// result for every 8-bit channel.
 	channel := func(c uint64) float64 {
 		s := float64(c) / 255
-		if s <= 0.03928 {
+		if s <= 0.04045 {
 			return s / 12.92
 		}
 		return math.Pow((s+0.055)/1.055, 2.4)

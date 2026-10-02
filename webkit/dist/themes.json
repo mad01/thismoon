@@ -572,7 +572,7 @@
      "tag-b-text": "#d2cb6c",
      "tag-c": "#4a4e4a",
      "tag-c-text": "#b7c0a5",
-     "on-red": "#FFFFFF",
+     "on-red": "#282828",
      "on-green": "#282828",
      "on-amber": "#FFFFFF",
      "on-yellow": "#282828",
@@ -631,7 +631,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red (MAD-372)"
+    "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents. red is bright red lifted from 59% to 68% lightness so red text meets 3:1 on dark2. Its tone roles stay pinned to the published red, and on-red is dark0 since white ink falls to 2.7 on the lifted fill (MAD-372)"
    }
   },
   {
@@ -776,7 +776,7 @@
      "tag-b-text": "#c8d7c0",
      "tag-c": "#495568",
      "tag-c-text": "#b7c8db",
-     "on-red": "#FFFFFF",
+     "on-red": "#2e3440",
      "on-green": "#2e3440",
      "on-amber": "#FFFFFF",
      "on-yellow": "#2e3440",
@@ -835,7 +835,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11 (MAD-372)"
+    "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9. red is nord11 lifted from 56% to 67% lightness so red text meets 3:1 on nord2. Its tone roles stay pinned to nord11, and on-red is nord0 since white ink falls to 2.7 on the lifted fill (MAD-372)"
    }
   },
   {
@@ -1185,7 +1185,7 @@
      "tag-c": "#384150",
      "tag-c-text": "#bed7e6",
      "on-red": "#FFFFFF",
-     "on-green": "#FFFFFF",
+     "on-green": "#191724",
      "on-amber": "#191724",
      "on-yellow": "#191724",
      "on-blue": "#191724",
@@ -1243,7 +1243,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine (MAD-372)"
+    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine, and on-green is base since white ink falls to 3.7 on Moon's pine (MAD-372)"
    }
   },
   {
@@ -1447,7 +1447,7 @@
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
      "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02. The roles derived from them stay pinned to the published values (MAD-372)"
+    "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01. The palette has one value per accent. red, orange, and violet are lifted a few points of lightness (52% to 58%, 44% to 48%, 60% to 63%) to meet 3:1 as text on base02. The roles derived from them stay pinned to the published values. Their white ink sits between 3.8 and 4.0, under 4.5. A fill light enough to read on base02 is too light for white ink at 4.5, and base03 ink does no better, so the ink stays white (MAD-372)"
    }
   },
   {
