@@ -94,10 +94,14 @@ has a `variant` name, optional `notes`, and the authored roles:
 Every other role is derived at build time by the fixed rules in
 `src/themes.mjs`: tags, code tokens, the Cytoscape box and tone colours, chart
 grid and text, `text-body`, the alpha surfaces (`topbar-bg`, `scrim`,
-`focus-ring`), and the `on-<colour>` inks. A variant can pin any derived role
-under `overrides`. The default family does that for every role whose derived
-value differs from the old hand-written stylesheet, so it stays byte-identical
-(pinned by `TestDefaultFamilyPinsTodaysPalette`).
+`focus-ring`), and the `on-<colour>` inks. An `on-<colour>` ink is white or
+the variant's deepest ink (`text-1` in light, `bg` in dark), whichever reads
+with more contrast on that fill. `themes_contrast_test.go` holds every dark
+ink to 4.5:1 on its fill, with solarized's named exceptions, and pins the
+light inks to the values they compiled to before that rule existed. A variant
+can pin any derived role under `overrides`. The default family does that for
+every role whose derived value differs from the old hand-written stylesheet,
+so it stays byte-identical (pinned by `TestDefaultFamilyPinsTodaysPalette`).
 
 The build emits every role as a literal hex or rgba, never a `var()` or a
 `color-mix()`. Cytoscape and Chart.js parse colour strings themselves, and

@@ -5,7 +5,7 @@
   "license": "BSD-3-Clause",
   "light": {
     "variant": "Cream",
-    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did.",
+    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did. That includes on-green, on-amber, on-yellow, and on-blue. The old rules put white on every fill, and the ink rule would now take text-1 on those four, a light-mode change MAD-376 left for later.",
     "bg": "#FAF9F7",
     "paper": "#FFFFFF",
     "chip": "#EEECE8",
@@ -24,6 +24,10 @@
     "purple": "#8B6BB0",
     "series": ["#C4704B", "#5B8EC4", "#4A9E6B", "#8B6BB0"],
     "overrides": {
+      "on-green": "#FFFFFF",
+      "on-amber": "#FFFFFF",
+      "on-yellow": "#FFFFFF",
+      "on-blue": "#FFFFFF",
       "primary-soft": "#d4855f",
       "text-body": "#4A453D",
       "ra-highlight": "#F3DDD2",
@@ -52,7 +56,7 @@
   },
   "dark": {
     "variant": "Warm gray",
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark.",
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, with two exceptions. Purple is brightened so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple). Red is lifted from 53% to 57% lightness so the page ink reads 4.5 on the danger button and the error toast. White ink reached 4.25 on the old red, and no darker red clears 3:1 as text on the chip, so the ink goes dark and the fill goes up. The tone roles keep the old literals (MAD-376). The graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark.",
     "bg": "#1A1916",
     "paper": "#252320",
     "chip": "#35322C",
@@ -63,7 +67,7 @@
     "text-3": "#8C8578",
     "primary": "#E8956A",
     "on-primary": "#FFFFFF",
-    "red": "#C45B4B",
+    "red": "#C9695A",
     "green": "#4A9E6B",
     "amber": "#D97706",
     "yellow": "#C4960B",

@@ -444,7 +444,8 @@ rule that reads a role follows the reader's choice.
 
 - surfaces and fills: `--card-bg`, `--chip-bg`, `--chip-active-bg`,
   `--chip-active-text`, `--progress-bg`, `--progress-fill`, `--primary-soft`
-- inks: `--text-body`, `--on-<colour>` for each semantic colour
+- inks: `--text-body`, and `--on-<colour>` for each semantic colour (white or
+  the variant's deepest ink, whichever reads with more contrast on that fill)
 - tags: `--tag-a`, `--tag-b`, `--tag-c` and their `-text` partners
 - overlays: `--ra-highlight`, `--focus-ring`, `--topbar-bg`, `--scrim`
 - code: `--code-bg`, `--code-header-bg`, `--code-border`, `--code-keyword`,

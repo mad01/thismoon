@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "One Light",
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan",
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. on-green and on-yellow are pinned to white: the ink rule would take mono-1 on them, a light-mode change MAD-376 left for later",
     "bg": "#eaeaeb",
     "paper": "#fafafa",
     "chip": "#e5e5e6",
@@ -22,7 +22,11 @@
     "yellow": "#c18401",
     "blue": "#4078f2",
     "purple": "#a626a4",
-    "series": ["#4078f2", "#0184bc", "#50a14f", "#a626a4"]
+    "series": ["#4078f2", "#0184bc", "#50a14f", "#a626a4"],
+    "overrides": {
+      "on-green": "#FFFFFF",
+      "on-yellow": "#FFFFFF"
+    }
   },
   "dark": {
     "variant": "One Dark",

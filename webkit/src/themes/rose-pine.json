@@ -26,7 +26,7 @@
   },
   "dark": {
     "variant": "Main",
-    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine, and on-green is base since white ink falls to 3.7 on Moon's pine (MAD-372)",
+    "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn. green is Moon's pine: Main's pine falls short of 3:1 as text on overlay. The roles derived from green stay pinned to Main's pine, and the ink rule picks base for on-green since white ink falls to 3.7 on Moon's pine (MAD-372)",
     "bg": "#191724",
     "paper": "#1f1d2e",
     "chip": "#26233a",
@@ -45,7 +45,6 @@
     "purple": "#c4a7e7",
     "series": ["#ebbcba", "#9ccfd8", "#31748f", "#c4a7e7"],
     "overrides": {
-      "on-green": "#191724",
       "tag-b": "#232e41",
       "tag-b-text": "#89a9c2",
       "code-string": "#31748f",
