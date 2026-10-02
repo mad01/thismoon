@@ -444,7 +444,7 @@ webkit asset bump shows up on the next navigation, not after a force-refresh.
   `Webkit`, self-registers the custom elements on load) + copy `dist/webkit.css`.
 - Go: `embed_test.go` still asserts Handler serves css/js. ADD assertions that
   `webkit.js` contains `wk-header` (customElements.define) and `webkit.css`
-  contains `wk-card`. Keep `--page-width`/`--terracotta` assertions.
+  contains `wk-card`. Keep the `--page-width` assertion.
 - Pure-fn unit tests (node, `npm test` → `node --test`) for `toFixation`/`clampSize`
   live in `test/`; the logic is imported from pure modules (`src/fixation.ts`,
   `src/size.ts`) shared with `webkit.ts` — not duplicated.

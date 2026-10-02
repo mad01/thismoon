@@ -92,7 +92,7 @@ test('deriveVariant: authored roles come through, series fan out, derived roles 
   assert.equal(r['tone-neutral-bg'], variant.chip);
   assert.equal(r['topbar-bg'], 'rgba(16,16,16,0.88)');
   assert.equal(r['scrim'], 'rgba(32,32,32,0.45)', 'dark scrim is paper at 45%');
-  assert.equal(r['terracotta'], variant.primary, 'legacy alias');
+  assert.ok(!('terracotta' in r), 'the terracotta alias is gone; present resolves it to primary');
   assert.equal(r['on-red'], '#FFFFFF', 'white on a dark fill');
   assert.equal(r['on-yellow'], variant.bg, 'the deepest ink on a pale fill in dark mode');
   assert.equal(deriveVariant(variant, 'light')['on-yellow'], variant['text-1'], 'and text-1 in light mode');

@@ -122,8 +122,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#C4704B"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did."
    },
@@ -222,10 +221,9 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#C4704B"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring and the terracotta alias keep the light-mode values the old stylesheet never overrode in dark."
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark."
    }
   },
   {
@@ -328,8 +326,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#8839ef"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach"
    },
@@ -428,8 +425,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#cba6f7"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "same ladder as Latte: bg mantle, paper base, chip surface0, border-hover surface1"
    }
@@ -534,8 +530,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#af3a03"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg light0, paper light0_hard, chip light1, border-hover light2; ink dark1, dark2, dark4; faded accents for contrast on light"
    },
@@ -634,8 +629,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#fe8019"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "bg dark0, paper dark1, chip dark2, border-hover dark3; ink light1, light2, light4; bright accents"
    }
@@ -740,8 +734,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#5e81ac"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light"
    },
@@ -840,8 +833,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#88c0d0"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "bg nord0, paper nord1, chip nord2, border-hover nord3; primary nord8 is Nord's primary accent; blue nord9"
    }
@@ -946,8 +938,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#4078f2"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan"
    },
@@ -1046,8 +1037,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#61afef"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "paper is the syntax background hsl(220,13%,18%); bg and chip are the One Dark UI panel steps; border the selection colour, border-hover the gutter; ink mono-1, mono-2, mono-3"
    }
@@ -1152,8 +1142,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#d7827e"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg base, paper surface, chip overlay, border highlight med, border-hover highlight high; text from the neovim palette file (older ports carry #575279); primary rose, red love, green pine, amber and yellow gold, blue foam, purple iris"
    },
@@ -1252,8 +1241,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#ebbcba"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "bg base, paper surface, chip overlay, border-hover highlight med; same role mapping as Dawn"
    }
@@ -1358,8 +1346,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#268bd2"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta"
    },
@@ -1458,8 +1445,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#268bd2"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "bg base03, paper base02, chip base02; border derived (base02 toward base01); text-1 base1, text-2 base0, text-3 base01"
    }
@@ -1564,8 +1550,7 @@
      "shadow-xs": "0 1px 2px rgba(37,35,32,0.05)",
      "shadow-sm": "0 2px 6px rgba(37,35,32,0.07), 0 1px 2px rgba(37,35,32,0.04)",
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
-     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)",
-     "terracotta": "#2e7de9"
+     "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
     "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan"
    },
@@ -1664,8 +1649,7 @@
      "shadow-xs": "0 1px 2px rgba(0,0,0,0.15)",
      "shadow-sm": "0 2px 6px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.12)",
      "shadow-md": "0 4px 16px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.18)",
-     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)",
-     "terracotta": "#7aa2f7"
+     "shadow-lg": "0 12px 40px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.25)"
     },
     "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover terminal_black; text-3 comment"
    }

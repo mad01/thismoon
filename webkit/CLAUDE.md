@@ -115,11 +115,11 @@ a role with one `cssVar` call. The generated blocks sit at the top of
 No selector is `:root`-scoped, so a subtree can carry its own palette; the
 themes page renders every card that way. The rules in `src/webkit.css` read
 roles only (`--primary`, `--on-primary`, `--topbar-bg`, `--code-bg`), never a
-ramp value. One alias remains: `--terracotta`, declared as `--primary` for
-the panel accents present pages stored under that name and still render as
-`var(--terracotta)`. The default family pins it to the light-mode primary in
-dark, where its primary is a lighter shade. `--green-light` is gone; csl, its
-last reader, paints its query tokens with the semantic colour roles.
+ramp value. The aliases are gone too. `--green-light` went when csl, its
+last reader, moved its query tokens to the semantic colour roles.
+`--terracotta` went when present started rendering the panel accent stored
+under that name as `var(--primary)`; present's own shell declares the old
+name for pages a shared instance never rerenders.
 
 Selection is three `localStorage` keys. `webkit-theme` keeps `light` | `dark`
 and gains `system` (follows `prefers-color-scheme`); `webkit-palette-light` and

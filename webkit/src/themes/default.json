@@ -52,7 +52,7 @@
   },
   "dark": {
     "variant": "Warm gray",
-    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring and the terracotta alias keep the light-mode values the old stylesheet never overrode in dark.",
+    "notes": "The semantic colours keep their light values, as the old dark block never overrode them, except purple, the one brightened in dark so purple text meets 3:1 on the chip surface (graph-module-4 keeps the old purple); the graph, chart, tag, and code roles pin the brighter literals app.js and the dark code block used. on-primary stays white (the old rules put #fff on every accent fill) while chip-active-text keeps the old dark literal, and the focus ring keeps the light-mode value the old stylesheet never overrode in dark.",
     "bg": "#1A1916",
     "paper": "#252320",
     "chip": "#35322C",
@@ -73,7 +73,6 @@
     "overrides": {
       "chip-active-text": "#1A1916",
       "focus-ring": "rgba(196,112,75,0.15)",
-      "terracotta": "#C4704B",
       "primary-soft": "#d4855f",
       "text-body": "#B8B2A7",
       "ra-highlight": "#4A3328",

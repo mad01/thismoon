@@ -25,10 +25,9 @@ var defaultLight = map[string]string{
 	"progress-bg": "#EEECE8", "progress-fill": "#C4704B",
 	"tag-a": "#E8D5C4", "tag-a-text": "#8B5A2B", "tag-b": "#D4E8D4", "tag-b-text": "#2B6B3E",
 	"tag-c": "#D4DEE8", "tag-c-text": "#2B4A6B", "ra-highlight": "#F3DDD2",
-	"terracotta": "#C4704B", "primary-soft": "#d4855f",
 	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
 	"blue": "#5B8EC4", "purple": "#8B6BB0",
-	"text-body": "#4A453D",
+	"primary-soft": "#d4855f", "text-body": "#4A453D",
 	"topbar-bg": "rgba(250,249,247,0.88)", "scrim": "rgba(37,35,32,0.45)",
 	"focus-ring": "rgba(196,112,75,0.15)",
 	"code-bg":    "#FFFFFF", "code-header-bg": "#EEECE8", "code-border": "#D8D4CD",
@@ -62,12 +61,12 @@ var defaultDark = map[string]string{
 	"tag-a": "#3A2E20", "tag-a-text": "#E8B86A", "tag-b": "#1E3A2A", "tag-b-text": "#6BC48A",
 	"tag-c": "#1E2A3A", "tag-c-text": "#7AAAE8", "ra-highlight": "#4A3328",
 	"primary-soft": "#d4855f",
-	// The semantic colours, the terracotta alias, and the focus ring keep
-	// their light values: the old dark block never overrode them (decision 7
-	// of the design). Purple is the one exception, brightened so purple text
-	// meets 3:1 on the chip surface; graph-module-4 keeps the old purple.
+	// The semantic colours and the focus ring keep their light values: the
+	// old dark block never overrode them (decision 7 of the design). Purple
+	// is the one exception, brightened so purple text meets 3:1 on the chip
+	// surface; graph-module-4 keeps the old purple.
 	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
-	"blue": "#5B8EC4", "purple": "#B294D8", "terracotta": "#C4704B",
+	"blue": "#5B8EC4", "purple": "#B294D8",
 	"focus-ring": "rgba(196,112,75,0.15)",
 	"text-body":  "#B8B2A7",
 	"topbar-bg":  "rgba(26,25,22,0.88)", "scrim": "rgba(37,35,32,0.45)",
@@ -252,11 +251,13 @@ func TestStylesheetCarriesEveryFamily(t *testing.T) {
 		}
 	}
 	// The ramp names are gone: a rule reading them would be invalid under
-	// another family. So is --green-light, with its last reader (csl) on
-	// roles. --terracotta stays declared as an alias of primary for the panel
-	// accents present pages stored under that name.
+	// another family. So are the aliases: --green-light once csl, its last
+	// reader, moved to roles, and --terracotta once present rendered the
+	// panel accent stored under that name as the primary role and took the
+	// stored-HTML compatibility rule into its own shell (MAD-371).
 	for _, gone := range []string{
-		"var(--wg", "var(--cream)", "var(--off-white)", "var(--terracotta-light)", "--green-light:",
+		"var(--wg", "var(--cream)", "var(--off-white)", "var(--terracotta-light)",
+		"--green-light:", "--terracotta:",
 	} {
 		if strings.Contains(css, gone) {
 			t.Errorf("webkit.css still carries %q", gone)
