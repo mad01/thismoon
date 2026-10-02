@@ -433,7 +433,7 @@ webkit.css defines the palette as CSS custom properties on `:root` and overrides
 | `--border-hover` | `#B8B2A7` | `#4A453D` |
 | `--text-1` / `--text-2` / `--text-3` | `#252320` / `#6B6459` / `#8C8578` | `#D8D4CD` / `#B8B2A7` / `#8C8578` |
 | `--primary` / `--on-primary` | `#C4704B` / `#FFFFFF` | `#E8956A` / `#FFFFFF` |
-| `--red` `--green` `--amber` `--yellow` `--blue` `--purple` | the semantic set | the same values (decision 7) |
+| `--red` `--green` `--amber` `--yellow` `--blue` `--purple` | the semantic set | the same values (decision 7), except `--purple` `#B294D8`, brightened for contrast on chips |
 | `--series-1` to `--series-4` | `#C4704B` `#5B8EC4` `#4A9E6B` `#8B6BB0` | `#E8956A` `#7AAAE8` `#6BC48A` `#8B6BB0` |
 
 Those are the default family's values. Every other family declares the same
@@ -454,10 +454,12 @@ rule that reads a role follows the reader's choice.
   `--chart-text`, `--chart-label`
 
 The old ramp primitives (`--cream`, `--off-white`, `--wg100` to `--wg900`,
-`--terracotta-light`) are gone. `--terracotta` and `--green-light` stay for
-the consumers that haven't moved to roles: terracotta keeps the light-mode
-primary and is pinned separately in dark, where the default primary is a
-lighter shade, and green-light is the derived light green.
+`--terracotta-light`) are gone, and so is `--green-light` now that csl, its
+last reader, paints its query tokens with the semantic colour roles. One alias
+remains: `--terracotta`, declared as `--primary` for the panel accents present
+pages stored under that name and still render as `var(--terracotta)`. The
+default family pins it to the light-mode primary in dark, where its primary is
+a lighter shade.
 
 **`localStorage` state keys (global, shared across a tool's pages):**
 

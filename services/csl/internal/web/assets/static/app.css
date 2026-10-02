@@ -24,16 +24,14 @@
   font-size: 1rem; color: var(--text-1); white-space: pre;
 }
 /* Token colors are shared by the live search overlay (.search-hl) and the
-   highlighted example queries on the landing view (.qhl). */
+   highlighted example queries on the landing view (.qhl). Each token reads a
+   semantic colour role in both modes, so the hues follow the palette family
+   the reader picked; the family's dark variant decides how bright they are. */
 .search-hl .t-field, .qhl .t-field { color: var(--blue); font-weight: 600; }
 .search-hl .t-neg,   .qhl .t-neg   { color: var(--red); font-weight: 600; }
 .search-hl .t-str,   .qhl .t-str   { color: var(--green); }
 .search-hl .t-paren, .qhl .t-paren { color: var(--amber); font-weight: 600; }
 .search-hl .t-op,    .qhl .t-op    { color: var(--purple); font-weight: 600; }
-[data-theme="dark"] .search-hl .t-field, [data-theme="dark"] .qhl .t-field { color: #7AAAE8; }
-[data-theme="dark"] .search-hl .t-str,   [data-theme="dark"] .qhl .t-str   { color: var(--green-light); }
-[data-theme="dark"] .search-hl .t-paren, [data-theme="dark"] .qhl .t-paren { color: #E8B86A; }
-[data-theme="dark"] .search-hl .t-op,    [data-theme="dark"] .qhl .t-op    { color: #B294D8; }
 
 /* ── Lexical ⇄ semantic mode toggle ── */
 .kind-row { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; }
@@ -99,7 +97,6 @@
   font-size: 0.8125rem; color: var(--text-2);
 }
 .file-path { color: var(--blue); text-decoration: none; word-break: break-all; }
-[data-theme="dark"] .file-path { color: #7AAAE8; }
 .file-path:hover { text-decoration: underline; }
 .file-actions { margin-left: auto; display: flex; gap: 0.4rem; }
 .mini-btn {
@@ -116,8 +113,9 @@
 .line.hit .ln { color: var(--primary); font-weight: 600; }
 .line .code { color: var(--text-1); }
 .line.ctx .code { color: var(--text-2); }
-.line mark { background: rgba(217,119,6,0.28); color: inherit; border-radius: 2px; padding: 0 1px; }
-[data-theme="dark"] .line mark { background: rgba(232,149,106,0.3); }
+/* A match reads the palette's highlight role, the tint webkit also uses for
+   the read-aloud sentence, so it follows the family instead of a literal. */
+.line mark { background: var(--ra-highlight); color: inherit; border-radius: 2px; padding: 0 1px; }
 
 .empty { text-align: center; color: var(--text-3); padding: 3rem 1rem; font-size: 0.9375rem; }
 

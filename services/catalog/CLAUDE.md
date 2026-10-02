@@ -259,14 +259,18 @@ load webkit assets, and use `<wk-header>`:
 
 ```html
 <wk-header brand="catalog.">
+  <a data-nav href="/webkit/themes">Themes</a>
   <button data-extra id="refreshBtn">Refresh</button>
   <button data-extra id="addBtn">Add</button>
 </wk-header>
 ```
 
-`[data-extra]` children are rendered in the controls area as-is; `app.js` wires
-their click handlers by `id`. `webkit.js` injects the full control set
-(font · fixation · size ± · reload · theme). Don't add those controls manually.
+The `[data-nav]` Themes link opens the palette picker webkit serves at
+`/webkit/themes`; catalog, csl, and present link it from their headers, since
+the browser stores the choice per origin. `[data-extra]` children are rendered
+in the controls area as-is; `app.js` wires their click handlers by `id`.
+`webkit.js` injects the full control set (font · fixation · size ± · reload ·
+theme). Don't add those controls manually.
 
 ### Per-repo changes
 
@@ -283,12 +287,15 @@ their click handlers by `id`. `webkit.js` injects the full control set
   - `<wk-toast-host>` + `<wk-toast>` for save/error feedback
   - `<wk-page-header>`, `<wk-table>`, `<wk-panel>` (+ sub-elements)
 - Catalog-bespoke CSS (kept in `app.css`, not part of webkit):
-  `--display`, `--sys`, `--comp` CSS variables, `.grain` texture overlay,
+  `--display`, plus the entity accents `--sys` and `--comp`, which read the
+  `--primary` and `--blue` palette roles so they follow the family and mode;
+  `.grain` texture overlay,
   `.section` / `.detail-*` layout classes, `.cy-*` Cytoscape chrome,
   `.icon-btn` icon-only buttons.
 - Theme changes fire a `document` event, `wk-themechange`, with
   `detail.theme`. `app.js` listens there and calls `buildGraph()` to
-  re-render the Cytoscape dependency graph.
+  re-render the Cytoscape dependency graph, which reads the `--graph-*`
+  palette roles rather than carrying colour literals of its own.
 
 ### Version check
 

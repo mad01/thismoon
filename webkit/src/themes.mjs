@@ -121,7 +121,6 @@ export function deriveVariant(v, mode) {
   r['progress-fill'] = v.primary;
   r['primary-soft'] = mix(v.primary, v.paper, 0.2);
   r['text-body'] = mix(v['text-1'], v['text-2'], 0.5);
-  r['green-light'] = mix(v.green, v.paper, 0.25);
   r['ra-highlight'] = mix(v.paper, v.primary, 0.25);
   r['tag-a'] = mix(v.paper, v.amber, 0.2);
   r['tag-a-text'] = mix(v.amber, v['text-1'], 0.5);
@@ -173,7 +172,9 @@ export function deriveVariant(v, mode) {
 
   Object.assign(r, SHADOWS[mode]);
 
-  // Legacy aliases: consumers not yet on roles (catalog, csl) still read these.
+  // Legacy alias: present pages store a panel accent under this name and
+  // render var(--terracotta), so it stays declared as the primary accent. The
+  // default family pins it to the light-mode value in dark (see default.json).
   r['terracotta'] = v.primary;
 
   for (const [role, value] of Object.entries(v.overrides ?? {})) r[role] = value;
