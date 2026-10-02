@@ -246,12 +246,11 @@ section.
     <wk-kv-row><wk-kv-label>Port</wk-kv-label><wk-kv-value><code>7423</code></wk-kv-value></wk-kv-row>
   </wk-kv>
   ```
-- `<wk-section>` with `<wk-section-heading>`, `<wk-section-id>`, `<wk-section-subheading>` —
-  document section with a ruled, primary-underlined heading. `<wk-section-id>` renders
-  a monospaced numbered badge. Example:
+- `<wk-section>` with `<wk-section-heading>`, `<wk-section-subheading>` —
+  document section with a ruled, primary-underlined heading. Example:
   ```html
   <wk-section>
-    <wk-section-heading><wk-section-id>01</wk-section-id>Overview</wk-section-heading>
+    <wk-section-heading>Overview</wk-section-heading>
     <p>Body paragraph.</p>
     <wk-section-subheading>Details</wk-section-subheading>
     <p>More text.</p>
@@ -305,13 +304,12 @@ section.
   horizontal progress bar. Consumer sets fill width inline. Example:
   `<wk-progress><wk-progress-bar><wk-progress-fill style="width:63%"></wk-progress-fill></wk-progress-bar><wk-progress-label>63%</wk-progress-label></wk-progress>`
 - `<wk-toc>` with `<wk-toc-title>` and a plain `<ul>/<li>/<a>` — table of contents
-  block. Links in `wk-toc` are styled in `--primary`; `<wk-section-id>` badges may
-  appear inline in anchors. Example:
+  block. Links in `wk-toc` are styled in `--primary`. Example:
   ```html
   <wk-toc>
     <wk-toc-title>Contents</wk-toc-title>
     <ul>
-      <li><a href="#overview"><wk-section-id>01</wk-section-id> Overview</a></li>
+      <li><a href="#overview">01 Overview</a></li>
       <li><a href="#usage">02 Usage</a></li>
     </ul>
   </wk-toc>

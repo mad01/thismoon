@@ -10,12 +10,12 @@
   --text-3: #8C8578;
   --primary: #C4704B;
   --on-primary: #FFFFFF;
-  --red: #C45B4B;
+  --red: #C15443;
   --green: #4A9E6B;
   --amber: #D97706;
   --yellow: #C4960B;
   --blue: #5B8EC4;
-  --purple: #8B6BB0;
+  --purple: #8868AE;
   --series-1: #C4704B;
   --series-2: #5B8EC4;
   --series-3: #4A9E6B;
@@ -36,10 +36,10 @@
   --tag-c: #D4DEE8;
   --tag-c-text: #2B4A6B;
   --on-red: #FFFFFF;
-  --on-green: #FFFFFF;
-  --on-amber: #FFFFFF;
-  --on-yellow: #FFFFFF;
-  --on-blue: #FFFFFF;
+  --on-green: #252320;
+  --on-amber: #252320;
+  --on-yellow: #252320;
+  --on-blue: #252320;
   --on-purple: #FFFFFF;
   --focus-ring: rgba(196,112,75,0.15);
   --topbar-bg: rgba(250,249,247,0.88);
@@ -228,7 +228,7 @@
   --on-red: #FFFFFF;
   --on-green: #FFFFFF;
   --on-amber: #FFFFFF;
-  --on-yellow: #FFFFFF;
+  --on-yellow: #4c4f69;
   --on-blue: #FFFFFF;
   --on-purple: #FFFFFF;
   --focus-ring: rgba(136,57,239,0.15);
@@ -393,7 +393,7 @@
   --red: #9d0006;
   --green: #79740e;
   --amber: #af3a03;
-  --yellow: #b57614;
+  --yellow: #a36a12;
   --blue: #076678;
   --purple: #8f3f71;
   --series-1: #af3a03;
@@ -580,12 +580,12 @@
   --text-3: #616e88;
   --primary: #5e81ac;
   --on-primary: #eceff4;
-  --red: #bf616a;
+  --red: #bb5660;
   --green: #a3be8c;
-  --amber: #d08770;
+  --amber: #d18a74;
   --yellow: #ebcb8b;
-  --blue: #5e81ac;
-  --purple: #b48ead;
+  --blue: #5579a5;
+  --purple: #b691af;
   --series-1: #5e81ac;
   --series-2: #88c0d0;
   --series-3: #a3be8c;
@@ -607,10 +607,10 @@
   --tag-c-text: #465b76;
   --on-red: #FFFFFF;
   --on-green: #2e3440;
-  --on-amber: #FFFFFF;
+  --on-amber: #2e3440;
   --on-yellow: #2e3440;
   --on-blue: #FFFFFF;
-  --on-purple: #FFFFFF;
+  --on-purple: #2e3440;
   --focus-ring: rgba(94,129,172,0.15);
   --topbar-bg: rgba(229,233,240,0.88);
   --scrim: rgba(46,52,64,0.45);
@@ -774,7 +774,7 @@
   --green: #50a14f;
   --amber: #986801;
   --yellow: #c18401;
-  --blue: #4078f2;
+  --blue: #326ef1;
   --purple: #a626a4;
   --series-1: #4078f2;
   --series-2: #0184bc;
@@ -796,9 +796,9 @@
   --tag-c: #d5e0f8;
   --tag-c-text: #3c599a;
   --on-red: #FFFFFF;
-  --on-green: #FFFFFF;
+  --on-green: #383a42;
   --on-amber: #FFFFFF;
-  --on-yellow: #FFFFFF;
+  --on-yellow: #383a42;
   --on-blue: #FFFFFF;
   --on-purple: #FFFFFF;
   --focus-ring: rgba(64,120,242,0.15);
@@ -960,12 +960,12 @@
   --text-3: #9893a5;
   --primary: #d7827e;
   --on-primary: #fffaf3;
-  --red: #b4637a;
+  --red: #b15c74;
   --green: #286983;
-  --amber: #ea9d34;
-  --yellow: #ea9d34;
-  --blue: #56949f;
-  --purple: #907aa9;
+  --amber: #eca646;
+  --yellow: #eca646;
+  --blue: #497e88;
+  --purple: #836b9f;
   --series-1: #d7827e;
   --series-2: #56949f;
   --series-3: #286983;
@@ -1154,8 +1154,8 @@
   --green: #859900;
   --amber: #cb4b16;
   --yellow: #b58900;
-  --blue: #268bd2;
-  --purple: #6c71c4;
+  --blue: #217ab8;
+  --purple: #686dc3;
   --series-1: #268bd2;
   --series-2: #2aa198;
   --series-3: #859900;
@@ -1340,12 +1340,12 @@
   --text-3: #848cb5;
   --primary: #2e7de9;
   --on-primary: #e1e2e7;
-  --red: #f52a65;
+  --red: #e60b4b;
   --green: #587539;
   --amber: #b15c00;
   --yellow: #8c6c3e;
-  --blue: #2e7de9;
-  --purple: #9854f1;
+  --blue: #1c72e7;
+  --purple: #954ff1;
   --series-1: #2e7de9;
   --series-2: #007197;
   --series-3: #587539;
@@ -2069,19 +2069,10 @@ wk-section-heading::after {
   background: var(--primary);
   border-radius: 1px;
 }
-wk-section-id {
-  font-family: var(--mono);
-  font-size: 0.875rem;
-  font-weight: 700;
-  background: var(--chip-bg);
-  color: var(--primary);
-  padding: 0.1875rem 0.5rem;
-  border-radius: 4px;
-  margin-right: 0.625rem;
-  vertical-align: baseline;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
+/* wk-section-id is retired (MAD-377) and nothing in the repo emits it. A page
+   stored on a shared present instance may still carry the element until it is
+   shared again, so this rule hides it. */
+wk-section-id { display: none; }
 wk-section p {
   font-size: 0.9375rem;
   line-height: 1.75;
@@ -2311,7 +2302,6 @@ wk-toc a {
   transition: color 0.15s;
 }
 wk-toc a:hover { text-decoration: underline; }
-wk-toc wk-section-id { font-size: 0.75rem; }
 
 /* ── wk-seg (segmented control) ── */
 

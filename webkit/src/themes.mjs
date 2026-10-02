@@ -104,9 +104,9 @@ export function contrast(a, b) {
  * with more contrast on it. The deepest ink is text-1 in light and bg in dark;
  * in dark, text-1 is pale and never beats white. A luminance threshold used to
  * pick white for every fill under 0.4, which left the dark semantic fills
- * between 2.4 and 4.3 (MAD-376). The Go contrast test holds every dark ink to
- * 4.5 on its fill, and a family pins on-<colour> under overrides where the
- * rule must not decide.
+ * between 2.4 and 4.3 (MAD-376). The Go contrast test holds every ink, light
+ * and dark, to 4.5 on its fill, and a family pins on-<colour> under overrides
+ * where the rule must not decide.
  */
 function onColour(fill, variant, mode) {
   const deep = mode === 'light' ? variant['text-1'] : variant.bg;

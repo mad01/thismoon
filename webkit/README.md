@@ -37,7 +37,7 @@ See [`COMPONENTS.md`](COMPONENTS.md) for the full design spec. Summary:
 | `<wk-seg>` | CSS-only | Segmented control; `<button class="active">` marks selected |
 | `<wk-table>` | CSS-only | Wraps a descendant `<table>` as a data table |
 | `<wk-kv>`, `<wk-kv-row>`, `<wk-kv-label>`, `<wk-kv-value>` | CSS-only | Key/value list; `variant="card"` adds border + rounded corners |
-| `<wk-section>`, `<wk-section-heading>`, `<wk-section-id>`, `<wk-section-subheading>` | CSS-only | Document section with a ruled heading |
+| `<wk-section>`, `<wk-section-heading>`, `<wk-section-subheading>` | CSS-only | Document section with a ruled heading |
 | `<wk-callout variant="info\|warn\|ok\|error">` | CSS-only | Left-bordered callout block |
 | `<wk-columns cols="2\|3">`, `<wk-col>` | CSS-only | Two or three equal columns of blocks; one column under 700px |
 | `<wk-stat>`, `<wk-stat-value>`, `<wk-stat-label>`, `<wk-stat-sub>` | CSS-only | Stat tile: a large figure over a label; the value stays out of fixation |

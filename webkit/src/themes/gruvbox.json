@@ -5,7 +5,7 @@
   "license": "MIT/X11 (README, no licence file)",
   "light": {
     "variant": "Light medium",
-    "notes": "bg light0, paper light0_hard, chip light1, border-hover light2; ink dark1, dark2, dark4; faded accents for contrast on light",
+    "notes": "bg light0, paper light0_hard, chip light1, border-hover light2; ink dark1, dark2, dark4; faded accents for contrast on light. yellow is faded yellow darkened four points of lightness so white ink reads 4.5 on it, where it read 3.8 (MAD-378)",
     "bg": "#fbf1c7",
     "paper": "#f9f5d7",
     "chip": "#ebdbb2",
@@ -19,7 +19,7 @@
     "red": "#9d0006",
     "green": "#79740e",
     "amber": "#af3a03",
-    "yellow": "#b57614",
+    "yellow": "#a36a12",
     "blue": "#076678",
     "purple": "#8f3f71",
     "series": ["#af3a03", "#076678", "#79740e", "#8f3f71"]

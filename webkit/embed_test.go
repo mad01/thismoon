@@ -41,6 +41,8 @@ func TestHandlerServesCSS(t *testing.T) {
 		"wk-badge[variant=\"filter\"]", "wk-badge[active]", "wk-search:has(", "wk-seg",
 		// content blocks
 		"wk-kv", "wk-section", "wk-callout", "wk-progress", "wk-toc",
+		// the retired section id badge (MAD-377) stays hidden on stored pages
+		"wk-section-id { display: none; }",
 		// layout blocks (MAD-365): columns, stat tile, quote and disclosure
 		// in a section, the ok callout
 		"wk-columns", "wk-columns[cols=\"3\"]", "wk-col", "wk-stat", "wk-stat-value",
@@ -123,6 +125,13 @@ func TestHandlerServesJS(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("webkit.js missing expected token %q", want)
+		}
+	}
+	// The section id badge is retired (MAD-377): nothing registers or skips
+	// the element any more; webkit.css only hides what stored pages carry.
+	for _, gone := range []string{"wk-section-id", "WK-SECTION-ID"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("webkit.js still carries the retired %q", gone)
 		}
 	}
 }

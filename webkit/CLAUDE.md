@@ -61,7 +61,7 @@ Badges: `<wk-badge variant="a|b|c|outline|stat|accent|filter">`;
 
 Content blocks: `<wk-kv>` / `<wk-kv-row>` / `<wk-kv-label>` / `<wk-kv-value>`
 (`variant="card"` adds border + rounded corners + uppercased labels),
-`<wk-section>` / `<wk-section-heading>` / `<wk-section-id>` /
+`<wk-section>` / `<wk-section-heading>` /
 `<wk-section-subheading>` (ruled heading), `<wk-callout variant="info|warn|ok|error">`,
 `<wk-progress>` / `<wk-progress-bar>` / `<wk-progress-fill>` /
 `<wk-progress-label>`, `<wk-toc>` / `<wk-toc-title>`, `<wk-columns cols="2|3">` /
@@ -96,13 +96,22 @@ Every other role is derived at build time by the fixed rules in
 grid and text, `text-body`, the alpha surfaces (`topbar-bg`, `scrim`,
 `focus-ring`), and the `on-<colour>` inks. An `on-<colour>` ink is white or
 the variant's deepest ink (`text-1` in light, `bg` in dark), whichever reads
-with more contrast on that fill. `themes_contrast_test.go` holds every dark
-ink to 4.5:1 on its fill, with solarized's named exceptions, and pins the
-light inks to the values they compiled to before that rule existed (the
-light-mode debt is MAD-378). A variant can pin any derived role under
-`overrides`. The default family does that for
-every role whose derived value differs from the old hand-written stylesheet,
-so it stays byte-identical (pinned by `TestDefaultFamilyPinsTodaysPalette`).
+with more contrast on that fill.
+
+`themes_contrast_test.go` holds every ink, light and dark, to 4.5:1 on its
+fill. Each mode has a named exception map. In dark it lists solarized's red,
+orange, and violet. In light it lists the fills whose family ink is too pale
+to win and which would have to become a different colour for white to reach
+the bar. Those are catppuccin's green, peach, and yellow, One's red, green,
+and yellow, and solarized's green and yellow. Where a fill sat just under
+the bar, the family moved it a few points of lightness with the hue held. It pinned the roles derived from that
+fill to the published values, so only the fill and its ink changed (MAD-372,
+MAD-376, MAD-378).
+
+A variant can pin any derived role under `overrides`. The default family
+does that for every role whose derived value differs from the old
+hand-written stylesheet, so it stays byte-identical (pinned by
+`TestDefaultFamilyPinsTodaysPalette`).
 
 The build emits every role as a literal hex or rgba, never a `var()` or a
 `color-mix()`. Cytoscape and Chart.js parse colour strings themselves, and

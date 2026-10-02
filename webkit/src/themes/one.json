@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "One Light",
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. on-green and on-yellow are pinned to white: the ink rule would take mono-1 on them, a light-mode change left to MAD-378",
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published",
     "bg": "#eaeaeb",
     "paper": "#fafafa",
     "chip": "#e5e5e6",
@@ -20,12 +20,17 @@
     "green": "#50a14f",
     "amber": "#986801",
     "yellow": "#c18401",
-    "blue": "#4078f2",
+    "blue": "#326ef1",
     "purple": "#a626a4",
     "series": ["#4078f2", "#0184bc", "#50a14f", "#a626a4"],
     "overrides": {
-      "on-green": "#FFFFFF",
-      "on-yellow": "#FFFFFF"
+      "tag-c": "#d5e0f8",
+      "tag-c-text": "#3c599a",
+      "code-symbol": "#4078f2",
+      "graph-module-2": "#4078f2",
+      "tone-blue-bg": "#e0e8f9",
+      "tone-blue-border": "#4078f2",
+      "tone-blue-text": "#3b5388"
     }
   },
   "dark": {

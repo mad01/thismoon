@@ -40,12 +40,12 @@
      "text-3": "#8C8578",
      "primary": "#C4704B",
      "on-primary": "#FFFFFF",
-     "red": "#C45B4B",
+     "red": "#C15443",
      "green": "#4A9E6B",
      "amber": "#D97706",
      "yellow": "#C4960B",
      "blue": "#5B8EC4",
-     "purple": "#8B6BB0",
+     "purple": "#8868AE",
      "series-1": "#C4704B",
      "series-2": "#5B8EC4",
      "series-3": "#4A9E6B",
@@ -66,10 +66,10 @@
      "tag-c": "#D4DEE8",
      "tag-c-text": "#2B4A6B",
      "on-red": "#FFFFFF",
-     "on-green": "#FFFFFF",
-     "on-amber": "#FFFFFF",
-     "on-yellow": "#FFFFFF",
-     "on-blue": "#FFFFFF",
+     "on-green": "#252320",
+     "on-amber": "#252320",
+     "on-yellow": "#252320",
+     "on-blue": "#252320",
      "on-purple": "#FFFFFF",
      "focus-ring": "rgba(196,112,75,0.15)",
      "topbar-bg": "rgba(250,249,247,0.88)",
@@ -124,7 +124,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed, so the default renders byte for byte as it did. That includes on-green, on-amber, on-yellow, and on-blue. The old rules put white on every fill, and the ink rule would now take text-1 on those four, a light-mode change left to MAD-378."
+    "notes": "webkit's original warm-gray palette. Every override pins a role to the literal the hand-written stylesheet and present's graph and chart code carried before themes existed. The default therefore renders byte for byte as it did, apart from the ink work of MAD-378. Red is darkened two points of lightness and purple one, so white ink reads 4.5 on the danger button and the toasts where it read 4.25 and 4.35. The roles derived from both keep the old literals. The ink rule takes text-1 on green, amber, yellow, and blue, where white read between 2.7 and 3.4."
    },
    "dark": {
     "variant": "Warm gray",
@@ -272,7 +272,7 @@
      "on-red": "#FFFFFF",
      "on-green": "#FFFFFF",
      "on-amber": "#FFFFFF",
-     "on-yellow": "#FFFFFF",
+     "on-yellow": "#4c4f69",
      "on-blue": "#FFFFFF",
      "on-purple": "#FFFFFF",
      "focus-ring": "rgba(136,57,239,0.15)",
@@ -328,7 +328,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. on-yellow is pinned to white: the ink rule would take the text ink on it, a light-mode change left to MAD-378"
+    "notes": "bg mantle, paper base, chip crust, border surface0 and surface1, text subtext0 and overlay1, primary mauve, amber is peach. Latte's text ink is a mid grey, so no ink reaches 4.5 on green, peach, or yellow. A fill dark enough for white ink would be a different colour from the published one, a Lab distance of 13.8 or more, so the three stay as published: white reads 3.34 on green and 2.98 on peach, and the text ink 3.05 on yellow (MAD-378)"
    },
    "dark": {
     "variant": "Mocha",
@@ -451,7 +451,7 @@
      "red": "#9d0006",
      "green": "#79740e",
      "amber": "#af3a03",
-     "yellow": "#b57614",
+     "yellow": "#a36a12",
      "blue": "#076678",
      "purple": "#8f3f71",
      "series-1": "#af3a03",
@@ -532,7 +532,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg light0, paper light0_hard, chip light1, border-hover light2; ink dark1, dark2, dark4; faded accents for contrast on light"
+    "notes": "bg light0, paper light0_hard, chip light1, border-hover light2; ink dark1, dark2, dark4; faded accents for contrast on light. yellow is faded yellow darkened four points of lightness so white ink reads 4.5 on it, where it read 3.8 (MAD-378)"
    },
    "dark": {
     "variant": "Dark medium",
@@ -652,12 +652,12 @@
      "text-3": "#616e88",
      "primary": "#5e81ac",
      "on-primary": "#eceff4",
-     "red": "#bf616a",
+     "red": "#bb5660",
      "green": "#a3be8c",
-     "amber": "#d08770",
+     "amber": "#d18a74",
      "yellow": "#ebcb8b",
-     "blue": "#5e81ac",
-     "purple": "#b48ead",
+     "blue": "#5579a5",
+     "purple": "#b691af",
      "series-1": "#5e81ac",
      "series-2": "#88c0d0",
      "series-3": "#a3be8c",
@@ -679,10 +679,10 @@
      "tag-c-text": "#465b76",
      "on-red": "#FFFFFF",
      "on-green": "#2e3440",
-     "on-amber": "#FFFFFF",
+     "on-amber": "#2e3440",
      "on-yellow": "#2e3440",
      "on-blue": "#FFFFFF",
-     "on-purple": "#FFFFFF",
+     "on-purple": "#2e3440",
      "focus-ring": "rgba(94,129,172,0.15)",
      "topbar-bg": "rgba(229,233,240,0.88)",
      "scrim": "rgba(46,52,64,0.45)",
@@ -736,7 +736,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light. on-amber and on-purple are pinned to white: the ink rule would take nord0 on them, a light-mode change left to MAD-378"
+    "notes": "Nord publishes no light variant; this one is built from its Snow Storm and Polar Night groups. bg nord5, paper nord6, chip nord4; border-hover derived (nord4 toward nord3); text-3 is nord3 brightened; aurora colours as published, pale on light, except four moved for the ink rule (MAD-378). red (nord11) and blue (nord10) are darkened three points of lightness so white ink reads 4.5 on them. amber (nord12) and purple (nord15) are lightened one point so nord0 ink does. The roles derived from the four stay pinned to the published values"
    },
    "dark": {
     "variant": "Polar Night",
@@ -860,7 +860,7 @@
      "green": "#50a14f",
      "amber": "#986801",
      "yellow": "#c18401",
-     "blue": "#4078f2",
+     "blue": "#326ef1",
      "purple": "#a626a4",
      "series-1": "#4078f2",
      "series-2": "#0184bc",
@@ -882,9 +882,9 @@
      "tag-c": "#d5e0f8",
      "tag-c-text": "#3c599a",
      "on-red": "#FFFFFF",
-     "on-green": "#FFFFFF",
+     "on-green": "#383a42",
      "on-amber": "#FFFFFF",
-     "on-yellow": "#FFFFFF",
+     "on-yellow": "#383a42",
      "on-blue": "#FFFFFF",
      "on-purple": "#FFFFFF",
      "focus-ring": "rgba(64,120,242,0.15)",
@@ -940,7 +940,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. on-green and on-yellow are pinned to white: the ink rule would take mono-1 on them, a light-mode change left to MAD-378"
+    "notes": "paper is the syntax background hsl(230,1%,98%); bg, chip, and border are derived steps below it (the syntax palette publishes one surface); ink mono-1, mono-2, mono-3; amber and yellow are the two orange hues; series two is cyan. blue is darkened three points of lightness so white ink reads 4.5 on it, and the roles derived from it stay pinned to the published value (MAD-378). The rule takes white on red and mono-1 on green and yellow, at 3.7, 3.5, and 3.6. A fill that reaches 4.5 with either ink is a different colour, a Lab distance of 11.6 or more. Green alone has a near option, nine points lighter at 8.9, but that drops green as text on paper from 3.1 to 2.4. So the three stay as published"
    },
    "dark": {
     "variant": "One Dark",
@@ -1060,12 +1060,12 @@
      "text-3": "#9893a5",
      "primary": "#d7827e",
      "on-primary": "#fffaf3",
-     "red": "#b4637a",
+     "red": "#b15c74",
      "green": "#286983",
-     "amber": "#ea9d34",
-     "yellow": "#ea9d34",
-     "blue": "#56949f",
-     "purple": "#907aa9",
+     "amber": "#eca646",
+     "yellow": "#eca646",
+     "blue": "#497e88",
+     "purple": "#836b9f",
      "series-1": "#d7827e",
      "series-2": "#56949f",
      "series-3": "#286983",
@@ -1144,7 +1144,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg base, paper surface, chip overlay, border highlight med, border-hover highlight high; text from the neovim palette file (older ports carry #575279); primary rose, red love, green pine, amber and yellow gold, blue foam, purple iris"
+    "notes": "bg base, paper surface, chip overlay, border highlight med, border-hover highlight high; text from the neovim palette file (older ports carry #575279); primary rose, red love, green pine, amber and yellow gold, blue foam, purple iris. red, blue, and purple are darkened two, seven, and five points of lightness so white ink reads 4.5 on them. gold (amber and yellow) is lightened four so the text ink does. The roles derived from the four stay pinned to the published values (MAD-378)"
    },
    "dark": {
     "variant": "Main",
@@ -1268,8 +1268,8 @@
      "green": "#859900",
      "amber": "#cb4b16",
      "yellow": "#b58900",
-     "blue": "#268bd2",
-     "purple": "#6c71c4",
+     "blue": "#217ab8",
+     "purple": "#686dc3",
      "series-1": "#268bd2",
      "series-2": "#2aa198",
      "series-3": "#859900",
@@ -1348,7 +1348,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta"
+    "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta. blue and violet are darkened six points and one point of lightness so white ink reads 4.5 on them. The roles derived from both stay pinned to the published values. base01 ink reads under 1.7 on every accent, and a green or yellow dark enough for white ink is a different colour from the published pair, a Lab distance of 15.3 and 14.8, so both keep white at 3.2 (MAD-378)"
    },
    "dark": {
     "variant": "Dark",
@@ -1468,12 +1468,12 @@
      "text-3": "#848cb5",
      "primary": "#2e7de9",
      "on-primary": "#e1e2e7",
-     "red": "#f52a65",
+     "red": "#e60b4b",
      "green": "#587539",
      "amber": "#b15c00",
      "yellow": "#8c6c3e",
-     "blue": "#2e7de9",
-     "purple": "#9854f1",
+     "blue": "#1c72e7",
+     "purple": "#954ff1",
      "series-1": "#2e7de9",
      "series-2": "#007197",
      "series-3": "#587539",
@@ -1552,7 +1552,7 @@
      "shadow-md": "0 4px 16px rgba(37,35,32,0.09), 0 2px 4px rgba(37,35,32,0.05)",
      "shadow-lg": "0 12px 40px rgba(37,35,32,0.14), 0 4px 8px rgba(37,35,32,0.06)"
     },
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan"
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan. Day's ink never beats white, so red, blue, and magenta are darkened nine, four, and one points of lightness for white ink to read 4.5 on them, where it read 3.9, 4.0, and 4.3. Red is the largest move in the collection, a Lab distance of 9.9. The roles derived from the three stay pinned to the published values (MAD-378)"
    },
    "dark": {
     "variant": "Night",

@@ -5,7 +5,7 @@
   "license": "MIT",
   "light": {
     "variant": "Light",
-    "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta",
+    "notes": "bg base2, paper base3, chip base2 (the palette has two light tones); border derived (base2 toward base1); text-1 base01 emphasised, text-2 base00 body, text-3 base1; amber is orange, purple is violet, series two is cyan and four is magenta. blue and violet are darkened six points and one point of lightness so white ink reads 4.5 on them. The roles derived from both stay pinned to the published values. base01 ink reads under 1.7 on every accent, and a green or yellow dark enough for white ink is a different colour from the published pair, a Lab distance of 15.3 and 14.8, so both keep white at 3.2 (MAD-378)",
     "bg": "#eee8d5",
     "paper": "#fdf6e3",
     "chip": "#eee8d5",
@@ -20,9 +20,22 @@
     "green": "#859900",
     "amber": "#cb4b16",
     "yellow": "#b58900",
-    "blue": "#268bd2",
-    "purple": "#6c71c4",
-    "series": ["#268bd2", "#2aa198", "#859900", "#d33682"]
+    "blue": "#217ab8",
+    "purple": "#686dc3",
+    "series": ["#268bd2", "#2aa198", "#859900", "#d33682"],
+    "overrides": {
+      "tag-c": "#d2e1e0",
+      "tag-c-text": "#3f7da4",
+      "code-symbol": "#268bd2",
+      "graph-module-2": "#268bd2",
+      "graph-module-4": "#6c71c4",
+      "tone-blue-bg": "#dfe7e1",
+      "tone-blue-border": "#268bd2",
+      "tone-blue-text": "#447a9a",
+      "tone-purple-bg": "#e9e3df",
+      "tone-purple-border": "#6c71c4",
+      "tone-purple-text": "#606f95"
+    }
   },
   "dark": {
     "variant": "Dark",
