@@ -25,8 +25,12 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+// TestPagesServed asserts every page shell carries the webkit chrome and links
+// the themes page webkit serves, so a reader can pick a palette family from
+// any csl view.
 func TestPagesServed(t *testing.T) {
-	for _, path := range []string{"/"} {
+	const themesLink = `<a data-nav href="/webkit/themes">Themes</a>`
+	for _, path := range []string{"/", "/health", "/file", "/refresh"} {
 		rec := httptest.NewRecorder()
 		newTestServer().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {
@@ -41,6 +45,9 @@ func TestPagesServed(t *testing.T) {
 		}
 		if !strings.Contains(body, "/webkit/webkit.js") {
 			t.Errorf("%s body missing /webkit/webkit.js script", path)
+		}
+		if !strings.Contains(body, themesLink) {
+			t.Errorf("%s body has no themes link", path)
 		}
 	}
 }

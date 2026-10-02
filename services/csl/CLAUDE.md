@@ -307,13 +307,17 @@ stylesheet and before `webkit.js`:
 <wk-header brand="csl·search">
   <a data-nav class="active" href="/">Search</a>
   <a data-nav href="/health">Health</a>
+  <a data-nav href="/refresh">Refresh</a>
+  <a data-nav href="/webkit/themes">Themes</a>
 </wk-header>
 ```
 
-The health and file pages (`health.html`, `file.html`) carry the same header
-with the matching link marked `active`; page-specific logic lives in
-`static/health.js` / `static/file.js`, with the clipboard helpers shared via
-`static/common.js`.
+The health, refresh, and file pages (`health.html`, `refresh.html`,
+`file.html`) carry the same header with the matching link marked `active`;
+page-specific logic lives in `static/health.js` / `static/file.js`, with the
+clipboard helpers shared via `static/common.js`. The Themes link opens the
+palette picker webkit serves at `/webkit/themes`; every consumer links it from
+its header, since the browser stores the choice per origin.
 
 `webkit.js` injects the full control set (font · fixation · size ± · reload · theme)
 automatically; don't add those controls manually.
@@ -322,7 +326,8 @@ automatically; don't add those controls manually.
 
 - Header markup lives in `internal/web/assets/index.html`.
 - webkit components csl uses:
-  - `<wk-header brand="csl·search">` with a `[data-nav]` Search link
+  - `<wk-header brand="csl·search">` with `[data-nav]` Search, Health,
+    Refresh, and Themes links
   - `<wk-page-header>`, `<wk-title>`, `<wk-subtitle>` for the hero block
   - `<wk-search>` with a leading `<svg>` icon for the main query input
   - `<wk-seg>` for the Lexical / Semantic / Hybrid search-kind toggle and, separately, the Files / Matches view toggle
@@ -336,7 +341,10 @@ automatically; don't add those controls manually.
   (`#examples`, `.ex-section`, `.ex-q`, `.qhl`; data and render logic in
   `app.js`). The same file holds the zoekt query syntax highlighting on both
   the search input overlay and the example queries (`.search-box`,
-  `.search-hl`, `.qhl`, `.t-*` token classes; tokenizer in `app.js`).
+  `.search-hl`, `.qhl`, `.t-*` token classes; tokenizer in `app.js`). Every
+  colour there is a palette role (`--blue`, `--red`, `--green`, `--amber`,
+  `--purple` for the tokens, `--ra-highlight` for a match), never a literal,
+  so the page follows the family and mode the reader picked.
 - Theme changes fire `document` event `wk-themechange` with `detail.theme`. Listen there (not an `onThemeChange` callback) if a page needs to redraw when the theme flips.
 - `[data-nav]` children of `<wk-header>` become nav links; `[data-extra]`
   children become app-specific buttons in the controls area.
