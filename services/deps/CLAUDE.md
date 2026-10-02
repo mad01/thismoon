@@ -195,11 +195,13 @@ The boot script is blocking (no `defer`/`async`) on purpose: it must set
 ### Header markup (deps)
 
 ```html
-<wk-header brand="deps" title="Dependencies"></wk-header>
+<wk-header brand="deps" title="Dependencies"><a data-nav href="/webkit/themes">Themes</a></wk-header>
 ```
 
-`webkit.js` injects the full control set (font · fixation · size ± · reload ·
-theme). Don't add those controls manually.
+The Themes nav link opens the palette picker webkit serves at `/webkit/themes`,
+since the browser stores the choice per origin. `webkit.js` injects the full
+control set (font · fixation · size ± · reload · theme). Don't add those
+controls manually.
 
 ### Per-repo changes
 
