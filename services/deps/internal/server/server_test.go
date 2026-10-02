@@ -53,7 +53,11 @@ func TestPageServesShell(t *testing.T) {
 	body := rec.Body.String()
 	// The page is a static shell: chrome + an empty mount point + the client
 	// scripts. The body is rendered in the browser, so no dep data inlined.
-	for _, want := range []string{`id="app"`, "/app.js", "/webkit/webkit.js"} {
+	// The chrome links the themes page webkit serves.
+	for _, want := range []string{
+		`id="app"`, "/app.js", "/webkit/webkit.js",
+		`<a data-nav href="/webkit/themes">Themes</a>`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("shell missing %q", want)
 		}

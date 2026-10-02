@@ -316,8 +316,9 @@ The health, refresh, and file pages (`health.html`, `refresh.html`,
 `file.html`) carry the same header with the matching link marked `active`;
 page-specific logic lives in `static/health.js` / `static/file.js`, with the
 clipboard helpers shared via `static/common.js`. The Themes link opens the
-palette picker webkit serves at `/webkit/themes`; catalog, csl, and present
-link it from their headers, since the browser stores the choice per origin.
+palette picker webkit serves at `/webkit/themes`; every web service that
+mounts webkit links it from its header, since the browser stores the choice
+per origin.
 
 `webkit.js` injects the full control set (font · fixation · size ± · reload · theme)
 automatically; don't add those controls manually.

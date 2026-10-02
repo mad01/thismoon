@@ -159,11 +159,13 @@ the events routes.
 ### Header markup (events)
 
 ```html
-<wk-header brand="events" title="Events"></wk-header>
+<wk-header brand="events" title="Events"><a data-nav href="/webkit/themes">Themes</a></wk-header>
 ```
 
-`webkit.js` injects the full control set (font · fixation · size ± · reload ·
-theme). Don't add those controls manually.
+The Themes nav link opens the palette picker webkit serves at `/webkit/themes`,
+since the browser stores the choice per origin. `webkit.js` injects the full
+control set (font · fixation · size ± · reload · theme). Don't add those
+controls manually.
 
 ### Per-repo changes
 
