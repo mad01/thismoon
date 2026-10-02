@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.14.0](https://github.com/mad01/thismoon/compare/present/v1.13.0...present/v1.14.0) (2026-10-02)
+
+
+### Features
+
+* **present,webkit:** graph beside prose in columns, and an image block with local-file sources ([3aa6f41](https://github.com/mad01/thismoon/commit/3aa6f41f5af94ce71d26579ff3c434392b509814))
+* **present:** image block with URL and local-file sources ([ec8896c](https://github.com/mad01/thismoon/commit/ec8896c41954d4fc404fea7993ee152f5b057557))
+* **present:** the graph may sit in a column ([e32b956](https://github.com/mad01/thismoon/commit/e32b956605dbbd5916445d2513200f7d40020449))
+
+
+### Bug Fixes
+
+* **present:** a reused stored image is touched and concurrent sweeps tolerate each other ([a2c191b](https://github.com/mad01/thismoon/commit/a2c191bd5f16be070bb5fc9d30aab24539d64df6))
+* **present:** image sweep keeps reused files and runs at startup ([678c14b](https://github.com/mad01/thismoon/commit/678c14bd5a352649be06a8f327711f0aff90e4df))
+* **present:** stop prescribing section id badges and drop them from deck slides ([#180](https://github.com/mad01/thismoon/issues/180)) ([45feb7b](https://github.com/mad01/thismoon/commit/45feb7b13754c24c12d26b5b1d917af8d4b0c05d))
+
 ## [1.13.0](https://github.com/mad01/thismoon/compare/present/v1.12.0...present/v1.13.0) (2026-10-01)
 
 

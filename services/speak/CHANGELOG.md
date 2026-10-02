@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/speak/v0.13.0...speak/v0.14.0) (2026-10-02)
+
+
+### Features
+
+* **services:** link the themes page from the deps, events, keeper-of-facts, speak and status shells ([1c8aac9](https://github.com/mad01/thismoon/commit/1c8aac9e8527bf379910401a798c02960d804451))
+* **speak:** link the themes page from the shell ([184693c](https://github.com/mad01/thismoon/commit/184693c8c65b80592a73401a46ccb242d79f714e))
+
 ## [0.13.0](https://github.com/mad01/thismoon/compare/speak/v0.12.0...speak/v0.13.0) (2026-09-24)
 
 

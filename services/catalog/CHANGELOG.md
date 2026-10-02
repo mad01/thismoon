@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/mad01/thismoon/compare/catalog/v0.5.1...catalog/v0.6.0) (2026-10-02)
+
+
+### Features
+
+* **services:** link the themes page from the deps, events, keeper-of-facts, speak and status shells ([1c8aac9](https://github.com/mad01/thismoon/commit/1c8aac9e8527bf379910401a798c02960d804451))
+
 ## [0.5.1](https://github.com/mad01/thismoon/compare/catalog/v0.5.0...catalog/v0.5.1) (2026-08-29)
 
 

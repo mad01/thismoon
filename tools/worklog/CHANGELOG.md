@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/mad01/thismoon/compare/worklog/v0.11.0...worklog/v0.11.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **worklog:** scan names a cwd-derived repo by its checkout root ([#181](https://github.com/mad01/thismoon/issues/181)) ([555b0c2](https://github.com/mad01/thismoon/commit/555b0c26a00e157eee0a05f61612dc3d5bee6b38))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/worklog/v0.10.0...worklog/v0.11.0) (2026-10-01)
 
 

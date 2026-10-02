@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.14.0...keeper-of-facts/v0.15.0) (2026-10-02)
+
+
+### Features
+
+* **keeper-of-facts:** link the themes page from the shell ([83072af](https://github.com/mad01/thismoon/commit/83072af741b350e7cbbb36f6fd728d50aa777cb7))
+* **services:** link the themes page from the deps, events, keeper-of-facts, speak and status shells ([1c8aac9](https://github.com/mad01/thismoon/commit/1c8aac9e8527bf379910401a798c02960d804451))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/keeper-of-facts/v0.13.0...keeper-of-facts/v0.14.0) (2026-09-12)
 
 

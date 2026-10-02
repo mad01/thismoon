@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/mad01/thismoon/compare/belt/v2.5.0...belt/v2.5.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **belt:** resolve git -C through home expansion and judge commits where they run ([#182](https://github.com/mad01/thismoon/issues/182)) ([39c3d1b](https://github.com/mad01/thismoon/commit/39c3d1b408d33965a83cda89351bbbbe05200df7))
+
 ## [2.5.0](https://github.com/mad01/thismoon/compare/belt/v2.4.1...belt/v2.5.0) (2026-10-01)
 
 
