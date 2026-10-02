@@ -109,7 +109,7 @@ func TestIndexServesLandingPage(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`href="http://present.this/"`, "fetch('/enginez'", "/webkit/webkit.js", "wk-header",
-		"/v1/audio/speech",
+		"/v1/audio/speech", `<a data-nav href="/webkit/themes">Themes</a>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("landing page missing %q", want)

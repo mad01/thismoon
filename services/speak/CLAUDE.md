@@ -257,9 +257,10 @@ webkit only.
 
 ### The landing page
 
-`index.html` is static: `<wk-header brand="speak">`, a `<wk-page-header>` +
-`<wk-title>` + `<wk-subtitle>` hero and one paragraph pointing at
-`http://present.this/`. An engine line (a `<wk-badge>` plus the provider and
+`index.html` is static: `<wk-header brand="speak">`, whose one nav child is the
+Themes link to the palette picker webkit serves at `/webkit/themes`, then a
+`<wk-page-header>` + `<wk-title>` + `<wk-subtitle>` hero and one paragraph
+pointing at `http://present.this/`. An engine line (a `<wk-badge>` plus the provider and
 model, filled in by an inline script from `GET /enginez`; a failed fetch
 reads as unknown) and a table of the routes follow. Only its own layout lives in the
 inline `<style>` block. There is no `<wk-read-aloud>` on it and no client
