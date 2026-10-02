@@ -125,7 +125,9 @@ func TestCompileDocGoldenJSON(t *testing.T) {
 // the stage 2 section fields or the transition. Its deck rendition is
 // pinned in testdata/golden-stage1.html, captured before stage 2, so a deck
 // written against stage 1 re-renders to the same bytes too (the brief
-// rendition of the same Doc is the golden above plus the blocks).
+// rendition of the same Doc is the golden above plus the blocks). MAD-369
+// regenerated it when the deck dropped the section id badge, so the
+// fixture carries no B001 badge.
 var goldenStage1Doc = Doc{
 	Summary:      "Stage 1 blocks and chrome.",
 	Meta:         "2026-10-01 · golden",
@@ -169,6 +171,6 @@ func TestRenderDocGoldenStage1(t *testing.T) {
 		t.Fatalf("read golden: %v", err)
 	}
 	if out != string(want) {
-		t.Errorf("rendered fragment differs from %s; a Doc without the stage 2 fields must render byte-identically\n got:\n%s\nwant:\n%s", path, out, want)
+		t.Errorf("rendered fragment differs from %s; a Doc without the stage 2 fields must render byte-identically (last regenerated for MAD-369, when the deck dropped the section id badge)\n got:\n%s\nwant:\n%s", path, out, want)
 	}
 }

@@ -84,7 +84,7 @@ type Chip struct {
 // Section is a content section with a heading and blocks.
 type Section struct {
 	Heading string  `json:"h"`
-	ID      string  `json:"id,omitempty"`
+	ID      string  `json:"id,omitempty"` // optional badge, shown by the heading and in the TOC of the brief only
 	Blocks  []Block `json:"blocks"`
 
 	// Slide fields, all optional. The deck view reads Layout, Notes, and
@@ -542,14 +542,14 @@ const docTemplateSrc = `{{with .Chrome}}<script type="application/json" class="d
   <wk-toc-title>Sections</wk-toc-title>
   <ul data-fixation>
 {{- range .Sections}}
-    <li><a href="#{{sectionID .Heading}}">{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{.Heading}}</a></li>
+    <li><a href="#{{sectionID .Heading}}">{{if not $.Deck}}{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{end}}{{.Heading}}</a></li>
 {{- end}}
   </ul>
 </wk-toc>
 {{- end}}
 {{- range .Sections}}
 <wk-section id="{{sectionID .Heading}}"{{with dataLayout .}} data-layout="{{.}}"{{end}}{{with .Tone}} data-tone="{{.}}" style="--slide-accent: var(--{{.}})"{{end}}{{if .Reveal}} data-reveal="true"{{end}}>
-  <wk-section-heading data-fixation>{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{.Heading}}</wk-section-heading>
+  <wk-section-heading data-fixation>{{if not $.Deck}}{{with .ID}}<wk-section-id>{{.}}</wk-section-id>{{end}}{{end}}{{.Heading}}</wk-section-heading>
 {{- range .Blocks}}
   {{renderBlock .}}
 {{- end}}
@@ -886,7 +886,8 @@ func RenderDoc(d Doc, title string) (string, error) {
 
 // RenderDeck converts a Doc to the deck's HTML body fragment: the brief's
 // markup plus the chrome island at its head and the presenter byline under
-// the meta line, each only when the Doc sets the field.
+// the meta line, each only when the Doc sets the field, and without the
+// section id badges: a badge in a slide heading never helps the room.
 func RenderDeck(d Doc, title string) (string, error) {
 	return renderDoc(d, title, true)
 }

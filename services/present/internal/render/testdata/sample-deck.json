@@ -22,7 +22,6 @@
   "sections": [
     {
       "h": "Checkout returned 502s for 41 minutes",
-      "id": "I001",
       "reveal": true,
       "notes": "Pause after the first line. Ask who was on call before showing the rest; the [runbook](https://example.com/runbook) has the rota.",
       "blocks": [
@@ -49,7 +48,6 @@
     },
     {
       "h": "Part two: the fix",
-      "id": "P002",
       "layout": "section",
       "tone": "blue",
       "blocks": [
@@ -306,7 +304,6 @@
     },
     {
       "h": "Next",
-      "id": "N001",
       "reveal": true,
       "blocks": [
         {
