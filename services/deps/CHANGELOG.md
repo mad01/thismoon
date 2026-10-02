@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/mad01/thismoon/compare/deps/v0.10.0...deps/v0.11.0) (2026-10-02)
+
+
+### Features
+
+* **deps:** link the themes page from the shell ([d878e44](https://github.com/mad01/thismoon/commit/d878e447db10b54e47988c31de61d12576da4ecc))
+* **services:** link the themes page from the deps, events, keeper-of-facts, speak and status shells ([1c8aac9](https://github.com/mad01/thismoon/commit/1c8aac9e8527bf379910401a798c02960d804451))
+
 ## [0.10.0](https://github.com/mad01/thismoon/compare/deps/v0.9.0...deps/v0.10.0) (2026-09-12)
 
 
