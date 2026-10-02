@@ -266,9 +266,9 @@ load webkit assets, and use `<wk-header>`:
 ```
 
 The `[data-nav]` Themes link opens the palette picker webkit serves at
-`/webkit/themes`; every consumer links it from its header, since the browser
-stores the choice per origin. `[data-extra]` children are rendered in the
-controls area as-is; `app.js` wires their click handlers by `id`.
+`/webkit/themes`; catalog, csl, and present link it from their headers, since
+the browser stores the choice per origin. `[data-extra]` children are rendered
+in the controls area as-is; `app.js` wires their click handlers by `id`.
 `webkit.js` injects the full control set (font · fixation · size ± · reload ·
 theme). Don't add those controls manually.
 
