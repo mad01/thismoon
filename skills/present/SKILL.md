@@ -30,7 +30,7 @@ Doc = {                                  // the `content` argument
 
 Section = {
   h: string,                             // heading (TOC anchor)
-  id: string | null,                     // 4-char ID badge (A001 / RC01) — required when items are referenced by ID
+  id?: string,                           // optional label shown by the heading in the brief; see Section fields
   blocks: Block[]
 }
 
@@ -80,11 +80,11 @@ To edit a page created in an earlier session: `present_list` to find it (`has_do
 When on, shape the Doc so an ADHD reader can act on it. This changes structure and ordering only — it never changes the facts, and it stays inside the page (it does not affect chat replies, commits, or docs):
 
 1. **Lead with actions.** Make the `summary` the single most important next action in concrete terms (a command, a path, a decision), not background. Put context lower.
-2. **First section is "Do now."** Give it `id` `"D001"` and a `list` block of bounded, numbered steps — each one action, no "and then" twice.
+2. **First section is "Do now."** Give it a `list` block of bounded, numbered steps, each one action, no "and then" twice.
 3. **Cap every list at 5 items.** If more, split into a "Now" section and a "Later" section rather than one long list.
 4. **Make wins visible.** Use `@chip(b:done)` chips and a `progress` block for anything completed or in-flight, so finished work is not buried in prose.
 5. **One callout, not many.** If there is a single blocker or risk, use one `callout` with `sev: "warn"`. Do not scatter warnings.
-6. **End with the next action.** The last section names ONE concrete thing to do next (`id` `"N001"`), doable in under two minutes.
+6. **End with the next action.** The last section names ONE concrete thing to do next, doable in under two minutes.
 7. **Matter-of-fact tone.** State cause and fix for errors; no "uh oh" framing.
 
 Skip preamble sections ("about this brief", "overview of overview"). Every section earns its place by being actionable or a visible win.
@@ -124,7 +124,6 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
   "sections": [
     {
       "h": "Section Heading",
-      "id": "A001",
       "blocks": [
         {"t": "p", "text": "Paragraph text."},
         {"t": "h3", "text": "Subsection Heading"},
@@ -232,10 +231,10 @@ One example of each, as they go in a section's `blocks`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `h` | string | Section heading (used for TOC anchor) |
-| `id` | string? | 4-char visible ID badge: either one letter + three digits (e.g. `"A001"`) or two letters + two digits (e.g. `"RC01"`). Rendered as a pill next to the heading and in the TOC. Use when presenting multiple items that need to be referenced by ID. |
+| `id` | string? | Optional label, rendered as a pill next to the heading and in the TOC of the brief; a slide never shows it. Set it only when code outside the page refers to sections by id: a script that reads the Doc, a tracker that links to items. Reuse the ids that code already uses. Leave it out otherwise; there is no default pattern. |
 | `blocks` | array | Content blocks |
 | `tone` | string? | A palette role name (see **Colors available**). In a brief it gives the section a band in that colour; on a slide it tints the surface and the heading rule. An unknown name is refused |
-| `layout` | string? | Deck only, ignored by the brief: `default`, `center` (centred at today's sizes), `statement` (the heading is the slide, large and centred, blocks as a line under it), `section` (a divider: large heading and id on a tone band). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
+| `layout` | string? | Deck only, ignored by the brief: `default`, `center` (centred at today's sizes), `statement` (the heading is the slide, large and centred, blocks as a line under it), `section` (a divider: large heading on a tone band). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
 | `notes` | string? | Deck only: speaker notes with inline markdown. Never on the slide, never read aloud; the deck shows them in a drawer on the N key or the Notes button |
 | `reveal` | bool? | Deck only: the slide's list items and top-level blocks appear one per Next, Prev hides the last one, a jump lands with all shown. The progress dots and the URL hash track slides, not steps |
 
@@ -252,8 +251,6 @@ One example of each, as they go in a section's `blocks`:
 
 When presenting N related items (review findings, bugs, options, comparison points), **always put them in one page as N sections — never create one page per item.**
 
-Assign each section a 4-char `id`: one letter + three digits (e.g. `"A001"`) or two letters + two digits (e.g. `"RC01"`). This makes items easy to reference in conversation (e.g. "let's discuss A002").
-
 ```json
 {
   "summary": "3 issues found during assessment.",
@@ -262,17 +259,14 @@ Assign each section a 4-char `id`: one letter + three digits (e.g. `"A001"`) or 
   "sections": [
     {
       "h": "Race condition in poll loop",
-      "id": "A001",
       "blocks": [{"t": "p", "text": "Description of the issue..."}]
     },
     {
       "h": "Missing error propagation",
-      "id": "A002",
       "blocks": [{"t": "p", "text": "Description of the issue..."}]
     },
     {
       "h": "Stale cache after leader change",
-      "id": "A003",
       "blocks": [{"t": "p", "text": "Description of the issue..."}]
     }
   ]
@@ -327,10 +321,9 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 9. **One callout per deck at most**, `sev: "warn"`, for the single risk or blocker.
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
-12. **Keep the ids.** When the brief uses section `id` badges (A001, RC01), keep them on the matching slides so the room can refer to a finding by id.
-13. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart` beside its caption in `columns`. A `details` block belongs in the brief: a slide that needs one has too much on it.
-14. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
-15. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
+12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart` beside its caption in `columns`. A `details` block belongs in the brief: a slide that needs one has too much on it.
+13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
+14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 
 ### Example deck
 
@@ -349,7 +342,6 @@ An incident review, seven slides plus the references the page already carries, w
   "sections": [
     {
       "h": "Checkout returned 502s for 41 minutes on Tuesday",
-      "id": "I001",
       "reveal": true,
       "notes": "Pause after the first line. Ask who was on call before showing the rest.",
       "blocks": [
@@ -378,7 +370,6 @@ An incident review, seven slides plus the references the page already carries, w
     },
     {
       "h": "The resolver kept a dead upstream for 40 minutes",
-      "id": "RC01",
       "blocks": [
         {"t": "p", "text": "The payments gateway rotated its IP; our resolver cached the old record with a **3600 second TTL** and no health check noticed."},
         {"t": "kv", "kv": [{"k": "TTL cached", "v": "3600 s"}, {"k": "Upstream rotation", "v": "no notice"}, {"k": "Health check", "v": "none on DNS"}]}
@@ -401,7 +392,6 @@ An incident review, seven slides plus the references the page already carries, w
     },
     {
       "h": "Next",
-      "id": "N001",
       "blocks": [
         {"t": "list", "ordered": true, "items": [
           "Payments approves the probe PR by Thursday",
