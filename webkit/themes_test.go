@@ -25,8 +25,12 @@ var defaultLight = map[string]string{
 	"progress-bg": "#EEECE8", "progress-fill": "#C4704B",
 	"tag-a": "#E8D5C4", "tag-a-text": "#8B5A2B", "tag-b": "#D4E8D4", "tag-b-text": "#2B6B3E",
 	"tag-c": "#D4DEE8", "tag-c-text": "#2B4A6B", "ra-highlight": "#F3DDD2",
-	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C45B4B",
-	"blue": "#5B8EC4", "purple": "#8B6BB0",
+	// Red and purple are darkened two points and one point of lightness so
+	// white ink reads 4.5 on the danger button and the toasts; the tone,
+	// graph, and series roles derived from them keep the old literals
+	// (MAD-378).
+	"amber": "#D97706", "green": "#4A9E6B", "yellow": "#C4960B", "red": "#C15443",
+	"blue": "#5B8EC4", "purple": "#8868AE",
 	"primary-soft": "#d4855f", "text-body": "#4A453D",
 	"topbar-bg": "rgba(250,249,247,0.88)", "scrim": "rgba(37,35,32,0.45)",
 	"focus-ring": "rgba(196,112,75,0.15)",

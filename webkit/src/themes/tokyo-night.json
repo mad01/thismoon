@@ -5,7 +5,7 @@
   "license": "MIT (values via folke/tokyonight.nvim, Apache-2.0)",
   "light": {
     "variant": "Day",
-    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan",
+    "notes": "bg bg_dark, paper bg, chip bg_highlight, border-hover the port's border; Day's body ink is a blue (#3760bf), faithful to the palette; amber is orange, purple is magenta, series two is cyan. blue and magenta are darkened four points and one point of lightness so white ink reads 4.5 on them. The roles derived from both stay pinned to the published values. Day's ink never beats white, and a red dark enough for white ink is nine points of lightness away, so red keeps white at 3.9 (MAD-378)",
     "bg": "#d0d5e3",
     "paper": "#e1e2e7",
     "chip": "#c4c8da",
@@ -20,9 +20,22 @@
     "green": "#587539",
     "amber": "#b15c00",
     "yellow": "#8c6c3e",
-    "blue": "#2e7de9",
-    "purple": "#9854f1",
-    "series": ["#2e7de9", "#007197", "#587539", "#9854f1"]
+    "blue": "#1c72e7",
+    "purple": "#954ff1",
+    "series": ["#2e7de9", "#007197", "#587539", "#9854f1"],
+    "overrides": {
+      "tag-c": "#bdcee7",
+      "tag-c-text": "#336fd4",
+      "code-symbol": "#2e7de9",
+      "graph-module-2": "#2e7de9",
+      "graph-module-4": "#9854f1",
+      "tone-blue-bg": "#c8d4e7",
+      "tone-blue-border": "#2e7de9",
+      "tone-blue-text": "#336cd0",
+      "tone-purple-bg": "#d7cee8",
+      "tone-purple-border": "#9854f1",
+      "tone-purple-text": "#5e5bd3"
+    }
   },
   "dark": {
     "variant": "Night",
