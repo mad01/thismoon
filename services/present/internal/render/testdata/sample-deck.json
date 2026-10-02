@@ -171,7 +171,20 @@
       "h": "Where the request died",
       "blocks": [
         {
-          "t": "graph"
+          "t": "columns",
+          "cols": [
+            [
+              {
+                "t": "graph"
+              }
+            ],
+            [
+              {
+                "t": "p",
+                "text": "The resolver sits between the gateway and payments. Every request after 14:02 followed its stale record to a host that was gone."
+              }
+            ]
+          ]
         }
       ]
     },

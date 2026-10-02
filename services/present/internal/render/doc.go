@@ -124,8 +124,8 @@ type Block struct {
 	Rows [][]string `json:"rows,omitempty"`
 
 	// t=columns: two or three columns of blocks, equal widths, one column on
-	// a narrow screen. Wire key cols. A column may hold any block but graph,
-	// columns, and details.
+	// a narrow screen. Wire key cols. A column may hold any block but
+	// columns and details; the page's one graph may sit in a column.
 	Columns [][]Block `json:"-"`
 
 	// t=stat: a large figure (Value, shown verbatim) over a Label, with an
@@ -742,14 +742,34 @@ func validAccent(name string) bool {
 	return alias || webkit.IsRole(name)
 }
 
+// isGraph reports whether b places the page's graph.
+func isGraph(b Block) bool { return b.T == "graph" }
+
+// countGraphs counts the graph blocks in blocks and in the columns they
+// hold. A details block never holds one, so it is not looked into.
+func countGraphs(blocks []Block) int {
+	n := 0
+	for _, b := range blocks {
+		if isGraph(b) {
+			n++
+		}
+		for _, col := range b.Columns {
+			n += countGraphs(col)
+		}
+	}
+	return n
+}
+
 // validateBlocks returns an error for the first block the renderer refuses:
 // a panel accent the palette does not define (the way validateTones does for
 // graph nodes), a columns block with other than two or three columns, a
-// details block without a summary or without blocks, and a graph or a
-// container below the top level, since a container holds plain blocks only.
+// details block without a summary or without blocks, a container below the
+// top level, since a container holds plain blocks only, and a graph inside
+// a details block, where a closed disclosure would hide the page's one
+// graph. A graph may sit in a column.
 func validateBlocks(blocks []Block, depth int) error {
 	for _, b := range blocks {
-		if depth > 0 && (isContainer(b) || b.T == "graph") {
+		if depth > 0 && isContainer(b) {
 			return fmt.Errorf("%s block: not allowed inside a columns or details block", b.T)
 		}
 		switch b.T {
@@ -775,6 +795,9 @@ func validateBlocks(blocks []Block, depth int) error {
 			}
 			if len(b.Blocks) == 0 {
 				return fmt.Errorf("details %q: blocks is empty", b.Summary)
+			}
+			if slices.ContainsFunc(b.Blocks, isGraph) {
+				return fmt.Errorf("graph block: not allowed inside a details block (%q)", b.Summary)
 			}
 			if err := validateBlocks(b.Blocks, depth+1); err != nil {
 				return err
@@ -841,10 +864,15 @@ func validateSection(s Section) error {
 	return nil
 }
 
+// validateDoc refuses a Doc the renderer cannot honour: a chrome field or a
+// section field outside its vocabulary, a block validateBlocks refuses, and
+// more than one graph block, since a page has one graph and the page view
+// mounts it in the one container the graph block renders.
 func validateDoc(d Doc) error {
 	if err := validateChrome(d); err != nil {
 		return err
 	}
+	graphs := 0
 	for _, s := range d.Sections {
 		if err := validateSection(s); err != nil {
 			return err
@@ -852,6 +880,10 @@ func validateDoc(d Doc) error {
 		if err := validateBlocks(s.Blocks, 0); err != nil {
 			return err
 		}
+		graphs += countGraphs(s.Blocks)
+	}
+	if graphs > 1 {
+		return fmt.Errorf("graph block: a page places its one graph once, found %d", graphs)
 	}
 	return nil
 }
