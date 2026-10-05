@@ -23,7 +23,7 @@
     {
       "name": "loom-pane",
       "source": "./mods/loom-pane",
-      "description": "Stub: reserved for a pane that shows the loom's claimed worktrees and ready branches."
+      "description": "A pane of the repo's worktrees for loom sessions, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
     }
   ]
 }
