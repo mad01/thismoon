@@ -12,16 +12,6 @@ export type WorktreeEntry = {
   isDetached: boolean
 }
 
-/** One pane row: a worktree and what the survey learned; null is a failed call. */
-export type WorktreeRow = {
-  path: string
-  branch: string | null
-  head: string | null
-  isDirty: boolean | null
-  ahead: number | null
-  age: string | null
-}
-
 /** Where the repo's checkouts are, as far as the mod knows. */
 export type Layout = {
   canonical: string | null
@@ -40,9 +30,6 @@ export const GIT_BUDGET_MS = 2_000
 
 /** The ref the ahead count compares against when origin names no HEAD. */
 export const DEFAULT_BRANCH = 'main'
-
-/** The widest a branch column gets in the pane. */
-const LABEL_WIDTH_CAP = 36
 
 // The git verbs that change a working tree, its index or its refs. The loom
 // skill's list, plus the verbs that do the same under another name.
@@ -703,43 +690,20 @@ export function shouldAskBranchDeletion(input: {
   return isUnpushed && input.ahead !== null && input.ahead > 0
 }
 
-/** The branch column of a row: the branch, or the detached head's short sha. */
-export function rowLabel(row: WorktreeRow): string {
-  if (row.branch !== null) return row.branch
-  return row.head === null ? 'detached' : `detached ${row.head.slice(0, 7)}`
-}
-
-/** One pane line: a mark (`>` own, `=` canonical), branch, dirty state, ahead count, age. */
-export function formatRow(row: WorktreeRow, layout: Layout, labelWidth: number): string {
-  const mark = isSamePath(row.path, layout.ownWorktree) ? '>' : isSamePath(row.path, layout.canonical) ? '=' : ' '
-  const state = row.isDirty === null ? '?' : row.isDirty ? 'dirty' : 'clean'
-  const ahead = row.ahead === null ? '?' : `+${row.ahead}`
-  const age = row.age ?? '?'
-  return `${mark} ${rowLabel(row).padEnd(labelWidth)}  ${state.padEnd(5)}  ${ahead.padStart(4)}  ${age}`
-}
-
-/** The pane's lines, one per worktree, cut to `columns` when a width is known. */
-export function paneLines(rows: readonly WorktreeRow[], layout: Layout, columns?: number): string[] {
-  if (rows.length === 0) return []
-  const widest = Math.max(...rows.map(row => rowLabel(row).length))
-  const labelWidth = Math.min(LABEL_WIDTH_CAP, widest)
-  return rows.map(row => {
-    const line = formatRow(row, layout, labelWidth)
-    return columns === undefined || columns <= 0 || line.length <= columns ? line : line.slice(0, columns)
-  })
-}
-
-/** The status line for a role, or undefined (clear) when the session has none. */
-export function statusText(role: Role, layout: Layout, rows: readonly WorktreeRow[]): string | undefined {
+/**
+ * The status line for a role, or undefined (clear) when the session has
+ * none. The engine prefixes the line with the mod's name, so the text
+ * never repeats it: `owner feat-pane`, `weaver · 3 worktrees`.
+ */
+export function statusText(role: Role, layout: Layout): string | undefined {
   if (role === 'owner') {
-    return `loom: owner ${layout.ownWorktree === null ? '?' : baseName(layout.ownWorktree)}`
+    return `owner ${layout.ownWorktree === null ? '?' : baseName(layout.ownWorktree)}`
   }
   if (role !== 'weaver') return undefined
-  if (rows.length === 0) return 'loom: weaver'
-  const linked = rows.filter(row => !isSamePath(row.path, layout.canonical))
-  const dirty = linked.filter(row => row.isDirty === true).length
+  const linked = layout.worktrees.filter(path => !isSamePath(path, layout.canonical))
+  if (linked.length === 0) return 'weaver'
   const noun = linked.length === 1 ? 'worktree' : 'worktrees'
-  return `loom: weaver · ${linked.length} ${noun}, ${dirty} dirty`
+  return `weaver · ${linked.length} ${noun}`
 }
 
 /** The question before a removal that would lose work. */

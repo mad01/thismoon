@@ -1,7 +1,7 @@
 {
   "name": "panel-policy",
   "version": "0.1.0",
-  "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band and a /panel members pane.",
+  "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band above the prompt.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"

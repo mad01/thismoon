@@ -1,26 +1,18 @@
 # loom-pane
 
-A Claude Code mod for sessions that follow the loom skill. It draws a pane of the repo's worktrees and a status line naming the session's role, and it turns the skill's rules into guards. The skill is unchanged; without the mod, loom works as before.
+A Claude Code mod for sessions that follow the loom skill. It names the session's role in the status line under the prompt and turns the skill's rules into guards. The skill is unchanged; without the mod, loom works as before.
 
-## What the pane shows
-
-`/loom-pane` opens it. One row per entry of `git worktree list --porcelain`, read from the canonical checkout:
-
-```
-= main              clean    +0  3 days ago
-> feat/pane         dirty    +2  5 minutes ago
-  detached 3333333  ?         ?  ?
-```
-
-`>` is this session's worktree, `=` the canonical checkout. The columns are the branch, `dirty` or `clean` (`git status --porcelain`), the commits ahead of the default branch (`git rev-list --count origin/<default>..HEAD`, `main` when origin names no HEAD), and the age of the last commit (`git log -1 --format=%cr`). A git call that fails or runs past 2 s leaves `?` in its column. The pane re-reads git every `pollMs` while it is open and stops when it closes.
+The name is historical. The mod once drew a pane of the repo's worktrees; the pane is gone, and the name stays because `enabledPlugins` on every machine keys on it.
 
 ## Role and status line
 
-At `session.start` (and again after a resume or `/clear`) the mod runs `git rev-parse --show-toplevel` and `--git-common-dir`; the canonical checkout is the parent of the common git dir. The role follows from there:
+At `session.start` (and again after a resume or `/clear`) the mod runs `git rev-parse --show-toplevel` and `--git-common-dir`; the canonical checkout is the parent of the common git dir. It then reads `git worktree list --porcelain` from the canonical checkout, once, for the paths the guards judge by, and reads it again when the session claims a worktree. Nothing runs on a timer. The role follows from there:
 
-- owner: the session's top level is `~/.worktrees/<repo>/<slug>`, or a Bash command in the main loop enters one (`cd ~/.worktrees/<repo>/<slug>`, `git worktree add ~/.worktrees/<repo>/<slug> ...`). The skill's own flow claims from the canonical checkout and commits with `cd <worktree> && git commit`, so this is how the role usually turns up. The status line reads `loom: owner <slug>`.
-- weaver: `/loom weave` was typed, run as the skill, or sent as a slash command, in any checkout of the repo. A weaver stays a weaver when it `cd`s into a worktree to rebase. The line reads `loom: weaver · 3 worktrees, 1 dirty` after a survey.
+- owner: the session's top level is `~/.worktrees/<repo>/<slug>`, or a Bash command in the main loop enters one (`cd ~/.worktrees/<repo>/<slug>`, `git worktree add ~/.worktrees/<repo>/<slug> ...`). The skill's own flow claims from the canonical checkout and commits with `cd <worktree> && git commit`, so this is how the role usually turns up. The status line reads `owner <slug>`.
+- weaver: `/loom weave` was typed, run as the skill, or sent as a slash command, in any checkout of the repo. A weaver stays a weaver when it `cd`s into a worktree to rebase. The line reads `weaver · 3 worktrees`, counting the linked worktrees git listed.
 - none: anything else; the line is cleared.
+
+The engine prefixes a plugin's status line with its name, so on screen the line reads `loom-pane: owner feat-pane`; the text itself never repeats the name.
 
 ## Guards
 
@@ -41,14 +33,13 @@ A guard that can't be sure lets the call through. A command with a substitution,
 | Field | Type | Default | Meaning |
 |-------|------|---------|---------|
 | `guards` | boolean | `true` | run the three guards above |
-| `pollMs` | number | `30000` | how often the open pane re-reads git (1000 at least) |
 
 ## Dev loop
 
 ```bash
-claude --plugin-dir mods/loom-pane         # from a checkout; a save hot-reloads, the open pane re-arms its timer
+claude --plugin-dir mods/loom-pane         # from a checkout; a save hot-reloads
 claude plugin validate mods/loom-pane      # what the engine would refuse
-node --test mods/loom-pane/test/*.test.mjs # the parsers and formatters in lib/
+node --test mods/loom-pane/test/*.test.mjs # the parsers and the status text in lib/
 claude plugin test mods/loom-pane          # the guards against the engine's test kit
 ```
 

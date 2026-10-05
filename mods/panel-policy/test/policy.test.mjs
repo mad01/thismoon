@@ -11,7 +11,6 @@ import {
   currentBatch,
   decideModel,
   formatDuration,
-  formatPaneRow,
   isBatchActive,
   isFanoutHoldDue,
   isFanoutToastDue,
@@ -19,7 +18,6 @@ import {
   isOnModel,
   memberLabel,
   memberStatus,
-  paneRows,
   promptLead,
   readConfig,
   staleAfterMs,
@@ -427,7 +425,7 @@ describe('staleness', () => {
       member({ id: 'c', startedAt: now - 5_000 }),
     ]
     assert.equal(bandText(list, now, config), 'panel: 1/3 returned, 1 stale · reviewers on opus')
-    assert.deepEqual(paneRows(list, now, 100, STALE_MS).map(r => r.status), ['done', 'stale', 'running'])
+    assert.deepEqual(list.map(m => memberStatus(m, now, STALE_MS)), ['done', 'stale', 'running'])
   })
 
   test('the band hides once every member is returned past the linger or stale', () => {
@@ -446,30 +444,10 @@ describe('staleness', () => {
   })
 })
 
-describe('pane rows', () => {
-  test('formatDuration reads in seconds, then minutes', () => {
+describe('formatDuration', () => {
+  test('reads in seconds, then minutes', () => {
     assert.equal(formatDuration(400), '0 s')
     assert.equal(formatDuration(12_400), '12 s')
     assert.equal(formatDuration(65_000), '1m 05s')
-  })
-
-  test('paneRows carries role, label, status and duration', () => {
-    const list = [member({ id: 'a', startedAt: 1_000 }), member({ id: 'b', role: 'other', label: 'explore', startedAt: 1_000, endedAt: 4_000 })]
-    assert.deepEqual(paneRows(list, 13_000), [
-      { role: 'review', label: 'review the diff', status: 'running', duration: '12 s' },
-      { role: 'other', label: 'explore', status: 'done', duration: '3 s' },
-    ])
-  })
-
-  test('paneRows keeps the newest members under the limit', () => {
-    const list = [member({ id: 'a' }), member({ id: 'b' }), member({ id: 'c', label: 'last' })]
-    const rows = paneRows(list, 2_000, 2)
-    assert.equal(rows.length, 2)
-    assert.equal(rows[1].label, 'last')
-  })
-
-  test('formatPaneRow lines the columns up', () => {
-    const line = formatPaneRow({ role: 'other', label: 'explore', status: 'done', duration: '3 s' }, 10)
-    assert.equal(line, 'other   explore     done     3 s')
   })
 })

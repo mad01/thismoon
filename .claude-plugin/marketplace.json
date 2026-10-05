@@ -1,6 +1,6 @@
 {
   "name": "thismoon",
-  "description": "Claude Code mods from the thismoon platform repo: bands, panes, and hooks that sit beside the *.this services and skills.",
+  "description": "Claude Code mods from the thismoon platform repo: bands, status lines, and hooks that sit beside the *.this services and skills.",
   "owner": {
     "name": "mad01"
   },
@@ -18,12 +18,12 @@
     {
       "name": "panel-policy",
       "source": "./mods/panel-policy",
-      "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band and a /panel members pane."
+      "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band above the prompt."
     },
     {
       "name": "loom-pane",
       "source": "./mods/loom-pane",
-      "description": "A pane of the repo's worktrees for loom sessions, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
+      "description": "A status line naming the session's loom role, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
     }
   ]
 }

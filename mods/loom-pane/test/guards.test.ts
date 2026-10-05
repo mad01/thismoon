@@ -73,7 +73,6 @@ function seat(on: On, repo: Repo, cwd: string, answer: Seat['answer'] = 'Proceed
   })
   on('process.run', (_$, e) => ({ value: fakeGit(repo, e.argv, e.init?.cwd ?? cwd) }))
   on('session.cwd', () => ({ value: cwd }))
-  on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.log', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))

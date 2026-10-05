@@ -10,17 +10,14 @@ import {
   countsTowardFanout,
   decideModel,
   formatDuration,
-  formatPaneRow,
   isBatchActive,
   isFanoutHoldDue,
   isFanoutToastDue,
   memberLabel,
-  paneRows,
   readConfig,
   staleAfterMs,
 } from '../lib/policy'
 
-const PANE = 'panel'
 const HOLD_PROCEED = 'Proceed'
 const HOLD_CANCEL = 'Cancel'
 
@@ -77,7 +74,6 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    await $.command.register({ name: PANE, description: 'open the panel members pane', immediate: true })
 
     let ticker: { cancel: () => void } | null = null
     const tick = async (): Promise<void> => {
@@ -166,13 +162,6 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(skipOnFailure)
 
-  on('command.run', { command: PANE }, async $ => {
-    const opened = await $.ui.open({ id: PANE, title: 'Panel members', focus: true, closeOnEscape: true })
-    return {
-      text: opened.isPlaced ? 'panel members pane open; Esc closes it' : 'panel members pane waits for a wider terminal',
-    }
-  }).catch(skipOnFailure)
-
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
@@ -185,23 +174,6 @@ export const register: Register = (on, options) => {
           {line}
         </Text>
         {below}
-      </Box>
-    )
-  }).catch(skipOnFailure)
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
-    const room = Math.max(1, (e.viewport?.rows ?? 24) - 4)
-    const rows = paneRows(await read($, members), await $.clock.now(), room, staleMs)
-    const labelWidth = Math.max(12, Math.min(60, e.props.bodyColumns - 28))
-    return (
-      <Box flexDirection="column">
-        {rows.length === 0 && <Text dimColor>No agents spawned yet.</Text>}
-        {rows.map(row => (
-          <Text dimColor={row.status === 'done'} wrap="truncate-end">
-            {formatPaneRow(row, labelWidth)}
-          </Text>
-        ))}
       </Box>
     )
   }).catch(skipOnFailure)

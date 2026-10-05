@@ -10,7 +10,6 @@ import {
   isWeaveArgs,
   loomArgsOf,
   ownerClaimFrom,
-  paneLines,
   parseCount,
   parseDefaultRef,
   parseWorktreeList,
@@ -336,47 +335,20 @@ describe('removal rules', () => {
   })
 })
 
-describe('paneLines', () => {
-  const rows = [
-    { path: CANONICAL, branch: 'main', head: null, isDirty: false, ahead: 0, age: '3 days ago' },
-    { path: OWN, branch: 'feat/pane', head: null, isDirty: true, ahead: 2, age: '5 minutes ago' },
-    { path: OTHER, branch: null, head: '3333333abcdef', isDirty: null, ahead: null, age: null },
-  ]
-
-  test('marks own and canonical rows and fills ? for failed calls', () => {
-    const lines = paneLines(rows, layout)
-    assert.equal(lines[0], '= main              clean    +0  3 days ago')
-    assert.equal(lines[1], '> feat/pane         dirty    +2  5 minutes ago')
-    assert.equal(lines[2], '  detached 3333333  ?         ?  ?')
-  })
-
-  test('cuts to the width given', () => {
-    assert.equal(paneLines(rows, layout, 10)[1], '> feat/pan')
-  })
-
-  test('is empty with no rows', () => {
-    assert.deepEqual(paneLines([], layout), [])
-  })
-})
-
 describe('statusText', () => {
-  const rows = [
-    { path: CANONICAL, branch: 'main', head: null, isDirty: false, ahead: 0, age: null },
-    { path: OWN, branch: 'a', head: null, isDirty: true, ahead: 1, age: null },
-    { path: OTHER, branch: 'b', head: null, isDirty: false, ahead: 0, age: null },
-  ]
-
-  test('names the owner slug', () => {
-    assert.equal(statusText('owner', layout, []), 'loom: owner feat-pane')
+  test('names the owner slug without repeating the mod name', () => {
+    assert.equal(statusText('owner', layout), 'owner feat-pane')
+    assert.equal(statusText('owner', { ...layout, ownWorktree: null }), 'owner ?')
   })
 
-  test('counts linked worktrees and dirty ones for the weaver', () => {
-    assert.equal(statusText('weaver', layout, rows), 'loom: weaver · 2 worktrees, 1 dirty')
-    assert.equal(statusText('weaver', layout, []), 'loom: weaver')
+  test('counts the linked worktrees for the weaver', () => {
+    assert.equal(statusText('weaver', layout), 'weaver · 3 worktrees')
+    assert.equal(statusText('weaver', { ...layout, worktrees: [CANONICAL, OWN] }), 'weaver · 1 worktree')
+    assert.equal(statusText('weaver', { ...layout, worktrees: [] }), 'weaver')
   })
 
   test('clears for no role', () => {
-    assert.equal(statusText('none', layout, rows), undefined)
+    assert.equal(statusText('none', layout), undefined)
   })
 })
 

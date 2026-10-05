@@ -29,13 +29,6 @@ export type PolicyConfig = {
 /** Returned, still in flight, or in flight past the stale budget. */
 export type MemberStatus = 'running' | 'done' | 'stale'
 
-export type PaneRow = {
-  role: Role
-  label: string
-  status: MemberStatus
-  duration: string
-}
-
 /** How long a finished batch stays on the band after its last member returned. */
 export const BAND_LINGER_MS = 60_000
 
@@ -45,7 +38,7 @@ export const PROMPT_LEAD_CHARS = 200
 /** How many characters of a description a member keeps as its label. */
 export const LABEL_CHARS = 60
 
-/** How many members the state keeps; older ones fall off the pane. */
+/** How many members the state keeps; older ones are forgotten. */
 export const MEMBER_CAP = 100
 
 /** The agent type whose model the mod may pick when the caller set none. */
@@ -249,28 +242,10 @@ export function bandText(
   return `panel: ${done}/${batch.length} returned${staleNote}${suffix}`
 }
 
-/** `12 s` under a minute, `1m 05s` past it. */
+/** `12 s` under a minute, `1m 05s` past it; the debug log's duration of a returned member. */
 export function formatDuration(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000))
   if (seconds < 60) return `${seconds} s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`
-}
-
-/** The pane's rows, oldest first, at most `limit` of the newest members. */
-export function paneRows(members: readonly Member[], now: number, limit = MEMBER_CAP, staleMs = 0): PaneRow[] {
-  return members.slice(-Math.max(1, limit)).map(m => ({
-    role: m.role,
-    label: m.label,
-    status: memberStatus(m, now, staleMs),
-    duration: formatDuration((m.endedAt ?? now) - m.startedAt),
-  }))
-}
-
-/** One pane row as a line: role, label, status and duration in columns. */
-export function formatPaneRow(row: PaneRow, labelWidth = LABEL_CHARS): string {
-  const role = row.role.padEnd(6)
-  const label = row.label.padEnd(labelWidth).slice(0, labelWidth)
-  const status = row.status.padEnd(7)
-  return `${role}  ${label}  ${status}  ${row.duration}`
 }

@@ -1,7 +1,7 @@
 {
   "name": "loom-pane",
   "version": "0.1.0",
-  "description": "A pane of the repo's worktrees for loom sessions, plus guards that keep an owner inside its own worktree and ask before a removal loses work.",
+  "description": "A status line naming the session's loom role, plus guards that keep an owner inside its own worktree and ask before a removal loses work.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"
@@ -12,12 +12,6 @@
       "title": "Guards",
       "description": "Deny an owner's edits outside its own worktree and ask before a branch force-delete or worktree removal that would lose work.",
       "default": true
-    },
-    "pollMs": {
-      "type": "number",
-      "title": "Poll interval (ms)",
-      "description": "How often the open pane re-reads git, in milliseconds.",
-      "default": 30000
     }
   }
 }
