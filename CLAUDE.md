@@ -23,6 +23,8 @@ kit/         shared Go packages for cross-tool functionality (one subpackage
 buildinfo/   shared build-metadata package (ldflags targets, /version handler)
 buildinfo.mk Makefile fragment every component includes to inject it
 recipes/     ralph recipes, consumed remotely via [[recipe_sources]]
+mods/        Claude Code mods (in-process plugin modules), one directory per
+             mod, listed by the root .claude-plugin/marketplace.json
 skills/      agent skills (Claude + Codex), one directory per skill; each is
              symlinked into ~/.claude/skills and ~/.agents/skills by its
              paired recipe (skill-only recipes for skills with no binary)
@@ -45,6 +47,7 @@ docs/RELEASING.md       release process (release-please, tags, artifacts, verifi
 - Code imported from another repo comes in clean (no git history); the import commit message records the source repo and SHA it came from.
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
+- Mods under `mods/` are additive, not components: no skill, hook, or service may require one, and they carry no Makefile or release line. The consuming repo registers their marketplace, never this one (docs/adr/0021).
 - Install the secret-scanning pre-commit hook after cloning: `suspenders hook install`.
 - Every `CLAUDE.md` in the repo has a sibling `AGENTS.md` symlink pointing at it, so non-Claude agents (Codex and others that read `AGENTS.md`) discover the same instructions. New components get the symlink alongside the `CLAUDE.md`.
 

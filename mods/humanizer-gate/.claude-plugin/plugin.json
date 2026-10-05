@@ -1,0 +1,8 @@
+{
+  "name": "humanizer-gate",
+  "version": "0.0.1",
+  "description": "Stub: reserved for a mod that runs humanizer detection on prose before it is committed or sent.",
+  "author": {
+    "name": "mad01"
+  }
+}

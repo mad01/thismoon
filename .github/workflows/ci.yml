@@ -19,6 +19,7 @@ jobs:
       has_components: ${{ steps.matrix.outputs.has_components }}
       swift_components: ${{ steps.matrix.outputs.swift_components }}
       has_swift: ${{ steps.matrix.outputs.has_swift }}
+      has_mods: ${{ steps.filter.outputs.mods }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -70,6 +71,9 @@ jobs:
             echo "  - 'go.sum'"
             echo "  - '.golangci.yml'"
             echo "  - '.github/workflows/**'"
+            echo "mods:"
+            echo "  - 'mods/**'"
+            echo "  - '.claude-plugin/marketplace.json'"
             for dir in services/*/ tools/*/; do
               [ -f "${dir}Makefile" ] || continue
               c="${dir%/}"
@@ -171,6 +175,40 @@ jobs:
         env:
           COMPONENT: ${{ matrix.component }}
         run: make -C "$COMPONENT" build
+
+  # Mods are Claude Code plugin modules, not components (docs/adr/0021): no
+  # Go, no release line. The runner has no Claude Code binary, so `claude
+  # plugin validate` stays a local gate; CI checks the manifests parse, every
+  # mod is listed in the marketplace, and the pure-function tests pass.
+  mods:
+    name: mods
+    needs: changes
+    if: needs.changes.outputs.has_mods == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      # The tests import lib/*.ts straight into node, which strips the types
+      # without a build step from 23.6 on.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Manifests parse
+        run: |
+          for f in .claude-plugin/marketplace.json mods/*/.claude-plugin/plugin.json mods/*/hooks/hooks.json; do
+            jq -e . "$f" > /dev/null || { echo "::error::${f} is not valid JSON"; exit 1; }
+          done
+
+      - name: Every mod is listed in the marketplace
+        run: |
+          diff \
+            <(jq -r '.plugins[].name' .claude-plugin/marketplace.json | sort) \
+            <(for dir in mods/*/; do basename "$dir"; done | sort) \
+            || { echo "::error::.claude-plugin/marketplace.json plugins out of sync with mods/*"; exit 1; }
+
+      - name: Test
+        run: node --test mods/*/test/*.test.mjs
 
   # present's shared mode runs in Kubernetes: build the image, stand up a
   # kind cluster, roll the manifests, and run the cluster-gated tests (the
