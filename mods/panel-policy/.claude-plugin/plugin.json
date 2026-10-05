@@ -1,8 +1,35 @@
 {
   "name": "panel-policy",
-  "version": "0.0.1",
-  "description": "Stub: reserved for a mod that surfaces review-panel policy at the moments a session needs it.",
+  "version": "0.1.0",
+  "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band and a /panel members pane.",
+  "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"
+  },
+  "userConfig": {
+    "enforce": {
+      "title": "Enforce the review model",
+      "type": "boolean",
+      "description": "Re-point review and verifier spawns to reviewModel.",
+      "default": true
+    },
+    "reviewModel": {
+      "title": "Review model",
+      "type": "string",
+      "description": "The model alias or id review and verifier spawns run on.",
+      "default": "opus"
+    },
+    "fanoutToast": {
+      "title": "Fan-out toast at",
+      "type": "number",
+      "description": "Toast once when a turn's spawn count reaches this; 0 turns it off.",
+      "default": 4
+    },
+    "fanoutHold": {
+      "title": "Fan-out hold at",
+      "type": "number",
+      "description": "Ask Proceed or Cancel on the Nth spawn of a turn; 0 (the default) never asks.",
+      "default": 0
+    }
   }
 }
