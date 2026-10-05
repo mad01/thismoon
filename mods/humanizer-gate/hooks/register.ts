@@ -1,5 +1,5 @@
 import { atom, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { Caught, EngineInterface, Register } from 'claude-code'
 
 import type { HumanizerGateReport } from '../types'
 import {
@@ -21,48 +21,26 @@ const lastReport = atom(
   null as HumanizerGateReport | null,
 )
 
-type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
-type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
-
 // The one .catch every hook below carries: say why in the debug log, then
 // let the chain beneath answer as if the hook were absent. The gate never
 // blocks a write, a PR or a commit on its own failure.
-const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
-  const why = next.error.message === undefined ? next.error.kind : `${next.error.kind}: ${next.error.message}`
-  $.ui.log(`humanizer-gate: ${next.event} skipped (${why})`, { to: 'debug' })
+const skipOnFailure = <E, R>($: EngineInterface, e: E, next: ((e: E) => R) & Caught): R => {
+  const { kind, message } = next.error
+  const why = message === undefined ? kind : `${kind}: ${message}`
+  $.ui.log(`humanizer-gate: hook skipped (${why})`, { to: 'debug' })
   return next(e)
 }
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-type Detector = Logger & {
-  process: {
-    run: (
-      argv: readonly string[],
-      init?: { stdin?: string; timeoutMs?: number },
-    ) => Promise<{ exitCode: number; stdout: string; stderr: string }>
-  }
-  clock: { sleep: (ms: number) => Promise<void> }
-}
-
-type Reporter = Parameters<typeof update>[0] & { ui: { status: (text: string | undefined) => void } }
-
-type Asker = Logger & {
-  ui: {
-    ask: (
-      question: string,
-      options?: readonly string[] | { options?: readonly string[]; header?: string },
-    ) => Promise<string>
-  }
-}
-
 type DetectSource = { file: string } | { text: string }
 
 // One `humanizer detect --json` run under the budget: a file by path, or
 // text on stdin. Null when it timed out, failed, or wrote no payload; the
-// debug log says which.
+// debug log says which. `timeoutMs` kills the child and rejects at the
+// budget, so there is no second clock to race it against.
 async function detect(
-  $: Detector,
+  $: EngineInterface,
   binary: string,
   source: DetectSource,
   level: Severity,
@@ -71,27 +49,26 @@ async function detect(
   const init: { stdin?: string; timeoutMs: number } = { timeoutMs: DETECT_BUDGET_MS }
   if ('file' in source) argv.push(source.file)
   else init.stdin = source.text
-  const outcome = await Promise.race([
-    $.process.run(argv, init).then(ran => ({ kind: 'ran' as const, ran })),
-    $.clock.sleep(DETECT_BUDGET_MS).then(() => ({ kind: 'timeout' as const })),
-  ])
-  if (outcome.kind === 'timeout') {
-    $.ui.log(`humanizer-gate: detect past ${DETECT_BUDGET_MS} ms, no report`, { to: 'debug' })
+  let ran: { exitCode: number; stdout: string; stderr: string }
+  try {
+    ran = await $.process.run(argv, init)
+  } catch (err) {
+    $.ui.log(`humanizer-gate: detect did not finish (${describe(err)})`, { to: 'debug' })
     return null
   }
-  if (outcome.ran.exitCode !== 0) {
-    const stderr = outcome.ran.stderr.trim().slice(0, 200)
-    $.ui.log(`humanizer-gate: detect exit ${outcome.ran.exitCode} (${stderr})`, { to: 'debug' })
+  if (ran.exitCode !== 0) {
+    const stderr = ran.stderr.trim().slice(0, 200)
+    $.ui.log(`humanizer-gate: detect exit ${ran.exitCode} (${stderr})`, { to: 'debug' })
     return null
   }
-  const summary = parseDetectOutput(outcome.ran.stdout)
+  const summary = parseDetectOutput(ran.stdout)
   if (summary === null) $.ui.log('humanizer-gate: detect wrote no JSON payload', { to: 'debug' })
   return summary
 }
 
 // Pins the status line for `target` (clears it on a clean scan) and keeps
 // the counts in state. A failed detect leaves both as they were.
-async function report($: Reporter, summary: FindingsSummary | null, target: string): Promise<void> {
+async function report($: EngineInterface, summary: FindingsSummary | null, target: string): Promise<void> {
   if (summary === null) return
   $.ui.status(statusText(summary, target))
   const { total, errors, warnings, suggestions } = summary
@@ -100,7 +77,7 @@ async function report($: Reporter, summary: FindingsSummary | null, target: stri
 
 // True only when the person picked Cancel. A dialog nobody can answer (a
 // `-p` run) or one dismissed lets the call through.
-async function isCancelled($: Asker, summary: FindingsSummary, target: string): Promise<boolean> {
+async function isCancelled($: EngineInterface, summary: FindingsSummary, target: string): Promise<boolean> {
   try {
     const answer = await $.ui.ask(holdQuestion(summary, target), { options: HOLD_OPTIONS, header: 'humanizer' })
     return answer === HOLD_OPTIONS[1]
@@ -155,6 +132,8 @@ export const register: Register = (on, options) => {
     },
   ).catch(skipOnFailure)
 
+  // A loose prefilter; extractCommitMessage decides whether a segment of
+  // the command is really `git commit` and reads only that segment.
   on('tool.call', { tool: 'Bash', command: /\bgit\b[^|;&\n]*?\bcommit\b/ }, async ($, e, next) => {
     const bin = binary
     const message = extractCommitMessage(e.command)

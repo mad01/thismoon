@@ -8,9 +8,11 @@ A Claude Code mod that runs `humanizer detect` on prose as it leaves the session
 |--------|-----------------|--------------|
 | `Write` or `Edit` on a `.md` or `.mdx` file | the file on disk, after the write | a status line under the prompt: `humanizer: 2 warnings in README.md`; cleared when the scan is clean |
 | `mcp__gh_com__create_pull_request`, `mcp__gh_com__update_pull_request` | the `body` field | status line; with an error-level finding and `holdOnError` on, a Proceed / Cancel dialog first |
-| `Bash` running `git commit` | the message from `-m "..."` (every `-m`, joined) or a heredoc after `-F -` or inside `-m "$(cat <<'EOF' ...)"` | status line; with an error-level finding and `holdOnCommitError` on, the same dialog |
+| `Bash` running `git commit` | the message of the last `git commit` segment in the command: every quoted `-m` (`-am`, `--message` too), joined, or a heredoc after `-F -` or inside `-m "$(cat <<'EOF' ...)"` | status line; with an error-level finding and `holdOnCommitError` on, the same dialog |
 
-Markdown under `node_modules`, `.git`, or any dot directory except `.github` is skipped. A commit whose message the mod can't read (`-F file`, an editor, an unquoted word) passes straight through.
+Markdown under `node_modules` or `.git` is skipped; dot directories such as `.claude/worktrees` and `~/.worktrees` are scanned. Only the commit's own segment of a shell command is read, so a script in a heredoc elsewhere in the command never gets scanned. A commit whose message the mod can't read (`-F file`, an editor, an unquoted word) passes straight through.
+
+Tool-call hooks run before the permission check, so the hold dialog can appear before a permission dialog for the same call.
 
 ## What it never blocks
 
@@ -34,10 +36,10 @@ The last scan's counts sit in `$.state` under `humanizer-gate.lastReport` for an
 ## Dev loop
 
 ```bash
-claude --plugin-dir mods/humanizer-gate        # from the repo root; saves hot-reload
+claude --plugin-dir mods/humanizer-gate        # from the repo root; reloads on save
 claude --debug --plugin-dir mods/humanizer-gate  # the debug log names every scan and skip
 claude plugin validate mods/humanizer-gate
 node --test mods/humanizer-gate/test/*.test.mjs
 ```
 
-Needs `~/code/bin/humanizer` (thismoon `services/humanizer`) and `vale` on PATH, which detect shells out to. The engine writes `.claude-plugin/types/` beside the mod on load; those files are the authority on event shapes for the build you run.
+Needs `~/code/bin/humanizer` (thismoon `tools/humanizer`) and `vale` on PATH, which detect shells out to. The engine writes `.claude-plugin/types/` beside the mod on load; those files are the authority on event shapes for the build you run.
