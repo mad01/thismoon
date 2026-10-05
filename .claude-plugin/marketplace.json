@@ -18,7 +18,7 @@
     {
       "name": "panel-policy",
       "source": "./mods/panel-policy",
-      "description": "Stub: reserved for a mod that surfaces review-panel policy at the moments a session needs it."
+      "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band and a /panel members pane."
     },
     {
       "name": "loom-pane",
