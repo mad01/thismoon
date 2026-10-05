@@ -42,6 +42,9 @@ builder adds a mod without editing the marketplace file.
   Cancel in a hold dialog, or a convenience guard. Such a guard fails open,
   is off by a config key, and duplicates no belt guard. A mod never edits
   the transcript.
+- A mod may change the model of a subagent spawn only behind a config key,
+  only when the caller set no model or a model the key lists, and never for
+  a model the caller chose explicitly.
 - Codex and pi see nothing of this layer. Anything they need stays a skill.
 - CI runs the mods' `node --test` suites and checks every mod is in the
   marketplace. `claude plugin validate` stays a local gate: the runner has
