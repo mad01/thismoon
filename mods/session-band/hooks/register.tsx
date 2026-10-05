@@ -1,26 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { SessionBandAgent, SessionBandPage } from '../types'
+import type { SessionBandPage } from '../types'
 import {
-  LONG_TURN_MS,
-  PROBE_BUDGET_MS,
-  beltEventsUrl,
   compactContextBlock,
   composeBandLines,
-  countBeltDenies,
-  eventsCursorAt,
   findPhaseMarker,
+  isBeltDeny,
   parsePresentResult,
   parseWorklogList,
   repoNameFrom,
+  shouldToastDone,
 } from '../lib/band'
 import type { BandSnapshot } from '../lib/band'
 
-const POLL_EVERY_MS = 15_000
 const WORKLOG_RUN_TIMEOUT_MS = 2_000
 
-const agent = atom({ plugin: 'session-band', key: 'agent' } as const, 'idle' as SessionBandAgent)
+const isWaiting = atom({ plugin: 'session-band', key: 'isWaiting' } as const, false)
 const worklogKey = atom({ plugin: 'session-band', key: 'worklogKey' } as const, null as string | null)
 const phase = atom({ plugin: 'session-band', key: 'phase' } as const, null as string | null)
 const presentPage = atom(
@@ -28,7 +24,6 @@ const presentPage = atom(
   null as SessionBandPage | null,
 )
 const beltDenies = atom({ plugin: 'session-band', key: 'beltDenies' } as const, 0)
-const eventsCursor = atom({ plugin: 'session-band', key: 'eventsCursor' } as const, null as string | null)
 const isCompacted = atom({ plugin: 'session-band', key: 'isCompacted' } as const, false)
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
@@ -45,10 +40,12 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+type StateDollar = Parameters<typeof read>[0]
+
 // Every signal the band and the compact block draw from, read in one go.
-async function snapshot($: Parameters<typeof read>[0]): Promise<BandSnapshot> {
+async function snapshot($: StateDollar): Promise<BandSnapshot> {
   return {
-    agent: await read($, agent),
+    isWaiting: await read($, isWaiting),
     worklogKey: await read($, worklogKey),
     phase: await read($, phase),
     presentPage: await read($, presentPage),
@@ -56,131 +53,101 @@ async function snapshot($: Parameters<typeof read>[0]): Promise<BandSnapshot> {
   }
 }
 
-export const register: Register = on => {
-  // Set while a belt poll is in flight, so a slow events service never
-  // stacks requests; reset on every settle.
-  let isPolling = false
-  let wasEventsDown = false
+// Writes the waiting flag only when it changes: every write redraws the band.
+async function setWaiting($: StateDollar, value: boolean): Promise<void> {
+  if ((await read($, isWaiting)) !== value) await update($, isWaiting, () => value)
+}
 
+export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     $.ui.log('session-band: loaded', { to: 'debug' })
 
-    if ((await read($, eventsCursor)) === null) {
-      const now = await $.clock.now()
-      await update($, eventsCursor, () => eventsCursorAt(now))
-    }
-
     const detectWorklogKey = async (): Promise<void> => {
       if ((await read($, worklogKey)) !== null) return
-      const home = await $.env.get('HOME')
-      if (home === undefined) return
       let commonDir: string | null = null
       try {
-        const git = await $.process.run(['git', 'rev-parse', '--git-common-dir'], {
-          cwd: e.cwd,
-          timeoutMs: WORKLOG_RUN_TIMEOUT_MS,
-        })
+        const git = await $.process.run(
+          ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+          { cwd: e.cwd, timeoutMs: WORKLOG_RUN_TIMEOUT_MS },
+        )
         if (git.exitCode === 0) commonDir = git.stdout
       } catch {
         commonDir = null
       }
       const repo = repoNameFrom(commonDir, e.cwd)
-      const listed = await $.process.run(
-        [`${home}/code/bin/worklog`, 'list', '--status', 'active', '--repo', repo],
-        { cwd: e.cwd, timeoutMs: WORKLOG_RUN_TIMEOUT_MS },
-      )
+      const home = await $.env.get('HOME')
+      const installed = home === undefined ? null : `${home}/code/bin/worklog`
+      const worklog = installed !== null && (await $.fs.exists(installed)) ? installed : 'worklog'
+      const listed = await $.process.run([worklog, 'list', '--status', 'active', '--repo', repo], {
+        cwd: e.cwd,
+        timeoutMs: WORKLOG_RUN_TIMEOUT_MS,
+      })
       if (listed.exitCode !== 0) return
       const key = parseWorklogList(listed.stdout)
       if (key !== null) await update($, worklogKey, () => key)
     }
 
-    const pollBeltDenies = async (): Promise<void> => {
-      if (isPolling) return
-      isPolling = true
-      try {
-        const url = beltEventsUrl(await read($, eventsCursor))
-        const outcome = await Promise.race([
-          $.http.fetch(url).then(response => ({ kind: 'response' as const, response })),
-          $.clock.sleep(PROBE_BUDGET_MS).then(() => ({ kind: 'timeout' as const })),
-        ])
-        if (outcome.kind === 'timeout' || !outcome.response.ok) {
-          wasEventsDown = true
-          return
-        }
-        if (wasEventsDown) {
-          wasEventsDown = false
-          $.ui.log('session-band: events service reachable again', { to: 'debug' })
-        }
-        const tally = countBeltDenies(JSON.parse(outcome.response.text))
-        if (tally.newestId !== null) {
-          const newest = tally.newestId
-          await update($, eventsCursor, () => newest)
-        }
-        if (tally.denies > 0) await update($, beltDenies, n => n + tally.denies)
-      } catch (err) {
-        if (!wasEventsDown) {
-          $.ui.log(`session-band: belt poll off (${describe(err)})`, { to: 'debug' })
-        }
-        wasEventsDown = true
-      } finally {
-        isPolling = false
-      }
-    }
-
-    // Both outlive this dispatch, so they start from the clock rather than
-    // inside the hook: the first prompt never waits on a child process.
+    // Outlives this dispatch, so it starts from the clock rather than inside
+    // the hook: the first prompt never waits on a child process.
     $.clock.after(0, () => {
       detectWorklogKey().catch(err => {
         $.ui.log(`session-band: worklog key not detected (${describe(err)})`, { to: 'debug' })
       })
     })
-    $.clock.every(POLL_EVERY_MS, () => {
-      void pollBeltDenies()
-    })
 
     return started
   }).catch(skipOnFailure)
 
-  on('turn.start', async ($, e, next) => {
-    await update($, agent, () => 'working')
-    return next(e)
-  }).catch(skipOnFailure)
-
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
-      await update($, agent, () => 'idle')
+      await setWaiting($, false)
       const marker = findPhaseMarker(e.answer)
-      if (marker !== null) await update($, phase, () => marker)
-      if (e.durationMs > LONG_TURN_MS) {
+      if (marker !== null && marker !== (await read($, phase))) await update($, phase, () => marker)
+      if (shouldToastDone(e.reason, e.durationMs)) {
         $.ui.toast(`done (${Math.round(e.durationMs / 1000)} s)`)
       }
     }
     return next(e)
   }).catch(skipOnFailure)
 
+  // The person is being asked: a permission prompt or an MCP elicitation on
+  // the main thread. A subagent's prompt is left to the engine's own spinner.
   on(
     'classic.Notification',
     { notification_type: ['permission_prompt', 'elicitation_dialog'] },
     async ($, e, next) => {
-      await update($, agent, () => 'waiting')
-      if (e.notification_type === 'permission_prompt') $.ui.toast('needs input')
+      if (e.agent_id === undefined) {
+        await setWaiting($, true)
+        if (e.notification_type === 'permission_prompt') $.ui.toast('needs input')
+      }
       return next(e)
     },
   ).catch(skipOnFailure)
 
-  // A tool call means the model is working, before the permission prompt
-  // and again once it was answered and the tool ran.
-  on('tool.call', async ($, e, next) => {
-    await update($, agent, () => 'working')
-    const answered = await next(e)
-    await update($, agent, () => 'working')
-    return answered
+  // Answered: the tool ran, or the person refused it.
+  on('classic.PostToolUse', async ($, e, next) => {
+    if (e.agent_id === undefined) await setWaiting($, false)
+    return next(e)
+  }).catch(skipOnFailure)
+
+  on('classic.PermissionDenied', async ($, e, next) => {
+    if (e.agent_id === undefined) await setWaiting($, false)
+    return next(e)
+  }).catch(skipOnFailure)
+
+  // belt answers PreToolUse as a settings hook beneath every mod; its deny
+  // comes back from next(e) with a `belt[<guard>]: ` reason. Counted, never
+  // changed: the decision returns exactly as belt made it.
+  on('classic.PreToolUse', async ($, e, next) => {
+    const decision = await next(e)
+    if (isBeltDeny(decision)) await update($, beltDenies, n => n + 1)
+    return decision
   }).catch(skipOnFailure)
 
   on('tool.call', { tool: 'mcp__worklog__worklog_checkpoint' }, async ($, e, next) => {
     const key = typeof e.key === 'string' ? e.key.trim() : ''
-    if (key !== '') await update($, worklogKey, () => key)
+    if (key !== '' && key !== (await read($, worklogKey))) await update($, worklogKey, () => key)
     return next(e)
   }).catch(skipOnFailure)
 
@@ -189,32 +156,34 @@ export const register: Register = on => {
     { tool: ['mcp__present__present_create', 'mcp__present__present_update'] },
     async ($, e, next) => {
       const answered = await next(e)
-      if (answered.deny === undefined) {
-        const page = parsePresentResult(answered.result, typeof e.id === 'string' ? e.id : null)
+      if (answered.deny === undefined && answered.isError !== true) {
+        const inputId = typeof e.id === 'string' ? e.id : null
+        const page = parsePresentResult(answered.result, inputId, answered.text)
         if (page !== null) await update($, presentPage, () => page)
       }
       return answered
     },
   ).catch(skipOnFailure)
 
+  // A compaction re-reads the first message's context, so the block goes in
+  // through prompt.context alone; this only arms it.
   on('classic.SessionStart', { source: 'compact' }, async ($, e, next) => {
-    const below = (await next(e)) ?? {}
-    await update($, isCompacted, () => true)
-    const block = compactContextBlock(await snapshot($))
-    return { ...below, additionalContext: [...(below.additionalContext ?? []), block] }
+    if (!(await read($, isCompacted))) await update($, isCompacted, () => true)
+    return next(e)
   }).catch(skipOnFailure)
 
   on('prompt.context', async ($, e, next) => {
     const below = await next(e)
     if (!(await read($, isCompacted))) return below
     const block = { name: 'session-band', text: compactContextBlock(await snapshot($)) }
+    await update($, isCompacted, () => false)
     return { ...below, blocks: [...below.blocks, block] }
   }).catch(skipOnFailure)
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
-    const lines = composeBandLines(await snapshot($), e.props.bodyColumns)
+    const lines = composeBandLines(await snapshot($), e.props.isWorking, e.props.bodyColumns)
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">

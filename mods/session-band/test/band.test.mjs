@@ -2,19 +2,19 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import {
-  beltEventsUrl,
+  agentState,
   compactContextBlock,
   composeBandLines,
-  countBeltDenies,
-  eventsCursorAt,
   findPhaseMarker,
+  isBeltDeny,
   parsePresentResult,
   parseWorklogList,
   phaseLabel,
   repoNameFrom,
+  shouldToastDone,
 } from '../lib/band.ts'
 
-const idle = { agent: 'idle', worklogKey: null, phase: null, presentPage: null, beltDenies: 0 }
+const idle = { isWaiting: false, worklogKey: null, phase: null, presentPage: null, beltDenies: 0 }
 
 describe('findPhaseMarker', () => {
   test('takes the last phase line of the answer', () => {
@@ -51,79 +51,75 @@ describe('phaseLabel', () => {
   })
 })
 
-describe('countBeltDenies', () => {
-  const events = [
-    { id: '00000000000000000003-aaaa', source: 'belt', title: 'blocked Bash (commit-guard)' },
-    { id: '00000000000000000002-aaaa', source: 'belt', title: 'hinted Bash (prefer-csl)' },
-    { id: '00000000000000000001-aaaa', source: 'deps', title: 'blocked something' },
-    { id: '00000000000000000004-aaaa', source: 'belt', title: 'blocked Write (write-internal-names)' },
-  ]
-
-  test('counts only belt events whose title says blocked', () => {
-    assert.equal(countBeltDenies(events).denies, 2)
+describe('shouldToastDone', () => {
+  test('toasts an answered turn past a minute', () => {
+    assert.equal(shouldToastDone('answer', 60_001), true)
   })
 
-  test('reports the newest id as the next cursor', () => {
-    assert.equal(countBeltDenies(events).newestId, '00000000000000000004-aaaa')
+  test('stays quiet for a short answer', () => {
+    assert.equal(shouldToastDone('answer', 60_000), false)
   })
 
-  test('is empty for a non-array or junk entries', () => {
-    assert.deepEqual(countBeltDenies(null), { denies: 0, newestId: null })
-    assert.deepEqual(countBeltDenies([null, 1, 'x']), { denies: 0, newestId: null })
+  test('stays quiet for an aborted or failed turn however long', () => {
+    assert.equal(shouldToastDone('aborted', 600_000), false)
+    assert.equal(shouldToastDone('error', 600_000), false)
+    assert.equal(shouldToastDone('refusal', 600_000), false)
   })
 })
 
-describe('eventsCursorAt', () => {
-  test('is a 20-digit nanosecond stamp with a zero suffix', () => {
-    assert.equal(eventsCursorAt(1_700_000_000_000), '01700000000000000000-0000')
+describe('isBeltDeny', () => {
+  test('is true for a denial with a belt reason', () => {
+    assert.equal(isBeltDeny({ deny: 'belt[commit-guard]: main is PR-only' }), true)
   })
 
-  test('sorts after an id stamped earlier and before one stamped later', () => {
-    const cursor = eventsCursorAt(1_700_000_000_000)
-    assert.ok('01699999999999999999-ffff' < cursor)
-    assert.ok('01700000000000000001-0000' > cursor)
+  test('is false for another hook, an allow, an ask, or no decision', () => {
+    assert.equal(isBeltDeny({ deny: 'policy: no' }), false)
+    assert.equal(isBeltDeny({ allow: true }), false)
+    assert.equal(isBeltDeny({ ask: 'belt[x]: sure?' }), false)
+    assert.equal(isBeltDeny({}), false)
+    assert.equal(isBeltDeny(undefined), false)
   })
 })
 
-describe('beltEventsUrl', () => {
-  test('filters to belt and carries the cursor', () => {
-    assert.equal(
-      beltEventsUrl('abc'),
-      'http://localhost:7430/api/events?source=belt&limit=200&since=abc',
-    )
+describe('agentState', () => {
+  test('waiting wins over working', () => {
+    assert.equal(agentState(true, true), 'waiting')
+    assert.equal(agentState(true, false), 'waiting')
   })
 
-  test('omits since without a cursor', () => {
-    assert.equal(beltEventsUrl(null), 'http://localhost:7430/api/events?source=belt&limit=200')
+  test('working and idle follow the render prop', () => {
+    assert.equal(agentState(false, true), 'working')
+    assert.equal(agentState(false, false), 'idle')
   })
 })
 
 describe('composeBandLines', () => {
   test('shows the idle default on one line', () => {
-    assert.deepEqual(composeBandLines(idle), ['- idle | belt denies 0'])
+    assert.deepEqual(composeBandLines(idle, false), ['- idle | belt denies 0'])
   })
 
   test('names every known signal in order', () => {
     const full = {
-      agent: 'working',
+      isWaiting: false,
       worklogKey: 'MAD-379',
       phase: '[Phase 4.unit.2/3] — tests done → docs',
       presentPage: { id: '1e52d87017', url: null },
       beltDenies: 2,
     }
-    assert.deepEqual(composeBandLines(full), [
+    assert.deepEqual(composeBandLines(full, true), [
       '* working | worklog MAD-379 | Phase 4.unit.2/3 | present 1e52d87017 | belt denies 2',
     ])
   })
 
   test('wraps to a second line when the width is short', () => {
-    const lines = composeBandLines({ ...idle, agent: 'waiting', worklogKey: 'MAD-379' }, 32)
+    const lines = composeBandLines({ ...idle, isWaiting: true, worklogKey: 'MAD-379' }, true, 32)
     assert.deepEqual(lines, ['? waiting for input', 'worklog MAD-379 | belt denies 0'])
   })
 
   test('never exceeds two lines', () => {
     const lines = composeBandLines(
-      { agent: 'working', worklogKey: 'k', phase: '[Phase 1]', presentPage: { id: 'p', url: null }, beltDenies: 0 },
+      { isWaiting: false, worklogKey: 'k', phase: '[Phase 1]', presentPage: { id: 'p', url: null }, beltDenies: 0 },
+      true,
       12,
     )
     assert.equal(lines.length, 2)
@@ -144,6 +140,10 @@ describe('parseWorklogList', () => {
     assert.equal(parseWorklogList('KEY  STATUS  UPDATED  REPOS\n'), null)
     assert.equal(parseWorklogList(''), null)
   })
+
+  test('is null for the no items message of an empty store', () => {
+    assert.equal(parseWorklogList('no items\n'), null)
+  })
 })
 
 describe('repoNameFrom', () => {
@@ -155,6 +155,10 @@ describe('repoNameFrom', () => {
     assert.equal(repoNameFrom('.git', '/home/u/code/thismoon'), 'thismoon')
   })
 
+  test('resolves a parent-relative common dir from a subdirectory', () => {
+    assert.equal(repoNameFrom('../../.git\n', '/home/u/code/thismoon/services/present'), 'thismoon')
+  })
+
   test('falls back to the cwd name outside a repo', () => {
     assert.equal(repoNameFrom(null, '/tmp/scratch'), 'scratch')
     assert.equal(repoNameFrom('', '/tmp/scratch/'), 'scratch')
@@ -162,7 +166,12 @@ describe('repoNameFrom', () => {
 })
 
 describe('parsePresentResult', () => {
-  test('prefers structured content', () => {
+  test('parses the JSON string a present tool returns', () => {
+    const result = '{"id":"c1b321f2c4","url":"http://localhost:7423/p/c1b321f2c4","version":1}'
+    assert.deepEqual(parsePresentResult(result, null), { id: 'c1b321f2c4', url: 'http://localhost:7423/p/c1b321f2c4' })
+  })
+
+  test('prefers structured content on an MCP record', () => {
     const result = { structuredContent: { id: 'abc', url: 'http://localhost:7423/p/abc' }, content: [] }
     assert.deepEqual(parsePresentResult(result, null), { id: 'abc', url: 'http://localhost:7423/p/abc' })
   })
@@ -172,8 +181,12 @@ describe('parsePresentResult', () => {
     assert.deepEqual(parsePresentResult(result, null), { id: 'def', url: 'u' })
   })
 
+  test('falls back to the text the model reads', () => {
+    assert.deepEqual(parsePresentResult({ content: [] }, null, '{"id":"ghi","url":"v"}'), { id: 'ghi', url: 'v' })
+  })
+
   test('falls back to the input id of an update', () => {
-    assert.deepEqual(parsePresentResult({ content: [{ type: 'text', text: 'not json' }] }, 'ghi'), { id: 'ghi', url: null })
+    assert.deepEqual(parsePresentResult('not json', 'jkl', 'not json either'), { id: 'jkl', url: null })
   })
 
   test('is null with nothing to go on', () => {
@@ -185,7 +198,7 @@ describe('parsePresentResult', () => {
 describe('compactContextBlock', () => {
   test('lists every known signal and the checkpoint reminder', () => {
     const block = compactContextBlock({
-      agent: 'idle',
+      isWaiting: false,
       worklogKey: 'MAD-379',
       phase: '[Phase 4.unit.2/3] — tests done → docs',
       presentPage: { id: 'p1', url: 'http://localhost:7423/p/p1' },

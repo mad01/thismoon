@@ -6,18 +6,12 @@ export type AgentState = 'working' | 'waiting' | 'idle'
 export type PageRef = { id: string; url: string | null }
 
 export type BandSnapshot = {
-  agent: AgentState
+  isWaiting: boolean
   worklogKey: string | null
   phase: string | null
   presentPage: PageRef | null
   beltDenies: number
 }
-
-/** How long a localhost probe may take before the band gives up on it. */
-export const PROBE_BUDGET_MS = 400
-
-/** The events service the belt deny counter polls. */
-export const EVENTS_BASE_URL = 'http://localhost:7430'
 
 /** A turn longer than this gets a "done" toast. */
 export const LONG_TURN_MS = 60_000
@@ -49,50 +43,26 @@ export function phaseLabel(line: string): string {
   return close > 1 ? line.slice(1, close) : line
 }
 
-export type BeltTally = { denies: number; newestId: string | null }
-
-type EventLike = { id?: unknown; source?: unknown; title?: unknown }
-
-// belt emits `blocked <tool> (<guard>)` for a guard denial and
-// `hinted ...` for advisory hints; only the first is a deny.
-function isBeltDeny(event: EventLike): boolean {
-  return (
-    event.source === 'belt' &&
-    typeof event.title === 'string' &&
-    event.title.startsWith('blocked ')
-  )
+/** Whether a finished turn earns the "done" toast: answered, and long. */
+export function shouldToastDone(reason: string, durationMs: number): boolean {
+  return reason === 'answer' && durationMs > LONG_TURN_MS
 }
 
-/** Counts belt denies in an events page and finds the cursor for the next poll. */
-export function countBeltDenies(events: unknown): BeltTally {
-  if (!Array.isArray(events)) return { denies: 0, newestId: null }
-  let denies = 0
-  let newestId: string | null = null
-  for (const item of events) {
-    if (item === null || typeof item !== 'object') continue
-    const event = item as EventLike
-    if (typeof event.id === 'string' && (newestId === null || event.id > newestId)) {
-      newestId = event.id
-    }
-    if (isBeltDeny(event)) denies += 1
-  }
-  return { denies, newestId }
+// Every belt denial reason starts `belt[<guard>]: `; other settings hooks
+// deny with their own words.
+const BELT_REASON = /^belt\[/
+
+/** Whether a `classic.PreToolUse` decision is a denial belt wrote. */
+export function isBeltDeny(decision: unknown): boolean {
+  if (decision === null || typeof decision !== 'object') return false
+  const { deny } = decision as { deny?: unknown }
+  return typeof deny === 'string' && BELT_REASON.test(deny)
 }
 
-/**
- * An events cursor standing at `nowMs`: ids are `%020d-%04x` of unix
- * nanoseconds, so this sorts after everything emitted before now.
- */
-export function eventsCursorAt(nowMs: number): string {
-  const nanos = BigInt(Math.max(0, Math.floor(nowMs))) * 1_000_000n
-  return `${nanos.toString().padStart(20, '0')}-0000`
-}
-
-/** The events query for belt activity after `cursor`. */
-export function beltEventsUrl(cursor: string | null, baseUrl = EVENTS_BASE_URL): string {
-  const query = new URLSearchParams({ source: 'belt', limit: '200' })
-  if (cursor !== null) query.set('since', cursor)
-  return `${baseUrl}/api/events?${query.toString()}`
+/** What the band says about the agent, from the render prop and the waiting flag. */
+export function agentState(isWaiting: boolean, isWorking: boolean): AgentState {
+  if (isWaiting) return 'waiting'
+  return isWorking ? 'working' : 'idle'
 }
 
 const AGENT_LABEL: Record<AgentState, string> = {
@@ -102,8 +72,8 @@ const AGENT_LABEL: Record<AgentState, string> = {
 }
 
 /** The band's segments in display order; absent signals are left out. */
-export function bandSegments(snapshot: BandSnapshot): string[] {
-  const segments = [AGENT_LABEL[snapshot.agent]]
+export function bandSegments(snapshot: BandSnapshot, isWorking: boolean): string[] {
+  const segments = [AGENT_LABEL[agentState(snapshot.isWaiting, isWorking)]]
   if (snapshot.worklogKey !== null) segments.push(`worklog ${snapshot.worklogKey}`)
   if (snapshot.phase !== null) segments.push(phaseLabel(snapshot.phase))
   if (snapshot.presentPage !== null) segments.push(`present ${snapshot.presentPage.id}`)
@@ -116,8 +86,8 @@ export function bandSegments(snapshot: BandSnapshot): string[] {
  * that fits nowhere is dropped rather than wrapped mid-word; with no width
  * known everything goes on one line.
  */
-export function composeBandLines(snapshot: BandSnapshot, columns?: number): string[] {
-  const segments = bandSegments(snapshot)
+export function composeBandLines(snapshot: BandSnapshot, isWorking: boolean, columns?: number): string[] {
+  const segments = bandSegments(snapshot, isWorking)
   if (columns === undefined || columns <= 0) return [segments.join(SEPARATOR)]
   const lines: string[] = []
   let current = ''
@@ -135,32 +105,54 @@ export function composeBandLines(snapshot: BandSnapshot, columns?: number): stri
   return lines.slice(0, BAND_MAX_LINES)
 }
 
-/** The first KEY of a `worklog list` table, or null when it lists nothing. */
+/**
+ * The first KEY of a `worklog list` table, or null. Rows count only below
+ * the `KEY` header: an empty store prints `no items` with no header at all.
+ */
 export function parseWorklogList(stdout: string): string | null {
-  const rows = stdout.split('\n').map(line => line.trim()).filter(line => line !== '')
-  for (const row of rows) {
-    if (row.startsWith('KEY ')) continue
+  let isBelowHeader = false
+  for (const line of stdout.split('\n')) {
+    const row = line.trim()
+    if (row === '') continue
+    if (!isBelowHeader) {
+      isBelowHeader = row.startsWith('KEY ')
+      continue
+    }
     const [key] = row.split(/\s+/)
     if (key !== undefined && key !== '') return key
   }
   return null
 }
 
+/** `a/b/../c` → `a/c`, with `.` segments dropped; keeps the leading slash. */
+function normalizePath(path: string): string {
+  const out: string[] = []
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      out.pop()
+      continue
+    }
+    out.push(segment)
+  }
+  return (path.startsWith('/') ? '/' : '') + out.join('/')
+}
+
 /**
  * The repo name behind a `git rev-parse --git-common-dir` answer: the
- * directory holding `.git`, resolved against `cwd` when git printed a
- * relative path (it does, from the main worktree). Falls back to the cwd's
- * own name outside a repo.
+ * directory holding `.git`. register.tsx asks git for an absolute path, and
+ * a relative one (`.git`, `../../.git`) is still resolved against `cwd`.
+ * Falls back to the cwd's own name outside a repo.
  */
 export function repoNameFrom(gitCommonDir: string | null, cwd: string): string {
   const base = (path: string): string => {
-    const parts = path.replace(/\/+$/, '').split('/')
+    const parts = normalizePath(path).split('/')
     return parts[parts.length - 1] ?? ''
   }
   const trimmed = gitCommonDir?.trim() ?? ''
   if (trimmed === '') return base(cwd)
-  const absolute = trimmed.startsWith('/') ? trimmed : `${cwd.replace(/\/+$/, '')}/${trimmed}`
-  const withoutGit = absolute.replace(/\/\.git$/, '')
+  const absolute = trimmed.startsWith('/') ? trimmed : `${cwd}/${trimmed}`
+  const withoutGit = normalizePath(absolute).replace(/\/\.git$/, '')
   return base(withoutGit === '' ? cwd : withoutGit)
 }
 
@@ -176,28 +168,42 @@ function pageFromObject(value: unknown): PageRef | null {
   return { id, url: typeof url === 'string' ? url : null }
 }
 
+function pageFromJson(text: string): PageRef | null {
+  try {
+    return pageFromObject(JSON.parse(text))
+  } catch {
+    return null
+  }
+}
+
 /**
- * The page a present_create or present_update result names: its structured
- * content first, then the first text block parsed as JSON, then the id the
- * call was made with (an update's input names the page).
+ * The page a present_create or present_update result names. The result is
+ * usually one JSON string (`{"id":..,"url":..,"version":..}`); an MCP record
+ * with `structuredContent` or text blocks is read too, then `text` as the
+ * model sees it, then the id the call was made with (an update's input
+ * names the page).
  */
-export function parsePresentResult(result: unknown, inputId: string | null): PageRef | null {
+export function parsePresentResult(result: unknown, inputId: string | null, text?: string): PageRef | null {
+  if (typeof result === 'string') {
+    const parsed = pageFromJson(result)
+    if (parsed !== null) return parsed
+  }
   if (result !== null && typeof result === 'object') {
     const mcp = result as McpResultLike
     const structured = pageFromObject(mcp.structuredContent)
     if (structured !== null) return structured
     if (Array.isArray(mcp.content)) {
       for (const block of mcp.content) {
-        const text = (block as { text?: unknown })?.text
-        if (typeof text !== 'string') continue
-        try {
-          const parsed = pageFromObject(JSON.parse(text))
-          if (parsed !== null) return parsed
-        } catch {
-          // not JSON: the next block may be
-        }
+        const blockText = (block as { text?: unknown })?.text
+        if (typeof blockText !== 'string') continue
+        const parsed = pageFromJson(blockText)
+        if (parsed !== null) return parsed
       }
     }
+  }
+  if (text !== undefined) {
+    const parsed = pageFromJson(text)
+    if (parsed !== null) return parsed
   }
   return inputId !== null && inputId !== '' ? { id: inputId, url: null } : null
 }
