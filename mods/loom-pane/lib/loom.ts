@@ -27,11 +27,13 @@ export type Layout = {
   canonical: string | null
   ownWorktree: string | null
   worktreeRoot: string | null
+  /** Every worktree path git listed, nested ones under the canonical checkout included. */
+  worktrees: readonly string[]
 }
 
 export type PathClass = 'own' | 'canonical' | 'other' | 'outside'
 
-export type Detected = Layout & { repo: string | null; role: Role }
+export type Detected = Omit<Layout, 'worktrees'> & { repo: string | null; role: Role }
 
 /** How long one git call may take. */
 export const GIT_BUDGET_MS = 2_000
@@ -65,12 +67,24 @@ const MUTATING_GIT_VERBS = new Set([
   'am',
 ])
 
+// The verbs whose path operands name what they change; the others take
+// messages, refs and patch files, whose spelling says nothing about writes.
+const OPERAND_VERBS = new Set(['add', 'rm', 'mv', 'checkout', 'restore', 'clean'])
+
+// Flags that take the next word as a value, so that word is not a path.
+const VALUE_FLAGS = new Set(['-m', '-F', '--message', '--file', '-b', '-B', '--reason', '-C'])
+
 // Commands that run another command the tokenizer cannot see into.
 const OPAQUE_COMMANDS = new Set(['sh', 'bash', 'zsh', 'eval', 'exec', 'xargs', 'sudo', 'env', 'popd'])
 
-const CONTROL_OPS = new Set(['&&', '||', ';', ';;', '|', '|&', '&', '(', ')', '\n'])
+// Prefixes that run the command after them unchanged.
+const PASSTHROUGH_COMMANDS = new Set(['command', 'time'])
 
-const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
+const CONTROL_OPS = new Set(['&&', '||', ';', ';;', '|', '|&', '&', '\n'])
+
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=/
+
+const GIT_ENV = new Set(['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE'])
 
 function trimSlash(path: string): string {
   const trimmed = path.replace(/\/+$/, '')
@@ -128,12 +142,30 @@ export function resolvePath(word: string, cwd: string, home: string | null): str
   return normalizePath(`${cwd}/${word}`)
 }
 
-/** Which checkout a path falls in. Own wins over the worktree root it sits under. */
+/**
+ * Which checkout a path falls in: the longest root that holds it wins, so a
+ * worktree nested under the canonical checkout counts as a worktree and the
+ * own worktree wins over the `~/.worktrees/<repo>` root above it.
+ */
 export function classifyPath(path: string, layout: Layout): PathClass {
-  if (layout.ownWorktree !== null && isUnder(path, layout.ownWorktree)) return 'own'
-  if (layout.canonical !== null && isUnder(path, layout.canonical)) return 'canonical'
-  if (layout.worktreeRoot !== null && isUnder(path, layout.worktreeRoot)) return 'other'
-  return 'outside'
+  const roots: Array<{ root: string; cls: PathClass }> = []
+  if (layout.ownWorktree !== null) roots.push({ root: layout.ownWorktree, cls: 'own' })
+  if (layout.canonical !== null) roots.push({ root: layout.canonical, cls: 'canonical' })
+  if (layout.worktreeRoot !== null) roots.push({ root: layout.worktreeRoot, cls: 'other' })
+  for (const worktree of layout.worktrees) {
+    const cls: PathClass = isSamePath(worktree, layout.ownWorktree)
+      ? 'own'
+      : isSamePath(worktree, layout.canonical)
+        ? 'canonical'
+        : 'other'
+    roots.push({ root: worktree, cls })
+  }
+  let best: { root: string; cls: PathClass } | null = null
+  for (const candidate of roots) {
+    if (!isUnder(path, candidate.root)) continue
+    if (best === null || trimSlash(candidate.root).length > trimSlash(best.root).length) best = candidate
+  }
+  return best === null ? 'outside' : best.cls
 }
 
 export function denyReason(path: string, cls: 'canonical' | 'other'): string {
@@ -159,9 +191,31 @@ export function worktreeRootFor(home: string | null, repo: string): string | nul
 }
 
 /**
- * The repo around the session and its role in the loom: `owner` inside
- * `~/.worktrees/<repo>/<slug>`, `weaver` in the canonical checkout once a
- * weave was asked for, `none` anywhere else or outside git.
+ * The worktree a path claims in the loom layout: `~/.worktrees/<repo>/<slug>`
+ * for a path at or below it, null for anything else.
+ */
+export function worktreeClaimedBy(path: string, worktreeRoot: string | null): string | null {
+  if (worktreeRoot === null) return null
+  const root = trimSlash(worktreeRoot)
+  const candidate = trimSlash(path)
+  if (candidate === root || !isUnder(candidate, root)) return null
+  const slug = candidate.slice(root.length + 1).split('/')[0] ?? ''
+  return slug === '' ? null : `${root}/${slug}`
+}
+
+/** The first worktree a command's `cd` or `git worktree add` claims in the layout. */
+export function ownerClaimFrom(claims: readonly string[], worktreeRoot: string | null): string | null {
+  for (const claim of claims) {
+    const worktree = worktreeClaimedBy(claim, worktreeRoot)
+    if (worktree !== null) return worktree
+  }
+  return null
+}
+
+/**
+ * The repo around the session and its role in the loom: `weaver` anywhere in
+ * the repo once a weave was asked for, `owner` inside
+ * `~/.worktrees/<repo>/<slug>`, `none` anywhere else or outside git.
  */
 export function detectLayout(input: {
   cwd: string
@@ -177,11 +231,11 @@ export function detectLayout(input: {
   const repo = baseName(canonical)
   const worktreeRoot = worktreeRootFor(input.home, repo)
   const top = trimSlash(toplevel)
+  if (input.weaveSeen) return { canonical, ownWorktree: null, worktreeRoot, repo, role: 'weaver' }
   if (worktreeRoot !== null && dirName(top) === worktreeRoot) {
     return { canonical, ownWorktree: top, worktreeRoot, repo, role: 'owner' }
   }
-  const role: Role = input.weaveSeen && isSamePath(top, canonical) ? 'weaver' : 'none'
-  return { canonical, ownWorktree: null, worktreeRoot, repo, role }
+  return { canonical, ownWorktree: null, worktreeRoot, repo, role: 'none' }
 }
 
 /** The entries of `git worktree list --porcelain`, in git's order. */
@@ -209,6 +263,10 @@ export function worktreeOfBranch(entries: readonly WorktreeEntry[], branch: stri
   return entries.find(entry => entry.branch === branch) ?? null
 }
 
+export function worktreeAt(entries: readonly WorktreeEntry[], path: string): WorktreeEntry | null {
+  return entries.find(entry => isSamePath(entry.path, path)) ?? null
+}
+
 /** `origin/main` from `git symbolic-ref refs/remotes/origin/HEAD`; `main` when it failed. */
 export function parseDefaultRef(stdout: string | null): string {
   const line = stdout?.trim().split('\n')[0] ?? ''
@@ -224,6 +282,12 @@ export function parseCount(stdout: string | null): number | null {
 /** The `/loom` arguments that make the session the weaver: `weave` as the first word. */
 export function isWeaveArgs(args: string): boolean {
   return /^\s*weave(\s|$)/.test(args)
+}
+
+/** The arguments of a `/loom ...` prompt, or null when the prompt is not one. */
+export function loomArgsOf(text: string): string | null {
+  const match = /^\/loom(?:\s+([\s\S]*))?$/.exec(text.trim())
+  return match === null ? null : (match[1] ?? '').trim()
 }
 
 type Token = { kind: 'word'; text: string } | { kind: 'op'; text: string }
@@ -384,24 +448,38 @@ export function tokenizeShell(command: string): Tokenized {
   return { tokens, isUncertain: false }
 }
 
-function splitSimple(tokens: readonly Token[]): Token[][] {
-  const commands: Token[][] = []
+type Segment = Token[] | '(' | ')'
+
+/** The simple commands in order, with the subshell parentheses kept as markers. */
+function segmentsOf(tokens: readonly Token[]): Segment[] {
+  const segments: Segment[] = []
   let current: Token[] = []
+  const close = (): void => {
+    if (current.length > 0) segments.push(current)
+    current = []
+  }
   for (const token of tokens) {
+    if (token.kind === 'op' && (token.text === '(' || token.text === ')')) {
+      close()
+      segments.push(token.text)
+      continue
+    }
     if (token.kind === 'op' && CONTROL_OPS.has(token.text)) {
-      if (current.length > 0) commands.push(current)
-      current = []
+      close()
       continue
     }
     current.push(token)
   }
-  if (current.length > 0) commands.push(current)
-  return commands
+  close()
+  return segments
 }
 
-/** A simple command's argv (leading assignments dropped) and the files its redirections write. */
-function partsOf(simple: readonly Token[]): { argv: string[]; redirectTargets: string[] } {
+type Parts = { argv: string[]; assignments: string[]; redirectTargets: string[] }
+
+/** A simple command's argv, its leading assignments, and the files its redirections write. */
+function partsOf(simple: readonly Token[]): Parts {
   const argv: string[] = []
+  const assignments: string[] = []
   const redirectTargets: string[] = []
   for (let i = 0; i < simple.length; i += 1) {
     const token = simple[i]
@@ -415,8 +493,21 @@ function partsOf(simple: readonly Token[]): { argv: string[]; redirectTargets: s
     if (token.text.endsWith('&') || token.text === '<') continue
     if (target?.kind === 'word') redirectTargets.push(target.text)
   }
-  while (argv.length > 0 && ASSIGNMENT.test(argv[0] ?? '')) argv.shift()
-  return { argv, redirectTargets }
+  while (argv.length > 0) {
+    const match = ASSIGNMENT.exec(argv[0] ?? '')
+    if (match === null) break
+    assignments.push(match[1] ?? '')
+    argv.shift()
+  }
+  return { argv, assignments, redirectTargets }
+}
+
+/** The argv from `git` on, when the command is git by any of its spellings; else null. */
+function gitArgvOf(argv: readonly string[]): readonly string[] | null {
+  const head = argv[0]
+  if (head === undefined) return null
+  if (head === 'git' || (head.includes('/') && baseName(head) === 'git')) return argv
+  return null
 }
 
 type GitCall = { location: string; verb: string | null; args: string[] }
@@ -450,27 +541,50 @@ function parseGit(argv: readonly string[], cwd: string, home: string | null): Gi
   return { location, verb: null, args: [] }
 }
 
+/** The operands of a verb with the flag values dropped. */
+function operandsOf(args: readonly string[]): string[] {
+  const operands: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? ''
+    if (VALUE_FLAGS.has(arg)) {
+      i += 1
+      continue
+    }
+    if (arg.startsWith('-')) continue
+    operands.push(arg)
+  }
+  return operands
+}
+
+function isMutating(call: GitCall): boolean {
+  if (call.verb === null) return false
+  if (call.verb === 'stash') {
+    const sub = operandsOf(call.args)[0]
+    return sub !== 'list' && sub !== 'show'
+  }
+  return MUTATING_GIT_VERBS.has(call.verb)
+}
+
 export type Removal =
   | { kind: 'branch'; name: string; location: string }
-  | { kind: 'worktree'; path: string }
+  | { kind: 'worktree'; path: string; isForce: boolean }
 
 /** What a `git branch -D` or `git worktree remove` names; null when a path cannot be resolved. */
 function removalsOf(call: GitCall, home: string | null): Removal[] | null {
   const flags = call.args.filter(arg => arg.startsWith('-'))
-  const operands = call.args.filter(arg => !arg.startsWith('-'))
+  const short = flags.filter(flag => /^-[A-Za-z]+$/.test(flag)).join('')
+  const isForce = short.includes('f') || flags.includes('--force')
   if (call.verb === 'branch') {
-    const short = flags.filter(flag => /^-[A-Za-z]+$/.test(flag)).join('')
     const isDelete = short.includes('d') || flags.includes('--delete')
-    const isForce = short.includes('f') || flags.includes('--force')
     if (!(short.includes('D') || (isDelete && isForce))) return []
-    return operands.map(name => ({ kind: 'branch', name, location: call.location }))
+    return operandsOf(call.args).map(name => ({ kind: 'branch', name, location: call.location }))
   }
   if (call.verb === 'worktree' && call.args[0] === 'remove') {
     const removals: Removal[] = []
-    for (const spelled of operands.slice(1)) {
+    for (const spelled of operandsOf(call.args.slice(1))) {
       const path = resolvePath(spelled, call.location, home)
       if (path === null) return null
-      removals.push({ kind: 'worktree', path })
+      removals.push({ kind: 'worktree', path, isForce })
     }
     return removals
   }
@@ -480,31 +594,45 @@ function removalsOf(call: GitCall, home: string | null): Removal[] | null {
 export type BashAnalysis = {
   /** True when the command could not be followed; the caller lets it through. */
   isUncertain: boolean
-  /** Where a mutating git verb acts (its repo and absolute operands) and what redirections write. */
+  /** Where a mutating git verb acts (its repo, and path operands for the verbs that take them) and what redirections write. */
   writes: string[]
   /** The branches and worktrees the command force-deletes or removes. */
   removals: Removal[]
+  /** Where the command goes: every `cd` target and `git worktree add` path, resolved. */
+  claims: string[]
 }
 
 /**
  * Reads a Bash command for what it would change on disk: `cd` moves the
- * working directory for what follows, `git -C` names the repo a verb acts
- * on, `>` names a file. Anything it cannot follow makes the whole reading
- * uncertain rather than a guess.
+ * working directory for what follows (a subshell's `cd` ends with it),
+ * `git -C` names the repo a verb acts on, `>` names a file. Anything it
+ * cannot follow makes the whole reading uncertain rather than a guess.
  */
 export function analyzeBash(command: string, env: { cwd: string; home: string | null }): BashAnalysis {
-  const uncertain: BashAnalysis = { isUncertain: true, writes: [], removals: [] }
+  const uncertain: BashAnalysis = { isUncertain: true, writes: [], removals: [], claims: [] }
   const { tokens, isUncertain } = tokenizeShell(command)
   if (isUncertain) return uncertain
-  const analysis: BashAnalysis = { isUncertain: false, writes: [], removals: [] }
+  const analysis: BashAnalysis = { isUncertain: false, writes: [], removals: [], claims: [] }
   let cwd = normalizePath(env.cwd)
-  for (const simple of splitSimple(tokens)) {
-    const { argv, redirectTargets } = partsOf(simple)
+  const outer: string[] = []
+  for (const segment of segmentsOf(tokens)) {
+    if (segment === '(') {
+      outer.push(cwd)
+      continue
+    }
+    if (segment === ')') {
+      cwd = outer.pop() ?? cwd
+      continue
+    }
+    const { argv: words, assignments, redirectTargets } = partsOf(segment)
     for (const target of redirectTargets) {
       const path = resolvePath(target, cwd, env.home)
       if (path === null) return uncertain
       analysis.writes.push(path)
     }
+    if (assignments.some(name => GIT_ENV.has(name))) return uncertain
+    let argv: string[] = words
+    while (argv.length > 0 && PASSTHROUGH_COMMANDS.has(argv[0] ?? '')) argv = argv.slice(1)
     const head = argv[0]
     if (head === undefined) continue
     if (OPAQUE_COMMANDS.has(head)) return uncertain
@@ -513,17 +641,29 @@ export function analyzeBash(command: string, env: { cwd: string; home: string | 
       const next = spelled === undefined ? env.home : resolvePath(spelled, cwd, env.home)
       if (next === null) return uncertain
       cwd = next
+      analysis.claims.push(cwd)
       continue
     }
-    if (head !== 'git') continue
-    const call = parseGit(argv, cwd, env.home)
+    const gitArgv = gitArgvOf(argv)
+    if (gitArgv === null) continue
+    const call = parseGit(gitArgv, cwd, env.home)
     if (call === null) return uncertain
-    if (call.verb !== null && MUTATING_GIT_VERBS.has(call.verb)) {
+    if (isMutating(call)) {
       analysis.writes.push(call.location)
-      for (const arg of call.args) {
-        if (!arg.startsWith('/') && !arg.startsWith('~')) continue
-        const path = resolvePath(arg, call.location, env.home)
-        if (path !== null) analysis.writes.push(path)
+      if (call.verb !== null && OPERAND_VERBS.has(call.verb)) {
+        for (const operand of operandsOf(call.args)) {
+          if (!operand.startsWith('/') && !operand.startsWith('~')) continue
+          const path = resolvePath(operand, call.location, env.home)
+          if (path !== null) analysis.writes.push(path)
+        }
+      }
+    }
+    if (call.verb === 'worktree' && call.args[0] === 'add') {
+      const spelled = operandsOf(call.args.slice(1))[0]
+      if (spelled !== undefined) {
+        const path = resolvePath(spelled, call.location, env.home)
+        if (path === null) return uncertain
+        analysis.claims.push(path)
       }
     }
     const removals = removalsOf(call, env.home)
@@ -531,6 +671,36 @@ export function analyzeBash(command: string, env: { cwd: string; home: string | 
     analysis.removals.push(...removals)
   }
   return analysis
+}
+
+/**
+ * Whether `git worktree remove` needs a word first: git itself refuses a
+ * dirty tree without `--force`, so only a forced removal of a dirty tree, or
+ * a detached head whose commits sit on no branch, can lose work.
+ */
+export function shouldAskWorktreeRemoval(input: {
+  isForce: boolean
+  isDirty: boolean
+  isDetached: boolean
+  ahead: number | null
+}): boolean {
+  if (input.isForce && input.isDirty) return true
+  return input.isDetached && input.ahead !== null && input.ahead > 0
+}
+
+/**
+ * Whether `git branch -D` needs a word first: when the branch's commits exist
+ * nowhere else (ahead of the default branch and not on `origin/<branch>`,
+ * `remoteAhead` null meaning no such upstream), or its worktree is dirty.
+ */
+export function shouldAskBranchDeletion(input: {
+  ahead: number | null
+  remoteAhead: number | null
+  isWorktreeDirty: boolean
+}): boolean {
+  if (input.isWorktreeDirty) return true
+  const isUnpushed = input.remoteAhead === null || input.remoteAhead > 0
+  return isUnpushed && input.ahead !== null && input.ahead > 0
 }
 
 /** The branch column of a row: the branch, or the detached head's short sha. */

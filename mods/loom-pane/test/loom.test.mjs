@@ -8,22 +8,30 @@ import {
   denyReason,
   detectLayout,
   isWeaveArgs,
+  loomArgsOf,
+  ownerClaimFrom,
   paneLines,
   parseCount,
   parseDefaultRef,
   parseWorktreeList,
   removalQuestion,
   resolvePath,
+  shouldAskBranchDeletion,
+  shouldAskWorktreeRemoval,
   statusText,
   tokenizeShell,
+  worktreeAt,
+  worktreeClaimedBy,
   worktreeOfBranch,
 } from '../lib/loom.ts'
 
 const HOME = '/home/u'
 const CANONICAL = '/home/u/code/thismoon'
-const OWN = '/home/u/.worktrees/thismoon/feat-pane'
-const OTHER = '/home/u/.worktrees/thismoon/fix-band'
-const layout = { canonical: CANONICAL, ownWorktree: OWN, worktreeRoot: '/home/u/.worktrees/thismoon' }
+const ROOT = '/home/u/.worktrees/thismoon'
+const OWN = `${ROOT}/feat-pane`
+const OTHER = `${ROOT}/fix-band`
+const NESTED = `${CANONICAL}/.claude/worktrees/agent-1`
+const layout = { canonical: CANONICAL, ownWorktree: OWN, worktreeRoot: ROOT, worktrees: [CANONICAL, OWN, OTHER, NESTED] }
 
 const porcelain = [
   `worktree ${CANONICAL}`,
@@ -69,9 +77,11 @@ describe('parseWorktreeList', () => {
     assert.deepEqual(parseWorktreeList(''), [])
   })
 
-  test('finds the worktree of a branch', () => {
+  test('finds a worktree by branch and by path', () => {
     assert.equal(worktreeOfBranch(entries, 'feat/pane')?.path, OWN)
     assert.equal(worktreeOfBranch(entries, 'nope'), null)
+    assert.equal(worktreeAt(entries, `${OTHER}/`)?.isDetached, true)
+    assert.equal(worktreeAt(entries, '/nowhere'), null)
   })
 })
 
@@ -99,18 +109,20 @@ describe('detectLayout', () => {
     assert.equal(found.role, 'owner')
     assert.equal(found.ownWorktree, OWN)
     assert.equal(found.repo, 'thismoon')
-    assert.equal(found.worktreeRoot, '/home/u/.worktrees/thismoon')
+    assert.equal(found.worktreeRoot, ROOT)
   })
 
-  test('is weaver in the canonical checkout once a weave was asked for', () => {
+  test('is weaver anywhere in the repo once a weave was asked for', () => {
     const base = { cwd: CANONICAL, toplevel: CANONICAL, commonDir: '.git', home: HOME }
     assert.equal(detectLayout({ ...base, weaveSeen: true }).role, 'weaver')
     assert.equal(detectLayout({ ...base, weaveSeen: false }).role, 'none')
+    const inWorktree = detectLayout({ cwd: OWN, toplevel: OWN, commonDir: common, home: HOME, weaveSeen: true })
+    assert.equal(inWorktree.role, 'weaver')
+    assert.equal(inWorktree.ownWorktree, null)
   })
 
   test('is none in a worktree outside the loom layout', () => {
-    const agent = `${CANONICAL}/.claude/worktrees/agent-1`
-    const found = detectLayout({ cwd: agent, toplevel: agent, commonDir: common, home: HOME, weaveSeen: true })
+    const found = detectLayout({ cwd: NESTED, toplevel: NESTED, commonDir: common, home: HOME, weaveSeen: false })
     assert.equal(found.role, 'none')
     assert.equal(found.canonical, CANONICAL)
   })
@@ -123,12 +135,41 @@ describe('detectLayout', () => {
   })
 })
 
+describe('owner claims', () => {
+  test('a path at or below ~/.worktrees/<repo>/<slug> claims that worktree', () => {
+    assert.equal(worktreeClaimedBy(OWN, ROOT), OWN)
+    assert.equal(worktreeClaimedBy(`${OWN}/mods/x`, ROOT), OWN)
+    assert.equal(worktreeClaimedBy(ROOT, ROOT), null)
+    assert.equal(worktreeClaimedBy(CANONICAL, ROOT), null)
+    assert.equal(worktreeClaimedBy(OWN, null), null)
+  })
+
+  test('the first claim in a command wins', () => {
+    assert.equal(ownerClaimFrom([CANONICAL, OTHER, OWN], ROOT), OTHER)
+    assert.equal(ownerClaimFrom([CANONICAL], ROOT), null)
+  })
+
+  test('git worktree add and cd both claim', () => {
+    const env = { cwd: CANONICAL, home: HOME }
+    assert.deepEqual(analyzeBash(`git worktree add ~/.worktrees/thismoon/feat-pane -b feat/pane`, env).claims, [OWN])
+    assert.deepEqual(analyzeBash(`git worktree add -b feat/pane ${OWN}`, env).claims, [OWN])
+    assert.deepEqual(analyzeBash(`cd ${OWN} && git commit -m x`, env).claims, [OWN])
+    assert.equal(ownerClaimFrom(analyzeBash('cd mods && git status', env).claims, ROOT), null)
+  })
+})
+
 describe('classifyPath', () => {
   test('tells own, canonical, another worktree and outside apart', () => {
     assert.equal(classifyPath(`${OWN}/lib/loom.ts`, layout), 'own')
     assert.equal(classifyPath(`${CANONICAL}/README.md`, layout), 'canonical')
     assert.equal(classifyPath(`${OTHER}/x`, layout), 'other')
+    assert.equal(classifyPath(`${ROOT}/unlisted/x`, layout), 'other')
     assert.equal(classifyPath('/tmp/notes.md', layout), 'outside')
+  })
+
+  test('a worktree nested under the canonical checkout is another worktree', () => {
+    assert.equal(classifyPath(`${NESTED}/README.md`, layout), 'other')
+    assert.equal(classifyPath(`${CANONICAL}/.claude/worktrees/README.md`, layout), 'canonical')
   })
 
   test('does not take a sibling with a longer name for the root', () => {
@@ -136,7 +177,7 @@ describe('classifyPath', () => {
   })
 
   test('is outside everywhere with nothing known', () => {
-    assert.equal(classifyPath(CANONICAL, { canonical: null, ownWorktree: null, worktreeRoot: null }), 'outside')
+    assert.equal(classifyPath(CANONICAL, { canonical: null, ownWorktree: null, worktreeRoot: null, worktrees: [] }), 'outside')
   })
 
   test('names the holder in the reason', () => {
@@ -146,10 +187,11 @@ describe('classifyPath', () => {
 })
 
 describe('resolvePath', () => {
-  test('resolves absolute, relative and ~ paths', () => {
+  test('resolves absolute, relative, .. and ~ paths', () => {
     assert.equal(resolvePath('/a/b/../c', '/cwd', HOME), '/a/c')
     assert.equal(resolvePath('sub/./x', '/cwd', HOME), '/cwd/sub/x')
     assert.equal(resolvePath('~/code', '/cwd', HOME), '/home/u/code')
+    assert.equal(resolvePath(`${OWN}/../../../code/thismoon/README.md`, '/cwd', HOME), `${CANONICAL}/README.md`)
   })
 
   test('is null for what the shell would have to expand', () => {
@@ -199,9 +241,15 @@ describe('analyzeBash', () => {
     assert.deepEqual(analyzeBash('cd mods; git commit -m x', env).writes, [`${OWN}/mods`])
   })
 
+  test('a cd inside a subshell ends with it', () => {
+    const found = analyzeBash(`(cd ${CANONICAL} && git log -1) && git commit -m x`, env)
+    assert.deepEqual(found.writes, [OWN])
+    assert.deepEqual(analyzeBash(`(cd ${CANONICAL}; git add .) ; git status`, env).writes, [CANONICAL])
+  })
+
   test('a quoted path with a space resolves whole', () => {
-    const found = analyzeBash(`git -C "${HOME}/.worktrees/thismoon/with space" push`, env)
-    assert.deepEqual(found.writes, [`${HOME}/.worktrees/thismoon/with space`])
+    const found = analyzeBash(`git -C "${ROOT}/with space" push`, env)
+    assert.deepEqual(found.writes, [`${ROOT}/with space`])
   })
 
   test('a path outside the repo is reported and classifies outside', () => {
@@ -214,6 +262,12 @@ describe('analyzeBash', () => {
     const found = analyzeBash(`git -C ${CANONICAL} status && git log --oneline -3 && ls ${CANONICAL} && cat ${OTHER}/x`, env)
     assert.equal(found.isUncertain, false)
     assert.deepEqual(found.writes, [])
+    assert.deepEqual(analyzeBash(`git -C ${CANONICAL} stash list && git -C ${CANONICAL} stash show -p`, env).writes, [])
+  })
+
+  test('stash with no subcommand, push, pop and drop mutate', () => {
+    assert.deepEqual(analyzeBash(`git -C ${CANONICAL} stash`, env).writes, [CANONICAL])
+    assert.deepEqual(analyzeBash(`git -C ${CANONICAL} stash pop`, env).writes, [CANONICAL])
   })
 
   test('a redirection writes its target, not an fd', () => {
@@ -222,8 +276,18 @@ describe('analyzeBash', () => {
     assert.deepEqual(analyzeBash('echo x >> log.txt', env).writes, [`${OWN}/log.txt`])
   })
 
-  test('absolute operands of a mutating verb count', () => {
+  test('path operands count for add, rm, mv, checkout, restore and clean only', () => {
     assert.deepEqual(analyzeBash(`git add ${CANONICAL}/x`, env).writes, [OWN, `${CANONICAL}/x`])
+    assert.deepEqual(analyzeBash(`git checkout -b feat ${CANONICAL}/x`, env).writes, [OWN, `${CANONICAL}/x`])
+    assert.deepEqual(analyzeBash(`git apply ${CANONICAL}/fix.patch`, env).writes, [OWN])
+    assert.deepEqual(analyzeBash(`git commit -m "${CANONICAL}/x: fix"`, env).writes, [OWN])
+    assert.deepEqual(analyzeBash(`git commit -F ${CANONICAL}/msg.txt`, env).writes, [OWN])
+  })
+
+  test('accepts command git, time git and a git by path', () => {
+    assert.deepEqual(analyzeBash(`command git -C ${CANONICAL} commit -m x`, env).writes, [CANONICAL])
+    assert.deepEqual(analyzeBash(`time git -C ${CANONICAL} push`, env).writes, [CANONICAL])
+    assert.deepEqual(analyzeBash(`/usr/bin/git -C ${CANONICAL} add .`, env).writes, [CANONICAL])
   })
 
   test('is uncertain on what it cannot follow', () => {
@@ -231,6 +295,8 @@ describe('analyzeBash', () => {
     assert.equal(analyzeBash('bash -c "git commit"', env).isUncertain, true)
     assert.equal(analyzeBash('git --work-tree=/x commit', env).isUncertain, true)
     assert.equal(analyzeBash('echo x > $OUT', env).isUncertain, true)
+    assert.equal(analyzeBash(`GIT_WORK_TREE=${CANONICAL} git commit -m x`, env).isUncertain, true)
+    assert.equal(analyzeBash(`git worktree add $WT -b x`, env).isUncertain, true)
   })
 
   test('finds a branch force-delete', () => {
@@ -242,10 +308,31 @@ describe('analyzeBash', () => {
     assert.deepEqual(analyzeBash('git branch -d feat/x', env).removals, [])
   })
 
-  test('finds a worktree removal by path', () => {
-    const found = analyzeBash(`git -C ${CANONICAL} worktree remove --force ~/.worktrees/thismoon/fix-band`, env)
-    assert.deepEqual(found.removals, [{ kind: 'worktree', path: OTHER }])
+  test('finds a worktree removal by path and whether it is forced', () => {
+    const forced = analyzeBash(`git -C ${CANONICAL} worktree remove --force ~/.worktrees/thismoon/fix-band`, env)
+    assert.deepEqual(forced.removals, [{ kind: 'worktree', path: OTHER, isForce: true }])
+    const plain = analyzeBash(`git -C ${CANONICAL} worktree remove ${OTHER}`, env)
+    assert.deepEqual(plain.removals, [{ kind: 'worktree', path: OTHER, isForce: false }])
     assert.deepEqual(analyzeBash('git worktree list', env).removals, [])
+  })
+})
+
+describe('removal rules', () => {
+  test('a worktree removal asks only when forced and dirty, or detached with commits', () => {
+    assert.equal(shouldAskWorktreeRemoval({ isForce: false, isDirty: true, isDetached: false, ahead: 3 }), false)
+    assert.equal(shouldAskWorktreeRemoval({ isForce: true, isDirty: false, isDetached: false, ahead: 3 }), false)
+    assert.equal(shouldAskWorktreeRemoval({ isForce: true, isDirty: true, isDetached: false, ahead: 0 }), true)
+    assert.equal(shouldAskWorktreeRemoval({ isForce: false, isDirty: false, isDetached: true, ahead: 2 }), true)
+    assert.equal(shouldAskWorktreeRemoval({ isForce: false, isDirty: false, isDetached: true, ahead: null }), false)
+  })
+
+  test('a branch deletion asks only when its commits exist nowhere else, or its tree is dirty', () => {
+    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: null, isWorktreeDirty: false }), true)
+    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: 1, isWorktreeDirty: false }), true)
+    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: 0, isWorktreeDirty: false }), false)
+    assert.equal(shouldAskBranchDeletion({ ahead: 0, remoteAhead: null, isWorktreeDirty: false }), false)
+    assert.equal(shouldAskBranchDeletion({ ahead: null, remoteAhead: null, isWorktreeDirty: false }), false)
+    assert.equal(shouldAskBranchDeletion({ ahead: 0, remoteAhead: 0, isWorktreeDirty: true }), true)
   })
 })
 
@@ -307,10 +394,21 @@ describe('small parsers', () => {
     assert.equal(parseCount('fatal: bad revision'), null)
   })
 
-  test('isWeaveArgs needs the word', () => {
+  test('isWeaveArgs needs weave as the first word', () => {
     assert.equal(isWeaveArgs('weave'), true)
+    assert.equal(isWeaveArgs('  weave now'), true)
     assert.equal(isWeaveArgs('claim weave-this'), false)
+    assert.equal(isWeaveArgs('claim feat/weave-x'), false)
     assert.equal(isWeaveArgs('status'), false)
+  })
+
+  test('loomArgsOf reads a /loom prompt the same way the command does', () => {
+    assert.equal(loomArgsOf('/loom weave'), 'weave')
+    assert.equal(loomArgsOf('/loom'), '')
+    assert.equal(loomArgsOf('/loom claim feat/weave-x'), 'claim feat/weave-x')
+    assert.equal(isWeaveArgs(loomArgsOf('/loom claim feat/weave-x')), false)
+    assert.equal(loomArgsOf('/loom-pane'), null)
+    assert.equal(loomArgsOf('please weave'), null)
   })
 
   test('removalQuestion names each risk', () => {

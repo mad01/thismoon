@@ -9,12 +9,18 @@ import {
   denyReason,
   detectLayout,
   isWeaveArgs,
+  loomArgsOf,
+  ownerClaimFrom,
   paneLines,
   parseCount,
   parseDefaultRef,
   parseWorktreeList,
   removalQuestion,
+  resolvePath,
+  shouldAskBranchDeletion,
+  shouldAskWorktreeRemoval,
   statusText,
+  worktreeAt,
   worktreeOfBranch,
 } from '../lib/loom'
 import type { Layout, Removal, WorktreeEntry } from '../lib/loom'
@@ -28,8 +34,10 @@ const role = atom({ plugin: 'loom-pane', key: 'role' } as const, 'none' as LoomP
 const canonical = atom({ plugin: 'loom-pane', key: 'canonical' } as const, null as string | null)
 const ownWorktree = atom({ plugin: 'loom-pane', key: 'ownWorktree' } as const, null as string | null)
 const worktreeRoot = atom({ plugin: 'loom-pane', key: 'worktreeRoot' } as const, null as string | null)
+const worktrees = atom({ plugin: 'loom-pane', key: 'worktrees' } as const, [] as string[])
 const repo = atom({ plugin: 'loom-pane', key: 'repo' } as const, null as string | null)
 const weaveSeen = atom({ plugin: 'loom-pane', key: 'weaveSeen' } as const, false)
+const isInteractive = atom({ plugin: 'loom-pane', key: 'isInteractive' } as const, false)
 const rows = atom({ plugin: 'loom-pane', key: 'rows' } as const, [] as LoomPaneWorktree[])
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
@@ -48,16 +56,14 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 let isSurveying = false
 
 // One git call under the budget: its stdout, or null when it failed, exited
-// non-zero or outran the budget. Never throws.
+// non-zero or outran the budget (the run rejects then). Never throws.
 async function git($: EngineInterface, args: readonly string[], cwd: string): Promise<string | null> {
-  const outcome = await Promise.race([
-    $.process.run(['git', ...args], { cwd, timeoutMs: GIT_BUDGET_MS })
-      .then(ran => ({ kind: 'ran' as const, ran }))
-      .catch(() => ({ kind: 'failed' as const })),
-    $.clock.sleep(GIT_BUDGET_MS).then(() => ({ kind: 'timeout' as const })),
-  ])
-  if (outcome.kind !== 'ran' || outcome.ran.exitCode !== 0) return null
-  return outcome.ran.stdout
+  try {
+    const ran = await $.process.run(['git', ...args], { cwd, timeoutMs: GIT_BUDGET_MS })
+    return ran.exitCode === 0 ? ran.stdout : null
+  } catch {
+    return null
+  }
 }
 
 async function layoutOf($: EngineInterface): Promise<Layout> {
@@ -65,11 +71,17 @@ async function layoutOf($: EngineInterface): Promise<Layout> {
     canonical: await read($, canonical),
     ownWorktree: await read($, ownWorktree),
     worktreeRoot: await read($, worktreeRoot),
+    worktrees: await read($, worktrees),
   }
 }
 
 async function showStatus($: EngineInterface): Promise<void> {
   $.ui.status(statusText(await read($, role), await layoutOf($), await read($, rows)))
+}
+
+async function listWorktrees($: EngineInterface, canon: string): Promise<WorktreeEntry[] | null> {
+  const listed = await git($, ['worktree', 'list', '--porcelain'], canon)
+  return listed === null ? null : parseWorktreeList(listed).filter(entry => !entry.isBare)
 }
 
 // Finds the repo around `cwd` and the session's role in its loom, writes
@@ -97,12 +109,28 @@ async function detect($: EngineInterface, cwd: string): Promise<void> {
   await update($, worktreeRoot, () => found.worktreeRoot)
   await update($, repo, () => found.repo)
   await update($, role, () => found.role)
-  await showStatus($)
   if (found.canonical === null) {
+    await update($, worktrees, () => [])
+    await showStatus($)
     $.ui.log(`loom-pane: no git repo at ${cwd}`, { to: 'debug' })
     return
   }
+  const entries = await listWorktrees($, found.canonical)
+  if (entries !== null) await update($, worktrees, () => entries.map(entry => entry.path))
+  await showStatus($)
   $.ui.log(`loom-pane: repo ${found.repo} canonical ${found.canonical} role ${found.role}`, { to: 'debug' })
+}
+
+// A Bash command that enters a worktree of the loom layout, by `cd` or by
+// `git worktree add`, makes this session its owner; a weaver stays a weaver.
+async function claimOwner($: EngineInterface, claims: readonly string[]): Promise<void> {
+  if (await read($, weaveSeen)) return
+  const claimed = ownerClaimFrom(claims, await read($, worktreeRoot))
+  if (claimed === null || claimed === (await read($, ownWorktree))) return
+  await update($, ownWorktree, () => claimed)
+  await update($, role, () => 'owner')
+  await showStatus($)
+  $.ui.log(`loom-pane: owner of ${claimed}`, { to: 'debug' })
 }
 
 async function rowFor($: EngineInterface, entry: WorktreeEntry, defaultRef: string): Promise<LoomPaneWorktree> {
@@ -128,16 +156,15 @@ async function survey($: EngineInterface): Promise<void> {
   try {
     const canon = await read($, canonical)
     if (canon === null) return
-    const listed = await git($, ['worktree', 'list', '--porcelain'], canon)
-    if (listed === null) {
+    const entries = await listWorktrees($, canon)
+    if (entries === null) {
       $.ui.log('loom-pane: worktree list failed', { to: 'debug' })
       return
     }
+    await update($, worktrees, () => entries.map(entry => entry.path))
     const defaultRef = parseDefaultRef(await git($, ['symbolic-ref', 'refs/remotes/origin/HEAD'], canon))
     const pending: Promise<LoomPaneWorktree>[] = []
-    for (const entry of parseWorktreeList(listed)) {
-      if (!entry.isBare) pending.push(rowFor($, entry, defaultRef))
-    }
+    for (const entry of entries) pending.push(rowFor($, entry, defaultRef))
     const surveyed = await Promise.all(pending)
     await update($, rows, () => surveyed)
     await showStatus($)
@@ -156,14 +183,18 @@ async function markWeave($: EngineInterface, cwd: string): Promise<void> {
   }
 }
 
-type RemovalTarget = { label: string; worktreePath: string | null; rev: string; revCwd: string }
-
-function targetOf(removal: Removal, entries: readonly WorktreeEntry[], canon: string): RemovalTarget {
-  if (removal.kind === 'worktree') {
-    return { label: removal.path, worktreePath: removal.path, rev: 'HEAD', revCwd: removal.path }
+// Asks before a removal that would lose work. A dismissed dialog keeps the
+// target in an interactive session; headless (`-p`), nobody can be asked and
+// the removal goes ahead.
+async function askToRemove($: EngineInterface, label: string, ahead: number | null, isDirty: boolean): Promise<boolean> {
+  try {
+    const answer = await $.ui.ask(removalQuestion(label, ahead, isDirty), ['Proceed', 'Cancel'])
+    return answer === 'Proceed'
+  } catch (err) {
+    const interactive = await read($, isInteractive)
+    $.ui.log(`loom-pane: removal dialog closed (${err instanceof Error ? err.message : String(err)}); ${interactive ? 'kept' : 'headless, allowed'}`, { to: 'debug' })
+    return !interactive
   }
-  const linked = worktreeOfBranch(entries, removal.name)
-  return { label: removal.name, worktreePath: linked === null ? null : linked.path, rev: removal.name, revCwd: canon }
 }
 
 // True when the removal may go ahead: nothing would be lost, or the person
@@ -172,29 +203,40 @@ async function confirmRemoval(
   $: EngineInterface,
   removal: Removal,
   entries: readonly WorktreeEntry[],
-  canon: string,
   defaultRef: string,
 ): Promise<boolean> {
-  const target = targetOf(removal, entries, canon)
-  const status = target.worktreePath === null ? null : await git($, ['status', '--porcelain'], target.worktreePath)
-  const isDirty = status !== null && status.trim() !== ''
-  const ahead = parseCount(await git($, ['rev-list', '--count', `${defaultRef}..${target.rev}`], target.revCwd))
-  if (!isDirty && (ahead === null || ahead === 0)) return true
-  const answer = await $.ui.ask(removalQuestion(target.label, ahead, isDirty), ['Proceed', 'Cancel'])
-  return answer === 'Proceed'
+  if (removal.kind === 'worktree') {
+    const entry = worktreeAt(entries, removal.path)
+    const status = removal.isForce ? await git($, ['status', '--porcelain'], removal.path) : null
+    const isDirty = status !== null && status.trim() !== ''
+    const isDetached = entry?.isDetached === true
+    const ahead = isDetached ? parseCount(await git($, ['rev-list', '--count', `${defaultRef}..HEAD`], removal.path)) : null
+    if (!shouldAskWorktreeRemoval({ isForce: removal.isForce, isDirty, isDetached, ahead })) return true
+    return askToRemove($, removal.path, ahead, isDirty)
+  }
+  const linked = worktreeOfBranch(entries, removal.name)
+  const status = linked === null ? null : await git($, ['status', '--porcelain'], linked.path)
+  const isWorktreeDirty = status !== null && status.trim() !== ''
+  const ahead = parseCount(await git($, ['rev-list', '--count', `${defaultRef}..${removal.name}`], removal.location))
+  const remoteAhead = parseCount(
+    await git($, ['rev-list', '--count', `origin/${removal.name}..${removal.name}`], removal.location),
+  )
+  if (!shouldAskBranchDeletion({ ahead, remoteAhead, isWorktreeDirty })) return true
+  return askToRemove($, removal.name, ahead, isWorktreeDirty)
 }
 
 export const register: Register = (on, options) => {
   const isGuarding = options.guards !== false
   const pollMs =
     typeof options.pollMs === 'number' && options.pollMs >= MIN_POLL_MS ? options.pollMs : DEFAULT_POLL_MS
-  // The pane's refresh timer; module-level on purpose, a reload drops it
-  // with the pane.
+  // The pane's refresh timer. A hot reload drops it while the pane stays
+  // open, so the pane's own draw re-arms it.
   let refresh: Timer | null = null
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     $.ui.log('loom-pane: loaded', { to: 'debug' })
+    await update($, isInteractive, () => e.isInteractive)
     await $.command.register({ name: COMMAND, description: 'Open the loom worktree pane' })
     await detect($, e.cwd)
     return started
@@ -205,15 +247,22 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(skipOnFailure)
 
-  // `/loom weave` typed at the prompt makes a canonical-checkout session the
-  // weaver. The skill runs as it always did; this only watches.
-  on('prompt.submit', { text: /^\/loom\b.*\bweave\b/ }, async ($, e, next) => {
-    await markWeave($, await $.session.cwd())
+  // `/loom weave`, typed at the prompt or run as the skill, makes a session
+  // of this repo the weaver. The skill runs as it always did; this only
+  // watches.
+  on('prompt.submit', { text: /^\/loom\b/ }, async ($, e, next) => {
+    const args = loomArgsOf(e.text)
+    if (args !== null && isWeaveArgs(args)) await markWeave($, await $.session.cwd())
     return next(e)
   }).catch(skipOnFailure)
 
   on('command.run', { command: 'loom' }, async ($, e, next) => {
     if (isWeaveArgs(e.args)) await markWeave($, await $.session.cwd())
+    return next(e)
+  }).catch(skipOnFailure)
+
+  on('tool.call', { tool: 'Skill', skill: 'loom' }, async ($, e, next) => {
+    if (e.agentId === undefined && isWeaveArgs(e.args ?? '')) await markWeave($, await $.session.cwd())
     return next(e)
   }).catch(skipOnFailure)
 
@@ -240,6 +289,11 @@ export const register: Register = (on, options) => {
   }).catch(skipOnFailure)
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    if (refresh === null) {
+      refresh = $.clock.every(pollMs, () => {
+        void survey($)
+      })
+    }
     const { Box, Text } = $.ui.resolve(e)
     const lines = paneLines(await read($, rows), await layoutOf($), e.props.bodyColumns)
     return (
@@ -252,20 +306,26 @@ export const register: Register = (on, options) => {
     )
   }).catch(skipOnFailure)
 
-  // Owner guards: an owner edits its own worktree and nothing else of the
-  // repo. Paths outside the repo are none of the loom's business.
+  // Owner guards, main loop only: an owner edits its own worktree and nothing
+  // else of the repo. Paths outside the repo are none of the loom's business,
+  // and a subagent in an isolation worktree is its own owner.
   on('tool.call', { tool: ['Write', 'Edit'] }, async ($, e, next) => {
-    if (!isGuarding || (await read($, role)) !== 'owner') return next(e)
-    const cls = classifyPath(e.file_path, await layoutOf($))
-    if (cls === 'canonical' || cls === 'other') return { deny: denyReason(e.file_path, cls) }
+    if (!isGuarding || e.agentId !== undefined || (await read($, role)) !== 'owner') return next(e)
+    const home = await $.env.get('HOME')
+    const path = resolvePath(e.file_path, await $.session.cwd(), home ?? null)
+    if (path === null) return next(e)
+    const cls = classifyPath(path, await layoutOf($))
+    if (cls === 'canonical' || cls === 'other') return { deny: denyReason(path, cls) }
     return next(e)
   }).catch(skipOnFailure)
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    if (!isGuarding || (await read($, role)) !== 'owner') return next(e)
+    if (e.agentId !== undefined) return next(e)
     const home = await $.env.get('HOME')
     const analysis = analyzeBash(e.command, { cwd: await $.session.cwd(), home: home ?? null })
     if (analysis.isUncertain) return next(e)
+    await claimOwner($, analysis.claims)
+    if (!isGuarding || (await read($, role)) !== 'owner') return next(e)
     const layout = await layoutOf($)
     for (const path of analysis.writes) {
       const cls = classifyPath(path, layout)
@@ -274,22 +334,24 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(skipOnFailure)
 
-  // Any role: a force-delete or worktree removal that would lose commits or
-  // uncommitted changes asks first. Cancel denies the call.
+  // Any role, main loop only: a force-delete or worktree removal that would
+  // lose commits or uncommitted changes asks first. Cancel denies the call.
   on('tool.call', { tool: 'Bash', command: /\bgit\b[\s\S]*\b(branch|worktree)\b/ }, async ($, e, next) => {
-    if (!isGuarding) return next(e)
+    if (!isGuarding || e.agentId !== undefined) return next(e)
     const canon = await read($, canonical)
     if (canon === null) return next(e)
     const home = await $.env.get('HOME')
     const analysis = analyzeBash(e.command, { cwd: await $.session.cwd(), home: home ?? null })
     if (analysis.isUncertain || analysis.removals.length === 0) return next(e)
-    const listed = await git($, ['worktree', 'list', '--porcelain'], canon)
-    const entries = listed === null ? [] : parseWorktreeList(listed)
+    const layout = await layoutOf($)
+    const entries = (await listWorktrees($, canon)) ?? []
     const defaultRef = parseDefaultRef(await git($, ['symbolic-ref', 'refs/remotes/origin/HEAD'], canon))
     for (const removal of analysis.removals) {
-      if (await confirmRemoval($, removal, entries, canon, defaultRef)) continue
+      // A branch of some other repo is not this loom's to judge.
+      if (removal.kind === 'branch' && classifyPath(removal.location, layout) === 'outside') continue
+      if (await confirmRemoval($, removal, entries, defaultRef)) continue
       const label = removal.kind === 'branch' ? removal.name : removal.path
-      return { deny: `loom-pane: ${label} kept; the removal was cancelled at the prompt` }
+      return { deny: `loom-pane: ${label} kept; the removal was not confirmed` }
     }
     return next(e)
   }).catch(skipOnFailure)

@@ -16,8 +16,10 @@ declare module 'claude-code' {
       canonical: string | null
       ownWorktree: string | null
       worktreeRoot: string | null
+      worktrees: string[]
       repo: string | null
       weaveSeen: boolean
+      isInteractive: boolean
       rows: LoomPaneWorktree[]
     }
   }
