@@ -4,7 +4,7 @@ import { describe, test } from 'node:test'
 import {
   agentState,
   compactContextBlock,
-  composeBandLines,
+  composeStatusText,
   decisionSummary,
   findPhaseMarker,
   isBeltDeny,
@@ -15,7 +15,7 @@ import {
   shouldToastDone,
 } from '../lib/band.ts'
 
-const idle = { isWaiting: false, worklogKey: null, phase: null, presentPage: null, beltDenies: 0 }
+const idle = { isWorking: false, isWaiting: false, worklogKey: null, phase: null, presentPage: null, beltDenies: 0 }
 
 describe('findPhaseMarker', () => {
   test('takes the last phase line of the answer', () => {
@@ -134,42 +134,38 @@ describe('agentState', () => {
     assert.equal(agentState(true, false), 'waiting')
   })
 
-  test('working and idle follow the render prop', () => {
+  test('working and idle follow the turn flag', () => {
     assert.equal(agentState(false, true), 'working')
     assert.equal(agentState(false, false), 'idle')
   })
 })
 
-describe('composeBandLines', () => {
-  test('shows the idle default on one line', () => {
-    assert.deepEqual(composeBandLines(idle, false), ['- idle | belt denies 0'])
+describe('composeStatusText', () => {
+  test('shows the idle default', () => {
+    assert.equal(composeStatusText(idle), 'idle | belt denies 0')
   })
 
   test('names every known signal in order', () => {
     const full = {
+      isWorking: true,
       isWaiting: false,
       worklogKey: 'MAD-379',
       phase: '[Phase 4.unit.2/3] — tests done → docs',
       presentPage: { id: '1e52d87017', url: null },
       beltDenies: 2,
     }
-    assert.deepEqual(composeBandLines(full, true), [
-      '* working | worklog MAD-379 | Phase 4.unit.2/3 | present 1e52d87017 | belt denies 2',
-    ])
+    assert.equal(composeStatusText(full), 'working | worklog MAD-379 | Phase 4.unit.2/3 | present 1e52d87017 | belt denies 2')
   })
 
-  test('wraps to a second line when the width is short', () => {
-    const lines = composeBandLines({ ...idle, isWaiting: true, worklogKey: 'MAD-379' }, true, 32)
-    assert.deepEqual(lines, ['? waiting for input', 'worklog MAD-379 | belt denies 0'])
-  })
-
-  test('never exceeds two lines', () => {
-    const lines = composeBandLines(
-      { isWaiting: false, worklogKey: 'k', phase: '[Phase 1]', presentPage: { id: 'p', url: null }, beltDenies: 0 },
-      true,
-      12,
+  test('waiting wins over working', () => {
+    assert.equal(
+      composeStatusText({ ...idle, isWorking: true, isWaiting: true, worklogKey: 'MAD-379' }),
+      'waiting for input | worklog MAD-379 | belt denies 0',
     )
-    assert.equal(lines.length, 2)
+  })
+
+  test('never repeats the mod name, which the engine prefixes', () => {
+    assert.doesNotMatch(composeStatusText({ ...idle, isWorking: true }), /session-band/)
   })
 })
 
@@ -245,6 +241,7 @@ describe('parsePresentResult', () => {
 describe('compactContextBlock', () => {
   test('lists every known signal and the checkpoint reminder', () => {
     const block = compactContextBlock({
+      isWorking: false,
       isWaiting: false,
       worklogKey: 'MAD-379',
       phase: '[Phase 4.unit.2/3] — tests done → docs',
