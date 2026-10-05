@@ -4,7 +4,7 @@
 export type Role = 'review' | 'other'
 
 export type Member = {
-  /** The subagent's engine id, or the Agent tool call's id when none came back. */
+  /** The subagent's engine id, the one its `turn.complete` carries. */
   id: string
   role: Role
   /** The first characters of the spawn's description. */
@@ -13,13 +13,13 @@ export type Member = {
   endedAt: number | null
   /** The main-loop turn the spawn happened in; null when none was seen yet. */
   turn: string | null
-  /** True when `id` is the engine's agent id, so a `turn.complete` names it. */
-  hasAgentId: boolean
 }
 
 export type PolicyConfig = {
   enforce: boolean
   reviewModel: string
+  /** Models a reviewer is moved off when the caller set one of them. */
+  overrideFrom: string[]
   fanoutToast: number
   fanoutHold: number
 }
@@ -34,8 +34,8 @@ export type PaneRow = {
 /** How long a finished batch stays on the band after its last member returned. */
 export const BAND_LINGER_MS = 60_000
 
-/** How many characters of a prompt the classifier reads. */
-export const PROMPT_HEAD_CHARS = 400
+/** How many characters of the prompt's first line the classifier reads. */
+export const PROMPT_LEAD_CHARS = 200
 
 /** How many characters of a description a member keeps as its label. */
 export const LABEL_CHARS = 60
@@ -43,28 +43,59 @@ export const LABEL_CHARS = 60
 /** How many members the state keeps; older ones fall off the pane. */
 export const MEMBER_CAP = 100
 
-const DEFAULTS: PolicyConfig = { enforce: true, reviewModel: 'opus', fanoutToast: 4, fanoutHold: 0 }
+/** The agent type whose model the mod may pick when the caller set none. */
+export const GENERAL_PURPOSE = 'general-purpose'
 
-// The words that make a spawn a reviewer, matched on word boundaries so
-// "verified" and "verification" (the brain-research promoter's bundle) and
-// "critical" (every severity scale) stay out. Plurals and -ing forms of the
-// review words are in because the skills use them ("reviewers", "reviews").
+const DEFAULTS: PolicyConfig = {
+  enforce: true,
+  reviewModel: 'opus',
+  overrideFrom: ['sonnet'],
+  fanoutToast: 4,
+  fanoutHold: 0,
+}
+
+// The description's review vocabulary, on word boundaries so "verified",
+// "verification" (the brain-research promoter's bundle) and "critical"
+// (every severity scale) stay out. Plurals and -ing forms are in because the
+// skills use them ("reviewers", "reviews"); analyst, assessor, adherence and
+// validation name the sre-panel and work-on agents whose labels say nothing
+// of reviewing.
 const REVIEW_WORDS =
-  /\b(?:reviews?|reviewers?|reviewing|verify|verifies|verifying|verifiers?|critics?|panels?|audits?|auditors?|auditing|challengers?|second opinion)\b/i
+  /\b(?:reviews?|reviewers?|reviewing|verify|verifies|verifying|verifiers?|critics?|panels?|audits?|auditors?|auditing|challengers?|second opinion|analysts?|assessors?|adherence|validation)\b/i
 
-// A description that announces building or research work settles the role
-// as `other` before the prompt is read: the work-on impact agent's prompt
-// says "name a verify method" and must not land on the review model.
-const WORK_WORDS = /\b(?:research|explore|implement|build|promote|promoter|write|draft|fix|scaffold|refactor)\b/i
+// A description that opens with a work verb is work, whatever it goes on to
+// name: "Implement review comment threading", "Fix cosign verify step",
+// "Build the panel-policy mod". The verb is followed by a space or a colon,
+// so a compound such as "Build-gate verifier" is not a lead.
+const WORK_VERB_LEAD =
+  /^(?:implement|build|fix|update|find|write|rewrite|scaffold|refactor|research|explore|promote|promoter|add|create|draft|run|migrate)(?:\s|:)/i
+
+// The prompt's first line, where a reviewer prompt names its role or opens
+// with the imperative; the rest of the prompt is the artifact and is never
+// read. The role clause stops at sentence punctuation, so "You are a fresh
+// reader. Answer about the reviewer tool" does not match.
+const ROLE_LEAD =
+  /^(?:You are [^.:;!?]*?\b(?:reviewer|critic|auditor|verifier|analyst|assessor)s?\b|Review\b|Audit\b|Verify\b|\**Role:?\**:?\s)/i
+
+/** The prompt's first non-empty line, capped. */
+export function promptLead(prompt: string): string {
+  for (const line of prompt.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed !== '') return trimmed.slice(0, PROMPT_LEAD_CHARS)
+  }
+  return ''
+}
 
 /**
- * Whether a spawn is a reviewer: its description decides first (a review
- * word wins, then a work word), and only then the head of its prompt.
+ * Whether a spawn is a reviewer. The description decides first: a leading
+ * work verb settles it as other, then a review word makes it a reviewer.
+ * Otherwise the prompt's first line decides, by a role or imperative opener.
  */
 export function classifyRole(spawn: { description: string; prompt: string }): Role {
-  if (REVIEW_WORDS.test(spawn.description)) return 'review'
-  if (WORK_WORDS.test(spawn.description)) return 'other'
-  return REVIEW_WORDS.test(spawn.prompt.slice(0, PROMPT_HEAD_CHARS)) ? 'review' : 'other'
+  const description = spawn.description.trim()
+  if (WORK_VERB_LEAD.test(description)) return 'other'
+  if (REVIEW_WORDS.test(description)) return 'review'
+  return ROLE_LEAD.test(promptLead(spawn.prompt)) ? 'review' : 'other'
 }
 
 /** True when `model` already names the review model, as an alias or a full id. */
@@ -73,18 +104,38 @@ export function isOnModel(model: string | undefined, reviewModel: string): boole
   return model === reviewModel || model.includes(reviewModel)
 }
 
+/** True for a spawn whose type lets the parent's model decide. */
+export function isGeneralPurpose(subagentType: string | undefined): boolean {
+  const type = subagentType?.trim() ?? ''
+  return type === '' || type === GENERAL_PURPOSE
+}
+
 /**
- * The model to re-point a spawn to, or null to leave it alone: teammates and
- * forks are never touched (a fork inherits its parent's model whatever a
- * hook sets), and nothing moves while `enforce` is off.
+ * The model to re-point a spawn to, or null to leave it alone. A reviewer
+ * moves when the caller set a model `overrideFrom` lists, or set none (or
+ * `inherit`) on a general-purpose spawn. A model the caller chose that the
+ * key does not list stays, as does an agent type with a model of its own
+ * (Explore, Plan, a plugin's agent) unless the caller set a listed model.
+ * Teammates and forks are never touched: a fork inherits whatever a hook
+ * sets, and nothing moves while `enforce` is off.
  */
 export function decideModel(
-  spawn: { role: Role; model?: string; isTeammate?: boolean; fork?: boolean },
-  config: Pick<PolicyConfig, 'enforce' | 'reviewModel'>,
+  spawn: { role: Role; model?: string; subagentType?: string; isTeammate?: boolean; fork?: boolean },
+  config: Pick<PolicyConfig, 'enforce' | 'reviewModel' | 'overrideFrom'>,
 ): string | null {
   if (!config.enforce || spawn.role !== 'review') return null
   if (spawn.isTeammate === true || spawn.fork === true) return null
-  return isOnModel(spawn.model, config.reviewModel) ? null : config.reviewModel
+  const model = spawn.model?.trim() ?? ''
+  if (isOnModel(model, config.reviewModel)) return null
+  const isListed = config.overrideFrom.some(m => m.toLowerCase() === model.toLowerCase())
+  if (isListed) return config.reviewModel
+  const isUnset = model === '' || model.toLowerCase() === 'inherit'
+  return isUnset && isGeneralPurpose(spawn.subagentType) ? config.reviewModel : null
+}
+
+/** True for a spawn the fan-out count takes: the main loop's own, no teammate. */
+export function countsTowardFanout(spawn: { isTeammate?: boolean; parentAgentId?: string }): boolean {
+  return spawn.isTeammate !== true && spawn.parentAgentId === undefined
 }
 
 /** The spawn count at which the fan-out toast shows, once per turn. */
@@ -107,9 +158,15 @@ export function readConfig(options: Readonly<Record<string, unknown>>): PolicyCo
     const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback
   }
+  const list = (value: unknown, fallback: string[]): string[] => {
+    const items = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : null
+    if (items === null) return fallback
+    return items.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(item => item !== '')
+  }
   return {
     enforce: bool(options.enforce, DEFAULTS.enforce),
     reviewModel: text(options.reviewModel, DEFAULTS.reviewModel),
+    overrideFrom: list(options.overrideFrom, DEFAULTS.overrideFrom),
     fanoutToast: count(options.fanoutToast, DEFAULTS.fanoutToast),
     fanoutHold: count(options.fanoutHold, DEFAULTS.fanoutHold),
   }
@@ -126,16 +183,9 @@ export function addMember(members: readonly Member[], member: Member): Member[] 
   return [...members, member].slice(-MEMBER_CAP)
 }
 
-/**
- * Marks the member a `turn.complete` names as done. An id no member carries
- * falls back to the oldest running member recorded without an agent id, the
- * order match the README describes; with none, the list is unchanged.
- */
+/** Marks the running member `agentId` names as done; unchanged when none is. */
 export function completeMember(members: readonly Member[], agentId: string, now: number): Member[] {
-  const byId = members.findIndex(m => m.id === agentId && m.endedAt === null)
-  const index = byId >= 0 ? byId : members.findIndex(m => !m.hasAgentId && m.endedAt === null)
-  if (index < 0) return [...members]
-  return members.map((m, i) => (i === index ? { ...m, endedAt: now } : m))
+  return members.map(m => (m.id === agentId && m.endedAt === null ? { ...m, endedAt: now } : m))
 }
 
 /** The members of the latest batch: those spawned in the newest member's turn. */
@@ -145,22 +195,30 @@ export function currentBatch(members: readonly Member[]): Member[] {
   return members.filter(m => m.turn === last.turn)
 }
 
+/** True while the latest batch is in flight or returned within BAND_LINGER_MS. */
+export function isBatchActive(members: readonly Member[], now: number): boolean {
+  const batch = currentBatch(members)
+  if (batch.length === 0) return false
+  const isRunning = batch.some(m => m.endedAt === null)
+  const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= BAND_LINGER_MS)
+  return isRunning || isRecent
+}
+
 /**
- * The band's one line, or null when nothing is in flight and nothing
- * returned within BAND_LINGER_MS: `panel: 2/5 returned · reviewers on opus`.
+ * The band's one line, or null while the batch is neither in flight nor
+ * fresh: `panel: 2/5 returned · reviewers on opus`. The suffix names the
+ * review model only when the batch holds a reviewer and `enforce` is on.
  */
 export function bandText(
   members: readonly Member[],
   now: number,
   config: Pick<PolicyConfig, 'enforce' | 'reviewModel'>,
 ): string | null {
+  if (!isBatchActive(members, now)) return null
   const batch = currentBatch(members)
-  if (batch.length === 0) return null
-  const isRunning = batch.some(m => m.endedAt === null)
-  const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= BAND_LINGER_MS)
-  if (!isRunning && !isRecent) return null
   const done = batch.filter(m => m.endedAt !== null).length
-  const suffix = config.enforce ? ` · reviewers on ${config.reviewModel}` : ''
+  const hasReviewer = batch.some(m => m.role === 'review')
+  const suffix = config.enforce && hasReviewer ? ` · reviewers on ${config.reviewModel}` : ''
   return `panel: ${done}/${batch.length} returned${suffix}`
 }
 

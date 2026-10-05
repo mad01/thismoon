@@ -1,12 +1,14 @@
 # panel-policy
 
-A Claude Code mod that turns one standing rule into engine behaviour: review and verifier subagents run on Opus. The skills that spawn them (subagent-review-panel, sre-panel, work-on's review gates) keep saying `sonnet` or nothing; the mod re-points the spawn on its way to the engine. Without the mod, every spawn runs exactly as the skill wrote it.
+A Claude Code mod that turns one standing rule into engine behaviour: review and verifier subagents run on Opus. The skills that spawn them through the Agent tool (subagent-review-panel in subagent mode, sre-panel, work-on's review gates) say `sonnet` or nothing. The mod re-points the spawn on its way to the engine. Without the mod, every spawn runs exactly as the skill wrote it.
 
 ## The rule
 
-On `agent.spawn` the mod reads the description and the first 400 characters of the prompt. A spawn is a reviewer when either carries one of: review, reviewer, verify, verifier, critic, panel, audit, challenger, second opinion (whole words, any case, plurals included). A description that instead announces research, explore, implement, build, promote, promoter, write, draft, fix, scaffold or refactor settles the spawn as other before the prompt is read. That keeps work-on's impact agent ("name a verify method per consumer") and the brain-research promoter ("verified inbox note") on their own model. A reviewer whose model is not already `reviewModel` goes out as `next({ ...e, model: reviewModel })`. The word list and the tests against the skills' real phrasing live in `lib/policy.ts` and `test/policy.test.mjs`.
+A mod may change the model of a subagent spawn only behind a config key, only when the caller set no model or a model the key lists, and never for a model the caller chose explicitly. Here the key is `enforce`, the list is `overrideFrom`, and the target is `reviewModel`.
 
-Left alone: teammates (`isTeammate`), forks (the engine ignores `model` on a fork, so there is nothing to set), and every spawn while `enforce` is off. A description that names a panel as the thing to build counts as review; phrase around it or turn `enforce` off for that session.
+On `agent.spawn` the mod classifies the spawn from its description and the first line of its prompt; the rest of the prompt is the artifact and is never read. A description that opens with a work verb (implement, build, fix, update, find, write, scaffold, refactor, research, explore, promote) is work, whatever it names: "Implement review comment threading" stays put. Otherwise a review word in the description makes a reviewer: review, verify, critic, panel, audit, challenger, second opinion, analyst, assessor, adherence, validation, with their plurals. Failing that, the prompt's first line decides by its opener: `You are a/the ... reviewer|critic|auditor|verifier|analyst|assessor`, `Review`, `Audit`, `Verify`, or `Role:`. The word lists and the tests against the skills' literal labels live in `lib/policy.ts` and `test/policy.test.mjs`.
+
+A reviewer moves to `reviewModel` when the caller set a model `overrideFrom` lists, or set none (or `inherit`) on a general-purpose spawn. Explore, Plan and plugin agents keep their own model unless the caller set a listed one. A model the caller chose that the list leaves out, say `haiku`, always stands. Teammates and forks are never touched: a fork inherits whatever a hook sets.
 
 ## Turning it off
 
@@ -16,8 +18,11 @@ Left alone: teammates (`isTeammate`), forks (the engine ignores `model` on a for
 |--------|---------|--------|
 | `enforce` | `true` | `false` leaves every model as the skill set it |
 | `reviewModel` | `opus` | the alias or id reviewers run on |
+| `overrideFrom` | `sonnet` | comma-separated models a reviewer is moved off when the caller set one of them |
 | `fanoutToast` | `4` | toast once when a turn's spawn count reaches this; `0` is off |
 | `fanoutHold` | `0` | ask Proceed or Cancel on the Nth spawn of a turn; `0` never asks |
+
+The fan-out count takes the main loop's own spawns, not a subagent's or a teammate's. With `fanoutHold` set, spawns the model issues in parallel after the Nth proceed while the dialog is open; Cancel refuses that one spawn only.
 
 ## The band and the pane
 
@@ -27,16 +32,16 @@ While a batch is in flight, and for a minute after its last member returned, one
 panel: 2/5 returned · reviewers on opus
 ```
 
-The batch is the set of spawns from the newest turn that spawned anything; the model suffix goes with `enforce: false`. Nothing is drawn while idle.
+The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. Nothing is drawn while idle. A one-second ticker keeps the durations and the linger moving and stops itself once the band is clear.
 
-`/panel` opens a pane listing the last 100 members this session: role, the first 60 characters of its description, running or done, and its duration. It redraws on every spawn and return; Esc closes it.
+`/panel` opens a pane with one row per member, as many as fit the pane, newest last: role, the first 60 characters of its description, running or done, and its duration. The state keeps the newest 100. Esc closes the pane.
 
-The mod keys each member by the `agentId` the engine returns from the spawn, the same id the subagent's `turn.complete` carries. Should a spawn resolve without one, the mod keys the member by the Agent tool call's id, and the next unmatched `turn.complete` marks the oldest such running member done, by order.
+Each member is keyed by the `agentId` the engine returns from the spawn, the same id the subagent's `turn.complete` carries. A spawn that resolves without one started no agent and is not tracked.
 
 ## Dev loop
 
 ```bash
-claude --plugin-dir mods/panel-policy        # from the repo root; saves hot-reload
+claude --plugin-dir mods/panel-policy        # from the repo root; reloads on save
 claude plugin validate mods/panel-policy     # what the engine would refuse
 node --test mods/panel-policy/test/*.test.mjs
 ```

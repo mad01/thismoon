@@ -19,6 +19,12 @@
       "description": "The model alias or id review and verifier spawns run on.",
       "default": "opus"
     },
+    "overrideFrom": {
+      "title": "Override from",
+      "type": "string",
+      "description": "Comma-separated models a reviewer is moved off when the caller set one of them; an unset or inherited model moves too on a general-purpose spawn.",
+      "default": "sonnet"
+    },
     "fanoutToast": {
       "title": "Fan-out toast at",
       "type": "number",

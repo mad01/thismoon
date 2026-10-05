@@ -7,19 +7,23 @@ import {
   bandText,
   classifyRole,
   completeMember,
+  countsTowardFanout,
   currentBatch,
   decideModel,
   formatDuration,
   formatPaneRow,
+  isBatchActive,
   isFanoutHoldDue,
   isFanoutToastDue,
+  isGeneralPurpose,
   isOnModel,
   memberLabel,
   paneRows,
+  promptLead,
   readConfig,
 } from '../lib/policy.ts'
 
-const config = { enforce: true, reviewModel: 'opus', fanoutToast: 4, fanoutHold: 0 }
+const config = { enforce: true, reviewModel: 'opus', overrideFrom: ['sonnet'], fanoutToast: 4, fanoutHold: 0 }
 
 const member = (over = {}) => ({
   id: 'a1',
@@ -28,45 +32,60 @@ const member = (over = {}) => ({
   startedAt: 1_000,
   endedAt: null,
   turn: 't1',
-  hasAgentId: true,
   ...over,
 })
 
-// Spawn phrasing lifted from the skills the mod serves, as the main agent
-// writes the Agent tool's description and prompt when it follows them.
+// A pasted artifact that names every review word: the classifier must never
+// read it, whether it leads the prompt or follows the instruction.
+const artifact = [
+  '# RFC: review panel audit of the verifier service',
+  '',
+  'The panel reviews each audit. A critic verifies the challenger.',
+].join('\n')
+
+// Spawn phrasing lifted from the skills the mod serves: the skills' literal
+// agent labels as descriptions, and prompts the way the main agent writes
+// them when it follows the skill, artifact included.
 const spawns = {
   reviewPanelCritical: {
     description: 'Critical correctness reviewer',
-    prompt:
-      'Read the brief at /tmp/claude/review-panel-brief-1714400000.md first. You are one reviewer on a panel: domain focus correctness, intensity critical. Find every weakness. Assume something is wrong. 200-400 words, the review only.',
+    prompt: `Read the brief at /tmp/claude/review-panel-brief-1714400000.md first. Domain focus correctness, intensity critical.\n\n${artifact}`,
   },
   reviewPanelSteelman: {
     description: 'Steelman: strongest case for the design',
-    prompt: 'Read the brief first. Make the strongest case for this design as a reviewer for senior backend engineers. Review only, no preamble.',
+    prompt: `You are one reviewer on a panel: make the strongest case for this design for senior backend engineers. 200-400 words, the review only.\n\n${artifact}`,
   },
-  srePanelAnalyst: {
-    description: 'SRE panel: failure mode analyst',
-    prompt: 'Role: Senior SRE focused on how this breaks. Adversarial. Assumes everything can fail. Evaluate the artifact below against the failure-mode questions.',
+  sreFailureMode: {
+    description: 'Failure Mode Analyst',
+    prompt: `**Role:** Senior SRE focused on how this breaks. Adversarial. Assumes everything can fail.\n\n${artifact}`,
   },
-  srePanelReadiness: {
+  sreReadiness: {
     description: 'Operational Readiness Reviewer',
-    prompt: 'Role: Senior SRE focused on whether this can be operated safely by a non-domain-expert at 3 AM. Is there a runbook covering all identified failure modes?',
+    prompt: `Role: Senior SRE focused on whether this can be operated safely by a non-domain-expert at 3 AM.\n\n${artifact}`,
   },
-  srePanelAnalystBare: {
-    description: 'Failure mode analyst',
-    prompt: 'Role: Senior SRE focused on how this breaks. Adversarial. Assumes everything can fail. List each component and how it fails, with its blast radius. Severity: CRITICAL / HIGH / MEDIUM / LOW.',
+  sreDependency: {
+    description: 'Dependency Analyst',
+    prompt: `${artifact}\n\nRole: Senior SRE mapping the dependency graph and identifying brittleness.`,
+  },
+  sreToil: {
+    description: 'Toil Assessor',
+    prompt: `${artifact}\n\nRole: Senior SRE quantifying the operational toil this adds or removes.`,
   },
   docsReaderTest: {
     description: 'reader-test: how do I install it?',
-    prompt: 'You are a fresh reader. Using ONLY the doc content below, answer this one question: how do I install it? If the docs do not say, say so.',
+    prompt: `You are a fresh reader. Using ONLY the doc content below, answer this one question: how do I install it?\n\n${artifact}`,
+  },
+  docsReaderTestDocFirst: {
+    description: 'reader-test: what does --foo do?',
+    prompt: `${artifact}\n\nAnswer from the doc above only: what does --foo do?`,
   },
   docsDeepPass: {
     description: 'Explore the architecture for the docs deep pass',
-    prompt: 'Map the data flow, the abstractions and the top-level package graph of this repo. Report the conclusion, not file dumps.',
+    prompt: 'Map the data flow, the abstractions and the top-level package graph of this repo.',
   },
   workOnImpact: {
-    description: 'Research: impact and blast radius',
-    prompt: 'Blast radius of the change: call sites, consumers, data shape. For each consumer, name a `verify` method: the command, suite or diff that would show it broke. Fill blast_radius.',
+    description: 'Impact: blast radius, consumers, data shape',
+    prompt: 'Blast radius of the change: call sites, consumers, data shape.\nFor each consumer, name a `verify` method: the command, suite or diff that would show it broke.',
   },
   workOnContext: {
     description: 'Research context for MAD-390',
@@ -74,15 +93,23 @@ const spawns = {
   },
   workOnStandardReview: {
     description: 'Review the diff against the coding standards',
-    prompt: 'Full diff against coding standards, CLAUDE.md rules, SRP, error handling. Produce findings with file:line and plan_adherence.',
+    prompt: `Full diff against coding standards, CLAUDE.md rules, SRP, error handling. Produce findings with file:line.\n\n${artifact}`,
+  },
+  workOnCodeQuality: {
+    description: 'Code quality',
+    prompt: `You are the code quality reviewer on a 3-agent panel. Review the full diff against standards; file:line for every finding.\n\n${artifact}`,
   },
   workOnPlanAdherence: {
-    description: '3-agent panel: plan adherence',
-    prompt: 'Diff against the ExecutionPlan. DONE, MISSING or DEVIATED per unit.',
+    description: 'Plan adherence',
+    prompt: `Diff against the ExecutionPlan. DONE, MISSING or DEVIATED per unit.\n\n${artifact}`,
+  },
+  workOnSilentValidation: {
+    description: 'Silent validation: plan against the research brief',
+    prompt: 'Check every unit of the plan against the brief. Report gaps only.',
   },
   workOnTieBreaker: {
     description: 'Tie-breaker: read both reviews and the changed files',
-    prompt: 'Read both reviews and the changed files. Required Changes and Optional Suggestions.',
+    prompt: 'Required Changes and Optional Suggestions.',
   },
   workOnChallenger: {
     description: 'Challenger: check this',
@@ -94,8 +121,7 @@ const spawns = {
   },
   brainPromoter: {
     description: 'Promote inbox/foo.md',
-    prompt:
-      'You are a promoter agent. Take ONE verified inbox note and promote it to notes/ with the correct evidence tier and a body that integrates the verification findings. INPUT: inbox_path, verifications: <ClaimVerification[] with verdict, proposed_tier, primary_citations>',
+    prompt: 'You are a promoter agent. Take ONE verified inbox note and promote it to notes/ with the correct evidence tier and a body that integrates the verification findings.',
   },
   secondOpinion: {
     description: 'Second opinion on the migration plan',
@@ -105,40 +131,56 @@ const spawns = {
     description: 'Verify the build gate',
     prompt: 'Run make test and report.',
   },
-  buildMod: {
-    description: 'build-humanizer-gate',
-    prompt: 'You are building in an isolated worktree. Build the humanizer-gate mod.',
-  },
+  subjectWords: [
+    { description: 'Implement review comment threading', prompt: 'Add threads to review comments.' },
+    { description: 'Fix cosign verify step', prompt: 'The verify step fails on arm64.' },
+    { description: 'Build the panel-policy mod', prompt: 'You are building in an isolated worktree.' },
+    { description: 'Update the audit log schema', prompt: 'Add a column.' },
+    { description: 'Find the analyst dashboard code', prompt: 'Locate it.' },
+  ],
 }
 
+describe('promptLead', () => {
+  test('is the first non-empty line, capped', () => {
+    assert.equal(promptLead('\n\n  Review this.  \nmore'), 'Review this.')
+    assert.equal(promptLead('x'.repeat(300)).length, 200)
+    assert.equal(promptLead(''), '')
+  })
+})
+
 describe('classifyRole', () => {
-  test('subagent-review-panel reviewers are review', () => {
+  test('subagent-review-panel reviewers are review, from the label or the prompt lead', () => {
     assert.equal(classifyRole(spawns.reviewPanelCritical), 'review')
     assert.equal(classifyRole(spawns.reviewPanelSteelman), 'review')
   })
 
-  test('sre-panel agents are review when the panel or reviewer is named', () => {
-    assert.equal(classifyRole(spawns.srePanelAnalyst), 'review')
-    assert.equal(classifyRole(spawns.srePanelReadiness), 'review')
+  test('sre-panel analysts, assessors and reviewers are review whichever side the artifact sits', () => {
+    assert.equal(classifyRole(spawns.sreFailureMode), 'review')
+    assert.equal(classifyRole(spawns.sreReadiness), 'review')
+    assert.equal(classifyRole(spawns.sreDependency), 'review')
+    assert.equal(classifyRole(spawns.sreToil), 'review')
   })
 
-  test('an sre-panel analyst named without the panel is other', () => {
-    assert.equal(classifyRole(spawns.srePanelAnalystBare), 'other')
+  test('a Role: opener alone makes a reviewer', () => {
+    assert.equal(classifyRole({ description: 'SRE agent 1', prompt: 'Role: Senior SRE focused on how this breaks.' }), 'review')
   })
 
-  test('docs-writer reader tests and deep passes are other', () => {
+  test('docs-writer reader tests are other even when the pasted doc names every review word', () => {
     assert.equal(classifyRole(spawns.docsReaderTest), 'other')
+    assert.equal(classifyRole(spawns.docsReaderTestDocFirst), 'other')
     assert.equal(classifyRole(spawns.docsDeepPass), 'other')
   })
 
-  test('work-on review agents, the panel and the challenger are review', () => {
+  test('work-on review agents, the panel members and the challenger are review', () => {
     assert.equal(classifyRole(spawns.workOnStandardReview), 'review')
+    assert.equal(classifyRole(spawns.workOnCodeQuality), 'review')
     assert.equal(classifyRole(spawns.workOnPlanAdherence), 'review')
+    assert.equal(classifyRole(spawns.workOnSilentValidation), 'review')
     assert.equal(classifyRole(spawns.workOnTieBreaker), 'review')
     assert.equal(classifyRole(spawns.workOnChallenger), 'review')
   })
 
-  test('work-on research agents are other even when the prompt says verify', () => {
+  test('work-on research agents are other even when a later prompt line says verify', () => {
     assert.equal(classifyRole(spawns.workOnImpact), 'other')
     assert.equal(classifyRole(spawns.workOnContext), 'other')
   })
@@ -157,55 +199,94 @@ describe('classifyRole', () => {
     assert.equal(classifyRole({ description: 'review-scaffold', prompt: '' }), 'review')
   })
 
-  test('a build description is other and critical alone never matches', () => {
-    assert.equal(classifyRole(spawns.buildMod), 'other')
-    assert.equal(classifyRole({ description: 'fix the critical bug', prompt: 'A critical path fails.' }), 'other')
+  test('a leading work verb wins over review words in the subject', () => {
+    for (const spawn of spawns.subjectWords) assert.equal(classifyRole(spawn), 'other', spawn.description)
   })
 
-  test('a review word in the description wins over a work word', () => {
+  test('a review word that is not a leading verb still wins in the description', () => {
     assert.equal(classifyRole({ description: 'Build-gate verifier', prompt: '' }), 'review')
   })
 
-  test('only the first 400 characters of the prompt count', () => {
-    const late = { description: 'Explore', prompt: `${'x '.repeat(210)}review this` }
-    assert.equal(classifyRole(late), 'other')
-    const early = { description: '', prompt: 'Please review this diff.' }
-    assert.equal(classifyRole(early), 'review')
+  test('the role clause stops at sentence punctuation', () => {
+    const reader = { description: '', prompt: 'You are a fresh reader. Answer the question about the reviewer tool.' }
+    assert.equal(classifyRole(reader), 'other')
+    assert.equal(classifyRole({ description: '', prompt: 'You are an auditor of this diff.' }), 'review')
+  })
+
+  test('critical alone never matches', () => {
+    assert.equal(classifyRole({ description: 'the critical bug', prompt: 'A critical path fails.' }), 'other')
   })
 })
 
-describe('isOnModel', () => {
-  test('matches the alias and a full id', () => {
+describe('isOnModel and isGeneralPurpose', () => {
+  test('isOnModel matches the alias and a full id', () => {
     assert.equal(isOnModel('opus', 'opus'), true)
     assert.equal(isOnModel('claude-opus-4-1', 'opus'), true)
     assert.equal(isOnModel('sonnet', 'opus'), false)
     assert.equal(isOnModel(undefined, 'opus'), false)
-    assert.equal(isOnModel('', 'opus'), false)
+  })
+
+  test('isGeneralPurpose is true for general-purpose and unset', () => {
+    assert.equal(isGeneralPurpose('general-purpose'), true)
+    assert.equal(isGeneralPurpose(''), true)
+    assert.equal(isGeneralPurpose(undefined), true)
+    assert.equal(isGeneralPurpose('Explore'), false)
   })
 })
 
 describe('decideModel', () => {
-  test('re-points a reviewer that is not on the review model', () => {
-    assert.equal(decideModel({ role: 'review', model: 'sonnet' }, config), 'opus')
-    assert.equal(decideModel({ role: 'review' }, config), 'opus')
+  const review = over => ({ role: 'review', subagentType: 'general-purpose', ...over })
+
+  test('moves a general-purpose reviewer with no model, inherit, or a listed model', () => {
+    assert.equal(decideModel(review({}), config), 'opus')
+    assert.equal(decideModel(review({ model: 'inherit' }), config), 'opus')
+    assert.equal(decideModel(review({ model: 'sonnet' }), config), 'opus')
+    assert.equal(decideModel(review({ subagentType: '' }), config), 'opus')
+  })
+
+  test('never moves a model the caller chose that the key does not list', () => {
+    assert.equal(decideModel(review({ model: 'haiku' }), config), null)
+    assert.equal(decideModel(review({ model: 'fable' }), config), null)
+    assert.equal(decideModel(review({ model: 'claude-fable-5-1' }), config), null)
   })
 
   test('leaves a reviewer already on the review model', () => {
-    assert.equal(decideModel({ role: 'review', model: 'opus' }, config), null)
+    assert.equal(decideModel(review({ model: 'opus' }), config), null)
+    assert.equal(decideModel(review({ model: 'claude-opus-4-1' }), config), null)
+  })
+
+  test('skips Explore, Plan and plugin agents unless the caller set a listed model', () => {
+    assert.equal(decideModel(review({ subagentType: 'Explore' }), config), null)
+    assert.equal(decideModel(review({ subagentType: 'Plan', model: 'inherit' }), config), null)
+    assert.equal(decideModel(review({ subagentType: 'code-review:reviewer' }), config), null)
+    assert.equal(decideModel(review({ subagentType: 'Explore', model: 'sonnet' }), config), 'opus')
+    assert.equal(decideModel(review({ subagentType: 'code-review:reviewer', model: 'sonnet' }), config), 'opus')
+  })
+
+  test('honours an extended overrideFrom list', () => {
+    const wide = { ...config, overrideFrom: ['sonnet', 'haiku'] }
+    assert.equal(decideModel(review({ model: 'haiku' }), wide), 'opus')
+    assert.equal(decideModel(review({ subagentType: 'Explore', model: 'Haiku' }), wide), 'opus')
   })
 
   test('leaves non-reviewers, teammates and forks alone', () => {
-    assert.equal(decideModel({ role: 'other', model: 'sonnet' }, config), null)
-    assert.equal(decideModel({ role: 'review', model: 'sonnet', isTeammate: true }, config), null)
-    assert.equal(decideModel({ role: 'review', model: 'sonnet', fork: true }, config), null)
+    assert.equal(decideModel({ role: 'other', model: 'sonnet', subagentType: 'general-purpose' }, config), null)
+    assert.equal(decideModel(review({ model: 'sonnet', isTeammate: true }), config), null)
+    assert.equal(decideModel(review({ model: 'sonnet', fork: true }), config), null)
   })
 
   test('does nothing while enforce is off', () => {
-    assert.equal(decideModel({ role: 'review', model: 'sonnet' }, { ...config, enforce: false }), null)
+    assert.equal(decideModel(review({ model: 'sonnet' }), { ...config, enforce: false }), null)
   })
 })
 
-describe('fan-out thresholds', () => {
+describe('fan-out', () => {
+  test('only main-loop, non-teammate spawns count', () => {
+    assert.equal(countsTowardFanout({}), true)
+    assert.equal(countsTowardFanout({ isTeammate: true }), false)
+    assert.equal(countsTowardFanout({ parentAgentId: 'sub-1' }), false)
+  })
+
   test('the toast is due exactly at the threshold', () => {
     assert.equal(isFanoutToastDue(3, config), false)
     assert.equal(isFanoutToastDue(4, config), true)
@@ -225,19 +306,22 @@ describe('readConfig', () => {
     assert.deepEqual(readConfig({}), config)
   })
 
-  test('takes typed values and string forms', () => {
-    assert.deepEqual(readConfig({ enforce: false, reviewModel: 'claude-opus-4-1', fanoutToast: 6, fanoutHold: 3 }), {
-      enforce: false,
-      reviewModel: 'claude-opus-4-1',
-      fanoutToast: 6,
-      fanoutHold: 3,
-    })
-    assert.deepEqual(readConfig({ enforce: 'false', fanoutToast: '2', fanoutHold: '-1', reviewModel: ' ' }), {
+  test('takes typed values, string forms and a comma list', () => {
+    assert.deepEqual(
+      readConfig({ enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', ' haiku '], fanoutToast: 6, fanoutHold: 3 }),
+      { enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', 'haiku'], fanoutToast: 6, fanoutHold: 3 },
+    )
+    assert.deepEqual(readConfig({ enforce: 'false', overrideFrom: 'sonnet, haiku,', fanoutToast: '2', fanoutHold: '-1', reviewModel: ' ' }), {
       enforce: false,
       reviewModel: 'opus',
+      overrideFrom: ['sonnet', 'haiku'],
       fanoutToast: 2,
       fanoutHold: 0,
     })
+  })
+
+  test('an empty overrideFrom list means no listed model moves', () => {
+    assert.deepEqual(readConfig({ overrideFrom: [] }).overrideFrom, [])
   })
 })
 
@@ -258,56 +342,50 @@ describe('members', () => {
     assert.equal(next[0].id, 'm1')
   })
 
-  test('completeMember marks the member by agent id', () => {
-    const list = [member({ id: 'a1' }), member({ id: 'a2' })]
+  test('completeMember marks the running member by agent id only', () => {
+    const list = [member({ id: 'a1' }), member({ id: 'a2' }), member({ id: 'a3', endedAt: 2_000 })]
     const done = completeMember(list, 'a2', 5_000)
     assert.equal(done[0].endedAt, null)
     assert.equal(done[1].endedAt, 5_000)
-  })
-
-  test('completeMember falls back to the oldest running member without an agent id', () => {
-    const list = [
-      member({ id: 'tool-1', hasAgentId: false, endedAt: 2_000 }),
-      member({ id: 'tool-2', hasAgentId: false }),
-      member({ id: 'tool-3', hasAgentId: false }),
-    ]
-    const done = completeMember(list, 'unknown', 5_000)
-    assert.equal(done[1].endedAt, 5_000)
-    assert.equal(done[2].endedAt, null)
-  })
-
-  test('completeMember leaves the list alone with nothing to match', () => {
-    const list = [member({ id: 'a1' })]
+    assert.equal(done[2].endedAt, 2_000)
     assert.deepEqual(completeMember(list, 'zzz', 5_000), list)
+    assert.deepEqual(completeMember(list, 'a3', 5_000), list)
+  })
+
+  test('two returns applied in either order both land', () => {
+    const list = [member({ id: 'a' }), member({ id: 'b' })]
+    const both = completeMember(completeMember(list, 'a', 5_000), 'b', 5_001)
+    assert.deepEqual(both.map(m => m.endedAt), [5_000, 5_001])
   })
 
   test('currentBatch is the newest turn', () => {
     const list = [member({ id: 'old', turn: 't0' }), member({ id: 'a', turn: 't1' }), member({ id: 'b', turn: 't1' })]
-    assert.deepEqual(
-      currentBatch(list).map(m => m.id),
-      ['a', 'b'],
-    )
+    assert.deepEqual(currentBatch(list).map(m => m.id), ['a', 'b'])
     assert.deepEqual(currentBatch([]), [])
   })
 })
 
-describe('bandText', () => {
-  test('is null with no members', () => {
+describe('isBatchActive and bandText', () => {
+  test('nothing is active or drawn with no members', () => {
+    assert.equal(isBatchActive([], 10_000), false)
     assert.equal(bandText([], 10_000, config), null)
   })
 
   test('counts the batch while members run', () => {
     const list = [member({ id: 'a' }), member({ id: 'b', endedAt: 2_000 }), member({ id: 'c' })]
+    assert.equal(isBatchActive(list, 3_000), true)
     assert.equal(bandText(list, 3_000, config), 'panel: 1/3 returned · reviewers on opus')
   })
 
-  test('drops the model suffix when enforce is off', () => {
+  test('drops the model suffix when enforce is off or no member is a reviewer', () => {
     assert.equal(bandText([member()], 3_000, { ...config, enforce: false }), 'panel: 0/1 returned')
+    assert.equal(bandText([member({ role: 'other' })], 3_000, config), 'panel: 0/1 returned')
   })
 
   test('lingers a minute after the last member returned, then clears', () => {
     const list = [member({ id: 'a', endedAt: 10_000 }), member({ id: 'b', endedAt: 20_000 })]
     assert.equal(bandText(list, 20_000 + BAND_LINGER_MS, config), 'panel: 2/2 returned · reviewers on opus')
+    assert.equal(isBatchActive(list, 20_001 + BAND_LINGER_MS), false)
     assert.equal(bandText(list, 20_001 + BAND_LINGER_MS, config), null)
   })
 

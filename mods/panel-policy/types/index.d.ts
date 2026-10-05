@@ -7,7 +7,6 @@ export type PanelPolicyMember = {
   startedAt: number
   endedAt: number | null
   turn: string | null
-  hasAgentId: boolean
 }
 
 export type PanelPolicyTurn = { id: string | null; spawns: number }
