@@ -1,0 +1,8 @@
+{
+  "name": "panel-policy",
+  "version": "0.0.1",
+  "description": "Stub: reserved for a mod that surfaces review-panel policy at the moments a session needs it.",
+  "author": {
+    "name": "mad01"
+  }
+}

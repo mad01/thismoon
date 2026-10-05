@@ -1,0 +1,8 @@
+{
+  "name": "loom-pane",
+  "version": "0.0.1",
+  "description": "Stub: reserved for a pane that shows the loom's claimed worktrees and ready branches.",
+  "author": {
+    "name": "mad01"
+  }
+}

@@ -30,3 +30,7 @@ tools/opener/opener
 tools/suspenders/suspenders
 tools/t-man/t-man
 tools/worklog/worklog
+
+# written by Claude Code beside a loaded mod (the API types and a tsconfig
+# extending them); .claude-plugin/types/ ignores itself
+mods/*/tsconfig.json

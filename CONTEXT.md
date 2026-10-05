@@ -32,6 +32,10 @@ _Avoid_: version info, version payload
 A ralph recipe under `recipes/` that installs a component on a machine. Consumed remotely through ralph's `[[recipe_sources]]`, identified as `thismoon/<recipe>`.
 _Avoid_: config, manifest
 
+**Mod**:
+A Claude Code plugin under `mods/<name>/` whose hooks are TypeScript functions running in-process: it draws a band or a pane and observes events. The root `thismoon` marketplace lists it. Additive only: nothing in the repo may require one, and it is never a component.
+_Avoid_: plugin on its own (ambiguous with command-hook plugins and MCP plugins), extension, hook module
+
 **Component tag**:
 A release tag in the form `svc/vX.Y.Z` (component path prefix, slash separator), cut by release-please.
 _Avoid_: version tag, release tag (ambiguous — repo-wide vs per-component)
