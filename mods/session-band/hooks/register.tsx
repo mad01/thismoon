@@ -5,6 +5,7 @@ import type { SessionBandPage } from '../types'
 import {
   compactContextBlock,
   composeBandLines,
+  decisionSummary,
   findPhaseMarker,
   isBeltDeny,
   parsePresentResult,
@@ -137,10 +138,15 @@ export const register: Register = on => {
   }).catch(skipOnFailure)
 
   // belt answers PreToolUse as a settings hook beneath every mod; its deny
-  // comes back from next(e) with a `belt[<guard>]: ` reason. Counted, never
-  // changed: the decision returns exactly as belt made it.
+  // comes back from next(e) with a `belt[<guard>]: ` reason, possibly inside
+  // the engine's own wrapping. Counted, never changed: the decision returns
+  // exactly as belt made it. Every decision is described in the debug log so
+  // its real shape can be read off `claude --debug`.
   on('classic.PreToolUse', async ($, e, next) => {
     const decision = await next(e)
+    if (decision !== undefined) {
+      $.ui.log(`session-band: PreToolUse ${e.tool} decision ${decisionSummary(decision)}`, { to: 'debug' })
+    }
     if (isBeltDeny(decision)) await update($, beltDenies, n => n + 1)
     return decision
   }).catch(skipOnFailure)
