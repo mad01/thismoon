@@ -20,7 +20,7 @@ A mod isn't a component: no Makefile, no release-please entry, no `name/vX.Y.Z` 
 
 ## Rules
 
-- Additive only. No skill, hook, or service may require a mod. A mod reads what they already produce (events, tool results, answer text) and never changes their contract. belt remains the fail-closed guard; a mod hook fails open on a throw or a timeout.
+- Additive only. No skill, hook, or service may require a mod. A mod reads what they already produce (events, tool results, answer text) and never changes their contract. belt remains the fail-closed guard layer and the only enforcement a rule may rely on; a mod hook fails open on a throw or a timeout. A mod may return a deny in two cases only: the user's own Cancel in a hold dialog, or a convenience guard. Such a guard fails open, is off by a config key, and duplicates no belt guard.
 - Every hook that does I/O or sits on a guard-shaped event carries `.catch`, which logs with `$.ui.log(text, { to: 'debug' })` and returns `next(e)`. The engine gives a hook 10 s; past it the hook is skipped and the chain goes on without it.
 - Localhost probes have a 400 ms budget (`Promise.race` against `$.clock.sleep`) and stay silent when the service is down: a debug line at most, never a toast, never a blocked turn. Work that outlives a dispatch starts from `$.clock.after` or `$.clock.every` in `session.start`.
 - Observe, then pass on. A `tool.call` observer calls `next(e)`, reads the result, and returns it unchanged. A `ui.render` hook on `AbovePrompt` includes `await next(e)` in its tree so a later mod's band survives.

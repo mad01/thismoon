@@ -10,10 +10,10 @@ consuming machines load them.
 
 Claude Code can load a plugin whose hooks are TypeScript functions running
 in-process. They draw a band above the prompt or open a pane, and they
-observe events such as `turn.complete` and `tool.call`. This repo already
-produces belt denies on the events service, worklog keys, work-on phase
-markers, and present page ids. A session sees them only when it reads them
-back through tools. A mod can keep them on screen. The same mechanism
+observe events such as `turn.complete` and `tool.call`. A session already
+carries signals nobody sees: belt's PreToolUse denials, worklog keys, work-on
+phase markers in answers, and present page ids in tool results. They reach
+the person only by being read back. A mod can keep them on screen. The same mechanism
 could also carry policy, which is the risk. A module hook is skipped on a
 throw or a timeout, so a guard written as a mod fails open. Codex and pi
 never load one at all.
@@ -37,8 +37,11 @@ builder adds a mod without editing the marketplace file.
 
 - Skills, hooks, and services are unchanged; a machine with no mods enabled
   behaves exactly as before.
-- belt remains the only guard layer. A mod never denies, rewrites a tool
-  call, or edits the transcript.
+- belt remains the fail-closed guard layer and the only enforcement a rule
+  may rely on. A mod may return a deny in two cases only: the user's own
+  Cancel in a hold dialog, or a convenience guard. Such a guard fails open,
+  is off by a config key, and duplicates no belt guard. A mod never edits
+  the transcript.
 - Codex and pi see nothing of this layer. Anything they need stays a skill.
 - CI runs the mods' `node --test` suites and checks every mod is in the
   marketplace. `claude plugin validate` stays a local gate: the runner has
