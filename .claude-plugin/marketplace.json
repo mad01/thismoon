@@ -13,7 +13,7 @@
     {
       "name": "humanizer-gate",
       "source": "./mods/humanizer-gate",
-      "description": "Stub: reserved for a mod that runs humanizer detection on prose before it is committed or sent."
+      "description": "Runs humanizer detection on prose as it leaves the session: a status line on markdown writes, a hold dialog on PR bodies and commit messages with error-level findings."
     },
     {
       "name": "panel-policy",

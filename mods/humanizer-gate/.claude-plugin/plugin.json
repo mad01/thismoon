@@ -1,8 +1,30 @@
 {
   "name": "humanizer-gate",
-  "version": "0.0.1",
-  "description": "Stub: reserved for a mod that runs humanizer detection on prose before it is committed or sent.",
+  "version": "0.1.0",
+  "description": "Runs humanizer detection on prose as it leaves the session: markdown writes get a status line, PR bodies and commit messages can be held for a yes/no when an error-level pattern shows up.",
+  "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"
+  },
+  "userConfig": {
+    "holdOnError": {
+      "type": "boolean",
+      "title": "Hold PR bodies on errors",
+      "description": "Ask before a create_pull_request or update_pull_request call whose body has an error-level finding. Off reports in the status line only.",
+      "default": true
+    },
+    "holdOnCommitError": {
+      "type": "boolean",
+      "title": "Hold commits on errors",
+      "description": "Ask before a git commit whose message has an error-level finding. Off by default: commit bodies are short and belt already guards commits.",
+      "default": false
+    },
+    "minSeverity": {
+      "type": "string",
+      "title": "Minimum severity",
+      "description": "The lowest severity humanizer detect reports; suggestion counts everything.",
+      "default": "warning",
+      "options": ["suggestion", "warning", "error"]
+    }
   }
 }
