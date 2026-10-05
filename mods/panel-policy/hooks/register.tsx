@@ -1,30 +1,26 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { PanelPolicyMember, PanelPolicyTurn } from '../types'
 import {
   addMember,
-  bandText,
   classifyRole,
   completeMember,
   countsTowardFanout,
   decideModel,
   formatDuration,
-  formatPaneRow,
-  isBatchActive,
   isFanoutHoldDue,
   isFanoutToastDue,
   memberLabel,
-  paneRows,
+  nextChangeMs,
   readConfig,
+  staleAfterMs,
+  statusText,
 } from '../lib/policy'
+import type { PolicyConfig } from '../lib/policy'
 
-const PANE = 'panel'
 const HOLD_PROCEED = 'Proceed'
 const HOLD_CANCEL = 'Cancel'
-
-/** How often the band and pane redraw while a batch is on screen. */
-const TICK_MS = 1_000
 
 const members = atom({ plugin: 'panel-policy', key: 'members' } as const, [] as PanelPolicyMember[])
 const turn = atom({ plugin: 'panel-policy', key: 'turn' } as const, { id: null, spawns: 0 } as PanelPolicyTurn)
@@ -34,7 +30,7 @@ type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; mess
 
 // The one .catch every hook below carries: say why in the debug log, then
 // let the chain beneath answer as if the hook were absent. A spawn is never
-// denied by a failure here, a draw never blocked.
+// denied by a failure here.
 const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
   const why = next.error.message === undefined ? next.error.kind : `${next.error.kind}: ${next.error.message}`
   $.ui.log(`panel-policy: ${next.event} skipped (${why})`, { to: 'debug' })
@@ -43,37 +39,67 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+// The text this module instance last pinned (null before its first pin),
+// and the one-shot timer for the next moment the text changes on its own:
+// a linger ending, a member going stale. A hot reload drops both, and
+// session.start pins and re-arms.
+let pinned: string | undefined | null = null
+let recheck: Timer | null = null
+
+// Recomposes the status line and pins it when it changed; undefined clears
+// it. Then arms one timer for the next change the clock alone brings.
+async function refreshStatus($: EngineInterface, config: PolicyConfig): Promise<void> {
+  const now = await $.clock.now()
+  const list = await read($, members)
+  const text = statusText(list, now, config)
+  if (pinned === null || text !== pinned) {
+    pinned = text
+    $.ui.status(text)
+  }
+  recheck?.cancel()
+  recheck = null
+  const delay = nextChangeMs(list, now, staleAfterMs(config))
+  if (delay !== null) {
+    recheck = $.clock.after(delay, () => {
+      void refreshStatus($, config)
+    })
+  }
+}
+
+// Marks the member `id` names as returned, from whichever signal came first:
+// the subagent's turn.complete or the classic SubagentStop event. The second
+// one finds the member already returned and only says so in the debug log.
+async function markReturned($: EngineInterface, id: string, signal: string, config: PolicyConfig): Promise<void> {
+  const now = await $.clock.now()
+  const known = (await read($, members)).find(m => m.id === id)
+  if (known === undefined) {
+    const running = (await read($, members)).filter(m => m.endedAt === null).map(m => m.id)
+    $.ui.log(`panel-policy: ${signal} for ${id} matched no member (running: ${running.join(',') || 'none'})`, { to: 'debug' })
+    return
+  }
+  if (known.endedAt !== null) {
+    $.ui.log(`panel-policy: ${signal} for ${id} found "${known.label}" already returned`, { to: 'debug' })
+    return
+  }
+  await update($, members, list => completeMember(list, id, now))
+  $.ui.log(
+    `panel-policy: ${known.role} "${known.label}" returned on ${signal} (${id}, ${formatDuration(now - known.startedAt)})`,
+    { to: 'debug' },
+  )
+  await refreshStatus($, config)
+}
+
 export const register: Register = (on, options) => {
   const config = readConfig(options)
 
-  // Starts the redraw ticker that keeps durations and the linger moving;
-  // the ticker cancels itself once the batch is off the band. Set in
-  // session.start, which runs again on every reload.
-  let startTicking: () => void = () => {}
-
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    await $.command.register({ name: PANE, description: 'open the panel members pane', immediate: true })
-
-    let ticker: { cancel: () => void } | null = null
-    const tick = async (): Promise<void> => {
-      if (isBatchActive(await read($, members), await $.clock.now())) {
-        $.ui.invalidate('ui.render')
-        return
-      }
-      ticker?.cancel()
-      ticker = null
-    }
-    startTicking = () => {
-      if (ticker === null) ticker = $.clock.every(TICK_MS, () => { void tick() })
-    }
-    // A batch may be mid-flight after a reload; the first tick settles it.
-    startTicking()
-
     $.ui.log(
-      `panel-policy: loaded (enforce ${config.enforce}, reviewModel ${config.reviewModel}, overrideFrom ${config.overrideFrom.join(',')}, fanoutToast ${config.fanoutToast}, fanoutHold ${config.fanoutHold})`,
+      `panel-policy: loaded (enforce ${config.enforce}, reviewModel ${config.reviewModel}, overrideFrom ${config.overrideFrom.join(',')}, fanoutToast ${config.fanoutToast}, fanoutHold ${config.fanoutHold}, staleMinutes ${config.staleMinutes})`,
       { to: 'debug' },
     )
+    // A batch may be mid-flight after a reload; this pins its line again.
+    await refreshStatus($, config)
     return started
   }).catch(skipOnFailure)
 
@@ -126,63 +152,19 @@ export const register: Register = (on, options) => {
       turn: (await read($, turn)).id,
     }
     await update($, members, list => addMember(list, member))
-    startTicking()
+    await refreshStatus($, config)
     return started
   }).catch(skipOnFailure)
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId !== undefined) {
-      const now = await $.clock.now()
-      const id = e.agentId
-      const after = await update($, members, list => completeMember(list, id, now))
-      const returned = after.find(m => m.id === id && m.endedAt === now)
-      $.ui.log(
-        returned === undefined
-          ? `panel-policy: turn.complete for ${id} matched no running member`
-          : `panel-policy: ${returned.role} "${returned.label}" returned (${id}, ${formatDuration(now - returned.startedAt)})`,
-        { to: 'debug' },
-      )
-    }
+    if (e.agentId !== undefined) await markReturned($, e.agentId, 'turn.complete', config)
     return next(e)
   }).catch(skipOnFailure)
 
-  on('command.run', { command: PANE }, async $ => {
-    const opened = await $.ui.open({ id: PANE, title: 'Panel members', focus: true, closeOnEscape: true })
-    return {
-      text: opened.isPlaced ? 'panel members pane open; Esc closes it' : 'panel members pane waits for a wider terminal',
-    }
-  }).catch(skipOnFailure)
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const below = await next(e)
-    if (e.props.hasSurvey) return below
-    const line = bandText(await read($, members), await $.clock.now(), config)
-    if (line === null) return below
-    const { Box, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column">
-        <Text dimColor wrap="truncate-end">
-          {line}
-        </Text>
-        {below}
-      </Box>
-    )
-  }).catch(skipOnFailure)
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
-    const room = Math.max(1, (e.viewport?.rows ?? 24) - 4)
-    const rows = paneRows(await read($, members), await $.clock.now(), room)
-    const labelWidth = Math.max(12, Math.min(60, e.props.bodyColumns - 28))
-    return (
-      <Box flexDirection="column">
-        {rows.length === 0 && <Text dimColor>No agents spawned yet.</Text>}
-        {rows.map(row => (
-          <Text dimColor={row.status === 'done'} wrap="truncate-end">
-            {formatPaneRow(row, labelWidth)}
-          </Text>
-        ))}
-      </Box>
-    )
+  // The settings-hook view of the same end: a background subagent's stop
+  // reaches the main session here with the id spelled `agent_id`.
+  on('classic.SubagentStop', async ($, e, next) => {
+    await markReturned($, e.agent_id, 'SubagentStop', config)
+    return next(e)
   }).catch(skipOnFailure)
 }

@@ -2,28 +2,30 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import {
-  BAND_LINGER_MS,
+  STATUS_LINGER_MS,
   addMember,
-  bandText,
+  statusText,
   classifyRole,
   completeMember,
   countsTowardFanout,
   currentBatch,
   decideModel,
   formatDuration,
-  formatPaneRow,
   isBatchActive,
   isFanoutHoldDue,
   isFanoutToastDue,
   isGeneralPurpose,
   isOnModel,
   memberLabel,
-  paneRows,
+  memberStatus,
+  nextChangeMs,
   promptLead,
   readConfig,
+  staleAfterMs,
 } from '../lib/policy.ts'
 
-const config = { enforce: true, reviewModel: 'opus', overrideFrom: ['sonnet'], fanoutToast: 4, fanoutHold: 0 }
+const config = { enforce: true, reviewModel: 'opus', overrideFrom: ['sonnet'], fanoutToast: 4, fanoutHold: 0, staleMinutes: 30 }
+const STALE_MS = 30 * 60_000
 
 const member = (over = {}) => ({
   id: 'a1',
@@ -308,16 +310,25 @@ describe('readConfig', () => {
 
   test('takes typed values, string forms and a comma list', () => {
     assert.deepEqual(
-      readConfig({ enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', ' haiku '], fanoutToast: 6, fanoutHold: 3 }),
-      { enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', 'haiku'], fanoutToast: 6, fanoutHold: 3 },
+      readConfig({ enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', ' haiku '], fanoutToast: 6, fanoutHold: 3, staleMinutes: 5 }),
+      { enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', 'haiku'], fanoutToast: 6, fanoutHold: 3, staleMinutes: 5 },
     )
-    assert.deepEqual(readConfig({ enforce: 'false', overrideFrom: 'sonnet, haiku,', fanoutToast: '2', fanoutHold: '-1', reviewModel: ' ' }), {
-      enforce: false,
-      reviewModel: 'opus',
-      overrideFrom: ['sonnet', 'haiku'],
-      fanoutToast: 2,
-      fanoutHold: 0,
-    })
+    assert.deepEqual(
+      readConfig({ enforce: 'false', overrideFrom: 'sonnet, haiku,', fanoutToast: '2', fanoutHold: '-1', reviewModel: ' ', staleMinutes: '0' }),
+      {
+        enforce: false,
+        reviewModel: 'opus',
+        overrideFrom: ['sonnet', 'haiku'],
+        fanoutToast: 2,
+        fanoutHold: 0,
+        staleMinutes: 0,
+      },
+    )
+  })
+
+  test('staleAfterMs turns the minutes into a budget; 0 stays 0', () => {
+    assert.equal(staleAfterMs(config), STALE_MS)
+    assert.equal(staleAfterMs({ staleMinutes: 0 }), 0)
   })
 
   test('an empty overrideFrom list means no listed model moves', () => {
@@ -365,60 +376,105 @@ describe('members', () => {
   })
 })
 
-describe('isBatchActive and bandText', () => {
+describe('isBatchActive and statusText', () => {
   test('nothing is active or drawn with no members', () => {
     assert.equal(isBatchActive([], 10_000), false)
-    assert.equal(bandText([], 10_000, config), null)
+    assert.equal(statusText([], 10_000, config), undefined)
   })
 
   test('counts the batch while members run', () => {
     const list = [member({ id: 'a' }), member({ id: 'b', endedAt: 2_000 }), member({ id: 'c' })]
     assert.equal(isBatchActive(list, 3_000), true)
-    assert.equal(bandText(list, 3_000, config), 'panel: 1/3 returned · reviewers on opus')
+    assert.equal(statusText(list, 3_000, config), '1/3 returned · reviewers on opus')
   })
 
   test('drops the model suffix when enforce is off or no member is a reviewer', () => {
-    assert.equal(bandText([member()], 3_000, { ...config, enforce: false }), 'panel: 0/1 returned')
-    assert.equal(bandText([member({ role: 'other' })], 3_000, config), 'panel: 0/1 returned')
+    assert.equal(statusText([member()], 3_000, { ...config, enforce: false }), '0/1 returned')
+    assert.equal(statusText([member({ role: 'other' })], 3_000, config), '0/1 returned')
   })
 
   test('lingers a minute after the last member returned, then clears', () => {
     const list = [member({ id: 'a', endedAt: 10_000 }), member({ id: 'b', endedAt: 20_000 })]
-    assert.equal(bandText(list, 20_000 + BAND_LINGER_MS, config), 'panel: 2/2 returned · reviewers on opus')
-    assert.equal(isBatchActive(list, 20_001 + BAND_LINGER_MS), false)
-    assert.equal(bandText(list, 20_001 + BAND_LINGER_MS, config), null)
+    assert.equal(statusText(list, 20_000 + STATUS_LINGER_MS, config), '2/2 returned · reviewers on opus')
+    assert.equal(isBatchActive(list, 20_001 + STATUS_LINGER_MS), false)
+    assert.equal(statusText(list, 20_001 + STATUS_LINGER_MS, config), undefined)
   })
 
   test('counts only the newest turn', () => {
     const list = [member({ id: 'old', turn: 't0', endedAt: 2_000 }), member({ id: 'a', turn: 't1' })]
-    assert.equal(bandText(list, 3_000, config), 'panel: 0/1 returned · reviewers on opus')
+    assert.equal(statusText(list, 3_000, config), '0/1 returned · reviewers on opus')
   })
 })
 
-describe('pane rows', () => {
-  test('formatDuration reads in seconds, then minutes', () => {
+describe('staleness', () => {
+  test('memberStatus is done once returned, stale past the budget, running before it', () => {
+    assert.equal(memberStatus(member({ endedAt: 2_000 }), 1_000 + STALE_MS + 1, STALE_MS), 'done')
+    assert.equal(memberStatus(member(), 1_000 + STALE_MS, STALE_MS), 'running')
+    assert.equal(memberStatus(member(), 1_000 + STALE_MS + 1, STALE_MS), 'stale')
+  })
+
+  test('a budget of 0 never marks a member stale', () => {
+    assert.equal(memberStatus(member(), 1_000 + 10 * STALE_MS, 0), 'running')
+    assert.equal(isBatchActive([member()], 1_000 + 10 * STALE_MS, 0), true)
+  })
+
+  test('a stale member leaves the in-flight count and the band names it', () => {
+    const now = 1_000 + STALE_MS + 1
+    const list = [
+      member({ id: 'a', startedAt: now - 20_000, endedAt: now - 10_000 }),
+      member({ id: 'b' }),
+      member({ id: 'c', startedAt: now - 5_000 }),
+    ]
+    assert.equal(statusText(list, now, config), '1/3 returned, 1 stale · reviewers on opus')
+    assert.deepEqual(list.map(m => memberStatus(m, now, STALE_MS)), ['done', 'stale', 'running'])
+  })
+
+  test('the band hides once every member is returned past the linger or stale', () => {
+    const list = [member({ id: 'a', endedAt: 5_000 }), member({ id: 'b' })]
+    const now = 5_000 + STATUS_LINGER_MS + STALE_MS
+    assert.equal(isBatchActive(list, now, STALE_MS), false)
+    assert.equal(statusText(list, now, config), undefined)
+    assert.equal(statusText(list, now, { ...config, staleMinutes: 0 }), '1/2 returned · reviewers on opus')
+  })
+
+  test('a late return of a stale member still lands and lingers', () => {
+    const now = 1_000 + STALE_MS + 1
+    const returned = completeMember([member({ id: 'b' })], 'b', now)
+    assert.equal(memberStatus(returned[0], now, STALE_MS), 'done')
+    assert.equal(statusText(returned, now, config), '1/1 returned · reviewers on opus')
+  })
+})
+
+describe('nextChangeMs', () => {
+  test('is null with no batch, or with nothing left to change', () => {
+    assert.equal(nextChangeMs([], 1_000, STALE_MS), null)
+    assert.equal(nextChangeMs([member({ endedAt: 2_000 })], 2_000 + STATUS_LINGER_MS + 1, STALE_MS), null)
+    assert.equal(nextChangeMs([member()], 5_000, 0), null)
+  })
+
+  test('is the linger end of a returned member, one past the boundary', () => {
+    assert.equal(nextChangeMs([member({ endedAt: 2_000 })], 5_000, STALE_MS), 2_000 + STATUS_LINGER_MS + 1 - 5_000)
+  })
+
+  test('is the stale boundary of a running member, and the soonest of several', () => {
+    const list = [member({ id: 'a', startedAt: 1_000 }), member({ id: 'b', startedAt: 1_000, endedAt: 4_000 })]
+    assert.equal(nextChangeMs(list, 5_000, STALE_MS), 4_000 + STATUS_LINGER_MS + 1 - 5_000)
+    const afterLinger = 4_000 + STATUS_LINGER_MS + 1
+    assert.equal(nextChangeMs(list, afterLinger, STALE_MS), 1_000 + STALE_MS + 1 - afterLinger)
+  })
+
+  test('the moment it names flips the status text', () => {
+    const list = [member({ id: 'a', startedAt: 1_000 })]
+    const delay = nextChangeMs(list, 5_000, STALE_MS)
+    assert.equal(statusText(list, 5_000 + delay - 1, config), '0/1 returned · reviewers on opus')
+    assert.equal(statusText(list, 5_000 + delay, config), undefined)
+  })
+})
+
+describe('formatDuration', () => {
+  test('reads in seconds, then minutes', () => {
     assert.equal(formatDuration(400), '0 s')
     assert.equal(formatDuration(12_400), '12 s')
     assert.equal(formatDuration(65_000), '1m 05s')
-  })
-
-  test('paneRows carries role, label, status and duration', () => {
-    const list = [member({ id: 'a', startedAt: 1_000 }), member({ id: 'b', role: 'other', label: 'explore', startedAt: 1_000, endedAt: 4_000 })]
-    assert.deepEqual(paneRows(list, 13_000), [
-      { role: 'review', label: 'review the diff', status: 'running', duration: '12 s' },
-      { role: 'other', label: 'explore', status: 'done', duration: '3 s' },
-    ])
-  })
-
-  test('paneRows keeps the newest members under the limit', () => {
-    const list = [member({ id: 'a' }), member({ id: 'b' }), member({ id: 'c', label: 'last' })]
-    const rows = paneRows(list, 2_000, 2)
-    assert.equal(rows.length, 2)
-    assert.equal(rows[1].label, 'last')
-  })
-
-  test('formatPaneRow lines the columns up', () => {
-    const line = formatPaneRow({ role: 'other', label: 'explore', status: 'done', duration: '3 s' }, 10)
-    assert.equal(line, 'other   explore     done     3 s')
   })
 })

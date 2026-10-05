@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-import type { LoomPaneRole, LoomPaneWorktree } from '../types'
+import type { LoomPaneRole } from '../types'
 import {
   GIT_BUDGET_MS,
   analyzeBash,
@@ -11,7 +11,6 @@ import {
   isWeaveArgs,
   loomArgsOf,
   ownerClaimFrom,
-  paneLines,
   parseCount,
   parseDefaultRef,
   parseWorktreeList,
@@ -25,11 +24,6 @@ import {
 } from '../lib/loom'
 import type { Layout, Removal, WorktreeEntry } from '../lib/loom'
 
-const PANE = 'loom'
-const COMMAND = 'loom-pane'
-const DEFAULT_POLL_MS = 30_000
-const MIN_POLL_MS = 1_000
-
 const role = atom({ plugin: 'loom-pane', key: 'role' } as const, 'none' as LoomPaneRole)
 const canonical = atom({ plugin: 'loom-pane', key: 'canonical' } as const, null as string | null)
 const ownWorktree = atom({ plugin: 'loom-pane', key: 'ownWorktree' } as const, null as string | null)
@@ -38,7 +32,6 @@ const worktrees = atom({ plugin: 'loom-pane', key: 'worktrees' } as const, [] as
 const repo = atom({ plugin: 'loom-pane', key: 'repo' } as const, null as string | null)
 const weaveSeen = atom({ plugin: 'loom-pane', key: 'weaveSeen' } as const, false)
 const isInteractive = atom({ plugin: 'loom-pane', key: 'isInteractive' } as const, false)
-const rows = atom({ plugin: 'loom-pane', key: 'rows' } as const, [] as LoomPaneWorktree[])
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
@@ -51,9 +44,6 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
   $.ui.log(`loom-pane: ${next.event} skipped (${why})`, { to: 'debug' })
   return next(e)
 }
-
-// Set while a survey runs, so a slow git never stacks surveys.
-let isSurveying = false
 
 // One git call under the budget: its stdout, or null when it failed, exited
 // non-zero or outran the budget (the run rejects then). Never throws.
@@ -76,12 +66,29 @@ async function layoutOf($: EngineInterface): Promise<Layout> {
 }
 
 async function showStatus($: EngineInterface): Promise<void> {
-  $.ui.status(statusText(await read($, role), await layoutOf($), await read($, rows)))
+  $.ui.status(statusText(await read($, role), await layoutOf($)))
 }
 
 async function listWorktrees($: EngineInterface, canon: string): Promise<WorktreeEntry[] | null> {
   const listed = await git($, ['worktree', 'list', '--porcelain'], canon)
   return listed === null ? null : parseWorktreeList(listed).filter(entry => !entry.isBare)
+}
+
+// Re-reads the worktree list and stores the paths the guards judge by. Runs
+// when the role is detected and when the session claims a worktree, never
+// on a timer. A failed list keeps the paths already known.
+async function refreshWorktrees($: EngineInterface): Promise<void> {
+  const canon = await read($, canonical)
+  if (canon === null) {
+    await update($, worktrees, () => [])
+    return
+  }
+  const entries = await listWorktrees($, canon)
+  if (entries === null) {
+    $.ui.log('loom-pane: worktree list failed', { to: 'debug' })
+    return
+  }
+  await update($, worktrees, () => entries.map(entry => entry.path))
 }
 
 // Finds the repo around `cwd` and the session's role in its loom, writes
@@ -109,16 +116,14 @@ async function detect($: EngineInterface, cwd: string): Promise<void> {
   await update($, worktreeRoot, () => found.worktreeRoot)
   await update($, repo, () => found.repo)
   await update($, role, () => found.role)
-  if (found.canonical === null) {
-    await update($, worktrees, () => [])
-    await showStatus($)
-    $.ui.log(`loom-pane: no git repo at ${cwd}`, { to: 'debug' })
-    return
-  }
-  const entries = await listWorktrees($, found.canonical)
-  if (entries !== null) await update($, worktrees, () => entries.map(entry => entry.path))
+  await refreshWorktrees($)
   await showStatus($)
-  $.ui.log(`loom-pane: repo ${found.repo} canonical ${found.canonical} role ${found.role}`, { to: 'debug' })
+  $.ui.log(
+    found.canonical === null
+      ? `loom-pane: no git repo at ${cwd}`
+      : `loom-pane: repo ${found.repo} canonical ${found.canonical} role ${found.role}`,
+    { to: 'debug' },
+  )
 }
 
 // A Bash command that enters a worktree of the loom layout, by `cd` or by
@@ -129,58 +134,14 @@ async function claimOwner($: EngineInterface, claims: readonly string[]): Promis
   if (claimed === null || claimed === (await read($, ownWorktree))) return
   await update($, ownWorktree, () => claimed)
   await update($, role, () => 'owner')
+  await refreshWorktrees($)
   await showStatus($)
   $.ui.log(`loom-pane: owner of ${claimed}`, { to: 'debug' })
-}
-
-async function rowFor($: EngineInterface, entry: WorktreeEntry, defaultRef: string): Promise<LoomPaneWorktree> {
-  const [status, count, age] = await Promise.all([
-    git($, ['status', '--porcelain'], entry.path),
-    git($, ['rev-list', '--count', `${defaultRef}..HEAD`], entry.path),
-    git($, ['log', '-1', '--format=%cr'], entry.path),
-  ])
-  return {
-    path: entry.path,
-    branch: entry.branch,
-    head: entry.head,
-    isDirty: status === null ? null : status.trim() !== '',
-    ahead: parseCount(count),
-    age: age === null ? null : age.trim(),
-  }
-}
-
-// Reads every worktree of the repo and stores the rows the pane draws.
-async function survey($: EngineInterface): Promise<void> {
-  if (isSurveying) return
-  isSurveying = true
-  try {
-    const canon = await read($, canonical)
-    if (canon === null) return
-    const entries = await listWorktrees($, canon)
-    if (entries === null) {
-      $.ui.log('loom-pane: worktree list failed', { to: 'debug' })
-      return
-    }
-    await update($, worktrees, () => entries.map(entry => entry.path))
-    const defaultRef = parseDefaultRef(await git($, ['symbolic-ref', 'refs/remotes/origin/HEAD'], canon))
-    const pending: Promise<LoomPaneWorktree>[] = []
-    for (const entry of entries) pending.push(rowFor($, entry, defaultRef))
-    const surveyed = await Promise.all(pending)
-    await update($, rows, () => surveyed)
-    await showStatus($)
-  } finally {
-    isSurveying = false
-  }
 }
 
 async function markWeave($: EngineInterface, cwd: string): Promise<void> {
   await update($, weaveSeen, () => true)
   await detect($, cwd)
-  if ((await read($, role)) === 'weaver') {
-    $.clock.after(0, () => {
-      void survey($)
-    })
-  }
 }
 
 // Asks before a removal that would lose work. A dismissed dialog keeps the
@@ -227,17 +188,11 @@ async function confirmRemoval(
 
 export const register: Register = (on, options) => {
   const isGuarding = options.guards !== false
-  const pollMs =
-    typeof options.pollMs === 'number' && options.pollMs >= MIN_POLL_MS ? options.pollMs : DEFAULT_POLL_MS
-  // The pane's refresh timer. A hot reload drops it while the pane stays
-  // open, so the pane's own draw re-arms it.
-  let refresh: Timer | null = null
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     $.ui.log('loom-pane: loaded', { to: 'debug' })
     await update($, isInteractive, () => e.isInteractive)
-    await $.command.register({ name: COMMAND, description: 'Open the loom worktree pane' })
     await detect($, e.cwd)
     return started
   }).catch(skipOnFailure)
@@ -264,46 +219,6 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'Skill', skill: 'loom' }, async ($, e, next) => {
     if (e.agentId === undefined && isWeaveArgs(e.args ?? '')) await markWeave($, await $.session.cwd())
     return next(e)
-  }).catch(skipOnFailure)
-
-  on('command.run', { command: COMMAND }, async ($, e, next) => {
-    if (e.args.trim() !== '') return next(e)
-    const opened = await $.ui.open({ id: PANE, title: 'loom' })
-    if (refresh === null) {
-      refresh = $.clock.every(pollMs, () => {
-        void survey($)
-      })
-    }
-    $.clock.after(0, () => {
-      void survey($)
-    })
-    return { text: opened.isPlaced ? 'loom pane opened.' : `loom pane waits: ${opened.reason}` }
-  }).catch(skipOnFailure)
-
-  on('ui.close', { id: PANE }, ($, e, next) => {
-    if (refresh !== null) {
-      refresh.cancel()
-      refresh = null
-    }
-    return next(e)
-  }).catch(skipOnFailure)
-
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    if (refresh === null) {
-      refresh = $.clock.every(pollMs, () => {
-        void survey($)
-      })
-    }
-    const { Box, Text } = $.ui.resolve(e)
-    const lines = paneLines(await read($, rows), await layoutOf($), e.props.bodyColumns)
-    return (
-      <Box flexDirection="column">
-        {lines.length === 0 ? <Text dimColor>no worktrees surveyed yet</Text> : null}
-        {lines.map(line => (
-          <Text wrap="truncate-end">{line}</Text>
-        ))}
-      </Box>
-    )
   }).catch(skipOnFailure)
 
   // Owner guards, main loop only: an owner edits its own worktree and nothing

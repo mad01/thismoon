@@ -6,7 +6,7 @@ A Claude Code mod that runs `humanizer detect` on prose as it leaves the session
 
 | Moment | What is scanned | What happens |
 |--------|-----------------|--------------|
-| `Write` or `Edit` on a `.md` or `.mdx` file | the file on disk, after the write | a status line under the prompt: `humanizer: 2 warnings in README.md`; cleared when the scan is clean |
+| `Write` or `Edit` on a `.md` or `.mdx` file | the file on disk, after the write | a status line under the prompt, `humanizer-gate: 2 warnings in README.md` (the engine adds the name); cleared when the scan is clean |
 | `mcp__gh_com__create_pull_request`, `mcp__gh_com__update_pull_request` | the `body` field | status line; with an error-level finding and `holdOnError` on, a Proceed / Cancel dialog first |
 | `Bash` running `git commit` | the message of the last `git commit` segment in the command: every quoted `-m` (`-am`, `--message` too), joined, or a heredoc after `-F -` or inside `-m "$(cat <<'EOF' ...)"` | status line; with an error-level finding and `holdOnCommitError` on, the same dialog |
 

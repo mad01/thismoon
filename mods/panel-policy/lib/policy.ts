@@ -4,7 +4,7 @@
 export type Role = 'review' | 'other'
 
 export type Member = {
-  /** The subagent's engine id, the one its `turn.complete` carries. */
+  /** The subagent's engine id: `agentId` on its `turn.complete`, `agent_id` on `classic.SubagentStop`. */
   id: string
   role: Role
   /** The first characters of the spawn's description. */
@@ -22,17 +22,15 @@ export type PolicyConfig = {
   overrideFrom: string[]
   fanoutToast: number
   fanoutHold: number
+  /** Minutes a member may stay in flight before it counts as stale; 0 never. */
+  staleMinutes: number
 }
 
-export type PaneRow = {
-  role: Role
-  label: string
-  status: 'running' | 'done'
-  duration: string
-}
+/** Returned, still in flight, or in flight past the stale budget. */
+export type MemberStatus = 'running' | 'done' | 'stale'
 
-/** How long a finished batch stays on the band after its last member returned. */
-export const BAND_LINGER_MS = 60_000
+/** How long a finished batch stays in the status line after its last member returned. */
+export const STATUS_LINGER_MS = 60_000
 
 /** How many characters of the prompt's first line the classifier reads. */
 export const PROMPT_LEAD_CHARS = 200
@@ -40,7 +38,7 @@ export const PROMPT_LEAD_CHARS = 200
 /** How many characters of a description a member keeps as its label. */
 export const LABEL_CHARS = 60
 
-/** How many members the state keeps; older ones fall off the pane. */
+/** How many members the state keeps; older ones are forgotten. */
 export const MEMBER_CAP = 100
 
 /** The agent type whose model the mod may pick when the caller set none. */
@@ -52,7 +50,10 @@ const DEFAULTS: PolicyConfig = {
   overrideFrom: ['sonnet'],
   fanoutToast: 4,
   fanoutHold: 0,
+  staleMinutes: 30,
 }
+
+const MINUTE_MS = 60_000
 
 // The description's review vocabulary, on word boundaries so "verified",
 // "verification" (the brain-research promoter's bundle) and "critical"
@@ -169,7 +170,19 @@ export function readConfig(options: Readonly<Record<string, unknown>>): PolicyCo
     overrideFrom: list(options.overrideFrom, DEFAULTS.overrideFrom),
     fanoutToast: count(options.fanoutToast, DEFAULTS.fanoutToast),
     fanoutHold: count(options.fanoutHold, DEFAULTS.fanoutHold),
+    staleMinutes: count(options.staleMinutes, DEFAULTS.staleMinutes),
   }
+}
+
+/** How long a member may be in flight before it is stale, in ms; 0 means never. */
+export function staleAfterMs(config: Pick<PolicyConfig, 'staleMinutes'>): number {
+  return config.staleMinutes * MINUTE_MS
+}
+
+/** What a member is at `now`; a member never returned goes stale past `staleMs`. */
+export function memberStatus(member: Member, now: number, staleMs: number): MemberStatus {
+  if (member.endedAt !== null) return 'done'
+  return staleMs > 0 && now - member.startedAt > staleMs ? 'stale' : 'running'
 }
 
 /** The label a member shows: the head of the description, or the agent type. */
@@ -195,55 +208,61 @@ export function currentBatch(members: readonly Member[]): Member[] {
   return members.filter(m => m.turn === last.turn)
 }
 
-/** True while the latest batch is in flight or returned within BAND_LINGER_MS. */
-export function isBatchActive(members: readonly Member[], now: number): boolean {
+/**
+ * True while the latest batch has a member in flight (not yet stale) or one
+ * returned within STATUS_LINGER_MS. A stale member holds nothing open.
+ */
+export function isBatchActive(members: readonly Member[], now: number, staleMs = 0): boolean {
   const batch = currentBatch(members)
   if (batch.length === 0) return false
-  const isRunning = batch.some(m => m.endedAt === null)
-  const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= BAND_LINGER_MS)
+  const isRunning = batch.some(m => memberStatus(m, now, staleMs) === 'running')
+  const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= STATUS_LINGER_MS)
   return isRunning || isRecent
 }
 
 /**
- * The band's one line, or null while the batch is neither in flight nor
- * fresh: `panel: 2/5 returned · reviewers on opus`. The suffix names the
- * review model only when the batch holds a reviewer and `enforce` is on.
+ * The status line, or undefined (clear it) while the batch is neither in
+ * flight nor fresh: `2/5 returned · reviewers on opus`, with `, 1 stale`
+ * after the count when a member outran the stale budget. The suffix names
+ * the review model only when the batch holds a reviewer and `enforce` is
+ * on. The engine prefixes the line with the mod's name, so the text never
+ * repeats it.
  */
-export function bandText(
+export function statusText(
   members: readonly Member[],
   now: number,
-  config: Pick<PolicyConfig, 'enforce' | 'reviewModel'>,
-): string | null {
-  if (!isBatchActive(members, now)) return null
+  config: Pick<PolicyConfig, 'enforce' | 'reviewModel' | 'staleMinutes'>,
+): string | undefined {
+  const staleMs = staleAfterMs(config)
+  if (!isBatchActive(members, now, staleMs)) return undefined
   const batch = currentBatch(members)
   const done = batch.filter(m => m.endedAt !== null).length
+  const stale = batch.filter(m => memberStatus(m, now, staleMs) === 'stale').length
+  const staleNote = stale > 0 ? `, ${stale} stale` : ''
   const hasReviewer = batch.some(m => m.role === 'review')
   const suffix = config.enforce && hasReviewer ? ` · reviewers on ${config.reviewModel}` : ''
-  return `panel: ${done}/${batch.length} returned${suffix}`
+  return `${done}/${batch.length} returned${staleNote}${suffix}`
 }
 
-/** `12 s` under a minute, `1m 05s` past it. */
+/**
+ * Milliseconds until the status line next changes on its own: a returned
+ * member's linger running out, or a running member going stale. Null when
+ * no such moment lies ahead; a moment already passed is not one.
+ */
+export function nextChangeMs(members: readonly Member[], now: number, staleMs: number): number | null {
+  let soonest: number | null = null
+  for (const m of currentBatch(members)) {
+    const at = m.endedAt !== null ? m.endedAt + STATUS_LINGER_MS + 1 : staleMs > 0 ? m.startedAt + staleMs + 1 : null
+    if (at === null || at <= now) continue
+    if (soonest === null || at - now < soonest) soonest = at - now
+  }
+  return soonest
+}
+
+/** `12 s` under a minute, `1m 05s` past it; the debug log's duration of a returned member. */
 export function formatDuration(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000))
   if (seconds < 60) return `${seconds} s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`
-}
-
-/** The pane's rows, oldest first, at most `limit` of the newest members. */
-export function paneRows(members: readonly Member[], now: number, limit = MEMBER_CAP): PaneRow[] {
-  return members.slice(-Math.max(1, limit)).map(m => ({
-    role: m.role,
-    label: m.label,
-    status: m.endedAt === null ? 'running' : 'done',
-    duration: formatDuration((m.endedAt ?? now) - m.startedAt),
-  }))
-}
-
-/** One pane row as a line: role, label, status and duration in columns. */
-export function formatPaneRow(row: PaneRow, labelWidth = LABEL_CHARS): string {
-  const role = row.role.padEnd(6)
-  const label = row.label.padEnd(labelWidth).slice(0, labelWidth)
-  const status = row.status.padEnd(7)
-  return `${role}  ${label}  ${status}  ${row.duration}`
 }

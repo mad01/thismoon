@@ -254,15 +254,19 @@ describe('statusText', () => {
   })
 
   test('names the counts in severity order, singular and plural', () => {
-    assert.equal(statusText({ ...empty, total: 1, warnings: 1 }, 'README.md'), 'humanizer: 1 warning in README.md')
+    assert.equal(statusText({ ...empty, total: 1, warnings: 1 }, 'README.md'), '1 warning in README.md')
     assert.equal(
       statusText({ ...empty, total: 5, errors: 2, warnings: 3 }, 'PR body'),
-      'humanizer: 2 errors, 3 warnings in PR body',
+      '2 errors, 3 warnings in PR body',
     )
     assert.equal(
       statusText({ ...empty, total: 2, warnings: 1, suggestions: 1 }, 'commit message'),
-      'humanizer: 1 warning, 1 suggestion in commit message',
+      '1 warning, 1 suggestion in commit message',
     )
+  })
+
+  test('never repeats the mod name, which the engine prefixes', () => {
+    assert.doesNotMatch(statusText({ ...empty, total: 1, warnings: 1 }, 'README.md'), /humanizer/)
   })
 })
 

@@ -5,7 +5,9 @@ export type AgentState = 'working' | 'waiting' | 'idle'
 
 export type PageRef = { id: string; url: string | null }
 
-export type BandSnapshot = {
+/** Every signal the status line and the compact block draw from. */
+export type StatusSnapshot = {
+  isWorking: boolean
   isWaiting: boolean
   worklogKey: string | null
   phase: string | null
@@ -18,9 +20,6 @@ export const LONG_TURN_MS = 60_000
 
 /** How many characters of a phase line the state keeps. */
 const PHASE_LINE_CAP = 120
-
-/** How many lines the band may take above the prompt. */
-const BAND_MAX_LINES = 2
 
 const SEPARATOR = ' | '
 
@@ -49,32 +48,61 @@ export function shouldToastDone(reason: string, durationMs: number): boolean {
   return reason === 'answer' && durationMs > LONG_TURN_MS
 }
 
-// Every belt denial reason starts `belt[<guard>]: `; other settings hooks
-// deny with their own words.
-const BELT_REASON = /^belt\[/
+// Every belt denial reason carries `belt[<guard>]: `; other settings hooks
+// deny with their own words. The engine may wrap the reason before a mod
+// sees it (`PreToolUse:Bash hook error: belt[git-push-main]: ...`), so the
+// marker is searched for anywhere in the text, never anchored.
+const BELT_REASON = /belt\[[^\]]+\]:/
 
-/** Whether a `classic.PreToolUse` decision is a denial belt wrote. */
+/** How many characters of a decision's JSON the debug line keeps. */
+const DECISION_JSON_CAP = 120
+
+/**
+ * Whether a `classic.PreToolUse` decision is a denial belt wrote. A string
+ * `deny` is read as the typed shape; an allow or an ask is never a denial;
+ * any other object is searched as JSON, so a shape the types do not name
+ * (a nested `permissionDecisionReason`, a `block`) still counts.
+ */
 export function isBeltDeny(decision: unknown): boolean {
   if (decision === null || typeof decision !== 'object') return false
-  const { deny } = decision as { deny?: unknown }
-  return typeof deny === 'string' && BELT_REASON.test(deny)
+  const { deny, allow, ask } = decision as { deny?: unknown; allow?: unknown; ask?: unknown }
+  if (typeof deny === 'string') return BELT_REASON.test(deny)
+  if (allow === true || typeof ask === 'string') return false
+  return BELT_REASON.test(stringify(decision))
 }
 
-/** What the band says about the agent, from the render prop and the waiting flag. */
+function stringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** One debug line's worth of a decision: its keys and the head of its JSON. */
+export function decisionSummary(decision: unknown): string {
+  if (decision === null || typeof decision !== 'object') return `${typeof decision} ${String(decision)}`
+  const keys = Object.keys(decision).join(',')
+  const json = stringify(decision)
+  const head = json.length > DECISION_JSON_CAP ? `${json.slice(0, DECISION_JSON_CAP)}...` : json
+  return `keys [${keys}] ${head}`
+}
+
+/** What the line says about the agent, from the turn flag and the waiting flag. */
 export function agentState(isWaiting: boolean, isWorking: boolean): AgentState {
   if (isWaiting) return 'waiting'
   return isWorking ? 'working' : 'idle'
 }
 
 const AGENT_LABEL: Record<AgentState, string> = {
-  working: '* working',
-  waiting: '? waiting for input',
-  idle: '- idle',
+  working: 'working',
+  waiting: 'waiting for input',
+  idle: 'idle',
 }
 
-/** The band's segments in display order; absent signals are left out. */
-export function bandSegments(snapshot: BandSnapshot, isWorking: boolean): string[] {
-  const segments = [AGENT_LABEL[agentState(snapshot.isWaiting, isWorking)]]
+/** The line's segments in display order; absent signals are left out. */
+export function statusSegments(snapshot: StatusSnapshot): string[] {
+  const segments = [AGENT_LABEL[agentState(snapshot.isWaiting, snapshot.isWorking)]]
   if (snapshot.worklogKey !== null) segments.push(`worklog ${snapshot.worklogKey}`)
   if (snapshot.phase !== null) segments.push(phaseLabel(snapshot.phase))
   if (snapshot.presentPage !== null) segments.push(`present ${snapshot.presentPage.id}`)
@@ -83,27 +111,13 @@ export function bandSegments(snapshot: BandSnapshot, isWorking: boolean): string
 }
 
 /**
- * Packs the segments into at most two lines of `columns` cells. A segment
- * that fits nowhere is dropped rather than wrapped mid-word; with no width
- * known everything goes on one line.
+ * The one line pinned under the prompt, or undefined (clear it) with
+ * nothing to say. The engine prefixes a status line with the mod's name,
+ * so the text never repeats it.
  */
-export function composeBandLines(snapshot: BandSnapshot, isWorking: boolean, columns?: number): string[] {
-  const segments = bandSegments(snapshot, isWorking)
-  if (columns === undefined || columns <= 0) return [segments.join(SEPARATOR)]
-  const lines: string[] = []
-  let current = ''
-  for (const segment of segments) {
-    const candidate = current === '' ? segment : `${current}${SEPARATOR}${segment}`
-    if (candidate.length <= columns || current === '') {
-      current = candidate
-      continue
-    }
-    lines.push(current)
-    current = segment
-    if (lines.length === BAND_MAX_LINES) break
-  }
-  if (lines.length < BAND_MAX_LINES && current !== '') lines.push(current)
-  return lines.slice(0, BAND_MAX_LINES)
+export function composeStatusText(snapshot: StatusSnapshot): string | undefined {
+  const text = statusSegments(snapshot).join(SEPARATOR)
+  return text === '' ? undefined : text
 }
 
 /**
@@ -210,7 +224,7 @@ export function parsePresentResult(result: unknown, inputId: string | null, text
 }
 
 /** The Claude-only block injected after a compaction. */
-export function compactContextBlock(snapshot: BandSnapshot): string {
+export function compactContextBlock(snapshot: StatusSnapshot): string {
   const lines = ['session-band: state carried across the compaction.']
   if (snapshot.worklogKey !== null) lines.push(`- active worklog key: ${snapshot.worklogKey}`)
   if (snapshot.phase !== null) lines.push(`- last phase marker: ${snapshot.phase}`)

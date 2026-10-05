@@ -267,14 +267,18 @@ function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`
 }
 
-/** The status line for a scanned target, or undefined (clear it) with nothing found. */
+/**
+ * The status line for a scanned target, or undefined (clear it) with
+ * nothing found. The engine prefixes the line with the mod's name, so the
+ * text never repeats it.
+ */
 export function statusText(summary: FindingsSummary, target: string): string | undefined {
   if (summary.total === 0) return undefined
   const parts: string[] = []
   if (summary.errors > 0) parts.push(count(summary.errors, 'error'))
   if (summary.warnings > 0) parts.push(count(summary.warnings, 'warning'))
   if (summary.suggestions > 0) parts.push(count(summary.suggestions, 'suggestion'))
-  return `humanizer: ${parts.join(', ')} in ${target}`
+  return `${parts.join(', ')} in ${target}`
 }
 
 /** The question the hold dialog asks: the error count and the first matches. */

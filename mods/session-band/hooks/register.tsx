@@ -1,10 +1,11 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { SessionBandPage } from '../types'
 import {
   compactContextBlock,
-  composeBandLines,
+  composeStatusText,
+  decisionSummary,
   findPhaseMarker,
   isBeltDeny,
   parsePresentResult,
@@ -12,10 +13,11 @@ import {
   repoNameFrom,
   shouldToastDone,
 } from '../lib/band'
-import type { BandSnapshot } from '../lib/band'
+import type { StatusSnapshot } from '../lib/band'
 
 const WORKLOG_RUN_TIMEOUT_MS = 2_000
 
+const isWorking = atom({ plugin: 'session-band', key: 'isWorking' } as const, false)
 const isWaiting = atom({ plugin: 'session-band', key: 'isWaiting' } as const, false)
 const worklogKey = atom({ plugin: 'session-band', key: 'worklogKey' } as const, null as string | null)
 const phase = atom({ plugin: 'session-band', key: 'phase' } as const, null as string | null)
@@ -30,8 +32,8 @@ type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
 
 // The one .catch every hook below carries: say why in the debug log, then
-// let the chain beneath answer as if the hook were absent. The band never
-// blocks a turn, a tool call or a draw.
+// let the chain beneath answer as if the hook were absent. The line never
+// blocks a turn or a tool call.
 const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
   const why = next.error.message === undefined ? next.error.kind : `${next.error.kind}: ${next.error.message}`
   $.ui.log(`session-band: ${next.event} skipped (${why})`, { to: 'debug' })
@@ -40,11 +42,15 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-type StateDollar = Parameters<typeof read>[0]
+// The text this module instance last pinned; null before its first pin. A
+// hot reload starts over and pins again, and the engine keeps one status
+// line per plugin either way.
+let pinned: string | undefined | null = null
 
-// Every signal the band and the compact block draw from, read in one go.
-async function snapshot($: StateDollar): Promise<BandSnapshot> {
+// Every signal the line and the compact block draw from, read in one go.
+async function snapshot($: EngineInterface): Promise<StatusSnapshot> {
   return {
+    isWorking: await read($, isWorking),
     isWaiting: await read($, isWaiting),
     worklogKey: await read($, worklogKey),
     phase: await read($, phase),
@@ -53,15 +59,32 @@ async function snapshot($: StateDollar): Promise<BandSnapshot> {
   }
 }
 
-// Writes the waiting flag only when it changes: every write redraws the band.
-async function setWaiting($: StateDollar, value: boolean): Promise<void> {
-  if ((await read($, isWaiting)) !== value) await update($, isWaiting, () => value)
+// Recomposes the line and pins it when it changed; undefined clears it.
+async function refreshStatus($: EngineInterface): Promise<void> {
+  const text = composeStatusText(await snapshot($))
+  if (pinned !== null && text === pinned) return
+  pinned = text
+  $.ui.status(text)
+}
+
+// Writes a flag only when it changes; says whether it did.
+async function setWaiting($: EngineInterface, value: boolean): Promise<boolean> {
+  if ((await read($, isWaiting)) === value) return false
+  await update($, isWaiting, () => value)
+  return true
+}
+
+async function setWorking($: EngineInterface, value: boolean): Promise<boolean> {
+  if ((await read($, isWorking)) === value) return false
+  await update($, isWorking, () => value)
+  return true
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     $.ui.log('session-band: loaded', { to: 'debug' })
+    await refreshStatus($)
 
     const detectWorklogKey = async (): Promise<void> => {
       if ((await read($, worklogKey)) !== null) return
@@ -85,7 +108,9 @@ export const register: Register = on => {
       })
       if (listed.exitCode !== 0) return
       const key = parseWorklogList(listed.stdout)
-      if (key !== null) await update($, worklogKey, () => key)
+      if (key === null) return
+      await update($, worklogKey, () => key)
+      await refreshStatus($)
     }
 
     // Outlives this dispatch, so it starts from the clock rather than inside
@@ -99,14 +124,22 @@ export const register: Register = on => {
     return started
   }).catch(skipOnFailure)
 
+  // Only the main loop raises turn.start; a subagent's run has none.
+  on('turn.start', async ($, e, next) => {
+    if (await setWorking($, true)) await refreshStatus($)
+    return next(e)
+  }).catch(skipOnFailure)
+
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       await setWaiting($, false)
+      await setWorking($, false)
       const marker = findPhaseMarker(e.answer)
       if (marker !== null && marker !== (await read($, phase))) await update($, phase, () => marker)
       if (shouldToastDone(e.reason, e.durationMs)) {
         $.ui.toast(`done (${Math.round(e.durationMs / 1000)} s)`)
       }
+      await refreshStatus($)
     }
     return next(e)
   }).catch(skipOnFailure)
@@ -118,7 +151,7 @@ export const register: Register = on => {
     { notification_type: ['permission_prompt', 'elicitation_dialog'] },
     async ($, e, next) => {
       if (e.agent_id === undefined) {
-        await setWaiting($, true)
+        if (await setWaiting($, true)) await refreshStatus($)
         if (e.notification_type === 'permission_prompt') $.ui.toast('needs input')
       }
       return next(e)
@@ -127,27 +160,38 @@ export const register: Register = on => {
 
   // Answered: the tool ran, or the person refused it.
   on('classic.PostToolUse', async ($, e, next) => {
-    if (e.agent_id === undefined) await setWaiting($, false)
+    if (e.agent_id === undefined && (await setWaiting($, false))) await refreshStatus($)
     return next(e)
   }).catch(skipOnFailure)
 
   on('classic.PermissionDenied', async ($, e, next) => {
-    if (e.agent_id === undefined) await setWaiting($, false)
+    if (e.agent_id === undefined && (await setWaiting($, false))) await refreshStatus($)
     return next(e)
   }).catch(skipOnFailure)
 
   // belt answers PreToolUse as a settings hook beneath every mod; its deny
-  // comes back from next(e) with a `belt[<guard>]: ` reason. Counted, never
-  // changed: the decision returns exactly as belt made it.
+  // comes back from next(e) with a `belt[<guard>]: ` reason, possibly inside
+  // the engine's own wrapping. Counted, never changed: the decision returns
+  // exactly as belt made it. Every decision is described in the debug log so
+  // its real shape can be read off `claude --debug`.
   on('classic.PreToolUse', async ($, e, next) => {
     const decision = await next(e)
-    if (isBeltDeny(decision)) await update($, beltDenies, n => n + 1)
+    if (decision !== undefined) {
+      $.ui.log(`session-band: PreToolUse ${e.tool} decision ${decisionSummary(decision)}`, { to: 'debug' })
+    }
+    if (isBeltDeny(decision)) {
+      await update($, beltDenies, n => n + 1)
+      await refreshStatus($)
+    }
     return decision
   }).catch(skipOnFailure)
 
   on('tool.call', { tool: 'mcp__worklog__worklog_checkpoint' }, async ($, e, next) => {
     const key = typeof e.key === 'string' ? e.key.trim() : ''
-    if (key !== '' && key !== (await read($, worklogKey))) await update($, worklogKey, () => key)
+    if (key !== '' && key !== (await read($, worklogKey))) {
+      await update($, worklogKey, () => key)
+      await refreshStatus($)
+    }
     return next(e)
   }).catch(skipOnFailure)
 
@@ -159,7 +203,10 @@ export const register: Register = on => {
       if (answered.deny === undefined && answered.isError !== true) {
         const inputId = typeof e.id === 'string' ? e.id : null
         const page = parsePresentResult(answered.result, inputId, answered.text)
-        if (page !== null) await update($, presentPage, () => page)
+        if (page !== null) {
+          await update($, presentPage, () => page)
+          await refreshStatus($)
+        }
       }
       return answered
     },
@@ -178,25 +225,5 @@ export const register: Register = on => {
     const block = { name: 'session-band', text: compactContextBlock(await snapshot($)) }
     await update($, isCompacted, () => false)
     return { ...below, blocks: [...below.blocks, block] }
-  }).catch(skipOnFailure)
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const below = await next(e)
-    if (e.props.hasSurvey) return below
-    const lines = composeBandLines(await snapshot($), e.props.isWorking, e.props.bodyColumns)
-    const { Box, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column">
-        <Text dimColor wrap="truncate-end">
-          {lines[0]}
-        </Text>
-        {lines[1] === undefined ? null : (
-          <Text dimColor wrap="truncate-end">
-            {lines[1]}
-          </Text>
-        )}
-        {below}
-      </Box>
-    )
   }).catch(skipOnFailure)
 }

@@ -8,7 +8,7 @@ A mod may change the model of a subagent spawn only behind a config key, only wh
 
 On `agent.spawn` the mod classifies the spawn from its description and the first line of its prompt; the rest of the prompt is the artifact and is never read. A description that opens with a work verb (implement, build, fix, update, find, write, scaffold, refactor, research, explore, promote) is work, whatever it names: "Implement review comment threading" stays put. Otherwise a review word in the description makes a reviewer: review, verify, critic, panel, audit, challenger, second opinion, analyst, assessor, adherence, validation, with their plurals. Failing that, the prompt's first line decides by its opener: `You are a/the ... reviewer|critic|auditor|verifier|analyst|assessor`, `Review`, `Audit`, `Verify`, or `Role:`. The word lists and the tests against the skills' literal labels live in `lib/policy.ts` and `test/policy.test.mjs`.
 
-A reviewer moves to `reviewModel` when the caller set a model `overrideFrom` lists, or set none (or `inherit`) on a general-purpose spawn. Explore, Plan and plugin agents keep their own model unless the caller set a listed one. A model the caller chose that the list leaves out, say `haiku`, always stands. Teammates and forks are never touched: a fork inherits whatever a hook sets.
+A reviewer moves to `reviewModel` when the caller set a model `overrideFrom` lists, or set none (or `inherit`) on a general-purpose spawn. Explore, Plan and plugin agents keep their own model unless the caller set a listed one. A model the caller chose that the list leaves out, say `haiku`, always stands. Teammates and forks are never touched: a fork inherits whatever a hook sets. The engine registers an agent spawned with a name as a teammate. The mod leaves teammates, forks, and explicitly chosen models alone, so a named reviewer keeps its own model. Seen live: a named reviewer ran on Fable while an unnamed one was re-pointed to Opus.
 
 ## Turning it off
 
@@ -21,22 +21,23 @@ A reviewer moves to `reviewModel` when the caller set a model `overrideFrom` lis
 | `overrideFrom` | `sonnet` | comma-separated models a reviewer is moved off when the caller set one of them |
 | `fanoutToast` | `4` | toast once when a turn's spawn count reaches this; `0` is off |
 | `fanoutHold` | `0` | ask Proceed or Cancel on the Nth spawn of a turn; `0` never asks |
+| `staleMinutes` | `30` | a member in flight longer than this is stale: it leaves the in-flight count and no longer holds the band open; `0` never marks one stale |
 
 The fan-out count takes the main loop's own spawns, not a subagent's or a teammate's. With `fanoutHold` set, spawns the model issues in parallel after the Nth proceed while the dialog is open; Cancel refuses that one spawn only.
 
-## The band and the pane
+## The status line
 
-While a batch is in flight, and for a minute after its last member returned, one dim line sits above the prompt:
+While a batch is in flight, and for a minute after its last member returned, the mod pins one line in the status row under the prompt:
 
 ```
-panel: 2/5 returned · reviewers on opus
+panel-policy: 2/5 returned · reviewers on opus
 ```
 
-The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. Nothing is drawn while idle. A one-second ticker keeps the durations and the linger moving and stops itself once the band is clear.
+The engine adds the name; the text the mod composes starts at the count. The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. A member in flight past `staleMinutes` is stale: the line reads `1/3 returned, 1 stale`, and a batch whose members are all returned or stale clears after the linger. Nothing is pinned while idle, and nothing is drawn above the prompt: the mod registers no `ui.render` hook. The line is recomposed on every spawn and return; one timer, armed for the next linger end or stale boundary, re-checks it in between. Nothing polls.
 
-`/panel` opens a pane with one row per member, as many as fit the pane, newest last: role, the first 60 characters of its description, running or done, and its duration. The state keeps the newest 100. Esc closes the pane.
+The state keeps the newest 100 members: role, the first 60 characters of the description, start and end times, and the turn. There is no pane; the status line and the debug log are the whole view.
 
-Each member is keyed by the `agentId` the engine returns from the spawn, the same id the subagent's `turn.complete` carries. A spawn that resolves without one started no agent and is not tracked.
+Each member is keyed by the `agentId` the engine returns from the spawn. Two signals mark it returned, whichever arrives first. The subagent's `turn.complete` carries the id as `agentId`; the classic `SubagentStop` settings event carries it as `agent_id`, and a background subagent's end reaches the main session that way. The second signal is a no-op. A spawn that resolves without an id started no agent and is not tracked. The debug log names which signal matched, or which running ids a signal failed to match.
 
 ## Dev loop
 
