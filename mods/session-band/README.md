@@ -16,16 +16,16 @@ The engine prefixes a plugin's status line with its name; the text the mod compo
 | active worklog key | `worklog list --status active --repo <repo>` at session start (`~/code/bin/worklog`, or `worklog` on PATH; repo from `git rev-parse --path-format=absolute --git-common-dir`), then every `worklog_checkpoint` call |
 | work-on phase | the last line of an answer that starts `[Phase ...]` or `[<key> Phase ...]`, the marker the work-on skill prints after each interaction; the line shows the bracket text, key included |
 | present page | the `{id, url}` JSON a `present_create` or `present_update` call returns |
-| belt denies | `classic.PreToolUse`: the decision `next(e)` hands back is belt's own, and a `deny` whose reason carries `belt[<guard>]:` anywhere (the engine may wrap it in its own hook-error prefix) counts one. Per session, since the mod only sees this session's calls |
+| belt denies | `classic.PreToolUse`: the decision `next(e)` hands back is belt's own, and a `deny` whose reason carries `belt[<guard>]:` anywhere (the engine may wrap it in its own hook-error prefix) counts as one. Per session, since the mod only sees this session's calls |
 
 Toasts: `done (N s)` when an answered turn ran longer than 60 s, `needs input` on a permission prompt. Both last 4 s.
 
-After a compaction the mod adds a short Claude-only context block to the next message through `prompt.context`. It carries the worklog key, the last phase marker, the present page id, and a reminder to checkpoint. `classic.SessionStart` with `source: compact` arms it, one injection disarms it. The dotfiles compact hook keeps its own job; this block sits beside it.
+After a compaction the mod adds a short Claude-only context block to the next message through `prompt.context`. It carries the worklog key, the last phase marker, the present page id, and a reminder to checkpoint. `classic.SessionStart` with `source: compact` arms it, and one injection disarms it. The dotfiles compact hook keeps its own job; this block sits beside it.
 
 ## Dev loop
 
 ```bash
-claude --plugin-dir mods/session-band        # from the repo root; saves hot-reload
+claude --plugin-dir mods/session-band        # from the repo root; a save hot-reloads
 claude --debug --plugin-dir mods/session-band  # every pin lands in the debug log as `$.ui.status (session-band): <text>`
 claude plugin validate mods/session-band     # what the engine would refuse
 node --test mods/session-band/test/*.test.mjs
