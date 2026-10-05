@@ -12,7 +12,7 @@ A Claude Code mod that draws one or two dim lines above the prompt:
 |---------|--------|
 | agent state (`working`, `waiting for input`, `idle`) | `working`/`idle` is the band's own `isWorking` render prop; `waiting` is set by `classic.Notification` with `permission_prompt` or `elicitation_dialog` on the main thread and cleared by `classic.PostToolUse`, `classic.PermissionDenied`, or `turn.complete` |
 | active worklog key | `worklog list --status active --repo <repo>` at session start (`~/code/bin/worklog`, or `worklog` on PATH; repo from `git rev-parse --path-format=absolute --git-common-dir`), then every `worklog_checkpoint` call |
-| work-on phase | the last line of an answer that starts `[Phase ...]`, the marker the work-on skill prints after each interaction |
+| work-on phase | the last line of an answer that starts `[Phase ...]` or `[<key> Phase ...]`, the marker the work-on skill prints after each interaction; the band shows the bracket text, key included |
 | present page | the `{id, url}` JSON a `present_create` or `present_update` call returns |
 | belt denies | `classic.PreToolUse`: the decision `next(e)` hands back is belt's own, and a `deny` whose reason starts `belt[` counts one. Per session, since the mod only sees this session's calls |
 

@@ -25,8 +25,9 @@ const BAND_MAX_LINES = 2
 const SEPARATOR = ' | '
 
 // The work-on skill ends every interaction with a line that starts
-// `[Phase X...]`; the last one in an answer is the current state.
-const PHASE_MARKER = /^\[Phase [^\]]+\].*$/gm
+// `[Phase X...]`, or `[<key> Phase X...]` for ticketed work; the last one
+// in an answer is the current state.
+const PHASE_MARKER = /^\[(?:\S+ )?Phase [^\]]+\].*$/gm
 
 /** The last work-on phase line in an answer, capped, or null. */
 export function findPhaseMarker(answer: string): string | null {
@@ -37,7 +38,7 @@ export function findPhaseMarker(answer: string): string | null {
   return last === null ? null : last.trim().slice(0, PHASE_LINE_CAP)
 }
 
-/** The text inside the leading brackets of a phase line: `Phase 4.unit.2/5`. */
+/** The text inside the leading brackets of a phase line: `Phase 4.unit.2/5` or `MAD-123 Phase 2.1`. */
 export function phaseLabel(line: string): string {
   const close = line.indexOf(']')
   return close > 1 ? line.slice(1, close) : line

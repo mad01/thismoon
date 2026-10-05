@@ -26,8 +26,19 @@ describe('findPhaseMarker', () => {
     assert.equal(findPhaseMarker(answer), '[Phase 4.unit.2/3] — tests done → docs')
   })
 
+  test('takes the keyed form of ticketed work, key included', () => {
+    const answer = 'Research done.\n[MAD-123 Phase 2.1] — evaluate done → plan'
+    assert.equal(findPhaseMarker(answer), '[MAD-123 Phase 2.1] — evaluate done → plan')
+    assert.equal(phaseLabel('[MAD-123 Phase 2.1] — evaluate done → plan'), 'MAD-123 Phase 2.1')
+  })
+
   test('ignores a marker that is not at a line start', () => {
     assert.equal(findPhaseMarker('see [Phase 1] above'), null)
+  })
+
+  test('ignores a bracket that is not a phase marker', () => {
+    assert.equal(findPhaseMarker('[WARN] disk is full\n[MAD-123] ticket moved → Done'), null)
+    assert.equal(findPhaseMarker('[Phases are over] — wrap up'), null)
   })
 
   test('is null for an answer with no marker', () => {
