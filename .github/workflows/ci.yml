@@ -105,7 +105,9 @@ jobs:
           if echo "$CHANGES" | jq -e 'index("fanout")' > /dev/null; then
             changed="$all"
           else
-            changed=$(echo "$CHANGES" | jq -c .)
+            # mods is a filter of its own (it drives the mods job), not a
+            # component directory, so it never enters the Go matrix.
+            changed=$(echo "$CHANGES" | jq -c '. - ["mods"]')
           fi
           components=$(echo "$changed" | jq -c --argjson swift "$all_swift" '. - $swift')
           swift_components=$(echo "$changed" | jq -c --argjson swift "$all_swift" 'map(select(IN($swift[])))')
