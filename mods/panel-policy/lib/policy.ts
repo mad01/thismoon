@@ -29,8 +29,8 @@ export type PolicyConfig = {
 /** Returned, still in flight, or in flight past the stale budget. */
 export type MemberStatus = 'running' | 'done' | 'stale'
 
-/** How long a finished batch stays on the band after its last member returned. */
-export const BAND_LINGER_MS = 60_000
+/** How long a finished batch stays in the status line after its last member returned. */
+export const STATUS_LINGER_MS = 60_000
 
 /** How many characters of the prompt's first line the classifier reads. */
 export const PROMPT_LEAD_CHARS = 200
@@ -210,36 +210,53 @@ export function currentBatch(members: readonly Member[]): Member[] {
 
 /**
  * True while the latest batch has a member in flight (not yet stale) or one
- * returned within BAND_LINGER_MS. A stale member holds nothing open.
+ * returned within STATUS_LINGER_MS. A stale member holds nothing open.
  */
 export function isBatchActive(members: readonly Member[], now: number, staleMs = 0): boolean {
   const batch = currentBatch(members)
   if (batch.length === 0) return false
   const isRunning = batch.some(m => memberStatus(m, now, staleMs) === 'running')
-  const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= BAND_LINGER_MS)
+  const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= STATUS_LINGER_MS)
   return isRunning || isRecent
 }
 
 /**
- * The band's one line, or null while the batch is neither in flight nor
- * fresh: `panel: 2/5 returned · reviewers on opus`, with `, 1 stale` after
- * the count when a member outran the stale budget. The suffix names the
- * review model only when the batch holds a reviewer and `enforce` is on.
+ * The status line, or undefined (clear it) while the batch is neither in
+ * flight nor fresh: `2/5 returned · reviewers on opus`, with `, 1 stale`
+ * after the count when a member outran the stale budget. The suffix names
+ * the review model only when the batch holds a reviewer and `enforce` is
+ * on. The engine prefixes the line with the mod's name, so the text never
+ * repeats it.
  */
-export function bandText(
+export function statusText(
   members: readonly Member[],
   now: number,
   config: Pick<PolicyConfig, 'enforce' | 'reviewModel' | 'staleMinutes'>,
-): string | null {
+): string | undefined {
   const staleMs = staleAfterMs(config)
-  if (!isBatchActive(members, now, staleMs)) return null
+  if (!isBatchActive(members, now, staleMs)) return undefined
   const batch = currentBatch(members)
   const done = batch.filter(m => m.endedAt !== null).length
   const stale = batch.filter(m => memberStatus(m, now, staleMs) === 'stale').length
   const staleNote = stale > 0 ? `, ${stale} stale` : ''
   const hasReviewer = batch.some(m => m.role === 'review')
   const suffix = config.enforce && hasReviewer ? ` · reviewers on ${config.reviewModel}` : ''
-  return `panel: ${done}/${batch.length} returned${staleNote}${suffix}`
+  return `${done}/${batch.length} returned${staleNote}${suffix}`
+}
+
+/**
+ * Milliseconds until the status line next changes on its own: a returned
+ * member's linger running out, or a running member going stale. Null when
+ * no such moment lies ahead; a moment already passed is not one.
+ */
+export function nextChangeMs(members: readonly Member[], now: number, staleMs: number): number | null {
+  let soonest: number | null = null
+  for (const m of currentBatch(members)) {
+    const at = m.endedAt !== null ? m.endedAt + STATUS_LINGER_MS + 1 : staleMs > 0 ? m.startedAt + staleMs + 1 : null
+    if (at === null || at <= now) continue
+    if (soonest === null || at - now < soonest) soonest = at - now
+  }
+  return soonest
 }
 
 /** `12 s` under a minute, `1m 05s` past it; the debug log's duration of a returned member. */

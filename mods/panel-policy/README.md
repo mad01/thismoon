@@ -25,17 +25,17 @@ A reviewer moves to `reviewModel` when the caller set a model `overrideFrom` lis
 
 The fan-out count takes the main loop's own spawns, not a subagent's or a teammate's. With `fanoutHold` set, spawns the model issues in parallel after the Nth proceed while the dialog is open; Cancel refuses that one spawn only.
 
-## The band
+## The status line
 
-While a batch is in flight, and for a minute after its last member returned, one dim line sits above the prompt:
+While a batch is in flight, and for a minute after its last member returned, the mod pins one line in the status row under the prompt:
 
 ```
-panel: 2/5 returned · reviewers on opus
+panel-policy: 2/5 returned · reviewers on opus
 ```
 
-The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. A member in flight past `staleMinutes` is stale: the line reads `panel: 1/3 returned, 1 stale`, and a batch whose members are all returned or stale clears after the linger. Nothing is drawn while idle. A one-second ticker keeps the durations and the linger moving and stops itself once the band is clear.
+The engine adds the name; the text the mod composes starts at the count. The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. A member in flight past `staleMinutes` is stale: the line reads `1/3 returned, 1 stale`, and a batch whose members are all returned or stale clears after the linger. Nothing is pinned while idle, and nothing is drawn above the prompt: the mod registers no `ui.render` hook. The line is recomposed on every spawn and return; one timer, armed for the next linger end or stale boundary, re-checks it in between. Nothing polls.
 
-The state keeps the newest 100 members: role, the first 60 characters of the description, start and end times, and the turn. There is no pane; the band and the debug log are the whole view.
+The state keeps the newest 100 members: role, the first 60 characters of the description, start and end times, and the turn. There is no pane; the status line and the debug log are the whole view.
 
 Each member is keyed by the `agentId` the engine returns from the spawn. Two signals mark it returned, whichever arrives first. The subagent's `turn.complete` carries the id as `agentId`; the classic `SubagentStop` settings event carries it as `agent_id`, and a background subagent's end reaches the main session that way. The second signal is a no-op. A spawn that resolves without an id started no agent and is not tracked. The debug log names which signal matched, or which running ids a signal failed to match.
 

@@ -1,28 +1,26 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { PanelPolicyMember, PanelPolicyTurn } from '../types'
 import {
   addMember,
-  bandText,
   classifyRole,
   completeMember,
   countsTowardFanout,
   decideModel,
   formatDuration,
-  isBatchActive,
   isFanoutHoldDue,
   isFanoutToastDue,
   memberLabel,
+  nextChangeMs,
   readConfig,
   staleAfterMs,
+  statusText,
 } from '../lib/policy'
+import type { PolicyConfig } from '../lib/policy'
 
 const HOLD_PROCEED = 'Proceed'
 const HOLD_CANCEL = 'Cancel'
-
-/** How often the band and pane redraw while a batch is on screen. */
-const TICK_MS = 1_000
 
 const members = atom({ plugin: 'panel-policy', key: 'members' } as const, [] as PanelPolicyMember[])
 const turn = atom({ plugin: 'panel-policy', key: 'turn' } as const, { id: null, spawns: 0 } as PanelPolicyTurn)
@@ -32,7 +30,7 @@ type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; mess
 
 // The one .catch every hook below carries: say why in the debug log, then
 // let the chain beneath answer as if the hook were absent. A spawn is never
-// denied by a failure here, a draw never blocked.
+// denied by a failure here.
 const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
   const why = next.error.message === undefined ? next.error.kind : `${next.error.kind}: ${next.error.message}`
   $.ui.log(`panel-policy: ${next.event} skipped (${why})`, { to: 'debug' })
@@ -41,10 +39,37 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+// The text this module instance last pinned (null before its first pin),
+// and the one-shot timer for the next moment the text changes on its own:
+// a linger ending, a member going stale. A hot reload drops both, and
+// session.start pins and re-arms.
+let pinned: string | undefined | null = null
+let recheck: Timer | null = null
+
+// Recomposes the status line and pins it when it changed; undefined clears
+// it. Then arms one timer for the next change the clock alone brings.
+async function refreshStatus($: EngineInterface, config: PolicyConfig): Promise<void> {
+  const now = await $.clock.now()
+  const list = await read($, members)
+  const text = statusText(list, now, config)
+  if (pinned === null || text !== pinned) {
+    pinned = text
+    $.ui.status(text)
+  }
+  recheck?.cancel()
+  recheck = null
+  const delay = nextChangeMs(list, now, staleAfterMs(config))
+  if (delay !== null) {
+    recheck = $.clock.after(delay, () => {
+      void refreshStatus($, config)
+    })
+  }
+}
+
 // Marks the member `id` names as returned, from whichever signal came first:
 // the subagent's turn.complete or the classic SubagentStop event. The second
 // one finds the member already returned and only says so in the debug log.
-async function markReturned($: EngineInterface, id: string, signal: string): Promise<void> {
+async function markReturned($: EngineInterface, id: string, signal: string, config: PolicyConfig): Promise<void> {
   const now = await $.clock.now()
   const known = (await read($, members)).find(m => m.id === id)
   if (known === undefined) {
@@ -61,39 +86,20 @@ async function markReturned($: EngineInterface, id: string, signal: string): Pro
     `panel-policy: ${known.role} "${known.label}" returned on ${signal} (${id}, ${formatDuration(now - known.startedAt)})`,
     { to: 'debug' },
   )
+  await refreshStatus($, config)
 }
 
 export const register: Register = (on, options) => {
   const config = readConfig(options)
-  const staleMs = staleAfterMs(config)
-
-  // Starts the redraw ticker that keeps durations and the linger moving;
-  // the ticker cancels itself once the batch is off the band. Set in
-  // session.start, which runs again on every reload.
-  let startTicking: () => void = () => {}
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-
-    let ticker: { cancel: () => void } | null = null
-    const tick = async (): Promise<void> => {
-      if (isBatchActive(await read($, members), await $.clock.now(), staleMs)) {
-        $.ui.invalidate('ui.render')
-        return
-      }
-      ticker?.cancel()
-      ticker = null
-    }
-    startTicking = () => {
-      if (ticker === null) ticker = $.clock.every(TICK_MS, () => { void tick() })
-    }
-    // A batch may be mid-flight after a reload; the first tick settles it.
-    startTicking()
-
     $.ui.log(
       `panel-policy: loaded (enforce ${config.enforce}, reviewModel ${config.reviewModel}, overrideFrom ${config.overrideFrom.join(',')}, fanoutToast ${config.fanoutToast}, fanoutHold ${config.fanoutHold}, staleMinutes ${config.staleMinutes})`,
       { to: 'debug' },
     )
+    // A batch may be mid-flight after a reload; this pins its line again.
+    await refreshStatus($, config)
     return started
   }).catch(skipOnFailure)
 
@@ -146,35 +152,19 @@ export const register: Register = (on, options) => {
       turn: (await read($, turn)).id,
     }
     await update($, members, list => addMember(list, member))
-    startTicking()
+    await refreshStatus($, config)
     return started
   }).catch(skipOnFailure)
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId !== undefined) await markReturned($, e.agentId, 'turn.complete')
+    if (e.agentId !== undefined) await markReturned($, e.agentId, 'turn.complete', config)
     return next(e)
   }).catch(skipOnFailure)
 
   // The settings-hook view of the same end: a background subagent's stop
   // reaches the main session here with the id spelled `agent_id`.
   on('classic.SubagentStop', async ($, e, next) => {
-    await markReturned($, e.agent_id, 'SubagentStop')
+    await markReturned($, e.agent_id, 'SubagentStop', config)
     return next(e)
-  }).catch(skipOnFailure)
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const below = await next(e)
-    if (e.props.hasSurvey) return below
-    const line = bandText(await read($, members), await $.clock.now(), config)
-    if (line === null) return below
-    const { Box, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column">
-        <Text dimColor wrap="truncate-end">
-          {line}
-        </Text>
-        {below}
-      </Box>
-    )
   }).catch(skipOnFailure)
 }

@@ -1,6 +1,6 @@
 {
   "name": "thismoon",
-  "description": "Claude Code mods from the thismoon platform repo: bands, status lines, and hooks that sit beside the *.this services and skills.",
+  "description": "Claude Code mods from the thismoon platform repo: status lines and hooks that sit beside the *.this services and skills.",
   "owner": {
     "name": "mad01"
   },
@@ -8,7 +8,7 @@
     {
       "name": "session-band",
       "source": "./mods/session-band",
-      "description": "A band above the prompt: agent state, the active worklog key, the work-on phase, the present page, and belt denies this session."
+      "description": "A status line under the prompt: agent state, the active worklog key, the work-on phase, the present page, and belt denies this session."
     },
     {
       "name": "humanizer-gate",
@@ -18,7 +18,7 @@
     {
       "name": "panel-policy",
       "source": "./mods/panel-policy",
-      "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and keeps a panel progress band above the prompt."
+      "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and shows the batch's progress in the status line under the prompt."
     },
     {
       "name": "loom-pane",
