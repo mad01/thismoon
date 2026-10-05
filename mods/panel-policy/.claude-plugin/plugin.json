@@ -36,6 +36,12 @@
       "type": "number",
       "description": "Ask Proceed or Cancel on the Nth spawn of a turn; 0 (the default) never asks.",
       "default": 0
+    },
+    "staleMinutes": {
+      "title": "Stale after (minutes)",
+      "type": "number",
+      "description": "A member in flight longer than this is marked stale and leaves the in-flight count, so the band can clear without it; 0 never marks one stale.",
+      "default": 30
     }
   }
 }

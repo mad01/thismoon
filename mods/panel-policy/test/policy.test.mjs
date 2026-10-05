@@ -18,12 +18,15 @@ import {
   isGeneralPurpose,
   isOnModel,
   memberLabel,
+  memberStatus,
   paneRows,
   promptLead,
   readConfig,
+  staleAfterMs,
 } from '../lib/policy.ts'
 
-const config = { enforce: true, reviewModel: 'opus', overrideFrom: ['sonnet'], fanoutToast: 4, fanoutHold: 0 }
+const config = { enforce: true, reviewModel: 'opus', overrideFrom: ['sonnet'], fanoutToast: 4, fanoutHold: 0, staleMinutes: 30 }
+const STALE_MS = 30 * 60_000
 
 const member = (over = {}) => ({
   id: 'a1',
@@ -308,16 +311,25 @@ describe('readConfig', () => {
 
   test('takes typed values, string forms and a comma list', () => {
     assert.deepEqual(
-      readConfig({ enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', ' haiku '], fanoutToast: 6, fanoutHold: 3 }),
-      { enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', 'haiku'], fanoutToast: 6, fanoutHold: 3 },
+      readConfig({ enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', ' haiku '], fanoutToast: 6, fanoutHold: 3, staleMinutes: 5 }),
+      { enforce: false, reviewModel: 'claude-opus-4-1', overrideFrom: ['sonnet', 'haiku'], fanoutToast: 6, fanoutHold: 3, staleMinutes: 5 },
     )
-    assert.deepEqual(readConfig({ enforce: 'false', overrideFrom: 'sonnet, haiku,', fanoutToast: '2', fanoutHold: '-1', reviewModel: ' ' }), {
-      enforce: false,
-      reviewModel: 'opus',
-      overrideFrom: ['sonnet', 'haiku'],
-      fanoutToast: 2,
-      fanoutHold: 0,
-    })
+    assert.deepEqual(
+      readConfig({ enforce: 'false', overrideFrom: 'sonnet, haiku,', fanoutToast: '2', fanoutHold: '-1', reviewModel: ' ', staleMinutes: '0' }),
+      {
+        enforce: false,
+        reviewModel: 'opus',
+        overrideFrom: ['sonnet', 'haiku'],
+        fanoutToast: 2,
+        fanoutHold: 0,
+        staleMinutes: 0,
+      },
+    )
+  })
+
+  test('staleAfterMs turns the minutes into a budget; 0 stays 0', () => {
+    assert.equal(staleAfterMs(config), STALE_MS)
+    assert.equal(staleAfterMs({ staleMinutes: 0 }), 0)
   })
 
   test('an empty overrideFrom list means no listed model moves', () => {
@@ -392,6 +404,45 @@ describe('isBatchActive and bandText', () => {
   test('counts only the newest turn', () => {
     const list = [member({ id: 'old', turn: 't0', endedAt: 2_000 }), member({ id: 'a', turn: 't1' })]
     assert.equal(bandText(list, 3_000, config), 'panel: 0/1 returned · reviewers on opus')
+  })
+})
+
+describe('staleness', () => {
+  test('memberStatus is done once returned, stale past the budget, running before it', () => {
+    assert.equal(memberStatus(member({ endedAt: 2_000 }), 1_000 + STALE_MS + 1, STALE_MS), 'done')
+    assert.equal(memberStatus(member(), 1_000 + STALE_MS, STALE_MS), 'running')
+    assert.equal(memberStatus(member(), 1_000 + STALE_MS + 1, STALE_MS), 'stale')
+  })
+
+  test('a budget of 0 never marks a member stale', () => {
+    assert.equal(memberStatus(member(), 1_000 + 10 * STALE_MS, 0), 'running')
+    assert.equal(isBatchActive([member()], 1_000 + 10 * STALE_MS, 0), true)
+  })
+
+  test('a stale member leaves the in-flight count and the band names it', () => {
+    const now = 1_000 + STALE_MS + 1
+    const list = [
+      member({ id: 'a', startedAt: now - 20_000, endedAt: now - 10_000 }),
+      member({ id: 'b' }),
+      member({ id: 'c', startedAt: now - 5_000 }),
+    ]
+    assert.equal(bandText(list, now, config), 'panel: 1/3 returned, 1 stale · reviewers on opus')
+    assert.deepEqual(paneRows(list, now, 100, STALE_MS).map(r => r.status), ['done', 'stale', 'running'])
+  })
+
+  test('the band hides once every member is returned past the linger or stale', () => {
+    const list = [member({ id: 'a', endedAt: 5_000 }), member({ id: 'b' })]
+    const now = 5_000 + BAND_LINGER_MS + STALE_MS
+    assert.equal(isBatchActive(list, now, STALE_MS), false)
+    assert.equal(bandText(list, now, config), null)
+    assert.equal(bandText(list, now, { ...config, staleMinutes: 0 }), 'panel: 1/2 returned · reviewers on opus')
+  })
+
+  test('a late return of a stale member still lands and lingers', () => {
+    const now = 1_000 + STALE_MS + 1
+    const returned = completeMember([member({ id: 'b' })], 'b', now)
+    assert.equal(memberStatus(returned[0], now, STALE_MS), 'done')
+    assert.equal(bandText(returned, now, config), 'panel: 1/1 returned · reviewers on opus')
   })
 })
 

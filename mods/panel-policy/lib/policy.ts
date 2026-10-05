@@ -4,7 +4,7 @@
 export type Role = 'review' | 'other'
 
 export type Member = {
-  /** The subagent's engine id, the one its `turn.complete` carries. */
+  /** The subagent's engine id: `agentId` on its `turn.complete`, `agent_id` on `classic.SubagentStop`. */
   id: string
   role: Role
   /** The first characters of the spawn's description. */
@@ -22,12 +22,17 @@ export type PolicyConfig = {
   overrideFrom: string[]
   fanoutToast: number
   fanoutHold: number
+  /** Minutes a member may stay in flight before it counts as stale; 0 never. */
+  staleMinutes: number
 }
+
+/** Returned, still in flight, or in flight past the stale budget. */
+export type MemberStatus = 'running' | 'done' | 'stale'
 
 export type PaneRow = {
   role: Role
   label: string
-  status: 'running' | 'done'
+  status: MemberStatus
   duration: string
 }
 
@@ -52,7 +57,10 @@ const DEFAULTS: PolicyConfig = {
   overrideFrom: ['sonnet'],
   fanoutToast: 4,
   fanoutHold: 0,
+  staleMinutes: 30,
 }
+
+const MINUTE_MS = 60_000
 
 // The description's review vocabulary, on word boundaries so "verified",
 // "verification" (the brain-research promoter's bundle) and "critical"
@@ -169,7 +177,19 @@ export function readConfig(options: Readonly<Record<string, unknown>>): PolicyCo
     overrideFrom: list(options.overrideFrom, DEFAULTS.overrideFrom),
     fanoutToast: count(options.fanoutToast, DEFAULTS.fanoutToast),
     fanoutHold: count(options.fanoutHold, DEFAULTS.fanoutHold),
+    staleMinutes: count(options.staleMinutes, DEFAULTS.staleMinutes),
   }
+}
+
+/** How long a member may be in flight before it is stale, in ms; 0 means never. */
+export function staleAfterMs(config: Pick<PolicyConfig, 'staleMinutes'>): number {
+  return config.staleMinutes * MINUTE_MS
+}
+
+/** What a member is at `now`; a member never returned goes stale past `staleMs`. */
+export function memberStatus(member: Member, now: number, staleMs: number): MemberStatus {
+  if (member.endedAt !== null) return 'done'
+  return staleMs > 0 && now - member.startedAt > staleMs ? 'stale' : 'running'
 }
 
 /** The label a member shows: the head of the description, or the agent type. */
@@ -195,31 +215,38 @@ export function currentBatch(members: readonly Member[]): Member[] {
   return members.filter(m => m.turn === last.turn)
 }
 
-/** True while the latest batch is in flight or returned within BAND_LINGER_MS. */
-export function isBatchActive(members: readonly Member[], now: number): boolean {
+/**
+ * True while the latest batch has a member in flight (not yet stale) or one
+ * returned within BAND_LINGER_MS. A stale member holds nothing open.
+ */
+export function isBatchActive(members: readonly Member[], now: number, staleMs = 0): boolean {
   const batch = currentBatch(members)
   if (batch.length === 0) return false
-  const isRunning = batch.some(m => m.endedAt === null)
+  const isRunning = batch.some(m => memberStatus(m, now, staleMs) === 'running')
   const isRecent = batch.some(m => m.endedAt !== null && now - m.endedAt <= BAND_LINGER_MS)
   return isRunning || isRecent
 }
 
 /**
  * The band's one line, or null while the batch is neither in flight nor
- * fresh: `panel: 2/5 returned · reviewers on opus`. The suffix names the
+ * fresh: `panel: 2/5 returned · reviewers on opus`, with `, 1 stale` after
+ * the count when a member outran the stale budget. The suffix names the
  * review model only when the batch holds a reviewer and `enforce` is on.
  */
 export function bandText(
   members: readonly Member[],
   now: number,
-  config: Pick<PolicyConfig, 'enforce' | 'reviewModel'>,
+  config: Pick<PolicyConfig, 'enforce' | 'reviewModel' | 'staleMinutes'>,
 ): string | null {
-  if (!isBatchActive(members, now)) return null
+  const staleMs = staleAfterMs(config)
+  if (!isBatchActive(members, now, staleMs)) return null
   const batch = currentBatch(members)
   const done = batch.filter(m => m.endedAt !== null).length
+  const stale = batch.filter(m => memberStatus(m, now, staleMs) === 'stale').length
+  const staleNote = stale > 0 ? `, ${stale} stale` : ''
   const hasReviewer = batch.some(m => m.role === 'review')
   const suffix = config.enforce && hasReviewer ? ` · reviewers on ${config.reviewModel}` : ''
-  return `panel: ${done}/${batch.length} returned${suffix}`
+  return `panel: ${done}/${batch.length} returned${staleNote}${suffix}`
 }
 
 /** `12 s` under a minute, `1m 05s` past it. */
@@ -231,11 +258,11 @@ export function formatDuration(ms: number): string {
 }
 
 /** The pane's rows, oldest first, at most `limit` of the newest members. */
-export function paneRows(members: readonly Member[], now: number, limit = MEMBER_CAP): PaneRow[] {
+export function paneRows(members: readonly Member[], now: number, limit = MEMBER_CAP, staleMs = 0): PaneRow[] {
   return members.slice(-Math.max(1, limit)).map(m => ({
     role: m.role,
     label: m.label,
-    status: m.endedAt === null ? 'running' : 'done',
+    status: memberStatus(m, now, staleMs),
     duration: formatDuration((m.endedAt ?? now) - m.startedAt),
   }))
 }

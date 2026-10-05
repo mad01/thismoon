@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { PanelPolicyMember, PanelPolicyTurn } from '../types'
 import {
@@ -17,6 +17,7 @@ import {
   memberLabel,
   paneRows,
   readConfig,
+  staleAfterMs,
 } from '../lib/policy'
 
 const PANE = 'panel'
@@ -43,8 +44,31 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 
 const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+// Marks the member `id` names as returned, from whichever signal came first:
+// the subagent's turn.complete or the classic SubagentStop event. The second
+// one finds the member already returned and only says so in the debug log.
+async function markReturned($: EngineInterface, id: string, signal: string): Promise<void> {
+  const now = await $.clock.now()
+  const known = (await read($, members)).find(m => m.id === id)
+  if (known === undefined) {
+    const running = (await read($, members)).filter(m => m.endedAt === null).map(m => m.id)
+    $.ui.log(`panel-policy: ${signal} for ${id} matched no member (running: ${running.join(',') || 'none'})`, { to: 'debug' })
+    return
+  }
+  if (known.endedAt !== null) {
+    $.ui.log(`panel-policy: ${signal} for ${id} found "${known.label}" already returned`, { to: 'debug' })
+    return
+  }
+  await update($, members, list => completeMember(list, id, now))
+  $.ui.log(
+    `panel-policy: ${known.role} "${known.label}" returned on ${signal} (${id}, ${formatDuration(now - known.startedAt)})`,
+    { to: 'debug' },
+  )
+}
+
 export const register: Register = (on, options) => {
   const config = readConfig(options)
+  const staleMs = staleAfterMs(config)
 
   // Starts the redraw ticker that keeps durations and the linger moving;
   // the ticker cancels itself once the batch is off the band. Set in
@@ -57,7 +81,7 @@ export const register: Register = (on, options) => {
 
     let ticker: { cancel: () => void } | null = null
     const tick = async (): Promise<void> => {
-      if (isBatchActive(await read($, members), await $.clock.now())) {
+      if (isBatchActive(await read($, members), await $.clock.now(), staleMs)) {
         $.ui.invalidate('ui.render')
         return
       }
@@ -71,7 +95,7 @@ export const register: Register = (on, options) => {
     startTicking()
 
     $.ui.log(
-      `panel-policy: loaded (enforce ${config.enforce}, reviewModel ${config.reviewModel}, overrideFrom ${config.overrideFrom.join(',')}, fanoutToast ${config.fanoutToast}, fanoutHold ${config.fanoutHold})`,
+      `panel-policy: loaded (enforce ${config.enforce}, reviewModel ${config.reviewModel}, overrideFrom ${config.overrideFrom.join(',')}, fanoutToast ${config.fanoutToast}, fanoutHold ${config.fanoutHold}, staleMinutes ${config.staleMinutes})`,
       { to: 'debug' },
     )
     return started
@@ -131,18 +155,14 @@ export const register: Register = (on, options) => {
   }).catch(skipOnFailure)
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId !== undefined) {
-      const now = await $.clock.now()
-      const id = e.agentId
-      const after = await update($, members, list => completeMember(list, id, now))
-      const returned = after.find(m => m.id === id && m.endedAt === now)
-      $.ui.log(
-        returned === undefined
-          ? `panel-policy: turn.complete for ${id} matched no running member`
-          : `panel-policy: ${returned.role} "${returned.label}" returned (${id}, ${formatDuration(now - returned.startedAt)})`,
-        { to: 'debug' },
-      )
-    }
+    if (e.agentId !== undefined) await markReturned($, e.agentId, 'turn.complete')
+    return next(e)
+  }).catch(skipOnFailure)
+
+  // The settings-hook view of the same end: a background subagent's stop
+  // reaches the main session here with the id spelled `agent_id`.
+  on('classic.SubagentStop', async ($, e, next) => {
+    await markReturned($, e.agent_id, 'SubagentStop')
     return next(e)
   }).catch(skipOnFailure)
 
@@ -172,7 +192,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const room = Math.max(1, (e.viewport?.rows ?? 24) - 4)
-    const rows = paneRows(await read($, members), await $.clock.now(), room)
+    const rows = paneRows(await read($, members), await $.clock.now(), room, staleMs)
     const labelWidth = Math.max(12, Math.min(60, e.props.bodyColumns - 28))
     return (
       <Box flexDirection="column">

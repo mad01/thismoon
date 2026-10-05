@@ -21,6 +21,7 @@ A reviewer moves to `reviewModel` when the caller set a model `overrideFrom` lis
 | `overrideFrom` | `sonnet` | comma-separated models a reviewer is moved off when the caller set one of them |
 | `fanoutToast` | `4` | toast once when a turn's spawn count reaches this; `0` is off |
 | `fanoutHold` | `0` | ask Proceed or Cancel on the Nth spawn of a turn; `0` never asks |
+| `staleMinutes` | `30` | a member in flight longer than this is stale: it leaves the in-flight count and no longer holds the band open; `0` never marks one stale |
 
 The fan-out count takes the main loop's own spawns, not a subagent's or a teammate's. With `fanoutHold` set, spawns the model issues in parallel after the Nth proceed while the dialog is open; Cancel refuses that one spawn only.
 
@@ -32,11 +33,11 @@ While a batch is in flight, and for a minute after its last member returned, one
 panel: 2/5 returned · reviewers on opus
 ```
 
-The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. Nothing is drawn while idle. A one-second ticker keeps the durations and the linger moving and stops itself once the band is clear.
+The batch is the spawns of the newest turn that spawned anything. The suffix names the review model only while `enforce` is on and the batch holds a reviewer. A member in flight past `staleMinutes` is stale: the line reads `panel: 1/3 returned, 1 stale`, and a batch whose members are all returned or stale clears after the linger. Nothing is drawn while idle. A one-second ticker keeps the durations and the linger moving and stops itself once the band is clear.
 
-`/panel` opens a pane with one row per member, as many as fit the pane, newest last: role, the first 60 characters of its description, running or done, and its duration. The state keeps the newest 100. Esc closes the pane.
+`/panel` opens a pane with one row per member, as many as fit the pane, newest last: role, the first 60 characters of its description, running, done or stale, and its duration. The state keeps the newest 100. Esc closes the pane.
 
-Each member is keyed by the `agentId` the engine returns from the spawn, the same id the subagent's `turn.complete` carries. A spawn that resolves without one started no agent and is not tracked.
+Each member is keyed by the `agentId` the engine returns from the spawn. Two signals mark it returned, whichever arrives first. The subagent's `turn.complete` carries the id as `agentId`; the classic `SubagentStop` settings event carries it as `agent_id`, and a background subagent's end reaches the main session that way. The second signal is a no-op. A spawn that resolves without an id started no agent and is not tracked. The debug log names which signal matched, or which running ids a signal failed to match.
 
 ## Dev loop
 
