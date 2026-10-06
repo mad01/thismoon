@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/mad01/thismoon/compare/belt/v2.5.1...belt/v2.6.0) (2026-10-06)
+
+
+### Features
+
+* **belt:** git-discard guard and em-dash hint ([#197](https://github.com/mad01/thismoon/issues/197)) ([358ca40](https://github.com/mad01/thismoon/commit/358ca407e409c1d90e76d46e88f747398664f75d))
+
 ## [2.5.1](https://github.com/mad01/thismoon/compare/belt/v2.5.0...belt/v2.5.1) (2026-10-02)
 
 
