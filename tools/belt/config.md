@@ -297,7 +297,7 @@ config, not in belt and not in a second SessionStart hook.
 
 ### guards
 
-A map keyed by built-in guard id (`git-push-main`, `git-identity`,
+A map keyed by built-in guard id (`git-push-main`, `git-discard`, `git-identity`,
 `commit-guard`, `script-deny-list`, `write-internal-names`,
 `publish-internal-names`) or a
 `custom_guards` name. Every guard, built-in or custom, defaults to enabled
@@ -315,6 +315,15 @@ entries match the same way as `git_identity[].repos` and
     remote. An unresolved repo and an off-allowlist repo both fail closed; a
     machine class where direct pushes are fine disables the guard in its
     rendered config.
+- **git-discard**
+  - `guards.git-discard.enabled` (bool, default `true`)
+  - `guards.git-discard.mode` (string, default `hard`): `soft` downgrades
+    every denial to a warn event on the events service and lets the command
+    proceed.
+  - `guards.git-discard.allow_repos` (list of string, default: empty):
+    canonical `host/owner/repo` entries (or a trailing `/*` org wildcard)
+    where discarding commands are allowed, matched against the origin remote
+    of the directory the command runs in.
 - **git-identity**
   - `guards.git-identity.enabled` (bool, default `true`): the only field
     with effect. The rules themselves live in the top-level `git_identity`
@@ -444,6 +453,9 @@ pattern tail (host dropped, case-insensitive).
 - `hints.humanizer-check.enabled` (bool, default `true`): fires after an MCP
   call publishes text off the machine, pointing at `humanizer_detect` while
   the wording is still editable.
+- `hints.em-dash.enabled` (bool, default `true`): one toggle for both of
+  the hint's events (`external-text` and `bash`). Flags em dashes in text a
+  publishing MCP call or gh command just sent.
 - **custom hint entries**
   - `hints.<name>.enabled` (bool, default `true`): a secondary toggle for a
     custom hint, used only when that hint's own
@@ -577,6 +589,8 @@ hints:
   kof-deposit:
     enabled: true
   humanizer-check:
+    enabled: true
+  em-dash:
     enabled: true
 ```
 

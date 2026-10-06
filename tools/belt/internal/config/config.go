@@ -92,7 +92,7 @@ const CustomHintTimeout = 400 * time.Millisecond
 // operator believe a guard was downgraded while it still blocks (or, worse,
 // believe it blocks while they meant to soften it). A guard package test
 // pins this list to the ids that actually call Toggle.Soft.
-var SoftModeGuards = []string{"script-deny-list", "publish-internal-names"}
+var SoftModeGuards = []string{"script-deny-list", "publish-internal-names", "git-discard"}
 
 // Config is everything a guard or hint needs to decide.
 type Config struct {
@@ -900,6 +900,7 @@ var (
 		"script-deny-list":       {"extra_patterns", "exclude_paths"},
 		"write-internal-names":   {"allow_repos", "exclude_paths"},
 		"publish-internal-names": {"allow_repos"},
+		"git-discard":            {"allow_repos"},
 	}
 	HintFields = map[string][]string{
 		"agent-memory":    {},
@@ -910,6 +911,7 @@ var (
 		"lint-policy":     {"exclude_repos"},
 		"prefer-csl":      {"exclude_repos"},
 		"humanizer-check": {},
+		"em-dash":         {},
 	}
 )
 

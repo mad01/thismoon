@@ -357,6 +357,7 @@ func TestHintFieldsListsEveryBuiltinHint(t *testing.T) {
 		ids = append(ids, h.ID())
 	}
 	slices.Sort(ids)
+	ids = slices.Compact(ids) // a hint registered on two events appears twice
 	if want := slices.Sorted(maps.Keys(config.HintFields)); !slices.Equal(ids, want) {
 		t.Errorf("hint.All ids = %v, config.HintFields keys = %v", ids, want)
 	}

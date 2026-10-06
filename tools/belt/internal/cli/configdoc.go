@@ -157,8 +157,9 @@ guards:
     enabled: true
     # "soft" downgrades every denial to a warn event on the events service
     # and lets the command proceed (the rollout setting for tuning new
-    # patterns before they block). "hard" (the default) blocks. This is the
-    # only guard that reads a mode here; setting it elsewhere is an error.
+    # patterns before they block). "hard" (the default) blocks. Only
+    # script-deny-list, publish-internal-names, and git-discard read a mode
+    # here; setting it elsewhere is an error.
     mode: hard
     # Extra patterns denied inside scripts, beyond the Claude settings
     # permissions.deny Bash(...) entries (which are read live, never copied).
@@ -212,6 +213,8 @@ hints:
   kof-deposit:
     enabled: true
   humanizer-check:
+    enabled: true
+  em-dash:
     enabled: true`
 
 func configDocCmd(paths pathsFunc) *cobra.Command {

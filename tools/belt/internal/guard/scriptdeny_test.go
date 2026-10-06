@@ -249,10 +249,10 @@ func TestSoftModeGuardsMatchesTheGuardsThatReadAMode(t *testing.T) {
 	for _, g := range All(cfg) {
 		cfg.Guards[g.ID()] = config.Toggle{Mode: soft}
 	}
-	// script-deny-list and publish-internal-names are the guards whose
+	// script-deny-list, publish-internal-names, and git-discard are the guards whose
 	// denial path consults the toggle mode; the rest carry a mode on their
 	// own rule entries instead.
-	want := []string{ScriptDenyListID, PublishInternalNamesID}
+	want := []string{ScriptDenyListID, PublishInternalNamesID, GitDiscardID}
 	if !slices.Equal(config.SoftModeGuards, want) {
 		t.Errorf("config.SoftModeGuards = %v, want %v", config.SoftModeGuards, want)
 	}
