@@ -1,7 +1,7 @@
 {
   "name": "session-band",
-  "version": "0.1.0",
-  "description": "A status line under the prompt: agent state, the active worklog key, the work-on phase, the present page, and belt denies this session.",
+  "version": "0.2.0",
+  "description": "A status line under the prompt counting belt denials this session, shown from the first deny on.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"

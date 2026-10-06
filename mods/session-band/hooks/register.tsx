@@ -1,32 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { SessionBandPage } from '../types'
-import {
-  compactContextBlock,
-  composeStatusText,
-  decisionSummary,
-  findPhaseMarker,
-  isBeltDeny,
-  parsePresentResult,
-  parseWorklogList,
-  repoNameFrom,
-  shouldToastDone,
-} from '../lib/band'
-import type { StatusSnapshot } from '../lib/band'
+import { composeStatusText, decisionSummary, isBeltDeny } from '../lib/band'
 
-const WORKLOG_RUN_TIMEOUT_MS = 2_000
-
-const isWorking = atom({ plugin: 'session-band', key: 'isWorking' } as const, false)
-const isWaiting = atom({ plugin: 'session-band', key: 'isWaiting' } as const, false)
-const worklogKey = atom({ plugin: 'session-band', key: 'worklogKey' } as const, null as string | null)
-const phase = atom({ plugin: 'session-band', key: 'phase' } as const, null as string | null)
-const presentPage = atom(
-  { plugin: 'session-band', key: 'presentPage' } as const,
-  null as SessionBandPage | null,
-)
 const beltDenies = atom({ plugin: 'session-band', key: 'beltDenies' } as const, 0)
-const isCompacted = atom({ plugin: 'session-band', key: 'isCompacted' } as const, false)
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
@@ -40,190 +17,43 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
   return next(e)
 }
 
-const describe = (err: unknown): string => (err instanceof Error ? err.message : String(err))
-
 // The text this module instance last pinned; null before its first pin. A
 // hot reload starts over and pins again, and the engine keeps one status
 // line per plugin either way.
 let pinned: string | undefined | null = null
 
-// Every signal the line and the compact block draw from, read in one go.
-async function snapshot($: EngineInterface): Promise<StatusSnapshot> {
-  return {
-    isWorking: await read($, isWorking),
-    isWaiting: await read($, isWaiting),
-    worklogKey: await read($, worklogKey),
-    phase: await read($, phase),
-    presentPage: await read($, presentPage),
-    beltDenies: await read($, beltDenies),
-  }
-}
-
 // Recomposes the line and pins it when it changed; undefined clears it.
 async function refreshStatus($: EngineInterface): Promise<void> {
-  const text = composeStatusText(await snapshot($))
+  const text = composeStatusText(await read($, beltDenies))
   if (pinned !== null && text === pinned) return
   pinned = text
   $.ui.status(text)
 }
 
-// Writes a flag only when it changes; says whether it did.
-async function setWaiting($: EngineInterface, value: boolean): Promise<boolean> {
-  if ((await read($, isWaiting)) === value) return false
-  await update($, isWaiting, () => value)
-  return true
-}
-
-async function setWorking($: EngineInterface, value: boolean): Promise<boolean> {
-  if ((await read($, isWorking)) === value) return false
-  await update($, isWorking, () => value)
-  return true
-}
-
 export const register: Register = on => {
+  // The count lives in $.state and outlives a reload; the pin does not, so
+  // a count carried across a hot reload is put back on screen here.
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     $.ui.log('session-band: loaded', { to: 'debug' })
     await refreshStatus($)
-
-    const detectWorklogKey = async (): Promise<void> => {
-      if ((await read($, worklogKey)) !== null) return
-      let commonDir: string | null = null
-      try {
-        const git = await $.process.run(
-          ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-          { cwd: e.cwd, timeoutMs: WORKLOG_RUN_TIMEOUT_MS },
-        )
-        if (git.exitCode === 0) commonDir = git.stdout
-      } catch {
-        commonDir = null
-      }
-      const repo = repoNameFrom(commonDir, e.cwd)
-      const home = await $.env.get('HOME')
-      const installed = home === undefined ? null : `${home}/code/bin/worklog`
-      const worklog = installed !== null && (await $.fs.exists(installed)) ? installed : 'worklog'
-      const listed = await $.process.run([worklog, 'list', '--status', 'active', '--repo', repo], {
-        cwd: e.cwd,
-        timeoutMs: WORKLOG_RUN_TIMEOUT_MS,
-      })
-      if (listed.exitCode !== 0) return
-      const key = parseWorklogList(listed.stdout)
-      if (key === null) return
-      await update($, worklogKey, () => key)
-      await refreshStatus($)
-    }
-
-    // Outlives this dispatch, so it starts from the clock rather than inside
-    // the hook: the first prompt never waits on a child process.
-    $.clock.after(0, () => {
-      detectWorklogKey().catch(err => {
-        $.ui.log(`session-band: worklog key not detected (${describe(err)})`, { to: 'debug' })
-      })
-    })
-
     return started
-  }).catch(skipOnFailure)
-
-  // Only the main loop raises turn.start; a subagent's run has none.
-  on('turn.start', async ($, e, next) => {
-    if (await setWorking($, true)) await refreshStatus($)
-    return next(e)
-  }).catch(skipOnFailure)
-
-  on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined) {
-      await setWaiting($, false)
-      await setWorking($, false)
-      const marker = findPhaseMarker(e.answer)
-      if (marker !== null && marker !== (await read($, phase))) await update($, phase, () => marker)
-      if (shouldToastDone(e.reason, e.durationMs)) {
-        $.ui.toast(`done (${Math.round(e.durationMs / 1000)} s)`)
-      }
-      await refreshStatus($)
-    }
-    return next(e)
-  }).catch(skipOnFailure)
-
-  // The person is being asked: a permission prompt or an MCP elicitation on
-  // the main thread. A subagent's prompt is left to the engine's own spinner.
-  on(
-    'classic.Notification',
-    { notification_type: ['permission_prompt', 'elicitation_dialog'] },
-    async ($, e, next) => {
-      if (e.agent_id === undefined) {
-        if (await setWaiting($, true)) await refreshStatus($)
-        if (e.notification_type === 'permission_prompt') $.ui.toast('needs input')
-      }
-      return next(e)
-    },
-  ).catch(skipOnFailure)
-
-  // Answered: the tool ran, or the person refused it.
-  on('classic.PostToolUse', async ($, e, next) => {
-    if (e.agent_id === undefined && (await setWaiting($, false))) await refreshStatus($)
-    return next(e)
-  }).catch(skipOnFailure)
-
-  on('classic.PermissionDenied', async ($, e, next) => {
-    if (e.agent_id === undefined && (await setWaiting($, false))) await refreshStatus($)
-    return next(e)
   }).catch(skipOnFailure)
 
   // belt answers PreToolUse as a settings hook beneath every mod; its deny
   // comes back from next(e) with a `belt[<guard>]: ` reason, possibly inside
   // the engine's own wrapping. Counted, never changed: the decision returns
   // exactly as belt made it. Every decision is described in the debug log so
-  // its real shape can be read off `claude --debug`.
+  // its real shape can be read off `claude --debug`. The line is refreshed
+  // on every call, not only on a deny, so a /clear that zeroed the count
+  // takes the stale line down with it.
   on('classic.PreToolUse', async ($, e, next) => {
     const decision = await next(e)
     if (decision !== undefined) {
       $.ui.log(`session-band: PreToolUse ${e.tool} decision ${decisionSummary(decision)}`, { to: 'debug' })
     }
-    if (isBeltDeny(decision)) {
-      await update($, beltDenies, n => n + 1)
-      await refreshStatus($)
-    }
+    if (isBeltDeny(decision)) await update($, beltDenies, n => n + 1)
+    await refreshStatus($)
     return decision
-  }).catch(skipOnFailure)
-
-  on('tool.call', { tool: 'mcp__worklog__worklog_checkpoint' }, async ($, e, next) => {
-    const key = typeof e.key === 'string' ? e.key.trim() : ''
-    if (key !== '' && key !== (await read($, worklogKey))) {
-      await update($, worklogKey, () => key)
-      await refreshStatus($)
-    }
-    return next(e)
-  }).catch(skipOnFailure)
-
-  on(
-    'tool.call',
-    { tool: ['mcp__present__present_create', 'mcp__present__present_update'] },
-    async ($, e, next) => {
-      const answered = await next(e)
-      if (answered.deny === undefined && answered.isError !== true) {
-        const inputId = typeof e.id === 'string' ? e.id : null
-        const page = parsePresentResult(answered.result, inputId, answered.text)
-        if (page !== null) {
-          await update($, presentPage, () => page)
-          await refreshStatus($)
-        }
-      }
-      return answered
-    },
-  ).catch(skipOnFailure)
-
-  // A compaction re-reads the first message's context, so the block goes in
-  // through prompt.context alone; this only arms it.
-  on('classic.SessionStart', { source: 'compact' }, async ($, e, next) => {
-    if (!(await read($, isCompacted))) await update($, isCompacted, () => true)
-    return next(e)
-  }).catch(skipOnFailure)
-
-  on('prompt.context', async ($, e, next) => {
-    const below = await next(e)
-    if (!(await read($, isCompacted))) return below
-    const block = { name: 'session-band', text: compactContextBlock(await snapshot($)) }
-    await update($, isCompacted, () => false)
-    return { ...below, blocks: [...below.blocks, block] }
   }).catch(skipOnFailure)
 }
