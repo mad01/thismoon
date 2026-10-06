@@ -432,6 +432,30 @@ two events.
   cannot run (no repo in the cwd) resolves to "not public" for git
   commands.
 
+### git-discard
+
+Blocks git commands that throw away uncommitted work.
+
+- **Fires on** `git stash` (bare, flag-led like `-u`, `push`, `save`),
+  `reset --hard`, a path checkout (`checkout -- <path>`, `checkout <ref> --
+  <path>`, `checkout .`) or a forced one, `switch --discard-changes`/`-f`,
+  `restore` unless the only target is the index (`--staged` without
+  `--worktree`), and `clean` with `-f` (a `-n` dry run passes). `stash
+  list|show|apply|pop|branch` are allowed. Each invocation is judged in the
+  directory it runs in: a tracked `cd`/`pushd`, a `git -C` target, else the
+  session cwd.
+- **Decides by** the working tree there. A clean tree (`git status
+  --porcelain` empty, with `--ignored` added for `clean -x`/`-X`) allows,
+  since nothing would be lost. `allow_repos` exempts repos by canonical
+  identity. Otherwise the reason tells the model to run the command only
+  when the user's latest message asked for it, and to ask first or hand the
+  user `! <command>` when it did not.
+- **Why it exists**: a session audit found agents stashing, hard-resetting,
+  and checking out over the user's uncommitted work without being asked.
+  Worktree changes are in no reflog, so this is damage that is hard to undo.
+- **Fails closed**: a directory only a shell can name, or a `git status`
+  that fails there, denies. `mode: soft` turns a deny into a warn event.
+
 ### Custom guards
 
 A `custom_guards.<name>` config entry registers a guard implemented as any
@@ -714,6 +738,23 @@ read, points at `humanizer_detect` while the wording is still editable.
 - **Why**: instruction prose covers PR descriptions and docs, so those get
   linted; a Slack message or short issue comment gets skipped for feeling too
   small. Length is not what makes AI tells visible.
+
+### em-dash (external-text, bash)
+
+After a publishing call, flags em dashes in the text that just went out.
+
+- **Fires when** an MCP call that is not a read verb carries an em dash
+  anywhere in its input, or a `gh pr|issue create|edit|comment` or a `gh
+  api` call sending fields (`-f`, `-F`, `--field`, `--raw-field`, `--input`)
+  carries one in its command text or in a body file it names.
+- **The advice** gives the count and asks for an edit now (`gh pr edit`, the
+  MCP update call), replacing each with a colon, comma, parentheses, or a
+  new sentence.
+- **Why**: the user reads em dashes as an AI tell, an audit found them in
+  about one PR body in four, and `humanizer_detect` does not flag them.
+- **No dedupe**: every offending publish is flagged, since each one is a
+  separate text still open to editing. `hints.em-dash.enabled` switches
+  both events.
 
 ### Custom hints (session-start)
 

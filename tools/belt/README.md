@@ -13,9 +13,10 @@ The one-paragraph summaries below say what each guard and hint does; [docs/hooks
 
 ## Guards
 
-Six built-in guards run against tool calls before they execute:
+Seven built-in guards run against tool calls before they execute:
 
 - `git-push-main`: blocks `git push` to main/master unless the repo is allowlisted. Machines where direct pushes are fine (personal machines, say) disable the guard in their rendered config.
+- `git-discard`: blocks git commands that throw away uncommitted work (`git stash`, `reset --hard`, a path checkout, a worktree `restore`, `clean -f`) unless the tree is already clean. The reason tells the agent to run it only when the user asked for it in their latest message, and otherwise to ask or let the user run it with `! <command>`. `allow_repos` exempts repos, and `mode: soft` warns instead.
 - `git-identity`: blocks `git commit` when the repo's `git config user.email` doesn't match the email the config expects for that repo. Rules match by repo pattern (exact `host/owner/repo` or a trailing `/*` org wildcard), so the repo decides the identity whatever machine the commit happens on. Soft mode downgrades the block to a warn event.
 - `commit-guard`: nudges personal-repo work out of work hours. Commits to configured repos inside a local-time window are warned about (soft, the default) or blocked (hard). `always_allow` exempts repos needed at any hour, and `belt override set <name> --reason "..."` switches a rule off for a timed window. That window is 10 minutes by default and `--for` sizes it. The required `--reason` is archived to the events service. `belt override extend` pushes the window forward, and it expires on its own so a forgotten override can't disarm a rule for days.
 - `script-deny-list`: deep deny inspection, applies the Bash deny list from the Claude settings inside scripts. `bash cleanup.sh` looks harmless to the permission system even when the script runs `kubectl delete`. This guard reads executed and sourced script files, inline `-c`/`-e` strings, heredocs, and stdin redirects and pipes into interpreters. It also reads the commands behind `eval`/`xargs`/`find -exec`, and a file written and run inside the same command. It denies when any of that contains a deny-listed command. Piping a `curl`/`wget` download straight into an interpreter is denied outright, since nothing can read what would run. Extra patterns (like `rm -rf`, or `re:`-prefixed regexes) come from the belt config; `mode: soft` turns denials into warn events.
@@ -26,7 +27,7 @@ Beyond the built-ins, a `custom_guards` config section registers named guards th
 
 ## Hints
 
-Eight hints add advisory context the agent reads next to a tool result or at session boundaries:
+Nine hints add advisory context the agent reads next to a tool result or at session boundaries:
 
 - `prefer-csl`: after a bash command sweeps multiple files inside a repo csl already indexes, hands back the equivalent `csl_search` call with the pattern translated to zoekt syntax. Pipe filters (`cmd | grep x`) and single-file greps don't fire, since they aren't what csl replaces.
 - `commit-policy`: after a `git commit` lands on main or master of a repo not opted out via `exclude_repos`, states the branch + PR commit policy. It also hands back the two commands that move the commit onto a branch. The post-commit half of the branch-discipline pair: the git-push-main guard denies the push, this hint catches the mistake while it is still a cheap fix. Repos with no origin remote stay silent. A repo can version its own policy in a root `.belt.yaml` overlay (opt-out, replacement protected branches, an appended message); hints-only by design, guards never read repo files (docs/adr/0012).
@@ -36,6 +37,7 @@ Eight hints add advisory context the agent reads next to a tool result or at ses
 - `agent-memory`: when a session opens, injects the agent memory indexes (`~/.config/agent-memory/MEMORY.md`, plus `~/.config/agent-memory-work/MEMORY.md` on machines that have one). Cross-agent facts then arrive as context instead of relying on instruction prose to prompt a read. A missing store is silence, so the work index never appears on personal machines.
 - `kof-deposit`: once per session, nudges a session that did substantial work but never recorded a kof assertion to deposit what it derived before the conclusions evaporate with the context.
 - `humanizer-check`: once per session, after a tool call publishes text to a system other people read, points at `humanizer_detect` while the wording can still be edited. A session that already ran a humanizer tool is left alone.
+- `em-dash`: after a gh command or MCP call publishes text containing em dashes, says how many went out and asks for an edit replacing them. The user reads them as an AI tell, and `humanizer_detect` does not flag them. Fires on every offending publish.
 
 Beyond the built-ins, a `custom_hints` config section registers named hints that shell out to an external command when a session starts. The hook payload fields arrive as JSON on stdin, and the command's stdout becomes the advice under the usual `belt[<name>]:` prefix. A non-zero exit, a run past the budget (400 ms unless `timeout_ms` says otherwise), or empty stdout means silence plus a warn event. A broken external never breaks a session. This is the escape hatch for context that belongs to one machine, such as a private daily journal. The hint lives in that machine's rendered config rather than in a second SessionStart hook or a compiled-in hint.
 

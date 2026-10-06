@@ -25,13 +25,13 @@ internal/cli/       cobra commands: hook <event>, hint <event>, check,
 internal/hook/      payload parsing + output emission per event: deny JSON,
                     additionalContext JSON, or plain stdout for prompt
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
-                    guards (git-push-main, git-identity, commit-guard,
+                    guards (git-push-main, git-discard, git-identity, commit-guard,
                     script-deny-list, write-internal-names,
                     publish-internal-names), and the Custom guard that execs
                     config-registered external commands
 internal/hint/      the Hint interface and the hints (prefer-csl,
                     commit-policy, lint-policy, kof-assertions, kof-consult,
-                    kof-deposit, agent-memory, humanizer-check), the Custom
+                    kof-deposit, agent-memory, humanizer-check, em-dash), the Custom
                     hint that execs config-registered external commands,
                     plus csl shard lookup, search-response parsing, and the
                     per-session seen store

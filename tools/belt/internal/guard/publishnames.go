@@ -783,23 +783,71 @@ func (c ghInvocation) files() []string {
 // missing or unreadable file (or "-" for stdin) contributes nothing: the
 // same command may be creating it, and its text is then in the command.
 func (g *PublishInternalNames) readReferenced(dir, path string) (string, bool) {
-	if path == "" || path == "-" {
+	path, ok := ReferencedPath(dir, path)
+	if !ok {
 		return "", false
-	}
-	switch {
-	case strings.HasPrefix(path, "~"):
-		path = config.ExpandHome(path)
-	case filepath.IsAbs(path):
-	case dir == "":
-		return "", false
-	default:
-		path = filepath.Join(dir, path)
 	}
 	body, err := g.readFile(path)
 	if err != nil {
 		return "", false
 	}
 	return body, true
+}
+
+// ReferencedPath resolves a file path a command names against dir: ~
+// expanded, absolute kept, relative joined onto dir. ok is false for "",
+// "-" (stdin), and a relative path from an unknown dir.
+func ReferencedPath(dir, path string) (string, bool) {
+	switch {
+	case path == "" || path == "-":
+		return "", false
+	case strings.HasPrefix(path, "~"):
+		return config.ExpandHome(path), true
+	case filepath.IsAbs(path):
+		return path, true
+	case dir == "":
+		return "", false
+	}
+	return filepath.Join(dir, path), true
+}
+
+// GhCall is one gh invocation in a shell command, placed in the directory
+// it runs in by the same cd-tracking walk the git guards use. Exported for
+// the em-dash hint, which watches the same publishing calls this guard
+// scans.
+type GhCall struct {
+	Group string   // pr, issue, api, ...
+	Sub   string   // create, edit, comment; for api, the endpoint
+	Args  []string // every token after gh
+	Dir   string   // "" when only a shell can name the directory
+}
+
+// GhCalls returns every gh invocation in a shell command, one per segment.
+func GhCalls(command, cwd string) []GhCall {
+	var calls []GhCall
+	walkSegments(command, cwd, func(tokens []string, dir string) {
+		for i, tok := range tokens {
+			if tok != "gh" {
+				continue
+			}
+			if c, ok := parseGh(tokens[i+1:]); ok {
+				calls = append(calls, GhCall{Group: c.group, Sub: c.sub, Args: c.args, Dir: dir})
+			}
+			return
+		}
+	})
+	return calls
+}
+
+// Files lists the paths the call reads text from, as written (see
+// ghInvocation.files). Resolve them with ReferencedPath.
+func (c GhCall) Files() []string {
+	return ghInvocation{group: c.Group, sub: c.Sub, args: c.Args}.files()
+}
+
+// FlagValues returns every value the call gives any of the flags.
+func (c GhCall) FlagValues(flags ...string) []string {
+	return flagValues(c.Args, flags...)
 }
 
 // readFileString is the real readFile backend.

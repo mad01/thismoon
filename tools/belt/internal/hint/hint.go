@@ -79,6 +79,11 @@ func All(cfg config.Config) []Hint {
 		NewKofConsult(cfg),
 		NewKofDeposit(cfg),
 		NewHumanizer(cfg),
+		// One hint id on two events, like the publish-internal-names guard:
+		// MCP publishing calls and gh publishing commands. ForEvent keeps
+		// them apart, HintEnabled switches both.
+		NewEmDash(cfg, EventExternalText),
+		NewEmDash(cfg, EventBash),
 		NewPreferCSL(cfg),
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.CustomHints)) {

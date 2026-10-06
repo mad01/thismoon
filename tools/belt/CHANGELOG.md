@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+
+### Features
+
+* **belt:** git-discard guard, denying stash, hard reset, checkout, restore, and forced clean over uncommitted work
+* **belt:** em-dash hint, flagging em dashes in PR, issue, and MCP-published text right after it goes out
+
 ## [2.5.1](https://github.com/mad01/thismoon/compare/belt/v2.5.0...belt/v2.5.1) (2026-10-02)
 
 
