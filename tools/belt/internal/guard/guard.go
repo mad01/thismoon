@@ -71,6 +71,7 @@ type Guard interface {
 func All(cfg config.Config) []Guard {
 	guards := []Guard{
 		NewGitPushMain(cfg),
+		NewGitDiscard(cfg),
 		NewGitIdentity(cfg),
 		NewCommitGuard(cfg),
 		NewScriptDenyList(cfg),
