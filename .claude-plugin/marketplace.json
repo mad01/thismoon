@@ -8,7 +8,7 @@
     {
       "name": "session-band",
       "source": "./mods/session-band",
-      "description": "A status line under the prompt: agent state, the active worklog key, the work-on phase, the present page, and belt denies this session."
+      "description": "A status line under the prompt counting belt denials this session, shown from the first deny on."
     },
     {
       "name": "humanizer-gate",

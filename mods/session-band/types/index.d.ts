@@ -1,15 +1,10 @@
-export type SessionBandPage = { id: string; url: string | null }
+/** How many belt denials this session has seen; zero keeps the line clear. */
+export type SessionBandDenies = number
 
 declare module 'claude-code' {
   interface PluginState {
     'session-band': {
-      isWorking: boolean
-      isWaiting: boolean
-      worklogKey: string | null
-      phase: string | null
-      presentPage: SessionBandPage | null
-      beltDenies: number
-      isCompacted: boolean
+      beltDenies: SessionBandDenies
     }
   }
 }
