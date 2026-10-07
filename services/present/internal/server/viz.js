@@ -174,10 +174,34 @@
   // Coordinates come back relative to the root, so the drawing needs no
   // offsetting.
   function diagramElk(spec, measure) {
+    var gap = DIAGRAM_LAYER_GAP, lr = spec.direction !== 'TB';
+    var edges = (spec.edges || []).map(function (e, i) {
+      // Left to right, the widest label sets the gap between layers, so a
+      // label on the run between two boxes never reaches into either box.
+      // Top to bottom the runs are vertical and a label's width is beside
+      // them, so the gap stays.
+      if (e.label && lr) gap = Math.max(gap, Math.ceil(measure(e.label, 'text')) + 24);
+      return { id: 'e' + i, sources: [e.from], targets: [e.to] };
+    });
+    // ELK spaces a set of siblings by their parent's options, not the
+    // root's, so every group carries the same spacing as the root. Without
+    // it the boxes inside a group sit ELK's default 20 apart and the
+    // labels on the runs between them land on the boxes.
+    var spacing = {
+      'elk.layered.spacing.nodeNodeBetweenLayers': String(gap),
+      'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+      'elk.spacing.nodeNode': '28',
+      'elk.spacing.edgeNode': '24',
+      'elk.spacing.edgeEdge': '14'
+    };
+    function spaced(options) {
+      for (var k in spacing) options[k] = spacing[k];
+      return options;
+    }
     var byParent = Object.create(null);
     function child(parent, el) { (byParent[parent || ''] = byParent[parent || ''] || []).push(el); }
     (spec.groups || []).forEach(function (g) {
-      child(g.group, { id: g.id, group: true, layoutOptions: { 'elk.padding': DIAGRAM_GROUP_PAD } });
+      child(g.group, { id: g.id, group: true, layoutOptions: spaced({ 'elk.padding': DIAGRAM_GROUP_PAD }) });
     });
     (spec.nodes || []).forEach(function (n) {
       var box = diagramBox(n, measure);
@@ -189,31 +213,17 @@
         return el;
       });
     }
-    var gap = DIAGRAM_LAYER_GAP, lr = spec.direction !== 'TB';
-    var edges = (spec.edges || []).map(function (e, i) {
-      // Left to right, the widest label sets the gap between layers, so a
-      // label on the run between two boxes never reaches into either box.
-      // Top to bottom the runs are vertical and a label's width is beside
-      // them, so the gap stays.
-      if (e.label && lr) gap = Math.max(gap, Math.ceil(measure(e.label, 'text')) + 24);
-      return { id: 'e' + i, sources: [e.from], targets: [e.to] };
-    });
     return {
       id: 'root',
-      layoutOptions: {
+      layoutOptions: spaced({
         'elk.algorithm': 'layered',
         'elk.direction': spec.direction === 'TB' ? 'DOWN' : 'RIGHT',
         'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
         'elk.edgeRouting': 'ORTHOGONAL',
         'elk.json.edgeCoords': 'ROOT',
         'elk.json.shapeCoords': 'ROOT',
-        'elk.layered.spacing.nodeNodeBetweenLayers': String(gap),
-        'elk.layered.spacing.edgeNodeBetweenLayers': '24',
-        'elk.spacing.nodeNode': '28',
-        'elk.spacing.edgeNode': '24',
-        'elk.spacing.edgeEdge': '14',
         'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
-      },
+      }),
       children: attach(''),
       edges: edges
     };

@@ -354,7 +354,9 @@ theme). Do not add those controls manually.
   the labels with a canvas and builds the ELK graph through
   `PresentViz.diagramGraph` (which wraps `diagramElk`: layered,
   `INCLUDE_CHILDREN`, orthogonal routes, root coordinates, a layer gap
-  sized from the widest edge label, left to right only). It runs the
+  sized from the widest edge label, left to right only, set on the root
+  and on every group since ELK spaces siblings by their parent's
+  options). It runs the
   vendored elkjs once per spec and draws SVG with D3: groups, boxes by
   kind, routed edges, labels placed by
   `routeLabelPoint` on a halo in `--surface`, and flow dots whose speed
