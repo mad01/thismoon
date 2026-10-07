@@ -158,7 +158,7 @@ Limits, all consequences of present's inline syntax having no escape: a bold spa
   - `content`: Doc JSON object `{summary?, meta?, chips?, sections:[{h, blocks}]}` or legacy HTML string (auto-detected)
   - `deck`: a second Doc JSON object with the same schema, Doc JSON only (a non-object is refused); every section is one slide, summary/meta/chips make the title slide, references the last one. The tool description carries the authoring rules (claim headings, 3 to 5 short items or two sentences per slide, one highlight per slide, 5 to 12 slides). Detail stays in the brief; the skill has the full list. The deck Doc may also set the chrome fields `logo`, `logo_position`, `progress`, `presenter`, `footer` (all optional; `render.validateChrome` refuses an unknown position or progress value and a logo that is neither `none` nor an http(s) URL)
   - Section fields beside `h` and `blocks`: `tone` (a role from `webkit.Roles()`, no aliases; rendered as `data-tone` plus `style="--slide-accent: var(--<role>)"`, banding the section in the brief and tinting the slide), and deck-only `layout` (default|center|statement|section, emitted as `data-layout` when not default), `notes` (an inert `<template class="deck-notes">` at the end of the section, outside both walkers by construction), `reveal` (`data-reveal`). Deck-level `transition` (fade|slide|none) rides in the chrome island only when set and not fade. `render.validateSection` refuses an unknown layout or tone; a Doc without any of them renders byte-identically (`render/testdata/golden-stage1.html`). `render/testdata/sample-deck.json` exercises all of it and `TestSampleDeckRenders` keeps it compiling
-  - Doc blocks: `p`, `h3`, `callout` (`sev` info|warn|ok|error), `table`, `kv`, `list`, `panel`, `progress`, `graph`, `diagram` (`nodes`, `edges`, `groups`, `direction`, `caption`, `steps` with `focus`; `render.validateDiagram` refuses unknown kinds, tones, and directions, a reused or empty id, an edge to a group or to itself, an empty group, groups nested past two, more than 24 nodes, and an element stepped before what holds it; many per page, outside the one-graph rule), `chart` (`steps: [{caption}]` and a series `step` for a chart a deck walks one step per Next; `render.validateChart` refuses an unknown kind, a step without a caption, a series step out of range, steps on a sparkline, a series step on a doughnut, a sankey, or a ribbon, `order` on any kind but ribbon, and a stepped chart inside `details`; `ribbon` adds `order` (rank or given) and `frame`, see *Metric charts* under *Gotchas*), `code`, `html`, `image` (`src`, `alt`, `caption?`; see *Images* under *Gotchas*), plus the layout blocks `columns` (`cols`: 2 or 3 arrays of blocks), `stat` (`value`, `label`, `sub?`), `quote` (`text`, `cite?`), and `details` (`summary`, `blocks`). A `columns` or `details` block holds any block but `columns` and `details`. The page's one `graph` may sit in a column but not in `details`; the deck splitter and `initGraphAndFlow` find `#cy-graph` wherever it is, and `validateDoc` refuses a Doc that places it twice. `render.validateBlocks` refuses the rest and `renderBlockAt` carries a depth guard. `cols` is one wire key for a table's header strings and a columns block's arrays, told apart by `t` in `Block.UnmarshalJSON`/`MarshalJSON`, so a stored table's canonical JSON never moves. A golden fixture (`render/testdata/golden-brief.html`) pins that a Doc without the new fields renders byte-identically
+  - Doc blocks: `p`, `h3`, `callout` (`sev` info|warn|ok|error), `table`, `kv`, `list`, `panel`, `progress`, `graph`, `diagram` (`nodes`, `edges`, `groups`, `direction`, `caption`, `steps` with `focus`; `render.validateDiagram` refuses unknown kinds, tones, and directions, an id that is not a plain token or is reused, labels past their caps, an edge to a group, to itself, or repeated, a weight without flow, an empty group, groups nested past two, more than 24 nodes or 12 groups, a frame, a step out of range, a focus naming nothing or something not yet shown, and an element stepped before what holds it; `validateFieldHomes` refuses its fields on any other block; many per page, outside the one-graph rule), `chart` (`steps: [{caption}]` and a series `step` for a chart a deck walks one step per Next; `render.validateChart` refuses an unknown kind, a step without a caption, a series step out of range, steps on a sparkline, a series step on a doughnut, a sankey, or a ribbon, `order` on any kind but ribbon, and a stepped chart inside `details`; `ribbon` adds `order` (rank or given); `frame: true` keeps a card around any chart, see *Visual blocks* under *Gotchas*), `code`, `html`, `image` (`src`, `alt`, `caption?`, `frame?`; see *Images* under *Gotchas*), plus the layout blocks `columns` (`cols`: 2 or 3 arrays of blocks), `stat` (`value`, `label`, `sub?`), `quote` (`text`, `cite?`), and `details` (`summary`, `blocks`). A `columns` or `details` block holds any block but `columns` and `details`. The page's one `graph` may sit in a column but not in `details`; the deck splitter and `initGraphAndFlow` find `#cy-graph` wherever it is, and `validateDoc` refuses a Doc that places it twice. `render.validateBlocks` refuses the rest and `renderBlockAt` carries a depth guard. `cols` is one wire key for a table's header strings and a columns block's arrays, told apart by `t` in `Block.UnmarshalJSON`/`MarshalJSON`, so a stored table's canonical JSON never moves. A golden fixture (`render/testdata/golden-brief.html`) pins that a Doc without the new fields renders byte-identically
   - `graph`: Graph JSON object `{nodes, edges, layout?}` or legacy JS string (auto-detected); one per page, shared by both renditions
   - `references`: `[{title, url}]`
 - `present_read(id)` → full page with rendered HTML content and `deck` (includes references, `has_deck`, `deck_url`)
@@ -335,9 +335,10 @@ theme). Do not add those controls manually.
   clicks. Every build registers `block._presentStep(n)`, which the deck calls
   to move the chart (no animation under Reduce Motion or `transition: none`).
   `viz.js` (`window.PresentViz`, served at `/viz.js`) holds the pure helpers
-  (`stepPlan`, `chartStepVisibility`, `ribbonLayout`, the diagram's
-  `diagramElk`, `diagramShown`, `diagramFocus`, `elkPath`), tested under
-  node. `d3-7.9.0.min.js` is vendored the same way as Chart.js
+  (`stepPlan`, `chartStepVisibility`, `ribbonLayout`, and the diagram's
+  `wrapLines`, `diagramBox`, `diagramElk`, `diagramGraph`, `diagramText`,
+  `elkPath`, `routeLabelPoint`, `diagramShown`, `diagramFocus`,
+  `flowSpeed`), tested under node. `d3-7.9.0.min.js` is vendored the same way as Chart.js
   (docs/adr/0022, `THIRD-PARTY.md`); the ribbon chart and the diagram
   block read it.
 - **Diagram blocks are laid out in the browser.** A `t=diagram` block
@@ -345,15 +346,17 @@ theme). Do not add those controls manually.
   JSON island (`diagramSpec`: direction, groups, nodes, edges, steps with
   focus), the caption as fixated prose, and the step captions as the same
   `ol.present-steps` a chart carries. `buildDiagram` in `app.js` measures
-  the labels with a canvas, builds the ELK graph through
-  `PresentViz.diagramElk` (layered, `INCLUDE_CHILDREN`, orthogonal routes,
-  root coordinates), runs the vendored elkjs once per spec (a generation
-  counter drops a stale result), and draws SVG with D3: groups, boxes by
-  kind, routed edges with haloed labels, flow dots whose speed follows
-  `flowSpeed`. Fills are `var(--tone-<t>-bg)` and friends, so a theme
-  change redraws nothing. The svg scales to its wrapper through the
-  viewBox (a ResizeObserver redraws on size changes), steps toggle `off`,
-  `focus`, and `dim` classes through `_presentStep` on the MAD-385
+  the labels with a canvas and builds the ELK graph through
+  `PresentViz.diagramGraph` (which wraps `diagramElk`: layered,
+  `INCLUDE_CHILDREN`, orthogonal routes, root coordinates, a layer gap
+  sized from the widest edge label). It runs the vendored elkjs once per
+  spec, with a generation counter that drops a stale result, and draws
+  SVG with D3: groups, boxes by kind, routed edges, labels placed by
+  `routeLabelPoint` on a halo in `--surface`, and flow dots whose speed
+  follows `flowSpeed`. Fills are `var(--tone-<t>-bg)` and friends, so a
+  theme change redraws nothing. The svg scales to its wrapper through
+  the viewBox; a ResizeObserver only refits, never redraws. Steps toggle
+  `off`, `focus`, and `dim` classes through `_presentStep` on the MAD-385
   contract, and Reduce Motion or a cutting deck swap without transitions.
   It needs `window.ELK` and `d3`; without one it shows a note. Every tone
   list has three consumers now: `graphTones` in graph.go, `GRAPH_TONES`

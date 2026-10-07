@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -333,6 +334,45 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			`diagram "D": edge 1 (a to b) appears from the start, before "b" at step 2`,
 		},
 		{"chart step with focus", Block{T: "chart", Title: "C", Steps: []Step{{Caption: "one", Focus: []string{"a"}}}}, `chart "C": step 1 names focus, which only a diagram takes`},
+		{"diagram with 25 nodes", Block{T: "diagram", Caption: "D", Nodes: func() []DiagramNode {
+			var ns []DiagramNode
+			for i := 0; i < 25; i++ {
+				ns = append(ns, DiagramNode{ID: fmt.Sprintf("n%d", i), Label: "N"})
+			}
+			return ns
+		}()}, `diagram "D": 25 nodes, at most 24`},
+		{"diagram with 13 groups", Block{T: "diagram", Caption: "D", Groups: func() []DiagramGroup {
+			var gs []DiagramGroup
+			for i := 0; i < 13; i++ {
+				gs = append(gs, DiagramGroup{ID: fmt.Sprintf("g%d", i), Label: "G"})
+			}
+			return gs
+		}(), Nodes: []DiagramNode{{ID: "a", Label: "A"}}}, `diagram "D": 13 groups, at most 12`},
+		{"diagram with a frame", Block{T: "diagram", Caption: "D", Frame: new(bool), Nodes: []DiagramNode{{ID: "a", Label: "A"}}}, `diagram "D": frame is a chart or image field`},
+		{"diagram without caption is named by its first node", Block{T: "diagram", Nodes: []DiagramNode{{ID: "web", Label: " "}}}, `diagram (first node "web"): node "web" has no label`},
+		{"diagram id is not a token", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a b", Label: "A"}}}, `diagram "D": node 1: id "a b" is not a plain token`},
+		{"diagram group without id", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: " ", Label: "G"}}, Nodes: []DiagramNode{{ID: "a", Label: "A"}}}, `diagram "D": group 1 has no id`},
+		{"diagram group label blank", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: " "}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}}, `diagram "D": group "g" has no label`},
+		{"diagram node label too long", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: strings.Repeat("x", 33)}}}, `diagram "D": node "a": label is over 32 characters`},
+		{"diagram node text too long", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A", Text: strings.Repeat("x", 61)}}}, `diagram "D": node "a": text is over 60 characters`},
+		{"diagram group label too long", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: strings.Repeat("x", 33)}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}}, `diagram "D": group "g": label is over 32 characters`},
+		{"diagram edge label too long", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "b", Label: strings.Repeat("x", 25)}}}, `diagram "D": edge 1 (a to b): label is over 24 characters`},
+		{"diagram edge repeated", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "b"}, {From: "a", To: "b", Label: "again"}}}, `diagram "D": edge 2 repeats edge 1 (a to b)`},
+		{"diagram weight without flow", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "b", Weight: 3}}}, `diagram "D": edge 1 (a to b): weight needs flow`},
+		{
+			"diagram group before its parent",
+			Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "outer", Label: "O", Step: 2}, {ID: "inner", Label: "I", Group: "outer", Step: 1}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "inner", Step: 2}}, Steps: []Step{{Caption: "one"}, {Caption: "two"}}},
+			`diagram "D": group "inner" appears at step 1, before "outer" at step 2`,
+		},
+		{"diagram group step out of range", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: "G", Step: 2}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g", Step: 2}}, Steps: []Step{{Caption: "one"}}}, `diagram "D": group "g" step 2: want 1 to 1`},
+		{"diagram edge step out of range", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "b", Step: 2}}, Steps: []Step{{Caption: "one"}}}, `diagram "D": edge 1 (a to b) step 2: want 1 to 1`},
+		{
+			"diagram focus on a hidden element",
+			Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B", Step: 2}}, Steps: []Step{{Caption: "one", Focus: []string{"b"}}, {Caption: "two"}}},
+			`diagram "D": step 1: focus "b" is not shown until step 2`,
+		},
+		{"direction on a paragraph", Block{T: "p", Text: "x", Direction: "LR"}, `p block: nodes, groups, edges, and direction are diagram fields`},
+		{"frame on a paragraph", Block{T: "p", Text: "x", Frame: new(bool)}, `p block: frame is a chart or image field`},
 		{
 			"stepped diagram in details",
 			Block{T: "details", Summary: "s", Blocks: []Block{{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A"}}, Steps: []Step{{Caption: "one"}}}}},

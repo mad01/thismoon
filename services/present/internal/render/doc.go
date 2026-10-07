@@ -267,9 +267,10 @@ type DiagramGroup struct {
 }
 
 // DiagramEdge is a labelled arrow from one node to another. Flow marks it
-// as carrying traffic (dots move along it on a deck, its speed set by
-// Weight against the heaviest flow edge), and Step is the step it appears
-// at, never before both ends.
+// as carrying traffic: the line is dashed, and dots move along it (in the
+// brief and on a slide alike) at a speed set by Weight against the
+// heaviest flow edge; Reduce Motion drops the dots and keeps the dash.
+// Step is the step it appears at, never before both ends.
 type DiagramEdge struct {
 	From   string  `json:"from"`
 	To     string  `json:"to"`
@@ -1009,6 +1010,9 @@ func validateBlocks(blocks []Block, depth int) error {
 		if depth > 0 && isContainer(b) {
 			return fmt.Errorf("%s block: not allowed inside a columns or details block", b.T)
 		}
+		if err := validateFieldHomes(b); err != nil {
+			return err
+		}
 		switch b.T {
 		case "panel":
 			if b.Accent != "" && !validAccent(b.Accent) {
@@ -1055,6 +1059,20 @@ func validateBlocks(blocks []Block, depth int) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// validateFieldHomes refuses a field set on a block type that does not
+// read it, so an author learns the field moved nothing: the diagram's
+// nodes, groups, edges, and direction on any other block, and frame on
+// anything but a chart or an image.
+func validateFieldHomes(b Block) error {
+	if b.T != "diagram" && (len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
+		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
+	}
+	if b.Frame != nil && b.T != "chart" && b.T != "image" && b.T != "diagram" {
+		return fmt.Errorf("%s block: frame is a chart or image field", b.T)
 	}
 	return nil
 }
@@ -1214,49 +1232,83 @@ func ribbonPeriods(series []ChartSeries) ([]string, error) {
 	return periods, nil
 }
 
+// Caps on a diagram's text, in runes: a node label draws on one line in
+// a box at most 240 px wide, a node text wraps to two lines, an edge label
+// sets the gap between two layers, and a group label sets the group's
+// least width.
+const (
+	diagramMaxLabel     = 32
+	diagramMaxText      = 60
+	diagramMaxEdgeLabel = 24
+)
+
+// diagramIDPattern is what a diagram id may be: a plain token, since ids
+// land in SVG class names and in the layout's keys.
+var diagramIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// diagramName names a diagram in an error: its caption cut to 40 runes,
+// or, with no caption, its first node, so the author can find the block.
+func diagramName(b Block) string {
+	if c := strings.TrimSpace(b.Caption); c != "" {
+		if r := []rune(c); len(r) > 40 {
+			c = string(r[:40]) + "\u2026"
+		}
+		return fmt.Sprintf("diagram %q", c)
+	}
+	if len(b.Nodes) > 0 {
+		return fmt.Sprintf("diagram (first node %q)", b.Nodes[0].ID)
+	}
+	return "diagram"
+}
+
 // validateDiagram refuses a diagram the browser could not lay out or walk:
 // an unknown direction, no nodes or more than diagramMaxNodes, more than
-// diagramMaxGroups groups, an id used twice across nodes and groups, and
-// whatever validateDiagramGroups, validateDiagramNodes,
-// validateDiagramEdges, and validateDiagramSteps refuse.
+// diagramMaxGroups groups, a frame (a diagram never has a card), an id used
+// twice across nodes and groups, and whatever validateDiagramGroups,
+// validateDiagramNodes, validateDiagramEdges, and validateDiagramSteps
+// refuse.
 func validateDiagram(b Block) error {
+	name := diagramName(b)
 	if b.Direction != "" && !slices.Contains(diagramDirections, b.Direction) {
-		return fmt.Errorf(
-			"diagram %q: unknown direction %q (want %s)",
-			b.Caption, b.Direction, strings.Join(diagramDirections, " or "),
-		)
+		return fmt.Errorf("%s: unknown direction %q (want %s)", name, b.Direction, strings.Join(diagramDirections, " or "))
 	}
 	if len(b.Nodes) == 0 {
-		return fmt.Errorf("diagram %q: needs at least one node", b.Caption)
+		return fmt.Errorf("%s: needs at least one node", name)
 	}
 	if len(b.Nodes) > diagramMaxNodes {
-		return fmt.Errorf("diagram %q: %d nodes, at most %d (split the picture over slides)", b.Caption, len(b.Nodes), diagramMaxNodes)
+		return fmt.Errorf("%s: %d nodes, at most %d (split the picture over slides)", name, len(b.Nodes), diagramMaxNodes)
 	}
 	if len(b.Groups) > diagramMaxGroups {
-		return fmt.Errorf("diagram %q: %d groups, at most %d", b.Caption, len(b.Groups), diagramMaxGroups)
+		return fmt.Errorf("%s: %d groups, at most %d", name, len(b.Groups), diagramMaxGroups)
+	}
+	if b.Frame != nil {
+		return fmt.Errorf("%s: frame is a chart or image field (a diagram never has a card)", name)
 	}
 	ids, err := diagramIDs(b)
 	if err != nil {
-		return fmt.Errorf("diagram %q: %w", b.Caption, err)
+		return fmt.Errorf("%s: %w", name, err)
 	}
 	for _, check := range []func(Block, map[string]string) error{
 		validateDiagramGroups, validateDiagramNodes, validateDiagramEdges, validateDiagramSteps,
 	} {
 		if err := check(b, ids); err != nil {
-			return fmt.Errorf("diagram %q: %w", b.Caption, err)
+			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
 	return nil
 }
 
 // diagramIDs maps every group and node id to "group" or "node", refusing
-// an empty id or one used twice: a step's focus names either, so they
-// share one namespace.
+// an id that is not a plain token or one used twice: a step's focus names
+// either, so they share one namespace.
 func diagramIDs(b Block) (map[string]string, error) {
 	ids := map[string]string{}
 	add := func(id, what string, k int) error {
 		if strings.TrimSpace(id) == "" {
 			return fmt.Errorf("%s %d has no id", what, k+1)
+		}
+		if !diagramIDPattern.MatchString(id) {
+			return fmt.Errorf("%s %d: id %q is not a plain token (letters, digits, _ and -, starting with a letter or digit)", what, k+1, id)
 		}
 		if ids[id] != "" {
 			return fmt.Errorf("id %q is used twice", id)
@@ -1277,9 +1329,13 @@ func diagramIDs(b Block) (map[string]string, error) {
 	return ids, nil
 }
 
-// validateDiagramGroups refuses a group without a label, with an unknown
-// tone, whose parent is not a group, nested past diagramMaxDepth (which
-// also catches parents that loop), or holding no node and no group.
+// runesOver reports whether s has more than max runes.
+func runesOver(s string, max int) bool { return len([]rune(s)) > max }
+
+// validateDiagramGroups refuses a group without a label or with one past
+// diagramMaxLabel runes, with an unknown tone, whose parent is not a group,
+// nested past diagramMaxDepth (which also catches parents that loop), or
+// holding no node and no group.
 func validateDiagramGroups(b Block, ids map[string]string) error {
 	parent := map[string]string{}
 	members := map[string]int{}
@@ -1293,6 +1349,9 @@ func validateDiagramGroups(b Block, ids map[string]string) error {
 	for _, g := range b.Groups {
 		if strings.TrimSpace(g.Label) == "" {
 			return fmt.Errorf("group %q has no label", g.ID)
+		}
+		if runesOver(g.Label, diagramMaxLabel) {
+			return fmt.Errorf("group %q: label is over %d characters", g.ID, diagramMaxLabel)
 		}
 		if g.Tone != "" && !validTone(g.Tone) {
 			return fmt.Errorf("group %q: unknown tone %q (want one of %s)", g.ID, g.Tone, strings.Join(graphTones, ", "))
@@ -1314,12 +1373,19 @@ func validateDiagramGroups(b Block, ids map[string]string) error {
 	return nil
 }
 
-// validateDiagramNodes refuses a node without a label, with an unknown
-// kind or tone, or in a group that is not one.
+// validateDiagramNodes refuses a node without a label, with a label or
+// text past the caps, with an unknown kind or tone, or in a group that is
+// not one.
 func validateDiagramNodes(b Block, ids map[string]string) error {
 	for _, n := range b.Nodes {
 		if strings.TrimSpace(n.Label) == "" {
 			return fmt.Errorf("node %q has no label", n.ID)
+		}
+		if runesOver(n.Label, diagramMaxLabel) {
+			return fmt.Errorf("node %q: label is over %d characters (put the rest in text)", n.ID, diagramMaxLabel)
+		}
+		if runesOver(n.Text, diagramMaxText) {
+			return fmt.Errorf("node %q: text is over %d characters", n.ID, diagramMaxText)
 		}
 		if n.Kind != "" && !slices.Contains(diagramKinds, n.Kind) {
 			return fmt.Errorf("node %q: unknown kind %q (want one of %s)", n.ID, n.Kind, strings.Join(diagramKinds, ", "))
@@ -1336,8 +1402,13 @@ func validateDiagramNodes(b Block, ids map[string]string) error {
 
 // validateDiagramEdges refuses an edge whose ends are not two different
 // nodes (a group is not an end, and a self loop has no orthogonal route
-// worth drawing) or whose weight is negative.
+// worth drawing), one that repeats an earlier edge (the two routes would
+// sit 14 px apart with their labels on top of each other), a label past
+// diagramMaxEdgeLabel runes (the widest label sets the gap between every
+// two layers), a weight without flow (it would mean nothing), or a
+// negative weight.
 func validateDiagramEdges(b Block, ids map[string]string) error {
+	seen := map[string]int{}
 	for k, e := range b.Edges {
 		for _, end := range []string{e.From, e.To} {
 			if ids[end] != "node" {
@@ -1347,28 +1418,30 @@ func validateDiagramEdges(b Block, ids map[string]string) error {
 		if e.From == e.To {
 			return fmt.Errorf("edge %d: from and to are both %q", k+1, e.From)
 		}
+		key := e.From + "\x00" + e.To
+		if j, dup := seen[key]; dup {
+			return fmt.Errorf("edge %d repeats edge %d (%s to %s)", k+1, j, e.From, e.To)
+		}
+		seen[key] = k + 1
+		if runesOver(e.Label, diagramMaxEdgeLabel) {
+			return fmt.Errorf("edge %d (%s to %s): label is over %d characters", k+1, e.From, e.To, diagramMaxEdgeLabel)
+		}
 		if e.Weight < 0 {
 			return fmt.Errorf("edge %d (%s to %s): weight %v, want 0 or more", k+1, e.From, e.To, e.Weight)
+		}
+		if e.Weight != 0 && !e.Flow {
+			return fmt.Errorf("edge %d (%s to %s): weight needs flow", k+1, e.From, e.To)
 		}
 	}
 	return nil
 }
 
 // validateDiagramSteps refuses a step without a caption, a focus id that
-// names nothing, an element step without steps or outside 1..len(steps),
-// and an element that would appear before what holds it: a group before
-// its parent, a node before its group, an edge before either end.
+// names nothing or something still hidden at that step, an element step
+// without steps or outside 1..len(steps), and an element that would appear
+// before what holds it: a group before its parent, a node before its
+// group, an edge before either end.
 func validateDiagramSteps(b Block, ids map[string]string) error {
-	for k, st := range b.Steps {
-		if strings.TrimSpace(st.Caption) == "" {
-			return fmt.Errorf("step %d has no caption", k+1)
-		}
-		for _, id := range st.Focus {
-			if ids[id] == "" {
-				return fmt.Errorf("step %d: focus %q names no node or group", k+1, id)
-			}
-		}
-	}
 	stepOf := map[string]int{}
 	for _, g := range b.Groups {
 		if err := diagramStepRange(b, "group", g.ID, g.Step); err != nil {
@@ -1398,6 +1471,19 @@ func validateDiagramSteps(b Block, ids map[string]string) error {
 		for _, end := range []string{e.From, e.To} {
 			if err := diagramStepAfter("", name, e.Step, end, stepOf); err != nil {
 				return err
+			}
+		}
+	}
+	for k, st := range b.Steps {
+		if strings.TrimSpace(st.Caption) == "" {
+			return fmt.Errorf("step %d has no caption", k+1)
+		}
+		for _, id := range st.Focus {
+			if ids[id] == "" {
+				return fmt.Errorf("step %d: focus %q names no node or group", k+1, id)
+			}
+			if stepOf[id] > k+1 {
+				return fmt.Errorf("step %d: focus %q is not shown until step %d", k+1, id, stepOf[id])
 			}
 		}
 	}

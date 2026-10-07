@@ -272,19 +272,22 @@ test('elkPath: one M/L run per section with the bend points in order', () => {
   assert.equal(PresentViz.elkPath({}), '');
 });
 
+// plain strips the prototype-free maps the helpers return, so deepEqual compares values.
+const plain = (v) => JSON.parse(JSON.stringify(v));
+
 test('diagramShown: step 0 shows the unstepped elements, step n adds the rest in order, null shows all', () => {
-  assert.deepEqual(PresentViz.diagramShown(checkout, 0), { groups: { prod: true, data: false }, nodes: { web: true, api: false, db: false }, edges: [false, false] });
-  assert.deepEqual(PresentViz.diagramShown(checkout, 2).nodes, { web: true, api: true, db: false });
+  assert.deepEqual(plain(PresentViz.diagramShown(checkout, 0)), { groups: { prod: true, data: false }, nodes: { web: true, api: false, db: false }, edges: [false, false] });
+  assert.deepEqual(plain(PresentViz.diagramShown(checkout, 2).nodes), { web: true, api: true, db: false });
   assert.deepEqual(PresentViz.diagramShown(checkout, 2).edges, [true, false]);
   assert.deepEqual(PresentViz.diagramShown(checkout, null).edges, [true, true]);
-  assert.deepEqual(PresentViz.diagramShown(checkout, null).groups, { prod: true, data: true });
+  assert.deepEqual(plain(PresentViz.diagramShown(checkout, null).groups), { prod: true, data: true });
 });
 
 test('diagramFocus: the focus ids, everything in a focused group, and the edges touching them', () => {
   assert.equal(PresentViz.diagramFocus(checkout, 1), null);
   assert.equal(PresentViz.diagramFocus(checkout, null), null);
-  assert.deepEqual(PresentViz.diagramFocus(checkout, 2), { groups: { prod: false, data: false }, nodes: { web: false, api: true, db: false }, edges: [true, true] });
-  assert.deepEqual(PresentViz.diagramFocus(checkout, 3), { groups: { prod: false, data: true }, nodes: { web: false, api: false, db: true }, edges: [false, true] });
+  assert.deepEqual(plain(PresentViz.diagramFocus(checkout, 2)), { groups: { prod: false, data: false }, nodes: { web: false, api: true, db: false }, edges: [true, true] });
+  assert.deepEqual(plain(PresentViz.diagramFocus(checkout, 3)), { groups: { prod: false, data: true }, nodes: { web: false, api: false, db: true }, edges: [false, true] });
 });
 
 test('flowSpeed: 6 px/s for the lightest, 20 px/s for the heaviest, the middle without weights', () => {
@@ -315,4 +318,16 @@ test('diagramText: the label row then one row per line, moved past the shape roo
   assert.deepEqual(PresentViz.diagramText({}, 0, 120), { x: 60, label: 19, lines: [] });
   assert.deepEqual(PresentViz.diagramText({ kind: 'person' }, 1, 196), { x: 105, label: 19, lines: [35.5] });
   assert.deepEqual(PresentViz.diagramText({ kind: 'store' }, 1, 120), { x: 60, label: 25, lines: [41.5] });
+});
+
+test('diagram helpers: an id named like an Object.prototype key is just an id', () => {
+  const spec = { groups: [{ id: 'constructor', label: 'C' }], nodes: [{ id: 'toString', label: 'T', group: 'constructor' }, { id: '__proto__', label: 'P', step: 2 }], edges: [{ from: 'toString', to: '__proto__' }], steps: [{ caption: 'one' }, { caption: 'two', focus: ['constructor'] }] };
+  const g = PresentViz.diagramElk(spec, (t) => t.length * 7);
+  assert.deepEqual(g.children.map((c) => c.id), ['constructor', '__proto__']);
+  assert.deepEqual(g.children[0].children.map((c) => c.id), ['toString']);
+  const shown = PresentViz.diagramShown(spec, 1).nodes, lit = PresentViz.diagramFocus(spec, 2).nodes;
+  assert.equal(shown.toString, true);
+  assert.equal(shown['__proto__'], false);
+  assert.equal(lit.toString, true);
+  assert.equal(lit['__proto__'], false);
 });

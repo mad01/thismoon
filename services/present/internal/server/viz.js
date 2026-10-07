@@ -174,7 +174,7 @@
   // Coordinates come back relative to the root, so the drawing needs no
   // offsetting.
   function diagramElk(spec, measure) {
-    var byParent = {};
+    var byParent = Object.create(null);
     function child(parent, el) { (byParent[parent || ''] = byParent[parent || ''] || []).push(el); }
     (spec.groups || []).forEach(function (g) {
       child(g.group, { id: g.id, group: true, layoutOptions: { 'elk.padding': DIAGRAM_GROUP_PAD } });
@@ -250,7 +250,7 @@
   // or none means from the start.
   function diagramShown(spec, stepAt) {
     function on(step) { return stepAt === null || stepAt === undefined || !isStep(step) || step <= stepAt; }
-    var groups = {}, nodes = {};
+    var groups = Object.create(null), nodes = Object.create(null);
     (spec.groups || []).forEach(function (g) { groups[g.id] = on(g.step); });
     (spec.nodes || []).forEach(function (n) { nodes[n.id] = on(n.step); });
     return { groups: groups, nodes: nodes, edges: (spec.edges || []).map(function (e) { return on(e.step); }) };
@@ -263,14 +263,14 @@
   function diagramFocus(spec, stepAt) {
     var step = isStep(stepAt) ? (spec.steps || [])[stepAt - 1] : null;
     if (!step || !step.focus || !step.focus.length) return null;
-    var parent = {};
+    var parent = Object.create(null);
     (spec.groups || []).forEach(function (g) { parent[g.id] = g.group || ''; });
     function lit(id, group) {
       if (step.focus.indexOf(id) >= 0) return true;
       for (var g = group || ''; g; g = parent[g]) { if (step.focus.indexOf(g) >= 0) return true; }
       return false;
     }
-    var groups = {}, nodes = {};
+    var groups = Object.create(null), nodes = Object.create(null);
     (spec.groups || []).forEach(function (g) { groups[g.id] = lit(g.id, g.group); });
     (spec.nodes || []).forEach(function (n) { nodes[n.id] = lit(n.id, n.group); });
     return { groups: groups, nodes: nodes, edges: (spec.edges || []).map(function (e) { return !!(nodes[e.from] || nodes[e.to]); }) };

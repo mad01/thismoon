@@ -401,12 +401,14 @@
             {
               "id": "edge",
               "label": "edge",
-              "tone": "neutral"
+              "tone": "neutral",
+              "step": 1
             },
             {
               "id": "prod",
               "label": "prod cluster",
-              "tone": "blue"
+              "tone": "blue",
+              "step": 2
             }
           ],
           "nodes": [

@@ -912,7 +912,7 @@ func TestRenderDocDiagram(t *testing.T) {
 // the diagram's script island, the way the chart island is kept safe.
 func TestRenderDocDiagramScriptSafe(t *testing.T) {
 	doc := Doc{Sections: []Section{{Heading: "X", Blocks: []Block{{
-		T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "</script><script>alert(1)</script>"}},
+		T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "</script><script>alert(1)"}},
 	}}}}}
 	out, err := RenderDoc(doc, "T")
 	if err != nil {
