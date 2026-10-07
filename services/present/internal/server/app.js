@@ -298,7 +298,7 @@
     });
     return max;
   }
-  // chartStepAt is the stage a stepped chart block stands at: the deck
+  // chartStepAt is the step a stepped chart block stands at: the deck
   // writes data-step-at as it walks the steps, the brief never does, and
   // null means every series shows.
   function chartStepAt(block) {
@@ -457,8 +457,8 @@
     if (animate && opts && opts.duration !== undefined && cfg.options) {
       cfg.options.animation = opts.duration > 0 ? { duration: opts.duration, easing: 'easeOutQuart' } : false;
     }
-    // A stepped chart (data-steps) starts at the stage the deck has walked
-    // to, with the series of later stages hidden. Its axis is pinned to the
+    // A stepped chart (data-steps) starts at the step the deck has walked
+    // to, with the series of later steps hidden. Its axis is pinned to the
     // full data and the legend stops toggling series, so a click cannot
     // undo a step.
     var stepped = block.hasAttribute('data-steps');
@@ -478,7 +478,7 @@
       }
     }
     block._chart = new Chart(canvas, cfg);
-    // The deck moves a stepped chart between stages through this hook. It
+    // The deck moves a stepped chart between steps through this hook. It
     // is registered on every build and reads block._chart when called,
     // because a theme change replaces the chart. Reduce Motion and a deck
     // that cuts (block._stepCut) swap the series without animating.
@@ -999,7 +999,7 @@
     slide._notes = notes;
     // Steps: on a reveal slide each item of a top-level list and every
     // other top-level block is one fragment. A stepped block (data-steps: a
-    // chart with stages) adds its own steps right after the fragment that
+    // chart with steps) adds its own steps right after the fragment that
     // holds it, a chart inside a columns block included, and a slide
     // without reveal still walks its stepped blocks. PresentViz.stepPlan
     // orders the entries; the slide keeps them as _steps.
@@ -1273,27 +1273,27 @@
     var step = 0;
     function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
     // applySteps lands the slide on step n: the first n fragments shown and
-    // every stepped block at the highest stage among its entries below n
-    // (stage 0 before its first one).
+    // every stepped block at the highest step among its entries below n
+    // (step 0 before its first one).
     function applySteps(slide, n) {
       step = n;
       if (!slide || !slide._steps) return;
-      var stages = [];
+      var reached = [];
       function record(el, m) {
-        for (var i = 0; i < stages.length; i++) {
-          if (stages[i].el === el) { if (m > stages[i].n) stages[i].n = m; return; }
+        for (var i = 0; i < reached.length; i++) {
+          if (reached[i].el === el) { if (m > reached[i].n) reached[i].n = m; return; }
         }
-        stages.push({ el: el, n: m });
+        reached.push({ el: el, n: m });
       }
       slide._steps.forEach(function (entry, k) {
         if (entry.kind === 'fragment') { entry.el.classList.toggle('shown', k < n); return; }
         record(entry.el, k < n ? entry.n : 0);
       });
-      stages.forEach(function (st) { setBlockStep(st.el, st.n); });
+      reached.forEach(function (r) { setBlockStep(r.el, r.n); });
     }
-    // setBlockStep moves a stepped block to stage m: the attribute the chart
+    // setBlockStep moves a stepped block to step m: the attribute the chart
     // bootstrap reads when the block builds later, the renderer's hook when
-    // it is already built, and the caption of that stage.
+    // it is already built, and the caption of that step.
     function setBlockStep(el, m) {
       el.setAttribute('data-step-at', String(m));
       el._stepCut = transition === 'none';

@@ -185,9 +185,9 @@ type Block struct {
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
 	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
 
-	// Steps makes a chart walk through stages on a deck slide, one per
-	// Next: each entry is the caption shown under the chart at that step,
-	// and a series whose Step names a stage appears at that step. The brief
+	// Steps makes a chart walk through its data on a deck slide, one step
+	// per Next: each entry is the caption shown under the chart at that
+	// step, and a series whose Step names one appears at that step. The brief
 	// shows the finished chart with the captions as a numbered list.
 	Steps []ChartStep `json:"steps,omitempty"`
 }
@@ -247,7 +247,7 @@ type ChartSeries struct {
 	Name   string       `json:"name,omitempty"`
 	Color  string       `json:"color,omitempty"` // a series role (series-1 to series-4) or a legacy name; empty = auto by index
 	Points []ChartPoint `json:"points"`
-	Step   int          `json:"step,omitempty"` // 1-based stage the series first shows at; 0 = from the start
+	Step   int          `json:"step,omitempty"` // 1-based step the series first shows at; 0 = from the start
 }
 
 // ChartPoint is one x/y datum. X is a category label (or the numeric x for a
@@ -293,7 +293,7 @@ type ChartFlow struct {
 	Value float64 `json:"value"`
 }
 
-// ChartStep is one stage of a stepped chart: the caption the deck shows
+// ChartStep is one step of a stepped chart: the caption the deck shows
 // under the chart at that step and the brief lists under it.
 type ChartStep struct {
 	Caption string `json:"caption"`

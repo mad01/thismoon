@@ -38,7 +38,7 @@ Block =                                  // discriminated on `t`
   | {t: "callout", text, sev?}           | {t: "table", cols, rows}
   | {t: "kv", kv}                        | {t: "list", items, ordered?}
   | {t: "panel", title, sub?, accent?}   | {t: "progress", pct, label?}
-  | {t: "graph"}                         | {t: "chart", kind, series | flows, title?, unit?, xunit?}
+  | {t: "graph"}                         | {t: "chart", kind, series | flows, title?, unit?, xunit?, steps?}
   | {t: "code", text, lang?}             | {t: "html", text}
   | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
   | {t: "quote", text, cite?}            | {t: "details", summary, blocks}
@@ -197,7 +197,7 @@ Rules:
 | `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a palette role name (`primary`, `blue`, `green`, `purple`, `amber`, `red`, `yellow`, `series-1` to `series-4`; `terracotta` still works as an alias of `primary`). An unknown name is refused |
 | `progress` | `pct`, `label?` | Progress bar (0-100) |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
-| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline — use as many as you like per page. See **Chart format** below |
+| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline — use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format** and **Stepped charts** below |
 | `code` | `text`, `lang?` | Fenced code block with language badge and copy button. `text` is verbatim code (NO inline markdown — backticks, `**`, `<` all render literally). `lang` sets the badge and syntax highlighting: `go`, `bash`, `json`, `python`, `typescript`, `yaml`, `sql` highlight; anything else (or omitted) renders plain with a `text` badge |
 | `html` | `text` | Raw HTML passthrough for one-off custom content |
 | `columns` | `cols: [[blocks], [blocks]]` | Two or three equal-width columns of blocks, one column under 700 px. A column holds any block but `columns` and `details`. Three `stat` blocks in it make a row of figures; a `chart` beside a `p` puts the caption next to the chart. The page's one `graph` may sit in a column too, beside the paragraph that says what to look at |
@@ -335,6 +335,7 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
+15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. See **Stepped charts**.
 
 ### Example deck
 
@@ -559,8 +560,9 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 | `xunit` | string? | X-axis unit label, `scatter` only (e.g. `payload KB`) |
 | `series` | array | One or more `{name?, color?, points}` series. Every kind except `sankey` |
 | `flows` | array | `{from, to, value}` links, `sankey` only. See **Sankey format** below |
+| `steps` | array? | `[{caption}]`, one per step a deck slide walks through the chart. See **Stepped charts** below |
 
-Each series: `name` (legend label, shown when 2+ series), `color` (`series-1` to `series-4`, or the legacy names `terracotta`, `blue`, `green`, `purple` for the same four slots; omit to auto-assign by index), and `points` — an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
+Each series: `name` (legend label, shown when 2+ series), `color` (`series-1` to `series-4`, or the legacy names `terracotta`, `blue`, `green`, `purple` for the same four slots; omit to auto-assign by index), `step` (the 1-based step the series first shows at, on a chart with `steps`; omit for a series shown from the start), and `points` — an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
 
 Charts use the same palette as the graph and recolor automatically when the reader switches mode or family. Hover shows a tooltip on every kind but `sparkline`; the entry animation plays once per render and is skipped when the reader has Reduce Motion on.
 
@@ -592,6 +594,31 @@ Charts use the same palette as the graph and recolor automatically when the read
 ```
 
 Node names are matched by exact string, so reuse the same spelling on every link. Each node takes the next palette color in order of first appearance and every link fades from its source color to its target color.
+
+### Stepped charts
+
+A chart with `steps` walks through its data on a deck slide. Each press of Next takes one step: it shows the series whose `step` it is and puts that step's caption under the chart. The slide's counter shows the steps as `s/S` beside the slide number. The remote control's `next` and `prev` take them the way the keys do, and a jump (`goto`, a dot, the URL hash) lands on the finished chart. On a `reveal` slide the chart's steps follow right after the chart itself appears. The brief shows the finished chart with the captions as a numbered list, so the page still reads top to bottom and read-aloud speaks them.
+
+```json
+{
+  "t": "chart",
+  "kind": "stacked-bar",
+  "title": "5xx by service per five minutes",
+  "unit": "req",
+  "steps": [
+    {"caption": "The pricing service times out first."},
+    {"caption": "Checkout retries pile on top of it."},
+    {"caption": "The gateway sheds load and the spike peaks."}
+  ],
+  "series": [
+    {"name": "pricing", "step": 1, "points": [{"x": "14:00", "y": 0}, {"x": "14:05", "y": 120}]},
+    {"name": "checkout", "step": 2, "points": [{"x": "14:00", "y": 0}, {"x": "14:05", "y": 60}]},
+    {"name": "gateway", "step": 3, "points": [{"x": "14:00", "y": 0}, {"x": "14:05", "y": 0}]}
+  ]
+}
+```
+
+Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` has no series, so its steps are captions only. A series without `step` shows from the first step on. The value axis is pinned to the full data, so a series joining later doesn't rescale the ones already shown. The legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
 
 ## References
 

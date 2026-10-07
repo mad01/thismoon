@@ -103,3 +103,7 @@ _Avoid_: page (a page is the whole id), frame
 **Presenting**:
 The deck view's state with the chrome hidden and one slide filling the window. It is entered and left with the Present button, the F or P key, Escape, or a remote command from the present_deck tool or `present deck`.
 _Avoid_: fullscreen (the browser's own fullscreen is one optional layer on top), slideshow mode
+
+**Step**:
+One press of Next on a slide before the deck moves on: a reveal item or block appearing, or a stepped chart showing its next series with its caption. The counter shows a slide's steps as `s/S`, and a jump lands with every step taken.
+_Avoid_: fragment (the CSS class behind a reveal step), stage, build
