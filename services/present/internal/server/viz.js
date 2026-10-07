@@ -1,6 +1,7 @@
 'use strict';
 // present deck visuals: the pure, node-tested parts of the deck's in-block
-// stepping and of the ribbon chart's layout. shell.html loads this file before
+// stepping, the ribbon chart's layout, and the diagram block's ELK graph,
+// stepping, and routes. shell.html loads this file before
 // app.js, which reads the helpers from window.PresentViz. Nothing here touches
 // the DOM at load time.
 (function (root) {
@@ -128,8 +129,211 @@
     return { periods: periods, columns: columns, ribbons: ribbons, max: max };
   }
 
+  // ── Diagram helpers ──
+  // The diagram block's pure side: the ELK graph built from a spec, which
+  // elements a step shows and lights up, an ELK edge route as an SVG path,
+  // and the flow speed. app.js measures text, runs ELK, and draws.
+  var DIAGRAM_BOX = { minW: 120, maxW: 240, padX: 14, padY: 10, label: 18, text: 15, lineChars: 28 };
+  var DIAGRAM_GROUP_PAD = '[top=36,left=16,bottom=16,right=16]';
+  var DIAGRAM_LAYER_GAP = 56; // between layers, unless a label needs more
+
+  // wrapLines breaks text into at most two lines of about max characters,
+  // on spaces; a long last line is cut with an ellipsis.
+  function wrapLines(text, max) {
+    var words = String(text || '').split(/\s+/).filter(Boolean), lines = [], line = '';
+    words.forEach(function (w) {
+      var next = line ? line + ' ' + w : w;
+      if (next.length <= max || !line) { line = next; return; }
+      lines.push(line);
+      line = w;
+    });
+    if (line) lines.push(line);
+    if (lines.length > 2) { lines = lines.slice(0, 2); lines[1] = lines[1].slice(0, Math.max(0, max - 1)) + '\u2026'; }
+    return lines;
+  }
+
+  // diagramBox sizes a node from its label and text lines: as wide as the
+  // widest line plus padding, between minW and maxW, and one label line
+  // plus one text line per wrapped line high. measure(string) returns the
+  // string's width in pixels.
+  function diagramBox(node, measure) {
+    var lines = wrapLines(node.text, DIAGRAM_BOX.lineChars);
+    var widest = measure(node.label || '', 'label');
+    lines.forEach(function (l) { widest = Math.max(widest, measure(l, 'text')); });
+    var w = Math.min(DIAGRAM_BOX.maxW, Math.max(DIAGRAM_BOX.minW, Math.ceil(widest) + 2 * DIAGRAM_BOX.padX));
+    var h = 2 * DIAGRAM_BOX.padY + DIAGRAM_BOX.label + lines.length * DIAGRAM_BOX.text;
+    return { width: w, height: h, lines: lines };
+  }
+
+  // diagramElk turns a spec into the graph ELK lays out: groups become
+  // compound nodes holding their nodes and child groups (padded for the
+  // group label), nodes carry the box size diagramBox gives them, and edges
+  // sit at the root. Edge labels stay out of the graph: ELK gives a centre
+  // label a layer of its own, which doubled the width of a chain, so the
+  // renderer puts each label on its route (routeLabelPoint) instead.
+  // Coordinates come back relative to the root, so the drawing needs no
+  // offsetting.
+  function diagramElk(spec, measure) {
+    var byParent = Object.create(null);
+    function child(parent, el) { (byParent[parent || ''] = byParent[parent || ''] || []).push(el); }
+    (spec.groups || []).forEach(function (g) {
+      child(g.group, { id: g.id, group: true, layoutOptions: { 'elk.padding': DIAGRAM_GROUP_PAD } });
+    });
+    (spec.nodes || []).forEach(function (n) {
+      var box = diagramBox(n, measure);
+      child(n.group, { id: n.id, width: box.width, height: box.height });
+    });
+    function attach(parentId) {
+      return (byParent[parentId] || []).map(function (el) {
+        if (el.group) el.children = attach(el.id);
+        return el;
+      });
+    }
+    var gap = DIAGRAM_LAYER_GAP, lr = spec.direction !== 'TB';
+    var edges = (spec.edges || []).map(function (e, i) {
+      // Left to right, the widest label sets the gap between layers, so a
+      // label on the run between two boxes never reaches into either box.
+      // Top to bottom the runs are vertical and a label's width is beside
+      // them, so the gap stays.
+      if (e.label && lr) gap = Math.max(gap, Math.ceil(measure(e.label, 'text')) + 24);
+      return { id: 'e' + i, sources: [e.from], targets: [e.to] };
+    });
+    return {
+      id: 'root',
+      layoutOptions: {
+        'elk.algorithm': 'layered',
+        'elk.direction': spec.direction === 'TB' ? 'DOWN' : 'RIGHT',
+        'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+        'elk.edgeRouting': 'ORTHOGONAL',
+        'elk.json.edgeCoords': 'ROOT',
+        'elk.json.shapeCoords': 'ROOT',
+        'elk.layered.spacing.nodeNodeBetweenLayers': String(gap),
+        'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+        'elk.spacing.nodeNode': '28',
+        'elk.spacing.edgeNode': '24',
+        'elk.spacing.edgeEdge': '14',
+        'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
+      },
+      children: attach(''),
+      edges: edges
+    };
+  }
+
+  // routeLabelPoint is where an edge's label sits: the middle of the
+  // longest straight run of its route, so a label lands on the long
+  // horizontal of an orthogonal route and not on a short jog. Null when
+  // the edge has no route.
+  function routeLabelPoint(edge) {
+    var best = null, bestLen = -1;
+    (edge.sections || []).forEach(function (sec) {
+      var pts = [sec.startPoint].concat(sec.bendPoints || [], [sec.endPoint]);
+      for (var i = 1; i < pts.length; i++) {
+        var len = Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+        if (len > bestLen) { bestLen = len; best = { x: (pts[i].x + pts[i - 1].x) / 2, y: (pts[i].y + pts[i - 1].y) / 2 }; }
+      }
+    });
+    return best;
+  }
+
+  // elkPath turns an ELK edge's sections (start, bend points, end) into one
+  // SVG path, section after section.
+  function elkPath(edge) {
+    var d = '';
+    (edge.sections || []).forEach(function (sec) {
+      d += 'M' + sec.startPoint.x + ',' + sec.startPoint.y;
+      (sec.bendPoints || []).forEach(function (p) { d += 'L' + p.x + ',' + p.y; });
+      d += 'L' + sec.endPoint.x + ',' + sec.endPoint.y;
+    });
+    return d;
+  }
+
+  // diagramShown says which groups, nodes, and edges a diagram shows at
+  // stepAt (null: everything). An element shows from its step on; step 0
+  // or none means from the start.
+  function diagramShown(spec, stepAt) {
+    function on(step) { return stepAt === null || stepAt === undefined || !isStep(step) || step <= stepAt; }
+    var groups = Object.create(null), nodes = Object.create(null);
+    (spec.groups || []).forEach(function (g) { groups[g.id] = on(g.step); });
+    (spec.nodes || []).forEach(function (n) { nodes[n.id] = on(n.step); });
+    return { groups: groups, nodes: nodes, edges: (spec.edges || []).map(function (e) { return on(e.step); }) };
+  }
+
+  // diagramFocus says which groups, nodes, and edges light up at stepAt:
+  // the step's focus ids, everything inside a focused group, and every
+  // edge touching a focused node. Null means the step singles nothing out
+  // (or there is no stepping), so nothing dims.
+  function diagramFocus(spec, stepAt) {
+    var step = isStep(stepAt) ? (spec.steps || [])[stepAt - 1] : null;
+    if (!step || !step.focus || !step.focus.length) return null;
+    var parent = Object.create(null);
+    (spec.groups || []).forEach(function (g) { parent[g.id] = g.group || ''; });
+    function lit(id, group) {
+      if (step.focus.indexOf(id) >= 0) return true;
+      for (var g = group || ''; g; g = parent[g]) { if (step.focus.indexOf(g) >= 0) return true; }
+      return false;
+    }
+    var groups = Object.create(null), nodes = Object.create(null);
+    (spec.groups || []).forEach(function (g) { groups[g.id] = lit(g.id, g.group); });
+    (spec.nodes || []).forEach(function (n) { nodes[n.id] = lit(n.id, n.group); });
+    return { groups: groups, nodes: nodes, edges: (spec.edges || []).map(function (e) { return !!(nodes[e.from] || nodes[e.to]); }) };
+  }
+
+  // flowSpeed is a flow edge's dot speed in px per ms: 6 px/s for the
+  // lightest edge up to 20 px/s for the heaviest, the graph's scale; with
+  // no weights every edge runs at the middle.
+  function flowSpeed(weight, max) {
+    var share = max ? (Number(weight) || 0) / max : 0.5;
+    return 0.006 + 0.014 * share;
+  }
+
+  // DIAGRAM_KIND_ROOM is the room a shape's decoration takes inside its
+  // box: a person's figure a strip down the left, a store's cap a band
+  // across the top. diagramGraph grows the box by it, so the text keeps
+  // its padding, and diagramText moves the text past it.
+  var DIAGRAM_KIND_ROOM = { person: { left: 14, top: 0 }, store: { left: 0, top: 6 } };
+  // DIAGRAM_GROUP_LABEL is where a group's label sits from the group's top
+  // left corner: x the left inset (kept on the right too), y the baseline,
+  // inside the top padding diagramElk gives every group.
+  var DIAGRAM_GROUP_LABEL = { x: 12, y: 20 };
+
+  // diagramGraph is diagramElk's graph made ready to draw: every box grown
+  // by its shape's room and every group at least as wide as its label
+  // (drawn in upper case, so that is what measure gets).
+  function diagramGraph(spec, measure) {
+    var graph = diagramElk(spec, measure), kind = Object.create(null), label = Object.create(null);
+    (spec.nodes || []).forEach(function (n) { kind[n.id] = n.kind; });
+    (spec.groups || []).forEach(function (g) { label[g.id] = String(g.label || '').toUpperCase(); });
+    function grow(children) {
+      (children || []).forEach(function (el) {
+        var room = DIAGRAM_KIND_ROOM[kind[el.id]];
+        if (room && !el.group) { el.width += room.left; el.height += room.top; }
+        if (el.group) {
+          var w = Math.ceil(measure(label[el.id], 'group')) + 2 * DIAGRAM_GROUP_LABEL.x;
+          el.layoutOptions['elk.nodeSize.constraints'] = 'MINIMUM_SIZE';
+          el.layoutOptions['elk.nodeSize.minimum'] = '(' + w + ',0)';
+        }
+        grow(el.children);
+      });
+    }
+    grow(graph.children);
+    return graph;
+  }
+
+  // diagramText places a node's text in its drawn box of width w: the
+  // centre line x, the label row's middle, and each text line's middle,
+  // the rows diagramBox sized the box for, moved past the shape's room.
+  function diagramText(node, lineCount, w) {
+    var room = DIAGRAM_KIND_ROOM[node.kind] || { left: 0, top: 0 };
+    var top = DIAGRAM_BOX.padY + room.top, lines = [];
+    for (var i = 0; i < lineCount; i++) lines.push(top + DIAGRAM_BOX.label + (i + 0.5) * DIAGRAM_BOX.text);
+    return { x: (w + room.left) / 2, label: top + DIAGRAM_BOX.label / 2, lines: lines };
+  }
+
   root.PresentViz = {
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
-    ribbonLayout: ribbonLayout
+    ribbonLayout: ribbonLayout,
+    wrapLines: wrapLines, diagramBox: diagramBox, diagramElk: diagramElk, elkPath: elkPath, routeLabelPoint: routeLabelPoint,
+    diagramShown: diagramShown, diagramFocus: diagramFocus, flowSpeed: flowSpeed,
+    diagramGraph: diagramGraph, diagramText: diagramText, diagramGroupLabel: DIAGRAM_GROUP_LABEL
   };
 })(typeof window !== 'undefined' ? window : globalThis);

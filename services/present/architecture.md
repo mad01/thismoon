@@ -116,7 +116,7 @@ The read path renders client-side (docs/adr/0005). `GET /p/{id}` serves the
 embedded chrome-only `shell.html`. The browser loads `app.js`, fetches the
 page as JSON from `GET /api/p/{id}`, mounts the compiled `content` fragment,
 runs the graph script, and initializes the Cytoscape graph, metric charts,
-references, and read-aloud. It then watches the page's version and reloads
+diagram blocks, references, and read-aloud. It then watches the page's version and reloads
 when it moves, so an update reaches every open tab. The index works the same
 way: `GET /` serves `index_shell.html` and `index.js` builds the list from
 `GET /api/pages`. There is no server-side template layer.
@@ -251,7 +251,7 @@ reaches the API server. The CRD is embedded in the binary and a test keeps
 
 `Dockerfile` builds the shared instance from the repo root: a cross-compiled
 static binary on `distroless/static:nonroot` with the page assets (fonts,
-Cytoscape, Chart.js, D3) baked into `/var/lib/present/assets`. So a pod
+Cytoscape, ELK, Chart.js, D3) baked into `/var/lib/present/assets`. So a pod
 needs no network and a read-only root filesystem. `deploy/base` is the kustomize
 base: the CRD and a service account with a Role over `pages` in its
 namespace. It also holds a two-replica Deployment running
@@ -275,8 +275,8 @@ page without a deck redirects to the brief) and `GET /p/{id}/deck/command`
 (the last remote command, local filesystem store only). `GET /api/p/{id}`
 answers with a `share` block in local mode and the `deck`, `has_deck`, and
 `deck_control` fields. The remaining page routes are `GET /app.js`,
-`GET /viz.js` (the deck's pure stepping helpers and the ribbon chart's
-layout, loaded before `app.js`),
+`GET /viz.js` (the deck's pure stepping helpers, the ribbon chart's
+layout, and the diagram's ELK graph and step logic, loaded before `app.js`),
 `GET /logo.png` (the embedded repo logo the deck chrome shows, served
 no-cache with a content ETag), `GET /p/{id}/version`, and `DELETE /p/{id}`
 (the only delete surface).

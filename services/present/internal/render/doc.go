@@ -71,7 +71,29 @@ var (
 	// A fifth ribbon series would repeat the first colour, and ranks that
 	// reorder every column make two same-coloured bands unreadable.
 	ribbonMaxSeries = 4
+	// diagramKinds is a diagram node's kind vocabulary: the shape the box
+	// takes. An empty kind draws as service, the plain box.
+	diagramKinds = []string{"service", "store", "queue", "person", "external"}
+	// diagramDirections is how a diagram's layers run: LR left to right (the
+	// default), TB top to bottom.
+	diagramDirections = []string{"LR", "TB"}
 )
+
+// Caps on a diagram: past them the picture is a hairball on a slide and the
+// layout takes long enough to notice. The skill says to split the picture
+// over slides instead.
+const (
+	diagramMaxNodes  = 24
+	diagramMaxGroups = 12
+	diagramMaxDepth  = 2 // a group inside a group inside the diagram
+)
+
+// DiagramKinds returns the node kinds a diagram may name, in the order the
+// docs list them. The MCP schema text and the skill pin the same list.
+func DiagramKinds() []string { return slices.Clone(diagramKinds) }
+
+// DiagramDirections returns the directions a diagram may name.
+func DiagramDirections() []string { return slices.Clone(diagramDirections) }
 
 // ChartKinds returns the chart kinds a chart block may name, in the order
 // the docs list them. The MCP schema text and the skill pin the same list.
@@ -129,7 +151,7 @@ func (s Section) dataLayout() string {
 
 // Block is a discriminated union on T.
 type Block struct {
-	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, code, html, columns, stat, quote, details, image
+	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, diagram, code, html, columns, stat, quote, details, image
 
 	// t=p, t=callout, t=h3, t=code, t=html, t=quote
 	Text string `json:"text,omitempty"`
@@ -193,17 +215,69 @@ type Block struct {
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
 	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
 	Order  string        `json:"order,omitempty"`  // ribbon only: rank (default) or given
-	// Frame keeps the card around a chart kind that draws without one. A
-	// ribbon sits straight on the page unless Frame is set; the other kinds
-	// keep their card either way until the frameless default reaches them.
-	Frame bool `json:"frame,omitempty"`
+	// Frame, on a chart, keeps the card around it: every chart sits straight
+	// on the page or slide unless frame is true. On an image, false drops
+	// the border around the picture. Absent means the default either way,
+	// so a pointer tells false from unset.
+	Frame *bool `json:"frame,omitempty"`
 
-	// Steps makes a chart walk through its data on a deck slide, one step
-	// per Next: each entry is the caption shown under the chart at that
-	// step, and a series whose Step names one appears at that step. A
-	// ribbon walks its periods instead, one step per period. The brief
-	// shows the finished chart with the captions as a numbered list.
-	Steps []ChartStep `json:"steps,omitempty"`
+	// t=diagram: an architecture picture laid out in the browser (ELK) and
+	// drawn as SVG (D3), many per page. Nodes are boxes with a name and a
+	// short text, Groups are labelled boundaries around them (a group may
+	// sit inside another), Edges are labelled arrows between nodes, and
+	// Direction is LR (default) or TB. Caption is the prose under it.
+	Direction string         `json:"direction,omitempty"`
+	Groups    []DiagramGroup `json:"groups,omitempty"`
+	Nodes     []DiagramNode  `json:"nodes,omitempty"`
+	Edges     []DiagramEdge  `json:"edges,omitempty"`
+
+	// Steps makes a chart or a diagram walk through its data on a deck
+	// slide, one step per Next: each entry is the caption shown under the
+	// block at that step. A chart series whose Step names one appears at
+	// that step; a ribbon walks its periods instead, one step per period;
+	// a diagram shows the nodes, groups, and edges whose Step is at or
+	// below it and lights up the step's Focus ids. The brief shows the
+	// finished block with the captions as a numbered list.
+	Steps []Step `json:"steps,omitempty"`
+}
+
+// DiagramNode is one box in a diagram: Label is its name, Text the short
+// line under it (technology, purpose), Kind its shape (one of DiagramKinds;
+// empty draws as service), Tone a graph tone for the box's colour family,
+// Group the id of the group it sits in, and Step the 1-based step it
+// appears at on a deck slide (0 = from the start).
+type DiagramNode struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Text  string `json:"text,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+	Tone  string `json:"tone,omitempty"`
+	Group string `json:"group,omitempty"`
+	Step  int    `json:"step,omitempty"`
+}
+
+// DiagramGroup is a labelled boundary around nodes (and groups): Tone is
+// a graph tone for its tint, Group the id of the group it sits in.
+type DiagramGroup struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Tone  string `json:"tone,omitempty"`
+	Group string `json:"group,omitempty"`
+	Step  int    `json:"step,omitempty"`
+}
+
+// DiagramEdge is a labelled arrow from one node to another. Flow marks it
+// as carrying traffic: the line is dashed, and dots move along it (in the
+// brief and on a slide alike) at a speed set by Weight against the
+// heaviest flow edge; Reduce Motion drops the dots and keeps the dash.
+// Step is the step it appears at, never before both ends.
+type DiagramEdge struct {
+	From   string  `json:"from"`
+	To     string  `json:"to"`
+	Label  string  `json:"label,omitempty"`
+	Flow   bool    `json:"flow,omitempty"`
+	Weight float64 `json:"weight,omitempty"`
+	Step   int     `json:"step,omitempty"`
 }
 
 // blockFields is Block without its methods, so the (un)marshalers below can
@@ -307,10 +381,13 @@ type ChartFlow struct {
 	Value float64 `json:"value"`
 }
 
-// ChartStep is one step of a stepped chart: the caption the deck shows
-// under the chart at that step and the brief lists under it.
-type ChartStep struct {
-	Caption string `json:"caption"`
+// Step is one step of a stepped chart or diagram: the caption the deck
+// shows under the block at that step and the brief lists under it. Focus,
+// on a diagram, names the node and group ids that light up at that step
+// while the rest dim; empty means nothing is singled out.
+type Step struct {
+	Caption string   `json:"caption"`
+	Focus   []string `json:"focus,omitempty"`
 }
 
 // textNorms normalizes text for fixation reading and TTS pronunciation.
@@ -555,6 +632,8 @@ func init() {
 		"langClass":    langClass,
 		"rawHTML":      func(s string) template.HTML { return template.HTML(s) },
 		"chartSpec":    chartSpec,
+		"diagramSpec":  diagramSpec,
+		"frameAttr":    frameAttr,
 		"renderBlock":  func(b Block) template.HTML { return renderBlockAt(b, 0) },
 		"renderNested": func(b Block) template.HTML { return renderBlockAt(b, 1) },
 		"dataLayout":   func(s Section) string { return s.dataLayout() },
@@ -655,7 +734,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
   <div id="cy-graph" class="cy-container"></div>
 </wk-panel>{{end}}
 
-{{define "block-chart"}}<div class="present-chart{{if eq .Kind "ribbon"}} is-ribbon{{end}}"{{with .Title}} data-chart-title="{{.}}"{{end}}{{if .Frame}} data-frame{{end}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
+{{define "block-chart"}}<div class="present-chart{{if eq .Kind "ribbon"}} is-ribbon{{end}}"{{with .Title}} data-chart-title="{{.}}"{{end}}{{frameAttr .}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
   <div class="present-chart-canvas"><canvas></canvas></div>
   <script type="application/json" class="chart-spec">{{chartSpec .}}</script>
 {{- with .Steps}}
@@ -703,12 +782,27 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{- end}}
 </details>{{end}}
 
-{{define "block-image"}}<wk-figure>
+{{define "block-image"}}<wk-figure{{frameAttr .}}>
   <img src="{{.Src}}" alt="{{.Alt}}" loading="lazy">
 {{- with .Caption}}
   <wk-figcaption data-fixation>{{inlineMd .}}</wk-figcaption>
 {{- end}}
-</wk-figure>{{end}}`
+</wk-figure>{{end}}
+
+{{define "block-diagram"}}<div class="present-diagram"{{with .Steps}} data-steps="{{len .}}"{{end}}>
+  <div class="present-diagram-canvas"></div>
+  <script type="application/json" class="diagram-spec">{{diagramSpec .}}</script>
+{{- with .Caption}}
+  <p class="present-diagram-caption" data-fixation>{{inlineMd .}}</p>
+{{- end}}
+{{- with .Steps}}
+  <ol class="present-steps">
+{{- range .}}
+    <li data-fixation>{{inlineMd .Caption}}</li>
+{{- end}}
+  </ol>
+{{- end}}
+</div>{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
 // names like JIRA render as words, not spelled-out acronyms. Code blocks are
@@ -831,6 +925,36 @@ func chartSpec(b Block) template.JS {
 	return template.JS(out)
 }
 
+// frameAttr is the data-frame attribute a block carries when its Doc sets
+// frame: "true" or "false" as written, so the stylesheet can key on
+// either (a chart keeps its card on true, an image drops its border on
+// false), and nothing when the field is absent.
+func frameAttr(b Block) template.HTMLAttr {
+	if b.Frame == nil {
+		return ""
+	}
+	return template.HTMLAttr(fmt.Sprintf(` data-frame="%t"`, *b.Frame))
+}
+
+// diagramSpec is the JSON island a diagram block carries for the browser:
+// the direction, every group, node, and edge, and the steps with their
+// focus ids (the captions ride in the HTML list too, for the deck and
+// read-aloud). Emitted verbatim like chartSpec, with the same escaping.
+func diagramSpec(b Block) template.JS {
+	spec := struct {
+		Direction string         `json:"direction,omitempty"`
+		Groups    []DiagramGroup `json:"groups,omitempty"`
+		Nodes     []DiagramNode  `json:"nodes"`
+		Edges     []DiagramEdge  `json:"edges,omitempty"`
+		Steps     []Step         `json:"steps,omitempty"`
+	}{Direction: b.Direction, Groups: b.Groups, Nodes: b.Nodes, Edges: b.Edges, Steps: b.Steps}
+	out, err := json.Marshal(spec)
+	if err != nil {
+		return template.JS(`{"nodes":[]}`)
+	}
+	return template.JS(out)
+}
+
 // accentAliases are accent names older pages carry outside the palette
 // roles, each mapped to the role it stands for. The alias is accepted on
 // input and rendered as the role, so a page's HTML carries only names webkit
@@ -886,6 +1010,9 @@ func validateBlocks(blocks []Block, depth int) error {
 		if depth > 0 && isContainer(b) {
 			return fmt.Errorf("%s block: not allowed inside a columns or details block", b.T)
 		}
+		if err := validateFieldHomes(b); err != nil {
+			return err
+		}
 		switch b.T {
 		case "panel":
 			if b.Accent != "" && !validAccent(b.Accent) {
@@ -913,8 +1040,8 @@ func validateBlocks(blocks []Block, depth int) error {
 			if slices.ContainsFunc(b.Blocks, isGraph) {
 				return fmt.Errorf("graph block: not allowed inside a details block (%q)", b.Summary)
 			}
-			if slices.ContainsFunc(b.Blocks, hasSteps) {
-				return fmt.Errorf("chart steps: not allowed inside a details block (%q)", b.Summary)
+			if k := slices.IndexFunc(b.Blocks, hasSteps); k >= 0 {
+				return fmt.Errorf("%s steps: not allowed inside a details block (%q)", b.Blocks[k].T, b.Summary)
 			}
 			if err := validateBlocks(b.Blocks, depth+1); err != nil {
 				return err
@@ -927,13 +1054,32 @@ func validateBlocks(blocks []Block, depth int) error {
 			if err := validateChart(b); err != nil {
 				return err
 			}
+		case "diagram":
+			if err := validateDiagram(b); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// hasSteps reports whether b is a chart that walks through steps.
-func hasSteps(b Block) bool { return b.T == "chart" && len(b.Steps) > 0 }
+// validateFieldHomes refuses a field set on a block type that does not
+// read it, so an author learns the field moved nothing: the diagram's
+// nodes, groups, edges, and direction on any other block, and frame on
+// anything but a chart or an image.
+func validateFieldHomes(b Block) error {
+	if b.T != "diagram" && (len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
+		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
+	}
+	if b.Frame != nil && b.T != "chart" && b.T != "image" && b.T != "diagram" {
+		return fmt.Errorf("%s block: frame is a chart or image field", b.T)
+	}
+	return nil
+}
+
+// hasSteps reports whether b is a chart or a diagram that walks through
+// steps.
+func hasSteps(b Block) bool { return (b.T == "chart" || b.T == "diagram") && len(b.Steps) > 0 }
 
 // validateChart refuses a kind outside chartKinds, a step without a
 // caption, a series step outside 1..len(steps) or on a chart without
@@ -957,6 +1103,9 @@ func validateChart(b Block) error {
 	for k, st := range b.Steps {
 		if strings.TrimSpace(st.Caption) == "" {
 			return fmt.Errorf("chart %q: step %d has no caption", b.Title, k+1)
+		}
+		if len(st.Focus) > 0 {
+			return fmt.Errorf("chart %q: step %d names focus, which only a diagram takes", b.Title, k+1)
 		}
 	}
 	for _, s := range b.Series {
@@ -1081,6 +1230,297 @@ func ribbonPeriods(series []ChartSeries) ([]string, error) {
 		}
 	}
 	return periods, nil
+}
+
+// Caps on a diagram's text, in runes: a node label draws on one line in
+// a box at most 240 px wide, a node text wraps to two lines, an edge label
+// sets the gap between two layers, and a group label sets the group's
+// least width.
+const (
+	diagramMaxLabel     = 32
+	diagramMaxText      = 60
+	diagramMaxEdgeLabel = 24
+)
+
+// diagramIDPattern is what a diagram id may be: a plain token, since ids
+// land in SVG class names and in the layout's keys.
+var diagramIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// diagramName names a diagram in an error: its caption cut to 40 runes,
+// or, with no caption, its first node, so the author can find the block.
+func diagramName(b Block) string {
+	if c := strings.TrimSpace(b.Caption); c != "" {
+		if r := []rune(c); len(r) > 40 {
+			c = string(r[:40]) + "\u2026"
+		}
+		return fmt.Sprintf("diagram %q", c)
+	}
+	if len(b.Nodes) > 0 {
+		return fmt.Sprintf("diagram (first node %q)", b.Nodes[0].ID)
+	}
+	return "diagram"
+}
+
+// validateDiagram refuses a diagram the browser could not lay out or walk:
+// an unknown direction, no nodes or more than diagramMaxNodes, more than
+// diagramMaxGroups groups, a frame (a diagram never has a card), an id used
+// twice across nodes and groups, and whatever validateDiagramGroups,
+// validateDiagramNodes, validateDiagramEdges, and validateDiagramSteps
+// refuse.
+func validateDiagram(b Block) error {
+	name := diagramName(b)
+	if b.Direction != "" && !slices.Contains(diagramDirections, b.Direction) {
+		return fmt.Errorf("%s: unknown direction %q (want %s)", name, b.Direction, strings.Join(diagramDirections, " or "))
+	}
+	if len(b.Nodes) == 0 {
+		return fmt.Errorf("%s: needs at least one node", name)
+	}
+	if len(b.Nodes) > diagramMaxNodes {
+		return fmt.Errorf("%s: %d nodes, at most %d (split the picture over slides)", name, len(b.Nodes), diagramMaxNodes)
+	}
+	if len(b.Groups) > diagramMaxGroups {
+		return fmt.Errorf("%s: %d groups, at most %d", name, len(b.Groups), diagramMaxGroups)
+	}
+	if b.Frame != nil {
+		return fmt.Errorf("%s: frame is a chart or image field (a diagram never has a card)", name)
+	}
+	ids, err := diagramIDs(b)
+	if err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	for _, check := range []func(Block, map[string]string) error{
+		validateDiagramGroups, validateDiagramNodes, validateDiagramEdges, validateDiagramSteps,
+	} {
+		if err := check(b, ids); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// diagramIDs maps every group and node id to "group" or "node", refusing
+// an id that is not a plain token or one used twice: a step's focus names
+// either, so they share one namespace.
+func diagramIDs(b Block) (map[string]string, error) {
+	ids := map[string]string{}
+	add := func(id, what string, k int) error {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("%s %d has no id", what, k+1)
+		}
+		if !diagramIDPattern.MatchString(id) {
+			return fmt.Errorf("%s %d: id %q is not a plain token (letters, digits, _ and -, starting with a letter or digit)", what, k+1, id)
+		}
+		if ids[id] != "" {
+			return fmt.Errorf("id %q is used twice", id)
+		}
+		ids[id] = what
+		return nil
+	}
+	for k, g := range b.Groups {
+		if err := add(g.ID, "group", k); err != nil {
+			return nil, err
+		}
+	}
+	for k, n := range b.Nodes {
+		if err := add(n.ID, "node", k); err != nil {
+			return nil, err
+		}
+	}
+	return ids, nil
+}
+
+// runesOver reports whether s has more than max runes.
+func runesOver(s string, max int) bool { return len([]rune(s)) > max }
+
+// validateDiagramGroups refuses a group without a label or with one past
+// diagramMaxLabel runes, with an unknown tone, whose parent is not a group,
+// nested past diagramMaxDepth (which also catches parents that loop), or
+// holding no node and no group.
+func validateDiagramGroups(b Block, ids map[string]string) error {
+	parent := map[string]string{}
+	members := map[string]int{}
+	for _, g := range b.Groups {
+		parent[g.ID] = g.Group
+		members[g.Group]++
+	}
+	for _, n := range b.Nodes {
+		members[n.Group]++
+	}
+	for _, g := range b.Groups {
+		if strings.TrimSpace(g.Label) == "" {
+			return fmt.Errorf("group %q has no label", g.ID)
+		}
+		if runesOver(g.Label, diagramMaxLabel) {
+			return fmt.Errorf("group %q: label is over %d characters", g.ID, diagramMaxLabel)
+		}
+		if g.Tone != "" && !validTone(g.Tone) {
+			return fmt.Errorf("group %q: unknown tone %q (want one of %s)", g.ID, g.Tone, strings.Join(graphTones, ", "))
+		}
+		if g.Group != "" && ids[g.Group] != "group" {
+			return fmt.Errorf("group %q: parent %q is not a group", g.ID, g.Group)
+		}
+		depth := 0
+		for p := g.Group; p != ""; p = parent[p] {
+			depth++
+			if depth >= diagramMaxDepth {
+				return fmt.Errorf("group %q: groups nest at most %d deep (or its parents loop)", g.ID, diagramMaxDepth)
+			}
+		}
+		if members[g.ID] == 0 {
+			return fmt.Errorf("group %q holds no node and no group", g.ID)
+		}
+	}
+	return nil
+}
+
+// validateDiagramNodes refuses a node without a label, with a label or
+// text past the caps, with an unknown kind or tone, or in a group that is
+// not one.
+func validateDiagramNodes(b Block, ids map[string]string) error {
+	for _, n := range b.Nodes {
+		if strings.TrimSpace(n.Label) == "" {
+			return fmt.Errorf("node %q has no label", n.ID)
+		}
+		if runesOver(n.Label, diagramMaxLabel) {
+			return fmt.Errorf("node %q: label is over %d characters (put the rest in text)", n.ID, diagramMaxLabel)
+		}
+		if runesOver(n.Text, diagramMaxText) {
+			return fmt.Errorf("node %q: text is over %d characters", n.ID, diagramMaxText)
+		}
+		if n.Kind != "" && !slices.Contains(diagramKinds, n.Kind) {
+			return fmt.Errorf("node %q: unknown kind %q (want one of %s)", n.ID, n.Kind, strings.Join(diagramKinds, ", "))
+		}
+		if n.Tone != "" && !validTone(n.Tone) {
+			return fmt.Errorf("node %q: unknown tone %q (want one of %s)", n.ID, n.Tone, strings.Join(graphTones, ", "))
+		}
+		if n.Group != "" && ids[n.Group] != "group" {
+			return fmt.Errorf("node %q: group %q is not a group", n.ID, n.Group)
+		}
+	}
+	return nil
+}
+
+// validateDiagramEdges refuses an edge whose ends are not two different
+// nodes (a group is not an end, and a self loop has no orthogonal route
+// worth drawing), one that repeats an earlier edge (the two routes would
+// sit 14 px apart with their labels on top of each other), a label past
+// diagramMaxEdgeLabel runes (the widest label sets the gap between every
+// two layers), a weight without flow (it would mean nothing), or a
+// negative weight.
+func validateDiagramEdges(b Block, ids map[string]string) error {
+	seen := map[string]int{}
+	for k, e := range b.Edges {
+		for _, end := range []string{e.From, e.To} {
+			if ids[end] != "node" {
+				return fmt.Errorf("edge %d: %q is not a node", k+1, end)
+			}
+		}
+		if e.From == e.To {
+			return fmt.Errorf("edge %d: from and to are both %q", k+1, e.From)
+		}
+		key := e.From + "\x00" + e.To
+		if j, dup := seen[key]; dup {
+			return fmt.Errorf("edge %d repeats edge %d (%s to %s)", k+1, j, e.From, e.To)
+		}
+		seen[key] = k + 1
+		if runesOver(e.Label, diagramMaxEdgeLabel) {
+			return fmt.Errorf("edge %d (%s to %s): label is over %d characters", k+1, e.From, e.To, diagramMaxEdgeLabel)
+		}
+		if e.Weight < 0 {
+			return fmt.Errorf("edge %d (%s to %s): weight %v, want 0 or more", k+1, e.From, e.To, e.Weight)
+		}
+		if e.Weight != 0 && !e.Flow {
+			return fmt.Errorf("edge %d (%s to %s): weight needs flow", k+1, e.From, e.To)
+		}
+	}
+	return nil
+}
+
+// validateDiagramSteps refuses a step without a caption, a focus id that
+// names nothing or something still hidden at that step, an element step
+// without steps or outside 1..len(steps), and an element that would appear
+// before what holds it: a group before its parent, a node before its
+// group, an edge before either end.
+func validateDiagramSteps(b Block, ids map[string]string) error {
+	stepOf := map[string]int{}
+	for _, g := range b.Groups {
+		if err := diagramStepRange(b, "group", g.ID, g.Step); err != nil {
+			return err
+		}
+		stepOf[g.ID] = g.Step
+	}
+	for _, g := range b.Groups {
+		if err := diagramStepAfter("group", g.ID, g.Step, g.Group, stepOf); err != nil {
+			return err
+		}
+	}
+	for _, n := range b.Nodes {
+		if err := diagramStepRange(b, "node", n.ID, n.Step); err != nil {
+			return err
+		}
+		stepOf[n.ID] = n.Step
+		if err := diagramStepAfter("node", n.ID, n.Step, n.Group, stepOf); err != nil {
+			return err
+		}
+	}
+	for k, e := range b.Edges {
+		name := fmt.Sprintf("edge %d (%s to %s)", k+1, e.From, e.To)
+		if err := diagramStepRange(b, "", name, e.Step); err != nil {
+			return err
+		}
+		for _, end := range []string{e.From, e.To} {
+			if err := diagramStepAfter("", name, e.Step, end, stepOf); err != nil {
+				return err
+			}
+		}
+	}
+	for k, st := range b.Steps {
+		if strings.TrimSpace(st.Caption) == "" {
+			return fmt.Errorf("step %d has no caption", k+1)
+		}
+		for _, id := range st.Focus {
+			if ids[id] == "" {
+				return fmt.Errorf("step %d: focus %q names no node or group", k+1, id)
+			}
+			if stepOf[id] > k+1 {
+				return fmt.Errorf("step %d: focus %q is not shown until step %d", k+1, id, stepOf[id])
+			}
+		}
+	}
+	return nil
+}
+
+// diagramStepRange refuses a step on a diagram without steps or outside
+// 1..len(steps); 0 means from the start and always passes.
+func diagramStepRange(b Block, what, name string, step int) error {
+	if what != "" {
+		name = what + " " + strconv.Quote(name)
+	}
+	switch {
+	case step == 0:
+		return nil
+	case len(b.Steps) == 0:
+		return fmt.Errorf("%s names step %d but the diagram has no steps", name, step)
+	case step < 1 || step > len(b.Steps):
+		return fmt.Errorf("%s step %d: want 1 to %d", name, step, len(b.Steps))
+	}
+	return nil
+}
+
+// diagramStepAfter refuses an element whose step comes before the step of
+// the element it depends on (its group, its parent, or an edge's end).
+func diagramStepAfter(what, name string, step int, holder string, stepOf map[string]int) error {
+	if holder == "" || step >= stepOf[holder] {
+		return nil
+	}
+	if what != "" {
+		name = what + " " + strconv.Quote(name)
+	}
+	at := "from the start"
+	if step > 0 {
+		at = fmt.Sprintf("at step %d", step)
+	}
+	return fmt.Errorf("%s appears %s, before %q at step %d", name, at, holder, stepOf[holder])
 }
 
 // validateImage refuses an image without alt, which read-aloud reads in the

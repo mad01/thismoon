@@ -17,6 +17,11 @@ func TestDeckLayoutWiring(t *testing.T) {
 		// In-block steps (MAD-385): the plan, the step attribute, the hook.
 		"PresentViz.stepPlan(items)", "data-steps", "data-step-at", "block._presentStep = function (n)",
 		"PresentViz.chartStepVisibility", "PresentViz.blockStepsAt", "PresentViz.seriesMax", "setDatasetVisibility", "legend.onClick = function () {}",
+		// Diagram blocks (MAD-382): a visual, a solo slide, built on the
+		// slide's first showing and refitted after, never laid out twice.
+		"'#cy-graph, .present-chart, wk-figure, .present-diagram'", "solo-diagram",
+		"buildDiagram(b, { duration: transition === 'none' ? 0 : 400 })", "b._diagramFit()",
+		"initPresentDiagrams(document, { builtOnly: true })", "PresentViz.diagramGraph(spec, measure)",
 	} {
 		if !contains(app, want) {
 			t.Errorf("app.js lacks %q", want)
@@ -35,6 +40,11 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"prefers-reduced-motion", ".cy-container.ready",
 		".deck .present-steps li { grid-area: 1 / 1; visibility: hidden; }", ".deck .present-steps li.current { visibility: visible;",
 		`html[data-transition="none"] .deck .present-steps li.current { animation: none; }`,
+		".present-diagram-svg { --diagram-fade: 350ms; display: block;", ".slide.solo-diagram .present-diagram-canvas",
+		":root { --surface: var(--bg); }", ".present-chart[data-frame=\"true\"] {",
+		"html.presenting .slide.has-viz .present-diagram-canvas { max-height: 52vh; }",
+		".present-diagram-svg .dedge-label rect { fill: var(--surface); }",
+		"@media (prefers-reduced-motion: reduce) {\n  .present-diagram-svg .dgroup, .present-diagram-svg .dnode, .present-diagram-svg .dedge { transition: none; }",
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)

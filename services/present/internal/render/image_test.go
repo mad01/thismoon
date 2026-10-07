@@ -167,3 +167,19 @@ func TestDocEachBlock(t *testing.T) {
 		t.Errorf("err = %v after %d blocks, want stop after 2", err, n)
 	}
 }
+
+// TestRenderImageFrame writes frame as given on the figure, so the
+// stylesheet can drop the border on false, and nothing when it is unset.
+func TestRenderImageFrame(t *testing.T) {
+	no := false
+	out := renderBlocks(t,
+		Block{T: "image", Src: "https://example.com/a.png", Alt: "a", Frame: &no},
+		Block{T: "image", Src: "https://example.com/b.png", Alt: "b"},
+	)
+	if !strings.Contains(out, `<wk-figure data-frame="false">`) {
+		t.Errorf("output lacks the frameless figure:\n%s", out)
+	}
+	if n := strings.Count(out, "<wk-figure>"); n != 1 {
+		t.Errorf("plain figures = %d, want 1", n)
+	}
+}
