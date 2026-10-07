@@ -45,9 +45,21 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"html.presenting .slide.has-viz .present-diagram-canvas { max-height: 52vh; }",
 		".present-diagram-svg .dedge-label rect { fill: var(--surface); }",
 		"@media (prefers-reduced-motion: reduce) {\n  .present-diagram-svg .dgroup, .present-diagram-svg .dnode, .present-diagram-svg .dedge { transition: none; }",
+		// Frameless slides (MAD-389): a stat sits plain, a section divider
+		// and a toned statement carry a centred accent bar, no band.
+		".slide wk-stat { border: 0; background: none;",
+		`.slide[data-layout="section"] .slide-body { text-align: center; padding: 2rem; }`,
+		`.slide[data-layout="section"] wk-section-heading::after, .slide[data-layout="statement"][data-tone] wk-section-heading::after { content: '';`,
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)
+		}
+	}
+	// A slide paints no filled box of its own: no rule may give a toned
+	// slide or a section body a background again.
+	for _, box := range []string{".slide[data-tone] {", "html.presenting .slide.active[data-tone]", `.slide[data-layout="section"] .slide-body { --surface`} {
+		if contains(shell, box) {
+			t.Errorf("shell.html paints a box on a slide again: %q", box)
 		}
 	}
 	// The slide tones mix roles; a palette value written out would pin a

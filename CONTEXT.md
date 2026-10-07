@@ -97,7 +97,7 @@ The slide rendition of a present page. A second Doc, authored on its own and com
 _Avoid_: slideshow, presentation (present's pages are all presentations), version (the revision counter)
 
 **Slide**:
-One section of a deck as the deck view shows it. The deck Doc's title, summary, meta, and chips make the title slide; its references make the last one.
+One section of a deck as the deck view shows it. The deck Doc's title, summary, meta, and chips make the title slide; its references make the last one. A slide paints no filled box of its own: the slide is already the container, and a tone colours its accent.
 _Avoid_: page (a page is the whole id), frame
 
 **Presenting**:
