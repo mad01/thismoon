@@ -201,3 +201,83 @@ test('ribbonLayout: the period order matches the Go side (testdata/ribbon-order.
   const vec = JSON.parse(readFileSync(new URL('../../render/testdata/ribbon-order.json', import.meta.url), 'utf8'));
   assert.deepEqual(PresentViz.ribbonLayout(vec.series).periods, vec.periods);
 });
+
+// Diagram helpers.
+const measure = (t) => String(t).length * 7;
+const checkout = {
+  direction: 'LR',
+  groups: [{ id: 'prod', label: 'prod cluster', tone: 'blue' }, { id: 'data', label: 'data', group: 'prod', step: 3 }],
+  nodes: [
+    { id: 'web', label: 'Web app', text: 'Next.js, renders the checkout page for the browser', kind: 'person' },
+    { id: 'api', label: 'Checkout API', text: 'Go', group: 'prod', step: 2 },
+    { id: 'db', label: 'Orders DB', kind: 'store', group: 'data', step: 3 },
+  ],
+  edges: [
+    { from: 'web', to: 'api', label: 'POST /checkout', flow: true, weight: 120, step: 2 },
+    { from: 'api', to: 'db', label: 'insert', step: 3 },
+  ],
+  steps: [{ caption: 'one' }, { caption: 'two', focus: ['api'] }, { caption: 'three', focus: ['data'] }],
+};
+
+test('wrapLines: breaks on spaces into at most two lines and cuts the rest', () => {
+  assert.deepEqual(PresentViz.wrapLines('Go, validates and prices', 28), ['Go, validates and prices']);
+  assert.deepEqual(PresentViz.wrapLines('Next.js, renders the checkout page for the browser', 28), ['Next.js, renders the', 'checkout page for the\u2026']);
+  assert.deepEqual(PresentViz.wrapLines('a b c d e f g h i j k l m n o p q r s t u v w x y z aa bb cc dd', 10), ['a b c d e', 'f g h i j\u2026']);
+  assert.deepEqual(PresentViz.wrapLines('', 28), []);
+});
+
+test('diagramBox: sized by the widest line within the bounds, one line per text line', () => {
+  const small = PresentViz.diagramBox({ label: 'API' }, measure);
+  assert.deepEqual(small, { width: 120, height: 38, lines: [] });
+  const two = PresentViz.diagramBox(checkout.nodes[0], measure);
+  assert.equal(two.lines.length, 2);
+  assert.equal(two.width, 22 * 7 + 28);
+  assert.equal(two.height, 20 + 18 + 30);
+  const wide = PresentViz.diagramBox({ label: 'x'.repeat(60) }, measure);
+  assert.equal(wide.width, 240);
+});
+
+test('diagramElk: groups nest, nodes sit in their group, edges carry sized labels at the root', () => {
+  const g = PresentViz.diagramElk(checkout, measure);
+  assert.equal(g.layoutOptions['elk.direction'], 'RIGHT');
+  assert.equal(g.layoutOptions['elk.hierarchyHandling'], 'INCLUDE_CHILDREN');
+  assert.equal(g.layoutOptions['elk.json.edgeCoords'], 'ROOT');
+  assert.deepEqual(g.children.map((c) => c.id), ['prod', 'web']);
+  const prod = g.children[0];
+  assert.deepEqual(prod.children.map((c) => c.id), ['data', 'api']);
+  assert.deepEqual(prod.children[0].children.map((c) => c.id), ['db']);
+  assert.equal(prod.layoutOptions['elk.padding'], '[top=36,left=16,bottom=16,right=16]');
+  assert.equal(g.children[1].width, 182);
+  assert.deepEqual(g.edges[0], { id: 'e0', sources: ['web'], targets: ['api'], labels: [{ text: 'POST /checkout', width: 14 * 7 + 8, height: 16 }] });
+  assert.equal(PresentViz.diagramElk({ direction: 'TB', nodes: [] }, measure).layoutOptions['elk.direction'], 'DOWN');
+});
+
+test('elkPath: one M/L run per section with the bend points in order', () => {
+  const d = PresentViz.elkPath({ sections: [
+    { startPoint: { x: 0, y: 1 }, bendPoints: [{ x: 10, y: 1 }, { x: 10, y: 20 }], endPoint: { x: 30, y: 20 } },
+    { startPoint: { x: 30, y: 20 }, endPoint: { x: 40, y: 20 } },
+  ] });
+  assert.equal(d, 'M0,1L10,1L10,20L30,20M30,20L40,20');
+  assert.equal(PresentViz.elkPath({}), '');
+});
+
+test('diagramShown: step 0 shows the unstepped elements, step n adds the rest in order, null shows all', () => {
+  assert.deepEqual(PresentViz.diagramShown(checkout, 0), { groups: { prod: true, data: false }, nodes: { web: true, api: false, db: false }, edges: [false, false] });
+  assert.deepEqual(PresentViz.diagramShown(checkout, 2).nodes, { web: true, api: true, db: false });
+  assert.deepEqual(PresentViz.diagramShown(checkout, 2).edges, [true, false]);
+  assert.deepEqual(PresentViz.diagramShown(checkout, null).edges, [true, true]);
+  assert.deepEqual(PresentViz.diagramShown(checkout, null).groups, { prod: true, data: true });
+});
+
+test('diagramFocus: the focus ids, everything in a focused group, and the edges touching them', () => {
+  assert.equal(PresentViz.diagramFocus(checkout, 1), null);
+  assert.equal(PresentViz.diagramFocus(checkout, null), null);
+  assert.deepEqual(PresentViz.diagramFocus(checkout, 2), { groups: { prod: false, data: false }, nodes: { web: false, api: true, db: false }, edges: [true, true] });
+  assert.deepEqual(PresentViz.diagramFocus(checkout, 3), { groups: { prod: false, data: true }, nodes: { web: false, api: false, db: true }, edges: [false, true] });
+});
+
+test('flowSpeed: 6 px/s for the lightest, 20 px/s for the heaviest, the middle without weights', () => {
+  assert.equal(PresentViz.flowSpeed(0, 100), 0.006);
+  assert.equal(PresentViz.flowSpeed(100, 100), 0.02);
+  assert.ok(Math.abs(PresentViz.flowSpeed(undefined, 0) - 0.013) < 1e-9);
+});

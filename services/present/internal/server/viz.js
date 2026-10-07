@@ -1,6 +1,7 @@
 'use strict';
 // present deck visuals: the pure, node-tested parts of the deck's in-block
-// stepping and of the ribbon chart's layout. shell.html loads this file before
+// stepping, the ribbon chart's layout, and the diagram block's ELK graph,
+// stepping, and routes. shell.html loads this file before
 // app.js, which reads the helpers from window.PresentViz. Nothing here touches
 // the DOM at load time.
 (function (root) {
@@ -128,8 +129,144 @@
     return { periods: periods, columns: columns, ribbons: ribbons, max: max };
   }
 
+  // ── Diagram helpers ──
+  // The diagram block's pure side: the ELK graph built from a spec, which
+  // elements a step shows and lights up, an ELK edge route as an SVG path,
+  // and the flow speed. app.js measures text, runs ELK, and draws.
+  var DIAGRAM_BOX = { minW: 120, maxW: 240, padX: 14, padY: 10, label: 18, text: 15, lineChars: 28 };
+  var DIAGRAM_GROUP_PAD = '[top=36,left=16,bottom=16,right=16]';
+
+  // wrapLines breaks text into at most two lines of about max characters,
+  // on spaces; a long last line is cut with an ellipsis.
+  function wrapLines(text, max) {
+    var words = String(text || '').split(/\s+/).filter(Boolean), lines = [], line = '';
+    words.forEach(function (w) {
+      var next = line ? line + ' ' + w : w;
+      if (next.length <= max || !line) { line = next; return; }
+      lines.push(line);
+      line = w;
+    });
+    if (line) lines.push(line);
+    if (lines.length > 2) { lines = lines.slice(0, 2); lines[1] = lines[1].slice(0, Math.max(0, max - 1)) + '\u2026'; }
+    return lines;
+  }
+
+  // diagramBox sizes a node from its label and text lines: as wide as the
+  // widest line plus padding, between minW and maxW, and one label line
+  // plus one text line per wrapped line high. measure(string) returns the
+  // string's width in pixels.
+  function diagramBox(node, measure) {
+    var lines = wrapLines(node.text, DIAGRAM_BOX.lineChars);
+    var widest = measure(node.label || '');
+    lines.forEach(function (l) { widest = Math.max(widest, measure(l)); });
+    var w = Math.min(DIAGRAM_BOX.maxW, Math.max(DIAGRAM_BOX.minW, Math.ceil(widest) + 2 * DIAGRAM_BOX.padX));
+    var h = 2 * DIAGRAM_BOX.padY + DIAGRAM_BOX.label + lines.length * DIAGRAM_BOX.text;
+    return { width: w, height: h, lines: lines };
+  }
+
+  // diagramElk turns a spec into the graph ELK lays out: groups become
+  // compound nodes holding their nodes and child groups (padded for the
+  // group label), nodes carry the box size diagramBox gives them, and edges
+  // sit at the root with their label sized, so ELK places it. Coordinates
+  // come back relative to the root, so the drawing needs no offsetting.
+  function diagramElk(spec, measure) {
+    var byParent = {};
+    function child(parent, el) { (byParent[parent || ''] = byParent[parent || ''] || []).push(el); }
+    (spec.groups || []).forEach(function (g) {
+      child(g.group, { id: g.id, group: true, layoutOptions: { 'elk.padding': DIAGRAM_GROUP_PAD } });
+    });
+    (spec.nodes || []).forEach(function (n) {
+      var box = diagramBox(n, measure);
+      child(n.group, { id: n.id, width: box.width, height: box.height });
+    });
+    function attach(parentId) {
+      return (byParent[parentId] || []).map(function (el) {
+        if (el.group) el.children = attach(el.id);
+        return el;
+      });
+    }
+    var edges = (spec.edges || []).map(function (e, i) {
+      var edge = { id: 'e' + i, sources: [e.from], targets: [e.to] };
+      if (e.label) edge.labels = [{ text: e.label, width: Math.ceil(measure(e.label)) + 8, height: 16 }];
+      return edge;
+    });
+    return {
+      id: 'root',
+      layoutOptions: {
+        'elk.algorithm': 'layered',
+        'elk.direction': spec.direction === 'TB' ? 'DOWN' : 'RIGHT',
+        'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+        'elk.edgeRouting': 'ORTHOGONAL',
+        'elk.json.edgeCoords': 'ROOT',
+        'elk.json.shapeCoords': 'ROOT',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '56',
+        'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+        'elk.spacing.nodeNode': '28',
+        'elk.spacing.edgeNode': '24',
+        'elk.spacing.edgeEdge': '14',
+        'elk.edgeLabels.inline': 'true',
+        'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
+      },
+      children: attach(''),
+      edges: edges
+    };
+  }
+
+  // elkPath turns an ELK edge's sections (start, bend points, end) into one
+  // SVG path, section after section.
+  function elkPath(edge) {
+    var d = '';
+    (edge.sections || []).forEach(function (sec) {
+      d += 'M' + sec.startPoint.x + ',' + sec.startPoint.y;
+      (sec.bendPoints || []).forEach(function (p) { d += 'L' + p.x + ',' + p.y; });
+      d += 'L' + sec.endPoint.x + ',' + sec.endPoint.y;
+    });
+    return d;
+  }
+
+  // diagramShown says which groups, nodes, and edges a diagram shows at
+  // stepAt (null: everything). An element shows from its step on; step 0
+  // or none means from the start.
+  function diagramShown(spec, stepAt) {
+    function on(step) { return stepAt === null || stepAt === undefined || !isStep(step) || step <= stepAt; }
+    var groups = {}, nodes = {};
+    (spec.groups || []).forEach(function (g) { groups[g.id] = on(g.step); });
+    (spec.nodes || []).forEach(function (n) { nodes[n.id] = on(n.step); });
+    return { groups: groups, nodes: nodes, edges: (spec.edges || []).map(function (e) { return on(e.step); }) };
+  }
+
+  // diagramFocus says which groups, nodes, and edges light up at stepAt:
+  // the step's focus ids, everything inside a focused group, and every
+  // edge touching a focused node. Null means the step singles nothing out
+  // (or there is no stepping), so nothing dims.
+  function diagramFocus(spec, stepAt) {
+    var step = isStep(stepAt) ? (spec.steps || [])[stepAt - 1] : null;
+    if (!step || !step.focus || !step.focus.length) return null;
+    var parent = {};
+    (spec.groups || []).forEach(function (g) { parent[g.id] = g.group || ''; });
+    function lit(id, group) {
+      if (step.focus.indexOf(id) >= 0) return true;
+      for (var g = group || ''; g; g = parent[g]) { if (step.focus.indexOf(g) >= 0) return true; }
+      return false;
+    }
+    var groups = {}, nodes = {};
+    (spec.groups || []).forEach(function (g) { groups[g.id] = lit(g.id, g.group); });
+    (spec.nodes || []).forEach(function (n) { nodes[n.id] = lit(n.id, n.group); });
+    return { groups: groups, nodes: nodes, edges: (spec.edges || []).map(function (e) { return !!(nodes[e.from] || nodes[e.to]); }) };
+  }
+
+  // flowSpeed is a flow edge's dot speed in px per ms: 6 px/s for the
+  // lightest edge up to 20 px/s for the heaviest, the graph's scale; with
+  // no weights every edge runs at the middle.
+  function flowSpeed(weight, max) {
+    var share = max ? (Number(weight) || 0) / max : 0.5;
+    return 0.006 + 0.014 * share;
+  }
+
   root.PresentViz = {
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
-    ribbonLayout: ribbonLayout
+    ribbonLayout: ribbonLayout,
+    wrapLines: wrapLines, diagramBox: diagramBox, diagramElk: diagramElk, elkPath: elkPath,
+    diagramShown: diagramShown, diagramFocus: diagramFocus, flowSpeed: flowSpeed
   };
 })(typeof window !== 'undefined' ? window : globalThis);
