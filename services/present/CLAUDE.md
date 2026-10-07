@@ -296,7 +296,8 @@ theme). Do not add those controls manually.
   `is-ribbon`, which drops the card unless the block sets `frame`
   (`data-frame`; accepted on every kind, a no-op on the others until the
   frameless default reaches them). `validateRibbon` refuses an unknown
-  `order`, a series without a name or with a name another series has, a
+  `order`, a fifth series (`ribbonMaxSeries`, the palette's four series
+  roles), a series without a name or with a name another series has, a
   point without an x or with a negative y, a period repeated in a series,
   a column total that overflows, series that disagree on the period order
   (periods run in order of first appearance; `ribbonPeriods`, pinned

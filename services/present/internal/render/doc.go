@@ -67,6 +67,10 @@ var (
 	// ribbonOrders is how a ribbon chart orders the categories inside a
 	// column: by rank (value, largest on top; the default) or as given.
 	ribbonOrders = []string{"rank", "given"}
+	// ribbonMaxSeries is the palette's series roles, series-1 to series-4.
+	// A fifth ribbon series would repeat the first colour, and ranks that
+	// reorder every column make two same-coloured bands unreadable.
+	ribbonMaxSeries = 4
 )
 
 // ChartKinds returns the chart kinds a chart block may name, in the order
@@ -1008,13 +1012,17 @@ func validateRibbon(b Block) error {
 	return nil
 }
 
-// validateRibbonSeries refuses a series without a name (the legend and the
-// segment labels need one), two series with the same name (the legend
-// could not tell them apart), a point without an x (the period) or with a
-// negative y (a segment has no height below zero), a period repeated
-// inside one series (the layout keeps one value per period), and a column
-// total that overflows a float (the layout would draw nothing).
+// validateRibbonSeries refuses more series than the palette has colours,
+// a series without a name (the legend and the segment labels need one),
+// two series with the same name (the legend could not tell them apart), a
+// point without an x (the period) or with a negative y (a segment has no
+// height below zero), a period repeated inside one series (the layout
+// keeps one value per period), and a column total that overflows a float
+// (the layout would draw nothing).
 func validateRibbonSeries(series []ChartSeries) error {
+	if len(series) > ribbonMaxSeries {
+		return fmt.Errorf("a ribbon takes at most %d series (the palette's series colours), got %d: fold the rest into one", ribbonMaxSeries, len(series))
+	}
 	names := map[string]bool{}
 	totals := map[string]float64{}
 	for i, s := range series {

@@ -616,7 +616,7 @@ Node names are matched by exact string, so reuse the same spelling on every link
 
 One series per category, `x` the period, `y` its value in that period. Each period is one column standing on the baseline. The categories stack inside it, the largest on top by default (`order: "rank"`), or in series order with `order: "given"`. A ribbon joins a category's segment to its segment in the next column, so two ribbons crossing is one category passing another. A category with a zero in a period has no segment there and its ribbon breaks. List every period in the first series, in order, with a zero for a gap. The columns follow the order the periods first appear in, and a later series that lists them the other way round is refused. Every series needs its own `name`, a period appears once per series, and values are zero or more. Hovering a segment or a ribbon shows its values and dims the other categories. The chart has no card: it sits on the page or the slide, and `frame: true` keeps the card.
 
-Keep it to four categories (the palette has four series colours, so a fifth repeats the first) and about eight periods. Past that the ribbons turn into a hairball: fold the small categories into one named "other", and split the periods across slides.
+A ribbon takes at most four categories (the palette has four series colours, and a fifth is refused): fold the small ones into one named "other". Keep it to about eight periods; past that the ribbons turn into a hairball, so split the periods across slides.
 
 ### Stepped charts
 

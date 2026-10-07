@@ -266,9 +266,16 @@
   // green, purple, the default family's first four) or by its role
   // (series-1 to series-4); both land on the same index in every family.
   var SERIES_NAMES = { terracotta: 0, blue: 1, green: 2, purple: 3, 'series-1': 0, 'series-2': 1, 'series-3': 2, 'series-4': 3 };
+  // seriesSlot is the palette slot (0 to 3) a series draws with: the slot
+  // its named colour maps to, or its index in order.
+  function seriesSlot(name, i) {
+    return (name && Object.prototype.hasOwnProperty.call(SERIES_NAMES, name)) ? SERIES_NAMES[name] : (i % CHART_SERIES);
+  }
   function chartSeriesColor(colors, name, i) {
-    var idx = (name && Object.prototype.hasOwnProperty.call(SERIES_NAMES, name)) ? SERIES_NAMES[name] : (i % colors.series.length);
-    return colors.series[idx];
+    return colors.series[seriesSlot(name, i)];
+  }
+  function seriesName(series, i) {
+    return (series[i] && series[i].name) || '';
   }
   function axisTitle(colors, text) {
     return { display: !!text, text: text || '', color: colors.text, font: { size: 11 } };
@@ -497,18 +504,20 @@
   // motion (entry, steps, hover) is CSS opacity on classes: s-<i> names an
   // element's series and col-<k> the column it shows with.
   var RIBBON_STAGGER_MS = 60; // between columns in the entry animation
-  var RIBBON_FADE_MS = 350; // the opacity transition in shell.html
   var RIBBON_CHAR_PX = 6.5; // estimated width of one 11 px character
   var RIBBON_LABEL_MIN_PX = 16; // the shortest segment that carries its name
   var RIBBON_LEFT_MIN_PX = 40; // the value axis's margin before its labels widen it
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
-  // ribbonSeriesVar is a series' fill as a palette variable: the slot its
-  // named colour maps to (SERIES_NAMES), or the next slot in order.
+  // ribbonSeriesVar is a series' fill as a palette variable, series-1 to
+  // series-4, so the markup needs no new colour on a theme change.
   function ribbonSeriesVar(s, i) {
-    var name = s && s.color;
-    var idx = (name && Object.prototype.hasOwnProperty.call(SERIES_NAMES, name)) ? SERIES_NAMES[name] : (i % CHART_SERIES);
-    return 'var(--series-' + (idx + 1) + ')';
+    return 'var(--series-' + (seriesSlot(s && s.color, i) + 1) + ')';
+  }
+  // ribbonFadeMs is the opacity transition shell.html gives the chart's
+  // parts, read from its --ribbon-fade so the duration lives in one place.
+  function ribbonFadeMs(svg) {
+    return parseFloat(getComputedStyle(svg).getPropertyValue('--ribbon-fade')) || 350;
   }
   // ribbonMargins leaves room for the value axis's widest tick label, the
   // unit above it, and the period labels under the columns.
@@ -569,7 +578,7 @@
       c.segments.forEach(function (s) { v[s.series] = s.value; });
       return v;
     });
-    function name(i) { return (series[i] && series[i].name) || ''; }
+    function name(i) { return seriesName(series, i); }
     return {
       seg: function (d) { return name(d.series) + ': ' + fmt(d.value) + unit + ' (' + d.period + ')'; },
       rib: function (r) {
@@ -586,7 +595,7 @@
     var series = spec.series || [];
     var geo = ribbonGeometry(spec, layout, w, h), x = geo.x, bw = geo.bw;
     var titles = ribbonTitles(spec, layout);
-    function name(d) { return (series[d.series] && series[d.series].name) || ''; }
+    function name(d) { return seriesName(series, d.series); }
     function fill(d) { return 'fill: ' + ribbonSeriesVar(series[d.series], d.series); }
     function cls(kind) {
       return function (d) { return kind + ' s-' + d.series + ' col-' + d.col + (hidden(d.col) ? ' off' : ''); };
@@ -644,7 +653,11 @@
   // ribbonEnter fades the drawn columns in from left to right. Everything
   // starts off; a frame later the columns the step allows lose it, each
   // delayed by its column index, and the delays clear once the last is in.
-  function ribbonEnter(block, svg, columns) {
+  // block._ribbonEntering holds until then, so a resize in that window
+  // (the presenting toggle after a reload) redraws and enters again
+  // instead of landing the chart in its final state.
+  function ribbonEnter(block, svg, periodCount) {
+    block._ribbonEntering = true;
     requestAnimationFrame(function () {
       // Flush style so the off state is computed and the change animates.
       svg.getBoundingClientRect();
@@ -656,8 +669,9 @@
         el.classList.remove('off');
       });
       setTimeout(function () {
+        block._ribbonEntering = false;
         els.forEach(function (el) { el.style.transitionDelay = ''; });
-      }, RIBBON_FADE_MS + RIBBON_STAGGER_MS * columns);
+      }, ribbonFadeMs(svg) + RIBBON_STAGGER_MS * periodCount);
     });
   }
   // ribbonSvg is the block's svg, made on the first build in place of the
@@ -738,6 +752,7 @@
     block._ribbonResize = function () {
       var s = block._ribbonSize;
       if (s && Math.abs(s.w - wrap.clientWidth) <= 1 && Math.abs(s.h - wrap.clientHeight) <= 1) return;
+      if (block._ribbonEntering) { if (draw(true)) ribbonEnter(block, svg, layout.periods.length); return; }
       draw(false);
     };
     if (block._ribbonObserver) block._ribbonObserver.disconnect();

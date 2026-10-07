@@ -243,6 +243,13 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			`chart "C": series 2 has no name`,
 		},
 		{
+			"ribbon with a fifth series",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{
+				{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"},
+			}},
+			`chart "C": a ribbon takes at most 4 series (the palette's series colours), got 5`,
+		},
+		{
 			"ribbon series named twice",
 			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}}},
 			`chart "C": two series are named "a"`,
