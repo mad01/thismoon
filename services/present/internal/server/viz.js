@@ -158,8 +158,8 @@
   // string's width in pixels.
   function diagramBox(node, measure) {
     var lines = wrapLines(node.text, DIAGRAM_BOX.lineChars);
-    var widest = measure(node.label || '');
-    lines.forEach(function (l) { widest = Math.max(widest, measure(l)); });
+    var widest = measure(node.label || '', 'label');
+    lines.forEach(function (l) { widest = Math.max(widest, measure(l, 'text')); });
     var w = Math.min(DIAGRAM_BOX.maxW, Math.max(DIAGRAM_BOX.minW, Math.ceil(widest) + 2 * DIAGRAM_BOX.padX));
     var h = 2 * DIAGRAM_BOX.padY + DIAGRAM_BOX.label + lines.length * DIAGRAM_BOX.text;
     return { width: w, height: h, lines: lines };
@@ -189,11 +189,13 @@
         return el;
       });
     }
-    var gap = DIAGRAM_LAYER_GAP;
+    var gap = DIAGRAM_LAYER_GAP, lr = spec.direction !== 'TB';
     var edges = (spec.edges || []).map(function (e, i) {
-      // The widest label sets the gap between layers, so a label on the
-      // run between two boxes never reaches into either box.
-      if (e.label) gap = Math.max(gap, Math.ceil(measure(e.label)) + 24);
+      // Left to right, the widest label sets the gap between layers, so a
+      // label on the run between two boxes never reaches into either box.
+      // Top to bottom the runs are vertical and a label's width is beside
+      // them, so the gap stays.
+      if (e.label && lr) gap = Math.max(gap, Math.ceil(measure(e.label, 'text')) + 24);
       return { id: 'e' + i, sources: [e.from], targets: [e.to] };
     });
     return {
@@ -298,7 +300,7 @@
   // by its shape's room and every group at least as wide as its label
   // (drawn in upper case, so that is what measure gets).
   function diagramGraph(spec, measure) {
-    var graph = diagramElk(spec, measure), kind = {}, label = {};
+    var graph = diagramElk(spec, measure), kind = Object.create(null), label = Object.create(null);
     (spec.nodes || []).forEach(function (n) { kind[n.id] = n.kind; });
     (spec.groups || []).forEach(function (g) { label[g.id] = String(g.label || '').toUpperCase(); });
     function grow(children) {
@@ -306,7 +308,7 @@
         var room = DIAGRAM_KIND_ROOM[kind[el.id]];
         if (room && !el.group) { el.width += room.left; el.height += room.top; }
         if (el.group) {
-          var w = Math.ceil(measure(label[el.id])) + 2 * DIAGRAM_GROUP_LABEL.x;
+          var w = Math.ceil(measure(label[el.id], 'group')) + 2 * DIAGRAM_GROUP_LABEL.x;
           el.layoutOptions['elk.nodeSize.constraints'] = 'MINIMUM_SIZE';
           el.layoutOptions['elk.nodeSize.minimum'] = '(' + w + ',0)';
         }

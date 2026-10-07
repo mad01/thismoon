@@ -88,18 +88,38 @@
   function role(name) {
     return cssVar('--' + name, '#808080');
   }
-  // surfaceColor is the colour behind el as the browser painted it: the
-  // first ancestor with a background, so a chart or graph label on a toned
-  // slide (a color-mix the stylesheet writes, which the shell names
-  // --surface) gets the tint and one in a card gets the card. Cytoscape and
-  // Chart.js parse colours themselves, so they need the computed rgb and
-  // not the variable.
-  function surfaceColor(el) {
-    for (var e = el; e && e.nodeType === 1; e = e.parentNode) {
-      var bg = getComputedStyle(e).backgroundColor;
-      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return bg;
+  var colorCtx = null; // the one-pixel canvas colorLiteral paints on
+  // colorLiteral turns any colour the browser can paint (a color-mix the
+  // stylesheet writes, which computes to color(srgb ...)) into the rgb()
+  // string Cytoscape and Chart.js parse, by painting one pixel with it.
+  function colorLiteral(value) {
+    if (!colorCtx) {
+      var c = document.createElement('canvas');
+      c.width = c.height = 1;
+      colorCtx = c.getContext('2d', { willReadFrequently: true });
     }
-    return role('bg');
+    colorCtx.clearRect(0, 0, 1, 1);
+    colorCtx.fillStyle = '#000';
+    colorCtx.fillStyle = value;
+    colorCtx.fillRect(0, 0, 1, 1);
+    var d = colorCtx.getImageData(0, 0, 1, 1).data;
+    return 'rgb(' + d[0] + ', ' + d[1] + ', ' + d[2] + ')';
+  }
+  // surfaceColor is the colour the shell names --surface at el: the page,
+  // a toned or section slide's tint, or a card. It is read through a probe
+  // child with its own transition off, never from a painted background:
+  // webkit eases the body and panel backgrounds over 300 ms and fires
+  // wk-themechange in the same tick, so right after a theme change the
+  // painted colour is still the old theme's. Cytoscape and Chart.js parse
+  // colours themselves, so the value is normalised to rgb().
+  function surfaceColor(el) {
+    if (!el || !el.appendChild) return role('bg');
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;width:0;height:0;transition:none;background:var(--surface, var(--bg))';
+    el.appendChild(probe);
+    var bg = getComputedStyle(probe).backgroundColor;
+    el.removeChild(probe);
+    return colorLiteral(bg || role('bg'));
   }
   function getGraphColors(container) {
     var tones = {};
@@ -436,6 +456,18 @@
     if (!n) { n = document.createElement('p'); n.className = 'present-chart-note'; block.appendChild(n); }
     n.textContent = text;
   }
+  // cutStep applies a step change to an svg renderer with its transitions
+  // off for a frame when the deck cuts (block._stepCut) or Reduce Motion
+  // is on, so the swap does not fade; otherwise the stylesheet's
+  // transition plays.
+  function cutStep(block, svg, apply) {
+    var cut = reducedMotion || block._stepCut;
+    if (cut) svg.classList.add('cut');
+    apply();
+    if (!cut) return;
+    svg.getBoundingClientRect(); // apply the change under cut before it lifts
+    requestAnimationFrame(function () { svg.classList.remove('cut'); });
+  }
   // buildChart builds (or rebuilds, on a theme change) one chart block. The
   // entry animation plays once per block, the first time it is built, and
   // opts.duration caps it: the brief plays Chart.js's 700 ms at mount, the
@@ -751,12 +783,7 @@
     var animate = !reducedMotion && !block._built && !(opts && opts.duration === 0);
     block._built = true;
     block._presentStep = function (n) {
-      var cut = reducedMotion || block._stepCut;
-      if (cut) svg.classList.add('cut');
-      ribbonStep(svg, n);
-      if (!cut) return;
-      svg.getBoundingClientRect(); // apply the change under cut before it lifts
-      requestAnimationFrame(function () { svg.classList.remove('cut'); });
+      cutStep(block, svg, function () { ribbonStep(svg, n); });
     };
     function draw(entering) {
       var w = wrap.clientWidth, h = wrap.clientHeight;
@@ -802,13 +829,16 @@
   // (g-<id>, n-<id>, e-<k>) for the stylesheet and anyone inspecting it.
   var DIAGRAM_LABEL_FONT = '600 13px '; // a node's name
   var DIAGRAM_TEXT_FONT = '11.5px '; // a node's text lines and the edge labels
-  var DIAGRAM_GROUP_FONT = '11px '; // a group's label, drawn in upper case
+  var DIAGRAM_GROUP_FONT_PX = 11; // a group's label, drawn in upper case
+  var DIAGRAM_GROUP_FONT = DIAGRAM_GROUP_FONT_PX + 'px ';
   var DIAGRAM_GROUP_TRACKING = 0.06; // the group label's letter spacing, in em
+  var DIAGRAM_BOX_RX = 8; // a box's corner
+  var DIAGRAM_GROUP_RX = 10; // a group's corner
+  var DIAGRAM_HALO = { pad: 8, h: 16, rx: 3 }; // an edge label's halo around its text
   var DIAGRAM_MAX_SCALE = 1.25; // how far a small diagram grows to fill its width
   var DIAGRAM_MAX_H = 420; // the canvas height when the stylesheet sets none
   var DIAGRAM_STAGGER_MS = 40; // between node layers in the entry
   var DIAGRAM_PHASE_MS = 120; // between the entry's phases: groups, nodes, edges
-  var DIAGRAM_DRAW_MS = 350; // an edge drawing in, as long as shell.html's fades
   var DIAGRAM_DOT_R = 3.5; // a flow dot
   // Node centres closer than this along the flow share a layer in the
   // entry: less than any two layers sit apart (a box is at least 120 wide
@@ -825,22 +855,20 @@
   var diagramCount = 0; // numbers each svg, so its marker id is unique on the page
   var measureCtx = null; // the canvas context diagramMeasure measures text on
 
-  // diagramMeasure returns the measure(string) PresentViz sizes boxes and
-  // labels with: the width of the string in the font it is drawn in, the
-  // block's font family at the size and weight of the role the string
-  // plays (a node's name, a group's label, or a text line or edge label).
-  function diagramMeasure(block, spec) {
+  // diagramMeasure returns the measure(string, role) PresentViz sizes
+  // boxes and labels with: the width of the string in the font its role
+  // is drawn in (label: a node's name; group: a group's label with its
+  // tracking; anything else: a text line or an edge label), in the block's
+  // font family. The header's font control changes that family after the
+  // layout, so the boxes keep the measured width until a reload.
+  function diagramMeasure(block) {
     if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
     var family = getComputedStyle(block).fontFamily || 'sans-serif';
-    var names = Object.create(null), groups = Object.create(null);
-    (spec.nodes || []).forEach(function (n) { names[n.label] = true; });
-    (spec.groups || []).forEach(function (g) { groups[String(g.label || '').toUpperCase()] = true; });
-    return function (text) {
+    return function (text, role) {
       text = String(text);
-      var group = groups[text] && !names[text];
-      measureCtx.font = (names[text] ? DIAGRAM_LABEL_FONT : group ? DIAGRAM_GROUP_FONT : DIAGRAM_TEXT_FONT) + family;
+      measureCtx.font = (role === 'label' ? DIAGRAM_LABEL_FONT : role === 'group' ? DIAGRAM_GROUP_FONT : DIAGRAM_TEXT_FONT) + family;
       var w = measureCtx.measureText(text).width;
-      return group ? w + text.length * 11 * DIAGRAM_GROUP_TRACKING : w;
+      return role === 'group' ? w + text.length * DIAGRAM_GROUP_FONT_PX * DIAGRAM_GROUP_TRACKING : w;
     };
   }
   // diagramLayout lays the spec out with ELK once the page's fonts have
@@ -956,7 +984,7 @@
     var g = layer.selectAll('g').data(data).join('g')
       .attr('class', diagramClass(function (d) { return 'dgroup g-' + diagramToken(d.key) + diagramTone(d.item); }, flags))
       .attr('transform', function (d) { return 'translate(' + d.box.x + ',' + d.box.y + ')'; });
-    g.append('rect').attr('class', 'dgroup-box').attr('rx', 10)
+    g.append('rect').attr('class', 'dgroup-box').attr('rx', DIAGRAM_GROUP_RX)
       .attr('width', function (d) { return d.box.width; }).attr('height', function (d) { return d.box.height; });
     g.append('text').attr('class', 'dgroup-label').attr('x', at.x).attr('y', at.y)
       .text(function (d) { return d.item.label; });
@@ -1005,10 +1033,10 @@
     g.each(function (d) {
       var p = d.item.label ? PresentViz.routeLabelPoint(d.route) : null;
       if (!p) return;
-      var w = Math.ceil(measure(d.item.label)) + 8, h = 16;
+      var w = Math.ceil(measure(d.item.label, 'text')) + DIAGRAM_HALO.pad, h = DIAGRAM_HALO.h;
       var label = d3.select(this).append('g').attr('class', 'dedge-label')
         .attr('transform', 'translate(' + (p.x - w / 2) + ',' + (p.y - h / 2) + ')');
-      label.append('rect').attr('width', w).attr('height', h).attr('rx', 3);
+      label.append('rect').attr('width', w).attr('height', h).attr('rx', DIAGRAM_HALO.rx);
       label.append('text').attr('x', w / 2).attr('y', h / 2).text(d.item.label);
     });
   }
@@ -1045,19 +1073,13 @@
   function diagramStepHook(block, spec) {
     return function (n) {
       var svg = block._diagramSvg;
-      if (!svg) return;
-      var cut = reducedMotion || block._stepCut;
-      if (cut) svg.classList.add('cut');
-      diagramStep(svg, spec, n);
-      if (!cut) return;
-      svg.getBoundingClientRect(); // apply the change under cut before it lifts
-      requestAnimationFrame(function () { svg.classList.remove('cut'); });
+      if (svg) cutStep(block, svg, function () { diagramStep(svg, spec, n); });
     };
   }
   // diagramDelays times the entry: groups first, then the nodes layer by
   // layer along the flow (x for LR, y for TB), then each edge with its
   // source's layer. total is when the last edge has drawn in.
-  function diagramDelays(spec, boxes) {
+  function diagramDelays(spec, boxes, fade) {
     var lr = spec.direction !== 'TB';
     function along(id) { var b = boxes[id]; return lr ? b.x + b.width / 2 : b.y + b.height / 2; }
     var layerOf = Object.create(null), layer = -1, start = -Infinity;
@@ -1074,13 +1096,19 @@
         if (d.kind === 'nodes') return nodes + layerOf[d.key] * DIAGRAM_STAGGER_MS;
         return edges + layerOf[d.item.from] * DIAGRAM_STAGGER_MS;
       },
-      total: edges + (layer + 1) * DIAGRAM_STAGGER_MS + DIAGRAM_DRAW_MS
+      total: edges + (layer + 1) * DIAGRAM_STAGGER_MS + fade
     };
+  }
+  // diagramFadeMs is the opacity transition shell.html gives the diagram's
+  // parts, read from its --diagram-fade so the duration lives in one place;
+  // an edge draws in over the same time.
+  function diagramFadeMs(svg) {
+    return parseFloat(getComputedStyle(svg).getPropertyValue('--diagram-fade')) || 350;
   }
   // diagramDrawIn draws an edge's line from its source to its tip: a dash
   // as long as the line, offset by its length and run to 0.
-  function diagramDrawIn(line, delay) {
-    line.style.transition = 'stroke-dashoffset ' + DIAGRAM_DRAW_MS + 'ms ease ' + delay + 'ms';
+  function diagramDrawIn(line, delay, fade) {
+    line.style.transition = 'stroke-dashoffset ' + fade + 'ms ease ' + delay + 'ms';
     line.style.strokeDashoffset = '0';
   }
   // diagramEnter fades the drawn diagram in. Everything starts off; a
@@ -1089,7 +1117,7 @@
   // and the draw-in dash clear (a flow edge gets its own dash back from
   // the stylesheet) and the flow dots, hidden by .entering, fade in.
   function diagramEnter(block, svg, spec, boxes) {
-    var delays = diagramDelays(spec, boxes);
+    var fade = diagramFadeMs(svg), delays = diagramDelays(spec, boxes, fade);
     svg.classList.add('entering');
     requestAnimationFrame(function () {
       var flags = diagramFlags(spec, chartStepAt(block), false), els = diagramElements(svg);
@@ -1107,7 +1135,7 @@
         var d = el.__data__, delay = delays.at(d);
         el.style.transitionDelay = delay + 'ms';
         el.classList.remove('off');
-        if (d.kind === 'edges') diagramDrawIn(el.querySelector('.dedge-line'), delay);
+        if (d.kind === 'edges') diagramDrawIn(el.querySelector('.dedge-line'), delay, fade);
       });
       setTimeout(function () {
         els.forEach(function (el) { el.style.transitionDelay = ''; });
@@ -1152,11 +1180,13 @@
     svg.querySelectorAll('.dedge.flow').forEach(function (g) {
       var dot = g.querySelector('.dflow'), line = g.querySelector('.dedge-line');
       var length = dot ? line.getTotalLength() : 0;
-      if (length > 0) runs.push({ dot: dot, line: line, length: length, speed: PresentViz.flowSpeed(g.__data__.item.weight, max) });
+      if (length > 0) runs.push({ g: g, dot: dot, line: line, length: length, speed: PresentViz.flowSpeed(g.__data__.item.weight, max) });
     });
     if (!runs.length) return;
     block._flowStop = visibleLoop(svg, function (now) {
       runs.forEach(function (r) {
+        // An edge a step hides or dims shows no dot, so it need not move.
+        if (r.g.classList.contains('off') || r.g.classList.contains('dim')) return;
         var p = r.line.getPointAtLength((now * r.speed) % r.length);
         r.dot.setAttribute('cx', p.x);
         r.dot.setAttribute('cy', p.y);
@@ -1207,7 +1237,9 @@
     block._diagramFit = attempt;
     if (block._diagramObserver) block._diagramObserver.disconnect();
     if (typeof ResizeObserver === 'function') {
-      block._diagramObserver = new ResizeObserver(attempt);
+      // A frame later, since fitting the svg resizes the wrapper the
+      // observer watches, which the browser reports as a loop otherwise.
+      block._diagramObserver = new ResizeObserver(function () { requestAnimationFrame(attempt); });
       block._diagramObserver.observe(wrap);
     }
     attempt();
@@ -1218,8 +1250,7 @@
   // variable and the geometry does not change, so ELK never runs twice.
   // The entry plays once, on the brief's mount or the deck's first
   // showing, and never under Reduce Motion or a deck that cuts
-  // (opts.duration 0). _diagramGen drops a layout that lands after a
-  // newer build started.
+  // (opts.duration 0).
   function buildDiagram(block, opts) {
     if (typeof d3 === 'undefined' || typeof ELK === 'undefined') {
       chartNote(block, 'Diagram needs the elk and d3 assets: run make cache in services/present.');
@@ -1232,14 +1263,12 @@
     try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
     block._built = true;
     var animate = !reducedMotion && !(opts && opts.duration === 0);
-    var gen = block._diagramGen = (block._diagramGen || 0) + 1;
     block._presentStep = diagramStepHook(block, spec);
     diagramLayout(block, spec).then(function (result) {
-      if (gen !== block._diagramGen) return;
       block._diagramLayout = result.graph;
       mountDiagram(block, spec, result, wrap, animate);
     }).catch(function (err) {
-      if (gen === block._diagramGen) chartNote(block, 'Diagram could not be drawn: ' + ((err && err.message) || err));
+      chartNote(block, 'Diagram could not be drawn: ' + ((err && err.message) || err));
     });
   }
   // initPresentDiagrams builds every diagram block under root (the
@@ -1268,36 +1297,15 @@
     var period = 16;
     var max = 0;
     edges.forEach(function (e) { max = Math.max(max, e.data('weight') || 0); });
-    function speed(e) { // px per ms: 6 px/s for the lightest edge up to 20 px/s for the heaviest
-      var share = max ? (e.data('weight') || 0) / max : 0.5;
-      return 0.006 + 0.014 * share;
-    }
     function frame(now) {
       cy.startBatch();
-      edges.forEach(function (e) { e.style('line-dash-offset', period - ((now * speed(e)) % period)); });
+      edges.forEach(function (e) {
+        e.style('line-dash-offset', period - ((now * PresentViz.flowSpeed(e.data('weight'), max)) % period));
+      });
       cy.endBatch();
     }
     if (reducedMotion) { frame(0); return; }
-    var raf = 0, visible = true, stopped = false, io = null;
-    function tick(now) { raf = 0; if (stopped) return; frame(now); if (visible && !document.hidden) raf = requestAnimationFrame(tick); }
-    function kick() { if (!raf && !stopped && visible && !document.hidden) raf = requestAnimationFrame(tick); }
-    if ('IntersectionObserver' in window) {
-      // Entries batch when the graph crosses in and out between callbacks; the
-      // last one is the current state, the first can be stale.
-      io = new IntersectionObserver(function (entries) {
-        visible = entries[entries.length - 1].isIntersecting;
-        kick();
-      }, { threshold: 0.05 });
-      io.observe(el);
-    }
-    document.addEventListener('visibilitychange', kick);
-    kick();
-    flowStop = function () {
-      stopped = true;
-      if (raf) cancelAnimationFrame(raf);
-      if (io) io.disconnect();
-      document.removeEventListener('visibilitychange', kick);
-    };
+    flowStop = visibleLoop(el, frame);
   }
 
   // ── Cytoscape graph controls ── engine/zoom/fit/fullscreen chrome around
@@ -1351,13 +1359,19 @@
       c.center();
     }
 
+    // The popup paints a card over the page, so the edge labels' backing
+    // follows the surface the graph sits on in and out of it.
+    function restyleLabels(c) {
+      c.style().selector('edge[label]').style('text-background-color', surfaceColor(el)).update();
+    }
+
     function openPopup() {
       wrapper.classList.add('cy-fullscreen');
       backdrop.classList.add('active');
       ctrls.querySelector('[data-cy="fs"]').innerHTML = svgCollapse;
       ctrls.querySelector('[data-cy="fs"]').title = 'Exit fullscreen';
       var c = cy();
-      if (c) setTimeout(function () { c.resize(); refit(c, 40); }, 120);
+      if (c) { restyleLabels(c); setTimeout(function () { c.resize(); refit(c, 40); }, 120); }
     }
 
     function closePopup() {
@@ -1366,7 +1380,7 @@
       ctrls.querySelector('[data-cy="fs"]').innerHTML = svgExpand;
       ctrls.querySelector('[data-cy="fs"]').title = 'Fullscreen';
       var c = cy();
-      if (c) setTimeout(function () { c.resize(); refit(c, 30); }, 80);
+      if (c) { restyleLabels(c); setTimeout(function () { c.resize(); refit(c, 30); }, 80); }
     }
 
     ctrls.addEventListener('click', function (e) {

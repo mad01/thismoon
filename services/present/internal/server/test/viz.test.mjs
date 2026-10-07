@@ -252,6 +252,8 @@ test('diagramElk: groups nest, nodes sit in their group, edges sit at the root w
   assert.equal(g.layoutOptions['elk.edgeLabels.inline'], undefined);
   assert.equal(g.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], String(14 * 7 + 24));
   assert.equal(PresentViz.diagramElk({ nodes: [{ id: 'a', label: 'A' }] }, measure).layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], '56');
+  const tb = PresentViz.diagramElk({ direction: 'TB', nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ from: 'a', to: 'b', label: 'a long label here' }] }, measure);
+  assert.equal(tb.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], '56');
   assert.equal(PresentViz.diagramElk({ direction: 'TB', nodes: [] }, measure).layoutOptions['elk.direction'], 'DOWN');
 });
 

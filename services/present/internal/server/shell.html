@@ -151,7 +151,7 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    fills it reads under 3:1 in most families, dark mode above all. */
 .present-ribbon { --ribbon-fade: 350ms; display: block; width: 100%; height: 100%; overflow: visible; }
 .present-ribbon text { fill: var(--chart-text); font-size: 11px; font-family: inherit; }
-.present-ribbon .seg-label { fill: var(--card-bg); pointer-events: none; }
+.present-ribbon .seg-label { fill: var(--surface); pointer-events: none; }
 .present-ribbon .grid line { stroke: var(--chart-grid); }
 .present-ribbon .seg, .present-ribbon .rib, .present-ribbon .seg-label { transition: opacity var(--ribbon-fade) ease; }
 .present-ribbon .rib { fill-opacity: 0.45; }
@@ -183,7 +183,7 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    follows .dim so an element a step has not reached stays hidden. */
 .present-diagram { margin: 1rem 0 1.5rem; }
 .present-diagram-canvas { display: flex; justify-content: center; max-height: 420px; }
-.present-diagram-svg { display: block; overflow: visible; font-family: inherit; }
+.present-diagram-svg { --diagram-fade: 350ms; display: block; overflow: visible; font-family: inherit; }
 .present-diagram-caption { font-size: 0.875rem; color: var(--text-2); margin: 0.5rem 0 0; }
 .deck .present-diagram-caption, .deck .present-diagram .present-steps { text-align: center; }
 .present-diagram-svg .tone-neutral { --dtone-bg: var(--tone-neutral-bg); --dtone-border: var(--tone-neutral-border); --dtone-text: var(--tone-neutral-text); }
@@ -213,7 +213,7 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
 .present-diagram-svg .dedge-label rect { fill: var(--surface); }
 .present-diagram-svg .dedge-label text { fill: var(--text-2); font-size: 11.5px; }
 .present-diagram-svg .dflow { fill: var(--graph-hot); pointer-events: none; }
-.present-diagram-svg .dgroup, .present-diagram-svg .dnode, .present-diagram-svg .dedge, .present-diagram-svg .dflow { transition: opacity 0.35s ease; }
+.present-diagram-svg .dgroup, .present-diagram-svg .dnode, .present-diagram-svg .dedge, .present-diagram-svg .dflow { transition: opacity var(--diagram-fade) ease; }
 .present-diagram-svg .dnode.focus { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--primary) 55%, transparent)); }
 .present-diagram-svg .dnode.focus .dnode-shape { stroke-width: 2.5px; }
 .present-diagram-svg .dim { opacity: 0.35; }

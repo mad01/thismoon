@@ -280,9 +280,14 @@ theme). Do not add those controls manually.
   `--surface`: `--bg`, the tint of a toned or section slide, or
   `--card-bg` inside `wk-panel`, `details`, and a framed chart. SVG reads
   it through `var()`. Chart.js and Cytoscape need a literal, so
-  `surfaceColor(el)` in app.js walks up to the first painted ancestor
-  background. The gaps between stacked bars and doughnut slices and the
-  graph's edge label backing follow the slide tint or the card that way.
+  `surfaceColor(el)` in app.js reads `--surface` through a probe child
+  with its transition off (webkit eases backgrounds over 300 ms and fires
+  `wk-themechange` in the same tick, so a painted background would still
+  be the old theme's) and normalises it through a one-pixel canvas
+  (`colorLiteral`), since a tint computes to `color(srgb …)`, which
+  neither library parses. The gaps between stacked bars and doughnut
+  slices and the graph's edge label backing follow the slide tint or the
+  card that way, in the graph's fullscreen popup too.
   This default is CSS only, so every stored chart changed look when it
   shipped (MAD-382, 2026-10-07).
 - **Metric charts are present-local, not webkit.** The `t=chart` Doc block
@@ -349,16 +354,20 @@ theme). Do not add those controls manually.
   the labels with a canvas and builds the ELK graph through
   `PresentViz.diagramGraph` (which wraps `diagramElk`: layered,
   `INCLUDE_CHILDREN`, orthogonal routes, root coordinates, a layer gap
-  sized from the widest edge label). It runs the vendored elkjs once per
-  spec, with a generation counter that drops a stale result, and draws
-  SVG with D3: groups, boxes by kind, routed edges, labels placed by
+  sized from the widest edge label, left to right only). It runs the
+  vendored elkjs once per spec and draws SVG with D3: groups, boxes by
+  kind, routed edges, labels placed by
   `routeLabelPoint` on a halo in `--surface`, and flow dots whose speed
   follows `flowSpeed`. Fills are `var(--tone-<t>-bg)` and friends, so a
   theme change redraws nothing. The svg scales to its wrapper through
   the viewBox; a ResizeObserver only refits, never redraws. Steps toggle
   `off`, `focus`, and `dim` classes through `_presentStep` on the MAD-385
-  contract, and Reduce Motion or a cutting deck swap without transitions.
-  It needs `window.ELK` and `d3`; without one it shows a note. Every tone
+  contract, and Reduce Motion or a cutting deck swap without transitions
+  (`cutStep`, shared with the ribbon). Flow dots run through
+  `visibleLoop`, which the graph's edge flow shares. It needs
+  `window.ELK` and `d3`; without one it shows a note. Known limit: the
+  header's font control changes the family after the layout, so the
+  boxes keep their measured width until a reload. Every tone
   list has three consumers now: `graphTones` in graph.go, `GRAPH_TONES`
   in app.js, and the diagram's CSS, which names the same six roles.
 - **Graph edge flow is split between graph.go and app.js.** A `GraphEdge` in
