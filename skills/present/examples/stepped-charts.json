@@ -1,0 +1,1111 @@
+{
+  "title": "Stepped charts in present",
+  "content": {
+    "summary": "A chart on a slide can now build up one step per Next, a ribbon chart shows ranks changing over periods, and a diagram block walks an architecture.",
+    "meta": "2026-10-07 · present release notes · stepped charts",
+    "chips": [
+      {
+        "text": "7 commits",
+        "style": "stat"
+      },
+      {
+        "text": "13 node tests",
+        "style": "stat"
+      },
+      {
+        "text": "d3 7.9.0 vendored",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "What changed",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A chart block may carry **steps**: one caption per step, and each series names the step it joins at. On a deck slide, Next walks the steps before moving on, and the counter shows them beside the slide number. In this brief the same chart shows its finished state with the captions as a numbered list, so the page still reads top to bottom."
+          },
+          {
+            "t": "list",
+            "items": [
+              "Go refuses an unknown chart kind at compile time instead of drawing a line chart.",
+              "The pure step helpers live in a second served script with node tests.",
+              "d3 7.9.0 is vendored with a sha256 pin, and the fetch policy is recorded in ADR-0022.",
+              "A ribbon chart kind, drawn by D3, shows how categories rank over periods and walks one period per Next on a slide.",
+              "A diagram block draws an architecture from boxes, boundaries, and arrows, laid out in the browser, and walks it one step per Next.",
+              "Charts sit straight on the page now; setting frame keeps a card around one."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "How the spike built up",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Three services fell over in order, two minutes apart. On the deck, each step adds one service to the stack."
+          },
+          {
+            "t": "chart",
+            "title": "5xx by service per five minutes",
+            "kind": "stacked-bar",
+            "unit": "req",
+            "series": [
+              {
+                "name": "pricing",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 120
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 310
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 300
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 40
+                  }
+                ],
+                "step": 1
+              },
+              {
+                "name": "checkout",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 60
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 280
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 420
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 30
+                  }
+                ],
+                "step": 2
+              },
+              {
+                "name": "gateway",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 90
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 220
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 10
+                  }
+                ],
+                "step": 3
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The pricing service times out first."
+              },
+              {
+                "caption": "Checkout retries pile on top of it."
+              },
+              {
+                "caption": "The gateway sheds load and the spike peaks."
+              }
+            ]
+          }
+        ],
+        "tone": "amber"
+      },
+      {
+        "h": "Latency before and after the fix",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A line chart steps the same way. The baseline is on screen from the start, and each step adds one comparison."
+          },
+          {
+            "t": "chart",
+            "title": "p95 checkout latency",
+            "kind": "line",
+            "unit": "ms",
+            "series": [
+              {
+                "name": "before",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 880
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 940
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 910
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 960
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 930
+                  }
+                ]
+              },
+              {
+                "name": "TTL cap",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 640
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 610
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 650
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 600
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 620
+                  }
+                ],
+                "step": 1
+              },
+              {
+                "name": "cap and probe",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 290
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 270
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 300
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 260
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 280
+                  }
+                ],
+                "step": 2
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The TTL cap alone takes the tail from 940 ms to 610 ms."
+              },
+              {
+                "caption": "The resolver probe on top of it lands under 300 ms."
+              }
+            ]
+          }
+        ],
+        "tone": "green"
+      },
+      {
+        "h": "Where the traffic went",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A sankey has flows rather than series, so its steps are captions only: the picture stays whole while the story moves under it."
+          },
+          {
+            "t": "chart",
+            "title": "Requests per second during the incident",
+            "kind": "sankey",
+            "flows": [
+              {
+                "from": "ingress",
+                "to": "gateway",
+                "value": 1200
+              },
+              {
+                "from": "gateway",
+                "to": "orders",
+                "value": 800
+              },
+              {
+                "from": "gateway",
+                "to": "pricing",
+                "value": 400
+              },
+              {
+                "from": "orders",
+                "to": "postgres",
+                "value": 400
+              },
+              {
+                "from": "orders",
+                "to": "retries",
+                "value": 400
+              }
+            ],
+            "steps": [
+              {
+                "caption": "Ingress held steady at 1200 requests per second."
+              },
+              {
+                "caption": "The gateway passed two thirds of them to orders."
+              },
+              {
+                "caption": "Half of what reached orders made it to the database."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Where the ranks changed",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A **ribbon** chart shows how categories rank against each other over periods. Each period is one column with the categories stacked by rank, and a ribbon joins a category to its segment in the next column, so two ribbons crossing is one category passing another. It sits straight on the page with no card, and on a slide it walks one period per Next."
+          },
+          {
+            "t": "chart",
+            "title": "Checkout visits by channel per quarter",
+            "kind": "ribbon",
+            "unit": "k",
+            "series": [
+              {
+                "name": "search",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 60
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 52
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 44
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 38
+                  }
+                ]
+              },
+              {
+                "name": "social",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 20
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 45
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 58
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 70
+                  }
+                ]
+              },
+              {
+                "name": "direct",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 35
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 30
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 40
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 32
+                  }
+                ]
+              },
+              {
+                "name": "referral",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 12
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 18
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 25
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 41
+                  }
+                ]
+              }
+            ],
+            "steps": [
+              {
+                "caption": "Search brings the most visits in Q1."
+              },
+              {
+                "caption": "Social overtakes direct in Q2."
+              },
+              {
+                "caption": "Social passes search in Q3."
+              },
+              {
+                "caption": "Referral climbs to second in Q4."
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Hover a segment or a ribbon to see its values and dim the other channels. Setting order to given keeps the series order in every column instead of ranking, and setting frame keeps the card."
+          }
+        ]
+      },
+      {
+        "h": "Where the request goes",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A **diagram** block explains an architecture: boxes with a name and a short text, labelled boundaries around the parts that share a host, and labelled arrows. The browser lays it out and draws it, so nothing is placed by hand. On a slide it builds up one step per Next and lights up the part each step is about."
+          },
+          {
+            "t": "diagram",
+            "caption": "A checkout request, from the browser to the orders table.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "edge",
+                "label": "edge",
+                "tone": "neutral"
+              },
+              {
+                "id": "prod",
+                "label": "prod cluster",
+                "tone": "blue"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "browser",
+                "label": "Browser",
+                "text": "the shopper's tab",
+                "kind": "person"
+              },
+              {
+                "id": "gw",
+                "label": "Gateway",
+                "text": "Envoy, terminates TLS",
+                "group": "edge"
+              },
+              {
+                "id": "api",
+                "label": "Checkout API",
+                "text": "Go, validates the cart",
+                "group": "prod",
+                "step": 2
+              },
+              {
+                "id": "pricing",
+                "label": "Pricing",
+                "text": "Go, quotes and discounts",
+                "group": "prod",
+                "step": 3
+              },
+              {
+                "id": "orders",
+                "label": "Orders DB",
+                "text": "Postgres",
+                "kind": "store",
+                "group": "prod",
+                "step": 4
+              }
+            ],
+            "edges": [
+              {
+                "from": "browser",
+                "to": "gw",
+                "label": "POST /checkout",
+                "flow": true,
+                "weight": 120
+              },
+              {
+                "from": "gw",
+                "to": "api",
+                "label": "route",
+                "flow": true,
+                "weight": 120,
+                "step": 2
+              },
+              {
+                "from": "api",
+                "to": "pricing",
+                "label": "quote",
+                "step": 3
+              },
+              {
+                "from": "pricing",
+                "to": "api",
+                "label": "price",
+                "step": 3
+              },
+              {
+                "from": "api",
+                "to": "orders",
+                "label": "insert order",
+                "step": 4
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The browser posts the cart to the gateway.",
+                "focus": [
+                  "gw"
+                ]
+              },
+              {
+                "caption": "The gateway routes it to the checkout API.",
+                "focus": [
+                  "api"
+                ]
+              },
+              {
+                "caption": "The API asks pricing for a quote and gets the price back.",
+                "focus": [
+                  "pricing"
+                ]
+              },
+              {
+                "caption": "The order lands in Postgres.",
+                "focus": [
+                  "orders"
+                ]
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Flow edges carry moving dots whose speed follows their weight. Under Reduce Motion the flow edges are dashed instead and every step is a cut."
+          }
+        ]
+      },
+      {
+        "h": "Rules the renderer enforces",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Every step has a caption, and a series step is between one and the number of steps.",
+              "A sparkline carries no steps; a doughnut and a sankey take caption-only steps.",
+              "A stepped chart never sits inside a details block, where it would be hidden.",
+              "A chart without steps renders exactly as before, which the golden fixtures pin.",
+              "A ribbon walks its periods: one caption per period, the step count equals the period count, every series has a name, and values are zero or more.",
+              "A diagram needs unique ids, an edge between two nodes, a node inside a real group, and no element stepped before what holds it."
+            ]
+          },
+          {
+            "t": "callout",
+            "text": "Next up: the ribbon chart (MAD-386) and the architecture diagram (MAD-382) build on this layer, both drawn with the vendored d3.",
+            "sev": "info"
+          }
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "summary": "A chart on a slide can now build up one step per Next, a ribbon chart shows ranks changing, and a diagram walks an architecture.",
+    "meta": "2026-10-07 · present · stepped charts, ribbons, and diagrams",
+    "chips": [
+      {
+        "text": "10 chart kinds",
+        "style": "stat"
+      },
+      {
+        "text": "1 diagram block",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "A chart can build up",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "One caption per step, one series per step, and the counter shows **s/S** beside the slide number."
+          }
+        ],
+        "layout": "statement",
+        "notes": "Steps are the unit of Next. A stepped chart adds its steps to the slide's counter."
+      },
+      {
+        "h": "How the spike built up",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Three services fell over in order, two minutes apart."
+          },
+          {
+            "t": "chart",
+            "title": "5xx by service per five minutes",
+            "kind": "stacked-bar",
+            "unit": "req",
+            "series": [
+              {
+                "name": "pricing",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 120
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 310
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 300
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 40
+                  }
+                ],
+                "step": 1
+              },
+              {
+                "name": "checkout",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 60
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 280
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 420
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 30
+                  }
+                ],
+                "step": 2
+              },
+              {
+                "name": "gateway",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 90
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 220
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 10
+                  }
+                ],
+                "step": 3
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The pricing service times out first."
+              },
+              {
+                "caption": "Checkout retries pile on top of it."
+              },
+              {
+                "caption": "The gateway sheds load and the spike peaks."
+              }
+            ]
+          }
+        ],
+        "tone": "amber",
+        "notes": "The paragraph appears first, then the chart, then its three steps. Prev takes them back.",
+        "reveal": true
+      },
+      {
+        "h": "Latency before and after the fix",
+        "blocks": [
+          {
+            "t": "chart",
+            "title": "p95 checkout latency",
+            "kind": "line",
+            "unit": "ms",
+            "series": [
+              {
+                "name": "before",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 880
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 940
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 910
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 960
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 930
+                  }
+                ]
+              },
+              {
+                "name": "TTL cap",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 640
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 610
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 650
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 600
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 620
+                  }
+                ],
+                "step": 1
+              },
+              {
+                "name": "cap and probe",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 290
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 270
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 300
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 260
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 280
+                  }
+                ],
+                "step": 2
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The TTL cap alone takes the tail from 940 ms to 610 ms."
+              },
+              {
+                "caption": "The resolver probe on top of it lands under 300 ms."
+              }
+            ]
+          }
+        ],
+        "tone": "green",
+        "notes": "No reveal on this slide: the chart is on screen from the start and Next walks its two steps."
+      },
+      {
+        "h": "Where the traffic went",
+        "blocks": [
+          {
+            "t": "chart",
+            "title": "Requests per second during the incident",
+            "kind": "sankey",
+            "flows": [
+              {
+                "from": "ingress",
+                "to": "gateway",
+                "value": 1200
+              },
+              {
+                "from": "gateway",
+                "to": "orders",
+                "value": 800
+              },
+              {
+                "from": "gateway",
+                "to": "pricing",
+                "value": 400
+              },
+              {
+                "from": "orders",
+                "to": "postgres",
+                "value": 400
+              },
+              {
+                "from": "orders",
+                "to": "retries",
+                "value": 400
+              }
+            ],
+            "steps": [
+              {
+                "caption": "Ingress held steady at 1200 requests per second."
+              },
+              {
+                "caption": "The gateway passed two thirds of them to orders."
+              },
+              {
+                "caption": "Half of what reached orders made it to the database."
+              }
+            ]
+          }
+        ],
+        "notes": "Caption-only steps on a sankey: the picture stays whole while the story moves under it."
+      },
+      {
+        "h": "Ranks change, and the ribbons show where",
+        "blocks": [
+          {
+            "t": "chart",
+            "title": "Checkout visits by channel per quarter",
+            "kind": "ribbon",
+            "unit": "k",
+            "series": [
+              {
+                "name": "search",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 60
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 52
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 44
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 38
+                  }
+                ]
+              },
+              {
+                "name": "social",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 20
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 45
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 58
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 70
+                  }
+                ]
+              },
+              {
+                "name": "direct",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 35
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 30
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 40
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 32
+                  }
+                ]
+              },
+              {
+                "name": "referral",
+                "points": [
+                  {
+                    "x": "Q1",
+                    "y": 12
+                  },
+                  {
+                    "x": "Q2",
+                    "y": 18
+                  },
+                  {
+                    "x": "Q3",
+                    "y": 25
+                  },
+                  {
+                    "x": "Q4",
+                    "y": 41
+                  }
+                ]
+              }
+            ],
+            "steps": [
+              {
+                "caption": "Search brings the most visits in Q1."
+              },
+              {
+                "caption": "Social overtakes direct in Q2."
+              },
+              {
+                "caption": "Social passes search in Q3."
+              },
+              {
+                "caption": "Referral climbs to second in Q4."
+              }
+            ]
+          }
+        ],
+        "notes": "The ribbon chart is drawn by D3, not Chart.js. Each Next adds a period: its column and the ribbons into it. Hover a segment to follow one channel."
+      },
+      {
+        "h": "An architecture builds up one step per Next",
+        "blocks": [
+          {
+            "t": "diagram",
+            "caption": "A checkout request, from the browser to the orders table.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "edge",
+                "label": "edge",
+                "tone": "neutral"
+              },
+              {
+                "id": "prod",
+                "label": "prod cluster",
+                "tone": "blue"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "browser",
+                "label": "Browser",
+                "text": "the shopper's tab",
+                "kind": "person"
+              },
+              {
+                "id": "gw",
+                "label": "Gateway",
+                "text": "Envoy, terminates TLS",
+                "group": "edge"
+              },
+              {
+                "id": "api",
+                "label": "Checkout API",
+                "text": "Go, validates the cart",
+                "group": "prod",
+                "step": 2
+              },
+              {
+                "id": "pricing",
+                "label": "Pricing",
+                "text": "Go, quotes and discounts",
+                "group": "prod",
+                "step": 3
+              },
+              {
+                "id": "orders",
+                "label": "Orders DB",
+                "text": "Postgres",
+                "kind": "store",
+                "group": "prod",
+                "step": 4
+              }
+            ],
+            "edges": [
+              {
+                "from": "browser",
+                "to": "gw",
+                "label": "POST /checkout",
+                "flow": true,
+                "weight": 120
+              },
+              {
+                "from": "gw",
+                "to": "api",
+                "label": "route",
+                "flow": true,
+                "weight": 120,
+                "step": 2
+              },
+              {
+                "from": "api",
+                "to": "pricing",
+                "label": "quote",
+                "step": 3
+              },
+              {
+                "from": "pricing",
+                "to": "api",
+                "label": "price",
+                "step": 3
+              },
+              {
+                "from": "api",
+                "to": "orders",
+                "label": "insert order",
+                "step": 4
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The browser posts the cart to the gateway.",
+                "focus": [
+                  "gw"
+                ]
+              },
+              {
+                "caption": "The gateway routes it to the checkout API.",
+                "focus": [
+                  "api"
+                ]
+              },
+              {
+                "caption": "The API asks pricing for a quote and gets the price back.",
+                "focus": [
+                  "pricing"
+                ]
+              },
+              {
+                "caption": "The order lands in Postgres.",
+                "focus": [
+                  "orders"
+                ]
+              }
+            ]
+          }
+        ],
+        "notes": "The diagram block: boxes with a name and a line of text, boundaries, routed arrows. ELK lays it out in the browser, D3 draws it, each Next adds a step and lights up its focus."
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Ribbon chart on d3 with stepped periods (MAD-386).",
+              "Architecture diagram block with a stepped walkthrough (MAD-382).",
+              "Roll the shared instance so decks there step too."
+            ]
+          }
+        ]
+      }
+    ],
+    "progress": "dots",
+    "presenter": "present release notes",
+    "transition": "slide"
+  },
+  "references": [
+    {
+      "title": "PR #200",
+      "url": "https://github.com/mad01/thismoon/pull/200"
+    }
+  ]
+}

@@ -1,0 +1,1121 @@
+{
+  "title": "Diagram block test: boxes, boundaries, arrows",
+  "content": {
+    "summary": "The diagram block draws boxes, boundaries, and arrows the browser lays out, and walks them one step per Next.",
+    "meta": "2026-10-07 · present test page · diagram block",
+    "chips": [
+      {
+        "text": "3 diagrams",
+        "style": "stat"
+      },
+      {
+        "text": "2 group levels",
+        "style": "stat"
+      },
+      {
+        "text": "9 steps",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "What this page tests",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Every new piece from MAD-382 and the group spacing fix from MAD-388 is on this page once, in the brief and again on a slide."
+          },
+          {
+            "t": "list",
+            "items": [
+              "Three diagrams: a context view, a cluster with two levels of groups, and a top to bottom pipeline.",
+              "Five node kinds: service, store, queue, person, external.",
+              "Stepped walkthroughs with focus on one box and on a whole group.",
+              "Charts without a card, one with frame set to true, and an image without its border."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "System context",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Two people, two hosted systems, and the platform between them. **Flow edges** carry dots whose speed follows their weight, so the shopper's traffic runs faster than the support agent's."
+          },
+          {
+            "t": "diagram",
+            "caption": "Who talks to the platform and what sits beside it. Purple is people, green the platform's own services, grey the systems outside it; the blue boundary is the platform.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "platform",
+                "label": "the platform",
+                "tone": "blue"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "shopper",
+                "label": "Shopper",
+                "text": "a browser on a phone",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "support",
+                "label": "Support agent",
+                "text": "the back office app",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "gateway",
+                "label": "Gateway",
+                "text": "Envoy, TLS and routing",
+                "group": "platform",
+                "tone": "green"
+              },
+              {
+                "id": "checkout",
+                "label": "Checkout",
+                "text": "orders, pricing, stock",
+                "group": "platform",
+                "tone": "green"
+              },
+              {
+                "id": "psp",
+                "label": "Payment provider",
+                "text": "cards and wallets, hosted",
+                "kind": "external",
+                "tone": "neutral"
+              },
+              {
+                "id": "mail",
+                "label": "Mail service",
+                "text": "receipts, hosted",
+                "kind": "external",
+                "tone": "neutral"
+              }
+            ],
+            "edges": [
+              {
+                "from": "shopper",
+                "to": "gateway",
+                "label": "buys",
+                "flow": true,
+                "weight": 200
+              },
+              {
+                "from": "support",
+                "to": "gateway",
+                "label": "refunds",
+                "flow": true,
+                "weight": 20
+              },
+              {
+                "from": "gateway",
+                "to": "checkout",
+                "label": "routes",
+                "flow": true,
+                "weight": 220
+              },
+              {
+                "from": "checkout",
+                "to": "psp",
+                "label": "charges"
+              },
+              {
+                "from": "psp",
+                "to": "checkout",
+                "label": "webhooks"
+              },
+              {
+                "from": "checkout",
+                "to": "mail",
+                "label": "sends receipts"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Inside the prod cluster, two levels of groups",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The cluster holds two namespaces. Boxes in a chain inside a group now sit the **same layer gap apart** as boxes at the root, so the labels on the runs between them stay clear of the boxes."
+          },
+          {
+            "t": "diagram",
+            "caption": "An order inside the prod cluster, namespace by namespace. Green boxes are the cluster's own services, blue its stores and queues, grey the edge; the amber boundary is the data namespace.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "prod",
+                "label": "prod cluster"
+              },
+              {
+                "id": "ns_checkout",
+                "label": "checkout namespace",
+                "group": "prod",
+                "step": 1
+              },
+              {
+                "id": "ns_data",
+                "label": "data namespace",
+                "tone": "amber",
+                "group": "prod",
+                "step": 4
+              }
+            ],
+            "nodes": [
+              {
+                "id": "gw",
+                "label": "Gateway",
+                "text": "Envoy, terminates TLS",
+                "group": "prod",
+                "tone": "neutral"
+              },
+              {
+                "id": "api",
+                "label": "Checkout API",
+                "text": "Go, validates the cart",
+                "group": "ns_checkout",
+                "step": 1,
+                "tone": "green"
+              },
+              {
+                "id": "pricing",
+                "label": "Pricing",
+                "text": "Go, quotes and discounts",
+                "group": "ns_checkout",
+                "step": 2,
+                "tone": "green"
+              },
+              {
+                "id": "stock",
+                "label": "Stock",
+                "text": "Go, reserves units",
+                "group": "ns_checkout",
+                "step": 3,
+                "tone": "green"
+              },
+              {
+                "id": "orders",
+                "label": "Orders DB",
+                "text": "Postgres, one row per order",
+                "kind": "store",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "events",
+                "label": "Order events",
+                "text": "Kafka, one topic",
+                "kind": "queue",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "mailer",
+                "label": "Mailer",
+                "text": "sends the receipt",
+                "group": "ns_checkout",
+                "step": 5,
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "gw",
+                "to": "api",
+                "label": "route",
+                "flow": true,
+                "weight": 300,
+                "step": 1
+              },
+              {
+                "from": "api",
+                "to": "pricing",
+                "label": "quote",
+                "step": 2
+              },
+              {
+                "from": "pricing",
+                "to": "api",
+                "label": "price",
+                "step": 2
+              },
+              {
+                "from": "api",
+                "to": "stock",
+                "label": "reserve",
+                "step": 3
+              },
+              {
+                "from": "api",
+                "to": "orders",
+                "label": "insert",
+                "step": 4
+              },
+              {
+                "from": "api",
+                "to": "events",
+                "label": "order placed",
+                "flow": true,
+                "weight": 300,
+                "step": 4
+              },
+              {
+                "from": "events",
+                "to": "mailer",
+                "label": "consume",
+                "flow": true,
+                "weight": 300,
+                "step": 5
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The gateway routes the request into the checkout namespace.",
+                "focus": [
+                  "api"
+                ]
+              },
+              {
+                "caption": "The API asks pricing for a quote and gets the price back.",
+                "focus": [
+                  "pricing"
+                ]
+              },
+              {
+                "caption": "Stock reserves the units.",
+                "focus": [
+                  "stock"
+                ]
+              },
+              {
+                "caption": "The order is written and an event goes on the topic.",
+                "focus": [
+                  "ns_data"
+                ]
+              },
+              {
+                "caption": "The mailer consumes the event and sends the receipt."
+              }
+            ]
+          },
+          {
+            "t": "p",
+            "text": "Step four focuses the whole data namespace: the group, everything inside it, and the edges that touch its boxes light up. The last step has no focus, so the finished picture shows plain."
+          }
+        ]
+      },
+      {
+        "h": "Top to bottom, the release pipeline",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The same block with direction set to TB. The layers run down the page and the edge labels sit beside the vertical runs, so the layer gap stays at its default."
+          },
+          {
+            "t": "diagram",
+            "caption": "From a pull request to a running service, top to bottom. Blue is GitHub, green the fleet, purple the developer.",
+            "direction": "TB",
+            "groups": [
+              {
+                "id": "gh",
+                "label": "GitHub",
+                "step": 1
+              },
+              {
+                "id": "fleet",
+                "label": "the fleet",
+                "step": 4
+              }
+            ],
+            "nodes": [
+              {
+                "id": "dev",
+                "label": "Developer",
+                "text": "opens a pull request",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "pr",
+                "label": "Pull request",
+                "text": "review and checks",
+                "group": "gh",
+                "step": 1,
+                "tone": "blue"
+              },
+              {
+                "id": "main",
+                "label": "main",
+                "text": "squash merge",
+                "group": "gh",
+                "step": 2,
+                "tone": "blue"
+              },
+              {
+                "id": "release",
+                "label": "Release",
+                "text": "release-please tags it",
+                "group": "gh",
+                "step": 3,
+                "tone": "blue"
+              },
+              {
+                "id": "ralph",
+                "label": "ralph up",
+                "text": "pulls main and rebuilds",
+                "group": "fleet",
+                "step": 4,
+                "tone": "green"
+              },
+              {
+                "id": "svc",
+                "label": "present.this",
+                "text": "restarted by t-man",
+                "group": "fleet",
+                "step": 4,
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "dev",
+                "to": "pr",
+                "label": "push",
+                "step": 1
+              },
+              {
+                "from": "pr",
+                "to": "main",
+                "label": "merge",
+                "step": 2
+              },
+              {
+                "from": "main",
+                "to": "release",
+                "label": "tag",
+                "step": 3
+              },
+              {
+                "from": "main",
+                "to": "ralph",
+                "label": "pull",
+                "flow": true,
+                "weight": 10,
+                "step": 4
+              },
+              {
+                "from": "ralph",
+                "to": "svc",
+                "label": "restart",
+                "step": 4
+              }
+            ],
+            "steps": [
+              {
+                "caption": "A pull request opens and CI runs.",
+                "focus": [
+                  "pr"
+                ]
+              },
+              {
+                "caption": "Merging to main is the deploy.",
+                "focus": [
+                  "main"
+                ]
+              },
+              {
+                "caption": "release-please cuts the tag on the side.",
+                "focus": [
+                  "release"
+                ]
+              },
+              {
+                "caption": "Every machine's ralph up rebuilds and restarts the service.",
+                "focus": [
+                  "fleet"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Charts sit on the page unless they ask for a card",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "chart",
+                  "title": "Gap between boxes in a chain",
+                  "kind": "bar",
+                  "unit": "px",
+                  "series": [
+                    {
+                      "name": "gap",
+                      "points": [
+                        {
+                          "x": "at the root",
+                          "y": 117
+                        },
+                        {
+                          "x": "inside a group, before",
+                          "y": 20
+                        },
+                        {
+                          "x": "inside a group, after",
+                          "y": 117
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              [
+                {
+                  "t": "p",
+                  "text": "No card by default. The bar chart on the left sits straight on the page. The doughnut below sets **frame to true** and keeps its card."
+                }
+              ]
+            ]
+          },
+          {
+            "t": "chart",
+            "title": "Boxes on this page by kind",
+            "kind": "doughnut",
+            "series": [
+              {
+                "name": "boxes",
+                "points": [
+                  {
+                    "x": "service",
+                    "y": 10
+                  },
+                  {
+                    "x": "person",
+                    "y": 3
+                  },
+                  {
+                    "x": "external",
+                    "y": 2
+                  },
+                  {
+                    "x": "store",
+                    "y": 1
+                  },
+                  {
+                    "x": "queue",
+                    "y": 1
+                  }
+                ]
+              }
+            ],
+            "frame": true
+          }
+        ]
+      },
+      {
+        "h": "An image without its border",
+        "blocks": [
+          {
+            "t": "image",
+            "src": "https://raw.githubusercontent.com/mad01/thismoon/main/docs/assets/logo.png",
+            "alt": "The thismoon logo: a tin of three blue sardines under a wave, with a cream lid and a dark outline",
+            "caption": "The repo logo as a borderless image, fetched from GitHub.",
+            "frame": false
+          },
+          {
+            "t": "p",
+            "text": "An image sets frame to false to drop its border, for transparent exports and screenshots that carry their own edge."
+          }
+        ]
+      },
+      {
+        "h": "Rules the renderer enforces",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "At most 24 boxes, 12 groups, and two levels of groups per diagram.",
+              "Labels up to 32 characters, texts 60, edge labels 24; ids are plain tokens.",
+              "An element never appears before what holds it, and a step's focus names only what has appeared.",
+              "A weight needs flow, a pair of boxes gets one edge per direction, and a box never points at itself."
+            ]
+          },
+          {
+            "t": "callout",
+            "text": "Stored pages pick up renderer changes on their next load. The layout runs in the browser, so no page needed a rerender for the spacing fix.",
+            "sev": "info"
+          }
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "summary": "The diagram block draws boxes, boundaries, and arrows the browser lays out, and walks them one step per Next.",
+    "meta": "2026-10-07 · present test page · the diagram block",
+    "chips": [
+      {
+        "text": "3 diagrams",
+        "style": "stat"
+      },
+      {
+        "text": "9 steps",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "Boxes, boundaries, arrows: the diagram block",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Three pictures, one step per Next."
+          }
+        ],
+        "layout": "statement"
+      },
+      {
+        "h": "The platform in its context",
+        "blocks": [
+          {
+            "t": "diagram",
+            "caption": "Who talks to the platform and what sits beside it. Purple is people, green the platform's own services, grey the systems outside it; the blue boundary is the platform.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "platform",
+                "label": "the platform",
+                "tone": "blue"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "shopper",
+                "label": "Shopper",
+                "text": "a browser on a phone",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "support",
+                "label": "Support agent",
+                "text": "the back office app",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "gateway",
+                "label": "Gateway",
+                "text": "Envoy, TLS and routing",
+                "group": "platform",
+                "tone": "green"
+              },
+              {
+                "id": "checkout",
+                "label": "Checkout",
+                "text": "orders, pricing, stock",
+                "group": "platform",
+                "tone": "green"
+              },
+              {
+                "id": "psp",
+                "label": "Payment provider",
+                "text": "cards and wallets, hosted",
+                "kind": "external",
+                "tone": "neutral"
+              },
+              {
+                "id": "mail",
+                "label": "Mail service",
+                "text": "receipts, hosted",
+                "kind": "external",
+                "tone": "neutral"
+              }
+            ],
+            "edges": [
+              {
+                "from": "shopper",
+                "to": "gateway",
+                "label": "buys",
+                "flow": true,
+                "weight": 200
+              },
+              {
+                "from": "support",
+                "to": "gateway",
+                "label": "refunds",
+                "flow": true,
+                "weight": 20
+              },
+              {
+                "from": "gateway",
+                "to": "checkout",
+                "label": "routes",
+                "flow": true,
+                "weight": 220
+              },
+              {
+                "from": "checkout",
+                "to": "psp",
+                "label": "charges"
+              },
+              {
+                "from": "psp",
+                "to": "checkout",
+                "label": "webhooks"
+              },
+              {
+                "from": "checkout",
+                "to": "mail",
+                "label": "sends receipts"
+              }
+            ]
+          }
+        ],
+        "notes": "Two people, two hosted systems. The flow dots run faster on the shopper's edge because its weight is ten times the support agent's."
+      },
+      {
+        "h": "Inside the cluster",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Two namespaces, five services, one queue."
+          }
+        ],
+        "layout": "section",
+        "tone": "blue"
+      },
+      {
+        "h": "A request walks the cluster one step per Next",
+        "blocks": [
+          {
+            "t": "diagram",
+            "caption": "An order inside the prod cluster, namespace by namespace. Green boxes are the cluster's own services, blue its stores and queues, grey the edge; the amber boundary is the data namespace.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "prod",
+                "label": "prod cluster"
+              },
+              {
+                "id": "ns_checkout",
+                "label": "checkout namespace",
+                "group": "prod",
+                "step": 1
+              },
+              {
+                "id": "ns_data",
+                "label": "data namespace",
+                "tone": "amber",
+                "group": "prod",
+                "step": 4
+              }
+            ],
+            "nodes": [
+              {
+                "id": "gw",
+                "label": "Gateway",
+                "text": "Envoy, terminates TLS",
+                "group": "prod",
+                "tone": "neutral"
+              },
+              {
+                "id": "api",
+                "label": "Checkout API",
+                "text": "Go, validates the cart",
+                "group": "ns_checkout",
+                "step": 1,
+                "tone": "green"
+              },
+              {
+                "id": "pricing",
+                "label": "Pricing",
+                "text": "Go, quotes and discounts",
+                "group": "ns_checkout",
+                "step": 2,
+                "tone": "green"
+              },
+              {
+                "id": "stock",
+                "label": "Stock",
+                "text": "Go, reserves units",
+                "group": "ns_checkout",
+                "step": 3,
+                "tone": "green"
+              },
+              {
+                "id": "orders",
+                "label": "Orders DB",
+                "text": "Postgres, one row per order",
+                "kind": "store",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "events",
+                "label": "Order events",
+                "text": "Kafka, one topic",
+                "kind": "queue",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "mailer",
+                "label": "Mailer",
+                "text": "sends the receipt",
+                "group": "ns_checkout",
+                "step": 5,
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "gw",
+                "to": "api",
+                "label": "route",
+                "flow": true,
+                "weight": 300,
+                "step": 1
+              },
+              {
+                "from": "api",
+                "to": "pricing",
+                "label": "quote",
+                "step": 2
+              },
+              {
+                "from": "pricing",
+                "to": "api",
+                "label": "price",
+                "step": 2
+              },
+              {
+                "from": "api",
+                "to": "stock",
+                "label": "reserve",
+                "step": 3
+              },
+              {
+                "from": "api",
+                "to": "orders",
+                "label": "insert",
+                "step": 4
+              },
+              {
+                "from": "api",
+                "to": "events",
+                "label": "order placed",
+                "flow": true,
+                "weight": 300,
+                "step": 4
+              },
+              {
+                "from": "events",
+                "to": "mailer",
+                "label": "consume",
+                "flow": true,
+                "weight": 300,
+                "step": 5
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The gateway routes the request into the checkout namespace.",
+                "focus": [
+                  "api"
+                ]
+              },
+              {
+                "caption": "The API asks pricing for a quote and gets the price back.",
+                "focus": [
+                  "pricing"
+                ]
+              },
+              {
+                "caption": "Stock reserves the units.",
+                "focus": [
+                  "stock"
+                ]
+              },
+              {
+                "caption": "The order is written and an event goes on the topic.",
+                "focus": [
+                  "ns_data"
+                ]
+              },
+              {
+                "caption": "The mailer consumes the event and sends the receipt."
+              }
+            ]
+          }
+        ],
+        "notes": "Five steps. Step four focuses the data namespace as a whole. The last step has no focus so the room sees the finished picture plain."
+      },
+      {
+        "h": "A release moves top to bottom",
+        "blocks": [
+          {
+            "t": "diagram",
+            "caption": "From a pull request to a running service, top to bottom. Blue is GitHub, green the fleet, purple the developer.",
+            "direction": "TB",
+            "groups": [
+              {
+                "id": "gh",
+                "label": "GitHub",
+                "step": 1
+              },
+              {
+                "id": "fleet",
+                "label": "the fleet",
+                "step": 4
+              }
+            ],
+            "nodes": [
+              {
+                "id": "dev",
+                "label": "Developer",
+                "text": "opens a pull request",
+                "kind": "person",
+                "tone": "purple"
+              },
+              {
+                "id": "pr",
+                "label": "Pull request",
+                "text": "review and checks",
+                "group": "gh",
+                "step": 1,
+                "tone": "blue"
+              },
+              {
+                "id": "main",
+                "label": "main",
+                "text": "squash merge",
+                "group": "gh",
+                "step": 2,
+                "tone": "blue"
+              },
+              {
+                "id": "release",
+                "label": "Release",
+                "text": "release-please tags it",
+                "group": "gh",
+                "step": 3,
+                "tone": "blue"
+              },
+              {
+                "id": "ralph",
+                "label": "ralph up",
+                "text": "pulls main and rebuilds",
+                "group": "fleet",
+                "step": 4,
+                "tone": "green"
+              },
+              {
+                "id": "svc",
+                "label": "present.this",
+                "text": "restarted by t-man",
+                "group": "fleet",
+                "step": 4,
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "dev",
+                "to": "pr",
+                "label": "push",
+                "step": 1
+              },
+              {
+                "from": "pr",
+                "to": "main",
+                "label": "merge",
+                "step": 2
+              },
+              {
+                "from": "main",
+                "to": "release",
+                "label": "tag",
+                "step": 3
+              },
+              {
+                "from": "main",
+                "to": "ralph",
+                "label": "pull",
+                "flow": true,
+                "weight": 10,
+                "step": 4
+              },
+              {
+                "from": "ralph",
+                "to": "svc",
+                "label": "restart",
+                "step": 4
+              }
+            ],
+            "steps": [
+              {
+                "caption": "A pull request opens and CI runs.",
+                "focus": [
+                  "pr"
+                ]
+              },
+              {
+                "caption": "Merging to main is the deploy.",
+                "focus": [
+                  "main"
+                ]
+              },
+              {
+                "caption": "release-please cuts the tag on the side.",
+                "focus": [
+                  "release"
+                ]
+              },
+              {
+                "caption": "Every machine's ralph up rebuilds and restarts the service.",
+                "focus": [
+                  "fleet"
+                ]
+              }
+            ]
+          }
+        ],
+        "notes": "Direction TB. Step four focuses the fleet group."
+      },
+      {
+        "h": "A chart sits on the slide unless it asks for a card",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "chart",
+                  "title": "Gap between boxes in a chain",
+                  "kind": "bar",
+                  "unit": "px",
+                  "series": [
+                    {
+                      "name": "gap",
+                      "points": [
+                        {
+                          "x": "at the root",
+                          "y": 117
+                        },
+                        {
+                          "x": "inside a group, before",
+                          "y": 20
+                        },
+                        {
+                          "x": "inside a group, after",
+                          "y": 117
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              [
+                {
+                  "t": "p",
+                  "text": "No card by default. The **next slide** sets frame to true and keeps its card."
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Frame set to true keeps the card",
+        "blocks": [
+          {
+            "t": "chart",
+            "title": "Boxes on this page by kind",
+            "kind": "doughnut",
+            "series": [
+              {
+                "name": "boxes",
+                "points": [
+                  {
+                    "x": "service",
+                    "y": 10
+                  },
+                  {
+                    "x": "person",
+                    "y": 3
+                  },
+                  {
+                    "x": "external",
+                    "y": 2
+                  },
+                  {
+                    "x": "store",
+                    "y": 1
+                  },
+                  {
+                    "x": "queue",
+                    "y": 1
+                  }
+                ]
+              }
+            ],
+            "frame": true
+          }
+        ]
+      },
+      {
+        "h": "An image without its border fills the slide",
+        "blocks": [
+          {
+            "t": "image",
+            "src": "https://raw.githubusercontent.com/mad01/thismoon/main/docs/assets/logo.png",
+            "alt": "The thismoon logo: a tin of three blue sardines under a wave, with a cream lid and a dark outline",
+            "caption": "The repo logo as a borderless image, fetched from GitHub.",
+            "frame": false
+          }
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Use a diagram, not the graph, when a slide explains how parts fit.",
+              "Keep a diagram to about twelve boxes and two levels of groups.",
+              "Split a bigger picture over slides, one zoom level each."
+            ]
+          }
+        ]
+      }
+    ],
+    "progress": "dots",
+    "presenter": "present test page · 2026-10-07",
+    "transition": "fade"
+  },
+  "references": [
+    {
+      "title": "PR #203: diagram block on elk and d3, frameless charts",
+      "url": "https://github.com/mad01/thismoon/pull/203"
+    },
+    {
+      "title": "PR #204: diagram layer gap reaches the nodes inside groups",
+      "url": "https://github.com/mad01/thismoon/pull/204"
+    }
+  ]
+}

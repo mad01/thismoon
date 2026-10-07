@@ -1,0 +1,850 @@
+{
+  "title": "Slides without boxes",
+  "content": {
+    "summary": "A slide paints no filled box of its own. The slide is already the container, and a tone colours its accent.",
+    "meta": "2026-10-07 · present test page · slides without boxes",
+    "chips": [
+      {
+        "text": "0 boxes on slides",
+        "style": "stat"
+      },
+      {
+        "text": "4 tones",
+        "style": "stat"
+      },
+      {
+        "text": "11 slides",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "What this page tests",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The deck beside this brief uses every slide shape that used to draw a box: a toned section divider, toned content slides, a chart alone, a row of figures, a big number, and a quote. None of them paints a background now."
+          },
+          {
+            "t": "list",
+            "items": [
+              "A section divider is a large centred heading with a short accent bar in its tone.",
+              "A toned content slide colours its heading rule and accent bar, nothing else.",
+              "Charts sit straight on the slide. The brief below keeps one framed chart to show the brief-only option.",
+              "The brief keeps its toned section bands; only slides changed."
+            ]
+          }
+        ]
+      },
+      {
+        "h": "A toned section keeps its band here",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "In the brief a tone still draws the band on the left, because a long page needs landmarks. On the matching slide the same tone colours only the accent."
+          }
+        ],
+        "tone": "blue"
+      },
+      {
+        "h": "Charts in the brief",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The first chart sits on the page. The second sets **frame to true**, which stays a brief-only option: deck rule 17 says a slide draws no filled boxes."
+          },
+          {
+            "t": "chart",
+            "title": "5xx by service per five minutes",
+            "kind": "stacked-bar",
+            "unit": "req",
+            "series": [
+              {
+                "name": "pricing",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 110
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 300
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 290
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 20
+                  }
+                ]
+              },
+              {
+                "name": "checkout",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 60
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 270
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 400
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 20
+                  }
+                ]
+              },
+              {
+                "name": "gateway",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 100
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 240
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 10
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "t": "chart",
+            "title": "p95 checkout latency",
+            "kind": "line",
+            "unit": "ms",
+            "series": [
+              {
+                "name": "before",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 880
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 940
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 910
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 960
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 930
+                  }
+                ]
+              },
+              {
+                "name": "after",
+                "points": [
+                  {
+                    "x": "Mon",
+                    "y": 290
+                  },
+                  {
+                    "x": "Tue",
+                    "y": 270
+                  },
+                  {
+                    "x": "Wed",
+                    "y": 300
+                  },
+                  {
+                    "x": "Thu",
+                    "y": 260
+                  },
+                  {
+                    "x": "Fri",
+                    "y": 280
+                  }
+                ]
+              }
+            ],
+            "frame": true
+          }
+        ],
+        "tone": "amber"
+      },
+      {
+        "h": "A diagram for the deck's picture slide",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "The same cluster walkthrough as the diagram test page, here to give the deck one picture slide."
+          },
+          {
+            "t": "diagram",
+            "caption": "An order inside the prod cluster, namespace by namespace. Green boxes are the cluster's own services, blue its stores and queues, grey the edge; the amber boundary is the data namespace.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "prod",
+                "label": "prod cluster"
+              },
+              {
+                "id": "ns_checkout",
+                "label": "checkout namespace",
+                "group": "prod",
+                "step": 1
+              },
+              {
+                "id": "ns_data",
+                "label": "data namespace",
+                "tone": "amber",
+                "group": "prod",
+                "step": 4
+              }
+            ],
+            "nodes": [
+              {
+                "id": "gw",
+                "label": "Gateway",
+                "text": "Envoy, terminates TLS",
+                "group": "prod",
+                "tone": "neutral"
+              },
+              {
+                "id": "api",
+                "label": "Checkout API",
+                "text": "Go, validates the cart",
+                "group": "ns_checkout",
+                "step": 1,
+                "tone": "green"
+              },
+              {
+                "id": "pricing",
+                "label": "Pricing",
+                "text": "Go, quotes and discounts",
+                "group": "ns_checkout",
+                "step": 2,
+                "tone": "green"
+              },
+              {
+                "id": "stock",
+                "label": "Stock",
+                "text": "Go, reserves units",
+                "group": "ns_checkout",
+                "step": 3,
+                "tone": "green"
+              },
+              {
+                "id": "orders",
+                "label": "Orders DB",
+                "text": "Postgres, one row per order",
+                "kind": "store",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "events",
+                "label": "Order events",
+                "text": "Kafka, one topic",
+                "kind": "queue",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "mailer",
+                "label": "Mailer",
+                "text": "sends the receipt",
+                "group": "ns_checkout",
+                "step": 5,
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "gw",
+                "to": "api",
+                "label": "route",
+                "flow": true,
+                "weight": 300,
+                "step": 1
+              },
+              {
+                "from": "api",
+                "to": "pricing",
+                "label": "quote",
+                "step": 2
+              },
+              {
+                "from": "pricing",
+                "to": "api",
+                "label": "price",
+                "step": 2
+              },
+              {
+                "from": "api",
+                "to": "stock",
+                "label": "reserve",
+                "step": 3
+              },
+              {
+                "from": "api",
+                "to": "orders",
+                "label": "insert",
+                "step": 4
+              },
+              {
+                "from": "api",
+                "to": "events",
+                "label": "order placed",
+                "flow": true,
+                "weight": 300,
+                "step": 4
+              },
+              {
+                "from": "events",
+                "to": "mailer",
+                "label": "consume",
+                "flow": true,
+                "weight": 300,
+                "step": 5
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The gateway routes the request into the checkout namespace.",
+                "focus": [
+                  "api"
+                ]
+              },
+              {
+                "caption": "The API asks pricing for a quote and gets the price back.",
+                "focus": [
+                  "pricing"
+                ]
+              },
+              {
+                "caption": "Stock reserves the units.",
+                "focus": [
+                  "stock"
+                ]
+              },
+              {
+                "caption": "The order is written and an event goes on the topic.",
+                "focus": [
+                  "ns_data"
+                ]
+              },
+              {
+                "caption": "The mailer consumes the event and sends the receipt."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "Rules the deck follows",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Never set frame to true on a chart in a deck.",
+              "Keep panel blocks in the brief.",
+              "Use tone for the accent of a divider or a slide, never as a fill.",
+              "One stat or one quote alone on a slide, two or three stats in a columns row for figures."
+            ]
+          },
+          {
+            "t": "callout",
+            "text": "The change is CSS only. Every stored deck shows the new look at its next load, with no rerender.",
+            "sev": "info"
+          }
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "summary": "A slide paints no filled box of its own. The slide is already the container, and a tone colours its accent.",
+    "meta": "2026-10-07 · present test page · slides without boxes",
+    "chips": [
+      {
+        "text": "0 boxes on slides",
+        "style": "stat"
+      },
+      {
+        "text": "4 tones",
+        "style": "stat"
+      }
+    ],
+    "sections": [
+      {
+        "h": "The slide is already the container",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "Nothing on a slide draws a box of its own."
+          }
+        ],
+        "layout": "statement"
+      },
+      {
+        "h": "Part one: the incident",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A divider with a blue accent bar and no band."
+          }
+        ],
+        "layout": "section",
+        "tone": "blue"
+      },
+      {
+        "h": "Three services fell over two minutes apart",
+        "blocks": [
+          {
+            "t": "chart",
+            "title": "5xx by service per five minutes",
+            "kind": "stacked-bar",
+            "unit": "req",
+            "series": [
+              {
+                "name": "pricing",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 110
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 300
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 290
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 20
+                  }
+                ]
+              },
+              {
+                "name": "checkout",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 60
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 270
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 400
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 20
+                  }
+                ]
+              },
+              {
+                "name": "gateway",
+                "points": [
+                  {
+                    "x": "14:00",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:05",
+                    "y": 0
+                  },
+                  {
+                    "x": "14:10",
+                    "y": 100
+                  },
+                  {
+                    "x": "14:15",
+                    "y": 240
+                  },
+                  {
+                    "x": "14:20",
+                    "y": 10
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "tone": "amber",
+        "notes": "A toned slide: the amber shows in the heading rule and the accent bar only."
+      },
+      {
+        "h": "The fix took the tail under 300 ms",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "chart",
+                  "title": "p95 checkout latency",
+                  "kind": "line",
+                  "unit": "ms",
+                  "series": [
+                    {
+                      "name": "before",
+                      "points": [
+                        {
+                          "x": "Mon",
+                          "y": 880
+                        },
+                        {
+                          "x": "Tue",
+                          "y": 940
+                        },
+                        {
+                          "x": "Wed",
+                          "y": 910
+                        },
+                        {
+                          "x": "Thu",
+                          "y": 960
+                        },
+                        {
+                          "x": "Fri",
+                          "y": 930
+                        }
+                      ]
+                    },
+                    {
+                      "name": "after",
+                      "points": [
+                        {
+                          "x": "Mon",
+                          "y": 290
+                        },
+                        {
+                          "x": "Tue",
+                          "y": 270
+                        },
+                        {
+                          "x": "Wed",
+                          "y": 300
+                        },
+                        {
+                          "x": "Thu",
+                          "y": 260
+                        },
+                        {
+                          "x": "Fri",
+                          "y": 280
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              [
+                {
+                  "t": "p",
+                  "text": "The TTL cap alone took the tail from 940 ms to **under 300 ms**."
+                }
+              ]
+            ]
+          }
+        ],
+        "tone": "green"
+      },
+      {
+        "h": "The numbers the room should keep",
+        "blocks": [
+          {
+            "t": "columns",
+            "cols": [
+              [
+                {
+                  "t": "stat",
+                  "value": "41 min",
+                  "label": "checkout outage"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "3 min",
+                  "label": "to detect after the fix"
+                }
+              ],
+              [
+                {
+                  "t": "stat",
+                  "value": "2",
+                  "label": "actions"
+                }
+              ]
+            ]
+          }
+        ],
+        "layout": "center"
+      },
+      {
+        "h": "One figure",
+        "blocks": [
+          {
+            "t": "stat",
+            "value": "41 min",
+            "sub": "Tuesday 14:02 to 14:43",
+            "label": "checkout outage"
+          }
+        ]
+      },
+      {
+        "h": "Part two: the architecture",
+        "blocks": [
+          {
+            "t": "p",
+            "text": "A second divider, purple, to show the tone changes the bar."
+          }
+        ],
+        "layout": "section",
+        "tone": "purple"
+      },
+      {
+        "h": "A request walks the cluster",
+        "blocks": [
+          {
+            "t": "diagram",
+            "caption": "An order inside the prod cluster, namespace by namespace. Green boxes are the cluster's own services, blue its stores and queues, grey the edge; the amber boundary is the data namespace.",
+            "direction": "LR",
+            "groups": [
+              {
+                "id": "prod",
+                "label": "prod cluster"
+              },
+              {
+                "id": "ns_checkout",
+                "label": "checkout namespace",
+                "group": "prod",
+                "step": 1
+              },
+              {
+                "id": "ns_data",
+                "label": "data namespace",
+                "tone": "amber",
+                "group": "prod",
+                "step": 4
+              }
+            ],
+            "nodes": [
+              {
+                "id": "gw",
+                "label": "Gateway",
+                "text": "Envoy, terminates TLS",
+                "group": "prod",
+                "tone": "neutral"
+              },
+              {
+                "id": "api",
+                "label": "Checkout API",
+                "text": "Go, validates the cart",
+                "group": "ns_checkout",
+                "step": 1,
+                "tone": "green"
+              },
+              {
+                "id": "pricing",
+                "label": "Pricing",
+                "text": "Go, quotes and discounts",
+                "group": "ns_checkout",
+                "step": 2,
+                "tone": "green"
+              },
+              {
+                "id": "stock",
+                "label": "Stock",
+                "text": "Go, reserves units",
+                "group": "ns_checkout",
+                "step": 3,
+                "tone": "green"
+              },
+              {
+                "id": "orders",
+                "label": "Orders DB",
+                "text": "Postgres, one row per order",
+                "kind": "store",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "events",
+                "label": "Order events",
+                "text": "Kafka, one topic",
+                "kind": "queue",
+                "group": "ns_data",
+                "step": 4,
+                "tone": "blue"
+              },
+              {
+                "id": "mailer",
+                "label": "Mailer",
+                "text": "sends the receipt",
+                "group": "ns_checkout",
+                "step": 5,
+                "tone": "green"
+              }
+            ],
+            "edges": [
+              {
+                "from": "gw",
+                "to": "api",
+                "label": "route",
+                "flow": true,
+                "weight": 300,
+                "step": 1
+              },
+              {
+                "from": "api",
+                "to": "pricing",
+                "label": "quote",
+                "step": 2
+              },
+              {
+                "from": "pricing",
+                "to": "api",
+                "label": "price",
+                "step": 2
+              },
+              {
+                "from": "api",
+                "to": "stock",
+                "label": "reserve",
+                "step": 3
+              },
+              {
+                "from": "api",
+                "to": "orders",
+                "label": "insert",
+                "step": 4
+              },
+              {
+                "from": "api",
+                "to": "events",
+                "label": "order placed",
+                "flow": true,
+                "weight": 300,
+                "step": 4
+              },
+              {
+                "from": "events",
+                "to": "mailer",
+                "label": "consume",
+                "flow": true,
+                "weight": 300,
+                "step": 5
+              }
+            ],
+            "steps": [
+              {
+                "caption": "The gateway routes the request into the checkout namespace.",
+                "focus": [
+                  "api"
+                ]
+              },
+              {
+                "caption": "The API asks pricing for a quote and gets the price back.",
+                "focus": [
+                  "pricing"
+                ]
+              },
+              {
+                "caption": "Stock reserves the units.",
+                "focus": [
+                  "stock"
+                ]
+              },
+              {
+                "caption": "The order is written and an event goes on the topic.",
+                "focus": [
+                  "ns_data"
+                ]
+              },
+              {
+                "caption": "The mailer consumes the event and sends the receipt."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "h": "What the on-call said",
+        "blocks": [
+          {
+            "t": "quote",
+            "text": "We never saw the resolver because nothing watched it.",
+            "cite": "On-call engineer, retrospective"
+          }
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {
+            "t": "list",
+            "items": [
+              "Keep tone for accents and dividers, never fills.",
+              "Keep framed charts and panels in the brief.",
+              "Put the detail in the brief and link to it."
+            ]
+          }
+        ]
+      }
+    ],
+    "progress": "dots",
+    "presenter": "present test page · 2026-10-07",
+    "transition": "fade"
+  },
+  "references": [
+    {
+      "title": "PR #203: diagram block on elk and d3, frameless charts",
+      "url": "https://github.com/mad01/thismoon/pull/203"
+    }
+  ]
+}
