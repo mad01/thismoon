@@ -57,7 +57,17 @@ var (
 	progressKinds = []string{"dots", "bar", "none"}
 	transitions   = []string{"fade", "slide", "none"}
 	layouts       = []string{"default", "center", "statement", "section"}
+	// chartKinds is the chart block's kind vocabulary. An empty kind draws
+	// as bar, the client's default; any other name outside the list is
+	// refused at compile time instead of drawing as a line chart.
+	chartKinds = []string{
+		"bar", "line", "area", "sparkline", "stacked-bar", "horizontal-bar", "doughnut", "scatter", "sankey",
+	}
 )
+
+// ChartKinds returns the chart kinds a chart block may name, in the order
+// the docs list them. The MCP schema text and the skill pin the same list.
+func ChartKinds() []string { return slices.Clone(chartKinds) }
 
 // chromeTransition is the transition value the island carries: empty for
 // the default fade, which the deck view assumes when the island says
@@ -169,7 +179,7 @@ type Block struct {
 	Label   string  `json:"label,omitempty"`
 
 	// t=chart
-	Kind   string        `json:"kind,omitempty"`   // bar, line, area, sparkline, stacked-bar, horizontal-bar, doughnut, scatter, sankey
+	Kind   string        `json:"kind,omitempty"`   // one of ChartKinds; empty draws as bar
 	Unit   string        `json:"unit,omitempty"`   // value-axis unit label, e.g. ms
 	XUnit  string        `json:"xunit,omitempty"`  // x-axis unit label (scatter only)
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
@@ -829,9 +839,9 @@ func countGraphs(blocks []Block) int {
 // a panel accent the palette does not define (the way validateTones does for
 // graph nodes), a columns block with other than two or three columns, a
 // details block without a summary or without blocks, a container below the
-// top level, since a container holds plain blocks only, and a graph inside
-// a details block, where a closed disclosure would hide the page's one
-// graph. A graph may sit in a column.
+// top level, since a container holds plain blocks only, a graph inside a
+// details block, where a closed disclosure would hide the page's one graph,
+// and a chart kind outside chartKinds. A graph may sit in a column.
 func validateBlocks(blocks []Block, depth int) error {
 	for _, b := range blocks {
 		if depth > 0 && isContainer(b) {
@@ -870,6 +880,13 @@ func validateBlocks(blocks []Block, depth int) error {
 		case "image":
 			if err := validateImage(b); err != nil {
 				return err
+			}
+		case "chart":
+			if b.Kind != "" && !slices.Contains(chartKinds, b.Kind) {
+				return fmt.Errorf(
+					"chart %q: unknown kind %q (want one of %s)",
+					b.Title, b.Kind, strings.Join(chartKinds, ", "),
+				)
 			}
 		}
 	}

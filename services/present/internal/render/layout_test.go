@@ -194,6 +194,12 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			},
 			`unknown accent "wg600"`,
 		},
+		{"unknown chart kind", Block{T: "chart", Title: "Errors", Kind: "pie"}, `chart "Errors": unknown kind "pie"`},
+		{
+			"unknown chart kind in a column",
+			Block{T: "columns", Columns: [][]Block{one, {{T: "chart", Kind: "pie"}}}},
+			`unknown kind "pie" (want one of bar, line`,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

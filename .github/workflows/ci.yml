@@ -79,6 +79,11 @@ jobs:
               c="${dir%/}"
               echo "${c}:"
               echo "  - '${c}/**'"
+              # A component's agent skill ships beside it under skills/<name>;
+              # a skill-only edit must still run the component's drift tests.
+              if [ -d "skills/${c##*/}" ]; then
+                echo "  - 'skills/${c##*/}/**'"
+              fi
             done
           } > .github/filters.generated.yml
           cat .github/filters.generated.yml
