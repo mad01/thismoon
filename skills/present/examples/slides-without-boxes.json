@@ -512,7 +512,7 @@
             ]
           }
         ],
-        "tone": "amber",
+        "tone": "blue",
         "notes": "A toned slide: the amber shows in the heading rule and the accent bar only."
       },
       {
@@ -590,10 +590,10 @@
             ]
           }
         ],
-        "tone": "green"
+        "tone": "blue"
       },
       {
-        "h": "The numbers the room should keep",
+        "h": "Forty-one minutes down, three to detect next time, two actions",
         "blocks": [
           {
             "t": "columns",
@@ -625,7 +625,7 @@
         "layout": "center"
       },
       {
-        "h": "One figure",
+        "h": "Checkout was down for 41 minutes",
         "blocks": [
           {
             "t": "stat",
@@ -814,7 +814,7 @@
         ]
       },
       {
-        "h": "What the on-call said",
+        "h": "Nothing watched the resolver",
         "blocks": [
           {
             "t": "quote",

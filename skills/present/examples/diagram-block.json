@@ -23,7 +23,7 @@
         "blocks": [
           {
             "t": "p",
-            "text": "Every new piece from MAD-382 and the group spacing fix from MAD-388 is on this page once, in the brief and again on a slide."
+            "text": "Every piece of the diagram block is on this page once, in the brief and again on a slide."
           },
           {
             "t": "list",
@@ -45,13 +45,13 @@
           },
           {
             "t": "diagram",
-            "caption": "Who talks to the platform and what sits beside it. Purple is people, green the platform's own services, grey the systems outside it; the blue boundary is the platform.",
+            "caption": "Who talks to the platform and what sits beside it. Purple is people, green the platform's own services, grey the systems outside it; the amber boundary is the platform.",
             "direction": "LR",
             "groups": [
               {
                 "id": "platform",
                 "label": "the platform",
-                "tone": "blue"
+                "tone": "amber"
               }
             ],
             "nodes": [
@@ -379,7 +379,7 @@
               },
               {
                 "id": "svc",
-                "label": "present.this",
+                "label": "present service",
                 "text": "restarted by t-man",
                 "group": "fleet",
                 "step": 4,
@@ -591,13 +591,13 @@
         "blocks": [
           {
             "t": "diagram",
-            "caption": "Who talks to the platform and what sits beside it. Purple is people, green the platform's own services, grey the systems outside it; the blue boundary is the platform.",
+            "caption": "Who talks to the platform and what sits beside it. Purple is people, green the platform's own services, grey the systems outside it; the amber boundary is the platform.",
             "direction": "LR",
             "groups": [
               {
                 "id": "platform",
                 "label": "the platform",
-                "tone": "blue"
+                "tone": "amber"
               }
             ],
             "nodes": [
@@ -926,7 +926,7 @@
               },
               {
                 "id": "svc",
-                "label": "present.this",
+                "label": "present service",
                 "text": "restarted by t-man",
                 "group": "fleet",
                 "step": 4,
@@ -1033,48 +1033,10 @@
               [
                 {
                   "t": "p",
-                  "text": "No card by default. The **next slide** sets frame to true and keeps its card."
+                  "text": "No card by default, on a slide or in the brief. The brief's doughnut sets frame to true and keeps its card; a slide never does."
                 }
               ]
             ]
-          }
-        ]
-      },
-      {
-        "h": "Frame set to true keeps the card",
-        "blocks": [
-          {
-            "t": "chart",
-            "title": "Boxes on this page by kind",
-            "kind": "doughnut",
-            "series": [
-              {
-                "name": "boxes",
-                "points": [
-                  {
-                    "x": "service",
-                    "y": 10
-                  },
-                  {
-                    "x": "person",
-                    "y": 3
-                  },
-                  {
-                    "x": "external",
-                    "y": 2
-                  },
-                  {
-                    "x": "store",
-                    "y": 1
-                  },
-                  {
-                    "x": "queue",
-                    "y": 1
-                  }
-                ]
-              }
-            ],
-            "frame": true
           }
         ]
       },

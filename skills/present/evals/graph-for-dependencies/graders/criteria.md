@@ -15,7 +15,7 @@ Required, every one must hold:
 
 Secondary, fail only when two or more of these miss:
 
-5. Node colour is consistent: every node has a `tone`, or none has, or nodes use `type: "module"` with `color` slots. Not a mix of toned and plain nodes, and not slots and tones together. Tone names (`neutral`, `green`, `red`, `blue`, `amber`, `purple`) are correct usage, not colour literals.
+5. Node colour is consistent: every node has a `tone`, or none has, or exactly one node is toned as the point of the map, or nodes use `type: "module"` with `color` slots. Not slots and tones together. Tone names (`neutral`, `green`, `red`, `blue`, `amber`, `purple`) are correct usage, not colour literals.
 6. The weighted edges set `flow: true`, so the traffic animates.
 7. A paragraph beside or above the graph block says what to look at (the heaviest edges, the external services).
 8. The publish and consume links on the events topic use `type: "publishes"` or a `label`, so a reader can tell them from direct calls.

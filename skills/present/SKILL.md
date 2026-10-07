@@ -5,7 +5,7 @@ description: Build a scrollable briefing page, a slide deck beside it, or both w
 
 # Present: briefing pages and slide decks
 
-Generate scrollable HTML briefing pages and slide decks served live over localhost by the **present MCP** (Model Context Protocol server), or on a shared instance others reach by link. You pass structured JSON. The server renders it into the full page under a reader-chosen palette (light and dark mode, several theme families picked on the Themes page). The page carries a fixation-reading toggle and font and size controls. The page draws one Cytoscape graph, Chart.js and D3 charts, and diagrams laid out by the Eclipse Layout Kernel (ELK). Never put a colour literal in a page: name a role (see **Colors available**) and the page follows whatever palette the reader picked.
+Generate scrollable HTML briefing pages and slide decks served live over localhost by the **present MCP** (Model Context Protocol server), or on a shared instance others reach by link. You pass structured JSON. The server renders it into the full page under a reader-chosen palette (light and dark mode, several theme families picked on the Themes page). The page carries a fixation-reading toggle and font and size controls. The page draws one Cytoscape graph, Chart.js and D3 charts, and diagrams laid out by the Eclipse Layout Kernel (ELK). Never put a colour literal in a page: name a role (see **Colours available**) and the page follows whatever palette the reader picked.
 
 This file is the entry point. It says which block, chart kind, graph option, and deck setting answers which question, points at the worked examples beside it, and names the decisions behind the design. The service's own docs are for changing present, not for using it.
 
@@ -22,7 +22,7 @@ When the user asks to present, summarize, or brief on a topic (e.g., "present th
 
 ### Worked examples
 
-Three complete pages sit beside this file in `examples/`. Each file is the argument object of one `present_create` call (`title`, `content`, `deck`, `graph`, `references`), so you can read it and pass it through; the tool takes `content`, `deck`, and `graph` as JSON strings. On a machine where they were created, `present_list` finds the same pages by title, and `present_open` shows them.
+Three complete pages sit beside this file in `examples/`. Each file is the argument object of one `present_create` call (`title`, `content`, `deck`, `references`): read it, serialise `content` and `deck` as JSON strings, and call the tool. None of the three carries a `graph`; the JSON under **Graph format** is the worked example for that.
 
 | File | Title | Shows |
 |------|-------|-------|
@@ -30,15 +30,15 @@ Three complete pages sit beside this file in `examples/`. Each file is the argum
 | [diagram-block.json](examples/diagram-block.json) | Diagram block test: boxes, boundaries, arrows | a system context, two levels of groups, a top-to-bottom pipeline, a request walkthrough with `focus`, a framed chart beside a frameless one, a borderless image, a `section` divider |
 | [slides-without-boxes.json](examples/slides-without-boxes.json) | Slides without boxes | every slide layout, `section` dividers with tones, a row of stats, a lone stat, a lone quote, a chart beside its caption in `columns` |
 
-The repo's `services/present/internal/render/testdata/sample-deck.json` is a fourth: a deck that sets every layout, tone, notes, reveal, block, and chrome field once, kept compiling by a test.
+The repo's [sample-deck.json][sample-deck] is a fourth: a deck that sets every layout, tone, notes, reveal, block, and chrome field once. A test keeps it and the three examples compiling.
 
 ### Where the decisions are recorded
 
 Three architecture decision records (ADRs) explain why the format is shaped the way it is. Each format section below names the ones that apply, and the deeper reasons live there, not here.
 
 - [ADR-0019][adr-0019]: a page carries a deck beside its brief. The deck is a second rendition under the same id, authored on its own and never converted from the brief. The two share the title, the one graph, the references, and the share link.
-- [ADR-0020][adr-0020]: slides carry layout, notes, and reveal; the deck carries its chrome; the Doc gained the blocks both renditions share. Amended for the image block, chart steps, the diagram block, and frameless slides.
-- [ADR-0022][adr-0022]: the browser libraries (Cytoscape, Chart.js, D3, ELK, the fonts) are fetched at install and pinned by version. A page loads offline without graphs, charts, or diagrams, and a missing library shows a note in the block's place.
+- [ADR-0020][adr-0020]: slides carry layout, notes, and reveal; the deck carries its chrome; the Doc gained the blocks both renditions share. Amended for the graph in columns and the image block, for chart steps, and for the diagram block and frameless charts. A later consequence records that a slide paints no filled box of its own.
+- [ADR-0022][adr-0022]: the browser libraries (Cytoscape, dagre, ELK, Chart.js, D3, the fonts) are fetched at install and pinned by version. An install without network leaves them out: a sankey, a ribbon, or a diagram then shows a note in its place, and the other charts and the graph stay empty.
 - The service's [CLAUDE.md][svc-claude] holds the renderer's gotchas: what each validator refuses, how the deck view splits a page into slides, how charts and diagrams build in the browser. The markdown import mapping is there too. Read it when a call is refused and the message is not enough.
 - The writing rules follow Stanford's communication teaching. The reader-and-ask step and the named orders come from Matt Abrahams ([three guiding principles][gsb-principles], [the Think Faster, Talk Smarter masterclass][gsb-masterclass]). The bottom line up front comes from [Abrahams and Kramon, Writing to Win][gsb-writing]. The number comparison comes from [Heath and Abrahams, Make Numbers Count][gsb-numbers]. The claim heading, the one idea per slide, and the chart cut to its message come from the Stanford Engineering [Technical Communication Program's visual aids notes][stanford-visual-aids].
 
@@ -62,14 +62,14 @@ The shapes at a glance; full field tables sit in the format sections below.
 Doc = {                                  // the `content` argument, and the `deck` argument
   summary: string,                       // the one line a reader acts on (the deck's title-slide sentence)
   meta: string,                          // date · category · key stats
-  chips: [{text: string, style: "stat" | "a" | "b" | "c" | "outline"}],
+  chips: [{text: string, style?: "stat" | "a" | "b" | "c" | "outline"}],
   sections: Section[],
   // deck only, ignored by the brief:
   logo?, logo_position?, progress?, presenter?, footer?, transition?
 }
 
 Section = {                              // one slide in a deck
-  h: string,                             // heading (TOC anchor; on a slide, the claim)
+  h: string,                             // heading (table of contents anchor; on a slide, the claim)
   blocks: Block[],
   tone?: string,                         // a palette role: a band in the brief, the accent on a slide
   layout?: "default" | "center" | "statement" | "section",   // deck only
@@ -82,7 +82,7 @@ Block =                                  // discriminated on `t`
   | {t: "callout", text, sev?}           | {t: "table", cols, rows}
   | {t: "kv", kv}                        | {t: "list", items, ordered?}
   | {t: "panel", title, sub?, accent?}   | {t: "progress", pct, label?}
-  | {t: "graph"}                         | {t: "chart", kind, series | flows, title?, unit?, xunit?, steps?, order?, frame?}
+  | {t: "graph"}                         | {t: "chart", kind?, series | flows, title?, unit?, xunit?, steps?, order?, frame?}
   | {t: "code", text, lang?}             | {t: "html", text}
   | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
   | {t: "quote", text, cite?}            | {t: "details", summary, blocks}
@@ -92,7 +92,7 @@ Graph = {                                // the `graph` argument, one per page, 
   nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?: 0..3,
            tone?: "neutral" | "green" | "red" | "blue" | "amber" | "purple"}],
   edges: [{from, to, type?: "consumes" | "publishes", label?, weight?, flow?}],
-  layout: "dagre" | "elk" | "elk-layered" | "elk-mrtree" | "elk-stress" | "elk-radial" | "elk-force" | "cose",
+  layout?: "dagre" | "elk" | "elk-layered" | "elk-mrtree" | "elk-stress" | "elk-radial" | "elk-force" | "cose",
   direction?: "TB" | "LR"
 }
 
@@ -138,7 +138,7 @@ The brief's first section answers the question. How you found it, the background
 ### Stat, kv, or table
 
 - One figure the reader should remember: `stat`. On a slide it is the big-number slide when alone, a row of figures when two or three sit in `columns`.
-- Two to four labelled figures that belong together (TTL, timeout, retries): `kv` in a brief. On a slide, stats in a row read better than a kv.
+- Two to four labelled figures that belong together (a cache's time to live, a timeout, a retry count): `kv` in a brief. On a slide, stats in a row read better than a kv.
 - A grid where the reader compares across both axes (three options against four criteria): `table`. Read-aloud skips tables and kv blocks, so when the page will be listened to, say the comparison in a list with one full sentence per item.
 - Give the one number a comparison the reader already knows, in the `stat`'s `sub` line or the next sentence. A ratio for a percentage ("2 of every 5 checkouts", not "40%"), a familiar unit for a big count ("a full day of Tuesday's traffic"). A number without a comparison is read once and lost.
 
@@ -146,7 +146,7 @@ The brief's first section answers the question. How you found it, the background
 
 - `columns` puts two or three things side by side at one glance. That is a chart and the paragraph that says what to look at, the graph and one sentence, three stats, or an image and its explanation. One column under 700 px wide.
 - `details` hides what most readers skip and some need: a full timeline, the log lines, the raw table. Closed by default, read aloud when reached. Brief only: a slide that needs one has too much on it.
-- Neither holds the other, and `details` never holds the graph or a stepped chart.
+- Neither holds the other, and `details` never holds the graph, a stepped chart, or a stepped diagram.
 
 ## MCP tools
 
@@ -303,7 +303,7 @@ One example of each, as they go in a section's `blocks`:
 |-------|------|-------------|
 | `h` | string | Section heading (used for TOC anchor) |
 | `blocks` | array | Content blocks |
-| `tone` | string? | A palette role name (see **Colors available**). In a brief it gives the section a band in that colour; on a slide it colours the heading rule and the accent bar (on a `statement` slide a centred bar under the heading), never a filled background. Pick a saturated role (`blue`, `green`, `amber`, `red`, `purple`, `primary`): a `-bg` role is nearly invisible as a rule and bar. An unknown name is refused |
+| `tone` | string? | A palette role name (see **Colours available**). In a brief it gives the section a band in that colour; on a slide it colours the heading rule and the accent bar (on a `statement` slide a centred bar under the heading), never a filled background. Pick a saturated role (`blue`, `green`, `amber`, `red`, `purple`, `primary`): a `-bg` role is nearly invisible as a rule and bar. An unknown name is refused |
 | `layout` | string? | Deck only, ignored by the brief: `default`, `center` (centred at today's sizes), `statement` (the heading is the slide, large and centred, blocks as a line under it), `section` (a divider: a large centred heading with a short accent bar in the tone). A slide whose only block is a `stat` or a `quote` is the big-number or quote slide with no layout set |
 | `notes` | string? | Deck only: speaker notes with inline markdown. Never on the slide, never read aloud; the deck shows them in a drawer on the N key or the Notes button |
 | `reveal` | bool? | Deck only: the slide's list items and top-level blocks appear one per Next, Prev hides the last one, a jump lands with all shown. The progress dots and the URL hash track slides, not steps |
@@ -377,10 +377,10 @@ The order that produces a deck rather than a shortened brief:
 
 1. **Write the title slide last, but decide it first.** `summary` is the one sentence the room should remember. `meta` is the date, the occasion, and the audience. `chips` carry two or three headline numbers with `style: "stat"`. `presenter` is the byline, and the only place for a date beside `meta`.
 2. **One claim per slide.** List the claims the room must accept, in the order the argument runs. Order them by one named structure and keep it. Problem, Solution, Benefit for a proposal. What, So What, Now What for a finding or a status. Cause, Effect, Solution for an incident. Comparison, Contrast, Conclusion for options. Each claim becomes a section whose `h` states it, "Cache cut p99 latency by 40%", never a topic, "Latency". Under it, a `list` of 3 to 5 items under ten words each or one `p` of at most two sentences. What you would say goes in `notes`.
-3. **Give every number its own slide.** A `chart` whose heading states what the chart proves and whose `title` names the measure, a `diagram` when the slide explains how parts fit, the `graph` when the map is the point. Alone on the slide, or in `columns` beside one short `p`. When the picture should form while you talk, give it `steps`.
+3. **Give the data its own slide.** A `chart` whose heading states what the chart proves and whose `title` names the measure, a `diagram` when the slide explains how parts fit, the `graph` when the map is the point. Alone on the slide, or in `columns` beside one short `p`. When the picture should form while you talk, give it `steps`.
 4. **Keep one figure and one line.** The number the room should carry out of the door is a lone `stat`; the sentence is a lone `quote` or a `statement` slide. Once or twice a deck.
 5. **End on the ask.** The last authored slide is `h: "Next"` with an ordered list of at most three actions, each with an owner and a date. References follow by themselves.
-6. **Cut.** Five to twelve slides. A longer deck opens its parts with `section` dividers, or is two decks. Everything cut goes in the brief.
+6. **Cut.** Five to twelve slides. Nine or more may open their parts with `section` dividers; past twelve it is two decks. Everything cut goes in the brief.
 
 ### Deck rules
 
@@ -393,11 +393,11 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 5. **One highlight per slide.** Bold exactly one phrase, or use one `@chip(stat:...)` for the number that matters. Two bold phrases highlight neither.
 6. **Data gets its own slide.** One `chart` block per slide, its heading the claim the chart proves and its `title` the measure. Draw only the series the claim needs and fold or cut the rest. The eye then finds the comparison the heading names. A `kv` block for up to four figures. A `table` only when the comparison is the point, at most four columns and five rows.
 7. **The graph gets its own slide.** A `{"t": "graph"}` block with nothing but the heading; it is the page's one visual, so let it fill the slide. When the room needs one sentence pointing at a node, put the graph in a `columns` block beside one short `p` and nothing else.
-8. **Code only when the code is the point.** At most eight lines; otherwise name the file or function in prose.
+8. **Code stays in the brief.** A code block draws a card (rule 17), so a slide names the file or function in prose and the brief holds the code. When the code is the point of the talk, the room reads it from the brief.
 9. **One callout per deck at most**, `sev: "warn"`, for the single risk or blocker.
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument. No sentence appears both on the slide and in `notes`.
-12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep, with a comparison the room already knows in the `sub` line ("2 of every 5 checkouts"). Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, a `diagram`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
+12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. The `sub` line gives the figure a comparison the room already knows ("2 of every 5 checkouts"). Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, a `diagram`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. A `ribbon` steps by period, one caption per column and no series `step`, so keep a stepped ribbon to three to five periods. See **Stepped charts**.
@@ -413,12 +413,12 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 | `layout: "statement"` | the one sentence the deck exists to say, the heading as the slide, once or twice a deck | a slide with body under it beyond one line |
 | `layout: "section"` | a divider opening a part of a longer deck, with a `tone` | a deck under nine slides |
 | `tone` | colouring a part's heading rule and accent bar so the room sees where it is; a saturated role, the same one for the whole part | decoration on every slide, a `-bg` role |
-| `reveal: true` | a list that is an argument built one line at a time | a list the room should read whole, a slide with one block |
+| `reveal: true` | a list that is an argument built one line at a time | a list the room should read whole, a slide whose one block is not a list |
 | chart or diagram `steps` | a picture that should form while you talk, three to five captions | a chart the room reads at a glance |
 | `notes` | what you would say and only that; N opens the drawer, nothing reads it aloud | content the room must read |
 | `transition` | `fade` (the default) for most decks; `slide` when the deck reads as a path through material; `none` when the room or the reader wants cuts | |
 | `logo`, `logo_position` | a mark in the corner: the repo logo by default, an http(s) URL for another, `"none"` for a bare room | |
-| `progress` | `dots` (the default) to 24 slides, where they give way to a `bar`; `"none"` when the count would distract | |
+| `progress` | `dots` (the default) up to 24 slides and a `bar` past that; `"none"` when the count would distract | |
 | `presenter`, `footer` | the byline under the meta line and the bottom strip; the footer defaults to the deck title once either is set | |
 | `present_deck` | driving the open deck from the shell or the MCP: `start`, `next`, `prev`, `goto`, `stop`; every open tab follows within a second | a shared instance, which has no remote control |
 | Reduce Motion | the reader's operating-system setting: every transition, reveal, draw-in, step, and flow animation becomes a cut or a static frame. Nothing to set; write the deck so it reads without motion | |
@@ -532,7 +532,7 @@ The reader opens the deck from the brief's Slides link or at `deck_url`, and mov
 
 ## Graph format (the `graph` argument)
 
-Pass a structured object. The server stores the nodes and edges; the page styles and lays them out when it loads, so a style change reaches existing pages without a rerender. One graph per page, shared by the brief and the deck. The engines, the palette, and the flow animation are built in the page shell. That is why the stored graph carries no colours and no coordinates (the service's [CLAUDE.md][svc-claude], under *Shared UI: webkit*). The ELK engines need the vendored library ([ADR-0022][adr-0022]); without it the graph falls back to the Cytoscape built-ins.
+Pass a structured object. The server stores the nodes and edges; the page styles and lays them out when it loads, so a style change reaches existing pages without a rerender. One graph per page, shared by the brief and the deck. The engines, the palette, and the flow animation are built in the page shell. That is why the stored graph carries no colours and no coordinates (the service's [CLAUDE.md][svc-claude], under *Shared UI: webkit*). dagre and the ELK engines need their vendored libraries ([ADR-0022][adr-0022]); an engine whose library is missing draws nothing. `cose` is built into Cytoscape itself.
 
 ```json
 {
@@ -563,7 +563,7 @@ Pick `layout` by the shape of the data:
 - **No hierarchy, distances should mean something** (a service mesh, a cluster of related modules): `elk-stress`. `elk-force` is the organic variant; `cose` is the Cytoscape built-in that needs no vendored library.
 - **A map with cycles** (a mesh with traffic both ways): `elk` or `elk-stress`; a layered engine draws a back-edge, which is acceptable for one or two.
 
-`dagre` and `elk` take an optional `direction`: `TB` (top-down) or `LR` (left-to-right). Omit it for auto: small graphs (8 nodes or fewer) draw left-to-right to fill the wide container, larger ones top-down. A pipeline reads left to right; a hierarchy reads top-down.
+`dagre` and every ELK engine take an optional `direction`: `TB` (top-down) or `LR` (left-to-right). Omit it for auto: small graphs (8 nodes or fewer) draw left-to-right to fill the wide container, larger ones top-down. A pipeline reads left to right; a hierarchy reads top-down.
 
 The page's graph toolbar has an engine button that cycles the live graph through every engine, so a reader can compare them on any page without re-authoring it. The choice is not saved; set `layout` to keep it.
 
@@ -584,12 +584,12 @@ Use `module` with `color` to group nodes by subsystem the way a Mermaid `subgrap
 
 | Tone | Reads as |
 |------|----------|
-| `neutral` | Grey; surroundings, inputs, outputs |
-| `green` | The system's own steps; healthy |
+| `neutral` | Grey: the outside, the edge, inputs and outputs |
+| `green` | The system's own parts and steps; healthy |
 | `red` | Guards, checks, failures |
-| `blue` | External services, storage |
-| `amber` | Pending, degraded, manual steps |
-| `purple` | Humans, decisions, review |
+| `blue` | Storage, queues, and the services it calls |
+| `amber` | Pending, degraded, manual steps; on a diagram also the one tone for a zone boundary |
+| `purple` | People, decisions, review |
 
 ```json
 {"nodes": [
@@ -599,16 +599,16 @@ Use `module` with `color` to group nodes by subsystem the way a Mermaid `subgrap
 ]}
 ```
 
-Use tones for meaning, not decoration: two or three per graph, the same tone for the same kind of thing. An unknown tone fails the call.
+Use tones for meaning, not decoration: two or three per graph, the same tone for the same kind of thing. The meanings in the table hold for diagram nodes and groups too, so one key serves every picture on a page. An unknown tone fails the call.
 
 ### Colour that reads
 
 The palette is the reader's choice, so you never pick a colour; you pick what carries one. On a graph that is the node `type`, a `module` slot, or a `tone`. The rules that keep them readable in both modes:
 
 - **One system carries the meaning.** `type` says the role in the map (the centre, a module, a leaf, a registry), `color` slots say which subsystem a node belongs to, `tone` says what kind of thing it is. Use slots or tones on a graph, never both: a module border under a tone is invisible.
-- **Tone every node, or none.** An untoned node is the leaf colour, a plain box close to the page colour, and in dark mode those are two greys a shade apart. One plain node among toned ones reads as switched off; one toned node among plain ones reads as the point, which is right when it is.
-- **Two or three tones with fixed meanings**, the same on every picture in the page. `neutral` is the outside, `green` the system's own parts, `blue` storage and the services it calls, `red` guards and failures, `amber` pending or manual, `purple` people. Say the key in the paragraph beside the graph.
-- **The accent already highlights.** The centre node, the hot edges (the top third by `weight`), and the flow dashes are drawn in the accent colour. Do not spend `red` on "busy" when `weight` and `flow` show it.
+- **Tone every node, or none.** An untoned leaf node is a plain box close to the page colour, and in dark mode those are two greys a shade apart. A centre or registry node keeps its own look. One plain node among toned ones reads as switched off; one toned node among plain ones reads as the point, which is right when it is.
+- **Two or three tones with the meanings in the table above**, the same on every picture in the page. Say the key in the paragraph beside the graph.
+- **The accent already highlights.** The centre node's border and the hot edges (weight in the top third of the range) are drawn in the accent colour. A flow edge is dashed and animated, and takes the accent only when it is hot. Do not spend `red` on "busy" when `weight` and `flow` show it.
 - **Check both modes.** Flip the theme in the page header before sharing. Contrast between two tones holds in both modes; contrast between a plain node and the page is what runs out first in dark mode.
 
 ### Edge types and labels
@@ -648,11 +648,11 @@ Put the number in `label` too when the reader should see it; the width alone onl
 
 ### Placement
 
-Place a `{"t": "graph"}` block in the section where you want the graph to appear. It goes at the top level or inside a column of a `columns` block, beside the paragraph that says what to look at. One graph block per page: a Doc that places it twice is refused, and so is a graph inside `details`. In a deck, the graph gets its own slide (deck rule 7); the brief and the deck show the same graph.
+Place a `{"t": "graph"}` block in the section where you want the graph to appear. It goes at the top level or inside a column of a `columns` block, beside the paragraph that says what to look at. One graph block per Doc, so the brief and the deck may each place it once: a Doc that places it twice is refused, and so is a graph inside `details`. In a deck, the graph gets its own slide (deck rule 7); the brief and the deck show the same graph.
 
 ### From a Mermaid flowchart
 
-A markdown file dropped on the index page (or posted to the import endpoint) becomes a page, and the first fenced `mermaid` flowchart in it becomes the page graph. Node labels are kept and shapes dropped. Dotted links become dashed `publishes` edges and every other link a solid arrow. `|text|` on a link becomes its label. A `subgraph` colours its members as `module` nodes, one colour slot per subgraph. `TD`, `TB`, and `BT` map to top-down, `LR` and `RL` to left-to-right. A sequence diagram, a second flowchart, or syntax the converter does not know stays a code block. When you already hold a flowchart, this is the fastest path to a graph; the full mapping and its losses are in the service's [CLAUDE.md][svc-claude] under *Importing markdown*.
+On a local instance, a markdown file dropped on the index page (or posted to the import endpoint) becomes a page. The first fenced `mermaid` flowchart in it becomes the page graph. Node labels are kept and shapes dropped. Dotted links become dashed `publishes` edges and every other link a solid arrow. `|text|` on a link becomes its label. A `subgraph` colours its members as `module` nodes, one colour slot per subgraph, cycling after four. `TD`, `TB`, and `BT` map to top-down, `LR` and `RL` to left-to-right. A sequence diagram, a second flowchart, or syntax the converter does not know stays a code block. When you already hold a flowchart, this is the fastest path to a graph; the full mapping and its losses are in the service's [CLAUDE.md][svc-claude] under *Importing markdown*.
 
 ## Chart format (the `chart` block)
 
@@ -688,7 +688,7 @@ Pick `kind` by the question the numbers answer:
 
 - **How many per category?** `bar`. One series, or two to four side by side when the question is also "and how do the groups compare".
 - **What is each category made of?** `stacked-bar`. Composition per category (responses by status class per day). Series stack in order; keep it to four.
-- **Which ranks highest?** `horizontal-bar`. One series sorted by value, long labels (stages, repos, endpoints) readable at the left.
+- **Which ranks highest?** `horizontal-bar`. One series, sorted by value before you pass it (the chart keeps the point order), long labels (stages, repos, endpoints) readable at the left.
 - **How did it move over time?** `line`. One or more trends on one axis. Never two value axes: split into two charts.
 - **How much volume over time?** `area`. A single trend where the filled volume matters (requests per minute through an incident).
 - **Is it trending, at a glance?** `sparkline`. A compact trend beside a `stat`, drawn without axes.
@@ -701,19 +701,17 @@ The kind list, in the renderer's order: `bar`, `line`, `area`, `sparkline`, `sta
 
 ### Limits
 
-The palette has four series colours, so four series is the ceiling for a readable chart of any kind; a fifth wraps to the first colour. Four is a ceiling, not a target: draw only the series the chart's claim needs and fold or cut the rest, so the eye finds the comparison the heading names. The renderer enforces the rest.
+The palette has four series colours, so four series is the ceiling for a readable chart of any kind; a fifth wraps to the first colour. Four is a ceiling, not a target: draw only the series the chart's claim needs and fold or cut the rest, so the eye finds the comparison the heading names. The renderer refuses a fifth ribbon series, steps on a sparkline, and a series `step` on a doughnut, a sankey, or a ribbon. It also refuses a ribbon whose caption count differs from its periods, a step without a caption, and a stepped chart or diagram inside `details`. Every other limit here is guidance.
 
 | Kind | Series | Categories, slices, or periods | Steps |
 |------|--------|-------------------------------|-------|
 | `bar`, `line`, `area`, `scatter` | one to four | about twelve categories; past that, a `horizontal-bar` or two charts | by series |
 | `stacked-bar` | up to four | about twelve categories | by series |
-| `horizontal-bar` | one | about fifteen labels, sorted | by series |
+| `horizontal-bar` | one | about fifteen labels, in the order you pass them | by series |
 | `sparkline` | one, `y` only | any length | none: steps are refused |
 | `doughnut` | one (only the first draws) | at most four slices, the rest folded into "other" | captions only, no series `step` |
 | `sankey` | `flows`, not series | about twelve nodes | captions only |
 | `ribbon` | one to four, each named, a fifth refused | about eight periods, every period in every series | by period: one caption per period, no series `step` |
-
-A stepped chart never sits inside `details`, and a step without a caption is refused.
 
 ### Fields
 
@@ -799,7 +797,7 @@ A chart with `steps` walks through its data on a deck slide. Each press of Next 
 
 A `diagram` walks its elements the same way, with `step` on nodes, groups, and edges and `focus` ids on a step; see **Diagram format**. A `ribbon` walks its periods instead of its series: one caption per period, in order, and step n shows the first n columns with the ribbons into them. The slide opens on the empty axis, and the first Next shows the first period. The step count has to equal the period count, and a series on a ribbon carries no `step`.
 
-Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. On a chart stepped by series the legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
+Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart or diagram never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. On a chart stepped by series the legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
 
 ## Diagram format (the `diagram` block)
 
@@ -851,9 +849,9 @@ The diagram sits straight on the page or slide with no card of its own. Boxes ca
 
 A diagram of plain boxes inside toned boundaries is the common mistake. In dark mode every box is a grey on a grey, and the only colour is a faint wash the eye cannot attach to anything. The rules:
 
-- **Boxes carry the tone, boundaries carry the structure.** A toned node is a filled box with a coloured border and label. A toned group is a half-transparent wash under a dashed line, drawn behind its members. So tone the nodes by what they are. Tone a group only when the boundary itself is the point (a trust zone, a namespace the room must see), in a tone none of its members use. A group in the same tone as its members swallows them.
+- **Boxes carry the tone, boundaries carry the structure.** A toned node is a filled box with a coloured border and label. A toned group is a half-transparent wash under a dashed line, drawn behind its members. So tone the nodes by what they are. Tone a group only when the boundary itself is the point (a trust zone, a namespace the room must see), in a tone none of its members use. `amber` is the boundary tone in the worked examples, since few boxes in an architecture are pending. A group in the same tone as its members swallows them.
 - **No plain boxes in a toned picture.** Every node has a tone or none has. An untoned box is the card colour on the page colour, a shade apart in dark mode.
-- **Two or three tones, fixed meanings, named in the caption.** `green` for the system's own services, `blue` for stores and queues, `neutral` for the edge and the outside, `purple` for people, `red` for guards, `amber` for pending or manual. `kind` says the shape (a store is a cylinder, a queue a pipe, an external system a dashed box). So the shape says what a box does and the tone says whose it is.
+- **Two or three node tones with the meanings in **Node tones**, plus at most one boundary tone, named in the caption.** `kind` says the shape (a store is a cylinder, a queue a pipe, an external system a dashed box). So the shape says what a box does and the tone says whose it is.
 - **Nested groups alternate.** A group inside a group gets a different tone or none; two washes of one tone stack into one.
 - **Focus and flow are colours already.** On a stepped diagram the focused box glows in the accent and the rest dim; a flow edge is dashed with accent dots moving on it. Do not spend a tone on "the current step" or "the busy path".
 - **Check both modes** with the theme toggle in the page header before sharing. The worked example [diagram-block.json](examples/diagram-block.json) tones its nodes this way; the groups that keep a tone are the boundaries the story is about.
@@ -883,14 +881,14 @@ The `references` parameter takes `[{title, url}]`: source links rendered at the 
 ]
 ```
 
-## Colors available
+## Colours available
 
 Pages name colours by palette role, never by value, so a page looks right under every theme family the reader can pick (the Themes link in the page header). Roles a page may reference:
 
 | Role | Use |
 |------|-----|
 | `primary` | The accent; `terracotta` is accepted as its alias on panel accents |
-| `red`, `green`, `amber`, `yellow`, `blue`, `purple` | Semantic colours: panel accents, section and slide tones, callout meaning |
+| `red`, `green`, `amber`, `yellow`, `blue`, `purple` | Semantic colours: panel accents, section and slide tones |
 | `series-1` to `series-4` | Chart series, in the palette's order; the legacy chart names `terracotta`, `blue`, `green`, `purple` map to the same slots |
 
 Graph and diagram node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purple`) are named on the node's `tone` field, not here. A tone's background, border, and text come as one family in both modes, so a toned box stays readable when the reader flips the theme. A plain box, with no tone, sits closest to the page colour, where contrast runs out first in dark mode. See **Colour that reads** under **Graph format** and **Diagram format**.
@@ -899,6 +897,7 @@ Graph and diagram node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purpl
 [adr-0020]: https://github.com/mad01/thismoon/blob/main/docs/adr/0020-present-slide-layouts-and-chrome.md
 [adr-0022]: https://github.com/mad01/thismoon/blob/main/docs/adr/0022-vendored-browser-assets.md
 [svc-claude]: https://github.com/mad01/thismoon/blob/main/services/present/CLAUDE.md
+[sample-deck]: https://github.com/mad01/thismoon/blob/main/services/present/internal/render/testdata/sample-deck.json
 [gsb-principles]: https://www.gsb.stanford.edu/insights/three-guiding-principles-successful-communication
 [gsb-masterclass]: https://www.gsb.stanford.edu/insights/how-think-faster-talk-smarter-masterclass-matt-abrahams
 [gsb-writing]: https://www.gsb.stanford.edu/insights/writing-win-how-quickly-capture-readers-keep-them-engaged

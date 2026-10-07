@@ -39,3 +39,30 @@ func TestDiagramVocabularyReachesTheSchema(t *testing.T) {
 		}
 	}
 }
+
+// TestDeckFieldsReachTheSchema pins the create tool's deck description to
+// the deck's chrome and per-slide field names, now that the shared deck
+// text defers to it, and the update tool's deck description to the create
+// tool's, so neither can lose a field without a test noticing.
+func TestDeckFieldsReachTheSchema(t *testing.T) {
+	create, ok := reflect.TypeOf(createInput{}).FieldByName("Deck")
+	if !ok {
+		t.Fatal("createInput has no Deck field")
+	}
+	tag := create.Tag.Get("jsonschema")
+	for _, want := range []string{
+		"logo", "logo_position", "progress", "presenter", "footer", "transition",
+		"layout", "tone", "notes", "reveal",
+	} {
+		if !strings.Contains(tag, want) {
+			t.Errorf("create deck schema lacks %q", want)
+		}
+	}
+	update, ok := reflect.TypeOf(updateInput{}).FieldByName("Deck")
+	if !ok {
+		t.Fatal("updateInput has no Deck field")
+	}
+	if !strings.Contains(update.Tag.Get("jsonschema"), "present_create") {
+		t.Error("update deck schema must point at present_create's deck")
+	}
+}

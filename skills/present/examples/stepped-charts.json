@@ -181,7 +181,8 @@
                     "x": "Fri",
                     "y": 930
                   }
-                ]
+                ],
+                "step": 1
               },
               {
                 "name": "TTL cap",
@@ -207,7 +208,7 @@
                     "y": 620
                   }
                 ],
-                "step": 1
+                "step": 2
               },
               {
                 "name": "cap and probe",
@@ -233,10 +234,13 @@
                     "y": 280
                   }
                 ],
-                "step": 2
+                "step": 3
               }
             ],
             "steps": [
+              {
+                "caption": "Before the fix the tail sat near 940 ms."
+              },
               {
                 "caption": "The TTL cap alone takes the tail from 940 ms to 610 ms."
               },
@@ -428,18 +432,17 @@
           },
           {
             "t": "diagram",
-            "caption": "A checkout request, from the browser to the orders table.",
+            "caption": "A checkout request, from the browser to the orders table. Purple is the person, grey the edge, green the cluster's own services, blue the store; the amber boundary is the prod cluster.",
             "direction": "LR",
             "groups": [
               {
                 "id": "edge",
-                "label": "edge",
-                "tone": "neutral"
+                "label": "edge"
               },
               {
                 "id": "prod",
                 "label": "prod cluster",
-                "tone": "blue"
+                "tone": "amber"
               }
             ],
             "nodes": [
@@ -447,27 +450,31 @@
                 "id": "browser",
                 "label": "Browser",
                 "text": "the shopper's tab",
-                "kind": "person"
+                "kind": "person",
+                "tone": "purple"
               },
               {
                 "id": "gw",
                 "label": "Gateway",
                 "text": "Envoy, terminates TLS",
-                "group": "edge"
+                "group": "edge",
+                "tone": "neutral"
               },
               {
                 "id": "api",
                 "label": "Checkout API",
                 "text": "Go, validates the cart",
                 "group": "prod",
-                "step": 2
+                "step": 2,
+                "tone": "green"
               },
               {
                 "id": "pricing",
                 "label": "Pricing",
                 "text": "Go, quotes and discounts",
                 "group": "prod",
-                "step": 3
+                "step": 3,
+                "tone": "green"
               },
               {
                 "id": "orders",
@@ -475,7 +482,8 @@
                 "text": "Postgres",
                 "kind": "store",
                 "group": "prod",
-                "step": 4
+                "step": 4,
+                "tone": "blue"
               }
             ],
             "edges": [
@@ -562,7 +570,7 @@
           },
           {
             "t": "callout",
-            "text": "Next up: the ribbon chart (MAD-386) and the architecture diagram (MAD-382) build on this layer, both drawn with the vendored d3.",
+            "text": "The ribbon chart and the architecture diagram build on this layer, both drawn with the vendored d3.",
             "sev": "info"
           }
         ]
@@ -595,7 +603,7 @@
         "notes": "Steps are the unit of Next. A stepped chart adds its steps to the slide's counter."
       },
       {
-        "h": "How the spike built up",
+        "h": "Three services failed in order, two minutes apart",
         "blocks": [
           {
             "t": "p",
@@ -704,7 +712,7 @@
         "reveal": true
       },
       {
-        "h": "Latency before and after the fix",
+        "h": "The cap and the probe took p95 from 940 ms to under 300 ms",
         "blocks": [
           {
             "t": "chart",
@@ -735,7 +743,8 @@
                     "x": "Fri",
                     "y": 930
                   }
-                ]
+                ],
+                "step": 1
               },
               {
                 "name": "TTL cap",
@@ -761,7 +770,7 @@
                     "y": 620
                   }
                 ],
-                "step": 1
+                "step": 2
               },
               {
                 "name": "cap and probe",
@@ -787,10 +796,13 @@
                     "y": 280
                   }
                 ],
-                "step": 2
+                "step": 3
               }
             ],
             "steps": [
+              {
+                "caption": "Before the fix the tail sat near 940 ms."
+              },
               {
                 "caption": "The TTL cap alone takes the tail from 940 ms to 610 ms."
               },
@@ -804,7 +816,7 @@
         "notes": "No reveal on this slide: the chart is on screen from the start and Next walks its two steps."
       },
       {
-        "h": "Where the traffic went",
+        "h": "Half of what reached orders never made the database",
         "blocks": [
           {
             "t": "chart",
@@ -969,18 +981,17 @@
         "blocks": [
           {
             "t": "diagram",
-            "caption": "A checkout request, from the browser to the orders table.",
+            "caption": "A checkout request, from the browser to the orders table. Purple is the person, grey the edge, green the cluster's own services, blue the store; the amber boundary is the prod cluster.",
             "direction": "LR",
             "groups": [
               {
                 "id": "edge",
-                "label": "edge",
-                "tone": "neutral"
+                "label": "edge"
               },
               {
                 "id": "prod",
                 "label": "prod cluster",
-                "tone": "blue"
+                "tone": "amber"
               }
             ],
             "nodes": [
@@ -988,27 +999,31 @@
                 "id": "browser",
                 "label": "Browser",
                 "text": "the shopper's tab",
-                "kind": "person"
+                "kind": "person",
+                "tone": "purple"
               },
               {
                 "id": "gw",
                 "label": "Gateway",
                 "text": "Envoy, terminates TLS",
-                "group": "edge"
+                "group": "edge",
+                "tone": "neutral"
               },
               {
                 "id": "api",
                 "label": "Checkout API",
                 "text": "Go, validates the cart",
                 "group": "prod",
-                "step": 2
+                "step": 2,
+                "tone": "green"
               },
               {
                 "id": "pricing",
                 "label": "Pricing",
                 "text": "Go, quotes and discounts",
                 "group": "prod",
-                "step": 3
+                "step": 3,
+                "tone": "green"
               },
               {
                 "id": "orders",
@@ -1016,7 +1031,8 @@
                 "text": "Postgres",
                 "kind": "store",
                 "group": "prod",
-                "step": 4
+                "step": 4,
+                "tone": "blue"
               }
             ],
             "edges": [
@@ -1090,8 +1106,8 @@
           {
             "t": "list",
             "items": [
-              "Ribbon chart on d3 with stepped periods (MAD-386).",
-              "Architecture diagram block with a stepped walkthrough (MAD-382).",
+              "Ribbon chart on d3 with stepped periods.",
+              "Architecture diagram block with a stepped walkthrough.",
               "Roll the shared instance so decks there step too."
             ]
           }
