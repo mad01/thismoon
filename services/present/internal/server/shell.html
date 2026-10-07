@@ -133,6 +133,40 @@ wk-col .cy-container { height: 400px; }
 .present-chart.is-sparkline .present-chart-canvas { height: 56px; }
 .present-chart .chart-spec { display: none; }
 .present-chart-note { font-size: 0.8125rem; color: var(--text-3); margin: 0.5rem 0 0; }
+/* Ribbon chart (d3, MAD-386): an svg straight on the page unless the block
+   asks for the card with data-frame. Fills are palette variables set inline
+   by app.js; stepping, the entry, and hover only toggle classes, and the
+   opacity transition here does the motion. .off follows .dim so a hidden
+   column stays hidden under the pointer. A segment's name is knocked out in
+   the surface colour: chart-label is ink for the page, and on the series
+   fills it reads under 3:1 in most families, dark mode above all. */
+.present-chart.is-ribbon:not([data-frame]) { background: none; border: 0; padding: 0; }
+.present-ribbon { display: block; width: 100%; height: 100%; overflow: visible; }
+.present-ribbon text { fill: var(--chart-text); font-size: 11px; font-family: inherit; }
+.present-ribbon .seg-label { fill: var(--card-bg); pointer-events: none; }
+.present-ribbon .grid line { stroke: var(--chart-grid); }
+.present-ribbon .domain { display: none; }
+.present-ribbon .seg, .present-ribbon .rib, .present-ribbon .seg-label { transition: opacity 0.35s ease; }
+.present-ribbon .rib { fill-opacity: 0.45; }
+.present-ribbon .rib.hover { fill-opacity: 0.65; }
+.present-ribbon .dim { opacity: 0.2; }
+.present-ribbon .off { opacity: 0; pointer-events: none; }
+.present-ribbon.cut .seg, .present-ribbon.cut .rib, .present-ribbon.cut .seg-label,
+html[data-transition="none"] .present-ribbon .seg, html[data-transition="none"] .present-ribbon .rib,
+html[data-transition="none"] .present-ribbon .seg-label { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .present-ribbon .seg, .present-ribbon .rib, .present-ribbon .seg-label { transition: none; }
+}
+.present-ribbon-legend {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1rem;
+  font-size: 11px; color: var(--chart-text); margin-bottom: 0.5rem;
+}
+.present-ribbon-key { cursor: default; }
+.present-ribbon-key::after { content: attr(data-name); }
+.present-ribbon-swatch {
+  display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+  margin-right: 0.375rem; vertical-align: -1px;
+}
 
 .refs-section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--border); }
 .refs-list { list-style: none; display: flex; flex-direction: column; gap: 0.625rem; }
