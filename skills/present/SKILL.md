@@ -40,15 +40,17 @@ Three architecture decision records (ADRs) explain why the format is shaped the 
 - [ADR-0020][adr-0020]: slides carry layout, notes, and reveal; the deck carries its chrome; the Doc gained the blocks both renditions share. Amended for the image block, chart steps, the diagram block, and frameless slides.
 - [ADR-0022][adr-0022]: the browser libraries (Cytoscape, Chart.js, D3, ELK, the fonts) are fetched at install and pinned by version. A page loads offline without graphs, charts, or diagrams, and a missing library shows a note in the block's place.
 - The service's [CLAUDE.md][svc-claude] holds the renderer's gotchas: what each validator refuses, how the deck view splits a page into slides, how charts and diagrams build in the browser. The markdown import mapping is there too. Read it when a call is refused and the message is not enough.
+- The writing rules follow Stanford's communication teaching. The reader-and-ask step and the named orders come from Matt Abrahams ([three guiding principles][gsb-principles], [the Think Faster, Talk Smarter masterclass][gsb-masterclass]). The bottom line up front comes from [Abrahams and Kramon, Writing to Win][gsb-writing]. The number comparison comes from [Heath and Abrahams, Make Numbers Count][gsb-numbers]. The claim heading, the one idea per slide, and the chart cut to its message come from the Stanford Engineering [Technical Communication Program's visual aids notes][stanford-visual-aids].
 
 ## Start here
 
 1. **Gather content.** Research the topic with code search, git log, PR data, or whatever sources apply. Every number and claim on the page comes from a real source.
-2. **Pick the shape.** A brief for a reader alone, a deck for a room, both when the room will want the detail afterwards. See **Brief or deck**.
-3. **Pick the visuals.** For each set of facts, find the block that answers its question in **Which block answers which question**. Numbers over categories or time are a `chart`; how parts fit is a `diagram`; a map of many nodes is the page's one `graph`.
-4. **Build the Doc** (and the Graph when the data is a map). Use the formats below.
-5. **Create and open.** `present_create` with `title`, `content`, optional `deck`, `graph`, and `references`. Hold the returned `id`. `present_open` once.
-6. **Iterate.** `present_update` with the same id and only the fields that changed. The open tab reloads.
+2. **Name the reader and the ask.** One line each: who will read or hear it, what they should know afterwards, and what they should do. The `summary` states the know; the brief's first section or the deck's Next slide states the do. Anything that serves neither is cut.
+3. **Pick the shape.** A brief for a reader alone, a deck for a room, both when the room will want the detail afterwards. See **Brief or deck**.
+4. **Pick the visuals.** For each set of facts, find the block that answers its question in **Which block answers which question**. Numbers over categories or time are a `chart`; how parts fit is a `diagram`; a map of many nodes is the page's one `graph`.
+5. **Build the Doc** (and the Graph when the data is a map). Use the formats below.
+6. **Create and open.** `present_create` with `title`, `content`, optional `deck`, `graph`, and `references`. Hold the returned `id`. `present_open` once.
+7. **Iterate.** `present_update` with the same id and only the fields that changed. The open tab reloads.
 
 To edit a page created in an earlier session: `present_list` to find it (`has_doc: true` means the source is available), `present_source` to get the Doc, deck, and graph JSON, modify, then `present_update`.
 
@@ -109,8 +111,9 @@ Pick by the question the facts answer, not by what looks rich. The right column 
 | a comparison where the grid itself is the point | `table` (on a slide at most four columns and five rows) | nested lists |
 | numbers over categories or over time | `chart`, see **Which kind** | a table of numbers |
 | how a few parts fit: boxes, boundaries, arrows | `diagram` | the graph, a bulleted architecture |
+| items that cause each other, branch, or nest: a cycle, a request path, a hierarchy | `diagram` | a bulleted list that hides the arrows |
 | a map of many nodes and their links | the page's one `graph` | a diagram past twelve boxes |
-| steps in order, or parallel items | `list` (`ordered: true` when the order matters) | a paragraph with "first, then, then" |
+| parallel items, or a plain sequence with no branching | `list` (`ordered: true` when the order matters) | a paragraph with "first, then, then" |
 | the one risk or blocker | one `callout` with `sev: "warn"` | several callouts |
 | a line someone said | `quote` with `cite` | italics in a `p` |
 | long raw material: a timeline, logs, every number | `details`, closed by default, in the brief | a slide, a long `p` |
@@ -124,6 +127,8 @@ Pick by the question the facts answer, not by what looks rich. The right column 
 
 A **brief** is read alone and scrolled. It holds the detail, the timeline, the alternatives, the raw numbers in `details`, and a table of contents when there are two or more sections. A **deck** is talked through in a room, one slide at a time. It says less on purpose, one idea per slide, and points at the brief for everything else. When the material will be read and talked through, make both under one id: the deck view has a Brief link and the brief a Slides link. Never make a second page for the deck of an existing brief; pass `deck` to `present_update` on the same id ([ADR-0019][adr-0019]).
 
+The brief's first section answers the question. How you found it, the background, and the history come after it or go in `details`. Write `summary` first, then cut any section that does not support it: tell the reader the time, not how the clock was built.
+
 ### Graph, diagram, or chart
 
 - The **graph** is the page's one map: many nodes, their links, laid out by an engine you choose. Use it when the shape of the network is the point (a dependency tree, a traffic map with flow edges, a module map). One per page, shared by the brief and the deck.
@@ -135,6 +140,7 @@ A **brief** is read alone and scrolled. It holds the detail, the timeline, the a
 - One figure the reader should remember: `stat`. On a slide it is the big-number slide when alone, a row of figures when two or three sit in `columns`.
 - Two to four labelled figures that belong together (TTL, timeout, retries): `kv` in a brief. On a slide, stats in a row read better than a kv.
 - A grid where the reader compares across both axes (three options against four criteria): `table`. Read-aloud skips tables and kv blocks, so when the page will be listened to, say the comparison in a list with one full sentence per item.
+- Give the one number a comparison the reader already knows, in the `stat`'s `sub` line or the next sentence. A ratio for a percentage ("2 of every 5 checkouts", not "40%"), a familiar unit for a big count ("a full day of Tuesday's traffic"). A number without a comparison is read once and lost.
 
 ### Columns or details
 
@@ -370,8 +376,8 @@ Make a deck when the material will be talked through: a review in a meeting, an 
 The order that produces a deck rather than a shortened brief:
 
 1. **Write the title slide last, but decide it first.** `summary` is the one sentence the room should remember. `meta` is the date, the occasion, and the audience. `chips` carry two or three headline numbers with `style: "stat"`. `presenter` is the byline, and the only place for a date beside `meta`.
-2. **One claim per slide.** List the claims the room must accept, in the order the argument runs. Each becomes a section whose `h` states the claim, "Cache cut p99 latency by 40%", never a topic, "Latency". Under it, a `list` of 3 to 5 items under ten words each or one `p` of at most two sentences. What you would say goes in `notes`.
-3. **Give every number its own slide.** A `chart` with the heading saying what it shows, a `diagram` when the slide explains how parts fit, the `graph` when the map is the point. Alone on the slide, or in `columns` beside one short `p`. When the picture should form while you talk, give it `steps`.
+2. **One claim per slide.** List the claims the room must accept, in the order the argument runs. Order them by one named structure and keep it. Problem, Solution, Benefit for a proposal. What, So What, Now What for a finding or a status. Cause, Effect, Solution for an incident. Comparison, Contrast, Conclusion for options. Each claim becomes a section whose `h` states it, "Cache cut p99 latency by 40%", never a topic, "Latency". Under it, a `list` of 3 to 5 items under ten words each or one `p` of at most two sentences. What you would say goes in `notes`.
+3. **Give every number its own slide.** A `chart` whose heading states what the chart proves and whose `title` names the measure, a `diagram` when the slide explains how parts fit, the `graph` when the map is the point. Alone on the slide, or in `columns` beside one short `p`. When the picture should form while you talk, give it `steps`.
 4. **Keep one figure and one line.** The number the room should carry out of the door is a lone `stat`; the sentence is a lone `quote` or a `statement` slide. Once or twice a deck.
 5. **End on the ask.** The last authored slide is `h: "Next"` with an ordered list of at most three actions, each with an owner and a date. References follow by themselves.
 6. **Cut.** Five to twelve slides. A longer deck opens its parts with `section` dividers, or is two decks. Everything cut goes in the brief.
@@ -380,18 +386,18 @@ The order that produces a deck rather than a shortened brief:
 
 A good deck is not a shorter brief. Apply these when writing `deck`:
 
-1. **One idea per slide.** The section heading `h` states the point as a claim, "Cache cut p99 latency by 40%", never a topic, "Latency".
+1. **One idea per slide.** The section heading `h` states the point as a claim, "Cache cut p99 latency by 40%", never a topic, "Latency". A data slide is no exception. Its heading is what the chart proves, "Errors held near 900 a minute for half an hour"; the chart's `title` names the measure, "Checkout 5xx per minute".
 2. **Slide budget.** A `list` of 3 to 5 items under ten words each, or one `p` of at most two sentences. Never a long paragraph and a list on the same slide. Six lines of body is the ceiling; a slide that scrolls has too much on it.
 3. **Deck length.** 5 to 12 slides. More than that is two decks, or material that belongs in the brief.
 4. **Title slide.** `summary` is the one sentence the audience should remember. `meta` is date, occasion, and audience. `chips` carry two or three headline numbers with `style: "stat"`.
 5. **One highlight per slide.** Bold exactly one phrase, or use one `@chip(stat:...)` for the number that matters. Two bold phrases highlight neither.
-6. **Data gets its own slide.** One `chart` block per slide, with the heading saying what the chart shows. A `kv` block for up to four figures. A `table` only when the comparison is the point, at most four columns and five rows.
+6. **Data gets its own slide.** One `chart` block per slide, its heading the claim the chart proves and its `title` the measure. Draw only the series the claim needs and fold or cut the rest. The eye then finds the comparison the heading names. A `kv` block for up to four figures. A `table` only when the comparison is the point, at most four columns and five rows.
 7. **The graph gets its own slide.** A `{"t": "graph"}` block with nothing but the heading; it is the page's one visual, so let it fill the slide. When the room needs one sentence pointing at a node, put the graph in a `columns` block beside one short `p` and nothing else.
 8. **Code only when the code is the point.** At most eight lines; otherwise name the file or function in prose.
 9. **One callout per deck at most**, `sev: "warn"`, for the single risk or blocker.
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
-11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
-12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, a `diagram`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
+11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument. No sentence appears both on the slide and in `notes`.
+12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep, with a comparison the room already knows in the `sub` line ("2 of every 5 checkouts"). Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, a `diagram`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. A `ribbon` steps by period, one caption per column and no series `step`, so keep a stepped ribbon to three to five periods. See **Stepped charts**.
@@ -468,13 +474,13 @@ An incident review, seven slides plus the references the page already carries, w
       ]
     },
     {
-      "h": "The number that matters",
+      "h": "Checkout was down for 41 minutes",
       "blocks": [
-        {"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43"}
+        {"t": "stat", "value": "41 min", "label": "checkout outage", "sub": "Tuesday 14:02 to 14:43, about 2 of every 5 lunchtime orders lost"}
       ]
     },
     {
-      "h": "Error rate by minute",
+      "h": "Errors held near 900 a minute for half an hour",
       "blocks": [
         {"t": "chart", "kind": "area", "title": "Checkout 5xx per minute", "unit": "req",
          "series": [{"name": "5xx", "color": "terracotta", "points": [
@@ -491,7 +497,7 @@ An incident review, seven slides plus the references the page already carries, w
       ]
     },
     {
-      "h": "Where the request died",
+      "h": "Every request after 14:02 followed the resolver's stale record",
       "blocks": [{"t": "graph"}]
     },
     {
@@ -695,7 +701,7 @@ The kind list, in the renderer's order: `bar`, `line`, `area`, `sparkline`, `sta
 
 ### Limits
 
-The palette has four series colours, so four series is the ceiling for a readable chart of any kind; a fifth wraps to the first colour. The renderer enforces the rest.
+The palette has four series colours, so four series is the ceiling for a readable chart of any kind; a fifth wraps to the first colour. Four is a ceiling, not a target: draw only the series the chart's claim needs and fold or cut the rest, so the eye finds the comparison the heading names. The renderer enforces the rest.
 
 | Kind | Series | Categories, slices, or periods | Steps |
 |------|--------|-------------------------------|-------|
@@ -893,3 +899,8 @@ Graph and diagram node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purpl
 [adr-0020]: https://github.com/mad01/thismoon/blob/main/docs/adr/0020-present-slide-layouts-and-chrome.md
 [adr-0022]: https://github.com/mad01/thismoon/blob/main/docs/adr/0022-vendored-browser-assets.md
 [svc-claude]: https://github.com/mad01/thismoon/blob/main/services/present/CLAUDE.md
+[gsb-principles]: https://www.gsb.stanford.edu/insights/three-guiding-principles-successful-communication
+[gsb-masterclass]: https://www.gsb.stanford.edu/insights/how-think-faster-talk-smarter-masterclass-matt-abrahams
+[gsb-writing]: https://www.gsb.stanford.edu/insights/writing-win-how-quickly-capture-readers-keep-them-engaged
+[gsb-numbers]: https://www.gsb.stanford.edu/insights/make-numbers-count-how-translate-data-your-audience
+[stanford-visual-aids]: https://web.stanford.edu/~mvassar/handouts/Week%203%20-%203%20-%20Visual%20Aids%20Lecture%20Notes.pdf
