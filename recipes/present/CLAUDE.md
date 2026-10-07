@@ -31,8 +31,11 @@ MCP server).
   and `present-serve.sh` executable inside the sources cache (the overlay
   registers the wrapper, not the bare binary).
 - **`post_apply` cache hook** — `make cache` fetches fonts/JS into
-  `~/.config/present` so pages have zero CDN dependencies. Offline-safe,
-  and cache-assets.sh exits early once the assets exist.
+  `~/.config/present` (d3 included) so pages have zero CDN dependencies,
+  and cache-assets.sh exits early once the assets exist. A failed or
+  checksum-mismatched download now fails the make target and leaves no
+  partial file; the hook's `|| true` still swallows that, so an offline
+  apply stays safe. See `docs/adr/0022-vendored-browser-assets.md`.
 - **`dotfiles.present_skill`** — symlinks the repo-root `skills/present/` dir
   into `~/.claude/skills/` so the Claude skill ships with the service.
 - **`dotfiles.present_codex_skill`** — symlinks the same dir into

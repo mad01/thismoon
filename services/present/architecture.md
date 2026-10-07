@@ -251,8 +251,8 @@ reaches the API server. The CRD is embedded in the binary and a test keeps
 
 `Dockerfile` builds the shared instance from the repo root: a cross-compiled
 static binary on `distroless/static:nonroot` with the page assets (fonts,
-Cytoscape, Chart.js) baked into `/var/lib/present/assets`. So a pod needs no
-network and a read-only root filesystem. `deploy/base` is the kustomize
+Cytoscape, Chart.js, D3) baked into `/var/lib/present/assets`. So a pod
+needs no network and a read-only root filesystem. `deploy/base` is the kustomize
 base: the CRD and a service account with a Role over `pages` in its
 namespace. It also holds a two-replica Deployment running
 `serve --shared --store k8s --bind 0.0.0.0` with `PRESENT_NAMESPACE` from
