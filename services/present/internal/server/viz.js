@@ -30,6 +30,39 @@
     return plan;
   }
 
+  // blockStepsAt reduces a slide's plan at step n to one entry per stepped
+  // block: the highest of its step numbers among the entries below n, or 0
+  // before its first one.
+  function blockStepsAt(plan, n) {
+    var out = [];
+    (plan || []).forEach(function (entry, k) {
+      if (entry.kind !== 'block') return;
+      var m = k < n ? entry.n : 0;
+      for (var i = 0; i < out.length; i++) {
+        if (out[i].el === entry.el) { if (m > out[i].n) out[i].n = m; return; }
+      }
+      out.push({ el: entry.el, n: m });
+    });
+    return out;
+  }
+
+  // seriesMax is the value a stepped chart's axis is pinned to: the largest
+  // positive point, or the largest per-category sum of the positive points
+  // when the bars stack (Chart.js stacks negatives on their own), so a
+  // series shown at a later step does not rescale the ones already there.
+  function seriesMax(series, stacked) {
+    var sums = [], max = 0;
+    (series || []).forEach(function (s) {
+      (s.points || []).forEach(function (p, i) {
+        var y = Number(p.y) || 0;
+        if (y <= 0) return;
+        if (stacked) { sums[i] = (sums[i] || 0) + y; y = sums[i]; }
+        if (y > max) max = y;
+      });
+    });
+    return max;
+  }
+
   // isStep reports whether v is a usable 1-based step number.
   function isStep(v) {
     return Number.isInteger(v) && v > 0;
@@ -46,5 +79,7 @@
     });
   }
 
-  root.PresentViz = { stepPlan: stepPlan, chartStepVisibility: chartStepVisibility };
+  root.PresentViz = {
+    stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax
+  };
 })(typeof window !== 'undefined' ? window : globalThis);

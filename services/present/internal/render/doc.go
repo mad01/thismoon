@@ -864,7 +864,8 @@ func countGraphs(blocks []Block) int {
 // details block without a summary or without blocks, a container below the
 // top level, since a container holds plain blocks only, a graph inside a
 // details block, where a closed disclosure would hide the page's one graph,
-// and a chart kind outside chartKinds. A graph may sit in a column.
+// a stepped chart inside a details block for the same reason, and a chart
+// validateChart refuses. A graph may sit in a column.
 func validateBlocks(blocks []Block, depth int) error {
 	for _, b := range blocks {
 		if depth > 0 && isContainer(b) {
@@ -922,7 +923,8 @@ func hasSteps(b Block) bool { return b.T == "chart" && len(b.Steps) > 0 }
 // validateChart refuses a kind outside chartKinds, a step without a
 // caption, a series step outside 1..len(steps) or on a chart without
 // steps, steps on a sparkline (a 56 px strip with no room for captions),
-// and a series step on a doughnut, which draws its first series only.
+// and a series step on a doughnut or a sankey, which draw no series by
+// step (the first series only, or flows).
 func validateChart(b Block) error {
 	if b.Kind != "" && !slices.Contains(chartKinds, b.Kind) {
 		return fmt.Errorf(
@@ -950,6 +952,9 @@ func validateChart(b Block) error {
 		}
 		if b.Kind == "doughnut" {
 			return fmt.Errorf("chart %q: a doughnut draws its first series only, so a series cannot carry a step", b.Title)
+		}
+		if b.Kind == "sankey" {
+			return fmt.Errorf("chart %q: a sankey draws flows, not series, so a series cannot carry a step", b.Title)
 		}
 	}
 	return nil

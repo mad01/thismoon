@@ -284,20 +284,6 @@
     if (kind === 'scatter') return 'scatter';
     return 'line'; // line, area, sparkline
   }
-  // seriesMax is the value a stepped chart's axis is pinned to: the largest
-  // point, or the largest per-category sum when the bars stack, so showing
-  // a series at a later step does not rescale the ones already shown.
-  function seriesMax(spec, stacked) {
-    var sums = [], max = 0;
-    (spec.series || []).forEach(function (s) {
-      (s.points || []).forEach(function (p, i) {
-        var y = Number(p.y) || 0;
-        if (stacked) { sums[i] = (sums[i] || 0) + y; y = sums[i]; }
-        if (y > max) max = y;
-      });
-    });
-    return max;
-  }
   // chartStepAt is the step a stepped chart block stands at: the deck
   // writes data-step-at as it walks the steps, the brief never does, and
   // null means every series shows.
@@ -457,40 +443,46 @@
     if (animate && opts && opts.duration !== undefined && cfg.options) {
       cfg.options.animation = opts.duration > 0 ? { duration: opts.duration, easing: 'easeOutQuart' } : false;
     }
-    // A stepped chart (data-steps) starts at the step the deck has walked
-    // to, with the series of later steps hidden. Its axis is pinned to the
-    // full data and the legend stops toggling series, so a click cannot
-    // undo a step.
-    var stepped = block.hasAttribute('data-steps');
-    if (stepped && window.PresentViz && cfg.data && cfg.data.datasets) {
-      var shown = window.PresentViz.chartStepVisibility(spec.series || [], chartStepAt(block));
-      cfg.data.datasets.forEach(function (ds, i) { if (shown[i] === false) ds.hidden = true; });
-      if (cfg.options && cfg.options.scales) {
-        var axis = cfg.options.indexAxis === 'y' ? 'x' : 'y';
-        if (cfg.options.scales[axis]) cfg.options.scales[axis].suggestedMax = seriesMax(spec, kind === 'stacked-bar');
-      }
-      if (cfg.options && cfg.options.plugins && cfg.options.plugins.legend) {
-        cfg.options.plugins.legend.onClick = function () {};
-        // A series not yet reached stays out of the legend instead of
-        // showing struck through.
-        cfg.options.plugins.legend.labels = cfg.options.plugins.legend.labels || {};
-        cfg.options.plugins.legend.labels.filter = function (item) { return !item.hidden; };
-      }
+    if (block.hasAttribute('data-steps')) {
+      applyStepConfig(cfg, spec, block, kind);
+      registerStepHook(block, spec);
     }
     block._chart = new Chart(canvas, cfg);
-    // The deck moves a stepped chart between steps through this hook. It
-    // is registered on every build and reads block._chart when called,
-    // because a theme change replaces the chart. Reduce Motion and a deck
-    // that cuts (block._stepCut) swap the series without animating.
-    if (stepped) {
-      block._presentStep = function (n) {
-        var c = block._chart;
-        if (!c || !window.PresentViz) return;
-        var vis = window.PresentViz.chartStepVisibility(spec.series || [], n);
-        vis.forEach(function (on, i) { if (c.data.datasets[i]) c.setDatasetVisibility(i, on); });
-        c.update(reducedMotion || block._stepCut ? 'none' : undefined);
-      };
+  }
+  // applyStepConfig shapes a stepped chart for the step the deck has walked
+  // to (data-step-at; the brief sets none and gets the full chart): the
+  // series of later steps start hidden, the value axis is pinned to the
+  // full data, and the legend lists only the series shown and stops
+  // toggling them, so a click cannot undo a step.
+  function applyStepConfig(cfg, spec, block, kind) {
+    var at = chartStepAt(block);
+    if (at === null || !cfg.data || !cfg.data.datasets) return;
+    var shown = PresentViz.chartStepVisibility(spec.series || [], at);
+    cfg.data.datasets.forEach(function (ds, i) { if (shown[i] === false) ds.hidden = true; });
+    var opts = cfg.options || {};
+    if (opts.scales) {
+      var axis = opts.indexAxis === 'y' ? 'x' : 'y';
+      if (opts.scales[axis]) opts.scales[axis].suggestedMax = PresentViz.seriesMax(spec.series, kind === 'stacked-bar');
     }
+    if (opts.plugins && opts.plugins.legend) {
+      opts.plugins.legend.onClick = function () {};
+      opts.plugins.legend.labels = opts.plugins.legend.labels || {};
+      opts.plugins.legend.labels.filter = function (item) { return !item.hidden; };
+    }
+  }
+  // registerStepHook gives the deck the hook that moves a stepped chart
+  // between steps. It is registered on every build and reads block._chart
+  // when called, because a theme change replaces the chart. Reduce Motion
+  // and a deck that cuts (block._stepCut) swap the series without animating.
+  function registerStepHook(block, spec) {
+    block._presentStep = function (n) {
+      var c = block._chart;
+      if (!c) return;
+      PresentViz.chartStepVisibility(spec.series || [], n).forEach(function (on, i) {
+        if (c.data.datasets[i]) c.setDatasetVisibility(i, on);
+      });
+      c.update(reducedMotion || block._stepCut ? 'none' : undefined);
+    };
   }
   // initPresentCharts builds every chart block under root (the document by
   // default); with opts.builtOnly it rebuilds only the ones already built,
@@ -977,9 +969,9 @@
   // data-reveal attributes the renderer put on the wk-section; a solo class
   // when the only block is a stat or a quote, which is the big-number or
   // quote slide with no field to set; the speaker notes template, read from
-  // its inert content; and, for a reveal slide, the steps: every item of a
-  // top-level list and every other top-level block, in order, each marked
-  // as a fragment the view shows one per Next.
+  // its inert content; and the slide's steps, one per Next: on a reveal
+  // slide every item of a top-level list and every other top-level block
+  // is a fragment, and a stepped chart adds its own steps on any slide.
   function decorateSlide(slide, section) {
     ['data-layout', 'data-tone', 'data-reveal'].forEach(function (a) {
       if (section.hasAttribute(a)) slide.setAttribute(a, section.getAttribute(a));
@@ -1016,11 +1008,12 @@
       });
       items.push({ el: b, fragment: reveal, steps: own, children: children });
     });
-    var plan = window.PresentViz ? window.PresentViz.stepPlan(items) : items.filter(function (it) { return it.fragment; }).map(function (it) { return { kind: 'fragment', el: it.el }; });
-    plan.forEach(function (entry, k) {
+    var plan = PresentViz.stepPlan(items), fragments = 0;
+    plan.forEach(function (entry) {
       if (entry.kind !== 'fragment') return;
+      fragments++;
       entry.el.classList.add('fragment');
-      entry.el.setAttribute('data-step', String(k + 1));
+      entry.el.setAttribute('data-step', String(fragments));
     });
     if (plan.length) slide._steps = plan;
   }
@@ -1266,10 +1259,11 @@
       });
     }
 
-    // Reveal steps: how many of the current slide's fragments are shown.
-    // Next shows one more before moving on, Prev hides the last shown one
-    // before moving back, and a jump (goto, a dot, the hash, Home and End)
-    // lands with every step shown. The hash and the dots track slides only.
+    // Steps: how many of the current slide's steps (reveal fragments and
+    // a stepped chart's steps) are taken. Next takes one more before
+    // moving on, Prev takes one back before moving back, and a jump (goto,
+    // a dot, the hash, Home and End) lands with every step taken. The hash
+    // and the dots track slides only.
     var step = 0;
     function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
     // applySteps lands the slide on step n: the first n fragments shown and
@@ -1278,18 +1272,10 @@
     function applySteps(slide, n) {
       step = n;
       if (!slide || !slide._steps) return;
-      var reached = [];
-      function record(el, m) {
-        for (var i = 0; i < reached.length; i++) {
-          if (reached[i].el === el) { if (m > reached[i].n) reached[i].n = m; return; }
-        }
-        reached.push({ el: el, n: m });
-      }
       slide._steps.forEach(function (entry, k) {
-        if (entry.kind === 'fragment') { entry.el.classList.toggle('shown', k < n); return; }
-        record(entry.el, k < n ? entry.n : 0);
+        if (entry.kind === 'fragment') entry.el.classList.toggle('shown', k < n);
       });
-      reached.forEach(function (r) { setBlockStep(r.el, r.n); });
+      PresentViz.blockStepsAt(slide._steps, n).forEach(function (r) { setBlockStep(r.el, r.n); });
     }
     // setBlockStep moves a stepped block to step m: the attribute the chart
     // bootstrap reads when the block builds later, the renderer's hook when
@@ -1328,7 +1314,7 @@
       if (notesOpen) renderNotes();
     }
 
-    // show moves to slide i. stepsMode says how a reveal slide lands: 'none'
+    // show moves to slide i. stepsMode says how a slide with steps lands: 'none'
     // (arriving by Next, nothing shown yet) or 'all' (any other way). The
     // change itself is apply(); with the transition none, Reduce Motion on,
     // no View Transitions API, or on the first showing it runs at once,

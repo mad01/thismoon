@@ -14,9 +14,9 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"'layoutstop'", "classList.add('ready')", "buildChart(b, { duration: transition === 'none' ? 0 : 400 })", "builtOnly",
 		"var pending = null;", "function at() { return pending ? pending.i : current; }", "pending.steps = n",
 		"vt.ready.catch(function () {});",
-		// In-block steps (MAD-385): the plan, the stage attribute, the hook.
+		// In-block steps (MAD-385): the plan, the step attribute, the hook.
 		"PresentViz.stepPlan(items)", "data-steps", "data-step-at", "block._presentStep = function (n)",
-		"PresentViz.chartStepVisibility", "setDatasetVisibility", "legend.onClick = function () {}",
+		"PresentViz.chartStepVisibility", "PresentViz.blockStepsAt", "PresentViz.seriesMax", "setDatasetVisibility", "legend.onClick = function () {}",
 	} {
 		if !contains(app, want) {
 			t.Errorf("app.js lacks %q", want)

@@ -226,6 +226,11 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			`a doughnut draws its first series only`,
 		},
 		{
+			"series step on a sankey",
+			Block{T: "chart", Title: "C", Kind: "sankey", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1}}},
+			`a sankey draws flows, not series`,
+		},
+		{
 			"stepped chart in details",
 			Block{T: "details", Summary: "s", Blocks: []Block{{T: "chart", Steps: []ChartStep{{Caption: "one"}}}}},
 			`chart steps: not allowed inside a details block`,
@@ -753,7 +758,7 @@ func TestSampleDeckRenders(t *testing.T) {
 		t.Errorf("sample deck has %d sections, want 15", n)
 	}
 	// The four reveal sections: two lists, the mixed slide, and the stepped
-	// chart that walks its stages after its paragraph (MAD-385).
+	// chart that walks its steps after its paragraph (MAD-385).
 	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 4 {
 		t.Errorf("reveal sections = %d, want 4", n)
 	}

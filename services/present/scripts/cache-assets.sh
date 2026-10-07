@@ -102,11 +102,15 @@ echo "google fonts (woff2)"
 fonts_src="$ASSETS/css/fonts.src.css"
 fetch "$FONTS_URL" "$fonts_src" "" -H "User-Agent: $UA"
 
-grep -oE 'https://fonts\.gstatic\.com/[^ )]+' "$fonts_src" | sort -u | while read -r url; do
+urls=$(grep -oE 'https://fonts\.gstatic\.com/[^ )]+' "$fonts_src" | sort -u) || {
+  echo "present: no font URLs in the fonts CSS" >&2
+  exit 1
+}
+while read -r url; do
   name=$(basename "$url")
   echo "  $name"
   fetch "$url" "$ASSETS/fonts/$name"
-done
+done <<<"$urls"
 
 sed 's|https://fonts\.gstatic\.com/[^)]*\/|/assets/fonts/|g' "$fonts_src" >"$fonts_file.tmp"
 mv "$fonts_file.tmp" "$fonts_file"

@@ -170,7 +170,7 @@
     {
       "h": "How the spike built up",
       "reveal": true,
-      "notes": "Next walks the chart one stage at a time; each stage adds a service and its caption.",
+      "notes": "Next walks the chart one step at a time; each step adds a service and its caption.",
       "blocks": [
         {
           "t": "p",
