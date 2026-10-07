@@ -91,3 +91,9 @@ golden fixtures keep pinning.
 - `internal/server/logo.png` is a second copy of `docs/assets/logo.png`. A
   test keeps the two byte-identical, the way the custom resource definition
   is kept.
+- Since MAD-389 (2026-10-07) a slide paints no filled box of its own. A
+  toned slide colours its heading rule and accent bar. A `section` divider
+  is a large centred heading with an accent bar in the tone. A `stat` sits
+  plain on a slide, alone or in a row. The brief keeps its section bands,
+  its stat tiles, and the chart card (`frame: true`) as options. CSS only,
+  so stored decks change at their next load.

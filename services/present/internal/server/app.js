@@ -89,9 +89,9 @@
     return cssVar('--' + name, '#808080');
   }
   var colorCtx = null; // the one-pixel canvas colorLiteral paints on
-  // colorLiteral turns any colour the browser can paint (a color-mix the
-  // stylesheet writes, which computes to color(srgb ...)) into the rgb()
-  // string Cytoscape and Chart.js parse, by painting one pixel with it.
+  // colorLiteral turns any colour the browser can paint (a computed style
+  // can come back as color(srgb ...)) into the rgb() string Cytoscape and
+  // Chart.js parse, by painting one pixel with it.
   function colorLiteral(value) {
     if (!colorCtx) {
       var c = document.createElement('canvas');
@@ -105,8 +105,8 @@
     var d = colorCtx.getImageData(0, 0, 1, 1).data;
     return 'rgb(' + d[0] + ', ' + d[1] + ', ' + d[2] + ')';
   }
-  // surfaceColor is the colour the shell names --surface at el: the page,
-  // a toned or section slide's tint, or a card. It is read through a probe
+  // surfaceColor is the colour the shell names --surface at el: the page
+  // (a slide paints no box of its own) or a card. It is read through a probe
   // child with its own transition off, never from a painted background:
   // webkit eases the body and panel backgrounds over 300 ms and fires
   // wk-themechange in the same tick, so right after a theme change the
@@ -145,7 +145,7 @@
   }
   // presentGraphStyle styles the page graph; container, when given, is the
   // element the graph draws in, so edge labels are backed with the colour
-  // behind it (its card, or a toned slide) instead of a fixed role.
+  // behind it (its card, or the page) instead of a fixed role.
   function presentGraphStyle(elements, container) {
     var c = getGraphColors(container);
     var maxW = 0;

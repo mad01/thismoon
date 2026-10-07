@@ -135,7 +135,7 @@ type Section struct {
 	// Reveal and the brief ignores them; Tone is honoured by both. Unset
 	// fields emit nothing, so a section without them renders as before.
 	Layout string `json:"layout,omitempty"` // default, center, statement, section
-	Tone   string `json:"tone,omitempty"`   // a palette role (webkit.Roles): tints the slide, bands the brief's section
+	Tone   string `json:"tone,omitempty"`   // a palette role (webkit.Roles): colours the slide's accent, bands the brief's section
 	Notes  string `json:"notes,omitempty"`  // speaker notes, inline markdown, shown in the deck's drawer
 	Reveal bool   `json:"reveal,omitempty"` // list items and top-level blocks appear one per Next
 }
