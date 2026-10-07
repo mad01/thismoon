@@ -200,6 +200,36 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			Block{T: "columns", Columns: [][]Block{one, {{T: "chart", Kind: "pie"}}}},
 			`unknown kind "pie" (want one of bar, line`,
 		},
+		{
+			"step without caption",
+			Block{T: "chart", Title: "C", Steps: []ChartStep{{Caption: "one"}, {Caption: " "}}},
+			`chart "C": step 2 has no caption`,
+		},
+		{
+			"series step without steps",
+			Block{T: "chart", Title: "C", Series: []ChartSeries{{Name: "a", Step: 1}}},
+			`series "a" names step 1 but the chart has no steps`,
+		},
+		{
+			"series step out of range",
+			Block{T: "chart", Title: "C", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 2}}},
+			`series "a" step 2: want 1 to 1`,
+		},
+		{
+			"steps on a sparkline",
+			Block{T: "chart", Title: "C", Kind: "sparkline", Steps: []ChartStep{{Caption: "one"}}},
+			`a sparkline cannot carry steps`,
+		},
+		{
+			"series step on a doughnut",
+			Block{T: "chart", Title: "C", Kind: "doughnut", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1}}},
+			`a doughnut draws its first series only`,
+		},
+		{
+			"stepped chart in details",
+			Block{T: "details", Summary: "s", Blocks: []Block{{T: "chart", Steps: []ChartStep{{Caption: "one"}}}}},
+			`chart steps: not allowed inside a details block`,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -713,16 +743,19 @@ func TestSampleDeckRenders(t *testing.T) {
 		`<a href="https://example.com/runbook">runbook</a>`,
 		`<wk-figure>`, `alt="The on-call dashboard at 14:15, every checkout panel red" loading="lazy">`,
 		`<wk-figcaption data-fixation>The on-call dashboard at 14:15.</wk-figcaption>`,
+		`data-steps="3"`, `<ol class="present-steps">`, `<li data-fixation>The pricing service times out first.</li>`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 14 {
-		t.Errorf("sample deck has %d sections, want 14", n)
+	if n := len(c.Doc.Sections); n != 15 {
+		t.Errorf("sample deck has %d sections, want 15", n)
 	}
-	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 3 {
-		t.Errorf("reveal sections = %d, want 3", n)
+	// The four reveal sections: two lists, the mixed slide, and the stepped
+	// chart that walks its stages after its paragraph (MAD-385).
+	if n := strings.Count(c.HTML, `data-reveal="true"`); n != 4 {
+		t.Errorf("reveal sections = %d, want 4", n)
 	}
 	// The four columns blocks: the row of figures, the chart beside its
 	// caption, the graph beside a paragraph (MAD-374), and the image beside

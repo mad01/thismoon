@@ -753,3 +753,35 @@ func TestInlineMdNestedMarkup(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderDocChartSteps renders a stepped chart: the block carries the
+// step count, the captions follow the canvas as a fixated numbered list
+// with inline markdown and name normalization applied, and the series
+// steps ride in the spec. A chart without steps emits neither.
+func TestRenderDocChartSteps(t *testing.T) {
+	stepped := Block{
+		T: "chart", Kind: "stacked-bar", Title: "Errors",
+		Steps:  []ChartStep{{Caption: "The **JIRA** queue fills."}, {Caption: "Retries pile on."}},
+		Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "x", Y: 1}}}, {Name: "b", Step: 2, Points: []ChartPoint{{X: "x", Y: 2}}}},
+	}
+	plain := Block{T: "chart", Kind: "bar", Series: []ChartSeries{{Points: []ChartPoint{{X: "x", Y: 1}}}}}
+	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{stepped, plain}}}}, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	for _, want := range []string{
+		`<div class="present-chart" data-chart-title="Errors" data-steps="2">`,
+		"</script>\n  <ol class=\"present-steps\">\n    <li data-fixation>The <strong>jira</strong> queue fills.</li>\n    <li data-fixation>Retries pile on.</li>\n  </ol>\n</div>",
+		`"name":"b","points":[{"x":"x","y":2}],"step":2}`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "data-steps="); n != 1 {
+		t.Errorf("data-steps appears %d times, want 1 (the plain chart carries none)", n)
+	}
+	if n := strings.Count(out, "present-steps"); n != 1 {
+		t.Errorf("present-steps appears %d times, want 1", n)
+	}
+}

@@ -184,6 +184,12 @@ type Block struct {
 	XUnit  string        `json:"xunit,omitempty"`  // x-axis unit label (scatter only)
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
 	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
+
+	// Steps makes a chart walk through stages on a deck slide, one per
+	// Next: each entry is the caption shown under the chart at that step,
+	// and a series whose Step names a stage appears at that step. The brief
+	// shows the finished chart with the captions as a numbered list.
+	Steps []ChartStep `json:"steps,omitempty"`
 }
 
 // blockFields is Block without its methods, so the (un)marshalers below can
@@ -239,8 +245,9 @@ type KVPair struct {
 // ChartSeries is one data series in a chart block.
 type ChartSeries struct {
 	Name   string       `json:"name,omitempty"`
-	Color  string       `json:"color,omitempty"` // blue, green, terracotta, purple; empty = auto by index
+	Color  string       `json:"color,omitempty"` // a series role (series-1 to series-4) or a legacy name; empty = auto by index
 	Points []ChartPoint `json:"points"`
+	Step   int          `json:"step,omitempty"` // 1-based stage the series first shows at; 0 = from the start
 }
 
 // ChartPoint is one x/y datum. X is a category label (or the numeric x for a
@@ -284,6 +291,12 @@ type ChartFlow struct {
 	From  string  `json:"from"`
 	To    string  `json:"to"`
 	Value float64 `json:"value"`
+}
+
+// ChartStep is one stage of a stepped chart: the caption the deck shows
+// under the chart at that step and the brief lists under it.
+type ChartStep struct {
+	Caption string `json:"caption"`
 }
 
 // textNorms normalizes text for fixation reading and TTS pronunciation.
@@ -628,9 +641,16 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
   <div id="cy-graph" class="cy-container"></div>
 </wk-panel>{{end}}
 
-{{define "block-chart"}}<div class="present-chart"{{with .Title}} data-chart-title="{{.}}"{{end}}>
+{{define "block-chart"}}<div class="present-chart"{{with .Title}} data-chart-title="{{.}}"{{end}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
   <div class="present-chart-canvas"><canvas></canvas></div>
   <script type="application/json" class="chart-spec">{{chartSpec .}}</script>
+{{- with .Steps}}
+  <ol class="present-steps">
+{{- range .}}
+    <li data-fixation>{{inlineMd .Caption}}</li>
+{{- end}}
+  </ol>
+{{- end}}
 </div>{{end}}
 
 {{define "block-code"}}<pre class="wk-code-block"><code class="language-{{langClass .Lang}}">{{.Text}}</code></pre>{{end}}
@@ -721,6 +741,9 @@ func normalizeBlock(b *Block) {
 	b.Caption = normalizeNames(b.Caption)
 	for k := range b.Items {
 		b.Items[k] = normalizeNames(b.Items[k])
+	}
+	for k := range b.Steps {
+		b.Steps[k].Caption = normalizeNames(b.Steps[k].Caption)
 	}
 	for k := range b.KV {
 		b.KV[k].K = normalizeNames(b.KV[k].K)
@@ -874,6 +897,9 @@ func validateBlocks(blocks []Block, depth int) error {
 			if slices.ContainsFunc(b.Blocks, isGraph) {
 				return fmt.Errorf("graph block: not allowed inside a details block (%q)", b.Summary)
 			}
+			if slices.ContainsFunc(b.Blocks, hasSteps) {
+				return fmt.Errorf("chart steps: not allowed inside a details block (%q)", b.Summary)
+			}
 			if err := validateBlocks(b.Blocks, depth+1); err != nil {
 				return err
 			}
@@ -882,12 +908,48 @@ func validateBlocks(blocks []Block, depth int) error {
 				return err
 			}
 		case "chart":
-			if b.Kind != "" && !slices.Contains(chartKinds, b.Kind) {
-				return fmt.Errorf(
-					"chart %q: unknown kind %q (want one of %s)",
-					b.Title, b.Kind, strings.Join(chartKinds, ", "),
-				)
+			if err := validateChart(b); err != nil {
+				return err
 			}
+		}
+	}
+	return nil
+}
+
+// hasSteps reports whether b is a chart that walks through steps.
+func hasSteps(b Block) bool { return b.T == "chart" && len(b.Steps) > 0 }
+
+// validateChart refuses a kind outside chartKinds, a step without a
+// caption, a series step outside 1..len(steps) or on a chart without
+// steps, steps on a sparkline (a 56 px strip with no room for captions),
+// and a series step on a doughnut, which draws its first series only.
+func validateChart(b Block) error {
+	if b.Kind != "" && !slices.Contains(chartKinds, b.Kind) {
+		return fmt.Errorf(
+			"chart %q: unknown kind %q (want one of %s)",
+			b.Title, b.Kind, strings.Join(chartKinds, ", "),
+		)
+	}
+	if len(b.Steps) > 0 && b.Kind == "sparkline" {
+		return fmt.Errorf("chart %q: a sparkline cannot carry steps", b.Title)
+	}
+	for k, st := range b.Steps {
+		if strings.TrimSpace(st.Caption) == "" {
+			return fmt.Errorf("chart %q: step %d has no caption", b.Title, k+1)
+		}
+	}
+	for _, s := range b.Series {
+		if s.Step == 0 {
+			continue
+		}
+		if len(b.Steps) == 0 {
+			return fmt.Errorf("chart %q: series %q names step %d but the chart has no steps", b.Title, s.Name, s.Step)
+		}
+		if s.Step < 1 || s.Step > len(b.Steps) {
+			return fmt.Errorf("chart %q: series %q step %d: want 1 to %d", b.Title, s.Name, s.Step, len(b.Steps))
+		}
+		if b.Kind == "doughnut" {
+			return fmt.Errorf("chart %q: a doughnut draws its first series only, so a series cannot carry a step", b.Title)
 		}
 	}
 	return nil

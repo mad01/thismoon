@@ -168,6 +168,114 @@
       ]
     },
     {
+      "h": "How the spike built up",
+      "reveal": true,
+      "notes": "Next walks the chart one stage at a time; each stage adds a service and its caption.",
+      "blocks": [
+        {
+          "t": "p",
+          "text": "Three services fell over in order, two minutes apart."
+        },
+        {
+          "t": "chart",
+          "kind": "stacked-bar",
+          "title": "5xx by service per five minutes",
+          "unit": "req",
+          "steps": [
+            {
+              "caption": "The pricing service times out first."
+            },
+            {
+              "caption": "Checkout retries pile on top of it."
+            },
+            {
+              "caption": "The gateway sheds load and the spike peaks."
+            }
+          ],
+          "series": [
+            {
+              "name": "pricing",
+              "step": 1,
+              "points": [
+                {
+                  "x": "14:00",
+                  "y": 0
+                },
+                {
+                  "x": "14:05",
+                  "y": 120
+                },
+                {
+                  "x": "14:10",
+                  "y": 310
+                },
+                {
+                  "x": "14:15",
+                  "y": 300
+                },
+                {
+                  "x": "14:20",
+                  "y": 40
+                }
+              ]
+            },
+            {
+              "name": "checkout",
+              "step": 2,
+              "points": [
+                {
+                  "x": "14:00",
+                  "y": 0
+                },
+                {
+                  "x": "14:05",
+                  "y": 60
+                },
+                {
+                  "x": "14:10",
+                  "y": 280
+                },
+                {
+                  "x": "14:15",
+                  "y": 420
+                },
+                {
+                  "x": "14:20",
+                  "y": 30
+                }
+              ]
+            },
+            {
+              "name": "gateway",
+              "step": 3,
+              "points": [
+                {
+                  "x": "14:00",
+                  "y": 0
+                },
+                {
+                  "x": "14:05",
+                  "y": 0
+                },
+                {
+                  "x": "14:10",
+                  "y": 90
+                },
+                {
+                  "x": "14:15",
+                  "y": 220
+                },
+                {
+                  "x": "14:20",
+                  "y": 10
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "h": "Where the request died",
       "blocks": [
         {
