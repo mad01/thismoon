@@ -34,3 +34,6 @@ tools/worklog/worklog
 # written by Claude Code beside a loaded mod (the API types and a tsconfig
 # extending them); .claude-plugin/types/ ignores itself
 mods/*/tsconfig.json
+
+# written by `claude plugin eval` beside a skill's cases
+skills/*/evals/results/
