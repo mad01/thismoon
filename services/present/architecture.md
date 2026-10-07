@@ -275,7 +275,8 @@ page without a deck redirects to the brief) and `GET /p/{id}/deck/command`
 (the last remote command, local filesystem store only). `GET /api/p/{id}`
 answers with a `share` block in local mode and the `deck`, `has_deck`, and
 `deck_control` fields. The remaining page routes are `GET /app.js`,
-`GET /viz.js` (the deck's pure stepping helpers, loaded before `app.js`),
+`GET /viz.js` (the deck's pure stepping helpers and the ribbon chart's
+layout, loaded before `app.js`),
 `GET /logo.png` (the embedded repo logo the deck chrome shows, served
 no-cache with a content ETag), `GET /p/{id}/version`, and `DELETE /p/{id}`
 (the only delete surface).
