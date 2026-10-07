@@ -1,6 +1,6 @@
 'use strict';
 // present deck visuals: the pure, node-tested parts of the deck's in-block
-// stepping (and later the D3 renderers). shell.html loads this file before
+// stepping and of the ribbon chart's layout. shell.html loads this file before
 // app.js, which reads the helpers from window.PresentViz. Nothing here touches
 // the DOM at load time.
 (function (root) {
@@ -79,7 +79,57 @@
     });
   }
 
+  // ribbonLayout lays a ribbon chart out in value units. periods are every
+  // distinct x across the series in order of first appearance (the same
+  // walk the renderer's validation takes, so step k is period k). Each
+  // column holds the segments of the series with a positive value in that
+  // period, ordered top-down by rank (largest first, ties as given) or, with
+  // order "given", in series order; y0 and y1 are a segment's bottom and top
+  // measured up from the baseline, so a column is bottom-aligned. A ribbon
+  // joins a series' segments in two adjacent columns; its col is the index
+  // of the column it ends at, so it shows with that column's step. max is
+  // the largest column total, the value axis the renderer pins to.
+  function ribbonLayout(series, order) {
+    var periods = [], values = [];
+    (series || []).forEach(function (s, i) {
+      values[i] = [];
+      ((s && s.points) || []).forEach(function (p) {
+        var x = p.x === undefined || p.x === null ? '' : String(p.x);
+        var k = periods.indexOf(x);
+        if (k < 0) { k = periods.length; periods.push(x); }
+        values[i][k] = Number(p.y) || 0;
+      });
+    });
+    var columns = periods.map(function (period, k) {
+      var segments = [];
+      values.forEach(function (v, i) {
+        if (v[k] > 0) segments.push({ series: i, value: v[k] });
+      });
+      if (order !== 'given') segments.sort(function (a, b) { return b.value - a.value; });
+      var cum = 0;
+      for (var j = segments.length - 1; j >= 0; j--) {
+        segments[j].y0 = cum;
+        cum += segments[j].value;
+        segments[j].y1 = cum;
+      }
+      return { period: period, total: cum, segments: segments };
+    });
+    var ribbons = [], max = 0;
+    columns.forEach(function (col, k) {
+      if (col.total > max) max = col.total;
+      if (k === 0) return;
+      col.segments.forEach(function (to) {
+        columns[k - 1].segments.forEach(function (from) {
+          if (from.series !== to.series) return;
+          ribbons.push({ series: to.series, col: k, a: { y0: from.y0, y1: from.y1 }, b: { y0: to.y0, y1: to.y1 } });
+        });
+      });
+    });
+    return { periods: periods, columns: columns, ribbons: ribbons, max: max };
+  }
+
   root.PresentViz = {
-    stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax
+    stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
+    ribbonLayout: ribbonLayout
   };
 })(typeof window !== 'undefined' ? window : globalThis);
