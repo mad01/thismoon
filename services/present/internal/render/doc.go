@@ -61,8 +61,11 @@ var (
 	// as bar, the client's default; any other name outside the list is
 	// refused at compile time instead of drawing as a line chart.
 	chartKinds = []string{
-		"bar", "line", "area", "sparkline", "stacked-bar", "horizontal-bar", "doughnut", "scatter", "sankey",
+		"bar", "line", "area", "sparkline", "stacked-bar", "horizontal-bar", "doughnut", "scatter", "sankey", "ribbon",
 	}
+	// ribbonOrders is how a ribbon chart orders the categories inside a
+	// column: by rank (value, largest on top; the default) or as given.
+	ribbonOrders = []string{"rank", "given"}
 )
 
 // ChartKinds returns the chart kinds a chart block may name, in the order
@@ -184,10 +187,16 @@ type Block struct {
 	XUnit  string        `json:"xunit,omitempty"`  // x-axis unit label (scatter only)
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
 	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
+	Order  string        `json:"order,omitempty"`  // ribbon only: rank (default) or given
+	// Frame keeps the card around a chart kind that draws without one. A
+	// ribbon sits straight on the page unless Frame is set; the other kinds
+	// keep their card either way until the frameless default reaches them.
+	Frame bool `json:"frame,omitempty"`
 
 	// Steps makes a chart walk through its data on a deck slide, one step
 	// per Next: each entry is the caption shown under the chart at that
-	// step, and a series whose Step names one appears at that step. The brief
+	// step, and a series whose Step names one appears at that step. A
+	// ribbon walks its periods instead, one step per period. The brief
 	// shows the finished chart with the captions as a numbered list.
 	Steps []ChartStep `json:"steps,omitempty"`
 }
@@ -641,7 +650,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
   <div id="cy-graph" class="cy-container"></div>
 </wk-panel>{{end}}
 
-{{define "block-chart"}}<div class="present-chart"{{with .Title}} data-chart-title="{{.}}"{{end}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
+{{define "block-chart"}}<div class="present-chart{{if eq .Kind "ribbon"}} is-ribbon{{end}}"{{with .Title}} data-chart-title="{{.}}"{{end}}{{if .Frame}} data-frame{{end}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
   <div class="present-chart-canvas"><canvas></canvas></div>
   <script type="application/json" class="chart-spec">{{chartSpec .}}</script>
 {{- with .Steps}}
@@ -808,7 +817,8 @@ func chartSpec(b Block) template.JS {
 		XUnit  string        `json:"xunit,omitempty"`
 		Series []ChartSeries `json:"series"`
 		Flows  []ChartFlow   `json:"flows,omitempty"`
-	}{Kind: b.Kind, Title: b.Title, Unit: b.Unit, XUnit: b.XUnit, Series: b.Series, Flows: b.Flows}
+		Order  string        `json:"order,omitempty"`
+	}{Kind: b.Kind, Title: b.Title, Unit: b.Unit, XUnit: b.XUnit, Series: b.Series, Flows: b.Flows, Order: b.Order}
 	out, err := json.Marshal(spec)
 	if err != nil {
 		return template.JS(`{"kind":"","series":[]}`)
@@ -923,14 +933,18 @@ func hasSteps(b Block) bool { return b.T == "chart" && len(b.Steps) > 0 }
 // validateChart refuses a kind outside chartKinds, a step without a
 // caption, a series step outside 1..len(steps) or on a chart without
 // steps, steps on a sparkline (a 56 px strip with no room for captions),
-// and a series step on a doughnut or a sankey, which draw no series by
-// step (the first series only, or flows).
+// a series step on a doughnut, a sankey, or a ribbon, which draw no
+// series by step (the first series only, flows, or periods), an order on
+// any kind but ribbon, and a ribbon that breaks validateRibbon's rules.
 func validateChart(b Block) error {
 	if b.Kind != "" && !slices.Contains(chartKinds, b.Kind) {
 		return fmt.Errorf(
 			"chart %q: unknown kind %q (want one of %s)",
 			b.Title, b.Kind, strings.Join(chartKinds, ", "),
 		)
+	}
+	if b.Order != "" && b.Kind != "ribbon" {
+		return fmt.Errorf("chart %q: order is a ribbon field", b.Title)
 	}
 	if len(b.Steps) > 0 && b.Kind == "sparkline" {
 		return fmt.Errorf("chart %q: a sparkline cannot carry steps", b.Title)
@@ -956,8 +970,60 @@ func validateChart(b Block) error {
 		if b.Kind == "sankey" {
 			return fmt.Errorf("chart %q: a sankey draws flows, not series, so a series cannot carry a step", b.Title)
 		}
+		if b.Kind == "ribbon" {
+			return fmt.Errorf("chart %q: a ribbon walks its periods, so a series cannot carry a step", b.Title)
+		}
+	}
+	if b.Kind == "ribbon" {
+		return validateRibbon(b)
 	}
 	return nil
+}
+
+// validateRibbon refuses a ribbon chart whose order is not rank or given,
+// a series without a name (the legend and the segment labels need one), a
+// point without an x (the period) or with a negative y (a segment has no
+// height below zero), and a step count that differs from the period
+// count: a ribbon's steps are its periods, one caption each.
+func validateRibbon(b Block) error {
+	if b.Order != "" && !slices.Contains(ribbonOrders, b.Order) {
+		return fmt.Errorf(
+			"ribbon %q: unknown order %q (want %s)",
+			b.Title, b.Order, strings.Join(ribbonOrders, " or "),
+		)
+	}
+	for i, s := range b.Series {
+		if strings.TrimSpace(s.Name) == "" {
+			return fmt.Errorf("ribbon %q: series %d has no name", b.Title, i+1)
+		}
+		for j, p := range s.Points {
+			if strings.TrimSpace(p.X) == "" {
+				return fmt.Errorf("ribbon %q: series %q point %d has no x (the period)", b.Title, s.Name, j+1)
+			}
+			if p.Y < 0 {
+				return fmt.Errorf("ribbon %q: series %q at %s is %v, want 0 or more", b.Title, s.Name, p.X, p.Y)
+			}
+		}
+	}
+	if n, m := len(b.Steps), len(ribbonPeriods(b.Series)); n > 0 && n != m {
+		return fmt.Errorf("ribbon %q: %d steps for %d periods (one caption per period)", b.Title, n, m)
+	}
+	return nil
+}
+
+// ribbonPeriods lists a ribbon chart's periods: every distinct x across
+// the series, in order of first appearance. The client's layout walks the
+// series the same way, so step k of a stepped ribbon is period k here.
+func ribbonPeriods(series []ChartSeries) []string {
+	var periods []string
+	for _, s := range series {
+		for _, p := range s.Points {
+			if !slices.Contains(periods, p.X) {
+				periods = append(periods, p.X)
+			}
+		}
+	}
+	return periods
 }
 
 // validateImage refuses an image without alt, which read-aloud reads in the

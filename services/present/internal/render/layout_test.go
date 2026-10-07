@@ -231,6 +231,33 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			`a sankey draws flows, not series`,
 		},
 		{
+			"series step on a ribbon",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1, Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`a ribbon walks its periods`,
+		},
+		{"order on a bar chart", Block{T: "chart", Title: "C", Kind: "bar", Order: "given"}, `chart "C": order is a ribbon field`},
+		{"unknown ribbon order", Block{T: "chart", Title: "C", Kind: "ribbon", Order: "value"}, `ribbon "C": unknown order "value" (want rank or given)`},
+		{
+			"ribbon series without a name",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`ribbon "C": series 2 has no name`,
+		},
+		{
+			"ribbon point without a period",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {Y: 2}}}}},
+			`ribbon "C": series "a" point 2 has no x (the period)`,
+		},
+		{
+			"ribbon negative value",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: -3}}}}},
+			`ribbon "C": series "a" at q1 is -3, want 0 or more`,
+		},
+		{
+			"ribbon steps differ from periods",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}, {Caption: "two"}}, Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}}}},
+			`ribbon "C": 2 steps for 3 periods (one caption per period)`,
+		},
+		{
 			"stepped chart in details",
 			Block{T: "details", Summary: "s", Blocks: []Block{{T: "chart", Steps: []ChartStep{{Caption: "one"}}}}},
 			`chart steps: not allowed inside a details block`,

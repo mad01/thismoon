@@ -15,6 +15,9 @@ func TestChartKindsRender(t *testing.T) {
 		if kind == "sankey" {
 			b = Block{T: "chart", Kind: kind, Flows: []ChartFlow{{From: "a", To: "b", Value: 1}}}
 		}
+		if kind == "ribbon" {
+			b.Series[0].Name = "a"
+		}
 		doc := Doc{Sections: []Section{{Heading: "S", Blocks: []Block{b}}}}
 		if _, err := RenderDoc(doc, "T"); err != nil {
 			t.Errorf("kind %q: %v", kind, err)

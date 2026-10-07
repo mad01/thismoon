@@ -197,7 +197,7 @@ Rules:
 | `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a palette role name (`primary`, `blue`, `green`, `purple`, `amber`, `red`, `yellow`, `series-1` to `series-4`; `terracotta` still works as an alias of `primary`). An unknown name is refused |
 | `progress` | `pct`, `label?` | Progress bar (0-100) |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
-| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline: use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format** and **Stepped charts** below |
+| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`, `ribbon`. Inline: use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format** and **Stepped charts** below |
 | `code` | `text`, `lang?` | Fenced code block with language badge and copy button. `text` is verbatim code (NO inline markdown — backticks, `**`, `<` all render literally). `lang` sets the badge and syntax highlighting: `go`, `bash`, `json`, `python`, `typescript`, `yaml`, `sql` highlight; anything else (or omitted) renders plain with a `text` badge |
 | `html` | `text` | Raw HTML passthrough for one-off custom content |
 | `columns` | `cols: [[blocks], [blocks]]` | Two or three equal-width columns of blocks, one column under 700 px. A column holds any block but `columns` and `details`. Three `stat` blocks in it make a row of figures; a `chart` beside a `p` puts the caption next to the chart. The page's one `graph` may sit in a column too, beside the paragraph that says what to look at |
@@ -554,7 +554,7 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `kind` | string | One of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Defaults to `bar` |
+| `kind` | string | One of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`, `ribbon`. Defaults to `bar` |
 | `title` | string? | Caption above the chart |
 | `unit` | string? | Value-axis unit label (e.g. `ms`, `req`). Ignored for `sparkline`; shown in tooltips for `doughnut` |
 | `xunit` | string? | X-axis unit label, `scatter` only (e.g. `payload KB`) |

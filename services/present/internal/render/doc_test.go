@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"html"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -783,5 +784,52 @@ func TestRenderDocChartSteps(t *testing.T) {
 	}
 	if n := strings.Count(out, "present-steps"); n != 1 {
 		t.Errorf("present-steps appears %d times, want 1", n)
+	}
+}
+
+// TestRenderDocRibbon renders a ribbon chart: the block carries the
+// is-ribbon class from the template (so the frameless style applies before
+// the renderer runs), data-frame only when the chart keeps its card, and
+// the order rides in the spec. The periods are every distinct x in order
+// of first appearance, so three captions for three periods pass.
+func TestRenderDocRibbon(t *testing.T) {
+	series := []ChartSeries{
+		{Name: "search", Points: []ChartPoint{{X: "Q1", Y: 40}, {X: "Q2", Y: 35}}},
+		{Name: "social", Points: []ChartPoint{{X: "Q1", Y: 20}, {X: "Q2", Y: 45}, {X: "Q3", Y: 50}}},
+	}
+	steps := []ChartStep{{Caption: "Search leads."}, {Caption: "Social passes it."}, {Caption: "Search drops out."}}
+	frameless := Block{T: "chart", Kind: "ribbon", Title: "Traffic by channel", Series: series, Steps: steps}
+	framed := Block{T: "chart", Kind: "ribbon", Order: "given", Frame: true, Series: series}
+	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{frameless, framed}}}}, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	for _, want := range []string{
+		`<div class="present-chart is-ribbon" data-chart-title="Traffic by channel" data-steps="3">`,
+		`<div class="present-chart is-ribbon" data-frame>`,
+		`"kind":"ribbon","series":[{"name":"search","points":[{"x":"Q1","y":40},{"x":"Q2","y":35}]},{"name":"social",`,
+		`"order":"given"}`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, `"order":`); n != 1 {
+		t.Errorf("order appears %d times, want 1 (the default rank is not written)", n)
+	}
+	if n := strings.Count(out, "data-frame"); n != 1 {
+		t.Errorf("data-frame appears %d times, want 1 (a ribbon is frameless unless frame is set)", n)
+	}
+}
+
+// TestRibbonPeriods keeps a ribbon's periods in order of first appearance
+// across the series, with a period a later series adds at the end.
+func TestRibbonPeriods(t *testing.T) {
+	got := ribbonPeriods([]ChartSeries{
+		{Points: []ChartPoint{{X: "Q2", Y: 1}, {X: "Q1", Y: 1}}},
+		{Points: []ChartPoint{{X: "Q1", Y: 1}, {X: "Q3", Y: 1}}},
+	})
+	if want := []string{"Q2", "Q1", "Q3"}; !slices.Equal(got, want) {
+		t.Errorf("ribbonPeriods = %v, want %v", got, want)
 	}
 }
