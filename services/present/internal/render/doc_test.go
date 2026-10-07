@@ -764,7 +764,7 @@ func TestInlineMdNestedMarkup(t *testing.T) {
 func TestRenderDocChartSteps(t *testing.T) {
 	stepped := Block{
 		T: "chart", Kind: "stacked-bar", Title: "Errors",
-		Steps:  []ChartStep{{Caption: "The **JIRA** queue fills."}, {Caption: "Retries pile on."}},
+		Steps:  []Step{{Caption: "The **JIRA** queue fills."}, {Caption: "Retries pile on."}},
 		Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "x", Y: 1}}}, {Name: "b", Step: 2, Points: []ChartPoint{{X: "x", Y: 2}}}},
 	}
 	plain := Block{T: "chart", Kind: "bar", Series: []ChartSeries{{Points: []ChartPoint{{X: "x", Y: 1}}}}}
@@ -799,7 +799,7 @@ func TestRenderDocRibbon(t *testing.T) {
 		{Name: "search", Points: []ChartPoint{{X: "Q1", Y: 40}, {X: "Q2", Y: 35}}},
 		{Name: "social", Points: []ChartPoint{{X: "Q1", Y: 20}, {X: "Q2", Y: 45}, {X: "Q3", Y: 50}}},
 	}
-	steps := []ChartStep{{Caption: "Search leads."}, {Caption: "Social passes it."}, {Caption: "Search drops out."}}
+	steps := []Step{{Caption: "Search leads."}, {Caption: "Social passes it."}, {Caption: "Search drops out."}}
 	frameless := Block{T: "chart", Kind: "ribbon", Title: "Traffic by channel", Series: series, Steps: steps}
 	framed := Block{T: "chart", Kind: "ribbon", Order: "given", Frame: true, Series: series}
 	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{frameless, framed}}}}, "T")
@@ -866,5 +866,61 @@ func TestCompileDeckRibbonAccepts(t *testing.T) {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("output lacks %q", want)
 		}
+	}
+}
+
+// TestRenderDocDiagram renders a diagram block: the block carries the step
+// count, the island holds the direction, groups, nodes, edges, and the
+// steps with their focus ids, the caption and the step captions follow it
+// as fixated prose with inline markdown, and a diagram without caption or
+// steps emits neither.
+func TestRenderDocDiagram(t *testing.T) {
+	stepped := Block{
+		T: "diagram", Direction: "TB", Caption: "The **checkout** path",
+		Groups: []DiagramGroup{{ID: "prod", Label: "prod cluster", Tone: "blue"}},
+		Nodes: []DiagramNode{
+			{ID: "web", Label: "Web app", Text: "Next.js", Kind: "person"},
+			{ID: "api", Label: "Checkout API", Group: "prod", Step: 2},
+		},
+		Edges: []DiagramEdge{{From: "web", To: "api", Label: "POST /checkout", Flow: true, Weight: 120, Step: 2}},
+		Steps: []Step{{Caption: "The browser posts the cart."}, {Caption: "The API prices it.", Focus: []string{"api"}}},
+	}
+	plain := Block{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A"}}}
+	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{stepped, plain}}}}, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	for _, want := range []string{
+		`<div class="present-diagram" data-steps="2">`,
+		`<div class="present-diagram-canvas"></div>`,
+		`<script type="application/json" class="diagram-spec">{"direction":"TB","groups":[{"id":"prod","label":"prod cluster","tone":"blue"}],"nodes":[{"id":"web","label":"Web app","text":"Next.js","kind":"person"},{"id":"api","label":"Checkout API","group":"prod","step":2}],"edges":[{"from":"web","to":"api","label":"POST /checkout","flow":true,"weight":120,"step":2}],"steps":[{"caption":"The browser posts the cart."},{"caption":"The API prices it.","focus":["api"]}]}</script>`,
+		`<p class="present-diagram-caption" data-fixation>The <strong>checkout</strong> path</p>`,
+		"<ol class=\"present-steps\">\n    <li data-fixation>The browser posts the cart.</li>\n    <li data-fixation>The API prices it.</li>\n  </ol>",
+		`<div class="present-diagram">` + "\n" + `  <div class="present-diagram-canvas"></div>` + "\n" + `  <script type="application/json" class="diagram-spec">{"nodes":[{"id":"a","label":"A"}]}</script>` + "\n" + `</div>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "present-diagram-caption"); n != 1 {
+		t.Errorf("caption appears %d times, want 1", n)
+	}
+}
+
+// TestRenderDocDiagramScriptSafe keeps a node label from breaking out of
+// the diagram's script island, the way the chart island is kept safe.
+func TestRenderDocDiagramScriptSafe(t *testing.T) {
+	doc := Doc{Sections: []Section{{Heading: "X", Blocks: []Block{{
+		T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "</script><script>alert(1)</script>"}},
+	}}}}}
+	out, err := RenderDoc(doc, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	if strings.Contains(out, "<script>alert(1)") {
+		t.Errorf("unescaped script breakout in: %s", out)
+	}
+	if strings.Count(out, "<script") != 1 {
+		t.Errorf("want exactly one <script tag, got %d in: %s", strings.Count(out, "<script"), out)
 	}
 }

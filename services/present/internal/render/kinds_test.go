@@ -39,3 +39,29 @@ func TestChartKindsReachTheSkill(t *testing.T) {
 		t.Errorf("SKILL.md lists the chart kinds as %s %d time(s), want at least 2", want, n)
 	}
 }
+
+// TestDiagramVocabularyReachesTheSkill pins the skill's diagram kind and
+// direction lists to DiagramKinds and DiagramDirections, written as one
+// backticked, comma-separated list each.
+func TestDiagramVocabularyReachesTheSkill(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "skills", "present", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range [][]string{DiagramKinds(), DiagramDirections()} {
+		want := "`" + strings.Join(list, "`, `") + "`"
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("SKILL.md does not list %s", want)
+		}
+	}
+}
+
+// TestDiagramKindsRender accepts every node kind and the empty kind.
+func TestDiagramKindsRender(t *testing.T) {
+	for _, kind := range append(DiagramKinds(), "") {
+		doc := Doc{Sections: []Section{{Heading: "S", Blocks: []Block{{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A", Kind: kind}}}}}}}
+		if _, err := RenderDoc(doc, "T"); err != nil {
+			t.Errorf("kind %q: %v", kind, err)
+		}
+	}
+}

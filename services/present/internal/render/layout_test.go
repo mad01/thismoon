@@ -202,7 +202,7 @@ func TestRenderDocBlockValidation(t *testing.T) {
 		},
 		{
 			"step without caption",
-			Block{T: "chart", Title: "C", Steps: []ChartStep{{Caption: "one"}, {Caption: " "}}},
+			Block{T: "chart", Title: "C", Steps: []Step{{Caption: "one"}, {Caption: " "}}},
 			`chart "C": step 2 has no caption`,
 		},
 		{
@@ -212,27 +212,27 @@ func TestRenderDocBlockValidation(t *testing.T) {
 		},
 		{
 			"series step out of range",
-			Block{T: "chart", Title: "C", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 2}}},
+			Block{T: "chart", Title: "C", Steps: []Step{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 2}}},
 			`series "a" step 2: want 1 to 1`,
 		},
 		{
 			"steps on a sparkline",
-			Block{T: "chart", Title: "C", Kind: "sparkline", Steps: []ChartStep{{Caption: "one"}}},
+			Block{T: "chart", Title: "C", Kind: "sparkline", Steps: []Step{{Caption: "one"}}},
 			`a sparkline cannot carry steps`,
 		},
 		{
 			"series step on a doughnut",
-			Block{T: "chart", Title: "C", Kind: "doughnut", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1}}},
+			Block{T: "chart", Title: "C", Kind: "doughnut", Steps: []Step{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1}}},
 			`a doughnut draws its first series only`,
 		},
 		{
 			"series step on a sankey",
-			Block{T: "chart", Title: "C", Kind: "sankey", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1}}},
+			Block{T: "chart", Title: "C", Kind: "sankey", Steps: []Step{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1}}},
 			`a sankey draws flows, not series`,
 		},
 		{
 			"series step on a ribbon",
-			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1, Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []Step{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1, Points: []ChartPoint{{X: "q1", Y: 1}}}}},
 			`a ribbon walks its periods`,
 		},
 		{"order on a bar chart", Block{T: "chart", Title: "C", Kind: "bar", Order: "given"}, `chart "C": order is a ribbon field`},
@@ -284,17 +284,63 @@ func TestRenderDocBlockValidation(t *testing.T) {
 		},
 		{
 			"ribbon steps differ from periods",
-			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}, {Caption: "two"}}, Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}}}},
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []Step{{Caption: "one"}, {Caption: "two"}}, Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}}}},
 			`chart "C": a ribbon takes one caption per period (captions: 2, periods: 3)`,
 		},
 		{
 			"ribbon steps without series",
-			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}}},
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []Step{{Caption: "one"}}},
 			`chart "C": a ribbon takes one caption per period (captions: 1, periods: 0)`,
+		},
+		{"diagram unknown direction", Block{T: "diagram", Caption: "D", Direction: "RL", Nodes: []DiagramNode{{ID: "a", Label: "A"}}}, `diagram "D": unknown direction "RL" (want LR or TB)`},
+		{"diagram without nodes", Block{T: "diagram", Caption: "D"}, `diagram "D": needs at least one node`},
+		{"diagram id used twice", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "a", Label: "G"}}, Nodes: []DiagramNode{{ID: "a", Label: "A"}}}, `diagram "D": id "a" is used twice`},
+		{"diagram node without id", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: " ", Label: "A"}}}, `diagram "D": node 1 has no id`},
+		{"diagram node without label", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a"}}}, `diagram "D": node "a" has no label`},
+		{"diagram node unknown kind", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A", Kind: "cloud"}}}, `diagram "D": node "a": unknown kind "cloud" (want one of service, store, queue, person, external)`},
+		{"diagram node unknown tone", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A", Tone: "pink"}}}, `diagram "D": node "a": unknown tone "pink" (want one of neutral, green, red, blue, amber, purple)`},
+		{"diagram node in a missing group", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}}, `diagram "D": node "a": group "g" is not a group`},
+		{"diagram group without label", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g"}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}}, `diagram "D": group "g" has no label`},
+		{"diagram group unknown tone", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: "G", Tone: "wg600"}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}}, `diagram "D": group "g": unknown tone "wg600"`},
+		{"diagram empty group", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: "G"}}, Nodes: []DiagramNode{{ID: "a", Label: "A"}}}, `diagram "D": group "g" holds no node and no group`},
+		{"diagram group parent is a node", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: "G", Group: "a"}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}}, `diagram "D": group "g": parent "a" is not a group`},
+		{
+			"diagram groups nested three deep",
+			Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g1", Label: "G"}, {ID: "g2", Label: "G", Group: "g1"}, {ID: "g3", Label: "G", Group: "g2"}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g3"}}},
+			`diagram "D": group "g3": groups nest at most 2 deep`,
+		},
+		{
+			"diagram groups in a loop",
+			Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g1", Label: "G", Group: "g2"}, {ID: "g2", Label: "G", Group: "g1"}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g1"}}},
+			`groups nest at most 2 deep (or its parents loop)`,
+		},
+		{"diagram edge to a missing node", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "c"}}}, `diagram "D": edge 1: "c" is not a node`},
+		{"diagram edge to a group", Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: "G"}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g"}}, Edges: []DiagramEdge{{From: "a", To: "g"}}}, `diagram "D": edge 1: "g" is not a node`},
+		{"diagram self edge", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "a"}}}, `diagram "D": edge 1: from and to are both "a"`},
+		{"diagram negative weight", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Edges: []DiagramEdge{{From: "a", To: "b", Weight: -1}}}, `diagram "D": edge 1 (a to b): weight -1, want 0 or more`},
+		{"diagram step without caption", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Steps: []Step{{Caption: " "}}}, `diagram "D": step 1 has no caption`},
+		{"diagram focus names nothing", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}, Steps: []Step{{Caption: "one", Focus: []string{"zz"}}}}, `diagram "D": step 1: focus "zz" names no node or group`},
+		{"diagram node step without steps", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A", Step: 1}}}, `diagram "D": node "a" names step 1 but the diagram has no steps`},
+		{"diagram node step out of range", Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A", Step: 3}}, Steps: []Step{{Caption: "one"}}}, `diagram "D": node "a" step 3: want 1 to 1`},
+		{
+			"diagram node before its group",
+			Block{T: "diagram", Caption: "D", Groups: []DiagramGroup{{ID: "g", Label: "G", Step: 2}}, Nodes: []DiagramNode{{ID: "a", Label: "A", Group: "g", Step: 1}}, Steps: []Step{{Caption: "one"}, {Caption: "two"}}},
+			`diagram "D": node "a" appears at step 1, before "g" at step 2`,
+		},
+		{
+			"diagram edge before its end",
+			Block{T: "diagram", Caption: "D", Nodes: []DiagramNode{{ID: "a", Label: "A"}, {ID: "b", Label: "B", Step: 2}}, Edges: []DiagramEdge{{From: "a", To: "b"}}, Steps: []Step{{Caption: "one"}, {Caption: "two"}}},
+			`diagram "D": edge 1 (a to b) appears from the start, before "b" at step 2`,
+		},
+		{"chart step with focus", Block{T: "chart", Title: "C", Steps: []Step{{Caption: "one", Focus: []string{"a"}}}}, `chart "C": step 1 names focus, which only a diagram takes`},
+		{
+			"stepped diagram in details",
+			Block{T: "details", Summary: "s", Blocks: []Block{{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A"}}, Steps: []Step{{Caption: "one"}}}}},
+			`diagram steps: not allowed inside a details block`,
 		},
 		{
 			"stepped chart in details",
-			Block{T: "details", Summary: "s", Blocks: []Block{{T: "chart", Steps: []ChartStep{{Caption: "one"}}}}},
+			Block{T: "details", Summary: "s", Blocks: []Block{{T: "chart", Steps: []Step{{Caption: "one"}}}}},
 			`chart steps: not allowed inside a details block`,
 		},
 	}
@@ -830,5 +876,22 @@ func TestSampleDeckRenders(t *testing.T) {
 	// its paragraph (MAD-375).
 	if n := strings.Count(c.HTML, "<wk-columns "); n != 4 {
 		t.Errorf("columns blocks = %d, want 4", n)
+	}
+}
+
+// TestRenderDocDiagramsManyPerPage keeps diagrams outside the one-graph
+// rule: two diagrams beside the page's one graph compile.
+func TestRenderDocDiagramsManyPerPage(t *testing.T) {
+	diagram := Block{T: "diagram", Nodes: []DiagramNode{{ID: "a", Label: "A"}}}
+	doc := Doc{Sections: []Section{
+		{Heading: "S", Blocks: []Block{diagram, {T: "graph"}}},
+		{Heading: "U", Blocks: []Block{{T: "columns", Columns: [][]Block{{diagram}, {{T: "p", Text: "x"}}}}}},
+	}}
+	out, err := RenderDoc(doc, "T")
+	if err != nil {
+		t.Fatalf("RenderDoc: %v", err)
+	}
+	if n := strings.Count(out, `class="present-diagram"`); n != 2 {
+		t.Errorf("present-diagram appears %d times, want 2", n)
 	}
 }
