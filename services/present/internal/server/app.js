@@ -88,7 +88,20 @@
   function role(name) {
     return cssVar('--' + name, '#808080');
   }
-  function getGraphColors() {
+  // surfaceColor is the colour behind el as the browser painted it: the
+  // first ancestor with a background, so a chart or graph label on a toned
+  // slide (a color-mix the stylesheet writes, which the shell names
+  // --surface) gets the tint and one in a card gets the card. Cytoscape and
+  // Chart.js parse colours themselves, so they need the computed rgb and
+  // not the variable.
+  function surfaceColor(el) {
+    for (var e = el; e && e.nodeType === 1; e = e.parentNode) {
+      var bg = getComputedStyle(e).backgroundColor;
+      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return bg;
+    }
+    return role('bg');
+  }
+  function getGraphColors(container) {
     var tones = {};
     GRAPH_TONES.forEach(function (t) {
       tones[t] = { bg: role('tone-' + t + '-bg'), border: role('tone-' + t + '-border'), text: role('tone-' + t + '-text') };
@@ -96,7 +109,7 @@
     var modBorder = [];
     for (var i = 1; i <= MODULE_COLORS; i++) modBorder.push(role('graph-module-' + i));
     return {
-      bg: role('graph-bg'),
+      bg: container ? surfaceColor(container) : role('graph-bg'),
       centerBg: role('graph-center-bg'), centerBorder: role('graph-center-border'), centerText: role('graph-center-text'),
       leafBg: role('graph-leaf-bg'), leafBorder: role('graph-leaf-border'), leafText: role('graph-leaf-text'),
       modBorder: modBorder,
@@ -110,8 +123,11 @@
     if (Array.isArray(elements)) return elements;
     return [].concat((elements && elements.nodes) || [], (elements && elements.edges) || []);
   }
-  function presentGraphStyle(elements) {
-    var c = getGraphColors();
+  // presentGraphStyle styles the page graph; container, when given, is the
+  // element the graph draws in, so edge labels are backed with the colour
+  // behind it (its card, or a toned slide) instead of a fixed role.
+  function presentGraphStyle(elements, container) {
+    var c = getGraphColors(container);
     var maxW = 0;
     elementList(elements).forEach(function (e) {
       var w = e && e.data && e.data.weight;
@@ -209,7 +225,7 @@
       var opts = arguments[0];
       var isPage = !!(opts && opts.container);
       if (isPage && (!opts.style || (opts.layout && opts.layout.presentEngine))) {
-        opts.style = presentGraphStyle(opts.elements);
+        opts.style = presentGraphStyle(opts.elements, opts.container);
       }
       if (isPage && opts.layout) {
         baseLayout = opts.layout;
@@ -256,11 +272,12 @@
   var CHART_SERIES = 4;
   // Palette roles, read at call time like the graph's: series-1 to series-4,
   // the grid and text inks, and the surface for the gaps between stacked
-  // segments and slices.
-  function getChartColors() {
+  // segments and slices, which is whatever is painted behind the block (a
+  // chart sits straight on the page or slide unless it keeps its card).
+  function getChartColors(block) {
     var series = [];
     for (var i = 1; i <= CHART_SERIES; i++) series.push(role('series-' + i));
-    return { series: series, grid: role('chart-grid'), text: role('chart-text'), label: role('chart-label'), surface: role('card-bg') };
+    return { series: series, grid: role('chart-grid'), text: role('chart-text'), label: role('chart-label'), surface: surfaceColor(block) };
   }
   // A stored spec names a series colour by its legacy name (terracotta, blue,
   // green, purple, the default family's first four) or by its role
@@ -435,7 +452,7 @@
     if (block._chart) { block._chart.destroy(); block._chart = null; }
     var kind = spec.kind || 'bar';
     block.classList.toggle('is-sparkline', kind === 'sparkline');
-    var colors = getChartColors();
+    var colors = getChartColors(block);
     var animate = !reducedMotion && !block._built;
     block._built = true;
     var cfg;

@@ -205,7 +205,7 @@ Rules:
 | `stat` | `value`, `label`, `sub?` | A large figure over a label in a framed tile. `value` is shown verbatim (no inline markdown) and stays out of fixation; `label` and `sub` take inline markdown |
 | `quote` | `text`, `cite?` | A quotation with a left rule and the attribution under it |
 | `details` | `summary`, `blocks` | A collapsible block, closed by default, with `summary` as the clickable line. Holds any block but `graph`, `columns`, and `details`. Read-aloud reads it and opens it while a part inside plays. The home for a long timeline or raw numbers |
-| `image` | `src`, `alt`, `caption?` | An image with a caption under it. `src` is an `http(s)` URL, or on this machine an absolute or `~` path to a png, jpeg, gif, or webp file of at most 2 MiB. The tool copies the file into the page store and rewrites `src` to the `/img/<hash>.<ext>` path it is served at, which is what `present_source` returns. A relative path is refused. `alt` is required: read-aloud reads it in the image's place, and the caption after it. Goes inside `columns` and `details`. A shared instance takes image URLs only, and a page with stored images can't be shared until they are URLs |
+| `image` | `src`, `alt`, `caption?`, `frame?` | An image with a caption under it. `src` is an `http(s)` URL, or on this machine an absolute or `~` path to a png, jpeg, gif, or webp file of at most 2 MiB. The tool copies the file into the page store and rewrites `src` to the `/img/<hash>.<ext>` path it is served at, which is what `present_source` returns. A relative path is refused. `alt` is required: read-aloud reads it in the image's place, and the caption after it. Goes inside `columns` and `details`. A shared instance takes image URLs only, and a page with stored images can't be shared until they are URLs |
 
 ### Layout blocks
 
@@ -564,7 +564,7 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 | `flows` | array | `{from, to, value}` links, `sankey` only. See **Sankey format** below |
 | `steps` | array? | `[{caption}]`, one per step a deck slide walks through the chart. See **Stepped charts** below |
 | `order` | string? | `ribbon` only. `rank` (the default) stacks the largest category on top of each column; `given` keeps the series order |
-| `frame` | bool? | `true` keeps the card around a `ribbon`, which otherwise sits straight on the page. Accepted on every kind; the other kinds keep their card either way for now |
+| `frame` | bool? | Every chart sits straight on the page or slide; `true` keeps a card (background, border, padding) around one that should stand apart |
 
 Each series: `name` (legend label, shown when 2+ series), `color` (`series-1` to `series-4`, or the legacy names `terracotta`, `blue`, `green`, `purple` for the same four slots; omit to auto-assign by index), `step` (the 1-based step the series first shows at, on a chart with `steps`; omit for a series shown from the start), and `points`, an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
 
@@ -616,7 +616,7 @@ Node names are matched by exact string, so reuse the same spelling on every link
 }
 ```
 
-One series per category, `x` the period, `y` its value in that period. Each period is one column standing on the baseline. The categories stack inside it, the largest on top by default (`order: "rank"`), or in series order with `order: "given"`. A ribbon joins a category's segment to its segment in the next column, so two ribbons crossing is one category passing another. A category with a zero in a period has no segment there and its ribbon breaks. List every period in the first series, in order, with a zero for a gap. The columns follow the order the periods first appear in, and a later series that lists them the other way round is refused. Every series needs its own `name`, a period appears once per series, and values are zero or more. Hovering a segment or a ribbon shows its values and dims the other categories. The chart has no card: it sits on the page or the slide, and `frame: true` keeps the card.
+One series per category, `x` the period, `y` its value in that period. Each period is one column standing on the baseline. The categories stack inside it, the largest on top by default (`order: "rank"`), or in series order with `order: "given"`. A ribbon joins a category's segment to its segment in the next column, so two ribbons crossing is one category passing another. A category with a zero in a period has no segment there and its ribbon breaks. List every period in the first series, in order, with a zero for a gap. The columns follow the order the periods first appear in, and a later series that lists them the other way round is refused. Every series needs its own `name`, a period appears once per series, and values are zero or more. Hovering a segment or a ribbon shows its values and dims the other categories.
 
 A ribbon takes at most four categories (the palette has four series colours, and a fifth is refused): fold the small ones into one named "other". Keep it to about eight periods; past that the ribbons turn into a hairball, so split the periods across slides.
 

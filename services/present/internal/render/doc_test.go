@@ -801,14 +801,15 @@ func TestRenderDocRibbon(t *testing.T) {
 	}
 	steps := []Step{{Caption: "Search leads."}, {Caption: "Social passes it."}, {Caption: "Search drops out."}}
 	frameless := Block{T: "chart", Kind: "ribbon", Title: "Traffic by channel", Series: series, Steps: steps}
-	framed := Block{T: "chart", Kind: "ribbon", Order: "given", Frame: true, Series: series}
+	yes := true
+	framed := Block{T: "chart", Kind: "ribbon", Order: "given", Frame: &yes, Series: series}
 	out, err := RenderDoc(Doc{Sections: []Section{{Heading: "S", Blocks: []Block{frameless, framed}}}}, "T")
 	if err != nil {
 		t.Fatalf("RenderDoc: %v", err)
 	}
 	for _, want := range []string{
 		`<div class="present-chart is-ribbon" data-chart-title="Traffic by channel" data-steps="3">`,
-		`<div class="present-chart is-ribbon" data-frame>`,
+		`<div class="present-chart is-ribbon" data-frame="true">`,
 		`"kind":"ribbon","series":[{"name":"search","points":[{"x":"Q1","y":40},{"x":"Q2","y":35}]},{"name":"social",`,
 		`"order":"given"}`,
 	} {
@@ -820,7 +821,7 @@ func TestRenderDocRibbon(t *testing.T) {
 		t.Errorf("order appears %d times, want 1 (the default rank is not written)", n)
 	}
 	if n := strings.Count(out, "data-frame"); n != 1 {
-		t.Errorf("data-frame appears %d times, want 1 (a ribbon is frameless unless frame is set)", n)
+		t.Errorf("data-frame appears %d times, want 1 (a chart carries none unless frame is set)", n)
 	}
 }
 

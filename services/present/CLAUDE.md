@@ -272,6 +272,19 @@ theme). Do not add those controls manually.
   Cytoscape graph chrome (`.cy-*`), the metric-chart chrome (`.present-chart`),
   `.brief a` link styling, `.brief-list`, the `.refs-*` references block, and
   the deck chrome (`.deck-strip`, `.deck-dot`, `.deck-progress`, `.deck-logo`).
+- **Visual blocks sit on the surface, not in a card.** A chart has no
+  card unless its Doc sets `frame: true`, and an image keeps its border
+  unless `frame: false`. `frameAttr` writes `data-frame="true"` or
+  `"false"` as given, from a `*bool`, so an unset field emits nothing and
+  the golden fixtures hold. The shell names the colour behind content
+  `--surface`: `--bg`, the tint of a toned or section slide, or
+  `--card-bg` inside `wk-panel`, `details`, and a framed chart. SVG reads
+  it through `var()`. Chart.js and Cytoscape need a literal, so
+  `surfaceColor(el)` in app.js walks up to the first painted ancestor
+  background. The gaps between stacked bars and doughnut slices and the
+  graph's edge label backing follow the slide tint or the card that way.
+  This default is CSS only, so every stored chart changed look when it
+  shipped (MAD-382, 2026-10-07).
 - **Metric charts are present-local, not webkit.** The `t=chart` Doc block
   (`kind` from `render.ChartKinds`: `bar`/`line`/`area`/`sparkline`/`stacked-bar`/
   `horizontal-bar`/`doughnut`/`scatter`/`sankey`/`ribbon`; `validateChart` refuses any
@@ -293,9 +306,7 @@ theme). Do not add those controls manually.
   a ribbon per category between adjacent columns). It draws SVG into the
   canvas wrapper with `var(--series-N)` fills, so the theme rebuild redraws
   it in place with no colour to resolve. The template gives the block
-  `is-ribbon`, which drops the card unless the block sets `frame`
-  (`data-frame`; accepted on every kind, a no-op on the others until the
-  frameless default reaches them). `validateRibbon` refuses an unknown
+  `is-ribbon` (no rule keys on it today). `validateRibbon` refuses an unknown
   `order`, a fifth series (`ribbonMaxSeries`, the palette's four series
   roles), a series without a name or with a name another series has, a
   point without an x or with a negative y, a period repeated in a series,

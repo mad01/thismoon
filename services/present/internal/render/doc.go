@@ -215,10 +215,11 @@ type Block struct {
 	Series []ChartSeries `json:"series,omitempty"` // every kind except sankey
 	Flows  []ChartFlow   `json:"flows,omitempty"`  // sankey only
 	Order  string        `json:"order,omitempty"`  // ribbon only: rank (default) or given
-	// Frame keeps the card around a chart kind that draws without one. A
-	// ribbon sits straight on the page unless Frame is set; the other kinds
-	// keep their card either way until the frameless default reaches them.
-	Frame bool `json:"frame,omitempty"`
+	// Frame, on a chart, keeps the card around it: every chart sits straight
+	// on the page or slide unless frame is true. On an image, false drops
+	// the border around the picture. Absent means the default either way,
+	// so a pointer tells false from unset.
+	Frame *bool `json:"frame,omitempty"`
 
 	// t=diagram: an architecture picture laid out in the browser (ELK) and
 	// drawn as SVG (D3), many per page. Nodes are boxes with a name and a
@@ -631,6 +632,7 @@ func init() {
 		"rawHTML":      func(s string) template.HTML { return template.HTML(s) },
 		"chartSpec":    chartSpec,
 		"diagramSpec":  diagramSpec,
+		"frameAttr":    frameAttr,
 		"renderBlock":  func(b Block) template.HTML { return renderBlockAt(b, 0) },
 		"renderNested": func(b Block) template.HTML { return renderBlockAt(b, 1) },
 		"dataLayout":   func(s Section) string { return s.dataLayout() },
@@ -731,7 +733,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
   <div id="cy-graph" class="cy-container"></div>
 </wk-panel>{{end}}
 
-{{define "block-chart"}}<div class="present-chart{{if eq .Kind "ribbon"}} is-ribbon{{end}}"{{with .Title}} data-chart-title="{{.}}"{{end}}{{if .Frame}} data-frame{{end}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
+{{define "block-chart"}}<div class="present-chart{{if eq .Kind "ribbon"}} is-ribbon{{end}}"{{with .Title}} data-chart-title="{{.}}"{{end}}{{frameAttr .}}{{with .Steps}} data-steps="{{len .}}"{{end}}>
   <div class="present-chart-canvas"><canvas></canvas></div>
   <script type="application/json" class="chart-spec">{{chartSpec .}}</script>
 {{- with .Steps}}
@@ -779,7 +781,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{- end}}
 </details>{{end}}
 
-{{define "block-image"}}<wk-figure>
+{{define "block-image"}}<wk-figure{{frameAttr .}}>
   <img src="{{.Src}}" alt="{{.Alt}}" loading="lazy">
 {{- with .Caption}}
   <wk-figcaption data-fixation>{{inlineMd .}}</wk-figcaption>
@@ -920,6 +922,17 @@ func chartSpec(b Block) template.JS {
 		return template.JS(`{"kind":"","series":[]}`)
 	}
 	return template.JS(out)
+}
+
+// frameAttr is the data-frame attribute a block carries when its Doc sets
+// frame: "true" or "false" as written, so the stylesheet can key on
+// either (a chart keeps its card on true, an image drops its border on
+// false), and nothing when the field is absent.
+func frameAttr(b Block) template.HTMLAttr {
+	if b.Frame == nil {
+		return ""
+	}
+	return template.HTMLAttr(fmt.Sprintf(` data-frame="%t"`, *b.Frame))
 }
 
 // diagramSpec is the JSON island a diagram block carries for the browser:
