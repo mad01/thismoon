@@ -237,7 +237,7 @@ test('diagramBox: sized by the widest line within the bounds, one line per text 
   assert.equal(wide.width, 240);
 });
 
-test('diagramElk: groups nest, nodes sit in their group, edges carry sized labels at the root', () => {
+test('diagramElk: groups nest, nodes sit in their group, edges sit at the root without labels', () => {
   const g = PresentViz.diagramElk(checkout, measure);
   assert.equal(g.layoutOptions['elk.direction'], 'RIGHT');
   assert.equal(g.layoutOptions['elk.hierarchyHandling'], 'INCLUDE_CHILDREN');
@@ -248,8 +248,19 @@ test('diagramElk: groups nest, nodes sit in their group, edges carry sized label
   assert.deepEqual(prod.children[0].children.map((c) => c.id), ['db']);
   assert.equal(prod.layoutOptions['elk.padding'], '[top=36,left=16,bottom=16,right=16]');
   assert.equal(g.children[1].width, 182);
-  assert.deepEqual(g.edges[0], { id: 'e0', sources: ['web'], targets: ['api'], labels: [{ text: 'POST /checkout', width: 14 * 7 + 8, height: 16 }] });
+  assert.deepEqual(g.edges[0], { id: 'e0', sources: ['web'], targets: ['api'] });
+  assert.equal(g.layoutOptions['elk.edgeLabels.inline'], undefined);
+  assert.equal(g.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], String(14 * 7 + 24));
+  assert.equal(PresentViz.diagramElk({ nodes: [{ id: 'a', label: 'A' }] }, measure).layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'], '56');
   assert.equal(PresentViz.diagramElk({ direction: 'TB', nodes: [] }, measure).layoutOptions['elk.direction'], 'DOWN');
+});
+
+test('routeLabelPoint: the middle of the longest straight run, null without a route', () => {
+  const route = { sections: [
+    { startPoint: { x: 0, y: 10 }, bendPoints: [{ x: 8, y: 10 }, { x: 8, y: 40 }], endPoint: { x: 60, y: 40 } },
+  ] };
+  assert.deepEqual(PresentViz.routeLabelPoint(route), { x: 34, y: 40 });
+  assert.equal(PresentViz.routeLabelPoint({}), null);
 });
 
 test('elkPath: one M/L run per section with the bend points in order', () => {
@@ -280,4 +291,28 @@ test('flowSpeed: 6 px/s for the lightest, 20 px/s for the heaviest, the middle w
   assert.equal(PresentViz.flowSpeed(0, 100), 0.006);
   assert.equal(PresentViz.flowSpeed(100, 100), 0.02);
   assert.ok(Math.abs(PresentViz.flowSpeed(undefined, 0) - 0.013) < 1e-9);
+});
+
+test('diagramGraph: a person box grows for its figure, a store for its cap', () => {
+  const plain = PresentViz.diagramElk(checkout, measure);
+  const g = PresentViz.diagramGraph(checkout, measure);
+  assert.equal(g.children[1].id, 'web');
+  assert.equal(g.children[1].width, plain.children[1].width + 14);
+  assert.equal(g.children[1].height, plain.children[1].height);
+  const db = g.children[0].children[0].children[0];
+  assert.equal(db.id, 'db');
+  assert.equal(db.height, 38 + 6);
+  assert.equal(db.width, 120);
+  assert.equal(g.children[0].children[1].width, 120);
+  assert.equal(g.children[0].width, undefined);
+  assert.equal(g.children[0].layoutOptions['elk.nodeSize.constraints'], 'MINIMUM_SIZE');
+  assert.equal(g.children[0].layoutOptions['elk.nodeSize.minimum'], '(' + ('PROD CLUSTER'.length * 7 + 24) + ',0)');
+  assert.equal(g.children[0].layoutOptions['elk.padding'], '[top=36,left=16,bottom=16,right=16]');
+});
+
+test('diagramText: the label row then one row per line, moved past the shape room', () => {
+  assert.deepEqual(PresentViz.diagramText({ kind: 'service' }, 2, 160), { x: 80, label: 19, lines: [35.5, 50.5] });
+  assert.deepEqual(PresentViz.diagramText({}, 0, 120), { x: 60, label: 19, lines: [] });
+  assert.deepEqual(PresentViz.diagramText({ kind: 'person' }, 1, 196), { x: 105, label: 19, lines: [35.5] });
+  assert.deepEqual(PresentViz.diagramText({ kind: 'store' }, 1, 120), { x: 60, label: 25, lines: [41.5] });
 });

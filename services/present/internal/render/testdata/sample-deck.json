@@ -391,6 +391,127 @@
       ]
     },
     {
+      "h": "How a checkout request travels",
+      "blocks": [
+        {
+          "t": "diagram",
+          "direction": "LR",
+          "caption": "One checkout request, from the browser to the orders table.",
+          "groups": [
+            {
+              "id": "edge",
+              "label": "edge",
+              "tone": "neutral"
+            },
+            {
+              "id": "prod",
+              "label": "prod cluster",
+              "tone": "blue"
+            }
+          ],
+          "nodes": [
+            {
+              "id": "browser",
+              "label": "Browser",
+              "text": "Checkout page",
+              "kind": "person"
+            },
+            {
+              "id": "gateway",
+              "label": "API gateway",
+              "text": "TLS and rate limits",
+              "group": "edge",
+              "step": 1
+            },
+            {
+              "id": "api",
+              "label": "Checkout API",
+              "text": "Go, validates the cart",
+              "group": "prod",
+              "step": 2
+            },
+            {
+              "id": "pricing",
+              "label": "Pricing",
+              "text": "Prices, discounts, tax",
+              "group": "prod",
+              "step": 3
+            },
+            {
+              "id": "orders",
+              "label": "Orders DB",
+              "text": "Postgres",
+              "kind": "store",
+              "group": "prod",
+              "step": 4
+            }
+          ],
+          "edges": [
+            {
+              "from": "browser",
+              "to": "gateway",
+              "label": "POST /checkout",
+              "flow": true,
+              "weight": 120,
+              "step": 1
+            },
+            {
+              "from": "gateway",
+              "to": "api",
+              "label": "forward",
+              "flow": true,
+              "weight": 80,
+              "step": 2
+            },
+            {
+              "from": "api",
+              "to": "pricing",
+              "label": "price cart",
+              "step": 3
+            },
+            {
+              "from": "api",
+              "to": "orders",
+              "label": "insert order",
+              "step": 4
+            },
+            {
+              "from": "pricing",
+              "to": "orders",
+              "label": "read history",
+              "step": 4
+            }
+          ],
+          "steps": [
+            {
+              "caption": "The browser posts the cart to the gateway at the edge.",
+              "focus": [
+                "gateway"
+              ]
+            },
+            {
+              "caption": "The gateway forwards it into the prod cluster.",
+              "focus": [
+                "api"
+              ]
+            },
+            {
+              "caption": "The checkout API asks pricing for the total.",
+              "focus": [
+                "pricing"
+              ]
+            },
+            {
+              "caption": "The order lands in Postgres.",
+              "focus": [
+                "orders"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "h": "Where the request died",
       "blocks": [
         {

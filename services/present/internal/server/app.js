@@ -792,6 +792,467 @@
     });
   }
 
+  // ── Diagram blocks (elk + d3) ──
+  // A diagram block is laid out once by ELK from its spec, every box sized
+  // from its measured text, and drawn as one svg whose geometry never
+  // changes after: steps, focus, the entry, and a theme change only move
+  // classes and CSS variables, and a resize rescales the svg through its
+  // width and height. Every drawn group, node, and edge carries
+  // {kind, key, item} as __data__ for stepping, and a class naming it
+  // (g-<id>, n-<id>, e-<k>) for the stylesheet and anyone inspecting it.
+  var DIAGRAM_LABEL_FONT = '600 13px '; // a node's name
+  var DIAGRAM_TEXT_FONT = '11.5px '; // a node's text lines and the edge labels
+  var DIAGRAM_GROUP_FONT = '11px '; // a group's label, drawn in upper case
+  var DIAGRAM_GROUP_TRACKING = 0.06; // the group label's letter spacing, in em
+  var DIAGRAM_MAX_SCALE = 1.25; // how far a small diagram grows to fill its width
+  var DIAGRAM_MAX_H = 420; // the canvas height when the stylesheet sets none
+  var DIAGRAM_STAGGER_MS = 40; // between node layers in the entry
+  var DIAGRAM_PHASE_MS = 120; // between the entry's phases: groups, nodes, edges
+  var DIAGRAM_DRAW_MS = 350; // an edge drawing in, as long as shell.html's fades
+  var DIAGRAM_DOT_R = 3.5; // a flow dot
+  // Node centres closer than this along the flow share a layer in the
+  // entry: less than any two layers sit apart (a box is at least 120 wide
+  // or 38 high, plus 56 between layers).
+  var DIAGRAM_LAYER_PX = 30;
+  var DIAGRAM_CAP_RY = 6; // a store's cap
+  var DIAGRAM_PIPE_INSET = 8; // a queue's end lines from its ends
+  // A person's figure in its box's top left corner: inset from the edges,
+  // the head's radius, the shoulders' radius (half the strip
+  // PresentViz.diagramGraph adds to the box), and the gap between them.
+  var DIAGRAM_FIGURE = { inset: 9, head: 5, shoulders: 7, gap: 2 };
+  var DIAGRAM_ARROW = 8; // the arrowhead's length and width
+  var diagramEngine = null; // one ELK for every diagram, made on first use
+  var diagramCount = 0; // numbers each svg, so its marker id is unique on the page
+  var measureCtx = null; // the canvas context diagramMeasure measures text on
+
+  // diagramMeasure returns the measure(string) PresentViz sizes boxes and
+  // labels with: the width of the string in the font it is drawn in, the
+  // block's font family at the size and weight of the role the string
+  // plays (a node's name, a group's label, or a text line or edge label).
+  function diagramMeasure(block, spec) {
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+    var family = getComputedStyle(block).fontFamily || 'sans-serif';
+    var names = Object.create(null), groups = Object.create(null);
+    (spec.nodes || []).forEach(function (n) { names[n.label] = true; });
+    (spec.groups || []).forEach(function (g) { groups[String(g.label || '').toUpperCase()] = true; });
+    return function (text) {
+      text = String(text);
+      var group = groups[text] && !names[text];
+      measureCtx.font = (names[text] ? DIAGRAM_LABEL_FONT : group ? DIAGRAM_GROUP_FONT : DIAGRAM_TEXT_FONT) + family;
+      var w = measureCtx.measureText(text).width;
+      return group ? w + text.length * 11 * DIAGRAM_GROUP_TRACKING : w;
+    };
+  }
+  // diagramLayout lays the spec out with ELK once the page's fonts have
+  // loaded (a fallback font measures differently), resolving to ELK's
+  // graph with every position filled in, relative to the root.
+  function diagramLayout(block, spec) {
+    var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    return fonts.then(function () {
+      if (!diagramEngine) diagramEngine = new ELK();
+      var measure = diagramMeasure(block, spec);
+      return diagramEngine.layout(PresentViz.diagramGraph(spec, measure)).then(function (layout) {
+        return { graph: layout, measure: measure };
+      });
+    });
+  }
+  // diagramBoxes maps every group and node id to its laid-out box.
+  function diagramBoxes(layout) {
+    var boxes = Object.create(null);
+    function walk(children) {
+      (children || []).forEach(function (c) {
+        boxes[c.id] = { x: c.x, y: c.y, width: c.width, height: c.height };
+        walk(c.children);
+      });
+    }
+    walk(layout.children);
+    return boxes;
+  }
+  // diagramFlags returns, for an element's datum, whether it is off (not
+  // shown at step at, or everything while the entry has not started), lit
+  // by the step's focus, or dimmed by it.
+  function diagramFlags(spec, at, entering) {
+    var shown = PresentViz.diagramShown(spec, at), focus = PresentViz.diagramFocus(spec, at);
+    return function (d) {
+      var lit = !!(focus && focus[d.kind][d.key]);
+      return { off: entering || !shown[d.kind][d.key], focus: lit, dim: !!focus && !lit };
+    };
+  }
+  // diagramClass is an element's class list: its own classes, then the
+  // step's flags, so the first paint already has them.
+  function diagramClass(base, flags) {
+    return function (d) {
+      var f = flags(d);
+      return base(d) + (f.off ? ' off' : '') + (f.focus ? ' focus' : '') + (f.dim ? ' dim' : '');
+    };
+  }
+  // diagramToken is an id made safe for a class name: ids are any
+  // non-empty string, and a space would split the class.
+  function diagramToken(id) {
+    return String(id).replace(/[^A-Za-z0-9_-]/g, '_');
+  }
+  function diagramTone(item) {
+    return item.tone ? ' tone-' + item.tone : '';
+  }
+  // diagramDepth is how deep a group nests, so parents draw first and a
+  // nested group sits on top of the one holding it.
+  function diagramDepth(spec) {
+    var parent = Object.create(null);
+    (spec.groups || []).forEach(function (g) { parent[g.id] = g.group || ''; });
+    return function (id) {
+      var n = 0;
+      for (var p = parent[id]; p; p = parent[p]) n++;
+      return n;
+    };
+  }
+  // diagramSvg makes a diagram's svg, detached: sized to the layout in
+  // viewBox units, with the arrowhead every edge ends in.
+  function diagramSvg(layout) {
+    var id = 'present-diagram-' + (++diagramCount) + '-arrow';
+    var svg = d3.create('svg').attr('class', 'present-diagram-svg')
+      .attr('viewBox', '0 0 ' + layout.width + ' ' + layout.height);
+    svg.append('defs').append('marker').attr('id', id).attr('viewBox', '0 0 10 10')
+      .attr('refX', 10).attr('refY', 5).attr('markerUnits', 'userSpaceOnUse')
+      .attr('markerWidth', DIAGRAM_ARROW).attr('markerHeight', DIAGRAM_ARROW).attr('orient', 'auto-start-reverse')
+      .append('path').attr('class', 'dedge-arrow').attr('d', 'M0,0L10,5L0,10z');
+    return svg.node();
+  }
+  function diagramRect(g, w, h, rx) {
+    return g.append('rect').attr('class', 'dnode-shape').attr('width', w).attr('height', h).attr('rx', rx);
+  }
+  // DIAGRAM_SHAPES draws a node's shape by kind into its group, the box w
+  // by h at the origin. external is the service box; the stylesheet
+  // dashes it.
+  var DIAGRAM_SHAPES = {
+    service: function (g, w, h) { diagramRect(g, w, h, 8); },
+    external: function (g, w, h) { diagramRect(g, w, h, 8); },
+    store: function (g, w, h) {
+      var rx = w / 2, ry = DIAGRAM_CAP_RY, arc = 'A' + rx + ',' + ry + ' 0 0 0 ';
+      g.append('path').attr('class', 'dnode-shape')
+        .attr('d', 'M0,' + ry + 'V' + (h - ry) + arc + w + ',' + (h - ry) + 'V' + ry + arc + '0,' + ry + 'Z');
+      g.append('ellipse').attr('class', 'dnode-shape').attr('cx', rx).attr('cy', ry).attr('rx', rx).attr('ry', ry);
+    },
+    queue: function (g, w, h) {
+      var r = h / 2, x = DIAGRAM_PIPE_INSET, dy = Math.sqrt(Math.max(0, r * r - (r - x) * (r - x)));
+      diagramRect(g, w, h, r);
+      g.append('path').attr('class', 'dnode-detail')
+        .attr('d', 'M' + x + ',' + (r - dy) + 'V' + (r + dy) + 'M' + (w - x) + ',' + (r - dy) + 'V' + (r + dy));
+    },
+    person: function (g, w, h) {
+      var f = DIAGRAM_FIGURE, cx = f.inset + f.shoulders, base = f.inset + 2 * f.head + f.gap + f.shoulders;
+      diagramRect(g, w, h, 8);
+      g.append('circle').attr('class', 'dnode-figure').attr('cx', cx).attr('cy', f.inset + f.head).attr('r', f.head);
+      g.append('path').attr('class', 'dnode-figure')
+        .attr('d', 'M' + f.inset + ',' + base + 'a' + f.shoulders + ',' + f.shoulders + ' 0 0 1 ' + 2 * f.shoulders + ',0z');
+    }
+  };
+  // drawDiagramGroups draws the boundaries, parents before the groups
+  // they hold: a tinted box with its label in the top padding.
+  function drawDiagramGroups(layer, spec, boxes, flags) {
+    var depth = diagramDepth(spec), at = PresentViz.diagramGroupLabel;
+    var data = (spec.groups || []).map(function (g, i) {
+      return { kind: 'groups', key: g.id, item: g, box: boxes[g.id], order: i };
+    }).sort(function (a, b) { return depth(a.key) - depth(b.key) || a.order - b.order; });
+    var g = layer.selectAll('g').data(data).join('g')
+      .attr('class', diagramClass(function (d) { return 'dgroup g-' + diagramToken(d.key) + diagramTone(d.item); }, flags))
+      .attr('transform', function (d) { return 'translate(' + d.box.x + ',' + d.box.y + ')'; });
+    g.append('rect').attr('class', 'dgroup-box').attr('rx', 10)
+      .attr('width', function (d) { return d.box.width; }).attr('height', function (d) { return d.box.height; });
+    g.append('text').attr('class', 'dgroup-label').attr('x', at.x).attr('y', at.y)
+      .text(function (d) { return d.item.label; });
+  }
+  // drawDiagramNodes draws the boxes: the shape by kind, the name, the
+  // text lines under it, and the text as a tooltip.
+  function drawDiagramNodes(layer, spec, boxes, flags, measure) {
+    var data = (spec.nodes || []).map(function (n) { return { kind: 'nodes', key: n.id, item: n, box: boxes[n.id] }; });
+    layer.selectAll('g').data(data).join('g')
+      .attr('class', diagramClass(function (d) {
+        return 'dnode n-' + diagramToken(d.key) + ' kind-' + (d.item.kind || 'service') + diagramTone(d.item);
+      }, flags))
+      .attr('transform', function (d) { return 'translate(' + d.box.x + ',' + d.box.y + ')'; })
+      .each(function (d) {
+        var g = d3.select(this), node = d.item, w = d.box.width;
+        (DIAGRAM_SHAPES[node.kind] || DIAGRAM_SHAPES.service)(g, w, d.box.height);
+        var lines = PresentViz.diagramBox(node, measure).lines, at = PresentViz.diagramText(node, lines.length, w);
+        g.append('text').attr('class', 'dnode-label').attr('x', at.x).attr('y', at.label).text(node.label);
+        lines.forEach(function (line, i) {
+          g.append('text').attr('class', 'dnode-text').attr('x', at.x).attr('y', at.lines[i]).text(line);
+        });
+        if (node.text) g.append('title').text(node.label + ': ' + node.text);
+      });
+  }
+  // drawDiagramEdges draws the arrows along ELK's routes: the line, a dot
+  // on a flow edge (none under Reduce Motion, where the dash alone says
+  // flow), and the label on a halo in the surface colour.
+  function drawDiagramEdges(layer, spec, layout, flags, arrowId, measure) {
+    var routes = Object.create(null);
+    (layout.edges || []).forEach(function (e) { routes[e.id] = e; });
+    var data = (spec.edges || []).map(function (e, k) {
+      return { kind: 'edges', key: k, item: e, route: routes['e' + k] || {} };
+    });
+    var g = layer.selectAll('g').data(data).join('g')
+      .attr('class', diagramClass(function (d) { return 'dedge e-' + d.key + (d.item.flow ? ' flow' : ''); }, flags));
+    g.append('path').attr('class', 'dedge-line').attr('marker-end', 'url(#' + arrowId + ')')
+      .attr('d', function (d) { return PresentViz.elkPath(d.route); });
+    if (!reducedMotion) {
+      g.filter(function (d) { return d.item.flow && d.route.sections && d.route.sections.length; })
+        .append('circle').attr('class', 'dflow').attr('r', DIAGRAM_DOT_R)
+        .attr('cx', function (d) { return d.route.sections[0].startPoint.x; })
+        .attr('cy', function (d) { return d.route.sections[0].startPoint.y; });
+    }
+    // The label sits on the longest straight run of the route (ELK never
+    // saw it, so the chain stays as tight as its boxes), on a halo.
+    g.each(function (d) {
+      var p = d.item.label ? PresentViz.routeLabelPoint(d.route) : null;
+      if (!p) return;
+      var w = Math.ceil(measure(d.item.label)) + 8, h = 16;
+      var label = d3.select(this).append('g').attr('class', 'dedge-label')
+        .attr('transform', 'translate(' + (p.x - w / 2) + ',' + (p.y - h / 2) + ')');
+      label.append('rect').attr('width', w).attr('height', h).attr('rx', 3);
+      label.append('text').attr('x', w / 2).attr('y', h / 2).text(d.item.label);
+    });
+  }
+  // drawDiagram draws the whole diagram into its detached svg, groups
+  // under edges under nodes, every element already carrying its step's
+  // classes.
+  function drawDiagram(svg, spec, result, flags) {
+    var root = d3.select(svg), boxes = diagramBoxes(result.graph);
+    drawDiagramGroups(root.append('g').attr('class', 'dgroups'), spec, boxes, flags);
+    var arrowId = svg.querySelector('marker').id;
+    drawDiagramEdges(root.append('g').attr('class', 'dedges'), spec, result.graph, flags, arrowId, result.measure);
+    drawDiagramNodes(root.append('g').attr('class', 'dnodes'), spec, boxes, flags, result.measure);
+  }
+  // diagramElements are the parts that step, dim, and enter: every group,
+  // node, and edge, each carrying its datum.
+  function diagramElements(svg) {
+    return Array.prototype.slice.call(svg.querySelectorAll('.dgroup, .dnode, .dedge'));
+  }
+  // diagramStep moves a drawn diagram to step n (null: everything shown,
+  // nothing dimmed).
+  function diagramStep(svg, spec, n) {
+    var flags = diagramFlags(spec, n, false);
+    diagramElements(svg).forEach(function (el) {
+      var f = flags(el.__data__);
+      el.classList.toggle('off', f.off);
+      el.classList.toggle('focus', f.focus);
+      el.classList.toggle('dim', f.dim);
+    });
+  }
+  // diagramStepHook is the deck's hook for a diagram block. It reads the
+  // svg when called, since a step can arrive before the layout is drawn
+  // (the draw then reads data-step-at itself). Reduce Motion and a deck
+  // that cuts swap the classes with the transitions off for a frame.
+  function diagramStepHook(block, spec) {
+    return function (n) {
+      var svg = block._diagramSvg;
+      if (!svg) return;
+      var cut = reducedMotion || block._stepCut;
+      if (cut) svg.classList.add('cut');
+      diagramStep(svg, spec, n);
+      if (!cut) return;
+      svg.getBoundingClientRect(); // apply the change under cut before it lifts
+      requestAnimationFrame(function () { svg.classList.remove('cut'); });
+    };
+  }
+  // diagramDelays times the entry: groups first, then the nodes layer by
+  // layer along the flow (x for LR, y for TB), then each edge with its
+  // source's layer. total is when the last edge has drawn in.
+  function diagramDelays(spec, boxes) {
+    var lr = spec.direction !== 'TB';
+    function along(id) { var b = boxes[id]; return lr ? b.x + b.width / 2 : b.y + b.height / 2; }
+    var layerOf = Object.create(null), layer = -1, start = -Infinity;
+    (spec.nodes || []).map(function (n) { return n.id; })
+      .sort(function (a, b) { return along(a) - along(b); })
+      .forEach(function (id) {
+        if (along(id) - start > DIAGRAM_LAYER_PX) { layer++; start = along(id); }
+        layerOf[id] = layer;
+      });
+    var nodes = DIAGRAM_PHASE_MS, edges = nodes + (layer + 1) * DIAGRAM_STAGGER_MS + DIAGRAM_PHASE_MS;
+    return {
+      at: function (d) {
+        if (d.kind === 'groups') return 0;
+        if (d.kind === 'nodes') return nodes + layerOf[d.key] * DIAGRAM_STAGGER_MS;
+        return edges + layerOf[d.item.from] * DIAGRAM_STAGGER_MS;
+      },
+      total: edges + (layer + 1) * DIAGRAM_STAGGER_MS + DIAGRAM_DRAW_MS
+    };
+  }
+  // diagramDrawIn draws an edge's line from its source to its tip: a dash
+  // as long as the line, offset by its length and run to 0.
+  function diagramDrawIn(line, delay) {
+    line.style.transition = 'stroke-dashoffset ' + DIAGRAM_DRAW_MS + 'ms ease ' + delay + 'ms';
+    line.style.strokeDashoffset = '0';
+  }
+  // diagramEnter fades the drawn diagram in. Everything starts off; a
+  // frame later the elements the step shows lose it, each delayed by
+  // diagramDelays, and the edges draw in. Once the last is in, the delays
+  // and the draw-in dash clear (a flow edge gets its own dash back from
+  // the stylesheet) and the flow dots, hidden by .entering, fade in.
+  function diagramEnter(block, svg, spec, boxes) {
+    var delays = diagramDelays(spec, boxes);
+    svg.classList.add('entering');
+    requestAnimationFrame(function () {
+      var flags = diagramFlags(spec, chartStepAt(block), false), els = diagramElements(svg);
+      var shown = els.filter(function (el) { return !flags(el.__data__).off; });
+      var lines = svg.querySelectorAll('.dedge-line');
+      shown.forEach(function (el) {
+        var line = el.__data__.kind === 'edges' && el.querySelector('.dedge-line');
+        if (!line) return;
+        var len = line.getTotalLength();
+        line.style.strokeDasharray = len + ' ' + len;
+        line.style.strokeDashoffset = String(len);
+      });
+      svg.getBoundingClientRect(); // flush, so the off state and the dash animate
+      shown.forEach(function (el) {
+        var d = el.__data__, delay = delays.at(d);
+        el.style.transitionDelay = delay + 'ms';
+        el.classList.remove('off');
+        if (d.kind === 'edges') diagramDrawIn(el.querySelector('.dedge-line'), delay);
+      });
+      setTimeout(function () {
+        els.forEach(function (el) { el.style.transitionDelay = ''; });
+        Array.prototype.forEach.call(lines, function (l) {
+          l.style.transition = ''; l.style.strokeDasharray = ''; l.style.strokeDashoffset = '';
+        });
+        svg.classList.remove('entering');
+      }, delays.total);
+    });
+  }
+  // visibleLoop calls frame(now) every animation frame while el is on
+  // screen and the tab is showing, pausing otherwise the way
+  // startGraphFlow does, and returns the function that stops it for good.
+  function visibleLoop(el, frame) {
+    var raf = 0, visible = true, stopped = false, io = null;
+    function kick() { if (!raf && !stopped && visible && !document.hidden) raf = requestAnimationFrame(tick); }
+    function tick(now) { raf = 0; if (stopped) return; frame(now); kick(); }
+    if ('IntersectionObserver' in window) {
+      // Entries batch; the last one is the current state.
+      io = new IntersectionObserver(function (entries) {
+        visible = entries[entries.length - 1].isIntersecting;
+        kick();
+      }, { threshold: 0.05 });
+      io.observe(el);
+    }
+    document.addEventListener('visibilitychange', kick);
+    kick();
+    return function () {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (io) io.disconnect();
+      document.removeEventListener('visibilitychange', kick);
+    };
+  }
+  // diagramFlow moves one dot along each flow edge, in viewBox units, at
+  // PresentViz.flowSpeed for its weight against the heaviest flow edge.
+  // A rebuild stops the block's previous loop; Reduce Motion drew no dots.
+  function diagramFlow(block, svg, spec) {
+    if (block._flowStop) { block._flowStop(); block._flowStop = null; }
+    var max = 0, runs = [];
+    (spec.edges || []).forEach(function (e) { if (e.flow) max = Math.max(max, Number(e.weight) || 0); });
+    svg.querySelectorAll('.dedge.flow').forEach(function (g) {
+      var dot = g.querySelector('.dflow'), line = g.querySelector('.dedge-line');
+      var length = dot ? line.getTotalLength() : 0;
+      if (length > 0) runs.push({ dot: dot, line: line, length: length, speed: PresentViz.flowSpeed(g.__data__.item.weight, max) });
+    });
+    if (!runs.length) return;
+    block._flowStop = visibleLoop(svg, function (now) {
+      runs.forEach(function (r) {
+        var p = r.line.getPointAtLength((now * r.speed) % r.length);
+        r.dot.setAttribute('cx', p.x);
+        r.dot.setAttribute('cy', p.y);
+      });
+    });
+  }
+  // diagramMaxHeight is the canvas's height cap in pixels, which the
+  // stylesheet sets per context (page, slide, presenting, solo).
+  function diagramMaxHeight(wrap) {
+    var v = parseFloat(getComputedStyle(wrap).maxHeight);
+    return isNaN(v) ? DIAGRAM_MAX_H : v;
+  }
+  // diagramFitter returns fit(), which scales the svg to its wrapper: as
+  // wide as the wrapper allows, no taller than its cap, and at most
+  // DIAGRAM_MAX_SCALE, so a three-box diagram does not fill a slide. It
+  // only sets the svg's size, so nothing redraws or replays.
+  function diagramFitter(wrap, svg, layout) {
+    var last = null;
+    return function () {
+      var w = wrap.clientWidth, maxH = diagramMaxHeight(wrap);
+      if (w < 1 || (last && Math.abs(last.w - w) <= 1 && Math.abs(last.h - maxH) <= 1)) return;
+      last = { w: w, h: maxH };
+      var s = Math.min(w / layout.width, maxH / layout.height, DIAGRAM_MAX_SCALE);
+      svg.setAttribute('width', String(Math.floor(layout.width * s)));
+      svg.setAttribute('height', String(Math.floor(layout.height * s)));
+    };
+  }
+  // mountDiagram puts a laid-out diagram on the page the first time its
+  // wrapper has a width (a slide not showing has none): drawn with its
+  // step's classes before it enters the page, so the first paint plays no
+  // transition, then sized, entered, and set moving. After that a change
+  // of width (the observer) or of the height cap (the deck's refresh)
+  // only refits it.
+  function mountDiagram(block, spec, result, wrap, animate) {
+    var fit = null;
+    function attempt() {
+      if (fit) { fit(); return; }
+      if (wrap.clientWidth < 1) return;
+      var svg = diagramSvg(result.graph);
+      drawDiagram(svg, spec, result, diagramFlags(spec, chartStepAt(block), animate));
+      fit = diagramFitter(wrap, svg, result.graph);
+      fit();
+      wrap.appendChild(svg);
+      block._diagramSvg = svg;
+      if (animate) diagramEnter(block, svg, spec, diagramBoxes(result.graph));
+      diagramFlow(block, svg, spec);
+    }
+    block._diagramFit = attempt;
+    if (block._diagramObserver) block._diagramObserver.disconnect();
+    if (typeof ResizeObserver === 'function') {
+      block._diagramObserver = new ResizeObserver(attempt);
+      block._diagramObserver.observe(wrap);
+    }
+    attempt();
+  }
+  // buildDiagram builds a diagram block: its step hook at once, then the
+  // ELK layout, kept on the block, and the drawing. A later call (a theme
+  // change, the deck's refresh) only refits: every colour is a CSS
+  // variable and the geometry does not change, so ELK never runs twice.
+  // The entry plays once, on the brief's mount or the deck's first
+  // showing, and never under Reduce Motion or a deck that cuts
+  // (opts.duration 0). _diagramGen drops a layout that lands after a
+  // newer build started.
+  function buildDiagram(block, opts) {
+    if (typeof d3 === 'undefined' || typeof ELK === 'undefined') {
+      chartNote(block, 'Diagram needs the elk and d3 assets: run make cache in services/present.');
+      return;
+    }
+    if (block._built) { if (block._diagramFit) block._diagramFit(); return; }
+    var specEl = block.querySelector('.diagram-spec'), wrap = block.querySelector('.present-diagram-canvas');
+    if (!specEl || !wrap) return;
+    var spec;
+    try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
+    block._built = true;
+    var animate = !reducedMotion && !(opts && opts.duration === 0);
+    var gen = block._diagramGen = (block._diagramGen || 0) + 1;
+    block._presentStep = diagramStepHook(block, spec);
+    diagramLayout(block, spec).then(function (result) {
+      if (gen !== block._diagramGen) return;
+      block._diagramLayout = result.graph;
+      mountDiagram(block, spec, result, wrap, animate);
+    }).catch(function (err) {
+      if (gen === block._diagramGen) chartNote(block, 'Diagram could not be drawn: ' + ((err && err.message) || err));
+    });
+  }
+  // initPresentDiagrams builds every diagram block under root (the
+  // document by default); with opts.builtOnly it only refits the ones
+  // already built, which is all a theme change in the deck needs, since
+  // a diagram's colours are CSS variables.
+  function initPresentDiagrams(root, opts) {
+    (root || document).querySelectorAll('.present-diagram').forEach(function (block) {
+      if (opts && opts.builtOnly && !block._built) return;
+      buildDiagram(block, opts);
+    });
+  }
+
   // ── Graph edge flow ── marches the dash pattern of every edge with data.flow
   // from source to target; speed follows data.weight. presentGraphStyle gives
   // those edges line-dash-pattern [10, 6], so the period here is 16. The
@@ -1009,6 +1470,7 @@
     setupGraphControls();
     initGraphAndFlow();
     initPresentCharts();
+    initPresentDiagrams();
 
     brief.querySelectorAll('a[href]:not([href^="#"])').forEach(function (a) {
       a.target = '_blank'; a.rel = 'noopener';
@@ -1212,9 +1674,9 @@
     var body = Webkit.el('div', { class: 'slide-body' });
     nodes.forEach(function (n) { body.appendChild(n); });
     var slide = Webkit.el('section', { class: 'slide ' + cls }, [body]);
-    // A visual (the graph, a chart, an image) sizes the slide by the
+    // A visual (the graph, a chart, an image, a diagram) sizes the slide by the
     // viewport instead of zooming the body while presenting.
-    if (body.querySelector('#cy-graph, .present-chart, wk-figure')) slide.classList.add('has-viz');
+    if (body.querySelector('#cy-graph, .present-chart, wk-figure, .present-diagram')) slide.classList.add('has-viz');
     return slide;
   }
 
@@ -1262,8 +1724,8 @@
   // decorateSlide carries a section's layout onto its slide: the
   // data-layout, data-tone (with its --slide-accent variable), and
   // data-reveal attributes the renderer put on the wk-section; a solo class
-  // when the only block is a stat or a quote, which is the big-number or
-  // quote slide with no field to set; the speaker notes template, read from
+  // when the only block is a stat, a quote, or a diagram, which is the
+  // big-number, quote, or picture slide with no field to set; the speaker notes template, read from
   // its inert content; and the slide's steps, one per Next: on a reveal
   // slide every item of a top-level list and every other top-level block
   // is a fragment, and a stepped chart adds its own steps on any slide.
@@ -1278,6 +1740,7 @@
       var tag = blocks[0].tagName.toLowerCase();
       if (tag === 'wk-stat') slide.classList.add('solo', 'solo-stat');
       else if (tag === 'blockquote') slide.classList.add('solo', 'solo-quote');
+      else if (blocks[0].classList.contains('present-diagram')) slide.classList.add('solo', 'solo-diagram');
     }
     var notes = null;
     Array.prototype.slice.call(section.children).forEach(function (c) {
@@ -1553,6 +2016,12 @@
         else if (b._chart) b._chart.resize();
         else if (b._ribbonResize) b._ribbonResize();
       });
+      // A diagram draws in the same way; built, it refits to the height cap
+      // presenting sets, which no resize observer sees.
+      slide.querySelectorAll('.present-diagram').forEach(function (b) {
+        if (!b._built) buildDiagram(b, { duration: transition === 'none' ? 0 : 400 });
+        else if (b._diagramFit) b._diagramFit();
+      });
     }
 
     // Steps: how many of the current slide's steps (reveal fragments and
@@ -1774,6 +2243,7 @@
       if (slide && graphSlide(slide) && graphReady) initGraphAndFlow();
       else graphReady = false;
       initPresentCharts(document, { builtOnly: true });
+      initPresentDiagrams(document, { builtOnly: true });
     });
 
     // Read the remembered mode before the first show() writes the memory.
@@ -1880,6 +2350,7 @@
         document.addEventListener('wk-themechange', function () {
           initGraphAndFlow();
           initPresentCharts();
+          initPresentDiagrams();
         });
       }
       wireShare(data.share);
