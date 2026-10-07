@@ -278,6 +278,16 @@ html.presenting .slide.active[data-tone] { background: color-mix(in srgb, var(--
 .deck .fragment.shown { visibility: visible; animation: fragmentIn 0.2s ease-out; }
 @keyframes fragmentIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 html[data-transition="none"] .deck .fragment.shown { animation: none; }
+/* Stepped charts (MAD-385): the brief lists every caption under the chart;
+   the deck stacks them in one cell and shows the current stage's, hidden by
+   visibility like a fragment so read-aloud and fixation see them all. */
+.present-steps { margin: 0.75rem 0 0; padding-left: 1.25rem; font-size: 0.875rem; color: var(--text-2); }
+.present-steps li { margin: 0.125rem 0; }
+.deck .present-steps { list-style: none; padding: 0; display: grid; }
+.deck .present-steps li { grid-area: 1 / 1; visibility: hidden; }
+.deck .present-steps li.current { visibility: visible; animation: fragmentIn 0.2s ease-out; }
+html[data-transition="none"] .deck .present-steps li.current { animation: none; }
+html.presenting .slide.has-viz .present-chart[data-steps] .present-chart-canvas { height: 44vh; }
 /* Speaker notes: a drawer at the lower left, outside every slide, over the
    chrome and, while presenting, over the fixed slide. */
 .deck-notes-drawer {

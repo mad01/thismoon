@@ -284,6 +284,28 @@
     if (kind === 'scatter') return 'scatter';
     return 'line'; // line, area, sparkline
   }
+  // seriesMax is the value a stepped chart's axis is pinned to: the largest
+  // point, or the largest per-category sum when the bars stack, so showing
+  // a series at a later step does not rescale the ones already shown.
+  function seriesMax(spec, stacked) {
+    var sums = [], max = 0;
+    (spec.series || []).forEach(function (s) {
+      (s.points || []).forEach(function (p, i) {
+        var y = Number(p.y) || 0;
+        if (stacked) { sums[i] = (sums[i] || 0) + y; y = sums[i]; }
+        if (y > max) max = y;
+      });
+    });
+    return max;
+  }
+  // chartStepAt is the stage a stepped chart block stands at: the deck
+  // writes data-step-at as it walks the steps, the brief never does, and
+  // null means every series shows.
+  function chartStepAt(block) {
+    if (!block.hasAttribute('data-step-at')) return null;
+    var n = parseInt(block.getAttribute('data-step-at'), 10);
+    return isNaN(n) ? null : n;
+  }
   function cartesianOptions(kind, spec, colors, animate) {
     var spark = kind === 'sparkline';
     var multi = (spec.series || []).length > 1;
@@ -435,7 +457,40 @@
     if (animate && opts && opts.duration !== undefined && cfg.options) {
       cfg.options.animation = opts.duration > 0 ? { duration: opts.duration, easing: 'easeOutQuart' } : false;
     }
+    // A stepped chart (data-steps) starts at the stage the deck has walked
+    // to, with the series of later stages hidden. Its axis is pinned to the
+    // full data and the legend stops toggling series, so a click cannot
+    // undo a step.
+    var stepped = block.hasAttribute('data-steps');
+    if (stepped && window.PresentViz && cfg.data && cfg.data.datasets) {
+      var shown = window.PresentViz.chartStepVisibility(spec.series || [], chartStepAt(block));
+      cfg.data.datasets.forEach(function (ds, i) { if (shown[i] === false) ds.hidden = true; });
+      if (cfg.options && cfg.options.scales) {
+        var axis = cfg.options.indexAxis === 'y' ? 'x' : 'y';
+        if (cfg.options.scales[axis]) cfg.options.scales[axis].suggestedMax = seriesMax(spec, kind === 'stacked-bar');
+      }
+      if (cfg.options && cfg.options.plugins && cfg.options.plugins.legend) {
+        cfg.options.plugins.legend.onClick = function () {};
+        // A series not yet reached stays out of the legend instead of
+        // showing struck through.
+        cfg.options.plugins.legend.labels = cfg.options.plugins.legend.labels || {};
+        cfg.options.plugins.legend.labels.filter = function (item) { return !item.hidden; };
+      }
+    }
     block._chart = new Chart(canvas, cfg);
+    // The deck moves a stepped chart between stages through this hook. It
+    // is registered on every build and reads block._chart when called,
+    // because a theme change replaces the chart. Reduce Motion and a deck
+    // that cuts (block._stepCut) swap the series without animating.
+    if (stepped) {
+      block._presentStep = function (n) {
+        var c = block._chart;
+        if (!c || !window.PresentViz) return;
+        var vis = window.PresentViz.chartStepVisibility(spec.series || [], n);
+        vis.forEach(function (on, i) { if (c.data.datasets[i]) c.setDatasetVisibility(i, on); });
+        c.update(reducedMotion || block._stepCut ? 'none' : undefined);
+      };
+    }
   }
   // initPresentCharts builds every chart block under root (the document by
   // default); with opts.builtOnly it rebuilds only the ones already built,
@@ -942,18 +997,35 @@
       if (c.tagName === 'TEMPLATE' && c.classList.contains('deck-notes')) notes = c.content;
     });
     slide._notes = notes;
-    if (section.hasAttribute('data-reveal')) {
-      var steps = [];
-      blocks.forEach(function (b) {
-        var items = (b.tagName === 'UL' || b.tagName === 'OL')
-          ? Array.prototype.slice.call(b.children).filter(function (c) { return c.tagName === 'LI'; })
-          : [];
-        if (items.length) items.forEach(function (li) { steps.push(li); });
-        else steps.push(b);
+    // Steps: on a reveal slide each item of a top-level list and every
+    // other top-level block is one fragment. A stepped block (data-steps: a
+    // chart with stages) adds its own steps right after the fragment that
+    // holds it, a chart inside a columns block included, and a slide
+    // without reveal still walks its stepped blocks. PresentViz.stepPlan
+    // orders the entries; the slide keeps them as _steps.
+    var reveal = section.hasAttribute('data-reveal');
+    var items = [];
+    blocks.forEach(function (b) {
+      var lis = (b.tagName === 'UL' || b.tagName === 'OL')
+        ? Array.prototype.slice.call(b.children).filter(function (c) { return c.tagName === 'LI'; })
+        : [];
+      if (reveal && lis.length) { lis.forEach(function (li) { items.push({ el: li, fragment: true }); }); return; }
+      var own = stepCount(b);
+      var children = own ? [] : Array.prototype.slice.call(b.querySelectorAll('[data-steps]')).map(function (el) {
+        return { el: el, steps: stepCount(el) };
       });
-      steps.forEach(function (el, k) { el.classList.add('fragment'); el.setAttribute('data-step', String(k + 1)); });
-      slide._steps = steps;
-    }
+      items.push({ el: b, fragment: reveal, steps: own, children: children });
+    });
+    var plan = window.PresentViz ? window.PresentViz.stepPlan(items) : items.filter(function (it) { return it.fragment; }).map(function (it) { return { kind: 'fragment', el: it.el }; });
+    plan.forEach(function (entry, k) {
+      if (entry.kind !== 'fragment') return;
+      entry.el.classList.add('fragment');
+      entry.el.setAttribute('data-step', String(k + 1));
+    });
+    if (plan.length) slide._steps = plan;
+  }
+  function stepCount(el) {
+    return parseInt(el.getAttribute('data-steps'), 10) || 0;
   }
 
   // ── Deck chrome ── the view's furniture around the slides, built from the
@@ -1200,10 +1272,35 @@
     // lands with every step shown. The hash and the dots track slides only.
     var step = 0;
     function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
+    // applySteps lands the slide on step n: the first n fragments shown and
+    // every stepped block at the highest stage among its entries below n
+    // (stage 0 before its first one).
     function applySteps(slide, n) {
       step = n;
       if (!slide || !slide._steps) return;
-      slide._steps.forEach(function (el, k) { el.classList.toggle('shown', k < n); });
+      var stages = [];
+      function record(el, m) {
+        for (var i = 0; i < stages.length; i++) {
+          if (stages[i].el === el) { if (m > stages[i].n) stages[i].n = m; return; }
+        }
+        stages.push({ el: el, n: m });
+      }
+      slide._steps.forEach(function (entry, k) {
+        if (entry.kind === 'fragment') { entry.el.classList.toggle('shown', k < n); return; }
+        record(entry.el, k < n ? entry.n : 0);
+      });
+      stages.forEach(function (st) { setBlockStep(st.el, st.n); });
+    }
+    // setBlockStep moves a stepped block to stage m: the attribute the chart
+    // bootstrap reads when the block builds later, the renderer's hook when
+    // it is already built, and the caption of that stage.
+    function setBlockStep(el, m) {
+      el.setAttribute('data-step-at', String(m));
+      el._stepCut = transition === 'none';
+      if (typeof el._presentStep === 'function') el._presentStep(m);
+      var list = el.querySelector('.present-steps');
+      if (!list) return;
+      Array.prototype.slice.call(list.children).forEach(function (li, i) { li.classList.toggle('current', i + 1 === m); });
     }
     function updateCounter() {
       var total = stepTotal(slides[current]);
