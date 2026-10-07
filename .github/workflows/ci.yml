@@ -148,6 +148,16 @@ jobs:
           COMPONENT: ${{ matrix.component }}
         run: go test "./${COMPONENT}/..."
 
+      # present's viz.js helpers run under node's test runner.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: matrix.component == 'services/present'
+        with:
+          node-version: 24
+
+      - name: JS tests
+        if: matrix.component == 'services/present'
+        run: node --test services/present/internal/server/test/*.test.mjs
+
       - name: Build
         env:
           COMPONENT: ${{ matrix.component }}

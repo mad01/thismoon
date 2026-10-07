@@ -50,6 +50,12 @@ func pageShell(mode Mode) []byte {
 //go:embed app.js
 var appJS []byte
 
+// vizJS holds the deck's pure stepping helpers, loaded by shell.html before
+// app.js and served at GET /viz.js.
+//
+//go:embed viz.js
+var vizJS []byte
+
 // indexShellHTML is the static index shell (chrome only). The page list is
 // rendered client-side by indexJS from the JSON at GET /api/pages. indexJS is
 // served at GET /index.js.
@@ -176,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /p/{id}/deck", s.handleDeckPage)
 	mux.HandleFunc("GET /api/p/{id}", s.handleAPIPage)
 	mux.HandleFunc("GET /app.js", handleAppJS)
+	mux.HandleFunc("GET /viz.js", handleVizJS)
 	mux.HandleFunc("GET /logo.png", handleLogo)
 	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
 	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
@@ -501,6 +508,14 @@ func handleAppJS(w http.ResponseWriter, _ *http.Request) {
 	// no-cache so a present rebuild's app.js is picked up on the next load.
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(appJS)
+}
+
+// handleVizJS serves the embedded deck visual helpers.
+func handleVizJS(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// no-cache so a present rebuild's viz.js is picked up on the next load.
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(vizJS)
 }
 
 // handleDelete removes a page. Local mode trusts the caller (the web index

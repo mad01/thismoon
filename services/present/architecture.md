@@ -56,7 +56,7 @@ internal/mermaid/    Mermaid flowchart source to GraphInput, pure; mdimport call
                      it for a fenced mermaid block
 internal/server/     HTTP handlers per mode (deck.go holds the deck shell and
                      command routes); embeds shell.html, index_shell.html,
-                     shared_index_shell.html, app.js, index.js
+                     shared_index_shell.html, app.js, viz.js, index.js
 internal/mcpserver/  MCP wiring and the present_* tools, one tool set per mode
 kit/notify           best-effort event emit to events.this (shared)
 ```
@@ -275,6 +275,7 @@ page without a deck redirects to the brief) and `GET /p/{id}/deck/command`
 (the last remote command, local filesystem store only). `GET /api/p/{id}`
 answers with a `share` block in local mode and the `deck`, `has_deck`, and
 `deck_control` fields. The remaining page routes are `GET /app.js`,
+`GET /viz.js` (the deck's pure stepping helpers, loaded before `app.js`),
 `GET /logo.png` (the embedded repo logo the deck chrome shows, served
 no-cache with a content ETag), `GET /p/{id}/version`, and `DELETE /p/{id}`
 (the only delete surface).

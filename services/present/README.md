@@ -173,7 +173,7 @@ upgrade the restart alone brings every page current.
 ## Develop
 
 ```bash
-make test    # go test ./...
+make test    # go test ./..., then the viz.js node tests (skipped without node)
 make build   # ./present
 make tidy    # go mod tidy
 ```

@@ -57,7 +57,9 @@ func TestPageServesShell(t *testing.T) {
 	}
 	// The shell is chrome only; the body is fetched from /api/p/{id} and built
 	// client-side by /app.js, so the page content is NOT in the served HTML.
-	for _, want := range []string{`id="root"`, "/app.js", "/webkit/webkit.js", "wk-section li"} {
+	for _, want := range []string{
+		`id="root"`, "/app.js", "/viz.js", "/webkit/webkit.js", "wk-section li",
+	} {
 		if !contains(body, want) {
 			t.Errorf("shell missing %q", want)
 		}
@@ -148,6 +150,28 @@ func TestAppJSServed(t *testing.T) {
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "javascript") {
 		t.Errorf("Content-Type = %q, want javascript", ct)
+	}
+}
+
+// viz.js is a common route, so the shared instance serves it too.
+func TestVizJSServed(t *testing.T) {
+	local, _ := setup(t)
+	for name, base := range map[string]string{"local": local.URL, "shared": setupShared(t).ts.URL} {
+		resp, err := http.Get(base + "/viz.js")
+		if err != nil {
+			t.Fatalf("%s: GET /viz.js: %v", name, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", name, resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "javascript") {
+			t.Errorf("%s: Content-Type = %q, want javascript", name, ct)
+		}
+		if !strings.Contains(string(body), "PresentViz") {
+			t.Errorf("%s: /viz.js does not define PresentViz", name)
+		}
 	}
 }
 
