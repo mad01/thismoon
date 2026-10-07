@@ -335,7 +335,7 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
-15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence; a `ribbon` steps by period, so one caption per column. See **Stepped charts**.
+15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. A `ribbon` steps by period, one caption per column and no series `step`, so keep a stepped ribbon to three to five periods. See **Stepped charts**.
 
 ### Example deck
 
@@ -562,7 +562,7 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 | `flows` | array | `{from, to, value}` links, `sankey` only. See **Sankey format** below |
 | `steps` | array? | `[{caption}]`, one per step a deck slide walks through the chart. See **Stepped charts** below |
 | `order` | string? | `ribbon` only. `rank` (the default) stacks the largest category on top of each column; `given` keeps the series order |
-| `frame` | bool? | `true` keeps the card around a `ribbon`, which otherwise sits straight on the page |
+| `frame` | bool? | `true` keeps the card around a `ribbon`, which otherwise sits straight on the page. Accepted on every kind; the other kinds keep their card either way for now |
 
 Each series: `name` (legend label, shown when 2+ series), `color` (`series-1` to `series-4`, or the legacy names `terracotta`, `blue`, `green`, `purple` for the same four slots; omit to auto-assign by index), `step` (the 1-based step the series first shows at, on a chart with `steps`; omit for a series shown from the start), and `points`, an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
 
@@ -614,9 +614,9 @@ Node names are matched by exact string, so reuse the same spelling on every link
 }
 ```
 
-One series per category, `x` the period, `y` its value in that period. Each period is one column standing on the baseline. The categories stack inside it, the largest on top by default (`order: "rank"`), or in series order with `order: "given"`. A ribbon joins a category's segment to its segment in the next column, so two ribbons crossing is one category passing another. A category with no point, or a zero, in a period has no segment there and its ribbon breaks. Every series needs a `name`, and values are zero or more. Hovering a segment or a ribbon shows its values and dims the other categories. The chart has no card: it sits on the page or the slide, and `frame: true` keeps the card.
+One series per category, `x` the period, `y` its value in that period. Each period is one column standing on the baseline. The categories stack inside it, the largest on top by default (`order: "rank"`), or in series order with `order: "given"`. A ribbon joins a category's segment to its segment in the next column, so two ribbons crossing is one category passing another. A category with a zero in a period has no segment there and its ribbon breaks. List every period in the first series, in order, with a zero for a gap. The columns follow the order the periods first appear in, and a later series that lists them the other way round is refused. Every series needs its own `name`, a period appears once per series, and values are zero or more. Hovering a segment or a ribbon shows its values and dims the other categories. The chart has no card: it sits on the page or the slide, and `frame: true` keeps the card.
 
-Keep it to about eight categories and eight periods. Past that the ribbons turn into a hairball: split the periods across slides, or fold the small categories into one named "other".
+Keep it to four categories (the palette has four series colours, so a fifth repeats the first) and about eight periods. Past that the ribbons turn into a hairball: fold the small categories into one named "other", and split the periods across slides.
 
 ### Stepped charts
 
@@ -641,9 +641,9 @@ A chart with `steps` walks through its data on a deck slide. Each press of Next 
 }
 ```
 
-A `ribbon` walks its periods instead of its series: one caption per period, in order, and step n shows the first n columns with the ribbons into them. The step count has to equal the period count, and a series on a ribbon carries no `step`.
+A `ribbon` walks its periods instead of its series: one caption per period, in order, and step n shows the first n columns with the ribbons into them. The slide opens on the empty axis, and the first Next shows the first period. The step count has to equal the period count, and a series on a ribbon carries no `step`.
 
-Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. The legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
+Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. On a chart stepped by series the legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
 
 ## References
 

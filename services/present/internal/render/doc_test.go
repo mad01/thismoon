@@ -3,6 +3,8 @@ package render
 import (
 	"encoding/json"
 	"html"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -822,14 +824,47 @@ func TestRenderDocRibbon(t *testing.T) {
 	}
 }
 
-// TestRibbonPeriods keeps a ribbon's periods in order of first appearance
-// across the series, with a period a later series adds at the end.
+// TestRibbonPeriods pins the period order both sides share: the vector in
+// testdata/ribbon-order.json is read by this test and by the viz.js tests,
+// and both must list the same periods (first appearance across the
+// series, a numeric x read as its decimal string).
 func TestRibbonPeriods(t *testing.T) {
-	got := ribbonPeriods([]ChartSeries{
-		{Points: []ChartPoint{{X: "Q2", Y: 1}, {X: "Q1", Y: 1}}},
-		{Points: []ChartPoint{{X: "Q1", Y: 1}, {X: "Q3", Y: 1}}},
-	})
-	if want := []string{"Q2", "Q1", "Q3"}; !slices.Equal(got, want) {
-		t.Errorf("ribbonPeriods = %v, want %v", got, want)
+	raw, err := os.ReadFile(filepath.Join("testdata", "ribbon-order.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vec struct {
+		Series  []ChartSeries `json:"series"`
+		Periods []string      `json:"periods"`
+	}
+	if err := json.Unmarshal(raw, &vec); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ribbonPeriods(vec.Series)
+	if err != nil {
+		t.Fatalf("ribbonPeriods: %v", err)
+	}
+	if !slices.Equal(got, vec.Periods) {
+		t.Errorf("ribbonPeriods = %v, want %v", got, vec.Periods)
+	}
+}
+
+// TestCompileDeckRibbonAccepts compiles a ribbon written the way the
+// schema allows: a numeric x, a zero value, an explicit rank order, and
+// four captions for the four periods the numbers make.
+func TestCompileDeckRibbonAccepts(t *testing.T) {
+	raw := []byte(`{"sections":[{"h":"S","blocks":[{"t":"chart","kind":"ribbon","order":"rank",
+		"steps":[{"caption":"a"},{"caption":"b"},{"caption":"c"},{"caption":"d"}],
+		"series":[{"name":"a","points":[{"x":2023,"y":1},{"x":2024,"y":0}]},
+		{"name":"b","points":[{"x":2023,"y":2},{"x":2024,"y":3},{"x":2025,"y":1}]},
+		{"name":"c","points":[{"x":"2025","y":4},{"x":"2026","y":5}]}]}]}]}`)
+	c, err := CompileDeck(raw, "T")
+	if err != nil {
+		t.Fatalf("CompileDeck: %v", err)
+	}
+	for _, want := range []string{`data-steps="4"`, `"order":"rank"`, `{"x":"2023","y":1}`} {
+		if !strings.Contains(c.HTML, want) {
+			t.Errorf("output lacks %q", want)
+		}
 	}
 }

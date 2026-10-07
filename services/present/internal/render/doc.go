@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"math"
 	"net/url"
 	"regexp"
 	"slices"
@@ -981,49 +982,97 @@ func validateChart(b Block) error {
 }
 
 // validateRibbon refuses a ribbon chart whose order is not rank or given,
-// a series without a name (the legend and the segment labels need one), a
-// point without an x (the period) or with a negative y (a segment has no
-// height below zero), and a step count that differs from the period
-// count: a ribbon's steps are its periods, one caption each.
+// a series validateRibbonSeries refuses, series whose periods disagree on
+// their order, and a step count that differs from the period count: a
+// ribbon's steps are its periods, one caption each.
 func validateRibbon(b Block) error {
 	if b.Order != "" && !slices.Contains(ribbonOrders, b.Order) {
 		return fmt.Errorf(
-			"ribbon %q: unknown order %q (want %s)",
+			"chart %q: unknown order %q (want %s)",
 			b.Title, b.Order, strings.Join(ribbonOrders, " or "),
 		)
 	}
-	for i, s := range b.Series {
-		if strings.TrimSpace(s.Name) == "" {
-			return fmt.Errorf("ribbon %q: series %d has no name", b.Title, i+1)
+	if err := validateRibbonSeries(b.Series); err != nil {
+		return fmt.Errorf("chart %q: %w", b.Title, err)
+	}
+	periods, err := ribbonPeriods(b.Series)
+	if err != nil {
+		return fmt.Errorf("chart %q: %w", b.Title, err)
+	}
+	if n := len(b.Steps); n > 0 && n != len(periods) {
+		return fmt.Errorf(
+			"chart %q: a ribbon takes one caption per period (captions: %d, periods: %d)",
+			b.Title, n, len(periods),
+		)
+	}
+	return nil
+}
+
+// validateRibbonSeries refuses a series without a name (the legend and the
+// segment labels need one), two series with the same name (the legend
+// could not tell them apart), a point without an x (the period) or with a
+// negative y (a segment has no height below zero), a period repeated
+// inside one series (the layout keeps one value per period), and a column
+// total that overflows a float (the layout would draw nothing).
+func validateRibbonSeries(series []ChartSeries) error {
+	names := map[string]bool{}
+	totals := map[string]float64{}
+	for i, s := range series {
+		name := strings.TrimSpace(s.Name)
+		if name == "" {
+			return fmt.Errorf("series %d has no name", i+1)
 		}
+		if names[name] {
+			return fmt.Errorf("two series are named %q", name)
+		}
+		names[name] = true
+		seen := map[string]bool{}
 		for j, p := range s.Points {
 			if strings.TrimSpace(p.X) == "" {
-				return fmt.Errorf("ribbon %q: series %q point %d has no x (the period)", b.Title, s.Name, j+1)
+				return fmt.Errorf("series %q point %d has no x (the period)", s.Name, j+1)
 			}
+			if seen[p.X] {
+				return fmt.Errorf("series %q repeats period %q", s.Name, p.X)
+			}
+			seen[p.X] = true
 			if p.Y < 0 {
-				return fmt.Errorf("ribbon %q: series %q at %s is %v, want 0 or more", b.Title, s.Name, p.X, p.Y)
+				return fmt.Errorf("series %q at %s is %v, want 0 or more", s.Name, p.X, p.Y)
+			}
+			totals[p.X] += p.Y
+			if math.IsInf(totals[p.X], 0) {
+				return fmt.Errorf("the %s column total is too large to draw", p.X)
 			}
 		}
-	}
-	if n, m := len(b.Steps), len(ribbonPeriods(b.Series)); n > 0 && n != m {
-		return fmt.Errorf("ribbon %q: %d steps for %d periods (one caption per period)", b.Title, n, m)
 	}
 	return nil
 }
 
 // ribbonPeriods lists a ribbon chart's periods: every distinct x across
 // the series, in order of first appearance. The client's layout walks the
-// series the same way, so step k of a stepped ribbon is period k here.
-func ribbonPeriods(series []ChartSeries) []string {
+// series the same way, so step k of a stepped ribbon is period k on both
+// sides. A series has to name its periods in that order: with a [Q2, Q3]
+// and then b [Q1, Q2, Q3] the columns would run Q2, Q3, Q1 and every
+// caption would land on the wrong period, so b is refused.
+func ribbonPeriods(series []ChartSeries) ([]string, error) {
 	var periods []string
 	for _, s := range series {
+		last := -1
 		for _, p := range s.Points {
-			if !slices.Contains(periods, p.X) {
+			k := slices.Index(periods, p.X)
+			if k < 0 {
+				k = len(periods)
 				periods = append(periods, p.X)
 			}
+			if k < last {
+				return nil, fmt.Errorf(
+					"series %q lists %q before %q, an earlier series the other way round (put every period in the first series, y 0 for a gap)",
+					s.Name, periods[last], p.X,
+				)
+			}
+			last = k
 		}
 	}
-	return periods
+	return periods, nil
 }
 
 // validateImage refuses an image without alt, which read-aloud reads in the

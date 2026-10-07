@@ -291,12 +291,18 @@ theme). Do not add those controls manually.
   `viz.js` (node-tested: periods in order of first appearance, one
   bottom-aligned column per period, segments ordered by rank or as given,
   a ribbon per category between adjacent columns). It draws SVG into the
-  canvas wrapper with `var(--series-N)` fills, so a theme switch needs no
-  rebuild. The template gives the block `is-ribbon`, which drops the card
-  unless the block sets `frame` (`data-frame`). `validateRibbon` refuses a
-  series without a name, a point without an x or with a negative y, an
-  unknown `order`, and a step count that differs from the period count. A
-  ribbon steps by period (its `_presentStep` shows the first n columns),
+  canvas wrapper with `var(--series-N)` fills, so the theme rebuild redraws
+  it in place with no colour to resolve. The template gives the block
+  `is-ribbon`, which drops the card unless the block sets `frame`
+  (`data-frame`; accepted on every kind, a no-op on the others until the
+  frameless default reaches them). `validateRibbon` refuses an unknown
+  `order`, a series without a name or with a name another series has, a
+  point without an x or with a negative y, a period repeated in a series,
+  a column total that overflows, series that disagree on the period order
+  (periods run in order of first appearance; `ribbonPeriods`, pinned
+  against the JS layout by `testdata/ribbon-order.json`), and a step count
+  that differs from the period count. A ribbon steps by period (its
+  `_presentStep` shows the first n columns, step 0 is the empty axis),
   never by series. The graph's layout engines (dagre, the ELK
   algorithms, cose) are built in `app.js` (`presentGraphLayout`), not in the
   generated graph script, which only names the engine and the resolved

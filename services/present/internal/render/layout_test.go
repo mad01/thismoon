@@ -236,26 +236,54 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			`a ribbon walks its periods`,
 		},
 		{"order on a bar chart", Block{T: "chart", Title: "C", Kind: "bar", Order: "given"}, `chart "C": order is a ribbon field`},
-		{"unknown ribbon order", Block{T: "chart", Title: "C", Kind: "ribbon", Order: "value"}, `ribbon "C": unknown order "value" (want rank or given)`},
+		{"unknown ribbon order", Block{T: "chart", Title: "C", Kind: "ribbon", Order: "value"}, `chart "C": unknown order "value" (want rank or given)`},
 		{
 			"ribbon series without a name",
-			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Points: []ChartPoint{{X: "q1", Y: 1}}}}},
-			`ribbon "C": series 2 has no name`,
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Name: " ", Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`chart "C": series 2 has no name`,
+		},
+		{
+			"ribbon series named twice",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`chart "C": two series are named "a"`,
 		},
 		{
 			"ribbon point without a period",
-			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {Y: 2}}}}},
-			`ribbon "C": series "a" point 2 has no x (the period)`,
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: " ", Y: 2}}}}},
+			`chart "C": series "a" point 2 has no x (the period)`,
+		},
+		{
+			"ribbon period repeated in a series",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 2}, {X: "q1", Y: 9}}}}},
+			`chart "C": series "a" repeats period "q1"`,
 		},
 		{
 			"ribbon negative value",
 			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: -3}}}}},
-			`ribbon "C": series "a" at q1 is -3, want 0 or more`,
+			`chart "C": series "a" at q1 is -3, want 0 or more`,
+		},
+		{
+			"ribbon column total overflows",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1e308}}}, {Name: "b", Points: []ChartPoint{{X: "q1", Y: 1e308}}}}},
+			`chart "C": the q1 column total is too large to draw`,
+		},
+		{
+			"ribbon series disagree on the period order",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{
+				{Name: "a", Points: []ChartPoint{{X: "q2", Y: 1}, {X: "q3", Y: 1}}},
+				{Name: "b", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}},
+			}},
+			`chart "C": series "b" lists "q1" before "q2", an earlier series the other way round`,
 		},
 		{
 			"ribbon steps differ from periods",
 			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}, {Caption: "two"}}, Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}}}},
-			`ribbon "C": 2 steps for 3 periods (one caption per period)`,
+			`chart "C": a ribbon takes one caption per period (captions: 2, periods: 3)`,
+		},
+		{
+			"ribbon steps without series",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}}},
+			`chart "C": a ribbon takes one caption per period (captions: 1, periods: 0)`,
 		},
 		{
 			"stepped chart in details",

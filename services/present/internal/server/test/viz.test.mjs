@@ -196,3 +196,8 @@ test('ribbonLayout: max is the largest column total, and nothing in gives nothin
   assert.deepEqual(PresentViz.ribbonLayout([]), { periods: [], columns: [], ribbons: [], max: 0 });
   assert.deepEqual(PresentViz.ribbonLayout(undefined).periods, []);
 });
+
+test('ribbonLayout: the period order matches the Go side (testdata/ribbon-order.json)', () => {
+  const vec = JSON.parse(readFileSync(new URL('../../render/testdata/ribbon-order.json', import.meta.url), 'utf8'));
+  assert.deepEqual(PresentViz.ribbonLayout(vec.series).periods, vec.periods);
+});
