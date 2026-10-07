@@ -247,6 +247,12 @@ test('diagramElk: groups nest, nodes sit in their group, edges sit at the root w
   assert.deepEqual(prod.children.map((c) => c.id), ['data', 'api']);
   assert.deepEqual(prod.children[0].children.map((c) => c.id), ['db']);
   assert.equal(prod.layoutOptions['elk.padding'], '[top=36,left=16,bottom=16,right=16]');
+  // ELK spaces siblings by their parent's options, so a group, nested or not, carries the root's.
+  ['elk.layered.spacing.nodeNodeBetweenLayers', 'elk.spacing.nodeNode', 'elk.spacing.edgeEdge'].forEach((k) => {
+    assert.equal(prod.layoutOptions[k], g.layoutOptions[k], k);
+    assert.equal(prod.children[0].layoutOptions[k], g.layoutOptions[k], k);
+  });
+  assert.equal(g.children[1].layoutOptions, undefined);
   assert.equal(g.children[1].width, 182);
   assert.deepEqual(g.edges[0], { id: 'e0', sources: ['web'], targets: ['api'] });
   assert.equal(g.layoutOptions['elk.edgeLabels.inline'], undefined);
