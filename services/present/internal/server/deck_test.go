@@ -41,7 +41,9 @@ func TestDeckPageServesShellOnlyWithADeck(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("deck view status = %d, want 200", code)
 	}
-	for _, want := range []string{`id="root"`, "/app.js", `id="deckLink"`, `id="briefLink"`} {
+	for _, want := range []string{
+		`id="root"`, "/viz.js", "/app.js", `id="deckLink"`, `id="briefLink"`,
+	} {
 		if !contains(body, want) {
 			t.Errorf("deck shell missing %q", want)
 		}

@@ -54,6 +54,13 @@ URL. On a local instance it may also be a file, which the MCP tools copy
 into the workdir under its content hash and serve at `/img/`. A shared
 instance takes URLs only. The rest of the decision stands.
 
+Amended 2026-10-07 (MAD-385): a `chart` block may carry `steps`, one
+caption per step, and a series the `step` it first shows at. The deck
+walks a stepped chart's steps on the slide's counter right after the
+chart's own fragment, on a slide without `reveal` too. The brief
+lists the captions under the chart. A chart without steps renders as
+before, which the golden fixtures keep pinning.
+
 ## Consequences
 
 - Every new field and block is optional. A Doc without them renders

@@ -79,6 +79,11 @@ jobs:
               c="${dir%/}"
               echo "${c}:"
               echo "  - '${c}/**'"
+              # A component's agent skill ships beside it under skills/<name>;
+              # a skill-only edit must still run the component's drift tests.
+              if [ -d "skills/${c##*/}" ]; then
+                echo "  - 'skills/${c##*/}/**'"
+              fi
             done
           } > .github/filters.generated.yml
           cat .github/filters.generated.yml
@@ -142,6 +147,16 @@ jobs:
         env:
           COMPONENT: ${{ matrix.component }}
         run: go test "./${COMPONENT}/..."
+
+      # present's viz.js helpers run under node's test runner.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: matrix.component == 'services/present'
+        with:
+          node-version: 24
+
+      - name: JS tests
+        if: matrix.component == 'services/present'
+        run: node --test services/present/internal/server/test/*.test.mjs
 
       - name: Build
         env:

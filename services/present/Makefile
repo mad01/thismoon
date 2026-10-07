@@ -12,7 +12,7 @@ KIND_CLUSTER    ?= kind
 KIND_VERSION    ?= v0.32.0
 KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 
-.PHONY: build install resign clean test tidy fmt lint cache cache-force image kind-test kind-down
+.PHONY: build install resign clean test test-js tidy fmt lint cache cache-force image kind-test kind-down
 
 build:
 	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/present
@@ -41,6 +41,16 @@ cache-force:
 
 test:
 	go test ./...
+	$(MAKE) test-js
+
+# The pure helpers in viz.js run under node's test runner. Build and install
+# never need node, so a machine without it skips these tests.
+test-js:
+	@if command -v node >/dev/null 2>&1; then \
+		node --test internal/server/test/*.test.mjs; \
+	else \
+		echo "present: node not found, skipping JS tests"; \
+	fi
 
 tidy:
 	go mod tidy

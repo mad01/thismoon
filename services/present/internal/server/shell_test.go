@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -133,4 +135,64 @@ func TestShellsDeclareTerracottaAlias(t *testing.T) {
 			t.Errorf("%s shell lacks the terracotta compatibility rule %q", name, rule)
 		}
 	}
+}
+
+var (
+	versionVar   = regexp.MustCompile(`(?m)^([A-Z0-9_]+_VERSION)="([^"]+)"$`)
+	assetFileVar = regexp.MustCompile(`(?m)^[a-z0-9_]+_file="\$ASSETS/js/([^"]+)"$`)
+	varRef       = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
+	shellJSSrc   = regexp.MustCompile(`src="/assets/js/([^"]+)"`)
+)
+
+// The page shell loads each vendored script by a versioned filename that
+// scripts/cache-assets.sh writes into the workdir (docs/adr/0022). Pin the
+// two to each other, so a version bump in one place cannot leave the shell
+// asking for a file the script never fetches, or the script fetching one no
+// page loads.
+func TestShellLoadsEveryCachedScript(t *testing.T) {
+	script, err := os.ReadFile("../../scripts/cache-assets.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetched := cachedScripts(t, string(script))
+	if len(fetched) == 0 {
+		t.Fatal("cache-assets.sh declares no $ASSETS/js file; the pattern no longer matches")
+	}
+	loaded := map[string]bool{}
+	for _, m := range shellJSSrc.FindAllStringSubmatch(string(shellHTML), -1) {
+		loaded[m[1]] = true
+	}
+	for name := range fetched {
+		if !loaded[name] {
+			t.Errorf("cache-assets.sh fetches %s but shell.html never loads /assets/js/%s", name, name)
+		}
+	}
+	for name := range loaded {
+		if !fetched[name] {
+			t.Errorf("shell.html loads /assets/js/%s but cache-assets.sh never fetches it", name)
+		}
+	}
+}
+
+// cachedScripts resolves the $ASSETS/js filenames cache-assets.sh declares,
+// expanding the *_VERSION variables they name.
+func cachedScripts(t *testing.T, script string) map[string]bool {
+	t.Helper()
+	versions := map[string]string{}
+	for _, m := range versionVar.FindAllStringSubmatch(script, -1) {
+		versions[m[1]] = m[2]
+	}
+	files := map[string]bool{}
+	for _, m := range assetFileVar.FindAllStringSubmatch(script, -1) {
+		name := varRef.ReplaceAllStringFunc(m[1], func(ref string) string {
+			key := varRef.FindStringSubmatch(ref)[1]
+			version, ok := versions[key]
+			if !ok {
+				t.Errorf("cache-assets.sh names ${%s} in %s but never sets it", key, m[1])
+			}
+			return version
+		})
+		files[name] = true
+	}
+	return files
 }

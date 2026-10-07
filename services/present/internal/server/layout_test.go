@@ -14,6 +14,9 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"'layoutstop'", "classList.add('ready')", "buildChart(b, { duration: transition === 'none' ? 0 : 400 })", "builtOnly",
 		"var pending = null;", "function at() { return pending ? pending.i : current; }", "pending.steps = n",
 		"vt.ready.catch(function () {});",
+		// In-block steps (MAD-385): the plan, the step attribute, the hook.
+		"PresentViz.stepPlan(items)", "data-steps", "data-step-at", "block._presentStep = function (n)",
+		"PresentViz.chartStepVisibility", "PresentViz.blockStepsAt", "PresentViz.seriesMax", "setDatasetVisibility", "legend.onClick = function () {}",
 	} {
 		if !contains(app, want) {
 			t.Errorf("app.js lacks %q", want)
@@ -30,6 +33,8 @@ func TestDeckLayoutWiring(t *testing.T) {
 		"::view-transition-old(deck-strip), ::view-transition-old(deck-logo), ::view-transition-old(deck-bar), ::view-transition-old(deck-notes) { display: none; }",
 		`html[data-transition="slide"].deck-next::view-transition-new(deck-slide)`,
 		"prefers-reduced-motion", ".cy-container.ready",
+		".deck .present-steps li { grid-area: 1 / 1; visibility: hidden; }", ".deck .present-steps li.current { visibility: visible;",
+		`html[data-transition="none"] .deck .present-steps li.current { animation: none; }`,
 	} {
 		if !contains(shell, want) {
 			t.Errorf("shell.html lacks %q", want)

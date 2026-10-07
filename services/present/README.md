@@ -49,7 +49,7 @@ The deck opens at `/p/<id>/deck`. A page with both shows a Slides link in the br
 
 Along the bottom edge sits the deck's chrome. The repo logo is in the right corner. One dot per slide sits in the centre, filled in as you go, and each dot is a button that jumps to its slide. Past 24 slides a thin bar takes over from the dots. A deck changes that from its Doc with five optional fields. `logo` takes `"none"` or an image URL, `logo_position` names a corner, and `progress` is `dots`, `bar`, or `none`. A footer line made of `footer` and `presenter` appears only when one of them is set, and the presenter also shows as a byline on the title slide. The strip stays on screen while presenting. The logo is served from the binary at `/logo.png`, so a shared instance needs nothing extra. The header's Audio toggle hides the read-aloud bar, play buttons, and badges. A deck opens with them hidden and a brief with them shown, and each view remembers its own choice.
 
-A section can name a `layout` for its slide: `center`, `statement`, or `section`. It can carry a `tone`, a palette role that tints the slide and bands the section in the brief. It can hold speaker `notes`, which the deck shows in a drawer on the N key, and set `reveal` to show a list one item per Next. A slide holding one stat or one quote alone becomes the big-number or quote slide on its own. The deck Doc's `transition` picks how slides change: a crossfade by default, `slide` for a nudge in the direction of travel, `none` for a cut. The browser's Reduce Motion setting makes every change a cut.
+A section can name a `layout` for its slide: `center`, `statement`, or `section`. It can carry a `tone`, a palette role that tints the slide and bands the section in the brief. It can hold speaker `notes`, which the deck shows in a drawer on the N key, and set `reveal` to show a list one item per Next. A chart with `steps` walks its series one per Next with a caption under it, and the brief lists the captions. A slide holding one stat or one quote alone becomes the big-number or quote slide on its own. The deck Doc's `transition` picks how slides change: a crossfade by default, `slide` for a nudge in the direction of travel, `none` for a cut. The browser's Reduce Motion setting makes every change a cut.
 
 A slide or a section can use five more blocks beside the ones a brief has. `columns` holds two or three equal columns of blocks and drops to one column on a narrow window; the page's graph may sit in one of them. `stat` is a large figure over a label. `quote` carries its attribution. `details` is a collapsible block, closed until opened, which read-aloud opens as it reads it. `image` shows a picture with a caption: an image URL, or a file on this machine that the tool copies into the page store and serves at `/img/`. Callouts come in `info`, `warn`, `ok`, and `error`.
 
@@ -173,7 +173,7 @@ upgrade the restart alone brings every page current.
 ## Develop
 
 ```bash
-make test    # go test ./...
+make test    # go test ./..., then the viz.js node tests (skipped without node)
 make build   # ./present
 make tidy    # go mod tidy
 ```
