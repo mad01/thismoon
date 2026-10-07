@@ -197,7 +197,7 @@ Rules:
 | `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a palette role name (`primary`, `blue`, `green`, `purple`, `amber`, `red`, `yellow`, `series-1` to `series-4`; `terracotta` still works as an alias of `primary`). An unknown name is refused |
 | `progress` | `pct`, `label?` | Progress bar (0-100) |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
-| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?` | Metric chart (Chart.js). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Inline: use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format** and **Stepped charts** below |
+| `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?`, `order?`, `frame?` | Metric chart (Chart.js, or D3 for `ribbon`). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`, `ribbon`. Inline: use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format**, **Ribbon format**, and **Stepped charts** below |
 | `code` | `text`, `lang?` | Fenced code block with language badge and copy button. `text` is verbatim code (NO inline markdown — backticks, `**`, `<` all render literally). `lang` sets the badge and syntax highlighting: `go`, `bash`, `json`, `python`, `typescript`, `yaml`, `sql` highlight; anything else (or omitted) renders plain with a `text` badge |
 | `html` | `text` | Raw HTML passthrough for one-off custom content |
 | `columns` | `cols: [[blocks], [blocks]]` | Two or three equal-width columns of blocks, one column under 700 px. A column holds any block but `columns` and `details`. Three `stat` blocks in it make a row of figures; a `chart` beside a `p` puts the caption next to the chart. The page's one `graph` may sit in a column too, beside the paragraph that says what to look at |
@@ -335,7 +335,7 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
-15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. See **Stepped charts**.
+15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. A `ribbon` steps by period, one caption per column and no series `step`, so keep a stepped ribbon to three to five periods. See **Stepped charts**.
 
 ### Example deck
 
@@ -554,13 +554,15 @@ A chart block is just another entry in `sections[].blocks`, never a top-level ar
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `kind` | string | One of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`. Defaults to `bar` |
+| `kind` | string | One of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`, `ribbon`. Defaults to `bar` |
 | `title` | string? | Caption above the chart |
 | `unit` | string? | Value-axis unit label (e.g. `ms`, `req`). Ignored for `sparkline`; shown in tooltips for `doughnut` |
 | `xunit` | string? | X-axis unit label, `scatter` only (e.g. `payload KB`) |
 | `series` | array | One or more `{name?, color?, points}` series. Every kind except `sankey` |
 | `flows` | array | `{from, to, value}` links, `sankey` only. See **Sankey format** below |
 | `steps` | array? | `[{caption}]`, one per step a deck slide walks through the chart. See **Stepped charts** below |
+| `order` | string? | `ribbon` only. `rank` (the default) stacks the largest category on top of each column; `given` keeps the series order |
+| `frame` | bool? | `true` keeps the card around a `ribbon`, which otherwise sits straight on the page. Accepted on every kind; the other kinds keep their card either way for now |
 
 Each series: `name` (legend label, shown when 2+ series), `color` (`series-1` to `series-4`, or the legacy names `terracotta`, `blue`, `green`, `purple` for the same four slots; omit to auto-assign by index), `step` (the 1-based step the series first shows at, on a chart with `steps`; omit for a series shown from the start), and `points`, an array of `{x, y}` where `x` is a category label (string) and `y` the value. Sparklines use only `y` (omit `x`). Scatter points take a numeric `x` (a JSON number or a numeric string).
 
@@ -568,15 +570,16 @@ Charts use the same palette as the graph and recolor automatically when the read
 
 ### Which kind
 
-- `bar` — counts per category, one or more series side by side.
-- `stacked-bar` — composition per category (for example responses by status class per day). Series stack in order; keep it to four series.
-- `horizontal-bar` — a ranked list with long labels (stages, repos, endpoints). One series, sorted by value.
-- `line` — one or more trends over time, compared on one axis. Never two value axes: split into two charts instead.
-- `area` — a single trend where the filled volume matters.
-- `sparkline` — a compact trend beside a stat, drawn without axes.
-- `doughnut` — share of a whole. One series, at most four slices; fold the rest into "other".
-- `scatter` — correlation between two numbers, one point per observation.
-- `sankey` — volume flowing between stages or services.
+- `bar`: counts per category, one or more series side by side.
+- `stacked-bar`: composition per category (for example responses by status class per day). Series stack in order; keep it to four series.
+- `horizontal-bar`: a ranked list with long labels (stages, repos, endpoints). One series, sorted by value.
+- `line`: one or more trends over time, compared on one axis. Never two value axes: split into two charts instead.
+- `area`: a single trend where the filled volume matters.
+- `sparkline`: a compact trend beside a stat, drawn without axes.
+- `doughnut`: share of a whole. One series, at most four slices; fold the rest into "other".
+- `scatter`: correlation between two numbers, one point per observation.
+- `sankey`: volume flowing between stages or services.
+- `ribbon`: how categories rank against each other over periods: one column per period, a ribbon per category, and a crossing is a rank change. See **Ribbon format**.
 
 ### Sankey format
 
@@ -594,6 +597,26 @@ Charts use the same palette as the graph and recolor automatically when the read
 ```
 
 Node names are matched by exact string, so reuse the same spelling on every link. Each node takes the next palette color in order of first appearance and every link fades from its source color to its target color.
+
+### Ribbon format
+
+```json
+{
+  "t": "chart",
+  "kind": "ribbon",
+  "title": "Signups by channel",
+  "unit": "k",
+  "series": [
+    {"name": "search", "points": [{"x": "Q1", "y": 40}, {"x": "Q2", "y": 35}, {"x": "Q3", "y": 30}]},
+    {"name": "social", "points": [{"x": "Q1", "y": 20}, {"x": "Q2", "y": 45}, {"x": "Q3", "y": 50}]},
+    {"name": "direct", "points": [{"x": "Q1", "y": 20}, {"x": "Q2", "y": 25}, {"x": "Q3", "y": 10}]}
+  ]
+}
+```
+
+One series per category, `x` the period, `y` its value in that period. Each period is one column standing on the baseline. The categories stack inside it, the largest on top by default (`order: "rank"`), or in series order with `order: "given"`. A ribbon joins a category's segment to its segment in the next column, so two ribbons crossing is one category passing another. A category with a zero in a period has no segment there and its ribbon breaks. List every period in the first series, in order, with a zero for a gap. The columns follow the order the periods first appear in, and a later series that lists them the other way round is refused. Every series needs its own `name`, a period appears once per series, and values are zero or more. Hovering a segment or a ribbon shows its values and dims the other categories. The chart has no card: it sits on the page or the slide, and `frame: true` keeps the card.
+
+A ribbon takes at most four categories (the palette has four series colours, and a fifth is refused): fold the small ones into one named "other". Keep it to about eight periods; past that the ribbons turn into a hairball, so split the periods across slides.
 
 ### Stepped charts
 
@@ -618,7 +641,9 @@ A chart with `steps` walks through its data on a deck slide. Each press of Next 
 }
 ```
 
-Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. The legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
+A `ribbon` walks its periods instead of its series: one caption per period, in order, and step n shows the first n columns with the ribbons into them. The slide opens on the empty axis, and the first Next shows the first period. The step count has to equal the period count, and a series on a ribbon carries no `step`.
+
+Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. On a chart stepped by series the legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
 
 ## References
 

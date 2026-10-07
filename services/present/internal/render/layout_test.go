@@ -231,6 +231,68 @@ func TestRenderDocBlockValidation(t *testing.T) {
 			`a sankey draws flows, not series`,
 		},
 		{
+			"series step on a ribbon",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}}, Series: []ChartSeries{{Name: "a", Step: 1, Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`a ribbon walks its periods`,
+		},
+		{"order on a bar chart", Block{T: "chart", Title: "C", Kind: "bar", Order: "given"}, `chart "C": order is a ribbon field`},
+		{"unknown ribbon order", Block{T: "chart", Title: "C", Kind: "ribbon", Order: "value"}, `chart "C": unknown order "value" (want rank or given)`},
+		{
+			"ribbon series without a name",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Name: " ", Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`chart "C": series 2 has no name`,
+		},
+		{
+			"ribbon with a fifth series",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{
+				{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"},
+			}},
+			`chart "C": a ribbon takes at most 4 series (the palette's series colours), got 5`,
+		},
+		{
+			"ribbon series named twice",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}, {Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}}}}},
+			`chart "C": two series are named "a"`,
+		},
+		{
+			"ribbon point without a period",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: " ", Y: 2}}}}},
+			`chart "C": series "a" point 2 has no x (the period)`,
+		},
+		{
+			"ribbon period repeated in a series",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 2}, {X: "q1", Y: 9}}}}},
+			`chart "C": series "a" repeats period "q1"`,
+		},
+		{
+			"ribbon negative value",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: -3}}}}},
+			`chart "C": series "a" at q1 is -3, want 0 or more`,
+		},
+		{
+			"ribbon column total overflows",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1e308}}}, {Name: "b", Points: []ChartPoint{{X: "q1", Y: 1e308}}}}},
+			`chart "C": the q1 column total is too large to draw`,
+		},
+		{
+			"ribbon series disagree on the period order",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Series: []ChartSeries{
+				{Name: "a", Points: []ChartPoint{{X: "q2", Y: 1}, {X: "q3", Y: 1}}},
+				{Name: "b", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}},
+			}},
+			`chart "C": series "b" lists "q1" before "q2", an earlier series the other way round`,
+		},
+		{
+			"ribbon steps differ from periods",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}, {Caption: "two"}}, Series: []ChartSeries{{Name: "a", Points: []ChartPoint{{X: "q1", Y: 1}, {X: "q2", Y: 1}, {X: "q3", Y: 1}}}}},
+			`chart "C": a ribbon takes one caption per period (captions: 2, periods: 3)`,
+		},
+		{
+			"ribbon steps without series",
+			Block{T: "chart", Title: "C", Kind: "ribbon", Steps: []ChartStep{{Caption: "one"}}},
+			`chart "C": a ribbon takes one caption per period (captions: 1, periods: 0)`,
+		},
+		{
 			"stepped chart in details",
 			Block{T: "details", Summary: "s", Blocks: []Block{{T: "chart", Steps: []ChartStep{{Caption: "one"}}}}},
 			`chart steps: not allowed inside a details block`,
@@ -749,13 +811,14 @@ func TestSampleDeckRenders(t *testing.T) {
 		`<wk-figure>`, `alt="The on-call dashboard at 14:15, every checkout panel red" loading="lazy">`,
 		`<wk-figcaption data-fixation>The on-call dashboard at 14:15.</wk-figcaption>`,
 		`data-steps="3"`, `<ol class="present-steps">`, `<li data-fixation>The pricing service times out first.</li>`,
+		`class="present-chart is-ribbon"`, `data-steps="4"`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 15 {
-		t.Errorf("sample deck has %d sections, want 15", n)
+	if n := len(c.Doc.Sections); n != 16 {
+		t.Errorf("sample deck has %d sections, want 16", n)
 	}
 	// The four reveal sections: two lists, the mixed slide, and the stepped
 	// chart that walks its steps after its paragraph (MAD-385).

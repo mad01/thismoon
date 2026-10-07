@@ -138,3 +138,66 @@ test('seriesMax: largest positive point, or the largest stacked sum of positives
   assert.equal(PresentViz.seriesMax([], true), 0);
   assert.equal(PresentViz.seriesMax(null, false), 0);
 });
+
+// ribbonLayout: the ribbon chart's columns, segments and ribbons in value units.
+const traffic = [
+  { name: 'search', points: [{ x: 'Q1', y: 40 }, { x: 'Q2', y: 35 }] },
+  { name: 'social', points: [{ x: 'Q1', y: 20 }, { x: 'Q2', y: 45 }, { x: 'Q3', y: 50 }] },
+  { name: 'direct', points: [{ x: 'Q1', y: 20 }, { x: 'Q2', y: 0 }, { x: 'Q3', y: 10 }] },
+];
+
+test('ribbonLayout: periods come in order of first appearance across the series', () => {
+  const l = PresentViz.ribbonLayout([
+    { points: [{ x: 'Q2', y: 1 }, { x: 'Q1', y: 1 }] },
+    { points: [{ x: 'Q1', y: 1 }, { x: 'Q3', y: 1 }] },
+  ]);
+  assert.deepEqual(l.periods, ['Q2', 'Q1', 'Q3']);
+  assert.deepEqual(l.columns.map((c) => c.segments.map((s) => s.series)), [[0], [0, 1], [1]]);
+});
+
+test('ribbonLayout: rank order puts the largest on top and keeps ties as given', () => {
+  const l = PresentViz.ribbonLayout(traffic);
+  const q1 = l.columns[0];
+  assert.equal(q1.period, 'Q1');
+  assert.equal(q1.total, 80);
+  assert.deepEqual(q1.segments, [
+    { series: 0, value: 40, y0: 40, y1: 80 },
+    { series: 1, value: 20, y0: 20, y1: 40 },
+    { series: 2, value: 20, y0: 0, y1: 20 },
+  ]);
+  assert.deepEqual(l.columns[1].segments.map((s) => s.series), [1, 0]);
+});
+
+test('ribbonLayout: given order keeps the series order in every column', () => {
+  const l = PresentViz.ribbonLayout(traffic, 'given');
+  assert.deepEqual(l.columns[1].segments.map((s) => s.series), [0, 1]);
+  assert.deepEqual(l.columns[1].segments[0], { series: 0, value: 35, y0: 45, y1: 80 });
+});
+
+test('ribbonLayout: a zero or missing value leaves no segment and no ribbon', () => {
+  const l = PresentViz.ribbonLayout(traffic);
+  assert.deepEqual(l.columns[1].segments.map((s) => s.series), [1, 0]);
+  assert.deepEqual(l.columns[2].segments.map((s) => s.series), [1, 2]);
+  assert.equal(l.ribbons.filter((r) => r.series === 2).length, 0);
+  assert.equal(l.ribbons.filter((r) => r.series === 0 && r.col === 2).length, 0);
+});
+
+test('ribbonLayout: a ribbon joins a series across adjacent columns and ends at col', () => {
+  const l = PresentViz.ribbonLayout(traffic);
+  assert.deepEqual(l.ribbons, [
+    { series: 1, col: 1, a: { y0: 20, y1: 40 }, b: { y0: 35, y1: 80 } },
+    { series: 0, col: 1, a: { y0: 40, y1: 80 }, b: { y0: 0, y1: 35 } },
+    { series: 1, col: 2, a: { y0: 35, y1: 80 }, b: { y0: 10, y1: 60 } },
+  ]);
+});
+
+test('ribbonLayout: max is the largest column total, and nothing in gives nothing out', () => {
+  assert.equal(PresentViz.ribbonLayout(traffic).max, 80);
+  assert.deepEqual(PresentViz.ribbonLayout([]), { periods: [], columns: [], ribbons: [], max: 0 });
+  assert.deepEqual(PresentViz.ribbonLayout(undefined).periods, []);
+});
+
+test('ribbonLayout: the period order matches the Go side (testdata/ribbon-order.json)', () => {
+  const vec = JSON.parse(readFileSync(new URL('../../render/testdata/ribbon-order.json', import.meta.url), 'utf8'));
+  assert.deepEqual(PresentViz.ribbonLayout(vec.series).periods, vec.periods);
+});

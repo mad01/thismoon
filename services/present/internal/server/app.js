@@ -266,9 +266,16 @@
   // green, purple, the default family's first four) or by its role
   // (series-1 to series-4); both land on the same index in every family.
   var SERIES_NAMES = { terracotta: 0, blue: 1, green: 2, purple: 3, 'series-1': 0, 'series-2': 1, 'series-3': 2, 'series-4': 3 };
+  // seriesSlot is the palette slot (0 to 3) a series draws with: the slot
+  // its named colour maps to, or its index in order.
+  function seriesSlot(name, i) {
+    return (name && Object.prototype.hasOwnProperty.call(SERIES_NAMES, name)) ? SERIES_NAMES[name] : (i % CHART_SERIES);
+  }
   function chartSeriesColor(colors, name, i) {
-    var idx = (name && Object.prototype.hasOwnProperty.call(SERIES_NAMES, name)) ? SERIES_NAMES[name] : (i % colors.series.length);
-    return colors.series[idx];
+    return colors.series[seriesSlot(name, i)];
+  }
+  function seriesName(series, i) {
+    return (series[i] && series[i].name) || '';
   }
   function axisTitle(colors, text) {
     return { display: !!text, text: text || '', color: colors.text, font: { size: 11 } };
@@ -415,13 +422,16 @@
   // buildChart builds (or rebuilds, on a theme change) one chart block. The
   // entry animation plays once per block, the first time it is built, and
   // opts.duration caps it: the brief plays Chart.js's 700 ms at mount, the
-  // deck 400 ms on the first showing of the slide.
+  // deck 400 ms on the first showing of the slide. A ribbon draws with d3
+  // (buildRibbon), every other kind with Chart.js.
   function buildChart(block, opts) {
     var specEl = block.querySelector('.chart-spec');
-    var canvas = block.querySelector('canvas');
-    if (!specEl || !canvas) return;
+    if (!specEl) return;
     var spec;
     try { spec = JSON.parse(specEl.textContent); } catch (e) { return; }
+    if (spec.kind === 'ribbon') { buildRibbon(block, spec, opts); return; }
+    var canvas = block.querySelector('canvas');
+    if (!canvas || typeof Chart === 'undefined') return;
     if (block._chart) { block._chart.destroy(); block._chart = null; }
     var kind = spec.kind || 'bar';
     block.classList.toggle('is-sparkline', kind === 'sparkline');
@@ -484,13 +494,281 @@
       c.update(reducedMotion || block._stepCut ? 'none' : undefined);
     };
   }
+  // ── Ribbon charts (d3) ──
+  // A ribbon chart draws one column per period with the series stacked in
+  // it, largest on top unless the spec orders them as given, and a band
+  // joining each series' segments in neighbouring columns, so a change of
+  // rank shows as ribbons crossing. PresentViz.ribbonLayout does the
+  // arithmetic; this part draws it into one svg. Every colour is a palette
+  // variable in the markup, so a theme change needs no new colours, and all
+  // motion (entry, steps, hover) is CSS opacity on classes: s-<i> names an
+  // element's series and col-<k> the column it shows with.
+  var RIBBON_STAGGER_MS = 60; // between columns in the entry animation
+  var RIBBON_CHAR_PX = 6.5; // estimated width of one 11 px character
+  var RIBBON_LABEL_MIN_PX = 16; // the shortest segment that carries its name
+  var RIBBON_LEFT_MIN_PX = 40; // the value axis's margin before its labels widen it
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  // ribbonSeriesVar is a series' fill as a palette variable, series-1 to
+  // series-4, so the markup needs no new colour on a theme change.
+  function ribbonSeriesVar(s, i) {
+    return 'var(--series-' + (seriesSlot(s && s.color, i) + 1) + ')';
+  }
+  // ribbonFadeMs is the opacity transition shell.html gives the chart's
+  // parts, read from its --ribbon-fade so the duration lives in one place.
+  function ribbonFadeMs(svg) {
+    return parseFloat(getComputedStyle(svg).getPropertyValue('--ribbon-fade')) || 350;
+  }
+  // ribbonMargins leaves room for the value axis's widest tick label, the
+  // unit above it, and the period labels under the columns.
+  function ribbonMargins(spec, y) {
+    var fmt = y.tickFormat(4), widest = 0;
+    y.ticks(4).forEach(function (t) { widest = Math.max(widest, fmt(t).length); });
+    return {
+      top: spec.unit ? 22 : 8, right: 4, bottom: 22,
+      left: Math.max(RIBBON_LEFT_MIN_PX, Math.ceil(widest * RIBBON_CHAR_PX) + 10)
+    };
+  }
+  // ribbonElements are the parts of the chart that step and dim: segments,
+  // ribbons, and the names inside segments. Each carries its layout datum.
+  function ribbonElements(svg) {
+    return Array.prototype.slice.call(svg.querySelectorAll('.seg, .rib, .seg-label'));
+  }
+  // ribbonGeometry places the layout in a w by h svg: the margins, the
+  // scales (the value axis pinned to the full data so steps never rescale),
+  // every segment in pixels, and the path of a ribbon between two columns.
+  function ribbonGeometry(spec, layout, w, h) {
+    var y = d3.scaleLinear().domain([0, layout.max || 1]).nice(4);
+    var m = ribbonMargins(spec, y);
+    var iw = Math.max(0, w - m.left - m.right), ih = Math.max(0, h - m.top - m.bottom);
+    y.range([ih, 0]);
+    var x = d3.scaleBand().domain(layout.periods).range([0, iw]).padding(0.5);
+    var bw = x.bandwidth();
+    // band is a segment's top and bottom in pixels, 1 px in from each edge,
+    // so stacked segments (and the ribbons leaving them) keep a 2 px gap.
+    function band(v0, v1) {
+      var top = y(v1) + 1, bottom = y(v0) - 1;
+      if (bottom < top) top = bottom = (top + bottom) / 2;
+      return { top: top, bottom: bottom };
+    }
+    var segs = [];
+    layout.columns.forEach(function (c, k) {
+      c.segments.forEach(function (s) {
+        var b = band(s.y0, s.y1);
+        segs.push({ series: s.series, col: k, period: c.period, value: s.value, top: b.top, bottom: b.bottom });
+      });
+    });
+    var area = d3.area().x(function (p) { return p.x; }).y0(function (p) { return p.y0; })
+      .y1(function (p) { return p.y1; }).curve(d3.curveBumpX);
+    function ribbonPath(r) {
+      var a = band(r.a.y0, r.a.y1), b = band(r.b.y0, r.b.y1);
+      return area([
+        { x: x(layout.periods[r.col - 1]) + bw, y0: a.bottom, y1: a.top },
+        { x: x(layout.periods[r.col]), y0: b.bottom, y1: b.top }
+      ]);
+    }
+    return { m: m, iw: iw, ih: ih, x: x, y: y, bw: bw, segs: segs, ribbonPath: ribbonPath };
+  }
+  // ribbonTitles are the hover tooltips: a segment's value in its period,
+  // and a ribbon's values at both ends.
+  function ribbonTitles(spec, layout) {
+    var series = spec.series || [], fmt = d3.format(','), unit = spec.unit ? ' ' + spec.unit : '';
+    var valueAt = layout.columns.map(function (c) {
+      var v = {};
+      c.segments.forEach(function (s) { v[s.series] = s.value; });
+      return v;
+    });
+    function name(i) { return seriesName(series, i); }
+    return {
+      seg: function (d) { return name(d.series) + ': ' + fmt(d.value) + unit + ' (' + d.period + ')'; },
+      rib: function (r) {
+        return name(r.series) + ': ' + fmt(valueAt[r.col - 1][r.series]) + ' to ' + fmt(valueAt[r.col][r.series]) +
+          unit + ' (' + layout.periods[r.col - 1] + ' to ' + layout.periods[r.col] + ')';
+      }
+    };
+  }
+  // drawRibbon draws the chart into svg at w by h pixels, replacing what was
+  // there: grid and axis, ribbons, columns, then labels. An element whose
+  // column hidden(col) names starts with off, set before it enters the page
+  // so its first paint plays no transition.
+  function drawRibbon(svg, spec, layout, w, h, hidden) {
+    var series = spec.series || [];
+    var geo = ribbonGeometry(spec, layout, w, h), x = geo.x, bw = geo.bw;
+    var titles = ribbonTitles(spec, layout);
+    function name(d) { return seriesName(series, d.series); }
+    function fill(d) { return 'fill: ' + ribbonSeriesVar(series[d.series], d.series); }
+    function cls(kind) {
+      return function (d) { return kind + ' s-' + d.series + ' col-' + d.col + (hidden(d.col) ? ' off' : ''); };
+    }
+    function fits(d) {
+      return d.bottom - d.top >= RIBBON_LABEL_MIN_PX && name(d).length * RIBBON_CHAR_PX <= bw - 8;
+    }
+    function centre(period) { return x(period) + bw / 2; }
+
+    var g = d3.create('svg:g').attr('transform', 'translate(' + geo.m.left + ',' + geo.m.top + ')');
+    // The axis's own font attributes go, so its labels take the page font
+    // from shell.html like every other label in the chart.
+    g.append('g').attr('class', 'grid')
+      .call(d3.axisLeft(geo.y).ticks(4).tickSize(-geo.iw).tickPadding(6))
+      .attr('font-family', null).attr('font-size', null)
+      .call(function (a) { a.select('.domain').remove(); });
+    if (spec.unit) g.append('text').attr('class', 'unit').attr('x', -geo.m.left).attr('y', -10).text(spec.unit);
+    g.append('g').attr('class', 'ribbons').selectAll('path').data(layout.ribbons).join('path')
+      .attr('class', cls('rib')).attr('style', fill).attr('d', geo.ribbonPath)
+      .append('title').text(titles.rib);
+    g.append('g').attr('class', 'columns').selectAll('rect').data(geo.segs).join('rect')
+      .attr('class', cls('seg')).attr('style', fill).attr('rx', 2)
+      .attr('x', function (d) { return x(d.period); }).attr('width', bw)
+      .attr('y', function (d) { return d.top; }).attr('height', function (d) { return d.bottom - d.top; })
+      .append('title').text(titles.seg);
+    g.append('g').attr('class', 'periods').selectAll('text').data(layout.periods).join('text')
+      .attr('x', centre).attr('y', geo.ih + 16).attr('text-anchor', 'middle').text(function (p) { return p; });
+    g.append('g').attr('class', 'seg-labels').selectAll('text').data(geo.segs.filter(fits)).join('text')
+      .attr('class', cls('seg-label')).attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+      .attr('x', function (d) { return centre(d.period); }).attr('y', function (d) { return (d.top + d.bottom) / 2; })
+      .text(name);
+
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.appendChild(g.node());
+  }
+  // ribbonStep shows the columns before step n and the ribbons that end in
+  // them; a null n shows everything.
+  function ribbonStep(svg, n) {
+    if (!svg) return;
+    ribbonElements(svg).forEach(function (el) {
+      el.classList.toggle('off', n !== null && n !== undefined && el.__data__.col >= n);
+    });
+  }
+  // ribbonHighlight dims every series but i, or clears the dimming when i
+  // is null.
+  function ribbonHighlight(svg, i) {
+    if (!svg) return;
+    ribbonElements(svg).forEach(function (el) {
+      var own = i !== null && el.__data__.series === i;
+      el.classList.toggle('dim', i !== null && !own);
+      el.classList.toggle('hover', own);
+    });
+  }
+  // ribbonEnter fades the drawn columns in from left to right. Everything
+  // starts off; a frame later the columns the step allows lose it, each
+  // delayed by its column index, and the delays clear once the last is in.
+  // block._ribbonEntering holds until then, so a resize in that window
+  // (the presenting toggle after a reload) redraws and enters again
+  // instead of landing the chart in its final state.
+  function ribbonEnter(block, svg, periodCount) {
+    block._ribbonEntering = true;
+    requestAnimationFrame(function () {
+      // Flush style so the off state is computed and the change animates.
+      svg.getBoundingClientRect();
+      var at = chartStepAt(block), els = ribbonElements(svg);
+      els.forEach(function (el) {
+        var col = el.__data__.col;
+        if (at !== null && col >= at) return;
+        el.style.transitionDelay = (col * RIBBON_STAGGER_MS) + 'ms';
+        el.classList.remove('off');
+      });
+      setTimeout(function () {
+        block._ribbonEntering = false;
+        els.forEach(function (el) { el.style.transitionDelay = ''; });
+      }, ribbonFadeMs(svg) + RIBBON_STAGGER_MS * periodCount);
+    });
+  }
+  // ribbonSvg is the block's svg, made on the first build in place of the
+  // canvas and kept across rebuilds; hover on a segment or ribbon dims the
+  // other series.
+  function ribbonSvg(block, wrap) {
+    if (block._ribbonSvg) return block._ribbonSvg;
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'present-ribbon');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.addEventListener('mouseover', function (e) {
+      var t = e.target.closest ? e.target.closest('.seg, .rib') : null;
+      if (t && t.__data__) ribbonHighlight(svg, t.__data__.series);
+    });
+    svg.addEventListener('mouseout', function () { ribbonHighlight(svg, null); });
+    wrap.innerHTML = '';
+    wrap.appendChild(svg);
+    block._ribbonSvg = svg;
+    return svg;
+  }
+  // ribbonLegend puts one key per series above the chart when there is more
+  // than one. The name is drawn from data-name by CSS, so read-aloud, which
+  // skips the svg, does not read the legend either.
+  function ribbonLegend(block, wrap, series) {
+    var old = block.querySelector('.present-ribbon-legend');
+    if (old) old.remove();
+    if (series.length < 2) return;
+    var legend = document.createElement('div');
+    legend.className = 'present-ribbon-legend';
+    series.forEach(function (s, i) {
+      var key = document.createElement('span');
+      key.className = 'present-ribbon-key';
+      key.setAttribute('data-name', (s && s.name) || '');
+      var swatch = document.createElement('span');
+      swatch.className = 'present-ribbon-swatch';
+      swatch.setAttribute('style', 'background: ' + ribbonSeriesVar(s, i));
+      key.appendChild(swatch);
+      key.addEventListener('mouseenter', function () { ribbonHighlight(block._ribbonSvg, i); });
+      key.addEventListener('mouseleave', function () { ribbonHighlight(block._ribbonSvg, null); });
+      legend.appendChild(key);
+    });
+    wrap.parentNode.insertBefore(legend, wrap);
+  }
+  // buildRibbon builds a ribbon chart block, or redraws it in place on a
+  // rebuild: the svg sized to its wrapper, the legend, the deck's step hook,
+  // and a ResizeObserver that redraws, unanimated, when presenting changes
+  // the wrapper's size. A wrapper with no size yet (a slide not showing)
+  // draws when the observer first sees one.
+  function buildRibbon(block, spec, opts) {
+    if (typeof d3 === 'undefined') {
+      chartNote(block, 'Ribbon needs the d3 asset: run make cache in services/present.');
+      return;
+    }
+    var wrap = block.querySelector('.present-chart-canvas');
+    if (!wrap) return;
+    var svg = ribbonSvg(block, wrap);
+    var layout = PresentViz.ribbonLayout(spec.series || [], spec.order);
+    ribbonLegend(block, wrap, spec.series || []);
+    var animate = !reducedMotion && !block._built && !(opts && opts.duration === 0);
+    block._built = true;
+    block._presentStep = function (n) {
+      var cut = reducedMotion || block._stepCut;
+      if (cut) svg.classList.add('cut');
+      ribbonStep(svg, n);
+      if (!cut) return;
+      svg.getBoundingClientRect(); // apply the change under cut before it lifts
+      requestAnimationFrame(function () { svg.classList.remove('cut'); });
+    };
+    function draw(entering) {
+      var w = wrap.clientWidth, h = wrap.clientHeight;
+      if (w < 1 || h < 1) return false;
+      block._ribbonSize = { w: w, h: h };
+      var at = chartStepAt(block);
+      drawRibbon(svg, spec, layout, w, h, function (col) { return entering || (at !== null && col >= at); });
+      return true;
+    }
+    block._ribbonResize = function () {
+      var s = block._ribbonSize;
+      if (s && Math.abs(s.w - wrap.clientWidth) <= 1 && Math.abs(s.h - wrap.clientHeight) <= 1) return;
+      if (block._ribbonEntering) { if (draw(true)) ribbonEnter(block, svg, layout.periods.length); return; }
+      draw(false);
+    };
+    if (block._ribbonObserver) block._ribbonObserver.disconnect();
+    if (typeof ResizeObserver === 'function') {
+      block._ribbonObserver = new ResizeObserver(function () { block._ribbonResize(); });
+      block._ribbonObserver.observe(wrap);
+    }
+    if (draw(animate) && animate) ribbonEnter(block, svg, layout.periods.length);
+  }
   // initPresentCharts builds every chart block under root (the document by
   // default); with opts.builtOnly it rebuilds only the ones already built,
   // which is what a theme change wants in the deck, where a chart on a slide
-  // not yet shown waits for its first showing.
+  // not yet shown waits for its first showing. buildChart checks per kind
+  // that its library loaded, so a ribbon builds without Chart.js.
   function initPresentCharts(root, opts) {
-    if (typeof Chart === 'undefined') return;
-    registerSankey();
+    if (typeof Chart !== 'undefined') registerSankey();
     (root || document).querySelectorAll('.present-chart').forEach(function (block) {
       if (opts && opts.builtOnly && !block._built) return;
       buildChart(block, opts);
@@ -1254,8 +1532,9 @@
       // The draw-in follows the deck's transition: 400 ms, or none for a
       // deck that cuts (Reduce Motion already turns it off in buildChart).
       slide.querySelectorAll('.present-chart').forEach(function (b) {
-        if (!b._built) { if (typeof Chart !== 'undefined') buildChart(b, { duration: transition === 'none' ? 0 : 400 }); }
+        if (!b._built) buildChart(b, { duration: transition === 'none' ? 0 : 400 });
         else if (b._chart) b._chart.resize();
+        else if (b._ribbonResize) b._ribbonResize();
       });
     }
 

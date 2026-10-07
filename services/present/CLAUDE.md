@@ -158,7 +158,7 @@ Limits, all consequences of present's inline syntax having no escape: a bold spa
   - `content`: Doc JSON object `{summary?, meta?, chips?, sections:[{h, blocks}]}` or legacy HTML string (auto-detected)
   - `deck`: a second Doc JSON object with the same schema, Doc JSON only (a non-object is refused); every section is one slide, summary/meta/chips make the title slide, references the last one. The tool description carries the authoring rules (claim headings, 3 to 5 short items or two sentences per slide, one highlight per slide, 5 to 12 slides). Detail stays in the brief; the skill has the full list. The deck Doc may also set the chrome fields `logo`, `logo_position`, `progress`, `presenter`, `footer` (all optional; `render.validateChrome` refuses an unknown position or progress value and a logo that is neither `none` nor an http(s) URL)
   - Section fields beside `h` and `blocks`: `tone` (a role from `webkit.Roles()`, no aliases; rendered as `data-tone` plus `style="--slide-accent: var(--<role>)"`, banding the section in the brief and tinting the slide), and deck-only `layout` (default|center|statement|section, emitted as `data-layout` when not default), `notes` (an inert `<template class="deck-notes">` at the end of the section, outside both walkers by construction), `reveal` (`data-reveal`). Deck-level `transition` (fade|slide|none) rides in the chrome island only when set and not fade. `render.validateSection` refuses an unknown layout or tone; a Doc without any of them renders byte-identically (`render/testdata/golden-stage1.html`). `render/testdata/sample-deck.json` exercises all of it and `TestSampleDeckRenders` keeps it compiling
-  - Doc blocks: `p`, `h3`, `callout` (`sev` info|warn|ok|error), `table`, `kv`, `list`, `panel`, `progress`, `graph`, `chart` (`steps: [{caption}]` and a series `step` for a chart a deck walks one step per Next; `render.validateChart` refuses an unknown kind, a step without a caption, a series step out of range, steps on a sparkline, a series step on a doughnut, and a stepped chart inside `details`), `code`, `html`, `image` (`src`, `alt`, `caption?`; see *Images* under *Gotchas*), plus the layout blocks `columns` (`cols`: 2 or 3 arrays of blocks), `stat` (`value`, `label`, `sub?`), `quote` (`text`, `cite?`), and `details` (`summary`, `blocks`). A `columns` or `details` block holds any block but `columns` and `details`. The page's one `graph` may sit in a column but not in `details`; the deck splitter and `initGraphAndFlow` find `#cy-graph` wherever it is, and `validateDoc` refuses a Doc that places it twice. `render.validateBlocks` refuses the rest and `renderBlockAt` carries a depth guard. `cols` is one wire key for a table's header strings and a columns block's arrays, told apart by `t` in `Block.UnmarshalJSON`/`MarshalJSON`, so a stored table's canonical JSON never moves. A golden fixture (`render/testdata/golden-brief.html`) pins that a Doc without the new fields renders byte-identically
+  - Doc blocks: `p`, `h3`, `callout` (`sev` info|warn|ok|error), `table`, `kv`, `list`, `panel`, `progress`, `graph`, `chart` (`steps: [{caption}]` and a series `step` for a chart a deck walks one step per Next; `render.validateChart` refuses an unknown kind, a step without a caption, a series step out of range, steps on a sparkline, a series step on a doughnut, a sankey, or a ribbon, `order` on any kind but ribbon, and a stepped chart inside `details`; `ribbon` adds `order` (rank or given) and `frame`, see *Metric charts* under *Gotchas*), `code`, `html`, `image` (`src`, `alt`, `caption?`; see *Images* under *Gotchas*), plus the layout blocks `columns` (`cols`: 2 or 3 arrays of blocks), `stat` (`value`, `label`, `sub?`), `quote` (`text`, `cite?`), and `details` (`summary`, `blocks`). A `columns` or `details` block holds any block but `columns` and `details`. The page's one `graph` may sit in a column but not in `details`; the deck splitter and `initGraphAndFlow` find `#cy-graph` wherever it is, and `validateDoc` refuses a Doc that places it twice. `render.validateBlocks` refuses the rest and `renderBlockAt` carries a depth guard. `cols` is one wire key for a table's header strings and a columns block's arrays, told apart by `t` in `Block.UnmarshalJSON`/`MarshalJSON`, so a stored table's canonical JSON never moves. A golden fixture (`render/testdata/golden-brief.html`) pins that a Doc without the new fields renders byte-identically
   - `graph`: Graph JSON object `{nodes, edges, layout?}` or legacy JS string (auto-detected); one per page, shared by both renditions
   - `references`: `[{title, url}]`
 - `present_read(id)` → full page with rendered HTML content and `deck` (includes references, `has_deck`, `deck_url`)
@@ -274,7 +274,7 @@ theme). Do not add those controls manually.
   the deck chrome (`.deck-strip`, `.deck-dot`, `.deck-progress`, `.deck-logo`).
 - **Metric charts are present-local, not webkit.** The `t=chart` Doc block
   (`kind` from `render.ChartKinds`: `bar`/`line`/`area`/`sparkline`/`stacked-bar`/
-  `horizontal-bar`/`doughnut`/`scatter`/`sankey`; `validateChart` refuses any
+  `horizontal-bar`/`doughnut`/`scatter`/`sankey`/`ribbon`; `validateChart` refuses any
   other, and tests pin the list to the MCP schema text and the skill) renders
   a `<div class="present-chart">` with a JSON spec in a
   `<script type="application/json">` island.
@@ -286,7 +286,25 @@ theme). Do not add those controls manually.
   theme-aware color function. `sankey` also needs the vendored
   `chartjs-chart-sankey-0.15.3.min.js` (same script, loaded by `shell.html`
   right after Chart.js); when that asset is missing the block shows a note
-  instead of a chart. The graph's layout engines (dagre, the ELK
+  instead of a chart. `ribbon` is the one kind D3 draws instead of Chart.js.
+  `buildRibbon` in `app.js` lays it out with `PresentViz.ribbonLayout` in
+  `viz.js` (node-tested: periods in order of first appearance, one
+  bottom-aligned column per period, segments ordered by rank or as given,
+  a ribbon per category between adjacent columns). It draws SVG into the
+  canvas wrapper with `var(--series-N)` fills, so the theme rebuild redraws
+  it in place with no colour to resolve. The template gives the block
+  `is-ribbon`, which drops the card unless the block sets `frame`
+  (`data-frame`; accepted on every kind, a no-op on the others until the
+  frameless default reaches them). `validateRibbon` refuses an unknown
+  `order`, a fifth series (`ribbonMaxSeries`, the palette's four series
+  roles), a series without a name or with a name another series has, a
+  point without an x or with a negative y, a period repeated in a series,
+  a column total that overflows, series that disagree on the period order
+  (periods run in order of first appearance; `ribbonPeriods`, pinned
+  against the JS layout by `testdata/ribbon-order.json`), and a step count
+  that differs from the period count. A ribbon steps by period (its
+  `_presentStep` shows the first n columns, step 0 is the empty axis),
+  never by series. The graph's layout engines (dagre, the ELK
   algorithms, cose) are built in `app.js` (`presentGraphLayout`), not in the
   generated graph script, which only names the engine and the resolved
   direction. The ELK options take the container's aspect ratio at run time,
