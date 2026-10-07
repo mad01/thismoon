@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.16.0](https://github.com/mad01/thismoon/compare/present/v1.15.0...present/v1.16.0) (2026-10-07)
+
+
+### Features
+
+* **present:** diagram block on elk and d3, frameless charts ([#203](https://github.com/mad01/thismoon/issues/203)) ([2b7b84b](https://github.com/mad01/thismoon/commit/2b7b84b04258462b8dd5d4b3f480f9661badd204))
+* **present:** ribbon chart kind on d3 with per-period steps ([#202](https://github.com/mad01/thismoon/issues/202)) ([0632bad](https://github.com/mad01/thismoon/commit/0632bad9d3c0920679f8b401ece01b278ce1987e))
+* **present:** shared viz layer: chart steps on deck slides, viz.js, chart kind validation, d3 ([#200](https://github.com/mad01/thismoon/issues/200)) ([69430f9](https://github.com/mad01/thismoon/commit/69430f9c2d61ee5fdae286de146c7e6246d071fe))
+* **present:** slides draw no filled boxes ([#205](https://github.com/mad01/thismoon/issues/205)) ([7c6002d](https://github.com/mad01/thismoon/commit/7c6002d1f60e9339df4c4b547626a1173e9de44d))
+* **present:** the skill and tool descriptions are the entry point for pages and decks ([#206](https://github.com/mad01/thismoon/issues/206)) ([c50468e](https://github.com/mad01/thismoon/commit/c50468e91637d456bd7aac5bea4813c738f860eb))
+
+
+### Bug Fixes
+
+* **present:** diagram layer gap reaches the nodes inside groups ([#204](https://github.com/mad01/thismoon/issues/204)) ([7d5f53f](https://github.com/mad01/thismoon/commit/7d5f53f8acd1ebc6956b63c495ff66cbaf969d7e))
+
 ## [1.15.0](https://github.com/mad01/thismoon/compare/present/v1.14.0...present/v1.15.0) (2026-10-02)
 
 
