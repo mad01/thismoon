@@ -17,7 +17,8 @@ var deckCmd = &cobra.Command{
 	Long: `Send a remote command to the slide deck of a page that is open in the
 browser (its /p/<id>/deck view). start and stop toggle presenting: the chrome
 hides and one slide fills the window. next and prev move one step: a reveal
-item, a stepped chart's next series, or the next slide. goto jumps to the
+item, a stepped chart's next series, a stepped diagram's next elements, or
+the next slide. goto jumps to the
 1-based slide number given as the third argument, with every step taken. Every open
 tab of the deck follows within a second.
 

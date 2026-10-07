@@ -78,7 +78,7 @@ var createAnnotations = &mcp.ToolAnnotations{
 const deckDescription = "A page can also carry a slide deck beside its content, or instead of it: pass a second Doc JSON object as `deck`. " +
 	"The deck is authored on its own, never converted from the content: each section is one slide, the title with the deck's summary, meta, and chips is the title slide, and references make the last slide. " +
 	"Write it like a good deck, not a shorter brief: one idea per slide with the heading stating the claim, a list of 3 to 5 short items or one paragraph of at most two sentences per slide, " +
-	"exactly one bold phrase or one @chip(stat:...) per slide as the highlight, a chart or the graph alone on its own slide, 5 to 12 slides in all, " +
+	"exactly one bold phrase or one @chip(stat:...) per slide as the highlight, a chart, a diagram, or the graph alone on its own slide, 5 to 12 slides in all, " +
 	"at most one warn callout in the deck, and a closing `Next` slide with at most three actions. Detail belongs in the content; the deck view links to it. " +
 	"Which block when: one `stat` or one `quote` alone on a slide for the one figure or the one line to remember; two or three `stat` blocks in a `columns` block for a row of figures; a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`; a `details` block belongs in the content, not on a slide. " +
 	"Deck-level chrome, all optional, read by the deck view only: `logo` (absent = the embedded repo logo, \"none\" hides it, an http(s) URL replaces it), " +
@@ -185,7 +185,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 				Name: "present_deck",
 				Description: "Drive the slide deck of a page that is open in the browser: `start` and `stop` presenting " +
 					"(the chrome hides and one slide fills the window; browser fullscreen needs a click, the F key, or the Present button), " +
-					"`next`, `prev`, or `goto` a 1-based `slide`. On a slide with `reveal` or a chart with `steps`, `next` and `prev` walk the items and the chart's steps the way the keys do, and `goto` lands with every step shown. Every open tab of the deck follows within a second. " +
+					"`next`, `prev`, or `goto` a 1-based `slide`. On a slide with `reveal` or a chart or diagram with `steps`, `next` and `prev` walk the items and the block's steps the way the keys do, and `goto` lands with every step shown. Every open tab of the deck follows within a second. " +
 					"The reader can also use the keyboard: Right, Space, or PageDown for the next slide, Left or PageUp for the previous, " +
 					"Home and End for the first and last, N for the speaker notes drawer, F or P to start presenting (pressed while presenting they go fullscreen again after a reload, and in fullscreen they stop), Esc to stop. " +
 					"Open the deck first with present_open(deck: true) or its deck_url.",

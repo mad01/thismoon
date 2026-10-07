@@ -105,9 +105,13 @@ The deck view's state with the chrome hidden and one slide filling the window. I
 _Avoid_: fullscreen (the browser's own fullscreen is one optional layer on top), slideshow mode
 
 **Step**:
-One press of Next on a slide before the deck moves on: a reveal item or block appearing, or a stepped chart showing its next series with its caption. A ribbon chart steps by period instead. The counter shows a slide's steps as `s/S`, and a jump lands with every step taken.
+One press of Next on a slide before the deck moves on: a reveal item or block appearing, a stepped chart showing its next series with its caption, or a stepped diagram showing its next elements. A ribbon chart steps by period instead. The counter shows a slide's steps as `s/S`, and a jump lands with every step taken.
 _Avoid_: fragment (the CSS class behind a reveal step), stage, build
 
 **Ribbon chart**:
 A chart kind for how categories rank over periods. One column per period stands on the baseline with the categories stacked inside it, by rank unless ordered as given. A ribbon joins each category's segments across adjacent columns, so a crossing is a rank change. It sits on the page with no card by default.
 _Avoid_: alluvial, bump chart, stream graph, sankey (a sankey shows volume flowing between stages, not ranks over periods)
+
+**Diagram**:
+An architecture picture on a page: boxes with a name and a short text, labelled boundaries (groups) around them, and labelled arrows between the boxes. The browser lays it out and draws it as SVG with no card of its own. Many per page. A stepped diagram shows its elements step by step and lights up a step's focus.
+_Avoid_: graph (the page's one network map), flowchart, architecture map, picture

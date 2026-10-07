@@ -61,6 +61,15 @@ chart's own fragment, on a slide without `reveal` too. The brief
 lists the captions under the chart. A chart without steps renders as
 before, which the golden fixtures keep pinning.
 
+Amended 2026-10-07 (MAD-382): the `diagram` block exists, Doc-wide and
+many per page, with `steps` that carry a `focus` list. A diagram alone
+on a slide fills it the way a lone stat or quote does. The same change
+drops the card around charts by default (`frame: true` keeps it) and
+lets an image drop its border (`frame: false`). That default is CSS
+only, so every stored page changes look at its next load. The rendered
+HTML of a Doc without the new fields stays byte-identical, which the
+golden fixtures keep pinning.
+
 ## Consequences
 
 - Every new field and block is optional. A Doc without them renders

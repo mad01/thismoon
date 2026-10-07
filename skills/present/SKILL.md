@@ -42,7 +42,7 @@ Block =                                  // discriminated on `t`
   | {t: "code", text, lang?}             | {t: "html", text}
   | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
   | {t: "quote", text, cite?}            | {t: "details", summary, blocks}
-  | {t: "image", src, alt, caption?}
+  | {t: "image", src, alt, caption?}    | {t: "diagram", nodes, edges?, groups?, direction?, caption?, steps?}
 
 Graph = {                                // the `graph` argument — one per page
   nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?,
@@ -333,10 +333,11 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 9. **One callout per deck at most**, `sev: "warn"`, for the single risk or blocker.
 10. **No agenda, no "questions?" slide.** Under nine slides an agenda is noise. The last authored slide is the ask: `h: "Next"` with a list of at most three actions. References follow automatically.
 11. **Cut the spoken sentences.** If a line only makes sense when said aloud, it is the speaker's, not the slide's. The slide carries the claim; the speaker carries the argument.
-12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
+12. **Which block when.** One `stat` or one `quote` alone on a slide for the one figure or the one line the room should keep. Two or three `stat` blocks in a `columns` block for a row of figures, and a `chart`, the `graph`, a `diagram`, or an `image` beside its caption paragraph in `columns`. An image alone on a slide fills it, bounded by the slide's height. A `details` block belongs in the brief: a slide that needs one has too much on it.
 13. **Which layout when.** `statement` for the one sentence the deck exists to say, once or twice a deck. `section` to open a part of a longer deck, with a `tone`. `center` for a slide that is one short thing, a row of figures say. Everything else stays `default`; the heading and the blocks carry the slide.
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. A `ribbon` steps by period, one caption per column and no series `step`, so keep a stepped ribbon to three to five periods. See **Stepped charts**.
+16. **An architecture gets a diagram, and a diagram alone fills its slide.** Use a `diagram` block, not the graph, when the slide explains how parts fit: boxes with a name and a short text, boundaries around the parts that share a host or a trust level, labelled arrows. Alone on a slide it fills the slide with its caption under it. A request walkthrough gets `steps`: four or five, each caption one sentence, with `focus` on the box the step is about. At most about twelve boxes and two or three tones per slide; split a bigger picture over slides. See **Diagram format**.
 
 ### Example deck
 
@@ -642,9 +643,69 @@ A chart with `steps` walks through its data on a deck slide. Each press of Next 
 }
 ```
 
-A `ribbon` walks its periods instead of its series: one caption per period, in order, and step n shows the first n columns with the ribbons into them. The slide opens on the empty axis, and the first Next shows the first period. The step count has to equal the period count, and a series on a ribbon carries no `step`.
+A `diagram` walks its elements the same way, with `step` on nodes, groups, and edges and `focus` ids on a step; see **Diagram format**. A `ribbon` walks its periods instead of its series: one caption per period, in order, and step n shows the first n columns with the ribbons into them. The slide opens on the empty axis, and the first Next shows the first period. The step count has to equal the period count, and a series on a ribbon carries no `step`.
 
 Rules the renderer enforces: every caption is non-empty, and a series `step` is between 1 and the number of steps. A `sparkline` carries no steps, a `doughnut` takes caption-only steps (it draws its first series only), and a stepped chart never sits inside `details`. A `sankey` draws flows, not series, so its steps are captions only. A series without `step` shows from the start. The value axis is pinned to the full data (its positive values), so a series joining later doesn't rescale the ones already shown. On a chart stepped by series the legend lists only the series shown so far. Reduce Motion and a deck with `transition: "none"` swap series without animating.
+
+## Diagram format (the `diagram` block)
+
+A `diagram` explains an architecture: boxes with a name and a short text under it, labelled boundaries around groups of boxes, and labelled arrows between them. The browser lays it out with the Eclipse Layout Kernel (ELK) and draws it as SVG, so the author never places a box. It is an inline block like `chart`, as many per page as the story needs, and it is never the page's one `graph`. The graph stays the tool for a dependency or traffic map of many nodes; a diagram is for the picture a slide explains.
+
+```json
+{
+  "t": "diagram",
+  "direction": "LR",
+  "caption": "The checkout request path",
+  "groups": [
+    {"id": "prod", "label": "prod cluster", "tone": "blue"}
+  ],
+  "nodes": [
+    {"id": "web", "label": "Web app", "text": "Next.js, renders checkout", "kind": "person"},
+    {"id": "api", "label": "Checkout API", "text": "Go, validates and prices", "group": "prod", "step": 2},
+    {"id": "db", "label": "Orders DB", "text": "Postgres", "kind": "store", "group": "prod", "step": 3}
+  ],
+  "edges": [
+    {"from": "web", "to": "api", "label": "POST /checkout", "flow": true, "weight": 120, "step": 2},
+    {"from": "api", "to": "db", "label": "insert order", "step": 3}
+  ],
+  "steps": [
+    {"caption": "The browser posts the cart."},
+    {"caption": "The API validates and prices it.", "focus": ["api"]},
+    {"caption": "The order lands in Postgres.", "focus": ["db"]}
+  ]
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nodes` | array | The boxes, at least one and at most 24. Each is `{id, label, text?, kind?, tone?, group?, step?}` |
+| `edges` | array? | The arrows, `{from, to, label?, flow?, weight?, step?}`, between two different nodes (never a group) |
+| `groups` | array? | The boundaries, `{id, label, tone?, group?, step?}`, at most 12. `group` names the group this one sits in; two levels at most |
+| `direction` | string? | How the layers run: one of `LR`, `TB`. Defaults to `LR` |
+| `caption` | string? | Prose under the diagram, with inline markdown |
+| `steps` | array? | `[{caption, focus?}]`, one per step a deck slide walks through the diagram. `focus` lists the node and group ids that light up at that step. See **Stepping a diagram** below |
+
+A node's `label` is its name, in bold. `text` is the short line under it (the technology, a one-line purpose), wrapped to two lines. `kind` picks the shape: `service` (the default, a plain box), `store` (a cylinder), `queue` (a pipe), `person` (a box with a figure), `external` (a dashed box). `tone` tints a node or a group with one of the six node tones from the graph (`neutral`, `green`, `red`, `blue`, `amber`, `purple`; see **Node tones**). Use at most two or three tones on one diagram, each with a fixed meaning.
+
+An edge's `label` sits on the line with a halo. `flow: true` marks an edge that carries traffic. On a slide, dots move along it, faster for a larger `weight` against the heaviest flow edge on the diagram; under Reduce Motion the edge is dashed instead. Ids are plain words you only use to connect things; labels are what the room reads. Labels and texts are plain text, never inline markdown.
+
+The diagram sits straight on the page or slide with no card of its own. Boxes carry their own border and fill, so they stand out on every theme. In a brief it shows its final state with the step captions as a numbered list under it. Alone on a slide it fills the slide with its caption under it.
+
+### Stepping a diagram
+
+With `steps`, Next walks the diagram on a deck slide the way it walks a stepped chart. The counter shows `s/S`, the remote `next` and `prev` take the steps, and a jump lands on the finished diagram. A node, group, or edge with `step` appears at that step and stays. Without one it is there from the start, so the slide opens on the parts every step shares. An element never appears before what holds it: a node waits for its group, a group for its parent, and an edge for both of its ends. The renderer refuses the rest.
+
+A step's `focus` lights up the named nodes and groups, everything inside a focused group, and the edges touching a focused node. The rest dim. A step without `focus` dims nothing. The layout is computed once for the whole diagram, so nothing moves between steps. Reduce Motion and a deck with `transition: "none"` cut between steps instead of fading.
+
+### Which picture
+
+- A `diagram` for how parts fit: a system context (the system, its users, the systems next to it), the containers inside a cluster boundary, trust zones as toned groups, or a request walking through four or five boxes.
+- The `graph` for a map of many nodes and their links, where the shape of the network is the point.
+- A `chart` for numbers over categories or time.
+
+Keep a diagram to about twelve boxes, two levels of groups, and two or three tones. Past that the room reads nothing; split the picture over slides, one zoom level per slide.
 
 ## References
 
