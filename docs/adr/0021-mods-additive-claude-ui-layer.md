@@ -1,7 +1,7 @@
 # ADR-0021: mods are an additive, Claude-only interface layer
 
 **Date:** 2026-10-05
-**Status:** Accepted
+**Status:** Accepted; the Claude-only clause is superseded by ADR-0023
 
 **Scope:** `mods/`, the root `.claude-plugin/marketplace.json`, and how
 consuming machines load them.

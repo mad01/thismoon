@@ -33,13 +33,17 @@ Set under `pluginConfigs["humanizer-gate"].options` in settings, or from `/confi
 
 The last scan's counts sit in `$.state` under `humanizer-gate.lastReport` for another mod to read.
 
+## pi face
+
+`pi/index.ts` runs the same three checks in the pi coding agent on its split events: `tool_call` scans a `git commit` message or a github.com pull request body (direct `mcp__gh_com__<op>` or the `mcp` proxy with `server: gh_com`) and may hold it for the same Proceed / Cancel; `tool_result` scans a `.md` or `.mdx` file after `write` or `edit` landed. Status goes to `ctx.ui.setStatus`. pi has no per-plugin config, so the face runs on the defaults above. The same pass-through rules apply: no binary, a failed scan, or no UI to ask all let the call through.
+
 ## Dev loop
 
 ```bash
 claude --plugin-dir mods/humanizer-gate        # from the repo root; reloads on save
 claude --debug --plugin-dir mods/humanizer-gate  # the debug log names every scan and skip
 claude plugin validate mods/humanizer-gate
-node --test mods/humanizer-gate/test/*.test.mjs
+node --test mods/humanizer-gate/test/*.test.mjs  # lib and the pi face
 ```
 
 Needs `~/code/bin/humanizer` (thismoon `tools/humanizer`) and `vale` on PATH, which detect shells out to. The engine writes `.claude-plugin/types/` beside the mod on load; those files are the authority on event shapes for the build you run.

@@ -196,7 +196,8 @@ jobs:
   # Mods are Claude Code plugin modules, not components (docs/adr/0021): no
   # Go, no release line. The runner has no Claude Code binary, so `claude
   # plugin validate` stays a local gate; CI checks the manifests parse, every
-  # mod is listed in the marketplace, and the pure-function tests pass.
+  # mod is listed in the marketplace, and the pure-function and pi-face
+  # tests pass.
   mods:
     name: mods
     needs: changes
@@ -213,7 +214,7 @@ jobs:
 
       - name: Manifests parse
         run: |
-          for f in .claude-plugin/marketplace.json mods/*/.claude-plugin/plugin.json mods/*/hooks/hooks.json; do
+          for f in .claude-plugin/marketplace.json mods/package.json mods/*/.claude-plugin/plugin.json mods/*/hooks/hooks.json; do
             jq -e . "$f" > /dev/null || { echo "::error::${f} is not valid JSON"; exit 1; }
           done
 
