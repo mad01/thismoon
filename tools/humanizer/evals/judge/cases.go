@@ -17,6 +17,7 @@ type Case struct {
 	ID        string
 	Label     string
 	Bucket    string
+	Split     string
 	Source    string
 	License   string
 	Generator string
@@ -85,6 +86,7 @@ func parseCase(raw string) (Case, error) {
 		ID:        fields["id"],
 		Label:     fields["label"],
 		Bucket:    fields["bucket"],
+		Split:     fields["split"],
 		Source:    fields["source"],
 		License:   fields["license"],
 		Generator: fields["generator"],
@@ -92,6 +94,9 @@ func parseCase(raw string) (Case, error) {
 		Text:      strings.TrimSpace(body),
 	}
 	c.Words = len(strings.Fields(c.Text))
+	if c.Split == "" {
+		c.Split = "train"
+	}
 	return c, validateCase(c)
 }
 
@@ -105,6 +110,8 @@ func validateCase(c Case) error {
 		return fmt.Errorf("bucket %q: want human, ai, hard, or ambiguous", c.Bucket)
 	case (c.Bucket == "ambiguous") != (c.Label == "unknown"):
 		return errors.New("label unknown and bucket ambiguous must go together")
+	case c.Split != "train" && c.Split != "test":
+		return fmt.Errorf("split %q: want train or test (or omit for train)", c.Split)
 	case c.Words < 20:
 		return fmt.Errorf("passage has %d words, want at least 20", c.Words)
 	}
@@ -142,22 +149,15 @@ func writeReview(w io.Writer, cases []Case) {
 		counts["hard"],
 		counts["ambiguous"],
 	)
-	fmt.Fprintln(w, "| id | bucket | label | words | source or generator |")
-	fmt.Fprintln(w, "|---|---|---|---|---|")
+	fmt.Fprintln(w, "| id | bucket | split | label | words | source or generator |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|")
 	for _, c := range cases {
 		origin := c.Source
 		if c.Generator != "" {
 			origin = c.Generator
 		}
-		fmt.Fprintf(
-			w,
-			"| %s | %s | %s | %d | %s |\n",
-			c.ID,
-			c.Bucket,
-			c.Label,
-			c.Words,
-			cell(origin),
-		)
+		fmt.Fprintf(w, "| %s | %s | %s | %s | %d | %s |\n",
+			c.ID, c.Bucket, c.Split, c.Label, c.Words, cell(origin))
 	}
 	for _, c := range cases {
 		fmt.Fprintf(w, "\n### %s\n\n", c.ID)

@@ -77,6 +77,16 @@ func TestRun(t *testing.T) {
 			wantErrText: "twice",
 		},
 		{
+			name: "missing confidence counts as contract break, not zero",
+			replies: []string{
+				`{"verdict":"likely_ai","confidence_basis":"50+36 = 86","summary":"x"}`,
+				goodReply,
+			},
+			wantCalls:      2,
+			wantVerdict:    "likely_ai",
+			wantConfidence: 0.88,
+		},
+		{
 			name:        "invalid verdict value counts as contract break",
 			replies:     []string{`{"verdict":"unsure"}`, `{"verdict":"unsure"}`},
 			wantCalls:   2,
@@ -165,7 +175,7 @@ func TestSystemPromptCarriesTheConfidenceRubric(t *testing.T) {
 		"integer from 0 to 100",
 		"confidence_basis",
 		"Start at 50",
-		"Three worked examples",
+		"Four worked examples",
 	}
 	for _, s := range want {
 		if !strings.Contains(SystemPrompt, s) {

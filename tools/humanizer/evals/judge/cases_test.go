@@ -83,7 +83,7 @@ func TestWriteReview(t *testing.T) {
 	var buf bytes.Buffer
 	writeReview(&buf, []Case{c})
 	out := buf.String()
-	for _, want := range []string{"| human-sample | human | likely_human | 21 |", "### human-sample", "```\nOne two"} {
+	for _, want := range []string{"| human-sample | human | train | likely_human | 21 |", "### human-sample", "```\nOne two"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("review missing %q:\n%s", want, out)
 		}

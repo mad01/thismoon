@@ -99,6 +99,7 @@ func costUSD(model string, promptTokens, completionTokens int) float64 {
 type Row struct {
 	ID               string             `json:"id"`
 	Bucket           string             `json:"bucket"`
+	Split            string             `json:"split"`
 	Label            string             `json:"label"`
 	Variant          string             `json:"variant"`
 	Rep              int                `json:"rep"`
@@ -216,8 +217,8 @@ func runJob(ctx context.Context, key string, j job, traceDir string) (*Row, *Err
 		reasoning += c.ReasoningTokens
 	}
 	return &Row{
-		ID: j.c.ID, Bucket: j.c.Bucket, Label: j.c.Label, Variant: j.arm.ID, Rep: j.rep,
-		Verdict: v.Verdict, Confidence: v.Confidence, Signals: len(v.Signals), Summary: v.Summary,
+		ID: j.c.ID, Bucket: j.c.Bucket, Split: j.c.Split, Label: j.c.Label,
+		Variant: j.arm.ID, Rep: j.rep, Verdict: v.Verdict, Confidence: v.Confidence, Signals: len(v.Signals), Summary: v.Summary,
 		Grade: grade(j.c, v.Verdict), Model: last.Model,
 		PromptTokens: in, CompletionTokens: out, ReasoningTokens: reasoning,
 		CostUSD:   costUSD(j.arm.Model, in, out),
