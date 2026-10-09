@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/mad01/thismoon/compare/humanizer/v0.13.1...humanizer/v0.14.0) (2026-10-09)
+
+
+### Features
+
+* **humanizer:** judge defaults to Claude Haiku 5.5 and sends no temperature ([#207](https://github.com/mad01/thismoon/issues/207)) ([5ae5c8f](https://github.com/mad01/thismoon/commit/5ae5c8f4548408dc19b9d94a7369bc6322a66410))
+* **humanizer:** judge rubric reads structural tells in current AI prose ([#208](https://github.com/mad01/thismoon/issues/208)) ([c574c31](https://github.com/mad01/thismoon/commit/c574c3133e98db0b81b77b573333c715d967e997))
+
 ## [0.13.1](https://github.com/mad01/thismoon/compare/humanizer/v0.13.0...humanizer/v0.13.1) (2026-09-30)
 
 
