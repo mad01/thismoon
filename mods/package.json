@@ -1,9 +1,12 @@
 {
   "name": "thismoon-mods",
   "private": true,
+  "type": "module",
   "description": "The thismoon mods as a pi package: pi loads each mod's pi/index.ts face in place from this directory (the ralph sources cache on a machine). Claude Code loads the hooks/ face through the marketplace at the repo root; both faces share lib/.",
   "pi": {
-    "extensions": ["./*/pi/index.ts"],
+    "extensions": [
+      "./*/pi/index.ts"
+    ],
     "skills": [],
     "prompts": [],
     "themes": []

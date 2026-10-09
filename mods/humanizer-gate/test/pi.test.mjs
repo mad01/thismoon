@@ -17,6 +17,9 @@ function fakeHome() {
     join(home, 'code', 'bin', 'humanizer'),
     [
       '#!/bin/sh',
+      // The real binary reads the text from stdin; consume it so spawnSync never
+      // sees a broken pipe (Linux closes the pipe at child exit).
+      'cat > /dev/null',
       `printf '%s\\n' "$@" > "${argvLog}"`,
       `printf '%s' '{"findings":[{"severity":"error","match":"delve into"},{"severity":"warning","match":"robust"}]}'`,
     ].join('\n'),
