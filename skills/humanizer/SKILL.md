@@ -1,6 +1,6 @@
 ---
 name: humanizer
-version: 2.13.0
+version: 2.13.1
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
@@ -11,7 +11,7 @@ description: |
   narrative prose, adds a StoryScope narrative-level pass (thematic
   over-explanation, plot linearity, embodied emotion). Backed by the local
   humanizer MCP for deterministic detection and voice profiling, plus the
-  humanizer_judge LLM pass (Haiku 4.5 via a LiteLLM proxy or OpenRouter) for holistic whole-passage
+  humanizer_judge LLM pass (Haiku 5.5 via a LiteLLM proxy or OpenRouter) for holistic whole-passage
   AI/human judgment.
 license: MIT
 compatibility: claude-code opencode
@@ -44,7 +44,7 @@ The MCP never rewrites prose — it finds, measures, and (for `humanizer_fix`) d
 
 ## Holistic judgment via `humanizer_judge`
 
-The MCP tools and Vale rules are deterministic span/metric matching. They nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass. The **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (Haiku 4.5 by default, through whichever provider the environment configures: a LiteLLM proxy or OpenRouter) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
+The MCP tools and Vale rules are deterministic span/metric matching. They nail mechanical tells (invisible Unicode, paste artifacts, per-word vocabulary, uniform rhythm) but can't read a passage the way a human reader does. Add a holistic pass. The **`humanizer_judge` MCP tool** sends the full text to a small LLM judge (Haiku 5.5 by default, through whichever provider the environment configures: a LiteLLM proxy or OpenRouter) and returns `{verdict: likely_ai|likely_human|mixed, confidence, signals[], summary}`. The judge ships its own rubric prompt and JSON contract; you just pass the text.
 
 This is the fuzzy complement to the deterministic layer; the two cover disjoint failure modes, so run both. Two rules earned from testing:
 

@@ -56,7 +56,7 @@ provider is set in the environment: `LITELLM_BASE_URL` (plus
 `LITELLM_API_KEY` when the proxy requires one) selects a LiteLLM proxy,
 `OPENROUTER_API_KEY` selects OpenRouter. An HTTP 401 or 404 from a proxy
 means the key or the model alias is wrong: list the proxy's `/v1/models`
-and pass the Haiku 4.5 alias it shows through `HUMANIZER_MODEL`. Under the
+and pass the Haiku 5.5 alias it shows through `HUMANIZER_MODEL`. Under the
 MCP sandbox a connection error means the seatbelt does not allow egress to
 that host; run the CLI from a shell, which is unsandboxed.
 

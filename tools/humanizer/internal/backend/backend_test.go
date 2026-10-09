@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,13 +41,13 @@ func TestSelect(t *testing.T) {
 			name:      "openrouter auto-detected from key",
 			env:       map[string]string{"OPENROUTER_API_KEY": "k"},
 			wantName:  "openrouter",
-			wantModel: "anthropic/claude-haiku-4.5",
+			wantModel: "anthropic/claude-haiku-5.5",
 		},
 		{
 			name:      "litellm auto-detected from base url",
 			env:       map[string]string{"LITELLM_BASE_URL": "http://proxy:4000"},
 			wantName:  "litellm",
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 		{
 			name: "litellm wins auto-detection when both are configured",
@@ -55,7 +56,7 @@ func TestSelect(t *testing.T) {
 				"OPENROUTER_API_KEY": "k",
 			},
 			wantName:  "litellm",
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 		{
 			name: "HUMANIZER_MODEL overrides default",
@@ -93,7 +94,7 @@ func TestSelect(t *testing.T) {
 				"LITELLM_BASE_URL":   "http://proxy:4000",
 			},
 			wantName:  "openrouter",
-			wantModel: "anthropic/claude-haiku-4.5",
+			wantModel: "anthropic/claude-haiku-5.5",
 		},
 		{
 			name: "HUMANIZER_BACKEND env forces litellm",
@@ -102,14 +103,14 @@ func TestSelect(t *testing.T) {
 				"LITELLM_BASE_URL":  "http://proxy:4000",
 			},
 			wantName:  "litellm",
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 		{
 			name:      "forced litellm without a key still resolves",
 			forceName: "litellm",
 			env:       map[string]string{"LITELLM_BASE_URL": "http://proxy:4000"},
 			wantName:  "litellm",
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 		{
 			name:        "forced openrouter without key fails",
@@ -186,6 +187,7 @@ type chatCapture struct {
 	auth   string
 	hasKey bool
 	body   chatRequest
+	raw    map[string]json.RawMessage
 }
 
 // newChatServer serves one successful chat completion and records the
@@ -198,12 +200,24 @@ func newChatServer(t *testing.T) (*httptest.Server, *chatCapture) {
 		got.path = r.URL.Path
 		got.auth = r.Header.Get("Authorization")
 		_, got.hasKey = r.Header["Authorization"]
-		if err := json.NewDecoder(r.Body).Decode(&got.body); err != nil {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+		}
+		if err := json.Unmarshal(data, &got.body); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
+		if err := json.Unmarshal(data, &got.raw); err != nil {
+			t.Errorf("decode raw request: %v", err)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model": "fake/model",
 			"choices": []map[string]any{
 				{"message": map[string]any{"content": `{"verdict":"likely_human"}`}},
+			},
+			"usage": map[string]any{
+				"prompt_tokens": 12, "completion_tokens": 34,
+				"completion_tokens_details": map[string]any{"reasoning_tokens": 5},
 			},
 		})
 	}))
@@ -226,7 +240,7 @@ func TestChatClientComplete(t *testing.T) {
 			},
 			wantAuth:  "Bearer test-key",
 			wantKey:   true,
-			wantModel: "anthropic/claude-haiku-4.5",
+			wantModel: "anthropic/claude-haiku-5.5",
 		},
 		{
 			name: "litellm sends bearer key and anthropic-native haiku id",
@@ -235,7 +249,7 @@ func TestChatClientComplete(t *testing.T) {
 			},
 			wantAuth:  "Bearer proxy-key",
 			wantKey:   true,
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 		{
 			name: "litellm without a key omits the Authorization header",
@@ -243,7 +257,7 @@ func TestChatClientComplete(t *testing.T) {
 				return NewLiteLLM(ChatConfig{BaseURL: base})
 			},
 			wantKey:   false,
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 		{
 			name: "litellm trims a pasted /v1 suffix off the base url",
@@ -252,7 +266,7 @@ func TestChatClientComplete(t *testing.T) {
 			},
 			wantAuth:  "Bearer k",
 			wantKey:   true,
-			wantModel: "claude-haiku-4-5-20251001",
+			wantModel: "claude-haiku-5-5",
 		},
 	}
 	wantMsgs := []chatMessage{
@@ -285,14 +299,80 @@ func TestChatClientComplete(t *testing.T) {
 			if got.body.Model != tc.wantModel {
 				t.Errorf("model = %q, want %q", got.body.Model, tc.wantModel)
 			}
-			if got.body.Temperature != 0 {
-				t.Errorf("temperature = %v, want 0", got.body.Temperature)
+			for _, key := range []string{"temperature", "reasoning_effort"} {
+				if _, ok := got.raw[key]; ok {
+					t.Errorf(
+						"request carries %q by default; the Claude 5.5 generation rejects it",
+						key,
+					)
+				}
 			}
 			msgs := got.body.Messages
 			if len(msgs) != 2 || msgs[0] != wantMsgs[0] || msgs[1] != wantMsgs[1] {
 				t.Errorf("messages = %+v, want %+v", msgs, wantMsgs)
 			}
 		})
+	}
+}
+
+// TestChatClientOptionalFields covers the eval-harness knobs: a configured
+// temperature and reasoning effort reach the wire, and the observer sees
+// what the provider reported.
+func TestChatClientOptionalFields(t *testing.T) {
+	srv, got := newChatServer(t)
+	var seen []CallInfo
+	zero := 0.0
+	b, err := NewOpenRouter(ChatConfig{
+		APIKey:          "k",
+		BaseURL:         srv.URL,
+		Temperature:     &zero,
+		ReasoningEffort: "low",
+		Observe:         func(ci CallInfo) { seen = append(seen, ci) },
+	})
+	if err != nil {
+		t.Fatalf("NewOpenRouter() error = %v", err)
+	}
+	if _, err := b.Complete(context.Background(), "s", "u"); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if string(got.raw["temperature"]) != "0" {
+		t.Errorf("raw temperature = %s, want 0", got.raw["temperature"])
+	}
+	if got.body.ReasoningEffort != "low" {
+		t.Errorf("reasoning_effort = %q, want low", got.body.ReasoningEffort)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("observer calls = %d, want 1", len(seen))
+	}
+	ci := seen[0]
+	if ci.Model != "fake/model" || ci.PromptTokens != 12 || ci.CompletionTokens != 34 ||
+		ci.ReasoningTokens != 5 || ci.Status != http.StatusOK {
+		t.Errorf("CallInfo = %+v, want fake/model, 12/34 tokens (5 reasoning), status 200", ci)
+	}
+	if ci.Latency <= 0 {
+		t.Errorf("latency = %v, want > 0", ci.Latency)
+	}
+}
+
+func TestChatClientObservesErrorStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":{"message":"temperature is deprecated"}}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	var seen []CallInfo
+	b, err := NewLiteLLM(ChatConfig{
+		BaseURL: srv.URL,
+		Observe: func(ci CallInfo) { seen = append(seen, ci) },
+	})
+	if err != nil {
+		t.Fatalf("NewLiteLLM() error = %v", err)
+	}
+	_, err = b.Complete(context.Background(), "s", "u")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("Complete() error = %v, want HTTP 400", err)
+	}
+	if len(seen) != 1 || seen[0].Status != http.StatusBadRequest {
+		t.Fatalf("observer saw %+v, want one call with status 400", seen)
 	}
 }
 

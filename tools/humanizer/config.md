@@ -52,8 +52,8 @@ through the environment (see Environment variables) and fails without one.
   `LITELLM_BASE_URL` selects `litellm`, else a set `OPENROUTER_API_KEY`
   selects `openrouter`.
 - `--model` (string, default `""`, env `HUMANIZER_MODEL`): override the
-  backend's default model id (`claude-haiku-4-5-20251001` for `litellm`,
-  `anthropic/claude-haiku-4.5` for `openrouter`).
+  backend's default model id (`claude-haiku-5-5` for `litellm`,
+  `anthropic/claude-haiku-5.5` for `openrouter`).
 - `--json` (bool, default `false`): emit the verdict as JSON, the same shape
   `humanizer_judge` returns over MCP.
 
