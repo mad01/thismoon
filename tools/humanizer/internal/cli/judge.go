@@ -31,8 +31,8 @@ reads the passage the way a human reader does. Run all three for coverage.
 
 The backend comes from the environment: HUMANIZER_BACKEND forces one,
 otherwise the first configured provider wins. LITELLM_BASE_URL selects a
-LiteLLM proxy (model claude-haiku-4-5-20251001, optional LITELLM_API_KEY);
-else OPENROUTER_API_KEY selects OpenRouter (model anthropic/claude-haiku-4.5).
+LiteLLM proxy (model claude-haiku-5-5, optional LITELLM_API_KEY);
+else OPENROUTER_API_KEY selects OpenRouter (model anthropic/claude-haiku-5.5).
 Override the model with --model or HUMANIZER_MODEL. Without any provider
 configured the command fails; the deterministic commands keep working offline.
 

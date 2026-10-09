@@ -28,7 +28,7 @@ func registerJudgeTools(s *mcp.Server) {
 			"Returns {verdict: likely_ai|likely_human|mixed, confidence, signals[], summary} plus the backend and model used. " +
 			"This is the fuzzy complement to humanizer_detect (span rules) and humanizer_detect_statistical (sample metrics) — the three cover disjoint failure modes, so run them together. " +
 			"Feed whole sections or paragraphs, never isolated words; verdicts are advisory rewrite targets, not ground truth. " +
-			"Calls out to a configured LLM provider (LITELLM_BASE_URL -> litellm on claude-haiku-4-5-20251001, else OPENROUTER_API_KEY -> openrouter on anthropic/claude-haiku-4.5), so it needs network egress and the provider env in the server's environment; " +
+			"Calls out to a configured LLM provider (LITELLM_BASE_URL -> litellm on claude-haiku-5-5, else OPENROUTER_API_KEY -> openrouter on anthropic/claude-haiku-5.5), so it needs network egress and the provider env in the server's environment; " +
 			"when it errors with no backend configured or a network denial, fall back to the `humanizer judge` CLI in a shell that has the key.",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(true),
