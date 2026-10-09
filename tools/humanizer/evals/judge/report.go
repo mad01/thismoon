@@ -11,25 +11,26 @@ import (
 const metricNotes = `Accuracy: share of scored rows whose verdict equals the label; mixed counts as a miss.
 Recall AI: likely_ai on AI-labeled rows. Spec. human: likely_human on human-labeled rows.
 FPR: likely_ai on human-labeled rows. Mixed: share of scored rows answering mixed.
-Flip rate: share of scored cases whose reps disagree on the verdict. Agreement: mean share
+Retried: rows whose first reply broke the JSON contract and the judge's one retry
+produced the verdict. Flip rate: share of scored cases whose reps disagree on the verdict. Agreement: mean share
 of reps matching the case majority. Conf sd: mean per-case standard deviation of
 confidence, in points of 100. Latency: the final HTTP call only. Tokens: mean per row,
 summed over every HTTP call the row made; think tok is the reasoning share of out tok
 where the provider reports it. Cost: recorded token usage at the model's list price. Rows that produced no verdict are in errors.jsonl and
 never in these numbers.`
 
-const armHeader = "| arm | model | temp | effort | rows | err | accuracy | recall AI " +
+const armHeader = "| arm | model | temp | effort | rows | err | retried | accuracy | recall AI " +
 	"| spec. human | FPR | mixed | flip rate | agreement | conf sd | p50 ms | p95 ms " +
 	"| in tok | out tok | think tok | cost |"
 
-var armRule = strings.Repeat("|---", 20) + "|"
+var armRule = strings.Repeat("|---", 21) + "|"
 
 // armRow renders one arm's headline as a markdown table row, in armHeader's
 // column order.
 func armRow(st ArmStats) string {
 	cells := []string{
 		st.Arm.ID, st.Arm.Model, tempCell(st.Arm), orDash(st.Arm.Effort),
-		strconv.Itoa(st.Rows), strconv.Itoa(st.Errors),
+		strconv.Itoa(st.Rows), strconv.Itoa(st.Errors), strconv.Itoa(st.Retried),
 		pct(st.Accuracy), pct(st.RecallAI), pct(st.SpecificityHuman), pct(st.FPR),
 		pct(st.MixedRate), pct(st.FlipRate), pct(st.Agreement), pts(st.ConfSDPoints),
 		strconv.FormatInt(st.LatencyP50, 10), strconv.FormatInt(st.LatencyP95, 10),
@@ -54,7 +55,12 @@ func writeSummary(
 	for _, c := range cases {
 		counts[c.Bucket]++
 	}
+	splits := map[string]int{}
+	for _, c := range cases {
+		splits[c.Split]++
+	}
 	fmt.Fprintf(w, "# Judge eval: %s\n\n", runID)
+	fmt.Fprintf(w, "Splits: %d train, %d test. ", splits["train"], splits["test"])
 	fmt.Fprintf(w, "%d cases (%d scored: %d human, %d ai, %d hard; %d ambiguous, unscored), ",
 		len(cases), len(cases)-counts["ambiguous"], counts["human"], counts["ai"], counts["hard"],
 		counts["ambiguous"])
@@ -79,9 +85,42 @@ func writeSummary(
 	}
 	fmt.Fprintf(w, "\n%s\n\n", metricNotes)
 
+	writeSplitTable(w, arms, rows, errs)
+
 	writeCaseGrid(w, "Per case (scored)", arms, cases, perArm, true)
 	writeCaseGrid(w, "Ambiguous bucket (unscored)", arms, cases, perArm, false)
 	writeErrors(w, errs)
+}
+
+// writeSplitTable repeats the quality columns per split, so a rubric tuned
+// on the train split shows its held-out number beside it.
+func writeSplitTable(w io.Writer, arms []Arm, rows []Row, errs []ErrRow) {
+	fmt.Fprintln(w, "## By split")
+	fmt.Fprintln(w)
+	fmt.Fprintln(
+		w,
+		"| arm | split | scored rows | accuracy | recall AI | spec. human | FPR | mixed | flip rate | conf sd |",
+	)
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|")
+	for _, arm := range arms {
+		for _, split := range []string{"train", "test"} {
+			var subset []Row
+			for _, r := range rows {
+				if r.Split == split {
+					subset = append(subset, r)
+				}
+			}
+			st, _ := summarize(arm, subset, errs)
+			if st.Rows == 0 {
+				continue
+			}
+			fmt.Fprintf(w, "| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s |\n",
+				arm.ID, split, st.ScoredRows, pct(st.Accuracy), pct(st.RecallAI),
+				pct(st.SpecificityHuman), pct(st.FPR), pct(st.MixedRate), pct(st.FlipRate),
+				pts(st.ConfSDPoints))
+		}
+	}
+	fmt.Fprintln(w)
 }
 
 // writeCaseGrid prints one row per case with a cell per arm: majority
@@ -109,7 +148,7 @@ func writeCaseGrid(
 		if c.Scored() != scored {
 			continue
 		}
-		fmt.Fprintf(w, "| %s | %s | %s |", c.ID, c.Bucket, c.Label)
+		fmt.Fprintf(w, "| %s | %s/%s | %s |", c.ID, c.Bucket, c.Split, c.Label)
 		for _, a := range arms {
 			fmt.Fprintf(w, " %s |", caseCell(perArm[a.ID][c.ID], scored))
 		}

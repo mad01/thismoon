@@ -26,6 +26,7 @@ type ArmStats struct {
 	Arm                  Arm
 	Rows                 int
 	Errors               int
+	Retried              int
 	ScoredRows           int
 	ScoredCases          int
 	Accuracy             float64
@@ -72,6 +73,9 @@ func summarize(arm Arm, rows []Row, errs []ErrRow) (ArmStats, map[string]CaseSta
 			continue
 		}
 		st.Rows++
+		if r.Attempts > 1 {
+			st.Retried++
+		}
 		byCase[r.ID] = append(byCase[r.ID], r)
 		latencies = append(latencies, r.LatencyMS)
 		in += float64(r.PromptTokens)

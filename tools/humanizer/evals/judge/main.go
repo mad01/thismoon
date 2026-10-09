@@ -16,6 +16,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -35,6 +36,7 @@ func main() {
 		outDir   = flag.String("out", "", "run directory (default: evals/judge/runs/<timestamp>)")
 		workers  = flag.Int("workers", 4, "concurrent requests")
 		filter   = flag.String("filter", "", "only cases whose id contains this substring")
+		split    = flag.String("split", "all", "only cases in this split: train, test, or all")
 		list     = flag.Bool("list", false, "print the sign-off document and exit")
 		oracle   = flag.Bool(
 			"oracle",
@@ -46,34 +48,58 @@ func main() {
 			"",
 			"grade this constant verdict (must score poorly) and exit",
 		)
+		report = flag.String("report", "", "re-render summary.md for this run directory and exit")
 	)
 	flag.Parse()
-	if err := run(*casesDir, *armIDs, *reps, *outDir, *workers, *filter, *list, *oracle, *null); err != nil {
+	err := run(runOptions{
+		casesDir: *casesDir, armIDs: *armIDs, reps: *reps, outDir: *outDir, workers: *workers,
+		filter: *filter, split: *split, list: *list, oracle: *oracle, null: *null,
+		report: *report,
+	})
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "judge eval:", err)
 		os.Exit(1)
 	}
 }
 
-func run(
-	casesDir, armIDs string, reps int, outDir string, workers int,
-	filter string, list, oracle bool, null string,
-) error {
-	cases, err := loadCases(casesDir)
+type runOptions struct {
+	casesDir string
+	armIDs   string
+	reps     int
+	outDir   string
+	workers  int
+	filter   string
+	split    string
+	list     bool
+	oracle   bool
+	null     string
+	report   string
+}
+
+func run(o runOptions) error {
+	cases, err := loadCases(o.casesDir)
 	if err != nil {
 		return err
 	}
-	if list {
+	if o.list {
 		writeReview(os.Stdout, cases)
 		return nil
 	}
-	cases = filterCases(cases, filter)
-	if oracle || null != "" {
-		return printSynthetic(os.Stdout, cases, reps, null)
+	if o.report != "" {
+		return rerender(o.report, cases)
 	}
-	arms, err := selectArms(armIDs)
+	cases = filterCases(cases, o.filter, o.split)
+	if len(cases) == 0 {
+		return errors.New("no cases match the filter and split")
+	}
+	if o.oracle || o.null != "" {
+		return printSynthetic(os.Stdout, cases, o.reps, o.null)
+	}
+	arms, err := selectArms(o.armIDs)
 	if err != nil {
 		return err
 	}
+	reps, outDir, workers := o.reps, o.outDir, o.workers
 	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" {
 		return fmt.Errorf("OPENROUTER_API_KEY is not set (source ~/.secrets.sh)")
@@ -108,15 +134,73 @@ func run(
 	return nil
 }
 
-func filterCases(cases []Case, substr string) []Case {
-	if substr == "" {
-		return cases
+// rerender rebuilds summary.md for an existing run from its results and
+// errors files, so a report change applies to past runs too. Cases without
+// rows (filtered out at run time) are dropped from the grid.
+func rerender(dir string, cases []Case) error {
+	var meta runMeta
+	if data, err := os.ReadFile(filepath.Join(dir, "run.json")); err == nil {
+		_ = json.Unmarshal(data, &meta)
 	}
+	rows, err := readJSONL[Row](filepath.Join(dir, "results.jsonl"))
+	if err != nil {
+		return err
+	}
+	errs, err := readJSONL[ErrRow](filepath.Join(dir, "errors.jsonl"))
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		seen[r.ID] = true
+	}
+	var ran []Case
+	for _, c := range cases {
+		if seen[c.ID] {
+			ran = append(ran, c)
+		}
+	}
+	arms := meta.Arms
+	if len(arms) == 0 {
+		arms = allArms()
+	}
+	var buf bytes.Buffer
+	writeSummary(&buf, meta.RunID, arms, ran, rows, errs, meta.Reps)
+	if err := os.WriteFile(filepath.Join(dir, "summary.md"), buf.Bytes(), 0o644); err != nil {
+		return err
+	}
+	fmt.Print(buf.String())
+	return nil
+}
+
+func readJSONL[T any](path string) ([]T, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	var out []T
+	dec := json.NewDecoder(f)
+	for dec.More() {
+		var it T
+		if err := dec.Decode(&it); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
+
+func filterCases(cases []Case, substr, split string) []Case {
 	var out []Case
 	for _, c := range cases {
-		if strings.Contains(c.ID, substr) {
-			out = append(out, c)
+		if substr != "" && !strings.Contains(c.ID, substr) {
+			continue
 		}
+		if split != "all" && c.Split != split {
+			continue
+		}
+		out = append(out, c)
 	}
 	return out
 }

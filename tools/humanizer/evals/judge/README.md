@@ -17,7 +17,8 @@ go run ./evals/judge -list           # the sign-off document, no network
 go run ./evals/judge -oracle         # grading sanity check, must score 100%
 go run ./evals/judge -null likely_ai # grading sanity check, must score the base rate
 go run ./evals/judge -arms haiku55 -reps 1 -filter slop   # one paid call
-go run ./evals/judge                 # the full matrix
+go run ./evals/judge -arms haiku55 -reps 3 -split train   # one tuning round
+go run ./evals/judge                 # the full matrix, both splits
 ```
 
 A run writes `runs/<timestamp>/`. Inside: `summary.md`, `results.jsonl`
@@ -53,7 +54,9 @@ The passage, 60 to 350 words.
 ```
 
 `label` is the expected verdict, `likely_human` or `likely_ai`, or `unknown`
-for the ambiguous bucket. The `human` and `ai` buckets carry clean
+for the ambiguous bucket. `split` is `train` (the default when omitted) or
+`test`. `-split test` selects the held-out cases that no rubric change was
+tuned on. The summary shows the split beside each case's bucket. The `human` and `ai` buckets carry clean
 provenance. Human text was written before LLM assistants existed. AI text
 was generated on a recorded date by a recorded model, never the model under
 test. Anchors and the known false-positive shapes go in `hard`. The
@@ -78,6 +81,9 @@ summed over every call the row made, so a contract retry is paid for in the
 number.
 
 Twenty scored cases at five reps put the accuracy noise floor near ten
-points, and differences inside that band aren't findings. The per-case grid
+points, and differences inside that band aren't findings. When tuning the
+rubric, run rounds on the train split only and read the held-out split once
+at the end, on every arm at the full rep count. A rubric that wins on
+train and loses on test was fitted to the cases, not to the problem. The per-case grid
 is where the real comparison happens. Look for cases whose majority verdict
 differs between arms, and for cases whose reps disagree.
