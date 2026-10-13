@@ -269,7 +269,9 @@ including the ones it does not pull, so an index-format bump heals on the next
 cycle. Comparing timestamps instead of counting ticks means a Mac
 waking from sleep catches up on the next wake instead of skipping a cycle.
 Failed cycles back off exponentially (up to an hour) so an offline stretch
-doesn't hammer remotes.
+doesn't hammer remotes. Each pull is bounded by a 5-minute timeout, so a
+remote that hangs (a Mac that slept mid-pull, a dropped VPN) fails that repo
+instead of stalling the cycle and the sync lock.
 
 The same safety rules as `csl sync` apply: repos on non-default branches, in
 detached HEAD, with uncommitted tracked changes, or without a remote are

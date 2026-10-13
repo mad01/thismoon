@@ -34,7 +34,8 @@ skipped.
 
 The run takes the sync lock shared with the background refresher in ` + "`csl web`" + `;
 if another sync or refresh is already running the command fails instead of
-racing it: retry when it finishes.
+racing it: retry when it finishes. Each pull is bounded by a 5-minute timeout,
+so a hung remote fails that repo instead of stalling the run and the lock.
 
 Use --concurrency to control parallel pulls (default: from config, fallback 8).
 Use --dry-run to preview what would happen without pulling or indexing.`,
