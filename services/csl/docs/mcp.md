@@ -727,7 +727,7 @@ Run csl's self-checks and return the report as JSON: config, repos discovered, s
      "detail": "41 repos, 2 dropped by index.hosts (1 with no remote)"},
     {"name": "state-file-loads", "status": "ok"},
     {"name": "index-freshness", "status": "fail",
-     "detail": "2 of 41 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now"},
+     "detail": "2 of 41 repos stale, dirty, or unindexed; the next sync or 'csl search' reindexes them, 'csl index' does it now"},
     {"name": "index-shards-valid", "status": "ok"},
     {"name": "search-server-responsive", "status": "ok"},
     {"name": "catalog-descriptors", "status": "ok"},

@@ -246,9 +246,10 @@ func stateFileLoads(indexDir string, repair bool) doctor.Check {
 }
 
 // indexFreshness compares each discovered repo's fingerprint against the
-// indexed state. Stale repos are not broken — searches answer from the old
-// shards and reindex them in the background — but the count is the first
-// thing to know when results look wrong, so it fails with the totals.
+// indexed state. Stale repos are not broken: searches answer from the old
+// shards until the next sync or `csl search` reindexes them. The count is
+// still the first thing to know when results look wrong, so it fails with the
+// totals.
 func indexFreshness(indexDir string, s shared) doctor.Check {
 	return doctor.Check{
 		Name: "index-freshness",
@@ -295,7 +296,7 @@ func indexFreshness(indexDir string, s shared) doctor.Check {
 			if n := len(staleness.Stale); n > 0 {
 				return fmt.Errorf(
 					"%d of %d repos stale, dirty, or unindexed; "+
-						"the next search reindexes them in the background, 'csl index' does it now",
+						"the next sync or 'csl search' reindexes them, 'csl index' does it now",
 					n, len(repos),
 				)
 			}

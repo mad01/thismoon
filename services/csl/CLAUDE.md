@@ -77,6 +77,9 @@ sections, say), so every repo re-indexes once after such an upgrade.
 `csl search` re-indexes stale repos in a background goroutine after
 returning results, so the current query is fast and the next one reflects
 the latest state; `csl sync` and `csl index` do it synchronously up front.
+`csl sync` and the `csl web` refresh, which share one engine, reindex every
+fingerprint-stale repo whatever its pull status, so an index-format bump heals
+on the next cycle.
 
 **Hybrid search (RRF).** `csl hybrid` / `csl_hybrid_search` run the lexical
 (zoekt) and semantic (vector) backends independently and collapse each to one

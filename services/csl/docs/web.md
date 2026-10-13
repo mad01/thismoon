@@ -264,7 +264,9 @@ While `csl web` runs, it keeps the index current on its own. A loop wakes
 every minute and, when the last full cycle is older than
 `refresh.interval_minutes` (default 15), runs the same engine as `csl sync`.
 It pulls every discovered repo (parallel, ff-only) and reindexes the ones
-that changed. Comparing timestamps instead of counting ticks means a Mac
+that changed. It also reindexes every repo whose index fingerprint is stale,
+including the ones it does not pull, so an index-format bump heals on the next
+cycle. Comparing timestamps instead of counting ticks means a Mac
 waking from sleep catches up on the next wake instead of skipping a cycle.
 Failed cycles back off exponentially (up to an hour) so an offline stretch
 doesn't hammer remotes.

@@ -485,7 +485,7 @@ csl doctor [--repair]
 
 The same checks are available to an agent with no shell as the `csl_doctor` MCP tool, which returns the report as JSON and never repairs.
 
-A stale-index FAIL self-heals: searches answer from the old shards and reindex in the background, or `csl index` does it synchronously. On a clean pass the last line points at `csl docs`, the embedded operating doc.
+A stale-index FAIL self-heals: searches answer from the old shards until the next sync or `csl search` reindexes them, or `csl index` does it synchronously. On a clean pass the last line points at `csl docs`, the embedded operating doc.
 
 ### Example output
 
@@ -493,7 +493,7 @@ A stale-index FAIL self-heals: searches answer from the old shards and reindex i
 ok config-loads
 ok repos-discovered (17 repos, 2 dropped by index.hosts (1 with no remote))
 ok state-file-loads
-FAIL index-freshness: 3 of 17 repos stale, dirty, or unindexed; the next search reindexes them in the background, 'csl index' does it now
+FAIL index-freshness: 3 of 17 repos stale, dirty, or unindexed; the next sync or 'csl search' reindexes them, 'csl index' does it now
 ok index-shards-valid
 ok search-server-responsive
 ok catalog-descriptors
