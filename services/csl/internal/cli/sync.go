@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
 	"github.com/mad01/thismoon/services/csl/internal/syncer"
 )
@@ -54,6 +54,7 @@ func init() {
 }
 
 func runSync(cmd *cobra.Command, _ []string) error {
+	status := progstatus.New("csl")
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -62,7 +63,7 @@ func runSync(cmd *cobra.Command, _ []string) error {
 	w := cmd.ErrOrStderr()
 	isTTY := false
 	if f, ok := w.(*os.File); ok {
-		isTTY = isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
+		isTTY = progstatus.IsTerminal(f)
 	}
 
 	parent := cmd.Context()
@@ -72,14 +73,38 @@ func runSync(cmd *cobra.Command, _ []string) error {
 	ctx, stop := interruptContext(parent)
 	defer stop()
 
-	_, err = syncer.Run(ctx, cfg, syncer.Options{
+	msg := "syncing repos"
+	if syncDryRunFlag {
+		msg = "previewing sync"
+	}
+	status.Working(msg)
+	rep, err := syncer.Run(ctx, cfg, syncer.Options{
 		Concurrency: syncConcurrencyFlag,
 		DryRun:      syncDryRunFlag,
 		Out:         cmd.OutOrStdout(),
 		Err:         w,
 		TTY:         isTTY,
 	})
-	return lockedHint(err)
+	if err != nil {
+		err = lockedHint(err)
+		if ctx.Err() != nil { // the user interrupted the run: nothing to show
+			status.Idle()
+		} else {
+			status.Error(err.Error())
+		}
+		return err
+	}
+	status.Done(syncDone(rep, syncDryRunFlag))
+	return nil
+}
+
+// syncDone words the terminal's final report. A dry run evaluated repos and
+// pulled nothing, so it must not read as a sync.
+func syncDone(rep *syncer.Report, dryRun bool) string {
+	if dryRun {
+		return fmt.Sprintf("dry run: %d repos evaluated", len(rep.Results))
+	}
+	return fmt.Sprintf("%d repos evaluated, %d indexed", len(rep.Results), len(rep.Indexed))
 }
 
 // interruptContext returns a context that the first SIGINT or SIGTERM cancels,

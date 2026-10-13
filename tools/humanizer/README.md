@@ -83,6 +83,8 @@ cat draft.md | humanizer judge --json
 
 The backend comes from the environment. `HUMANIZER_BACKEND` forces one; otherwise the first configured provider wins. `LITELLM_BASE_URL` selects a LiteLLM proxy, self-hosted or a company gateway, on model `claude-haiku-5-5`, with `LITELLM_API_KEY` sent as a bearer token when set. Otherwise `OPENROUTER_API_KEY` selects OpenRouter on model `anthropic/claude-haiku-5.5`. Both make the same OpenAI-compatible chat-completions call; only the host, the auth, and the model alias differ, so a proxy that names Haiku 5.5 differently needs `HUMANIZER_MODEL`. Without a provider the command fails, and everything else in humanizer keeps working offline.
 
+`humanizer judge` reports its status to terminals that implement the Program Status Protocol (OSC 7501). An unfocused tab then shows when the verdict is in or the call failed.
+
 | Flag | Description |
 |---|---|
 | `--backend` | Force an LLM backend (`litellm`, `openrouter`); default auto-detects from env |

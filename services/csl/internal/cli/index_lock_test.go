@@ -5,12 +5,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/csl/internal/queue"
 	"github.com/mad01/thismoon/services/csl/internal/repo/finder"
 	"github.com/mad01/thismoon/services/csl/internal/search"
@@ -23,6 +25,18 @@ func indexTestCmd(out, errOut *bytes.Buffer) *cobra.Command {
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
 	return cmd
+}
+
+// reportStates lists the state and progress keys of every Program Status
+// Protocol report in raw, in order, so a test pins the sequence without the
+// app and msg keys. It assumes the reporter was given an app.
+func reportStates(raw string) []string {
+	var states []string
+	for _, report := range strings.Split(raw, "\x1b]7501;")[1:] {
+		keys, _, _ := strings.Cut(report, ":app=")
+		states = append(states, keys)
+	}
+	return states
 }
 
 // countShards counts the .zoekt shard files in indexDir; a missing directory
@@ -113,7 +127,7 @@ func TestIndexStaleHoldsLock(t *testing.T) {
 		holdLock(t, indexDir)
 
 		var out, errOut bytes.Buffer
-		err := indexStale(indexTestCmd(&out, &errOut), indexDir, repos, nil, current)
+		err := indexStale(indexTestCmd(&out, &errOut), indexDir, repos, nil, current, nil)
 		wantLockedError(t, err)
 		wantNothingWritten(t, indexDir)
 	})
@@ -122,7 +136,7 @@ func TestIndexStaleHoldsLock(t *testing.T) {
 		indexDir := t.TempDir()
 
 		var out, errOut bytes.Buffer
-		err := indexStale(indexTestCmd(&out, &errOut), indexDir, repos, nil, current)
+		err := indexStale(indexTestCmd(&out, &errOut), indexDir, repos, nil, current, nil)
 		if err != nil {
 			t.Fatalf("indexStale: %v", err)
 		}
@@ -143,7 +157,7 @@ func TestIndexSingleHoldsLock(t *testing.T) {
 		holdLock(t, indexDir)
 
 		var out, errOut bytes.Buffer
-		err := runIndexSingle(indexTestCmd(&out, &errOut), indexDir, repoDir)
+		err := runIndexSingle(indexTestCmd(&out, &errOut), indexDir, repoDir, nil)
 		wantLockedError(t, err)
 		wantNothingWritten(t, indexDir)
 		if out.Len() != 0 {
@@ -154,13 +168,18 @@ func TestIndexSingleHoldsLock(t *testing.T) {
 	t.Run("indexes and releases the lock when free", func(t *testing.T) {
 		indexDir := t.TempDir()
 
-		var out, errOut bytes.Buffer
-		if err := runIndexSingle(indexTestCmd(&out, &errOut), indexDir, repoDir); err != nil {
+		var out, errOut, reports bytes.Buffer
+		status := progstatus.NewWriter(&reports, "csl")
+		if err := runIndexSingle(indexTestCmd(&out, &errOut), indexDir, repoDir, status); err != nil {
 			t.Fatalf("runIndexSingle: %v", err)
 		}
 		wantIndexed(t, indexDir, repoDir)
 		if !strings.Contains(out.String(), "indexed org/single") {
 			t.Errorf("stdout = %q, want the indexed line", out.String())
+		}
+		want := []string{"state=working", "state=working:progress=100", "state=done"}
+		if got := reportStates(reports.String()); !slices.Equal(got, want) {
+			t.Errorf("status reports = %v, want %v", got, want)
 		}
 	})
 }
@@ -183,7 +202,7 @@ func TestIndexDrainHoldsLock(t *testing.T) {
 			}
 
 			var out, errOut bytes.Buffer
-			err := runIndexDrain(indexTestCmd(&out, &errOut), indexDir)
+			err := runIndexDrain(indexTestCmd(&out, &errOut), indexDir, nil)
 			wantLockedError(t, err)
 			wantNothingWritten(t, indexDir)
 			if _, err := os.Stat(queuePath); err != nil {
@@ -199,7 +218,7 @@ func TestIndexDrainHoldsLock(t *testing.T) {
 		}
 
 		var out, errOut bytes.Buffer
-		if err := runIndexDrain(indexTestCmd(&out, &errOut), indexDir); err != nil {
+		if err := runIndexDrain(indexTestCmd(&out, &errOut), indexDir, nil); err != nil {
 			t.Fatalf("runIndexDrain: %v", err)
 		}
 		wantIndexed(t, indexDir, repoDir)
@@ -226,4 +245,15 @@ func TestIndexCommandFailsFastWhenLocked(t *testing.T) {
 	_, err = runCLI(t, "index")
 	wantLockedError(t, err)
 	wantNothingWritten(t, indexDir)
+
+	// The same failure through runIndexWith ends the terminal's status as an
+	// error, with no working report first: the lock is refused before any
+	// write starts.
+	var out, errOut, reports bytes.Buffer
+	err = runIndexWith(indexTestCmd(&out, &errOut), progstatus.NewWriter(&reports, "csl"))
+	wantLockedError(t, err)
+	want := []string{"state=error"}
+	if got := reportStates(reports.String()); !slices.Equal(got, want) {
+		t.Errorf("status reports = %v, want %v", got, want)
+	}
 }

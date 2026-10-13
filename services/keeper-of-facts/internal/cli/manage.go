@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/keeper-of-facts/internal/client"
 )
 
@@ -242,14 +243,21 @@ store (skipping retracted ones). Prints the fresh/stale/flipped counts and, for
 each stale assertion, its id and stale reason.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		status := progstatus.New("kof")
 		var id string
+		msg := "checking assertions"
 		if len(args) == 1 {
 			id = args[0]
+			msg = "checking " + id
 		}
+		status.Working(msg)
 		rep, err := apiClient().Check(id)
 		if err != nil {
+			status.Error(err.Error())
 			return err
 		}
+		status.Done(fmt.Sprintf("checked %d, stale %d, flipped %d",
+			rep.Checked, rep.Stale, rep.Flipped))
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "checked %d, fresh %d, stale %d, flipped %d\n",
 			rep.Checked, rep.Fresh, rep.Stale, rep.Flipped)
