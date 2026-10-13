@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -34,7 +37,8 @@ skipped.
 
 The run takes the sync lock shared with the background refresher in ` + "`csl web`" + `;
 if another sync or refresh is already running the command fails instead of
-racing it: retry when it finishes.
+racing it: retry when it finishes. Each pull is bounded by a 5-minute timeout,
+so a hung remote fails that repo instead of stalling the run and the lock.
 
 Use --concurrency to control parallel pulls (default: from config, fallback 8).
 Use --dry-run to preview what would happen without pulling or indexing.`,
@@ -61,7 +65,14 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		isTTY = isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 	}
 
-	_, err = syncer.Run(cmd.Context(), cfg, syncer.Options{
+	parent := cmd.Context()
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, stop := interruptContext(parent)
+	defer stop()
+
+	_, err = syncer.Run(ctx, cfg, syncer.Options{
 		Concurrency: syncConcurrencyFlag,
 		DryRun:      syncDryRunFlag,
 		Out:         cmd.OutOrStdout(),
@@ -69,4 +80,18 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		TTY:         isTTY,
 	})
 	return lockedHint(err)
+}
+
+// interruptContext returns a context that the first SIGINT or SIGTERM cancels,
+// which kills each in-flight pull's process group. git runs outside the
+// terminal's foreground group, so without this a Ctrl-C would orphan the pulls.
+// Once ctx is done the handler is removed: a second Ctrl-C kills the process
+// with the default behavior, even during the index phase, which ignores ctx.
+func interruptContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+	return ctx, stop
 }
