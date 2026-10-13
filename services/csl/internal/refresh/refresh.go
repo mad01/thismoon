@@ -191,8 +191,8 @@ func (r *Refresher) cycle(ctx context.Context, only string) {
 			}
 		}
 		log.Printf(
-			"csl web: refresh complete: %d repos, %d indexed (%s)",
-			len(rep.Results), len(rep.Indexed), now.Sub(start).Round(time.Second),
+			"csl web: refresh complete: %d repos, %d indexed, %d pruned (%s)",
+			len(rep.Results), len(rep.Indexed), rep.Pruned, now.Sub(start).Round(time.Second),
 		)
 	}
 }

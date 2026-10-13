@@ -282,6 +282,9 @@ while a manual sync runs. `csl index` and `csl_repo_reindex` take the same
 lock and fail fast the same way. Disable the loop with `refresh.enabled: false`; the
 manual buttons on the `/refresh` page keep working.
 
+Each full cycle also removes the index shards of repos that discovery no
+longer returns, such as a deleted checkout or worktree.
+
 ## Running as a service
 
 Register `csl web` with a process manager so the UI, the background refresh, and the `csl_show_file` links stay available:

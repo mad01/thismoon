@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -32,6 +33,7 @@ type PullResult struct {
 type Report struct {
 	Results []PullResult  // one per evaluated repo, sorted by name
 	Indexed []finder.Repo // repos reindexed this run
+	Pruned  int           // orphan shards deleted this run (full runs only)
 }
 
 // Options tunes one sync run. The zero value is a full, quiet, non-TTY run
@@ -54,8 +56,10 @@ type Options struct {
 }
 
 // Run executes one sync: discover repos, pull them in parallel, drain the
-// reindex queue, reindex what changed or has a stale fingerprint, and (when
-// semantic.sync is on) re-embed the same repos. It holds the sync lock for the pull and index phases and
+// reindex queue, prune the index entries of repos discovery no longer returns
+// (full runs only), reindex what changed or has a stale fingerprint, and (when
+// semantic.sync is on) re-embed the same repos. It holds the sync lock for the
+// pull and index phases and
 // returns ErrLocked without touching anything when another run already holds
 // it.
 func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error) {
@@ -70,14 +74,15 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 
 	fmt.Fprintf(errw, "Discovering repos...")
 
-	targets, err := cfg.DiscoverRepos()
+	discovered, dropped, err := cfg.DiscoverReposReport()
 	if err != nil {
 		fmt.Fprintln(errw)
 		return nil, err
 	}
 
+	targets := discovered
 	if opts.Only != "" {
-		targets = filterOnly(targets, opts.Only)
+		targets = filterOnly(discovered, opts.Only)
 		if len(targets) == 0 {
 			fmt.Fprintln(errw)
 			return nil, fmt.Errorf("syncer: no repo matching %q", opts.Only)
@@ -147,6 +152,12 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 		}
 	}
 
+	// Prune saves state.json before indexChanged loads it, both under the lock.
+	if opts.Only == "" {
+		keep := pruneKeepSet(discovered, dropped, queuedRepos)
+		report.Pruned = pruneOrphans(indexDir, keep, out, errw)
+	}
+
 	indexed, err := indexChanged(indexInput{
 		indexDir:    indexDir,
 		results:     results,
@@ -207,6 +218,46 @@ func runPullPhase(
 		fmt.Fprintln(errw)
 	}
 	return results
+}
+
+// pruneKeepSet returns the repos a full run must not prune: every discovered
+// repo, the ones hooks.post_merge.exclude hides (still on disk, and `csl
+// index` may have built their shards), and the queued repos this run is about
+// to index. It is nil when the walk saw no repo at all, so a config that
+// discovers nothing never wipes the whole index.
+func pruneKeepSet(
+	discovered []finder.Repo,
+	dropped []finder.Dropped,
+	queued []finder.Repo,
+) []finder.Repo {
+	keep := slices.Clone(discovered)
+	for _, d := range dropped {
+		if d.Kind == finder.DropExcluded {
+			keep = append(keep, d.Repo)
+		}
+	}
+	if len(keep) == 0 {
+		return nil
+	}
+	return append(keep, queued...)
+}
+
+// pruneOrphans drops the shards and state entries of indexed repos keep does
+// not hold, reporting the count on out, and returns it. An empty keep skips
+// the prune. Pruning is housekeeping, so a failure is reported on errw and
+// never fails the sync; the next full run retries.
+func pruneOrphans(indexDir string, keep []finder.Repo, out, errw io.Writer) int {
+	if len(keep) == 0 {
+		return 0
+	}
+	removed, err := search.PruneOrphans(indexDir, keep)
+	if err != nil {
+		fmt.Fprintf(errw, "prune orphan shards: %v\n", err)
+	}
+	if len(removed) > 0 {
+		fmt.Fprintf(out, "pruned %d orphan shard(s)\n", len(removed))
+	}
+	return len(removed)
 }
 
 // filterOnly keeps the repos whose org/repo name or absolute path equals only.
