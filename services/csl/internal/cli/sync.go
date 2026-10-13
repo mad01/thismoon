@@ -20,13 +20,15 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Pull all repos and batch-reindex updated ones",
 	Long: `Pull all discovered repos (parallel, ff-only) and batch-reindex the ones
-that changed, in a single process with one state.json write.
+that changed, in a single process with one state.json write. Repos whose index
+fingerprint is stale are reindexed too, pulled or not, so an index-format bump
+heals on the next sync.
 
 Hooks are suppressed during sync pulls via core.hooksPath=/dev/null. Any repos
 queued by earlier ad-hoc git pulls are also drained and indexed.
 
 Repos on non-default branches, in detached HEAD, with dirty working trees
-(tracked uncommitted changes), or without a remote are skipped. Untracked
+(tracked uncommitted changes), or without a remote are not pulled. Untracked
 files don't count as dirty. Repos in hooks.post_merge.exclude are also
 skipped.
 

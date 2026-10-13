@@ -1,6 +1,6 @@
 // Package syncer pulls the discovered repos and batch-reindexes the ones that
-// changed — the shared engine behind the `csl sync` command and the background
-// refresh loop in `csl web`. Both invocations run the same phases (discover,
+// changed or whose index went stale. It is the shared engine behind the
+// `csl sync` command and the background refresh loop in `csl web`. Both invocations run the same phases (discover,
 // pull, queue drain, index, optional semantic re-embed) under the same lock,
 // so a manual sync and a background refresh can never double-pull or race on
 // state.json.
@@ -54,8 +54,8 @@ type Options struct {
 }
 
 // Run executes one sync: discover repos, pull them in parallel, drain the
-// reindex queue, reindex what changed, and (when semantic.sync is on) re-embed
-// the same repos. It holds the sync lock for the pull and index phases and
+// reindex queue, reindex what changed or has a stale fingerprint, and (when
+// semantic.sync is on) re-embed the same repos. It holds the sync lock for the pull and index phases and
 // returns ErrLocked without touching anything when another run already holds
 // it.
 func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error) {
@@ -147,52 +147,33 @@ func Run(ctx context.Context, cfg *config.Config, opts Options) (*Report, error)
 		}
 	}
 
-	state, err := search.LoadState(indexDir)
+	indexed, err := indexChanged(indexInput{
+		indexDir:    indexDir,
+		results:     results,
+		queued:      queuedRepos,
+		hiddenDirs:  cfg.AllowedHiddenDirs(),
+		concurrency: concurrency,
+		errw:        errw,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	updated := reposToIndex(results, state, queuedRepos)
+	if len(indexed) > 0 {
+		report.Indexed = indexed
+		fmt.Fprintf(out, "indexed %d repo(s)\n", len(indexed))
 
-	if len(updated) == 0 {
-		fmt.Fprintf(out, "\n%s\n", syncSummary(counts))
-		printAttention(out, results)
-		emitSyncEvent(start, counts, len(results), 0)
-		return report, nil
-	}
-
-	fmt.Fprintf(errw, "\nIndexing %d repo(s)...\n", len(updated))
-
-	if err := search.IndexRepos(indexDir, updated, cfg.AllowedHiddenDirs(), func(i, total int, repo finder.Repo) {
-		fmt.Fprintf(errw, "  [%d/%d] %s\n", i+1, total, repo.Name)
-	}); err != nil {
-		return nil, fmt.Errorf("indexing failed: %w", err)
-	}
-
-	for _, repo := range updated {
-		fp, fpErr := search.Fingerprint(repo.Path)
-		if fpErr == nil {
-			fp.IndexedAt = time.Now()
-			state.SetRepo(repo.Path, fp)
+		// Semantic reindex of the same repos, opt-in via semantic.sync and
+		// fully decoupled: the lexical reindex above has already succeeded,
+		// so any failure here is reported but never fails the sync.
+		if cfg.SemanticSyncEnabled() {
+			runSemanticSync(ctx, errw, indexed, opts.TTY)
 		}
-	}
-	if err := state.Save(indexDir); err != nil {
-		return nil, fmt.Errorf("save state: %w", err)
-	}
-	report.Indexed = updated
-
-	fmt.Fprintf(out, "indexed %d repo(s)\n", len(updated))
-
-	// Semantic reindex of the same changed repos, opt-in via semantic.sync and
-	// fully decoupled: the lexical reindex above has already succeeded, so any
-	// failure here is reported but never fails the sync.
-	if cfg.SemanticSyncEnabled() {
-		runSemanticSync(ctx, errw, updated, opts.TTY)
 	}
 
 	fmt.Fprintf(out, "\n%s\n", syncSummary(counts))
 	printAttention(out, results)
-	emitSyncEvent(start, counts, len(results), len(updated))
+	emitSyncEvent(start, counts, len(results), len(indexed))
 
 	return report, nil
 }
@@ -288,9 +269,9 @@ func emitSyncEvent(start time.Time, counts map[string]int, total, indexed int) {
 	)
 }
 
-// reposToIndex selects which repos need (re-)indexing after a pull phase.
-// Includes repos updated by pull, newly discovered repos absent from state,
-// and queued repos from ad-hoc pulls (deduped).
+// reposToIndex selects the repos the pull phase itself marks for indexing:
+// repos updated by pull, newly discovered repos absent from state, and queued
+// repos from ad-hoc pulls (deduped). indexChanged adds the stale ones.
 func reposToIndex(
 	results []PullResult,
 	state *search.IndexState,
