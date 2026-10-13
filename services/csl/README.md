@@ -108,6 +108,8 @@ csl config                               # which config file is read, and the se
 
 First search in a fresh checkout triggers an initial index build. The daemon serves subsequent searches and returns them in hundreds of milliseconds. Semantic and hybrid search need `csl index --semantic-all` run once first, with Ollama running and the embedding model pulled (`ollama pull unclemusclez/jina-embeddings-v2-base-code:f16`).
 
+`csl index` and `csl sync` report their status to terminals that implement the Program Status Protocol (OSC 7501), so an unfocused tab still shows whether the run is going, done, or failed.
+
 `csl hooks install` (legacy per-repo post-merge hook installer) is deprecated: suspenders now owns git hooks; see Configuration.
 
 For a browser UI instead of the CLI:

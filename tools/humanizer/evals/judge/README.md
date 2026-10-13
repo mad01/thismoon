@@ -21,6 +21,11 @@ go run ./evals/judge -arms haiku55 -reps 3 -split train   # one tuning round
 go run ./evals/judge                 # the full matrix, both splits
 ```
 
+A paid run reports its status to terminals that implement the Program Status
+Protocol (OSC 7501), so an unfocused tab shows when the matrix finishes or
+fails. An interrupted run reports idle, which a terminal may drop once the
+process exits.
+
 A run writes `runs/<timestamp>/`. Inside: `summary.md`, `results.jsonl`
 with one row per case, arm, and rep, and `errors.jsonl` for attempts that
 produced no verdict, each with a failure class. `run.json` records the arms,

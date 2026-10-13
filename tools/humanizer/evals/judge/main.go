@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/tools/humanizer/internal/judge"
 )
 
@@ -51,12 +52,14 @@ func main() {
 		report = flag.String("report", "", "re-render summary.md for this run directory and exit")
 	)
 	flag.Parse()
+	status := progstatus.New("humanizer")
 	err := run(runOptions{
 		casesDir: *casesDir, armIDs: *armIDs, reps: *reps, outDir: *outDir, workers: *workers,
 		filter: *filter, split: *split, list: *list, oracle: *oracle, null: *null,
 		report: *report,
-	})
+	}, status)
 	if err != nil {
+		status.Error(err.Error())
 		fmt.Fprintln(os.Stderr, "judge eval:", err)
 		os.Exit(1)
 	}
@@ -76,7 +79,9 @@ type runOptions struct {
 	report   string
 }
 
-func run(o runOptions) error {
+// run does the eval; status reports the paid phase to the terminal, so an
+// unfocused tab shows when the matrix finishes, fails, or was interrupted.
+func run(o runOptions, status *progstatus.Reporter) error {
 	cases, err := loadCases(o.casesDir)
 	if err != nil {
 		return err
@@ -117,6 +122,9 @@ func run(o runOptions) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	status.Working(
+		fmt.Sprintf("judging %d cases on %d arms, %d reps", len(cases), len(arms), reps),
+	)
 	rows, errs := runAll(ctx, key, buildJobs(cases, arms, reps), traceDir, workers)
 	if err := writeJSONL(filepath.Join(outDir, "results.jsonl"), rows); err != nil {
 		return err
@@ -131,6 +139,11 @@ func run(o runOptions) error {
 	}
 	fmt.Print(buf.String())
 	fmt.Fprintf(os.Stderr, "\nrun written to %s\n", outDir)
+	if ctx.Err() != nil {
+		status.Idle()
+		return nil
+	}
+	status.Done(fmt.Sprintf("%d verdicts, %d errors", len(rows), len(errs)))
 	return nil
 }
 

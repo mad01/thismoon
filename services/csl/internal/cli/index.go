@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/csl/internal/daemon"
 	"github.com/mad01/thismoon/services/csl/internal/queue"
 	"github.com/mad01/thismoon/services/csl/internal/repo/config"
@@ -87,7 +87,23 @@ type indexStatusJSON struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
-func runIndex(cmd *cobra.Command, args []string) error {
+func runIndex(cmd *cobra.Command, _ []string) error {
+	return runIndexWith(cmd, progstatus.New("csl"))
+}
+
+// runIndexWith runs the index command and reports its status through
+// status. The writers say when they start and finish; any failure ends the
+// run as an error here, since the terminal keeps the last state it saw.
+func runIndexWith(cmd *cobra.Command, status *progstatus.Reporter) error {
+	if err := dispatchIndex(cmd, status); err != nil {
+		status.Error(err.Error())
+		return err
+	}
+	return nil
+}
+
+// dispatchIndex picks the index mode from the flags and runs it.
+func dispatchIndex(cmd *cobra.Command, status *progstatus.Reporter) error {
 	indexDir, err := search.DefaultIndexDir()
 	if err != nil {
 		return err
@@ -106,21 +122,21 @@ func runIndex(cmd *cobra.Command, args []string) error {
 	}
 
 	if indexDrainFlag {
-		return runIndexDrain(cmd, indexDir)
+		return runIndexDrain(cmd, indexDir, status)
 	}
 
 	// --semantic-all alone: semantic only, no lexical.
 	if indexSemanticAllFlag && !indexAllFlag {
-		return runIndexSemantic(cmd, indexRepoFlag)
+		return runIndexSemantic(cmd, indexRepoFlag, status)
 	}
 
 	// --semantic --repo X: semantic build filtered to one repo.
 	if indexSemanticFlag {
-		return runIndexSemantic(cmd, indexRepoFlag)
+		return runIndexSemantic(cmd, indexRepoFlag, status)
 	}
 
 	if indexRepoFlag != "" {
-		return runIndexSingle(cmd, indexDir, indexRepoFlag)
+		return runIndexSingle(cmd, indexDir, indexRepoFlag, status)
 	}
 
 	cfg, err := config.Load()
@@ -158,7 +174,7 @@ func runIndex(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	err = indexStale(cmd, indexDir, toIndex, cfg.AllowedHiddenDirs(), staleness.Current)
+	err = indexStale(cmd, indexDir, toIndex, cfg.AllowedHiddenDirs(), staleness.Current, status)
 	if err != nil {
 		return err
 	}
@@ -167,9 +183,7 @@ func runIndex(cmd *cobra.Command, args []string) error {
 
 	// --all also runs semantic.
 	if indexAllFlag {
-		if err := runIndexSemantic(cmd, indexRepoFlag); err != nil {
-			return err
-		}
+		return runIndexSemantic(cmd, indexRepoFlag, status)
 	}
 
 	return nil
@@ -258,22 +272,34 @@ func printIndexStatus(
 }
 
 // indexWrite describes one write of shards and state.json: the repos to
-// rebuild, optional progress output, and where each repo's fresh fingerprint
-// comes from. A full run reuses the fingerprints its staleness check already
-// computed; single-repo and queue-drain runs probe git after indexing.
+// rebuild, optional progress output, where each repo's fresh fingerprint
+// comes from, and the terminal status reporter. A full run reuses the
+// fingerprints its staleness check already computed; single-repo and
+// queue-drain runs probe git after indexing.
 type indexWrite struct {
 	repos       []finder.Repo
 	hiddenDirs  []string
 	progress    func(i, total int, repo finder.Repo)
 	fingerprint func(repo finder.Repo) (search.RepoState, bool)
+	status      *progstatus.Reporter
 }
 
 // writeIndex rebuilds the shards for w.repos and records their fingerprints
 // in state.json. The caller holds the sync lock (see withIndexLock), and the
 // state is reloaded under it: a sync may have saved state.json after this
 // command loaded it for the staleness check, and those entries must survive.
+// As the one path every lexical writer takes, it is also where the terminal
+// hears that the write started, how far it is, and that it ended.
 func writeIndex(indexDir string, w indexWrite) error {
-	if err := search.IndexRepos(indexDir, w.repos, w.hiddenDirs, w.progress); err != nil {
+	w.status.Working(indexMsg("indexing", w.repos))
+	steps := w.status.Steps(len(w.repos))
+	progress := func(i, total int, repo finder.Repo) {
+		if w.progress != nil {
+			w.progress(i, total, repo)
+		}
+		steps.Step(i+1, "indexed "+repo.Name)
+	}
+	if err := search.IndexRepos(indexDir, w.repos, w.hiddenDirs, progress); err != nil {
 		return fmt.Errorf("indexing failed: %w", err)
 	}
 	state, err := search.LoadState(indexDir)
@@ -292,7 +318,17 @@ func writeIndex(indexDir string, w indexWrite) error {
 	if err := state.Save(indexDir); err != nil {
 		return fmt.Errorf("failed to save index state: %w", err)
 	}
+	w.status.Done(indexMsg("indexed", w.repos))
 	return nil
+}
+
+// indexMsg words a status report for one write's repos: the repo's name
+// when there is one, a count otherwise.
+func indexMsg(verb string, repos []finder.Repo) string {
+	if len(repos) == 1 {
+		return verb + " " + repos[0].Name
+	}
+	return fmt.Sprintf("%s %d repos", verb, len(repos))
 }
 
 // fingerprintFrom serves fingerprints out of a staleness check's Current map.
@@ -328,6 +364,7 @@ func indexStale(
 	toIndex []finder.Repo,
 	hiddenDirs []string,
 	current map[string]search.RepoState,
+	status *progstatus.Reporter,
 ) error {
 	w := cmd.ErrOrStderr()
 	return withIndexLock(indexDir, func() error {
@@ -337,6 +374,7 @@ func indexStale(
 			hiddenDirs:  hiddenDirs,
 			progress:    progressLine(w),
 			fingerprint: fingerprintFrom(current),
+			status:      status,
 		})
 	})
 }
@@ -345,7 +383,11 @@ func indexStale(
 // scan, updating its state.json entry so the next `csl index` skips it. Like
 // every other writer it holds the sync lock, failing fast while csl sync or
 // the web refresher runs instead of writing beside them.
-func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
+func runIndexSingle(
+	cmd *cobra.Command,
+	indexDir, repoPath string,
+	status *progstatus.Reporter,
+) error {
 	abs, err := filepath.Abs(repoPath)
 	if err != nil {
 		return fmt.Errorf("resolve repo path %s: %w", repoPath, err)
@@ -367,6 +409,7 @@ func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
 			repos:       []finder.Repo{repo},
 			hiddenDirs:  cfg.AllowedHiddenDirs(),
 			fingerprint: fingerprintNow,
+			status:      status,
 		})
 	})
 	if err != nil {
@@ -380,7 +423,7 @@ func runIndexSingle(cmd *cobra.Command, indexDir, repoPath string) error {
 // runIndexDrain batch-indexes the repos queued by post-merge hooks. The sync
 // lock is taken before the queue is claimed, so a drain that loses to a
 // running sync fails fast and leaves the queue for that sync to drain.
-func runIndexDrain(cmd *cobra.Command, indexDir string) error {
+func runIndexDrain(cmd *cobra.Command, indexDir string, status *progstatus.Reporter) error {
 	queuePath, err := queue.DefaultPath()
 	if err != nil {
 		return err
@@ -392,13 +435,18 @@ func runIndexDrain(cmd *cobra.Command, indexDir string) error {
 	}
 
 	return withIndexLock(indexDir, func() error {
-		return drainQueue(cmd, indexDir, queuePath, cfg.AllowedHiddenDirs())
+		return drainQueue(cmd, indexDir, queuePath, cfg.AllowedHiddenDirs(), status)
 	})
 }
 
 // drainQueue claims the queue and indexes every repo in it that still
 // inspects as a git repo. The caller holds the sync lock.
-func drainQueue(cmd *cobra.Command, indexDir, queuePath string, hiddenDirs []string) error {
+func drainQueue(
+	cmd *cobra.Command,
+	indexDir, queuePath string,
+	hiddenDirs []string,
+	status *progstatus.Reporter,
+) error {
 	out, w := cmd.OutOrStdout(), cmd.ErrOrStderr()
 
 	claimedPath, repoPaths, err := queue.Claim(queuePath)
@@ -424,6 +472,7 @@ func drainQueue(cmd *cobra.Command, indexDir, queuePath string, hiddenDirs []str
 		hiddenDirs:  hiddenDirs,
 		progress:    progressLine(w),
 		fingerprint: fingerprintNow,
+		status:      status,
 	})
 	if err != nil {
 		return fmt.Errorf("%w (claimed file: %s)", err, claimedPath)
@@ -469,7 +518,8 @@ func filterReposByName(repos []finder.Repo, name string) []finder.Repo {
 // repos (optionally filtered by repoFilter). It is additive to the lexical
 // index and lives under its own directory. Embedding runs via Ollama; the
 // configured model must be pulled first.
-func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
+func runIndexSemantic(cmd *cobra.Command, repoFilter string, status *progstatus.Reporter) error {
+	status.Working("checking embedding model")
 	semDir, err := semantic.DefaultSemanticIndexDir()
 	if err != nil {
 		return err
@@ -485,12 +535,14 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 	}
 	if len(repos) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), cfg.EmptyDiscoveryHint(dropped))
+		status.Done("no repos to embed")
 		return nil
 	}
 	if repoFilter != "" {
 		repos = filterReposByName(repos, repoFilter)
 		if len(repos) == 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "no repo matching %q\n", repoFilter)
+			status.Done("no repo matching " + repoFilter)
 			return nil
 		}
 	}
@@ -511,10 +563,12 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 
 	tty := false
 	if f, ok := w.(*os.File); ok {
-		tty = isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
+		tty = progstatus.IsTerminal(f)
 	}
 
 	fmt.Fprintf(w, "Semantically indexing %d repo(s)...\n", len(repos))
+	status.Working(fmt.Sprintf("embedding %d repos", len(repos)))
+	steps := status.Steps(len(repos))
 	repoWidth := len(fmt.Sprint(len(repos)))
 	var totalFiles, totalChunks int
 	for i, repo := range repos {
@@ -540,6 +594,7 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 			w, "  [%*d/%d] %s — %d embedded, %d chunks\n",
 			repoWidth, i+1, len(repos), repo.Name, stats.FilesEmbedded, stats.ChunksEmbedded,
 		)
+		steps.Step(i+1, "embedded "+repo.Name)
 	}
 
 	fmt.Fprintf(
@@ -547,6 +602,7 @@ func runIndexSemantic(cmd *cobra.Command, repoFilter string) error {
 		"semantic index: %d repo(s), %d file(s) embedded, %d chunk(s)\n",
 		len(repos), totalFiles, totalChunks,
 	)
+	status.Done(fmt.Sprintf("embedded %d files in %d repos", totalFiles, len(repos)))
 
 	// A running daemon loaded the semantic index at startup and will not see
 	// the rebuild. Shut it down best-effort so the next query spawns a fresh

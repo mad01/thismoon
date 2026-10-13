@@ -70,7 +70,9 @@ deps config                        # print the discovery config in use and its e
 ```
 
 The CLI and MCP tools both need `deps serve` running: they're HTTP clients to
-it.
+it. `deps scan` and `deps check` report their status to terminals that
+implement the Program Status Protocol (OSC 7501), so an unfocused tab shows
+when a run finishes.
 
 The web page at `http://deps.this/` shows the counts per package manager, the
 active findings, and an acknowledged section. From here you can:

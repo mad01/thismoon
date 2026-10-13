@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/tools/humanizer/internal/backend"
 	"github.com/mad01/thismoon/tools/humanizer/internal/judge"
 )
@@ -52,6 +54,7 @@ func init() {
 }
 
 func runJudge(cmd *cobra.Command, args []string) error {
+	status := progstatus.New("humanizer")
 	text, err := readInput(args)
 	if err != nil {
 		return err
@@ -66,12 +69,15 @@ func runJudge(cmd *cobra.Command, args []string) error {
 		}
 		return err
 	}
+	status.Working("judging " + judgeTarget(args))
 	ctx, cancel := context.WithTimeout(cmd.Context(), judgeTimeout)
 	defer cancel()
 	v, err := judge.Run(ctx, b, text)
 	if err != nil {
+		status.Error(err.Error())
 		return err
 	}
+	status.Done(fmt.Sprintf("verdict %s, confidence %.2f", v.Verdict, v.Confidence))
 	if judgeJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
@@ -94,4 +100,13 @@ func runJudge(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return nil
+}
+
+// judgeTarget names the judged text for the terminal's status line: the
+// file argument's base name, or stdin.
+func judgeTarget(args []string) string {
+	if len(args) == 0 || args[0] == "-" {
+		return "stdin"
+	}
+	return filepath.Base(args[0])
 }

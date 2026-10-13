@@ -66,6 +66,9 @@ checked 2  fresh 1  stale 1  flipped 1
 A stale line means the pinned code moved. Open it, decide whether the assertion
 still holds, and re-assert with fresh pins if it does.
 
+`kof check` reports its status to terminals that implement the Program Status
+Protocol (OSC 7501), so an unfocused tab shows when a long check finishes.
+
 ```bash
 kof assert --kind <kind> --subject <key> --statement "<sentence>" \
             --confidence verified|derived|hint --session <id> \

@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/client"
 )
@@ -24,10 +25,14 @@ var scanCmd = &cobra.Command{
 registered repos and persist the result. Prints a per-ecosystem count. Run
 'deps check' to additionally check them against OSV.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		status := progstatus.New("deps")
+		status.Working("scanning repos for dependencies")
 		res, err := apiClient().Scan()
 		if err != nil {
+			status.Error(err.Error())
 			return err
 		}
+		status.Done(fmt.Sprintf("discovered %d dependencies", res.Total))
 		fmt.Fprintf(cmd.OutOrStdout(), "Discovered %d dependencies\n", res.Total)
 		for eco, n := range res.ByEcosystem {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %-5s %d\n", eco, n)
@@ -45,6 +50,8 @@ advisory id, severity, and the version that fixes it.
 
 With --repo, rescan a single repo (by path or basename) and merge the result.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		status := progstatus.New("deps")
+		status.Working("checking dependencies against OSV")
 		c := apiClient()
 		var res client.CheckResult
 		var err error
@@ -54,8 +61,10 @@ With --repo, rescan a single repo (by path or basename) and merge the result.`,
 			res, err = c.Check()
 		}
 		if err != nil {
+			status.Error(err.Error())
 			return err
 		}
+		status.Done(fmt.Sprintf("checked %d dependencies, %d flagged", res.Total, len(res.Flagged)))
 		printFlagged(cmd, res.Total, res.Flagged)
 		return nil
 	},
