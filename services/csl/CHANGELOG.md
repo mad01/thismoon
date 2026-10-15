@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.27.0](https://github.com/mad01/thismoon/compare/csl/v0.26.0...csl/v0.27.0) (2026-10-13)
+
+
+### Features
+
+* report program status (OSC 7501) from the long-running commands ([#215](https://github.com/mad01/thismoon/issues/215)) ([8db8ae9](https://github.com/mad01/thismoon/commit/8db8ae9a8e576e714b77ac50f753a53a65d4e1d4))
+
+
+### Bug Fixes
+
+* **csl:** bound sync pulls with a timeout that kills the process tree ([#213](https://github.com/mad01/thismoon/issues/213)) ([f0dd2ef](https://github.com/mad01/thismoon/commit/f0dd2ef1302b12b036663ca612ff01e6d62ce7db))
+* **csl:** prune shards of repos discovery no longer returns ([#214](https://github.com/mad01/thismoon/issues/214)) ([784c14d](https://github.com/mad01/thismoon/commit/784c14d007ad317d1082c2d3458e10c6a85f2d43))
+* **csl:** reindex fingerprint-stale repos on sync ([#211](https://github.com/mad01/thismoon/issues/211)) ([ad87803](https://github.com/mad01/thismoon/commit/ad87803af87937a33cdbc95ff1f7f32b34337a89))
+
 ## [0.26.0](https://github.com/mad01/thismoon/compare/csl/v0.25.1...csl/v0.26.0) (2026-10-02)
 
 

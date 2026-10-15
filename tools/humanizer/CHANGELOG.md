@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/mad01/thismoon/compare/humanizer/v0.14.0...humanizer/v0.15.0) (2026-10-13)
+
+
+### Features
+
+* report program status (OSC 7501) from the long-running commands ([#215](https://github.com/mad01/thismoon/issues/215)) ([8db8ae9](https://github.com/mad01/thismoon/commit/8db8ae9a8e576e714b77ac50f753a53a65d4e1d4))
+
 ## [0.14.0](https://github.com/mad01/thismoon/compare/humanizer/v0.13.1...humanizer/v0.14.0) (2026-10-09)
 
 

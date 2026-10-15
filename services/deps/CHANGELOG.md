@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/mad01/thismoon/compare/deps/v0.11.0...deps/v0.12.0) (2026-10-13)
+
+
+### Features
+
+* report program status (OSC 7501) from the long-running commands ([#215](https://github.com/mad01/thismoon/issues/215)) ([8db8ae9](https://github.com/mad01/thismoon/commit/8db8ae9a8e576e714b77ac50f753a53a65d4e1d4))
+
 ## [0.11.0](https://github.com/mad01/thismoon/compare/deps/v0.10.0...deps/v0.11.0) (2026-10-02)
 
 
