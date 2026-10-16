@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/mad01/thismoon/compare/belt/v2.8.0...belt/v2.9.0) (2026-10-16)
+
+
+### Features
+
+* **belt:** tag model and effort on subagent-start ledger entries, glob agent-type keys ([#227](https://github.com/mad01/thismoon/issues/227)) ([9b32592](https://github.com/mad01/thismoon/commit/9b32592c3c5c624b323afd3a1a00bb41f32d65a9))
+
 ## [2.8.0](https://github.com/mad01/thismoon/compare/belt/v2.7.0...belt/v2.8.0) (2026-10-16)
 
 
