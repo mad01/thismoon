@@ -1,0 +1,23 @@
+{
+  "name": "factory-band",
+  "version": "0.1.0",
+  "description": "Experimental. A band above the prompt for a factory run: each worker's worktree state, model and effort, the workers' belt denies, belt-inbox items for this session, and a weave now button.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "mad01"
+  },
+  "userConfig": {
+    "events": {
+      "type": "boolean",
+      "title": "Read the events service",
+      "description": "Ask the local events service for belt's ledger (the workers' auto-mode denials, effort) and belt-inbox (items addressed to this session). Off counts the workers' guard denials only and shows inbox as a dash.",
+      "default": true
+    },
+    "contractGuard": {
+      "type": "boolean",
+      "title": "Contract guard",
+      "description": "Deny a factory worker spawn whose prompt does not open with the eight-line task header. Off by default; belt stays the guard.",
+      "default": false
+    }
+  }
+}
