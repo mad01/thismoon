@@ -67,7 +67,7 @@ Sharing carries the deck: a shared copy has the same renditions as the local pag
 
 ### Shared mode
 
-`present serve --shared --bind 0.0.0.0` runs the same binary as a network-facing shared instance, meant for a few replicas in Kubernetes behind one hostname. There is no index and no listing: a page is reachable only by the 32-hex id present minted for it. Every write carries an author key as a bearer token (the server keeps only its hash, and only that key can update or delete the page). Reads need nothing, and a page created as ephemeral disappears 30 days after its last write. The root serves a how-to page, `POST /api/pages` and `PUT /api/p/<id>` take pushed pages, and the present tools are served over HTTP at `/mcp` (`present_create` with an `ephemeral` flag, `present_read`, `present_source`, `present_update`, `present_doctor`). Page URLs follow the `X-Forwarded-Host` and `X-Forwarded-Proto` headers the ingress sets.
+`present serve --shared --bind 0.0.0.0` runs the same binary as a network-facing shared instance, meant for a few replicas in Kubernetes behind one hostname. There is no index and no listing: a page is reachable only by the 32-hex id present minted for it. Every write carries an author key as a bearer token (the server keeps only its hash, and only that key can update or delete the page). Reads need nothing, and a page created as ephemeral disappears 30 days after its last write. The root serves a how-to page, `POST /api/pages` and `PUT /api/p/<id>` take pushed pages, and the present tools are served over HTTP at `/mcp` (`present_create` with an `ephemeral` flag, `present_read`, `present_source`, `present_update`, `present_patch_section`, `present_doctor`). Page URLs follow the `X-Forwarded-Host` and `X-Forwarded-Proto` headers the ingress sets.
 
 ### Sharing a page
 
@@ -99,6 +99,39 @@ jq -Rs '{name: "notes.md", markdown: .}' notes.md \
 
 The import exists in local mode only; a shared instance takes pages through the MCP tools or `POST /api/pages` with an author key.
 
+## HTTP API
+
+Besides the page views, `present serve` takes edits to one part of a page, so a worker can report into a page without holding the whole Doc. Every write takes a lock on the page directory, so parallel writers never lose an edit. Local serve takes these from pages on this machine with `Content-Type: application/json`, the import's rule. A shared instance takes them only with the page author's key as a bearer token.
+
+| Route | Body | Does |
+|-------|------|------|
+| `PATCH /api/p/{id}/sections/{anchor}` | `{"op", "section"?, "body_format"?, "rendition"?, "base_version"?}` | `replace`, `insert_before`, `insert_after`, or `remove` at the section `{anchor}` names |
+| `POST /api/p/{id}/sections` | `{"section", "body_format"?, "rendition"?, "base_version"?}` | Append a section at the end |
+| `POST /api/p/{id}/progress` | `{"label", "pct", "note"?, "section"?, "rendition"?}` | Set the progress block carrying `label`, or add one |
+| `GET /api/p/{id}/history` | | List the kept versions, newest first |
+| `GET /api/p/{id}/history/{version}` | | One kept version, in the shape `present_source` returns |
+| `GET /api/p/{id}/diff?since={version}` | | The sections of the brief and the deck that changed, were added, or were removed since a kept version |
+
+`{anchor}` is a section's table-of-contents anchor: the heading lowercased, spaces as dashes, other punctuation dropped, so "Next steps" is `next-steps`. `index:N` (zero-based) names a section by position, for a heading that repeats or has no letters. `section` is one Doc section object, or with `"body_format": "markdown"` a string of markdown that opens with a `#` or `##` heading. `rendition` is `content` (the default, the brief) or `deck`. With `base_version`, the patch applies only while the page is still at that version. The whole Doc is recompiled, so a section the renderer refuses is refused here.
+
+A patch answers `200 {"id", "version", "rendition", "op", "index", "anchor", "url"}`. Refusals come back as `{"error"}` with one of these statuses:
+
+- **409 with `version`**: the page moved past `base_version`; read it again.
+- **409 with `indices`**: the anchor names several sections, or the section would repeat another section's anchor. Address one as `index:N` or rename the heading.
+- **409 alone**: the rendition has no Doc source, such as a brief stored as raw HTML or a page without a deck.
+- **404**: no such page, or no section with that anchor (the error lists the anchors).
+- **400**: the patch or its section is malformed.
+
+```bash
+curl -sS -X POST http://localhost:7423/api/p/<id>/sections \
+  -H 'Content-Type: application/json' \
+  -d '{"body_format":"markdown","section":"## Results\n\nAll green."}'
+```
+
+A progress report finds the progress block whose label matches, in the named `section` or anywhere in the Doc. It sets that block's `pct` (0 to 100) and its `note`, a short line shown after the label. With no match the block is added to that section, or to a Progress section at the end, created the first time. A label two blocks share answers 409 with their `sections`. `present progress <id> <label> <pct> [--note ...] [--section ...]` does the same against the workdir with serve down, which suits hooks.
+
+A local page keeps its newest 20 versions under `history/`. `present_source` takes a `version` to read one back, and passing that source to `present_update` restores it as a new version. The diff answers `{"content": {"changed", "added", "removed"}, "deck": {...}}`, naming each section by its anchor, or `index:N` when its anchor is empty or shared. The page view uses it to mark the sections that changed since this browser last opened the page. A version older than the kept window is 404. A shared instance keeps no history, so these routes are missing there.
+
 ## MCP
 
 On a standalone install, register it once:
@@ -115,8 +148,9 @@ The tools write the page store directly, so they work with `present serve` down;
 |------|---------|
 | `present_create(title, content?, deck?, graph?, references?)` | Create a page; at least one of `content` and `deck`; returns `{id, url, has_deck, deck_url?, version}` |
 | `present_read(id)` | Read a page's rendered title/content/deck/graph/version/urls |
-| `present_source(id)` | Get the editable source (Doc JSON, deck Doc JSON, graph JSON) in the format `present_update` accepts; use to mutate a page from a new session |
+| `present_source(id, version?)` | Get the editable source (Doc JSON, deck Doc JSON, graph JSON) in the format `present_update` accepts; use to mutate a page from a new session. `version` reads a kept earlier version (local pages keep 20) |
 | `present_update(id, title?, content?, deck?, graph?, references?)` | Patch a page (omitted fields unchanged; `deck: ""` removes the deck); bumps version → open tabs auto-reload |
+| `present_patch_section(id, op, anchor?, section?, body_format?, rendition?, base_version?)` | Change one section without resending the Doc: `replace`, `insert_before`, `insert_after`, or `remove` at an anchor, or `append`; the section as Doc JSON or markdown |
 | `present_list()` | List all pages, newest first; `has_doc` marks pages with an editable Doc source, `has_brief`/`has_deck` say which renditions exist |
 | `present_open(id, deck?)` | Open a page in the browser (call once per page); `deck: true` opens the slide deck |
 | `present_deck(id, action, slide?)` | Drive the open deck: `start`, `stop`, `next`, `prev`, `goto`. Local instance only |
@@ -163,6 +197,7 @@ make -C services/present kind-test   # build, load, apply deploy/overlays/kind, 
     deck-command.json    # the last 32 remote commands for open deck tabs
     graph.js             # optional cytoscape init script
     graph.json           # canonical graph source (when created from graph JSON)
+    history/<version>.json  # the newest 20 versions, what present_source returns for each
   images/<sha256>.<ext>  # image files brought in from this machine, served at /img/<name>
 ```
 

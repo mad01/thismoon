@@ -54,6 +54,33 @@ func (g *imageIngest) doc(s string) (string, error) {
 	if err := json.Unmarshal([]byte(trimmed), &d); err != nil {
 		return s, nil
 	}
+	changed, err := g.rewrite(&d)
+	if err != nil {
+		return "", err
+	}
+	if !changed {
+		return s, nil
+	}
+	out, err := json.Marshal(d)
+	if err != nil {
+		return "", fmt.Errorf("image sources: %w", err)
+	}
+	return string(out), nil
+}
+
+// section rewrites the local image sources of one section, as doc does for
+// a whole Doc.
+func (g *imageIngest) section(s render.Section) (render.Section, error) {
+	d := render.Doc{Sections: []render.Section{s}}
+	if _, err := g.rewrite(&d); err != nil {
+		return render.Section{}, err
+	}
+	return d.Sections[0], nil
+}
+
+// rewrite points every image block of d whose src is a local file at the
+// stored image it becomes, and reports whether any src changed.
+func (g *imageIngest) rewrite(d *render.Doc) (bool, error) {
 	changed := false
 	err := d.EachBlock(func(b *render.Block) error {
 		if b.T != "image" || render.IsHTTPURL(b.Src) {
@@ -83,17 +110,7 @@ func (g *imageIngest) doc(s string) (string, error) {
 		changed = true
 		return nil
 	})
-	if err != nil {
-		return "", err
-	}
-	if !changed {
-		return s, nil
-	}
-	out, err := json.Marshal(d)
-	if err != nil {
-		return "", fmt.Errorf("image sources: %w", err)
-	}
-	return string(out), nil
+	return changed, err
 }
 
 // update rewrites the image sources of the content and deck an update

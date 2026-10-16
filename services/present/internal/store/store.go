@@ -520,11 +520,11 @@ func (s *FS) Ping(context.Context) error {
 }
 
 // writeSnapshot persists a page into its existing directory in commit order:
-// the sources, then the renditions, graph, and references, then meta.json,
-// whose version is what readers watch. Every file lands whole through a
-// temp file and a rename: the serve process reads them while another process
-// writes, and a half-written one would read as a page that references
-// nothing.
+// the sources, then the renditions, graph, and references, then the
+// version's history record, then meta.json, whose version is what readers
+// watch. Every file lands whole through a temp file and a rename: the serve
+// process reads them while another process writes, and a half-written one
+// would read as a page that references nothing.
 func (s *FS) writeSnapshot(snap Snapshot) error {
 	dir := s.pageDir(snap.Page.ID)
 	for _, slot := range sourceSlots(&snap.Sources) {
@@ -533,6 +533,9 @@ func (s *FS) writeSnapshot(snap Snapshot) error {
 		}
 	}
 	if err := writeBodies(dir, snap.Page); err != nil {
+		return err
+	}
+	if err := s.writeRevision(snap); err != nil {
 		return err
 	}
 	return s.writeMeta(snap.Page)

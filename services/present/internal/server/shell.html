@@ -462,6 +462,14 @@ html[data-transition="none"] .cy-container { transition: none; }
 }
 #share-result code { word-break: break-all; }
 #share-status { color: var(--text-3); }
+/* A section that changed since this browser last opened the page
+   (markChangedSections in app.js): an "updated" chip before its heading
+   until the next load. The brief only; the deck view never marks. */
+wk-section.section-changed > wk-section-heading::before {
+  content: 'updated'; display: inline-block; margin-right: 0.5rem; padding: 0 0.45rem;
+  border: 1px solid var(--primary); border-radius: 999px; color: var(--primary);
+  font-size: 0.7rem; line-height: 1.5; vertical-align: middle;
+}
 </style>
 </head>
 <body>

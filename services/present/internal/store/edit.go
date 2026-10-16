@@ -54,6 +54,23 @@ func PatchEdit(patch Patch) EditFunc {
 	}
 }
 
+// RenewEphemeral returns fn with an ephemeral page's expiry moved to
+// expiresAt whenever fn succeeds: a shared instance restarts the 30 days on
+// every write. A page kept until deleted stays that way. The caller fixes
+// expiresAt once, so a conflict retry keeps the same expiry.
+func RenewEphemeral(fn EditFunc, expiresAt *time.Time) EditFunc {
+	return func(cur Snapshot) (Snapshot, error) {
+		next, err := fn(cur)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		if cur.Page.Ephemeral {
+			next.Page.Ephemeral, next.Page.ExpiresAt = true, expiresAt
+		}
+		return next, nil
+	}
+}
+
 // foldEdit takes the editable fields of edited into cur through Apply, so
 // the derived flags follow the rules a patch follows.
 func foldEdit(cur, edited Page) Page {

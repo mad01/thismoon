@@ -339,3 +339,11 @@ test('diagram helpers: an id named like an Object.prototype key is just an id', 
   assert.equal(lit.toString, true);
   assert.equal(lit['__proto__'], false);
 });
+
+test('changedSectionTargets: changed and added sections, by id or by index', () => {
+  assert.deepEqual(PresentViz.changedSectionTargets({
+    changed: ['results'], added: ['index:3', 'next-steps'], removed: ['old'],
+  }), [{ id: 'results' }, { index: 3 }, { id: 'next-steps' }]);
+  assert.deepEqual(PresentViz.changedSectionTargets(undefined), []);
+  assert.deepEqual(PresentViz.changedSectionTargets({ changed: [], added: [] }), []);
+});

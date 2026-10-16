@@ -1,7 +1,7 @@
 'use strict';
 // present deck visuals: the pure, node-tested parts of the deck's in-block
-// stepping, the ribbon chart's layout, and the diagram block's ELK graph,
-// stepping, and routes. shell.html loads this file before
+// stepping, the ribbon chart's layout, the diagram block's ELK graph,
+// stepping, and routes, and the brief's changed-section marker. shell.html loads this file before
 // app.js, which reads the helpers from window.PresentViz. Nothing here touches
 // the DOM at load time.
 (function (root) {
@@ -339,7 +339,20 @@
     return { x: (w + room.left) / 2, label: top + DIAGRAM_BOX.label / 2, lines: lines };
   }
 
+  // changedSectionTargets turns the content half of a diff answer
+  // (GET /api/p/{id}/diff) into the sections the brief marks: changed and
+  // added ones, by element id, or by position for an index:N name. Removed
+  // sections are gone from the page and are not marked.
+  function changedSectionTargets(diff) {
+    var names = ((diff && diff.changed) || []).concat((diff && diff.added) || []);
+    return names.map(function (name) {
+      var m = /^index:(\d+)$/.exec(name);
+      return m ? { index: parseInt(m[1], 10) } : { id: name };
+    });
+  }
+
   root.PresentViz = {
+    changedSectionTargets: changedSectionTargets,
     stepPlan: stepPlan, blockStepsAt: blockStepsAt, chartStepVisibility: chartStepVisibility, seriesMax: seriesMax,
     ribbonLayout: ribbonLayout,
     wrapLines: wrapLines, diagramBox: diagramBox, diagramElk: diagramElk, elkPath: elkPath, routeLabelPoint: routeLabelPoint,
