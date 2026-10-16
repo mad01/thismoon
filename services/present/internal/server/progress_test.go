@@ -2,8 +2,13 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
+
+	"github.com/mad01/thismoon/services/present"
+	"github.com/mad01/thismoon/services/present/internal/author"
 )
 
 func TestProgressRouteInsertsThenUpdates(t *testing.T) {
@@ -96,5 +101,44 @@ func TestRepeatedProgressKeepsTheVersion(t *testing.T) {
 	if revisions, _ := history["revisions"].([]any); status != http.StatusOK ||
 		len(revisions) != 2 {
 		t.Fatalf("history after repeats: %d %v; want versions 1 and 2 only", status, history)
+	}
+}
+
+// TestSharedProgressIsAuthorOnlyAndRenewsExpiry pins the shared guard on the
+// progress route: no author key is 401, another key is 403, and neither
+// writes; the page's own key lands the report and renews the ephemeral
+// expiry, as a section patch does.
+func TestSharedProgressIsAuthorOnlyAndRenewsExpiry(t *testing.T) {
+	f := setupShared(t)
+	key := author.NewKey()
+	c := compiledDoc(t, "Alpha")
+	created := f.create(t, key, map[string]any{
+		"title": "Weekly", "content": c.HTML, "doc": json.RawMessage(c.JSON), "ephemeral": true,
+	})
+	path := "/api/p/" + created.ID + "/progress"
+	body := map[string]any{"label": "Index", "pct": 40}
+	if resp, _ := f.call(t, http.MethodPost, path, "", body, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("no key: status %d, want 401", resp.StatusCode)
+	}
+	if resp, _ := f.call(t, http.MethodPost, path, author.NewKey(), body, nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("wrong key: status %d, want 403", resp.StatusCode)
+	}
+	if got, err := f.raw.Get(t.Context(), created.ID); err != nil || got.Version != 1 {
+		t.Fatalf("page after refused reports = %+v, %v; want version 1", got, err)
+	}
+	f.now = f.now.Add(24 * time.Hour)
+	resp, out := f.call(t, http.MethodPost, path, key, body, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("author: status %d %s", resp.StatusCode, out)
+	}
+	got, err := f.raw.Get(t.Context(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != 2 {
+		t.Errorf("version after the author's report = %d, want 2", got.Version)
+	}
+	if want := f.now.Add(present.SharedTTL); got.ExpiresAt == nil || !got.ExpiresAt.Equal(want) {
+		t.Errorf("expiry after the report = %v, want %v", got.ExpiresAt, want)
 	}
 }
