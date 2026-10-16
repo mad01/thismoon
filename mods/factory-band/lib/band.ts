@@ -52,6 +52,13 @@ const LIVE = new Set(['pending', 'running', 'waiting'])
 // engine's own prefix on the same line.
 const BELT_REASON = /belt\[[^\]]+\]:/
 
+// What git says when `-C` names a worktree that is gone: a removed
+// directory, or one that no longer holds a repository.
+const WORKTREE_GONE = /cannot change to|not a git repository/
+
+// States after which a worker whose loop ended has nothing left to show.
+const DONE = new Set(['integrated', 'removed'])
+
 /**
  * The default branch's tree and full ref name in one call; the `^{tree}`
  * comes first because `--symbolic-full-name` applies to what follows it.
@@ -60,6 +67,9 @@ export const DEFAULT_BRANCH_ARGS = ['rev-parse', 'origin/HEAD^{tree}', '--symbol
 
 /** Uncommitted changes in the worktree. */
 export const STATUS_ARGS = ['status', '--porcelain'] as const
+
+/** Every git call runs untranslated, so WORKTREE_GONE reads git's own words on any locale. */
+export const GIT_ENV = { LC_ALL: 'C' } as const
 
 /** How many commits HEAD has that `ref` lacks. */
 export function aheadArgs(ref: string): string[] {
@@ -96,6 +106,12 @@ export type Liveness = 'live' | 'idle' | 'gone' | 'unknown'
  */
 export type GitFacts = { isDirty: boolean; ahead: number; isIntegrated: boolean }
 
+/** One git call's result, as `$.process.run` resolves it. */
+export type GitRun = { exitCode: number; stdout: string; stderr: string }
+
+/** What git said about a worktree: its facts, `removed` once it is gone, null when git could not say. */
+export type WorktreeRead = GitFacts | 'removed' | null
+
 /** The default branch as `origin/HEAD` names it, and its tree when known. */
 export type DefaultBranch = { ref: string; tree: string | null }
 
@@ -113,6 +129,22 @@ export type Probe = { facts: Record<string, WorkerFacts>; ledgerDenies: number |
 
 /** What the band draws. */
 export type BandView = { summary: string; rows: string[]; isAnyReady: boolean }
+
+/**
+ * One factory run, kept in one atom so that a spawn and the refresh that
+ * closes the run cannot interleave. `workerIds` keeps every worker the run
+ * spawned, dropped ones included, so their denials keep counting.
+ */
+export type Run = {
+  workers: Worker[]
+  startedAt: number | null
+  workerIds: string[]
+  guardDenies: number
+  probe: Probe | null
+}
+
+/** No run: no workers, no counts. */
+export const NO_RUN: Run = { workers: [], startedAt: null, workerIds: [], guardDenies: 0, probe: null }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -267,6 +299,20 @@ export function parseDefaultBranch(stdout: string | null): DefaultBranch {
   return { ref, tree }
 }
 
+/** A git call's stdout, or null when it exited non-zero or never answered. */
+export function stdoutOf(run: GitRun | null): string | null {
+  return run !== null && run.exitCode === 0 ? run.stdout : null
+}
+
+/**
+ * True when git refused because the worktree is gone: exit 128 and git
+ * saying so. A timeout rejects the call and a signal reads as exit 1, so
+ * neither reads as gone.
+ */
+export function isWorktreeGone(run: GitRun | null): boolean {
+  return run !== null && run.exitCode === 128 && WORKTREE_GONE.test(run.stderr)
+}
+
 /** The worktree's facts from `git status --porcelain` and `git rev-list --count`, or null when either failed. */
 export function gitFactsFrom(status: string | null, count: string | null): GitFacts | null {
   const ahead = Number.parseInt(count?.trim() ?? '', 10)
@@ -302,11 +348,13 @@ export function livenessOf(agents: readonly AgentLike[] | null, agentId: string)
  * sent ready is ready, or integrated once the default branch holds its
  * changes; a dirty tree after a ready is in flight again. A worker whose
  * last message waits for an answer is blocked. An idle worker is in
- * flight; one whose loop ended without a ready is stopped. Abandoned is
- * the weaver's call after a survey, never the band's.
+ * flight; one whose loop ended without a ready is stopped. A worktree
+ * that is gone is removed, as loom leaves it after landing or dropping the
+ * unit. Abandoned is the weaver's call after a survey, never the band's.
  */
-export function workerState(input: { git: GitFacts | null; liveness: Liveness; lastKind: string | null }): string {
+export function workerState(input: { git: WorktreeRead; liveness: Liveness; lastKind: string | null }): string {
   const { git, liveness, lastKind } = input
+  if (git === 'removed') return 'removed'
   if (git === null || liveness === 'unknown') return UNKNOWN
   if (liveness === 'live') return 'in flight'
   if (lastKind === 'ready') {
@@ -321,7 +369,7 @@ export function workerState(input: { git: GitFacts | null; liveness: Liveness; l
 export function probeFrom(input: {
   workers: readonly Worker[]
   agents: readonly AgentLike[] | null
-  gits: ReadonlyArray<GitFacts | null>
+  gits: readonly WorktreeRead[]
   ledger: LedgerRead
   inbox: number | null
 }): Probe {
@@ -339,14 +387,42 @@ export function probeFrom(input: {
 }
 
 /**
- * The workers a refresh may drop: integrated, with their loop ended, so
- * rows and git probes do not pile up across runs.
+ * The workers a refresh may drop: integrated or with their worktree
+ * removed, and their loop ended, so rows and git probes do not pile up.
  */
 export function prunableIds(workers: readonly Worker[], probe: Probe, agents: readonly AgentLike[] | null): Set<string> {
   const ids = workers
     .map(worker => worker.agentId)
-    .filter(id => probe.facts[id]?.state === 'integrated' && livenessOf(agents, id) === 'gone')
+    .filter(id => DONE.has(probe.facts[id]?.state ?? UNKNOWN) && livenessOf(agents, id) === 'gone')
   return new Set(ids)
+}
+
+/** The run with `worker` recorded; the first worker starts the run at `now`. */
+export function withWorker(run: Run, worker: Worker, now: number): Run {
+  const isKnown = run.workerIds.includes(worker.agentId)
+  return {
+    ...run,
+    workers: upsertWorker(run.workers, worker),
+    startedAt: run.startedAt ?? now,
+    workerIds: isKnown ? run.workerIds : [...run.workerIds, worker.agentId],
+  }
+}
+
+/** The run with one more guard denial when `agentId` is one of its workers. */
+export function withGuardDeny(run: Run, agentId: string): Run {
+  return run.workerIds.includes(agentId) ? { ...run, guardDenies: run.guardDenies + 1 } : run
+}
+
+/**
+ * The run after a refresh: the probe stored and the workers it found done
+ * dropped. Dropping the last worker closes the run, so the next spawn
+ * starts with fresh counts. A worker spawned while the refresh ran is not
+ * in the probe, so it stays and keeps the run open.
+ */
+export function settleRun(run: Run, probe: Probe, agents: readonly AgentLike[] | null): Run {
+  const done = prunableIds(run.workers, probe, agents)
+  const workers = run.workers.filter(worker => !done.has(worker.agentId))
+  return workers.length === 0 ? NO_RUN : { ...run, workers, probe }
 }
 
 /**

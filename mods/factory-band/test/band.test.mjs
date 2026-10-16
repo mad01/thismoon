@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 
 import {
   DEFAULT_BRANCH_ARGS,
+  GIT_ENV,
+  NO_RUN,
   REFRESH_GAP_MS,
   STATUS_ARGS,
   UNKNOWN,
@@ -23,6 +25,7 @@ import {
   isRefreshDue,
   isTaskMessage,
   isWorkerType,
+  isWorktreeGone,
   kindOf,
   livenessOf,
   mergeTreeArgs,
@@ -31,9 +34,13 @@ import {
   parseLedger,
   probeFrom,
   prunableIds,
+  settleRun,
+  stdoutOf,
   trailingDelay,
   upsertWorker,
+  withGuardDeny,
   withKind,
+  withWorker,
   workerFrom,
   workerState,
 } from '../lib/band.ts'
@@ -281,6 +288,8 @@ describe('worker state', () => {
     ['an idle worker with nothing said yet', { git: dirty, liveness: 'idle', lastKind: 'status' }, 'in flight'],
     ['git could not say', { git: null, liveness: 'live', lastKind: null }, UNKNOWN],
     ['the agent list could not say', { git: clean(), liveness: 'unknown', lastKind: 'ready' }, UNKNOWN],
+    ['a worktree that is gone is removed, loop at work or not', { git: 'removed', liveness: 'live', lastKind: null }, 'removed'],
+    ['removed even when the agent list could not say', { git: 'removed', liveness: 'unknown', lastKind: 'ready' }, 'removed'],
   ]
   for (const [name, input, want] of cases) {
     test(name, () => assert.equal(workerState(input), want))
@@ -315,6 +324,18 @@ describe('worker state', () => {
     assert.deepEqual(parseDefaultBranch('aaff749\nrefs/remotes/origin/main\n'), { ref: 'origin/main', tree: 'aaff749' })
     assert.deepEqual(parseDefaultBranch(null), { ref: 'main', tree: null })
     assert.deepEqual(parseDefaultBranch('garbage'), { ref: 'main', tree: null })
+  })
+
+  test('exit 128 with git saying the worktree is gone reads gone; a timeout or another failure does not', () => {
+    const failed = (exitCode, stderr) => ({ exitCode, stdout: '', stderr })
+    assert.equal(isWorktreeGone(failed(128, "fatal: cannot change to '/x': No such file or directory")), true)
+    assert.equal(isWorktreeGone(failed(128, 'fatal: not a git repository: /r/.git/worktrees/x')), true)
+    assert.equal(isWorktreeGone(failed(128, "fatal: ambiguous argument 'origin/HEAD^{tree}': unknown revision")), false)
+    assert.equal(isWorktreeGone(failed(1, 'fatal: not a git repository')), false)
+    assert.equal(isWorktreeGone(null), false)
+    assert.equal(stdoutOf({ exitCode: 0, stdout: 'x\n', stderr: '' }), 'x\n')
+    assert.equal(stdoutOf(failed(128, 'fatal')), null)
+    assert.equal(stdoutOf(null), null)
   })
 
   test('an unknown merge or default tree is never integrated', () => {
@@ -371,6 +392,27 @@ describe('squash merge, against a fixture repo', () => {
     assert.equal(workerState({ git: { ...facts, isIntegrated }, liveness: 'gone', lastKind: 'ready' }), 'integrated')
   })
 
+  // A German locale, as a translated git would answer under it; the mod's
+  // GIT_ENV over it, as $.process.run lays env over the host's.
+  const ask = path => {
+    const ran = spawnSync('git', ['-C', path, ...DEFAULT_BRANCH_ARGS], { env: { ...env, LANG: 'de_DE.UTF-8', LANGUAGE: 'de', ...GIT_ENV }, encoding: 'utf8' })
+    return { exitCode: ran.status ?? 1, stdout: ran.stdout, stderr: ran.stderr }
+  }
+
+  test('git\'s own words for a removed worktree, a directory left without its repository, and one that is there', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'factory-band-outside-'))
+    try {
+      mkdirSync(join(outside, 'pruned'))
+      writeFileSync(join(outside, 'pruned', '.git'), `gitdir: ${join(outside, 'repo', '.git', 'worktrees', 'pruned')}\n`)
+      assert.equal(isWorktreeGone(ask(join(outside, 'removed'))), true)
+      assert.equal(isWorktreeGone(ask(join(outside, 'pruned'))), true)
+      assert.equal(isWorktreeGone(ask(outside)), true)
+      assert.equal(isWorktreeGone(ask(dir)), false)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   test('a branch main never took stays ready', () => {
     git('checkout', '-q', 'open')
     const { facts, isIntegrated } = factsOfHead()
@@ -417,6 +459,25 @@ describe('band', () => {
     assert.equal(view.isAnyReady, false)
   })
 
+  test('a worker whose worktree is gone is pruned once its loop ended, whatever it said last', () => {
+    const w3 = { ...w2, agentId: 'a3', name: 'live-one' }
+    const ledger = { facts: new Map(), denies: 0 }
+    const agents = [{ id: 'a3', status: 'running' }]
+    const probe = probeFrom({ workers: [w1, w2, w3], agents, gits: ['removed', 'removed', 'removed'], ledger, inbox: 0 })
+    assert.deepEqual([...prunableIds([w1, w2, w3], probe, agents)], ['a1', 'a2'])
+  })
+
+  test('blocked and stopped workers whose worktree is still there stay', () => {
+    const blocked = { ...w2, lastKind: 'blocked' }
+    const ledger = { facts: new Map(), denies: 0 }
+    const tree = { isDirty: true, ahead: 1, isIntegrated: false }
+    const probe = probeFrom({ workers: [w1, blocked], agents: [], gits: [tree, tree], ledger, inbox: 0 })
+    assert.deepEqual([probe.facts.a1?.state, probe.facts.a2?.state], ['in flight', 'blocked'])
+    const stopped = probeFrom({ workers: [w2], agents: [], gits: [tree], ledger, inbox: 0 })
+    assert.equal(stopped.facts.a2?.state, 'stopped')
+    assert.equal(prunableIds([w1, blocked], probe, []).size + prunableIds([w2], stopped, []).size, 0)
+  })
+
   test('integrated workers whose loop ended are pruned; a live or not yet integrated one stays', () => {
     const w3 = { ...w1, agentId: 'a3', name: 'live-one' }
     const ledger = { facts: new Map(), denies: 0 }
@@ -426,6 +487,46 @@ describe('band', () => {
     assert.equal(probe.facts.a1?.state, 'integrated')
     assert.deepEqual([...prunableIds([w1, w2, w3], probe, agents)], ['a1'])
     assert.equal(prunableIds([w1], probe, null).size, 0)
+  })
+})
+
+describe('run', () => {
+  const w1 = { agentId: 'a1', name: 'events', worktree: WT, model: null, lastKind: 'ready' }
+  const w2 = { agentId: 'a2', name: 'csl', worktree: null, model: null, lastKind: null }
+  const probeOf = states => ({
+    facts: Object.fromEntries(Object.entries(states).map(([id, state]) => [id, { state, model: null, effort: null }])),
+    ledgerDenies: 0,
+    inbox: 0,
+  })
+
+  test('the first worker starts the run; a respawn keeps the start and adds no id', () => {
+    const one = withWorker(NO_RUN, w1, 100)
+    const again = withWorker(withWorker(one, w2, 200), { ...w1, name: 'again' }, 300)
+    assert.equal(again.startedAt, 100)
+    assert.deepEqual(again.workerIds, ['a1', 'a2'])
+    assert.deepEqual(again.workers.map(worker => worker.name), ['csl', 'again'])
+  })
+
+  test('guard denials count for the run\'s workers only', () => {
+    assert.equal(withGuardDeny(withGuardDeny(withWorker(NO_RUN, w1, 100), 'a1'), 'zz').guardDenies, 1)
+    assert.equal(withGuardDeny(NO_RUN, 'a1'), NO_RUN)
+  })
+
+  test('a dropped worker keeps its id and denials in the run; the last one dropped closes it', () => {
+    const both = withGuardDeny(withWorker(withWorker(NO_RUN, w1, 100), w2, 200), 'a1')
+    const one = settleRun(both, probeOf({ a1: 'removed', a2: 'in flight' }), [{ id: 'a2', status: 'running' }])
+    assert.deepEqual(one.workers.map(worker => worker.agentId), ['a2'])
+    assert.deepEqual([one.workerIds, one.guardDenies, one.startedAt], [['a1', 'a2'], 1, 100])
+    assert.equal(withGuardDeny(one, 'a1').guardDenies, 2)
+    assert.equal(one.probe?.facts.a2?.state, 'in flight')
+    assert.deepEqual(settleRun(one, probeOf({ a2: 'integrated' }), []), NO_RUN)
+  })
+
+  test('a worker spawned while the refresh ran is not in its probe, so it stays and keeps the run open', () => {
+    const probe = probeOf({ a1: 'integrated' })
+    const settled = settleRun(withWorker(withWorker(NO_RUN, w1, 100), w2, 200), probe, [])
+    assert.deepEqual(settled.workers.map(worker => worker.agentId), ['a2'])
+    assert.equal(settled.startedAt, 100)
   })
 })
 

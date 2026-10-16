@@ -11,6 +11,7 @@ import { idAt } from '../lib/band'
 
 const HOME = '/home/u'
 const WT = '/home/u/.worktrees/thismoon/alexander-docs-sweep-events'
+const WT2 = '/home/u/.worktrees/thismoon/alexander-csl-prune'
 const SESSION = 's-lead'
 const RUN_START_MS = 1_792_000_000_000
 const MAIN_TREE = 'aaff749'
@@ -45,6 +46,10 @@ const inboxJson = JSON.stringify([{ id: later(2), source: 'belt-inbox', title: '
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 11 }, view: {} }
 
 const w1: AgentInfo = { id: 'a1', name: 'events', type: 'factory-worker-medium', status: 'running', description: 'events docs' }
+const w2: AgentInfo = { id: 'a2', name: 'csl', type: 'factory-worker-high', status: 'running', description: 'csl prune' }
+
+// The agent id each spawn name resolves to.
+const IDS: Record<string, string> = { events: 'a1', csl: 'a2' }
 
 const spawn: AgentSpawnInput = {
   tool_use_id: 'tu1',
@@ -58,21 +63,33 @@ const spawn: AgentSpawnInput = {
   name: 'events',
 }
 
-const run = (exitCode: number, stdout: string): ProcessRunResult => ({
+// A second worker in its own worktree; the spawn's cwd wins over the header.
+const spawn2: AgentSpawnInput = { ...spawn, tool_use_id: 'tu2', subagentType: 'factory-worker-high', name: 'csl', cwd: WT2 }
+
+const run = (exitCode: number, stdout: string, stderr = exitCode === 0 ? '' : 'fatal'): ProcessRunResult => ({
   exitCode,
   stdout,
-  stderr: exitCode === 0 ? '' : 'fatal',
+  stderr,
   isStdoutTruncated: false,
   isStderrTruncated: false,
 })
 
+// git's words for a worktree that is gone: its own under LC_ALL=C, a
+// translation otherwise, so a call that drops the locale misses them.
+const gone = (dir: string, isUntranslated: boolean): string =>
+  isUntranslated ? `fatal: cannot change to '${dir}': No such file or directory` : `fatal: kann nicht in Verzeichnis '${dir}' wechseln`
+
 // The worktree as git reports it; `mergedTree` is what merge-tree writes.
 type Git = { status: string; ahead: string; mergedTree: string }
+
+// A worktree: there, slower than any budget, or removed by loom.
+type Tree = Git | 'hung' | 'removed'
 
 type World = {
   agents: AgentInfo[]
   events: 'ok' | 'down' | 'hung'
-  git: Git | 'hung'
+  git: Tree
+  others: Record<string, Tree>
   commands: string[]
   fetches: number
   mergeTrees: number
@@ -81,24 +98,35 @@ type World = {
 
 const OPEN: Git = { status: '', ahead: '0', mergedTree: 'b0b0b0b' }
 
-// The engine beneath the plugin.
+// git's answer to one call in a worktree that is there.
+function gitAnswer(world: World, git: Git, args: readonly string[]): ProcessRunResult {
+  switch (args.join(' ')) {
+    case 'rev-parse origin/HEAD^{tree} --symbolic-full-name origin/HEAD':
+      return run(0, `${MAIN_TREE}\nrefs/remotes/origin/main\n`)
+    case 'status --porcelain':
+      return run(0, git.status)
+    case 'rev-list --count origin/main..HEAD':
+      return run(0, `${git.ahead}\n`)
+    case 'merge-tree --write-tree origin/main HEAD':
+      world.mergeTrees += 1
+      return run(0, `${git.mergedTree}\n`)
+  }
+  return run(128, '')
+}
+
+// The engine beneath the plugin. `git` is the first worker's worktree,
+// `others` any more.
 function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}): World {
   const clock = mock.clock(on)
-  const world: World = { agents: [w1], events: 'ok', git: OPEN, commands: [], fetches: 0, mergeTrees: 0, clock, ...overrides }
+  const world: World = { agents: [w1], events: 'ok', git: OPEN, others: {}, commands: [], fetches: 0, mergeTrees: 0, clock, ...overrides }
   mock.env(on, { HOME })
   on('process.run', async (_$, e) => {
-    const line = e.argv.join(' ')
-    if (!line.startsWith(`git -C ${WT} `)) return { value: run(128, '') }
-    if (world.git === 'hung') await clock.sleep(10_000)
-    const git = world.git === 'hung' ? OPEN : world.git
-    if (line.endsWith('rev-parse origin/HEAD^{tree} --symbolic-full-name origin/HEAD')) return { value: run(0, `${MAIN_TREE}\nrefs/remotes/origin/main\n`) }
-    if (line.endsWith('status --porcelain')) return { value: run(0, git.status) }
-    if (line.endsWith('rev-list --count origin/main..HEAD')) return { value: run(0, `${git.ahead}\n`) }
-    if (line.endsWith('merge-tree --write-tree origin/main HEAD')) {
-      world.mergeTrees += 1
-      return { value: run(0, `${git.mergedTree}\n`) }
-    }
-    return { value: run(128, '') }
+    const [command, flag, dir = '', ...args] = e.argv
+    const tree = command === 'git' && flag === '-C' ? (dir === WT ? world.git : world.others[dir]) : undefined
+    if (tree === undefined) return { value: run(128, '') }
+    if (tree === 'removed') return { value: run(128, '', gone(dir, e.init?.env?.LC_ALL === 'C')) }
+    if (tree === 'hung') await clock.sleep(10_000)
+    return { value: gitAnswer(world, tree === 'hung' ? OPEN : tree, args) }
   })
   on('agent.list', () => ({ value: world.agents }))
   on('session.id', () => ({ value: SESSION }))
@@ -112,7 +140,7 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}
   })
   on('ui.log', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'a1' }))
+  on('agent.spawn', (_$, e) => ({ model: 'claude-sonnet-5-5', agentId: IDS[e.name ?? ''] ?? 'a1' }))
   on('turn.complete', () => ({ text: '' }))
   // Stands for the engine's own band: an empty Box the mod keeps under its rows.
   on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Box' }))
@@ -245,6 +273,16 @@ test('a hung events service and a hung git cost the 400 ms budget and no more', 
   expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · inbox -', 'events  -  claude-sonnet-5-5  -'])
 })
 
+test('a git that outruns the budget is no removed worktree: an ended worker keeps its row', async ($, on) => {
+  const world = seat(on, { events: 'down', git: 'hung', agents: [] })
+  await $.session.start(start)
+  const spawned = $.agent.spawn(spawn)
+  await world.clock.advance(400)
+  await spawned
+  const ui = await mountBand($)
+  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · inbox -', 'events  -  claude-sonnet-5-5  -'])
+})
+
 test('events off: nothing is fetched', { options: { events: false } }, async ($, on) => {
   const world = seat(on)
   await $.session.start(start)
@@ -256,9 +294,12 @@ test('events off: nothing is fetched', { options: { events: false } }, async ($,
 // the kit hands it to the tool.call hooks as a session does for a subagent.
 const pushFrom = (agentId: string) => ({ tool: 'Bash' as const, command: 'git push origin main', agentId })
 
+// belt's guard refusing the call, as a settings PreToolUse hook does.
+const beltDeny = () => ({ deny: 'belt[git-push-main]: pushes to main are denied' })
+
 test('belt denies count for the workers\' own calls only, never the orchestrator\'s', async ($, on) => {
   seat(on, { events: 'down' })
-  on('classic.PreToolUse', () => ({ deny: 'belt[git-push-main]: pushes to main are denied' }))
+  on('classic.PreToolUse', beltDeny)
   await $.session.start(start)
   await $.agent.spawn(spawn)
   await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
@@ -267,6 +308,73 @@ test('belt denies count for the workers\' own calls only, never the orchestrator
   expect((await band(ui))[0]).toBe('factory · 1 worker · denies 0 · inbox -')
   await $.tool.call(pushFrom('a1'))
   expect((await band(ui))[0]).toBe('factory · 1 worker · denies 1 · inbox -')
+})
+
+test('a worker\'s failed call that is no belt denial does not count, belt in its output included', async ($, on) => {
+  seat(on, { events: 'down' })
+  on('tool.call', () => ({ result: undefined, text: 'Exit code 1\nbelt[git-push-main]: quoted from a log', isError: true }))
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  await $.tool.call(pushFrom('a1'))
+  const ui = await mountBand($)
+  expect((await band(ui))[0]).toBe('factory · 1 worker · denies 0 · inbox -')
+})
+
+test('a worker whose worktree loom removed drops off once its loop ended; the run\'s denies stay', async ($, on) => {
+  const world = seat(on, { agents: [w1, w2], others: { [WT2]: OPEN } })
+  on('classic.PreToolUse', beltDeny)
+  await world.clock.set(RUN_START_MS)
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  await $.agent.spawn(spawn2)
+  await $.tool.call(pushFrom('a1'))
+  await world.clock.advance(5_000)
+  const ui = await mountBand($)
+  expect(await band(ui)).toEqual([
+    'factory · 2 workers · denies 2 · inbox 1',
+    'events  in flight  claude-sonnet-5-5  medium',
+    'csl     in flight  claude-sonnet-5-5  -',
+  ])
+  world.git = 'removed'
+  world.agents = [w2]
+  await $.turn.complete(workerTurn(READY))
+  await world.clock.advance(5_000)
+  expect(await band(ui)).toEqual(['factory · 1 worker · denies 2 · inbox 1', 'csl  in flight  claude-sonnet-5-5  -'])
+  await $.turn.complete(mainTurn)
+  await world.clock.advance(5_000)
+  expect((await band(ui))[0]).toBe('factory · 1 worker · denies 2 · inbox 1')
+})
+
+test('a worker spawned while a refresh reads stays when that refresh drops the last earlier worker', async ($, on) => {
+  const world = seat(on, { events: 'hung', git: 'removed', agents: [w2], others: { [WT2]: OPEN } })
+  await $.session.start(start)
+  const first = $.agent.spawn(spawn)
+  await $.agent.spawn(spawn2)
+  await world.clock.advance(400)
+  await first
+  const ui = await mountBand($)
+  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · inbox -', 'csl  -  claude-sonnet-5-5  -'])
+})
+
+test('the last worker dropped closes the run: the next run counts denies and inbox from its own start', async ($, on) => {
+  const world = seat(on)
+  on('classic.PreToolUse', beltDeny)
+  await world.clock.set(RUN_START_MS)
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  await $.tool.call(pushFrom('a1'))
+  const ui = await mountBand($)
+  expect((await band(ui))[0]).toBe('factory · 1 worker · denies 2 · inbox 1')
+  world.git = 'removed'
+  world.agents = []
+  await $.turn.complete(workerTurn(READY))
+  await world.clock.advance(5_000)
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  world.others = { [WT2]: OPEN }
+  world.agents = [w2]
+  await $.agent.spawn(spawn2)
+  await world.clock.advance(5_000)
+  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · inbox 0', 'csl  in flight  claude-sonnet-5-5  -'])
 })
 
 test('the contract guard is off by default: a spawn without a task header starts', async ($, on) => {

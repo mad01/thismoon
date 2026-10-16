@@ -17,8 +17,8 @@ The band stays hidden until the first factory worker spawns, and it yields to a 
 - State: one of the states below, from the agent list, git in the worktree, and the kind of the worker's last message. That kind is the last `kind:` line (`status`, `question`, `ready` or `blocked`) of its SendMessage, or of its final answer for an unnamed worker.
 - Model: what the spawn resolved, else the ledger's `model` tag.
 - Effort: the ledger's `effort` tag. belt does not tag effort or model yet (MAD-406), so effort shows `-` today.
-- denies: belt's guard denials of the workers' own tool calls, plus the auto-mode denials belt's ledger recorded for those workers (`belt-ledger`, `event: permission-denied`). The orchestrator's denials are left to session-band.
-- inbox: items on `belt-inbox` whose `to` tag is this session, posted since the first worker spawned. These are not parked questions: those live in kof and on the board.
+- denies: belt's guard denials of the workers' own tool calls, plus the auto-mode denials belt's ledger recorded for those workers (`belt-ledger`, `event: permission-denied`). A worker that dropped off still counts, so the number never goes down mid-run. The orchestrator's denials are left to session-band.
+- inbox: items on `belt-inbox` whose `to` tag is this session, posted since the run's first worker spawned. These are not parked questions: those live in kof and on the board.
 
 ## States
 
@@ -27,11 +27,11 @@ The band stays hidden until the first factory worker spawns, and it yields to a 
 - `integrated`: the worker sent ready and the default branch already holds the changes, by a fast-forward or a squash merge.
 - `blocked`: the worker's last message was `blocked` or `question`.
 - `stopped`: the loop ended without a ready. Whether that worktree is abandoned is the weaver's call after a survey.
-- `-`: git or the agent list did not answer.
+- `removed`: the worktree is gone, as loom leaves it after landing or dropping the unit.
 
-Git answers from the worktree: `rev-parse` for `origin/HEAD` and its tree, `status --porcelain`, `rev-list --count`. For a ready worker's clean tree, one `merge-tree --write-tree` more: a merged tree equal to the default branch's tree means integrated. An integrated worker whose loop ended drops off the band; the last one closes the run.
+Git answers from the worktree under `LC_ALL=C`: `rev-parse` for `origin/HEAD` and its tree, `status --porcelain`, `rev-list --count`. For a ready worker's clean tree, one `merge-tree --write-tree` more: a merged tree equal to the default branch's tree means integrated. Exit 128 with git saying `cannot change to` or `not a git repository` means removed; a timeout never does. A worker whose loop ended drops off the band once it is integrated or removed. The last one to go closes the run, and the next spawn starts with fresh counts.
 
-The band is read again after a worker spawns, when a worker reports or ends a turn, and when a main-loop turn ends. One refresh runs at a time and none starts within 5 s of the last. One trailing refresh at the 5 s mark catches up what was skipped. A worker's turn end always gets one, since the agent list can still say running at that moment. Each worker's git and each events query (`localhost:7430`) gets 400 ms, side by side. A source that fails or runs out of time reads as unknown.
+The band is read again after a worker spawns, when a worker reports or ends a turn, and when a main-loop turn ends. One refresh runs at a time and none starts within 5 s of the last. One trailing refresh at the 5 s mark catches up what was skipped. A worker's turn end always gets one, since the agent list can still say running at that moment. Each worker's git and each events query (`localhost:7430`) gets 400 ms, side by side. A source that fails or runs out of time reads as unknown, shown as `-`.
 
 ## Weave now
 

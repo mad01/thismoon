@@ -21,13 +21,19 @@ export type FactoryBandProbe = {
   inbox: number | null
 }
 
+/** One factory run; `workerIds` keeps every worker it spawned, dropped ones included. */
+export type FactoryBandRun = {
+  workers: FactoryBandWorker[]
+  startedAt: number | null
+  workerIds: string[]
+  guardDenies: number
+  probe: FactoryBandProbe | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'factory-band': {
-      workers: FactoryBandWorker[]
-      runStartedAt: number | null
-      guardDenies: number
-      probe: FactoryBandProbe | null
+      run: FactoryBandRun
     }
   }
 }
