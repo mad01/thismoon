@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path"
@@ -314,10 +315,17 @@ func gitUserEmail(dir string) string {
 // a target only a shell can resolve once let a push into a non-exempt repo
 // ride an exempt session cwd.
 func gitOutput(dir string, args ...string) string {
+	return gitOutputContext(context.Background(), dir, args...)
+}
+
+// gitOutputContext is gitOutput bounded by ctx: git is killed when ctx is
+// done, and that ends in "" like any other failure. For a caller with a
+// deadline of its own, where a stalled filesystem must not hold the hook.
+func gitOutputContext(ctx context.Context, dir string, args ...string) string {
 	if dir == "" {
 		return ""
 	}
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

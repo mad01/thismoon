@@ -230,36 +230,60 @@ func TestCustomHintTimeoutKillsGrandchildren(t *testing.T) {
 	t.Errorf("grandchild %d is still alive after the timeout", pid)
 }
 
+// TestCustomHintPayload pins the exact key set an external reads. The
+// main-session payload must stay the original four keys, so an external
+// written against that shape sees nothing new; the agent keys appear only
+// inside a subagent.
 func TestCustomHintPayload(t *testing.T) {
-	dir := t.TempDir()
-	captured := filepath.Join(dir, "payload.json")
-	capture := writeHintScript(t, dir, "capture.sh", "cat > "+captured+"\necho ok")
-	var warned []string
-	h := newCustomHint(config.CustomHint{Command: []string{capture}}, &warned)
-
-	h.Check(Input{
+	session := Input{
 		Event:          EventSessionStart,
 		Cwd:            "/work",
 		SessionID:      "s1",
 		TranscriptPath: "/t.jsonl",
-	})
-
-	raw, err := os.ReadFile(captured)
-	if err != nil {
-		t.Fatal(err)
 	}
-	var got map[string]string
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{
+	subagent := session
+	subagent.AgentID = "agent-abc123"
+	subagent.AgentType = "Explore"
+	mainKeys := map[string]string{
 		"event":           "session-start",
 		"cwd":             "/work",
 		"session_id":      "s1",
 		"transcript_path": "/t.jsonl",
 	}
-	if !maps.Equal(got, want) {
-		t.Errorf("payload = %v, want %v", got, want)
+	subagentKeys := maps.Clone(mainKeys)
+	subagentKeys["agent_id"] = "agent-abc123"
+	subagentKeys["agent_type"] = "Explore"
+
+	tests := []struct {
+		name string
+		in   Input
+		want map[string]string
+	}{
+		{"main session keeps the original keys", session, mainKeys},
+		{"subagent adds its identity", subagent, subagentKeys},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			captured := filepath.Join(dir, "payload.json")
+			capture := writeHintScript(t, dir, "capture.sh", "cat > "+captured+"\necho ok")
+			var warned []string
+			h := newCustomHint(config.CustomHint{Command: []string{capture}}, &warned)
+
+			h.Check(tt.in)
+
+			raw, err := os.ReadFile(captured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]string
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("payload = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

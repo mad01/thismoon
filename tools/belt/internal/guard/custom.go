@@ -105,12 +105,18 @@ func (c *Custom) matchTarget(in Input) string {
 }
 
 // payload is the JSON object the external reads on stdin: the same fields
-// belt extracted from the hook payload for this event.
+// belt extracted from the hook payload for this event, plus who made the
+// call. The identity keys are additive and appear only when set, so an
+// external written against the original shape keeps reading the same keys.
 func (c *Custom) payload(in Input) map[string]string {
+	var p map[string]string
 	if in.Event == EventWrite {
-		return map[string]string{"file_path": in.FilePath, "content": in.Content, "cwd": in.Cwd}
+		p = map[string]string{"file_path": in.FilePath, "content": in.Content, "cwd": in.Cwd}
+	} else {
+		p = map[string]string{"command": in.Command, "cwd": in.Cwd}
 	}
-	return map[string]string{"command": in.Command, "cwd": in.Cwd}
+	Identity{SessionID: in.SessionID, AgentID: in.AgentID, AgentType: in.AgentType}.AddTo(p)
+	return p
 }
 
 // warn records a fail-open allow so a broken external is visible in the

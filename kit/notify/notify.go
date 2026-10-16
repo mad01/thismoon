@@ -59,11 +59,23 @@ func EmitEvent(source, level, title, message string, tags map[string]string) {
 // afterwards, where a goroutine would be killed before the request goes
 // out.
 func EmitEventSync(source, level, title, message string, tags map[string]string) {
+	EmitEventSyncWithin(syncTimeout, source, level, title, message, tags)
+}
+
+// EmitEventSyncWithin is EmitEventSync with the caller's budget in place of
+// the one-second default. Use it from a hook whose own deadline is tighter
+// than that default: a hook that holds up an agent's start, or one that
+// shares a short shutdown budget with every other hook on its event.
+func EmitEventSyncWithin(
+	timeout time.Duration,
+	source, level, title, message string,
+	tags map[string]string,
+) {
 	if testing.Testing() {
 		return
 	}
 	ev := Event{Source: source, Level: level, Title: title, Message: message, Tags: tags}
-	_ = post(context.Background(), BaseURL(), ev, syncTimeout)
+	_ = post(context.Background(), BaseURL(), ev, timeout)
 }
 
 // BaseURL returns the events service base URL: EVENTS_BASE_URL when set,

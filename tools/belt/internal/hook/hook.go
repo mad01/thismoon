@@ -1,20 +1,25 @@
-// Package hook adapts Claude Code hook payloads to belt's two halves:
+// Package hook adapts Claude Code hook payloads to belt's three concepts.
 // PreToolUse payloads become guard inputs and guard denials become deny
-// decisions, and PostToolUse payloads become hint inputs and hint advice
-// becomes additionalContext. Both travel as JSON on stdout with exit 0 — a
-// hook must not break tool calls on its own bugs.
+// decisions. PostToolUse, SessionStart and UserPromptSubmit payloads become
+// hint inputs and hint advice becomes added context. Lifecycle payloads
+// (subagents, tasks, compaction, session end) become ledger entries and
+// print nothing at all. Every entrypoint exits 0: a hook must not break
+// tool calls, or steer a session, on its own bugs.
 package hook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
+	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
 // payload is the subset of the hook payload belt reads. ToolName, ToolInput,
@@ -27,7 +32,62 @@ type payload struct {
 	Cwd            string          `json:"cwd"`
 	SessionID      string          `json:"session_id"`
 	TranscriptPath string          `json:"transcript_path"`
+	// AgentID and AgentType ride every event that fires inside a subagent
+	// (its tool calls included) and the subagent lifecycle events; both
+	// are empty in the main session. They decode leniently: no guard reads
+	// them, so a value of the wrong type must not fail the decode a guard
+	// depends on (see lenientString).
+	AgentID   lenientString `json:"agent_id"`
+	AgentType lenientString `json:"agent_type"`
 }
+
+// lenientString is a payload field that keeps a JSON string and ignores any
+// other JSON value, leaving the field empty instead of failing the whole
+// payload decode. A guard drops a payload it cannot decode and allows the
+// call, so every field added for something other than a guard decodes this
+// way.
+type lenientString string
+
+// UnmarshalJSON keeps a string value and drops anything else. It never
+// returns an error: the decoder has already checked the value is valid JSON.
+func (s *lenientString) UnmarshalJSON(raw []byte) error {
+	var v string
+	if json.Unmarshal(raw, &v) == nil {
+		*s = lenientString(v)
+	}
+	return nil
+}
+
+// recordPayload is what the ledger reads from a lifecycle event: the shared
+// fields plus the ones only lifecycle events carry. They live here rather
+// than in payload because a guard drops a payload it cannot decode and
+// allows the call: a field the guards never read must not be able to fail
+// their decode. Each is set only by the events that carry it: SubagentStop
+// the first three, TaskCompleted the task fields, TaskCompleted and
+// TeammateIdle the teammate name, PreCompact and PostCompact the trigger,
+// SessionEnd the reason.
+type recordPayload struct {
+	payload
+	AgentTranscriptPath  string `json:"agent_transcript_path"`
+	LastAssistantMessage string `json:"last_assistant_message"`
+	StopHookActive       bool   `json:"stop_hook_active"`
+	TaskID               string `json:"task_id"`
+	TaskSubject          string `json:"task_subject"`
+	TeammateName         string `json:"teammate_name"`
+	Trigger              string `json:"trigger"`
+	Reason               string `json:"reason"`
+}
+
+// Record budgets. SubagentStart holds the subagent's first turn until its
+// hooks return, and SessionEnd gives all of its hooks 1.5 s in total, so
+// each step of a record is bounded: placing the event in git (two git
+// processes a stalled filesystem could hold) and the ledger POST, for which
+// the one-second default emit budget is too generous. Together they stay
+// inside SessionEnd's total.
+const (
+	locateBudget = time.Second
+	recordBudget = 300 * time.Millisecond
+)
 
 type decision struct {
 	HookSpecificOutput hookOutput `json:"hookSpecificOutput"`
@@ -79,7 +139,7 @@ func Run(event string, load Load, r io.Reader, w io.Writer) {
 			"error",
 			"blocked every tool call (unreadable config)",
 			d.Reason,
-			map[string]string{"guard": d.Guard, "event": event},
+			withSession(map[string]string{"guard": d.Guard, "event": event}, p),
 		)
 		writeDeny(w, d)
 		return
@@ -94,9 +154,26 @@ func Run(event string, load Load, r io.Reader, w io.Writer) {
 		"warn",
 		fmt.Sprintf("blocked %s (%s)", p.ToolName, d.Guard),
 		d.Reason,
-		map[string]string{"guard": d.Guard, "event": event},
+		withSession(map[string]string{"guard": d.Guard, "event": event}, p),
 	)
 	writeDeny(w, d)
+}
+
+// withSession adds who made the call to an event's tags: the session id
+// and, inside a subagent, the agent id and type. Empty values stay off, so
+// a main-session event gains only session_id.
+func withSession(tags map[string]string, p payload) map[string]string {
+	p.identity().AddTo(tags)
+	return tags
+}
+
+// identity is who made the call this payload describes.
+func (p payload) identity() guard.Identity {
+	return guard.Identity{
+		SessionID: p.SessionID,
+		AgentID:   string(p.AgentID),
+		AgentType: string(p.AgentType),
+	}
 }
 
 // writeDeny emits the deny decision. It travels in the JSON with exit 0: a
@@ -153,10 +230,82 @@ func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 			"info",
 			fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint),
 			a.Text,
-			map[string]string{"hint": a.Hint, "event": event},
+			withSession(map[string]string{"hint": a.Hint, "event": event}, p),
 		)
 	}
 	writeAdvice(w, event, text)
+}
+
+// RunRecord reads a lifecycle hook payload from r and records the event to
+// the events ledger. It takes no writer on purpose. On SubagentStop any
+// additionalContext keeps the subagent running, and TaskCompleted,
+// TeammateIdle and PreCompact treat exit 2 as a block, so the record path
+// must print nothing and fail nothing; the signature makes that structural,
+// the way a hint's interface has no denial path (docs/adr/0008). It reads
+// no config, so a broken config file cannot stop the record. A missing or
+// unreadable payload is still recorded, at warn level, from whatever
+// fields arrived.
+func RunRecord(event string, r io.Reader) {
+	record(event, r, buildEntry)
+}
+
+// entryBuilder turns a decoded lifecycle payload into its ledger entry.
+type entryBuilder func(event string, p recordPayload, decodeErr error) notify.Event
+
+// record is RunRecord with the entry builder injected. Its deferred recover
+// is what makes "prints nothing, exits 0" hold for bugs too: an escaped
+// panic exits 2 with a stack trace on stderr, which blocks TaskCompleted,
+// TeammateIdle, PreCompact and SubagentStop and hands the trace to the
+// model.
+func record(event string, r io.Reader, build entryBuilder) {
+	defer func() {
+		if v := recover(); v != nil {
+			reportPanic(event, v)
+		}
+	}()
+	var p recordPayload
+	decodeErr := json.NewDecoder(r).Decode(&p)
+	ev := build(event, p, decodeErr)
+	notify.EmitEventSyncWithin(recordBudget, ev.Source, ev.Level, ev.Title, ev.Message, ev.Tags)
+}
+
+// buildEntry places the event's working directory in git, under
+// locateBudget, and builds the entry.
+func buildEntry(event string, p recordPayload, decodeErr error) notify.Event {
+	in := toLedgerInput(p)
+	if decodeErr != nil {
+		in.PayloadError = decodeErr.Error()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), locateBudget)
+	defer cancel()
+	return ledger.Build(event, in, guard.LocationAt(ctx, p.Cwd))
+}
+
+// reportPanic records a swallowed panic so a broken record path shows in
+// the timeline instead of as missing entries. It recovers on its own
+// account: a second panic from the emit is dropped as well.
+func reportPanic(event string, v any) {
+	defer func() { _ = recover() }()
+	notify.EmitEventSyncWithin(recordBudget, ledger.Source, "error", "belt record failed",
+		fmt.Sprint(v), map[string]string{"event": event})
+}
+
+// toLedgerInput maps a lifecycle payload onto the ledger input.
+func toLedgerInput(p recordPayload) ledger.Input {
+	return ledger.Input{
+		SessionID:            p.SessionID,
+		TranscriptPath:       p.TranscriptPath,
+		AgentID:              string(p.AgentID),
+		AgentType:            string(p.AgentType),
+		AgentTranscriptPath:  p.AgentTranscriptPath,
+		LastAssistantMessage: p.LastAssistantMessage,
+		StopHookActive:       p.StopHookActive,
+		TaskID:               p.TaskID,
+		TaskSubject:          p.TaskSubject,
+		TeammateName:         p.TeammateName,
+		Trigger:              p.Trigger,
+		Reason:               p.Reason,
+	}
 }
 
 // writeAdvice emits advice in the form the invoking hook event accepts.
@@ -194,6 +343,8 @@ func toHintInput(event string, p payload) hint.Input {
 		Cwd:            p.Cwd,
 		SessionID:      p.SessionID,
 		TranscriptPath: p.TranscriptPath,
+		AgentID:        string(p.AgentID),
+		AgentType:      string(p.AgentType),
 	}
 	switch event {
 	case hint.EventBash:
@@ -224,7 +375,13 @@ func toHintInput(event string, p payload) hint.Input {
 // can leak, so that is what gets scanned. An external-text call carries its
 // whole input: the guard decides which fields are text.
 func toInput(event string, p payload) guard.Input {
-	in := guard.Input{Event: event, Cwd: p.Cwd}
+	in := guard.Input{
+		Event:     event,
+		Cwd:       p.Cwd,
+		SessionID: p.SessionID,
+		AgentID:   string(p.AgentID),
+		AgentType: string(p.AgentType),
+	}
 	str := func(key string) string {
 		s, _ := p.ToolInput[key].(string)
 		return s

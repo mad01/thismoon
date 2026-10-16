@@ -2,6 +2,7 @@ package guard
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,39 +135,66 @@ func TestCustomGuardMatchGate(t *testing.T) {
 	}
 }
 
+// TestCustomGuardPayload pins the exact key set an external reads per
+// event. The identity keys are additive: a call with no session (a `belt
+// check` dry-run) keeps the original shape, a main-session call adds only
+// session_id, and a subagent call adds its agent id and type as well.
 func TestCustomGuardPayload(t *testing.T) {
-	dir := t.TempDir()
-	captured := filepath.Join(dir, "payload.json")
-	capture := writeGuardScript(t, dir, "capture.sh", "cat > "+captured+"\nexit 0")
+	bash := Input{Event: EventBash, Command: "git commit -m x", Cwd: "/work"}
+	write := Input{Event: EventWrite, FilePath: "/repo/file.md", Content: "text", Cwd: "/work"}
+	inSession := func(in Input) Input {
+		in.SessionID = "s1"
+		return in
+	}
+	inSubagent := func(in Input) Input {
+		in.SessionID, in.AgentID, in.AgentType = "s1", "agent-abc123", "Explore"
+		return in
+	}
+	bashKeys := map[string]string{"command": "git commit -m x", "cwd": "/work"}
+	writeKeys := map[string]string{"file_path": "/repo/file.md", "content": "text", "cwd": "/work"}
+	sessionKeys := map[string]string{"session_id": "s1"}
+	subagentKeys := map[string]string{
+		"session_id": "s1", "agent_id": "agent-abc123", "agent_type": "Explore",
+	}
 
-	t.Run("bash payload", func(t *testing.T) {
-		var warned []string
-		g := newCustomGuard(
-			config.CustomGuard{Event: EventBash, Command: []string{capture}},
-			&warned,
-		)
-		g.Check(Input{Event: EventBash, Command: "git commit -m x", Cwd: "/work"})
-		var got map[string]string
-		mustReadJSON(t, captured, &got)
-		if got["command"] != "git commit -m x" || got["cwd"] != "/work" {
-			t.Errorf("bash payload = %v", got)
-		}
-	})
+	tests := []struct {
+		name string
+		in   Input
+		want map[string]string
+	}{
+		{"bash without a session", bash, bashKeys},
+		{"bash in the main session", inSession(bash), withKeys(bashKeys, sessionKeys)},
+		{"bash in a subagent", inSubagent(bash), withKeys(bashKeys, subagentKeys)},
+		{"write without a session", write, writeKeys},
+		{"write in a subagent", inSubagent(write), withKeys(writeKeys, subagentKeys)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			captured := filepath.Join(dir, "payload.json")
+			capture := writeGuardScript(t, dir, "capture.sh", "cat > "+captured+"\nexit 0")
+			var warned []string
+			g := newCustomGuard(
+				config.CustomGuard{Event: tt.in.Event, Command: []string{capture}},
+				&warned,
+			)
 
-	t.Run("write payload", func(t *testing.T) {
-		var warned []string
-		g := newCustomGuard(
-			config.CustomGuard{Event: EventWrite, Command: []string{capture}},
-			&warned,
-		)
-		g.Check(Input{Event: EventWrite, FilePath: "/repo/file.md", Content: "text", Cwd: "/work"})
-		var got map[string]string
-		mustReadJSON(t, captured, &got)
-		if got["file_path"] != "/repo/file.md" || got["content"] != "text" ||
-			got["cwd"] != "/work" {
-			t.Errorf("write payload = %v", got)
-		}
-	})
+			g.Check(tt.in)
+
+			var got map[string]string
+			mustReadJSON(t, captured, &got)
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("payload = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// withKeys returns a copy of base with extra merged in.
+func withKeys(base, extra map[string]string) map[string]string {
+	out := maps.Clone(base)
+	maps.Copy(out, extra)
+	return out
 }
 
 func mustReadJSON(t *testing.T, path string, v any) {

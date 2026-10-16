@@ -50,6 +50,11 @@ type Input struct {
 	// ToolInput carries the external-text tool call's input fields, so the
 	// nudge can name the exact text that was published.
 	ToolInput map[string]any
+	// AgentID and AgentType name the subagent the hook fired in, and are
+	// empty in the main session. No built-in hint reads them: they reach
+	// custom hints.
+	AgentID   string
+	AgentType string
 }
 
 // Advice is one hint's output: which hint spoke and what it said.
