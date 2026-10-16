@@ -78,7 +78,9 @@ call. Build and install the new belt (a `ralph up` on the fleet) before any
 machine config names the new event. A new key fails the other way: an older
 belt ignores `custom_hints.<name>.agent_types` and runs the hint for every
 subagent, and ignores `ledger.agent_types` and records no model or effort.
-The same order applies.
+A belt that knows `agent_types` but not `*` matching reads a `*` entry
+literally, so the worker brief reaches no worker until the new belt is
+installed. The same order applies.
 
 ## failure modes
 
