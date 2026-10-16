@@ -40,18 +40,30 @@ loom without taking a role.
    canonical checkout, and classify each worktree per `loom.md`: in
    flight, ready, abandoned, or integrated. A ready message is a claim.
    The proof is git: `git log origin/main..<branch>` lists the claimed
-   commits and `git -C <worktree> status --porcelain` is empty. No
-   worktrees and no `worktree-agent-*` branches: say so and stop.
+   commits and `git -C <worktree> status --porcelain` is empty. Check
+   integrated before ready: the branch has at least one commit beyond
+   main, and `git merge-tree --write-tree origin/main <branch>` prints the
+   tree id `git rev-parse 'origin/main^{tree}'` prints. A squash-merged
+   branch passes it while its commits still read as ahead. When main has
+   changed the branch's lines since, that check conflicts; `loom.md` walks
+   main's first-parent commits for the squash instead. A clean worktree
+   with no commits beyond main is not integrated: it is a fresh claim or a
+   fast-forward leftover, and git cannot tell them apart. Report it.
+   No worktrees and no `worktree-agent-*` branches: say so and stop.
 2. For each ready branch, in order: rebase it onto the default branch tip
    in its own worktree, re-run the gates, then land it by repo policy.
    Push + PR for PR-only repos, fast-forward merge for direct-main repos.
    A rebase conflict hands the branch back to its owner; it is not yours
    to resolve.
-3. After a branch lands: remove its worktree, delete the branch, update
-   the canonical checkout.
+3. After a branch lands, and for every worktree the survey found
+   integrated: remove its worktree and delete the branch per `loom.md`
+   Teardown, with the proof printed above the delete. A clean worktree
+   with no commits beyond main goes only on its owner's ready message or
+   the user's go-ahead. Then update the canonical checkout.
 4. Sweep: list the `worktree-agent-*` branches and `.claude/worktrees/`
-   entries the Agent tool left behind, per `loom.md`. Remove them only on
-   the user's explicit go-ahead.
+   entries the Agent tool left behind, per `loom.md`, and offer those with
+   nothing beyond main or integrated. Remove them only on the user's
+   explicit go-ahead.
 5. Report one line per worktree: branch, state, and what happened or what
    blocks it. Add the sweep listing.
 
@@ -66,5 +78,8 @@ loom without taking a role.
   the weaver's fast-forward integration touches it.
 - Commit messages follow conventional-commit format and carry no
   attribution trailers.
-- Branch deletion is `-d` after the merge is visible from the default
-  branch, never `-D`.
+- Branch deletion is `-d` once the branch is integrated. `-D` only when
+  `-d` refuses a squash-merged branch, and only after the merge-tree proof
+  printed equal tree ids on the lines above it. The proof needs
+  `git merge-tree --write-tree`, so git 2.38 or later; on an older git,
+  keep the branch and report it. Never `-D` in any other case.

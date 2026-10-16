@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { after, before, describe, test } from 'node:test'
 
 import {
   analyzeBash,
@@ -7,8 +11,10 @@ import {
   classifyPath,
   denyReason,
   detectLayout,
+  isIntegratedTree,
   isWeaveArgs,
   loomArgsOf,
+  mergeTreeArgs,
   ownerClaimFrom,
   parseCount,
   parseDefaultRef,
@@ -326,12 +332,99 @@ describe('removal rules', () => {
   })
 
   test('a branch deletion asks only when its commits exist nowhere else, or its tree is dirty', () => {
-    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: null, isWorktreeDirty: false }), true)
-    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: 1, isWorktreeDirty: false }), true)
-    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: 0, isWorktreeDirty: false }), false)
-    assert.equal(shouldAskBranchDeletion({ ahead: 0, remoteAhead: null, isWorktreeDirty: false }), false)
-    assert.equal(shouldAskBranchDeletion({ ahead: null, remoteAhead: null, isWorktreeDirty: false }), false)
-    assert.equal(shouldAskBranchDeletion({ ahead: 0, remoteAhead: 0, isWorktreeDirty: true }), true)
+    const facts = (ahead, remoteAhead, isWorktreeDirty = false) => ({ ahead, remoteAhead, isIntegrated: false, isWorktreeDirty })
+    assert.equal(shouldAskBranchDeletion(facts(2, null)), true)
+    assert.equal(shouldAskBranchDeletion(facts(2, 1)), true)
+    assert.equal(shouldAskBranchDeletion(facts(2, 0)), false)
+    assert.equal(shouldAskBranchDeletion(facts(0, null)), false)
+    assert.equal(shouldAskBranchDeletion(facts(null, null)), false)
+    assert.equal(shouldAskBranchDeletion(facts(0, 0, true)), true)
+  })
+
+  test('an integrated branch is deleted without a question unless its tree is dirty', () => {
+    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: null, isIntegrated: true, isWorktreeDirty: false }), false)
+    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: 1, isIntegrated: true, isWorktreeDirty: false }), false)
+    assert.equal(shouldAskBranchDeletion({ ahead: 2, remoteAhead: null, isIntegrated: true, isWorktreeDirty: true }), true)
+  })
+
+  test('an unknown merge or default tree is never integrated', () => {
+    assert.deepEqual(mergeTreeArgs('origin/main', 'feat/x'), ['merge-tree', '--write-tree', 'origin/main', 'feat/x'])
+    assert.equal(isIntegratedTree('fe56c1c\n', 'fe56c1c'), true)
+    assert.equal(isIntegratedTree(null, 'fe56c1c'), false)
+    assert.equal(isIntegratedTree('fe56c1c\n', null), false)
+    assert.equal(isIntegratedTree('0b1d2e3\n', 'fe56c1c'), false)
+    assert.equal(isIntegratedTree('', ''), false)
+  })
+})
+
+// A real repo: main squash-merged `feat` and moved on elsewhere, squash-merged
+// `edited` and then changed its line again; `open` was never merged. The
+// guard's git calls, run here by git itself; a non-zero exit reads as null,
+// as the mod's git helper returns it.
+describe('branch deletion, against a fixture repo', () => {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'init.defaultBranch=main']
+  let dir = ''
+  const git = (...args) => execFileSync('git', ['-C', dir, ...id, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const gitOrNull = (...args) => {
+    try {
+      return git(...args)
+    } catch {
+      return null
+    }
+  }
+  const commitFile = (name, text, message) => {
+    writeFileSync(join(dir, name), text)
+    git('add', name)
+    git('commit', '-q', '-m', message)
+  }
+  const squash = branch => {
+    git('merge', '-q', '--squash', branch)
+    git('commit', '-q', '-m', `${branch} (squash)`)
+  }
+  // The guard's facts for `git branch -D <branch>` from main, with no upstream.
+  const factsOf = branch => {
+    const ahead = parseCount(gitOrNull('rev-list', '--count', `main..${branch}`))
+    const remoteAhead = parseCount(gitOrNull('rev-list', '--count', `origin/${branch}..${branch}`))
+    const isIntegrated = isIntegratedTree(gitOrNull(...mergeTreeArgs('main', branch)), gitOrNull('rev-parse', 'main^{tree}'))
+    return { ahead, remoteAhead, isIntegrated, isWorktreeDirty: false }
+  }
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'loom-pane-'))
+    git('init', '-q', '.')
+    commitFile('a.md', 'base\n', 'base')
+    git('checkout', '-q', '-b', 'feat')
+    commitFile('b.md', 'one\n', 'feat 1')
+    commitFile('b.md', 'one\ntwo\n', 'feat 2')
+    git('checkout', '-q', '-b', 'edited', 'main')
+    commitFile('a.md', 'edited\n', 'edited 1')
+    git('checkout', '-q', '-b', 'open', 'main')
+    commitFile('c.md', 'open\n', 'open 1')
+    git('checkout', '-q', 'main')
+    squash('feat')
+    squash('edited')
+    commitFile('z.md', 'later\n', 'later work on main')
+    commitFile('a.md', 'edited again\n', 'main changes the edited line again')
+  })
+
+  after(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('a squash-merged branch is ahead by commits yet deleted without a question', () => {
+    const facts = factsOf('feat')
+    assert.deepEqual(facts, { ahead: 2, remoteAhead: null, isIntegrated: true, isWorktreeDirty: false })
+    assert.equal(shouldAskBranchDeletion(facts), false)
+  })
+
+  test('a branch main never took asks', () => {
+    const facts = factsOf('open')
+    assert.equal(facts.isIntegrated, false)
+    assert.equal(shouldAskBranchDeletion(facts), true)
+  })
+
+  test('a squash-merged branch whose lines main changed since conflicts, so it still asks', () => {
+    assert.equal(gitOrNull(...mergeTreeArgs('main', 'edited')), null)
+    assert.equal(shouldAskBranchDeletion(factsOf('edited')), true)
   })
 })
 

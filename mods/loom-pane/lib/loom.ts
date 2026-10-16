@@ -675,19 +675,40 @@ export function shouldAskWorktreeRemoval(input: {
   return input.isDetached && input.ahead !== null && input.ahead > 0
 }
 
+/** The tree a merge of `branch` into `ref` would write, conflicts or not; needs git 2.38. */
+export function mergeTreeArgs(ref: string, branch: string): string[] {
+  return ['merge-tree', '--write-tree', ref, branch]
+}
+
+/**
+ * True when the tree a merge into the default branch would write is the
+ * default branch's own tree: the branch's changes are already there, by a
+ * fast-forward or a squash merge. False when either is unknown (git before
+ * 2.38, a conflict, no default branch). factory-band's isIntegratedTree is
+ * the same check; mods load as separate plugins and share no code, so it is
+ * mirrored here, not imported.
+ */
+export function isIntegratedTree(mergeTreeOut: string | null, defaultTree: string | null): boolean {
+  const merged = mergeTreeOut?.trim().split('\n')[0] ?? ''
+  return merged !== '' && defaultTree !== null && merged === defaultTree.trim()
+}
+
 /**
  * Whether `git branch -D` needs a word first: when the branch's commits exist
- * nowhere else (ahead of the default branch and not on `origin/<branch>`,
- * `remoteAhead` null meaning no such upstream), or its worktree is dirty.
+ * nowhere else (ahead of the default branch, not on `origin/<branch>` with
+ * `remoteAhead` null meaning no such upstream, and not integrated), or its
+ * worktree is dirty. A squash-merged branch is ahead and has no upstream
+ * once its remote branch is gone, yet loses nothing.
  */
 export function shouldAskBranchDeletion(input: {
   ahead: number | null
   remoteAhead: number | null
+  isIntegrated: boolean
   isWorktreeDirty: boolean
 }): boolean {
   if (input.isWorktreeDirty) return true
   const isUnpushed = input.remoteAhead === null || input.remoteAhead > 0
-  return isUnpushed && input.ahead !== null && input.ahead > 0
+  return isUnpushed && !input.isIntegrated && input.ahead !== null && input.ahead > 0
 }
 
 /**
