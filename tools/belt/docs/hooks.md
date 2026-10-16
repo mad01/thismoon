@@ -891,9 +891,9 @@ text for that event; the brief comes from the consuming repo's config.
   config error too, and so is an empty list or a blank entry.
 - `belt doctor` lists each custom hint beside the built-ins with its event,
   budget, command, `agent_types` gate, opt-out count, and whether the
-  command resolves to something executable. An unreachable command means the hint warns and
-  stays silent on every session, which looks identical to a hint with
-  nothing to say.
+  command resolves to something executable. An unreachable command means
+  the hint warns and stays silent on every session, which looks identical
+  to a hint with nothing to say.
 - Custom hints run after the built-ins, alphabetical by name, through the
   same `belt hint session-start` and `belt hint subagent-start`
   entrypoints, so any setup that wires those entries runs them.

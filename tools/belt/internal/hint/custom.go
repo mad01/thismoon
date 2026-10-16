@@ -38,9 +38,10 @@ const warnGrace = 50 * time.Millisecond
 // stdout all end in silence plus a warn event, so a broken external costs a
 // session nothing but the budget. A subagent-start hint may name the agent
 // types it briefs (agent_types); any other spawn skips the external with no
-// warn, since declining there is the configured outcome, not a failure. The commands run with the user's full
-// environment on purpose: they are user-configured, not agent-configured,
-// and belt never writes its own config.
+// warn, since declining there is the configured outcome, not a failure. The
+// commands run with the user's full environment on purpose: they are
+// user-configured, not agent-configured, and belt never writes its own
+// config.
 //
 // It exists so machine-private context (a daily journal, say) can ride the
 // session-start hook under belt's toggles, budget, and doctor report rather

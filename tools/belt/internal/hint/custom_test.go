@@ -373,6 +373,57 @@ func TestCustomHintAgentTypesGate(t *testing.T) {
 	}
 }
 
+// TestCustomHintAgentTypesGateRunsBeforeExclusion pins the check order: an
+// unlisted agent type is declined before exclude_repos is consulted, so a
+// skipped spawn never pays for the git call that resolves the repo. The
+// listed-type case is the control: the same recording resolver is called
+// there, so zero calls in the unlisted case means the gate ran first.
+func TestCustomHintAgentTypesGateRunsBeforeExclusion(t *testing.T) {
+	tests := []struct {
+		agentType    string
+		wantResolves int
+		wantRan      bool
+	}{
+		{"Explore", 0, false},
+		{"factory-worker-low", 1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.agentType, func(t *testing.T) {
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "ran")
+			script := writeHintScript(t, dir, "brief.sh", "touch "+marker+"\necho brief")
+			var warned []string
+			h := newCustomHint(config.CustomHint{
+				Event:        EventSubagentStart,
+				Command:      []string{script},
+				AgentTypes:   []string{"factory-worker-low"},
+				ExcludeRepos: []string{"github.com/you/elsewhere"},
+			}, &warned)
+			resolves := 0
+			h.resolveRepo = func(string) string {
+				resolves++
+				return "github.com/mad01/thismoon"
+			}
+
+			h.Check(Input{
+				Event: EventSubagentStart, Cwd: dir, SessionID: "s",
+				AgentID: "agent-abc123", AgentType: tt.agentType,
+			})
+
+			if resolves != tt.wantResolves {
+				t.Errorf("repo resolved %d times, want %d", resolves, tt.wantResolves)
+			}
+			_, err := os.Stat(marker)
+			if ran := err == nil; ran != tt.wantRan {
+				t.Errorf("external ran = %v, want %v", ran, tt.wantRan)
+			}
+			if len(warned) > 0 {
+				t.Errorf("unexpected warnings %v", warned)
+			}
+		})
+	}
+}
+
 // TestCustomHintExcludeRepos pins both places the opt-out list may sit and
 // that an excluded repo costs no process launch: the script leaves a marker
 // when it runs, and the marker must be absent.
