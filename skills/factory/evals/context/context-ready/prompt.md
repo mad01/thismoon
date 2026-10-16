@@ -21,7 +21,7 @@ Do not guess the answer to an open question.
 Do not run gh, and do not spawn agents.
 
 1. Read the task message. Its header gives your unit, worktree, branch, model and effort.
-2. Use absolute paths under your worktree, or git -C with the worktree path.
+2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run your commands there with no cd. If not, start each Bash command with cd <worktree> &&. Write each git command as git <subcommand>, with no option before the subcommand. Use absolute paths under your worktree for files.
 3. Do the numbered steps of the task in order.
 4. Run the gates that the task names, inside your worktree.
 5. Commit in your worktree when the done criterion holds and every gate passes.

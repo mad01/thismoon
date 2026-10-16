@@ -19,30 +19,39 @@ custom_hints:
   factory-worker:
     event: subagent-start
     command: ["sh", "<path>/factory-worker-hint.sh"]
+    agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
 ```
 
-The script prints the brief for the three worker agent types and nothing for
-any other subagent:
+The SubagentStart hook reports a named spawn's name as `agent_type`, and the
+orchestrator names each worker `factory-worker-<tier>-<slug>`. An unnamed
+worker reports its definition name. The script prints the brief when the
+agent type starts with one of the three definition names. It prints nothing
+for any other subagent:
 
 ```sh
 #!/bin/sh
 # belt custom hint factory-worker, run on subagent-start
 case "$(jq -r '.agent_type // ""')" in
-factory-worker-low | factory-worker-medium | factory-worker-high)
+factory-worker-low* | factory-worker-medium* | factory-worker-high*)
     awk '/^```text$/{f=1;next} /^```$/{f=0} f' ~/.claude/skills/factory/worker-brief.md
     ;;
 esac
 ```
 
-belt logs a warn event when a hint exits non-zero or prints nothing, so each
-other subagent leaves one warn event behind. That cost is accepted until belt
-can gate a hint on the agent type (MAD-405).
+belt logs a warn event when a hint exits non-zero or prints nothing. The
+`agent_types` gate shipped with belt in PR #223, and today it matches the
+agent type exactly. Keys that end in `*`, such as `factory-worker-low*`,
+land with MAD-406, so named workers match them. Until then, leave the
+`agent_types` line out, because an exact match on a `*` key skips every
+worker. The script's own case line gates the brief, and each other subagent
+leaves one warn event behind.
 
 When the hint is missing, the worker definitions tell the worker to read
 this file before its first step.
 
-The eval suite under `evals/context/` pastes this block into each case.
-`evals/scripts/check-graders.mjs` fails when a case's copy drifts from it.
+The eval suite under `evals/context/` pastes this block into each case, and
+a case rubric can quote one of its steps. `evals/scripts/check-graders.mjs`
+fails when a case's copy or a quoted step drifts from it.
 
 ## The brief
 
@@ -60,7 +69,7 @@ Do not guess the answer to an open question.
 Do not run gh, and do not spawn agents.
 
 1. Read the task message. Its header gives your unit, worktree, branch, model and effort.
-2. Use absolute paths under your worktree, or git -C with the worktree path.
+2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run your commands there with no cd. If not, start each Bash command with cd <worktree> &&. Write each git command as git <subcommand>, with no option before the subcommand. Use absolute paths under your worktree for files.
 3. Do the numbered steps of the task in order.
 4. Run the gates that the task names, inside your worktree.
 5. Commit in your worktree when the done criterion holds and every gate passes.

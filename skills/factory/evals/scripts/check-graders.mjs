@@ -4,11 +4,12 @@
 // It catches what `claude plugin eval` would refuse or quietly mis-grade:
 // unknown frontmatter keys, missing tags, grader shapes, and regex patterns
 // that do not compile as the JS RegExp the runner builds. Graders that share
-// a file name must not drift apart. The regex graders of five cases run over
+// a file name must not drift apart. The regex graders of six cases run over
 // the sample messages in ../contract.md (every grader must pass) and over
 // broken copies of them (the targeted grader must fail). Every embedded copy
-// of the sample task must equal the one in ../contract.md, and each context
-// case must quote the brief in ../worker-brief.md word for word.
+// of the sample task must equal the one in ../contract.md. Each context case
+// must quote the brief in ../worker-brief.md word for word, and so must each
+// step of the brief that a context rubric quotes.
 //
 // Usage: node skills/factory/evals/scripts/check-graders.mjs
 
@@ -36,13 +37,14 @@ const GRADER_KEYS = {
 const SHARED = new Set([
   'skill-fired', 'warnings-first', 'no-warning-after-steps', 'no-hedging', 'report-format-last',
   'files-changed', 'gates-run', 'fields-in-order', 'question-field', 'not-done-field', 'asks',
-  'kind-ready', 'not-ready',
+  'kind-ready', 'not-ready', 'no-git-option-first',
 ]);
 // Grader file names that hold case-specific facts and may differ.
 const PER_CASE = new Set([
   'criteria', 'where', 'routing', 'reply-to', 'commit-range', 'unresolved-term', 'unresolved-none',
   'blocker-verbatim', 'blocker-names-test', 'names-missing-path', 'no-em-dash', 'no-csl-step',
-  'lists-extra-file', 'names-section', 'options-field', 'both-options',
+  'lists-extra-file', 'names-section', 'options-field', 'both-options', 'git-commands-field',
+  'runs-in-worktree',
 ]);
 // Files that embed the sample task from ../contract.md.
 const SAMPLE_COPIES = [
@@ -219,6 +221,24 @@ const emptyBlockerLine = (t) => t.replace(/^blocker: .*$/m, 'blocker: ');
 // context-denial's fixture is the blocked sample with another unit and denial.
 const toDocsSweepDenial = (t) => t.replaceAll('csl/prune-shards', 'docs-sweep/events')
   .replace('make -C services/csl install', 'humanizer detect services/events/README.md');
+// context-plain-git's fixture is the ready sample with another unit and range,
+// and a git commands field in place of the unresolved terms.
+const PLAIN_GIT_WT = '~/.worktrees/thismoon/alexander-adr-links-catalog';
+const toCatalogReady = (t) => t.replaceAll('docs-sweep/events', 'adr-links/catalog')
+  .replaceAll('docs-sweep-events', 'adr-links-catalog')
+  .replace('3f1c2ab..9e04d17', '4b7e0c2..e91d3a5')
+  .replace(/^unresolved terms:[\s\S]*$/m, [
+    'git commands:',
+    `- \`cd ${PLAIN_GIT_WT} && git add services/catalog/README.md\``,
+    `- \`cd ${PLAIN_GIT_WT} && git commit -m "docs(catalog): fix the ADR link"\``,
+    '',
+  ].join('\n'));
+// The option sits in a constant, so a search for the banned form finds no copy
+// of it under skills/factory.
+const GIT_DIR_OPTION = '-C';
+const optionBeforeSubcommand = (t) => t.replace(`cd ${PLAIN_GIT_WT} && git add`, `git ${GIT_DIR_OPTION} ${PLAIN_GIT_WT} add`);
+const dropCd = (t) => t.replaceAll(`cd ${PLAIN_GIT_WT} && `, '');
+const dropGitCommands = (t) => t.replace(/^git commands:[\s\S]*$/m, '');
 
 // Each case with a blocker-verbatim grader, and how the blocked sample fits it.
 const BLOCKER_CASES = [
@@ -259,6 +279,10 @@ const SAMPLE_CHECKS = [
   ['report/report-ready-unresolved-term', 'ready', 'reply-to', (t) => t.replace('#task-1', '')],
   ['report/report-blocked-denial', 'blocked', 'question-field', (t) => t.replace(/\?$/m, '.')],
   ['report/report-blocked-denial', 'blocked', 'blocker-verbatim', (t) => t.replace('has been denied', 'was refused')],
+  ['context/context-plain-git', 'ready', null, toCatalogReady, 'ready sample fitted to context-plain-git'],
+  ['context/context-plain-git', 'ready', 'no-git-option-first', (t) => optionBeforeSubcommand(toCatalogReady(t)), 'fitted ready sample with an option before the git subcommand'],
+  ['context/context-plain-git', 'ready', 'runs-in-worktree', (t) => dropCd(toCatalogReady(t)), 'fitted ready sample with no cd to the worktree'],
+  ['context/context-plain-git', 'ready', 'git-commands-field', (t) => dropGitCommands(toCatalogReady(t)), 'fitted ready sample without the git commands field'],
 ];
 
 function runSampleChecks(gradersByCase, samples) {
@@ -285,6 +309,21 @@ function checkContextBrief(suite, caseName, body) {
   if (m[1] !== briefText()) fail(`${suite}/${caseName}`, 'quoted brief differs from worker-brief.md');
 }
 
+// The judge sees only the reply, so a rubric repeats the steps of the brief
+// it grades against. Each quoted step must match the brief word for word.
+function checkRubricStepQuotes(graders) {
+  const brief = briefText();
+  for (const g of graders.filter((x) => x.type === 'llm')) {
+    const quotes = [...g.raw.matchAll(/step (\d+) of the brief says "([^"]*)"/g)];
+    const mentions = g.raw.match(/step \d+ of the brief/g) ?? [];
+    if (mentions.length !== quotes.length) fail(g.where, 'names a step of the brief without the quote form step N of the brief says "..."');
+    for (const [, n, quote] of quotes) {
+      const step = brief.match(new RegExp(`^${n}\\. (.*)$`, 'm'));
+      if (step?.[1] !== quote) fail(g.where, `step ${n} quote differs from worker-brief.md`);
+    }
+  }
+}
+
 const names = new Set();
 const gradersByCase = new Map();
 let graderCount = 0;
@@ -294,7 +333,10 @@ for (const suite of SUITES) {
     const graders = loadGraders(suite, caseName);
     graderCount += graders.length;
     gradersByCase.set(`${suite}/${caseName}`, graders);
-    if (suite === 'context') checkContextBrief(suite, caseName, body);
+    if (suite === 'context') {
+      checkContextBrief(suite, caseName, body);
+      checkRubricStepQuotes(graders);
+    }
   }
 }
 const samples = contractSamples();

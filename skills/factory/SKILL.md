@@ -153,8 +153,9 @@ carries the override. Reviewers run on the model the panel-policy mod sets.
    after the other, never at the same time.
 2. Route each unit with the table above. The task header carries the
    result.
-3. Claim one loom worktree per unit, each claim as its own command:
-   `git -C <canonical> worktree add ~/.worktrees/<repo>/<slug> -b <branch>`.
+3. Claim one loom worktree per unit. Run each claim as its own command in
+   the canonical checkout:
+   `git worktree add ~/.worktrees/<repo>/<slug> -b <branch>`.
    Never chain a claim with a pull of the canonical checkout. A chained
    command hides which half failed.
 4. Run the preflight below. A failed check stops the run before any spawn.
@@ -164,8 +165,12 @@ carries the override. Reviewers run on the model the panel-policy mod sets.
 6. Write each task by the contract and check it with
    `humanizer ste --profile procedure`. Spawn the worker with the definition
    for the unit's effort and the task as the prompt. Pass the model on the
-   spawn when it overrides the definition's. Name the worker after the unit
-   slug so it can message you and receive answers.
+   spawn when it overrides the definition's. Name the worker
+   `factory-worker-<tier>-<slug>`, where `<tier>` is `low`, `medium` or
+   `high` from its definition and `<slug>` is the unit slug. The name lets
+   it message you and receive answers. The SubagentStart hook reports the
+   spawn name as `agent_type`. belt's hint gate and ledger keys match the
+   `factory-worker-<tier>` prefix.
 7. Read each message as it arrives and update its board row:
    - `ready`: check that it has the three fields, then hand the branch to
      the weaver. The message is the evidence.
@@ -187,10 +192,12 @@ Run all five checks before the first spawn:
 1. `belt doctor` exits 0.
 2. The events and present services answer: `events doctor` and
    `present doctor`, or `events_doctor` and `present_doctor` over MCP.
-3. The git identity matches: `git -C <worktree> config user.name` and
-   `user.email` give the identity the user commits with.
-4. Each unit's worktree exists and is clean:
-   `git -C <worktree> status --porcelain` prints nothing.
+3. The git identity matches. Run `git var GIT_AUTHOR_IDENT` and
+   `git var GIT_COMMITTER_IDENT` in the canonical checkout. Each prints
+   the name and email the user commits with, then a timestamp. Linked
+   worktrees read the same repository config.
+4. Each unit's worktree exists and is clean: `git status --porcelain`
+   inside it prints nothing.
 5. The agents listing answers: `ListAgents` returns.
 
 ## Rules
