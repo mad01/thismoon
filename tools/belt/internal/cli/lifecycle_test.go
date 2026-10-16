@@ -110,8 +110,9 @@ func TestConfigReferenceIsAValidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the reference does not load: %v", err)
 	}
-	if cfg.CustomHints["worker-brief"].Event != config.HintEventSubagentStart {
-		t.Errorf("reference lost its subagent-start example: %+v", cfg.CustomHints)
+	brief := cfg.CustomHints["worker-brief"]
+	if brief.Event != config.HintEventSubagentStart || len(brief.AgentTypes) == 0 {
+		t.Errorf("reference lost its gated subagent-start example: %+v", cfg.CustomHints)
 	}
 	if !cfg.Ledger.On() || cfg.Watch.Enabled ||
 		cfg.Watch.SourceName() != config.DefaultWatchSource {

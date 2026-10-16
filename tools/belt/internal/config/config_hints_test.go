@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,31 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 				"    timeout_ms: -1\n",
 			"custom_hints.journal.timeout_ms is -1",
 		},
+		{
+			"agent_types on a session-start hint",
+			"custom_hints:\n  journal:\n    event: session-start\n    command: [journal]\n" +
+				"    agent_types: [factory-worker-low]\n",
+			`custom_hints.journal.agent_types only applies to event "subagent-start" ` +
+				`(event is "session-start")`,
+		},
+		{
+			"empty agent_types list",
+			"custom_hints:\n  brief:\n    event: subagent-start\n    command: [brief]\n" +
+				"    agent_types: []\n",
+			"custom_hints.brief.agent_types is empty",
+		},
+		{
+			"agent_types key with no value",
+			"custom_hints:\n  brief:\n    event: subagent-start\n    command: [brief]\n" +
+				"    agent_types:\n",
+			"custom_hints.brief.agent_types is empty",
+		},
+		{
+			"blank agent type",
+			"custom_hints:\n  brief:\n    event: subagent-start\n    command: [brief]\n" +
+				"    agent_types: [factory-worker-low, \"\"]\n",
+			"custom_hints.brief.agent_types[1] is blank",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -106,6 +132,52 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 				t.Errorf("error %v does not mention %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestLoadCustomHintAgentTypes pins the gate's list reaching the loaded
+// entry from both file formats, and the legacy TOML file rejecting an empty
+// list the way YAML does.
+func TestLoadCustomHintAgentTypes(t *testing.T) {
+	want := []string{"factory-worker-low", "factory-worker-high"}
+	yamlCfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", `
+custom_hints:
+  worker-brief:
+    event: subagent-start
+    command: [brief]
+    agent_types: [factory-worker-low, factory-worker-high]
+`)})
+	if got := yamlCfg.CustomHints["worker-brief"].AgentTypes; !slices.Equal(got, want) {
+		t.Errorf("yaml agent_types = %v, want %v", got, want)
+	}
+
+	dir := t.TempDir()
+	tomlCfg := mustLoad(t, Paths{
+		BeltYAML: filepath.Join(dir, "config.yaml"),
+		BeltTOML: writeFile(t, dir, "config.toml", `
+[custom_hints.worker-brief]
+event = "subagent-start"
+command = ["brief"]
+agent_types = ["factory-worker-low", "factory-worker-high"]
+`),
+	})
+	if got := tomlCfg.CustomHints["worker-brief"].AgentTypes; !slices.Equal(got, want) {
+		t.Errorf("toml agent_types = %v, want %v", got, want)
+	}
+
+	emptyDir := t.TempDir()
+	_, err := LoadFrom(Paths{
+		BeltYAML: filepath.Join(emptyDir, "config.yaml"),
+		BeltTOML: writeFile(t, emptyDir, "config.toml", `
+[custom_hints.worker-brief]
+event = "subagent-start"
+command = ["brief"]
+agent_types = []
+`),
+	})
+	const wantErr = "custom_hints.worker-brief.agent_types is empty"
+	if err == nil || !strings.Contains(err.Error(), wantErr) {
+		t.Errorf("toml empty agent_types: err = %v, want %q", err, wantErr)
 	}
 }
 

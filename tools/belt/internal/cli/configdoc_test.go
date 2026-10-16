@@ -2,6 +2,7 @@ package cli
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -210,8 +211,9 @@ func TestConfigHelpCarriesTheReference(t *testing.T) {
 // TestConfigRendersEffectiveCustomHints pins the custom-hint half of the
 // effective view: a hints.<name> toggle on a custom hint is honored at run
 // time, so the rendered custom_hints entry must show the enabled state and
-// the merged opt-outs belt would use, with the budget made explicit, and
-// the custom id must not appear a second time under hints:.
+// the merged opt-outs belt would use, with the budget made explicit and
+// the agent_types gate kept, and the custom id must not appear a second
+// time under hints:.
 func TestConfigRendersEffectiveCustomHints(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "config.yaml", `
@@ -224,6 +226,10 @@ custom_hints:
   plain:
     event: session-start
     command: [plain]
+  brief:
+    event: subagent-start
+    command: [brief]
+    agent_types: [factory-worker-low, factory-worker-high]
 hints:
   journal:
     enabled: false
@@ -258,6 +264,10 @@ hints:
 	plain := got.CustomHints["plain"]
 	if plain.Enabled == nil || !*plain.Enabled {
 		t.Errorf("plain enabled = %v, want the explicit default true", plain.Enabled)
+	}
+	wantTypes := []string{"factory-worker-low", "factory-worker-high"}
+	if gotTypes := got.CustomHints["brief"].AgentTypes; !slices.Equal(gotTypes, wantTypes) {
+		t.Errorf("brief agent_types = %v, want %v", gotTypes, wantTypes)
 	}
 	for _, id := range []string{"journal", "plain"} {
 		if _, dup := got.Hints[id]; dup {

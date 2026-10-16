@@ -49,6 +49,9 @@ nothing:
   `subagent-start` (the events custom hints run on), whose `command` is
   empty, or whose name is a built-in hint id, since the entry would shadow
   the built-in;
+- a `custom_hints.<name>.agent_types` key on a hint whose `event` is not
+  `subagent-start` (only a subagent has a type to match), or one that is
+  empty or holds a blank entry;
 - a `mode:` anywhere other than `hard` or `soft`;
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list` and `publish-internal-names`, the two that read a
@@ -310,6 +313,16 @@ machine's rendered config, not in belt and not in a second hook.
   repos opted out of this hint, matched like every other `exclude_repos`
   against the session cwd's origin remote. A `hints.<name>.exclude_repos`
   list of the same name is honored too; either one opts out.
+- `custom_hints.<name>.agent_types` (list of string, default: unset):
+  limits a `subagent-start` hint to the subagent types it names, matched
+  exactly and case-sensitively against the payload's `agent_type`. A spawn
+  of any other type skips the hint with no process launch and no warn
+  event. Unset, the hint runs for every subagent. The key is a config error
+  on any other event, and so is an empty list (`agent_types: []`, or the
+  key with no value) or a blank entry. A factory worker brief lists
+  `factory-worker-low`, `factory-worker-medium` and `factory-worker-high`.
+  A belt older than the key ignores it and runs the hint for every
+  subagent, so run `ralph up` before a config names it.
 
 ### ledger
 
@@ -601,6 +614,7 @@ custom_hints:
   worker-brief:
     event: subagent-start
     command: [factory, brief]
+    agent_types: [factory-worker-low, factory-worker-medium, factory-worker-high]
 
 ledger:
   enabled: true

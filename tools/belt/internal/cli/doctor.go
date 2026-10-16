@@ -432,7 +432,8 @@ func printCustomGuards(w io.Writer, cfg config.Config, customs []*guard.Custom) 
 }
 
 // printCustomHints renders the config-registered external hints beside the
-// built-ins, with the same health fact doctor checks for custom guards:
+// built-ins, each with its agent_types gate and opt-out count, plus the
+// same health fact doctor checks for custom guards:
 // whether the command resolves to something executable. An unreachable
 // command means the hint warns and stays silent on every session, which is
 // indistinguishable from a hint with nothing to say.
@@ -444,11 +445,21 @@ func printCustomHints(w io.Writer, cfg config.Config, customs []*hint.Custom) {
 	}
 	for _, c := range customs {
 		ch := c.Config()
-		fmt.Fprintf(w, "  %-22s %-14s %-9s budget: %s  command: %s%s%s\n",
+		fmt.Fprintf(w, "  %-22s %-14s %-9s budget: %s  command: %s%s%s%s\n",
 			c.ID(), c.Event(), enabledWord(cfg.HintEnabled(c.ID())), c.Timeout(),
-			strings.Join(ch.Command, " "), excludeReposNote(cfg, c.ID()),
+			strings.Join(ch.Command, " "), agentTypesNote(ch.AgentTypes),
+			excludeReposNote(cfg, c.ID()),
 			reachabilityNote(ch.Command, "hint stays silent with a warn event"))
 	}
+}
+
+// agentTypesNote names the subagent types a gated hint runs for, so the
+// line shows why the hint stays quiet for every other spawn.
+func agentTypesNote(agentTypes []string) string {
+	if len(agentTypes) == 0 {
+		return ""
+	}
+	return "  (agent_types: " + strings.Join(agentTypes, ", ") + ")"
 }
 
 // excludeReposNote counts the repos opted out of a custom hint across both
