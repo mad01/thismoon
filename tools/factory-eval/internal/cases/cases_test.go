@@ -2,6 +2,7 @@ package cases
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -31,13 +32,18 @@ func TestCommittedCasesFileIsValid(t *testing.T) {
 	}
 }
 
+// signOffValue matches the three sign-off lines, whatever the committed
+// file carries. The fixture tests want the file as it reads before a
+// sign-off, so validFile blanks them the way the digest does.
+var signOffValue = regexp.MustCompile(`(?m)^(  (?:by|date|digest)):.*$`)
+
 func validFile(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile("../../cases.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(raw)
+	return signOffValue.ReplaceAllString(string(raw), `$1: ""`)
 }
 
 func TestParseRejectsBrokenFiles(t *testing.T) {
