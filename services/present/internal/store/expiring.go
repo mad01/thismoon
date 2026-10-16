@@ -11,12 +11,15 @@ import (
 // serves a page past its expiry; the wrapped store still holds the page until
 // the sweeper deletes it, which is why the sweeper works on the raw store.
 func WithoutExpired(s Store, now func() time.Time) Store {
-	return &expiring{Store: s, now: now}
+	return &expiring{forwardable: s, inner: s, now: now}
 }
 
+// expiring embeds forwardable rather than Store, so Edit and Update exist
+// only as the expiry-checking methods below.
 type expiring struct {
-	Store
-	now func() time.Time
+	forwardable
+	inner Store
+	now   func() time.Time
 }
 
 // live returns ErrNotFound for a missing or expired page and nil otherwise.
@@ -26,11 +29,11 @@ func (e *expiring) live(ctx context.Context, id string) error {
 }
 
 func (e *expiring) Get(ctx context.Context, id string) (Page, error) {
-	return e.unlessExpired(e.Store.Get(ctx, id))
+	return e.unlessExpired(e.inner.Get(ctx, id))
 }
 
 func (e *expiring) GetMeta(ctx context.Context, id string) (Page, error) {
-	return e.unlessExpired(e.Store.GetMeta(ctx, id))
+	return e.unlessExpired(e.inner.GetMeta(ctx, id))
 }
 
 // unlessExpired passes a read through, turning an expired page into
@@ -45,27 +48,35 @@ func (e *expiring) unlessExpired(p Page, err error) (Page, error) {
 	return p, nil
 }
 
+// Edit refuses an expired page from inside the wrapped store's edit, so the
+// expiry is judged on the state the edit would build on.
+func (e *expiring) Edit(ctx context.Context, id string, fn EditFunc) (Page, error) {
+	return e.inner.Edit(ctx, id, func(cur Snapshot) (Snapshot, error) {
+		if cur.Page.Expired(e.now()) {
+			return Snapshot{}, ErrNotFound
+		}
+		return fn(cur)
+	})
+}
+
 func (e *expiring) Update(ctx context.Context, id string, patch Patch) (Page, error) {
-	if err := e.live(ctx, id); err != nil {
-		return Page{}, err
-	}
-	return e.Store.Update(ctx, id, patch)
+	return e.Edit(ctx, id, PatchEdit(patch))
 }
 
 func (e *expiring) Delete(ctx context.Context, id string) error {
 	if err := e.live(ctx, id); err != nil {
 		return err
 	}
-	return e.Store.Delete(ctx, id)
+	return e.inner.Delete(ctx, id)
 }
 
 func (e *expiring) List(ctx context.Context) ([]Page, error) {
-	pages, err := e.Store.List(ctx)
+	pages, err := e.inner.List(ctx)
 	return e.dropExpired(pages), err
 }
 
 func (e *expiring) ListMeta(ctx context.Context) ([]Page, error) {
-	pages, err := e.Store.ListMeta(ctx)
+	pages, err := e.inner.ListMeta(ctx)
 	return e.dropExpired(pages), err
 }
 
@@ -86,84 +97,42 @@ func (e *expiring) dropExpired(pages []Page) []Page {
 	return kept
 }
 
-func (e *expiring) SaveDoc(ctx context.Context, id string, doc []byte) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.Store.SaveDoc(ctx, id, doc)
-}
-
 func (e *expiring) LoadDoc(ctx context.Context, id string) ([]byte, error) {
 	if err := e.live(ctx, id); err != nil {
 		return nil, err
 	}
-	return e.Store.LoadDoc(ctx, id)
+	return e.inner.LoadDoc(ctx, id)
 }
 
 func (e *expiring) HasDoc(ctx context.Context, id string) bool {
-	return e.live(ctx, id) == nil && e.Store.HasDoc(ctx, id)
-}
-
-func (e *expiring) DeleteDoc(ctx context.Context, id string) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.Store.DeleteDoc(ctx, id)
-}
-
-func (e *expiring) SaveGraphSource(ctx context.Context, id string, src []byte) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.Store.SaveGraphSource(ctx, id, src)
+	return e.live(ctx, id) == nil && e.inner.HasDoc(ctx, id)
 }
 
 func (e *expiring) LoadGraphSource(ctx context.Context, id string) ([]byte, error) {
 	if err := e.live(ctx, id); err != nil {
 		return nil, err
 	}
-	return e.Store.LoadGraphSource(ctx, id)
+	return e.inner.LoadGraphSource(ctx, id)
 }
 
 func (e *expiring) HasGraphSource(ctx context.Context, id string) bool {
-	return e.live(ctx, id) == nil && e.Store.HasGraphSource(ctx, id)
-}
-
-func (e *expiring) DeleteGraphSource(ctx context.Context, id string) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.Store.DeleteGraphSource(ctx, id)
-}
-
-func (e *expiring) SaveDeckSource(ctx context.Context, id string, src []byte) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.Store.SaveDeckSource(ctx, id, src)
+	return e.live(ctx, id) == nil && e.inner.HasGraphSource(ctx, id)
 }
 
 func (e *expiring) LoadDeckSource(ctx context.Context, id string) ([]byte, error) {
 	if err := e.live(ctx, id); err != nil {
 		return nil, err
 	}
-	return e.Store.LoadDeckSource(ctx, id)
+	return e.inner.LoadDeckSource(ctx, id)
 }
 
 func (e *expiring) HasDeckSource(ctx context.Context, id string) bool {
-	return e.live(ctx, id) == nil && e.Store.HasDeckSource(ctx, id)
-}
-
-func (e *expiring) DeleteDeckSource(ctx context.Context, id string) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.Store.DeleteDeckSource(ctx, id)
+	return e.live(ctx, id) == nil && e.inner.HasDeckSource(ctx, id)
 }
 
 func (e *expiring) SetShared(ctx context.Context, id string, info *SharedInfo) error {
 	if err := e.live(ctx, id); err != nil {
 		return err
 	}
-	return e.Store.SetShared(ctx, id, info)
+	return e.inner.SetShared(ctx, id, info)
 }

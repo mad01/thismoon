@@ -57,6 +57,24 @@ type record struct {
 	GraphSource []byte
 }
 
+// snapshot is rec as an edit sees it.
+func (rec record) snapshot() store.Snapshot {
+	return store.Snapshot{
+		Page:    rec.Page,
+		Sources: store.Sources{Doc: rec.Doc, Deck: rec.DeckSource, Graph: rec.GraphSource},
+	}
+}
+
+// recordOf is the record an edit's result persists as.
+func recordOf(snap store.Snapshot) record {
+	return record{
+		Page:        snap.Page,
+		Doc:         snap.Sources.Doc,
+		DeckSource:  snap.Sources.Deck,
+		GraphSource: snap.Sources.Graph,
+	}
+}
+
 // specOf builds the spec for a record.
 func specOf(rec record) pageSpec {
 	p := rec.Page

@@ -50,7 +50,7 @@ Three architecture decision records (ADRs) explain why the format is shaped the 
 4. **Pick the visuals.** For each set of facts, find the block that answers its question in **Which block answers which question**. Numbers over categories or time are a `chart`; how parts fit is a `diagram`; a map of many nodes is the page's one `graph`.
 5. **Build the Doc** (and the Graph when the data is a map). Use the formats below.
 6. **Create and open.** `present_create` with `title`, `content`, optional `deck`, `graph`, and `references`. Hold the returned `id`. `present_open` once.
-7. **Iterate.** `present_update` with the same id and only the fields that changed. The open tab reloads.
+7. **Iterate.** `present_update` with the same id and only the fields that changed. The open tab reloads. To change one section, use `present_patch_section` instead of resending the whole Doc. That is also how parallel workers report into one page: each one patches its own section, and no edit is lost. A hook that only reports how far along it is runs `present progress <id> <label> <pct>` instead, which sets one progress bar.
 
 To edit a page created in an earlier session: `present_list` to find it (`has_doc: true` means the source is available), `present_source` to get the Doc, deck, and graph JSON, modify, then `present_update`.
 
@@ -81,7 +81,7 @@ Block =                                  // discriminated on `t`
   | {t: "p", text}                       | {t: "h3", text}
   | {t: "callout", text, sev?}           | {t: "table", cols, rows}
   | {t: "kv", kv}                        | {t: "list", items, ordered?}
-  | {t: "panel", title, sub?, accent?}   | {t: "progress", pct, label?}
+  | {t: "panel", title, sub?, accent?}   | {t: "progress", pct, label?, note?}
   | {t: "graph"}                         | {t: "chart", kind?, series | flows, title?, unit?, xunit?, steps?, order?, frame?}
   | {t: "code", text, lang?}             | {t: "html", text}
   | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
@@ -153,9 +153,10 @@ The brief's first section answers the question. How you found it, the background
 | Tool | Use |
 |------|-----|
 | `present_create(title, content?, deck?, graph?, references?)` | Create a page. `content` is a Doc JSON object (the brief). `deck` is a second Doc JSON object (the slides). At least one of the two. `graph` is a Graph JSON object. `references` is `[{title, url}]`. Returns `deck_url` when there is a deck. |
-| `present_source(id)` | Get the editable source: Doc JSON (`content_format: "doc"`), the deck's Doc JSON (`deck`, empty without one), and graph JSON (`graph_format: "json"`), ready to modify and pass back to `present_update`. **Use this to edit a page from a new session.** Legacy pages return raw HTML/JS instead. |
+| `present_source(id, version?)` | Get the editable source: Doc JSON (`content_format: "doc"`), the deck's Doc JSON (`deck`, empty without one), and graph JSON (`graph_format: "json"`), ready to modify and pass back to `present_update`. **Use this to edit a page from a new session.** Legacy pages return raw HTML/JS instead. `version` reads an earlier version a local page still keeps (its newest 20); pass that source to `present_update` to undo a bad edit. |
 | `present_read(id)` | Fetch the rendered page (HTML, plus the deck's HTML). For editing, prefer `present_source`. |
 | `present_update(id, title?, content?, deck?, graph?, references?)` | Patch a page. Omit fields to leave unchanged. Pass `graph: ""` to remove a graph, `deck: ""` to remove the deck, `references: []` to clear refs. A page keeps at least one of content and deck. |
+| `present_patch_section(id, op, anchor?, section?, body_format?, rendition?, base_version?)` | Change one section. `op` is `replace`, `insert_before`, `insert_after`, or `remove` at `anchor`, or `append` at the end. `anchor` is the section's TOC anchor (the heading lowercased with dashes: "Next steps" is `next-steps`) or `index:N`, zero-based, when a heading repeats. `section` is one section as a JSON string, or markdown starting with a `#` or `##` heading when `body_format` is `markdown`. `rendition` is `content` (default) or `deck`. Pass the `version` you last read as `base_version` to be refused instead of overwriting a newer page. A refusal over a shared anchor lists the indices to use. |
 | `present_list()` | List all pages (id, title, url, version, updated, has_doc, has_brief, has_deck, deck_url). `has_doc: true` means the page is source-editable via `present_source`. |
 | `present_open(id, deck?)` | Open in browser, **once per page**. `deck: true` opens the slide deck instead of the brief. |
 | `present_deck(id, action, slide?)` | Drive the deck that is open in the browser: `start` or `stop` presenting, `next`, `prev`, `goto` a 1-based `slide`. Local instance only. |
@@ -253,7 +254,7 @@ Rules:
 | `kv` | `kv: [{k, v}]` | Key-value pairs. Values support inline markdown |
 | `list` | `items`, `ordered?` | Bulleted or numbered list. Items support inline markdown |
 | `panel` | `title`, `sub?`, `accent?` | Titled card. Accent is a palette role name (`primary`, `blue`, `green`, `purple`, `amber`, `red`, `yellow`, `series-1` to `series-4`; `terracotta` still works as an alias of `primary`). An unknown name is refused |
-| `progress` | `pct`, `label?` | Progress bar (0-100) |
+| `progress` | `pct`, `label?`, `note?` | Progress bar (0-100); `note` is a short line after the label ("Index: 12 of 20") |
 | `graph` | (none) | Placement marker for the Cytoscape graph container |
 | `chart` | `kind`, `series` or `flows`, `title?`, `unit?`, `xunit?`, `steps?`, `order?`, `frame?` | Metric chart (Chart.js, or D3 for `ribbon`). `kind` is one of `bar`, `line`, `area`, `sparkline`, `stacked-bar`, `horizontal-bar`, `doughnut`, `scatter`, `sankey`, `ribbon`. Inline: use as many as you like per page. `steps` makes a deck slide walk the chart one step per Next. See **Chart format** |
 | `diagram` | `nodes`, `edges?`, `groups?`, `direction?`, `caption?`, `steps?` | Architecture picture laid out in the browser by ELK and drawn as SVG (D3): boxes with a name and a short text, labelled boundaries, labelled arrows. A node `kind` is one of `service`, `store`, `queue`, `person`, `external`; `direction` is one of `LR`, `TB`. Many per page, never the page graph. `steps` walks it one step per Next on a deck slide. See **Diagram format** |

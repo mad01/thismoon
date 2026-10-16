@@ -98,6 +98,10 @@ type Server struct {
 	// store that cannot (the cluster store), which leaves the command route
 	// unregistered and the deck view without remote control.
 	deckCtl store.DeckController
+	// history serves a page's kept versions when the store keeps them;
+	// nil on a store that does not (a wrapped or cluster store), which
+	// leaves the history and diff routes unregistered.
+	history store.Historian
 	// images is the local image store under the workdir, served at /img/;
 	// nil on a shared instance, whose pages carry image URLs only.
 	images *images.Store
@@ -144,12 +148,14 @@ func New(st store.Store, opts Options) *Server {
 		heartbeat = DefaultHeartbeat
 	}
 	deckCtl, _ := st.(store.DeckController)
+	history, _ := st.(store.Historian)
 	var imgs *images.Store
 	if opts.Mode != ModeShared && opts.Workdir != "" {
 		imgs = images.New(opts.Workdir)
 	}
 	return &Server{
 		deckCtl:     deckCtl,
+		history:     history,
 		images:      imgs,
 		watcher:     opts.Watcher,
 		heartbeat:   heartbeat,
@@ -170,9 +176,11 @@ func New(st store.Store, opts Options) *Server {
 
 // Handler builds the HTTP routes for the server's mode, wrapped in
 // forwarded-header defaults and request logging. The page view, the deck
-// view, their JSON, the version poll, delete, assets, and webkit are common,
-// and so is the version event stream whenever a watcher is configured and
-// the deck command poll whenever the store relays commands; local mode adds
+// view, their JSON, the version poll, delete, the section patch and
+// progress routes, assets, and webkit are common. So is the version event
+// stream whenever a watcher is configured, the deck command poll whenever
+// the store relays commands, and the history and diff routes whenever the
+// store keeps history (the raw filesystem store alone); local mode adds
 // the index, its listing, the markdown import, and the stored images; shared
 // mode the how-to root, the write API, whoami, and the MCP endpoint. A
 // route the mode does not register is a plain 404.
@@ -186,11 +194,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /logo.png", handleLogo)
 	mux.HandleFunc("DELETE /p/{id}", s.handleDelete)
 	mux.HandleFunc("GET /p/{id}/version", s.handleVersion)
+	mux.HandleFunc("PATCH /api/p/{id}/sections/{anchor}", s.handlePatchSection)
+	mux.HandleFunc("POST /api/p/{id}/sections", s.handleAppendSection)
+	mux.HandleFunc("POST /api/p/{id}/progress", s.handleProgress)
 	if s.watcher != nil {
 		mux.HandleFunc("GET /p/{id}/events", s.handleEvents)
 	}
 	if s.deckCtl != nil {
 		mux.HandleFunc("GET /p/{id}/deck/command", s.handleDeckCommand)
+	}
+	if s.history != nil {
+		mux.HandleFunc("GET /api/p/{id}/history", s.handleHistory)
+		mux.HandleFunc("GET /api/p/{id}/history/{version}", s.handleRevision)
+		mux.HandleFunc("GET /api/p/{id}/diff", s.handleDiff)
 	}
 	mux.HandleFunc("GET /version", s.info.Handler())
 	mux.Handle("GET /assets/", s.assetsHandler())

@@ -39,7 +39,10 @@ internal/cli/        cobra command tree: serve, mcp, rerender, share, unshare,
                      is missing)
 internal/store/      Store interface + FS, the filesystem implementation over
                      pages/<id>/; id generation; expiry wrapper; deck.go, the
-                     deck remote control the filesystem store alone provides
+                     deck remote control the filesystem store alone provides;
+                     edit.go and lock.go, the locked edit every write runs
+internal/store/storetest/  the Edit contract as a suite every store runs
+internal/docedit/    a section patch on a page's Doc, built as one store edit
 internal/store/k8sstore/  Store over Page custom resources (dynamic client),
                      the CRD (embedded, copied to deploy/base), the page
                      cache, the sweeper
@@ -51,7 +54,8 @@ internal/sharedclient/  client for a shared instance (create, replace, delete,
 internal/render/     Doc-to-HTML (doc.go), Graph-to-JS (graph.go), legacy upgrade;
                      compile.go is the parse, render, canonical-JSON step every
                      write path shares
-internal/mdimport/   markdown file to title + Doc + optional graph (goldmark), pure
+internal/mdimport/   markdown file to title + Doc + optional graph (goldmark), and
+                     one section's markdown to a Section (ConvertSection), pure
 internal/mermaid/    Mermaid flowchart source to GraphInput, pure; mdimport calls
                      it for a fenced mermaid block
 internal/server/     HTTP handlers per mode (deck.go holds the deck shell and
@@ -210,6 +214,8 @@ instance and clears the record.
   graph.js       rendered Cytoscape init (when has_graph)
   graph.json     canonical graph source (when authored as JSON)
   refs.json      optional [{title,url},...]
+  history/<version>.json  the newest 20 versions: title, references, the
+                 sources, and the HTML or script of a field without one
 ~/.config/present/images/<sha256>.<ext>
                  image files the image blocks brought in from this machine
                  (png, jpg, gif, webp), named by content, served at /img/<name>,
@@ -219,6 +225,13 @@ instance and clears the record.
 Plain files, one directory per page. Raw HTML/JS input deletes the now-stale
 source file for that field; nothing else lands on disk.
 
+Every write is a store edit. The filesystem store takes an exclusive flock on
+the page directory, because the MCP server, serve, and the CLI are separate
+processes over one workdir. It then reads the page, runs the edit, and writes
+in commit order: the sources, the renditions, the history record, and
+`meta.json` last. The version therefore never moves ahead of the files it
+stands for, and two writers never lose each other's edits.
+
 A shared instance in Kubernetes swaps the filesystem for `--store k8s`: one
 `Page` custom resource per page (`present.thismoon.mad01.dev/v1alpha1`,
 namespaced). Each resource holds the same fields plus the rendered artifacts
@@ -226,8 +239,8 @@ and the canonical sources as strings in its spec. Replicas read and write it
 through the API server with client-go's dynamic client. A write is a
 read-modify-write guarded by resourceVersion and retried on conflict, so two
 replicas never clobber each other. `version` is an explicit spec field
-rather than `metadata.generation`, because source saves would bump the
-generation and make open tabs reload for nothing.
+rather than `metadata.generation`, because recording a push with SetShared
+would bump the generation and make open tabs reload for nothing.
 
 Each replica also runs an informer over the namespace's pages. Its cache
 keeps metadata only, because a transform drops content, graph, and
@@ -280,6 +293,17 @@ layout, and the diagram's ELK graph and step logic, loaded before `app.js`),
 `GET /logo.png` (the embedded repo logo the deck chrome shows, served
 no-cache with a content ETag), `GET /p/{id}/version`, and `DELETE /p/{id}`
 (the only delete surface).
+`PATCH /api/p/{id}/sections/{anchor}` and `POST /api/p/{id}/sections`
+change one section of the brief's or the deck's Doc in both modes. Locally
+they take the import's guard, and a shared instance wants the author's key.
+`internal/docedit` parses the patch and runs it as one store edit that
+recompiles the whole Doc. A stale `base_version` or a shared anchor answers
+409 with the version or the indices. `POST /api/p/{id}/progress` sets or
+adds the progress block carrying a label, with the same guards. When the
+store keeps history, as the raw filesystem store does, `GET
+/api/p/{id}/history`, `GET /api/p/{id}/history/{version}`, and `GET
+/api/p/{id}/diff?since={version}` serve the kept versions and the sections
+changed since one. The page view uses the diff to mark changed sections.
 `POST /api/import` is local mode only. The body is `{"name", "markdown"}` as
 JSON. It answers `201 {"id", "url"}`, 415 without the JSON content type, or
 403 cross-site. It answers 413 when the rendered page would pass the 1 MiB
@@ -291,11 +315,14 @@ and `GET /webkit/version` come from the webkit Go package.
 
 CLI: `present serve`, `present mcp`, `present rerender [id...]`,
 `present deck <id> <start|stop|next|prev|goto> [slide]`,
+`present progress <id> <label> <pct> [--note] [--section] [--deck]`,
 `present share <id> [--ephemeral]`, `present unshare <id>`,
 `present key new`, `present version [-o json]`.
 
-MCP tools: `present_create`, `present_read`, `present_source`,
-`present_update`, `present_list`, `present_open` (macOS `open`),
+MCP tools: `present_create`, `present_read`, `present_source` (with an
+optional `version` from the history),
+`present_update`, `present_patch_section` (one section, the same patch as
+the routes above), `present_list`, `present_open` (macOS `open`),
 `present_deck` on the local filesystem store, and `present_share` when a
 shared instance is configured. Deliberately no delete tool.
 

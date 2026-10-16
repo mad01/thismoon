@@ -57,8 +57,9 @@ func TestInvalidIDIsNotFoundEverywhere(t *testing.T) {
 	if err := s.Delete(ctx, bad); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Delete: err = %v, want ErrNotFound", err)
 	}
-	if err := s.SaveDoc(ctx, bad, []byte(`{}`)); !errors.Is(err, ErrNotFound) {
-		t.Errorf("SaveDoc: err = %v, want ErrNotFound", err)
+	setDoc := func(cur *Sources) { cur.Doc = []byte(`{}`) }
+	if err := setSources(t, s, bad, setDoc); !errors.Is(err, ErrNotFound) {
+		t.Errorf("source edit: err = %v, want ErrNotFound", err)
 	}
 	if _, err := s.LoadDoc(ctx, bad); !errors.Is(err, ErrNotFound) {
 		t.Errorf("LoadDoc: err = %v, want ErrNotFound", err)
@@ -279,8 +280,9 @@ func TestWithoutExpiredHidesExpiredPages(t *testing.T) {
 	if _, err := s.LoadDoc(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("LoadDoc dead: err = %v, want ErrNotFound", err)
 	}
-	if err := raw.SaveDeckSource(ctx, dead.ID, []byte(`{}`)); err != nil {
-		t.Fatalf("raw SaveDeckSource: %v", err)
+	setDeck := func(cur *Sources) { cur.Deck = []byte(`{}`) }
+	if err := setSources(t, raw, dead.ID, setDeck); err != nil {
+		t.Fatalf("raw deck source edit: %v", err)
 	}
 	if s.HasDeckSource(ctx, dead.ID) {
 		t.Error("HasDeckSource dead: true, want false")
@@ -288,14 +290,11 @@ func TestWithoutExpiredHidesExpiredPages(t *testing.T) {
 	if _, err := s.LoadDeckSource(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("LoadDeckSource dead: err = %v, want ErrNotFound", err)
 	}
-	if err := s.SaveDeckSource(ctx, dead.ID, []byte(`{}`)); !errors.Is(err, ErrNotFound) {
-		t.Errorf("SaveDeckSource dead: err = %v, want ErrNotFound", err)
+	if err := setSources(t, s, dead.ID, setDeck); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deck source edit dead: err = %v, want ErrNotFound", err)
 	}
-	if err := s.DeleteDeckSource(ctx, dead.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("DeleteDeckSource dead: err = %v, want ErrNotFound", err)
-	}
-	if err := s.SaveDeckSource(ctx, live.ID, []byte(`{}`)); err != nil {
-		t.Errorf("SaveDeckSource live: %v", err)
+	if err := setSources(t, s, live.ID, setDeck); err != nil {
+		t.Errorf("deck source edit live: %v", err)
 	}
 	if !s.HasDeckSource(ctx, live.ID) {
 		t.Error("HasDeckSource live: false, want true")

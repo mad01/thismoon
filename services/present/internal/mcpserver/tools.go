@@ -126,7 +126,8 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "present_source",
 		Description: "Get a presentation's editable source by id: the Doc JSON it was created from (content_format=doc), the structured graph JSON (graph_format=json), the deck's Doc JSON (`deck`, empty when the page has no deck), plus references. " +
 			"All come back in exactly the format present_update accepts, so you can modify them and pass them straight back. Use this to mutate a page from a new or restored session. " +
-			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form.",
+			"Legacy pages return content_format=html (raw HTML) or graph_format=js (raw JS); those can only be edited in that form. " +
+			"Pass `version` for an earlier version the page still keeps (a local page keeps its newest 20); passing that source back to present_update restores it as a new version.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
@@ -148,6 +149,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 			OpenWorldHint:   new(false),
 		},
 	}, withHint(h.handleUpdate))
+	registerSectionTool(s, h)
 
 	// A shared instance lists nothing (pages are reachable by id alone) and
 	// has no browser to open.
@@ -263,6 +265,16 @@ func (h *handlers) deckController() (store.DeckController, bool) {
 	return dc, ok
 }
 
+// renewing wraps a write's edit so that on a shared instance an ephemeral
+// page's 30 days start over, as on every write there. Locally it returns fn
+// as it is.
+func (h *handlers) renewing(fn store.EditFunc) store.EditFunc {
+	if h.mode != ModeShared {
+		return fn
+	}
+	return store.RenewEphemeral(fn, h.expiry(true))
+}
+
 // expiry returns when an ephemeral page touched now expires, or nil.
 func (h *handlers) expiry(ephemeral bool) *time.Time {
 	if !ephemeral {
@@ -345,7 +357,7 @@ type refInput struct {
 
 type createInput struct {
 	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content,omitempty"    jsonschema:"Page content (the brief) as a Doc JSON string, or a legacy HTML string. Omit it for a deck-only page (then deck is required).\nDoc: {summary?, meta?, chips?:[{text, style: stat|a|b|c|outline}], sections:[{h, blocks:[{t, ...}], tone?, layout?, notes?, reveal?}]}. Text fields take inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text).\nBlocks by t: p {text}; h3 {text}; callout {text, sev?: info|warn|ok|error}; table {cols, rows}; kv {kv:[{k,v}]}; list {items, ordered?}; panel {title, sub?, accent?: a palette role}; progress {pct, label?}; graph {} (places the page's one graph, at most once, in a column but never in details); chart {kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey|ribbon, title?, unit?, xunit?, series:[{name?, color?, step?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey, steps?:[{caption}] (one step per Next on a deck slide; a series with step k joins at step k; a ribbon steps by period), order?: rank|given (ribbon only), frame?: true keeps a card (brief only)}; diagram {nodes:[{id, label, text?, kind?, tone?, group?, step?}] with node kind: service|store|queue|person|external and tone: neutral|green|red|blue|amber|purple, groups?:[{id, label, tone?, group?, step?}] (a group may sit in one other group), edges?:[{from, to, label?, flow?, weight?, step?}] between two nodes, direction: LR|TB, caption?, steps?:[{caption, focus?:[ids]}]}; code {text, lang?} (verbatim, no inline markdown); html {text}; columns {cols: 2 or 3 arrays of blocks}; stat {value, label, sub?}; quote {text, cite?}; details {summary, blocks}; image {src, alt, caption?, frame?: false drops the border}.\nSection fields beside h and blocks: tone (a palette role: a band in the brief, the heading rule and accent bar on a slide), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool).\nLimits the renderer enforces: columns and details hold any block but columns and details; a ribbon takes at most 4 named series; a diagram at most 24 nodes and 12 groups, two levels deep, no element stepped before what holds it; an image src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB (copied into the page store and rewritten to the /img/<hash>.<ext> path present_source returns; a shared instance takes URLs only), and alt is required. A refused Doc names the block and the rule.\nThe present skill says which block answers which question and holds the chart kind picker; load it before writing a page."`
+	Content    string     `json:"content,omitempty"    jsonschema:"Page content (the brief) as a Doc JSON string, or a legacy HTML string. Omit it for a deck-only page (then deck is required).\nDoc: {summary?, meta?, chips?:[{text, style: stat|a|b|c|outline}], sections:[{h, blocks:[{t, ...}], tone?, layout?, notes?, reveal?}]}. Text fields take inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text).\nBlocks by t: p {text}; h3 {text}; callout {text, sev?: info|warn|ok|error}; table {cols, rows}; kv {kv:[{k,v}]}; list {items, ordered?}; panel {title, sub?, accent?: a palette role}; progress {pct, label?, note?}; graph {} (places the page's one graph, at most once, in a column but never in details); chart {kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey|ribbon, title?, unit?, xunit?, series:[{name?, color?, step?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey, steps?:[{caption}] (one step per Next on a deck slide; a series with step k joins at step k; a ribbon steps by period), order?: rank|given (ribbon only), frame?: true keeps a card (brief only)}; diagram {nodes:[{id, label, text?, kind?, tone?, group?, step?}] with node kind: service|store|queue|person|external and tone: neutral|green|red|blue|amber|purple, groups?:[{id, label, tone?, group?, step?}] (a group may sit in one other group), edges?:[{from, to, label?, flow?, weight?, step?}] between two nodes, direction: LR|TB, caption?, steps?:[{caption, focus?:[ids]}]}; code {text, lang?} (verbatim, no inline markdown); html {text}; columns {cols: 2 or 3 arrays of blocks}; stat {value, label, sub?}; quote {text, cite?}; details {summary, blocks}; image {src, alt, caption?, frame?: false drops the border}.\nSection fields beside h and blocks: tone (a palette role: a band in the brief, the heading rule and accent bar on a slide), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool).\nLimits the renderer enforces: columns and details hold any block but columns and details; a ribbon takes at most 4 named series; a diagram at most 24 nodes and 12 groups, two levels deep, no element stepped before what holds it; an image src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB (copied into the page store and rewritten to the /img/<hash>.<ext> path present_source returns; a shared instance takes URLs only), and alt is required. A refused Doc names the block and the rule.\nThe present skill says which block answers which question and holds the chart kind picker; load it before writing a page."`
 	Deck       string     `json:"deck,omitempty"       jsonschema:"Optional slide deck as a Doc JSON string with the same shape and blocks as content: every section is one slide, summary, meta, and chips fill the title slide, references make the last slide. Authored on its own, never converted from content.\nDeck-level chrome beside summary, meta, and chips, all optional: logo (absent = the embedded repo logo; none hides it; an http(s) URL replaces it), logo_position (bottom-right|bottom-left|top-left|top-right), progress (dots|bar|none; dots give way to a bar above 24 slides), presenter (a byline under the meta line and in the footer), footer (absent = the deck title; none suppresses it; the footer line shows only when presenter or footer is set), transition (fade|slide|none).\nPer section: layout (default|center|statement|section), tone (a palette role for the heading rule and accent bar; a slide never paints a filled box), notes (speaker notes shown in a drawer on the N key, never on the slide), reveal (true: list items and top-level blocks appear one per Next; a chart or diagram with steps walks them right after it appears). A lone stat or quote on a slide is the big-number or quote slide.\nThe rules that keep a deck a deck: the heading is the claim, 3 to 5 short items or two sentences per slide, one highlight per slide, one visual (a chart, a diagram, the graph, an image, or a lone stat or quote) per slide, alone or beside one short paragraph in columns, 5 to 12 slides, no filled boxes on a slide (no panel, details, code, or frame: true), detail stays in content. The present skill has the full list, a building-a-deck recipe, and worked examples.\nServed at deck_url; the page's graph is shared with the content."`
 	Graph      string     `json:"graph,omitempty"      jsonschema:"Optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?,tone?}], edges:[{from,to,type?,label?,weight?,flow?}], layout?, direction?} or a legacy JS string. One per page, shared by the content and the deck, placed by a graph block.\nNode types: center, module (color: 0 to 3 picks one of four border slots), leaf (the default), registry. Node tones (box background, border, and text as one family, theme-aware): neutral, green, red, blue, amber, purple. Tone every node or none, two or three tones with fixed meanings; use module slots or tones on a graph, never both.\nEdge types: consumes (solid), publishes (dashed). Edge weight (a number, e.g. requests per second) drives line width and tints the busiest edges; flow: true animates dashes from source to target.\nLayouts: dagre (default, layered, for trees and hierarchies), elk (ELK layered with wrapping; folds a long chain into rows to fit the container, for pipelines), elk-layered | elk-mrtree | elk-stress | elk-radial | elk-force (plain layered, tree, stress, radial, force; no folding), cose (no hierarchy, no vendored library needed). Direction (dagre and the ELK engines): TB or LR; omit for auto (LR when the graph has few nodes). The present skill has the engine picker and the colour rules."`
 	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
@@ -542,7 +554,8 @@ func (h *handlers) handleRead(
 // ── source ──
 
 type sourceInput struct {
-	ID string `json:"id" jsonschema:"page id returned by present_create"`
+	ID      string `json:"id"                jsonschema:"page id returned by present_create"`
+	Version int    `json:"version,omitempty" jsonschema:"an earlier version to return instead of the current one; a local page keeps its newest 20"`
 }
 
 type sourceOutput struct {
@@ -569,6 +582,11 @@ func (h *handlers) handleSource(
 		return nil, sourceOutput{}, err
 	}
 	urls := pageOutputFor(p, h.url(req, p.ID))
+	if in.Version > 0 && in.Version != p.Version {
+		out, err := h.sourceAt(ctx, in.ID, in.Version)
+		out.URL, out.DeckURL = urls.URL, urls.DeckURL
+		return nil, out, err
+	}
 	out := sourceOutput{
 		ID: p.ID, Title: p.Title,
 		References: fromStoreRefs(p.References),
@@ -610,6 +628,30 @@ func (h *handlers) handleSource(
 	return nil, out, nil
 }
 
+// errNoHistory is present_source asked for an earlier version on a store
+// that keeps none: a shared instance.
+var errNoHistory = errors.New("this instance keeps no page history; omit version for the current source")
+
+// sourceAt is present_source for a kept earlier version, from the page's
+// history.
+func (h *handlers) sourceAt(ctx context.Context, id string, version int) (sourceOutput, error) {
+	hist, ok := h.store.(store.Historian)
+	if !ok {
+		return sourceOutput{}, errNoHistory
+	}
+	rev, err := hist.Revision(ctx, id, version)
+	if err != nil {
+		return sourceOutput{}, err
+	}
+	out := sourceOutput{
+		ID: id, Title: rev.Title, Deck: rev.DeckSource,
+		References: fromStoreRefs(rev.References), Version: rev.Version,
+	}
+	out.ContentFormat, out.Content = rev.ContentSource()
+	out.GraphFormat, out.Graph = rev.GraphSourceOf()
+	return out, nil
+}
+
 // ── update ──
 
 type updateInput struct {
@@ -621,17 +663,39 @@ type updateInput struct {
 	References *[]refInput `json:"references,omitempty" jsonschema:"replace the references list; omit to leave unchanged, empty array to clear"`
 }
 
-// sourcePlan is what an update does to the page's persisted sources once
-// the page itself is written. A source the update replaced is saved; one
-// the update made stale is deleted, so a later re-render never reads a
-// source the page no longer came from.
+// sourcePlan is what an update does to the page's sources. A source the
+// update touched takes the value held here: the canonical JSON of a Doc or
+// Graph, or nil when the update removed that rendition or replaced it with
+// legacy HTML or JS, so a stale source never outlives what it rendered and a
+// later re-render or present_source cannot bring it back. An untouched
+// source is kept.
 type sourcePlan struct {
-	doc        []byte
-	clearDoc   bool
-	deck       []byte
-	clearDeck  bool
-	graph      []byte
-	clearGraph bool
+	setDoc, setDeck, setGraph bool
+	doc, deck, graph          []byte
+}
+
+// apply returns src with the touched sources replaced.
+func (p sourcePlan) apply(src store.Sources) store.Sources {
+	if p.setDoc {
+		src.Doc = p.doc
+	}
+	if p.setDeck {
+		src.Deck = p.deck
+	}
+	if p.setGraph {
+		src.Graph = p.graph
+	}
+	return src
+}
+
+// compiledUpdate is an update rendered under one title: the patch for the
+// page and the plan for its sources. baseTitle is the stored title it was
+// compiled under; it decides a recompile only for an update that leaves the
+// title alone, since one that sets a title compiled under that.
+type compiledUpdate struct {
+	baseTitle string
+	patch     store.Patch
+	plan      sourcePlan
 }
 
 func (h *handlers) handleUpdate(
@@ -641,8 +705,8 @@ func (h *handlers) handleUpdate(
 ) (*mcp.CallToolResult, pageOutput, error) {
 	// The current page is read first, before any rendering: on a shared
 	// instance only the author may write, and an update from the wrong key
-	// must cost this instance nothing but a store read; in either mode the
-	// patch is judged against what the page holds now.
+	// must cost this instance nothing but a store read. The author never
+	// changes, so the check holds for the edit below.
 	cur, err := h.store.Get(ctx, in.ID)
 	if err != nil {
 		return nil, pageOutput{}, err
@@ -657,33 +721,17 @@ func (h *handlers) handleUpdate(
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
-	patch, plan, err := resolveUpdate(in, cur.Title)
+	// Compiling before the edit refuses a malformed Doc or Graph before
+	// anything is written, image files included.
+	compiled, err := resolveUpdate(in, cur.Title)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
 	if err := ing.commit(); err != nil {
 		return nil, pageOutput{}, err
 	}
-	// A page that has something to show keeps something to show. The check
-	// runs on a copy: the store applies the real patch. A page from before
-	// decks that has neither rendition (empty content was accepted then)
-	// still takes title, graph, and reference updates.
-	next := cur
-	next.Apply(patch)
-	if (cur.HasBrief || cur.HasDeck) && !next.HasBrief && !next.HasDeck {
-		return nil, pageOutput{}, errLastRendition
-	}
-	// An ephemeral page's 30 days start over on every update.
-	if h.mode == ModeShared && cur.Ephemeral {
-		on := true
-		patch.Ephemeral = &on
-		patch.ExpiresAt = h.expiry(true)
-	}
-	p, err := h.store.Update(ctx, in.ID, patch)
+	p, err := h.store.Edit(ctx, in.ID, h.renewing(h.updateEdit(in, compiled)))
 	if err != nil {
-		return nil, pageOutput{}, err
-	}
-	if err := h.applySourcePlan(ctx, p.ID, plan); err != nil {
 		return nil, pageOutput{}, err
 	}
 	notify.EmitEvent("present", "info", "page updated: "+p.Title, "",
@@ -691,95 +739,73 @@ func (h *handlers) handleUpdate(
 	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
 }
 
+// updateEdit is the store edit an update runs: the page and its sources
+// change in one write. compiled was rendered under the title read before the
+// edit; when the update leaves the title alone and another writer changed it
+// since, the inputs are compiled again under the title the page has now,
+// because a Doc renders its title into the hero.
+func (h *handlers) updateEdit(in updateInput, compiled compiledUpdate) store.EditFunc {
+	return func(cur store.Snapshot) (store.Snapshot, error) {
+		u := compiled
+		if in.Title == nil && cur.Page.Title != u.baseTitle {
+			var err error
+			if u, err = resolveUpdate(in, cur.Page.Title); err != nil {
+				return store.Snapshot{}, err
+			}
+		}
+		next := cur
+		next.Page.Apply(u.patch)
+		// A page that has something to show keeps something to show. A page
+		// from before decks that has neither rendition (empty content was
+		// accepted then) still takes title, graph, and reference updates.
+		if (cur.Page.HasBrief || cur.Page.HasDeck) && !next.Page.HasBrief && !next.Page.HasDeck {
+			return store.Snapshot{}, errLastRendition
+		}
+		next.Sources = u.plan.apply(cur.Sources)
+		return next, nil
+	}
+}
+
 // resolveUpdate renders the inputs an update carries into the patch for the
 // page and the plan for its sources. It touches no store, so a malformed
 // Doc or Graph fails before anything is written. curTitle is the page's
 // title as stored: a Doc renders its title into the hero, so an update that
 // leaves the title alone must still compile under it.
-func resolveUpdate(in updateInput, curTitle string) (store.Patch, sourcePlan, error) {
+func resolveUpdate(in updateInput, curTitle string) (compiledUpdate, error) {
 	title := curTitle
 	if in.Title != nil {
 		title = *in.Title
 	}
-	patch := store.Patch{Title: in.Title}
-	var plan sourcePlan
+	u := compiledUpdate{baseTitle: curTitle, patch: store.Patch{Title: in.Title}}
 	if in.Content != nil {
 		content, docJSON, err := resolveContent(*in.Content, title)
 		if err != nil {
-			return store.Patch{}, sourcePlan{}, fmt.Errorf("content: %w", err)
+			return compiledUpdate{}, fmt.Errorf("content: %w", err)
 		}
-		patch.Content = &content
-		// A Doc refreshes doc.json. Legacy HTML, or an empty string that
-		// removes the brief, leaves no Doc the content came from, so any
-		// prior doc.json is stale and must go, or a later re-render or
-		// present_source would bring the old brief back.
-		plan.doc, plan.clearDoc = docJSON, docJSON == nil
+		u.patch.Content = &content
+		u.plan.setDoc, u.plan.doc = true, docJSON
 	}
 	if in.Deck != nil {
 		deck, deckJSON, err := resolveDeck(*in.Deck, title)
 		if err != nil {
-			return store.Patch{}, sourcePlan{}, err
+			return compiledUpdate{}, err
 		}
-		patch.Deck = &deck
-		// A deck is replaced from a Doc or removed; either way the old
-		// deck.json must not outlive it.
-		plan.deck, plan.clearDeck = deckJSON, deckJSON == nil
+		u.patch.Deck = &deck
+		u.plan.setDeck, u.plan.deck = true, deckJSON
 	}
 	if in.Graph != nil {
 		graph, graphJSON, err := resolveGraph(*in.Graph)
 		if err != nil {
-			return store.Patch{}, sourcePlan{}, fmt.Errorf("graph: %w", err)
+			return compiledUpdate{}, fmt.Errorf("graph: %w", err)
 		}
-		patch.Graph = &graph
-		// Graph cleared or replaced with legacy JS: any prior graph.json is
-		// now stale and would mislead a later re-render.
-		plan.graph, plan.clearGraph = graphJSON, graphJSON == nil
+		u.patch.Graph = &graph
+		u.plan.setGraph, u.plan.graph = true, graphJSON
 	}
 	if in.References != nil {
 		refs := toStoreRefs(*in.References)
-		patch.References = &refs
+		u.patch.References = &refs
 	}
-	return patch, plan, nil
-}
-
-// applySourcePlan persists the source changes an update implies. It runs
-// after the page is written, so a page that failed to update leaves its
-// sources alone. Deletes go first: a store that measures the page on every
-// save (the shared instance's size cap) must not count a source the same
-// update is removing, or an update that shrinks the page could be refused
-// halfway through.
-func (h *handlers) applySourcePlan(ctx context.Context, id string, plan sourcePlan) error {
-	if plan.clearDoc {
-		if err := h.store.DeleteDoc(ctx, id); err != nil {
-			return fmt.Errorf("clear doc: %w", err)
-		}
-	}
-	if plan.clearDeck {
-		if err := h.store.DeleteDeckSource(ctx, id); err != nil {
-			return fmt.Errorf("clear deck source: %w", err)
-		}
-	}
-	if plan.clearGraph {
-		if err := h.store.DeleteGraphSource(ctx, id); err != nil {
-			return fmt.Errorf("clear graph source: %w", err)
-		}
-	}
-	if plan.doc != nil {
-		if err := h.store.SaveDoc(ctx, id, plan.doc); err != nil {
-			return fmt.Errorf("save doc: %w", err)
-		}
-	}
-	if plan.deck != nil {
-		if err := h.store.SaveDeckSource(ctx, id, plan.deck); err != nil {
-			return fmt.Errorf("save deck source: %w", err)
-		}
-	}
-	if plan.graph != nil {
-		if err := h.store.SaveGraphSource(ctx, id, plan.graph); err != nil {
-			return fmt.Errorf("save graph source: %w", err)
-		}
-	}
-	return nil
+	return u, nil
 }
 
 // ── list ──

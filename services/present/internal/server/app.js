@@ -1511,6 +1511,31 @@
     if (window.Webkit && typeof Webkit.enhanceProse === 'function') Webkit.enhanceProse(brief);
   }
 
+  // markChangedSections flags the brief's sections that changed since this
+  // browser last opened the page. It keeps the last version seen per page in
+  // localStorage, asks the diff route what changed since then, and adds
+  // section-changed to those sections until the next load. A server without
+  // history (a shared instance) answers 404, and nothing is marked; a first
+  // visit only records the version.
+  function markChangedSections(id, version) {
+    var key = 'present-seen:' + id;
+    var seen = 0;
+    try { seen = parseInt(localStorage.getItem(key) || '0', 10) || 0; } catch (e) {}
+    try { localStorage.setItem(key, String(version)); } catch (e) {}
+    if (!seen || seen >= version) return;
+    fetch('/api/p/' + encodeURIComponent(id) + '/diff?since=' + seen, { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        var sections = root.querySelectorAll('wk-section');
+        PresentViz.changedSectionTargets(d.content).forEach(function (t) {
+          var el = t.id !== undefined ? document.getElementById(t.id) : sections[t.index];
+          if (el && el.tagName === 'WK-SECTION') el.classList.add('section-changed');
+        });
+      })
+      .catch(function () {});
+  }
+
   // showViewLink unhides the header link to the page's other rendition: the
   // brief offers Slides when the page has a deck, the deck offers Brief when
   // the page has one. Both anchors sit hidden in the shell's header.
@@ -2358,6 +2383,7 @@
         if (data.content) showViewLink('briefLink', base);
       } else {
         render(data);
+        markChangedSections(id, data.version);
         if (data.has_deck) showViewLink('deckLink', base + '/deck');
         // Recolor the graph + charts when the webkit theme toggle fires
         // (the deck view registers its own listener).

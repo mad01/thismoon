@@ -204,9 +204,12 @@ type Block struct {
 	Subtitle string `json:"sub,omitempty"`
 	Accent   string `json:"accent,omitempty"` // a palette role (webkit.Roles) or the alias terracotta
 
-	// t=progress
+	// t=progress: Note follows the label under the bar ("Index: 12 of 20"),
+	// emitted only when set, so a progress block without one renders as it
+	// always did. The progress endpoint matches a block by Label alone.
 	Percent float64 `json:"pct,omitempty"`
 	Label   string  `json:"label,omitempty"`
+	Note    string  `json:"note,omitempty"`
 
 	// t=chart
 	Kind   string        `json:"kind,omitempty"`   // one of ChartKinds; empty draws as bar
@@ -418,11 +421,26 @@ var textNorms = []struct {
 	{regexp.MustCompile(`(^| )= `), "${1}equals "},
 }
 
+// normalizeNames applies textNorms until the text stops changing, so it is
+// idempotent: normalizing a stored field again yields the same field, and a
+// heading's anchor is the same whether it is derived from the text a caller
+// sent or from the text the Doc stored. One pass is not enough because a
+// match consumes the space after its operator, so in "a - - b" the second
+// operator has no leading space left until the next pass. The loop ends:
+// each replacement swaps the symbol or name it matched for lowercase words
+// no pattern matches, so every pass that changes the text leaves fewer
+// matchable symbols behind.
 func normalizeNames(s string) string {
-	for _, n := range textNorms {
-		s = n.re.ReplaceAllString(s, n.repl)
+	for {
+		next := s
+		for _, n := range textNorms {
+			next = n.re.ReplaceAllString(next, n.repl)
+		}
+		if next == s {
+			return s
+		}
+		s = next
 	}
-	return s
 }
 
 // Inline markdown patterns — applied in order. Chip must go first because
@@ -567,6 +585,20 @@ func langClass(lang string) string {
 	}
 	return s
 }
+
+// SectionAnchor returns the table-of-contents anchor a section with this
+// heading renders under: the id of its wk-section and the fragment its TOC
+// entry links to. The renderer normalizes names before it derives the id
+// (" & " reads "and"), so the anchor does too. Normalization is idempotent,
+// so the anchor of a stored heading equals the anchor of the text it came
+// from. A heading with no ASCII letter or digit has an empty anchor.
+func SectionAnchor(heading string) string { return sectionID(normalizeNames(heading)) }
+
+// NormalizeNames applies the name normalization every rendered prose field
+// gets (" & " reads "and", " - " reads "minus"), which is also what a
+// compiled Doc's canonical JSON holds. Compare a caller's text against a
+// stored field through it.
+func NormalizeNames(s string) string { return normalizeNames(s) }
 
 // sectionID derives an anchor ID from a heading.
 func sectionID(heading string) string {
@@ -725,8 +757,8 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 
 {{define "block-progress"}}<wk-progress>
   <wk-progress-bar><wk-progress-fill style="width:{{.Percent}}%"></wk-progress-fill></wk-progress-bar>
-{{- with .Label}}
-  <wk-progress-label>{{.}}</wk-progress-label>
+{{- if or .Label .Note}}
+  <wk-progress-label>{{.Label}}{{if and .Label .Note}}: {{end}}{{.Note}}</wk-progress-label>
 {{- end}}
 </wk-progress>{{end}}
 
@@ -843,6 +875,7 @@ func normalizeBlock(b *Block) {
 	b.Title = normalizeNames(b.Title)
 	b.Subtitle = normalizeNames(b.Subtitle)
 	b.Label = normalizeNames(b.Label)
+	b.Note = normalizeNames(b.Note)
 	b.Cite = normalizeNames(b.Cite)
 	b.Summary = normalizeNames(b.Summary)
 	b.Alt = normalizeNames(b.Alt)
@@ -1073,6 +1106,9 @@ func validateFieldHomes(b Block) error {
 	}
 	if b.Frame != nil && b.T != "chart" && b.T != "image" && b.T != "diagram" {
 		return fmt.Errorf("%s block: frame is a chart or image field", b.T)
+	}
+	if b.Note != "" && b.T != "progress" {
+		return fmt.Errorf("%s block: note is a progress field", b.T)
 	}
 	return nil
 }

@@ -46,11 +46,12 @@ func TestToolSetsPerMode(t *testing.T) {
 		want []string
 	}{
 		{ModeLocal, []string{
-			"present_create", "present_read", "present_source", "present_update",
+			"present_create", "present_read", "present_source", "present_update", "present_patch_section",
 			"present_list", "present_open", "present_deck", "present_doctor",
 		}},
 		{ModeShared, []string{
-			"present_create", "present_read", "present_source", "present_update", "present_doctor",
+			"present_create", "present_read", "present_source", "present_update",
+			"present_patch_section", "present_doctor",
 		}},
 	}
 	for _, tc := range cases {

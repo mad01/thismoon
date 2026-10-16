@@ -47,6 +47,12 @@ func CompileDoc(d Doc, title string) (Compiled, error) {
 	return compileDoc(d, title, RenderDoc)
 }
 
+// CompileDeckDoc renders d as a deck under title and returns the artifacts
+// a page stores.
+func CompileDeckDoc(d Doc, title string) (Compiled, error) {
+	return compileDoc(d, title, RenderDeck)
+}
+
 func compileDoc(d Doc, title string, render func(Doc, string) (string, error)) (Compiled, error) {
 	out, err := render(d, title)
 	if err != nil {

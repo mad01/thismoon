@@ -198,15 +198,20 @@ func (s *Store) get(ctx context.Context, id string) (record, *unstructured.Unstr
 
 // mutate applies fn to the page under optimistic concurrency: on a
 // resourceVersion conflict the read-modify-write runs again from a fresh
-// read, so two replicas writing the same page never clobber each other.
-func (s *Store) mutate(ctx context.Context, id string, fn func(rec *record)) (store.Page, error) {
+// read, so two replicas writing the same page never clobber each other. An
+// error from fn ends the retry with nothing written.
+func (s *Store) mutate(
+	ctx context.Context, id string, fn func(rec *record) error,
+) (store.Page, error) {
 	var out store.Page
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		rec, u, err := s.get(ctx, id)
 		if err != nil {
 			return err
 		}
-		fn(&rec)
+		if err := fn(&rec); err != nil {
+			return err
+		}
 		if err := setSpec(u, rec, s.maxBytes); err != nil {
 			return err
 		}
@@ -219,13 +224,25 @@ func (s *Store) mutate(ctx context.Context, id string, fn func(rec *record)) (st
 	return out, err
 }
 
-// Update applies patch, bumps the version, and stamps UpdatedAt.
-func (s *Store) Update(ctx context.Context, id string, patch store.Patch) (store.Page, error) {
-	return s.mutate(ctx, id, func(rec *record) {
-		rec.Page.Apply(patch)
-		rec.Page.Version++
-		rec.Page.UpdatedAt = s.now().UTC()
+// Edit runs fn inside mutate's conflict retry, so fn sees the page as the
+// API server holds it and runs again from a fresh read when another replica
+// wrote in between. The page and its sources are one object, so they land
+// in one write with the version bump.
+func (s *Store) Edit(ctx context.Context, id string, fn store.EditFunc) (store.Page, error) {
+	return s.mutate(ctx, id, func(rec *record) error {
+		next, err := store.ApplyEdit(rec.snapshot(), fn, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		*rec = recordOf(next)
+		return nil
 	})
+}
+
+// Update applies patch, bumps the version, and stamps UpdatedAt: an Edit
+// running store.PatchEdit(patch).
+func (s *Store) Update(ctx context.Context, id string, patch store.Patch) (store.Page, error) {
+	return s.Edit(ctx, id, store.PatchEdit(patch))
 }
 
 // Delete removes a page. Returns store.ErrNotFound when it does not exist.
@@ -299,7 +316,10 @@ func (s *Store) ListMeta(ctx context.Context) ([]store.Page, error) {
 // SetShared records where the page was pushed, or clears it with nil. The
 // version is untouched.
 func (s *Store) SetShared(ctx context.Context, id string, info *store.SharedInfo) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.Page.Shared = info })
+	_, err := s.mutate(ctx, id, func(rec *record) error {
+		rec.Page.Shared = info
+		return nil
+	})
 	return err
 }
 

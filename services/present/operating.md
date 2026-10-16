@@ -32,8 +32,10 @@ deck.html and deck.json the same way, and deck-command.json holds the last
 remote command (present_deck, `present deck`) that open deck tabs poll. An
 image block whose src was a file on this machine puts a copy under
 images/<sha256>.<ext> beside pages/, served at /img/<name>; deleting the last
-page that shows it removes the copy. A shared instance keeps pages as Page
-resources, so `kubectl get pages` is its store, and takes image URLs only.
+page that shows it removes the copy. history/<version>.json under a page
+keeps its newest 20 versions. A shared instance keeps pages as Page
+resources, so `kubectl get pages` is its store, takes image URLs only, and
+keeps no history.
 
 ## failure modes
 
@@ -61,6 +63,29 @@ after the command was sent (only later commands apply). Or the deck is on a
 shared instance, which has no remote control; the keys still work there. A slide
 that overflows or scrolls carries too much: the skill's deck rules say a
 heading and 3 to 5 short items or two sentences per slide.
+
+## editing part of a page
+
+present_patch_section changes one section without resending the Doc. It
+works at the section a table-of-contents anchor (next-steps for "Next
+steps") or index:N names, and takes the section as Doc JSON or as markdown
+opening with a heading. Serve takes the same patch at
+PATCH /api/p/<id>/sections/<anchor> and POST /api/p/<id>/sections. Every
+write takes a lock on the page directory, so the MCP, serve, and parallel
+workers never lose each other's edits. A 409 says what to do next. With a
+version, base_version was stale: read and retry. With indices, the anchor is
+shared: use index:N or rename the heading. Alone, the page has no Doc to
+patch, because it was stored as raw HTML.
+
+Progress goes to POST /api/p/<id>/progress, or to `present progress <id>
+<label> <pct>`, which takes the page lock and works with serve up or down;
+hooks use it. It sets the progress block carrying that label, or adds one to
+a Progress section. A 409 with sections means two blocks share the label:
+pass --section. A report the bar already shows writes nothing and keeps the
+version. Every other report is a version, and only 20 are kept, so report on
+change rather than on a timer. A bad edit is undone from
+history: GET /api/p/<id>/history lists versions, present_source with a
+version returns one, and present_update with that source restores it.
 
 ## sharing a page
 
@@ -98,6 +123,8 @@ values mean an old process is still serving: `t-man restart present`.
 1. `present doctor`: store, reachability, skew, shared instance in one pass
 2. Serve unreachable or skewed: `t-man restart present`, then doctor again
 3. Wrong-looking page: `present_list` for its id, `present_source` to check
-   it against the content rules above, then `present_update`
+   it against the content rules above, then `present_update`, or
+   `present_patch_section` when one section is wrong; a page an edit broke
+   comes back from `present_source` with an earlier `version`
 4. Failed share: retry from the Share button or `present share <id>`;
    the MCP sandbox lets present_share reach only an https:// shared URL

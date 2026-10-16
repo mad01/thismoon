@@ -35,6 +35,18 @@ import (
 // ErrEmpty is returned when the markdown yields no blocks at all.
 var ErrEmpty = errors.New("mdimport: markdown has no content to import")
 
+// ErrNoHeading is returned by ConvertSection when the markdown does not open
+// with the level-1 or level-2 heading that names the section.
+var ErrNoHeading = errors.New(
+	"mdimport: a section's markdown must open with a # or ## heading naming it",
+)
+
+// ErrManySections is returned by ConvertSection when the markdown holds a
+// second level-1 or level-2 heading, which would start another section.
+var ErrManySections = errors.New(
+	"mdimport: markdown holds more than one section; send one section per patch",
+)
+
 // Page is a converted markdown file: the page title, the Doc it renders
 // from, and the page graph converted from the first mermaid flowchart, nil
 // when the file has none.
@@ -65,17 +77,47 @@ var alertMarker = regexp.MustCompile(`^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]
 
 // Convert parses src as markdown and maps it onto a Doc. name is the file
 // name, which titles the page when the document has no level-1 heading.
-// NUL bytes become U+FFFD first, CommonMark's rule, which goldmark itself
-// does not apply: the renderer's placeholder tokens are NUL-delimited, and a
-// NUL that reached a stored Doc could forge one.
 func Convert(name string, src []byte) (Page, error) {
-	src = bytes.ReplaceAll(src, []byte{0}, []byte("�"))
-	root := md.Parser().Parse(text.NewReader(src))
-	c := &converter{src: src}
+	c, root := parse(src)
 	for n := root.FirstChild(); n != nil; n = n.NextSibling() {
 		c.top(n)
 	}
 	return c.page(name)
+}
+
+// ConvertSection parses src as the markdown of one section: a leading # or
+// ## heading names it, and everything after maps onto its blocks the way
+// Convert maps a section's body, with ### to ###### as subheadings. A second
+// # or ## heading is refused rather than flattened, since it means the
+// caller meant two sections. A mermaid fence stays a code block: a page's
+// one graph is placed through Doc JSON, never by a section patch.
+func ConvertSection(src []byte) (render.Section, error) {
+	c, root := parse(src)
+	c.noGraph = true
+	first, ok := root.FirstChild().(*ast.Heading)
+	if !ok || first.Level > 2 {
+		return render.Section{}, ErrNoHeading
+	}
+	sec := render.Section{Heading: c.plain(first), Blocks: []render.Block{}}
+	if sec.Heading == "" {
+		return render.Section{}, ErrNoHeading
+	}
+	for n := first.NextSibling(); n != nil; n = n.NextSibling() {
+		if h, ok := n.(*ast.Heading); ok && h.Level <= 2 {
+			return render.Section{}, fmt.Errorf("%w: %q", ErrManySections, c.plain(h))
+		}
+		sec.Blocks = append(sec.Blocks, c.blocks(n)...)
+	}
+	return sec, nil
+}
+
+// parse reads src as markdown and returns a converter over it with the
+// document root. NUL bytes become U+FFFD first, CommonMark's rule, which
+// goldmark itself does not apply: the renderer's placeholder tokens are
+// NUL-delimited, and a NUL that reached a stored Doc could forge one.
+func parse(src []byte) (*converter, ast.Node) {
+	src = bytes.ReplaceAll(src, []byte{0}, []byte("�"))
+	return &converter{src: src}, md.Parser().Parse(text.NewReader(src))
 }
 
 // converter accumulates the Doc while walking the document's top level.
@@ -85,6 +127,7 @@ type converter struct {
 	intro    []render.Block // blocks before the first level-2 heading
 	sections []render.Section
 	graph    *render.GraphInput // the first mermaid flowchart, once seen
+	noGraph  bool               // keep every mermaid fence a code block
 	emphasis int                // nesting depth of the emphasis being written
 }
 
@@ -211,7 +254,7 @@ func (c *converter) blocks(n ast.Node) []render.Block {
 func (c *converter) fenced(n *ast.FencedCodeBlock) []render.Block {
 	lang := string(n.Language(c.src))
 	text := c.lines(n)
-	if c.graph == nil && strings.EqualFold(lang, mermaidLang) {
+	if !c.noGraph && c.graph == nil && strings.EqualFold(lang, mermaidLang) {
 		if g, err := mermaid.Convert(text); err == nil {
 			c.graph = &g
 			return []render.Block{{T: "graph"}}
