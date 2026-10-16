@@ -31,11 +31,12 @@ var (
 
 var steCmd = &cobra.Command{
 	Use:   "ste [file|-]",
-	Short: "Check an agent brief or report against the STE-lite rules",
+	Short: "Check an agent brief or report against the STE-lite rules (experimental)",
 	Long: `Check text (from a file or stdin) against the STE-lite rules: a vale style
 shaped on Simplified Technical English (ASD-STE100) for messages one agent
 writes for another. --profile picks the rule set: procedure for task briefs
-and steps, description for status reports and summaries.
+and steps, description for status reports and summaries. The command is
+experimental: rules, profiles, and output may change.
 
 With --repo, the _Avoid_ lists of every CONTEXT.md under that path become
 STE.Glossary substitutions, reported at suggestion level.
@@ -53,7 +54,7 @@ payload, not the exit code.`,
 
 var steGlossaryCmd = &cobra.Command{
 	Use:   "glossary",
-	Short: "Print the STE.Glossary rule generated from a repo's CONTEXT.md files",
+	Short: "Print the STE.Glossary rule generated from a repo's CONTEXT.md files (experimental)",
 	Args:  steNoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return withExitCode(steExitError, runSTEGlossary(cmd))

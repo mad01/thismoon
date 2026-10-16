@@ -25,6 +25,8 @@ Rule metadata (ID, category, severity, rationale, before/after examples) comes f
 
 ### Simplified Technical English (STE) style
 
+**Experimental.** The STE style, the `ste` command, the `profile` and `repo` parameters of `humanizer_detect`, and the generated glossary rule are new and may change or go away. The default detect path is not affected.
+
 A second style checks messages that one agent writes for another: task briefs, steps, status reports. It follows Simplified Technical English (STE), the controlled language that the AeroSpace and Defence Industries Association of Europe (ASD) publishes as ASD-STE100 for maintenance manuals. Six rules live under `internal/rules/vale/styles/STE/`, and humanizer generates a seventh for each repo:
 
 | Rule | Profiles | Flags |
@@ -94,7 +96,7 @@ Statistical mode (`--statistical`) runs size-gated whole-sample checks (sentence
 
 ### ste
 
-Check an agent brief or report against the STE rules (see the STE style section above).
+Check an agent brief or report against the STE rules (see the STE style section above). The command is experimental.
 
 ```sh
 humanizer ste --profile procedure brief.md
@@ -310,7 +312,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | Tool | Description |
 |---|---|
 | `humanizer_status` | Health check: vale installed, version, cache dir, rule count |
-| `humanizer_detect` | Scan text for AI-writing patterns; `profile` runs the STE rules, `repo` adds the glossary |
+| `humanizer_detect` | Scan text for AI-writing patterns; `profile` runs the STE rules, `repo` adds the glossary (both experimental) |
 | `humanizer_detect_file` | Scan a file on disk (sandbox: prose and Go files under the profile's workspace roots only) |
 | `humanizer_scan_go` | Extract prose from Go source and scan it; findings map back to Go source lines |
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |

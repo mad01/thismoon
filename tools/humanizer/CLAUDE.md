@@ -47,6 +47,8 @@ The pack extracts to `~/.cache/humanizer/vale` on first use. To override the cac
 
 ### Simplified Technical English (STE) style
 
+Experimental: the STE style, the `ste` command, and the `profile` and `repo` options may change or go away. The default detect path is unaffected.
+
 The STE style (`internal/rules/vale/styles/STE/`) checks agent-to-agent messages. It holds six rules: ProcedureSentenceLength (20 words), DescriptionSentenceLength (25 words), ParagraphSentences (six sentences), OneInstruction, IngForm, and AuxiliaryChain. `internal/glossary` generates a seventh, STE.Glossary, for each repo from the `_Avoid_` lines of its CONTEXT.md files, at suggestion level.
 
 - A `# humanizer-profile: procedure, description` header names the profiles that run a rule. `DetectOptions.Profile` expands to a rule-ID filter over those headers. Humanizer rules carry no profile, and an STE rule ID passed without a profile is an error.

@@ -21,7 +21,7 @@ embedded in the binary and extracted to a cache directory on first use. The
 statistical detector, voice profiler, and watermark scrub (`lint`/`fix`) are
 pure Go with no subprocess and keep working when vale is missing.
 
-The Simplified Technical English (STE) check (`humanizer ste`, or
+The experimental Simplified Technical English (STE) check (`humanizer ste`, or
 `humanizer_detect` with a profile) runs the same vale binary against a
 second embedded style, for messages one agent writes for another. With a
 repo path it first reads every CONTEXT.md under the repo and turns the

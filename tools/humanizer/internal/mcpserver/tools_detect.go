@@ -19,8 +19,8 @@ type detectInput struct {
 	Text        string   `json:"text"                   jsonschema:"the text to scan for AI-writing patterns"`
 	Rules       []string `json:"rules,omitempty"        jsonschema:"restrict detection to these rule IDs (e.g. Humanizer.AIVocabulary); empty = all; use humanizer_rules_list to discover IDs"`
 	MinSeverity string   `json:"min_severity,omitempty" jsonschema:"filter findings below this severity: suggestion, warning, or error (default suggestion)"`
-	Profile     string   `json:"profile,omitempty"      jsonschema:"run the STE-lite rules instead of the Humanizer pack: procedure for task briefs and steps, description for status reports and summaries; empty runs the Humanizer pack"`
-	Repo        string   `json:"repo,omitempty"         jsonschema:"absolute repo path whose CONTEXT.md glossaries become STE.Glossary substitutions at suggestion level; needs profile"`
+	Profile     string   `json:"profile,omitempty"      jsonschema:"experimental: run the STE-lite rules instead of the Humanizer pack: procedure for task briefs and steps, description for status reports and summaries; empty runs the Humanizer pack"`
+	Repo        string   `json:"repo,omitempty"         jsonschema:"experimental: absolute repo path whose CONTEXT.md glossaries become STE.Glossary substitutions at suggestion level; needs profile"`
 }
 
 type detectFileInput struct {
@@ -55,7 +55,7 @@ func registerDetectTools(s *mcp.Server) {
 			"Returns findings with rule_id (e.g. Humanizer.AIVocabulary), severity (suggestion|warning|error), line, column, matched text, and message. " +
 			"Use before rewriting AI-heavy text so the rewrite targets are concrete. " +
 			"Filter with rules=[...] to check specific patterns, or min_severity=error for only the highest-confidence tells. " +
-			"To check a message one agent writes for another, pass profile=procedure (task briefs, steps) or profile=description (status reports): that runs the STE-lite rules (STE.* IDs, shaped on Simplified Technical English) instead of the Humanizer pack. " +
+			"To check a message one agent writes for another (experimental), pass profile=procedure (task briefs, steps) or profile=description (status reports): that runs the STE-lite rules (STE.* IDs, shaped on Simplified Technical English) instead of the Humanizer pack. " +
 			"Add repo=<absolute path> to flag the synonyms the repo's CONTEXT.md glossaries ban.",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(false),

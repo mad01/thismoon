@@ -93,7 +93,7 @@ CLI tools under `tools/`, installed to your local bin.
 | Tool | What it does | Interfaces | State |
 |------|--------------|------------|-------|
 | [clipboard](tools/clipboard/README.md) | macOS clipboard bridge over pbcopy/pbpaste | CLI · MCP | proven |
-| [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling | CLI · MCP | proven |
+| [humanizer](tools/humanizer/README.md) | AI-writing detection and voice profiling; its STE check for agent-to-agent text is experimental | CLI · MCP | proven |
 | [opener](tools/opener/README.md) | macOS open bridge: URLs, files, apps, Finder reveal | CLI · MCP | proven |
 | [t-man](tools/t-man/README.md) | Declarative launchd agent/daemon manager | CLI | proven |
 | [toss-bin](tools/toss-bin/README.md) | Safe `rm` replacement: moves files to a dated `~/.Trash` folder | CLI | proven |
