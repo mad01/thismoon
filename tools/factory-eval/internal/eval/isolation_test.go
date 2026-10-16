@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -12,21 +13,39 @@ func TestDenyRulesCoverTheUsersCheckouts(t *testing.T) {
 	iso := Isolation{Home: "/Users/me", Source: "/Users/me/code/src/github.com/mad01/thismoon"}
 	got := iso.DenyRules()
 	want := []string{
-		"Edit(//Users/me/code/**)", "Write(//Users/me/code/**)",
-		"Edit(//Users/me/.worktrees/**)", "Write(//Users/me/.worktrees/**)",
+		"Edit(//Users/me/code/**)",
+		"Edit(//Users/me/.worktrees/**)",
 		"Bash(curl *)",
-		"Bash(git -C /Users/me/code/src/github.com/mad01/thismoon*)",
-		"Bash(git -C ~/code/src/github.com/mad01/thismoon*)",
+		"Bash(git -C /Users/me/code*)",
+		"Bash(git -C ~/code*)",
 		"Bash(git -C /Users/me/.worktrees*)",
 		"Bash(git -C ~/.worktrees*)",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("DenyRules() =\n%q\nwant\n%q", got, want)
 	}
-	elsewhere := Isolation{Home: "/Users/me", Source: "/srv/thismoon"}.DenyRules()
-	for _, rule := range []string{"Edit(//srv/thismoon/**)", "Bash(git -C /srv/thismoon*)"} {
-		if !slices.Contains(elsewhere, rule) {
-			t.Errorf("a source outside ~/code gets no %s rule: %q", rule, elsewhere)
+	for _, src := range []struct{ source, edit, abs, home string }{
+		{"/srv/thismoon", "Edit(//srv/thismoon/**)", "Bash(git -C /srv/thismoon*)", ""},
+		{
+			"/Users/me/eval-source", "Edit(//Users/me/eval-source/**)",
+			"Bash(git -C /Users/me/eval-source*)", "Bash(git -C ~/eval-source*)",
+		},
+	} {
+		rules := Isolation{Home: "/Users/me", Source: src.source}.DenyRules()
+		for _, rule := range []string{src.edit, src.abs, src.home} {
+			if rule != "" && !slices.Contains(rules, rule) {
+				t.Errorf("a source at %s gets no %s rule: %q", src.source, rule, rules)
+			}
+		}
+	}
+}
+
+// TestDenyRulesHoldNoWriteRules guards against dead rules: Claude checks
+// the Write tool against Edit rules and warns about Write path rules.
+func TestDenyRulesHoldNoWriteRules(t *testing.T) {
+	for _, rule := range (Isolation{Home: "/Users/me", Source: "/srv/thismoon"}).DenyRules() {
+		if strings.HasPrefix(rule, "Write(") {
+			t.Errorf("DenyRules() holds %s, which Claude never consults", rule)
 		}
 	}
 }

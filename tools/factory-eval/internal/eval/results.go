@@ -79,9 +79,10 @@ type RunResult struct {
 }
 
 // Errored reports whether a run cannot count toward a decision: the
-// harness or the session failed, the session stopped before it finished
-// its turn (a budget stop included), or the run changed the source
-// checkout.
+// harness, the session or the judge failed (Error is set, which a result
+// with is_error does under subtype success too), the session stopped
+// before it finished its turn (a budget stop included), or the run
+// changed the source checkout.
 func (r RunResult) Errored() bool {
 	return r.Error != "" || r.Stop != claude.SubtypeSuccess || r.Tainted
 }
@@ -262,13 +263,14 @@ func ratioText(name string, r, single, limit float64) string {
 }
 
 // WorstCaseUSD is the most a batch can spend: every arm run at its tier's
-// cap, plus every judge call at the judge's cap. A paid run refuses to
-// start when this exceeds the cases file's batch ceiling.
+// cap, plus every judge call at the judge's cap, counting the retry each
+// case's judge may make. A paid run refuses to start when this exceeds the
+// cases file's batch ceiling.
 func WorstCaseUSD(f *cases.File, arms int, tiers []cases.Tier, runs int) float64 {
 	total := 0.0
 	for _, t := range tiers {
 		total += t.BudgetUSD * float64(arms*runs)
 	}
-	judgeCalls := len(f.Cases) * arms * len(tiers) * runs
+	judgeCalls := len(f.Cases) * arms * len(tiers) * runs * judgeAttempts
 	return total + f.Judge.BudgetUSD*float64(judgeCalls)
 }

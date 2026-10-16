@@ -292,8 +292,10 @@ func TestRunScoresBothArmsAndAppliesThePassRule(t *testing.T) {
 	if _, err := os.Stat(failed.KeptDir); err != nil {
 		t.Errorf("kept dir %s is gone: %v", failed.KeptDir, err)
 	}
-	if !res.Summary.Pass || !strings.HasPrefix(res.Summary.Decision, "PASS at tier mid") {
-		t.Errorf("summary = %+v, want a PASS at the primary tier", res.Summary)
+	// One run per arm against the cases file's three: the PASS is provisional.
+	wantPrefix := "provisional, 1 of the cases file's 3 runs per arm: PASS at tier mid"
+	if !res.Summary.Pass || !strings.HasPrefix(res.Summary.Decision, wantPrefix) {
+		t.Errorf("summary = %+v, want a provisional PASS at the primary tier", res.Summary)
 	}
 	if res.Summary.Decisions[1].Pass {
 		t.Errorf("top decision = %+v, want a failure on the judge score", res.Summary.Decisions[1])
@@ -426,6 +428,15 @@ func TestTheJudgeGetsOneRetry(t *testing.T) {
 			if (cr.JudgeScore != nil) != tt.score || cr.JudgeAttempts != tt.attempts {
 				t.Errorf("case = %+v, want score=%v after %d attempts", cr, tt.score, tt.attempts)
 			}
+			// A judge that failed twice on an existing branch errors the run,
+			// so its 0 never lowers the arm's mean.
+			if run.Errored() == tt.score || run.Pass == !tt.score {
+				t.Errorf("run = errored %v pass %v (error %q), want errored=%v",
+					run.Errored(), run.Pass, run.Error, !tt.score)
+			}
+			if !tt.score && !strings.Contains(run.Error, "the judge could not score belt") {
+				t.Errorf("run error = %q, want it to name the case the judge failed on", run.Error)
+			}
 			if run.JudgeDollars != tt.dollars {
 				t.Errorf(
 					"JudgeDollars = %v, want %v: every attempt is paid for",
@@ -437,5 +448,56 @@ func TestTheJudgeGetsOneRetry(t *testing.T) {
 				t.Errorf("JudgeError = %q, want it to count the attempts", cr.JudgeError)
 			}
 		})
+	}
+}
+
+// apiErrorReport is the result an API error that ends the turn prints:
+// subtype success, is_error true, api_error_status, and no errors array.
+const apiErrorReport = `{"type":"result","subtype":"success","is_error":true,` +
+	`"api_error_status":529,"result":"API Error: 529 overloaded","session_id":"s",` +
+	`"total_cost_usd":1.20,"num_turns":3,"modelUsage":{"m":{"inputTokens":9000,` +
+	`"outputTokens":800,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"costUSD":1.20}},` +
+	`"permission_denials":[]}`
+
+// TestASuccessReportWithIsErrorCountsAsErrored mirrors the probe that found
+// a PASS on a run an API error ended: such a run must count as errored, so
+// its lowered judge score never enters the mean and the tier is incomplete.
+func TestASuccessReportWithIsErrorCountsAsErrored(t *testing.T) {
+	f := loadCases(t)
+	f.Cases, f.Tiers = f.Cases[:1], f.Tiers[:1]
+	src := testRepo(t, f)
+	agent := &scriptedAgent{t: t, cases: f.Cases, src: src, spend: map[string]string{
+		"single/sonnet":  apiErrorReport,
+		"factory/sonnet": spendReport(5, 90_000, 60_000, 850_000),
+	}}
+	res := Run(context.Background(), testConfig(t, f, src, agent, fixedScorer{}))
+	broken := res.Runs[0]
+	if broken.Stop != claude.SubtypeSuccess || !broken.Errored() || broken.Pass || broken.KeptDir == "" {
+		t.Errorf("run = stop %q errored %v pass %v kept %q, want an errored, kept run",
+			broken.Stop, broken.Errored(), broken.Pass, broken.KeptDir)
+	}
+	for _, want := range []string{"is_error", "api_error_status 529", "API Error: 529 overloaded"} {
+		if !strings.Contains(broken.Error, want) {
+			t.Errorf("Error = %q, want it to contain %q", broken.Error, want)
+		}
+	}
+	if !strings.Contains(res.Summary.Decision, "single has 0 of 1 runs without error") {
+		t.Errorf("decision = %q, want an incomplete tier", res.Summary.Decision)
+	}
+
+	broken.Arm, broken.Tier, broken.JudgeScore = ArmSingle, "mid", 2
+	a := stats([]RunResult{ok(ArmSingle, "mid", 7, 60_000, 1000), broken}, ArmSingle, "mid")
+	if a.RunsErrored != 1 || a.MeanJudgeScore != 7 {
+		t.Errorf("stats = %+v, want the errored run left out of the mean of 7", a)
+	}
+}
+
+func TestProvisionalMarksABatchShortOfTheCasesFileRuns(t *testing.T) {
+	if got := provisional("PASS at tier mid", 3, 3); got != "PASS at tier mid" {
+		t.Errorf("provisional(3 of 3) = %q, want the decision unchanged", got)
+	}
+	want := "provisional, 1 of the cases file's 3 runs per arm: PASS at tier mid"
+	if got := provisional("PASS at tier mid", 1, 3); got != want {
+		t.Errorf("provisional(1 of 3) = %q, want %q", got, want)
 	}
 }

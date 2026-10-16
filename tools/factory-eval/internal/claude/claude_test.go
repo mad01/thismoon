@@ -57,6 +57,47 @@ func TestParseReportFallsBackToMainThreadUsage(t *testing.T) {
 	}
 }
 
+func TestErrorTextExplainsEveryFailedReport(t *testing.T) {
+	long := strings.Repeat("x", maxResultText+50)
+	tests := []struct {
+		name, raw, want string
+		finished        bool
+	}{
+		{"clean", successReport, "", true},
+		{
+			"budget stop lists its errors",
+			`{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["a","b"]}`,
+			"a; b", false,
+		},
+		{
+			"API error under subtype success",
+			`{"type":"result","subtype":"success","is_error":true,"api_error_status":529,` +
+				`"result":"API Error: overloaded"}`,
+			"the session ended with is_error set, api_error_status 529: API Error: overloaded", false,
+		},
+		{
+			"no status, long result",
+			`{"type":"result","subtype":"success","is_error":true,"api_error_status":null,` +
+				`"result":"` + long + `"}`,
+			"the session ended with is_error set: " + long[:maxResultText] + "...", false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := ParseReport([]byte(tt.raw))
+			if err != nil {
+				t.Fatalf("ParseReport() error = %v", err)
+			}
+			if got := r.ErrorText(); got != tt.want {
+				t.Errorf("ErrorText() = %q, want %q", got, tt.want)
+			}
+			if r.Finished() != tt.finished {
+				t.Errorf("Finished() = %v, want %v", r.Finished(), tt.finished)
+			}
+		})
+	}
+}
+
 func TestParseReportFindsResultAtStreamEnd(t *testing.T) {
 	raw := "{\"type\":\"system\",\"subtype\":\"init\"}\n" +
 		"{\"type\":\"result\",\"subtype\":\"success\",\"total_cost_usd\":0.5}\n"

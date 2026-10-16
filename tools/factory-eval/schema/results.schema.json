@@ -47,7 +47,7 @@
       "description": "what the host had installed when the run started",
       "properties": {
         "files": {"type": "object", "additionalProperties": {"type": "string"},
-          "description": "sha256:<hex>, missing, or unreadable: <error>, keyed by path under the home dir"},
+          "description": "sha256:<hex>, missing, or unreadable: <error>, keyed by path under the home dir: every file of the factory and loom skill dirs (evals/ aside) and each worker definition; a skill dir that is missing records under its own path with a trailing slash"},
         "belt_version": {"type": "string"}
       }
     },
@@ -72,7 +72,7 @@
           "description": "the judge's raw score, null when the judge did not answer"},
         "judge_reasons": {"type": "array", "items": {"type": "string"}},
         "judge_attempts": {"type": "integer", "minimum": 0, "maximum": 2,
-          "description": "judge calls made, a failed first call gets one retry"},
+          "description": "judge calls made; a failed first call gets one retry, and a failed retry errors the run"},
         "judge_error": {"type": "string"},
         "score": {"type": "integer", "minimum": 0, "maximum": 10,
           "description": "judge_score when every check passed, else 0"}
@@ -100,7 +100,7 @@
         "num_turns": {"type": "integer", "minimum": 0},
         "session_id": {"type": "string"},
         "stop": {"type": "string", "description": "the result subtype, or error when no result came back; anything but success counts as errored"},
-        "error": {"type": "string"},
+        "error": {"type": "string", "description": "why factory-eval, claude or the judge failed, or the errors of a result with is_error set, subtype success included; any error counts as errored"},
         "permission_denials": {"type": "integer", "minimum": 0},
         "agent_report": {"description": "the session's structured final report, as it returned it"},
         "settings_file": {"type": "string", "description": "the harness settings file passed with --settings"},
@@ -159,7 +159,7 @@
         "decisions": {"type": "array", "items": {"$ref": "#/$defs/decision"}},
         "primary_tier": {"type": "string"},
         "pass": {"type": "boolean", "description": "the primary tier's decision"},
-        "decision": {"type": "string"}
+        "decision": {"type": "string", "description": "the primary tier's reason, prefixed provisional when the batch ran fewer runs per arm than the cases file asks for"}
       }
     }
   }

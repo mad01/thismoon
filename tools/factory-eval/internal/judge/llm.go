@@ -86,11 +86,7 @@ func (s Scorer) Score(ctx context.Context, req Request) (Verdict, error) {
 
 func parseVerdict(rep claude.Report) (Verdict, error) {
 	if !rep.Finished() {
-		return Verdict{}, fmt.Errorf(
-			"call ended %s: %s",
-			rep.Subtype,
-			strings.Join(rep.Errors, "; "),
-		)
+		return Verdict{}, fmt.Errorf("call ended %s: %s", rep.Subtype, rep.ErrorText())
 	}
 	if len(rep.StructuredOutput) == 0 {
 		return Verdict{}, errors.New("no structured output")

@@ -31,7 +31,9 @@ type Invocation struct {
 	Stdin string
 }
 
-// Report is the result message one call printed.
+// Report is the result message one call printed. An API error that ends
+// the turn reports subtype success with IsError set, APIErrorStatus beside
+// it, and no Errors; Finished and ErrorText both treat that as a failure.
 type Report struct {
 	Type              string                `json:"type"`
 	Subtype           string                `json:"subtype"`
@@ -46,6 +48,7 @@ type Report struct {
 	PermissionDenials []json.RawMessage     `json:"permission_denials"`
 	StructuredOutput  json.RawMessage       `json:"structured_output"`
 	Errors            []string              `json:"errors"`
+	APIErrorStatus    json.RawMessage       `json:"api_error_status"`
 }
 
 // Usage is the main thread's token usage.
@@ -104,6 +107,32 @@ func (r Report) Tokens() Tokens {
 
 // Finished reports whether the session ended its turn normally.
 func (r Report) Finished() bool { return r.Subtype == SubtypeSuccess && !r.IsError }
+
+// maxResultText caps how much of the result text ErrorText quotes.
+const maxResultText = 300
+
+// ErrorText says why the session failed: its errors when it lists any.
+// Without them, a report with IsError set names its api_error_status and
+// quotes the start of its result text. It is empty for a clean report.
+func (r Report) ErrorText() string {
+	if len(r.Errors) > 0 {
+		return strings.Join(r.Errors, "; ")
+	}
+	if !r.IsError {
+		return ""
+	}
+	msg := "the session ended with is_error set"
+	if s := strings.TrimSpace(string(r.APIErrorStatus)); s != "" && s != "null" {
+		msg += ", api_error_status " + s
+	}
+	if res := []rune(strings.TrimSpace(r.Result)); len(res) > 0 {
+		if len(res) > maxResultText {
+			res = append(res[:maxResultText], []rune("...")...)
+		}
+		msg += ": " + string(res)
+	}
+	return msg
+}
 
 // ParseReport finds the result message in a call's stdout. The JSON output
 // format prints one object; a line-by-line scan from the end also accepts a

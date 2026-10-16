@@ -21,8 +21,8 @@ import (
 // stopError is the Stop value of a run that ended without a result message.
 const stopError = "error"
 
-// judgeAttempts is how many calls a case's judge gets before its score is
-// zeroed: one retry, so a single flaky call does not decide a case.
+// judgeAttempts is how many calls a case's judge gets before the run
+// errors: one retry, so a single flaky call does not decide a case.
 const judgeAttempts = 2
 
 // AgentRunner makes one headless arm session.
@@ -97,7 +97,17 @@ func Run(ctx context.Context, cfg Config) Results {
 	}
 	res.FinishedAt = cfg.Now().UTC()
 	res.Summary = Summarize(res.Runs, cfg.Tiers, primaryTier(cfg), cfg.Runs)
+	res.Summary.Decision = provisional(res.Summary.Decision, cfg.Runs, cfg.Cases.Runs)
 	return res
+}
+
+// provisional marks a decision drawn from fewer runs per arm than the
+// cases file asks for, so a first look is never read as the verdict.
+func provisional(decision string, runs, want int) string {
+	if runs >= want {
+		return decision
+	}
+	return fmt.Sprintf("provisional, %d of the cases file's %d runs per arm: %s", runs, want, decision)
 }
 
 func primaryTier(cfg Config) string {
@@ -228,9 +238,19 @@ func recordReport(rr *RunResult, rep claude.Report) {
 	rr.SessionID = rep.SessionID
 	rr.PermissionDenials = len(rep.PermissionDenials)
 	rr.AgentReport = rep.StructuredOutput
-	if rep.IsError && len(rep.Errors) > 0 {
-		rr.Error = strings.Join(rep.Errors, "; ")
+	if rep.IsError {
+		// A success subtype with is_error set is an API error that ended
+		// the turn: the error makes the run count as errored.
+		rr.Error = rep.ErrorText()
 	}
+}
+
+// addError appends msg to the run's error, which makes the run errored.
+func addError(rr *RunResult, msg string) {
+	if rr.Error != "" {
+		rr.Error += "; "
+	}
+	rr.Error += msg
 }
 
 func lastLines(b []byte, n int) string {
@@ -244,7 +264,10 @@ func lastLines(b []byte, n int) string {
 func scoreCases(ctx context.Context, cfg Config, co *checkout.Checkout, rr *RunResult) {
 	total := 0
 	for _, c := range cfg.Cases.Cases {
-		cr, cost := scoreCase(ctx, cfg, co, c)
+		cr, cost, err := scoreCase(ctx, cfg, co, c)
+		if err != nil {
+			addError(rr, fmt.Sprintf("the judge could not score %s: %v", c.Name(), err))
+		}
 		rr.Cases = append(rr.Cases, cr)
 		rr.JudgeDollars += cost
 		total += cr.Score
@@ -259,33 +282,37 @@ func scoreCases(ctx context.Context, cfg Config, co *checkout.Checkout, rr *RunR
 
 // scoreCase runs the deterministic checks, then the judge whenever the
 // branch exists. The judge's raw score is kept either way; the case's
-// Score counts it only when every check passed.
+// Score counts it only when every check passed. A missing branch scores 0.
+// A judge that could not score an existing branch returns an error, which
+// errors the run: a 0 there would lower the arm's mean for no fault of
+// the arm.
 func scoreCase(ctx context.Context, cfg Config, co *checkout.Checkout,
 	c cases.Case,
-) (CaseResult, float64) {
+) (CaseResult, float64, error) {
 	cr := CaseResult{Component: c.Component, Branch: c.Branch, JudgeReasons: []string{}}
 	cr.Checks = cfg.Checker.Run(ctx, co, c)
 	cr.DeterministicPass = judge.AllPass(cr.Checks)
 	if !co.BranchExists(ctx, c.Branch) {
 		cr.JudgeError = "skipped: branch missing"
-		return cr, 0
+		return cr, 0, nil
 	}
 	req, err := judgeRequest(ctx, co, c)
 	if err != nil {
 		cr.JudgeError = err.Error()
-		return cr, 0
+		return cr, 0, err
 	}
 	v, cost, err := judgeWithRetry(ctx, cfg.Scorer, req, &cr)
 	if err != nil {
-		cr.JudgeError = fmt.Sprintf("after %d attempts: %v", cr.JudgeAttempts, err)
-		return cr, cost
+		err = fmt.Errorf("after %d attempts: %w", cr.JudgeAttempts, err)
+		cr.JudgeError = err.Error()
+		return cr, cost, err
 	}
 	cr.JudgeScore = &v.Score
 	cr.JudgeReasons = nonNil(v.Reasons)
 	if cr.DeterministicPass {
 		cr.Score = v.Score
 	}
-	return cr, cost
+	return cr, cost, nil
 }
 
 // judgeWithRetry calls the judge up to judgeAttempts times, stopping at

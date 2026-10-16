@@ -273,6 +273,8 @@ func TestScoreRejectsVerdictsOutOfContract(t *testing.T) {
 			`"structured_output":{"score":5,"reasons":[]}}`,
 		"budget stop": `{"type":"result","subtype":"error_max_budget_usd","is_error":true,` +
 			`"total_cost_usd":0.5,"errors":["budget"]}`,
+		"API error under subtype success": `{"type":"result","subtype":"success","is_error":true,` +
+			`"api_error_status":529,"result":"API Error: overloaded"}`,
 		"not json": "Error: not logged in",
 	} {
 		s := Scorer{Runner: &fakeRunner{stdout: stdout}, Judge: testJudge}

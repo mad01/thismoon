@@ -15,14 +15,15 @@ reflog or remote, and its local config holds the factory-eval git
 identity. One headless `claude -p` session starts there with a dollar cap,
 the dontAsk permission mode with prompts turned into denials, only the
 humanizer MCP server, and a settings file of deny rules. Those rules keep
-the file tools and `git -C` out of ~/code, ~/.worktrees and the source
-repo. That is not a sandbox. {{.Bin}} fingerprints the source checkout
+Edit, Write and `git -C` out of ~/code, ~/.worktrees and the source repo;
+reads stay allowed. That is not a sandbox. {{.Bin}} fingerprints the source checkout
 before and after the session, and a change taints the run.
 
 Runs go one at a time. After each session {{.Bin}} checks every case
 branch: branch present, only allowed paths changed, outline order,
 humanizer findings, `make build test`. Then one Haiku judge call scores
-each case's prose, with one retry. A passing run's clone is deleted. A
+each case's prose, with one retry; a second failure errors the run. A
+passing run's clone is deleted. A
 failing run's clone is kept, and its path goes into the results as
 kept_dir.
 
@@ -42,8 +43,9 @@ three factory-worker definitions in ~/.claude/agents, or a SubagentStart
 hook that runs belt is missing. The message lists each one. Run
 `--arms single` for a baseline only, or install the missing pieces first.
 
-"worst case exceeds the batch ceiling": every arm run at its tier cap plus
-every judge call at its cap is above batch_ceiling_usd. Pass fewer
+"worst case exceeds the batch ceiling": the worst case is above
+batch_ceiling_usd. It counts every arm run at its tier cap, plus two judge
+calls per case at the judge cap: the call and its retry. Pass fewer
 `--runs` or `--tiers`. Never raise the ceiling without the user.
 
 stop=error_max_budget_usd in a run: the session hit its dollar cap before it
@@ -52,11 +54,25 @@ That is a result, not a bug in {{.Bin}}.
 
 "tainted, the source checkout changed" in a run: HEAD, the status, the
 worktrees or a ref of the source checkout changed during the session. The
-run counts as errored. Read the listed change. If another session made it,
-rerun the batch with the checkout left alone.
+run counts as errored. Read the listed change. A commit in any worktree of
+the source repo, loom worktrees included, taints a run, and so does a
+fetch. Rerun against a dedicated clone no session works in:
+`git clone <source> ~/factory-eval-source`, then
+`{{.Bin}} run --repo ~/factory-eval-source`.
 
 "FAIL at tier ...: incomplete": an arm has fewer runs without error than
 --runs asked for. The runs array says which run errored and why.
+
+"the session ended with is_error set" in a run: the result said success
+but carried is_error, the shape of an API error that ended the turn. The
+run counts as errored. Rerun once the API recovers.
+
+"the judge could not score <case>" in a run: the judge failed twice on a
+branch that exists. The run counts as errored rather than scoring 0. The
+case's judge_error holds the reason.
+
+"provisional, 1 of the cases file's 3 runs per arm": the batch ran fewer
+runs than cases.yaml asks for. Treat the decision as a first look.
 
 "temp dir ... is under a path the arms may not edit": --temp-dir points
 into ~/code, ~/.worktrees or the source repo. Pick a dir outside them.

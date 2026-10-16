@@ -198,8 +198,9 @@ func TestSummarizeReportsThePrimaryTier(t *testing.T) {
 func TestWorstCaseCountsEveryArmRunAndJudgeCall(t *testing.T) {
 	f := &cases.File{Judge: cases.Judge{BudgetUSD: 0.25}, Cases: make([]cases.Case, 4)}
 	tiers := []cases.Tier{{BudgetUSD: 10}, {BudgetUSD: 25}}
-	// 3 runs x 2 arms x ($10 + $25) = $210, plus 4 cases x 2 arms x 2 tiers x 3 runs x $0.25 = $12.
-	if got := WorstCaseUSD(f, 2, tiers, 3); got != 222 {
-		t.Errorf("WorstCaseUSD() = %v, want 222", got)
+	// 3 runs x 2 arms x ($10 + $25) = $210, plus 4 cases x 2 arms x 2 tiers x 3 runs
+	// x 2 judge attempts x $0.25 = $24.
+	if got := WorstCaseUSD(f, 2, tiers, 3); got != 234 {
+		t.Errorf("WorstCaseUSD() = %v, want 234", got)
 	}
 }

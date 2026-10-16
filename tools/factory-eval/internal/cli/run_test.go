@@ -125,7 +125,7 @@ func TestPrintPlanShowsWhatAPaidRunWouldRefuse(t *testing.T) {
 		"dry run, no model call", "NOT SIGNED OFF", "sign_off.by is blank",
 		"sign-off digest (sign_off.digest must hold it): " + b.file.Digest(),
 		"FAIL belt SubagentStart hook",
-		"the factory arm cannot run", "a paid run refuses here", "worst case: $222.00",
+		"the factory arm cannot run", "a paid run refuses here", "worst case: $234.00",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("plan lacks %q:\n%s", want, out.String())

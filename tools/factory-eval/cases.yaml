@@ -3,14 +3,14 @@
 # `factory-eval run --dry-run`, then set sign_off.by to a name, sign_off.date
 # to the date as YYYY-MM-DD, and sign_off.digest to the digest the dry run
 # prints. The digest is the sha256 of this file with each sign_off line
-# rewritten to its key and an empty value (`  by: ""`), so filling in the
-# three values does not change it, and any other edit does: a paid run
+# rewritten to its key and an empty value (`  by: ""`). Filling in the three
+# values leaves it unchanged, and any other edit changes it. A paid run
 # refuses when the digest no longer matches.
 #
 # Provenance labels:
 #   measured   computed from the repo at the pinned commit (`factory-eval measure`)
 #   spec       from MAD-402, the factory spec page, or the shared docs outline (MAD-217)
-#   judgement  a choice made for this harness, open to the user's veto
+#   judgement  a choice made for this eval, open to the user's veto
 version: 1
 repo: ~/code/src/github.com/mad01/thismoon
 commit: 45518e8b8461d491dc2a1aafaf1a8aa56702858a
@@ -27,14 +27,14 @@ tiers:
     model: sonnet
     effort: medium
     worker: factory-worker-medium
-    budget_usd: 10          # judgement: about 2x the per-run estimate of $5 (sign-off digest)
+    budget_usd: 10          # judgement: about 2x the per-run estimate of $5 (arithmetic on the sign-off page)
     primary: true
     provenance: spec        # routing.md: a docs sweep is a known-domain unit, mid tier, medium effort
   - name: top
     model: opus
     effort: high
     worker: factory-worker-high
-    budget_usd: 25          # judgement: about 2x the per-run estimate of $10 to $12 (sign-off digest)
+    budget_usd: 25          # judgement: about 2x the per-run estimate of $10 to $12 (arithmetic on the sign-off page)
     provenance: spec        # MAD-402: the same unit at a second tier seeds the routing table
 
 outline:
@@ -79,7 +79,7 @@ humanizer:
 
 judge:
   model: haiku              # judgement: claude -p on Haiku 5.5, one credential for arms and judge
-  budget_usd: 0.25
+  budget_usd: 0.25          # judgement: per call; a case gets up to two calls, the call and one retry
   provenance: judgement
   rubric: |
     Score the after version of both files from 0 to 10. Start at 10 and take points off:

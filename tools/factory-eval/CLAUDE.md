@@ -34,7 +34,8 @@ tools/factory-eval/
 `run` resolves a batch from cases.yaml and the flags, then prints the plan,
 the sign-off digest and every prerequisite. It refuses a paid run when the
 sign-off is missing or does not match `cases.File.Digest`, a prerequisite
-is missing, or the worst case is above `batch_ceiling_usd`. `eval.Run` then
+is missing, or the worst case is above `batch_ceiling_usd`. The worst case
+counts every arm run at its cap and `judgeAttempts` judge calls per case. `eval.Run` then
 loops run index, tier, arm. Each run records `prereq.Snapshot`, clones the
 source with `checkout.Create`, and writes its settings file from
 `eval.Isolation`. It fingerprints the source checkout, invokes the arm
@@ -42,7 +43,8 @@ through the `AgentRunner` seam, and fingerprints again; a change taints
 the run. It scores every case with the `CaseChecker` and `CaseScorer`
 seams, and keeps the clone when the run fails. `Summarize` takes the
 per-arm stats over the runs that did not error, and `Decide` applies the
-pass rule per tier. The primary tier's decision is the headline.
+pass rule per tier. The primary tier's decision is the headline, marked
+provisional when `--runs` is below the cases file's `runs`.
 
 `--dry-run` swaps `dryrun.Agent` and `dryrun.Judge` in for `claude.Exec`.
 Everything else is the paid path.
@@ -51,6 +53,8 @@ Everything else is the paid path.
 
 - The judge always runs when the branch exists, but a case scores 0 unless
   every deterministic check passed. A broken branch never wins on prose.
+  A judge that fails both attempts on an existing branch errors the run
+  instead of scoring 0, so it never lowers the arm's mean.
 - Tokens are the sum over `modelUsage`, cache reads included, so subagent
   work counts. The pass rule compares `tokens_total`.
 - Wall clock is factory-eval's own measure around the claude process, not
@@ -60,11 +64,16 @@ Everything else is the paid path.
   criterion means, so it needs a new sign-off.
 - `Decide` decides a tier only when it is complete: every expected run of
   both arms recorded, none errored. `RunResult.Errored` covers an error, a
-  stop other than success (a budget stop too) and a taint. On a complete
+  stop other than success (a budget stop too) and a taint. A result with
+  `is_error` set sets the error even under subtype success, the shape an
+  API error that ends the turn takes; `claude.Report.ErrorText` words it. On a complete
   tier it still fails without a single-arm baseline (mean judge above 0)
   or without one factory run that passed all five checks.
 - humanizer and build_test fail as skipped when allowed_paths fails, so a
   Makefile the arm edited never runs.
+- `prereq.Snapshot` hashes every file in the factory and loom skill dirs,
+  not only `SKILL.md`, since the worker brief and routing table reach the
+  workers. It skips `evals/`, where an eval run writes its results.
 - `cases.ContentDigest` blanks each `sign_off` line to its key and `""`
   before hashing; README documents the rule for people. Changing the rule
   voids every existing sign-off.
@@ -112,9 +121,16 @@ schema. Review the diff before committing it.
   `internal/eval/isolation.go`. That prevents only the paths those rules
   name. It is not a sandbox: a Bash command can still reach a checkout
   through `cd` or `$HOME`, and only the fingerprint detects that.
+- **Edit rules cover the Write tool.** Claude Code checks file writes
+  against Edit rules and never consults a Write path rule, so the settings
+  file holds Edit rules only, and a test keeps Write rules out. Its `git -C`
+  rules deny the same dirs: `~/code`, `~/.worktrees`, and the source when it
+  lives outside both.
 - **The fingerprint taints a run on any change to the source checkout**,
-  whoever made it. A paid batch needs a source checkout no other session
-  works in.
+  whoever made it. All worktrees share the ref store, so a commit in any
+  worktree of the source repo (loom ones included) taints a run, and so
+  does a fetch. Paid batches pass `--repo` pointing at a dedicated clone
+  no session works in; README's Usage shows the command.
 - **The clone holds nothing past the pin.** Branches, tags, reflogs and the
   origin remote go right after cloning and git prunes what that leaves
   unreachable. No newer main drifts in, and no session can push back.

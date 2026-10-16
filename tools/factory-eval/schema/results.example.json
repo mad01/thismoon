@@ -26,12 +26,10 @@
   ],
   "settings_deny": [
     "Edit(//Users/example/code/**)",
-    "Write(//Users/example/code/**)",
     "Edit(//Users/example/.worktrees/**)",
-    "Write(//Users/example/.worktrees/**)",
     "Bash(curl *)",
-    "Bash(git -C /Users/example/code/src/github.com/mad01/thismoon*)",
-    "Bash(git -C ~/code/src/github.com/mad01/thismoon*)",
+    "Bash(git -C /Users/example/code*)",
+    "Bash(git -C ~/code*)",
     "Bash(git -C /Users/example/.worktrees*)",
     "Bash(git -C ~/.worktrees*)"
   ],
@@ -573,6 +571,6 @@
     ],
     "primary_tier": "mid",
     "pass": true,
-    "decision": "PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=); wall 0.38x (needs \u003c=0.5x); tokens 1.29x (needs \u003c=1.5x)"
+    "decision": "provisional, 1 of the cases file's 3 runs per arm: PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=); wall 0.38x (needs \u003c=0.5x); tokens 1.29x (needs \u003c=1.5x)"
   }
 }

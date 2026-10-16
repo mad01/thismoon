@@ -23,18 +23,24 @@ type Isolation struct {
 
 // DenyRules are the rules the settings file holds. Claude loads the file
 // beside the user's own settings, and a deny rule beats every allow rule,
-// so the user's allow list cannot reopen these paths. Reads stay allowed.
+// so the user's allow list cannot reopen these paths. The rules cover
+// ~/code, ~/.worktrees and the source checkout when it lives outside both.
+// An Edit rule covers the Write tool too: Claude checks file writes
+// against Edit rules and never consults a Write path rule. git -C is
+// denied into the same dirs, in absolute and ~/ form, since the allow
+// list lets an arm branch and commit with -C. Reads stay allowed.
 func (iso Isolation) DenyRules() []string {
-	var rules []string
-	for _, dir := range iso.editDirs() {
-		rules = append(rules, "Edit(/"+dir+"/**)", "Write(/"+dir+"/**)")
+	dirs := iso.editDirs()
+	rules := make([]string, 0, 1+3*len(dirs))
+	for _, dir := range dirs {
+		rules = append(rules, "Edit(/"+dir+"/**)")
 	}
 	rules = append(rules, "Bash(curl *)")
-	for _, dir := range []string{iso.Source, iso.worktrees()} {
+	for _, dir := range dirs {
 		rules = append(rules, "Bash(git -C "+dir+"*)")
 		if within(dir, iso.Home) {
 			rel, _ := filepath.Rel(iso.Home, dir)
-			rules = append(rules, "Bash(git -C ~/"+rel+"*)")
+			rules = append(rules, "Bash(git -C ~/"+filepath.ToSlash(rel)+"*)")
 		}
 	}
 	return rules

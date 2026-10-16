@@ -94,20 +94,41 @@ func TestOlderComparesFieldByField(t *testing.T) {
 
 func TestSnapshotRecordsWhatIsInstalled(t *testing.T) {
 	home := t.TempDir()
-	writeFile(t, filepath.Join(home, ".claude", "skills", "factory", "SKILL.md"), "factory v1\n")
+	// The factory skill is a symlink to its source dir, the way the recipe
+	// installs it; the loom skill is not installed.
+	src := filepath.Join(home, "src", "factory")
+	writeFile(t, filepath.Join(src, "SKILL.md"), "factory v1\n")
+	writeFile(t, filepath.Join(src, "worker-brief.md"), "brief v1\n")
+	writeFile(t, filepath.Join(src, "evals", "brief", "results.json"), "{}\n")
+	writeFile(t, filepath.Join(src, ".DS_Store"), "finder\n")
+	if err := os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(src, filepath.Join(home, ".claude", "skills", "factory")); err != nil {
+		t.Fatal(err)
+	}
 	env := Env{Home: home, BeltVersion: func(context.Context) (string, error) {
 		return "d430918\n", nil
 	}}
 	in := Snapshot(context.Background(), env)
-	if len(in.Files) != 5 || in.BeltVersion != "d430918" {
-		t.Fatalf("Snapshot() = %+v, want five files and the trimmed belt version", in)
+	if len(in.Files) != 6 || in.BeltVersion != "d430918" {
+		t.Fatalf("Snapshot() = %+v, want two skill files, the missing loom dir, "+
+			"three worker definitions and the trimmed belt version", in)
 	}
-	got := in.Files["~/.claude/skills/factory/SKILL.md"]
-	if !strings.HasPrefix(got, "sha256:") || len(got) != len("sha256:")+64 {
-		t.Errorf("factory skill = %q, want a sha256", got)
+	for _, key := range []string{
+		"~/.claude/skills/factory/SKILL.md", "~/.claude/skills/factory/worker-brief.md",
+	} {
+		if got := in.Files[key]; !strings.HasPrefix(got, "sha256:") || len(got) != len("sha256:")+64 {
+			t.Errorf("%s = %q, want a sha256", key, got)
+		}
 	}
-	if got := in.Files["~/.claude/agents/factory-worker-high.md"]; got != "missing" {
-		t.Errorf("absent worker definition = %q, want missing", got)
+	for key, want := range map[string]string{
+		"~/.claude/skills/loom/":                  "missing",
+		"~/.claude/agents/factory-worker-high.md": "missing",
+	} {
+		if got := in.Files[key]; got != want {
+			t.Errorf("%s = %q, want %s", key, got, want)
+		}
 	}
 	env.BeltVersion = func(context.Context) (string, error) { return "", errors.New("not on PATH") }
 	if in := Snapshot(context.Background(), env); in.BeltVersion != "unavailable: not on PATH" {

@@ -30,8 +30,8 @@ permission profile:
   `git push`, `git remote`, `git config`, `gh`, `ralph`, `make install` and
   `go install`. Only the factory arm may use `Agent` and `SendMessage`.
 - `--settings` with a settings file written into the run's temp dir. Its
-  deny rules keep the file tools out of the user's checkouts, as the next
-  section lists.
+  deny rules keep Edit, Write and `git -C` out of the user's checkouts, as
+  the next section lists.
 
 ### What is enforced and what is only detected
 
@@ -43,21 +43,28 @@ because a deny rule beats every allow rule in any settings file:
 - `--strict-mcp-config`: the humanizer MCP server is the only one.
 - The deny list above blocks push, remote, git config, `gh`, `ralph`,
   installs and the web tools.
-- The run's settings file blocks Edit and Write under `~/code` and
-  `~/.worktrees`, and under the source repo when it lives elsewhere. It
-  also blocks `curl`, and `git -C` aimed at the source repo or at
-  `~/.worktrees` in absolute or `~/` form. Reads stay allowed.
+- The run's settings file holds Edit deny rules for `~/code` and
+  `~/.worktrees`, and for the source repo when it lives elsewhere. Claude
+  Code checks the Write tool against Edit rules, so they block Write too;
+  it never consults a Write path rule, and the file holds none.
+- The same file blocks `curl`, and `git -C` aimed into any of those
+  directories in absolute or `~/` form. Reads stay allowed.
 
 A Bash command can still reach a checkout another way: `cd` first, `$HOME`
 in the path, a symlink, or a command the user's settings allow. That is
 detected, not prevented. Before and after each arm session, factory-eval
 fingerprints the source checkout: HEAD, a hash of `git status --porcelain`,
 the worktree count and every ref. Any change marks the run tainted, lists
-the change under `taint`, and counts the run as errored. The fingerprint
-cannot tell the arm's change from another session's, so run a paid batch
-while no other session works in the source checkout. Files outside the
+the change under `taint`, and counts the run as errored. Files outside the
 source checkout, such as other repos under `~/code` reached through Bash,
 are not watched.
+
+The fingerprint cannot tell the arm's change from another session's. All
+worktrees of a repo share one ref store, so a commit in any worktree of
+the source repo taints a run, loom worktrees included. A fetch taints it
+too, since it moves the remote-tracking refs. For a paid batch, clone a
+dedicated source that no session works in and point `--repo` at it, as
+Usage shows.
 
 ### Scoring and the pass rule
 
@@ -75,15 +82,23 @@ fail as skipped instead of running, so a Makefile the arm wrote never runs.
 
 Then one judge call scores the prose from 0 to 10 against a fixed rubric,
 a do-not-fail list and the case's glossary files as they read at the pin.
-A failed judge call gets one retry before the case's judge score counts as
-missing. A case's score is the judge score when every check passed, else 0.
-A run passes when it did not error and every case passed its checks.
+A failed judge call gets one retry. A case's score is the judge score when
+every check passed, else 0, and a case whose branch is missing scores 0. A
+run passes when it did not error and every case passed its checks.
 
-A run errors when factory-eval or claude failed, when the session stopped
-before it finished (a budget stop too), or when the run is tainted. A tier
-is decided only when it is complete: each arm recorded every expected run
-and none errored. Errored runs never count toward the means. On a complete
-tier, the factory passes only when all of these hold:
+A run errors in any of these cases:
+
+- factory-eval or claude failed.
+- The session stopped before it finished, a budget stop too.
+- The result message carries `is_error`. An API error that ends the turn
+  reports subtype `success` with `is_error` set.
+- The judge failed twice on a case whose branch exists.
+- The run is tainted.
+
+A tier is decided only when it is complete: each arm recorded every
+expected run and none errored. Errored runs never count toward the means,
+so a judge outage or an API error never lowers an arm's score. On a
+complete tier, the factory passes only when all of these hold:
 
 - The single arm's mean judge score is above 0, so there is a baseline.
 - At least one factory run passed all five checks on every case.
@@ -153,17 +168,28 @@ same digest by hand:
 sed -E 's/^(  (by|date|digest)):.*/\1: ""/' cases.yaml | shasum -a 256
 ```
 
+Paid runs clone a dedicated source, so no other session can taint them.
+Make it once, outside `~/code`, and keep every session out of it. Fetch
+in it only between batches, when the pinned commit moves past it:
+
+```bash
+git clone ~/code/src/github.com/mad01/thismoon ~/factory-eval-source
+```
+
 The first paid run, once the user has signed off `cases.yaml`. Start with
 the primary tier alone, one run per arm:
 
 ```bash
-go run ./cmd/factory-eval run --tiers mid --runs 1
+go run ./cmd/factory-eval run --repo ~/factory-eval-source --tiers mid --runs 1
 ```
+
+A batch with fewer runs per arm than the cases file's `runs` prints its
+decision as provisional. Read it as a first look, not as the verdict.
 
 The full matrix, three runs per arm at both tiers:
 
 ```bash
-go run ./cmd/factory-eval run
+go run ./cmd/factory-eval run --repo ~/factory-eval-source
 ```
 
 `--runs` must be at least 1. `--arms single` runs the baseline alone, for
@@ -180,10 +206,12 @@ system temp dir.
 | One judge call (Haiku) | $0.25 | `judge.budget_usd` |
 | One batch, worst case | $250 | `batch_ceiling_usd`; a batch whose worst case is higher refuses to start |
 
-The full matrix has a worst case of $222: 12 arm runs at their caps plus 48
-judge calls at theirs. The expected spend is about half of that; the
-sign-off digest shows the arithmetic. The dollar figures are claude's own
-client-side estimates (`total_cost_usd`), not a bill.
+The full matrix has a worst case of $234: 12 arm runs at their caps plus
+up to 96 judge calls at theirs. That is 48 case scorings, each with one
+retry. The expected spend is about half of that; the pilot's sign-off page,
+which is not part of this repo, shows the arithmetic. The dollar figures are
+claude's own client-side estimates
+(`total_cost_usd`), not a bill.
 
 ### What this machine's claude confirmed
 
@@ -195,7 +223,9 @@ and the dry run uses stand-ins instead. `--output-format json` prints one result
 message, the Agent SDK's `SDKResultMessage`:
 
 - `type` is `result`, and `subtype` is `success` or an error such as
-  `error_max_budget_usd`, with `is_error` and `errors` beside it.
+  `error_max_budget_usd`, with `is_error` and `errors` beside it. A
+  `success` result can still carry `is_error` true, with
+  `api_error_status` and no `errors`: an API error ended the turn.
 - `total_cost_usd`, `duration_ms`, `num_turns` and `session_id`.
 - `usage` (main thread: `input_tokens`, `output_tokens`,
   `cache_creation_input_tokens`, `cache_read_input_tokens`) and
@@ -254,8 +284,9 @@ checks with their details. A failed run names its kept clone in `kept_dir`.
 Open it to see what the session left on each branch.
 
 Each run also records what could make two runs differ. `installed` holds
-the sha256 of the factory and loom skills and of the three worker
-definitions, and the belt version, as they were when the run started. A
+the sha256 of every file in the factory and loom skill directories, their
+`evals/` suites aside, and of the three worker definitions. It also holds
+the belt version. Each value is as it was when the run started. A
 `ralph up` in the middle of a batch shows there. `tainted` and `taint` say
 whether the source checkout changed during the run. `settings_file` is the
 run's settings file, and `settings_deny` at the top lists its rules.
