@@ -292,11 +292,12 @@ func TestEventsFollowTheCatalog(t *testing.T) {
 }
 
 // factoryTypes is ledger.agent_types as the factory worker definitions
-// declare it, plus an entry whose effort did not resolve.
+// declare it, keyed by glob because the factory names its workers
+// factory-worker-<tier>-<slug>, plus an entry whose effort did not resolve.
 var factoryTypes = config.ResolveAgentTypes(map[string]any{
-	"factory-worker-low":  map[string]any{"model": "sonnet", "effort": "low"},
-	"factory-worker-high": map[string]any{"model": "opus", "effort": "high"},
-	"half-declared":       map[string]any{"model": "haiku", "effort": "extreme"},
+	"factory-worker-low*":  map[string]any{"model": "sonnet", "effort": "low"},
+	"factory-worker-high*": map[string]any{"model": "opus", "effort": "high"},
+	"half-declared":        map[string]any{"model": "haiku", "effort": "extreme"},
 })
 
 // TestTagsCarryDeclaredModelAndEffort: a subagent-start entry whose agent
@@ -313,6 +314,14 @@ func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
 	}{
 		{"matching type", EventSubagentStart, "factory-worker-high", "opus", "high"},
 		{"another matching type", EventSubagentStart, "factory-worker-low", "sonnet", "low"},
+		{
+			"a named worker matches its tier's glob", EventSubagentStart,
+			"factory-worker-high-csl-prune", "opus", "high",
+		},
+		{
+			"a plain key does not match a longer name", EventSubagentStart,
+			"half-declared-x", "", "",
+		},
 		{"unknown type", EventSubagentStart, "Explore", "", ""},
 		{"absent type", EventSubagentStart, "", "", ""},
 		{"a dropped effort leaves the model", EventSubagentStart, "half-declared", "haiku", ""},
@@ -335,16 +344,16 @@ func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
 }
 
 // TestBuildTagsAFactoryWorker is the acceptance case end to end through
-// Build: a factory-worker-high start carries the model and effort the map
-// declares beside its usual tags.
+// Build: a factory worker named after its unit carries the model and effort
+// its tier's glob declares beside its usual tags.
 func TestBuildTagsAFactoryWorker(t *testing.T) {
-	in := Input{SessionID: "s1", AgentID: "a1", AgentType: "factory-worker-high"}
+	in := Input{SessionID: "s1", AgentID: "a1", AgentType: "factory-worker-high-csl-prune"}
 	got := Build(EventSubagentStart, in, linked, factoryTypes)
 	want := map[string]string{
 		"event":      "subagent-start",
 		"session_id": "s1",
 		"agent_id":   "a1",
-		"agent_type": "factory-worker-high",
+		"agent_type": "factory-worker-high-csl-prune",
 		"model":      "opus",
 		"effort":     "high",
 		"repo":       "github.com/mad01/thismoon",

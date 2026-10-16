@@ -58,8 +58,8 @@ Validation covers the values that parse and then do nothing:
 - a `custom_guards.<name>.event` outside bash/write;
 - a `custom_hints.<name>` entry with an event other than session-start or
   subagent-start, an empty command, or a built-in hint's name;
-- an `agent_types` list on a custom hint that is empty or not on
-  subagent-start;
+- an `agent_types` list on a custom hint that is empty, not on
+  subagent-start, or holds an entry with a `*` before its end;
 - `mode:` values other than hard/soft, or set on a guard that ignores them.
 
 A names file listed under internal_names.include that is missing or fails
@@ -128,9 +128,12 @@ The ledger and the watcher both need the events service. When it is down,
 ledger entries are dropped without a trace and the watcher wakes nobody;
 the doctor events line says which. Ledger entries live under the
 `belt-ledger` source, not `belt`. A subagent-start entry without `model`
-and `effort` tags means its agent type has no `ledger.agent_types` entry,
-the entry was dropped, or the belt predates the key. The doctor ledger
-block lists the entries in effect and the warnings name the drops. A
+and `effort` tags means no `ledger.agent_types` key matches its agent type,
+the entry was dropped, or the belt predates the key. A named spawn reports
+its name as its agent type, so keys for factory workers end in `*` and the
+factory names workers `factory-worker-<tier>-<slug>`; a plain key never
+matches a named worker. The doctor ledger block lists the keys in effect
+and the warnings name the drops. A
 watcher that never wakes the session
 usually means the item's `to` tag does not match the session id exactly, or
 the Stop entry lacks `asyncRewake`. Each item is delivered once: the cursor

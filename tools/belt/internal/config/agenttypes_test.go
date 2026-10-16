@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -101,6 +102,97 @@ func TestLedgerAgentTypes(t *testing.T) {
 			content: "ledger:\n  agent_types:\n",
 			want:    map[string]AgentTypeTags{},
 		},
+		{
+			name: "a duplicate agent type keeps its first entry and the rest of the map",
+			content: "ledger:\n  agent_types:\n" +
+				"    factory-worker-low: {model: sonnet, effort: low}\n" +
+				"    factory-worker-high: {model: opus, effort: high}\n" +
+				"    factory-worker-low: {model: haiku, effort: max}\n",
+			want: map[string]AgentTypeTags{
+				"factory-worker-low":  {Model: "sonnet", Effort: "low"},
+				"factory-worker-high": {Model: "opus", Effort: "high"},
+			},
+			warn: "ledger.agent_types.factory-worker-low is defined twice (lines 3 and 5): " +
+				"later one dropped",
+		},
+		{
+			name: "a duplicate field keeps its first value and the rest of the entry",
+			content: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high:\n" +
+				"      model: opus\n" +
+				"      model: sonnet\n" +
+				"      effort: high\n" +
+				"    factory-worker-low: {model: sonnet, effort: low}\n",
+			want: map[string]AgentTypeTags{
+				"factory-worker-high": {Model: "opus", Effort: "high"},
+				"factory-worker-low":  {Model: "sonnet", Effort: "low"},
+			},
+			warn: "ledger.agent_types.factory-worker-high.model is defined twice " +
+				"(lines 4 and 5): later one dropped",
+		},
+		{
+			name: "an entry YAML cannot read drops only itself",
+			content: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high: {model: !!int opus, effort: high}\n" +
+				"    factory-worker-low: {model: sonnet, effort: low}\n",
+			want: map[string]AgentTypeTags{"factory-worker-low": {Model: "sonnet", Effort: "low"}},
+			warn: "ledger.agent_types.factory-worker-high could not be read (yaml: ",
+		},
+		{
+			name: "a blank agent type is quoted so the blanks read apart",
+			content: "ledger:\n  agent_types:\n" +
+				"    '  ': {model: opus}\n" +
+				"    factory-worker-low: {model: sonnet}\n",
+			want: map[string]AgentTypeTags{"factory-worker-low": {Model: "sonnet"}},
+			warn: `ledger.agent_types has an entry with a blank agent type ("  "): dropped`,
+		},
+		{
+			name: "a merge key inside an entry works as YAML defines it",
+			content: "ledger:\n  agent_types:\n" +
+				"    factory-worker-low: &sonnet {model: sonnet, effort: low}\n" +
+				"    factory-worker-medium: {<<: *sonnet, effort: medium}\n",
+			want: map[string]AgentTypeTags{
+				"factory-worker-low":    {Model: "sonnet", Effort: "low"},
+				"factory-worker-medium": {Model: "sonnet", Effort: "medium"},
+			},
+		},
+		{
+			name: "a merge key in place of an agent type is named and dropped",
+			content: "x-workers: &workers\n" +
+				"  factory-worker-low: {model: sonnet}\n" +
+				"ledger:\n  agent_types:\n" +
+				"    <<: *workers\n" +
+				"    factory-worker-high: {model: opus}\n",
+			want: map[string]AgentTypeTags{"factory-worker-high": {Model: "opus"}},
+			warn: "ledger.agent_types has a merge key (<<) at line 5",
+		},
+		{
+			name: "glob keys load as written",
+			content: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high*: {model: opus, effort: high}\n" +
+				"    '*': {model: sonnet}\n",
+			want: map[string]AgentTypeTags{
+				"factory-worker-high*": {Model: "opus", Effort: "high"},
+				"*":                    {Model: "sonnet"},
+			},
+		},
+		{
+			name: "a * before the end warns and drops that entry",
+			content: "ledger:\n  agent_types:\n" +
+				"    factory-*-high: {model: opus, effort: high}\n" +
+				"    factory-worker-low*: {model: sonnet, effort: low}\n",
+			want: map[string]AgentTypeTags{"factory-worker-low*": {Model: "sonnet", Effort: "low"}},
+			warn: "ledger.agent_types.factory-*-high has a * before its end " +
+				"(only a trailing * is a glob): dropped",
+		},
+		{
+			name: "a key that is not a name is dropped",
+			content: "ledger:\n  agent_types:\n" +
+				"    [a, b]: {model: opus}\n" +
+				"    factory-worker-low: {model: sonnet}\n",
+			want: map[string]AgentTypeTags{"factory-worker-low": {Model: "sonnet"}},
+			warn: "ledger.agent_types has a key at line 3 that is not a name: dropped",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -123,6 +215,11 @@ func checkAgentTypes(t *testing.T, l Ledger, want map[string]AgentTypeTags, warn
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("entries = %v, want %v", got, want)
+	}
+	for _, a := range l.Adjustments() {
+		if strings.Contains(a, "\n") {
+			t.Errorf("adjustment %q spans lines, want one line per doctor warning", a)
+		}
 	}
 	adjustments := strings.Join(l.Adjustments(), "\n")
 	if warn == "" && adjustments != "" {
@@ -147,6 +244,9 @@ effort = "high"
 [ledger.agent_types.factory-worker-low]
 model = "sonnet"
 effort = 3
+
+[ledger.agent_types."factory-*-high"]
+model = "opus"
 `),
 	}
 	cfg, err := LoadFrom(p)
@@ -157,6 +257,40 @@ effort = 3
 		"factory-worker-high": {Model: "opus", Effort: "high"},
 		"factory-worker-low":  {Model: "sonnet"},
 	}, "ledger.agent_types.factory-worker-low.effort is 3, not a string: effort tag dropped")
+	const misplaced = "ledger.agent_types.factory-*-high has a * before its end"
+	if adj := strings.Join(cfg.Ledger.Adjustments(), "\n"); !strings.Contains(adj, misplaced) {
+		t.Errorf("adjustments = %q, want one containing %q", adj, misplaced)
+	}
+}
+
+// TestLedgerAgentTypesForGlobs: a named spawn reports its name as its agent
+// type, so a factory worker named factory-worker-high-<slug> is tagged
+// through the factory-worker-high* key. An exact key beats a glob, the
+// longest glob wins, and a plain key does not match a slugged name.
+func TestLedgerAgentTypesForGlobs(t *testing.T) {
+	cfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", `ledger:
+  agent_types:
+    factory-worker*: {model: haiku, effort: low}
+    factory-worker-high*: {model: opus, effort: high}
+    factory-worker-high-csl-prune: {model: opus, effort: max}
+    reviewer: {model: opus, effort: xhigh}
+`)})
+	tests := []struct {
+		agentType string
+		want      AgentTypeTags
+	}{
+		{"factory-worker-high-ledger-tags", AgentTypeTags{Model: "opus", Effort: "high"}},
+		{"factory-worker-high-csl-prune", AgentTypeTags{Model: "opus", Effort: "max"}},
+		{"factory-worker-low-docs", AgentTypeTags{Model: "haiku", Effort: "low"}},
+		{"reviewer", AgentTypeTags{Model: "opus", Effort: "xhigh"}},
+		{"reviewer-belt", AgentTypeTags{}},
+		{"Explore", AgentTypeTags{}},
+	}
+	for _, tt := range tests {
+		if got := cfg.Ledger.AgentTypes.For(tt.agentType); got != tt.want {
+			t.Errorf("For(%q) = %v, want %v", tt.agentType, got, tt.want)
+		}
+	}
 }
 
 // TestLedgerAgentTypesLeaveTheRestOfTheSection: a broken agent_types does
@@ -182,5 +316,28 @@ func TestResolveAgentTypesNamesAreSorted(t *testing.T) {
 	})
 	if got, want := a.Names(), []string{"alpha", "zeta"}; !slices.Equal(got, want) {
 		t.Errorf("Names() = %v, want %v", got, want)
+	}
+}
+
+// TestLedgerAgentTypesLargeMap: a map far past any real config still
+// loads in full, a late duplicate included, since walking the pairs keeps
+// the duplicate check linear.
+func TestLedgerAgentTypesLargeMap(t *testing.T) {
+	const entries = 10000
+	var b strings.Builder
+	b.WriteString("ledger:\n  agent_types:\n")
+	for i := range entries {
+		fmt.Fprintf(&b, "    worker-%d: {model: opus, effort: high}\n", i)
+	}
+	b.WriteString("    worker-0: {model: sonnet, effort: low}\n")
+	cfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", b.String())})
+	if got := len(cfg.Ledger.AgentTypes.Names()); got != entries {
+		t.Errorf("len(Names()) = %d, want %d", got, entries)
+	}
+	if got := cfg.Ledger.AgentTypes.For("worker-0"); got != (AgentTypeTags{Model: "opus", Effort: "high"}) {
+		t.Errorf("For(worker-0) = %v, want the first entry", got)
+	}
+	if got := cfg.Ledger.Adjustments(); len(got) != 1 {
+		t.Errorf("adjustments = %v, want the one duplicate", got)
 	}
 }

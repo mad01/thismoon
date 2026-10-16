@@ -318,14 +318,20 @@ machine's rendered config, not in belt and not in a second hook.
   list of the same name is honored too; either one opts out.
 - `custom_hints.<name>.agent_types` (list of string, default: unset):
   limits a `subagent-start` hint to the subagent types it names, matched
-  exactly and case-sensitively against the payload's `agent_type`. A spawn
-  of any other type skips the hint with no process launch and no warn
-  event. Unset, the hint runs for every subagent. The key is a config error
-  on any other event, and so is an empty list (`agent_types: []`, or the
-  key with no value) or a blank entry. A factory worker brief lists
-  `factory-worker-low`, `factory-worker-medium` and `factory-worker-high`.
-  A belt older than the key ignores it and runs the hint for every
-  subagent, so run `ralph up` before a config names it.
+  case-sensitively against the payload's `agent_type`. An entry ending in
+  `*` matches every type that starts with the rest of it, and any other
+  entry matches exactly. A spawn of any other type skips the hint with no
+  process launch and no warn event. Unset, the hint runs for every
+  subagent. The key is a config error on any other event. So is an empty
+  list (`agent_types: []`, or the key with no value), a blank entry, or an
+  entry with a `*` before its end. A named spawn reports its name as
+  its `agent_type`, so entries for factory workers end in `*` and the
+  factory names workers `factory-worker-<tier>-<slug>`. A factory worker
+  brief lists `factory-worker-low*`, `factory-worker-medium*` and
+  `factory-worker-high*`. A belt older than the key ignores it and runs the
+  hint for every subagent, and one older than `*` matching reads the `*`
+  literally and briefs no worker. So run `ralph up` before a config names
+  either.
 
 ### ledger
 
@@ -342,28 +348,35 @@ records, with these defaults.
   letters, digits, `-` and `_` becomes one dash, dashes are trimmed, and it
   keeps at most 64 characters. A name with nothing usable left falls back to the default.
   `belt doctor` warns when the name in effect differs from the one written.
-- `ledger.agent_types` (map of agent type name to `{model, effort}`,
+- `ledger.agent_types` (map of agent type pattern to `{model, effort}`,
   default empty): the model and effort a subagent's agent definition
   declares. A subagent-start entry whose payload `agent_type` matches a key
-  exactly gets `model` and `effort` tags; any other type gets neither, and
-  no other event reads the map. It restates the definition, so keep it in
-  step with the definition files; belt never infers a value. `model` is a
-  string, trimmed, and must not be empty. `effort` must be `low`, `medium`,
-  `high`, `xhigh` or `max`, the values Claude Code agent frontmatter
-  accepts. A value that fails drops its own tag, an entry that is not a
-  map or names neither key is dropped, and an unknown key is ignored. Each
-  drop is a `belt doctor` warning, and none fails the file, a wrong YAML
-  type included. `belt doctor` prints the entries in effect and `belt
-  config` shows them. A belt older than the key ignores it and records no
-  model or effort, so run `ralph up` before a machine config names it. The
-  factory worker definitions are the first entries:
+  gets `model` and `effort` tags; any other type gets neither, and no other
+  event reads the map. A key ending in `*` matches every type that starts
+  with the rest of it, any other key matches exactly, and case counts. The
+  exact key wins, then the longest matching `*` key. A named spawn reports
+  its name as its `agent_type`, so keys for factory workers end in `*` and
+  the factory names workers `factory-worker-<tier>-<slug>`. The map
+  restates the definition, so keep it in step with the definition files;
+  belt never infers a value. `model` is a string, trimmed, and must not be
+  empty. `effort` must be `low`, `medium`, `high`, `xhigh` or `max`, the
+  values Claude Code agent frontmatter accepts. A value that fails drops
+  its own tag, an entry that is not a map or names neither key is dropped,
+  and an unknown key is ignored. A key with a `*` before its end is
+  dropped, and an agent type or key stated twice keeps its first value.
+  Each drop is a `belt doctor` warning, and none fails the file, a wrong
+  YAML type or a duplicate key included. `belt doctor` prints the keys in
+  effect as written and `belt config` shows them. A belt older than the key
+  ignores it and records no model or effort, so run `ralph up` before a
+  machine config names it. The factory worker definitions are the first
+  entries:
 
   ```yaml
   ledger:
     agent_types:
-      factory-worker-low: {model: sonnet, effort: low}
-      factory-worker-medium: {model: sonnet, effort: medium}
-      factory-worker-high: {model: opus, effort: high}
+      factory-worker-low*: {model: sonnet, effort: low}
+      factory-worker-medium*: {model: sonnet, effort: medium}
+      factory-worker-high*: {model: opus, effort: high}
   ```
 
 ### watch
@@ -640,15 +653,15 @@ custom_hints:
   worker-brief:
     event: subagent-start
     command: [factory, brief]
-    agent_types: [factory-worker-low, factory-worker-medium, factory-worker-high]
+    agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
 
 ledger:
   enabled: true
   source: belt-ledger
   agent_types:
-    factory-worker-low: {model: sonnet, effort: low}
-    factory-worker-medium: {model: sonnet, effort: medium}
-    factory-worker-high: {model: opus, effort: high}
+    factory-worker-low*: {model: sonnet, effort: low}
+    factory-worker-medium*: {model: sonnet, effort: medium}
+    factory-worker-high*: {model: opus, effort: high}
 
 watch:
   enabled: true

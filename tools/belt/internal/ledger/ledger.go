@@ -238,8 +238,8 @@ func declaredTags(event string, in Input, declared config.AgentTypes) config.Age
 // linkedWorktree is the working tree's root when it is a linked worktree,
 // "" for the main checkout (whose root the canonical tag already names).
 // The root is git's toplevel for the payload cwd, never the cwd itself, so
-// a cwd in a subdirectory still names the worktree. That cwd is the
-// session's that fired the hook: for a spawn it can be the parent's, so
+// a cwd in a subdirectory still names the worktree. That cwd belongs to
+// the session that fired the hook: for a spawn it can be the parent's, so
 // the tag names where the event fired, not where the subagent will work.
 func linkedWorktree(loc guard.Location) string {
 	if !loc.Linked {

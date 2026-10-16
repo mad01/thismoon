@@ -89,7 +89,10 @@ func printLedger(w io.Writer, l config.Ledger) {
 func printAgentTypes(w io.Writer, a config.AgentTypes) {
 	names := a.Names()
 	if len(names) == 0 {
-		fmt.Fprintln(w, "  agent types: none, so subagent-start entries carry no model or effort tag")
+		fmt.Fprintln(
+			w,
+			"  agent types: none, so subagent-start entries carry no model or effort tag",
+		)
 		return
 	}
 	fmt.Fprintln(w, "  agent types, tagged on their subagent-start entries:")

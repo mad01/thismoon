@@ -133,11 +133,15 @@ custom_guards:
 # (once per subagent, before its first prompt, advice in the subagent's
 # context); prompt and post-tool events can join later. agent_types limits
 # a subagent-start hint to the subagent types it names: any other spawn
-# skips the command, with no warn event. A name that shadows a built-in
-# hint, a missing command, an unsupported event, and agent_types that is
-# empty or sits on another event are config errors. This is where a
-# machine-private hint (a daily journal, a worker brief) is registered
-# without a second hook or a compiled-in hint.
+# skips the command, with no warn event. An entry ending in * matches by
+# prefix, any other entry exactly. A named spawn reports its name as its
+# agent type, so entries for factory workers end in * and the factory
+# names workers factory-worker-<tier>-<slug>. A name that shadows a
+# built-in hint, a missing command, an unsupported event, and agent_types
+# that is empty, holds a * before an entry's end, or sits on another event
+# are config errors. This is where a machine-private hint (a daily
+# journal, a worker brief) is registered without a second hook or a
+# compiled-in hint.
 custom_hints:
   daily-journal:
     enabled: true
@@ -149,7 +153,7 @@ custom_hints:
   worker-brief:
     event: subagent-start
     command: [factory, brief]
-    agent_types: [factory-worker-low, factory-worker-medium, factory-worker-high]
+    agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
 
 # The lifecycle ledger: belt record posts one events-service entry per
 # Claude Code lifecycle event it is wired to (subagent start and stop,
@@ -163,17 +167,21 @@ custom_hints:
 # type to the model and effort its agent definition declares; a
 # subagent-start entry of that type is tagged model and effort. It restates
 # the definition, belt never infers a value, and an unlisted type gets
-# neither tag. model is any non-empty string, effort is low, medium, high,
-# xhigh or max (the values Claude Code agent frontmatter accepts).
-# A malformed entry or value is dropped with a doctor warning, never a
-# config error. A belt older than the key ignores it: ralph up first.
+# neither tag. A key ending in * matches by prefix: the exact key wins,
+# then the longest matching glob. A named spawn reports its name as its
+# agent type, so keys for factory workers end in * and the factory names
+# workers factory-worker-<tier>-<slug>. model is any non-empty string,
+# effort is low, medium, high, xhigh or max (the values Claude Code agent
+# frontmatter accepts). A malformed entry, key or value, a * before a
+# key's end included, is dropped with a doctor warning, never a config
+# error. A belt older than the key ignores it: ralph up first.
 ledger:
   enabled: true
   source: belt-ledger
   agent_types:
-    factory-worker-low: {model: sonnet, effort: low}
-    factory-worker-medium: {model: sonnet, effort: medium}
-    factory-worker-high: {model: opus, effort: high}
+    factory-worker-low*: {model: sonnet, effort: low}
+    factory-worker-medium*: {model: sonnet, effort: medium}
+    factory-worker-high*: {model: opus, effort: high}
 
 # The inbox watcher: belt watch, wired as an asyncRewake hook on Stop and
 # SessionStart, polls source for entries whose to tag is the session's id

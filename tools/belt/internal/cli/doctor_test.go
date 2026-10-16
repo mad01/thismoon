@@ -105,6 +105,12 @@ func TestDoctorReportsLifecycle(t *testing.T) {
 			},
 		},
 		{
+			name: "glob agent types are printed as written",
+			config: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high*: {model: opus, effort: high}\n",
+			wantLines: []string{"    factory-worker-high*     model: opus     effort: high\n"},
+		},
+		{
 			name: "a malformed agent type value warns and drops only its tag",
 			config: "ledger:\n  agent_types:\n" +
 				"    factory-worker-high: {model: opus, effort: extreme}\n",
@@ -416,7 +422,7 @@ custom_hints:
   worker-brief:
     event: subagent-start
     command: [`+reachable+`]
-    agent_types: [factory-worker-low, factory-worker-high]
+    agent_types: [factory-worker-low*, factory-worker-high]
 `)
 	out := runDoctorString(t, doctorPaths(dir))
 
@@ -427,7 +433,7 @@ custom_hints:
 		"off-path               session-start  DISABLED  budget: 400ms",
 		"not-executable",
 		"worker-brief           subagent-start enabled   budget: 400ms  command: " +
-			reachable + "  (agent_types: factory-worker-low, factory-worker-high)",
+			reachable + "  (agent_types: factory-worker-low*, factory-worker-high)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)

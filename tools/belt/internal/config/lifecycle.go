@@ -59,8 +59,8 @@ const maxSourceLen = 64
 // record event posts under DefaultLedgerSource: wiring the record hooks in
 // the Claude settings is the opt-in, as it is for hints.
 type Ledger struct {
-	Enabled *bool  `toml:"enabled" yaml:"enabled,omitempty"`
-	Source  string `toml:"source"  yaml:"source,omitempty"`
+	Enabled *bool  `toml:"enabled"     yaml:"enabled,omitempty"`
+	Source  string `toml:"source"      yaml:"source,omitempty"`
 	// AgentTypes maps a subagent type to the model and effort its
 	// definition declares, tagged on that type's subagent-start entries.
 	// Unlike the other lifecycle keys it tolerates any shape, a wrong YAML
