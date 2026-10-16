@@ -87,9 +87,43 @@ func TestDoctorReportsLifecycle(t *testing.T) {
 			name: "defaults",
 			wantLines: []string{
 				"enabled  source: belt-ledger  events: subagent-start,",
+				"agent types: none, so subagent-start entries carry no model or effort tag",
 				"DISABLED (the default",
 				"http://127.0.0.1:7430  reachable",
 			},
+		},
+		{
+			name: "agent types are printed in the ledger block",
+			config: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high: {model: opus, effort: high}\n" +
+				"    factory-worker-low: {model: sonnet, effort: low}\n",
+			wantLines: []string{
+				"(ledger.enabled, ledger.source, ledger.agent_types):",
+				"agent types, tagged on their subagent-start entries:",
+				"    factory-worker-high      model: opus     effort: high\n",
+				"    factory-worker-low       model: sonnet   effort: low\n",
+			},
+		},
+		{
+			name: "glob agent types are printed as written",
+			config: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high*: {model: opus, effort: high}\n",
+			wantLines: []string{"    factory-worker-high*     model: opus     effort: high\n"},
+		},
+		{
+			name: "a malformed agent type value warns and drops only its tag",
+			config: "ledger:\n  agent_types:\n" +
+				"    factory-worker-high: {model: opus, effort: extreme}\n",
+			wantLines: []string{"    factory-worker-high      model: opus     effort: -\n"},
+			wantWarn: `ledger.agent_types.factory-worker-high.effort is "extreme", ` +
+				"not one of low, medium, high, xhigh, max: effort tag dropped",
+		},
+		{
+			name:      "a malformed agent type entry warns and is left out",
+			config:    "ledger:\n  agent_types:\n    factory-worker-high: opus\n",
+			wantLines: []string{"agent types: none"},
+			wantWarn: `ledger.agent_types.factory-worker-high is "opus", ` +
+				"not a map with model and effort: no tags",
 		},
 		{
 			name: "enabled watcher",
@@ -388,7 +422,7 @@ custom_hints:
   worker-brief:
     event: subagent-start
     command: [`+reachable+`]
-    agent_types: [factory-worker-low, factory-worker-high]
+    agent_types: [factory-worker-low*, factory-worker-high]
 `)
 	out := runDoctorString(t, doctorPaths(dir))
 
@@ -399,7 +433,7 @@ custom_hints:
 		"off-path               session-start  DISABLED  budget: 400ms",
 		"not-executable",
 		"worker-brief           subagent-start enabled   budget: 400ms  command: " +
-			reachable + "  (agent_types: factory-worker-low, factory-worker-high)",
+			reachable + "  (agent_types: factory-worker-low*, factory-worker-high)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)

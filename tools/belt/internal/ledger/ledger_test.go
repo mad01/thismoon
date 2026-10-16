@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
@@ -194,7 +195,7 @@ func TestBuild(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Build(tt.event, tt.in, tt.loc)
+			got := Build(tt.event, tt.in, tt.loc, config.AgentTypes{})
 			if got.Source != Source || got.Level != levelInfo {
 				t.Errorf(
 					"source, level = %q, %q, want %q, %q",
@@ -220,7 +221,12 @@ func TestBuild(t *testing.T) {
 // TestBuildUnreadablePayload: an entry built from a payload that did not
 // decode is still written, at warn level, naming the decode error.
 func TestBuildUnreadablePayload(t *testing.T) {
-	got := Build(EventSubagentStop, Input{PayloadError: "unexpected EOF"}, guard.Location{})
+	got := Build(
+		EventSubagentStop,
+		Input{PayloadError: "unexpected EOF"},
+		guard.Location{},
+		config.AgentTypes{},
+	)
 	if got.Level != levelWarn {
 		t.Errorf("level = %q, want %q", got.Level, levelWarn)
 	}
@@ -261,6 +267,7 @@ func TestBuildTruncatesTheMessage(t *testing.T) {
 				EventSubagentStop,
 				Input{LastAssistantMessage: tt.message},
 				guard.Location{},
+				config.AgentTypes{},
 			)
 			if got.Message != tt.want {
 				t.Errorf("message = %d bytes %q..., want %d bytes", len(got.Message),
@@ -281,5 +288,80 @@ func TestEventsFollowTheCatalog(t *testing.T) {
 	got := Events()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("Events() = %v, want %v", got, want)
+	}
+}
+
+// factoryTypes is ledger.agent_types as the factory worker definitions
+// declare it, keyed by glob because the factory names its workers
+// factory-worker-<tier>-<slug>, plus an entry whose effort did not resolve.
+var factoryTypes = config.ResolveAgentTypes(map[string]any{
+	"factory-worker-low*":  map[string]any{"model": "sonnet", "effort": "low"},
+	"factory-worker-high*": map[string]any{"model": "opus", "effort": "high"},
+	"half-declared":        map[string]any{"model": "haiku", "effort": "extreme"},
+})
+
+// TestTagsCarryDeclaredModelAndEffort: a subagent-start entry whose agent
+// type has a ledger.agent_types entry is tagged with its model and effort.
+// Any other type, a spawn with no type, and every other event get no such
+// tag, and a value that did not resolve drops only its own tag.
+func TestTagsCarryDeclaredModelAndEffort(t *testing.T) {
+	tests := []struct {
+		name       string
+		event      string
+		agentType  string
+		wantModel  string
+		wantEffort string
+	}{
+		{"matching type", EventSubagentStart, "factory-worker-high", "opus", "high"},
+		{"another matching type", EventSubagentStart, "factory-worker-low", "sonnet", "low"},
+		{
+			"a named worker matches its tier's glob", EventSubagentStart,
+			"factory-worker-high-csl-prune", "opus", "high",
+		},
+		{
+			"a plain key does not match a longer name", EventSubagentStart,
+			"half-declared-x", "", "",
+		},
+		{"unknown type", EventSubagentStart, "Explore", "", ""},
+		{"absent type", EventSubagentStart, "", "", ""},
+		{"a dropped effort leaves the model", EventSubagentStart, "half-declared", "haiku", ""},
+		{"subagent stop is never tagged", EventSubagentStop, "factory-worker-high", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := Input{SessionID: "s1", AgentID: "a1", AgentType: tt.agentType}
+			got := tags(tt.event, in, guard.Location{}, factoryTypes)
+			model, hasModel := got["model"]
+			effort, hasEffort := got["effort"]
+			if model != tt.wantModel || hasModel != (tt.wantModel != "") {
+				t.Errorf("model tag = %q (set %v), want %q", model, hasModel, tt.wantModel)
+			}
+			if effort != tt.wantEffort || hasEffort != (tt.wantEffort != "") {
+				t.Errorf("effort tag = %q (set %v), want %q", effort, hasEffort, tt.wantEffort)
+			}
+		})
+	}
+}
+
+// TestBuildTagsAFactoryWorker is the acceptance case end to end through
+// Build: a factory worker named after its unit carries the model and effort
+// its tier's glob declares beside its usual tags.
+func TestBuildTagsAFactoryWorker(t *testing.T) {
+	in := Input{SessionID: "s1", AgentID: "a1", AgentType: "factory-worker-high-csl-prune"}
+	got := Build(EventSubagentStart, in, linked, factoryTypes)
+	want := map[string]string{
+		"event":      "subagent-start",
+		"session_id": "s1",
+		"agent_id":   "a1",
+		"agent_type": "factory-worker-high-csl-prune",
+		"model":      "opus",
+		"effort":     "high",
+		"repo":       "github.com/mad01/thismoon",
+		"worktree":   "/home/.worktrees/thismoon/feat-x",
+		"canonical":  "/src/thismoon",
+		"branch":     "feat/x",
+	}
+	if !maps.Equal(got.Tags, want) {
+		t.Errorf("tags = %v, want %v", got.Tags, want)
 	}
 }

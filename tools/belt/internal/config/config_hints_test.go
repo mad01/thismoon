@@ -119,6 +119,12 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 				"    agent_types: [factory-worker-low, \"\"]\n",
 			"custom_hints.brief.agent_types[1] is blank",
 		},
+		{
+			"agent type with a * before its end",
+			"custom_hints:\n  brief:\n    event: subagent-start\n    command: [brief]\n" +
+				"    agent_types: [factory-*-high]\n",
+			`custom_hints.brief.agent_types[0] "factory-*-high" has a * before its end`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -136,16 +142,16 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 }
 
 // TestLoadCustomHintAgentTypes pins the gate's list reaching the loaded
-// entry from both file formats, and the legacy TOML file rejecting an empty
-// list the way YAML does.
+// entry from both file formats, a glob kept as written, and the legacy TOML
+// file rejecting an empty list the way YAML does.
 func TestLoadCustomHintAgentTypes(t *testing.T) {
-	want := []string{"factory-worker-low", "factory-worker-high"}
+	want := []string{"factory-worker-low*", "factory-worker-high"}
 	yamlCfg := mustLoad(t, Paths{BeltYAML: writeFile(t, t.TempDir(), "config.yaml", `
 custom_hints:
   worker-brief:
     event: subagent-start
     command: [brief]
-    agent_types: [factory-worker-low, factory-worker-high]
+    agent_types: [factory-worker-low*, factory-worker-high]
 `)})
 	if got := yamlCfg.CustomHints["worker-brief"].AgentTypes; !slices.Equal(got, want) {
 		t.Errorf("yaml agent_types = %v, want %v", got, want)
@@ -158,7 +164,7 @@ custom_hints:
 [custom_hints.worker-brief]
 event = "subagent-start"
 command = ["brief"]
-agent_types = ["factory-worker-low", "factory-worker-high"]
+agent_types = ["factory-worker-low*", "factory-worker-high"]
 `),
 	})
 	if got := tomlCfg.CustomHints["worker-brief"].AgentTypes; !slices.Equal(got, want) {

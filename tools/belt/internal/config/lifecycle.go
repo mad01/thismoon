@@ -59,8 +59,13 @@ const maxSourceLen = 64
 // record event posts under DefaultLedgerSource: wiring the record hooks in
 // the Claude settings is the opt-in, as it is for hints.
 type Ledger struct {
-	Enabled *bool  `toml:"enabled" yaml:"enabled,omitempty"`
-	Source  string `toml:"source"  yaml:"source,omitempty"`
+	Enabled *bool  `toml:"enabled"     yaml:"enabled,omitempty"`
+	Source  string `toml:"source"      yaml:"source,omitempty"`
+	// AgentTypes maps a subagent type to the model and effort its
+	// definition declares, tagged on that type's subagent-start entries.
+	// Unlike the other lifecycle keys it tolerates any shape, a wrong YAML
+	// type included (see AgentTypes).
+	AgentTypes AgentTypes `toml:"agent_types" yaml:"agent_types,omitempty"`
 }
 
 // On reports whether record events post at all; unset means yes.
@@ -74,9 +79,11 @@ func (l Ledger) SourceName() string {
 }
 
 // Adjustments names the ledger values belt uses in a different form than
-// the file states.
+// the file states: a rewritten source, and every agent_types entry or
+// value it dropped.
 func (l Ledger) Adjustments() []string {
-	return sourceAdjustment("ledger.source", l.Source, l.SourceName())
+	out := sourceAdjustment("ledger.source", l.Source, l.SourceName())
+	return append(out, l.AgentTypes.Adjustments()...)
 }
 
 // Watch configures `belt watch`. It is the one belt feature that is off

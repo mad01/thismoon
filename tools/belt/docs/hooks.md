@@ -872,13 +872,16 @@ text for that event; the brief comes from the consuming repo's config.
   whole process group, so a hung grandchild (a `curl` inside the script)
   does not outlive the hook either.
 - `agent_types` limits a `subagent-start` hint to the subagent types it
-  names, matched exactly against the payload's `agent_type`. A spawn of any
-  other type skips the hint: belt starts no process and logs no warn event,
-  because the hint declined on purpose. Without the key the hint runs for
-  every subagent. The factory worker brief is the case it exists for. Its
-  entry lists `factory-worker-low`, `factory-worker-medium` and
-  `factory-worker-high`, so an Explore or general-purpose spawn gets nothing
-  and leaves no warning on the events timeline. The SubagentStart hook
+  names, matched against the payload's `agent_type`: exactly, or by prefix
+  for an entry ending in `*`. A spawn of any other type skips the hint:
+  belt starts no process and logs no warn event, because the hint declined
+  on purpose. Without the key the hint runs for every subagent. The factory
+  worker brief is the case it exists for. A named spawn reports its name as
+  its `agent_type`, so entries for factory workers end in `*` and the
+  factory names workers `factory-worker-<tier>-<slug>`. The brief's entry
+  lists `factory-worker-low*`, `factory-worker-medium*` and
+  `factory-worker-high*`, so an Explore or general-purpose spawn gets
+  nothing and leaves no warning on the events timeline. The SubagentStart hook
   matcher can filter by agent type too, but it gates the whole `belt hint
   subagent-start` command and every custom hint behind it. `agent_types`
   gates one hint.
@@ -888,7 +891,8 @@ text for that event; the brief comes from the consuming repo's config.
   prompt and post-tool events can be added later. Anything else is a config
   error naming the supported values, as is an empty `command` or a name
   that shadows a built-in hint. `agent_types` on a `session-start` hint is a
-  config error too, and so is an empty list or a blank entry.
+  config error too, and so is an empty list, a blank entry, or an entry
+  with a `*` before its end.
 - `belt doctor` lists each custom hint beside the built-ins with its event,
   budget, command, `agent_types` gate, opt-out count, and whether the
   command resolves to something executable. An unreachable command means
@@ -910,7 +914,9 @@ hint for every subagent, so a brief meant for factory workers reaches every
 spawn. Run `ralph up` first and change the config second. Keep any agent
 type check the script already does until every machine runs the new belt.
 On an old binary that check makes the hint decline, which costs only the
-old warn events.
+old warn events. A `*` entry has the opposite skew: a belt older than `*`
+matching reads it literally, so the brief reaches no worker until the
+fleet runs the new belt.
 
 ## Ledger
 
@@ -931,11 +937,34 @@ never reaches the model and never steers the session (`docs/adr/0024`).
   completed task's subject, the denial reason, or the notification's title
   and text, cut to 500 bytes on a character boundary.
 - **Tags.** Every set field, nothing empty: `event`, `session_id`,
-  `agent_id`, `agent_type`, `repo`, `worktree` (only for a linked
-  worktree), `canonical` (the main checkout), `branch`, `task_id`,
-  `teammate`, `tool`, `tool_use_id`, `notification_type`, `trigger`,
-  `reason`, `transcript` (the subagent's own transcript when there is one)
-  and `stop_hook_active`. Filter the timeline by any of them.
+  `agent_id`, `agent_type`, `model` and `effort` (subagent-start only, see
+  below), `repo`, `worktree` (only for a linked worktree), `canonical` (the
+  main checkout), `branch`, `task_id`, `teammate`, `tool`, `tool_use_id`,
+  `notification_type`, `trigger`, `reason`, `transcript` (the subagent's
+  own transcript when there is one) and `stop_hook_active`. Filter the
+  timeline by any of them.
+- **Where `worktree` comes from.** It is git's toplevel for the payload's
+  working directory, never the directory itself, so a hook that fires in
+  `tools/belt` of a loom worktree still names the worktree root. The main
+  checkout gets no `worktree` tag, only `canonical`. The payload's working
+  directory belongs to the session that fired the hook. For a spawn that can
+  be the parent's, so on subagent-start the tag says where the spawn
+  happened, not where the subagent will work.
+- **Model and effort.** The SubagentStart payload names the agent type and
+  no model. `ledger.agent_types` in the belt config maps an agent type to the
+  model and effort its agent definition declares. A subagent-start entry
+  whose `agent_type` matches a key there gets `model` and `effort` tags; any
+  other type gets neither, and no other event reads the map. A key ending
+  in `*` matches by prefix: the exact key wins, then the longest `*` key.
+  A named spawn reports its name as its `agent_type`, so keys for factory
+  workers end in `*` and the factory names workers
+  `factory-worker-<tier>-<slug>`. The map restates the definition, belt
+  never infers a value. The loom-pane member
+  line and the factory band read these two tags. A malformed entry or value
+  drops its own tag, with a `belt doctor` warning, and never fails the
+  config file (see `config.md`). Run `ralph up` before a machine config
+  names the key: an older belt ignores unknown ledger keys and records no
+  model or effort.
 - **Never steers.** `belt record` takes no output writer at all and recovers
   from its own panics. On SubagentStop any output keeps the subagent
   running, TaskCompleted, TeammateIdle and PreCompact treat exit 2 as a
@@ -943,10 +972,10 @@ never reaches the model and never steers the session (`docs/adr/0024`).
   valid event it writes nothing to stdout or stderr and exits 0, whatever
   happens.
 - **Fails toward recording.** A config belt cannot read records with the
-  defaults and tags the entry `config: unreadable, recorded with the
-  defaults`. A payload that does not decode is still recorded, at `warn`,
-  naming the decode error. A panic posts an `error` entry titled `belt
-  record failed`.
+  defaults, so no `model` or `effort` tag, and tags the entry `config:
+  unreadable, recorded with the defaults`. A payload that does not decode
+  is still recorded, at `warn`, naming the decode error. A panic posts an
+  `error` entry titled `belt record failed`.
 - **Bounded.** Placing the event in git (two git processes) gets 1 s and
   the POST 300 ms. So a record stays inside the 1.5 s SessionEnd gives all
   of its hooks, and a stalled filesystem cannot hold a subagent's start.
@@ -1055,6 +1084,7 @@ missing key:
 | watcher cursor and owner files | `~/.cache/belt/watch-<session>` and `.pid` beside it | belt watch |
 | documented watch hook timeout | 590 s | belt watch (doctor warns when an enabled watcher's `max_wait_s` reaches it) |
 | events source name cap | 64 characters | `ledger.source`, `watch.source` (rewritten like the events service does) |
+| agent type effort levels | low, medium, high, xhigh, max | `ledger.agent_types` (the values Claude Code agent frontmatter accepts; any other effort drops the tag, with a doctor warning) |
 
 ## When a hook seems silent
 

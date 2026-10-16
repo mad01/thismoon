@@ -200,10 +200,11 @@ type CustomHint struct {
 	// host/owner/repo patterns as the built-in hints' exclude_repos.
 	ExcludeRepos []string `toml:"exclude_repos" yaml:"exclude_repos,omitempty"`
 	// AgentTypes limits a subagent-start hint to the subagent types it
-	// names, matched exactly against the payload's agent_type. A spawn of
-	// any other type skips the external: no process, no warn event. Unset
-	// means every subagent. Validated at load: subagent-start only, and
-	// never empty.
+	// names, matched against the payload's agent_type by MatchAgentType:
+	// exactly, or by prefix for an entry ending in *. A spawn of any other
+	// type skips the external: no process, no warn event. Unset means every
+	// subagent. Validated at load: subagent-start only, never empty, and no
+	// * before an entry's end.
 	AgentTypes []string `toml:"agent_types"   yaml:"agent_types,omitempty"`
 	// agentTypesKey records that the YAML entry wrote the agent_types key,
 	// even with no value (see UnmarshalYAML).
@@ -940,7 +941,8 @@ func customHintErrors(hints map[string]CustomHint) []error {
 
 // agentTypesErrors rejects an agent_types gate that cannot do what it says:
 // one on an event with no subagent to match (only subagent-start carries an
-// agent type), and one that names no type, an empty list or a blank entry.
+// agent type), one that names no type, an empty list or a blank entry, and
+// an entry with a * before its end, which would match only its literal self.
 func agentTypesErrors(name string, ch CustomHint) []error {
 	if !ch.agentTypesSet() {
 		return nil
@@ -964,6 +966,10 @@ func agentTypesErrors(name string, ch CustomHint) []error {
 	for i, agentType := range ch.AgentTypes {
 		if strings.TrimSpace(agentType) == "" {
 			errs = append(errs, fmt.Errorf("custom_hints.%s.agent_types[%d] is blank", name, i))
+		} else if problem := agentTypePatternProblem(agentType); problem != "" {
+			errs = append(errs, fmt.Errorf(
+				"custom_hints.%s.agent_types[%d] %q %s", name, i, agentType, problem,
+			))
 		}
 	}
 	return errs

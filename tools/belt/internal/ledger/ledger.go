@@ -137,15 +137,17 @@ func Events() []string {
 
 // Build turns one lifecycle event into its ledger entry, under Source. loc
 // is where the event's working directory sits in git; its zero value
-// leaves the repo, worktree, canonical and branch tags off.
-func Build(event string, in Input, loc guard.Location) notify.Event {
+// leaves the repo, worktree, canonical and branch tags off. declared is
+// ledger.agent_types: a subagent-start entry whose agent type has an entry
+// there is tagged with its model and effort.
+func Build(event string, in Input, loc guard.Location, declared config.AgentTypes) notify.Event {
 	s := lookup(event)
 	ev := notify.Event{
 		Source:  Source,
 		Level:   levelInfo,
 		Title:   title(s, in),
 		Message: truncate(text(s, in), maxMessageBytes),
-		Tags:    tags(event, in, loc),
+		Tags:    tags(event, in, loc, declared),
 	}
 	if in.PayloadError != "" {
 		ev.Level = levelWarn
@@ -187,12 +189,18 @@ func text(s spec, in Input) string {
 // tags carries every identifying field that is set, so the timeline can be
 // filtered by session, agent, repo, worktree or branch. worktree is set
 // only for a linked worktree; canonical names the main checkout either way.
-func tags(event string, in Input, loc guard.Location) map[string]string {
+// model and effort come from declared, on subagent-start only.
+func tags(
+	event string, in Input, loc guard.Location, declared config.AgentTypes,
+) map[string]string {
+	d := declaredTags(event, in, declared)
 	pairs := [][2]string{
 		{"event", event},
 		{"session_id", in.SessionID},
 		{"agent_id", in.AgentID},
 		{"agent_type", in.AgentType},
+		{"model", d.Model},
+		{"effort", d.Effort},
 		{"repo", loc.Repo},
 		{"worktree", linkedWorktree(loc)},
 		{"canonical", loc.Canonical},
@@ -216,8 +224,23 @@ func tags(event string, in Input, loc guard.Location) map[string]string {
 	return out
 }
 
+// declaredTags is the model and effort ledger.agent_types declares for the
+// subagent a subagent-start entry is about. Every other event, an entry
+// with no agent type, and a type with no entry get none: the map restates
+// what an agent definition declares, and belt never guesses a value.
+func declaredTags(event string, in Input, declared config.AgentTypes) config.AgentTypeTags {
+	if event != EventSubagentStart || in.AgentType == "" {
+		return config.AgentTypeTags{}
+	}
+	return declared.For(in.AgentType)
+}
+
 // linkedWorktree is the working tree's root when it is a linked worktree,
 // "" for the main checkout (whose root the canonical tag already names).
+// The root is git's toplevel for the payload cwd, never the cwd itself, so
+// a cwd in a subdirectory still names the worktree. That cwd belongs to
+// the session that fired the hook: for a spawn it can be the parent's, so
+// the tag names where the event fired, not where the subagent will work.
 func linkedWorktree(loc guard.Location) string {
 	if !loc.Linked {
 		return ""

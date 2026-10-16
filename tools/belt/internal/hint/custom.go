@@ -148,12 +148,17 @@ func (c *Custom) command(ctx context.Context, payload []byte) *exec.Cmd {
 }
 
 // admitsAgent reports whether the hint runs for the subagent the hook fired
-// in. Without agent_types it runs for every one. With the list, a type
-// outside it is a hint declining on purpose, so it ends in silence with no
-// warn event: the warn exists to expose a broken external, and a skipped
+// in. Without agent_types it runs for every one. With the list, a type no
+// entry matches (config.MatchAgentType: exact, or by prefix for an entry
+// ending in *) is a hint declining on purpose, so it ends in silence with
+// no warn event: the warn exists to expose a broken external, and a skipped
 // spawn is not one.
 func (c *Custom) admitsAgent(in Input) bool {
-	return len(c.cfg.AgentTypes) == 0 || slices.Contains(c.cfg.AgentTypes, in.AgentType)
+	if len(c.cfg.AgentTypes) == 0 {
+		return true
+	}
+	_, ok := config.MatchAgentType(slices.Values(c.cfg.AgentTypes), in.AgentType)
+	return ok
 }
 
 // excluded reports whether the session's repo is opted out of this hint.

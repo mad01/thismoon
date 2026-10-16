@@ -58,8 +58,8 @@ Validation covers the values that parse and then do nothing:
 - a `custom_guards.<name>.event` outside bash/write;
 - a `custom_hints.<name>` entry with an event other than session-start or
   subagent-start, an empty command, or a built-in hint's name;
-- an `agent_types` list on a custom hint that is empty or not on
-  subagent-start;
+- an `agent_types` list on a custom hint that is empty, not on
+  subagent-start, or holds an entry with a `*` before its end;
 - `mode:` values other than hard/soft, or set on a guard that ignores them.
 
 A names file listed under internal_names.include that is missing or fails
@@ -67,7 +67,9 @@ to parse is the same error, and the deny names the include file. The
 broken config does not reach the ledger or the watcher: `record` posts with
 the defaults, and `watch` stays off. The `ledger` and `watch` values never
 fail validation at all. A bad number is clamped and a source is rewritten
-the way the events service stores it, and doctor warns about each.
+the way the events service stores it, and doctor warns about each. A
+malformed `ledger.agent_types` entry or value is dropped with a doctor
+warning, even one of the wrong YAML type.
 
 Rollout order matters for config that names something new. A binary that
 predates subagent-start rejects `custom_hints.<name>.event: subagent-start`
@@ -75,7 +77,10 @@ as an unknown event, and that config error makes it deny every guarded tool
 call. Build and install the new belt (a `ralph up` on the fleet) before any
 machine config names the new event. A new key fails the other way: an older
 belt ignores `custom_hints.<name>.agent_types` and runs the hint for every
-subagent, so the same order applies.
+subagent, and ignores `ledger.agent_types` and records no model or effort.
+A belt that knows `agent_types` but not `*` matching reads a `*` entry
+literally, so the worker brief reaches no worker until the new belt is
+installed. The same order applies.
 
 ## failure modes
 
@@ -124,7 +129,14 @@ executable at all.
 The ledger and the watcher both need the events service. When it is down,
 ledger entries are dropped without a trace and the watcher wakes nobody;
 the doctor events line says which. Ledger entries live under the
-`belt-ledger` source, not `belt`. A watcher that never wakes the session
+`belt-ledger` source, not `belt`. A subagent-start entry without `model`
+and `effort` tags means no `ledger.agent_types` key matches its agent type,
+the entry was dropped, or the belt predates the key. A named spawn reports
+its name as its agent type, so keys for factory workers end in `*` and the
+factory names workers `factory-worker-<tier>-<slug>`; a plain key never
+matches a named worker. The doctor ledger block lists the keys in effect
+and the warnings name the drops. A
+watcher that never wakes the session
 usually means the item's `to` tag does not match the session id exactly, or
 the Stop entry lacks `asyncRewake`. Each item is delivered once: the cursor
 in `~/.cache/belt/watch-<session>` names the newest one already delivered.

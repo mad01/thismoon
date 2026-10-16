@@ -294,6 +294,7 @@ func TestCustomHintPayload(t *testing.T) {
 // the empty-stdout warn for a hint that runs and says nothing.
 func TestCustomHintAgentTypesGate(t *testing.T) {
 	workers := []string{"factory-worker-low", "factory-worker-medium", "factory-worker-high"}
+	globWorkers := []string{"factory-worker-low*", "factory-worker-medium*", "factory-worker-high*"}
 	tests := []struct {
 		name       string
 		agentTypes []string
@@ -324,6 +325,19 @@ func TestCustomHintAgentTypesGate(t *testing.T) {
 		{
 			name:       "a listed type in another case does not match",
 			agentTypes: workers, agentType: "Factory-Worker-Low",
+		},
+		{
+			name:       "a glob matches a slugged worker name",
+			agentTypes: globWorkers, agentType: "factory-worker-high-csl-prune",
+			wantRan: true, wantText: "brief",
+		},
+		{
+			name:       "a plain type does not match a slugged worker name",
+			agentTypes: workers, agentType: "factory-worker-high-csl-prune",
+		},
+		{
+			name:       "a glob of another tier skips with no exec and no warn",
+			agentTypes: []string{"factory-worker-low*"}, agentType: "factory-worker-high-csl-prune",
 		},
 		{
 			name:       "listed type with empty stdout still warns",

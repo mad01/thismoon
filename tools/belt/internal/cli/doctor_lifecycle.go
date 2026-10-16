@@ -76,12 +76,39 @@ func printLifecycle(w io.Writer, cfg config.Config, probe eventsProbe) []string 
 }
 
 func printLedger(w io.Writer, l config.Ledger) {
-	fmt.Fprintln(
-		w,
-		"\nledger, the lifecycle events belt record posts (ledger.enabled, ledger.source):",
-	)
+	fmt.Fprintln(w, "\nledger, the lifecycle events belt record posts "+
+		"(ledger.enabled, ledger.source, ledger.agent_types):")
 	fmt.Fprintf(w, "  %s  source: %s  events: %s\n",
 		enabledWord(l.On()), l.SourceName(), strings.Join(ledger.Events(), ", "))
+	printAgentTypes(w, l.AgentTypes)
+}
+
+// printAgentTypes lists the model and effort each agent type's
+// subagent-start entries are tagged with: the entries in effect, after
+// every malformed one was dropped (the warnings section names those).
+func printAgentTypes(w io.Writer, a config.AgentTypes) {
+	names := a.Names()
+	if len(names) == 0 {
+		fmt.Fprintln(
+			w,
+			"  agent types: none, so subagent-start entries carry no model or effort tag",
+		)
+		return
+	}
+	fmt.Fprintln(w, "  agent types, tagged on their subagent-start entries:")
+	for _, name := range names {
+		tags := a.For(name)
+		fmt.Fprintf(w, "    %-24s model: %-8s effort: %s\n",
+			name, orDash(tags.Model), orDash(tags.Effort))
+	}
+}
+
+// orDash renders a tag an agent_types entry leaves off.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 // printWatch renders the watcher's settings and returns the warning for a

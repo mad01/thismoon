@@ -33,7 +33,8 @@ internal/hook/      payload parsing + output emission per event: deny JSON,
                     additionalContext JSON, plain stdout for prompt, nothing
                     for record; the watch entrypoint
 internal/ledger/    the record events and the pure entry builder: title,
-                    500-byte message, session/agent/repo/worktree tags
+                    500-byte message, session/agent/repo/worktree tags,
+                    model and effort from ledger.agent_types
 internal/watch/     the inbox poller: one GET client, the to-tag filter,
                     the per-session cursor and owner files
 internal/cache/     per-session file names under ~/.cache/belt with the
@@ -96,8 +97,9 @@ lifecycle-only fields sit in a separate struct, out of the guard decode's
 reach. It places the working directory in git with `guard.LocationAt` under
 a 1 s budget, builds the entry with `ledger.Build`, and posts it with a
 300 ms budget. A deferred recover keeps a panic from exiting 2. The config decides
-only `ledger.enabled` and `ledger.source`; a broken config records with the
-defaults.
+only `ledger.enabled`, `ledger.source`, and the model and effort tags
+`ledger.agent_types` adds to a subagent-start entry; a broken config records
+with the defaults.
 
 The watch path: `belt watch` reads the session id and, when `watch.enabled`
 is set, `watch.Run` claims the session's owner file. It polls the events

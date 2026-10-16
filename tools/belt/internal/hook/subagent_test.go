@@ -88,6 +88,7 @@ func TestRunHintSubagentStartGatesByAgentType(t *testing.T) {
 	}{
 		{"Explore", false},
 		{"factory-worker-high", true},
+		{"factory-worker-high-csl-prune", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.agentType, func(t *testing.T) {
@@ -101,7 +102,7 @@ func TestRunHintSubagentStartGatesByAgentType(t *testing.T) {
 			cfgPath := filepath.Join(dir, "config.yaml")
 			cfgYAML := "custom_hints:\n  worker-brief:\n    event: subagent-start\n" +
 				"    command: [" + script + "]\n    timeout_ms: 10000\n" +
-				"    agent_types: [factory-worker-low, factory-worker-medium, factory-worker-high]\n"
+				"    agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]\n"
 			if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
 				t.Fatal(err)
 			}

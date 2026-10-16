@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,6 +68,10 @@ func TestBadLifecycleValuesNeverDenyAToolCall(t *testing.T) {
 		"watch:\n  enabled: true\n  poll_interval_ms: -1\n  max_wait_s: -5\n  source: 'in box/1'\n",
 		"watch:\n  max_wait_s: 999999\n",
 		"ledger:\n  source: '///'\n",
+		"ledger:\n  agent_types: [factory-worker-high]\n",
+		"ledger:\n  agent_types:\n    factory-worker-high: opus\n",
+		"ledger:\n  agent_types:\n    factory-worker-high: {model: '', effort: extreme, x: 1}\n",
+		"ledger:\n  agent_types: !!int many\n",
 	} {
 		t.Run(strings.ReplaceAll(cfgText, "\n", " "), func(t *testing.T) {
 			dir := t.TempDir()
@@ -121,6 +126,41 @@ func TestConfigReferenceIsAValidConfig(t *testing.T) {
 			cfg.Ledger,
 			cfg.Watch,
 		)
+	}
+	high := cfg.Ledger.AgentTypes.For("factory-worker-high")
+	if len(cfg.Ledger.AgentTypes.Names()) != 3 || high.Model != "opus" || high.Effort != "high" {
+		t.Errorf("reference lost its factory worker agent_types: %v", cfg.Ledger.AgentTypes.Names())
+	}
+	if adj := cfg.Ledger.Adjustments(); len(adj) != 0 {
+		t.Errorf("reference ledger needs adjustments: %v", adj)
+	}
+}
+
+// TestConfigRendersEffectiveAgentTypes: `belt config` prints the
+// agent_types entries in effect, so a malformed one is absent from the view
+// and a partly malformed one shows only the tag that survived.
+func TestConfigRendersEffectiveAgentTypes(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "config.yaml", "ledger:\n  agent_types:\n"+
+		"    factory-worker-high: {model: opus, effort: high}\n"+
+		"    factory-worker-low: {model: sonnet, effort: extreme}\n"+
+		"    broken: opus\n")
+	out := runConfigDocString(t, doctorPaths(dir))
+	_, body, _ := strings.Cut(out, "\n\n")
+	var raw struct {
+		Ledger struct {
+			AgentTypes map[string]map[string]string `yaml:"agent_types"`
+		} `yaml:"ledger"`
+	}
+	if err := yaml.Unmarshal([]byte(body), &raw); err != nil {
+		t.Fatalf("body is not valid YAML: %v\n%s", err, body)
+	}
+	want := map[string]map[string]string{
+		"factory-worker-high": {"model": "opus", "effort": "high"},
+		"factory-worker-low":  {"model": "sonnet"},
+	}
+	if !reflect.DeepEqual(raw.Ledger.AgentTypes, want) {
+		t.Errorf("ledger.agent_types = %v, want %v", raw.Ledger.AgentTypes, want)
 	}
 }
 
