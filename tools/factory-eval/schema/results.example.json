@@ -1,0 +1,576 @@
+{
+  "schema": "factory-eval/results/v1",
+  "dry_run": false,
+  "started_at": "2026-10-16T19:00:00Z",
+  "finished_at": "2026-10-16T20:00:00Z",
+  "commit": "45518e8b8461d491dc2a1aafaf1a8aa56702858a",
+  "cases_file": "cases.yaml",
+  "cases_digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "sign_off": {
+    "by": "",
+    "date": "",
+    "digest": ""
+  },
+  "claude_version": "2.1.301 (Claude Code)",
+  "prereqs": [
+    {
+      "name": "claude version",
+      "ok": true,
+      "detail": "2.1.301 (Claude Code)"
+    },
+    {
+      "name": "worker definition factory-worker-medium",
+      "ok": true,
+      "detail": "~/.claude/agents/factory-worker-medium.md"
+    }
+  ],
+  "settings_deny": [
+    "Edit(//Users/example/code/**)",
+    "Edit(//Users/example/.worktrees/**)",
+    "Bash(curl *)",
+    "Bash(git -C /Users/example/code*)",
+    "Bash(git -C ~/code*)",
+    "Bash(git -C /Users/example/.worktrees*)",
+    "Bash(git -C ~/.worktrees*)"
+  ],
+  "runs": [
+    {
+      "arm": "single",
+      "tier": "mid",
+      "run_index": 1,
+      "model": "sonnet",
+      "effort": "medium",
+      "budget_usd": 10,
+      "tokens_in": 940000,
+      "tokens_out": 60000,
+      "tokens_total": 1000000,
+      "tokens": {
+        "input": 90000,
+        "output": 60000,
+        "cache_read": 850000,
+        "cache_creation": 0
+      },
+      "dollars": 6.1,
+      "judge_dollars": 0.02,
+      "wall_clock_ms": 2520000,
+      "num_turns": 40,
+      "session_id": "s",
+      "stop": "success",
+      "permission_denials": 0,
+      "agent_report": {
+        "cases": []
+      },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
+      "cases": [
+        {
+          "component": "tools/belt",
+          "branch": "eval/docs-sweep-belt",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        },
+        {
+          "component": "services/speak",
+          "branch": "eval/docs-sweep-speak",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        }
+      ],
+      "judge_score": 8,
+      "judge_reasons": [
+        "belt: one sentence runs long",
+        "speak: one sentence runs long"
+      ],
+      "pass": true
+    },
+    {
+      "arm": "factory",
+      "tier": "mid",
+      "run_index": 1,
+      "model": "sonnet",
+      "effort": "medium",
+      "budget_usd": 10,
+      "tokens_in": 1220000,
+      "tokens_out": 70000,
+      "tokens_total": 1290000,
+      "tokens": {
+        "input": 120000,
+        "output": 70000,
+        "cache_read": 1100000,
+        "cache_creation": 0
+      },
+      "dollars": 5.4,
+      "judge_dollars": 0.02,
+      "wall_clock_ms": 960000,
+      "num_turns": 40,
+      "session_id": "s",
+      "stop": "success",
+      "permission_denials": 0,
+      "agent_report": {
+        "cases": []
+      },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
+      "cases": [
+        {
+          "component": "tools/belt",
+          "branch": "eval/docs-sweep-belt",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        },
+        {
+          "component": "services/speak",
+          "branch": "eval/docs-sweep-speak",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        }
+      ],
+      "judge_score": 8,
+      "judge_reasons": [
+        "belt: one sentence runs long",
+        "speak: one sentence runs long"
+      ],
+      "pass": true
+    },
+    {
+      "arm": "single",
+      "tier": "top",
+      "run_index": 1,
+      "model": "opus",
+      "effort": "high",
+      "budget_usd": 25,
+      "tokens_in": 990000,
+      "tokens_out": 80000,
+      "tokens_total": 1070000,
+      "tokens": {
+        "input": 90000,
+        "output": 80000,
+        "cache_read": 900000,
+        "cache_creation": 0
+      },
+      "dollars": 13.2,
+      "judge_dollars": 0.02,
+      "wall_clock_ms": 3060000,
+      "num_turns": 40,
+      "session_id": "s",
+      "stop": "success",
+      "permission_denials": 0,
+      "agent_report": {
+        "cases": []
+      },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
+      "cases": [
+        {
+          "component": "tools/belt",
+          "branch": "eval/docs-sweep-belt",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        },
+        {
+          "component": "services/speak",
+          "branch": "eval/docs-sweep-speak",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        }
+      ],
+      "judge_score": 8,
+      "judge_reasons": [
+        "belt: one sentence runs long",
+        "speak: one sentence runs long"
+      ],
+      "pass": true
+    },
+    {
+      "arm": "factory",
+      "tier": "top",
+      "run_index": 1,
+      "model": "opus",
+      "effort": "high",
+      "budget_usd": 25,
+      "tokens_in": 1110000,
+      "tokens_out": 90000,
+      "tokens_total": 1200000,
+      "tokens": {
+        "input": 110000,
+        "output": 90000,
+        "cache_read": 1000000,
+        "cache_creation": 0
+      },
+      "dollars": 11.8,
+      "judge_dollars": 0.01,
+      "wall_clock_ms": 1140000,
+      "num_turns": 40,
+      "session_id": "s",
+      "stop": "success",
+      "permission_denials": 0,
+      "agent_report": {
+        "cases": []
+      },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
+      "cases": [
+        {
+          "component": "tools/belt",
+          "branch": "eval/docs-sweep-belt",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": true,
+              "detail": "1 files changed"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": true
+            },
+            {
+              "name": "outline",
+              "pass": true
+            },
+            {
+              "name": "humanizer",
+              "pass": true
+            },
+            {
+              "name": "build_test",
+              "pass": true
+            }
+          ],
+          "deterministic_pass": true,
+          "judge_score": 8,
+          "judge_reasons": [
+            "one sentence runs long"
+          ],
+          "judge_attempts": 1,
+          "score": 8
+        },
+        {
+          "component": "services/speak",
+          "branch": "eval/docs-sweep-speak",
+          "checks": [
+            {
+              "name": "branch",
+              "pass": false,
+              "detail": "branch eval/docs-sweep-speak missing"
+            },
+            {
+              "name": "allowed_paths",
+              "pass": false,
+              "detail": "branch eval/docs-sweep-speak missing"
+            },
+            {
+              "name": "outline",
+              "pass": false,
+              "detail": "branch eval/docs-sweep-speak missing"
+            },
+            {
+              "name": "humanizer",
+              "pass": false,
+              "detail": "branch eval/docs-sweep-speak missing"
+            },
+            {
+              "name": "build_test",
+              "pass": false,
+              "detail": "branch eval/docs-sweep-speak missing"
+            }
+          ],
+          "deterministic_pass": false,
+          "judge_score": null,
+          "judge_reasons": [],
+          "judge_attempts": 0,
+          "judge_error": "skipped: branch missing",
+          "score": 0
+        }
+      ],
+      "judge_score": 4,
+      "judge_reasons": [
+        "belt: one sentence runs long"
+      ],
+      "pass": false,
+      "kept_dir": "/tmp/factory-eval-123456789"
+    }
+  ],
+  "summary": {
+    "arms": [
+      {
+        "arm": "single",
+        "tier": "mid",
+        "runs": 1,
+        "runs_errored": 0,
+        "runs_passed": 1,
+        "mean_judge_score": 8,
+        "mean_wall_clock_ms": 2520000,
+        "mean_tokens": 1000000,
+        "mean_dollars": 6.1
+      },
+      {
+        "arm": "factory",
+        "tier": "mid",
+        "runs": 1,
+        "runs_errored": 0,
+        "runs_passed": 1,
+        "mean_judge_score": 8,
+        "mean_wall_clock_ms": 960000,
+        "mean_tokens": 1290000,
+        "mean_dollars": 5.4
+      },
+      {
+        "arm": "single",
+        "tier": "top",
+        "runs": 1,
+        "runs_errored": 0,
+        "runs_passed": 1,
+        "mean_judge_score": 8,
+        "mean_wall_clock_ms": 3060000,
+        "mean_tokens": 1070000,
+        "mean_dollars": 13.2
+      },
+      {
+        "arm": "factory",
+        "tier": "top",
+        "runs": 1,
+        "runs_errored": 0,
+        "runs_passed": 0,
+        "mean_judge_score": 4,
+        "mean_wall_clock_ms": 1140000,
+        "mean_tokens": 1200000,
+        "mean_dollars": 11.8
+      }
+    ],
+    "decisions": [
+      {
+        "tier": "mid",
+        "expected_runs": 1,
+        "complete": true,
+        "judge_single": 8,
+        "judge_factory": 8,
+        "wall_ratio": 0.38095238095238093,
+        "token_ratio": 1.29,
+        "judge_ok": true,
+        "wall_ok": true,
+        "tokens_ok": true,
+        "factory_runs_passed": 1,
+        "pass": true,
+        "reason": "PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=); wall 0.38x (needs \u003c=0.5x); tokens 1.29x (needs \u003c=1.5x)"
+      },
+      {
+        "tier": "top",
+        "expected_runs": 1,
+        "complete": true,
+        "judge_single": 8,
+        "judge_factory": 4,
+        "wall_ratio": 0.37254901960784315,
+        "token_ratio": 1.1214953271028036,
+        "judge_ok": false,
+        "wall_ok": true,
+        "tokens_ok": true,
+        "factory_runs_passed": 0,
+        "pass": false,
+        "reason": "FAIL at tier top: no factory run passed all five checks; judge 4.0 vs 8.0 (needs \u003e=); wall 0.37x (needs \u003c=0.5x); tokens 1.12x (needs \u003c=1.5x)"
+      }
+    ],
+    "primary_tier": "mid",
+    "pass": true,
+    "decision": "provisional, 1 of the cases file's 3 runs per arm: PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=); wall 0.38x (needs \u003c=0.5x); tokens 1.29x (needs \u003c=1.5x)"
+  }
+}

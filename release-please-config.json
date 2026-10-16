@@ -17,6 +17,7 @@
     "services/status": { "component": "status" },
     "tools/belt": { "component": "belt" },
     "tools/clipboard": { "component": "clipboard" },
+    "tools/factory-eval": { "component": "factory-eval" },
     "tools/humanizer": { "component": "humanizer" },
     "tools/opener": { "component": "opener" },
     "tools/suspenders": { "component": "suspenders" },

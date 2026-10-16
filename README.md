@@ -100,6 +100,7 @@ CLI tools under `tools/`, installed to your local bin.
 | [worklog](tools/worklog/README.md) | Resumable cross-session work state, keyed by ticket or topic | CLI · MCP | proven |
 | [belt](tools/belt/README.md) | Claude Code guard and hint hooks: denies risky tool calls, injects context | CLI | experimental |
 | [suspenders](tools/suspenders/README.md) | Git secret scanner and pre-commit hook orchestrator | CLI | experimental |
+| [factory-eval](tools/factory-eval/README.md) | **experimental**: runs the factory and one agent on the same docs-sweep cases at the same dollar cap, then applies the pass rule | CLI | experimental |
 
 The MCP column is the AI half of the toolbox. Register those components as
 stdio MCP servers. Then your agent gets the code search, the audit log, and

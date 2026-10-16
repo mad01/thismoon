@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: factory-eval
+  description: experimental eval harness, the factory against one agent at equal budget (CLI)
+  tags: [go, cli, eval]
+spec:
+  type: cli
+  lifecycle: experimental
+  owner: mad01
+  system: thismoon
