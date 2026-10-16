@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -87,13 +88,17 @@ func outlineDocs(c cases.Case, broken bool) map[string]string {
 
 // scriptedAgent stands in for both arms: it commits outline-conforming docs
 // on each case branch, except the branches skip names, and reports the
-// canned spend for its arm and model.
+// canned spend for its arm and model. The arm named by escape also makes a
+// branch in the source repo at src, the way a run that reached the user's
+// checkout would.
 type scriptedAgent struct {
 	t      *testing.T
 	cases  []cases.Case
 	spend  map[string]string
 	wall   map[string]time.Duration
 	skip   map[string]string
+	escape string
+	src    string
 	called []string
 }
 
@@ -107,6 +112,10 @@ func (a *scriptedAgent) Run(_ context.Context, inv claude.Invocation) (claude.Ou
 	}
 	key := arm + "/" + inv.Args[slices.Index(inv.Args, "--model")+1]
 	a.called = append(a.called, key)
+	assertCleanStart(a.t, inv)
+	if key == a.escape {
+		git(a.t, a.src, "branch", "escaped")
+	}
 	pin := git(a.t, inv.Dir, "rev-parse", "HEAD")
 	for _, c := range a.cases {
 		if a.skip[key] == c.Branch {
@@ -118,6 +127,24 @@ func (a *scriptedAgent) Run(_ context.Context, inv claude.Invocation) (claude.Ou
 		git(a.t, inv.Dir, "switch", "--quiet", "--detach", pin)
 	}
 	return claude.Output{Stdout: []byte(a.spend[key]), Wall: a.wall[key]}, nil
+}
+
+// assertCleanStart checks what an arm session starts with: a clone with no
+// branch, no tag and no remote, and the harness settings file with its
+// deny rules.
+func assertCleanStart(t *testing.T, inv claude.Invocation) {
+	t.Helper()
+	if refs := git(t, inv.Dir, "for-each-ref", "refs/heads", "refs/tags"); refs != "" {
+		t.Errorf("the clone holds refs when the arm starts:\n%s", refs)
+	}
+	if remotes := git(t, inv.Dir, "remote"); remotes != "" {
+		t.Errorf("the clone has remotes when the arm starts: %s", remotes)
+	}
+	settings := inv.Args[slices.Index(inv.Args, "--settings")+1]
+	raw, err := os.ReadFile(settings)
+	if err != nil || !strings.Contains(string(raw), `"Bash(curl *)"`) {
+		t.Errorf("settings file %s = %s, %v; want the deny rules", settings, raw, err)
+	}
 }
 
 func spendReport(cost float64, input, output, cacheRead int64) string {
@@ -140,27 +167,89 @@ func (cleanCmd) Run(_ context.Context, _, name string, _ ...string) ([]byte, err
 // fixedScorer gives every judged case an 8.
 type fixedScorer struct{}
 
-func (fixedScorer) Score(context.Context, string, []judge.FilePair) (judge.Verdict, error) {
+func (fixedScorer) Score(_ context.Context, req judge.Request) (judge.Verdict, error) {
+	if len(req.Glossary) == 0 || req.Glossary[0].Path != cases.RootGlossary {
+		return judge.Verdict{}, fmt.Errorf("no root glossary in %+v", req.Glossary)
+	}
 	return judge.Verdict{Score: 8, Reasons: []string{"one sentence runs long"}, CostUSD: 0.01}, nil
 }
 
-// fixtureBatch runs the real loop over a test repo holding the first two
-// docs-sweep cases, one run per arm and tier, with stand-ins for claude,
-// humanizer, make and the judge.
-func fixtureBatch(t *testing.T) (Results, *scriptedAgent) {
+// flakyScorer fails the first fails calls, at a cent each, then gives 7.
+type flakyScorer struct {
+	fails int
+	calls int
+}
+
+func (f *flakyScorer) Score(context.Context, judge.Request) (judge.Verdict, error) {
+	f.calls++
+	if f.calls <= f.fails {
+		return judge.Verdict{CostUSD: 0.01}, errors.New("judge: call ended error_during_execution")
+	}
+	return judge.Verdict{Score: 7, Reasons: []string{"fine"}, CostUSD: 0.01}, nil
+}
+
+func fixedSnapshot(context.Context) prereq.Installed {
+	return prereq.Installed{
+		Files: map[string]string{
+			"~/.claude/skills/factory/SKILL.md":       "sha256:" + strings.Repeat("ab", 32),
+			"~/.claude/agents/factory-worker-high.md": "missing",
+		},
+		BeltVersion: "d430918",
+	}
+}
+
+// testRepo makes a source repo with the outline-breaking docs of f's
+// cases and a root glossary, and pins f to its one commit.
+func testRepo(t *testing.T, f *cases.File) string {
 	t.Helper()
-	f := loadCases(t)
-	f.Cases = f.Cases[:2]
 	src := t.TempDir()
 	git(t, src, "init", "--quiet")
+	writeFiles(t, src, map[string]string{cases.RootGlossary: "# test\n\n**Component**:\nA unit.\n"})
 	for _, c := range f.Cases {
 		writeFiles(t, src, outlineDocs(c, true))
 	}
 	git(t, src, "add", ".")
 	git(t, src, "commit", "--quiet", "-m", "pin")
 	f.Commit = git(t, src, "rev-parse", "HEAD")
+	return src
+}
+
+// testConfig is a batch over src with stand-ins for claude, humanizer,
+// make and the judge, one run per arm and tier.
+func testConfig(
+	t *testing.T,
+	f *cases.File,
+	src string,
+	agent AgentRunner,
+	scorer CaseScorer,
+) Config {
+	clock := time.Date(2026, 10, 16, 18, 0, 0, 0, time.UTC)
+	return Config{
+		Cases: f, CasesPath: "cases.yaml", Source: src, Home: "/Users/example",
+		Arms: []string{ArmSingle, ArmFactory}, Tiers: f.Tiers, Runs: 1, TempParent: t.TempDir(),
+		ClaudeVersion: "2.1.301 (Claude Code)",
+		Prereqs: []prereq.Result{
+			{Name: "claude version", OK: true, Detail: "2.1.301 (Claude Code)"},
+			{
+				Name: "worker definition factory-worker-medium", OK: true,
+				Detail: "~/.claude/agents/factory-worker-medium.md",
+			},
+		},
+		Agent: agent, Checker: judge.Deterministic{Outline: f.Outline, Humanizer: f.Humanizer, Cmd: cleanCmd{}},
+		Scorer: scorer, Snapshot: fixedSnapshot, Progress: io.Discard,
+		Now: func() time.Time { clock = clock.Add(time.Hour); return clock },
+	}
+}
+
+// fixtureBatch runs the real loop over a test repo holding the first two
+// docs-sweep cases, one run per arm and tier.
+func fixtureBatch(t *testing.T) (Results, *scriptedAgent) {
+	t.Helper()
+	f := loadCases(t)
+	f.Cases = f.Cases[:2]
+	src := testRepo(t, f)
 	agent := &scriptedAgent{
-		t: t, cases: f.Cases,
+		t: t, cases: f.Cases, src: src,
 		spend: map[string]string{
 			"single/sonnet":  spendReport(6.10, 90_000, 60_000, 850_000),
 			"factory/sonnet": spendReport(5.40, 120_000, 70_000, 1_100_000),
@@ -173,22 +262,7 @@ func fixtureBatch(t *testing.T) (Results, *scriptedAgent) {
 		},
 		skip: map[string]string{"factory/opus": f.Cases[1].Branch},
 	}
-	clock := time.Date(2026, 10, 16, 18, 0, 0, 0, time.UTC)
-	res := Run(context.Background(), Config{
-		Cases: f, CasesPath: "cases.yaml", Source: src, Arms: []string{ArmSingle, ArmFactory},
-		Tiers: f.Tiers, Runs: 1, TempParent: t.TempDir(), ClaudeVersion: "2.1.301 (Claude Code)",
-		Prereqs: []prereq.Result{
-			{Name: "claude version", OK: true, Detail: "2.1.301 (Claude Code)"},
-			{
-				Name: "worker definition factory-worker-medium", OK: true,
-				Detail: "~/.claude/agents/factory-worker-medium.md",
-			},
-		},
-		Agent: agent, Checker: judge.Deterministic{Outline: f.Outline, Humanizer: f.Humanizer, Cmd: cleanCmd{}},
-		Scorer: fixedScorer{}, Progress: io.Discard,
-		Now: func() time.Time { clock = clock.Add(time.Hour); return clock },
-	})
-	return res, agent
+	return Run(context.Background(), testConfig(t, f, src, agent, fixedScorer{})), agent
 }
 
 func TestRunScoresBothArmsAndAppliesThePassRule(t *testing.T) {
@@ -231,12 +305,7 @@ func TestRunScoresBothArmsAndAppliesThePassRule(t *testing.T) {
 // -update to rewrite it), and it must validate against the schema file.
 func TestResultsFixtureMatchesTheSchemaAndTheCode(t *testing.T) {
 	res, _ := fixtureBatch(t)
-	res.Commit = "45518e8b8461d491dc2a1aafaf1a8aa56702858a"
-	for i := range res.Runs {
-		if res.Runs[i].KeptDir != "" {
-			res.Runs[i].KeptDir = "/tmp/factory-eval-123456789"
-		}
-	}
+	normalize(&res)
 	got, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -262,6 +331,23 @@ func TestResultsFixtureMatchesTheSchemaAndTheCode(t *testing.T) {
 	}
 }
 
+// normalize replaces what changes from machine to machine, or with every
+// edit to cases.yaml, with fixed values that read like a real batch.
+func normalize(res *Results) {
+	const root = "/tmp/factory-eval-123456789"
+	res.Commit = "45518e8b8461d491dc2a1aafaf1a8aa56702858a"
+	res.CasesDigest = strings.Repeat("5e", 32)
+	res.SettingsDeny = Isolation{
+		Home: "/Users/example", Source: "/Users/example/code/src/github.com/mad01/thismoon",
+	}.DenyRules()
+	for i := range res.Runs {
+		res.Runs[i].SettingsFile = root + "/" + SettingsFileName
+		if res.Runs[i].KeptDir != "" {
+			res.Runs[i].KeptDir = root
+		}
+	}
+}
+
 func validate(t *testing.T, doc []byte) error {
 	t.Helper()
 	raw, err := os.ReadFile(schemaPath)
@@ -281,4 +367,75 @@ func validate(t *testing.T, doc []byte) error {
 		t.Fatal(err)
 	}
 	return resolved.Validate(instance)
+}
+
+// TestARunThatReachesTheSourceIsTainted makes the factory arm branch in the
+// source repo: the run is tainted, counts as errored, and the tier cannot
+// be decided.
+func TestARunThatReachesTheSourceIsTainted(t *testing.T) {
+	f := loadCases(t)
+	f.Cases = f.Cases[:1]
+	f.Tiers = f.Tiers[:1]
+	src := testRepo(t, f)
+	agent := &scriptedAgent{
+		t: t, cases: f.Cases, src: src, escape: "factory/sonnet",
+		spend: map[string]string{
+			"single/sonnet":  spendReport(6, 90_000, 60_000, 850_000),
+			"factory/sonnet": spendReport(5, 90_000, 60_000, 850_000),
+		},
+	}
+	res := Run(context.Background(), testConfig(t, f, src, agent, fixedScorer{}))
+	single, factory := res.Runs[0], res.Runs[1]
+	if single.Tainted || !single.Pass {
+		t.Errorf("single = tainted %v pass %v, want a clean pass", single.Tainted, single.Pass)
+	}
+	if !factory.Tainted || factory.Pass || !factory.Errored() || factory.KeptDir == "" {
+		t.Errorf("factory = %+v, want a tainted, errored, kept run", factory)
+	}
+	if !slices.Contains(factory.Taint, "ref added: refs/heads/escaped") {
+		t.Errorf("Taint = %q, want the escaped branch named", factory.Taint)
+	}
+	if res.Summary.Pass || !strings.Contains(res.Summary.Decision, "incomplete") {
+		t.Errorf("decision = %q, want an incomplete failure", res.Summary.Decision)
+	}
+}
+
+func TestTheJudgeGetsOneRetry(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		fails    int
+		score    bool
+		attempts int
+		dollars  float64
+	}{
+		{"recovers on the retry", 1, true, 2, 0.02},
+		{"fails twice", 2, false, 2, 0.02},
+		{"first call answers", 0, true, 1, 0.01},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := loadCases(t)
+			f.Cases, f.Tiers = f.Cases[:1], f.Tiers[:1]
+			src := testRepo(t, f)
+			agent := &scriptedAgent{t: t, cases: f.Cases, src: src, spend: map[string]string{
+				"single/sonnet": spendReport(6, 90_000, 60_000, 850_000),
+			}}
+			cfg := testConfig(t, f, src, agent, &flakyScorer{fails: tt.fails})
+			cfg.Arms = []string{ArmSingle}
+			run := Run(context.Background(), cfg).Runs[0]
+			cr := run.Cases[0]
+			if (cr.JudgeScore != nil) != tt.score || cr.JudgeAttempts != tt.attempts {
+				t.Errorf("case = %+v, want score=%v after %d attempts", cr, tt.score, tt.attempts)
+			}
+			if run.JudgeDollars != tt.dollars {
+				t.Errorf(
+					"JudgeDollars = %v, want %v: every attempt is paid for",
+					run.JudgeDollars,
+					tt.dollars,
+				)
+			}
+			if !tt.score && !strings.HasPrefix(cr.JudgeError, "after 2 attempts:") {
+				t.Errorf("JudgeError = %q, want it to count the attempts", cr.JudgeError)
+			}
+		})
+	}
 }

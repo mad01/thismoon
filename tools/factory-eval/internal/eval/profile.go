@@ -60,8 +60,9 @@ func disallowedTools(arm string) []string {
 	return tools
 }
 
-// armArgs is the full argv for one arm session at one tier, in one checkout.
-func armArgs(arm string, tier cases.Tier, co *checkout.Checkout) []string {
+// armArgs is the full argv for one arm session at one tier, in one
+// checkout, with the harness settings file at settings.
+func armArgs(arm string, tier cases.Tier, co *checkout.Checkout, settings string) []string {
 	return claude.ArmArgs(claude.ArmFlags{
 		Model:        tier.Model,
 		Effort:       tier.Effort,
@@ -71,5 +72,6 @@ func armArgs(arm string, tier cases.Tier, co *checkout.Checkout) []string {
 		MCPConfig:    mcpConfig,
 		Allowed:      allowedTools(arm),
 		Disallowed:   disallowedTools(arm),
+		Settings:     settings,
 	})
 }

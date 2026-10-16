@@ -53,6 +53,30 @@ func TestBothArmsGetTheSameCaseText(t *testing.T) {
 	}
 }
 
+// TestPreamblesMatchWhatTheRunAllows keeps the preambles from sending an
+// arm into a call the profile denies: preflight check 3 reads the repo's
+// identity settings, which the deny list blocks, so the factory arm runs
+// check 4 alone and the harness sets the identity itself.
+func TestPreamblesMatchWhatTheRunAllows(t *testing.T) {
+	f := loadCases(t)
+	for name, arm := range map[string]cases.Arm{"single": f.Arms.Single, "factory": f.Arms.Factory} {
+		if !strings.Contains(arm.Preamble, "csl and kof tools are not attached") {
+			t.Errorf("%s preamble does not say csl and kof are missing", name)
+		}
+	}
+	factory := f.Arms.Factory.Preamble
+	if !strings.Contains(factory, "Run preflight check 4 only.") ||
+		strings.Contains(factory, "checks 3") {
+		t.Error("factory preamble must run preflight check 4 only")
+	}
+	if !strings.Contains(factory, "The harness sets the git identity") {
+		t.Error("factory preamble does not say the harness sets the git identity")
+	}
+	if !slices.Contains(denied, "Bash(git -C * config *)") {
+		t.Error("the deny list no longer blocks the -C identity read, so recheck the preamble")
+	}
+}
+
 func TestSharedBlockListsTheOutlineInOrder(t *testing.T) {
 	f := loadCases(t)
 	block := sharedBlock(f)
@@ -82,11 +106,12 @@ func TestProfileKeepsRunsInsideTheClone(t *testing.T) {
 	co := &checkout.Checkout{Root: "/tmp/run"}
 	tier := cases.Tier{Model: "sonnet", Effort: "medium", BudgetUSD: 10}
 	for _, arm := range []string{ArmSingle, ArmFactory} {
-		args := armArgs(arm, tier, co)
+		args := armArgs(arm, tier, co, "/tmp/run/settings.json")
 		joined := strings.Join(args, " ")
 		for _, want := range []string{
 			"Bash(git push *)", "Bash(git -C * push *)", "Bash(make * install*)",
 			"Bash(go install *)", "--strict-mcp-config", "--add-dir /tmp/run", "--max-budget-usd 10.00",
+			"--settings /tmp/run/settings.json",
 		} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("%s args lack %q", arm, want)

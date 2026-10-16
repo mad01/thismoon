@@ -12,8 +12,12 @@ Anything else means the factory stops here.
 ## How it works
 
 Each run gets a fresh clone of thismoon under a temp dir, detached at the
-pinned commit, with its origin remote removed. The arm session works there
-under a fixed permission profile:
+pinned commit. The clone loses its origin remote, every branch, every tag
+and its reflogs, and git prunes the objects that leaves unreachable. So the
+clone holds nothing newer than the pin, and `git fetch` has no remote to
+pull it back from. Its local config carries the `factory-eval` git
+identity, so no commit prompts. The arm session works there under a fixed
+permission profile:
 
 - `--max-budget-usd` with the tier's cap, and `--output-format json` plus
   `--json-schema` for a structured final report.
@@ -25,6 +29,37 @@ under a fixed permission profile:
   build`/`make test`, `go build/test/vet` and `humanizer`. A deny list for
   `git push`, `git remote`, `git config`, `gh`, `ralph`, `make install` and
   `go install`. Only the factory arm may use `Agent` and `SendMessage`.
+- `--settings` with a settings file written into the run's temp dir. Its
+  deny rules keep the file tools out of the user's checkouts, as the next
+  section lists.
+
+### What is enforced and what is only detected
+
+The arms do not run in a sandbox. Each arm session runs as the user, with
+the user's own settings loaded, and those settings may allow commands this
+profile does not list. Claude's permission rules enforce three things,
+because a deny rule beats every allow rule in any settings file:
+
+- `--strict-mcp-config`: the humanizer MCP server is the only one.
+- The deny list above blocks push, remote, git config, `gh`, `ralph`,
+  installs and the web tools.
+- The run's settings file blocks Edit and Write under `~/code` and
+  `~/.worktrees`, and under the source repo when it lives elsewhere. It
+  also blocks `curl`, and `git -C` aimed at the source repo or at
+  `~/.worktrees` in absolute or `~/` form. Reads stay allowed.
+
+A Bash command can still reach a checkout another way: `cd` first, `$HOME`
+in the path, a symlink, or a command the user's settings allow. That is
+detected, not prevented. Before and after each arm session, factory-eval
+fingerprints the source checkout: HEAD, a hash of `git status --porcelain`,
+the worktree count and every ref. Any change marks the run tainted, lists
+the change under `taint`, and counts the run as errored. The fingerprint
+cannot tell the arm's change from another session's, so run a paid batch
+while no other session works in the source checkout. Files outside the
+source checkout, such as other repos under `~/code` reached through Bash,
+are not watched.
+
+### Scoring and the pass rule
 
 After the session ends, factory-eval scores every case. Deterministic
 checks come first:
@@ -35,10 +70,27 @@ checks come first:
   ignored rules.
 - `make -C <component> build test` passes.
 
-Then one judge call scores the prose from 0 to 10
-against a fixed rubric and a do-not-fail list. A case's score is the judge
-score when every check passed, else 0. A run passes when the session
-finished and every case passed its checks.
+When a branch edits a path outside the case, the humanizer and build checks
+fail as skipped instead of running, so a Makefile the arm wrote never runs.
+
+Then one judge call scores the prose from 0 to 10 against a fixed rubric,
+a do-not-fail list and the case's glossary files as they read at the pin.
+A failed judge call gets one retry before the case's judge score counts as
+missing. A case's score is the judge score when every check passed, else 0.
+A run passes when it did not error and every case passed its checks.
+
+A run errors when factory-eval or claude failed, when the session stopped
+before it finished (a budget stop too), or when the run is tainted. A tier
+is decided only when it is complete: each arm recorded every expected run
+and none errored. Errored runs never count toward the means. On a complete
+tier, the factory passes only when all of these hold:
+
+- The single arm's mean judge score is above 0, so there is a baseline.
+- At least one factory run passed all five checks on every case.
+- The factory's mean judge score is at least the single arm's.
+- Its mean wall clock is at most half the single arm's, and its mean
+  tokens at most 1.5 times. A zero single-arm mean leaves a ratio
+  undefined, and the decision says so and fails.
 
 Runs go one at a time, interleaved by run index, tier and arm. A passing
 run's clone is deleted; a failing run's clone stays, and its path is in the
@@ -63,21 +115,42 @@ Prerequisites for a paid run, all checked before anything is spent:
 - For the factory arm: the factory and loom skills in `~/.claude/skills`,
   the three worker definitions `factory-worker-low`, `-medium` and `-high`
   in `~/.claude/agents`, and a SubagentStart hook in
-  `~/.claude/settings.json` that runs belt. The definitions and the hook
-  wiring land with MAD-398. Until then the factory arm refuses to run.
-- A signed-off cases file: `sign_off.by` and `sign_off.date` set.
+  `~/.claude/settings.json` that runs belt. MAD-398 installs the
+  definitions and the hook wiring. Without them the factory arm refuses to
+  run.
+- A signed-off cases file, as Usage describes.
+- A temp dir outside `~/code` and `~/.worktrees`, where the arms may edit
+  their clone. The default system temp dir qualifies.
 
 ## Usage
 
 Rehearse first. A dry run makes no model call: stand-ins replace claude and
 the judge, while the clones, the checks and the results file are real. It
 prints every prerequisite, the exact argv of both arms and of the judge,
-and what a paid run would refuse.
+the sign-off digest, and what a paid run would refuse.
 
 ```bash
 cd tools/factory-eval
 go run ./cmd/factory-eval run --dry-run      # one run per arm and tier, about 90 s
 go run ./cmd/factory-eval measure            # the deviation table behind the cases
+```
+
+To sign off, show the user the cases and the dry run's output. Once they
+approve, set the three `sign_off` values in `cases.yaml`:
+
+- `by`: the name of the person who approved.
+- `date`: the date, as YYYY-MM-DD.
+- `digest`: the value the dry run prints as the sign-off digest.
+
+The digest is the sha256 of `cases.yaml` with each `sign_off` line
+rewritten to its key and an empty quoted value (`  by: ""`). Filling in the
+three values leaves it unchanged, and any other edit changes it. A paid run
+recomputes it and refuses when it no longer matches. In `cases.yaml` as
+committed only the `sign_off` lines match this pattern, so it gives the
+same digest by hand:
+
+```bash
+sed -E 's/^(  (by|date|digest)):.*/\1: ""/' cases.yaml | shasum -a 256
 ```
 
 The first paid run, once the user has signed off `cases.yaml`. Start with
@@ -93,8 +166,8 @@ The full matrix, three runs per arm at both tiers:
 go run ./cmd/factory-eval run
 ```
 
-`--arms single` runs the baseline alone, for example while the factory
-prerequisites are missing. `--repo` clones another checkout instead of the
+`--runs` must be at least 1. `--arms single` runs the baseline alone, for
+example while the factory prerequisites are missing. `--repo` clones another checkout instead of the
 one in `cases.yaml`. `--temp-dir` puts the clones somewhere other than the
 system temp dir.
 
@@ -145,7 +218,7 @@ of three provenance labels:
 - `judgement`: a choice made for this eval.
 
 The user signs the file off before the first paid run, and again after any
-change to a task, the rubric, a tier or a cap. The fields:
+change to it. The sign-off digest enforces that. The fields:
 
 - `commit` pins the tree every run clones. `repo` is the checkout cloned
   from.
@@ -154,12 +227,14 @@ change to a task, the rubric, a tier or a cap. The fields:
 - `outline` is the shared docs outline (MAD-217), and `humanizer` names the
   severity and the two rules ignored because they fire on text the outline
   itself requires.
-- `judge` holds the rubric, the do-not-fail list and the glossary the judge
-  sees.
+- `judge` holds the rubric, the do-not-fail list and the glossary notes
+  the judge sees beside each case's glossary files.
 - `arms` holds each arm's preamble. The case tasks below it reach both arms
   in identical wording.
 - `cases` lists the four components, each with its branch, allowed paths,
-  task, done criterion and measured deviation.
+  task, done criterion and measured deviation. A case's `glossary` lists
+  the glossary files the judge reads; without one it reads the root
+  `CONTEXT.md`.
 
 ## Where things live
 
@@ -177,6 +252,13 @@ it. `runs[]` has one entry per arm session, with tokens, dollars, wall clock,
 the stop reason, the judge's mean score and reasons, and per case the five
 checks with their details. A failed run names its kept clone in `kept_dir`.
 Open it to see what the session left on each branch.
+
+Each run also records what could make two runs differ. `installed` holds
+the sha256 of the factory and loom skills and of the three worker
+definitions, and the belt version, as they were when the run started. A
+`ralph up` in the middle of a batch shows there. `tainted` and `taint` say
+whether the source checkout changed during the run. `settings_file` is the
+run's settings file, and `settings_deny` at the top lists its rules.
 
 ## Develop
 

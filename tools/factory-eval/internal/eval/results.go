@@ -3,6 +3,7 @@ package eval
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mad01/thismoon/tools/factory-eval/internal/cases"
@@ -23,7 +24,9 @@ const (
 	MaxTokenRatio = 1.5
 )
 
-// Results is the one document a batch writes.
+// Results is the one document a batch writes. CasesDigest is the cases
+// file's content digest, which a signed-off file also holds in its
+// sign-off; SettingsDeny is the deny list every run's settings file held.
 type Results struct {
 	Schema        string          `json:"schema"`
 	DryRun        bool            `json:"dry_run"`
@@ -31,39 +34,56 @@ type Results struct {
 	FinishedAt    time.Time       `json:"finished_at"`
 	Commit        string          `json:"commit"`
 	CasesFile     string          `json:"cases_file"`
+	CasesDigest   string          `json:"cases_digest"`
 	SignOff       cases.SignOff   `json:"sign_off"`
 	ClaudeVersion string          `json:"claude_version"`
 	Prereqs       []prereq.Result `json:"prereqs"`
+	SettingsDeny  []string        `json:"settings_deny"`
 	Runs          []RunResult     `json:"runs"`
 	Summary       Summary         `json:"summary"`
 }
 
 // RunResult is one arm session at one tier, with its cases scored.
+// Installed is what the host had installed when the run started. Taint
+// lists how the source checkout changed while the arm ran; a tainted run
+// counts as errored.
 type RunResult struct {
-	Arm               string          `json:"arm"`
-	Tier              string          `json:"tier"`
-	Index             int             `json:"run_index"`
-	Model             string          `json:"model"`
-	Effort            string          `json:"effort"`
-	BudgetUSD         float64         `json:"budget_usd"`
-	TokensIn          int64           `json:"tokens_in"`
-	TokensOut         int64           `json:"tokens_out"`
-	TokensTotal       int64           `json:"tokens_total"`
-	Tokens            claude.Tokens   `json:"tokens"`
-	Dollars           float64         `json:"dollars"`
-	JudgeDollars      float64         `json:"judge_dollars"`
-	WallClockMS       int64           `json:"wall_clock_ms"`
-	NumTurns          int             `json:"num_turns"`
-	SessionID         string          `json:"session_id,omitempty"`
-	Stop              string          `json:"stop"`
-	Error             string          `json:"error,omitempty"`
-	PermissionDenials int             `json:"permission_denials"`
-	AgentReport       json.RawMessage `json:"agent_report,omitempty"`
-	Cases             []CaseResult    `json:"cases"`
-	JudgeScore        float64         `json:"judge_score"`
-	JudgeReasons      []string        `json:"judge_reasons"`
-	Pass              bool            `json:"pass"`
-	KeptDir           string          `json:"kept_dir,omitempty"`
+	Arm               string           `json:"arm"`
+	Tier              string           `json:"tier"`
+	Index             int              `json:"run_index"`
+	Model             string           `json:"model"`
+	Effort            string           `json:"effort"`
+	BudgetUSD         float64          `json:"budget_usd"`
+	TokensIn          int64            `json:"tokens_in"`
+	TokensOut         int64            `json:"tokens_out"`
+	TokensTotal       int64            `json:"tokens_total"`
+	Tokens            claude.Tokens    `json:"tokens"`
+	Dollars           float64          `json:"dollars"`
+	JudgeDollars      float64          `json:"judge_dollars"`
+	WallClockMS       int64            `json:"wall_clock_ms"`
+	NumTurns          int              `json:"num_turns"`
+	SessionID         string           `json:"session_id,omitempty"`
+	Stop              string           `json:"stop"`
+	Error             string           `json:"error,omitempty"`
+	PermissionDenials int              `json:"permission_denials"`
+	AgentReport       json.RawMessage  `json:"agent_report,omitempty"`
+	SettingsFile      string           `json:"settings_file,omitempty"`
+	Installed         prereq.Installed `json:"installed"`
+	Tainted           bool             `json:"tainted"`
+	Taint             []string         `json:"taint"`
+	Cases             []CaseResult     `json:"cases"`
+	JudgeScore        float64          `json:"judge_score"`
+	JudgeReasons      []string         `json:"judge_reasons"`
+	Pass              bool             `json:"pass"`
+	KeptDir           string           `json:"kept_dir,omitempty"`
+}
+
+// Errored reports whether a run cannot count toward a decision: the
+// harness or the session failed, the session stopped before it finished
+// its turn (a budget stop included), or the run changed the source
+// checkout.
+func (r RunResult) Errored() bool {
+	return r.Error != "" || r.Stop != claude.SubtypeSuccess || r.Tainted
 }
 
 // CaseResult is one case of one run: its deterministic checks and its
@@ -76,6 +96,7 @@ type CaseResult struct {
 	DeterministicPass bool          `json:"deterministic_pass"`
 	JudgeScore        *int          `json:"judge_score"`
 	JudgeReasons      []string      `json:"judge_reasons"`
+	JudgeAttempts     int           `json:"judge_attempts"`
 	JudgeError        string        `json:"judge_error,omitempty"`
 	Score             int           `json:"score"`
 }
@@ -90,11 +111,13 @@ type Summary struct {
 	Decision    string     `json:"decision"`
 }
 
-// ArmStats are one arm's means over its runs at one tier.
+// ArmStats are one arm's counts and means at one tier. Runs counts every
+// recorded run; the means cover only the runs that did not error.
 type ArmStats struct {
 	Arm             string  `json:"arm"`
 	Tier            string  `json:"tier"`
 	Runs            int     `json:"runs"`
+	RunsErrored     int     `json:"runs_errored"`
 	RunsPassed      int     `json:"runs_passed"`
 	MeanJudgeScore  float64 `json:"mean_judge_score"`
 	MeanWallClockMS float64 `json:"mean_wall_clock_ms"`
@@ -104,21 +127,24 @@ type ArmStats struct {
 
 // Decision applies the pass rule at one tier.
 type Decision struct {
-	Tier         string  `json:"tier"`
-	Complete     bool    `json:"complete"`
-	JudgeSingle  float64 `json:"judge_single"`
-	JudgeFactory float64 `json:"judge_factory"`
-	WallRatio    float64 `json:"wall_ratio"`
-	TokenRatio   float64 `json:"token_ratio"`
-	JudgeOK      bool    `json:"judge_ok"`
-	WallOK       bool    `json:"wall_ok"`
-	TokensOK     bool    `json:"tokens_ok"`
-	Pass         bool    `json:"pass"`
-	Reason       string  `json:"reason"`
+	Tier              string  `json:"tier"`
+	ExpectedRuns      int     `json:"expected_runs"`
+	Complete          bool    `json:"complete"`
+	JudgeSingle       float64 `json:"judge_single"`
+	JudgeFactory      float64 `json:"judge_factory"`
+	WallRatio         float64 `json:"wall_ratio"`
+	TokenRatio        float64 `json:"token_ratio"`
+	JudgeOK           bool    `json:"judge_ok"`
+	WallOK            bool    `json:"wall_ok"`
+	TokensOK          bool    `json:"tokens_ok"`
+	FactoryRunsPassed int     `json:"factory_runs_passed"`
+	Pass              bool    `json:"pass"`
+	Reason            string  `json:"reason"`
 }
 
-// Summarize computes the per-arm means and the decisions over runs.
-func Summarize(runs []RunResult, tiers []cases.Tier, primary string) Summary {
+// Summarize computes the per-arm stats and the decisions over runs, where
+// each arm was meant to run expected times per tier.
+func Summarize(runs []RunResult, tiers []cases.Tier, primary string, expected int) Summary {
 	s := Summary{PrimaryTier: primary, Arms: []ArmStats{}, Decisions: []Decision{}}
 	for _, t := range tiers {
 		single := stats(runs, ArmSingle, t.Name)
@@ -128,7 +154,7 @@ func Summarize(runs []RunResult, tiers []cases.Tier, primary string) Summary {
 				s.Arms = append(s.Arms, a)
 			}
 		}
-		d := Decide(t.Name, single, factory)
+		d := Decide(t.Name, expected, single, factory)
 		s.Decisions = append(s.Decisions, d)
 		if t.Name == primary {
 			s.Pass, s.Decision = d.Pass, d.Reason
@@ -144,6 +170,10 @@ func stats(runs []RunResult, arm, tier string) ArmStats {
 			continue
 		}
 		a.Runs++
+		if r.Errored() {
+			a.RunsErrored++
+			continue
+		}
 		if r.Pass {
 			a.RunsPassed++
 		}
@@ -152,8 +182,8 @@ func stats(runs []RunResult, arm, tier string) ArmStats {
 		a.MeanTokens += float64(r.TokensTotal)
 		a.MeanDollars += r.Dollars
 	}
-	if a.Runs > 0 {
-		n := float64(a.Runs)
+	if clean := a.Runs - a.RunsErrored; clean > 0 {
+		n := float64(clean)
 		a.MeanJudgeScore /= n
 		a.MeanWallClockMS /= n
 		a.MeanTokens /= n
@@ -162,39 +192,73 @@ func stats(runs []RunResult, arm, tier string) ArmStats {
 	return a
 }
 
-// Decide applies the MAD-402 pass rule to one tier's arm means. A ratio
-// against a zero single-arm mean is undefined and fails its check.
-func Decide(tier string, single, factory ArmStats) Decision {
+// Decide applies the MAD-402 pass rule at one tier. The tier must be
+// complete: each arm recorded all expected runs and none errored. Then
+// the factory passes only when the single arm set a baseline (a mean judge
+// score above 0), at least one factory run passed all five checks on every
+// case, and the factory's means meet the three thresholds. A ratio against
+// a zero single-arm mean is undefined and fails its check.
+func Decide(tier string, expected int, single, factory ArmStats) Decision {
 	d := Decision{
-		Tier:         tier,
-		JudgeSingle:  single.MeanJudgeScore,
-		JudgeFactory: factory.MeanJudgeScore,
+		Tier: tier, ExpectedRuns: expected, FactoryRunsPassed: factory.RunsPassed,
+		JudgeSingle: single.MeanJudgeScore, JudgeFactory: factory.MeanJudgeScore,
 	}
-	if single.Runs == 0 || factory.Runs == 0 {
-		d.Reason = fmt.Sprintf("FAIL at tier %s: incomplete, single ran %d and factory ran %d",
-			tier, single.Runs, factory.Runs)
+	if !complete(single, expected) || !complete(factory, expected) {
+		d.Reason = fmt.Sprintf("FAIL at tier %s: incomplete; %s; %s", tier,
+			cleanRuns(single, expected), cleanRuns(factory, expected))
 		return d
 	}
 	d.Complete = true
-	d.JudgeOK = factory.MeanJudgeScore >= single.MeanJudgeScore
-	if single.MeanWallClockMS > 0 {
-		d.WallRatio = factory.MeanWallClockMS / single.MeanWallClockMS
-		d.WallOK = d.WallRatio <= MaxWallRatio
+	d.JudgeOK = single.MeanJudgeScore > 0 && factory.MeanJudgeScore >= single.MeanJudgeScore
+	d.WallRatio, d.WallOK = ratio(factory.MeanWallClockMS, single.MeanWallClockMS, MaxWallRatio)
+	d.TokenRatio, d.TokensOK = ratio(factory.MeanTokens, single.MeanTokens, MaxTokenRatio)
+	d.Pass = d.JudgeOK && d.WallOK && d.TokensOK && factory.RunsPassed > 0
+	d.Reason = decisionReason(d, single)
+	return d
+}
+
+func complete(a ArmStats, expected int) bool {
+	return expected > 0 && a.Runs == expected && a.RunsErrored == 0
+}
+
+func cleanRuns(a ArmStats, expected int) string {
+	return fmt.Sprintf("%s has %d of %d runs without error", a.Arm, a.Runs-a.RunsErrored, expected)
+}
+
+// ratio is factory over single and whether it is at most limit. A zero
+// single mean leaves the ratio undefined: 0 and failed.
+func ratio(factory, single, limit float64) (float64, bool) {
+	if single <= 0 {
+		return 0, false
 	}
-	if single.MeanTokens > 0 {
-		d.TokenRatio = factory.MeanTokens / single.MeanTokens
-		d.TokensOK = d.TokenRatio <= MaxTokenRatio
-	}
-	d.Pass = d.JudgeOK && d.WallOK && d.TokensOK
+	r := factory / single
+	return r, r <= limit
+}
+
+func decisionReason(d Decision, single ArmStats) string {
 	verdict := "FAIL"
 	if d.Pass {
 		verdict = "PASS"
 	}
-	d.Reason = fmt.Sprintf("%s at tier %s: judge %.1f vs %.1f (needs >=), "+
-		"wall %.2fx (needs <=%.1fx), tokens %.2fx (needs <=%.1fx)",
-		verdict, tier, d.JudgeFactory, d.JudgeSingle, d.WallRatio, MaxWallRatio,
-		d.TokenRatio, MaxTokenRatio)
-	return d
+	var parts []string
+	if single.MeanJudgeScore <= 0 {
+		parts = append(parts, "the single arm's mean judge score is 0, no baseline to match")
+	}
+	if d.FactoryRunsPassed == 0 {
+		parts = append(parts, "no factory run passed all five checks")
+	}
+	parts = append(parts,
+		fmt.Sprintf("judge %.1f vs %.1f (needs >=)", d.JudgeFactory, d.JudgeSingle),
+		ratioText("wall", d.WallRatio, single.MeanWallClockMS, MaxWallRatio),
+		ratioText("tokens", d.TokenRatio, single.MeanTokens, MaxTokenRatio))
+	return fmt.Sprintf("%s at tier %s: %s", verdict, d.Tier, strings.Join(parts, "; "))
+}
+
+func ratioText(name string, r, single, limit float64) string {
+	if single <= 0 {
+		return name + " undefined, the single arm's mean is 0"
+	}
+	return fmt.Sprintf("%s %.2fx (needs <=%.1fx)", name, r, limit)
 }
 
 // WorstCaseUSD is the most a batch can spend: every arm run at its tier's

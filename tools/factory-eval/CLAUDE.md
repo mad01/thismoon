@@ -19,27 +19,30 @@ tools/factory-eval/
   results/                   batch output, ignored by git
   internal/
     cli/       run, measure, docs, version; the paid-run gate
-    cases/     cases.yaml types, decoding with known fields, validation
+    cases/     cases.yaml types, decoding with known fields, validation, sign-off digest
     outline/   pure heading check against the shared outline
-    checkout/  throwaway clone at the pin, branch reads, check worktrees
+    checkout/  throwaway clone at the pin, branch reads, check worktrees, fingerprint
     claude/    headless argv builders, the result-message parser, the exec runner
     judge/     the five deterministic checks and the LLM judge call
-    prereq/    tool, skill, worker definition and hook checks
-    eval/      the run loop, prompts, permission profile, results, pass rule
+    prereq/    tool, skill, worker definition and hook checks; the install snapshot
+    eval/      the run loop, prompts, permission profile, isolation settings, results, pass rule
     dryrun/    stand-ins for the arm session and the judge
 ```
 
 ## How it works
 
-`run` resolves a batch from cases.yaml and the flags, then prints the plan
-and every prerequisite. It refuses a paid run with no sign-off, a missing
-prerequisite, or a worst case above `batch_ceiling_usd`. `eval.Run` then
-loops run index, tier, arm. Each run clones the source with
-`checkout.Create`, invokes the arm through the `AgentRunner` seam, and
-scores every case with the `CaseChecker` and `CaseScorer` seams. It keeps
-the clone when the run fails. `Summarize` takes the per-arm means and
-`Decide` applies the pass rule per tier; the primary tier's decision is the
-headline.
+`run` resolves a batch from cases.yaml and the flags, then prints the plan,
+the sign-off digest and every prerequisite. It refuses a paid run when the
+sign-off is missing or does not match `cases.File.Digest`, a prerequisite
+is missing, or the worst case is above `batch_ceiling_usd`. `eval.Run` then
+loops run index, tier, arm. Each run records `prereq.Snapshot`, clones the
+source with `checkout.Create`, and writes its settings file from
+`eval.Isolation`. It fingerprints the source checkout, invokes the arm
+through the `AgentRunner` seam, and fingerprints again; a change taints
+the run. It scores every case with the `CaseChecker` and `CaseScorer`
+seams, and keeps the clone when the run fails. `Summarize` takes the
+per-arm stats over the runs that did not error, and `Decide` applies the
+pass rule per tier. The primary tier's decision is the headline.
 
 `--dry-run` swaps `dryrun.Agent` and `dryrun.Judge` in for `claude.Exec`.
 Everything else is the paid path.
@@ -55,13 +58,24 @@ Everything else is the paid path.
 - Two humanizer rules are ignored, measured as firing on every component doc
   on text the outline requires. Changing the list changes what the done
   criterion means, so it needs a new sign-off.
+- `Decide` decides a tier only when it is complete: every expected run of
+  both arms recorded, none errored. `RunResult.Errored` covers an error, a
+  stop other than success (a budget stop too) and a taint. On a complete
+  tier it still fails without a single-arm baseline (mean judge above 0)
+  or without one factory run that passed all five checks.
+- humanizer and build_test fail as skipped when allowed_paths fails, so a
+  Makefile the arm edited never runs.
+- `cases.ContentDigest` blanks each `sign_off` line to its key and `""`
+  before hashing; README documents the rule for people. Changing the rule
+  voids every existing sign-off.
 
 ## Data model & storage
 
 No store. Input is cases.yaml. Output is one JSON document per batch under
 `results/`, shaped by `schema/results.schema.json` (`factory-eval/results/v1`).
 The clones live under the system temp dir, or `--temp-dir`, as
-`factory-eval-*`; passing runs delete theirs.
+`factory-eval-*`, each with the run's read-only `settings.json` beside the
+clone. Passing runs delete theirs.
 
 ## Build / install / test
 
@@ -92,10 +106,22 @@ schema. Review the diff before committing it.
   stdin for that reason, and a test checks that each variadic flag is
   followed by another flag.
 - **Arm sessions load the user's settings** (hooks, skills, agent
-  definitions, permission rules), because the factory arm needs them. The
-  deny list in `internal/eval/profile.go` beats any allow rule they add.
-- **The source repo is only read.** The clone's origin remote is removed
-  right after cloning, so no session can push back.
+  definitions, permission rules), because the factory arm needs them. A
+  deny rule beats every allow rule wherever it comes from: the deny list in
+  `internal/eval/profile.go` and the run's settings file from
+  `internal/eval/isolation.go`. That prevents only the paths those rules
+  name. It is not a sandbox: a Bash command can still reach a checkout
+  through `cd` or `$HOME`, and only the fingerprint detects that.
+- **The fingerprint taints a run on any change to the source checkout**,
+  whoever made it. A paid batch needs a source checkout no other session
+  works in.
+- **The clone holds nothing past the pin.** Branches, tags, reflogs and the
+  origin remote go right after cloning and git prunes what that leaves
+  unreachable. No newer main drifts in, and no session can push back.
+- **The factory preamble runs preflight check 4 only.** Check 3 reads the
+  identity from the repo's git settings, a call the deny list blocks, so
+  the clone's local config carries the identity instead. A prompt test ties
+  the preamble to that deny rule.
 
 ## See also
 

@@ -138,12 +138,15 @@ type ArmFlags struct {
 	MCPConfig    string
 	Allowed      []string
 	Disallowed   []string
+	// Settings is the harness's own settings file, loaded beside the
+	// user's: its deny rules beat any allow rule the user's settings hold.
+	Settings string
 }
 
 // ArmArgs is the argv for one unattended arm session: JSON output, the
 // dollar cap, the dontAsk mode with prompts turned into denials, only the
-// MCP servers the config names, and the run's temp dir as the one extra
-// directory the file tools may reach.
+// MCP servers the config names, the harness settings file, and the run's
+// temp dir as the one extra directory the file tools may reach.
 func ArmArgs(f ArmFlags) []string {
 	return []string{
 		"-p",
@@ -158,6 +161,7 @@ func ArmArgs(f ArmFlags) []string {
 		"--mcp-config", f.MCPConfig,
 		"--allowedTools", strings.Join(f.Allowed, ","),
 		"--disallowedTools", strings.Join(f.Disallowed, ","),
+		"--settings", f.Settings,
 		"--add-dir", f.AddDir,
 	}
 }

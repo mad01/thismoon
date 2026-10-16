@@ -1,6 +1,11 @@
 # factory-eval cases file (MAD-402). The user signs this file off before the
-# first paid run: set sign_off.by and sign_off.date, and re-sign after any
-# change to a task, a rubric, a tier or a cap.
+# first paid run, and again after any change to it. To sign off, run
+# `factory-eval run --dry-run`, then set sign_off.by to a name, sign_off.date
+# to the date as YYYY-MM-DD, and sign_off.digest to the digest the dry run
+# prints. The digest is the sha256 of this file with each sign_off line
+# rewritten to its key and an empty value (`  by: ""`), so filling in the
+# three values does not change it, and any other edit does: a paid run
+# refuses when the digest no longer matches.
 #
 # Provenance labels:
 #   measured   computed from the repo at the pinned commit (`factory-eval measure`)
@@ -12,6 +17,7 @@ commit: 45518e8b8461d491dc2a1aafaf1a8aa56702858a
 sign_off:
   by: ""
   date: ""
+  digest: ""
 runs: 3                   # spec: three runs per arm
 timeout_minutes: 90       # judgement: per arm run, wall clock
 batch_ceiling_usd: 250    # judgement: a paid batch refuses to start when its worst case exceeds this
@@ -97,17 +103,11 @@ judge:
     - Component-specific terms the glossary does not define.
     - Bold lead-ins on bullet points.
     - Lists and tables where the before version used them.
-  glossary: |
-    From CONTEXT.md at the repo root (term, then the synonyms it bans):
-    - Component: a releasable unit, a directory under services/ or tools/ with its own Makefile and semver line. Avoid: module, package.
-    - Service: a component under services/ that runs locally and serves a *.this address. Avoid: app, daemon.
-    - Tool: a component under tools/, a CLI installed to the local bin. Avoid: binary, utility.
-    - webkit: the shared Go web UI package services import in-module. Avoid: web kit, ui-lib.
-    - buildinfo: the shared build-metadata package. Avoid: version package, versioninfo.
-    - Build metadata: version, commit, component tag and build time as one four-key JSON object. Avoid: version info, version payload.
-    - Recipe: a ralph recipe under recipes/ that installs a component. Avoid: config, manifest.
-    - Component tag: a release tag of the form svc/vX.Y.Z. Avoid: version tag, release tag.
-    - Clean import: bringing code in without its git history. Avoid: migration, fork.
+  # The judge gets each glossary file of the case (cases[].glossary, the root
+  # CONTEXT.md when a case lists none) as it reads at the pinned commit, and
+  # these notes beside them.
+  glossary_notes: |
+    Each glossary file lists its terms in bold. The _Avoid_ line under a term names the synonyms it bans.
     Exception: t-man's launchd Agents and Daemons are the correct LaunchAgents and LaunchDaemons terms.
 
 arms:
@@ -120,6 +120,7 @@ arms:
 
       Do not push, and do not add a remote.
       Do not edit any file outside the allowed paths of the case you work on.
+      The csl and kof tools are not attached in this run: use grep and git in their place.
       Do not ask questions: nobody can answer them during this run. Record a blocker in the final report and go on to the next case.
 
       Work through the cases in the order given. For each case:
@@ -138,12 +139,14 @@ arms:
 
       Do not push, and do not add a remote.
       Do not edit files yourself: the workers make every edit.
+      The csl and kof tools are not attached in this run: use grep and git in their place.
       Do not ask questions: nobody can answer them during this run. Record a blocked unit or an open question in the final report.
 
       These changes to the factory procedure apply to this run:
       - Claim each worktree under {{.Worktrees}}, not under ~/.worktrees: `git -C {{.Repo}} worktree add {{.Worktrees}}/<slug> -b <branch> {{.Commit}}`, with the case's branch.
       - Route every unit at model {{.Model}} and effort {{.Effort}}, with the worker definition {{.Worker}}.
-      - Skip the board, the kof parking and the worklog checkpoints: those services are not part of this run. Run preflight checks 3 and 4 only.
+      - Skip the board, the kof parking and the worklog checkpoints: those services are not part of this run. Run preflight check 4 only.
+      - The harness sets the git identity in the local config of the clone, so commits in every worktree use it without a prompt.
       - Spawn all workers in one message so they run at the same time. Spawn them unnamed so each worker's final message comes back to you.
       - Do not land, merge or rebase the branches. Leave each unit committed on its own branch: the harness reads the branches.
 
@@ -232,6 +235,7 @@ cases:
   - component: tools/suspenders
     branch: eval/docs-sweep-suspenders
     allowed_paths: [tools/suspenders/README.md, tools/suspenders/CLAUDE.md]
+    glossary: [CONTEXT.md, tools/suspenders/CONTEXT.md]   # spec: the task names both glossaries
     task: |
       Bring the README.md and CLAUDE.md of the suspenders tool to the shared outline and to the glossaries in CONTEXT.md at the repo root and in tools/suspenders/CONTEXT.md.
 

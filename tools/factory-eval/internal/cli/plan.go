@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/mad01/thismoon/tools/factory-eval/internal/cases"
 	"github.com/mad01/thismoon/tools/factory-eval/internal/eval"
 	"github.com/mad01/thismoon/tools/factory-eval/internal/prereq"
 )
@@ -32,11 +33,8 @@ func printPlan(w io.Writer, b batch, dryRun bool) {
 		strings.Join(b.arms, ", "), strings.Join(tierNames, ", "), b.runs, len(b.file.Cases))
 	fmt.Fprintf(w, "  worst case: $%.2f against a batch ceiling of $%.2f\n",
 		eval.WorstCaseUSD(b.file, len(b.arms), b.tiers, b.runs), b.file.BatchCeilingUSD)
-	signOff := "NOT SIGNED OFF (a paid run refuses)"
-	if b.file.SignOff.Signed() {
-		signOff = fmt.Sprintf("signed off by %s on %s", b.file.SignOff.By, b.file.SignOff.Date)
-	}
-	fmt.Fprintf(w, "  cases file: %s\n", signOff)
+	fmt.Fprintf(w, "  cases file: %s\n", signOffState(b.file))
+	fmt.Fprintf(w, "  sign-off digest (sign_off.digest must hold it): %s\n", b.file.Digest())
 	fmt.Fprintln(w, "prerequisites:")
 	for _, r := range b.prereqs() {
 		state := "ok  "
@@ -52,4 +50,11 @@ func printPlan(w io.Writer, b batch, dryRun bool) {
 		}
 	}
 	fmt.Fprintln(w)
+}
+
+func signOffState(f *cases.File) string {
+	if err := f.CheckSignOff(); err != nil {
+		return "NOT SIGNED OFF, a paid run refuses: " + strings.ReplaceAll(err.Error(), "\n", "; ")
+	}
+	return fmt.Sprintf("signed off by %s on %s, digest matches", f.SignOff.By, f.SignOff.Date)
 }

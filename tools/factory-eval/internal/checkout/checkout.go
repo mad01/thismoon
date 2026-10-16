@@ -1,8 +1,10 @@
 // Package checkout makes the throwaway clone an eval run works in, and
-// reads back the branches the run left behind. A run never touches the
-// source repo: the clone is made under a fresh temp dir, detached at the
-// pinned commit, and its origin remote is removed so nothing the agents do
-// can be pushed back.
+// reads back the branches the run left behind. The clone is made under a
+// fresh temp dir and detached at the pinned commit. Its origin remote, its
+// branches, its tags and its reflogs are removed and unreachable objects
+// are pruned, so it holds nothing newer than the pin and nothing the
+// agents do can be pushed back. Fingerprint detects whether a run reached
+// the source checkout anyway.
 package checkout
 
 import (
@@ -13,6 +15,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+)
+
+// The git identity every commit in a clone carries. The harness sets it in
+// the clone's local config, which the worktrees share, so no commit
+// prompts and the user's own identity never lands on an eval branch.
+const (
+	IdentityName  = "factory-eval"
+	IdentityEmail = "factory-eval@localhost"
 )
 
 // Checkout is one throwaway clone. Root holds the clone and the directory
@@ -49,16 +59,56 @@ func (c *Checkout) clone(ctx context.Context, src string) error {
 	if _, err := git(ctx, "", "clone", "--quiet", "--no-checkout", src, c.Repo); err != nil {
 		return err
 	}
-	if _, err := git(ctx, c.Repo, "checkout", "--quiet", "--detach", c.Commit); err != nil {
-		return err
+	for _, args := range [][]string{
+		{"checkout", "--quiet", "--detach", c.Commit},
+		{"remote", "remove", "origin"},
+		{"config", "user.name", IdentityName},
+		{"config", "user.email", IdentityEmail},
+		{"config", "commit.gpgsign", "false"},
+	} {
+		if _, err := git(ctx, c.Repo, args...); err != nil {
+			return err
+		}
 	}
-	if _, err := git(ctx, c.Repo, "remote", "remove", "origin"); err != nil {
+	if err := c.dropHistoryPastPin(ctx); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(c.Worktrees, 0o755); err != nil {
 		return fmt.Errorf("checkout: worktrees dir: %w", err)
 	}
 	return nil
+}
+
+// dropHistoryPastPin deletes every local branch and tag, expires the
+// reflogs and prunes what that left unreachable. The clone then has no
+// main that moves with the source and no object newer than the pin, and
+// with origin gone git fetch has no remote to bring them back from.
+func (c *Checkout) dropHistoryPastPin(ctx context.Context) error {
+	refs, err := c.LocalRefs(ctx)
+	if err != nil {
+		return err
+	}
+	var deletes strings.Builder
+	for _, ref := range refs {
+		deletes.WriteString("delete " + ref + "\n")
+	}
+	if _, err := run(ctx, c.Repo, deletes.String(), "update-ref", "--stdin"); err != nil {
+		return err
+	}
+	if _, err := git(ctx, c.Repo, "reflog", "expire", "--expire=now", "--all"); err != nil {
+		return err
+	}
+	_, err = git(ctx, c.Repo, "-c", "gc.auto=0", "gc", "--quiet", "--prune=now")
+	return err
+}
+
+// LocalRefs lists the clone's branches and tags.
+func (c *Checkout) LocalRefs(ctx context.Context) ([]string, error) {
+	out, err := git(ctx, c.Repo, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(string(out)), nil
 }
 
 // Remove deletes the clone and every worktree under Root.
@@ -126,8 +176,14 @@ func (c *Checkout) Worktree(ctx context.Context, branch string) (string, func(),
 }
 
 func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	return run(ctx, dir, "", args...)
+}
+
+// run runs git in dir with stdin as its input.
+func run(ctx context.Context, dir, stdin string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

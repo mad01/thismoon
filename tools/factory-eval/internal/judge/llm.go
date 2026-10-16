@@ -39,6 +39,20 @@ type FilePair struct {
 	After  string
 }
 
+// Doc is one glossary file as it reads at the pinned commit.
+type Doc struct {
+	Path    string
+	Content string
+}
+
+// Request is everything one judge call grades: the component's docs before
+// and after, and the glossaries the case names.
+type Request struct {
+	Component string
+	Files     []FilePair
+	Glossary  []Doc
+}
+
 // Verdict is the judge's score for one case.
 type Verdict struct {
 	Score            int      `json:"score"`
@@ -47,29 +61,25 @@ type Verdict struct {
 	CostUSD          float64  `json:"cost_usd"`
 }
 
-// Score asks the judge model for a 0 to 10 score on component's docs.
-func (s Scorer) Score(ctx context.Context, component string, files []FilePair) (Verdict, error) {
+// Score asks the judge model for a 0 to 10 score on the request's docs.
+func (s Scorer) Score(ctx context.Context, req Request) (Verdict, error) {
 	out, err := s.Runner.Run(ctx, claude.Invocation{
 		Dir:   s.Dir,
 		Args:  claude.JudgeArgs(s.Judge.Model, s.Judge.BudgetUSD, VerdictSchema),
-		Stdin: Prompt(s.Judge, component, files),
+		Stdin: Prompt(s.Judge, req),
 	})
 	if err != nil {
-		return Verdict{}, fmt.Errorf("judge: %s: %w", component, err)
+		return Verdict{}, fmt.Errorf("judge: %s: %w", req.Component, err)
 	}
 	rep, err := claude.ParseReport(out.Stdout)
 	if err != nil {
-		return Verdict{}, fmt.Errorf(
-			"judge: %s: %w: %s",
-			component,
-			err,
-			tail(string(out.Stderr), 3),
-		)
+		return Verdict{}, fmt.Errorf("judge: %s: %w: %s",
+			req.Component, err, tail(string(out.Stderr), 3))
 	}
 	v, err := parseVerdict(rep)
 	v.CostUSD = rep.TotalCostUSD
 	if err != nil {
-		return v, fmt.Errorf("judge: %s: %w", component, err)
+		return v, fmt.Errorf("judge: %s: %w", req.Component, err)
 	}
 	return v, nil
 }
@@ -97,22 +107,26 @@ func parseVerdict(rep claude.Report) (Verdict, error) {
 }
 
 // Prompt is the judge's whole input: the rubric, the do-not-fail list, the
-// glossary, and each file before and after the sweep. The judge sees
-// nothing else, so everything it grades against is in here.
-func Prompt(j cases.Judge, component string, files []FilePair) string {
+// case's glossary files and the glossary notes, and each file before and
+// after the sweep. The judge sees nothing else, so everything it grades
+// against is in here.
+func Prompt(j cases.Judge, req Request) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You grade the documentation of the %s component after a docs sweep.\n\n",
-		component)
+		req.Component)
 	fmt.Fprintf(&b, "<rubric>\n%s\n</rubric>\n\n", strings.TrimSpace(j.Rubric))
 	b.WriteString("<do_not_fail>\nNever take points off for any of these:\n")
 	for _, item := range j.DoNotFail {
 		fmt.Fprintf(&b, "- %s\n", item)
 	}
 	b.WriteString("</do_not_fail>\n\n")
-	if g := strings.TrimSpace(j.Glossary); g != "" {
-		fmt.Fprintf(&b, "<glossary>\n%s\n</glossary>\n\n", g)
+	for _, g := range req.Glossary {
+		fmt.Fprintf(&b, "<glossary path=%q>\n%s</glossary>\n\n", g.Path, g.Content)
 	}
-	for _, f := range files {
+	if notes := strings.TrimSpace(j.GlossaryNotes); notes != "" {
+		fmt.Fprintf(&b, "<glossary_notes>\n%s\n</glossary_notes>\n\n", notes)
+	}
+	for _, f := range req.Files {
 		fmt.Fprintf(&b, "<file path=%q version=\"before\">\n%s</file>\n\n", f.Path, f.Before)
 		fmt.Fprintf(&b, "<file path=%q version=\"after\">\n%s</file>\n\n", f.Path, f.After)
 	}

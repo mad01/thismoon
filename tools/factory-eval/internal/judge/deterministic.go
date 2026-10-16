@@ -65,9 +65,15 @@ func TargetFiles(c cases.Case) []string {
 	return []string{c.Component + "/CLAUDE.md", c.Component + "/README.md"}
 }
 
+// skippedDetail marks the checks that never ran because the branch edited
+// a path outside the case: they would run tools on files the agent wrote,
+// a Makefile among them.
+const skippedDetail = "skipped: the branch edits paths outside allowed_paths"
+
 // Run checks one case's branch in co and returns all five checks in order.
 // A missing branch fails every check, so each case always reports the same
-// five names.
+// five names. When allowed_paths fails, humanizer and build_test fail as
+// skipped without running.
 func (d Deterministic) Run(ctx context.Context, co *checkout.Checkout, c cases.Case) []Check {
 	if !co.BranchExists(ctx, c.Branch) {
 		return failAll("branch " + c.Branch + " missing")
@@ -81,13 +87,21 @@ func (d Deterministic) Run(ctx context.Context, co *checkout.Checkout, c cases.C
 		return failAll(err.Error())
 	}
 	defer remove()
-	return []Check{
+	allowed := allowedPaths(changed, c.AllowedPaths)
+	checks := []Check{
 		{Name: CheckBranch, Pass: true, Detail: fmt.Sprintf("%d files changed", len(changed))},
-		allowedPaths(changed, c.AllowedPaths),
+		allowed,
 		d.outlineCheck(dir, c),
+	}
+	if !allowed.Pass {
+		return append(checks, Check{Name: CheckHumanizer, Detail: skippedDetail},
+			Check{Name: CheckBuildTest, Detail: skippedDetail})
+	}
+	return append(
+		checks,
 		d.humanizerCheck(ctx, dir, c, changed),
 		d.buildTest(ctx, dir, c.Component),
-	}
+	)
 }
 
 func failAll(detail string) []Check {

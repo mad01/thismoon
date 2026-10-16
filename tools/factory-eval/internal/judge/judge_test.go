@@ -150,13 +150,10 @@ func TestCleanSweepPassesEveryCheck(t *testing.T) {
 }
 
 func TestEachCheckReportsItsOwnFailure(t *testing.T) {
-	co := checkoutWithBranch(t, map[string]string{
-		"svc/README.md": "# svc\n\n## Install\n\nnew\n", "svc/main.go": "package main\n",
-		"svc/docs/extra.md": "# extra\n",
-	})
+	co := checkoutWithBranch(t, map[string]string{"svc/README.md": "# svc\n\n## Install\n\nnew\n"})
 	cmd := &fakeCmd{
 		findings: map[string]string{
-			"svc/docs/extra.md": `{"findings":[{"rule_id":"Humanizer.EmDashOveruse"},` +
+			"svc/README.md": `{"findings":[{"rule_id":"Humanizer.EmDashOveruse"},` +
 				`{"rule_id":"Humanizer.EmDashOveruse"}]}`,
 		},
 		makeErr: errors.New("make: exit 2\n--- FAIL: TestX"),
@@ -168,9 +165,8 @@ func TestEachCheckReportsItsOwnFailure(t *testing.T) {
 	}
 	checks := d.Run(context.Background(), co, svcCase)
 	tests := []struct{ name, detail string }{
-		{CheckAllowedPaths, "svc/docs/extra.md, svc/main.go"},
 		{CheckOutline, "svc/CLAUDE.md: title: svc, order:"},
-		{CheckHumanizer, "svc/docs/extra.md: EmDashOveruse=2"},
+		{CheckHumanizer, "svc/README.md: EmDashOveruse=2"},
 		{CheckBuildTest, "--- FAIL: TestX"},
 	}
 	for _, tt := range tests {
@@ -179,8 +175,41 @@ func TestEachCheckReportsItsOwnFailure(t *testing.T) {
 			t.Errorf("%s = %+v, want a failure containing %q", tt.name, c, tt.detail)
 		}
 	}
-	if c := checkByName(t, checks, CheckBranch); !c.Pass {
-		t.Errorf("branch = %+v, want pass", c)
+	for _, name := range []string{CheckBranch, CheckAllowedPaths} {
+		if c := checkByName(t, checks, name); !c.Pass {
+			t.Errorf("%s = %+v, want pass", name, c)
+		}
+	}
+}
+
+// TestEditsOutsideTheCaseRunNoTool proves an arm that edited a Makefile
+// never gets it run: humanizer and make are skipped, not called.
+func TestEditsOutsideTheCaseRunNoTool(t *testing.T) {
+	co := checkoutWithBranch(t, map[string]string{
+		"svc/CLAUDE.md": goodClaude, "svc/Makefile": "build:\n\ttouch /tmp/pwned\n",
+		"svc/docs/extra.md": "# extra\n",
+	})
+	cmd := &fakeCmd{}
+	d := Deterministic{
+		Outline:   testOutline,
+		Cmd:       cmd,
+		Humanizer: cases.Humanizer{MinSeverity: "warning"},
+	}
+	checks := d.Run(context.Background(), co, svcCase)
+	if c := checkByName(t, checks, CheckAllowedPaths); c.Pass ||
+		!strings.Contains(c.Detail, "svc/Makefile, svc/docs/extra.md") {
+		t.Errorf("allowed_paths = %+v, want a failure naming both paths", c)
+	}
+	for _, name := range []string{CheckHumanizer, CheckBuildTest} {
+		if c := checkByName(t, checks, name); c.Pass || !strings.HasPrefix(c.Detail, "skipped") {
+			t.Errorf("%s = %+v, want a skipped failure", name, c)
+		}
+	}
+	if len(cmd.calls) != 0 {
+		t.Errorf("tools ran on a branch that edits outside the case: %v", cmd.calls)
+	}
+	if c := checkByName(t, checks, CheckOutline); !c.Pass {
+		t.Errorf("outline = %+v, want it still checked and passing", c)
 	}
 }
 
@@ -197,7 +226,7 @@ func (f *fakeRunner) Run(_ context.Context, inv claude.Invocation) (claude.Outpu
 
 var testJudge = cases.Judge{
 	Model: "haiku", BudgetUSD: 0.5, Rubric: "Score clarity.",
-	DoNotFail: []string{"short sections"}, Glossary: "Component: a releasable unit.",
+	DoNotFail: []string{"short sections"}, GlossaryNotes: "Exception: Agents are fine.",
 }
 
 func TestScoreParsesTheStructuredVerdict(t *testing.T) {
@@ -205,8 +234,13 @@ func TestScoreParsesTheStructuredVerdict(t *testing.T) {
 		`"structured_output":{"score":8,"reasons":["one long sentence"],` +
 		`"do_not_fail_applied":["short sections"]}}`}
 	s := Scorer{Runner: r, Judge: testJudge, Dir: "/empty"}
-	v, err := s.Score(context.Background(), "svc", []FilePair{
-		{Path: "svc/README.md", Before: "old text\n", After: "new text\n"},
+	v, err := s.Score(context.Background(), Request{
+		Component: "svc",
+		Files:     []FilePair{{Path: "svc/README.md", Before: "old text\n", After: "new text\n"}},
+		Glossary: []Doc{
+			{Path: "CONTEXT.md", Content: "**Component**:\nA releasable unit.\n"},
+			{Path: "svc/CONTEXT.md", Content: "**Rule ignore**:\nPer repo.\n"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Score() error = %v", err)
@@ -218,7 +252,10 @@ func TestScoreParsesTheStructuredVerdict(t *testing.T) {
 		t.Errorf("invocation = %+v, want the judge model in the empty dir", r.got)
 	}
 	for _, want := range []string{
-		"Score clarity.", "- short sections", "Component: a releasable",
+		"Score clarity.", "- short sections",
+		"<glossary path=\"CONTEXT.md\">\n**Component**:\nA releasable unit.\n</glossary>",
+		"<glossary path=\"svc/CONTEXT.md\">\n**Rule ignore**:",
+		"<glossary_notes>\nException: Agents are fine.\n</glossary_notes>",
 		`<file path="svc/README.md" version="before">` + "\nold text\n",
 		`<file path="svc/README.md" version="after">` + "\nnew text\n",
 	} {
@@ -239,7 +276,7 @@ func TestScoreRejectsVerdictsOutOfContract(t *testing.T) {
 		"not json": "Error: not logged in",
 	} {
 		s := Scorer{Runner: &fakeRunner{stdout: stdout}, Judge: testJudge}
-		v, err := s.Score(context.Background(), "svc", nil)
+		v, err := s.Score(context.Background(), Request{Component: "svc"})
 		if err == nil {
 			t.Errorf("%s: Score() = %+v, nil error; want a contract error", name, v)
 		}

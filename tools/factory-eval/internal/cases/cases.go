@@ -32,9 +32,14 @@ const (
 )
 
 var (
-	shaPattern   = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	validEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+	shaPattern      = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	validEfforts    = []string{"low", "medium", "high", "xhigh", "max"}
+	validSeverities = []string{"suggestion", "warning", "error"}
 )
+
+// RootGlossary is the glossary a case's judge call gets when the case
+// names none of its own.
+const RootGlossary = "CONTEXT.md"
 
 // File is the whole cases file.
 type File struct {
@@ -51,16 +56,10 @@ type File struct {
 	Judge           Judge     `yaml:"judge"`
 	Arms            Arms      `yaml:"arms"`
 	Cases           []Case    `yaml:"cases"`
-}
 
-// SignOff records who approved the file for paid runs, and when.
-type SignOff struct {
-	By   string `yaml:"by"   json:"by"`
-	Date string `yaml:"date" json:"date"`
+	// digest is ContentDigest of the bytes the file was parsed from.
+	digest string
 }
-
-// Signed reports whether the user signed the file off.
-func (s SignOff) Signed() bool { return s.By != "" && s.Date != "" }
 
 // Tier is one model tier both arms run at, with the dollar cap each arm
 // run gets at that tier.
@@ -81,21 +80,23 @@ type Outline struct {
 	Readme     outline.Spec `yaml:"readme"`
 }
 
-// Humanizer configures the deterministic prose check.
+// Humanizer configures the deterministic prose check. MinSeverity is one
+// of humanizer's levels: suggestion, warning or error.
 type Humanizer struct {
 	MinSeverity string   `yaml:"min_severity"`
 	IgnoreRules []string `yaml:"ignore_rules"`
 	Provenance  string   `yaml:"provenance"`
 }
 
-// Judge configures the one LLM judge call per case.
+// Judge configures the one LLM judge call per case. GlossaryNotes go to
+// the judge beside the case's glossary files.
 type Judge struct {
-	Model      string   `yaml:"model"`
-	BudgetUSD  float64  `yaml:"budget_usd"`
-	Rubric     string   `yaml:"rubric"`
-	DoNotFail  []string `yaml:"do_not_fail"`
-	Glossary   string   `yaml:"glossary"`
-	Provenance string   `yaml:"provenance"`
+	Model         string   `yaml:"model"`
+	BudgetUSD     float64  `yaml:"budget_usd"`
+	Rubric        string   `yaml:"rubric"`
+	DoNotFail     []string `yaml:"do_not_fail"`
+	GlossaryNotes string   `yaml:"glossary_notes"`
+	Provenance    string   `yaml:"provenance"`
 }
 
 // Arms holds the preamble each arm's session gets before the case tasks.
@@ -111,10 +112,13 @@ type Arm struct {
 }
 
 // Case is one component docs sweep: one branch, two files, one task.
+// Glossary lists the repo-relative glossary files the judge grades the
+// case against; empty means the root CONTEXT.md alone.
 type Case struct {
 	Component    string         `yaml:"component"`
 	Branch       string         `yaml:"branch"`
 	AllowedPaths []string       `yaml:"allowed_paths"`
+	Glossary     []string       `yaml:"glossary"`
 	Task         string         `yaml:"task"`
 	Done         string         `yaml:"done"`
 	Deviation    Deviation      `yaml:"deviation"`
@@ -124,6 +128,15 @@ type Case struct {
 // Name is the component's directory name, which the outline title rules
 // match against.
 func (c Case) Name() string { return path.Base(c.Component) }
+
+// GlossaryFiles is the case's glossary list, the root CONTEXT.md when the
+// case names none.
+func (c Case) GlossaryFiles() []string {
+	if len(c.Glossary) == 0 {
+		return []string{RootGlossary}
+	}
+	return c.Glossary
+}
 
 // Deviation is the measured distance of a case's two files from the
 // outline and the humanizer pack at the pinned commit.
@@ -156,8 +169,9 @@ func Load(p string) (*File, error) {
 	return Parse(raw)
 }
 
-// Parse decodes and validates a cases file. Unknown keys are errors, so a
-// typo in a field name fails loudly instead of dropping the value.
+// Parse decodes and validates a cases file and computes its content
+// digest. Unknown keys are errors, so a typo in a field name fails loudly
+// instead of dropping the value.
 func Parse(raw []byte) (*File, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
@@ -168,6 +182,11 @@ func Parse(raw []byte) (*File, error) {
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
+	digest, err := ContentDigest(raw)
+	if err != nil {
+		return nil, err
+	}
+	f.digest = digest
 	return &f, nil
 }
 
@@ -250,6 +269,10 @@ func (f *File) validateSettings() []error {
 		checkLabel("arms.single", f.Arms.Single.Provenance),
 		checkLabel("arms.factory", f.Arms.Factory.Provenance),
 	}
+	if !slices.Contains(validSeverities, f.Humanizer.MinSeverity) {
+		errs = append(errs, fmt.Errorf("cases: humanizer min_severity %q, want one of %s",
+			f.Humanizer.MinSeverity, strings.Join(validSeverities, ", ")))
+	}
 	if len(f.Outline.ClaudeMD.Sections) == 0 || len(f.Outline.Readme.Sections) == 0 {
 		errs = append(errs, errors.New("cases: outline needs claude_md and readme sections"))
 	}
@@ -293,6 +316,12 @@ func (c Case) validate() []error {
 	for _, p := range c.AllowedPaths {
 		if !strings.HasPrefix(p, c.Component+"/") {
 			errs = append(errs, fmt.Errorf("cases: case %q allows %q outside it", c.Component, p))
+		}
+	}
+	for _, g := range c.Glossary {
+		if path.IsAbs(g) || path.Clean(g) != g || strings.HasPrefix(g, "../") {
+			errs = append(errs, fmt.Errorf("cases: case %q glossary %q is not a clean repo path",
+				c.Component, g))
 		}
 	}
 	labels := [][2]string{

@@ -5,9 +5,11 @@
   "finished_at": "2026-10-16T20:00:00Z",
   "commit": "45518e8b8461d491dc2a1aafaf1a8aa56702858a",
   "cases_file": "cases.yaml",
+  "cases_digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
   "sign_off": {
     "by": "",
-    "date": ""
+    "date": "",
+    "digest": ""
   },
   "claude_version": "2.1.301 (Claude Code)",
   "prereqs": [
@@ -21,6 +23,17 @@
       "ok": true,
       "detail": "~/.claude/agents/factory-worker-medium.md"
     }
+  ],
+  "settings_deny": [
+    "Edit(//Users/example/code/**)",
+    "Write(//Users/example/code/**)",
+    "Edit(//Users/example/.worktrees/**)",
+    "Write(//Users/example/.worktrees/**)",
+    "Bash(curl *)",
+    "Bash(git -C /Users/example/code/src/github.com/mad01/thismoon*)",
+    "Bash(git -C ~/code/src/github.com/mad01/thismoon*)",
+    "Bash(git -C /Users/example/.worktrees*)",
+    "Bash(git -C ~/.worktrees*)"
   ],
   "runs": [
     {
@@ -49,6 +62,16 @@
       "agent_report": {
         "cases": []
       },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
       "cases": [
         {
           "component": "tools/belt",
@@ -81,6 +104,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         },
         {
@@ -114,6 +138,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         }
       ],
@@ -150,6 +175,16 @@
       "agent_report": {
         "cases": []
       },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
       "cases": [
         {
           "component": "tools/belt",
@@ -182,6 +217,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         },
         {
@@ -215,6 +251,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         }
       ],
@@ -251,6 +288,16 @@
       "agent_report": {
         "cases": []
       },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
       "cases": [
         {
           "component": "tools/belt",
@@ -283,6 +330,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         },
         {
@@ -316,6 +364,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         }
       ],
@@ -352,6 +401,16 @@
       "agent_report": {
         "cases": []
       },
+      "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "installed": {
+        "files": {
+          "~/.claude/agents/factory-worker-high.md": "missing",
+          "~/.claude/skills/factory/SKILL.md": "sha256:abababababababababababababababababababababababababababababababab"
+        },
+        "belt_version": "d430918"
+      },
+      "tainted": false,
+      "taint": [],
       "cases": [
         {
           "component": "tools/belt",
@@ -384,6 +443,7 @@
           "judge_reasons": [
             "one sentence runs long"
           ],
+          "judge_attempts": 1,
           "score": 8
         },
         {
@@ -419,6 +479,7 @@
           "deterministic_pass": false,
           "judge_score": null,
           "judge_reasons": [],
+          "judge_attempts": 0,
           "judge_error": "skipped: branch missing",
           "score": 0
         }
@@ -437,6 +498,7 @@
         "arm": "single",
         "tier": "mid",
         "runs": 1,
+        "runs_errored": 0,
         "runs_passed": 1,
         "mean_judge_score": 8,
         "mean_wall_clock_ms": 2520000,
@@ -447,6 +509,7 @@
         "arm": "factory",
         "tier": "mid",
         "runs": 1,
+        "runs_errored": 0,
         "runs_passed": 1,
         "mean_judge_score": 8,
         "mean_wall_clock_ms": 960000,
@@ -457,6 +520,7 @@
         "arm": "single",
         "tier": "top",
         "runs": 1,
+        "runs_errored": 0,
         "runs_passed": 1,
         "mean_judge_score": 8,
         "mean_wall_clock_ms": 3060000,
@@ -467,6 +531,7 @@
         "arm": "factory",
         "tier": "top",
         "runs": 1,
+        "runs_errored": 0,
         "runs_passed": 0,
         "mean_judge_score": 4,
         "mean_wall_clock_ms": 1140000,
@@ -477,6 +542,7 @@
     "decisions": [
       {
         "tier": "mid",
+        "expected_runs": 1,
         "complete": true,
         "judge_single": 8,
         "judge_factory": 8,
@@ -485,11 +551,13 @@
         "judge_ok": true,
         "wall_ok": true,
         "tokens_ok": true,
+        "factory_runs_passed": 1,
         "pass": true,
-        "reason": "PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=), wall 0.38x (needs \u003c=0.5x), tokens 1.29x (needs \u003c=1.5x)"
+        "reason": "PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=); wall 0.38x (needs \u003c=0.5x); tokens 1.29x (needs \u003c=1.5x)"
       },
       {
         "tier": "top",
+        "expected_runs": 1,
         "complete": true,
         "judge_single": 8,
         "judge_factory": 4,
@@ -498,12 +566,13 @@
         "judge_ok": false,
         "wall_ok": true,
         "tokens_ok": true,
+        "factory_runs_passed": 0,
         "pass": false,
-        "reason": "FAIL at tier top: judge 4.0 vs 8.0 (needs \u003e=), wall 0.37x (needs \u003c=0.5x), tokens 1.12x (needs \u003c=1.5x)"
+        "reason": "FAIL at tier top: no factory run passed all five checks; judge 4.0 vs 8.0 (needs \u003e=); wall 0.37x (needs \u003c=0.5x); tokens 1.12x (needs \u003c=1.5x)"
       }
     ],
     "primary_tier": "mid",
     "pass": true,
-    "decision": "PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=), wall 0.38x (needs \u003c=0.5x), tokens 1.29x (needs \u003c=1.5x)"
+    "decision": "PASS at tier mid: judge 8.0 vs 8.0 (needs \u003e=); wall 0.38x (needs \u003c=0.5x); tokens 1.29x (needs \u003c=1.5x)"
   }
 }

@@ -30,6 +30,7 @@ type runOptions struct {
 	arms      []string
 	tiers     []string
 	runs      int
+	runsSet   bool
 	out       string
 	repo      string
 	tempDir   string
@@ -42,13 +43,15 @@ func runCmd() *cobra.Command {
 		Short: "Run the matrix (paid), or rehearse it with --dry-run (no model call)",
 		Long: `Run every arm at every tier, runs times each, and write one results file.
 
-A paid run needs a signed-off cases file, every prerequisite (the factory arm
-also needs the factory skill, the three worker definitions and the belt hook),
-and a worst-case cost within the cases file's batch ceiling. A dry run checks
-and prints all of that, then rehearses one run per arm and tier with stand-ins
-for every model call: same checkouts, same checks, same results file.`,
+A paid run needs a cases file signed off at its current digest, every
+prerequisite (the factory arm also needs the factory skill, the three worker
+definitions and the belt hook), and a worst-case cost within the cases file's
+batch ceiling. A dry run checks and prints all of that, the digest included,
+then rehearses one run per arm and tier with stand-ins for every model call:
+same checkouts, same checks, same results file.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			o.runsSet = cmd.Flags().Changed("runs")
 			return agentdoc.Hint(runBatch(cmd.Context(), cmd.OutOrStdout(), o), factoryeval.Facts())
 		},
 	}
@@ -73,7 +76,7 @@ type batch struct {
 	tiers   []cases.Tier
 	runs    int
 	source  string
-	version string
+	env     prereq.Env
 	common  []prereq.Result
 	factory []prereq.Result
 }
@@ -114,9 +117,9 @@ func plan(ctx context.Context, o runOptions) (batch, error) {
 	if err != nil {
 		return batch{}, err
 	}
-	b := batch{file: f, runs: o.runs, source: expandHome(f.Repo)}
-	if o.repo != "" {
-		b.source = expandHome(o.repo)
+	b := batch{file: f}
+	if b.runs, err = resolveRuns(o, f.Runs); err != nil {
+		return batch{}, err
 	}
 	if b.arms, err = parseArms(o.arms); err != nil {
 		return batch{}, err
@@ -124,24 +127,94 @@ func plan(ctx context.Context, o runOptions) (batch, error) {
 	if b.tiers, err = selectTiers(f, o.tiers); err != nil {
 		return batch{}, err
 	}
-	if b.runs == 0 {
-		b.runs = f.Runs
-		if o.dryRun {
-			b.runs = 1
-		}
+	if b.env, err = hostEnv(ctx); err != nil {
+		return batch{}, err
 	}
-	env := hostEnv()
-	_, b.version, _ = claude.Exec{}.Version(ctx)
-	b.common = prereq.Common(ctx, env)
+	if b.source, err = resolveSource(f.Repo, o.repo); err != nil {
+		return batch{}, err
+	}
+	if err := checkTempDir(o.tempDir, b.isolation()); err != nil {
+		return batch{}, err
+	}
+	b.common = prereq.Common(b.env)
 	if slices.Contains(b.arms, eval.ArmFactory) {
-		b.factory = prereq.Factory(env)
+		b.factory = prereq.Factory(b.env)
 	}
 	return b, nil
 }
 
-func hostEnv() prereq.Env {
-	home, _ := os.UserHomeDir()
-	return prereq.Env{Home: home, LookPath: exec.LookPath, ClaudeVersion: claude.Exec{}.Version}
+func (b batch) isolation() eval.Isolation {
+	return eval.Isolation{Home: b.env.Home, Source: b.source}
+}
+
+// resolveRuns is --runs when given, which must be at least 1, else the
+// cases file's runs, or 1 in a dry run.
+func resolveRuns(o runOptions, fileRuns int) (int, error) {
+	switch {
+	case o.runsSet && o.runs < 1:
+		return 0, fmt.Errorf("--runs %d, want at least 1", o.runs)
+	case o.runsSet:
+		return o.runs, nil
+	case o.dryRun:
+		return 1, nil
+	}
+	return fileRuns, nil
+}
+
+// resolveSource is the absolute path of the repo every run clones: --repo
+// when given, else the cases file's repo.
+func resolveSource(fileRepo, flagRepo string) (string, error) {
+	src := fileRepo
+	if flagRepo != "" {
+		src = flagRepo
+	}
+	abs, err := filepath.Abs(expandHome(src))
+	if err != nil {
+		return "", fmt.Errorf("repo %s: %w", src, err)
+	}
+	return abs, nil
+}
+
+// checkTempDir refuses a temp parent inside a directory the isolation
+// rules deny edits in, where an arm could not edit its own clone.
+func checkTempDir(tempDir string, iso eval.Isolation) error {
+	dir := tempDir
+	if dir == "" {
+		dir = os.TempDir()
+	}
+	abs, err := filepath.Abs(expandHome(dir))
+	if err != nil {
+		return fmt.Errorf("temp dir %s: %w", dir, err)
+	}
+	if iso.Covers(abs) {
+		return fmt.Errorf("temp dir %s is under a path the arms may not edit "+
+			"(~/code, ~/.worktrees or the source repo): pick one outside them", abs)
+	}
+	return nil
+}
+
+// hostEnv probes the host once: the home dir, claude's version, and the
+// seams the prerequisite checks and the install snapshot read through.
+func hostEnv(ctx context.Context) (prereq.Env, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return prereq.Env{}, fmt.Errorf("home dir: %w", err)
+	}
+	v, raw, err := claude.Exec{}.Version(ctx)
+	return prereq.Env{
+		Home:        home,
+		LookPath:    exec.LookPath,
+		Claude:      prereq.ClaudeProbe{Version: v, Raw: raw, Err: err},
+		BeltVersion: beltVersion,
+	}, nil
+}
+
+func beltVersion(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "belt", "version").Output()
+	if err != nil {
+		return "", fmt.Errorf("belt version: %w", err)
+	}
+	return string(out), nil
 }
 
 func parseArms(arms []string) ([]string, error) {
@@ -171,12 +244,14 @@ func selectTiers(f *cases.File, names []string) ([]cases.Tier, error) {
 	return tiers, nil
 }
 
-// gate refuses a paid run before it spends anything: no sign-off, a
-// missing prerequisite, or a worst case above the batch ceiling.
+// gate refuses a paid run before it spends anything: no valid sign-off of
+// the file as it is now, a missing prerequisite, or a worst case above the
+// batch ceiling.
 func gate(b batch) error {
-	if !b.file.SignOff.Signed() {
-		return errors.New("the cases file is not signed off: run --dry-run, show the user " +
-			"the sign-off digest, and set sign_off.by and sign_off.date once they approve")
+	if err := b.file.CheckSignOff(); err != nil {
+		return fmt.Errorf("the cases file is not signed off for a paid run:\n%w\n"+
+			"Run --dry-run, show the user the cases and the digest it prints, and fill in "+
+			"sign_off.by, sign_off.date and sign_off.digest once they approve", err)
 	}
 	if failed := prereq.Failed(b.common); len(failed) > 0 {
 		return errors.New(prereq.Explain("every", failed))
@@ -197,12 +272,13 @@ func gate(b batch) error {
 
 func config(b batch, o runOptions, w io.Writer, judgeDir string) eval.Config {
 	cfg := eval.Config{
-		Cases: b.file, CasesPath: o.casesPath, Source: b.source, Arms: b.arms, Tiers: b.tiers,
-		Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun, ClaudeVersion: b.version,
-		Prereqs: b.prereqs(), Now: time.Now, Progress: w,
+		Cases: b.file, CasesPath: o.casesPath, Source: b.source, Home: b.env.Home,
+		Arms: b.arms, Tiers: b.tiers, Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun,
+		ClaudeVersion: b.env.Claude.Raw, Prereqs: b.prereqs(), Now: time.Now, Progress: w,
 		Checker: judge.Deterministic{
 			Outline: b.file.Outline, Humanizer: b.file.Humanizer, Cmd: judge.ExecCommander{},
 		},
+		Snapshot: func(ctx context.Context) prereq.Installed { return prereq.Snapshot(ctx, b.env) },
 	}
 	var judgeRunner judge.Runner = claude.Exec{}
 	cfg.Agent = claude.Exec{}

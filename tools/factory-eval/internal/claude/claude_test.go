@@ -74,6 +74,7 @@ func TestArmArgsCapsBudgetAndTurnsPromptsIntoDenials(t *testing.T) {
 		Model: "sonnet", Effort: "medium", BudgetUSD: 10, AddDir: "/tmp/run",
 		ReportSchema: "{}", MCPConfig: "{}",
 		Allowed: []string{"Read", "Bash(git add *)"}, Disallowed: []string{"Agent"},
+		Settings: "/tmp/run/settings.json",
 	})
 	for _, pair := range [][2]string{
 		{"--max-budget-usd", "10.00"},
@@ -84,6 +85,7 @@ func TestArmArgsCapsBudgetAndTurnsPromptsIntoDenials(t *testing.T) {
 		{"--output-format", "json"},
 		{"--allowedTools", "Read,Bash(git add *)"},
 		{"--disallowedTools", "Agent"},
+		{"--settings", "/tmp/run/settings.json"},
 		{"--add-dir", "/tmp/run"},
 	} {
 		i := slices.Index(args, pair[0])

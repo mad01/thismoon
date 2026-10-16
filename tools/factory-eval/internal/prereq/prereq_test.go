@@ -66,11 +66,9 @@ func TestCommonChecksClaudeVersionAndTools(t *testing.T) {
 			}
 			return "/bin/" + f, nil
 		},
-		ClaudeVersion: func(context.Context) ([3]int, string, error) {
-			return [3]int{2, 1, 200}, "2.1.200 (Claude Code)", nil
-		},
+		Claude: ClaudeProbe{Version: [3]int{2, 1, 200}, Raw: "2.1.200 (Claude Code)"},
 	}
-	failed := Failed(Common(context.Background(), env))
+	failed := Failed(Common(env))
 	if len(failed) != 2 || failed[0].Name != "claude version" || failed[1].Name != "humanizer" {
 		t.Errorf("failed = %+v, want the old claude and the missing humanizer", failed)
 	}
@@ -91,5 +89,28 @@ func TestOlderComparesFieldByField(t *testing.T) {
 		if got := older(tt.v, MinClaude); got != tt.want {
 			t.Errorf("older(%v) = %v, want %v", tt.v, got, tt.want)
 		}
+	}
+}
+
+func TestSnapshotRecordsWhatIsInstalled(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".claude", "skills", "factory", "SKILL.md"), "factory v1\n")
+	env := Env{Home: home, BeltVersion: func(context.Context) (string, error) {
+		return "d430918\n", nil
+	}}
+	in := Snapshot(context.Background(), env)
+	if len(in.Files) != 5 || in.BeltVersion != "d430918" {
+		t.Fatalf("Snapshot() = %+v, want five files and the trimmed belt version", in)
+	}
+	got := in.Files["~/.claude/skills/factory/SKILL.md"]
+	if !strings.HasPrefix(got, "sha256:") || len(got) != len("sha256:")+64 {
+		t.Errorf("factory skill = %q, want a sha256", got)
+	}
+	if got := in.Files["~/.claude/agents/factory-worker-high.md"]; got != "missing" {
+		t.Errorf("absent worker definition = %q, want missing", got)
+	}
+	env.BeltVersion = func(context.Context) (string, error) { return "", errors.New("not on PATH") }
+	if in := Snapshot(context.Background(), env); in.BeltVersion != "unavailable: not on PATH" {
+		t.Errorf("BeltVersion = %q, want the reason it is unavailable", in.BeltVersion)
 	}
 }

@@ -62,6 +62,18 @@ func TestParseRejectsBrokenFiles(t *testing.T) {
 			"repeated branch", "branch: eval/docs-sweep-speak", "branch: eval/docs-sweep-belt",
 			`branch "eval/docs-sweep-belt" repeated`,
 		},
+		{
+			"unknown severity", "min_severity: warning", "min_severity: warn",
+			`min_severity "warn", want one of suggestion, warning, error`,
+		},
+		{
+			"glossary outside the repo", "glossary: [CONTEXT.md, tools/suspenders/CONTEXT.md]",
+			"glossary: [../CONTEXT.md]", `glossary "../CONTEXT.md" is not a clean repo path`,
+		},
+		{
+			"flow-style sign-off", "sign_off:\n  by: \"\"\n  date: \"\"\n  digest: \"\"\n",
+			"sign_off: {by: \"\", date: \"\", digest: \"\"}\n", "sign_off must be a block mapping",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -77,13 +89,80 @@ func TestParseRejectsBrokenFiles(t *testing.T) {
 	}
 }
 
-func TestSignOffNeedsNameAndDate(t *testing.T) {
-	for _, s := range []SignOff{{}, {By: "someone"}, {Date: "2026-10-17"}} {
-		if s.Signed() {
-			t.Errorf("%+v.Signed() = true", s)
-		}
+// signed fills in the sign-off lines of raw, the way the user does after
+// reading the dry run.
+func signed(raw, by, date, digest string) string {
+	return strings.Replace(raw, "sign_off:\n  by: \"\"\n  date: \"\"\n  digest: \"\"\n",
+		"sign_off:\n  by: "+by+"\n  date: \""+date+"\"   # approved\n  digest: "+digest+"\n", 1)
+}
+
+func TestFillingInTheSignOffKeepsTheDigest(t *testing.T) {
+	raw := validFile(t)
+	blank, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !(SignOff{By: "someone", Date: "2026-10-17"}).Signed() {
-		t.Error("a named, dated sign-off is not Signed()")
+	if len(blank.Digest()) != 64 {
+		t.Fatalf("Digest() = %q, want 64 hex characters", blank.Digest())
+	}
+	filled, err := Parse([]byte(signed(raw, "Someone Else", "2026-10-17", blank.Digest())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filled.Digest() != blank.Digest() {
+		t.Errorf("signing changed the digest: %s, was %s", filled.Digest(), blank.Digest())
+	}
+	if filled.SignOff.By != "Someone Else" {
+		t.Errorf("SignOff.By = %q, the rewrite reached the parsed value", filled.SignOff.By)
+	}
+}
+
+func TestCheckSignOff(t *testing.T) {
+	raw := validFile(t)
+	unsigned, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := unsigned.Digest()
+	editedTask := strings.Replace(raw, "Move and reword text only.", "Move text only.", 1)
+	tests := []struct {
+		name, raw, want string
+	}{
+		{"digest matches", signed(raw, "someone", "2026-10-17", digest), ""},
+		{"blank by", signed(raw, `"  "`, "2026-10-17", digest), "sign_off.by is blank"},
+		{"bad date", signed(raw, "someone", "17/10/2026", digest), "is not YYYY-MM-DD"},
+		{"no digest", signed(raw, "someone", "2026-10-17", `""`), "sign_off.digest is empty"},
+		{
+			"task edited after sign-off", signed(editedTask, "someone", "2026-10-17", digest),
+			"the file changed after the sign-off",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := Parse([]byte(tt.raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = f.CheckSignOff()
+			if tt.want == "" && err != nil {
+				t.Errorf("CheckSignOff() = %v, want nil", err)
+			}
+			if tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+				t.Errorf("CheckSignOff() = %v, want an error containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestGlossaryFilesDefaultsToTheRootGlossary(t *testing.T) {
+	f, err := Load("../../cases.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Cases[0].GlossaryFiles(); len(got) != 1 || got[0] != RootGlossary {
+		t.Errorf("belt GlossaryFiles() = %v, want [%s]", got, RootGlossary)
+	}
+	if got := f.Cases[3].GlossaryFiles(); len(got) != 2 || got[1] != "tools/suspenders/CONTEXT.md" {
+		t.Errorf("suspenders GlossaryFiles() = %v, want the root and its own glossary", got)
 	}
 }

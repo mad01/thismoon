@@ -31,16 +31,24 @@ type Result struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// ClaudeProbe is what the one `claude --version` call of a batch returned.
+type ClaudeProbe struct {
+	Version [3]int
+	Raw     string
+	Err     error
+}
+
 // Env is the host the checks look at. Tests point Home at a temp dir.
 type Env struct {
-	Home          string
-	LookPath      func(file string) (string, error)
-	ClaudeVersion func(ctx context.Context) ([3]int, string, error)
+	Home        string
+	LookPath    func(file string) (string, error)
+	Claude      ClaudeProbe
+	BeltVersion func(ctx context.Context) (string, error)
 }
 
 // Common checks what every arm needs.
-func Common(ctx context.Context, env Env) []Result {
-	results := []Result{claudeVersion(ctx, env)}
+func Common(env Env) []Result {
+	results := []Result{claudeVersion(env.Claude)}
 	for _, bin := range []string{"git", "make", "go", "humanizer"} {
 		results = append(results, onPath(env, bin))
 	}
@@ -81,23 +89,22 @@ func Explain(arm string, failed []Result) string {
 		lines = append(lines, fmt.Sprintf("  - %s: %s", r.Name, r.Detail))
 	}
 	if arm == "factory" {
-		lines = append(lines, "The worker definitions and the belt hook wiring land with MAD-398; "+
+		lines = append(lines, "MAD-398 installs the worker definitions and the belt hook wiring; "+
 			"see the factory-eval README, prerequisites.")
 	}
 	return strings.Join(lines, "\n")
 }
 
-func claudeVersion(ctx context.Context, env Env) Result {
+func claudeVersion(p ClaudeProbe) Result {
 	r := Result{Name: "claude version"}
-	v, raw, err := env.ClaudeVersion(ctx)
 	switch {
-	case err != nil:
-		r.Detail = err.Error()
-	case older(v, MinClaude):
+	case p.Err != nil:
+		r.Detail = p.Err.Error()
+	case older(p.Version, MinClaude):
 		r.Detail = fmt.Sprintf("%s is older than %d.%d.%d, which --permission-prompts needs",
-			raw, MinClaude[0], MinClaude[1], MinClaude[2])
+			p.Raw, MinClaude[0], MinClaude[1], MinClaude[2])
 	default:
-		r.OK, r.Detail = true, raw
+		r.OK, r.Detail = true, p.Raw
 	}
 	return r
 }

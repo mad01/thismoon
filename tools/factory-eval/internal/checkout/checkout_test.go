@@ -72,6 +72,44 @@ func TestCreateDetachesAtCommitWithoutOrigin(t *testing.T) {
 	}
 }
 
+// TestCreateKeepsNothingPastThePin gives the source a main that moved on,
+// a side branch and a tag, the way the real repo looks after the pin.
+func TestCreateKeepsNothingPastThePin(t *testing.T) {
+	src, pin := sourceRepo(t)
+	runGit(t, src, "tag", "svc/v1.0.0")
+	runGit(t, src, "branch", "side")
+	writeFile(t, filepath.Join(src, "svc", "cases.yaml"), "answers: here\n")
+	runGit(t, src, "add", ".")
+	runGit(t, src, "commit", "--quiet", "-m", "after the pin")
+	newer := runGit(t, src, "rev-parse", "HEAD")
+
+	c, err := Create(context.Background(), src, pin, t.TempDir())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	refs, err := c.LocalRefs(context.Background())
+	if err != nil || len(refs) != 0 {
+		t.Errorf("LocalRefs() = %v, %v; want no branch and no tag", refs, err)
+	}
+	if got := runGit(t, c.Repo, "for-each-ref"); got != "" {
+		t.Errorf("refs left in the clone:\n%s", got)
+	}
+	if got := runGit(t, c.Repo, "reflog", "--all"); got != "" {
+		t.Errorf("reflog still names commits:\n%s", got)
+	}
+	cmd := exec.Command("git", "cat-file", "-e", newer)
+	cmd.Dir = c.Repo
+	if err := cmd.Run(); err == nil {
+		t.Errorf("commit %s from after the pin is still in the object store", newer)
+	}
+	if got := runGit(t, c.Repo, "config", "--local", "user.name"); got != IdentityName {
+		t.Errorf("user.name = %q, want the harness identity %q", got, IdentityName)
+	}
+	if got := runGit(t, c.Repo, "config", "--local", "user.email"); got != IdentityEmail {
+		t.Errorf("user.email = %q, want %q", got, IdentityEmail)
+	}
+}
+
 func TestCreateRemovesPartialDirOnBadCommit(t *testing.T) {
 	src, _ := sourceRepo(t)
 	parent := t.TempDir()
@@ -153,5 +191,44 @@ func TestCreateLeavesSourceUntouched(t *testing.T) {
 	}
 	if got := runGit(t, src, "worktree", "list"); strings.Count(got, "\n") != 0 {
 		t.Errorf("source gained worktrees:\n%s", got)
+	}
+}
+
+func TestFingerprintSeesEveryKindOfChange(t *testing.T) {
+	src, _ := sourceRepo(t)
+	ctx := context.Background()
+	before, err := Fingerprint(ctx, src)
+	if err != nil {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+	again, err := Fingerprint(ctx, src)
+	if err != nil || len(before.Changes(again)) != 0 {
+		t.Fatalf("an untouched repo changed: %v, %v", before.Changes(again), err)
+	}
+	runGit(t, src, "branch", "eval/x")
+	writeFile(t, filepath.Join(src, "svc", "README.md"), "# svc\n\nedited\n")
+	runGit(t, src, "worktree", "add", "--quiet", "--detach", filepath.Join(t.TempDir(), "wt"))
+	after, err := Fingerprint(ctx, src)
+	if err != nil {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+	want := []string{
+		"git status --porcelain changed",
+		"worktrees were 1, now 2",
+		"ref added: refs/heads/eval/x",
+	}
+	if got := before.Changes(after); !reflect.DeepEqual(got, want) {
+		t.Errorf("Changes() = %q, want %q", got, want)
+	}
+	runGit(t, src, "commit", "--quiet", "-am", "edit")
+	moved, err := Fingerprint(ctx, src)
+	if err != nil {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+	got := strings.Join(after.Changes(moved), "; ")
+	for _, w := range []string{"HEAD moved from", "ref moved: refs/heads/main"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("Changes() after a commit = %q, want it to contain %q", got, w)
+		}
 	}
 }
