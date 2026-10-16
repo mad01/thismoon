@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mad01/thismoon/tools/belt/internal/cache"
 )
 
 // seen suppresses repeat advice within one session. Without it a hint repeats
@@ -17,28 +19,10 @@ var seen = sessionSeen{}
 
 type sessionSeen struct{}
 
+// path names the session's seen file, "" when the session cannot have one
+// (no id, no home directory, or an id with nothing path-safe in it).
 func (sessionSeen) path(sessionID string) string {
-	if sessionID == "" {
-		return ""
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	// Session ids come from the hook payload; keep only path-safe characters
-	// so a malformed id cannot escape the cache directory.
-	safe := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
-			return r
-		default:
-			return -1
-		}
-	}, sessionID)
-	if safe == "" {
-		return ""
-	}
-	return filepath.Join(home, ".cache", "belt", "seen-"+safe)
+	return cache.SessionFile(cache.Dir(), "seen-", sessionID)
 }
 
 // filter drops assertions already surfaced this session and records the rest.

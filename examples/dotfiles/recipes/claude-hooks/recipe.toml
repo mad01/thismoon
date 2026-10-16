@@ -23,7 +23,7 @@
 # anything points at it.
 [recipe]
 name = "claude-hooks"
-description = "belt config overlay + the Claude Code hooks block that registers belt's guards and hints"
+description = "belt config overlay + the Claude Code hooks block that registers belt's guards, hints, ledger and watcher"
 wave = 1
 
 [directories.belt_config]

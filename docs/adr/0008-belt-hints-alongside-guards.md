@@ -7,6 +7,10 @@
 transcripts measured how often the documented tool conventions are actually
 followed.
 
+**Amended by ADR-0024 (2026-10-16):** belt carries three concepts, not two.
+The ledger joins guards and hints, recording lifecycle events with no output
+at all, and `belt watch` is the one command that exits 2.
+
 ## Context
 
 belt has one shape: a guard inspects a tool call before it runs and either

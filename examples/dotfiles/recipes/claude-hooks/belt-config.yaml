@@ -109,8 +109,34 @@ hints:
 # payload fields as JSON on stdin and relays its stdout as advice under
 # belt[<name>]:. A failed run, a run past the budget (400ms unless
 # timeout_ms says otherwise), or empty stdout is silence plus a warn event.
+# A hint on subagent-start runs before each subagent's first prompt, with
+# agent_id and agent_type added to the payload, and its advice lands in the
+# subagent's own context: the place for a brief to worker subagents.
 # custom_hints:
 #   daily-journal:
 #     event: session-start
 #     command: [journal, open-actions, --since, yesterday]
 #     timeout_ms: 400
+#   worker-brief:
+#     event: subagent-start
+#     command: [factory, brief]
+
+# The lifecycle ledger (optional, on by default): belt record posts one
+# events entry per lifecycle hook it is wired to, tagged with the session,
+# agent, repo, worktree and branch. Switch it off or move it to another
+# events source here.
+# ledger:
+#   enabled: true
+#   source: belt-ledger
+
+# The inbox watcher (optional, off by default): belt watch, wired as an
+# asyncRewake hook on Stop and SessionStart, wakes an idle session when an
+# events entry under source carries a to tag naming it. Keep max_wait_s
+# below the hook's timeout, 590 in the hooks block; belt doctor warns when
+# it reaches 590. Out-of-range values are clamped with a doctor warning,
+# never rejected, so a typo here cannot make belt deny tool calls.
+# watch:
+#   enabled: true
+#   poll_interval_ms: 2000
+#   max_wait_s: 540
+#   source: belt-inbox

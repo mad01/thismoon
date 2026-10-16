@@ -67,18 +67,23 @@ const (
 	ModeSoft = "soft"
 )
 
-// HintEventSessionStart is the one hint event a custom hint may register on
-// today. It lives here for the same reason the guard events do: the config
-// file names it (custom_hints.<name>.event) and this package validates what
-// it reads; internal/hint aliases it.
-const HintEventSessionStart = "session-start"
+// The hint events a custom hint may register on. They live here for the
+// same reason the guard events do: the config file names them
+// (custom_hints.<name>.event) and this package validates what it reads;
+// internal/hint aliases them. Both run before a conversation's first
+// prompt: session-start for the session, subagent-start for each subagent
+// it spawns, whose context the advice lands in.
+const (
+	HintEventSessionStart  = "session-start"
+	HintEventSubagentStart = "subagent-start"
+)
 
 // CustomHintEvents lists the events custom_hints.<name>.event accepts. The
 // field is a string rather than a bool so prompt and post-tool events can
 // join this list later without a schema break; until they do, validation
 // rejects them by name so a config does not register a hint on an event the
 // binary never runs it on.
-var CustomHintEvents = []string{HintEventSessionStart}
+var CustomHintEvents = []string{HintEventSessionStart, HintEventSubagentStart}
 
 // CustomHintTimeout is the default budget for one external hint run, the
 // same budget the kof hints give kof serve: a session-start hook runs before
@@ -124,6 +129,8 @@ type Config struct {
 	CommitGuards   []CommitGuard          // commit-guard rules, every rule is checked
 	CustomGuards   map[string]CustomGuard // external-command guards keyed by guard name
 	CustomHints    map[string]CustomHint  // external-command hints keyed by hint name
+	Ledger         Ledger                 // what `belt record` posts, and where
+	Watch          Watch                  // whether and how `belt watch` polls for items
 }
 
 // GitIdentity is one git-identity rule: the git user.email expected for
@@ -670,6 +677,8 @@ func LoadFrom(p Paths) (Config, error) {
 		CommitGuards:    f.CommitGuards,
 		CustomGuards:    f.CustomGuards,
 		CustomHints:     f.CustomHints,
+		Ledger:          f.Ledger,
+		Watch:           f.Watch,
 	}
 	if cfg.ClaudeSettings.ReadEnabled() {
 		cfg.ClaudeDeny = LoadClaudeDenyPatterns(p.ClaudeSettings...)
@@ -740,6 +749,8 @@ type File struct {
 	CommitGuards    []CommitGuard          `toml:"commit_guards"     yaml:"commit_guards"`
 	CustomGuards    map[string]CustomGuard `toml:"custom_guards"     yaml:"custom_guards"`
 	CustomHints     map[string]CustomHint  `toml:"custom_hints"      yaml:"custom_hints"`
+	Ledger          Ledger                 `toml:"ledger"            yaml:"ledger"`
+	Watch           Watch                  `toml:"watch"             yaml:"watch"`
 }
 
 // Source reports which belt config file was read and what happened.
@@ -823,6 +834,8 @@ func (f File) validate() error {
 		}
 	}
 	errs = append(errs, customHintErrors(f.CustomHints)...)
+	// The ledger and watch sections are deliberately absent here: their
+	// values are resolved and warned about, never rejected (lifecycle.go).
 	errs = append(errs, toggleModeErrors("guards", f.Guards)...)
 	errs = append(errs, toggleModeErrors("hints", f.Hints)...)
 	errs = append(errs, toggleFieldErrors("guards", f.Guards, GuardFields)...)

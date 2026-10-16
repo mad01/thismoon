@@ -24,18 +24,26 @@ import (
 var errDoctorWarnings = errors.New("belt doctor: warnings present")
 
 func doctorCmd(paths pathsFunc) *cobra.Command {
-	return doctorCmdWith(paths, liveKofProbe)
+	return doctorCmdWith(paths, doctorProbes{kof: liveKofProbe, events: liveEventsProbe})
 }
 
-// doctorCmdWith builds the doctor command around an injectable kof probe,
-// so the command's exit contract can be tested without dialing a port.
-func doctorCmdWith(paths pathsFunc, probe kofProbe) *cobra.Command {
+// doctorProbes are the network checks doctor makes, injected so tests never
+// dial a real port.
+type doctorProbes struct {
+	kof    kofProbe
+	events eventsProbe
+}
+
+// doctorCmdWith builds the doctor command around injectable probes, so the
+// command's exit contract can be tested without dialing a port.
+func doctorCmdWith(paths pathsFunc, probes doctorProbes) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Show the build and resolved config: surfaces loaded, guard/hint state, kof reachability, blocked names",
 		Long: `Show what belt is actually running with: which build is installed, which
 config surface loaded (or didn't), which guards and hints are enabled,
-whether the kof serve instance the kof-* hints query is reachable, and
+whether the kof serve instance the kof-* hints query is reachable, the
+ledger and watch settings with the events service they depend on, and
 the resolved blocked-name set the write-internal-names guard matches
 against. Use it to answer "why did that check fire": a deny names the
 guard, doctor names the build and the config behind it.
@@ -43,15 +51,17 @@ guard, doctor names the build and the config behind it.
 The report ends with a warnings section and exits 1 when it is not empty:
 a broken config or include file (every hook is denying), a script guard
 with no deny patterns to enforce, an internal-name guard with no names to
-match, or a toggle no registered guard or hint answers to. A machine with
-no belt config at all warns about the last three by design.`,
+match, a toggle no registered guard or hint answers to, or an enabled
+watcher that cannot work (events service unreachable, or a max wait at or
+past the hook timeout). A machine with no belt config at all warns about
+the internal-name, script and toggle cases by design.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths()
 			if err != nil {
 				return err
 			}
-			if warns := runDoctor(cmd.OutOrStdout(), p, probe); len(warns) > 0 {
+			if warns := runDoctor(cmd.OutOrStdout(), p, probes); len(warns) > 0 {
 				return errDoctorWarnings
 			}
 			return nil
@@ -95,7 +105,7 @@ func newDoctorReport(p config.Paths) doctorReport {
 // section rather than aborting: doctor is what someone runs to find out why
 // belt is denying everything, so it has to survive the config that caused
 // it.
-func runDoctor(w io.Writer, p config.Paths, probe kofProbe) []string {
+func runDoctor(w io.Writer, p config.Paths, probes doctorProbes) []string {
 	r := newDoctorReport(p)
 	cfg := r.cfg
 
@@ -148,9 +158,12 @@ func runDoctor(w io.Writer, p config.Paths, probe kofProbe) []string {
 
 	printCustomHints(w, cfg, customHints)
 
-	base, count, probeErr := probe()
+	base, count, probeErr := probes.kof()
 	fmt.Fprintln(w, "\nkof serve — backs the kof-* hints:")
 	fmt.Fprintf(w, "  %s  %s\n", base, kofNote(count, probeErr))
+	// A broken config leaves watch at its disabled default, so this section
+	// cannot add a warning describing defaults on top of the BROKEN one.
+	warns = append(warns, printLifecycle(w, cfg, probes.events)...)
 
 	nameWarns := r.printBlockedNames(w)
 	if !r.src.Broken() {
@@ -431,7 +444,7 @@ func printCustomHints(w io.Writer, cfg config.Config, customs []*hint.Custom) {
 	}
 	for _, c := range customs {
 		ch := c.Config()
-		fmt.Fprintf(w, "  %-22s %-13s %-9s budget: %s  command: %s%s%s\n",
+		fmt.Fprintf(w, "  %-22s %-14s %-9s budget: %s  command: %s%s%s\n",
 			c.ID(), c.Event(), enabledWord(cfg.HintEnabled(c.ID())), c.Timeout(),
 			strings.Join(ch.Command, " "), excludeReposNote(cfg, c.ID()),
 			reachabilityNote(ch.Command, "hint stays silent with a warn event"))

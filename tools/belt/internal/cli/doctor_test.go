@@ -40,7 +40,7 @@ func runDoctorString(t *testing.T, p config.Paths) string {
 func runDoctorReport(t *testing.T, p config.Paths) (string, []string) {
 	t.Helper()
 	var b strings.Builder
-	warns := runDoctor(&b, p, stubKofProbe(3, nil))
+	warns := runDoctor(&b, p, stubProbes(stubKofProbe(3, nil), nil))
 	return b.String(), warns
 }
 
@@ -58,6 +58,103 @@ func armedConfig(t *testing.T, dir string) config.Paths {
 func stubKofProbe(count int, err error) kofProbe {
 	return func() (string, int, error) {
 		return "http://127.0.0.1:7431", count, err
+	}
+}
+
+// stubProbes pairs a kof probe with an events probe that answers eventsErr,
+// so no doctor test dials the events port either.
+func stubProbes(kof kofProbe, eventsErr error) doctorProbes {
+	return doctorProbes{
+		kof:    kof,
+		events: func() (string, error) { return "http://127.0.0.1:7430", eventsErr },
+	}
+}
+
+// TestDoctorReportsLifecycle covers the ledger, watch and events-service
+// sections and the two warnings they can raise, both only for an enabled
+// watcher: one that can never wake anyone, and one whose max wait outlives
+// the hook that runs it.
+func TestDoctorReportsLifecycle(t *testing.T) {
+	down := errors.New("connection refused")
+	tests := []struct {
+		name      string
+		config    string
+		eventsErr error
+		wantLines []string
+		wantWarn  string
+	}{
+		{
+			name: "defaults",
+			wantLines: []string{
+				"enabled  source: belt-ledger  events: subagent-start,",
+				"DISABLED (the default",
+				"http://127.0.0.1:7430  reachable",
+			},
+		},
+		{
+			name: "enabled watcher",
+			config: "ledger:\n  enabled: false\n  source: factory-ledger\n" +
+				"watch:\n  enabled: true\n  poll_interval_ms: 500\n  max_wait_s: 120\n",
+			wantLines: []string{
+				"DISABLED  source: factory-ledger",
+				"enabled  source: belt-inbox  poll: 500ms  max wait: 2m0s",
+			},
+		},
+		{
+			name:      "unreachable events service with watch off is a note",
+			eventsErr: down,
+			wantLines: []string{"UNREACHABLE (connection refused)"},
+		},
+		{
+			name:      "unreachable events service with watch on warns",
+			config:    "watch:\n  enabled: true\n",
+			eventsErr: down,
+			wantWarn:  "watch is enabled but the events service at http://127.0.0.1:7430 is unreachable",
+		},
+		{
+			name:     "max wait at the documented hook timeout warns",
+			config:   "watch:\n  enabled: true\n  max_wait_s: 590\n",
+			wantWarn: "watch max wait is 9m50s: at or past the documented 9m50s hook timeout",
+		},
+		{
+			name:      "max wait just under the hook timeout is fine",
+			config:    "watch:\n  enabled: true\n  max_wait_s: 589\n",
+			wantLines: []string{"max wait: 9m49s"},
+		},
+		{
+			name:     "a clamped value warns even with watch off",
+			config:   "watch:\n  enabled: false\n  poll_interval_ms: 50\n",
+			wantWarn: "watch.poll_interval_ms is 50, using the 100ms floor",
+		},
+		{
+			name:     "a normalized ledger source warns",
+			config:   "ledger:\n  source: Belt_Ledger\n",
+			wantWarn: `ledger.source is "Belt_Ledger", using "belt_ledger"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := armedConfig(t, t.TempDir())
+			if tt.config != "" {
+				writeFile(t, filepath.Dir(p.BeltYAML), "config.yaml",
+					"internal_names:\n  blocked_words:\n    - acmecorp\n"+tt.config)
+			}
+			var b strings.Builder
+			warns := runDoctor(&b, p, stubProbes(stubKofProbe(3, nil), tt.eventsErr))
+			out := b.String()
+			for _, want := range tt.wantLines {
+				if !strings.Contains(out, want) {
+					t.Errorf("output missing %q:\n%s", want, out)
+				}
+			}
+			got := strings.Join(warns, "\n")
+			if tt.wantWarn == "" && got != "" {
+				t.Errorf("warnings = %q, want none", got)
+			}
+			if tt.wantWarn != "" && !strings.Contains(got, tt.wantWarn) {
+				t.Errorf("warnings = %q, want one containing %q", got, tt.wantWarn)
+			}
+		})
 	}
 }
 
@@ -194,7 +291,7 @@ func TestDoctorReportsKofReachability(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var b strings.Builder
-			runDoctor(&b, doctorPaths(t.TempDir()), stubKofProbe(tt.count, tt.err))
+			runDoctor(&b, doctorPaths(t.TempDir()), stubProbes(stubKofProbe(tt.count, tt.err), nil))
 			out := b.String()
 			if !strings.Contains(out, "kof serve — backs the kof-* hints:") {
 				t.Errorf("kof section header missing:\n%s", out)
@@ -293,9 +390,9 @@ custom_hints:
 
 	for _, want := range []string{
 		"custom hints — external commands from custom_hints",
-		"daily-journal          session-start enabled   budget: 250ms  command: " +
+		"daily-journal          session-start  enabled   budget: 250ms  command: " +
 			reachable + " --since yesterday  (exclude_repos: 1)",
-		"off-path               session-start DISABLED  budget: 400ms",
+		"off-path               session-start  DISABLED  budget: 400ms",
 		"not-executable",
 	} {
 		if !strings.Contains(out, want) {
@@ -498,7 +595,10 @@ func TestDoctorNoWarningsExitsClean(t *testing.T) {
 func TestDoctorCmdReturnsErrorOnWarnings(t *testing.T) {
 	run := func(t *testing.T, p config.Paths) error {
 		t.Helper()
-		cmd := doctorCmdWith(func() (config.Paths, error) { return p, nil }, stubKofProbe(0, nil))
+		cmd := doctorCmdWith(
+			func() (config.Paths, error) { return p, nil },
+			stubProbes(stubKofProbe(0, nil), nil),
+		)
 		cmd.SetOut(&strings.Builder{})
 		cmd.SetArgs(nil)
 		return cmd.Execute()

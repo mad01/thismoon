@@ -111,6 +111,63 @@ func TestBuild(t *testing.T) {
 			},
 		},
 		{
+			name:  "permission denied names the tool and carries the reason",
+			event: EventPermissionDenied,
+			in: Input{
+				SessionID: "s1",
+				ToolName:  "Bash",
+				ToolUseID: "toolu_01ABC",
+				Reason:    "[Irreversible Local Destruction]",
+			},
+			wantTitle:   "permission denied (Bash)",
+			wantMessage: "[Irreversible Local Destruction]",
+			wantTags: map[string]string{
+				"event":       "permission-denied",
+				"session_id":  "s1",
+				"tool":        "Bash",
+				"tool_use_id": "toolu_01ABC",
+				"reason":      "[Irreversible Local Destruction]",
+			},
+		},
+		{
+			name:  "notification names its type and puts the title before the text",
+			event: EventNotification,
+			in: Input{
+				SessionID:           "s1",
+				NotificationType:    "permission_prompt",
+				NotificationTitle:   "Permission needed",
+				NotificationMessage: "Claude needs your permission",
+			},
+			wantTitle:   "notification (permission_prompt)",
+			wantMessage: "Permission needed: Claude needs your permission",
+			wantTags: map[string]string{
+				"event":             "notification",
+				"session_id":        "s1",
+				"notification_type": "permission_prompt",
+			},
+		},
+		{
+			name:  "notification without a title is the bare text",
+			event: EventNotification,
+			in: Input{
+				NotificationType:    "idle_prompt",
+				NotificationMessage: "Claude is waiting for your input",
+			},
+			wantTitle:   "notification (idle_prompt)",
+			wantMessage: "Claude is waiting for your input",
+			wantTags: map[string]string{
+				"event":             "notification",
+				"notification_type": "idle_prompt",
+			},
+		},
+		{
+			name:      "an event with no text ignores a stray final message",
+			event:     EventTeammateIdle,
+			in:        Input{TeammateName: "researcher", LastAssistantMessage: "stray"},
+			wantTitle: "teammate idle (researcher)",
+			wantTags:  map[string]string{"event": "teammate-idle", "teammate": "researcher"},
+		},
+		{
 			name:      "main-session event omits every empty agent field",
 			event:     EventSessionEnd,
 			in:        Input{SessionID: "s1", TranscriptPath: "/t/session.jsonl", Reason: "clear"},
@@ -219,7 +276,7 @@ func TestBuildTruncatesTheMessage(t *testing.T) {
 func TestEventsFollowTheCatalog(t *testing.T) {
 	want := []string{
 		"subagent-start", "subagent-stop", "task-completed", "teammate-idle",
-		"pre-compact", "post-compact", "session-end",
+		"permission-denied", "notification", "pre-compact", "post-compact", "session-end",
 	}
 	got := Events()
 	if strings.Join(got, ",") != strings.Join(want, ",") {

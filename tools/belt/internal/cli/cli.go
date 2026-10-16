@@ -1,13 +1,14 @@
 // Package cli wires the belt commands: `hook <event>` (the Claude Code
 // PreToolUse guard entrypoint), `hint <event>` (the PostToolUse advisory
-// entrypoint), `record <event>` (the lifecycle ledger entrypoint), `check`
-// (manual dry-run), `doctor` (resolved-config report), `config` (config
-// locations + annotated setting reference), `docs` (the embedded operating
-// doc), and `version`.
+// entrypoint), `record <event>` (the lifecycle ledger entrypoint), `watch`
+// (the asyncRewake inbox watcher), `check` (manual dry-run), `doctor`
+// (resolved-config report), `config` (config locations + annotated setting
+// reference), `docs` (the embedded operating doc), and `version`.
 package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -25,9 +26,16 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
-// Execute runs the root command.
+// Execute runs the root command. A watcher that delivered items exits with
+// the wake code and prints nothing more; any other error prints once and
+// exits 1.
 func Execute() {
-	if err := rootCmd().Execute(); err != nil {
+	err := rootCmd().Execute()
+	switch {
+	case err == nil:
+	case errors.Is(err, errWake):
+		os.Exit(wakeExitCode)
+	default:
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -47,7 +55,8 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(
 		hookCmd(paths),
 		hintCmd(paths),
-		recordCmd(),
+		recordCmd(paths),
+		watchCmd(paths),
 		checkCmd(paths),
 		doctorCmd(paths),
 		configDocCmd(paths),
@@ -88,10 +97,12 @@ and advice are the only two outcomes.
 The event argument is belt's hint event, not the Claude Code tool name:
 search hints on the csl search tools, bash hints on Bash commands,
 external-text hints on the MCP tools that publish text off this machine,
-session-start hints once when a session opens (a SessionStart hook), and
-prompt hints on each user prompt (a UserPromptSubmit hook: advice goes to
-stdout as plain text, the form that event adds to context). Wire them in
-~/.claude/settings.json:
+session-start hints once when a session opens (a SessionStart hook),
+subagent-start hints once per subagent before its first prompt (a
+SubagentStart hook: the advice lands in the subagent's context, and only
+custom hints run there), and prompt hints on each user prompt (a
+UserPromptSubmit hook: advice goes to stdout as plain text, the form that
+event adds to context). Wire them in ~/.claude/settings.json:
 
   {
     "hooks": {
@@ -104,6 +115,9 @@ stdout as plain text, the form that event adds to context). Wire them in
       ],
       "SessionStart": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint session-start"}]}
+      ],
+      "SubagentStart": [
+        {"matcher": "", "hooks": [{"type": "command", "command": "belt hint subagent-start"}]}
       ],
       "UserPromptSubmit": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint prompt"}]}
@@ -123,21 +137,22 @@ stdout as plain text, the form that event adds to context). Wire them in
 	}
 }
 
-func recordCmd() *cobra.Command {
+func recordCmd(paths pathsFunc) *cobra.Command {
 	return &cobra.Command{
 		Use:   "record <event>",
 		Short: "Record a Claude Code lifecycle event to the events ledger (payload on stdin, no output)",
 		Long: `Record a Claude Code lifecycle event to the events ledger. Reads the hook
 payload on stdin and posts one entry to the local events service under the
-` + ledger.Source + ` source, tagged with the session, the agent, and the
-repo, worktree and branch the event happened in.
+` + ledger.Source + ` source (ledger.source replaces it), tagged with the
+session, the agent, and the repo, worktree and branch the event happened in.
 
 For a valid event it never writes to stdout or stderr and always exits 0.
-On SubagentStop any output keeps the subagent running, and TaskCompleted,
-TeammateIdle and PreCompact treat exit 2 as a block, so a ledger entry must
-never be able to steer the session. It reads no config, so a broken config
-file does not stop the record; an unreadable payload is still recorded, at
-warn level.
+On SubagentStop any output keeps the subagent running, TaskCompleted,
+TeammateIdle and PreCompact treat exit 2 as a block, and PermissionDenied
+reads its output for a retry flag, so a ledger entry must never be able to
+steer the session. The config decides only whether entries post
+(ledger.enabled, default on) and where; a broken config file records with
+the defaults. An unreadable payload is still recorded, at warn level.
 
 The event argument is belt's record event, not the Claude Code hook name.
 An unknown event is a wiring mistake and fails loud like every belt
@@ -146,18 +161,20 @@ entrypoint: an error on stderr and exit 1. Wire them in
 
   {
     "hooks": {
-      "SubagentStart": [{"matcher": "", "hooks": [{"type": "command", "command": "belt record subagent-start"}]}],
-      "SubagentStop":  [{"matcher": "", "hooks": [{"type": "command", "command": "belt record subagent-stop"}]}],
-      "TaskCompleted": [{"matcher": "", "hooks": [{"type": "command", "command": "belt record task-completed"}]}],
-      "TeammateIdle":  [{"matcher": "", "hooks": [{"type": "command", "command": "belt record teammate-idle"}]}],
-      "PreCompact":    [{"matcher": "", "hooks": [{"type": "command", "command": "belt record pre-compact"}]}],
-      "PostCompact":   [{"matcher": "", "hooks": [{"type": "command", "command": "belt record post-compact"}]}],
-      "SessionEnd":    [{"matcher": "", "hooks": [{"type": "command", "command": "belt record session-end"}]}]
+      "SubagentStart":    [{"matcher": "", "hooks": [{"type": "command", "command": "belt record subagent-start"}]}],
+      "SubagentStop":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record subagent-stop"}]}],
+      "TaskCompleted":    [{"matcher": "", "hooks": [{"type": "command", "command": "belt record task-completed"}]}],
+      "TeammateIdle":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record teammate-idle"}]}],
+      "PermissionDenied": [{"matcher": "", "hooks": [{"type": "command", "command": "belt record permission-denied"}]}],
+      "Notification":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record notification"}]}],
+      "PreCompact":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record pre-compact"}]}],
+      "PostCompact":      [{"matcher": "", "hooks": [{"type": "command", "command": "belt record post-compact"}]}],
+      "SessionEnd":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record session-end"}]}]
     }
   }`,
 		Args: eventArg("record event", ledger.Events),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hook.RunRecord(strings.ToLower(args[0]), cmd.InOrStdin())
+			hook.RunRecord(strings.ToLower(args[0]), loader(paths), cmd.InOrStdin())
 			return nil // always exit 0: a non-zero exit would block some of these events
 		},
 	}

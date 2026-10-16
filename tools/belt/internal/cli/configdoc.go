@@ -123,16 +123,18 @@ custom_guards:
     mode: hard
 
 # Named external hints: belt execs the command with the hook payload fields
-# as JSON on stdin ({"event","cwd","session_id","transcript_path"} for
-# session-start) and relays its stdout, trailing whitespace trimmed and
-# multi-line allowed, as advice prefixed belt[<name>]:. A non-zero exit, a
-# run past the budget (400ms unless timeout_ms says otherwise), a start
-# failure, or empty stdout is silence plus a warn event: a broken external
-# never breaks a session. event is required and must be session-start
-# today (prompt and post-tool events can join later); a name that shadows
-# a built-in hint, a missing command, or an unsupported event is a config
-# error. This is where a machine-private hint (a daily journal, say) is
-# registered without a second SessionStart hook or a compiled-in hint.
+# as JSON on stdin ({"event","cwd","session_id","transcript_path"}, plus
+# "agent_id" and "agent_type" inside a subagent) and relays its stdout,
+# trailing whitespace trimmed and multi-line allowed, as advice prefixed
+# belt[<name>]:. A non-zero exit, a run past the budget (400ms unless
+# timeout_ms says otherwise), a start failure, or empty stdout is silence
+# plus a warn event: a broken external never breaks a session. event is
+# required and must be session-start (once per session) or subagent-start
+# (once per subagent, before its first prompt, advice in the subagent's
+# context); prompt and post-tool events can join later. A name that
+# shadows a built-in hint, a missing command, or an unsupported event is a
+# config error. This is where a machine-private hint (a daily journal, a
+# worker brief) is registered without a second hook or a compiled-in hint.
 custom_hints:
   daily-journal:
     enabled: true
@@ -141,6 +143,36 @@ custom_hints:
     timeout_ms: 400
     exclude_repos:
       - github.com/you/scratch
+  worker-brief:
+    event: subagent-start
+    command: [factory, brief]
+
+# The lifecycle ledger: belt record posts one events-service entry per
+# Claude Code lifecycle event it is wired to (subagent start and stop,
+# task completed, teammate idle, permission denied, notification,
+# compaction, session end). enabled defaults to true: wiring the record
+# hooks is the opt-in. A broken config file still records, with these
+# defaults. The ledger and watch values are clamped, never rejected: a
+# source is rewritten the way the events service stores it (lowercase
+# letters, digits, - and _, at most 64), an out-of-range number is clamped,
+# and belt doctor warns about each adjustment.
+ledger:
+  enabled: true
+  source: belt-ledger
+
+# The inbox watcher: belt watch, wired as an asyncRewake hook on Stop and
+# SessionStart, polls source for entries whose to tag is the session's id
+# and wakes the session with them (exit 2, the items on stderr). Off until
+# enabled is set: a watcher holds a process per idle session. poll_interval_ms
+# is 2000 by default and clamped to at least 100. max_wait_s is 540 by
+# default and clamped to at most 3600; keep it below the hook's timeout
+# (590 in the documented wiring, where doctor warns). After it the watcher
+# exits 0 and the next idle starts a new one.
+watch:
+  enabled: false
+  poll_interval_ms: 2000
+  max_wait_s: 540
+  source: belt-inbox
 
 guards:
   git-push-main:
@@ -322,6 +354,8 @@ type effectiveConfig struct {
 	CommitGuards   []config.CommitGuard          `yaml:"commit_guards,omitempty"`
 	CustomGuards   map[string]config.CustomGuard `yaml:"custom_guards,omitempty"`
 	CustomHints    map[string]config.CustomHint  `yaml:"custom_hints,omitempty"`
+	Ledger         config.Ledger                 `yaml:"ledger"`
+	Watch          config.Watch                  `yaml:"watch"`
 	Guards         map[string]config.Toggle      `yaml:"guards"`
 	Hints          map[string]config.Toggle      `yaml:"hints"`
 	ClaudeDeny     []string                      `yaml:"claude_deny"`
@@ -341,6 +375,8 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		CommitGuards:   cfg.CommitGuards,
 		CustomGuards:   cfg.CustomGuards,
 		CustomHints:    effectiveCustomHints(cfg),
+		Ledger:         effectiveLedger(cfg.Ledger),
+		Watch:          effectiveWatch(cfg.Watch),
 		Guards:         make(map[string]config.Toggle, len(guards)),
 		Hints:          make(map[string]config.Toggle, len(hints)),
 		ClaudeDeny:     cfg.ClaudeDeny,
@@ -358,6 +394,22 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 		e.Hints[h.ID()] = withEnabled(cfg.Hints[h.ID()], cfg.HintEnabled(h.ID()))
 	}
 	return e
+}
+
+// effectiveLedger and effectiveWatch print every lifecycle value resolved,
+// defaults made explicit, so an absent section shows what belt runs with.
+func effectiveLedger(l config.Ledger) config.Ledger {
+	on := l.On()
+	return config.Ledger{Enabled: &on, Source: l.SourceName()}
+}
+
+func effectiveWatch(w config.Watch) config.Watch {
+	return config.Watch{
+		Enabled:        w.Enabled,
+		PollIntervalMS: int(w.PollInterval() / time.Millisecond),
+		MaxWaitS:       int(w.MaxWait() / time.Second),
+		Source:         w.SourceName(),
+	}
 }
 
 // effectiveCustomHints resolves each custom hint the way the built-ins are

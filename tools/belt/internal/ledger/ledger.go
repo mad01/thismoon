@@ -1,36 +1,41 @@
 // Package ledger turns Claude Code lifecycle hook events into entries for
 // the local events service, so an orchestrator session and its workers
 // leave one timeline: which subagent started and stopped where, which task
-// completed, when a session compacted or ended. It is belt's third concept
-// beside guards (deny) and hints (advise): a ledger entry never reaches the
-// model and never steers the session. Build is pure; the hook entrypoint
-// resolves the git location and posts the entry.
+// completed, which tool call auto mode denied, when a session asked for
+// attention, compacted or ended. It is belt's third concept beside guards
+// (deny) and hints (advise): a ledger entry never reaches the model and
+// never steers the session (docs/adr/0024). Build is pure; the hook
+// entrypoint resolves the git location and posts the entry.
 package ledger
 
 import (
 	"unicode/utf8"
 
 	"github.com/mad01/thismoon/kit/notify"
+	"github.com/mad01/thismoon/tools/belt/internal/config"
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 )
 
 // Event names match `belt record <event>`; each comment names the Claude
 // Code hook it is registered under.
 const (
-	EventSubagentStart = "subagent-start" // hook: SubagentStart
-	EventSubagentStop  = "subagent-stop"  // hook: SubagentStop
-	EventTaskCompleted = "task-completed" // hook: TaskCompleted
-	EventTeammateIdle  = "teammate-idle"  // hook: TeammateIdle
-	EventPreCompact    = "pre-compact"    // hook: PreCompact
-	EventPostCompact   = "post-compact"   // hook: PostCompact
-	EventSessionEnd    = "session-end"    // hook: SessionEnd
+	EventSubagentStart    = "subagent-start"    // hook: SubagentStart
+	EventSubagentStop     = "subagent-stop"     // hook: SubagentStop
+	EventTaskCompleted    = "task-completed"    // hook: TaskCompleted
+	EventTeammateIdle     = "teammate-idle"     // hook: TeammateIdle
+	EventPermissionDenied = "permission-denied" // hook: PermissionDenied
+	EventNotification     = "notification"      // hook: Notification
+	EventPreCompact       = "pre-compact"       // hook: PreCompact
+	EventPostCompact      = "post-compact"      // hook: PostCompact
+	EventSessionEnd       = "session-end"       // hook: SessionEnd
 )
 
-// Source is the events-service source every entry posts under. It stays
-// apart from the source belt's denies and hints use because the events
-// service caps each source's in-memory history: a busy factory must not
-// push guard denials out of view.
-const Source = "belt-ledger"
+// Source is the events-service source entries post under unless
+// ledger.source names another. It stays apart from the source belt's
+// denies and hints use because the events service caps each source's
+// in-memory history: a busy factory must not push guard denials out of
+// view.
+const Source = config.DefaultLedgerSource
 
 // maxMessageBytes caps an entry's message. A subagent's final message can
 // run to pages; the entry needs enough to recognize the outcome, and the
@@ -62,32 +67,61 @@ type Input struct {
 	TaskID         string // task-completed
 	TaskSubject    string // task-completed
 	TeammateName   string // task-completed, teammate-idle
-	Trigger        string // pre-compact, post-compact: manual or auto
-	Reason         string // session-end: why the session ended
+	ToolName       string // permission-denied: the denied tool
+	ToolUseID      string // permission-denied: the denied call
+	// Reason is why the session ended (session-end) or why auto mode
+	// denied the call (permission-denied); the hooks share the key.
+	Reason              string
+	NotificationType    string // notification: which kind fired, e.g. permission_prompt
+	NotificationTitle   string // notification: optional heading
+	NotificationMessage string // notification: the text
+	Trigger             string // pre-compact, post-compact: manual or auto
 	// PayloadError is the decode error of a hook payload belt could not
 	// read, "" when it decoded. The entry is still built from whatever
 	// arrived.
 	PayloadError string
 }
 
-// spec describes one event: the entry title and the payload field that
-// qualifies it, shown in parentheses when set.
+// spec describes one event: the entry title, the payload field that
+// qualifies it (shown in parentheses when set), and the field that becomes
+// the entry message, nil for events that carry no text.
 type spec struct {
 	name      string
 	title     string
 	qualifier func(Input) string
+	message   func(Input) string
 }
 
 // catalog lists every recordable event in a fixed order, which Events and
 // the CLI's error text follow.
 var catalog = []spec{
-	{EventSubagentStart, "subagent started", func(in Input) string { return in.AgentType }},
-	{EventSubagentStop, "subagent stopped", func(in Input) string { return in.AgentType }},
-	{EventTaskCompleted, "task completed", func(in Input) string { return in.TeammateName }},
-	{EventTeammateIdle, "teammate idle", func(in Input) string { return in.TeammateName }},
-	{EventPreCompact, "compaction starting", func(in Input) string { return in.Trigger }},
-	{EventPostCompact, "compaction finished", func(in Input) string { return in.Trigger }},
-	{EventSessionEnd, "session ended", func(in Input) string { return in.Reason }},
+	{EventSubagentStart, "subagent started", agentType, nil},
+	{EventSubagentStop, "subagent stopped", agentType, lastMessage},
+	{EventTaskCompleted, "task completed", teammate, taskSubject},
+	{EventTeammateIdle, "teammate idle", teammate, nil},
+	{EventPermissionDenied, "permission denied", toolName, reason},
+	{EventNotification, "notification", notificationType, notificationText},
+	{EventPreCompact, "compaction starting", trigger, nil},
+	{EventPostCompact, "compaction finished", trigger, nil},
+	{EventSessionEnd, "session ended", reason, nil},
+}
+
+func agentType(in Input) string        { return in.AgentType }
+func teammate(in Input) string         { return in.TeammateName }
+func toolName(in Input) string         { return in.ToolName }
+func notificationType(in Input) string { return in.NotificationType }
+func trigger(in Input) string          { return in.Trigger }
+func reason(in Input) string           { return in.Reason }
+func lastMessage(in Input) string      { return in.LastAssistantMessage }
+func taskSubject(in Input) string      { return in.TaskSubject }
+
+// notificationText is the notification's message under its title, when it
+// has one: "Permission needed: Claude needs your permission".
+func notificationText(in Input) string {
+	if in.NotificationTitle == "" {
+		return in.NotificationMessage
+	}
+	return in.NotificationTitle + ": " + in.NotificationMessage
 }
 
 // Events lists every valid record event. CLI validation and its error text
@@ -101,15 +135,16 @@ func Events() []string {
 	return names
 }
 
-// Build turns one lifecycle event into its ledger entry. loc is where the
-// event's working directory sits in git; its zero value leaves the repo,
-// worktree, canonical and branch tags off.
+// Build turns one lifecycle event into its ledger entry, under Source. loc
+// is where the event's working directory sits in git; its zero value
+// leaves the repo, worktree, canonical and branch tags off.
 func Build(event string, in Input, loc guard.Location) notify.Event {
+	s := lookup(event)
 	ev := notify.Event{
 		Source:  Source,
 		Level:   levelInfo,
-		Title:   title(event, in),
-		Message: truncate(message(in), maxMessageBytes),
+		Title:   title(s, in),
+		Message: truncate(text(s, in), maxMessageBytes),
 		Tags:    tags(event, in, loc),
 	}
 	if in.PayloadError != "" {
@@ -119,29 +154,34 @@ func Build(event string, in Input, loc guard.Location) notify.Event {
 	return ev
 }
 
-// title names the event and its qualifier: "subagent stopped (Explore)".
-// An event outside the catalog is rejected at the CLI; a direct caller
-// still gets the event name as the title.
-func title(event string, in Input) string {
+// lookup finds an event's spec. An event outside the catalog is rejected
+// at the CLI; a direct caller still gets an entry titled by the event name.
+func lookup(event string) spec {
 	for _, s := range catalog {
-		if s.name != event {
-			continue
+		if s.name == event {
+			return s
 		}
-		if q := s.qualifier(in); q != "" {
-			return s.title + " (" + q + ")"
-		}
-		return s.title
 	}
-	return event
+	return spec{name: event, title: event}
 }
 
-// message is the entry body: the subagent's final text when the event
-// carries one, else the completed task's subject.
-func message(in Input) string {
-	if in.LastAssistantMessage != "" {
-		return in.LastAssistantMessage
+// title names the event and its qualifier: "subagent stopped (Explore)".
+func title(s spec, in Input) string {
+	if s.qualifier == nil {
+		return s.title
 	}
-	return in.TaskSubject
+	if q := s.qualifier(in); q != "" {
+		return s.title + " (" + q + ")"
+	}
+	return s.title
+}
+
+// text is the entry body, "" for an event that carries none.
+func text(s spec, in Input) string {
+	if s.message == nil {
+		return ""
+	}
+	return s.message(in)
 }
 
 // tags carries every identifying field that is set, so the timeline can be
@@ -159,6 +199,9 @@ func tags(event string, in Input, loc guard.Location) map[string]string {
 		{"branch", loc.Branch},
 		{"task_id", in.TaskID},
 		{"teammate", in.TeammateName},
+		{"tool", in.ToolName},
+		{"tool_use_id", in.ToolUseID},
+		{"notification_type", in.NotificationType},
 		{"trigger", in.Trigger},
 		{"reason", in.Reason},
 		{"transcript", transcript(in)},

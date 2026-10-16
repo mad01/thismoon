@@ -16,14 +16,18 @@ import (
 // Event names match `belt hint <event>` and the hook matcher they are
 // registered under. Search, bash, and external-text run on PostToolUse;
 // session-start runs on SessionStart, where there is no tool call — the input
-// carries only the session's cwd and id. session-start aliases the config
-// constant because the config file names it (custom_hints.<name>.event) and
-// validates it there: one source for what a legal custom-hint event is.
+// carries only the session's cwd and id. subagent-start runs on
+// SubagentStart, before a subagent's first prompt; its input adds the
+// agent's id and type, and its advice lands in the subagent's context, not
+// the parent's. The two start events alias the config constants because the
+// config file names them (custom_hints.<name>.event) and validates them
+// there: one source for what a legal custom-hint event is.
 const (
-	EventSearch       = "search"                     // matcher: the csl search MCP tools
-	EventBash         = "bash"                       // matcher: Bash
-	EventSessionStart = config.HintEventSessionStart // hook: SessionStart
-	EventPrompt       = "prompt"                     // hook: UserPromptSubmit
+	EventSearch        = "search"                      // matcher: the csl search MCP tools
+	EventBash          = "bash"                        // matcher: Bash
+	EventSessionStart  = config.HintEventSessionStart  // hook: SessionStart
+	EventSubagentStart = config.HintEventSubagentStart // hook: SubagentStart
+	EventPrompt        = "prompt"                      // hook: UserPromptSubmit
 	// matcher: the MCP tools that write human-read text off this machine.
 	// Which tools those are is consuming-repo wiring (docs/adr/0006); belt
 	// only drops the read-only calls a broad matcher would sweep in.
@@ -34,7 +38,9 @@ const (
 // from here so a new event cannot be added to the constants above and then be
 // silently rejected at the command line.
 func Events() []string {
-	return []string{EventSearch, EventBash, EventSessionStart, EventPrompt, EventExternalText}
+	return []string{
+		EventSearch, EventBash, EventSessionStart, EventSubagentStart, EventPrompt, EventExternalText,
+	}
 }
 
 // Input carries the fields extracted from a hook payload.

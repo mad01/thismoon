@@ -1,13 +1,16 @@
 # belt
 
-Guard and hint hooks for Claude Code sessions. belt inspects tool calls and either denies the risky ones before they run or advises after them, always with a reason the agent can act on.
+Guard, hint and ledger hooks for Claude Code sessions. belt inspects tool calls and either denies the risky ones before they run or advises after them, always with a reason the agent can act on. It also records session lifecycle events to a timeline, and can wake an idle session when an item arrives for it.
 
 Named for the layer it adds: suspenders holds up the git side (pre-commit secret scanning and internal-name guard). belt holds up the session side, before anything reaches git.
 
-belt has two halves, and the split is deliberate (see `docs/adr/0008`):
+belt has three concepts, and the split is deliberate (see `docs/adr/0008` and `docs/adr/0024`):
 
 - **Guards** run as a PreToolUse hook and can deny. They are reserved for damage that is hard to undo.
-- **Hints** only advise. Most run as a PostToolUse hook after the tool call whose result stands; two ride session lifecycle events instead (SessionStart and UserPromptSubmit). A hint that misfires costs a few lines of ignored text rather than a stalled session.
+- **Hints** only advise. Most run as a PostToolUse hook after the tool call whose result stands; three ride session lifecycle events instead (SessionStart, SubagentStart and UserPromptSubmit). A hint that misfires costs a few lines of ignored text rather than a stalled session.
+- **Ledger** entries only record. `belt record` posts one entry to the events service per lifecycle event it is wired to: subagents starting and stopping, tasks completing, permission denials, notifications, compaction, session end. It never prints anything, so it cannot steer the session.
+
+On top of the ledger sits one opt-in helper, `belt watch`, which wakes an idle session when an item addressed to it lands on the events service.
 
 The one-paragraph summaries below say what each guard and hint does; [docs/hooks.md](docs/hooks.md) covers how each one decides, why it exists, how it fails, and the `~/.claude/settings.json` entries that wire belt up.
 
@@ -39,7 +42,15 @@ Nine hints add advisory context the agent reads next to a tool result or at sess
 - `humanizer-check`: once per session, after a tool call publishes text to a system other people read, points at `humanizer_detect` while the wording can still be edited. A session that already ran a humanizer tool is left alone.
 - `em-dash`: after a gh command or MCP call publishes text containing em dashes, says how many went out and asks for an edit replacing them. The user reads them as an AI tell, and `humanizer_detect` does not flag them. Fires on every offending publish.
 
-Beyond the built-ins, a `custom_hints` config section registers named hints that shell out to an external command when a session starts. The hook payload fields arrive as JSON on stdin, and the command's stdout becomes the advice under the usual `belt[<name>]:` prefix. A non-zero exit, a run past the budget (400 ms unless `timeout_ms` says otherwise), or empty stdout means silence plus a warn event. A broken external never breaks a session. This is the escape hatch for context that belongs to one machine, such as a private daily journal. The hint lives in that machine's rendered config rather than in a second SessionStart hook or a compiled-in hint.
+Beyond the built-ins, a `custom_hints` config section registers named hints that shell out to an external command when a session starts (`session-start`) or when a subagent starts (`subagent-start`). A subagent-start hint's advice lands in the subagent's own context before its first prompt. The hook payload fields arrive as JSON on stdin, with the agent's id and type added inside a subagent, and the command's stdout becomes the advice under the usual `belt[<name>]:` prefix. A non-zero exit, a run past the budget (400 ms unless `timeout_ms` says otherwise), or empty stdout means silence plus a warn event. A broken external never breaks a session. This is the escape hatch for context that belongs to one machine, such as a private daily journal or a brief for worker subagents. The hint lives in that machine's rendered config rather than in a second hook or a compiled-in hint.
+
+## Ledger and watcher
+
+`belt record <event>` is the ledger entrypoint. It runs on nine Claude Code lifecycle hooks: SubagentStart, SubagentStop, TaskCompleted, TeammateIdle, PermissionDenied, Notification, PreCompact, PostCompact and SessionEnd. Each run posts one entry to the events service under the `belt-ledger` source. An entry is tagged with the session and agent ids and with the repo, linked worktree, main checkout and branch the event happened in. An orchestrator session and its workers then leave one timeline that can be filtered per worker or per worktree. A subagent's final message, a denial reason or a notification's text becomes the entry message, capped at 500 bytes.
+
+`belt record` never writes to stdout or stderr and always exits 0 for a valid event, a broken config and a panic included. On SubagentStop any output keeps the subagent running, and on TaskCompleted, TeammateIdle and PreCompact a non-zero exit blocks. So the ledger is built to be unable to steer a session (docs/adr/0024).
+
+`belt watch` is the opt-in inbox watcher, off until `watch.enabled` is set. It runs as an asyncRewake hook on Stop and SessionStart, so it starts each time the session goes idle. It polls the events service for entries under `belt-inbox` whose `to` tag is the session's id. When items arrive it prints them on stderr and exits 2, which wakes the session with them. It is the one belt command that exits non-zero on purpose. Each item is delivered once, and a watcher that times out, finds the service down, or is superseded by a newer one for the same session exits 0 silently.
 
 ## Install
 
@@ -64,7 +75,9 @@ belt version
 belt version -o json
 ```
 
-`belt doctor` prints the resolved state behind those decisions. First comes the installed build (version, commit, release tag, build time) and which config file loaded, or failed to parse. Next are the guards and hints in effect, with their allow/exclude counts. Doctor also probes the kof serve instance behind the kof-* hints and reports whether it is reachable and how many assertions it stores. The hints render "kof down" and "store empty" identically, as silence, so doctor is what tells them apart. The last block is the full blocked-name set the write-internal-names and publish-internal-names guards match against. Doctor closes with a warnings section and exits 1 when that section is not empty, on a machine with no config at all included.
+`belt doctor` prints the resolved state behind those decisions. First comes the installed build (version, commit, release tag, build time) and which config file loaded, or failed to parse. Next are the guards and hints in effect, with their allow/exclude counts. Doctor also probes the kof serve instance behind the kof-* hints and reports whether it is reachable and how many assertions it stores. The hints render "kof down" and "store empty" identically, as silence, so doctor is what tells them apart.
+
+Doctor then shows the ledger and watch settings and whether the events service they post to and poll answers. An enabled watcher that cannot work is a warning. The last block is the full blocked-name set the write-internal-names and publish-internal-names guards match against. Doctor closes with a warnings section and exits 1 when that section is not empty, on a machine with no config at all included.
 
 `belt config` prints the config file locations and every setting in effect after defaults are applied. That covers the guard and hint toggles, the resolved internal_names, and the Claude-settings Bash deny patterns the script guard enforces. `belt config --help` carries the annotated reference of every setting, including how `allow_repos` exempts a repo from a guard and `exclude_paths` exempts paths.
 
@@ -72,7 +85,7 @@ When a deny surprises you: `check` shows the verdict, `doctor` shows the state t
 
 `belt version` prints the bare version token of the installed build. With `-o json` it prints the full build metadata (`version`, `commit`, `tag`, `build_time`), the same four keys every tool in this repo reports, so one probe can ask any of them what build is running.
 
-`belt hook <event>` and `belt hint <event>` are the real hook entrypoints (payload on stdin, output on stdout); Claude Code invokes them, not the user. `hook` carries deny decisions for guards; `hint` carries `additionalContext` JSON for the search, bash, and session-start events, and plain stdout text for prompt (UserPromptSubmit adds stdout to context directly).
+`belt hook <event>`, `belt hint <event>`, `belt record <event>` and `belt watch` are the real hook entrypoints, with the payload on stdin; Claude Code invokes them, not the user. `hook` carries deny decisions for guards on stdout. `hint` carries `additionalContext` JSON for the search, bash, external-text, session-start and subagent-start events, and plain stdout text for prompt (UserPromptSubmit adds stdout to context directly). `record` prints nothing. `watch` prints only when it wakes the session, on stderr with exit 2.
 
 ## Configuration
 
@@ -88,14 +101,18 @@ The other shared list, `public_repos`, states which repos are public or headed t
 
 An exemption that should hold on only some machines goes in those machines' rendered config file, because there is no machine-profile switch inside the config (docs/adr/0010).
 
-The rule-driven guards and the external hints read four more top-level sections:
+The rule-driven guards, the external hints, the ledger and the watcher read six more top-level sections:
 
 - `git_identity` holds the expected email per repo pattern.
 - `commit_guards` holds work-hours rules with `block_hours`, `always_allow`, and an `override` name.
 - `custom_guards` registers external commands as named guards.
-- `custom_hints` registers external commands as named session-start hints.
+- `custom_hints` registers external commands as named session-start or subagent-start hints.
+- `ledger` switches `belt record` off (`enabled: false`) or moves it to another events source (`source`).
+- `watch` turns `belt watch` on (`enabled: true`) and sets its `poll_interval_ms` (2000), `max_wait_s` (540) and `source` (`belt-inbox`).
 
-`belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this).
+The `ledger` and `watch` values are clamped and normalized with a doctor warning, never rejected. A typo there cannot turn into the machine-wide deny a config error causes.
+
+`belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this), tagged with the session id on every real call and with the agent id and type inside a subagent. Custom guards receive the same identity keys on stdin.
 
 ## Develop
 

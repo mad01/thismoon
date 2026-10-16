@@ -64,8 +64,9 @@ func (s *lenientString) UnmarshalJSON(raw []byte) error {
 // allows the call: a field the guards never read must not be able to fail
 // their decode. Each is set only by the events that carry it: SubagentStop
 // the first three, TaskCompleted the task fields, TaskCompleted and
-// TeammateIdle the teammate name, PreCompact and PostCompact the trigger,
-// SessionEnd the reason.
+// TeammateIdle the teammate name, PermissionDenied the tool use id and a
+// reason (beside the shared tool_name), Notification the message, title
+// and type, PreCompact and PostCompact the trigger, SessionEnd a reason.
 type recordPayload struct {
 	payload
 	AgentTranscriptPath  string `json:"agent_transcript_path"`
@@ -74,6 +75,10 @@ type recordPayload struct {
 	TaskID               string `json:"task_id"`
 	TaskSubject          string `json:"task_subject"`
 	TeammateName         string `json:"teammate_name"`
+	ToolUseID            string `json:"tool_use_id"`
+	Message              string `json:"message"`
+	Title                string `json:"title"`
+	NotificationType     string `json:"notification_type"`
 	Trigger              string `json:"trigger"`
 	Reason               string `json:"reason"`
 }
@@ -203,9 +208,9 @@ func configDenial(err error) *guard.Denial {
 // RunHint reads a hook payload from r, runs the hints for event, and writes
 // any advice as additionalContext. Silence is the common case: when no hint
 // fires, nothing is written at all, so the model sees no extra context. Most
-// hint events ride PostToolUse; session-start rides SessionStart, and the
-// emitted hookEventName must match the hook that invoked belt or Claude Code
-// drops the output.
+// hint events ride PostToolUse; the start events ride SessionStart and
+// SubagentStart, and the emitted hookEventName must match the hook that
+// invoked belt or Claude Code drops the output (see hintAdviceByEvent).
 func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 	var p payload
 	if err := json.NewDecoder(r).Decode(&p); err != nil {
@@ -241,31 +246,67 @@ func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 // additionalContext keeps the subagent running, and TaskCompleted,
 // TeammateIdle and PreCompact treat exit 2 as a block, so the record path
 // must print nothing and fail nothing; the signature makes that structural,
-// the way a hint's interface has no denial path (docs/adr/0008). It reads
-// no config, so a broken config file cannot stop the record. A missing or
+// the way a hint's interface has no denial path (docs/adr/0024). The config
+// decides only whether and where entries post (ledger.enabled,
+// ledger.source); a broken config file records with the defaults, because
+// the ledger is not a guard and an entry is harmless. A missing or
 // unreadable payload is still recorded, at warn level, from whatever
 // fields arrived.
-func RunRecord(event string, r io.Reader) {
-	record(event, r, buildEntry)
+func RunRecord(event string, load Load, r io.Reader) {
+	recorder{load: load, build: buildEntry, emit: postEntry}.run(event, r)
 }
 
 // entryBuilder turns a decoded lifecycle payload into its ledger entry.
 type entryBuilder func(event string, p recordPayload, decodeErr error) notify.Event
 
-// record is RunRecord with the entry builder injected. Its deferred recover
-// is what makes "prints nothing, exits 0" hold for bugs too: an escaped
-// panic exits 2 with a stack trace on stderr, which blocks TaskCompleted,
-// TeammateIdle, PreCompact and SubagentStop and hands the trace to the
-// model.
-func record(event string, r io.Reader, build entryBuilder) {
+// recorder is the record path with its effects injected, so a test can see
+// the entry that would post, and prove a panic is swallowed.
+type recorder struct {
+	load  Load
+	build entryBuilder
+	emit  func(notify.Event)
+}
+
+// configTag marks an entry recorded with the defaults because the config
+// could not be read, so the fallback is visible in the timeline.
+const configTag = "config"
+
+// run records one event. Its deferred recover is what makes "prints
+// nothing, exits 0" hold for bugs too: an escaped panic exits 2 with a
+// stack trace on stderr, which blocks TaskCompleted, TeammateIdle,
+// PreCompact and SubagentStop and hands the trace to the model. The panic
+// report follows the ledger settings once the config has loaded, so a
+// disabled ledger posts nothing at all; before that it uses the defaults.
+func (rc recorder) run(event string, r io.Reader) {
+	var settings config.Ledger // the defaults until the config loads
 	defer func() {
-		if v := recover(); v != nil {
-			reportPanic(event, v)
+		if v := recover(); v != nil && settings.On() {
+			rc.reportPanic(event, settings.SourceName(), v)
 		}
 	}()
+	cfg, cfgErr := rc.load() // on error cfg holds the defaults: record anyway
+	settings = cfg.Ledger
+	if !settings.On() {
+		// Read the payload anyway: a producer still writing a large one
+		// (a long final message on SubagentStop) would fail on a closed pipe.
+		_, _ = io.Copy(io.Discard, r)
+		return
+	}
 	var p recordPayload
 	decodeErr := json.NewDecoder(r).Decode(&p)
-	ev := build(event, p, decodeErr)
+	ev := rc.build(event, p, decodeErr)
+	ev.Source = settings.SourceName()
+	if cfgErr != nil {
+		if ev.Tags == nil {
+			ev.Tags = map[string]string{}
+		}
+		ev.Tags[configTag] = "unreadable, recorded with the defaults"
+	}
+	rc.emit(ev)
+}
+
+// postEntry posts one entry to the events service within recordBudget.
+func postEntry(ev notify.Event) {
 	notify.EmitEventSyncWithin(recordBudget, ev.Source, ev.Level, ev.Title, ev.Message, ev.Tags)
 }
 
@@ -281,13 +322,18 @@ func buildEntry(event string, p recordPayload, decodeErr error) notify.Event {
 	return ledger.Build(event, in, guard.LocationAt(ctx, p.Cwd))
 }
 
-// reportPanic records a swallowed panic so a broken record path shows in
-// the timeline instead of as missing entries. It recovers on its own
-// account: a second panic from the emit is dropped as well.
-func reportPanic(event string, v any) {
+// reportPanic records a swallowed panic under source, so a broken record
+// path shows in the timeline instead of as missing entries. It recovers on
+// its own account: a second panic from the emit is dropped as well.
+func (rc recorder) reportPanic(event, source string, v any) {
 	defer func() { _ = recover() }()
-	notify.EmitEventSyncWithin(recordBudget, ledger.Source, "error", "belt record failed",
-		fmt.Sprint(v), map[string]string{"event": event})
+	rc.emit(notify.Event{
+		Source:  source,
+		Level:   "error",
+		Title:   "belt record failed",
+		Message: fmt.Sprint(v),
+		Tags:    map[string]string{"event": event},
+	})
 }
 
 // toLedgerInput maps a lifecycle payload onto the ledger input.
@@ -303,35 +349,57 @@ func toLedgerInput(p recordPayload) ledger.Input {
 		TaskID:               p.TaskID,
 		TaskSubject:          p.TaskSubject,
 		TeammateName:         p.TeammateName,
-		Trigger:              p.Trigger,
+		ToolName:             p.ToolName,
+		ToolUseID:            p.ToolUseID,
 		Reason:               p.Reason,
+		NotificationType:     p.NotificationType,
+		NotificationTitle:    p.Title,
+		NotificationMessage:  p.Message,
+		Trigger:              p.Trigger,
 	}
 }
 
 // writeAdvice emits advice in the form the invoking hook event accepts.
-// UserPromptSubmit adds plain stdout to context on exit 0; it is not in the
-// hookSpecificOutput.additionalContext event family, so the JSON envelope
-// would be dropped (or injected verbatim) there.
 func writeAdvice(w io.Writer, event, text string) {
-	if event == hint.EventPrompt {
+	out := hintAdviceFor(event)
+	if out.plain {
 		fmt.Fprintln(w, text)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(adviceDecision{
 		HookSpecificOutput: adviceOutput{
-			HookEventName:     hintHookEventName(event),
+			HookEventName:     out.hookEvent,
 			AdditionalContext: text,
 		},
 	})
 }
 
-// hintHookEventName maps a belt hint event to the Claude Code hook event it
-// is registered under.
-func hintHookEventName(event string) string {
-	if event == hint.EventSessionStart {
-		return "SessionStart"
+// hintAdvice is how one hint event's advice must travel: the Claude Code
+// hook the event is registered under, whose name the JSON envelope has to
+// carry or Claude Code drops the output, and whether that hook reads plain
+// stdout instead of the envelope.
+type hintAdvice struct {
+	hookEvent string
+	plain     bool
+}
+
+// hintAdviceByEvent lists the hint events that do not ride PostToolUse.
+// UserPromptSubmit adds plain stdout to context on exit 0; it is not in the
+// hookSpecificOutput.additionalContext event family, so the JSON envelope
+// would be dropped (or injected verbatim) there.
+var hintAdviceByEvent = map[string]hintAdvice{
+	hint.EventSessionStart:  {hookEvent: "SessionStart"},
+	hint.EventSubagentStart: {hookEvent: "SubagentStart"},
+	hint.EventPrompt:        {hookEvent: "UserPromptSubmit", plain: true},
+}
+
+// hintAdviceFor maps a hint event to how its advice travels; every event
+// not in the table rides PostToolUse.
+func hintAdviceFor(event string) hintAdvice {
+	if out, ok := hintAdviceByEvent[event]; ok {
+		return out
 	}
-	return "PostToolUse"
+	return hintAdvice{hookEvent: "PostToolUse"}
 }
 
 // toHintInput maps a PostToolUse payload onto the shared hint input. A search
