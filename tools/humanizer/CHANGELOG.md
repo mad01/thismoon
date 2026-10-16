@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/mad01/thismoon/compare/humanizer/v0.15.0...humanizer/v0.16.0) (2026-10-16)
+
+
+### Features
+
+* **humanizer:** STE profiles and repo glossary for agent-to-agent text ([#218](https://github.com/mad01/thismoon/issues/218)) ([35c7e3a](https://github.com/mad01/thismoon/commit/35c7e3a39818573c39764435e2988df6500fa506))
+
 ## [0.15.0](https://github.com/mad01/thismoon/compare/humanizer/v0.14.0...humanizer/v0.15.0) (2026-10-13)
 
 

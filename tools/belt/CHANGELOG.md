@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/mad01/thismoon/compare/belt/v2.6.0...belt/v2.7.0) (2026-10-16)
+
+
+### Features
+
+* **belt:** agent identity, lifecycle ledger, subagent-start hint, and watch ([#216](https://github.com/mad01/thismoon/issues/216)) ([ead4a32](https://github.com/mad01/thismoon/commit/ead4a32b631d2545bc116afdc8860437f3beb192))
+
 ## [2.6.0](https://github.com/mad01/thismoon/compare/belt/v2.5.1...belt/v2.6.0) (2026-10-06)
 
 
