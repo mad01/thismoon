@@ -7,8 +7,9 @@
 // a file name must not drift apart. The regex graders of six cases run over
 // the sample messages in ../contract.md (every grader must pass) and over
 // broken copies of them (the targeted grader must fail). Every embedded copy
-// of the sample task must equal the one in ../contract.md, and each context
-// case must quote the brief in ../worker-brief.md word for word.
+// of the sample task must equal the one in ../contract.md. Each context case
+// must quote the brief in ../worker-brief.md word for word, and so must each
+// step of the brief that a context rubric quotes.
 //
 // Usage: node skills/factory/evals/scripts/check-graders.mjs
 
@@ -308,6 +309,21 @@ function checkContextBrief(suite, caseName, body) {
   if (m[1] !== briefText()) fail(`${suite}/${caseName}`, 'quoted brief differs from worker-brief.md');
 }
 
+// The judge sees only the reply, so a rubric repeats the steps of the brief
+// it grades against. Each quoted step must match the brief word for word.
+function checkRubricStepQuotes(graders) {
+  const brief = briefText();
+  for (const g of graders.filter((x) => x.type === 'llm')) {
+    const quotes = [...g.raw.matchAll(/step (\d+) of the brief says "([^"]*)"/g)];
+    const mentions = g.raw.match(/step \d+ of the brief/g) ?? [];
+    if (mentions.length !== quotes.length) fail(g.where, 'names a step of the brief without the quote form step N of the brief says "..."');
+    for (const [, n, quote] of quotes) {
+      const step = brief.match(new RegExp(`^${n}\\. (.*)$`, 'm'));
+      if (step?.[1] !== quote) fail(g.where, `step ${n} quote differs from worker-brief.md`);
+    }
+  }
+}
+
 const names = new Set();
 const gradersByCase = new Map();
 let graderCount = 0;
@@ -317,7 +333,10 @@ for (const suite of SUITES) {
     const graders = loadGraders(suite, caseName);
     graderCount += graders.length;
     gradersByCase.set(`${suite}/${caseName}`, graders);
-    if (suite === 'context') checkContextBrief(suite, caseName, body);
+    if (suite === 'context') {
+      checkContextBrief(suite, caseName, body);
+      checkRubricStepQuotes(graders);
+    }
   }
 }
 const samples = contractSamples();
