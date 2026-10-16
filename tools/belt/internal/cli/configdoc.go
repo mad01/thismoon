@@ -159,10 +159,21 @@ custom_hints:
 # defaults. The ledger and watch values are clamped, never rejected: a
 # source is rewritten the way the events service stores it (lowercase
 # letters, digits, - and _, at most 64), an out-of-range number is clamped,
-# and belt doctor warns about each adjustment.
+# and belt doctor warns about each adjustment. agent_types maps a subagent
+# type to the model and effort its agent definition declares; a
+# subagent-start entry of that type is tagged model and effort. It restates
+# the definition, belt never infers a value, and an unlisted type gets
+# neither tag. model is any non-empty string, effort is low, medium, high,
+# xhigh or max (the values Claude Code agent frontmatter accepts).
+# A malformed entry or value is dropped with a doctor warning, never a
+# config error. A belt older than the key ignores it: ralph up first.
 ledger:
   enabled: true
   source: belt-ledger
+  agent_types:
+    factory-worker-low: {model: sonnet, effort: low}
+    factory-worker-medium: {model: sonnet, effort: medium}
+    factory-worker-high: {model: opus, effort: high}
 
 # The inbox watcher: belt watch, wired as an asyncRewake hook on Stop and
 # SessionStart, polls source for entries whose to tag is the session's id
@@ -404,7 +415,7 @@ func resolveEffective(cfg config.Config) effectiveConfig {
 // defaults made explicit, so an absent section shows what belt runs with.
 func effectiveLedger(l config.Ledger) config.Ledger {
 	on := l.On()
-	return config.Ledger{Enabled: &on, Source: l.SourceName()}
+	return config.Ledger{Enabled: &on, Source: l.SourceName(), AgentTypes: l.AgentTypes}
 }
 
 func effectiveWatch(w config.Watch) config.Watch {

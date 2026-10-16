@@ -292,9 +292,11 @@ func TestRecordSwallowsPanics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var posted []notify.Event
 			rc := recorder{
-				load:  tt.load,
-				build: func(string, recordPayload, error) notify.Event { panic("builder bug") },
-				emit:  func(ev notify.Event) { posted = append(posted, ev) },
+				load: tt.load,
+				build: func(string, recordPayload, error, config.AgentTypes) notify.Event {
+					panic("builder bug")
+				},
+				emit: func(ev notify.Event) { posted = append(posted, ev) },
 			}
 			got := captureStdio(t, func() {
 				rc.run(ledger.EventSubagentStop, strings.NewReader(`{"session_id":"s1"}`))

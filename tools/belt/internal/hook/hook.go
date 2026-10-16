@@ -248,8 +248,9 @@ func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 // must print nothing and fail nothing; the signature makes that structural,
 // the way a hint's interface has no denial path (docs/adr/0024). The config
 // decides only whether and where entries post (ledger.enabled,
-// ledger.source); a broken config file records with the defaults, because
-// the ledger is not a guard and an entry is harmless. A missing or
+// ledger.source) and which model and effort a subagent-start entry carries
+// (ledger.agent_types); a broken config file records with the defaults,
+// because the ledger is not a guard and an entry is harmless. A missing or
 // unreadable payload is still recorded, at warn level, from whatever
 // fields arrived.
 func RunRecord(event string, load Load, r io.Reader) {
@@ -257,7 +258,10 @@ func RunRecord(event string, load Load, r io.Reader) {
 }
 
 // entryBuilder turns a decoded lifecycle payload into its ledger entry.
-type entryBuilder func(event string, p recordPayload, decodeErr error) notify.Event
+// declared is ledger.agent_types from the config in effect.
+type entryBuilder func(
+	event string, p recordPayload, decodeErr error, declared config.AgentTypes,
+) notify.Event
 
 // recorder is the record path with its effects injected, so a test can see
 // the entry that would post, and prove a panic is swallowed.
@@ -294,7 +298,7 @@ func (rc recorder) run(event string, r io.Reader) {
 	}
 	var p recordPayload
 	decodeErr := json.NewDecoder(r).Decode(&p)
-	ev := rc.build(event, p, decodeErr)
+	ev := rc.build(event, p, decodeErr, settings.AgentTypes)
 	ev.Source = settings.SourceName()
 	if cfgErr != nil {
 		if ev.Tags == nil {
@@ -312,14 +316,16 @@ func postEntry(ev notify.Event) {
 
 // buildEntry places the event's working directory in git, under
 // locateBudget, and builds the entry.
-func buildEntry(event string, p recordPayload, decodeErr error) notify.Event {
+func buildEntry(
+	event string, p recordPayload, decodeErr error, declared config.AgentTypes,
+) notify.Event {
 	in := toLedgerInput(p)
 	if decodeErr != nil {
 		in.PayloadError = decodeErr.Error()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), locateBudget)
 	defer cancel()
-	return ledger.Build(event, in, guard.LocationAt(ctx, p.Cwd))
+	return ledger.Build(event, in, guard.LocationAt(ctx, p.Cwd), declared)
 }
 
 // reportPanic records a swallowed panic under source, so a broken record

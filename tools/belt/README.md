@@ -46,7 +46,7 @@ Beyond the built-ins, a `custom_hints` config section registers named hints that
 
 ## Ledger and watcher
 
-`belt record <event>` is the ledger entrypoint. It runs on nine Claude Code lifecycle hooks: SubagentStart, SubagentStop, TaskCompleted, TeammateIdle, PermissionDenied, Notification, PreCompact, PostCompact and SessionEnd. Each run posts one entry to the events service under the `belt-ledger` source. An entry is tagged with the session and agent ids and with the repo, linked worktree, main checkout and branch the event happened in. An orchestrator session and its workers then leave one timeline that can be filtered per worker or per worktree. A subagent's final message, a denial reason or a notification's text becomes the entry message, capped at 500 bytes.
+`belt record <event>` is the ledger entrypoint. It runs on nine Claude Code lifecycle hooks: SubagentStart, SubagentStop, TaskCompleted, TeammateIdle, PermissionDenied, Notification, PreCompact, PostCompact and SessionEnd. Each run posts one entry to the events service under the `belt-ledger` source. An entry is tagged with the session and agent ids and with the repo, linked worktree, main checkout and branch the event happened in. A subagent-start entry also gets the model and effort its agent type declares, when `ledger.agent_types` in the config lists that type. An orchestrator session and its workers then leave one timeline that can be filtered per worker or per worktree. A subagent's final message, a denial reason or a notification's text becomes the entry message, capped at 500 bytes.
 
 `belt record` never writes to stdout or stderr and always exits 0 for a valid event, a broken config and a panic included. On SubagentStop any output keeps the subagent running, and on TaskCompleted, TeammateIdle and PreCompact a non-zero exit blocks. So the ledger is built to be unable to steer a session (docs/adr/0024).
 
@@ -107,10 +107,10 @@ The rule-driven guards, the external hints, the ledger and the watcher read six 
 - `commit_guards` holds work-hours rules with `block_hours`, `always_allow`, and an `override` name.
 - `custom_guards` registers external commands as named guards.
 - `custom_hints` registers external commands as named session-start or subagent-start hints.
-- `ledger` switches `belt record` off (`enabled: false`) or moves it to another events source (`source`).
+- `ledger` switches `belt record` off (`enabled: false`), moves it to another events source (`source`), and maps agent types to the model and effort their subagent-start entries are tagged with (`agent_types`).
 - `watch` turns `belt watch` on (`enabled: true`) and sets its `poll_interval_ms` (2000), `max_wait_s` (540) and `source` (`belt-inbox`).
 
-The `ledger` and `watch` values are clamped and normalized with a doctor warning, never rejected. A typo there cannot turn into the machine-wide deny a config error causes.
+The `ledger` and `watch` values are clamped and normalized with a doctor warning, never rejected. A malformed `ledger.agent_types` entry is dropped the same way. A typo there cannot turn into the machine-wide deny a config error causes.
 
 `belt config --help` carries the annotated reference for all of them. Denials and hints are logged to the local events timeline (events.this), tagged with the session id on every real call and with the agent id and type inside a subagent. Custom guards receive the same identity keys on stdin.
 

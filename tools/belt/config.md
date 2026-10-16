@@ -71,7 +71,9 @@ typo in a feature that may be off. Out-of-range numbers are clamped and
 source names are rewritten the way the events service stores them. `belt
 doctor` warns about each adjustment, naming the key and the value in effect,
 and `belt config` prints the effective values. Only a value of the wrong YAML
-type still fails the file, as in every other section.
+type still fails the file, as in every other section. `ledger.agent_types`
+is the one exception: any shape loads, and a malformed entry or value is
+dropped with a doctor warning.
 
 Overrides stay in `~/.config/belt/overrides/` (or the `XDG_CONFIG_HOME`
 equivalent) whatever `--config` points at: an override is machine state set
@@ -106,16 +108,17 @@ configs stay in step; neither reads the other's config.
 
 Run `belt config` to see which files loaded (or failed to) and every setting
 belt is actually running with, after every default and fallback is applied.
-Run `belt doctor` to see the state those settings produce: enabled guards and
-hints, active overrides, the ledger and watch settings with the events
-service they depend on, and the resolved blocked-name list. The report ends
+Run `belt doctor` to see the state those settings produce. It lists enabled
+guards and hints, active overrides, the ledger settings with the
+`ledger.agent_types` map, the watch settings, the events service both depend
+on, and the resolved blocked-name list. The report ends
 with a warnings section and exits 1 when it is not empty.
 
 That section flags a broken config or include, a script guard with no deny
 patterns, an internal-name guard with no names, or a toggle nothing answers
 to. It flags an enabled watcher that cannot work, because the events
 service is unreachable or the max wait reaches the hook timeout. It also
-names each ledger or watch value it had to clamp or rewrite. A machine with
+names each ledger or watch value it had to clamp, rewrite or drop. A machine with
 no config at all exits 1 for the script and internal-name cases by design.
 
 ## Keys
@@ -339,6 +342,29 @@ records, with these defaults.
   letters, digits, `-` and `_` becomes one dash, dashes are trimmed, and it
   keeps at most 64 characters. A name with nothing usable left falls back to the default.
   `belt doctor` warns when the name in effect differs from the one written.
+- `ledger.agent_types` (map of agent type name to `{model, effort}`,
+  default empty): the model and effort a subagent's agent definition
+  declares. A subagent-start entry whose payload `agent_type` matches a key
+  exactly gets `model` and `effort` tags; any other type gets neither, and
+  no other event reads the map. It restates the definition, so keep it in
+  step with the definition files; belt never infers a value. `model` is a
+  string, trimmed, and must not be empty. `effort` must be `low`, `medium`,
+  `high`, `xhigh` or `max`, the values Claude Code agent frontmatter
+  accepts. A value that fails drops its own tag, an entry that is not a
+  map or names neither key is dropped, and an unknown key is ignored. Each
+  drop is a `belt doctor` warning, and none fails the file, a wrong YAML
+  type included. `belt doctor` prints the entries in effect and `belt
+  config` shows them. A belt older than the key ignores it and records no
+  model or effort, so run `ralph up` before a machine config names it. The
+  factory worker definitions are the first entries:
+
+  ```yaml
+  ledger:
+    agent_types:
+      factory-worker-low: {model: sonnet, effort: low}
+      factory-worker-medium: {model: sonnet, effort: medium}
+      factory-worker-high: {model: opus, effort: high}
+  ```
 
 ### watch
 
@@ -619,6 +645,10 @@ custom_hints:
 ledger:
   enabled: true
   source: belt-ledger
+  agent_types:
+    factory-worker-low: {model: sonnet, effort: low}
+    factory-worker-medium: {model: sonnet, effort: medium}
+    factory-worker-high: {model: opus, effort: high}
 
 watch:
   enabled: true

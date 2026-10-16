@@ -931,11 +931,30 @@ never reaches the model and never steers the session (`docs/adr/0024`).
   completed task's subject, the denial reason, or the notification's title
   and text, cut to 500 bytes on a character boundary.
 - **Tags.** Every set field, nothing empty: `event`, `session_id`,
-  `agent_id`, `agent_type`, `repo`, `worktree` (only for a linked
-  worktree), `canonical` (the main checkout), `branch`, `task_id`,
-  `teammate`, `tool`, `tool_use_id`, `notification_type`, `trigger`,
-  `reason`, `transcript` (the subagent's own transcript when there is one)
-  and `stop_hook_active`. Filter the timeline by any of them.
+  `agent_id`, `agent_type`, `model` and `effort` (subagent-start only, see
+  below), `repo`, `worktree` (only for a linked worktree), `canonical` (the
+  main checkout), `branch`, `task_id`, `teammate`, `tool`, `tool_use_id`,
+  `notification_type`, `trigger`, `reason`, `transcript` (the subagent's
+  own transcript when there is one) and `stop_hook_active`. Filter the
+  timeline by any of them.
+- **Where `worktree` comes from.** It is git's toplevel for the payload's
+  working directory, never the directory itself, so a hook that fires in
+  `tools/belt` of a loom worktree still names the worktree root. The main
+  checkout gets no `worktree` tag, only `canonical`. The payload's working
+  directory belongs to the session that fired the hook. For a spawn that can
+  be the parent's, so on subagent-start the tag says where the spawn
+  happened, not where the subagent will work.
+- **Model and effort.** The SubagentStart payload names the agent type and
+  no model. `ledger.agent_types` in the belt config maps an agent type to the
+  model and effort its agent definition declares. A subagent-start entry
+  whose `agent_type` has an entry there gets `model` and `effort` tags; any
+  other type gets neither, and no other event reads the map. The map
+  restates the definition, belt never infers a value. The loom-pane member
+  line and the factory band read these two tags. A malformed entry or value
+  drops its own tag, with a `belt doctor` warning, and never fails the
+  config file (see `config.md`). Run `ralph up` before a machine config
+  names the key: an older belt ignores unknown ledger keys and records no
+  model or effort.
 - **Never steers.** `belt record` takes no output writer at all and recovers
   from its own panics. On SubagentStop any output keeps the subagent
   running, TaskCompleted, TeammateIdle and PreCompact treat exit 2 as a
@@ -943,8 +962,8 @@ never reaches the model and never steers the session (`docs/adr/0024`).
   valid event it writes nothing to stdout or stderr and exits 0, whatever
   happens.
 - **Fails toward recording.** A config belt cannot read records with the
-  defaults and tags the entry `config: unreadable, recorded with the
-  defaults`. A payload that does not decode is still recorded, at `warn`,
+  defaults, so no `model` or `effort` tag, and tags the entry `config:
+  unreadable, recorded with the defaults`. A payload that does not decode is still recorded, at `warn`,
   naming the decode error. A panic posts an `error` entry titled `belt
   record failed`.
 - **Bounded.** Placing the event in git (two git processes) gets 1 s and
@@ -1055,6 +1074,7 @@ missing key:
 | watcher cursor and owner files | `~/.cache/belt/watch-<session>` and `.pid` beside it | belt watch |
 | documented watch hook timeout | 590 s | belt watch (doctor warns when an enabled watcher's `max_wait_s` reaches it) |
 | events source name cap | 64 characters | `ledger.source`, `watch.source` (rewritten like the events service does) |
+| agent type effort levels | low, medium, high, xhigh, max | `ledger.agent_types` (the values Claude Code agent frontmatter accepts; any other effort drops the tag, with a doctor warning) |
 
 ## When a hook seems silent
 
