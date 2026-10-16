@@ -2,6 +2,8 @@ package k8sstore
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -46,7 +48,51 @@ func fixtureOn(t *testing.T, client dynamic.Interface) *fixture {
 }
 
 func TestFakeClientConformance(t *testing.T) {
-	runConformance(t, fakeFixture)
+	runConformance(t, func(t *testing.T) *fixture {
+		return fixtureOn(t, withOptimisticConcurrency(newFakeClient()))
+	})
+}
+
+// withOptimisticConcurrency makes client keep a resourceVersion on every
+// page and refuse an update that carries a stale one, as the API server
+// does. The stock tracker is last-write-wins, so without this a store that
+// lost concurrent updates would still pass the conformance suite.
+func withOptimisticConcurrency(client *fake.FakeDynamicClient) *fake.FakeDynamicClient {
+	// The fake runs reactors one action at a time under its own lock, so
+	// the check and the store below cannot interleave with another write.
+	client.PrependReactor(
+		"create",
+		"pages",
+		func(a k8stesting.Action) (bool, runtime.Object, error) {
+			obj := a.(k8stesting.CreateAction).GetObject().(*unstructured.Unstructured)
+			obj.SetResourceVersion("1")
+			return false, nil, nil
+		},
+	)
+	client.PrependReactor(
+		"update",
+		"pages",
+		func(a k8stesting.Action) (bool, runtime.Object, error) {
+			obj := a.(k8stesting.UpdateAction).GetObject().(*unstructured.Unstructured)
+			stored, err := client.Tracker().Get(GVR, a.GetNamespace(), obj.GetName())
+			if err != nil {
+				return true, nil, err
+			}
+			rv := stored.(*unstructured.Unstructured).GetResourceVersion()
+			if obj.GetResourceVersion() != rv {
+				return true, nil, apierrors.NewConflict(GVR.GroupResource(), obj.GetName(), nil)
+			}
+			n, err := strconv.Atoi(rv)
+			if err != nil {
+				return true, nil, fmt.Errorf("stored resourceVersion %q: %w", rv, err)
+			}
+			// Unhandled: the default reactor stores the object, new version
+			// and all, since every reactor sees the same copy of the action.
+			obj.SetResourceVersion(strconv.Itoa(n + 1))
+			return false, nil, nil
+		},
+	)
+	return client
 }
 
 func TestNewRequiresClientAndNamespace(t *testing.T) {

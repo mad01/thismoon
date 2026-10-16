@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -109,94 +110,98 @@ const (
 	outcomeUnchanged = "unchanged"
 )
 
+// errUnchanged ends a re-render edit whose output matches what is stored,
+// so the page keeps its version and open tabs do not reload.
+var errUnchanged = errors.New("present: page unchanged")
+
 // rerenderOne re-renders a single page and returns its outcome. A page with a
 // persisted Doc is re-rendered from source; otherwise its stored HTML is run
 // through the legacy upgrader. A deck (deck.json) and a graph with a persisted
 // source (graph.json) are re-rendered too; legacy JS graphs are left as-is.
-// Files are overwritten and the version bumped only when the rendered output
-// actually changed.
+// The render runs inside a store edit, so it reads the sources and writes the
+// output under the page lock, and an edit landing meanwhile is never
+// overwritten with output from older sources. Files are overwritten and the
+// version bumped only when the rendered output actually changed.
 func rerenderOne(ctx context.Context, st store.Store, id string) (string, error) {
-	p, err := st.Get(ctx, id)
-	if err != nil {
+	var outcome string
+	_, err := st.Edit(ctx, id, func(cur store.Snapshot) (store.Snapshot, error) {
+		next, moved, err := rerenderSnapshot(cur)
+		if err != nil {
+			return store.Snapshot{}, err
+		}
+		if moved == "" {
+			return store.Snapshot{}, errUnchanged
+		}
+		outcome = moved
+		return next, nil
+	})
+	switch {
+	case errors.Is(err, errUnchanged):
+		return outcomeUnchanged, nil
+	case err != nil:
 		return "", err
 	}
+	return outcome, nil
+}
 
-	var (
-		newContent string
-		fromDoc    bool
-	)
-	switch {
-	case st.HasDoc(ctx, id):
-		fromDoc = true
-		raw, err := st.LoadDoc(ctx, id)
-		if err != nil {
-			return "", fmt.Errorf("load doc: %w", err)
-		}
-		c, err := render.Compile(raw, p.Title)
-		if err != nil {
-			return "", err
-		}
-		newContent = c.HTML
-	case p.HasBrief:
-		newContent = render.UpgradeLegacyHTML(p.Content)
+// rerenderSnapshot renders cur's renditions afresh and names what moved: the
+// brief from its Doc (or the legacy upgrade of its HTML), the deck and the
+// graph from their sources. An empty outcome means the output is unchanged.
+// It is pure, so it can run inside an edit.
+func rerenderSnapshot(cur store.Snapshot) (store.Snapshot, string, error) {
+	p := cur.Page
+	newContent, fromDoc, err := rerenderBrief(cur)
+	if err != nil {
+		return store.Snapshot{}, "", err
 	}
-
 	newDeck := p.Deck
-	if st.HasDeckSource(ctx, id) {
-		raw, err := st.LoadDeckSource(ctx, id)
+	if cur.Sources.Deck != nil {
+		c, err := render.CompileDeck(cur.Sources.Deck, p.Title)
 		if err != nil {
-			return "", fmt.Errorf("load deck source: %w", err)
-		}
-		c, err := render.CompileDeck(raw, p.Title)
-		if err != nil {
-			return "", fmt.Errorf("render deck: %w", err)
+			return store.Snapshot{}, "", fmt.Errorf("render deck: %w", err)
 		}
 		newDeck = c.HTML
 	}
-
 	newGraph := p.Graph
-	if st.HasGraphSource(ctx, id) {
-		raw, err := st.LoadGraphSource(ctx, id)
-		if err != nil {
-			return "", fmt.Errorf("load graph source: %w", err)
-		}
+	if cur.Sources.Graph != nil {
 		var g render.GraphInput
-		if err := json.Unmarshal(raw, &g); err != nil {
-			return "", fmt.Errorf("parse graph source: %w", err)
+		if err := json.Unmarshal(cur.Sources.Graph, &g); err != nil {
+			return store.Snapshot{}, "", fmt.Errorf("parse graph source: %w", err)
 		}
-		newGraph, err = render.RenderGraph(g)
-		if err != nil {
-			return "", fmt.Errorf("render graph: %w", err)
+		if newGraph, err = render.RenderGraph(g); err != nil {
+			return store.Snapshot{}, "", fmt.Errorf("render graph: %w", err)
 		}
-	}
-
-	var patch store.Patch
-	if newContent != p.Content {
-		patch.Content = &newContent
-	}
-	if newDeck != p.Deck {
-		patch.Deck = &newDeck
-	}
-	if newGraph != p.Graph {
-		patch.Graph = &newGraph
-	}
-	if patch.Content == nil && patch.Deck == nil && patch.Graph == nil {
-		return outcomeUnchanged, nil
-	}
-	if _, err := st.Update(ctx, id, patch); err != nil {
-		return "", fmt.Errorf("update page: %w", err)
 	}
 
 	var outcome string
 	switch {
-	case patch.Content != nil && fromDoc:
+	case newContent != p.Content && fromDoc:
 		outcome = outcomeFromDoc
-	case patch.Content != nil:
+	case newContent != p.Content:
 		outcome = outcomeUpgraded
 	}
-	outcome = joinOutcome(outcome, patch.Deck != nil, outcomeDeck, "+deck")
-	outcome = joinOutcome(outcome, patch.Graph != nil, outcomeGraph, "+graph")
-	return outcome, nil
+	outcome = joinOutcome(outcome, newDeck != p.Deck, outcomeDeck, "+deck")
+	outcome = joinOutcome(outcome, newGraph != p.Graph, outcomeGraph, "+graph")
+	next := cur
+	next.Page.Content, next.Page.Deck, next.Page.Graph = newContent, newDeck, newGraph
+	return next, outcome, nil
+}
+
+// rerenderBrief renders the brief afresh: from the Doc when the page has
+// one, else as the legacy upgrade of its stored HTML. fromDoc says which.
+func rerenderBrief(cur store.Snapshot) (html string, fromDoc bool, err error) {
+	switch {
+	case cur.Sources.Doc != nil:
+		c, err := render.Compile(cur.Sources.Doc, cur.Page.Title)
+		if err != nil {
+			return "", false, err
+		}
+		return c.HTML, true, nil
+	case cur.Page.HasBrief:
+		return render.UpgradeLegacyHTML(cur.Page.Content), false, nil
+	default:
+		return cur.Page.Content, false, nil
+	}
 }
 
 // joinOutcome appends a changed artifact to the outcome: the full name when

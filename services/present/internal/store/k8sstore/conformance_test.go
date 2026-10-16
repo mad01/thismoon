@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/mad01/thismoon/services/present/internal/store/storetest"
 )
 
 // fixture is a store under test with the clock the test controls and the
@@ -22,6 +23,9 @@ type fixture struct {
 // against any Store; the fake client and the kind cluster both run it.
 func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 	t.Helper()
+	t.Run("Edit", func(t *testing.T) {
+		storetest.RunEditConformance(t, func(t *testing.T) store.Store { return newFixture(t).st })
+	})
 	t.Run("CreateGetRoundTrip", func(t *testing.T) {
 		f := newFixture(t)
 		ctx := context.Background()

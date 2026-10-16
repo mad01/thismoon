@@ -124,8 +124,28 @@ type Patch struct {
 // Store is the page repository. Every method takes a context because a store
 // may sit behind a network; FS ignores it. Sources (Doc, GraphSource) are the
 // canonical JSON the rendered artifacts came from; saving or deleting one
-// never bumps the page version, which only Update does.
+// alone never bumps the page version, which only Edit (and Update, which is
+// an Edit) does.
 type Store interface {
+	// Edit runs fn over the page's current state and persists the state fn
+	// returns as the next version (see EditFunc). Concurrent edits of one
+	// page are serialized, so none is lost, and the sources land before the
+	// version moves, so the version never stands for sources not yet
+	// written. Returns ErrNotFound when the page does not exist, and any
+	// error fn returns as it is, with nothing written.
+	Edit(ctx context.Context, id string, fn EditFunc) (Page, error)
+	// Update applies patch, bumps the version, and stamps UpdatedAt: an
+	// Edit running PatchEdit(patch).
+	Update(ctx context.Context, id string, patch Patch) (Page, error)
+
+	forwardable
+}
+
+// forwardable is every Store method a wrapper may pass straight through to
+// the store it wraps. Edit and Update stay out: a wrapper embeds forwardable
+// instead of Store, so it satisfies Store only once it defines both writes
+// itself, and the compiler refuses a wrapper a write could slip past.
+type forwardable interface {
 	// Create persists a new page from d and returns it with a fresh id.
 	Create(ctx context.Context, d Draft) (Page, error)
 	// Get loads a page by id. Returns ErrNotFound when it does not exist.
@@ -134,8 +154,6 @@ type Store interface {
 	// References. A cached store may answer from a copy that trails a
 	// concurrent write for a moment, so read with Get before writing.
 	GetMeta(ctx context.Context, id string) (Page, error)
-	// Update applies patch, bumps the version, and stamps UpdatedAt.
-	Update(ctx context.Context, id string, patch Patch) (Page, error)
 	// Delete removes a page and its sources. Irreversible.
 	Delete(ctx context.Context, id string) error
 	// List returns every page fully loaded, newest update first.
@@ -191,8 +209,9 @@ func NewFS(dir string) (*FS, error) {
 func (s *FS) pagesDir() string         { return filepath.Join(s.dir, "pages") }
 func (s *FS) pageDir(id string) string { return filepath.Join(s.pagesDir(), id) }
 
-// Create persists a new page and returns it with a freshly minted id. Sources
-// land first so the meta written last already reflects them.
+// Create persists a new page and returns it with a freshly minted id. It
+// writes in the order an edit does, so the meta written last already
+// reflects the sources and renditions.
 func (s *FS) Create(_ context.Context, d Draft) (Page, error) {
 	id := d.ID
 	if id == "" {
@@ -219,22 +238,11 @@ func (s *FS) Create(_ context.Context, d Draft) (Page, error) {
 		Ephemeral:  d.Ephemeral,
 		ExpiresAt:  d.ExpiresAt,
 	}
-	if d.Doc != nil {
-		if err := s.saveSource(p.ID, docFile, d.Doc); err != nil {
-			return Page{}, err
-		}
+	if err := os.MkdirAll(s.pageDir(id), 0o755); err != nil {
+		return Page{}, fmt.Errorf("create page dir: %w", err)
 	}
-	if d.GraphSource != nil {
-		if err := s.saveSource(p.ID, graphSourceFile, d.GraphSource); err != nil {
-			return Page{}, err
-		}
-	}
-	if d.DeckSource != nil {
-		if err := s.saveSource(p.ID, deckSourceFile, d.DeckSource); err != nil {
-			return Page{}, err
-		}
-	}
-	if err := s.write(p); err != nil {
+	src := Sources{Doc: d.Doc, Deck: d.DeckSource, Graph: d.GraphSource}
+	if err := s.writeSnapshot(Snapshot{Page: p, Sources: src}); err != nil {
 		return Page{}, err
 	}
 	p.HasDoc = d.Doc != nil
@@ -329,19 +337,51 @@ func (s *FS) decodeMeta(id string, metaBytes []byte) (Page, error) {
 }
 
 // Update applies a patch to an existing page, bumps its version, and stamps
-// UpdatedAt. Unset patch fields are preserved.
+// UpdatedAt. Unset patch fields are preserved. It is an Edit, so it takes
+// the page lock like every other write.
 func (s *FS) Update(ctx context.Context, id string, patch Patch) (Page, error) {
+	return s.Edit(ctx, id, PatchEdit(patch))
+}
+
+// Edit runs fn over the page while holding its directory lock, then writes
+// the result in commit order: the sources, then the renditions, graph, and
+// references, then meta.json carrying the new version. A crash part way
+// leaves the old version over newer files, never a new version over old
+// sources, and the next edit reads the newer files back.
+func (s *FS) Edit(ctx context.Context, id string, fn EditFunc) (Page, error) {
+	var out Page
+	err := s.withPageLock(id, func() error {
+		cur, err := s.snapshot(ctx, id)
+		if err != nil {
+			return err
+		}
+		next, err := ApplyEdit(cur, fn, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if err := s.writeSnapshot(next); err != nil {
+			return err
+		}
+		out = next.Page
+		return nil
+	})
+	return out, err
+}
+
+// snapshot reads a page and its sources for an edit. A missing source reads
+// as nil; any other read failure stops the edit.
+func (s *FS) snapshot(ctx context.Context, id string) (Snapshot, error) {
 	p, err := s.Get(ctx, id)
 	if err != nil {
-		return Page{}, err
+		return Snapshot{}, err
 	}
-	p.Apply(patch)
-	p.Version++
-	p.UpdatedAt = s.now().UTC()
-	if err := s.write(p); err != nil {
-		return Page{}, err
+	snap := Snapshot{Page: p}
+	for _, slot := range sourceSlots(&snap.Sources) {
+		if *slot.data, err = optionalSource(s.loadSource(id, slot.name)); err != nil {
+			return Snapshot{}, err
+		}
 	}
-	return p, nil
+	return snap, nil
 }
 
 // Apply folds patch into p and refreshes the derived flags. Every store
@@ -377,19 +417,21 @@ func (p *Page) Apply(patch Patch) {
 
 // Delete removes a page and everything under its directory (content, sources,
 // graph, refs). Irreversible. Returns ErrNotFound when no page exists for id.
+// It holds the page lock, so an edit waiting on it finds the page gone.
 func (s *FS) Delete(_ context.Context, id string) error {
-	if !ValidID(id) {
-		return ErrNotFound
-	}
-	if _, err := os.Stat(filepath.Join(s.pageDir(id), metaFile)); errors.Is(err, os.ErrNotExist) {
-		return ErrNotFound
-	} else if err != nil {
-		return fmt.Errorf("stat meta: %w", err)
-	}
-	if err := os.RemoveAll(s.pageDir(id)); err != nil {
-		return fmt.Errorf("delete page dir: %w", err)
-	}
-	return nil
+	return s.withPageLock(id, func() error {
+		_, err := os.Stat(filepath.Join(s.pageDir(id), metaFile))
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("stat meta: %w", err)
+		}
+		if err := os.RemoveAll(s.pageDir(id)); err != nil {
+			return fmt.Errorf("delete page dir: %w", err)
+		}
+		return nil
+	})
 }
 
 // List returns every page's metadata, newest update first. Content and Graph
@@ -456,14 +498,17 @@ func SortNewestFirst(pages []Page) {
 }
 
 // SetShared records where the page was pushed (nil clears it). Only meta.json
-// changes; the version is untouched so open tabs do not reload.
-func (s *FS) SetShared(ctx context.Context, id string, info *SharedInfo) error {
-	p, err := s.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-	p.Shared = info
-	return s.writeMeta(p)
+// changes; the version is untouched so open tabs do not reload. It holds the
+// page lock, so it cannot write back a version an edit has moved past.
+func (s *FS) SetShared(_ context.Context, id string, info *SharedInfo) error {
+	return s.withPageLock(id, func() error {
+		p, err := s.readMeta(id)
+		if err != nil {
+			return err
+		}
+		p.Shared = info
+		return s.writeMeta(p)
+	})
 }
 
 // Ping reports whether the pages directory is readable.
@@ -474,19 +519,30 @@ func (s *FS) Ping(context.Context) error {
 	return nil
 }
 
-// write persists a page's meta, content, deck, graph, and refs files
-// atomically enough for a single-writer local tool.
-func (s *FS) write(p Page) error {
-	dir := s.pageDir(p.ID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create page dir: %w", err)
+// writeSnapshot persists a page into its existing directory in commit order:
+// the sources, then the renditions, graph, and references, then meta.json,
+// whose version is what readers watch. Every file lands whole through a
+// temp file and a rename: the serve process reads them while another process
+// writes, and a half-written one would read as a page that references
+// nothing.
+func (s *FS) writeSnapshot(snap Snapshot) error {
+	dir := s.pageDir(snap.Page.ID)
+	for _, slot := range sourceSlots(&snap.Sources) {
+		if err := writeSource(dir, slot.name, *slot.data); err != nil {
+			return err
+		}
 	}
-	if err := s.writeMeta(p); err != nil {
+	if err := writeBodies(dir, snap.Page); err != nil {
 		return err
 	}
-	// The renditions land whole: the serve process reads them while the
-	// MCP process writes, and a half-written one would read as a page
-	// that references nothing.
+	return s.writeMeta(snap.Page)
+}
+
+// writeBodies writes the files the page's flags say it has: the brief's
+// content.html always (empty on a deck-only page), deck.html, graph.js, and
+// refs.json when present. A file a flag no longer names stays on disk
+// unread, as it always has.
+func writeBodies(dir string, p Page) error {
 	if err := writeFileAtomic(filepath.Join(dir, contentFile), []byte(p.Content)); err != nil {
 		return fmt.Errorf("write content: %w", err)
 	}
@@ -496,7 +552,7 @@ func (s *FS) write(p Page) error {
 		}
 	}
 	if p.HasGraph {
-		if err := os.WriteFile(filepath.Join(dir, graphFile), []byte(p.Graph), 0o644); err != nil {
+		if err := writeFileAtomic(filepath.Join(dir, graphFile), []byte(p.Graph)); err != nil {
 			return fmt.Errorf("write graph: %w", err)
 		}
 	}
@@ -505,7 +561,7 @@ func (s *FS) write(p Page) error {
 		if err != nil {
 			return fmt.Errorf("encode refs: %w", err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, refsFile), refsBytes, 0o644); err != nil {
+		if err := writeFileAtomic(filepath.Join(dir, refsFile), refsBytes); err != nil {
 			return fmt.Errorf("write refs: %w", err)
 		}
 	}
@@ -548,7 +604,7 @@ func (s *FS) writeMeta(p Page) error {
 	if err != nil {
 		return fmt.Errorf("encode meta: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(s.pageDir(p.ID), metaFile), meta, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(s.pageDir(p.ID), metaFile), meta); err != nil {
 		return fmt.Errorf("write meta: %w", err)
 	}
 	return nil

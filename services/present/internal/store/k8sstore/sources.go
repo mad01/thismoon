@@ -9,8 +9,16 @@ import (
 // Sources live inside the page object, so each save or delete is one
 // read-modify-write that leaves the version alone.
 
+// always adapts a record change that cannot fail to the shape mutate takes.
+func always(change func(rec *record)) func(rec *record) error {
+	return func(rec *record) error {
+		change(rec)
+		return nil
+	}
+}
+
 func (s *Store) SaveDoc(ctx context.Context, id string, doc []byte) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.Doc = doc; rec.Page.HasDoc = true })
+	_, err := s.mutate(ctx, id, always(func(rec *record) { rec.Doc = doc; rec.Page.HasDoc = true }))
 	return err
 }
 
@@ -31,12 +39,16 @@ func (s *Store) HasDoc(ctx context.Context, id string) bool {
 }
 
 func (s *Store) DeleteDoc(ctx context.Context, id string) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.Doc = nil; rec.Page.HasDoc = false })
+	_, err := s.mutate(
+		ctx,
+		id,
+		always(func(rec *record) { rec.Doc = nil; rec.Page.HasDoc = false }),
+	)
 	return err
 }
 
 func (s *Store) SaveGraphSource(ctx context.Context, id string, src []byte) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.GraphSource = src })
+	_, err := s.mutate(ctx, id, always(func(rec *record) { rec.GraphSource = src }))
 	return err
 }
 
@@ -57,12 +69,12 @@ func (s *Store) HasGraphSource(ctx context.Context, id string) bool {
 }
 
 func (s *Store) DeleteGraphSource(ctx context.Context, id string) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.GraphSource = nil })
+	_, err := s.mutate(ctx, id, always(func(rec *record) { rec.GraphSource = nil }))
 	return err
 }
 
 func (s *Store) SaveDeckSource(ctx context.Context, id string, src []byte) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.DeckSource = src })
+	_, err := s.mutate(ctx, id, always(func(rec *record) { rec.DeckSource = src }))
 	return err
 }
 
@@ -83,6 +95,6 @@ func (s *Store) HasDeckSource(ctx context.Context, id string) bool {
 }
 
 func (s *Store) DeleteDeckSource(ctx context.Context, id string) error {
-	_, err := s.mutate(ctx, id, func(rec *record) { rec.DeckSource = nil })
+	_, err := s.mutate(ctx, id, always(func(rec *record) { rec.DeckSource = nil }))
 	return err
 }

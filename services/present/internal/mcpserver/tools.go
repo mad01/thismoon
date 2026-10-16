@@ -621,17 +621,37 @@ type updateInput struct {
 	References *[]refInput `json:"references,omitempty" jsonschema:"replace the references list; omit to leave unchanged, empty array to clear"`
 }
 
-// sourcePlan is what an update does to the page's persisted sources once
-// the page itself is written. A source the update replaced is saved; one
-// the update made stale is deleted, so a later re-render never reads a
-// source the page no longer came from.
+// sourcePlan is what an update does to the page's sources. A source the
+// update touched takes the value held here: the canonical JSON of a Doc or
+// Graph, or nil when the update removed that rendition or replaced it with
+// legacy HTML or JS, so a stale source never outlives what it rendered and a
+// later re-render or present_source cannot bring it back. An untouched
+// source is kept.
 type sourcePlan struct {
-	doc        []byte
-	clearDoc   bool
-	deck       []byte
-	clearDeck  bool
-	graph      []byte
-	clearGraph bool
+	setDoc, setDeck, setGraph bool
+	doc, deck, graph          []byte
+}
+
+// apply returns src with the touched sources replaced.
+func (p sourcePlan) apply(src store.Sources) store.Sources {
+	if p.setDoc {
+		src.Doc = p.doc
+	}
+	if p.setDeck {
+		src.Deck = p.deck
+	}
+	if p.setGraph {
+		src.Graph = p.graph
+	}
+	return src
+}
+
+// compiledUpdate is an update rendered under one title: the patch for the
+// page and the plan for its sources.
+type compiledUpdate struct {
+	title string
+	patch store.Patch
+	plan  sourcePlan
 }
 
 func (h *handlers) handleUpdate(
@@ -641,8 +661,8 @@ func (h *handlers) handleUpdate(
 ) (*mcp.CallToolResult, pageOutput, error) {
 	// The current page is read first, before any rendering: on a shared
 	// instance only the author may write, and an update from the wrong key
-	// must cost this instance nothing but a store read; in either mode the
-	// patch is judged against what the page holds now.
+	// must cost this instance nothing but a store read. The author never
+	// changes, so the check holds for the edit below.
 	cur, err := h.store.Get(ctx, in.ID)
 	if err != nil {
 		return nil, pageOutput{}, err
@@ -657,33 +677,17 @@ func (h *handlers) handleUpdate(
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
-	patch, plan, err := resolveUpdate(in, cur.Title)
+	// Compiling before the edit refuses a malformed Doc or Graph before
+	// anything is written, image files included.
+	compiled, err := resolveUpdate(in, cur.Title)
 	if err != nil {
 		return nil, pageOutput{}, err
 	}
 	if err := ing.commit(); err != nil {
 		return nil, pageOutput{}, err
 	}
-	// A page that has something to show keeps something to show. The check
-	// runs on a copy: the store applies the real patch. A page from before
-	// decks that has neither rendition (empty content was accepted then)
-	// still takes title, graph, and reference updates.
-	next := cur
-	next.Apply(patch)
-	if (cur.HasBrief || cur.HasDeck) && !next.HasBrief && !next.HasDeck {
-		return nil, pageOutput{}, errLastRendition
-	}
-	// An ephemeral page's 30 days start over on every update.
-	if h.mode == ModeShared && cur.Ephemeral {
-		on := true
-		patch.Ephemeral = &on
-		patch.ExpiresAt = h.expiry(true)
-	}
-	p, err := h.store.Update(ctx, in.ID, patch)
+	p, err := h.store.Edit(ctx, in.ID, h.updateEdit(in, compiled))
 	if err != nil {
-		return nil, pageOutput{}, err
-	}
-	if err := h.applySourcePlan(ctx, p.ID, plan); err != nil {
 		return nil, pageOutput{}, err
 	}
 	notify.EmitEvent("present", "info", "page updated: "+p.Title, "",
@@ -691,95 +695,83 @@ func (h *handlers) handleUpdate(
 	return nil, pageOutputFor(p, h.url(req, p.ID)), nil
 }
 
+// updateEdit is the store edit an update runs: the page and its sources
+// change in one write. compiled was rendered under the title read before the
+// edit; when the update leaves the title alone and another writer changed it
+// since, the inputs are compiled again under the title the page has now,
+// because a Doc renders its title into the hero.
+func (h *handlers) updateEdit(in updateInput, compiled compiledUpdate) store.EditFunc {
+	// An ephemeral page's 30 days start over on every update; the new
+	// expiry is fixed once so a conflict retry keeps it.
+	shared := h.mode == ModeShared
+	var renewed *time.Time
+	if shared {
+		renewed = h.expiry(true)
+	}
+	return func(cur store.Snapshot) (store.Snapshot, error) {
+		u := compiled
+		if in.Title == nil && cur.Page.Title != u.title {
+			var err error
+			if u, err = resolveUpdate(in, cur.Page.Title); err != nil {
+				return store.Snapshot{}, err
+			}
+		}
+		next := cur
+		next.Page.Apply(u.patch)
+		// A page that has something to show keeps something to show. A page
+		// from before decks that has neither rendition (empty content was
+		// accepted then) still takes title, graph, and reference updates.
+		if (cur.Page.HasBrief || cur.Page.HasDeck) && !next.Page.HasBrief && !next.Page.HasDeck {
+			return store.Snapshot{}, errLastRendition
+		}
+		if shared && cur.Page.Ephemeral {
+			next.Page.ExpiresAt = renewed
+		}
+		next.Sources = u.plan.apply(cur.Sources)
+		return next, nil
+	}
+}
+
 // resolveUpdate renders the inputs an update carries into the patch for the
 // page and the plan for its sources. It touches no store, so a malformed
 // Doc or Graph fails before anything is written. curTitle is the page's
 // title as stored: a Doc renders its title into the hero, so an update that
 // leaves the title alone must still compile under it.
-func resolveUpdate(in updateInput, curTitle string) (store.Patch, sourcePlan, error) {
+func resolveUpdate(in updateInput, curTitle string) (compiledUpdate, error) {
 	title := curTitle
 	if in.Title != nil {
 		title = *in.Title
 	}
-	patch := store.Patch{Title: in.Title}
-	var plan sourcePlan
+	u := compiledUpdate{title: curTitle, patch: store.Patch{Title: in.Title}}
 	if in.Content != nil {
 		content, docJSON, err := resolveContent(*in.Content, title)
 		if err != nil {
-			return store.Patch{}, sourcePlan{}, fmt.Errorf("content: %w", err)
+			return compiledUpdate{}, fmt.Errorf("content: %w", err)
 		}
-		patch.Content = &content
-		// A Doc refreshes doc.json. Legacy HTML, or an empty string that
-		// removes the brief, leaves no Doc the content came from, so any
-		// prior doc.json is stale and must go, or a later re-render or
-		// present_source would bring the old brief back.
-		plan.doc, plan.clearDoc = docJSON, docJSON == nil
+		u.patch.Content = &content
+		u.plan.setDoc, u.plan.doc = true, docJSON
 	}
 	if in.Deck != nil {
 		deck, deckJSON, err := resolveDeck(*in.Deck, title)
 		if err != nil {
-			return store.Patch{}, sourcePlan{}, err
+			return compiledUpdate{}, err
 		}
-		patch.Deck = &deck
-		// A deck is replaced from a Doc or removed; either way the old
-		// deck.json must not outlive it.
-		plan.deck, plan.clearDeck = deckJSON, deckJSON == nil
+		u.patch.Deck = &deck
+		u.plan.setDeck, u.plan.deck = true, deckJSON
 	}
 	if in.Graph != nil {
 		graph, graphJSON, err := resolveGraph(*in.Graph)
 		if err != nil {
-			return store.Patch{}, sourcePlan{}, fmt.Errorf("graph: %w", err)
+			return compiledUpdate{}, fmt.Errorf("graph: %w", err)
 		}
-		patch.Graph = &graph
-		// Graph cleared or replaced with legacy JS: any prior graph.json is
-		// now stale and would mislead a later re-render.
-		plan.graph, plan.clearGraph = graphJSON, graphJSON == nil
+		u.patch.Graph = &graph
+		u.plan.setGraph, u.plan.graph = true, graphJSON
 	}
 	if in.References != nil {
 		refs := toStoreRefs(*in.References)
-		patch.References = &refs
+		u.patch.References = &refs
 	}
-	return patch, plan, nil
-}
-
-// applySourcePlan persists the source changes an update implies. It runs
-// after the page is written, so a page that failed to update leaves its
-// sources alone. Deletes go first: a store that measures the page on every
-// save (the shared instance's size cap) must not count a source the same
-// update is removing, or an update that shrinks the page could be refused
-// halfway through.
-func (h *handlers) applySourcePlan(ctx context.Context, id string, plan sourcePlan) error {
-	if plan.clearDoc {
-		if err := h.store.DeleteDoc(ctx, id); err != nil {
-			return fmt.Errorf("clear doc: %w", err)
-		}
-	}
-	if plan.clearDeck {
-		if err := h.store.DeleteDeckSource(ctx, id); err != nil {
-			return fmt.Errorf("clear deck source: %w", err)
-		}
-	}
-	if plan.clearGraph {
-		if err := h.store.DeleteGraphSource(ctx, id); err != nil {
-			return fmt.Errorf("clear graph source: %w", err)
-		}
-	}
-	if plan.doc != nil {
-		if err := h.store.SaveDoc(ctx, id, plan.doc); err != nil {
-			return fmt.Errorf("save doc: %w", err)
-		}
-	}
-	if plan.deck != nil {
-		if err := h.store.SaveDeckSource(ctx, id, plan.deck); err != nil {
-			return fmt.Errorf("save deck source: %w", err)
-		}
-	}
-	if plan.graph != nil {
-		if err := h.store.SaveGraphSource(ctx, id, plan.graph); err != nil {
-			return fmt.Errorf("save graph source: %w", err)
-		}
-	}
-	return nil
+	return u, nil
 }
 
 // ── list ──

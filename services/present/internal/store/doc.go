@@ -17,20 +17,54 @@ const (
 	deckSourceFile  = "deck.json"  // Doc source for deck.html
 )
 
-// saveSource writes raw source bytes into a page directory. The store does not
-// interpret them, keeping it free of any render-package dependency.
-func (s *FS) saveSource(id, name string, data []byte) error {
-	if !ValidID(id) {
-		return ErrNotFound
+// sourceSlot pairs a source file with the Sources field it holds.
+type sourceSlot struct {
+	name string
+	data *[]byte
+}
+
+// sourceSlots lists the source files of src in the one order reads and
+// writes walk them.
+func sourceSlots(src *Sources) []sourceSlot {
+	return []sourceSlot{
+		{name: docFile, data: &src.Doc},
+		{name: deckSourceFile, data: &src.Deck},
+		{name: graphSourceFile, data: &src.Graph},
 	}
-	dir := s.pageDir(id)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create page dir: %w", err)
+}
+
+// writeSource makes the named source file in dir hold data, or removes it
+// when data is nil. The store does not interpret the bytes, keeping it free
+// of any render-package dependency.
+func writeSource(dir, name string, data []byte) error {
+	path := filepath.Join(dir, name)
+	if data == nil {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", name, err)
+		}
+		return nil
 	}
-	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+	if err := writeFileAtomic(path, data); err != nil {
 		return fmt.Errorf("write %s: %w", name, err)
 	}
 	return nil
+}
+
+// optionalSource turns a missing source into nil and passes any other
+// outcome through.
+func optionalSource(data []byte, err error) ([]byte, error) {
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	return data, err
+}
+
+// saveSource writes one source of an existing page under the page lock,
+// leaving the version alone. A nil data removes the source.
+func (s *FS) saveSource(id, name string, data []byte) error {
+	return s.withPageLock(id, func() error {
+		return writeSource(s.pageDir(id), name, data)
+	})
 }
 
 // loadSource reads a page's stored source bytes. It returns ErrNotFound when
@@ -58,18 +92,11 @@ func (s *FS) hasSource(id, name string) bool {
 	return err == nil
 }
 
-// deleteSource removes a page's persisted source file, if any. Used when the
-// rendered artifact is replaced with legacy input, so a now-stale source does
-// not mislead a later re-render. Absence is not an error.
+// deleteSource removes a page's persisted source file, if any, so a stale
+// source cannot mislead a later re-render. A page without the source is not
+// an error; a page that does not exist is ErrNotFound.
 func (s *FS) deleteSource(id, name string) error {
-	if !ValidID(id) {
-		return nil
-	}
-	err := os.Remove(filepath.Join(s.pageDir(id), name))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove %s: %w", name, err)
-	}
-	return nil
+	return s.saveSource(id, name, nil)
 }
 
 // SaveDoc writes the canonical Doc JSON for a page. Callers pass the exact JSON

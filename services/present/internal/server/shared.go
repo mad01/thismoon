@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -113,21 +112,8 @@ func (s *Server) handleSharedReplace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	refs := toStoreRefs(b.References)
-	p, err = s.store.Update(r.Context(), id, store.Patch{
-		Title:      &b.Title,
-		Content:    &b.Content,
-		Deck:       &b.Deck,
-		Graph:      &b.Graph,
-		References: &refs,
-		Ephemeral:  &b.Ephemeral,
-		ExpiresAt:  s.expiry(b.Ephemeral),
-	})
+	p, err = s.store.Edit(r.Context(), id, s.replaceEdit(b))
 	if err != nil {
-		writeStoreError(w, r, err)
-		return
-	}
-	if err := s.replaceSources(r, id, b); err != nil {
 		writeStoreError(w, r, err)
 		return
 	}
@@ -136,44 +122,31 @@ func (s *Server) handleSharedReplace(w http.ResponseWriter, r *http.Request) {
 	s.writeSharedPage(w, r, http.StatusOK, p)
 }
 
-// replaceSources makes the stored sources match the bundle: a source the
-// bundle carries is saved, one it omits is removed so a stale copy cannot
-// mislead a later re-render. Removals go first: the size cap measures the
-// page on every save and must not count a source this replace is dropping.
-func (s *Server) replaceSources(r *http.Request, id string, b bundle) error {
-	ctx := r.Context()
-	doc, deck, graph := rawOrNil(b.Doc), rawOrNil(b.DeckSource), rawOrNil(b.GraphSource)
-	if doc == nil {
-		if err := s.store.DeleteDoc(ctx, id); err != nil {
-			return fmt.Errorf("clear doc: %w", err)
-		}
+// replaceEdit is the store edit a replace runs: the page takes the bundle's
+// fields and its sources become exactly the bundle's, in one write. A source
+// the bundle omits is removed so a stale copy cannot mislead a later
+// re-render. The expiry is computed once, so a conflict retry keeps it.
+func (s *Server) replaceEdit(b bundle) store.EditFunc {
+	refs := toStoreRefs(b.References)
+	patch := store.Patch{
+		Title:      &b.Title,
+		Content:    &b.Content,
+		Deck:       &b.Deck,
+		Graph:      &b.Graph,
+		References: &refs,
+		Ephemeral:  &b.Ephemeral,
+		ExpiresAt:  s.expiry(b.Ephemeral),
 	}
-	if deck == nil {
-		if err := s.store.DeleteDeckSource(ctx, id); err != nil {
-			return fmt.Errorf("clear deck source: %w", err)
-		}
+	src := store.Sources{
+		Doc:   rawOrNil(b.Doc),
+		Deck:  rawOrNil(b.DeckSource),
+		Graph: rawOrNil(b.GraphSource),
 	}
-	if graph == nil {
-		if err := s.store.DeleteGraphSource(ctx, id); err != nil {
-			return fmt.Errorf("clear graph source: %w", err)
-		}
+	return func(cur store.Snapshot) (store.Snapshot, error) {
+		cur.Page.Apply(patch)
+		cur.Sources = src
+		return cur, nil
 	}
-	if doc != nil {
-		if err := s.store.SaveDoc(ctx, id, doc); err != nil {
-			return fmt.Errorf("save doc: %w", err)
-		}
-	}
-	if deck != nil {
-		if err := s.store.SaveDeckSource(ctx, id, deck); err != nil {
-			return fmt.Errorf("save deck source: %w", err)
-		}
-	}
-	if graph != nil {
-		if err := s.store.SaveGraphSource(ctx, id, graph); err != nil {
-			return fmt.Errorf("save graph source: %w", err)
-		}
-	}
-	return nil
 }
 
 // handleWhoAmI echoes the author hash the caller's key resolves to. It is
