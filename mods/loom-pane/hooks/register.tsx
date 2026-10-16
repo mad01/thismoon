@@ -12,11 +12,13 @@ import {
   composeStatus,
   denyReason,
   detectLayout,
+  isIntegratedTree,
   isLive,
   isRefreshDue,
   isWeaveArgs,
   loomArgsOf,
   membersFrom,
+  mergeTreeArgs,
   ownerClaimFrom,
   parseCount,
   parseDefaultRef,
@@ -305,8 +307,23 @@ async function confirmRemoval(
   const remoteAhead = parseCount(
     await git($, ['rev-list', '--count', `origin/${removal.name}..${removal.name}`], removal.location),
   )
-  if (!shouldAskBranchDeletion({ ahead, remoteAhead, isWorktreeDirty })) return true
+  const facts = { ahead, remoteAhead, isIntegrated: false, isWorktreeDirty }
+  if (!shouldAskBranchDeletion(facts)) return true
+  // Only a deletion that would ask pays for the merge-tree check.
+  const isIntegrated = await isIntegratedBranch($, removal.name, removal.location, defaultRef)
+  if (!shouldAskBranchDeletion({ ...facts, isIntegrated })) return true
   return askToRemove($, removal.name, ahead, isWorktreeDirty)
+}
+
+// True when the default branch already holds the branch's changes: a merge
+// would write the default branch's own tree. Unlike the counts above, a
+// failure here (git before 2.38, a conflict) keeps the question.
+async function isIntegratedBranch($: EngineInterface, branch: string, cwd: string, defaultRef: string): Promise<boolean> {
+  const [merged, tree] = await Promise.all([
+    git($, mergeTreeArgs(defaultRef, branch), cwd),
+    git($, ['rev-parse', `${defaultRef}^{tree}`], cwd),
+  ])
+  return isIntegratedTree(merged, tree)
 }
 
 export const register: Register = (on, options) => {

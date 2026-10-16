@@ -35,14 +35,20 @@ const porcelain = [
   '',
 ].join('\n')
 
-type Repo = { dirty: readonly string[]; ahead: number; remoteAhead: number | null }
+type Repo = { dirty: readonly string[]; ahead: number; remoteAhead: number | null; isIntegrated?: boolean }
+
+const MAIN_TREE = 'fe56c1cfe56c1cfe56c1cfe56c1cfe56c1cfe56c'
+const OTHER_TREE = '0b1d2e30b1d2e30b1d2e30b1d2e30b1d2e30b1d'
 
 // A git answered from memory: the two worktrees above, every branch `ahead`
-// commits past main, `remoteAhead` of them not on origin (null: no upstream).
+// commits past main, `remoteAhead` of them not on origin (null: no upstream),
+// and squash-merged into main when `isIntegrated`.
 function fakeGit(repo: Repo, argv: readonly string[], cwd: string): ProcessRunResult {
   const line = argv.slice(1).join(' ')
   if (line === 'rev-parse --show-toplevel') return ok(cwd.startsWith(OWN) ? OWN : CANONICAL)
   if (line.endsWith('--git-common-dir')) return ok(`${CANONICAL}/.git`)
+  if (line === 'rev-parse main^{tree}') return ok(`${MAIN_TREE}\n`)
+  if (line.startsWith('merge-tree --write-tree main ')) return ok(`${repo.isIntegrated === true ? MAIN_TREE : OTHER_TREE}\n`)
   if (line === 'worktree list --porcelain') return ok(porcelain)
   if (line.startsWith('symbolic-ref')) return failed()
   if (line === 'status --porcelain') return ok(repo.dirty.includes(cwd) ? ' M x\n' : '')
@@ -168,6 +174,13 @@ test('a pushed branch and a clean worktree are removed without a question', asyn
   await $.session.start({ cwd: CANONICAL, surface: null, isInteractive: true })
   expect(refusalOf(await $.tool.call({ tool: 'Bash', command: 'git branch -D feat/x' }))).toBeUndefined()
   expect(refusalOf(await $.tool.call({ tool: 'Bash', command: `git worktree remove ${OWN}` }))).toBeUndefined()
+  expect(seated.asked.length).toBe(0)
+})
+
+test('a squash-merged branch with no upstream is force-deleted without a question', async ($, on) => {
+  const seated = seat(on, { dirty: [], ahead: 2, remoteAhead: null, isIntegrated: true }, CANONICAL, 'Cancel')
+  await $.session.start({ cwd: CANONICAL, surface: null, isInteractive: true })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: 'git branch -D feat/x' }))).toBeUndefined()
   expect(seated.asked.length).toBe(0)
 })
 

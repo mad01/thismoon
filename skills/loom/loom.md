@@ -13,7 +13,8 @@ the **weaver**.
 Git is the whole state store. There is no queue directory, no status
 frontmatter, nothing to garbage-collect: `git worktree list` says what
 exists, `git status` says what is in flight, `git log main..branch` says
-what is ready, `git branch --merged` says what is done. Every question the
+what a branch offers, `git merge-tree` says whether main already holds it.
+Every question the
 weaver asks is answered live from git. Messages and belt's ledger only say
 where to look: an owner's ready message is a claim, and git is the proof.
 
@@ -47,17 +48,56 @@ The weaver classifies each worktree from git alone:
 - **In flight**: the working tree is dirty (`git -C <wt> status
   --porcelain` has output). Someone is mid-task; leave it alone.
 - **Ready**: clean, and ahead of the default branch
-  (`git -C <wt> log --oneline <default>..HEAD` is non-empty), and its owner
-  has sent a ready message (or, with no weaver session, told the user).
-  Cleanliness alone is not readiness: only the owner knows whether the
-  last commit was the last commit. The message alone is not readiness
-  either: git has to show what it claims.
-- **Integrated**: the branch is reachable from the default branch
-  (`git branch --merged <default>` lists it). The worktree is a leftover;
-  remove it.
+  (`git -C <wt> log --oneline <default>..HEAD` is non-empty), not
+  integrated, and its owner has sent a ready message (or, with no weaver
+  session, told the user). Cleanliness alone is not readiness: only the
+  owner knows whether the last commit was the last commit. The message
+  alone is not readiness either: git has to show what it claims.
+- **Integrated**: the default branch already holds the changes, by a
+  fast-forward or a squash merge. A merged tree equal to the default
+  branch's tree is the proof (see the integrated check below). The
+  worktree is a leftover; remove it.
 - **Abandoned**: clean or dirty, untouched for a long time, owner gone.
   Report it to the user with its branch and last-commit age; never remove
   or resolve it without their say-so.
+
+Check integrated before ready. A squash merge leaves the branch's commits
+unreachable from the default branch, so `git log <default>..<branch>`
+still lists them and `git branch --merged` never lists the branch.
+
+## Integrated check
+
+The same check factory-band runs for a ready worker, from the canonical
+checkout after a fetch (`main` stands for the default branch):
+
+```
+git -C <canonical> merge-tree --write-tree origin/main <branch>  # the tree a merge would write
+git -C <canonical> rev-parse 'origin/main^{tree}'               # the default branch's own tree
+```
+
+Two equal tree ids: integrated. A different tree, or a conflict (exit 1
+and a list of conflicted files), means a merge would still change the
+default branch. `merge-tree --write-tree` needs git 2.38 or later; an
+older git has no proof, so every branch reads as not integrated there.
+`git cherry` does not close the gap: its per-commit patch ids match a
+rebase merge or a one-commit squash only.
+
+The default branch may have changed the branch's lines again since the
+squash. The merge into its tip then conflicts although the branch landed.
+Run the same check against each first-parent commit since the fork point;
+the squash commit answers with equal trees:
+
+```
+base=$(git -C <canonical> merge-base origin/main <branch>)
+for c in $(git -C <canonical> rev-list --first-parent --reverse "$base"..origin/main); do
+  merged=$(git -C <canonical> merge-tree --write-tree "$c" <branch> 2>/dev/null)
+  tree=$(git -C <canonical> rev-parse "$c^{tree}")
+  [ "$merged" = "$tree" ] && { echo "integrated at $c: $merged $tree"; break; }
+done
+```
+
+That line, with its two equal tree ids, is the proof. No line printed
+means not integrated.
 
 ## Survey
 
@@ -84,15 +124,16 @@ The weaver gathers the claims first, then checks each one against git.
    git -C <canonical> fetch origin
    git -C <canonical> worktree list --porcelain
    git -C <wt> status --porcelain                    # empty: clean
+   git -C <canonical> merge-tree --write-tree origin/main <branch>  # equal to the next line: integrated
+   git -C <canonical> rev-parse 'origin/main^{tree}'
    git -C <canonical> log --oneline origin/main..<branch>  # the commits on offer
    git -C <canonical> diff --stat origin/main...<branch>   # the files they touch
-   git -C <canonical> branch --merged origin/main    # integrated
    ```
 
-A ready claim holds when the tree is clean, the commit range ends at the
-branch tip (`git rev-parse <branch>`), and the files changed match the diff
-stat. When it doesn't, the branch is not ready: tell its owner what
-differs.
+A ready claim holds when the tree is clean, the branch is not integrated,
+the commit range ends at the branch tip (`git rev-parse <branch>`), and
+the files changed match the diff stat. When it doesn't, the branch is not
+ready: tell its owner what differs.
 
 ## Integration
 
@@ -124,15 +165,23 @@ resolve it, and only with the user's go-ahead.
 
 ## Teardown
 
-After a branch is visible from the default branch:
+After a branch lands, and for every worktree the survey found integrated:
 
 ```
 git -C <canonical> worktree remove ~/.worktrees/<repo>/<slug>
+git -C <canonical> merge-tree --write-tree origin/main <branch>  # the proof: this line and the next
+git -C <canonical> rev-parse 'origin/main^{tree}'               # print the same tree id
 git -C <canonical> branch -d <branch>
 ```
 
-`branch -d` only: if git refuses, the branch is not actually merged and
-force-deleting it would eat work. `git worktree prune` clears any stale
+Show the proof's output on the lines above the delete. `branch -d` comes
+first. It refuses a squash-merged branch: the branch's commits are not
+reachable from the default branch, and its upstream is usually gone after
+the merge. Only then may the weaver run `git branch -D <branch>`, and only
+when the proof above it printed two equal tree ids, from the tip check or
+from the first-parent walk. Without that proof `-D` would eat
+work: keep the branch and report it. On git before 2.38 there is no proof,
+so `-d` is the only delete. `git worktree prune` clears any stale
 administrative entries left by a worktree removed by hand.
 
 Before removing a worktree, harvest anything durable that points into it:
@@ -154,6 +203,7 @@ List them:
 git -C <canonical> branch --list 'worktree-agent-*'
 git -C <canonical> worktree list --porcelain            # entries under .claude/worktrees/, with any locked line
 git -C <canonical> log --oneline origin/main..<branch>  # per branch: empty means nothing beyond main
+git -C <canonical> merge-tree --write-tree origin/main <branch>  # per branch with commits: the integrated check
 ps -p <pid> -o lstart=                                  # per lock: is its agent still running?
 ```
 
@@ -166,6 +216,8 @@ agent is gone.
 
 Report one line per branch: its worktree if it has one, whether that is
 locked and whether the lock's pid still runs, and its commits beyond main.
+Offer a branch for removal when it has nothing beyond main or is
+integrated; report any other with its commits.
 
 After the go-ahead, per branch, worktree first (git refuses to delete a
 branch a worktree has checked out). The listing may be old by the time the
@@ -177,14 +229,17 @@ ps -p <pid> -o lstart=                                            # the reason's
 git -C <canonical> worktree unlock <canonical>/.claude/worktrees/agent-<id>
 git -C <canonical> worktree remove <canonical>/.claude/worktrees/agent-<id>
 git -C <canonical> log --oneline origin/main..worktree-agent-<id>  # the proof
+git -C <canonical> merge-tree --write-tree origin/main worktree-agent-<id>  # with commits listed: the proof goes on
+git -C <canonical> rev-parse 'origin/main^{tree}'
 git -C <canonical> branch -d worktree-agent-<id>
 ```
 
-Show the proof's output on the line above the delete. Empty means nothing
-beyond main can be lost, and `-d` deletes such a branch even with no
-upstream. `-D` stays out of the sweep as everywhere else: when `-d`
-refuses, or `worktree remove` refuses a dirty tree, keep it and report it
-to the user.
+Show the proof's output on the lines above the delete. An empty log means
+nothing beyond main can be lost, and `-d` deletes such a branch even with
+no upstream. Commits listed with two equal tree ids mean a squash merge:
+`-d` refuses it, and `-D` follows under the Teardown rule. Any other
+refusal, from `-d` or from `worktree remove` on a dirty tree: keep it and
+report it to the user.
 
 ## Known frictions
 
