@@ -361,8 +361,8 @@ func TestDoctorReportsRulelessGuardsAsNoOps(t *testing.T) {
 
 // TestDoctorReportsCustomHints pins the custom hints section beside the
 // built-in hints: one line per entry with its event, enabled state, budget,
-// command, opt-out count, and the reachability check that tells a hint
-// with nothing to say apart from one whose command cannot run.
+// command, agent_types gate, opt-out count, and the reachability check that
+// tells a hint with nothing to say apart from one whose command cannot run.
 func TestDoctorReportsCustomHints(t *testing.T) {
 	dir := t.TempDir()
 	reachable := filepath.Join(dir, "journal.sh")
@@ -385,6 +385,10 @@ custom_hints:
   not-executable:
     event: session-start
     command: [`+notExecutable+`]
+  worker-brief:
+    event: subagent-start
+    command: [`+reachable+`]
+    agent_types: [factory-worker-low, factory-worker-high]
 `)
 	out := runDoctorString(t, doctorPaths(dir))
 
@@ -394,6 +398,8 @@ custom_hints:
 			reachable + " --since yesterday  (exclude_repos: 1)",
 		"off-path               session-start  DISABLED  budget: 400ms",
 		"not-executable",
+		"worker-brief           subagent-start enabled   budget: 400ms  command: " +
+			reachable + "  (agent_types: factory-worker-low, factory-worker-high)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)

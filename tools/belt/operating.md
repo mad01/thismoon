@@ -58,6 +58,8 @@ Validation covers the values that parse and then do nothing:
 - a `custom_guards.<name>.event` outside bash/write;
 - a `custom_hints.<name>` entry with an event other than session-start or
   subagent-start, an empty command, or a built-in hint's name;
+- an `agent_types` list on a custom hint that is empty or not on
+  subagent-start;
 - `mode:` values other than hard/soft, or set on a guard that ignores them.
 
 A names file listed under internal_names.include that is missing or fails
@@ -71,7 +73,9 @@ Rollout order matters for config that names something new. A binary that
 predates subagent-start rejects `custom_hints.<name>.event: subagent-start`
 as an unknown event, and that config error makes it deny every guarded tool
 call. Build and install the new belt (a `ralph up` on the fleet) before any
-machine config names the new event.
+machine config names the new event. A new key fails the other way: an older
+belt ignores `custom_hints.<name>.agent_types` and runs the hint for every
+subagent, so the same order applies.
 
 ## failure modes
 

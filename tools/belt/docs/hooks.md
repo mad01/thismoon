@@ -871,15 +871,27 @@ text for that event; the brief comes from the consuming repo's config.
   plus a short grace for closing the pipe and landing the warn event. On timeout belt kills the external's
   whole process group, so a hung grandchild (a `curl` inside the script)
   does not outlive the hook either.
+- `agent_types` limits a `subagent-start` hint to the subagent types it
+  names, matched exactly against the payload's `agent_type`. A spawn of any
+  other type skips the hint: belt starts no process and logs no warn event,
+  because the hint declined on purpose. Without the key the hint runs for
+  every subagent. The factory worker brief is the case it exists for. Its
+  entry lists `factory-worker-low`, `factory-worker-medium` and
+  `factory-worker-high`, so an Explore or general-purpose spawn gets nothing
+  and leaves no warning on the events timeline. The SubagentStart hook
+  matcher can filter by agent type too, but it gates the whole `belt hint
+  subagent-start` command and every custom hint behind it. `agent_types`
+  gates one hint.
 - `enabled` and `exclude_repos` sit on the entry and work like the
   built-ins' (a `hints.<name>` toggle of the same name is honored too).
   `event` accepts `session-start` and `subagent-start`. It is a string so
   prompt and post-tool events can be added later. Anything else is a config
   error naming the supported values, as is an empty `command` or a name
-  that shadows a built-in hint.
+  that shadows a built-in hint. `agent_types` on a `session-start` hint is a
+  config error too, and so is an empty list or a blank entry.
 - `belt doctor` lists each custom hint beside the built-ins with its event,
-  budget, command, opt-out count, and whether the command resolves to
-  something executable. An unreachable command means the hint warns and
+  budget, command, `agent_types` gate, opt-out count, and whether the
+  command resolves to something executable. An unreachable command means the hint warns and
   stays silent on every session, which looks identical to a hint with
   nothing to say.
 - Custom hints run after the built-ins, alphabetical by name, through the
@@ -891,6 +903,14 @@ subagent-start existed rejects `event: subagent-start` as an unknown event,
 and that config error makes it deny every guarded tool call on the machine.
 So the thismoon binary must be built and installed (a `ralph up` on the
 fleet) before any machine config names the new event.
+
+`agent_types` needs the same order for a different reason. A belt built
+before the key existed does not reject it. It ignores the key and runs the
+hint for every subagent, so a brief meant for factory workers reaches every
+spawn. Run `ralph up` first and change the config second. Keep any agent
+type check the script already does until every machine runs the new belt.
+On an old binary that check makes the hint decline, which costs only the
+old warn events.
 
 ## Ledger
 
@@ -1063,7 +1083,8 @@ In symptom order:
    events timeline naming the cause. A silent custom hint with no event
    behind it was never run: check that the entry is enabled, on the
    `session-start` or `subagent-start` event its hook is wired for, and not
-   opted out for the session's repo.
+   opted out for the session's repo. A gated subagent-start hint also skips
+   every agent type its `agent_types` list leaves out.
 7. **The ledger has no entries.** `belt doctor` shows whether the ledger is
    enabled and whether the events service answers; an unreachable service
    drops every entry. Query the `belt-ledger` source (or your

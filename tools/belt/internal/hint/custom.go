@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -35,7 +36,9 @@ const warnGrace = 50 * time.Millisecond
 // whitespace trimmed, is the advice, rendered with the usual belt[<name>]:
 // prefix. A non-zero exit, a run past the budget, a start failure, or empty
 // stdout all end in silence plus a warn event, so a broken external costs a
-// session nothing but the budget. The commands run with the user's full
+// session nothing but the budget. A subagent-start hint may name the agent
+// types it briefs (agent_types); any other spawn skips the external with no
+// warn, since declining there is the configured outcome, not a failure. The commands run with the user's full
 // environment on purpose: they are user-configured, not agent-configured,
 // and belt never writes its own config.
 //
@@ -71,16 +74,17 @@ func (c *Custom) ID() string    { return c.id }
 func (c *Custom) Event() string { return c.cfg.Event }
 
 // Config exposes the hint's config entry for introspection (belt doctor
-// reports the command, budget, and exclusions).
+// reports the command, budget, exclusions, and agent_types gate).
 func (c *Custom) Config() config.CustomHint { return c.cfg }
 
-// Check runs the external command against the input. Exclusion is checked
-// before anything is exec'd, so an opted-out repo costs no process launch.
+// Check runs the external command against the input. The agent_types gate
+// and repo exclusion are checked before anything is exec'd, so a subagent
+// type outside the list or an opted-out repo costs no process launch.
 func (c *Custom) Check(in Input) *Advice {
 	if len(c.cfg.Command) == 0 {
 		return nil // rejected at load; kept so a hand-built config cannot panic
 	}
-	if c.excluded(in) {
+	if !c.admitsAgent(in) || c.excluded(in) {
 		return nil
 	}
 	payload, err := json.Marshal(c.payload(in))
@@ -140,6 +144,15 @@ func (c *Custom) command(ctx context.Context, payload []byte) *exec.Cmd {
 	}
 	cmd.WaitDelay = pipeGrace
 	return cmd
+}
+
+// admitsAgent reports whether the hint runs for the subagent the hook fired
+// in. Without agent_types it runs for every one. With the list, a type
+// outside it is a hint declining on purpose, so it ends in silence with no
+// warn event: the warn exists to expose a broken external, and a skipped
+// spawn is not one.
+func (c *Custom) admitsAgent(in Input) bool {
+	return len(c.cfg.AgentTypes) == 0 || slices.Contains(c.cfg.AgentTypes, in.AgentType)
 }
 
 // excluded reports whether the session's repo is opted out of this hint.

@@ -199,6 +199,47 @@ type CustomHint struct {
 	// ExcludeRepos opts repos out of this hint, same canonical
 	// host/owner/repo patterns as the built-in hints' exclude_repos.
 	ExcludeRepos []string `toml:"exclude_repos" yaml:"exclude_repos,omitempty"`
+	// AgentTypes limits a subagent-start hint to the subagent types it
+	// names, matched exactly against the payload's agent_type. A spawn of
+	// any other type skips the external: no process, no warn event. Unset
+	// means every subagent. Validated at load: subagent-start only, and
+	// never empty.
+	AgentTypes []string `toml:"agent_types"   yaml:"agent_types,omitempty"`
+	// agentTypesKey records that the YAML entry wrote the agent_types key,
+	// even with no value (see UnmarshalYAML).
+	agentTypesKey bool
+}
+
+// UnmarshalYAML decodes the entry as usual and also records whether the
+// agent_types key was written at all. A key with no value decodes to the
+// same nil list as an absent key, and nil means every subagent, so without
+// the record an `agent_types:` left empty by mistake would silently brief
+// every subagent instead of failing validation.
+func (h *CustomHint) UnmarshalYAML(node *yaml.Node) error {
+	type entry CustomHint // drops this method, so Decode does not recurse
+	if err := node.Decode((*entry)(h)); err != nil {
+		return err
+	}
+	h.agentTypesKey = mappingHasKey(node, "agent_types")
+	return nil
+}
+
+// agentTypesSet reports whether the entry names agent_types at all, an
+// empty value included. YAML records the key itself; the legacy TOML
+// format has no null, so a non-nil list is the signal there.
+func (h CustomHint) agentTypesSet() bool { return h.agentTypesKey || h.AgentTypes != nil }
+
+// mappingHasKey reports whether a YAML mapping node holds key.
+func mappingHasKey(node *yaml.Node, key string) bool {
+	if node.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
 }
 
 // Timeout is the budget one run of the external gets: timeout_ms when set,
@@ -860,7 +901,8 @@ func (f File) validate() error {
 
 // customHintErrors rejects the custom_hints entries that would load and then
 // advise nothing: an event the binary never runs custom hints on, a missing
-// command, a negative budget, and a name that shadows a built-in hint. The
+// command, a negative budget, an agent_types gate that cannot match, and a
+// name that shadows a built-in hint. The
 // shadow check reads HintFields, the one table that lists every built-in
 // hint id; a shadowing entry would register a second hint under an id the
 // toggles and doctor already attribute to the built-in.
@@ -890,6 +932,38 @@ func customHintErrors(hints map[string]CustomHint) []error {
 				name,
 				ch.TimeoutMS,
 			))
+		}
+		errs = append(errs, agentTypesErrors(name, ch)...)
+	}
+	return errs
+}
+
+// agentTypesErrors rejects an agent_types gate that cannot do what it says:
+// one on an event with no subagent to match (only subagent-start carries an
+// agent type), and one that names no type, an empty list or a blank entry.
+func agentTypesErrors(name string, ch CustomHint) []error {
+	if !ch.agentTypesSet() {
+		return nil
+	}
+	var errs []error
+	if ch.Event != HintEventSubagentStart {
+		errs = append(errs, fmt.Errorf(
+			"custom_hints.%s.agent_types only applies to event %q (event is %q)",
+			name,
+			HintEventSubagentStart,
+			ch.Event,
+		))
+	}
+	if len(ch.AgentTypes) == 0 {
+		errs = append(errs, fmt.Errorf(
+			"custom_hints.%s.agent_types is empty "+
+				"(list the agent types to brief, or remove the key to brief every subagent)",
+			name,
+		))
+	}
+	for i, agentType := range ch.AgentTypes {
+		if strings.TrimSpace(agentType) == "" {
+			errs = append(errs, fmt.Errorf("custom_hints.%s.agent_types[%d] is blank", name, i))
 		}
 	}
 	return errs

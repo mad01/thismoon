@@ -75,6 +75,72 @@ func TestRunHintSubagentStartBriefsTheWorker(t *testing.T) {
 	}
 }
 
+// TestRunHintSubagentStartGatesByAgentType pins agent_types end to end, from
+// a config file through `belt hint subagent-start`: a spawn of an unlisted
+// type prints nothing and never execs the command (the script leaves a
+// marker when it runs), and a listed type gets the brief as before.
+func TestRunHintSubagentStartGatesByAgentType(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("EVENTS_BASE_URL", "http://127.0.0.1:1")
+	tests := []struct {
+		agentType string
+		wantBrief bool
+	}{
+		{"Explore", false},
+		{"factory-worker-high", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.agentType, func(t *testing.T) {
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "ran")
+			script := filepath.Join(dir, "brief.sh")
+			body := "#!/bin/sh\ntouch " + marker + "\necho 'work only inside your worktree'\n"
+			if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cfgPath := filepath.Join(dir, "config.yaml")
+			cfgYAML := "custom_hints:\n  worker-brief:\n    event: subagent-start\n" +
+				"    command: [" + script + "]\n    timeout_ms: 10000\n" +
+				"    agent_types: [factory-worker-low, factory-worker-medium, factory-worker-high]\n"
+			if err := os.WriteFile(cfgPath, []byte(cfgYAML), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			load := func() (config.Config, error) {
+				return config.LoadFrom(config.Paths{BeltYAML: cfgPath})
+			}
+			p, err := json.Marshal(map[string]string{
+				"session_id": "s1", "cwd": dir, "agent_id": "agent-abc123",
+				"agent_type": tt.agentType, "hook_event_name": "SubagentStart",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var out bytes.Buffer
+			RunHint("subagent-start", load, bytes.NewReader(p), &out)
+
+			_, statErr := os.Stat(marker)
+			if ran := statErr == nil; ran != tt.wantBrief {
+				t.Errorf("external ran = %v, want %v", ran, tt.wantBrief)
+			}
+			if !tt.wantBrief {
+				if out.Len() != 0 {
+					t.Errorf("stdout = %q, want nothing for an unlisted agent type", out.String())
+				}
+				return
+			}
+			var a adviceDecision
+			if err := json.Unmarshal(out.Bytes(), &a); err != nil {
+				t.Fatalf("decode advice from %q: %v", out.String(), err)
+			}
+			if got, want := a.HookSpecificOutput.AdditionalContext,
+				"belt[worker-brief]: work only inside your worktree"; got != want {
+				t.Errorf("additionalContext = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestHintAdviceFor(t *testing.T) {
 	tests := []struct {
 		event string

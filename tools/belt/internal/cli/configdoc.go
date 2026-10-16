@@ -131,10 +131,13 @@ custom_guards:
 # plus a warn event: a broken external never breaks a session. event is
 # required and must be session-start (once per session) or subagent-start
 # (once per subagent, before its first prompt, advice in the subagent's
-# context); prompt and post-tool events can join later. A name that
-# shadows a built-in hint, a missing command, or an unsupported event is a
-# config error. This is where a machine-private hint (a daily journal, a
-# worker brief) is registered without a second hook or a compiled-in hint.
+# context); prompt and post-tool events can join later. agent_types limits
+# a subagent-start hint to the subagent types it names: any other spawn
+# skips the command, with no warn event. A name that shadows a built-in
+# hint, a missing command, an unsupported event, and agent_types that is
+# empty or sits on another event are config errors. This is where a
+# machine-private hint (a daily journal, a worker brief) is registered
+# without a second hook or a compiled-in hint.
 custom_hints:
   daily-journal:
     enabled: true
@@ -146,6 +149,7 @@ custom_hints:
   worker-brief:
     event: subagent-start
     command: [factory, brief]
+    agent_types: [factory-worker-low, factory-worker-medium, factory-worker-high]
 
 # The lifecycle ledger: belt record posts one events-service entry per
 # Claude Code lifecycle event it is wired to (subagent start and stop,
