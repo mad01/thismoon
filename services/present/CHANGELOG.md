@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/mad01/thismoon/compare/present/v1.16.0...present/v1.17.0) (2026-10-16)
+
+
+### Features
+
+* **present:** locked edits, section patch, progress reports, and page history ([#221](https://github.com/mad01/thismoon/issues/221)) ([45518e8](https://github.com/mad01/thismoon/commit/45518e8b8461d491dc2a1aafaf1a8aa56702858a))
+
 ## [1.16.0](https://github.com/mad01/thismoon/compare/present/v1.15.0...present/v1.16.0) (2026-10-07)
 
 

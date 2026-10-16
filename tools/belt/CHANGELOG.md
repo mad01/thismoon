@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/mad01/thismoon/compare/belt/v2.7.0...belt/v2.8.0) (2026-10-16)
+
+
+### Features
+
+* **belt:** agent_types gate for subagent-start custom hints ([#223](https://github.com/mad01/thismoon/issues/223)) ([d430918](https://github.com/mad01/thismoon/commit/d430918b8a719c2bcc2dd28c421685390fc467bc))
+
 ## [2.7.0](https://github.com/mad01/thismoon/compare/belt/v2.6.0...belt/v2.7.0) (2026-10-16)
 
 
