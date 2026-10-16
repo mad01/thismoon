@@ -15,9 +15,9 @@ version: 1
 repo: ~/code/src/github.com/mad01/thismoon
 commit: 45518e8b8461d491dc2a1aafaf1a8aa56702858a
 sign_off:
-  by: ""
-  date: ""
-  digest: ""
+  by: "Alexander Brandstedt"
+  date: "2026-10-16"
+  digest: "58cd676f055c49c91fe964bf808dca50234ff02d35acba5673376f5dbf2bddce"
 runs: 3                   # spec: three runs per arm
 timeout_minutes: 90       # judgement: per arm run, wall clock
 batch_ceiling_usd: 250    # judgement: a paid batch refuses to start when its worst case exceeds this
