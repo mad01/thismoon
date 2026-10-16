@@ -53,10 +53,11 @@ docs/RELEASING.md       release process (release-please, tags, artifacts, verifi
 
 ## Skills
 
-The repo ships seven agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
+The repo ships eight agent skills under `skills/`, one directory per skill. Each is a `SKILL.md` that Claude Code and Codex load on demand. The paired recipe under `recipes/<skill>/` symlinks it into `~/.claude/skills` and `~/.agents/skills` when the fleet applies recipes, so a provisioned machine has it in every session. Invoke one explicitly with `/<skill-name>`, or let the agent load it when the task matches the skill's description.
 
 | Skill | What it does | Backed by |
 |-------|--------------|-----------|
+| `factory` | Experimental. Runs a plan through worker subagents: one orchestrator, plus one loom worktree and one worker per unit. Every message follows a fixed contract that humanizer checks against Simplified Technical English (STE). Ships its own `claude plugin eval` suites under `skills/factory/evals/`. | the humanizer STE check (`humanizer ste`), belt's `factory-worker` subagent-start hint and ledger, and the events, present and keeper-of-facts (kof) services |
 | `golang-pro` | Go concurrency, channels, generics depth, pprof profiling, and gRPC — the specialist scope `golang-style` defers to. Vendored from [jeffallan/claude-skills](https://github.com/jeffallan/claude-skills) under MIT; `skills/golang-pro/LICENSE` carries the notice. | nothing (guidance only) |
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
 | `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
@@ -65,7 +66,7 @@ The repo ships seven agent skills under `skills/`, one directory per skill. Each
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing beyond the checkout. The other three need their backing MCP or service registered — that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable.
+Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing beyond the checkout. The other four need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable. `factory` also needs the three worker agent definitions and the belt subagent-start hint installed by the consuming repo; the skill holds the text for both.
 
 ## Release process
 

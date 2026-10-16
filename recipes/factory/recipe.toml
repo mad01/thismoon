@@ -1,0 +1,22 @@
+# factory: skill-only recipe. The skill has no companion binary; it ships the
+# orchestrator-and-workers procedure (SKILL.md, the message contract, routing,
+# the worker brief and the worker definitions) from the repo-root skills/ dir
+# into the agent skill directories on every machine.
+[recipe]
+name = "factory"
+description = "factory: agent skill for running a plan with worker subagents, one loom worktree per unit (experimental)"
+
+# The skill lives in the repo-root skills/ dir (discoverable by browsing the
+# repo); link just this skill's directory into place. Relative sources resolve
+# against the recipe dir and are path-cleaned, so ../../ reaches the
+# source-checkout root.
+[dotfiles.factory_skill]
+source = "../../skills/factory"
+target = "~/.claude/skills/factory"
+action = "symlink_dir"
+
+# Codex discovers user skills from ~/.agents/skills; mirror the same dir there.
+[dotfiles.factory_codex_skill]
+source = "../../skills/factory"
+target = "~/.agents/skills/factory"
+action = "symlink_dir"
