@@ -23,7 +23,7 @@
     {
       "name": "loom-pane",
       "source": "./mods/loom-pane",
-      "description": "A status line naming the session's loom role, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
+      "description": "A status line naming the session's loom role and the factory members beside it, plus guards that keep an owner inside its own worktree and ask before a removal loses work."
     }
   ]
 }

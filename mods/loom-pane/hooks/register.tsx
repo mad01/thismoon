@@ -1,28 +1,38 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LoomPaneRole } from '../types'
+import type { LoomPaneMember, LoomPaneRole } from '../types'
 import {
+  AGENTS_ARGV,
   GIT_BUDGET_MS,
+  LEDGER_URL,
+  PROBE_BUDGET_MS,
   analyzeBash,
   classifyPath,
+  composeStatus,
   denyReason,
   detectLayout,
+  isLive,
+  isRefreshDue,
   isWeaveArgs,
   loomArgsOf,
+  membersFrom,
   ownerClaimFrom,
   parseCount,
   parseDefaultRef,
+  parseLedger,
+  parseSessions,
   parseWorktreeList,
   removalQuestion,
   resolvePath,
   shouldAskBranchDeletion,
   shouldAskWorktreeRemoval,
   statusText,
+  trailingDelay,
   worktreeAt,
   worktreeOfBranch,
 } from '../lib/loom'
-import type { Layout, Removal, WorktreeEntry } from '../lib/loom'
+import type { AgentLike, Layout, LedgerFacts, Removal, WorktreeEntry } from '../lib/loom'
 
 const role = atom({ plugin: 'loom-pane', key: 'role' } as const, 'none' as LoomPaneRole)
 const canonical = atom({ plugin: 'loom-pane', key: 'canonical' } as const, null as string | null)
@@ -32,6 +42,7 @@ const worktrees = atom({ plugin: 'loom-pane', key: 'worktrees' } as const, [] as
 const repo = atom({ plugin: 'loom-pane', key: 'repo' } as const, null as string | null)
 const weaveSeen = atom({ plugin: 'loom-pane', key: 'weaveSeen' } as const, false)
 const isInteractive = atom({ plugin: 'loom-pane', key: 'isInteractive' } as const, false)
+const members = atom({ plugin: 'loom-pane', key: 'members' } as const, [] as LoomPaneMember[])
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
@@ -66,7 +77,119 @@ async function layoutOf($: EngineInterface): Promise<Layout> {
 }
 
 async function showStatus($: EngineInterface): Promise<void> {
-  $.ui.status(statusText(await read($, role), await layoutOf($)))
+  $.ui.status(composeStatus(statusText(await read($, role), await layoutOf($)), await read($, members)))
+}
+
+// This session's agents, or none when the engine cannot list them.
+async function listAgents($: EngineInterface): Promise<AgentLike[]> {
+  try {
+    return await $.agent.list()
+  } catch {
+    return []
+  }
+}
+
+async function sessionId($: EngineInterface): Promise<string | null> {
+  try {
+    return await $.session.id()
+  } catch {
+    return null
+  }
+}
+
+// What `work` answers, or null when it fails or the 400 ms probe budget
+// runs out first.
+async function withinBudget<T>($: EngineInterface, work: Promise<T | null>): Promise<T | null> {
+  const timedOut = $.clock
+    .sleep(PROBE_BUDGET_MS)
+    .then(() => null)
+    .catch(() => null)
+  return Promise.race([work.catch(() => null), timedOut])
+}
+
+// The engine's session list, or null when `claude` is missing, fails or
+// outruns the budget (the child is killed at the same budget).
+async function listSessions($: EngineInterface): Promise<string | null> {
+  const ran = $.process
+    .run(AGENTS_ARGV, { timeoutMs: PROBE_BUDGET_MS })
+    .then(result => (result.exitCode === 0 ? result.stdout : null))
+  return withinBudget($, ran)
+}
+
+// belt's subagent-start entries from the events service, or null when it
+// is down, answers an error or outruns the budget.
+async function fetchLedger($: EngineInterface): Promise<string | null> {
+  const fetched = $.http.fetch(LEDGER_URL).then(response => (response.ok ? response.text : null))
+  return withinBudget($, fetched)
+}
+
+// The member refresh throttle: one refresh at a time, and none within
+// MEMBERS_REFRESH_GAP_MS of the last one's start, so a chatty session never
+// queues probes. A refresh the throttle skips marks the line stale, and one
+// trailing refresh at the gap boundary catches it up; further skips fold
+// into that one. Module variables, so a hot reload starts it over (and
+// cancels the timer), which costs one extra refresh at most.
+let isRefreshing = false
+let isStale = false
+let isTrailingScheduled = false
+let lastRefreshAt: number | null = null
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+// Re-reads who works beside this session, unless the throttle says no.
+// Nothing here throws.
+async function refreshMembers($: EngineInterface): Promise<void> {
+  if (isRefreshing) {
+    isStale = true
+    return
+  }
+  isRefreshing = true
+  let now: number | null = null
+  try {
+    now = await $.clock.now()
+    if (!isRefreshDue(now, lastRefreshAt)) {
+      isStale = true
+      return
+    }
+    lastRefreshAt = now
+    isStale = false
+    await readMembers($)
+  } catch (err) {
+    $.ui.log(`loom-pane: members not refreshed (${errorText(err)})`, { to: 'debug' })
+  } finally {
+    isRefreshing = false
+    if (isStale && now !== null) scheduleTrailing($, now)
+  }
+}
+
+// Schedules the one trailing refresh at the gap boundary, unless one is
+// already waiting.
+function scheduleTrailing($: EngineInterface, now: number): void {
+  if (isTrailingScheduled) return
+  isTrailingScheduled = true
+  try {
+    $.clock.after(trailingDelay(now, lastRefreshAt), () => {
+      isTrailingScheduled = false
+      void refreshMembers($)
+    })
+  } catch (err) {
+    isTrailingScheduled = false
+    $.ui.log(`loom-pane: trailing refresh not scheduled (${errorText(err)})`, { to: 'debug' })
+  }
+}
+
+// Asks every source, stores the members and pins the status line again.
+// Every source that fails reads as empty, so the line degrades to the role
+// alone.
+async function readMembers($: EngineInterface): Promise<void> {
+  const layout = await layoutOf($)
+  const agents = layout.canonical === null ? [] : await listAgents($)
+  const hasLinked = layout.worktrees.some(path => path !== layout.canonical)
+  const sessions = hasLinked ? parseSessions(await listSessions($)) : []
+  const ledger: Map<string, LedgerFacts> = agents.some(isLive) ? parseLedger(await fetchLedger($)) : new Map()
+  const found = membersFrom({ agents, sessions, ledger, layout, selfSessionId: await sessionId($) })
+  await update($, members, () => found)
+  await showStatus($)
 }
 
 async function listWorktrees($: EngineInterface, canon: string): Promise<WorktreeEntry[] | null> {
@@ -188,18 +311,41 @@ async function confirmRemoval(
 
 export const register: Register = (on, options) => {
   const isGuarding = options.guards !== false
+  const isListing = options.members !== false
 
+  // A session start (a hot reload after `members` was switched off included)
+  // drops members a past refresh left in the state, so the line never shows
+  // them with the listing off.
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     $.ui.log('loom-pane: loaded', { to: 'debug' })
     await update($, isInteractive, () => e.isInteractive)
+    if (!isListing) await update($, members, () => [])
     await detect($, e.cwd)
+    if (isListing) await refreshMembers($)
     return started
   }).catch(skipOnFailure)
 
   on('classic.SessionStart', { source: ['resume', 'clear'] }, async ($, e, next) => {
+    if (!isListing) await update($, members, () => [])
     await detect($, e.cwd)
+    if (isListing) await refreshMembers($)
     return next(e)
+  }).catch(skipOnFailure)
+
+  // The member line follows the agents: re-read once a spawn has started
+  // its agent, and when a main-loop turn ends (a member reported, stopped
+  // or went idle). Observers only; the results pass on unchanged.
+  on('agent.spawn', async ($, e, next) => {
+    const spawned = await next(e)
+    if (isListing) await refreshMembers($)
+    return spawned
+  }).catch(skipOnFailure)
+
+  on('turn.complete', async ($, e, next) => {
+    const completed = await next(e)
+    if (isListing && e.agentId === undefined) await refreshMembers($)
+    return completed
   }).catch(skipOnFailure)
 
   // `/loom weave`, typed at the prompt or run as the skill, makes a session
@@ -239,14 +385,24 @@ export const register: Register = (on, options) => {
     const home = await $.env.get('HOME')
     const analysis = analyzeBash(e.command, { cwd: await $.session.cwd(), home: home ?? null })
     if (analysis.isUncertain) return next(e)
-    await claimOwner($, analysis.claims)
-    if (!isGuarding || (await read($, role)) !== 'owner') return next(e)
-    const layout = await layoutOf($)
-    for (const path of analysis.writes) {
-      const cls = classifyPath(path, layout)
-      if (cls === 'canonical' || cls === 'other') return { deny: denyReason(path, cls) }
+    if (isGuarding && (await read($, role)) === 'owner') {
+      const layout = await layoutOf($)
+      for (const path of analysis.writes) {
+        const cls = classifyPath(path, layout)
+        if (cls === 'canonical' || cls === 'other') return { deny: denyReason(path, cls) }
+      }
     }
-    return next(e)
+    // A claim counts once the command ran: a call this guard, belt or the
+    // person denied leaves the role where it was. A failure from here on is
+    // logged, never handed to .catch, which would run the command again.
+    const ran = await next(e)
+    if (ran.deny !== undefined || ran.isError === true) return ran
+    try {
+      await claimOwner($, analysis.claims)
+    } catch (err) {
+      $.ui.log(`loom-pane: claim not recorded (${errorText(err)})`, { to: 'debug' })
+    }
+    return ran
   }).catch(skipOnFailure)
 
   // Any role, main loop only: a force-delete or worktree removal that would
