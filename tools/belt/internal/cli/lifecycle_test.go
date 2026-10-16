@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -91,9 +93,18 @@ func TestBadLifecycleValuesNeverDenyAToolCall(t *testing.T) {
 
 // TestConfigReferenceIsAValidConfig keeps the annotated reference in `belt
 // config --help` honest: pasted into a config file as is, it must load and
-// validate, so it can never show a key or value validation rejects.
+// validate, so it can never show a key or value validation rejects. The
+// reference lists a shared names file under ~/.config, and a listed file
+// that is missing is a config error, so the test runs under a temp HOME
+// holding a minimal valid one: it must never read the machine's own.
 func TestConfigReferenceIsAValidConfig(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	namesDir := filepath.Join(dir, ".config", "internal-names")
+	if err := os.MkdirAll(namesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, namesDir, "common.yaml", "blocked_words:\n  - example-internal\n")
 	p := config.Paths{BeltYAML: writeFile(t, dir, "config.yaml", configReference)}
 	cfg, err := config.LoadFrom(p)
 	if err != nil {
