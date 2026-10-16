@@ -713,3 +713,228 @@ export function removalQuestion(label: string, ahead: number | null, isDirty: bo
   if (isDirty) risks.push('uncommitted changes')
   return `${label} has ${risks.join(' and ')}. Remove anyway?`
 }
+
+// The member line: who else works this repo's loom, read from the engine's
+// agent list, the session list of `claude agents --json --all` and belt's
+// ledger. The caller hands in what those sources answered.
+
+/** What the member line shows for a field no source recorded. */
+export const UNKNOWN = '-'
+
+/** How long `claude agents --json --all` and the events service may each take. */
+export const PROBE_BUDGET_MS = 400
+
+/** The shortest gap between the starts of two member refreshes. */
+export const MEMBERS_REFRESH_GAP_MS = 5_000
+
+/** belt's subagent-start ledger entries on the local events service, newest first. */
+export const LEDGER_URL = 'http://localhost:7430/api/events?source=belt-ledger&q=subagent-start&limit=200'
+
+/** The argv of the engine's session list. */
+export const AGENTS_ARGV = ['claude', 'agents', '--json', '--all'] as const
+
+// The agent definitions the factory spawns its workers from, optionally
+// under a plugin's `<plugin>:` prefix; the tier names the member's role.
+const WORKER_TYPE = /(?:^|:)factory-worker-(low|medium|high)$/
+
+// Agent statuses after which the engine keeps an agent listed only until it
+// drops the task.
+const FINISHED = new Set(['completed', 'failed', 'killed'])
+
+// The session state `claude agents` gives a session that has finished.
+const SESSION_DONE = 'done'
+
+/** One agent of this session, as `$.agent.list()` returns it. */
+export type AgentLike = { id: string; name?: string; type: string; status: string }
+
+/** One session row of `claude agents --json --all`; `state` is a background row's `state` or an interactive row's `status`. */
+export type SessionRow = { sessionId: string | null; name: string | null; cwd: string | null; state: string | null }
+
+/** What belt's ledger recorded when a subagent started. */
+export type LedgerFacts = { worktree: string | null; model: string | null; effort: string | null }
+
+/** One member as the line shows it; a field nobody recorded is `-`, and `state` is a session's CLI state. */
+export type Member = { name: string; role: string; worktree: string; model: string; effort: string; state: string | null }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function textOf(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+function parseArray(text: string | null): unknown[] {
+  if (text === null) return []
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+/** The rows of `claude agents --json --all`; empty when the output is not that JSON array. */
+export function parseSessions(stdout: string | null): SessionRow[] {
+  const rows: SessionRow[] = []
+  for (const item of parseArray(stdout)) {
+    if (!isRecord(item)) continue
+    rows.push({
+      sessionId: textOf(item.sessionId),
+      name: textOf(item.name) ?? textOf(item.id),
+      cwd: textOf(item.cwd),
+      state: textOf(item.state) ?? textOf(item.status),
+    })
+  }
+  return rows
+}
+
+/**
+ * The newest subagent-start facts per agent id from the events service's
+ * answer (newest first); empty when the answer is not an event array.
+ */
+export function parseLedger(body: string | null): Map<string, LedgerFacts> {
+  const facts = new Map<string, LedgerFacts>()
+  for (const item of parseArray(body)) {
+    if (!isRecord(item) || !isRecord(item.tags)) continue
+    const tags = item.tags
+    const agentId = textOf(tags.agent_id)
+    if (tags.event !== 'subagent-start' || agentId === null || facts.has(agentId)) continue
+    facts.set(agentId, { worktree: textOf(tags.worktree), model: textOf(tags.model), effort: textOf(tags.effort) })
+  }
+  return facts
+}
+
+/** True when no refresh started in the last `MEMBERS_REFRESH_GAP_MS`. */
+export function isRefreshDue(now: number, lastRefreshAt: number | null): boolean {
+  return lastRefreshAt === null || now - lastRefreshAt >= MEMBERS_REFRESH_GAP_MS
+}
+
+/** How long until the gap since the last refresh has passed: 0 when it already has. */
+export function trailingDelay(now: number, lastRefreshAt: number | null): number {
+  return lastRefreshAt === null ? 0 : Math.max(0, lastRefreshAt + MEMBERS_REFRESH_GAP_MS - now)
+}
+
+/** True when an agent could be a member, so the ledger is worth asking. */
+export function isLive(agent: AgentLike): boolean {
+  return !FINISHED.has(agent.status)
+}
+
+/** `worker-low`, `worker-medium` or `worker-high` for a factory worker definition, else null. */
+export function roleOfType(type: string): string | null {
+  const tier = WORKER_TYPE.exec(type)?.[1]
+  return tier === undefined ? null : `worker-${tier}`
+}
+
+/** The isolation worktree path the Agent tool uses for `agentId`. */
+function isolationPathOf(agentId: string, canonical: string): string {
+  return `${canonical}/.claude/worktrees/agent-${agentId}`
+}
+
+/** True for a loom worktree (`~/.worktrees/<repo>/<slug>`) or an isolation worktree (`.claude/worktrees/agent-<id>`). */
+export function isMemberWorktree(worktree: string, layout: Layout): boolean {
+  if (layout.worktreeRoot !== null && dirName(worktree) === layout.worktreeRoot) return true
+  return layout.canonical !== null && dirName(worktree) === `${layout.canonical}/.claude/worktrees` && baseName(worktree).startsWith('agent-')
+}
+
+/** The linked worktree of the repo that holds `path`, the innermost one; null for the canonical checkout or outside. */
+export function linkedWorktreeOf(path: string, layout: Layout): string | null {
+  let best: string | null = null
+  for (const worktree of layout.worktrees) {
+    if (worktree === layout.canonical || !isUnder(path, worktree)) continue
+    if (best === null || worktree.length > best.length) best = worktree
+  }
+  return best
+}
+
+/** The worktree the Agent tool's isolation mode made for `agentId`, when git lists it. */
+export function isolationWorktreeOf(agentId: string, layout: Layout): string | null {
+  if (layout.canonical === null) return null
+  const path = isolationPathOf(agentId, layout.canonical)
+  return layout.worktrees.includes(path) ? path : null
+}
+
+/**
+ * Where an agent works: the isolation worktree git lists for its id first,
+ * then the ledger's worktree tag. The tag comes from the hook payload's cwd,
+ * which can be the parent's, so it counts only for a member worktree that
+ * is not this session's own.
+ */
+export function agentWorktreeOf(agentId: string, tag: string | null, layout: Layout): string | null {
+  const isolated = isolationWorktreeOf(agentId, layout)
+  if (isolated !== null) return isolated
+  if (tag === null || tag === layout.ownWorktree || !isMemberWorktree(tag, layout)) return null
+  return tag
+}
+
+function agentMember(agent: AgentLike, ledger: ReadonlyMap<string, LedgerFacts>, layout: Layout): Member | null {
+  if (!isLive(agent)) return null
+  const facts = ledger.get(agent.id)
+  const worktree = agentWorktreeOf(agent.id, facts?.worktree ?? null, layout)
+  const role = roleOfType(agent.type) ?? (worktree === null ? null : 'owner')
+  if (role === null) return null
+  return {
+    name: agent.name ?? agent.id,
+    role,
+    worktree: worktree === null ? UNKNOWN : baseName(worktree),
+    model: facts?.model ?? UNKNOWN,
+    effort: facts?.effort ?? UNKNOWN,
+    state: null,
+  }
+}
+
+function sessionMember(row: SessionRow, layout: Layout, selfSessionId: string | null): Member | null {
+  if (row.cwd === null || row.state === SESSION_DONE) return null
+  if (selfSessionId !== null && row.sessionId === selfSessionId) return null
+  const worktree = linkedWorktreeOf(row.cwd, layout)
+  if (worktree === null || !isMemberWorktree(worktree, layout)) return null
+  return {
+    name: row.name ?? row.sessionId ?? UNKNOWN,
+    role: 'owner',
+    worktree: baseName(worktree),
+    model: UNKNOWN,
+    effort: UNKNOWN,
+    state: row.state,
+  }
+}
+
+/**
+ * The members beside this session: its live agents that run a factory
+ * worker definition or work in a loom or isolation worktree, then the
+ * sessions in such a worktree that are not done, this one left out. A plain
+ * named agent is no member. Model and effort come from the ledger alone.
+ */
+export function membersFrom(input: {
+  agents: readonly AgentLike[]
+  sessions: readonly SessionRow[]
+  ledger: ReadonlyMap<string, LedgerFacts>
+  layout: Layout
+  selfSessionId: string | null
+}): Member[] {
+  const members: Member[] = []
+  for (const agent of input.agents) {
+    const member = agentMember(agent, input.ledger, input.layout)
+    if (member !== null) members.push(member)
+  }
+  for (const row of input.sessions) {
+    const member = sessionMember(row, input.layout, input.selfSessionId)
+    if (member !== null) members.push(member)
+  }
+  return members
+}
+
+/** `w1 (worker-high, agent-a1, -, -)`, a session's state after it: `fixer (owner, fix-band, -, -) idle`. */
+export function memberText(member: Member): string {
+  const fields = `${member.name} (${member.role}, ${member.worktree}, ${member.model}, ${member.effort})`
+  return member.state === null ? fields : `${fields} ${member.state}`
+}
+
+/**
+ * The status line: the role text, then the members after `members`, or
+ * undefined (clear) when there is neither.
+ */
+export function composeStatus(roleText: string | undefined, members: readonly Member[]): string | undefined {
+  const memberPart = members.length === 0 ? undefined : `members ${members.map(memberText).join(', ')}`
+  const parts = [roleText, memberPart].filter((part): part is string => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join(' · ')
+}

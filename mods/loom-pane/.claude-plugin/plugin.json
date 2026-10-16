@@ -1,7 +1,7 @@
 {
   "name": "loom-pane",
-  "version": "0.1.0",
-  "description": "A status line naming the session's loom role, plus guards that keep an owner inside its own worktree and ask before a removal loses work.",
+  "version": "0.2.0",
+  "description": "A status line naming the session's loom role and the factory members beside it, plus guards that keep an owner inside its own worktree and ask before a removal loses work.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "mad01"
@@ -11,6 +11,12 @@
       "type": "boolean",
       "title": "Guards",
       "description": "Deny an owner's edits outside its own worktree and ask before a branch force-delete or worktree removal that would lose work.",
+      "default": true
+    },
+    "members": {
+      "type": "boolean",
+      "title": "Members",
+      "description": "List the factory members (this session's agents and the sessions in the repo's worktrees) on the status line, from the engine's agent list and belt's ledger.",
       "default": true
     }
   }
