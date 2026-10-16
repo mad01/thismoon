@@ -339,6 +339,7 @@ func normalize(res *Results) {
 	const root = "/tmp/factory-eval-123456789"
 	res.Commit = "45518e8b8461d491dc2a1aafaf1a8aa56702858a"
 	res.CasesDigest = strings.Repeat("5e", 32)
+	res.SignOff = cases.SignOff{}
 	res.SettingsDeny = Isolation{
 		Home: "/Users/example", Source: "/Users/example/code/src/github.com/mad01/thismoon",
 	}.DenyRules()
