@@ -51,6 +51,12 @@ type DetectOptions struct {
 	MinSeverity string
 	// Timeout bounds a single vale invocation. Zero uses defaultValeTimeout.
 	Timeout time.Duration
+	// Profile runs the STE-lite rules of that profile instead of the
+	// Humanizer pack. Empty runs the Humanizer pack.
+	Profile Profile
+	// Glossary is a generated STE.Glossary rule (internal/glossary) added
+	// to a profile run. Setting it without a Profile is an error.
+	Glossary []byte
 }
 
 // Status describes the state of the `vale` binary we depend on.
@@ -79,7 +85,7 @@ func CheckStatus(ctx context.Context, opts DetectOptions) Status {
 		Binary:    bin,
 		CacheDir:  cacheDir,
 		RuleCount: len(All()),
-		StylePack: "Humanizer",
+		StylePack: "Humanizer, STE",
 	}
 	path, err := exec.LookPath(bin)
 	if err != nil {
@@ -147,35 +153,71 @@ func DetectFile(ctx context.Context, filePath string, opts DetectOptions) ([]Fin
 	return findings, agentdoc.Hint(err, humanizer.Facts())
 }
 
-// runVale is the shared backbone for Detect / DetectFile. It ensures the
-// style pack is extracted, resolves the vale binary, applies a timeout,
-// runs vale on the given file path, and filters+enriches the result.
+// runVale is the shared backbone for Detect / DetectFile. It resolves the
+// rule filter, prepares the vale config the run needs, resolves the vale
+// binary, runs vale on the given file path, and filters+enriches the result.
 func runVale(ctx context.Context, filePath string, opts DetectOptions) ([]Finding, error) {
-	cacheDir := opts.CacheDir
-	if cacheDir == "" {
-		cd, err := DefaultCacheDir()
-		if err != nil {
-			return nil, err
-		}
-		cacheDir = cd
+	filter, err := ruleFilter(opts.Profile, opts.Rules)
+	if err != nil {
+		return nil, err
 	}
-	if err := EnsurePack(cacheDir); err != nil {
-		return nil, fmt.Errorf("extract vale pack: %w", err)
+	if opts.Profile == "" && len(opts.Glossary) > 0 {
+		return nil, errors.New("rules: a glossary runs only with a profile")
 	}
-
+	cfg, err := prepareConfig(opts)
+	if err != nil {
+		return nil, err
+	}
 	bin := binaryOrDefault(opts.ValeBinary)
 	if _, err := exec.LookPath(bin); err != nil {
 		return nil, &ValeNotInstalledError{Binary: bin}
 	}
+	findings, err := execVale(ctx, bin, cfg, filePath, opts.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	opts.Rules = filter
+	return filterAndEnrich(findings, opts), nil
+}
 
-	timeout := opts.Timeout
+// prepareConfig extracts what the run needs into the cache directory and
+// returns the vale config to run with: the STE run directory's for a profile
+// run, the extracted Humanizer pack's otherwise.
+func prepareConfig(opts DetectOptions) (string, error) {
+	cacheDir := opts.CacheDir
+	if cacheDir == "" {
+		cd, err := DefaultCacheDir()
+		if err != nil {
+			return "", err
+		}
+		cacheDir = cd
+	}
+	if opts.Profile != "" {
+		cfg, err := ensureSTERunDir(cacheDir, opts.Glossary)
+		if err != nil {
+			return "", fmt.Errorf("prepare STE run dir: %w", err)
+		}
+		return cfg, nil
+	}
+	if err := EnsurePack(cacheDir); err != nil {
+		return "", fmt.Errorf("extract vale pack: %w", err)
+	}
+	return filepath.Join(cacheDir, ".vale.ini"), nil
+}
+
+// execVale runs vale with config cfg on filePath under a timeout and parses
+// its JSON output.
+func execVale(
+	ctx context.Context,
+	bin, cfg, filePath string,
+	timeout time.Duration,
+) ([]Finding, error) {
 	if timeout <= 0 {
 		timeout = defaultValeTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cfg := filepath.Join(cacheDir, ".vale.ini")
 	cmd := exec.CommandContext(
 		ctx, bin,
 		"--config", cfg,
@@ -188,7 +230,7 @@ func runVale(ctx context.Context, filePath string, opts DetectOptions) ([]Findin
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	// Vale exits non-zero when it finds alerts at >= its min level. That's
-	// not a failure — we still get JSON on stdout. Only treat the run as
+	// not a failure: we still get JSON on stdout. Only treat the run as
 	// failed when stdout is empty (no JSON to parse).
 	if err != nil && stdout.Len() == 0 {
 		var ee *exec.ExitError
@@ -205,7 +247,7 @@ func runVale(ctx context.Context, filePath string, opts DetectOptions) ([]Findin
 			strings.TrimSpace(stderr.String()),
 		)
 	}
-	return filterAndEnrich(findings, opts), nil
+	return findings, nil
 }
 
 func binaryOrDefault(bin string) string {

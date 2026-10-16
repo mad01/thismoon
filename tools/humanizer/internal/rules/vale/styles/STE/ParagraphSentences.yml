@@ -1,0 +1,21 @@
+# humanizer-id: STE.ParagraphSentences
+# humanizer-name: Too many sentences in a paragraph
+# humanizer-category: ste
+# humanizer-profile: procedure, description
+# humanizer-summary: A paragraph with more than six sentences.
+# humanizer-rationale: Simplified Technical English (ASD-STE100) limits a paragraph to six sentences. Past that the reader loses the topic of the paragraph. Start a new paragraph, or turn the steps into a numbered list.
+# humanizer-before: Open the file. Read the outline. Find the first section. Move it to the top. Save the file. Run the tests. Report the result.
+# humanizer-after: |
+#   Open the file and read the outline.
+#
+#   1. Move the first section to the top.
+#   2. Save the file.
+#   3. Run the tests.
+#   4. Report the result.
+# humanizer-reference: https://www.asd-ste100.org
+extends: metric
+message: "Paragraph has more than six sentences. Start a new paragraph or use a numbered list."
+level: warning
+scope: paragraph
+formula: sentences
+condition: "> 6"

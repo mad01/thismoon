@@ -12,7 +12,9 @@ import (
 // the parity gate between what `rules explain` shows users and what the
 // pack actually detects — a rule whose own example passes clean is dead
 // weight or a regex bug (the \b-wrap gotcha in CLAUDE.md silently killed
-// four rules before this gate existed).
+// four rules before this gate existed). An STE rule runs under its first
+// profile; the generated STE.Glossary rule has no embedded file and is
+// covered by TestGlossaryRuleFires instead.
 func TestRulesFireOnTheirBeforeExamples(t *testing.T) {
 	if _, err := exec.LookPath("vale"); err != nil {
 		t.Skip("vale not installed")
@@ -20,13 +22,17 @@ func TestRulesFireOnTheirBeforeExamples(t *testing.T) {
 	cacheDir := t.TempDir()
 	for _, r := range All() {
 		t.Run(r.ID, func(t *testing.T) {
+			if r.File == "" {
+				t.Skip("generated rule, covered by TestGlossaryRuleFires")
+			}
 			if strings.TrimSpace(r.Before) == "" {
 				t.Fatalf("%s has no before example", r.ID)
 			}
-			findings, err := Detect(context.Background(), dedent(r.Before)+"\n", DetectOptions{
-				CacheDir: cacheDir,
-				Rules:    []string{r.ID},
-			})
+			opts := DetectOptions{CacheDir: cacheDir, Rules: []string{r.ID}}
+			if len(r.Profiles) > 0 {
+				opts.Profile = Profile(r.Profiles[0])
+			}
+			findings, err := Detect(context.Background(), dedent(r.Before)+"\n", opts)
 			if err != nil {
 				t.Fatalf("Detect: %v", err)
 			}

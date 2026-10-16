@@ -5,6 +5,7 @@
 package rules
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -46,13 +47,20 @@ func EnsurePack(destDir string) error {
 }
 
 func extractPack(destDir string) error {
-	return fs.WalkDir(valeFS, "vale", func(p string, d fs.DirEntry, err error) error {
+	return extractTree(packRoot, destDir)
+}
+
+// packRoot is the embedded directory that extracts to the cache root.
+const packRoot = "vale"
+
+// extractTree copies the embedded tree under root into destDir, so
+// <root>/a/b lands at <destDir>/a/b. Unchanged files are left alone.
+func extractTree(root, destDir string) error {
+	return fs.WalkDir(valeFS, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		// Strip the "vale/" prefix so files land at <destDir>/<rest>.
-		rel := strings.TrimPrefix(p, "vale")
-		rel = strings.TrimPrefix(rel, "/")
+		rel := strings.TrimPrefix(strings.TrimPrefix(p, root), "/")
 		target := filepath.Join(destDir, rel)
 		if d.IsDir() {
 			if err := os.MkdirAll(target, 0o755); err != nil {
@@ -64,17 +72,41 @@ func extractPack(destDir string) error {
 		if err != nil {
 			return fmt.Errorf("read embedded %s: %w", p, err)
 		}
-		if existing, err := os.ReadFile(target); err == nil && string(existing) == string(data) {
-			return nil // unchanged
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", filepath.Dir(target), err)
-		}
-		if err := os.WriteFile(target, data, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", target, err)
-		}
-		return nil
+		return writeFileIfChanged(target, data)
 	})
+}
+
+// writeFileIfChanged writes data to target unless target already holds it.
+// The data goes to a temp file beside target that is renamed into place, so
+// a vale process running at the same time never reads a half-written rule.
+// The temp name has no .yml suffix, so vale never loads it as a rule.
+func writeFileIfChanged(target string, data []byte) error {
+	if existing, err := os.ReadFile(target); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	dir := filepath.Dir(target)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp in %s: %w", dir, err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", tmp.Name(), err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return fmt.Errorf("chmod %s: %w", tmp.Name(), err)
+	}
+	if err := os.Rename(tmp.Name(), target); err != nil {
+		return fmt.Errorf("write %s: %w", target, err)
+	}
+	return nil
 }
 
 // DefaultCacheDir returns the canonical extraction target: the first of

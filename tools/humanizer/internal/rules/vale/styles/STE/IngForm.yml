@@ -1,0 +1,35 @@
+# humanizer-id: STE.IngForm
+# humanizer-name: Verb -ing form
+# humanizer-category: ste
+# humanizer-profile: procedure, description
+# humanizer-summary: A verb in the -ing form.
+# humanizer-rationale: Simplified Technical English (ASD-STE100) does not use -ing forms of verbs, because one -ing word can be a verb, a noun, or an adjective. Use the simple verb form. A technical noun that ends in -ing is acceptable; the exceptions list holds the common ones.
+# humanizer-before: You should be updating the README while making sure the outline is matching.
+# humanizer-after: Update the README. Make sure that the outline matches.
+# humanizer-reference: https://www.asd-ste100.org
+extends: existence
+message: "'%s' is an -ing form. Use the simple verb form, or keep it if it is a technical noun."
+level: warning
+ignorecase: true
+tokens:
+  - '\w{2,}ing'
+# vale prefixes each exception with (?-i), so (?i) keeps a capitalized
+# exception (sentence start, heading) from firing.
+exceptions:
+  - '(?i)anything'
+  - '(?i)bring'
+  - '(?i)building'
+  - '(?i)ceiling'
+  - '(?i)during'
+  - '(?i)evening'
+  - '(?i)everything'
+  - '(?i)heading'
+  - '(?i)morning'
+  - '(?i)nothing'
+  - '(?i)setting'
+  - '(?i)something'
+  - '(?i)spring'
+  - '(?i)string'
+  - '(?i)swing'
+  - '(?i)thing'
+  - '(?i)warning'

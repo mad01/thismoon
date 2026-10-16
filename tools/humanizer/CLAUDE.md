@@ -8,10 +8,11 @@ Go CLI + MCP server. Detects AI-writing patterns by shelling out to `vale` again
 humanizer/
   cmd/humanizer/     - entrypoint (delegates to internal/cli)
   internal/
-    cli/             - cobra command tree (root, detect, judge, scan, profile, rules, narrative, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
+    cli/             - cobra command tree (root, detect, ste, judge, scan, profile, rules, narrative, lint, fix, rewrite, mcp, docs, version); build metadata from the shared buildinfo package
     goscan/          - Go source prose extraction (goscan.go walk + file filters, extract.go go/ast visitors, document.go blocks-to-document plus the line map back to source); importable so an MCP tool can wrap the same extraction
     mcpserver/       - MCP server wiring (server.go, tools_detect.go, tools_scan.go, tools_statistical.go, tools_rules.go, tools_narrative.go, tools_judge.go, tools_status.go, tools_voice.go, tools_scrub.go, tools_rewrite.go)
-    rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, vale/)
+    rules/           - vale style pack embedding and metadata (embed.go, metadata.go, vale.go, ste.go for profiles and the STE run dir, vale/)
+    glossary/        - CONTEXT.md _Avoid_ lines to the generated STE.Glossary substitution rule (glossary.go pure parse and render, repo.go the walk)
     narrative/       - StoryScope narrative rubric: 30 discourse-level fiction features + judge prompt (static data, no detection engine)
     backend/         - LLM provider behind the judge pass (MAD-342): env-driven selection (backend.go) over one OpenAI-compatible chat client (chat.go) with two provider constructors, LiteLLM proxy (litellm.go) and OpenRouter (openrouter.go); vertex/anthropic planned
     judge/           - holistic whole-passage judgment: static system prompt with
@@ -44,10 +45,21 @@ Rule metadata (ID, category, severity, rationale, before/after examples) is pars
 
 The pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`.
 
+### Simplified Technical English (STE) style
+
+Experimental: the STE style, the `ste` command, and the `profile` and `repo` options may change or go away. The default detect path is unaffected.
+
+The STE style (`internal/rules/vale/styles/STE/`) checks agent-to-agent messages. It holds six rules: ProcedureSentenceLength (20 words), DescriptionSentenceLength (25 words), ParagraphSentences (six sentences), OneInstruction, IngForm, and AuxiliaryChain. `internal/glossary` generates a seventh, STE.Glossary, for each repo from the `_Avoid_` lines of its CONTEXT.md files, at suggestion level.
+
+- A `# humanizer-profile: procedure, description` header names the profiles that run a rule. `DetectOptions.Profile` expands to a rule-ID filter over those headers. Humanizer rules carry no profile, and an STE rule ID passed without a profile is an error.
+- The default `.vale.ini` keeps `BasedOnStyles = Humanizer`, so a run without a profile never loads STE.
+- A profile run uses its own run directory, `<cache>/ste/<key>/`: a short config with `BasedOnStyles = STE`, a copy of the STE style, and `Glossary.yml` for a repo run. The key is `default` without a glossary and a SHA-256 prefix of the glossary otherwise, so the glossary in a directory never changes. Run dirs accumulate, one per glossary revision, and nothing prunes them. Writes go through a temp file and a rename and are skipped when unchanged, so concurrent runs need no lock.
+- The registry entry for STE.Glossary is parsed from the header `glossary.Render` writes, so `rules explain` and the generated file share one source.
+
 ### Adding or editing a rule
 
-1. Copy an existing `.yml` from `internal/rules/vale/styles/Humanizer/` as a template.
-2. Edit the rule, keeping the `# humanizer-*` comment block intact (used by `rules explain`).
+1. Copy an existing `.yml` from `internal/rules/vale/styles/Humanizer/` (or `STE/`) as a template.
+2. Edit the rule, keeping the `# humanizer-*` comment block intact (used by `rules explain`). An STE rule also needs `# humanizer-profile` and category `ste`; the replay test runs it under its first profile.
 3. Run the tests: the metadata tests parse every YAML and catch malformed headers.
 4. Check that `vale` picks it up: `humanizer detect --rule Humanizer.YourRule testdata/ai_sample.md`
 5. Build and install: `make build && make install`
@@ -64,11 +76,12 @@ make resign   # re-apply adhoc signature without rebuilding (macOS only)
 
 Binary installs to `~/code/bin/humanizer`. There is no config file; the only tunable is the vale pack cache directory (`HUMANIZER_CACHE_DIR`, falling back to `XDG_CACHE_HOME`, default `~/.cache/humanizer/vale`).
 
-The test suite includes metadata validation for every YAML header, a gate asserting every rule fires on its own before-example (skipped when vale is not installed), and concurrent-detection race checks.
+The test suite includes metadata validation for every YAML header, a gate asserting every rule fires on its own before-example (skipped when vale is not installed), and concurrent-detection race checks. The STE tests add two task-brief fixtures under `testdata/ste/`: the clean brief must pass the procedure profile with and without the fixture glossary in `testdata/ste/repo/`, and the sloppy one must trip ProcedureSentenceLength. The glossary generator has table tests, a golden file over a fixture CONTEXT.md, and an idempotence run over this repo's real CONTEXT.md files. A separate test only checks that vale accepts the rule generated from them, so a glossary edit cannot break the suite.
 
 ## Commands
 
 - `humanizer detect [file]`: scan text (stdin, `-`, or a file argument) for AI-writing patterns via the vale span rules. Flags: `--min-severity` (`suggestion`|`warning`|`error`), `--rule` (repeatable rule ID filter), `--statistical` (run the statistical detector instead of vale), `--json` (same shape as `humanizer_detect`).
+- `humanizer ste [file]`: check an agent brief or report against the STE rules. Flags: `--profile` (required, `procedure`|`description`), `--repo` (add the STE.Glossary substitutions from that repo's CONTEXT.md files), `--min-severity`, `--json` (the `humanizer_detect` payload plus `profile`). Exit codes: 0 clean, 1 findings, 2 error. Integrations parse the `--json` payload, not the exit code. `humanizer ste glossary --repo <path> [-o file]` prints the generated rule.
 - `humanizer judge [file]`: whole-passage LLM verdict (`likely_ai`|`likely_human`|`mixed` with confidence, signals, summary) through the configured backend — `LITELLM_BASE_URL` → a LiteLLM proxy on `claude-haiku-5-5` (optional `LITELLM_API_KEY`), else `OPENROUTER_API_KEY` → OpenRouter on `anthropic/claude-haiku-5.5`. Flags: `--backend` (force one), `--model` (or `HUMANIZER_MODEL`), `--json`. Fails without a configured backend; every other command stays offline.
 - `humanizer scan [path]`: extract the prose from Go source (doc comments, cobra `Use`/`Short`/`Long`/`Example`, MCP tool `Description` strings, the message arguments of `fmt.Errorf`/`errors.New`/`http.Error`, and `jsonschema` tag text). It prints the prose as `file:line`-tagged blocks that pipe into `humanizer detect`. Flags: `--go` (required, selects the Go extractor) and `--detect` (run the vale span rules, findings reported against the Go source line). It also takes `--holistic` (LLM judge per file; skipped with a note when no backend is configured) and `--kind` (repeatable: `doc`|`cobra`|`mcp`|`error`|`schema`). A directory is walked recursively, skipping dot-directories, `vendor`, `node_modules`, `testdata`, and generated files; test files are included.
 - `humanizer profile [file]`: compute a quantitative voice profile: word/sentence/paragraph counts, type-token ratio, sentence length (mean/stddev/p50/p90), punctuation densities per 100 words (em-dash, semicolon, colon, paren, comma, hyphenated-pair, bold). It also covers contraction rate, Flesch reading ease, and top bigrams/trigrams. Flags: `--diff <file>` (also print a metric-by-metric delta against a reference sample), `--json`.
@@ -87,14 +100,14 @@ The test suite includes metadata validation for every YAML header, a gate assert
 The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)) exposing fourteen tools:
 
 - `humanizer_status()` → `{installed, binary, version, cache_dir, rule_count, style_pack, error?, install_hint?}`. Health check: is vale installed, its version, the cache dir, bundled rule count. Call first when `humanizer_detect` fails unexpectedly.
-- `humanizer_detect(text, rules?, min_severity?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message.
+- `humanizer_detect(text, rules?, min_severity?, profile?, repo?)` → `{findings[], summary{total, by_severity, by_category, by_rule}, engine}`. Scans a text block with the vale span rules. Each finding carries `rule_id`, `severity`, `line`, `column`, matched text, and message. `profile` (`procedure`|`description`) runs the STE rules instead of the Humanizer pack; `repo` (needs `profile`) adds the CONTEXT.md glossary. A sandbox denial on the repo walk returns an error whose `use_instead` names the `humanizer ste` CLI form.
 - `humanizer_detect_file(path, rules?, min_severity?)` → same shape as `humanizer_detect`. Scans a file on disk instead of inline text; saves a read and lets vale use the real extension for format detection.
   - Sandbox-gated: only prose files (`.md`/`.markdown`/`.txt`) and Go sources (`.go`) under the seatbelt profile's workspace roots, plus `/tmp` paths, are readable. A denied path returns an error pointing at `humanizer_detect` instead. Still a prose tool — use `humanizer_scan_go` to extract and scan Go source.
 - `humanizer_scan_go(path, detect?, recursive?)` → `{files[]{path, blocks[]{file, line, kind, label, text}, detection?}, total_files}`. Extracts prose from Go source (doc comments, cobra `Use`/`Short`/`Long`/`Example`, MCP tool `Description` strings, `fmt.Errorf`/`errors.New`/`http.Error` messages, `jsonschema` tag text). When `detect` is true (the default), it runs the vale span rules over each file's prose. Each file's `detection` field is a `humanizer_detect`-shaped result (`findings[]`, `summary`, `engine`), with finding lines mapped back to the Go source line they came from. `recursive` (default true) walks a directory into subdirectories; false scans only its direct children. Wraps the same `internal/goscan` extraction the `scan --go` CLI command uses.
   - Sandbox-gated like `humanizer_detect_file`, for `.go` files. No MCP fallback for a denied path (extraction needs real file access); run `humanizer scan --go` instead, which is unsandboxed.
 - `humanizer_detect_statistical(text)` → `{findings[], profile, summary, engine}`. Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, semicolon absence, short-text em-dash, long-text em-dash density, heading density, anaphora) that span rules can't catch. Most checks gate on a minimum sample size; 200+ words gives the most reliable verdict.
-- `humanizer_rules_list(category?)` → `{rules[], total}`. Lists every rule (ID, name, category, default severity, summary), optionally filtered by category.
-- `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, file?}`. Full metadata for one rule.
+- `humanizer_rules_list(category?)` → `{rules[], total}`. Lists every rule (ID, name, category, default severity, summary, and `profiles` for STE rules), optionally filtered by category.
+- `humanizer_rules_explain(rule_id)` → `{id, name, category, default_severity, summary, rationale?, before?, after?, reference?, profiles?, file?}`. Full metadata for one rule; `file` is empty for the generated STE.Glossary.
 - `humanizer_narrative_rubric()` → `{features[], total, themes[], prompt, source}` (the `narrative.Rubric` payload, shared with `humanizer narrative --json`). The StoryScope narrative rubric: 30 discourse-level features (thematic over-explanation, plot linearity, embodied emotion, intertextual reference) that separate human from AI fiction. The paper reports 84.8% macro-F1 for this core set, and the narrative signal survives style editing. Serves data only — feed `prompt` plus the passage to an LLM judge (the skill's narrative pass) for fiction and story-shaped prose.
 - `humanizer_judge(text, backend?, model?)` → `{verdict, confidence, signals[], summary, backend, model}`. Holistic whole-passage AI/human judgment through the LLM backend (`internal/backend`): auto-detects from env (`LITELLM_BASE_URL` → litellm, default model `claude-haiku-5-5`; else `OPENROUTER_API_KEY` → openrouter, default model `anthropic/claude-haiku-5.5`; `HUMANIZER_MODEL` overrides). The one networked tool — needs egress plus the provider env in the server env; under a denying sandbox it errors and the caller falls back to the `humanizer judge` CLI.
 - `humanizer_voice_profile(text)` → the voice `Profile` (same metrics as `humanizer profile`). 500+ words gives the most reliable metrics.
@@ -123,6 +136,7 @@ The `mcp` subcommand starts a stdio server (`internal/mcpserver`, built on the [
   - A `metric` formula is a tengo expression, so a gate like `words < 40 || sentences < 2 ? 100.0 : ...` works. The short-circuit value must be a float; an int result breaks vale's `%f` condition formatting.
   - Vale reports a paragraph-scoped `metric` alert on the paragraph's last line, not its first.
   - A paragraph-scoped `occurrence` alert (ParagraphLength) lands on the paragraph's first line instead. The two only agree when a paragraph is a single unwrapped line; in a hard-wrapped file, locate the paragraph by content, not by the reported line.
+- **A metric message prints the value as a decimal.** ParagraphSentences counts with `formula: sentences`, and a `%s` in its message would read "7.00 sentences", so the message carries no number.
 - **The MCP sandbox roots are the consuming repo's.** The seatbelt profile that gates `humanizer_detect_file` (and denies all network) is registered by the consuming repo's wrapper, not this code; new runtime file or network needs require a profile change there.
 - **A directory scan needs directory reads in the profile.** `humanizer_scan_go` on a directory lists it with `ReadDir`, which the seatbelt sees as `file-read-data` on the directory vnode, separate from the per-file extension allows. Since 2026-09-30 the profile grants that on the code roots with a `vnode-type DIRECTORY` filter; before that a directory scan came back as zero files with no error. `goscan.Scan` now returns the root's read error (a permission error maps to the "not readable under the MCP sandbox" hint), so a missing allow is loud.
 
