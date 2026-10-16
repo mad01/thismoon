@@ -3,23 +3,30 @@ import type { AgentSpawnInput, EngineInterface, Register } from 'claude-code'
 
 import type { FactoryBandProbe, FactoryBandWorker } from '../types'
 import {
+  DEFAULT_BRANCH_ARGS,
   INBOX_SOURCE,
   LEDGER_SOURCE,
   PROBE_BUDGET_MS,
+  STATUS_ARGS,
+  aheadArgs,
   bandView,
-  countParked,
+  countInbox,
   eventsUrl,
   gitFactsFrom,
   guardReason,
   idAt,
-  isBeltDeny,
+  isBeltRefusal,
+  isIntegratedTree,
+  isReadyCandidate,
   isRefreshDue,
   isTaskMessage,
   isWorkerType,
   kindOf,
-  parseDefaultRef,
+  mergeTreeArgs,
+  parseDefaultBranch,
   parseLedger,
   probeFrom,
+  prunableIds,
   trailingDelay,
   upsertWorker,
   withKind,
@@ -65,15 +72,17 @@ async function git($: EngineInterface, worktree: string, args: readonly string[]
   return withinBudget($, ran)
 }
 
-// Whether the worktree is dirty and how far it is ahead of the default
-// branch, or null when git could not say.
-async function gitFactsOf($: EngineInterface, worktree: string): Promise<GitFacts | null> {
-  const defaultRef = parseDefaultRef(await git($, worktree, ['symbolic-ref', 'refs/remotes/origin/HEAD']))
-  const [status, count] = await Promise.all([
-    git($, worktree, ['status', '--porcelain']),
-    git($, worktree, ['rev-list', '--count', `${defaultRef}..HEAD`]),
-  ])
-  return gitFactsFrom(status, count)
+// Whether the worktree is dirty, how far it is ahead of the default branch
+// and, for a ready worker's clean tree only, whether the default branch
+// already holds its changes (one merge-tree more). Null when git could not
+// say; a merge-tree that fails (git before 2.38) leaves it not integrated.
+async function gitFactsOf($: EngineInterface, worktree: string, lastKind: string | null): Promise<GitFacts | null> {
+  const branch = parseDefaultBranch(await git($, worktree, DEFAULT_BRANCH_ARGS))
+  const [status, count] = await Promise.all([git($, worktree, STATUS_ARGS), git($, worktree, aheadArgs(branch.ref))])
+  const facts = gitFactsFrom(status, count)
+  if (facts === null || branch.tree === null || !isReadyCandidate(facts, lastKind)) return facts
+  const merged = await git($, worktree, mergeTreeArgs(branch.ref))
+  return { ...facts, isIntegrated: isIntegratedTree(merged, branch.tree) }
 }
 
 // One events query, or null when the service is down, answers an error or
@@ -100,31 +109,47 @@ async function sessionIdOf($: EngineInterface): Promise<string | null> {
   }
 }
 
+type EventsRead = { ledger: LedgerRead; inbox: number | null }
+
 // belt's ledger and inbox for this run, or nothing read when the events
 // service is switched off, down or this session has no id.
-async function readEvents($: EngineInterface, isReading: boolean): Promise<{ ledger: LedgerRead; parked: number | null }> {
+async function readEvents($: EngineInterface, isReading: boolean, known: readonly FactoryBandWorker[]): Promise<EventsRead> {
   const sessionId = isReading ? await sessionIdOf($) : null
-  if (sessionId === null) return { ledger: { facts: new Map(), denies: null }, parked: null }
-  const scope = { sessionId, sinceId: idAt((await read($, runStartedAt)) ?? 0) }
+  if (sessionId === null) return { ledger: { facts: new Map(), denies: null }, inbox: null }
+  const workerIds = new Set(known.map(worker => worker.agentId))
+  const sinceId = idAt((await read($, runStartedAt)) ?? 0)
   const [ledgerBody, inboxBody] = await Promise.all([
     fetchText($, eventsUrl(LEDGER_SOURCE, sessionId)),
     fetchText($, eventsUrl(INBOX_SOURCE, sessionId)),
   ])
-  return { ledger: parseLedger(ledgerBody, scope), parked: countParked(inboxBody, scope) }
+  return { ledger: parseLedger(ledgerBody, { sessionId, workerIds }), inbox: countInbox(inboxBody, { sessionId, sinceId }) }
 }
 
-// Asks every source at once and stores what they said. Every source that
-// fails reads as unknown, so a field turns to a dash and nothing errors.
+// Asks every source at once and stores what they said, then drops the
+// workers that are integrated and ended. Every source that fails reads as
+// unknown, so a field turns to a dash and nothing errors.
 async function readProbe($: EngineInterface, isReading: boolean): Promise<void> {
   const known = await read($, workers)
   if (known.length === 0) return
   const [agents, events, gits] = await Promise.all([
     listAgents($),
-    readEvents($, isReading),
-    Promise.all(known.map(worker => (worker.worktree === null ? null : withinBudget($, gitFactsOf($, worker.worktree))))),
+    readEvents($, isReading, known),
+    Promise.all(known.map(worker => (worker.worktree === null ? null : withinBudget($, gitFactsOf($, worker.worktree, worker.lastKind))))),
   ])
-  const found = probeFrom({ workers: known, agents, gits, ledger: events.ledger, parked: events.parked })
+  const found = probeFrom({ workers: known, agents, gits, ledger: events.ledger, inbox: events.inbox })
   await update($, probe, () => found)
+  await pruneWorkers($, prunableIds(known, found, agents))
+}
+
+// Drops finished workers. The last one dropped ends the run: the next
+// spawn starts a new one with fresh counts.
+async function pruneWorkers($: EngineInterface, ids: ReadonlySet<string>): Promise<void> {
+  if (ids.size === 0) return
+  await update($, workers, list => list.filter(worker => !ids.has(worker.agentId)))
+  if ((await read($, workers)).length > 0) return
+  await update($, runStartedAt, () => null)
+  await update($, guardDenies, () => 0)
+  $.ui.log('factory-band: every worker integrated; run closed', { to: 'debug' })
 }
 
 // The refresh throttle: one refresh at a time, and none within
@@ -137,8 +162,10 @@ let isStale = false
 let isTrailingScheduled = false
 let lastRefreshAt: number | null = null
 
-// Re-reads the run, unless the throttle says no. Nothing here throws.
-async function refreshBand($: EngineInterface, isReading: boolean): Promise<void> {
+// Re-reads the run, unless the throttle says no. A recheck also leaves one
+// trailing refresh behind, for a read that may come too early (an agent
+// still listed as running at its own last turn end). Nothing here throws.
+async function refreshBand($: EngineInterface, isReading: boolean, isRecheck = false): Promise<void> {
   if (isRefreshing) {
     isStale = true
     return
@@ -152,7 +179,7 @@ async function refreshBand($: EngineInterface, isReading: boolean): Promise<void
       return
     }
     lastRefreshAt = now
-    isStale = false
+    isStale = isRecheck
     await readProbe($, isReading)
   } catch (err) {
     $.ui.log(`factory-band: band not refreshed (${errorText(err)})`, { to: 'debug' })
@@ -190,14 +217,16 @@ async function recordWorker($: EngineInterface, e: AgentSpawnInput, agentId: str
   $.ui.log(`factory-band: worker ${worker.name} in ${worker.worktree ?? 'no worktree'}`, { to: 'debug' })
 }
 
+const isWorker = (list: readonly FactoryBandWorker[], agentId: string): boolean => list.some(worker => worker.agentId === agentId)
+
 // A worker's turn ended or it sent a message: keep the kind of any
-// contract message in it, then re-read the band.
-async function noteWorker($: EngineInterface, agentId: string, text: string, isReading: boolean): Promise<void> {
-  const known = await read($, workers)
-  if (!known.some(worker => worker.agentId === agentId)) return
+// contract message in it, then re-read the band. After a turn end the
+// band reads again at the gap boundary, once the agent list has caught up.
+async function noteWorker($: EngineInterface, agentId: string, text: string, isReading: boolean, isTurnEnd: boolean): Promise<void> {
+  if (!isWorker(await read($, workers), agentId)) return
   const kind = kindOf(text)
   if (kind !== null) await update($, workers, list => withKind(list, agentId, kind))
-  await refreshBand($, isReading)
+  await refreshBand($, isReading, isTurnEnd)
 }
 
 // The one human action: `/loom weave`, queued as if typed, run once the
@@ -245,7 +274,7 @@ export const register: Register = (on, options) => {
   // worker is its contract message; a main-loop turn end re-reads the band.
   on('turn.complete', async ($, e, next) => {
     const completed = await next(e)
-    if (e.agentId !== undefined) await noteWorker($, e.agentId, e.answer, isReading)
+    if (e.agentId !== undefined) await noteWorker($, e.agentId, e.answer, isReading, true)
     else if ((await read($, workers)).length > 0) await refreshBand($, isReading)
     return completed
   }).catch(skipOnFailure)
@@ -254,16 +283,22 @@ export const register: Register = (on, options) => {
   // passed on unchanged.
   on('session.send', async ($, e, next) => {
     const sent = await next(e)
-    if (e.agentId !== undefined && sent.isDelivered) await noteWorker($, e.agentId, e.text, isReading)
+    if (e.agentId !== undefined && sent.isDelivered) await noteWorker($, e.agentId, e.text, isReading, false)
     return sent
   }).catch(skipOnFailure)
 
-  // belt's guard denials once the run started, read off the decision belt
-  // handed back and returned exactly as it came.
-  on('classic.PreToolUse', async ($, e, next) => {
-    const decision = await next(e)
-    if (isBeltDeny(decision) && (await read($, runStartedAt)) !== null) await update($, guardDenies, n => n + 1)
-    return decision
+  // belt's guard denials of the workers' own tool calls, read off the
+  // result and returned exactly as it came. The orchestrator's denials are
+  // session-band's to count.
+  on('tool.call', async ($, e, next) => {
+    const ran = await next(e)
+    if (e.agentId === undefined || !isBeltRefusal(ran)) return ran
+    try {
+      if (isWorker(await read($, workers), e.agentId)) await update($, guardDenies, n => n + 1)
+    } catch (err) {
+      $.ui.log(`factory-band: deny not counted (${errorText(err)})`, { to: 'debug' })
+    }
+    return ran
   }).catch(skipOnFailure)
 
   // The band, from the first worker on; it yields to a survey and keeps

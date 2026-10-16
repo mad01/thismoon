@@ -18,7 +18,7 @@ export type FactoryBandFacts = {
 export type FactoryBandProbe = {
   facts: Record<string, FactoryBandFacts>
   ledgerDenies: number | null
-  parked: number | null
+  inbox: number | null
 }
 
 declare module 'claude-code' {

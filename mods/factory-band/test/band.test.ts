@@ -4,7 +4,7 @@
 // list, the events service (http.fetch), the clock, the spawn, the weave
 // command and belt's PreToolUse decision.
 import { expect, mock, test } from 'claude-code/testing'
-import type { MockClock } from 'claude-code/testing'
+import type { Engine, MockClock } from 'claude-code/testing'
 import type { AgentInfo, AgentSpawnInput, HttpResponse, On, ProcessRunResult } from 'claude-code'
 
 import { idAt } from '../lib/band'
@@ -13,6 +13,7 @@ const HOME = '/home/u'
 const WT = '/home/u/.worktrees/thismoon/alexander-docs-sweep-events'
 const SESSION = 's-lead'
 const RUN_START_MS = 1_792_000_000_000
+const MAIN_TREE = 'aaff749'
 
 const TASK = [
   'kind: task',
@@ -31,14 +32,15 @@ const TASK = [
 
 const READY = TASK.replace('kind: task', 'kind: ready').replace('needs_reply: true', 'needs_reply: false')
 
-const after = (n: number): string => `${idAt(RUN_START_MS + n * 1_000)}-00aa`
+const later = (n: number): string => `${idAt(RUN_START_MS + n * 1_000)}-00aa`
 
 // belt's ledger and inbox as the events service answers them, newest first.
 const ledgerJson = JSON.stringify([
-  { id: after(3), source: 'belt-ledger', title: 'permission denied (Bash)', tags: { event: 'permission-denied', session_id: SESSION, agent_id: 'a1', tool: 'Bash' } },
-  { id: after(1), source: 'belt-ledger', title: 'subagent started (factory-worker-medium)', tags: { event: 'subagent-start', session_id: SESSION, agent_id: 'a1', worktree: WT, effort: 'medium' } },
+  { id: later(4), source: 'belt-ledger', title: 'permission denied (Bash)', tags: { event: 'permission-denied', session_id: SESSION, tool: 'Bash' } },
+  { id: later(3), source: 'belt-ledger', title: 'permission denied (Bash)', tags: { event: 'permission-denied', session_id: SESSION, agent_id: 'a1', tool: 'Bash' } },
+  { id: later(1), source: 'belt-ledger', title: 'subagent started (factory-worker-medium)', tags: { event: 'subagent-start', session_id: SESSION, agent_id: 'a1', worktree: WT, effort: 'medium' } },
 ])
-const inboxJson = JSON.stringify([{ id: after(2), source: 'belt-inbox', title: 'question parked', tags: { to: SESSION, from: 'events' } }])
+const inboxJson = JSON.stringify([{ id: later(2), source: 'belt-inbox', title: 'ci green', tags: { to: SESSION, from: 'ci' } }])
 
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 11 }, view: {} }
 
@@ -64,28 +66,38 @@ const run = (exitCode: number, stdout: string): ProcessRunResult => ({
   isStderrTruncated: false,
 })
 
+// The worktree as git reports it; `mergedTree` is what merge-tree writes.
+type Git = { status: string; ahead: string; mergedTree: string }
+
 type World = {
   agents: AgentInfo[]
   events: 'ok' | 'down' | 'hung'
-  git: { status: string; ahead: string } | 'hung'
+  git: Git | 'hung'
   commands: string[]
   fetches: number
+  mergeTrees: number
   clock: MockClock
 }
+
+const OPEN: Git = { status: '', ahead: '0', mergedTree: 'b0b0b0b' }
 
 // The engine beneath the plugin.
 function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}): World {
   const clock = mock.clock(on)
-  const world: World = { agents: [w1], events: 'ok', git: { status: '', ahead: '0' }, commands: [], fetches: 0, clock, ...overrides }
+  const world: World = { agents: [w1], events: 'ok', git: OPEN, commands: [], fetches: 0, mergeTrees: 0, clock, ...overrides }
   mock.env(on, { HOME })
   on('process.run', async (_$, e) => {
     const line = e.argv.join(' ')
     if (!line.startsWith(`git -C ${WT} `)) return { value: run(128, '') }
     if (world.git === 'hung') await clock.sleep(10_000)
-    const git = world.git === 'hung' ? { status: '', ahead: '0' } : world.git
-    if (line.endsWith('symbolic-ref refs/remotes/origin/HEAD')) return { value: run(0, 'refs/remotes/origin/main\n') }
+    const git = world.git === 'hung' ? OPEN : world.git
+    if (line.endsWith('rev-parse origin/HEAD^{tree} --symbolic-full-name origin/HEAD')) return { value: run(0, `${MAIN_TREE}\nrefs/remotes/origin/main\n`) }
     if (line.endsWith('status --porcelain')) return { value: run(0, git.status) }
     if (line.endsWith('rev-list --count origin/main..HEAD')) return { value: run(0, `${git.ahead}\n`) }
+    if (line.endsWith('merge-tree --write-tree origin/main HEAD')) {
+      world.mergeTrees += 1
+      return { value: run(0, `${git.mergedTree}\n`) }
+    }
     return { value: run(128, '') }
   })
   on('agent.list', () => ({ value: world.agents }))
@@ -116,14 +128,20 @@ const start = { cwd: WT, surface: null, isInteractive: true } as const
 const workerTurn = (answer: string) =>
   ({ answer, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', agentId: 'a1' }) as const
 
+const mainTurn = { answer: '', durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' } as const
+
 async function band(ui: { findAll: (q: { type: 'Text' }) => Promise<Array<{ text?: string }>> }): Promise<string[]> {
   return (await ui.findAll({ type: 'Text' })).map(found => found.text ?? '')
+}
+
+async function mountBand($: Engine) {
+  return $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
 }
 
 test('the band stays hidden until the first worker spawns', async ($, on) => {
   seat(on)
   await $.session.start(start)
-  const ui = await $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const ui = await mountBand($)
   expect(await ui.find({ type: 'Button' })).toBeUndefined()
 })
 
@@ -134,34 +152,77 @@ test('a spawned worker gets a row: model from the spawn, effort from the ledger,
   await $.agent.spawn(spawn)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'factory-band', surface, component: 'AbovePrompt', props: BAND })
-    expect(await band(ui)).toEqual(['factory · 1 worker · denies 1 · parked 1', 'events  in flight  claude-sonnet-5-5  medium'])
+    expect(await band(ui)).toEqual(['factory · 1 worker · denies 1 · inbox 1', 'events  in flight  claude-sonnet-5-5  medium'])
     await ui.unmount()
   }
 })
 
-test('a ready message on a clean tree ahead of main reads ready; weave now runs /loom weave', async ($, on) => {
-  const world = seat(on, { git: { status: '', ahead: '2' } })
+test('a ready message on a clean tree main has not taken reads ready; weave now runs /loom weave', async ($, on) => {
+  const world = seat(on, { git: { ...OPEN, ahead: '2' } })
   await world.clock.set(RUN_START_MS)
   await $.session.start(start)
   await $.agent.spawn(spawn)
   world.agents = [{ ...w1, status: 'completed' }]
   await $.turn.complete(workerTurn(READY))
   await world.clock.advance(5_000)
-  const ui = await $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const ui = await mountBand($)
   expect((await band(ui))[1]).toBe('events  ready  claude-sonnet-5-5  medium')
+  expect(world.mergeTrees).toBe(1)
   await ui.press({ key: 'weave' })
   expect(world.commands).toEqual(['weave'])
 })
 
+test('the agent list still says running at the worker\'s final turn end: in flight, then ready with no other event', async ($, on) => {
+  const world = seat(on, { git: { ...OPEN, ahead: '2' } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  await world.clock.advance(5_000)
+  await $.turn.complete(workerTurn(READY))
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toBe('events  in flight  claude-sonnet-5-5  medium')
+  world.agents = [{ ...w1, status: 'completed' }]
+  await world.clock.advance(5_000)
+  expect((await band(ui))[1]).toBe('events  ready  claude-sonnet-5-5  medium')
+})
+
+test('a squash-merged worker reads integrated and drops off once its loop ended; the last one hides the band', async ($, on) => {
+  const world = seat(on, { git: { status: '', ahead: '2', mergedTree: MAIN_TREE } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  await world.clock.advance(5_000)
+  await $.turn.complete(workerTurn(READY))
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toBe('events  in flight  claude-sonnet-5-5  medium')
+  world.agents = [{ ...w1, status: 'idle' }]
+  await world.clock.advance(5_000)
+  expect((await band(ui))[1]).toBe('events  integrated  claude-sonnet-5-5  medium')
+  world.agents = []
+  await world.clock.advance(5_000)
+  await $.turn.complete(mainTurn)
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+})
+
 test('a blocked message reads blocked once the worker stopped', async ($, on) => {
-  const world = seat(on, { git: { status: ' M README.md\n', ahead: '0' } })
+  const world = seat(on, { git: { ...OPEN, status: ' M README.md\n' } })
   await $.session.start(start)
   await $.agent.spawn(spawn)
   world.agents = []
   await $.turn.complete(workerTurn(READY.replace('kind: ready', 'kind: blocked')))
   await world.clock.advance(5_000)
-  const ui = await $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const ui = await mountBand($)
   expect((await band(ui))[1]).toMatch(/^events {2}blocked {2}/)
+})
+
+test('an ended worker that never sent ready reads stopped', async ($, on) => {
+  const world = seat(on, { git: { ...OPEN, ahead: '1' } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  world.agents = []
+  await world.clock.advance(5_000)
+  await $.turn.complete(mainTurn)
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toMatch(/^events {2}stopped {2}/)
+  expect(world.mergeTrees).toBe(0)
 })
 
 test('an events service that is down leaves dashes and the guard count, no error', async ($, on) => {
@@ -170,8 +231,8 @@ test('an events service that is down leaves dashes and the guard count, no error
   await $.session.start(start)
   await $.agent.spawn(spawn)
   expect(world.fetches).toBe(2)
-  const ui = await $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · parked -', 'events  in flight  claude-sonnet-5-5  -'])
+  const ui = await mountBand($)
+  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · inbox -', 'events  in flight  claude-sonnet-5-5  -'])
 })
 
 test('a hung events service and a hung git cost the 400 ms budget and no more', async ($, on) => {
@@ -180,8 +241,8 @@ test('a hung events service and a hung git cost the 400 ms budget and no more', 
   const spawned = $.agent.spawn(spawn)
   await world.clock.advance(400)
   await spawned
-  const ui = await $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · parked -', 'events  -  claude-sonnet-5-5  -'])
+  const ui = await mountBand($)
+  expect(await band(ui)).toEqual(['factory · 1 worker · denies 0 · inbox -', 'events  -  claude-sonnet-5-5  -'])
 })
 
 test('events off: nothing is fetched', { options: { events: false } }, async ($, on) => {
@@ -191,16 +252,21 @@ test('events off: nothing is fetched', { options: { events: false } }, async ($,
   expect(world.fetches).toBe(0)
 })
 
-test('belt denies count from the first worker spawn on', async ($, on) => {
-  const world = seat(on, { events: 'down' })
+// A push raised in an agent's loop. The call type leaves `agentId` out, but
+// the kit hands it to the tool.call hooks as a session does for a subagent.
+const pushFrom = (agentId: string) => ({ tool: 'Bash' as const, command: 'git push origin main', agentId })
+
+test('belt denies count for the workers\' own calls only, never the orchestrator\'s', async ($, on) => {
+  seat(on, { events: 'down' })
   on('classic.PreToolUse', () => ({ deny: 'belt[git-push-main]: pushes to main are denied' }))
   await $.session.start(start)
-  await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
   await $.agent.spawn(spawn)
   await $.tool.call({ tool: 'Bash', command: 'git push origin main' })
-  await world.clock.advance(5_000)
-  const ui = await $.ui.mount({ plugin: 'factory-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect((await band(ui))[0]).toBe('factory · 1 worker · denies 1 · parked -')
+  await $.tool.call(pushFrom('b7'))
+  const ui = await mountBand($)
+  expect((await band(ui))[0]).toBe('factory · 1 worker · denies 0 · inbox -')
+  await $.tool.call(pushFrom('a1'))
+  expect((await band(ui))[0]).toBe('factory · 1 worker · denies 1 · inbox -')
 })
 
 test('the contract guard is off by default: a spawn without a task header starts', async ($, on) => {

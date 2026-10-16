@@ -28,7 +28,7 @@
     {
       "name": "factory-band",
       "source": "./mods/factory-band",
-      "description": "Experimental. A band above the prompt for a factory run: each worker's worktree state, model and effort, belt denies and parked questions, and a weave now button."
+      "description": "Experimental. A band above the prompt for a factory run: each worker's worktree state, model and effort, the workers' belt denies, belt-inbox items for this session, and a weave now button."
     }
   ]
 }

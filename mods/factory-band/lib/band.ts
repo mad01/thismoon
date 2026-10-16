@@ -37,9 +37,10 @@ const HEADER_KEYS = ['kind', 'unit', 'worktree', 'branch', 'model', 'effort', 'r
 // A header line, `key: value`; the value runs to the end of the line.
 const HEADER_LINE = /^([a-z_]+):[ \t]*(.*?)[ \t]*$/
 
-// The `kind:` line of a contract message, wherever the message starts: an
-// answer handed back to its spawner can be led by the engine's warning.
-const KIND_LINE = /^kind:[ \t]*(task|status|question|answer|ready|blocked)[ \t]*$/m
+// The `kind:` line of a message a worker sends, anywhere in the text: an
+// answer handed back to its spawner can be led by the engine's warning, and
+// a worker may quote its task above its own header.
+const KIND_LINE = /^kind:[ \t]*(status|question|ready|blocked)[ \t]*$/gm
 
 // Kinds after which the worker waits for the orchestrator.
 const NEEDS_ANSWER = new Set(['blocked', 'question'])
@@ -47,9 +48,28 @@ const NEEDS_ANSWER = new Set(['blocked', 'question'])
 // Agent statuses of a loop at work or about to be.
 const LIVE = new Set(['pending', 'running', 'waiting'])
 
-// Every belt denial reason carries `belt[<guard>]: `, possibly inside the
-// engine's own wrapping, so the marker is searched for anywhere.
+// Every belt denial reason carries `belt[<guard>]: `, possibly behind the
+// engine's own prefix on the same line.
 const BELT_REASON = /belt\[[^\]]+\]:/
+
+/**
+ * The default branch's tree and full ref name in one call; the `^{tree}`
+ * comes first because `--symbolic-full-name` applies to what follows it.
+ */
+export const DEFAULT_BRANCH_ARGS = ['rev-parse', 'origin/HEAD^{tree}', '--symbolic-full-name', 'origin/HEAD'] as const
+
+/** Uncommitted changes in the worktree. */
+export const STATUS_ARGS = ['status', '--porcelain'] as const
+
+/** How many commits HEAD has that `ref` lacks. */
+export function aheadArgs(ref: string): string[] {
+  return ['rev-list', '--count', `${ref}..HEAD`]
+}
+
+/** The tree a merge of HEAD into `ref` would write, conflicts or not; needs git 2.38. */
+export function mergeTreeArgs(ref: string): string[] {
+  return ['merge-tree', '--write-tree', ref, 'HEAD']
+}
 
 export type Header = Record<(typeof HEADER_KEYS)[number], string>
 
@@ -70,20 +90,26 @@ export type AgentLike = { id: string; status: string }
 
 export type Liveness = 'live' | 'idle' | 'gone' | 'unknown'
 
-/** What git says about a worker's worktree. */
-export type GitFacts = { isDirty: boolean; ahead: number }
+/**
+ * What git says about a worker's worktree. `isIntegrated`: merging HEAD
+ * into the default branch would change nothing, as after a squash merge.
+ */
+export type GitFacts = { isDirty: boolean; ahead: number; isIntegrated: boolean }
+
+/** The default branch as `origin/HEAD` names it, and its tree when known. */
+export type DefaultBranch = { ref: string; tree: string | null }
 
 /** What belt's ledger recorded when a worker started. */
 export type LedgerFacts = { model: string | null; effort: string | null }
 
-/** The ledger read for one run: start facts per agent id and this session's denials. */
+/** The ledger read for one run: start facts per agent id and the workers' denials. */
 export type LedgerRead = { facts: Map<string, LedgerFacts>; denies: number | null }
 
 /** What one refresh read for one worker. */
 export type WorkerFacts = { state: string; model: string | null; effort: string | null }
 
 /** What one refresh read for the run; null counts are sources that did not answer. */
-export type Probe = { facts: Record<string, WorkerFacts>; ledgerDenies: number | null; parked: number | null }
+export type Probe = { facts: Record<string, WorkerFacts>; ledgerDenies: number | null; inbox: number | null }
 
 /** What the band draws. */
 export type BandView = { summary: string; rows: string[]; isAnyReady: boolean }
@@ -135,9 +161,9 @@ export function guardReason(type: string): string {
   return `factory-band: the ${type} prompt lacks the eight-line task header (kind, unit, worktree, branch, model, effort, reply_to, needs_reply); see the factory skill's contract.md`
 }
 
-/** The kind a contract message names, or null for any other text. */
+/** The last worker kind (status, question, ready, blocked) a text names, or null when it names none. */
 export function kindOf(text: string): string | null {
-  return KIND_LINE.exec(text)?.[1] ?? null
+  return [...text.matchAll(KIND_LINE)].at(-1)?.[1] ?? null
 }
 
 /** `~/x` under `home`; an absolute path as given; null for a relative path or an unknown home. */
@@ -202,44 +228,65 @@ function entriesOf(body: string | null): Entry[] | null {
 
 /**
  * belt's ledger as one run sees it: the newest subagent-start facts per
- * agent id, and the auto-mode denials recorded for this session since the
- * run started. The answer comes newest first; denies is null when the
- * answer is not an event array.
+ * agent id, and the auto-mode denials recorded for this session's worker
+ * agents. The answer comes newest first; denies is null when the answer is
+ * not an event array.
  */
-export function parseLedger(body: string | null, scope: { sessionId: string; sinceId: string }): LedgerRead {
+export function parseLedger(body: string | null, scope: { sessionId: string; workerIds: ReadonlySet<string> }): LedgerRead {
   const facts = new Map<string, LedgerFacts>()
   const entries = entriesOf(body)
   if (entries === null) return { facts, denies: null }
   let denies = 0
-  for (const { id, tags } of entries) {
+  for (const { tags } of entries) {
     const agentId = textOf(tags.agent_id)
-    if (tags.event === 'subagent-start' && agentId !== null && !facts.has(agentId)) {
+    if (agentId === null) continue
+    if (tags.event === 'subagent-start' && !facts.has(agentId)) {
       facts.set(agentId, { model: textOf(tags.model), effort: textOf(tags.effort) })
     }
-    if (tags.event === 'permission-denied' && tags.session_id === scope.sessionId && id >= scope.sinceId) denies += 1
+    if (tags.event === 'permission-denied' && tags.session_id === scope.sessionId && scope.workerIds.has(agentId)) denies += 1
   }
   return { facts, denies }
 }
 
-/** How many inbox items are addressed to this session since the run started; null when the answer is not an event array. */
-export function countParked(body: string | null, scope: { sessionId: string; sinceId: string }): number | null {
+/** How many belt-inbox items are addressed to this session since the run started; null when the answer is not an event array. */
+export function countInbox(body: string | null, scope: { sessionId: string; sinceId: string }): number | null {
   const entries = entriesOf(body)
   if (entries === null) return null
   return entries.filter(({ id, tags }) => tags.to === scope.sessionId && id >= scope.sinceId).length
 }
 
-/** `origin/main` from `git symbolic-ref refs/remotes/origin/HEAD`; `main` when it failed. */
-export function parseDefaultRef(stdout: string | null): string {
-  const line = stdout?.trim().split('\n')[0] ?? ''
-  const short = line.replace(/^refs\/remotes\//, '')
-  return short === '' || short === line ? DEFAULT_BRANCH : short
+/**
+ * The default branch from DEFAULT_BRANCH_ARGS' output (the tree, then
+ * `refs/remotes/origin/main`): `origin/main` and its tree; `main` and no
+ * tree when origin names no HEAD.
+ */
+export function parseDefaultBranch(stdout: string | null): DefaultBranch {
+  const [tree = '', name = ''] = stdout?.trim().split('\n') ?? []
+  const ref = name.replace(/^refs\/remotes\//, '')
+  if (ref === '' || ref === name || tree === '') return { ref: DEFAULT_BRANCH, tree: null }
+  return { ref, tree }
 }
 
 /** The worktree's facts from `git status --porcelain` and `git rev-list --count`, or null when either failed. */
 export function gitFactsFrom(status: string | null, count: string | null): GitFacts | null {
   const ahead = Number.parseInt(count?.trim() ?? '', 10)
   if (status === null || Number.isNaN(ahead)) return null
-  return { isDirty: status.trim() !== '', ahead }
+  return { isDirty: status.trim() !== '', ahead, isIntegrated: false }
+}
+
+/** True when a worker's tree is worth the merge-tree check: clean, ahead, and the worker sent ready. */
+export function isReadyCandidate(git: GitFacts | null, lastKind: string | null): boolean {
+  return git !== null && !git.isDirty && git.ahead > 0 && lastKind === 'ready'
+}
+
+/**
+ * True when the tree a merge of HEAD into the default branch would write
+ * is the default branch's own tree: the branch's changes are already there.
+ * False when either is unknown (git before 2.38, a conflict, no origin HEAD).
+ */
+export function isIntegratedTree(mergeTreeOut: string | null, defaultTree: string | null): boolean {
+  const merged = mergeTreeOut?.trim().split('\n')[0] ?? ''
+  return merged !== '' && defaultTree !== null && merged === defaultTree.trim()
 }
 
 /** Where an agent's loop stands for the band; `gone` once it ended or left the list. */
@@ -251,19 +298,23 @@ export function livenessOf(agents: readonly AgentLike[] | null, agentId: string)
 }
 
 /**
- * A worker's state in loom's words, plus `blocked` from the contract. A
- * loop at work is in flight. A clean tree whose worker sent ready is ready
- * while it is ahead of the default branch, integrated once it is not. A
- * worker whose last message waits for an answer is blocked. An idle worker
- * is still in flight; one that is gone left its worktree abandoned.
+ * A worker's state. A loop at work is in flight. A clean tree whose worker
+ * sent ready is ready, or integrated once the default branch holds its
+ * changes; a dirty tree after a ready is in flight again. A worker whose
+ * last message waits for an answer is blocked. An idle worker is in
+ * flight; one whose loop ended without a ready is stopped. Abandoned is
+ * the weaver's call after a survey, never the band's.
  */
 export function workerState(input: { git: GitFacts | null; liveness: Liveness; lastKind: string | null }): string {
   const { git, liveness, lastKind } = input
   if (git === null || liveness === 'unknown') return UNKNOWN
   if (liveness === 'live') return 'in flight'
-  if (!git.isDirty && lastKind === 'ready') return git.ahead > 0 ? 'ready' : 'integrated'
+  if (lastKind === 'ready') {
+    if (git.isDirty) return 'in flight'
+    return git.ahead > 0 && !git.isIntegrated ? 'ready' : 'integrated'
+  }
   if (lastKind !== null && NEEDS_ANSWER.has(lastKind)) return 'blocked'
-  return liveness === 'idle' ? 'in flight' : 'abandoned'
+  return liveness === 'idle' ? 'in flight' : 'stopped'
 }
 
 /** One refresh's reading of every worker and of the run's counts. */
@@ -272,7 +323,7 @@ export function probeFrom(input: {
   agents: readonly AgentLike[] | null
   gits: ReadonlyArray<GitFacts | null>
   ledger: LedgerRead
-  parked: number | null
+  inbox: number | null
 }): Probe {
   const facts: Record<string, WorkerFacts> = {}
   input.workers.forEach((worker, i) => {
@@ -284,19 +335,31 @@ export function probeFrom(input: {
       effort: recorded?.effort ?? null,
     }
   })
-  return { facts, ledgerDenies: input.ledger.denies, parked: input.parked }
+  return { facts, ledgerDenies: input.ledger.denies, inbox: input.inbox }
 }
 
-/** True when the decision `classic.PreToolUse` handed back is a belt denial. */
-export function isBeltDeny(decision: unknown): boolean {
-  if (!isRecord(decision)) return false
-  if (typeof decision.deny === 'string') return BELT_REASON.test(decision.deny)
-  if (decision.allow === true || typeof decision.ask === 'string') return false
-  try {
-    return BELT_REASON.test(JSON.stringify(decision) ?? '')
-  } catch {
-    return false
-  }
+/**
+ * The workers a refresh may drop: integrated, with their loop ended, so
+ * rows and git probes do not pile up across runs.
+ */
+export function prunableIds(workers: readonly Worker[], probe: Probe, agents: readonly AgentLike[] | null): Set<string> {
+  const ids = workers
+    .map(worker => worker.agentId)
+    .filter(id => probe.facts[id]?.state === 'integrated' && livenessOf(agents, id) === 'gone')
+  return new Set(ids)
+}
+
+/**
+ * True when a tool call's result is a belt denial. A denial from a settings
+ * hook reaches a plugin as an errored result whose text is the reason, so
+ * only the first line counts: a failed command whose output mentions belt
+ * does not.
+ */
+export function isBeltRefusal(result: unknown): boolean {
+  if (!isRecord(result)) return false
+  if (typeof result.deny === 'string') return BELT_REASON.test(result.deny)
+  if (result.isError !== true || typeof result.text !== 'string') return false
+  return BELT_REASON.test(result.text.trimStart().split('\n')[0] ?? '')
 }
 
 /** True when no refresh started in the last `REFRESH_GAP_MS`. */
@@ -325,16 +388,16 @@ function alignRows(rows: readonly Row[]): string[] {
 /**
  * The band: a summary line, then one aligned row per worker as name,
  * state, model and effort. The model comes from the spawn, then the
- * ledger; effort from the ledger alone. Denies add belt's guard denials
- * to the ledger's; parked is a dash while the inbox has not answered.
+ * ledger; effort from the ledger alone. Denies add the workers' belt guard
+ * denials to the ledger's; inbox is a dash while belt-inbox has not answered.
  */
 export function bandView(input: { workers: readonly Worker[]; probe: Probe | null; guardDenies: number }): BandView {
   const rows = input.workers.map(worker => rowOf(worker, input.probe?.facts[worker.agentId]))
   const denies = input.guardDenies + (input.probe?.ledgerDenies ?? 0)
-  const parked = input.probe?.parked ?? null
+  const inbox = input.probe?.inbox ?? null
   const noun = rows.length === 1 ? 'worker' : 'workers'
   return {
-    summary: `factory · ${rows.length} ${noun} · denies ${denies} · parked ${parked ?? UNKNOWN}`,
+    summary: `factory · ${rows.length} ${noun} · denies ${denies} · inbox ${inbox ?? UNKNOWN}`,
     rows: alignRows(rows),
     isAnyReady: rows.some(row => row[1] === 'ready'),
   }
