@@ -35,20 +35,30 @@ const porcelain = [
   '',
 ].join('\n')
 
-type Repo = { dirty: readonly string[]; ahead: number; remoteAhead: number | null; isIntegrated?: boolean }
+type Repo = {
+  dirty: readonly string[]
+  ahead: number
+  remoteAhead: number | null
+  isIntegrated?: boolean
+  mergeTreeExit?: number
+}
 
 const MAIN_TREE = 'fe56c1cfe56c1cfe56c1cfe56c1cfe56c1cfe56c'
 const OTHER_TREE = '0b1d2e30b1d2e30b1d2e30b1d2e30b1d2e30b1d'
 
 // A git answered from memory: the two worktrees above, every branch `ahead`
 // commits past main, `remoteAhead` of them not on origin (null: no upstream),
-// and squash-merged into main when `isIntegrated`.
+// and squash-merged into main when `isIntegrated`. merge-tree exits with
+// `mergeTreeExit` (default 0), whatever tree it prints.
 function fakeGit(repo: Repo, argv: readonly string[], cwd: string): ProcessRunResult {
   const line = argv.slice(1).join(' ')
   if (line === 'rev-parse --show-toplevel') return ok(cwd.startsWith(OWN) ? OWN : CANONICAL)
   if (line.endsWith('--git-common-dir')) return ok(`${CANONICAL}/.git`)
   if (line === 'rev-parse main^{tree}') return ok(`${MAIN_TREE}\n`)
-  if (line.startsWith('merge-tree --write-tree main ')) return ok(`${repo.isIntegrated === true ? MAIN_TREE : OTHER_TREE}\n`)
+  if (line.startsWith('merge-tree --write-tree main ')) {
+    const merged = ok(`${repo.isIntegrated === true ? MAIN_TREE : OTHER_TREE}\n`)
+    return { ...merged, exitCode: repo.mergeTreeExit ?? 0 }
+  }
   if (line === 'worktree list --porcelain') return ok(porcelain)
   if (line.startsWith('symbolic-ref')) return failed()
   if (line === 'status --porcelain') return ok(repo.dirty.includes(cwd) ? ' M x\n' : '')
@@ -182,6 +192,22 @@ test('a squash-merged branch with no upstream is force-deleted without a questio
   await $.session.start({ cwd: CANONICAL, surface: null, isInteractive: true })
   expect(refusalOf(await $.tool.call({ tool: 'Bash', command: 'git branch -D feat/x' }))).toBeUndefined()
   expect(seated.asked.length).toBe(0)
+})
+
+test('a merge-tree that exits non-zero is no proof, so the force-delete still asks', async ($, on) => {
+  // The default branch's own tree on stdout, so only the exit code keeps the
+  // question. Exit 1 is a conflict or a bad ref; 129 stands for a git that
+  // can't run the check at all.
+  const repo: Repo = { dirty: [], ahead: 2, remoteAhead: null, isIntegrated: true, mergeTreeExit: 1 }
+  const seated = seat(on, repo, CANONICAL, 'Cancel')
+  await $.session.start({ cwd: CANONICAL, surface: null, isInteractive: true })
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: 'git branch -D feat/x' }))).toMatch(/feat\/x kept/)
+  repo.mergeTreeExit = 129
+  expect(refusalOf(await $.tool.call({ tool: 'Bash', command: 'git branch -D feat/x' }))).toMatch(/feat\/x kept/)
+  expect(seated.asked).toEqual([
+    'feat/x has 2 unmerged commits. Remove anyway?',
+    'feat/x has 2 unmerged commits. Remove anyway?',
+  ])
 })
 
 test('a forced removal of a dirty worktree asks', async ($, on) => {

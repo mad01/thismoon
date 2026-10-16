@@ -41,11 +41,14 @@ loom without taking a role.
    flight, ready, abandoned, or integrated. A ready message is a claim.
    The proof is git: `git log origin/main..<branch>` lists the claimed
    commits and `git -C <worktree> status --porcelain` is empty. Check
-   integrated first: `git merge-tree --write-tree origin/main <branch>`
-   prints the tree id `git rev-parse 'origin/main^{tree}'` prints. A
-   squash-merged branch passes it while its commits still read as ahead.
-   When main has changed the branch's lines since, that check conflicts;
-   `loom.md` walks main's first-parent commits for the squash instead.
+   integrated before ready: the branch has at least one commit beyond
+   main, and `git merge-tree --write-tree origin/main <branch>` prints the
+   tree id `git rev-parse 'origin/main^{tree}'` prints. A squash-merged
+   branch passes it while its commits still read as ahead. When main has
+   changed the branch's lines since, that check conflicts; `loom.md` walks
+   main's first-parent commits for the squash instead. A clean worktree
+   with no commits beyond main is not integrated: it is a fresh claim or a
+   fast-forward leftover, and git cannot tell them apart. Report it.
    No worktrees and no `worktree-agent-*` branches: say so and stop.
 2. For each ready branch, in order: rebase it onto the default branch tip
    in its own worktree, re-run the gates, then land it by repo policy.
@@ -54,8 +57,9 @@ loom without taking a role.
    to resolve.
 3. After a branch lands, and for every worktree the survey found
    integrated: remove its worktree and delete the branch per `loom.md`
-   Teardown, with the proof printed above the delete. Then update the
-   canonical checkout.
+   Teardown, with the proof printed above the delete. A clean worktree
+   with no commits beyond main goes only on its owner's ready message or
+   the user's go-ahead. Then update the canonical checkout.
 4. Sweep: list the `worktree-agent-*` branches and `.claude/worktrees/`
    entries the Agent tool left behind, per `loom.md`, and offer those with
    nothing beyond main or integrated. Remove them only on the user's

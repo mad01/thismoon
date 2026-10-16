@@ -301,23 +301,26 @@ async function confirmRemoval(
     return askToRemove($, removal.path, ahead, isDirty)
   }
   const linked = worktreeOfBranch(entries, removal.name)
-  const status = linked === null ? null : await git($, ['status', '--porcelain'], linked.path)
+  // One round, all at once: run one after another behind the worktree
+  // listing and the default ref, these calls could outlast the engine's
+  // 10 s hook limit, and a skipped hook lets the delete through.
+  const [status, aheadOut, remoteAheadOut, isIntegrated] = await Promise.all([
+    linked === null ? null : git($, ['status', '--porcelain'], linked.path),
+    git($, ['rev-list', '--count', `${defaultRef}..${removal.name}`], removal.location),
+    git($, ['rev-list', '--count', `origin/${removal.name}..${removal.name}`], removal.location),
+    isIntegratedBranch($, removal.name, removal.location, defaultRef),
+  ])
   const isWorktreeDirty = status !== null && status.trim() !== ''
-  const ahead = parseCount(await git($, ['rev-list', '--count', `${defaultRef}..${removal.name}`], removal.location))
-  const remoteAhead = parseCount(
-    await git($, ['rev-list', '--count', `origin/${removal.name}..${removal.name}`], removal.location),
-  )
-  const facts = { ahead, remoteAhead, isIntegrated: false, isWorktreeDirty }
-  if (!shouldAskBranchDeletion(facts)) return true
-  // Only a deletion that would ask pays for the merge-tree check.
-  const isIntegrated = await isIntegratedBranch($, removal.name, removal.location, defaultRef)
-  if (!shouldAskBranchDeletion({ ...facts, isIntegrated })) return true
+  const ahead = parseCount(aheadOut)
+  const remoteAhead = parseCount(remoteAheadOut)
+  if (!shouldAskBranchDeletion({ ahead, remoteAhead, isIntegrated, isWorktreeDirty })) return true
   return askToRemove($, removal.name, ahead, isWorktreeDirty)
 }
 
 // True when the default branch already holds the branch's changes: a merge
-// would write the default branch's own tree. Unlike the counts above, a
-// failure here (git before 2.38, a conflict) keeps the question.
+// would write the default branch's own tree. Unlike the counts beside it, a
+// failure here (git before 2.38, a conflict, a call past its budget) keeps
+// the question.
 async function isIntegratedBranch($: EngineInterface, branch: string, cwd: string, defaultRef: string): Promise<boolean> {
   const [merged, tree] = await Promise.all([
     git($, mergeTreeArgs(defaultRef, branch), cwd),
