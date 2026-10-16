@@ -153,8 +153,9 @@ carries the override. Reviewers run on the model the panel-policy mod sets.
    after the other, never at the same time.
 2. Route each unit with the table above. The task header carries the
    result.
-3. Claim one loom worktree per unit, each claim as its own command:
-   `git -C <canonical> worktree add ~/.worktrees/<repo>/<slug> -b <branch>`.
+3. Claim one loom worktree per unit. Run each claim as its own command in
+   the canonical checkout:
+   `git worktree add ~/.worktrees/<repo>/<slug> -b <branch>`.
    Never chain a claim with a pull of the canonical checkout. A chained
    command hides which half failed.
 4. Run the preflight below. A failed check stops the run before any spawn.
@@ -187,10 +188,11 @@ Run all five checks before the first spawn:
 1. `belt doctor` exits 0.
 2. The events and present services answer: `events doctor` and
    `present doctor`, or `events_doctor` and `present_doctor` over MCP.
-3. The git identity matches: `git -C <worktree> config user.name` and
-   `user.email` give the identity the user commits with.
-4. Each unit's worktree exists and is clean:
-   `git -C <worktree> status --porcelain` prints nothing.
+3. The git identity matches: `git config user.name` and `user.email` in
+   the canonical checkout give the identity the user commits with. Linked
+   worktrees read the same repository config.
+4. Each unit's worktree exists and is clean: `git status --porcelain`
+   inside it prints nothing.
 5. The agents listing answers: `ListAgents` returns.
 
 ## Rules
