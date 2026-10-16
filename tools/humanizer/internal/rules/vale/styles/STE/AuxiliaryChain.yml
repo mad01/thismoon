@@ -1,0 +1,19 @@
+# humanizer-id: STE.AuxiliaryChain
+# humanizer-name: Helping-verb chain
+# humanizer-category: ste
+# humanizer-profile: procedure, description
+# humanizer-summary: A complex verb built with a helping verb ("will be", "has been", "being").
+# humanizer-rationale: Simplified Technical English (ASD-STE100) does not use helping verbs to make complex verb structures. A chain such as "will be updated" or "has been changed" hides who does the action and when. Use one verb in the simple present or past tense.
+# humanizer-before: The outline has been changed and the files will be updated after the review.
+# humanizer-after: The outline changed. Update the files after the review.
+# humanizer-reference: https://www.asd-ste100.org
+extends: existence
+message: "'%s' makes a complex verb. Use one verb in the simple present or past tense."
+level: warning
+ignorecase: true
+tokens:
+  - will be
+  - has been
+  - have been
+  - had been
+  - being

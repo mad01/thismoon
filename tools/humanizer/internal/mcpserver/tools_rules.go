@@ -11,15 +11,16 @@ import (
 )
 
 type ruleSummary struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Category        string `json:"category"`
-	DefaultSeverity string `json:"default_severity"`
-	Summary         string `json:"summary"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Category        string   `json:"category"`
+	DefaultSeverity string   `json:"default_severity"`
+	Summary         string   `json:"summary"`
+	Profiles        []string `json:"profiles,omitempty"`
 }
 
 type rulesListInput struct {
-	Category string `json:"category,omitempty" jsonschema:"optional: filter by category (content, language, style, communication, clarity)"`
+	Category string `json:"category,omitempty" jsonschema:"optional: filter by category (content, language, style, communication, clarity, ste)"`
 }
 
 type rulesListOutput struct {
@@ -32,16 +33,17 @@ type rulesExplainInput struct {
 }
 
 type rulesExplainOutput struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Category        string `json:"category"`
-	DefaultSeverity string `json:"default_severity"`
-	Summary         string `json:"summary"`
-	Rationale       string `json:"rationale,omitempty"`
-	Before          string `json:"before,omitempty"`
-	After           string `json:"after,omitempty"`
-	Reference       string `json:"reference,omitempty"`
-	File            string `json:"file,omitempty"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Category        string   `json:"category"`
+	DefaultSeverity string   `json:"default_severity"`
+	Summary         string   `json:"summary"`
+	Rationale       string   `json:"rationale,omitempty"`
+	Before          string   `json:"before,omitempty"`
+	After           string   `json:"after,omitempty"`
+	Reference       string   `json:"reference,omitempty"`
+	Profiles        []string `json:"profiles,omitempty"`
+	File            string   `json:"file,omitempty"`
 }
 
 func registerRulesTools(s *mcp.Server) {
@@ -49,7 +51,8 @@ func registerRulesTools(s *mcp.Server) {
 		Name: "humanizer_rules_list",
 		Description: "List every supported humanizer detection rule with its ID, category, default severity, and a one-line summary. " +
 			"Use to discover what humanizer_detect can find, or to build a targeted rules=[...] filter. " +
-			"Categories: content (significance inflation, promo language), language (AI vocab, negative parallelism), style (em-dashes, bold), communication (sycophancy, filler), clarity (long sentences, dense paragraphs, plain words).",
+			"Categories: content (significance inflation, promo language), language (AI vocab, negative parallelism), style (em-dashes, bold), communication (sycophancy, filler), clarity (long sentences, dense paragraphs, plain words), ste (the STE-lite rules for agent messages). " +
+			"An ste rule lists the profiles (procedure, description) that run it; pass one as humanizer_detect's profile.",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(false),
 			ReadOnlyHint:  true,
@@ -86,6 +89,7 @@ func handleRulesList(
 			Category:        r.Category,
 			DefaultSeverity: r.DefaultSeverity,
 			Summary:         r.Summary,
+			Profiles:        r.Profiles,
 		})
 	}
 	out.Total = len(out.Rules)
@@ -117,6 +121,7 @@ func handleRulesExplain(
 		Before:          r.Before,
 		After:           r.After,
 		Reference:       r.Reference,
+		Profiles:        r.Profiles,
 		File:            r.File,
 	}, nil
 }

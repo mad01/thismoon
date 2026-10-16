@@ -23,6 +23,26 @@ AcronymFirstUse, AIVocabulary, AphoristicClosure, AssistantArtifacts, BoldOverus
 
 Rule metadata (ID, category, severity, rationale, before/after examples) comes from `# humanizer-*` comment headers in each YAML file, served by both the CLI (`rules explain`) and the MCP tools.
 
+### Simplified Technical English (STE) style
+
+A second style checks messages that one agent writes for another: task briefs, steps, status reports. It follows Simplified Technical English (STE), the controlled language that the AeroSpace and Defence Industries Association of Europe (ASD) publishes as ASD-STE100 for maintenance manuals. Six rules live under `internal/rules/vale/styles/STE/`, and humanizer generates a seventh for each repo:
+
+| Rule | Profiles | Flags |
+|---|---|---|
+| ProcedureSentenceLength | procedure | A sentence over 20 words |
+| DescriptionSentenceLength | description | A sentence over 25 words |
+| ParagraphSentences | both | A paragraph with more than six sentences |
+| OneInstruction | procedure | Two instructions joined with "and then" |
+| IngForm | both | A verb in the -ing form, minus a list of technical nouns |
+| AuxiliaryChain | both | A helping-verb chain: will be, has been, have been, had been, being |
+| Glossary | both | A synonym that a CONTEXT.md glossary bans, at suggestion level |
+
+A profile picks the rule set: `procedure` for instructions, `description` for reports and summaries. Each rule names its profiles in a `# humanizer-profile` header. The default detect path never loads the STE style, so `humanizer detect` and a `humanizer_detect` call without a profile report what they did before.
+
+The Glossary rule is not embedded. Given a repo path, humanizer reads every CONTEXT.md under it and skips dot-directories, `vendor`, `node_modules` and `testdata`. Each synonym on an `_Avoid_:` line becomes a case-insensitive substitution to its bold term. A glossary scopes a word to one sense, so a Glossary hit asks you to check the sense. It isn't an error.
+
+Version one has known limits. It has no noun-cluster rule, and the official STE dictionary is not vendored. IngForm is a regex, so an -ing noun outside its exceptions list still fires.
+
 ## Install
 
 ```sh
@@ -71,6 +91,27 @@ Reads from stdin when you omit the file argument or pass `-`.
 Output groups findings by file position with a severity badge (`ERR`, `WARN`, `INFO`) and a summary line with counts per level.
 
 Statistical mode (`--statistical`) runs size-gated whole-sample checks (sentence-length uniformity, contraction rate, lexical diversity, anaphora, heading density) rather than span-level pattern matching. Run both modes for full coverage; very short snippets return few or no statistical findings.
+
+### ste
+
+Check an agent brief or report against the STE rules (see the STE style section above).
+
+```sh
+humanizer ste --profile procedure brief.md
+printf '%s' "$MSG" | humanizer ste --profile procedure --repo . --json
+humanizer ste glossary --repo . -o /tmp/Glossary.yml
+```
+
+| Flag | Description |
+|---|---|
+| `--profile` | Required: `procedure` (task briefs, steps) or `description` (status reports, summaries) |
+| `--repo` | Add the STE.Glossary substitutions from every CONTEXT.md under this path |
+| `--min-severity` | Filter findings below this level; `warning` drops the Glossary suggestions |
+| `--json` | Emit the `humanizer_detect` payload plus a `profile` field |
+
+Exit codes: 0 clean, 1 findings, 2 error. Integrations parse the `--json` payload, not the exit code.
+
+`ste glossary` prints the generated rule, or writes it to the `-o` file, so you can see what a repo bans. A run with a repo glossary takes tens of milliseconds on this repo, so a hook can call it on every message.
 
 ### judge
 
@@ -148,10 +189,10 @@ humanizer rules explain Humanizer.EmDashOveruse
 
 | Flag | Description |
 |---|---|
-| `--category` | Filter by category: `content`, `language`, `style`, `communication`, `clarity` |
+| `--category` | Filter by category: `content`, `language`, `style`, `communication`, `clarity`, `ste` |
 | `--json` | Emit the rule list as JSON |
 
-`rules explain` prints the rule ID, name, category, severity, summary, rationale, before/after examples, and reference link.
+`rules explain` prints the rule ID, name, category, severity, summary, profiles (STE rules only), rationale, before/after examples, and reference link.
 
 ### narrative
 
@@ -269,7 +310,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | Tool | Description |
 |---|---|
 | `humanizer_status` | Health check: vale installed, version, cache dir, rule count |
-| `humanizer_detect` | Scan text for AI-writing patterns (vale span rules) |
+| `humanizer_detect` | Scan text for AI-writing patterns; `profile` runs the STE rules, `repo` adds the glossary |
 | `humanizer_detect_file` | Scan a file on disk (sandbox: prose and Go files under the profile's workspace roots only) |
 | `humanizer_scan_go` | Extract prose from Go source and scan it; findings map back to Go source lines |
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |
@@ -295,19 +336,24 @@ What the sandbox denies:
 - All `$HOME` reads, denied by default except specific paths: the install dir (the binaries), `~/.cache/humanizer` (the extracted style pack), and `.md`/`.markdown`/`.txt`/`.go` files under the profile's workspace roots (for `humanizer_detect_file` and `humanizer_scan_go`).
 - All `$HOME` writes, restricted to `~/.cache/humanizer` and system temp.
 
+`humanizer_detect` with `repo` walks the repo for CONTEXT.md files, so it works only under the roots the profile grants. Elsewhere it returns an error whose `use_instead` field names the `humanizer ste` command, which runs unsandboxed.
+
 This means `humanizer_detect_file` and `humanizer_scan_go` work only on files under the workspace roots the profile grants. For anything else (e.g., a file under `~/Desktop`), pass the content as text via `humanizer_detect` instead; `humanizer_scan_go` has no such fallback, so use the CLI's `scan --go`, which runs unsandboxed.
 
 If you add a runtime file or network need, update the consuming repo's seatbelt profile; a code change alone isn't enough.
 
 ## Configuration
 
-The style pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`.
+The style pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`. An STE run writes its own config, a copy of the STE style, and any repo glossary to `ste/<key>/` inside that directory. The key is `default` without a glossary and a hash of the glossary otherwise. These run dirs accumulate, one per glossary revision, and nothing prunes them; deleting the cache directory is safe.
 
 ## Where things live
 
 | File | What it does |
 |---|---|
 | `internal/rules/vale/styles/Humanizer/*.yml` | One YAML file per rule. Add or edit rules here. |
+| `internal/rules/vale/styles/STE/*.yml` | The STE rules; each names its profiles in a `# humanizer-profile` header. |
+| `internal/rules/ste.go` | Profiles, the profile rule filter, and the per-glossary STE run directory. |
+| `internal/glossary/` | Turns the `_Avoid_` lines of CONTEXT.md files into the STE.Glossary substitution rule. |
 | `internal/rules/embed.go` | Embeds the `vale/` tree into the binary; extracts to `~/.cache/humanizer/vale` on first use. |
 | `internal/rules/vale.go` | Runs the `vale` subprocess against extracted rules, parses JSON output. |
 | `internal/rules/metadata.go` | Parses `# humanizer-*` headers from each YAML for `rules list`/`explain`. |

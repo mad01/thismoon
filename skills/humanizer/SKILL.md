@@ -1,6 +1,6 @@
 ---
 name: humanizer
-version: 2.13.1
+version: 2.14.0
 description: |
   Remove signs of AI-generated writing from text. Use when editing or reviewing
   text to make it sound more natural and human-written. Based on Wikipedia's
@@ -62,6 +62,18 @@ Skip the pass entirely when neither path works; the deterministic MCP layer alre
 **How:** call `humanizer_judge(text)` once per section or logical passage (50-2000 words works best) rather than one call for a whole long document, so verdicts map to rewrite targets. Signals come back with severity and a quoted excerpt.
 
 Use the verdicts as rewrite targets: any section flagged `likely_ai` with high confidence gets priority alongside the MCP findings. On the final pass, re-run the judge on your rewrite — `likely_human` across sections is the exit signal.
+
+## Simplified Technical English (STE) check for agent briefs
+
+A task brief, a step list, or a status report that one agent writes for another isn't prose to humanize. Check it against the STE rules instead. They ask for short sentences and one instruction per sentence. They flag -ing verb forms, helping-verb chains, and the synonyms that the repo's glossary bans.
+
+Call `humanizer_detect(text, profile="procedure")` for a brief or steps, or `profile="description"` for a report or summary. Add `repo=<absolute repo path>` to flag the synonyms its CONTEXT.md glossaries ban. Those STE.Glossary findings are suggestions: a glossary scopes a word to one sense, so check the sense before you swap the word. If the repo walk is denied under the MCP sandbox, run the CLI form the error names:
+
+```bash
+printf '%s\n' "$BRIEF" | humanizer ste --profile procedure --repo /path/to/repo --json -
+```
+
+`humanizer rules list --category ste` lists the rules with their profiles.
 
 ## Narrative pass for fiction and long-form prose
 

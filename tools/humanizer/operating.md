@@ -10,10 +10,10 @@ binary; print it anytime with `humanizer docs`.
 ## how it runs
 
 One binary (`{{.Bin}}`, installed to ~/code/bin) with two frontends over the
-same internal functions: the CLI (`humanizer detect`, `scan`, `profile`,
-`rules`, `lint`, `fix`, `rewrite`) and an MCP stdio server (`humanizer mcp`)
-that the MCP host spawns per session. Both call the same code in-process, so
-CLI and MCP results never diverge.
+same internal functions: the CLI (`humanizer detect`, `ste`, `scan`,
+`profile`, `rules`, `lint`, `fix`, `rewrite`) and an MCP stdio server
+(`humanizer mcp`) that the MCP host spawns per session. Both call the same
+code in-process, so CLI and MCP results never diverge.
 
 Span detection is the one part that is not pure Go. It runs the `vale` prose
 linter as a subprocess, resolved from PATH, against a Humanizer style pack
@@ -21,12 +21,23 @@ embedded in the binary and extracted to a cache directory on first use. The
 statistical detector, voice profiler, and watermark scrub (`lint`/`fix`) are
 pure Go with no subprocess and keep working when vale is missing.
 
+The Simplified Technical English (STE) check (`humanizer ste`, or
+`humanizer_detect` with a profile) runs the same vale binary against a
+second embedded style, for messages one agent writes for another. With a
+repo path it first reads every CONTEXT.md under the repo and turns the
+`_Avoid_` lines into one generated substitution rule. Exit codes: 0 clean,
+1 findings, 2 error. Integrations parse the `--json` payload, not the exit
+code.
+
 ## where state lives
 
 Nothing persists between runs: humanizer reads no config file, keeps no
 store, and writes no log. The one on-disk artifact is the extracted vale
 style pack, default {{.StorePath}} (HUMANIZER_CACHE_DIR or XDG_CACHE_HOME
-override it). It is a regenerable cache: a run rewrites any file that
+override it). An STE run adds `ste/<key>/` inside it: a config, a copy of
+the STE style, and the generated glossary rule, keyed by the glossary's
+hash. These run dirs accumulate, one per glossary revision, and nothing
+prunes them. It is a regenerable cache: a run rewrites any file that
 drifted from the embedded copy, so deleting the directory is always safe.
 
 ## failure modes
@@ -66,6 +77,12 @@ sandbox profile's workspace roots, plus /tmp paths. For `humanizer_detect_file`
 pass the text inline via `humanizer_detect` instead; `humanizer_scan_go` has
 no inline fallback, so run `humanizer scan --go` from a shell, which is
 unsandboxed.
+
+`humanizer_detect` with `repo` fails with a `use_instead` field: the sandbox
+denied the walk for CONTEXT.md files. The roots the sandbox allows are the
+consuming repo's choice, set in its seatbelt profile, not in this binary.
+Run the `humanizer ste --repo` command the error names from a shell, or call
+`humanizer_detect` again without `repo`.
 
 ## version skew
 

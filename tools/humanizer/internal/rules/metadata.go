@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/mad01/thismoon/tools/humanizer/internal/glossary"
 )
 
 // Rule describes a single humanizer detection rule. The fields are
 // populated from the `humanizer-*` YAML comment headers in each rule
-// file under vale/styles/Humanizer/.
+// file under vale/styles/<style>/, plus the generated STE.Glossary rule.
 type Rule struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -24,9 +27,13 @@ type Rule struct {
 	Before          string `json:"before,omitempty"`
 	After           string `json:"after,omitempty"`
 	Reference       string `json:"reference,omitempty"`
+	// Profiles lists the STE-lite profiles (procedure, description) that
+	// run the rule. Humanizer rules carry none: they run without a profile.
+	Profiles []string `json:"profiles,omitempty"`
 	// File is the relative path within the embedded pack (e.g.
 	// "vale/styles/Humanizer/AIVocabulary.yml"). Useful for debugging and
-	// for MCP clients that want to inspect the raw rule.
+	// for MCP clients that want to inspect the raw rule. Empty for the
+	// generated STE.Glossary rule, which is written per repo at run time.
 	File string `json:"file,omitempty"`
 }
 
@@ -53,7 +60,9 @@ func load() {
 func All() []Rule {
 	load()
 	out := make([]Rule, len(loadedRules))
-	copy(out, loadedRules)
+	for i, r := range loadedRules {
+		out[i] = r.clone()
+	}
 	return out
 }
 
@@ -62,7 +71,13 @@ func All() []Rule {
 func Get(id string) (Rule, bool) {
 	load()
 	r, ok := loadedByID[id]
-	return r, ok
+	return r.clone(), ok
+}
+
+// clone copies r so a caller cannot change the cached Profiles slice.
+func (r Rule) clone() Rule {
+	r.Profiles = slices.Clone(r.Profiles)
+	return r
 }
 
 // byID returns the internal ID-indexed map for read-only use inside the
@@ -97,16 +112,43 @@ func Categories() []string {
 	return out
 }
 
-// parseAllRules walks the embedded pack and returns every rule with a
-// populated metadata block. Rules whose YAML lacks the humanizer-id
-// header are skipped.
+// stylesRoot is the embedded directory holding one subdirectory per style.
+const stylesRoot = "vale/styles"
+
+// parseAllRules walks every embedded style and returns each rule with a
+// populated metadata block, plus the generated STE.Glossary rule, whose
+// metadata comes from the header glossary.Render writes. Rules whose YAML
+// lacks the humanizer-id header are skipped.
 func parseAllRules() []Rule {
 	var out []Rule
-	root := "vale/styles/Humanizer"
+	styles, err := fs.ReadDir(valeFS, stylesRoot)
+	if err != nil {
+		return nil
+	}
+	for _, s := range styles {
+		if s.IsDir() {
+			out = append(out, parseStyle(path.Join(stylesRoot, s.Name()))...)
+		}
+	}
+	if r, ok := parseMetadata(glossary.Render(nil, nil)); ok {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Category != out[j].Category {
+			return out[i].Category < out[j].Category
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// parseStyle returns the rules of one embedded style directory.
+func parseStyle(root string) []Rule {
 	entries, err := fs.ReadDir(valeFS, root)
 	if err != nil {
 		return nil
 	}
+	var out []Rule
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -130,12 +172,6 @@ func parseAllRules() []Rule {
 		r.File = full
 		out = append(out, r)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Category != out[j].Category {
-			return out[i].Category < out[j].Category
-		}
-		return out[i].ID < out[j].ID
-	})
 	return out
 }
 
@@ -235,7 +271,20 @@ func setField(r *Rule, key, value string) {
 		r.After = value
 	case "humanizer-reference":
 		r.Reference = value
+	case "humanizer-profile":
+		r.Profiles = splitList(value)
 	}
+}
+
+// splitList splits a comma-separated header value into trimmed items.
+func splitList(value string) []string {
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // PackError indicates the embedded pack is malformed — unrecoverable and

@@ -1,0 +1,15 @@
+# humanizer-id: STE.OneInstruction
+# humanizer-name: Two instructions in one sentence
+# humanizer-category: ste
+# humanizer-profile: procedure
+# humanizer-summary: Two instructions joined with "and then" in one sentence.
+# humanizer-rationale: Simplified Technical English (ASD-STE100) puts one instruction in each sentence, unless the two actions occur at the same time. An agent that reads a joined pair can skip the second action or do them in the wrong order. Split them into two steps. A bare ", then" is not flagged, because it also closes a condition ("If the build fails, then stop").
+# humanizer-before: Run the tests and then push the branch.
+# humanizer-after: Run the tests. Push the branch.
+# humanizer-reference: https://www.asd-ste100.org
+extends: existence
+message: "Two instructions joined by '%s'. Write one instruction per sentence."
+level: warning
+ignorecase: true
+tokens:
+  - and then

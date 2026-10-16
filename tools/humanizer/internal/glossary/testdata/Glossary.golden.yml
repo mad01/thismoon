@@ -1,0 +1,28 @@
+# humanizer-id: STE.Glossary
+# humanizer-name: Glossary term
+# humanizer-category: ste
+# humanizer-profile: procedure, description
+# humanizer-summary: A synonym that a CONTEXT.md glossary bans, in place of its glossary term.
+# humanizer-rationale: Generated at run time from the _Avoid_ lists of every CONTEXT.md in the repo. A glossary scopes a word to one sense, so a hit is a prompt to check the sense, not an error: "delete" can be the glossary's Retract or a plain file deletion. Use the term when you mean the glossary sense.
+# humanizer-before: Delete the assertion when its pin goes stale.
+# humanizer-after: Retract the assertion when its pin goes stale.
+# humanizer-reference: CONTEXT.md files in the repo (bold term line, definition, _Avoid_ line)
+extends: substitution
+message: "Use '%s' instead of '%s' if you mean the glossary sense."
+level: suggestion
+ignorecase: true
+exceptions:
+  - '(?i)Author key'
+swap:
+  'API key': 'Author key'
+  'app': 'Service'
+  'daemon': 'Service'
+  'fullscreen': 'Presenting'
+  'it''s-a-key': 'Author key'
+  'module': 'Component'
+  'package': 'Component'
+  'presentation': 'Deck'
+  'slideshow': 'Deck or Presenting'
+  'Slideshow mode': 'Presenting'
+  'token': 'Author key'
+  'version': 'Deck'

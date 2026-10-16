@@ -1,0 +1,15 @@
+# humanizer-id: STE.DescriptionSentenceLength
+# humanizer-name: Long description sentence
+# humanizer-category: ste
+# humanizer-profile: description
+# humanizer-summary: A descriptive sentence that runs past 25 words.
+# humanizer-rationale: Simplified Technical English (ASD-STE100) caps a descriptive sentence at 25 words. A status report or a summary is read once and acted on, so each sentence should carry one fact.
+# humanizer-before: The sweep finished on all six files and the only remaining problem is that two of the terms in the present README did not have a glossary entry that matched what the section described.
+# humanizer-after: The sweep finished on all six files. Two terms in the present README have no matching glossary entry.
+# humanizer-reference: https://www.asd-ste100.org
+extends: occurrence
+message: "Long description sentence (%v words). Keep a sentence to 25 words or fewer."
+level: warning
+scope: sentence
+max: 25
+token: '[\w''./-]+'

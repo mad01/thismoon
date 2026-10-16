@@ -62,6 +62,9 @@ var rulesExplainCmd = &cobra.Command{
 		fmt.Fprintf(out, "Category:  %s\n", r.Category)
 		fmt.Fprintf(out, "Severity:  %s\n", r.DefaultSeverity)
 		fmt.Fprintf(out, "Summary:   %s\n", r.Summary)
+		if len(r.Profiles) > 0 {
+			fmt.Fprintf(out, "Profiles:  %s\n", strings.Join(r.Profiles, ", "))
+		}
 		if r.Rationale != "" {
 			fmt.Fprintf(out, "Rationale: %s\n", r.Rationale)
 		}
@@ -83,7 +86,7 @@ var rulesExplainCmd = &cobra.Command{
 
 func init() {
 	rulesListCmd.Flags().
-		StringVar(&rulesListCategory, "category", "", "filter by category (content|language|style|communication|clarity)")
+		StringVar(&rulesListCategory, "category", "", "filter by category (content|language|style|communication|clarity|ste)")
 	rulesListCmd.Flags().BoolVar(&rulesListJSON, "json", false, "emit rules as JSON")
 	rulesCmd.AddCommand(rulesListCmd)
 	rulesCmd.AddCommand(rulesExplainCmd)
@@ -96,8 +99,12 @@ func printRulesList(w io.Writer, rs []rules.Rule) {
 		return
 	}
 	for _, r := range rs {
-		fmt.Fprintf(w, "%-12s %-10s %s\n  %s\n  %s\n\n",
+		fmt.Fprintf(w, "%-12s %-10s %s\n  %s\n  %s\n",
 			r.Category, r.DefaultSeverity, r.ID, r.Name, r.Summary)
+		if len(r.Profiles) > 0 {
+			fmt.Fprintf(w, "  profiles: %s\n", strings.Join(r.Profiles, ", "))
+		}
+		fmt.Fprintln(w)
 	}
 }
 

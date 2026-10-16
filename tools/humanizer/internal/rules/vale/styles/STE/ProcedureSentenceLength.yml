@@ -1,0 +1,15 @@
+# humanizer-id: STE.ProcedureSentenceLength
+# humanizer-name: Long procedure sentence
+# humanizer-category: ste
+# humanizer-profile: procedure
+# humanizer-summary: A procedure sentence that runs past 20 words.
+# humanizer-rationale: Simplified Technical English (ASD-STE100) caps a sentence in a procedure at 20 words. An agent that reads a long instruction can merge two steps or drop one. Write one short step per sentence.
+# humanizer-before: You should be looking at updating the README files for the events and present services so that they follow the shared outline that the docs playbook describes.
+# humanizer-after: Update the README files of the events and present services. Use the shared outline from the docs playbook.
+# humanizer-reference: https://www.asd-ste100.org
+extends: occurrence
+message: "Long procedure sentence (%v words). Keep a step to 20 words or fewer."
+level: warning
+scope: sentence
+max: 20
+token: '[\w''./-]+'
