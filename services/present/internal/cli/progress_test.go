@@ -58,6 +58,10 @@ func TestProgressCommandWritesTheStore(t *testing.T) {
 	if want := id + ": Compile 40% in build, version 2\n"; out != want {
 		t.Errorf("printed %q, want %q", out, want)
 	}
+	out, err = runProgressCmd(t, id, "Compile", "40")
+	if want := id + ": Compile 40% in build, version 2 (unchanged)\n"; err != nil || out != want {
+		t.Errorf("repeated report printed %q, %v; want %q", out, err, want)
+	}
 	flagProgressSection, flagProgressNote = "", ""
 	if _, err := runProgressCmd(t, id, "Compile", "100"); err != nil {
 		t.Fatalf("second report: %v", err)

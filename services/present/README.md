@@ -121,6 +121,9 @@ A patch answers `200 {"id", "version", "rendition", "op", "index", "anchor", "ur
 - **409 alone**: the rendition has no Doc source, such as a brief stored as raw HTML or a page without a deck.
 - **404**: no such page, or no section with that anchor (the error lists the anchors).
 - **400**: the patch or its section is malformed.
+- **413**: the body is over the route's cap, or on a shared instance the page would grow past its size cap.
+- **415**: on a local present, the request is not `Content-Type: application/json`.
+- **403**: on a local present, the request came from a page on another site. On a shared instance, the author key is not the page's. A shared instance answers 401 when no author key arrived.
 
 ```bash
 curl -sS -X POST http://localhost:7423/api/p/<id>/sections \
@@ -128,7 +131,9 @@ curl -sS -X POST http://localhost:7423/api/p/<id>/sections \
   -d '{"body_format":"markdown","section":"## Results\n\nAll green."}'
 ```
 
-A progress report finds the progress block whose label matches, in the named `section` or anywhere in the Doc. It sets that block's `pct` (0 to 100) and its `note`, a short line shown after the label. With no match the block is added to that section, or to a Progress section at the end, created the first time. A label two blocks share answers 409 with their `sections`. `present progress <id> <label> <pct> [--note ...] [--section ...]` does the same against the workdir with serve down, which suits hooks.
+A progress report finds the progress block whose label matches, in the named `section` or anywhere in the Doc. It sets that block's `pct` (0 to 100) and its `note`, a short line shown after the label. With no match the block is added to that section, or to a Progress section at the end, created the first time. A label two blocks share answers 409 with their `sections`. The route takes the guards and statuses of the section routes. It answers `200 {"id", "version", "label", "pct", "section", "anchor", "inserted", "url"}`.
+
+A report the block already shows writes nothing and answers with the current version and `"unchanged": true`. Every other report is a new version with its own history record. A hook that reports on a timer with a moving value therefore pushes older versions out of the 20 kept, so report when the value changes. `present progress <id> <label> <pct> [--note ...] [--section ...] [--deck]` makes the same edit against the workdir under the page lock. It works whether serve is running or not, which suits hooks. `--deck` reports into the deck instead of the brief.
 
 A local page keeps its newest 20 versions under `history/`. `present_source` takes a `version` to read one back, and passing that source to `present_update` restores it as a new version. The diff answers `{"content": {"changed", "added", "removed"}, "deck": {...}}`, naming each section by its anchor, or `index:N` when its anchor is empty or shared. The page view uses it to mark the sections that changed since this browser last opened the page. A version older than the kept window is 404. A shared instance keeps no history, so these routes are missing there.
 

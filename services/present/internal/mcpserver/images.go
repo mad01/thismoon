@@ -26,8 +26,9 @@ var errNoImageStore = errors.New(
 // machine into stored images: the file is read, checked, named by its
 // hash, and the src rewritten to the path the server serves it at. The
 // bytes are held until commit, which runs once the Doc has compiled, so a
-// refused Doc leaves no file behind and a stored page never names an
-// image that is not there.
+// Doc the renderer refuses leaves no file behind and a stored page never
+// names an image that is not there. A store edit refusing the write after
+// commit leaves the files for the next sweep.
 type imageIngest struct {
 	store   *images.Store // nil on a shared instance: no local files
 	pending map[string][]byte

@@ -30,8 +30,10 @@ end of the page, created the first time.
 
 The command edits the page in the workdir under the page lock, so it works
 with serve running or not, beside the MCP server and other reporters, which
-makes it fit for hooks. Open tabs reload on the new version. --deck reports
-into the deck instead of the brief.`,
+makes it fit for hooks. Open tabs reload on the new version. A report the
+block already shows writes nothing and keeps the version, so a hook can
+repeat itself without using up the page's history. --deck reports into the
+deck instead of the brief.`,
 	Args: cobra.ExactArgs(3),
 	RunE: runProgress,
 }
@@ -68,13 +70,16 @@ func runProgress(cmd *cobra.Command, args []string) error {
 	}
 	var res docedit.ProgressResult
 	page, err := st.Edit(context.Background(), id, p.Edit(&res))
-	if errors.Is(err, store.ErrNotFound) {
+	version, suffix := page.Version, ""
+	switch {
+	case errors.Is(err, store.ErrUnchanged):
+		version, suffix = res.Version, " (unchanged)"
+	case errors.Is(err, store.ErrNotFound):
 		return fmt.Errorf("%s: %w (workdir %s)", id, err, flagWorkdir)
-	}
-	if err != nil {
+	case err != nil:
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s %s%% in %s, version %d\n",
-		id, p.Label, strconv.FormatFloat(p.Percent, 'f', -1, 64), res.Anchor, page.Version)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s %s%% in %s, version %d%s\n",
+		id, p.Label, strconv.FormatFloat(p.Percent, 'f', -1, 64), res.Anchor, version, suffix)
 	return nil
 }

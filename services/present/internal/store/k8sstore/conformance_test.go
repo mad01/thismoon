@@ -174,15 +174,15 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 			if f.st.HasDeckSource(ctx, id) {
 				t.Errorf("HasDeckSource(%q) = true", id)
 			}
-			if err := f.st.SaveDeckSource(ctx, id, []byte(`{}`)); !errors.Is(
-				err, store.ErrNotFound,
-			) {
-				t.Errorf("SaveDeckSource(%q): %v, want ErrNotFound", id, err)
+			if _, err := storetest.SetSources(ctx, f.st, id, func(src *store.Sources) {
+				src.Deck = []byte(`{}`)
+			}); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("source edit (%q): %v, want ErrNotFound", id, err)
 			}
 		}
 	})
 
-	t.Run("UpdateBumpsVersionSourcesDoNot", func(t *testing.T) {
+	t.Run("UpdateAndSourceEditsBumpVersion", func(t *testing.T) {
 		f := newFixture(t)
 		ctx := context.Background()
 		p, _ := f.st.Create(ctx, store.Draft{Title: "T", Content: "<p>v1</p>"})
@@ -202,51 +202,43 @@ func runConformance(t *testing.T, newFixture func(t *testing.T) *fixture) {
 			!got.UpdatedAt.Equal(f.now) {
 			t.Fatalf("after update: %+v", got)
 		}
-		if err := f.st.SaveDoc(ctx, p.ID, []byte(`{}`)); err != nil {
-			t.Fatalf("SaveDoc: %v", err)
-		}
-		if err := f.st.SaveGraphSource(ctx, p.ID, []byte(`{}`)); err != nil {
-			t.Fatalf("SaveGraphSource: %v", err)
-		}
 		if f.st.HasDeckSource(ctx, p.ID) {
-			t.Fatal("HasDeckSource before any save: true")
+			t.Fatal("HasDeckSource before any source edit: true")
 		}
 		if _, err := f.st.LoadDeckSource(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
-			t.Fatalf("LoadDeckSource before any save: %v, want ErrNotFound", err)
+			t.Fatalf("LoadDeckSource before any source edit: %v, want ErrNotFound", err)
 		}
-		if err := f.st.SaveDeckSource(ctx, p.ID, []byte(`{"d":1}`)); err != nil {
-			t.Fatalf("SaveDeckSource: %v", err)
+		if _, err := storetest.SetSources(ctx, f.st, p.ID, func(src *store.Sources) {
+			src.Doc, src.Graph, src.Deck = []byte(`{}`), []byte(`{}`), []byte(`{"d":1}`)
+		}); err != nil {
+			t.Fatalf("source edit: %v", err)
 		}
 		got, _ = f.st.Get(ctx, p.ID)
-		if got.Version != 2 || !got.HasDoc || !f.st.HasGraphSource(ctx, p.ID) ||
+		if got.Version != 3 || !got.HasDoc || !f.st.HasGraphSource(ctx, p.ID) ||
 			!f.st.HasDeckSource(ctx, p.ID) {
-			t.Fatalf("after source saves: %+v", got)
+			t.Fatalf("after the source edit: %+v", got)
 		}
 		if src, err := f.st.LoadDeckSource(ctx, p.ID); err != nil || string(src) != `{"d":1}` {
 			t.Fatalf("LoadDeckSource = %q, %v", src, err)
 		}
-		if err := f.st.DeleteDoc(ctx, p.ID); err != nil {
-			t.Fatalf("DeleteDoc: %v", err)
-		}
-		if err := f.st.DeleteGraphSource(ctx, p.ID); err != nil {
-			t.Fatalf("DeleteGraphSource: %v", err)
-		}
-		if err := f.st.DeleteDeckSource(ctx, p.ID); err != nil {
-			t.Fatalf("DeleteDeckSource: %v", err)
+		if _, err := storetest.SetSources(ctx, f.st, p.ID, func(src *store.Sources) {
+			*src = store.Sources{}
+		}); err != nil {
+			t.Fatalf("source clearing edit: %v", err)
 		}
 		if f.st.HasDoc(ctx, p.ID) || f.st.HasGraphSource(ctx, p.ID) ||
 			f.st.HasDeckSource(ctx, p.ID) {
-			t.Fatal("sources must be gone after delete")
+			t.Fatal("sources must be gone after the clearing edit")
 		}
 		if _, err := f.st.LoadDoc(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
-			t.Fatalf("LoadDoc after delete: %v, want ErrNotFound", err)
+			t.Fatalf("LoadDoc after the clearing edit: %v, want ErrNotFound", err)
 		}
 		if _, err := f.st.LoadDeckSource(ctx, p.ID); !errors.Is(err, store.ErrNotFound) {
-			t.Fatalf("LoadDeckSource after delete: %v, want ErrNotFound", err)
+			t.Fatalf("LoadDeckSource after the clearing edit: %v, want ErrNotFound", err)
 		}
 		off := false
 		got, _ = f.st.Update(ctx, p.ID, store.Patch{Ephemeral: &off})
-		if got.Ephemeral || got.ExpiresAt != nil || got.Version != 3 {
+		if got.Ephemeral || got.ExpiresAt != nil || got.Version != 5 {
 			t.Fatalf("ephemeral=false patch: %+v", got)
 		}
 	})

@@ -1,6 +1,7 @@
 package docedit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -58,11 +59,15 @@ type Progress struct {
 }
 
 // ProgressResult says where a report landed: the section holding the
-// block, and whether the block was new.
+// block, and whether the block was new. Unchanged marks a report the block
+// already showed: the edit returned store.ErrUnchanged, wrote nothing, and
+// Version is the version the page still holds.
 type ProgressResult struct {
-	Section  int
-	Anchor   string
-	Inserted bool
+	Section   int
+	Anchor    string
+	Inserted  bool
+	Unchanged bool
+	Version   int
 }
 
 // blockRef addresses one top-level block of a Doc.
@@ -93,7 +98,9 @@ func ParseProgress(r ProgressRequest) (Progress, error) {
 
 // Edit returns the store edit that updates the progress block carrying
 // p's label, or inserts one, and recompiles the Doc. res is filled in each
-// time the edit succeeds.
+// time the edit succeeds. A report that leaves the Doc and its rendition
+// byte for byte as stored returns store.ErrUnchanged, so a hook repeating
+// the same pct spends no version and no history record.
 func (p Progress) Edit(res *ProgressResult) store.EditFunc {
 	return func(cur store.Snapshot) (store.Snapshot, error) {
 		src := p.Rendition.source(&cur.Sources)
@@ -112,11 +119,15 @@ func (p Progress) Edit(res *ProgressResult) store.EditFunc {
 		if err != nil {
 			return store.Snapshot{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 		}
-		*src = c.JSON
-		p.Rendition.setHTML(&cur.Page, c.HTML)
 		*res = ProgressResult{
 			Section: at, Anchor: render.SectionAnchor(doc.Sections[at].Heading), Inserted: inserted,
 		}
+		if bytes.Equal(c.JSON, *src) && c.HTML == p.Rendition.html(cur.Page) {
+			res.Unchanged, res.Version = true, cur.Page.Version
+			return store.Snapshot{}, store.ErrUnchanged
+		}
+		*src = c.JSON
+		p.Rendition.setHTML(&cur.Page, c.HTML)
 		return cur, nil
 	}
 }

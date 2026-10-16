@@ -358,3 +358,41 @@ func TestAnchorsFollowNameNormalization(t *testing.T) {
 		t.Fatalf("remove by the heading as typed: %v", err)
 	}
 }
+
+// TestRepeatedOperatorsAddressByTheRenderedID pins a heading whose name
+// normalization needs more than one pass: the section answers to the id
+// the page renders and to the heading as typed, and the anchor a patch
+// reports is that rendered id.
+func TestRepeatedOperatorsAddressByTheRenderedID(t *testing.T) {
+	cur := page(t, "Alpha", "A - - B")
+	for _, anchor := range []string{"a-minus-minus-b", "#a-minus-minus-b", "A - - B"} {
+		if _, _, err := run(t, cur, docedit.Request{Op: "remove", Anchor: anchor}); err != nil {
+			t.Errorf("remove by %q: %v", anchor, err)
+		}
+	}
+	_, res, err := run(t, cur, docedit.Request{
+		Op: "append", Section: sectionJSON(t, section("x & & y")),
+	})
+	if err != nil || res.Anchor != "x-and-and-y" {
+		t.Fatalf("append: result %+v, err %v; want anchor x-and-and-y", res, err)
+	}
+}
+
+// TestHeadingsWithoutASCIIAreIndexOnly pins the fallback for a heading with
+// no ASCII letter or digit: its anchor is empty, a patch naming it is
+// refused with a pointer to the index form, and the index form works.
+func TestHeadingsWithoutASCIIAreIndexOnly(t *testing.T) {
+	cur := page(t, "设计 概览", "Beta")
+	if _, _, err := run(t, cur, docedit.Request{Op: "remove", Anchor: "设计 概览"}); !errors.Is(
+		err, docedit.ErrInvalid,
+	) || !strings.Contains(err.Error(), docedit.IndexPrefix) {
+		t.Errorf("remove by the heading: err = %v, want ErrInvalid naming the index form", err)
+	}
+	next, _, err := run(t, cur, docedit.Request{Op: "remove", Anchor: docedit.IndexPrefix + "0"})
+	if err != nil {
+		t.Fatalf("remove by index: %v", err)
+	}
+	if got := headingsOf(t, next.Sources.Doc); !slices.Equal(got, []string{"Beta"}) {
+		t.Errorf("headings after removing index:0 = %v", got)
+	}
+}

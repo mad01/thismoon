@@ -119,27 +119,28 @@ func TestDeckSourceRoundTrip(t *testing.T) {
 		t.Fatalf("LoadDeckSource absent: err = %v, want ErrNotFound", err)
 	}
 	src := []byte(`{"sections":[{"h":"One","blocks":[]}]}`)
-	if err := s.SaveDeckSource(ctx, p.ID, src); err != nil {
-		t.Fatalf("SaveDeckSource: %v", err)
+	if err := setSources(t, s, p.ID, func(cur *Sources) { cur.Deck = src }); err != nil {
+		t.Fatalf("edit in a deck source: %v", err)
 	}
 	if !s.HasDeckSource(ctx, p.ID) {
-		t.Fatal("HasDeckSource = false after save")
+		t.Fatal("HasDeckSource = false after the edit")
 	}
 	got, err := s.LoadDeckSource(ctx, p.ID)
 	if err != nil || string(got) != string(src) {
 		t.Fatalf("LoadDeckSource = %q, %v", got, err)
 	}
-	if err := s.DeleteDeckSource(ctx, p.ID); err != nil {
-		t.Fatalf("DeleteDeckSource: %v", err)
+	clearDeck := func(cur *Sources) { cur.Deck = nil }
+	if err := setSources(t, s, p.ID, clearDeck); err != nil {
+		t.Fatalf("edit out the deck source: %v", err)
 	}
 	if s.HasDeckSource(ctx, p.ID) {
-		t.Fatal("deck source still present after delete")
+		t.Fatal("deck source still present after the edit cleared it")
 	}
-	if err := s.DeleteDeckSource(ctx, p.ID); err != nil {
-		t.Fatalf("DeleteDeckSource on absent file: %v", err)
+	if err := setSources(t, s, p.ID, clearDeck); err != nil {
+		t.Fatalf("clearing an absent deck source: %v", err)
 	}
-	if err := s.SaveDeckSource(ctx, "../escape", src); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("SaveDeckSource invalid id: err = %v, want ErrNotFound", err)
+	if err := setSources(t, s, "../escape", clearDeck); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("edit of an invalid id: err = %v, want ErrNotFound", err)
 	}
 }
 

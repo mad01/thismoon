@@ -82,22 +82,24 @@ func TestSizeLimitCountsTheSourcesToo(t *testing.T) {
 	}
 
 	big := []byte(`{"note":"` + strings.Repeat("d", limitBytes) + `"}`)
-	if err := limited.SaveDoc(ctx, p.ID, big); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("SaveDoc over the limit: err = %v, want ErrTooLarge", err)
+	bigDoc := func(cur *Sources) { cur.Doc = big }
+	if err := setSources(t, limited, p.ID, bigDoc); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("doc edit over the limit: err = %v, want ErrTooLarge", err)
 	}
 	if _, err := fs.LoadDoc(ctx, p.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a refused SaveDoc must write nothing: err = %v", err)
+		t.Fatalf("a refused doc edit must write nothing: err = %v", err)
 	}
-	if err := limited.SaveGraphSource(ctx, p.ID, big); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("SaveGraphSource over the limit: err = %v, want ErrTooLarge", err)
+	bigGraph := func(cur *Sources) { cur.Graph = big }
+	if err := setSources(t, limited, p.ID, bigGraph); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("graph source edit over the limit: err = %v, want ErrTooLarge", err)
 	}
 	if _, err := fs.LoadGraphSource(ctx, p.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a refused SaveGraphSource must write nothing: err = %v", err)
+		t.Fatalf("a refused graph source edit must write nothing: err = %v", err)
 	}
 
 	small := []byte(`{"sections":[]}`)
-	if err := limited.SaveDoc(ctx, p.ID, small); err != nil {
-		t.Fatalf("SaveDoc under the limit: %v", err)
+	if err := setSources(t, limited, p.ID, func(cur *Sources) { cur.Doc = small }); err != nil {
+		t.Fatalf("doc edit under the limit: %v", err)
 	}
 	// The doc now counts against the page's budget, so content that fit on
 	// its own no longer does.
@@ -155,16 +157,17 @@ func TestSizeLimitCountsTheDeckToo(t *testing.T) {
 	if got, _ := fs.Get(ctx, p.ID); got.HasDeck || got.Version != 1 {
 		t.Fatalf("a refused update must not change the page: %+v", got)
 	}
-	if err := limited.SaveDeckSource(ctx, p.ID, bigSrc); !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("SaveDeckSource over the limit: err = %v, want ErrTooLarge", err)
+	bigDeck := func(cur *Sources) { cur.Deck = bigSrc }
+	if err := setSources(t, limited, p.ID, bigDeck); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("deck source edit over the limit: err = %v, want ErrTooLarge", err)
 	}
 	if _, err := fs.LoadDeckSource(ctx, p.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a refused SaveDeckSource must write nothing: err = %v", err)
+		t.Fatalf("a refused deck source edit must write nothing: err = %v", err)
 	}
 
 	small := []byte(`{"sections":[]}`)
-	if err := limited.SaveDeckSource(ctx, p.ID, small); err != nil {
-		t.Fatalf("SaveDeckSource under the limit: %v", err)
+	if err := setSources(t, limited, p.ID, func(cur *Sources) { cur.Deck = small }); err != nil {
+		t.Fatalf("deck source edit under the limit: %v", err)
 	}
 	// The deck source now counts against the page's budget.
 	almost := "<p>" + strings.Repeat("y", limitBytes-len(small)-64) + "</p>"

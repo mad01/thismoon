@@ -110,10 +110,6 @@ const (
 	outcomeUnchanged = "unchanged"
 )
 
-// errUnchanged ends a re-render edit whose output matches what is stored,
-// so the page keeps its version and open tabs do not reload.
-var errUnchanged = errors.New("present: page unchanged")
-
 // rerenderOne re-renders a single page and returns its outcome. A page with a
 // persisted Doc is re-rendered from source; otherwise its stored HTML is run
 // through the legacy upgrader. A deck (deck.json) and a graph with a persisted
@@ -124,22 +120,28 @@ var errUnchanged = errors.New("present: page unchanged")
 // version bumped only when the rendered output actually changed.
 func rerenderOne(ctx context.Context, st store.Store, id string) (string, error) {
 	var outcome string
+	var renderErr error
 	_, err := st.Edit(ctx, id, func(cur store.Snapshot) (store.Snapshot, error) {
 		next, moved, err := rerenderSnapshot(cur)
 		if err != nil {
+			renderErr = err
 			return store.Snapshot{}, err
 		}
 		if moved == "" {
-			return store.Snapshot{}, errUnchanged
+			return store.Snapshot{}, store.ErrUnchanged
 		}
 		outcome = moved
 		return next, nil
 	})
 	switch {
-	case errors.Is(err, errUnchanged):
+	case errors.Is(err, store.ErrUnchanged):
 		return outcomeUnchanged, nil
-	case err != nil:
+	case renderErr != nil && errors.Is(err, renderErr):
 		return "", err
+	case err != nil:
+		// The store failed reading the page and its sources (a doc read
+		// failure carries "load doc:") or writing the result.
+		return "", fmt.Errorf("update page: %w", err)
 	}
 	return outcome, nil
 }

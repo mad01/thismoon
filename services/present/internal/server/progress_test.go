@@ -72,3 +72,29 @@ func TestProgressRouteRefusals(t *testing.T) {
 		t.Errorf("unknown page: %d, want 404", status)
 	}
 }
+
+// TestRepeatedProgressKeepsTheVersion pins the route's no-op: identical
+// reports after the first answer with the version the page holds, marked
+// unchanged, and add no history record.
+func TestRepeatedProgressKeepsTheVersion(t *testing.T) {
+	ts, st := setup(t)
+	p := docPage(t, st, "Alpha")
+	path := "/api/p/" + p.ID + "/progress"
+	body := map[string]any{"label": "Index", "pct": 40, "note": "8 of 20"}
+	if status, out := sendSection(t, ts, http.MethodPost, path, body, nil); status != http.StatusOK ||
+		out["version"] != 2.0 ||
+		out["unchanged"] != nil {
+		t.Fatalf("first report: %d %v", status, out)
+	}
+	for range 2 {
+		status, out := sendSection(t, ts, http.MethodPost, path, body, nil)
+		if status != http.StatusOK || out["version"] != 2.0 || out["unchanged"] != true {
+			t.Fatalf("repeated report: %d %v; want version 2, unchanged", status, out)
+		}
+	}
+	status, history := getJSON(t, ts.URL+"/api/p/"+p.ID+"/history")
+	if revisions, _ := history["revisions"].([]any); status != http.StatusOK ||
+		len(revisions) != 2 {
+		t.Fatalf("history after repeats: %d %v; want versions 1 and 2 only", status, history)
+	}
+}

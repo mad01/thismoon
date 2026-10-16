@@ -206,19 +206,6 @@ func parseSection(body []byte, format string) (render.Section, error) {
 	return render.Section{}, invalid("unknown body_format %q (want json or markdown)", format)
 }
 
-// Check compiles the patch's section alone, so a section the renderer
-// refuses is turned away before anything else is done for it, such as
-// storing the images it names. The edit compiles the whole Doc again.
-func (p SectionPatch) Check(title string) error {
-	if p.Op == OpRemove {
-		return nil
-	}
-	if _, err := p.Rendition.compile(render.Doc{Sections: []render.Section{p.Section}}, title); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalid, err)
-	}
-	return nil
-}
-
 // Edit returns the store edit that applies p to the page's current Doc and
 // recompiles it under the page's title. res is filled in each time the edit
 // succeeds; read it once the store's Edit returned without error.
@@ -355,6 +342,14 @@ func (r Rendition) source(src *store.Sources) *[]byte {
 		return &src.Deck
 	}
 	return &src.Doc
+}
+
+// html is the rendition's rendered HTML as the page holds it.
+func (r Rendition) html(p store.Page) string {
+	if r == Deck {
+		return p.Deck
+	}
+	return p.Content
 }
 
 // setHTML stores the rendition's rendered HTML on the page.

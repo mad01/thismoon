@@ -78,9 +78,12 @@ shared: use index:N or rename the heading. Alone, the page has no Doc to
 patch, because it was stored as raw HTML.
 
 Progress goes to POST /api/p/<id>/progress, or to `present progress <id>
-<label> <pct>` with serve down, which hooks use. It sets the progress block
-carrying that label, or adds one to a Progress section. A 409 with sections
-means two blocks share the label: pass --section. A bad edit is undone from
+<label> <pct>`, which takes the page lock and works with serve up or down;
+hooks use it. It sets the progress block carrying that label, or adds one to
+a Progress section. A 409 with sections means two blocks share the label:
+pass --section. A report the bar already shows writes nothing and keeps the
+version. Every other report is a version, and only 20 are kept, so report on
+change rather than on a timer. A bad edit is undone from
 history: GET /api/p/<id>/history lists versions, present_source with a
 version returns one, and present_update with that source restores it.
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/mad01/thismoon/services/present/internal/store/storetest"
 )
 
 // seedLegacyPage writes a page directly with legacy HTML content and no
@@ -21,6 +22,17 @@ func seedLegacyPage(t *testing.T, st store.Store, legacyHTML string) string {
 		t.Fatalf("seed legacy: %v", err)
 	}
 	return p.ID
+}
+
+// setDoc gives a seeded page a Doc source without touching its stored HTML,
+// the state a renderer change leaves behind.
+func setDoc(t *testing.T, st store.Store, id string, doc []byte) {
+	t.Helper()
+	if _, err := storetest.SetSources(t.Context(), st, id, func(src *store.Sources) {
+		src.Doc = doc
+	}); err != nil {
+		t.Fatalf("edit in a doc: %v", err)
+	}
 }
 
 func TestRerenderUpgradesLegacyAndReRendersDoc(t *testing.T) {
@@ -39,9 +51,7 @@ func TestRerenderUpgradesLegacyAndReRendersDoc(t *testing.T) {
 	// Doc page: persisted doc.json so rerender re-renders from source.
 	docID := seedLegacyPage(t, st, "<p>placeholder content from before a render change</p>")
 	docJSON := []byte(`{"sections":[{"h":"FromDoc","blocks":[{"t":"p","text":"re-rendered"}]}]}`)
-	if err := st.SaveDoc(t.Context(), docID, docJSON); err != nil {
-		t.Fatalf("SaveDoc: %v", err)
-	}
+	setDoc(t, st, docID, docJSON)
 
 	legacyBefore, _ := st.Get(t.Context(), legacyID)
 	docBefore, _ := st.Get(t.Context(), docID)
@@ -169,8 +179,11 @@ func TestRerenderReRendersGraphFromSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := st.SaveGraphSource(t.Context(), p.ID, []byte(`{"nodes":[{"id":"a","label":"NodeA"}]}`)); err != nil {
-		t.Fatalf("SaveGraphSource: %v", err)
+	graphSrc := []byte(`{"nodes":[{"id":"a","label":"NodeA"}]}`)
+	if _, err := storetest.SetSources(t.Context(), st, p.ID, func(src *store.Sources) {
+		src.Graph = graphSrc
+	}); err != nil {
+		t.Fatalf("edit in a graph source: %v", err)
 	}
 
 	var out bytes.Buffer
@@ -293,9 +306,7 @@ func TestRerenderSweepRefreshesStalePagesOnce(t *testing.T) {
 	}
 	staleID := seedLegacyPage(t, st, "<p>stale html from an older renderer</p>")
 	docJSON := []byte(`{"sections":[{"h":"S","blocks":[{"t":"p","text":"fresh"}]}]}`)
-	if err := st.SaveDoc(t.Context(), staleID, docJSON); err != nil {
-		t.Fatalf("SaveDoc: %v", err)
-	}
+	setDoc(t, st, staleID, docJSON)
 	stale, _ := st.Get(t.Context(), staleID)
 
 	var lines []string
@@ -321,5 +332,37 @@ func TestRerenderSweepRefreshesStalePagesOnce(t *testing.T) {
 	}
 	if len(lines) != 1 || !strings.HasSuffix(lines[0], "1 pages, 0 re-rendered, 0 failed") {
 		t.Errorf("second sweep log = %q", lines)
+	}
+}
+
+// TestRerenderErrorsNameTheStep pins the error context a failed re-render
+// carries: a store failure reads as "update page:" with the source that
+// failed, and a render failure keeps its own prefix without one.
+func TestRerenderErrorsNameTheStep(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.NewFS(dir)
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+
+	unreadable := seedLegacyPage(t, st, "<p>x</p>")
+	// A directory where doc.json belongs is a read failure, not a missing doc.
+	if err := os.Mkdir(filepath.Join(dir, "pages", unreadable, "doc.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err = rerenderOne(t.Context(), st, unreadable)
+	if err == nil || !strings.HasPrefix(err.Error(), "update page: load doc: ") {
+		t.Errorf("unreadable doc: err = %v, want an \"update page: load doc:\" prefix", err)
+	}
+
+	broken := seedLegacyPage(t, st, "<p>x</p>")
+	if _, err := storetest.SetSources(t.Context(), st, broken, func(src *store.Sources) {
+		src.Deck = []byte(`not json`)
+	}); err != nil {
+		t.Fatalf("edit in a broken deck source: %v", err)
+	}
+	_, err = rerenderOne(t.Context(), st, broken)
+	if err == nil || !strings.HasPrefix(err.Error(), "render deck: ") {
+		t.Errorf("broken deck source: err = %v, want a bare \"render deck:\" prefix", err)
 	}
 }

@@ -3,6 +3,8 @@ package store
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -107,5 +109,39 @@ func TestHistoryMissingPagesAndVersions(t *testing.T) {
 		if _, err := s.Revision(ctx, p.ID, v); !errors.Is(err, ErrRevisionNotKept) {
 			t.Errorf("Revision(%d): err = %v, want ErrRevisionNotKept", v, err)
 		}
+	}
+}
+
+// TestHistoryLandsBeforeTheVersion pins the commit order: the history record
+// is written before meta.json moves, so an edit whose record cannot be
+// written leaves the page at its old version, and the next edit that can
+// write one commits the version that failed.
+func TestHistoryLandsBeforeTheVersion(t *testing.T) {
+	s := newTestStore(t)
+	ctx := t.Context()
+	p, err := s.Create(ctx, Draft{Title: "T", Content: "<p>v1</p>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := filepath.Join(s.pageDir(p.ID), historyDir)
+	if err := os.RemoveAll(history); err != nil {
+		t.Fatal(err)
+	}
+	// A file where the history directory belongs fails the record's write.
+	if err := os.WriteFile(history, []byte("in the way"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	title := "T2"
+	if _, err := s.Update(ctx, p.ID, Patch{Title: &title}); err == nil {
+		t.Fatal("an edit whose history record cannot be written succeeded")
+	}
+	if got, err := s.GetMeta(ctx, p.ID); err != nil || got.Version != 1 || got.Title != "T" {
+		t.Fatalf("meta after the failed record = %+v, %v; want version 1 untouched", got, err)
+	}
+	if err := os.Remove(history); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Update(ctx, p.ID, Patch{Title: &title}); err != nil || got.Version != 2 {
+		t.Fatalf("edit once history is writable = %+v, %v; want version 2", got, err)
 	}
 }

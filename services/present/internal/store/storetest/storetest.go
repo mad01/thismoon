@@ -234,6 +234,17 @@ func checkVersions(t *testing.T, versions [][]int) {
 	}
 }
 
+// SetSources changes a page's sources through Edit, the one write path for
+// them, so the edit bumps the version like any other.
+func SetSources(
+	ctx context.Context, st store.Store, id string, change func(*store.Sources),
+) (store.Page, error) {
+	return st.Edit(ctx, id, func(cur store.Snapshot) (store.Snapshot, error) {
+		change(&cur.Sources)
+		return cur, nil
+	})
+}
+
 // NewTokenPage creates the page the token edits work on: a Doc source that
 // is a JSON list of tokens, and content rendered from it.
 func NewTokenPage(t *testing.T, st store.Store) string {

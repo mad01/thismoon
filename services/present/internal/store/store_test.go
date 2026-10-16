@@ -19,6 +19,18 @@ func newTestStore(t *testing.T) *FS {
 	return s
 }
 
+// setSources changes a page's sources through Edit, the one write path for
+// them. storetest.SetSources is the same helper for tests outside this
+// package; these tests cannot import storetest without an import cycle.
+func setSources(t *testing.T, st Store, id string, change func(*Sources)) error {
+	t.Helper()
+	_, err := st.Edit(t.Context(), id, func(cur Snapshot) (Snapshot, error) {
+		change(&cur.Sources)
+		return cur, nil
+	})
+	return err
+}
+
 func TestCreatePersistsAndReturnsID(t *testing.T) {
 	s := newTestStore(t)
 	p, err := s.Create(t.Context(), Draft{Title: "My Brief", Content: "<p>body</p>"})

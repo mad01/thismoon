@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // Sources are the canonical JSON a page's renditions were rendered from:
 // Doc for the brief (doc.json), Deck for the deck (deck.json), and Graph
@@ -28,6 +31,13 @@ type Snapshot struct {
 // record. The returned sources replace the stored ones, and a nil source is
 // deleted. An error aborts the edit with nothing written.
 type EditFunc func(cur Snapshot) (Snapshot, error)
+
+// ErrUnchanged is what an EditFunc returns when its edit would leave the
+// page as it is. Like any error it aborts the edit, so no version is spent,
+// no history record is written, and no open tab reloads. Every store
+// returns it unwrapped, so the caller can tell a no-op from a failure and
+// answer with the version its EditFunc read.
+var ErrUnchanged = errors.New("present: page unchanged")
 
 // ApplyEdit runs fn over cur and returns the state to persist: the editable
 // fields and sources fn returned, folded into cur, with the version bumped

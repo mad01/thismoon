@@ -22,11 +22,11 @@ func TestGraphSourceRoundTrip(t *testing.T) {
 		t.Fatal("new page should have no graph source")
 	}
 	src := []byte(`{"nodes":[{"id":"a","label":"A"}]}`)
-	if err := st.SaveGraphSource(t.Context(), p.ID, src); err != nil {
-		t.Fatalf("SaveGraphSource: %v", err)
+	if err := setSources(t, st, p.ID, func(cur *Sources) { cur.Graph = src }); err != nil {
+		t.Fatalf("edit in a graph source: %v", err)
 	}
 	if !st.HasGraphSource(t.Context(), p.ID) {
-		t.Fatal("HasGraphSource = false after save")
+		t.Fatal("HasGraphSource = false after the edit")
 	}
 	got, err := st.LoadGraphSource(t.Context(), p.ID)
 	if err != nil {
@@ -48,17 +48,19 @@ func TestGraphSourceLoadMissingReturnsNotFound(t *testing.T) {
 func TestGraphSourceDelete(t *testing.T) {
 	st, _ := NewFS(t.TempDir())
 	p, _ := st.Create(t.Context(), Draft{Title: "T", Content: "<p>x</p>", Graph: "js"})
-	if err := st.SaveGraphSource(t.Context(), p.ID, []byte(`{"nodes":[]}`)); err != nil {
-		t.Fatalf("SaveGraphSource: %v", err)
+	setGraph := func(cur *Sources) { cur.Graph = []byte(`{"nodes":[]}`) }
+	if err := setSources(t, st, p.ID, setGraph); err != nil {
+		t.Fatalf("edit in a graph source: %v", err)
 	}
-	if err := st.DeleteGraphSource(t.Context(), p.ID); err != nil {
-		t.Fatalf("DeleteGraphSource: %v", err)
+	clearGraph := func(cur *Sources) { cur.Graph = nil }
+	if err := setSources(t, st, p.ID, clearGraph); err != nil {
+		t.Fatalf("edit out the graph source: %v", err)
 	}
 	if st.HasGraphSource(t.Context(), p.ID) {
-		t.Fatal("graph source still present after delete")
+		t.Fatal("graph source still present after the edit cleared it")
 	}
-	// Deleting again (absent) is not an error.
-	if err := st.DeleteGraphSource(t.Context(), p.ID); err != nil {
-		t.Fatalf("DeleteGraphSource on absent file: %v", err)
+	// Clearing again (absent) is not an error.
+	if err := setSources(t, st, p.ID, clearGraph); err != nil {
+		t.Fatalf("clearing an absent graph source: %v", err)
 	}
 }

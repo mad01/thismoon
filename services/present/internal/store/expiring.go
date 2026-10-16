@@ -97,13 +97,6 @@ func (e *expiring) dropExpired(pages []Page) []Page {
 	return kept
 }
 
-func (e *expiring) SaveDoc(ctx context.Context, id string, doc []byte) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.inner.SaveDoc(ctx, id, doc)
-}
-
 func (e *expiring) LoadDoc(ctx context.Context, id string) ([]byte, error) {
 	if err := e.live(ctx, id); err != nil {
 		return nil, err
@@ -113,20 +106,6 @@ func (e *expiring) LoadDoc(ctx context.Context, id string) ([]byte, error) {
 
 func (e *expiring) HasDoc(ctx context.Context, id string) bool {
 	return e.live(ctx, id) == nil && e.inner.HasDoc(ctx, id)
-}
-
-func (e *expiring) DeleteDoc(ctx context.Context, id string) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.inner.DeleteDoc(ctx, id)
-}
-
-func (e *expiring) SaveGraphSource(ctx context.Context, id string, src []byte) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.inner.SaveGraphSource(ctx, id, src)
 }
 
 func (e *expiring) LoadGraphSource(ctx context.Context, id string) ([]byte, error) {
@@ -140,20 +119,6 @@ func (e *expiring) HasGraphSource(ctx context.Context, id string) bool {
 	return e.live(ctx, id) == nil && e.inner.HasGraphSource(ctx, id)
 }
 
-func (e *expiring) DeleteGraphSource(ctx context.Context, id string) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.inner.DeleteGraphSource(ctx, id)
-}
-
-func (e *expiring) SaveDeckSource(ctx context.Context, id string, src []byte) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.inner.SaveDeckSource(ctx, id, src)
-}
-
 func (e *expiring) LoadDeckSource(ctx context.Context, id string) ([]byte, error) {
 	if err := e.live(ctx, id); err != nil {
 		return nil, err
@@ -163,13 +128,6 @@ func (e *expiring) LoadDeckSource(ctx context.Context, id string) ([]byte, error
 
 func (e *expiring) HasDeckSource(ctx context.Context, id string) bool {
 	return e.live(ctx, id) == nil && e.inner.HasDeckSource(ctx, id)
-}
-
-func (e *expiring) DeleteDeckSource(ctx context.Context, id string) error {
-	if err := e.live(ctx, id); err != nil {
-		return err
-	}
-	return e.inner.DeleteDeckSource(ctx, id)
 }
 
 func (e *expiring) SetShared(ctx context.Context, id string, info *SharedInfo) error {

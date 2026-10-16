@@ -99,9 +99,11 @@ func (l *sizeLimited) Create(ctx context.Context, d Draft) (Page, error) {
 	return l.inner.Create(ctx, d)
 }
 
-// Edit measures the state fn returns, inside the wrapped store's edit, so
-// the page is judged by exactly what the store would persist and a
-// concurrent write cannot slip between the check and the write.
+// Edit measures the state fn returns, inside the wrapped store's edit, so a
+// concurrent write cannot slip between the check and the write. The page is
+// measured as fn left it, still carrying the old version and UpdatedAt,
+// before the store bumps the one and stamps the other. Both are short, so
+// the persisted object can differ from the measured one by a few bytes.
 func (l *sizeLimited) Edit(ctx context.Context, id string, fn EditFunc) (Page, error) {
 	return l.inner.Edit(ctx, id, func(cur Snapshot) (Snapshot, error) {
 		next, err := fn(cur)
@@ -120,64 +122,4 @@ func (l *sizeLimited) Edit(ctx context.Context, id string, fn EditFunc) (Page, e
 // becomes.
 func (l *sizeLimited) Update(ctx context.Context, id string, patch Patch) (Page, error) {
 	return l.Edit(ctx, id, PatchEdit(patch))
-}
-
-// SaveDoc measures the page with the new Doc source in place of the old one.
-func (l *sizeLimited) SaveDoc(ctx context.Context, id string, doc []byte) error {
-	return l.saveSource(ctx, id, func(src *Sources) { src.Doc = doc }, func() error {
-		return l.inner.SaveDoc(ctx, id, doc)
-	})
-}
-
-// SaveGraphSource measures the page with the new graph source in place of
-// the old one.
-func (l *sizeLimited) SaveGraphSource(ctx context.Context, id string, src []byte) error {
-	return l.saveSource(ctx, id, func(s *Sources) { s.Graph = src }, func() error {
-		return l.inner.SaveGraphSource(ctx, id, src)
-	})
-}
-
-// SaveDeckSource measures the page with the new deck source in place of the
-// old one.
-func (l *sizeLimited) SaveDeckSource(ctx context.Context, id string, src []byte) error {
-	return l.saveSource(ctx, id, func(s *Sources) { s.Deck = src }, func() error {
-		return l.inner.SaveDeckSource(ctx, id, src)
-	})
-}
-
-// saveSource measures the page with one source replaced (replace edits the
-// stored set) and runs save only when it fits.
-func (l *sizeLimited) saveSource(
-	ctx context.Context, id string, replace func(*Sources), save func() error,
-) error {
-	page, err := l.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-	src, err := l.sources(ctx, id)
-	if err != nil {
-		return err
-	}
-	replace(&src)
-	if err := l.check(page, src); err != nil {
-		return err
-	}
-	return save()
-}
-
-// sources loads every persisted source for a page. A page without a source
-// is measured without one; only a real read failure stops the write.
-func (l *sizeLimited) sources(ctx context.Context, id string) (Sources, error) {
-	var src Sources
-	var err error
-	if src.Doc, err = optionalSource(l.LoadDoc(ctx, id)); err != nil {
-		return Sources{}, fmt.Errorf("load doc: %w", err)
-	}
-	if src.Graph, err = optionalSource(l.LoadGraphSource(ctx, id)); err != nil {
-		return Sources{}, fmt.Errorf("load graph source: %w", err)
-	}
-	if src.Deck, err = optionalSource(l.LoadDeckSource(ctx, id)); err != nil {
-		return Sources{}, fmt.Errorf("load deck source: %w", err)
-	}
-	return src, nil
 }

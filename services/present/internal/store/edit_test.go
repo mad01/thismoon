@@ -121,8 +121,11 @@ func TestWritesNeverRecreateADeletedPage(t *testing.T) {
 			_, err := s.Edit(ctx, p.ID, PatchEdit(Patch{Title: &title}))
 			return err
 		}(),
-		"SaveDoc":   s.SaveDoc(ctx, p.ID, []byte(`{}`)),
-		"DeleteDoc": s.DeleteDoc(ctx, p.ID),
+		"Update": func() error {
+			_, err := s.Update(ctx, p.ID, Patch{Title: &title})
+			return err
+		}(),
+		"Delete":    s.Delete(ctx, p.ID),
 		"SetShared": s.SetShared(ctx, p.ID, nil),
 	}
 	for name, err := range writes {

@@ -2,12 +2,14 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/services/present/internal/author"
 	"github.com/mad01/thismoon/services/present/internal/docedit"
+	"github.com/mad01/thismoon/services/present/internal/store"
 )
 
 // patchSectionDescription teaches the tool, with the one example a client
@@ -84,7 +86,7 @@ func (h *handlers) handlePatchSection(
 			return nil, patchSectionOutput{}, err
 		}
 	}
-	if patch, err = h.ingestSection(patch, cur.Title); err != nil {
+	if patch, err = h.ingestSection(ctx, patch, cur); err != nil {
 		return nil, patchSectionOutput{}, err
 	}
 	var res docedit.Result
@@ -104,12 +106,17 @@ func (h *handlers) handlePatchSection(
 	}, nil
 }
 
-// ingestSection turns the section's local image files into stored images,
-// checks that the section compiles on its own, and only then writes the
-// files, so a refused section leaves no file behind.
+// ingestSection turns the section's local image files into stored images
+// and writes the files only once the patch, images rewritten, passes a dry
+// run of its edit over the page as cur read it. So a patch refused for a
+// stale base_version, a missing or shared anchor, or a Doc the renderer
+// refuses leaves no file behind. A write landing between the dry run and
+// the store edit can still refuse the patch after the files are written;
+// such a file stays until the sweep at serve start or the next page delete.
 func (h *handlers) ingestSection(
+	ctx context.Context,
 	patch docedit.SectionPatch,
-	title string,
+	cur store.Page,
 ) (docedit.SectionPatch, error) {
 	if patch.Op == docedit.OpRemove {
 		return patch, nil
@@ -120,11 +127,39 @@ func (h *handlers) ingestSection(
 		return docedit.SectionPatch{}, err
 	}
 	patch.Section = section
-	if err := patch.Check(title); err != nil {
+	snap, err := h.snapshotOf(ctx, cur)
+	if err != nil {
+		return docedit.SectionPatch{}, err
+	}
+	var dry docedit.Result
+	if _, err := patch.Edit(&dry)(snap); err != nil {
 		return docedit.SectionPatch{}, err
 	}
 	if err := ing.commit(); err != nil {
 		return docedit.SectionPatch{}, err
 	}
 	return patch, nil
+}
+
+// snapshotOf reads cur's sources beside it: the state a store edit hands an
+// EditFunc, so an edit can run as a dry run before anything is written. A
+// missing source reads as nil, as it does in an edit.
+func (h *handlers) snapshotOf(ctx context.Context, cur store.Page) (store.Snapshot, error) {
+	snap := store.Snapshot{Page: cur}
+	loads := []struct {
+		into *[]byte
+		load func(context.Context, string) ([]byte, error)
+	}{
+		{&snap.Sources.Doc, h.store.LoadDoc},
+		{&snap.Sources.Deck, h.store.LoadDeckSource},
+		{&snap.Sources.Graph, h.store.LoadGraphSource},
+	}
+	for _, l := range loads {
+		data, err := l.load(ctx, cur.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return store.Snapshot{}, err
+		}
+		*l.into = data
+	}
+	return snap, nil
 }

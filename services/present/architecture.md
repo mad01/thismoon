@@ -239,8 +239,8 @@ and the canonical sources as strings in its spec. Replicas read and write it
 through the API server with client-go's dynamic client. A write is a
 read-modify-write guarded by resourceVersion and retried on conflict, so two
 replicas never clobber each other. `version` is an explicit spec field
-rather than `metadata.generation`, because source saves would bump the
-generation and make open tabs reload for nothing.
+rather than `metadata.generation`, because recording a push with SetShared
+would bump the generation and make open tabs reload for nothing.
 
 Each replica also runs an informer over the namespace's pages. Its cache
 keeps metadata only, because a transform drops content, graph, and

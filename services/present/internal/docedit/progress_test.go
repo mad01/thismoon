@@ -188,3 +188,26 @@ func TestParseProgressRefusals(t *testing.T) {
 		}
 	}
 }
+
+// TestRepeatedProgressWritesNothing pins the no-op: a report the block
+// already shows returns store.ErrUnchanged with the version it read, so a
+// hook repeating itself spends no version, and a changed note still writes.
+func TestRepeatedProgressWritesNothing(t *testing.T) {
+	req := docedit.ProgressRequest{Label: "Index", Percent: pct(40), Note: "8 of 20"}
+	cur, _, err := report(t, page(t, "Alpha"), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const storedVersion = 4 // the version a store stamped on the first report
+	cur.Page.Version = storedVersion
+	_, res, err := report(t, cur, req)
+	if !errors.Is(err, store.ErrUnchanged) || !res.Unchanged || res.Version != storedVersion ||
+		res.Anchor != "progress" {
+		t.Fatalf("repeated report = %+v, %v; want ErrUnchanged at version %d",
+			res, err, storedVersion)
+	}
+	req.Note = "9 of 20"
+	if _, res, err := report(t, cur, req); err != nil || res.Unchanged {
+		t.Fatalf("report with a new note = %+v, %v; want a write", res, err)
+	}
+}

@@ -316,7 +316,10 @@ func (s *Store) ListMeta(ctx context.Context) ([]store.Page, error) {
 // SetShared records where the page was pushed, or clears it with nil. The
 // version is untouched.
 func (s *Store) SetShared(ctx context.Context, id string, info *store.SharedInfo) error {
-	_, err := s.mutate(ctx, id, always(func(rec *record) { rec.Page.Shared = info }))
+	_, err := s.mutate(ctx, id, func(rec *record) error {
+		rec.Page.Shared = info
+		return nil
+	})
 	return err
 }
 

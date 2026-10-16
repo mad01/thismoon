@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSaveAndLoadDoc(t *testing.T) {
+func TestEditedDocLoadsBack(t *testing.T) {
 	s := newTestStore(t)
 	p, err := s.Create(t.Context(), Draft{Title: "Doc page", Content: "<p>rendered</p>"})
 	if err != nil {
@@ -14,12 +14,12 @@ func TestSaveAndLoadDoc(t *testing.T) {
 	}
 
 	doc := []byte(`{"sections":[{"h":"S","blocks":[{"t":"p","text":"hi"}]}]}`)
-	if err := s.SaveDoc(t.Context(), p.ID, doc); err != nil {
-		t.Fatalf("SaveDoc: %v", err)
+	if err := setSources(t, s, p.ID, func(cur *Sources) { cur.Doc = doc }); err != nil {
+		t.Fatalf("edit in a doc: %v", err)
 	}
 
 	if !s.HasDoc(t.Context(), p.ID) {
-		t.Fatal("HasDoc = false after SaveDoc")
+		t.Fatal("HasDoc = false after the edit")
 	}
 
 	got, err := s.LoadDoc(t.Context(), p.ID)

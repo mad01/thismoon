@@ -52,9 +52,9 @@ type Page struct {
 	HasBrief bool `json:"has_brief"`
 	HasDeck  bool `json:"has_deck"`
 	// HasDoc reports whether a canonical Doc source (doc.json) is persisted for
-	// this page. It is derived from disk at read time, not stored in meta.json —
-	// the file's existence is the single source of truth — so it never goes
-	// stale relative to SaveDoc.
+	// this page. It is derived from disk at read time, not stored in
+	// meta.json: the file's existence is the single source of truth, so it
+	// never goes stale relative to the doc an edit wrote.
 	HasDoc    bool      `json:"has_doc"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -161,18 +161,14 @@ type forwardable interface {
 	// ListMeta returns every page's metadata only, newest update first.
 	ListMeta(ctx context.Context) ([]Page, error)
 
-	SaveDoc(ctx context.Context, id string, doc []byte) error
+	// The sources are read-only here: they change only through Edit, which
+	// writes them in the same commit as the version bump.
 	LoadDoc(ctx context.Context, id string) ([]byte, error)
 	HasDoc(ctx context.Context, id string) bool
-	DeleteDoc(ctx context.Context, id string) error
-	SaveGraphSource(ctx context.Context, id string, src []byte) error
 	LoadGraphSource(ctx context.Context, id string) ([]byte, error)
 	HasGraphSource(ctx context.Context, id string) bool
-	DeleteGraphSource(ctx context.Context, id string) error
-	SaveDeckSource(ctx context.Context, id string, src []byte) error
 	LoadDeckSource(ctx context.Context, id string) ([]byte, error)
 	HasDeckSource(ctx context.Context, id string) bool
-	DeleteDeckSource(ctx context.Context, id string) error
 
 	// SetShared records where a page was pushed, or clears the record when
 	// info is nil. It touches metadata only and does not bump the version.
@@ -378,7 +374,7 @@ func (s *FS) snapshot(ctx context.Context, id string) (Snapshot, error) {
 	snap := Snapshot{Page: p}
 	for _, slot := range sourceSlots(&snap.Sources) {
 		if *slot.data, err = optionalSource(s.loadSource(id, slot.name)); err != nil {
-			return Snapshot{}, err
+			return Snapshot{}, fmt.Errorf("load %s: %w", slot.label, err)
 		}
 	}
 	return snap, nil
@@ -420,13 +416,6 @@ func (p *Page) Apply(patch Patch) {
 // It holds the page lock, so an edit waiting on it finds the page gone.
 func (s *FS) Delete(_ context.Context, id string) error {
 	return s.withPageLock(id, func() error {
-		_, err := os.Stat(filepath.Join(s.pageDir(id), metaFile))
-		if errors.Is(err, os.ErrNotExist) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return fmt.Errorf("stat meta: %w", err)
-		}
 		if err := os.RemoveAll(s.pageDir(id)); err != nil {
 			return fmt.Errorf("delete page dir: %w", err)
 		}

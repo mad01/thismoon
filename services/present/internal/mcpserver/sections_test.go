@@ -121,6 +121,43 @@ func TestPatchSectionToolStoresLocalImages(t *testing.T) {
 	}
 }
 
+// TestRefusedPatchesStoreNoImage pins the dry run before the image commit:
+// a patch carrying a local image that its edit would refuse, for a stale
+// base_version, a missing anchor, or an anchor it would repeat, writes no
+// file, and the page keeps its version.
+func TestRefusedPatchesStoreNoImage(t *testing.T) {
+	h, dir := imageHandlers(t)
+	ctx := context.Background()
+	_, created, err := h.handleCreate(ctx, nil, createInput{Title: "T", Content: twoSectionDoc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _ := writePNG(t, t.TempDir(), "shot.png")
+	withImage := func(heading string) string {
+		return `{"h":"` + heading + `","blocks":[{"t":"image","src":"` + path + `","alt":"a shot"}]}`
+	}
+	refusals := map[string]patchSectionInput{
+		"stale base_version": {
+			ID: created.ID, Op: "append", Section: withImage("Shot"), BaseVersion: 5,
+		},
+		"missing anchor": {
+			ID: created.ID, Op: "insert_after", Anchor: "zeta", Section: withImage("Shot"),
+		},
+		"repeated anchor": {ID: created.ID, Op: "append", Section: withImage("Alpha")},
+	}
+	for name, in := range refusals {
+		if _, _, err := h.handlePatchSection(ctx, nil, in); err == nil {
+			t.Errorf("%s: the patch was accepted", name)
+		}
+	}
+	if files := storedFiles(t, dir); len(files) != 0 {
+		t.Fatalf("refused patches stored images %v", files)
+	}
+	if p, err := h.store.GetMeta(ctx, created.ID); err != nil || p.Version != 1 {
+		t.Fatalf("page after refused patches = %+v, %v; want version 1", p, err)
+	}
+}
+
 func TestSharedPatchSectionIsAuthorOnly(t *testing.T) {
 	h, _ := sharedHandlers(t)
 	ctx := context.Background()

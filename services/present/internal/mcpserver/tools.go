@@ -689,11 +689,13 @@ func (p sourcePlan) apply(src store.Sources) store.Sources {
 }
 
 // compiledUpdate is an update rendered under one title: the patch for the
-// page and the plan for its sources.
+// page and the plan for its sources. baseTitle is the stored title it was
+// compiled under; it decides a recompile only for an update that leaves the
+// title alone, since one that sets a title compiled under that.
 type compiledUpdate struct {
-	title string
-	patch store.Patch
-	plan  sourcePlan
+	baseTitle string
+	patch     store.Patch
+	plan      sourcePlan
 }
 
 func (h *handlers) handleUpdate(
@@ -745,7 +747,7 @@ func (h *handlers) handleUpdate(
 func (h *handlers) updateEdit(in updateInput, compiled compiledUpdate) store.EditFunc {
 	return func(cur store.Snapshot) (store.Snapshot, error) {
 		u := compiled
-		if in.Title == nil && cur.Page.Title != u.title {
+		if in.Title == nil && cur.Page.Title != u.baseTitle {
 			var err error
 			if u, err = resolveUpdate(in, cur.Page.Title); err != nil {
 				return store.Snapshot{}, err
@@ -774,7 +776,7 @@ func resolveUpdate(in updateInput, curTitle string) (compiledUpdate, error) {
 	if in.Title != nil {
 		title = *in.Title
 	}
-	u := compiledUpdate{title: curTitle, patch: store.Patch{Title: in.Title}}
+	u := compiledUpdate{baseTitle: curTitle, patch: store.Patch{Title: in.Title}}
 	if in.Content != nil {
 		content, docJSON, err := resolveContent(*in.Content, title)
 		if err != nil {
