@@ -399,11 +399,13 @@ hook in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md)). The
 `grep` in an indexed repo back as the equivalent `csl_search` call.
 [`CLAUDE.md.example`](../examples/dotfiles/CLAUDE.md.example) is for the
 instruction file that teaches the agent when to reach for which tool. The
-seven skills under `skills/` need no registration; their recipes symlink
-them into `~/.claude/skills`, and they load when invoked by name
-(`/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`, `/loom`, `/present`,
-`/worklog`) or when a task matches. The MCP-backed ones assume their server
-from this section is registered.
+eight skills under `skills/` load without registration of their own: their
+recipes symlink them into `~/.claude/skills`, and they load when invoked by
+name (`/factory`, `/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`,
+`/loom`, `/present`, `/worklog`) or when a task matches. The MCP-backed ones
+assume their server from this section is registered. `factory` also needs its
+three worker definitions in `~/.claude/agents/` and the `factory-worker`
+custom hint in the belt config; `skills/factory/` holds the text for both.
 
 ## Updating
 
