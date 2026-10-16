@@ -1,5 +1,5 @@
 {
-  "__comment": "The hooks block that registers belt in ~/.claude/settings.json. Merge the 'hooks' key into your settings (keep your existing entries); tools/belt/docs/hooks.md in the thismoon repo explains every entry. The PostToolUse external-text matcher below is an example - list the MCP tools on YOUR machine that publish text other people read (issue comments, PR reviews, chat messages). The PreToolUse external-text matcher is stricter: route ONLY the MCP server that talks to github.com there, because the publish-internal-names guard treats every call it sees as public.",
+  "__comment": "The hooks block that registers belt in ~/.claude/settings.json. Merge the 'hooks' key into your settings (keep your existing entries); tools/belt/docs/hooks.md in the thismoon repo explains every entry. The PostToolUse external-text matcher below is an example - list the MCP tools on YOUR machine that publish text other people read (issue comments, PR reviews, chat messages). The PreToolUse external-text matcher is stricter: route ONLY the MCP server that talks to github.com there, because the publish-internal-names guard treats every call it sees as public. The belt record entries only post to the events ledger and never print, so they are safe everywhere. The belt watch entries (asyncRewake, timeout above watch.max_wait_s) do nothing until watch.enabled is set in the belt config. Never point a belt command at WorktreeCreate or WorktreeRemove: those hooks replace git's own worktree handling.",
   "hooks": {
     "PreToolUse": [
       {
@@ -31,13 +31,55 @@
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint session-start" }]
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt hint session-start" },
+          { "type": "command", "command": "~/code/bin/belt watch", "asyncRewake": true, "timeout": 590 }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt hint subagent-start" },
+          { "type": "command", "command": "~/code/bin/belt record subagent-start" }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint prompt" }]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt watch", "asyncRewake": true, "timeout": 590 }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record subagent-stop" }] }
+    ],
+    "TaskCompleted": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record task-completed" }] }
+    ],
+    "TeammateIdle": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record teammate-idle" }] }
+    ],
+    "PermissionDenied": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record permission-denied" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record notification" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record pre-compact" }] }
+    ],
+    "PostCompact": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record post-compact" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record session-end" }] }
     ]
   }
 }

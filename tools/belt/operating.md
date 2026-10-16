@@ -2,19 +2,29 @@
 
 belt is the Claude Code hook binary: guards inspect a tool call before it
 runs and deny risky ones with a reason. Hints inspect a tool call after it
-ran and add advisory context beside the result. The two halves are separate
-by design: a hint has no denial path in its interface, so it can never block
-a tool call, even by mistake.
+ran and add advisory context beside the result. Ledger entries record
+session lifecycle events (subagents, tasks, permission denials,
+notifications, compaction, session end) to the events service. The three
+are separate by design. A hint has no denial path in its interface, and the
+record path has no output at all, so neither can block or steer anything,
+even by mistake.
 
 ## how it runs
 
-There is no daemon. Claude Code spawns `belt hook <event>` or
-`belt hint <event>` as a fresh process for every tool call it is wired to,
-feeds the payload on stdin, and reads the decision or advice on stdout.
-The output is JSON for every event except `hint prompt`, which writes plain
-text because UserPromptSubmit reads stdout directly as context. The process
-exits 0 even when it denies: the deny travels in the JSON, never the exit
-code, so a belt bug cannot break tool calls.
+There is no daemon. Claude Code spawns `belt hook <event>`,
+`belt hint <event>` or `belt record <event>` as a fresh process for every
+event it is wired to, feeds the payload on stdin, and reads the decision or
+advice on stdout. The output is JSON for every hint event except
+`hint prompt`, which writes plain text because UserPromptSubmit reads stdout
+directly as context; `record` writes nothing. Each exits 0 even when it
+denies: the deny travels in the JSON, never the exit code, so a belt bug
+cannot break tool calls.
+
+`belt watch` is the exception, and it is off until `watch.enabled` is set.
+It runs as an asyncRewake hook on Stop and SessionStart and polls the
+events service for items whose `to` tag is the session id. When some
+arrive it exits 2 with them on stderr, which wakes the idle session. Exit 2 blocks nothing there,
+because the turn has already ended. Every other outcome is exit 0, silent.
 
 Because every invocation is a fresh process, changes apply on the next tool
 call. belt config edits, Claude settings deny-list edits, hook registration
@@ -41,13 +51,27 @@ all means the built-in defaults. A file that is present and fails to parse
 or validate makes every `belt hook` invocation deny with
 `belt[config]: belt cannot read its config …`. belt cannot tell "no rules
 configured" from "the rules did not load". Guessing the permissive one
-would silently disarm every guard. Validation covers the values that parse
-and then do nothing: a `custom_guards.<name>.event` outside bash/write, a
-`custom_hints.<name>` entry with an event other than session-start, an
-empty command, or a built-in hint's name, and `mode:` values other than
-hard/soft or set on a guard that ignores them. A
-names file listed under internal_names.include that is missing or fails to
-parse is the same error, and the deny names the include file.
+would silently disarm every guard.
+
+Validation covers the values that parse and then do nothing:
+
+- a `custom_guards.<name>.event` outside bash/write;
+- a `custom_hints.<name>` entry with an event other than session-start or
+  subagent-start, an empty command, or a built-in hint's name;
+- `mode:` values other than hard/soft, or set on a guard that ignores them.
+
+A names file listed under internal_names.include that is missing or fails
+to parse is the same error, and the deny names the include file. The
+broken config does not reach the ledger or the watcher: `record` posts with
+the defaults, and `watch` stays off. The `ledger` and `watch` values never
+fail validation at all. A bad number is clamped and a source is rewritten
+the way the events service stores it, and doctor warns about each.
+
+Rollout order matters for config that names something new. A binary that
+predates subagent-start rejects `custom_hints.<name>.event: subagent-start`
+as an unknown event, and that config error makes it deny every guarded tool
+call. Build and install the new belt (a `ralph up` on the fleet) before any
+machine config names the new event.
 
 ## failure modes
 
@@ -93,6 +117,14 @@ prints nothing stays silent and leaves a warn event naming the cause. The
 doctor custom hints section says whether its command resolves to something
 executable at all.
 
+The ledger and the watcher both need the events service. When it is down,
+ledger entries are dropped without a trace and the watcher wakes nobody;
+the doctor events line says which. Ledger entries live under the
+`belt-ledger` source, not `belt`. A watcher that never wakes the session
+usually means the item's `to` tag does not match the session id exactly, or
+the Stop entry lacks `asyncRewake`. Each item is delivered once: the cursor
+in `~/.cache/belt/watch-<session>` names the newest one already delivered.
+
 ## version skew
 
 `belt version -o json` reports the build of the binary on PATH. An
@@ -104,9 +136,10 @@ again.
 ## first moves
 
 1. `belt doctor`: build metadata, which config surface loaded (include
-   files too), guard and hint enablement, kof reachability, and the
-   resolved blocked-name list. It ends with a warnings section and exits 1
-   when that section is not empty
+   files too), guard and hint enablement, kof reachability, the ledger and
+   watch settings with events-service reachability, and the resolved
+   blocked-name list. It ends with a warnings section and exits 1 when that
+   section is not empty
 2. `belt check bash "<command>"`, or `belt check write --file <path>
    --content "<text>"`: dry-run the guards and print each verdict
 3. `belt config`: every setting in effect, with resolved defaults,

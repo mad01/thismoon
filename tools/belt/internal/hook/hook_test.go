@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/kit/notify"
 	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/guard"
+	"github.com/mad01/thismoon/tools/belt/internal/hint"
+	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
 // The config load is injected, so hook-level tests cover the payload
@@ -135,15 +141,413 @@ func TestDecisionShape(t *testing.T) {
 	}
 }
 
+// subagentPayload is a tool call made inside a subagent: the session fields
+// plus the agent identity Claude Code adds there.
+var subagentPayload = payload{
+	ToolInput:      map[string]any{"command": "ls"},
+	Cwd:            "/x",
+	SessionID:      "s1",
+	TranscriptPath: "/t.jsonl",
+	AgentID:        "agent-abc123",
+	AgentType:      "Explore",
+}
+
+// TestToHintInputCarriesSessionFields covers every hint event: the session
+// and agent fields are not event-specific, so no event's switch case may
+// drop them.
 func TestToHintInputCarriesSessionFields(t *testing.T) {
-	in := toHintInput("prompt", payload{
-		Cwd:            "/x",
-		SessionID:      "s1",
-		TranscriptPath: "/t.jsonl",
-	})
-	if in.SessionID != "s1" || in.TranscriptPath != "/t.jsonl" || in.Cwd != "/x" {
-		t.Errorf("unexpected hint input: %+v", in)
+	for _, event := range hint.Events() {
+		t.Run(event, func(t *testing.T) {
+			in := toHintInput(event, subagentPayload)
+			if in.SessionID != "s1" || in.TranscriptPath != "/t.jsonl" || in.Cwd != "/x" ||
+				in.AgentID != "agent-abc123" || in.AgentType != "Explore" {
+				t.Errorf("unexpected hint input: %+v", in)
+			}
+		})
 	}
+}
+
+func TestToInputCarriesSessionFields(t *testing.T) {
+	for _, event := range guard.Events() {
+		t.Run(event, func(t *testing.T) {
+			in := toInput(event, subagentPayload)
+			if in.SessionID != "s1" || in.AgentID != "agent-abc123" ||
+				in.AgentType != "Explore" || in.Cwd != "/x" {
+				t.Errorf("unexpected guard input: %+v", in)
+			}
+		})
+	}
+}
+
+func TestWithSession(t *testing.T) {
+	tests := []struct {
+		name string
+		p    payload
+		want map[string]string
+	}{
+		{"no session adds nothing", payload{}, map[string]string{"guard": "g"}},
+		{
+			"main session adds only its id",
+			payload{SessionID: "s1"},
+			map[string]string{"guard": "g", "session_id": "s1"},
+		},
+		{
+			"subagent adds its identity",
+			subagentPayload,
+			map[string]string{
+				"guard": "g", "session_id": "s1", "agent_id": "agent-abc123", "agent_type": "Explore",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := withSession(map[string]string{"guard": "g"}, tt.p)
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("withSession() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunDeniesDespiteMistypedOptionalFields pins that no field added for
+// something other than a guard can disarm one. A guard drops a payload it
+// cannot decode and allows the call, so a mistyped key must never fail the
+// guard decode: the lifecycle fields live in recordPayload out of its
+// reach, and the agent fields decode leniently. The push below is denied
+// with no config, and has to stay denied whatever rides along with it.
+func TestRunDeniesDespiteMistypedOptionalFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra string
+	}{
+		{
+			"lifecycle fields",
+			`"reason":{"nested":true},"trigger":7,"stop_hook_active":"yes","task_id":[1]`,
+		},
+		{"numeric agent_id", `"agent_id":7`},
+		{"object agent_type", `"agent_type":{"name":"Explore"}`},
+		{"both agent fields mistyped", `"agent_id":[1,2],"agent_type":false`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := `{"tool_name":"Bash","tool_input":{"command":"git push origin main"},` +
+				tt.extra + `}`
+			var out bytes.Buffer
+			Run("bash", defaults, strings.NewReader(raw), &out)
+
+			var d decision
+			if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+				t.Fatalf("decode decision from %q: %v", out.String(), err)
+			}
+			if d.HookSpecificOutput.PermissionDecision != "deny" {
+				t.Errorf(
+					"permissionDecision = %q, want deny",
+					d.HookSpecificOutput.PermissionDecision,
+				)
+			}
+		})
+	}
+}
+
+// TestLenientStringKeepsOnlyStrings: a mistyped agent field is dropped to
+// empty while a string survives, so a subagent's real identity still
+// arrives.
+func TestLenientStringKeepsOnlyStrings(t *testing.T) {
+	var p payload
+	raw := `{"session_id":"s1","agent_id":"agent-abc123","agent_type":7}`
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatalf("decode error = %v, want none", err)
+	}
+	if p.AgentID != "agent-abc123" || p.AgentType != "" {
+		t.Errorf(
+			"agent_id, agent_type = %q, %q, want %q, \"\"",
+			p.AgentID,
+			p.AgentType,
+			"agent-abc123",
+		)
+	}
+}
+
+// TestRecordSwallowsPanics pins the recover that makes the record path's
+// exit 0 structural: a panic in the entry builder must neither escape
+// (which would exit 2 and block the event) nor print a trace the model
+// would read. Without the recover this test crashes the test binary. The
+// panic is reported instead, under the source the config names.
+func TestRecordSwallowsPanics(t *testing.T) {
+	tests := []struct {
+		name       string
+		load       Load
+		wantSource string
+	}{
+		{"defaults", defaults, ledger.Source},
+		{
+			"ledger.source is honored",
+			func() (config.Config, error) {
+				return config.Config{Ledger: config.Ledger{Source: "factory-ledger"}}, nil
+			},
+			"factory-ledger",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var posted []notify.Event
+			rc := recorder{
+				load:  tt.load,
+				build: func(string, recordPayload, error) notify.Event { panic("builder bug") },
+				emit:  func(ev notify.Event) { posted = append(posted, ev) },
+			}
+			got := captureStdio(t, func() {
+				rc.run(ledger.EventSubagentStop, strings.NewReader(`{"session_id":"s1"}`))
+			})
+			if got != "" {
+				t.Errorf("record wrote %q after a panic, want nothing", got)
+			}
+			if len(posted) != 1 || posted[0].Title != "belt record failed" ||
+				posted[0].Source != tt.wantSource || posted[0].Message != "builder bug" {
+				t.Errorf("posted %+v, want one panic report under %s", posted, tt.wantSource)
+			}
+		})
+	}
+}
+
+// panickingReader stands in for a stdin whose read blows up.
+type panickingReader struct{}
+
+func (panickingReader) Read([]byte) (int, error) { panic("read bug") }
+
+// TestDisabledLedgerPostsNothingEvenOnAPanic: once the config says the
+// ledger is off, not even a panic report may post. The only work left on
+// that path is draining stdin, so the panic comes from the read.
+func TestDisabledLedgerPostsNothingEvenOnAPanic(t *testing.T) {
+	off := false
+	rc := recorder{
+		load: func() (config.Config, error) {
+			return config.Config{Ledger: config.Ledger{Enabled: &off}}, nil
+		},
+		build: buildEntry,
+		emit:  func(ev notify.Event) { t.Errorf("a disabled ledger posted %+v", ev) },
+	}
+	got := captureStdio(t, func() { rc.run(ledger.EventSubagentStop, panickingReader{}) })
+	if got != "" {
+		t.Errorf("record wrote %q, want nothing", got)
+	}
+}
+
+// TestDisabledLedgerDrainsStdin: a disabled ledger still reads the whole
+// payload, so a producer writing a large SubagentStop payload never hits a
+// closed pipe.
+func TestDisabledLedgerDrainsStdin(t *testing.T) {
+	off := false
+	rc := recorder{
+		load: func() (config.Config, error) {
+			return config.Config{Ledger: config.Ledger{Enabled: &off}}, nil
+		},
+		build: buildEntry,
+		emit:  func(notify.Event) {},
+	}
+	payload := strings.NewReader(`{"last_assistant_message":"` + strings.Repeat("x", 1<<20) + `"}`)
+	rc.run(ledger.EventSubagentStop, payload)
+	if left := payload.Len(); left != 0 {
+		t.Errorf("%d payload bytes left unread, want all of it drained", left)
+	}
+}
+
+// TestRecorderFollowsTheLedgerConfig pins what the config may decide for a
+// record: whether it posts and under which source. A config belt cannot
+// read records with the defaults and says so on the entry.
+func TestRecorderFollowsTheLedgerConfig(t *testing.T) {
+	off := false
+	tests := []struct {
+		name       string
+		load       Load
+		wantPosted bool
+		wantSource string
+		wantConfig string
+	}{
+		{"defaults post under belt-ledger", defaults, true, ledger.Source, ""},
+		{
+			"ledger.source replaces the source",
+			func() (config.Config, error) {
+				return config.Config{Ledger: config.Ledger{Source: "factory-ledger"}}, nil
+			},
+			true, "factory-ledger", "",
+		},
+		{
+			"ledger.enabled false posts nothing",
+			func() (config.Config, error) {
+				return config.Config{Ledger: config.Ledger{Enabled: &off}}, nil
+			},
+			false, "", "",
+		},
+		{
+			"broken config records with the defaults",
+			failing,
+			true, ledger.Source, "unreadable, recorded with the defaults",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var posted []notify.Event
+			rc := recorder{
+				load:  tt.load,
+				build: buildEntry,
+				emit:  func(ev notify.Event) { posted = append(posted, ev) },
+			}
+			rc.run(
+				ledger.EventSessionEnd,
+				strings.NewReader(`{"session_id":"s1","reason":"clear"}`),
+			)
+			if got := len(posted) == 1; got != tt.wantPosted {
+				t.Fatalf("posted %d entries, want posted %v", len(posted), tt.wantPosted)
+			}
+			if !tt.wantPosted {
+				return
+			}
+			ev := posted[0]
+			if ev.Source != tt.wantSource || ev.Title != "session ended (clear)" {
+				t.Errorf("entry = source %q, title %q", ev.Source, ev.Title)
+			}
+			if got := ev.Tags[configTag]; got != tt.wantConfig {
+				t.Errorf("config tag = %q, want %q", got, tt.wantConfig)
+			}
+		})
+	}
+}
+
+func TestToLedgerInput(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want ledger.Input
+	}{
+		{
+			name: "subagent stop",
+			raw: `{
+				"session_id": "s1",
+				"transcript_path": "/t/session.jsonl",
+				"cwd": "/x",
+				"hook_event_name": "SubagentStop",
+				"stop_hook_active": true,
+				"agent_id": "def456",
+				"agent_type": "Explore",
+				"agent_transcript_path": "/t/agent-def456.jsonl",
+				"last_assistant_message": "Analysis complete.",
+				"task_id": "task-001",
+				"task_subject": "Implement auth",
+				"teammate_name": "implementer",
+				"trigger": "auto",
+				"reason": "clear"
+			}`,
+			want: ledger.Input{
+				SessionID:            "s1",
+				TranscriptPath:       "/t/session.jsonl",
+				AgentID:              "def456",
+				AgentType:            "Explore",
+				AgentTranscriptPath:  "/t/agent-def456.jsonl",
+				LastAssistantMessage: "Analysis complete.",
+				StopHookActive:       true,
+				TaskID:               "task-001",
+				TaskSubject:          "Implement auth",
+				TeammateName:         "implementer",
+				Trigger:              "auto",
+				Reason:               "clear",
+			},
+		},
+		{
+			name: "permission denied",
+			raw: `{
+				"session_id": "s1",
+				"hook_event_name": "PermissionDenied",
+				"tool_name": "Bash",
+				"tool_input": {"command": "rm -rf /tmp/build"},
+				"tool_use_id": "toolu_01ABC",
+				"reason": "[Irreversible Local Destruction]"
+			}`,
+			want: ledger.Input{
+				SessionID: "s1",
+				ToolName:  "Bash",
+				ToolUseID: "toolu_01ABC",
+				Reason:    "[Irreversible Local Destruction]",
+			},
+		},
+		{
+			name: "notification",
+			raw: `{
+				"session_id": "s1",
+				"hook_event_name": "Notification",
+				"message": "Claude needs your permission",
+				"title": "Permission needed",
+				"notification_type": "permission_prompt"
+			}`,
+			want: ledger.Input{
+				SessionID:           "s1",
+				NotificationType:    "permission_prompt",
+				NotificationTitle:   "Permission needed",
+				NotificationMessage: "Claude needs your permission",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var p recordPayload
+			if err := json.Unmarshal([]byte(tt.raw), &p); err != nil {
+				t.Fatal(err)
+			}
+			if got := toLedgerInput(p); got != tt.want {
+				t.Errorf("toLedgerInput() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunRecordWritesNothing pins the record path's output contract on
+// every event: whatever the payload, and with a config belt cannot read,
+// nothing reaches stdout or stderr, because any output on SubagentStop
+// keeps the subagent running. The process streams are captured, since
+// RunRecord takes no writer to check.
+func TestRunRecordWritesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cwd := t.TempDir()
+	payloads := map[string]string{
+		"full payload": `{"session_id":"s1","cwd":"` + cwd + `","agent_id":"a1",` +
+			`"agent_type":"Explore","last_assistant_message":"done"}`,
+		"empty stdin":       "",
+		"malformed payload": "not json",
+		"wrong field type":  `{"session_id":"s1","stop_hook_active":"yes"}`,
+	}
+	for _, event := range ledger.Events() {
+		for name, raw := range payloads {
+			t.Run(event+"/"+name, func(t *testing.T) {
+				got := captureStdio(t, func() { RunRecord(event, failing, strings.NewReader(raw)) })
+				if got != "" {
+					t.Errorf("RunRecord(%s) wrote %q, want nothing", event, got)
+				}
+			})
+		}
+	}
+}
+
+// captureStdio runs fn with the process stdout and stderr pointed at one
+// pipe and returns everything written to either.
+func captureStdio(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = w, w
+	defer func() { os.Stdout, os.Stderr = stdout, stderr }()
+	read := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		read <- string(b)
+	}()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return <-read
 }
 
 // The prompt event must emit plain text: UserPromptSubmit adds stdout to

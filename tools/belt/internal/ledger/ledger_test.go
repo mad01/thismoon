@@ -1,0 +1,285 @@
+package ledger
+
+import (
+	"maps"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"github.com/mad01/thismoon/tools/belt/internal/guard"
+)
+
+// linked is a loom worktree: its own toplevel and branch, hanging off the
+// main checkout.
+var linked = guard.Location{
+	Toplevel:  "/home/.worktrees/thismoon/feat-x",
+	Canonical: "/src/thismoon",
+	Branch:    "feat/x",
+	Repo:      "github.com/mad01/thismoon",
+	Linked:    true,
+}
+
+// mainCheckout is the canonical checkout itself.
+var mainCheckout = guard.Location{
+	Toplevel:  "/src/thismoon",
+	Canonical: "/src/thismoon",
+	Branch:    "main",
+	Repo:      "github.com/mad01/thismoon",
+}
+
+func TestBuild(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       string
+		in          Input
+		loc         guard.Location
+		wantTitle   string
+		wantMessage string
+		wantTags    map[string]string
+	}{
+		{
+			name:  "subagent stop in a linked worktree",
+			event: EventSubagentStop,
+			in: Input{
+				SessionID:            "s1",
+				TranscriptPath:       "/t/session.jsonl",
+				AgentID:              "agent-def456",
+				AgentType:            "Explore",
+				AgentTranscriptPath:  "/t/agent-def456.jsonl",
+				LastAssistantMessage: "Analysis complete. Found 3 issues.",
+				StopHookActive:       true,
+			},
+			loc:         linked,
+			wantTitle:   "subagent stopped (Explore)",
+			wantMessage: "Analysis complete. Found 3 issues.",
+			wantTags: map[string]string{
+				"event":            "subagent-stop",
+				"session_id":       "s1",
+				"agent_id":         "agent-def456",
+				"agent_type":       "Explore",
+				"repo":             "github.com/mad01/thismoon",
+				"worktree":         "/home/.worktrees/thismoon/feat-x",
+				"canonical":        "/src/thismoon",
+				"branch":           "feat/x",
+				"transcript":       "/t/agent-def456.jsonl",
+				"stop_hook_active": "true",
+			},
+		},
+		{
+			name:      "subagent start in the main checkout has no worktree tag",
+			event:     EventSubagentStart,
+			in:        Input{SessionID: "s1", AgentID: "agent-abc123", AgentType: "Explore"},
+			loc:       mainCheckout,
+			wantTitle: "subagent started (Explore)",
+			wantTags: map[string]string{
+				"event":      "subagent-start",
+				"session_id": "s1",
+				"agent_id":   "agent-abc123",
+				"agent_type": "Explore",
+				"repo":       "github.com/mad01/thismoon",
+				"canonical":  "/src/thismoon",
+				"branch":     "main",
+			},
+		},
+		{
+			name:  "task completed carries the subject as its message",
+			event: EventTaskCompleted,
+			in: Input{
+				SessionID:    "s1",
+				TaskID:       "task-001",
+				TaskSubject:  "Implement user authentication",
+				TeammateName: "implementer",
+			},
+			wantTitle:   "task completed (implementer)",
+			wantMessage: "Implement user authentication",
+			wantTags: map[string]string{
+				"event":      "task-completed",
+				"session_id": "s1",
+				"task_id":    "task-001",
+				"teammate":   "implementer",
+			},
+		},
+		{
+			name:      "pre-compact names its trigger",
+			event:     EventPreCompact,
+			in:        Input{SessionID: "s1", Trigger: "auto"},
+			wantTitle: "compaction starting (auto)",
+			wantTags: map[string]string{
+				"event":      "pre-compact",
+				"session_id": "s1",
+				"trigger":    "auto",
+			},
+		},
+		{
+			name:  "permission denied names the tool and carries the reason",
+			event: EventPermissionDenied,
+			in: Input{
+				SessionID: "s1",
+				ToolName:  "Bash",
+				ToolUseID: "toolu_01ABC",
+				Reason:    "[Irreversible Local Destruction]",
+			},
+			wantTitle:   "permission denied (Bash)",
+			wantMessage: "[Irreversible Local Destruction]",
+			wantTags: map[string]string{
+				"event":       "permission-denied",
+				"session_id":  "s1",
+				"tool":        "Bash",
+				"tool_use_id": "toolu_01ABC",
+				"reason":      "[Irreversible Local Destruction]",
+			},
+		},
+		{
+			name:  "notification names its type and puts the title before the text",
+			event: EventNotification,
+			in: Input{
+				SessionID:           "s1",
+				NotificationType:    "permission_prompt",
+				NotificationTitle:   "Permission needed",
+				NotificationMessage: "Claude needs your permission",
+			},
+			wantTitle:   "notification (permission_prompt)",
+			wantMessage: "Permission needed: Claude needs your permission",
+			wantTags: map[string]string{
+				"event":             "notification",
+				"session_id":        "s1",
+				"notification_type": "permission_prompt",
+			},
+		},
+		{
+			name:  "notification without a title is the bare text",
+			event: EventNotification,
+			in: Input{
+				NotificationType:    "idle_prompt",
+				NotificationMessage: "Claude is waiting for your input",
+			},
+			wantTitle:   "notification (idle_prompt)",
+			wantMessage: "Claude is waiting for your input",
+			wantTags: map[string]string{
+				"event":             "notification",
+				"notification_type": "idle_prompt",
+			},
+		},
+		{
+			name:      "an event with no text ignores a stray final message",
+			event:     EventTeammateIdle,
+			in:        Input{TeammateName: "researcher", LastAssistantMessage: "stray"},
+			wantTitle: "teammate idle (researcher)",
+			wantTags:  map[string]string{"event": "teammate-idle", "teammate": "researcher"},
+		},
+		{
+			name:      "main-session event omits every empty agent field",
+			event:     EventSessionEnd,
+			in:        Input{SessionID: "s1", TranscriptPath: "/t/session.jsonl", Reason: "clear"},
+			wantTitle: "session ended (clear)",
+			wantTags: map[string]string{
+				"event":      "session-end",
+				"session_id": "s1",
+				"reason":     "clear",
+				"transcript": "/t/session.jsonl",
+			},
+		},
+		{
+			name:      "no qualifier leaves the bare title",
+			event:     EventTeammateIdle,
+			wantTitle: "teammate idle",
+			wantTags:  map[string]string{"event": "teammate-idle"},
+		},
+		{
+			name:      "an event outside the catalog is titled by its name",
+			event:     "frobnicate",
+			wantTitle: "frobnicate",
+			wantTags:  map[string]string{"event": "frobnicate"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(tt.event, tt.in, tt.loc)
+			if got.Source != Source || got.Level != levelInfo {
+				t.Errorf(
+					"source, level = %q, %q, want %q, %q",
+					got.Source,
+					got.Level,
+					Source,
+					levelInfo,
+				)
+			}
+			if got.Title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", got.Title, tt.wantTitle)
+			}
+			if got.Message != tt.wantMessage {
+				t.Errorf("message = %q, want %q", got.Message, tt.wantMessage)
+			}
+			if !maps.Equal(got.Tags, tt.wantTags) {
+				t.Errorf("tags = %v, want %v", got.Tags, tt.wantTags)
+			}
+		})
+	}
+}
+
+// TestBuildUnreadablePayload: an entry built from a payload that did not
+// decode is still written, at warn level, naming the decode error.
+func TestBuildUnreadablePayload(t *testing.T) {
+	got := Build(EventSubagentStop, Input{PayloadError: "unexpected EOF"}, guard.Location{})
+	if got.Level != levelWarn {
+		t.Errorf("level = %q, want %q", got.Level, levelWarn)
+	}
+	if want := "hook payload unreadable: unexpected EOF"; got.Message != want {
+		t.Errorf("message = %q, want %q", got.Message, want)
+	}
+	if got.Tags["event"] != EventSubagentStop {
+		t.Errorf("tags = %v, want the event tag kept", got.Tags)
+	}
+}
+
+func TestBuildTruncatesTheMessage(t *testing.T) {
+	ascii := strings.Repeat("a", maxMessageBytes)
+	tests := []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{"at the cap is kept whole", ascii, ascii},
+		{"one byte over is cut to the cap", ascii + "b", ascii},
+		{
+			// "é" is two bytes; starting it at the last byte the cap allows
+			// would split it, so the cut backs up to before it.
+			"a rune straddling the cap is dropped whole",
+			ascii[:maxMessageBytes-1] + "é and more",
+			ascii[:maxMessageBytes-1],
+		},
+		{
+			// "€" is three bytes and ends exactly at the cap.
+			"a rune ending at the cap is kept",
+			ascii[:maxMessageBytes-3] + "€" + "tail",
+			ascii[:maxMessageBytes-3] + "€",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(
+				EventSubagentStop,
+				Input{LastAssistantMessage: tt.message},
+				guard.Location{},
+			)
+			if got.Message != tt.want {
+				t.Errorf("message = %d bytes %q..., want %d bytes", len(got.Message),
+					got.Message[max(0, len(got.Message)-8):], len(tt.want))
+			}
+			if !utf8.ValidString(got.Message) {
+				t.Errorf("message is not valid UTF-8 after the cut")
+			}
+		})
+	}
+}
+
+func TestEventsFollowTheCatalog(t *testing.T) {
+	want := []string{
+		"subagent-start", "subagent-stop", "task-completed", "teammate-idle",
+		"permission-denied", "notification", "pre-compact", "post-compact", "session-end",
+	}
+	got := Events()
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("Events() = %v, want %v", got, want)
+	}
+}

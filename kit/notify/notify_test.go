@@ -136,11 +136,41 @@ func TestPostErrors(t *testing.T) {
 	})
 }
 
+// TestPostReturnsWithinBudgetAgainstAHangingService pins the bound
+// EmitEventSyncWithin relies on: a service that accepts the connection and
+// never answers costs the caller its budget and no more. The handler holds
+// every request until the test ends, so the timeout is the only way out.
+// It waits on a channel rather than the request context: the server never
+// cancels that context for a request whose body the handler left unread.
+func TestPostReturnsWithinBudgetAgainstAHangingService(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
+	}))
+	defer srv.Close()    // runs second: Close waits for the held handler
+	defer close(release) // runs first: lets the held handler return
+
+	const budget = 50 * time.Millisecond
+	// ceiling leaves room for scheduler noise under a loaded `go test ./...`
+	// and still fails if the call fell back to the one-second default.
+	const ceiling = 500 * time.Millisecond
+	start := time.Now()
+	err := post(context.Background(), srv.URL, Event{}, budget)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("post() to a hanging service = nil error, want a timeout")
+	}
+	if elapsed > ceiling {
+		t.Errorf("post() took %s against a %s budget, want under %s", elapsed, budget, ceiling)
+	}
+}
+
 // TestEmitFromTestsIsSilent pins the contract that keeps `go test` off the
 // live timeline: the exported emitters no-op while testing.Testing() is
 // true, which is why the tests above exercise post directly.
 func TestEmitFromTestsIsSilent(t *testing.T) {
-	hits := make(chan struct{}, 2)
+	hits := make(chan struct{}, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		hits <- struct{}{}
 	}))
@@ -149,6 +179,7 @@ func TestEmitFromTestsIsSilent(t *testing.T) {
 
 	EmitEvent("kit", "info", "t", "m", nil)
 	EmitEventSync("kit", "info", "t", "m", nil)
+	EmitEventSyncWithin(time.Second, "kit", "info", "t", "m", nil)
 
 	select {
 	case <-hits:

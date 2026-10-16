@@ -45,9 +45,10 @@ nothing:
 
 - a `custom_guards.<name>.event` that is not `bash` or `write` (including a
   missing one) — the guard would register on an event that never fires;
-- a `custom_hints.<name>` entry whose `event` is not `session-start` (the
-  only event custom hints run on today), whose `command` is empty, or whose
-  name is a built-in hint id, since the entry would shadow the built-in;
+- a `custom_hints.<name>` entry whose `event` is not `session-start` or
+  `subagent-start` (the events custom hints run on), whose `command` is
+  empty, or whose name is a built-in hint id, since the entry would shadow
+  the built-in;
 - a `mode:` anywhere other than `hard` or `soft`;
 - `mode: soft` under `guards:` or `hints:` on any id except
   `script-deny-list` and `publish-internal-names`, the two that read a
@@ -60,6 +61,14 @@ nothing:
   the binary does not know (custom guards, or a config targeting a newer
   belt) stay lax on purpose. Rejecting unknown keys would turn ordinary
   config/binary rollout skew into a machine-wide deny.
+
+The `ledger` and `watch` values are never rejected, for the same reason. A
+config error denies every guarded tool call, which is far too much for a
+typo in a feature that may be off. Out-of-range numbers are clamped and
+source names are rewritten the way the events service stores them. `belt
+doctor` warns about each adjustment, naming the key and the value in effect,
+and `belt config` prints the effective values. Only a value of the wrong YAML
+type still fails the file, as in every other section.
 
 Overrides stay in `~/.config/belt/overrides/` (or the `XDG_CONFIG_HOME`
 equivalent) whatever `--config` points at: an override is machine state set
@@ -95,11 +104,16 @@ configs stay in step; neither reads the other's config.
 Run `belt config` to see which files loaded (or failed to) and every setting
 belt is actually running with, after every default and fallback is applied.
 Run `belt doctor` to see the state those settings produce: enabled guards and
-hints, active overrides, and the resolved blocked-name list. The report ends
-with a warnings section and exits 1 when it is not empty. It flags a broken
-config or include, a script guard with no deny patterns, an internal-name
-guard with no names, or a toggle nothing answers to. A machine with no config
-at all exits 1 for the middle two by design.
+hints, active overrides, the ledger and watch settings with the events
+service they depend on, and the resolved blocked-name list. The report ends
+with a warnings section and exits 1 when it is not empty.
+
+That section flags a broken config or include, a script guard with no deny
+patterns, an internal-name guard with no names, or a toggle nothing answers
+to. It flags an enabled watcher that cannot work, because the events
+service is unreachable or the max wait reaches the hook timeout. It also
+names each ledger or watch value it had to clamp or rewrite. A machine with
+no config at all exits 1 for the script and internal-name cases by design.
 
 ## Keys
 
@@ -268,9 +282,9 @@ whitespace, keeps multiple lines and any leading indentation, and emits the
 result under the usual `belt[<name>]:` prefix. A non-zero exit, a run past the budget, a failure
 to start, or empty stdout all end in silence plus a warn event on the
 events service. A broken external never breaks a session. The entry is how
-a machine-private hint (a daily journal, say) rides the session-start hook
-under belt's toggles and budget. It lives in that machine's rendered
-config, not in belt and not in a second SessionStart hook.
+a machine-private hint (a daily journal, or a brief for worker subagents)
+rides a start hook under belt's toggles and budget. It lives in that
+machine's rendered config, not in belt and not in a second hook.
 
 - `custom_hints.<name>` (the key): any name that is not a built-in hint id.
   A name that shadows one is a config error, since the toggles and `belt
@@ -278,15 +292,17 @@ config, not in belt and not in a second SessionStart hook.
 - `custom_hints.<name>.enabled` (bool pointer, default: unset): when set,
   wins over any `hints.<name>.enabled` toggle of the same name. Left unset,
   the hint falls back to that toggle (which itself defaults to enabled).
-- `custom_hints.<name>.event` (string, required): `"session-start"`, the
-  only event custom hints run on today. The field is a string so prompt
-  and post-tool events can be added later without a schema break; until
-  then any other value, and a missing one, is a config error naming the
-  supported values.
+- `custom_hints.<name>.event` (string, required): `"session-start"` (once
+  per session, before its first prompt) or `"subagent-start"` (once per
+  subagent, before its first prompt). A subagent-start hint's advice lands
+  in the subagent's context. The field is a string so prompt and post-tool
+  events can be added later without a schema break. Until then any other
+  value, and a missing one, is a config error naming the supported values.
 - `custom_hints.<name>.command` (list of string, required): the external
   program and its arguments. Runs with the invoking user's full
-  environment; an empty list is a config error. For session-start the
-  stdin payload is `{"event","cwd","session_id","transcript_path"}`.
+  environment; an empty list is a config error. The stdin payload is
+  `{"event","cwd","session_id","transcript_path"}`, plus `"agent_id"` and
+  `"agent_type"` inside a subagent (every subagent-start run).
 - `custom_hints.<name>.timeout_ms` (int, default `400`): the budget for one
   run, the same budget the kof hints give kof serve. Zero means the
   default; a negative value is a config error.
@@ -294,6 +310,45 @@ config, not in belt and not in a second SessionStart hook.
   repos opted out of this hint, matched like every other `exclude_repos`
   against the session cwd's origin remote. A `hints.<name>.exclude_repos`
   list of the same name is honored too; either one opts out.
+
+### ledger
+
+What `belt record` posts. With no `ledger` section every lifecycle hook
+wired to `belt record` posts one entry under `belt-ledger`: wiring the
+hooks is the opt-in, as for hints. A config file belt cannot read still
+records, with these defaults.
+
+- `ledger.enabled` (bool pointer, default: unset, meaning on): `false`
+  makes every record a no-op without touching the hook entries.
+- `ledger.source` (string, default `belt-ledger`): the events-service
+  source entries post under. belt rewrites it the way the events service
+  stores a source. It is lowercased, every run of characters other than
+  letters, digits, `-` and `_` becomes one dash, dashes are trimmed, and it
+  keeps at most 64 characters. A name with nothing usable left falls back to the default.
+  `belt doctor` warns when the name in effect differs from the one written.
+
+### watch
+
+`belt watch`, the asyncRewake inbox watcher. It is the one belt feature that
+is off until the config turns it on. A watcher holds a process per idle
+session for up to its max wait, and a machine class should choose that
+rather than inherit it from a hook entry.
+
+- `watch.enabled` (bool, default `false`): with it off, `belt watch` exits 0
+  at once and prints nothing.
+- `watch.poll_interval_ms` (int, default `2000`): how often the watcher asks
+  the events service for items. Zero or a negative value means the default;
+  a value below `100` is clamped to `100`, since anything faster is a busy
+  loop, and one past `3600000` (an hour) is clamped to it. `belt doctor`
+  warns about each adjustment.
+- `watch.max_wait_s` (int, default `540`): how long one watcher waits before
+  it exits 0 and leaves the next idle to start a fresh one. Zero or a
+  negative value means the default; a value past `3600` is clamped to it,
+  with a doctor warning. Keep it below the hook's `timeout`, 590 in the
+  documented wiring, because Claude Code kills the watcher at the timeout.
+  `belt doctor` warns when an enabled watcher's value is 590 or more.
+- `watch.source` (string, default `belt-inbox`): the events-service source
+  the watcher polls, rewritten like `ledger.source`.
 
 ### guards
 
@@ -477,8 +532,9 @@ environment at hook invocation time.
   absolute path, belt's config directory is `$XDG_CONFIG_HOME/belt` — config
   file and overrides both. A relative value is ignored, per the XDG spec.
 - `EVENTS_BASE_URL` (default `http://127.0.0.1:7430`): base URL of the local
-  events service that guard denials and soft-mode/fail-open warnings POST
-  to. A POST failure (service down) is silently dropped.
+  events service that guard denials, hint fires, soft-mode/fail-open
+  warnings and ledger entries POST to, and that `belt watch` polls. A POST
+  failure (service down) is silently dropped.
 - `KOF_PORT` (default `7431`; the legacy `KEEP_PORT` is honored as a
   fallback when `KOF_PORT` is unset): port of the local kof serve instance
   the `kof-assertions` and `kof-consult` hints, and the `belt doctor`
@@ -542,6 +598,19 @@ custom_hints:
     timeout_ms: 400
     exclude_repos:
       - github.com/you/scratch
+  worker-brief:
+    event: subagent-start
+    command: [factory, brief]
+
+ledger:
+  enabled: true
+  source: belt-ledger
+
+watch:
+  enabled: true
+  poll_interval_ms: 2000
+  max_wait_s: 540
+  source: belt-inbox
 
 guards:
   git-push-main:

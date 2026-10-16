@@ -1,10 +1,11 @@
 # belt hooks
 
-How each guard and hint works: what invokes it, the decision sequence it runs,
-why it exists, and how it fails. The keys behind them are in
+How each guard, hint and ledger entry works: what invokes it, the decision
+sequence it runs, why it exists, and how it fails. The keys behind them are in
 [config.md](../config.md); this page covers behavior and wiring. For the
 reasoning behind the guard/hint split itself, see `docs/adr/0008` in the repo
-root.
+root. `docs/adr/0024` adds the ledger as the third concept and records why
+the watcher is the one command that exits 2.
 
 ## The execution model
 
@@ -19,16 +20,24 @@ shape has consequences worth knowing before reading about any single hook:
   `permissionDecision: deny` with a reason the model reads. A hint has no
   denial path in its interface; the worst a broken hint can do is add a few
   lines of ignored text.
-- **belt always exits 0.** A deny travels as JSON data, never as an exit code,
-  so a bug in belt cannot break tool calls outright.
+- **Ledger entries only record.** `belt record` posts an entry and prints
+  nothing at all, so it cannot keep a subagent running or block a task the
+  way output or a non-zero exit would on those events.
+- **belt always exits 0, with one exception.** A deny travels as JSON data,
+  never as an exit code, so a bug in belt cannot break tool calls outright.
+  The exception is `belt watch`, an asyncRewake hook that exits 2 when it
+  wakes an idle session. On asyncRewake exit 2 blocks nothing, because the
+  turn it would have blocked has already ended (see Watcher below).
 - **Silence is the common case.** Most invocations write nothing at all. A
   guard that allows and a hint with nothing to say are indistinguishable from
-  belt not being wired up — which is why `belt doctor` and the events
+  belt not being wired up, which is why `belt doctor` and the events
   timeline exist.
 - **Every deny and every hint is attributable and audited.** Output is
   prefixed `belt[<id>]:`, and each fire POSTs an event to the local events
   service (`events.this`): denies and soft-mode hits as `warn`, hints as
-  `info`. When a guard seems silent, the timeline is where to look.
+  `info`. Each event is tagged with the session id on every real call, and
+  with the agent id and type when the call came from inside a subagent.
+  When a guard seems silent, the timeline is where to look.
 
 ## Wiring belt into Claude Code
 
@@ -71,17 +80,62 @@ complete hooks block looks like this:
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "~/code/bin/belt hint session-start" }]
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt hint session-start" },
+          { "type": "command", "command": "~/code/bin/belt watch", "asyncRewake": true, "timeout": 590 }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt hint subagent-start" },
+          { "type": "command", "command": "~/code/bin/belt record subagent-start" }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [{ "type": "command", "command": "~/code/bin/belt hint prompt" }]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "~/code/bin/belt watch", "asyncRewake": true, "timeout": 590 }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record subagent-stop" }] }
+    ],
+    "TaskCompleted": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record task-completed" }] }
+    ],
+    "TeammateIdle": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record teammate-idle" }] }
+    ],
+    "PermissionDenied": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record permission-denied" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record notification" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record pre-compact" }] }
+    ],
+    "PostCompact": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record post-compact" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record session-end" }] }
     ]
   }
 }
 ```
+
+The `belt watch` entries do nothing until `watch.enabled` is set in the belt
+config; the rest of the lifecycle block is safe to wire everywhere.
 
 A worked version of this block, with the belt config beside it, lives in
 `examples/dotfiles/recipes/claude-hooks/` at the repo root.
@@ -97,16 +151,39 @@ The event-to-subcommand mapping is fixed:
 | `belt hint bash` | PostToolUse | `Bash` |
 | `belt hint external-text` | PostToolUse | your publishing MCP tools (see below) |
 | `belt hint session-start` | SessionStart | none (fires on every session) |
+| `belt hint subagent-start` | SubagentStart | none, or an agent type to brief only some subagents |
 | `belt hint prompt` | UserPromptSubmit | none (fires on every prompt) |
+| `belt record subagent-start` | SubagentStart | none |
+| `belt record subagent-stop` | SubagentStop | none |
+| `belt record task-completed` | TaskCompleted | none |
+| `belt record teammate-idle` | TeammateIdle | none |
+| `belt record permission-denied` | PermissionDenied | none, or a tool name |
+| `belt record notification` | Notification | none, or a notification type |
+| `belt record pre-compact` | PreCompact | none |
+| `belt record post-compact` | PostCompact | none |
+| `belt record session-end` | SessionEnd | none |
+| `belt watch` (asyncRewake, timeout 590) | Stop and SessionStart | none |
 
-Three wiring rules that are easy to get wrong:
+The wiring rules that are easy to get wrong:
 
 - **The event must match the subcommand.** belt stamps its JSON output with
   the hook event it was built for (`PreToolUse`, `PostToolUse`,
-  `SessionStart`); register `belt hint search` under the wrong event and
-  Claude Code silently drops the output. The exception is `belt hint prompt`,
-  which emits plain stdout text rather than JSON, because UserPromptSubmit
-  adds stdout to context directly and would drop an envelope.
+  `SessionStart`, `SubagentStart`); register `belt hint search` under the
+  wrong event and Claude Code silently drops the output. The exception is
+  `belt hint prompt`, which emits plain stdout text rather than JSON, because
+  UserPromptSubmit adds stdout to context directly and would drop an
+  envelope.
+- **Never register a belt command on WorktreeCreate or WorktreeRemove.**
+  Those hooks replace Claude Code's own `git worktree` handling: a
+  WorktreeCreate hook must print the path it created, and a WorktreeRemove
+  hook that exits 0 counts as the removal. They also never fire for a
+  `git worktree add` run through Bash, which is how loom worktrees are made.
+  The ledger tags every entry with the worktree it happened in instead.
+- **`belt watch` needs `asyncRewake` and a timeout above its max wait.**
+  Without asyncRewake the hook blocks the session's turn for the whole wait.
+  With a timeout at or below `watch.max_wait_s`, Claude Code kills the
+  watcher before it can exit on its own. The block above uses 590 s, and
+  `belt doctor` warns when an enabled watcher's max wait reaches it.
 - **An unknown subcommand fails loud on purpose.** `belt hook searchh` errors
   at argument parsing instead of running zero guards, so a typo in a settings
   entry does not impersonate a healthy no-op.
@@ -145,8 +222,10 @@ session if you want proof the wiring is live.
 belt is not Claude-Code-exclusive: any harness that execs a command per tool
 event and reads its stdout can run it. What to expect per harness:
 
-- **Claude Code** gets the full set: both guard events and all eight hints, wired
-  as shown above.
+- **Claude Code** gets the full set: every guard event, every hint, the
+  ledger and the watcher, wired as shown above. The subagent, task, teammate,
+  permission-denied and asyncRewake hooks are Claude Code features, so the
+  ledger and the watcher are Claude-only.
 - **Codex** reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
   wires the six tool-event entries (`hook bash`, `hook write`,
@@ -463,6 +542,11 @@ external command, no Go required.
 
 - belt execs the command with the tool-call fields as JSON on stdin
   (`{"command","cwd"}` for bash, `{"file_path","content","cwd"}` for write).
+  Who made the call is added when the payload carries it: `session_id` on
+  every real main-session call, plus `agent_id` and `agent_type` inside a
+  subagent. A `belt check` dry-run has no session, so it sends the bare
+  shape. The keys are additive: a script written against the bare shape
+  keeps working.
 - Exit 0 allows. Exit 1 denies, with stdout line one as the reason. Exit 2 or
   higher, a five-second timeout, or a failure to start all **allow with a
   warn event**. A broken external guard must never block work, but it also
@@ -570,7 +654,8 @@ about hint behavior is fixed
 (see Fixed constants below). The guards carry the richer per-guard keys —
 each guard section above names its own, and [config.md](../config.md)
 specifies them all. A `custom_hints` entry registers an external command as
-a session-start hint beside the built-ins (see Custom hints below).
+a session-start or subagent-start hint beside the built-ins (see Custom
+hints below).
 
 ### agent-memory (session-start)
 
@@ -756,17 +841,24 @@ After a publishing call, flags em dashes in the text that just went out.
   separate text still open to editing. `hints.em-dash.enabled` switches
   both events.
 
-### Custom hints (session-start)
+### Custom hints (session-start, subagent-start)
 
 A `custom_hints.<name>` config entry registers a hint implemented as any
 external command, no Go required. It is the hint-side twin of custom
 guards, built for context that belongs to one machine. The first case is a
 private daily journal that should open every session on one machine class.
 That machine's rendered config registers it, with no second SessionStart
-hook in the Claude settings and no compiled-in hint in a public repo.
+hook in the Claude settings and no compiled-in hint in a public repo. The
+second is a brief for worker subagents. A hint on `subagent-start` runs once
+per subagent, before its first prompt, and its advice lands in the
+subagent's own context rather than the parent's. belt ships no built-in
+text for that event; the brief comes from the consuming repo's config.
 
 - belt execs the command with the hook payload fields as JSON on stdin
-  (`{"event","cwd","session_id","transcript_path"}` for session-start).
+  (`{"event","cwd","session_id","transcript_path"}`). Inside a subagent,
+  which is every `subagent-start` run, the payload adds `agent_id` and
+  `agent_type`, so one script can brief an Explore agent differently from a
+  general-purpose one. A main-session payload keeps the original four keys.
 - stdout is the advice: trailing whitespace trimmed, multiple lines and
   leading indentation kept, emitted under `belt[<name>]:` like every
   built-in. A non-zero exit, a run
@@ -774,30 +866,113 @@ hook in the Claude settings and no compiled-in hint in a public repo.
   with a warn event**, so a broken external never breaks a session and
   never fails silently either.
 - The budget is the kof hints' 400 ms by default; `timeout_ms` sizes it per
-  hint. A session-start hook runs before the first prompt, so the budget is
-  the whole cost a slow external can impose, plus a short grace for closing
-  the pipe and landing the warn event. On timeout belt kills the external's
+  hint. Both start hooks run before a first prompt, the session's or the
+  subagent's. So the budget is the whole cost a slow external can impose,
+  plus a short grace for closing the pipe and landing the warn event. On timeout belt kills the external's
   whole process group, so a hung grandchild (a `curl` inside the script)
   does not outlive the hook either.
 - `enabled` and `exclude_repos` sit on the entry and work like the
   built-ins' (a `hints.<name>` toggle of the same name is honored too).
-  `event` accepts `session-start` only today; it is a string so prompt and
-  post-tool events can be added later, and anything else is a config error
-  naming the supported values, as is an empty `command` or a name that
-  shadows a built-in hint.
+  `event` accepts `session-start` and `subagent-start`. It is a string so
+  prompt and post-tool events can be added later. Anything else is a config
+  error naming the supported values, as is an empty `command` or a name
+  that shadows a built-in hint.
 - `belt doctor` lists each custom hint beside the built-ins with its event,
   budget, command, opt-out count, and whether the command resolves to
   something executable. An unreachable command means the hint warns and
   stays silent on every session, which looks identical to a hint with
   nothing to say.
 - Custom hints run after the built-ins, alphabetical by name, through the
-  same `belt hint session-start` entrypoint, so any harness that wires that
-  entry runs them.
+  same `belt hint session-start` and `belt hint subagent-start`
+  entrypoints, so any setup that wires those entries runs them.
+
+Install the new binary before the config that uses it. A belt built before
+subagent-start existed rejects `event: subagent-start` as an unknown event,
+and that config error makes it deny every guarded tool call on the machine.
+So the thismoon binary must be built and installed (a `ralph up` on the
+fleet) before any machine config names the new event.
+
+## Ledger
+
+`belt record <event>` turns Claude Code lifecycle events into entries on the
+events service, so an orchestrator session and the workers it spawns leave
+one timeline. It is the third concept beside guards and hints: an entry
+never reaches the model and never steers the session (`docs/adr/0024`).
+
+- **Events.** `subagent-start`, `subagent-stop`, `task-completed`,
+  `teammate-idle`, `permission-denied`, `notification`, `pre-compact`,
+  `post-compact` and `session-end`, one per Claude Code hook of the matching
+  name. An unknown event fails at argument parsing, like every belt
+  entrypoint.
+- **Entry.** Source `belt-ledger` (`ledger.source` replaces it), level
+  `info`, a title naming the event and its qualifier ("subagent stopped
+  (Explore)", "permission denied (Bash)", "notification
+  (permission_prompt)"). The message is the subagent's final message, the
+  completed task's subject, the denial reason, or the notification's title
+  and text, cut to 500 bytes on a character boundary.
+- **Tags.** Every set field, nothing empty: `event`, `session_id`,
+  `agent_id`, `agent_type`, `repo`, `worktree` (only for a linked
+  worktree), `canonical` (the main checkout), `branch`, `task_id`,
+  `teammate`, `tool`, `tool_use_id`, `notification_type`, `trigger`,
+  `reason`, `transcript` (the subagent's own transcript when there is one)
+  and `stop_hook_active`. Filter the timeline by any of them.
+- **Never steers.** `belt record` takes no output writer at all and recovers
+  from its own panics. On SubagentStop any output keeps the subagent
+  running, TaskCompleted, TeammateIdle and PreCompact treat exit 2 as a
+  block, and PermissionDenied reads its output for a retry flag. So for a
+  valid event it writes nothing to stdout or stderr and exits 0, whatever
+  happens.
+- **Fails toward recording.** A config belt cannot read records with the
+  defaults and tags the entry `config: unreadable, recorded with the
+  defaults`. A payload that does not decode is still recorded, at `warn`,
+  naming the decode error. A panic posts an `error` entry titled `belt
+  record failed`.
+- **Bounded.** Placing the event in git (two git processes) gets 1 s and
+  the POST 300 ms. So a record stays inside the 1.5 s SessionEnd gives all
+  of its hooks, and a stalled filesystem cannot hold a subagent's start.
+- **Off switch.** `ledger.enabled: false` makes every record a no-op without
+  touching the hooks.
+
+## Watcher
+
+`belt watch` wakes an idle session when an item addressed to it lands on the
+events service. It is opt-in: nothing happens until `watch.enabled: true`.
+
+- **When it runs.** As an asyncRewake hook on Stop and SessionStart, so
+  Claude Code starts a watcher in the background each time the session goes
+  idle and at session start. It reads only `session_id` from the payload.
+- **What it polls.** `GET /api/events?source=belt-inbox&q=<session id>&since=<cursor>`
+  every `watch.poll_interval_ms` (2000 by default), then keeps the entries
+  whose `to` tag equals the session id. The `q` filter is a substring match,
+  so an entry that only mentions the id is skipped.
+- **Waking.** On a hit it writes the newest delivered id to its cursor
+  file, prints each item as `belt[watch]: from <from tag>: <title>` with
+  the message below it on stderr, and exits 2. Claude Code shows that text
+  to the session as a system reminder and wakes it. The cursor moves before
+  the wake, so each item is delivered once. The watcher also skips any entry
+  at or before its cursor itself, so even a service that ignored `since`
+  could not repeat an item. If the cursor cannot be written
+  the watcher delivers nothing, because an item delivered without one would
+  wake the session again on every Stop.
+- **Quiet exits.** With nothing after `watch.max_wait_s` (540 by default) it
+  exits 0 and the next idle starts a fresh watcher. A newer watcher for the
+  same session claims the owner file and the older one exits 0 at its next
+  poll. Watch disabled, a config belt cannot read, a payload without a
+  session id, and an events service that does not answer all end in exit 0
+  with no output.
+- **Producers.** Anything that can POST to the events service can address a
+  session: an entry under `belt-inbox` with `tags.to` set to the session id
+  and `tags.from` naming the sender. The events MCP's emit tool works too.
+- **State is one cache file.** The events service is the inbox and the
+  cursor is a cache file beside the hints' seen files; there is no store
+  and no port. Acknowledgement, retry or
+  routing would be queue semantics, which the platform deliberately does not
+  have (`docs/adr/0014`).
 
 ## How belt resolves repos
 
 Several guards and hints above need to know "which repo is this, and is it
-public?". belt answers that three different ways, and none of them involve
+public?". belt answers that four different ways, and none of them involve
 walking the filesystem at hook time — a hook runs on every tool call and
 cannot afford discovery:
 
@@ -815,6 +990,14 @@ cannot afford discovery:
   anything; it lists csl's shard directory (`~/.config/csl/search-index/`)
   to learn which repos are indexed, and names the repo containing a swept
   path as `<parent-dir>/<repo-dir>` to match csl's shard naming.
+- **Locate, for the ledger.** `belt record` runs one
+  `git rev-parse --show-toplevel --git-dir --git-common-dir --abbrev-ref HEAD`
+  in the payload's working directory, plus the origin lookup. A linked
+  worktree is the layout where the per-tree git dir differs from the shared
+  common dir. The main checkout is the parent of the shared `.git`. Two rare
+  layouts read wrong and are accepted: a bare repo cloned into `proj/.git`
+  reads as a checkout at `proj`, and a worktree of a `--separate-git-dir`
+  checkout reads as having no main checkout.
 
 The one place belt does walk is derivation time, not hook time. The
 blocked-name set behind `write-internal-names` comes from scanning
@@ -843,6 +1026,15 @@ missing key:
 | session dedupe store | `~/.cache/belt/seen-<session>` | all once-per-session hints |
 | agent-memory store paths | `~/.config/agent-memory[-work]/MEMORY.md` | agent-memory |
 | csl shard listing | `~/.config/csl/search-index/` | prefer-csl |
+| ledger message cap | 500 bytes | belt record |
+| record budgets | 1 s to locate in git, 300 ms to post | belt record |
+| watcher request timeout | 2 s per poll | belt watch |
+| watcher page size | 100 entries per poll | belt watch |
+| watcher poll floor | 100 ms | belt watch (`poll_interval_ms` below it is clamped to it, with a doctor warning) |
+| watcher max wait cap | 1 h | belt watch (`max_wait_s` past it is clamped to it, with a doctor warning) |
+| watcher cursor and owner files | `~/.cache/belt/watch-<session>` and `.pid` beside it | belt watch |
+| documented watch hook timeout | 590 s | belt watch (doctor warns when an enabled watcher's `max_wait_s` reaches it) |
+| events source name cap | 64 characters | `ledger.source`, `watch.source` (rewritten like the events service does) |
 
 ## When a hook seems silent
 
@@ -870,4 +1062,14 @@ In symptom order:
    one past its budget, or empty stdout) leaves a `warn` event on the
    events timeline naming the cause. A silent custom hint with no event
    behind it was never run: check that the entry is enabled, on the
-   `session-start` event, and not opted out for the session's repo.
+   `session-start` or `subagent-start` event its hook is wired for, and not
+   opted out for the session's repo.
+7. **The ledger has no entries.** `belt doctor` shows whether the ledger is
+   enabled and whether the events service answers; an unreachable service
+   drops every entry. Query the `belt-ledger` source (or your
+   `ledger.source`) rather than `belt`, which holds denies and hints.
+8. **The watcher never wakes the session.** `belt doctor` shows whether
+   watch is enabled and warns when it cannot work. Check that the item was
+   posted under the watch source with `tags.to` set to the exact session
+   id, and that the Stop entry carries `asyncRewake: true`. The cursor file
+   `~/.cache/belt/watch-<session>` must not already name a newer id.

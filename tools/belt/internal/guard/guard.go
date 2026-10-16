@@ -42,6 +42,39 @@ type Input struct {
 	// ToolInput carries the external-text tool call's input fields: every
 	// string in it is text that is about to leave the machine.
 	ToolInput map[string]any
+	// SessionID names the Claude Code session making the call. AgentID and
+	// AgentType name the subagent inside it, and are empty for a call made
+	// by the main session. No built-in guard reads them: they reach custom
+	// guards, and are "" in a `belt check` dry-run.
+	SessionID string
+	AgentID   string
+	AgentType string
+}
+
+// Identity names who made a hook call: the Claude Code session and, inside
+// a subagent, the agent. A field is "" when the payload did not carry it.
+// It lives here because every belt package that reports identity (hook,
+// hint, guard) already imports this one.
+type Identity struct {
+	SessionID string
+	AgentID   string
+	AgentType string
+}
+
+// AddTo copies the set fields into m under the hook payload's own key names
+// and leaves the empty ones out. Adding only what is set keeps the keys
+// additive: a consumer written before they existed sees nothing new on a
+// call that carries none.
+func (id Identity) AddTo(m map[string]string) {
+	for _, kv := range [...][2]string{
+		{"session_id", id.SessionID},
+		{"agent_id", id.AgentID},
+		{"agent_type", id.AgentType},
+	} {
+		if kv[1] != "" {
+			m[kv[0]] = kv[1]
+		}
+	}
 }
 
 // Denial is a blocked tool call: which guard fired and why.

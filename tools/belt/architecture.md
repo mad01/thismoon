@@ -3,27 +3,41 @@
 ## Overview
 
 belt is a tool that runs as Claude Code hooks. Claude Code invokes
-`belt hook <event>` (PreToolUse) or `belt hint <event>` (PostToolUse,
-SessionStart, UserPromptSubmit) with the event payload on stdin. belt runs
-the guards or hints registered for that event and writes its decision or
-advice as JSON on stdout. For the guards, it writes nothing when everything
-is allowed, which is the common case. Each invocation inspects exactly one
-event and exits. belt keeps no daemon, registers no hooks itself, and ships no
-config of its own; hook registration and the config overlay live in the
-consuming repo's companion recipe (docs/adr/0006).
+`belt hook <event>` (PreToolUse), `belt hint <event>` (PostToolUse,
+SessionStart, SubagentStart, UserPromptSubmit) or `belt record <event>` (the
+subagent, task, teammate, permission-denied, notification, compaction and
+session-end lifecycle hooks) with the event payload on stdin. belt runs the
+guards or hints registered for that event and writes its decision or advice
+as JSON on stdout, or posts a ledger entry and writes nothing. For the
+guards, it writes nothing when everything is allowed, which is the common
+case. Each invocation inspects exactly one event and exits. `belt watch` is
+the one longer-lived command: an asyncRewake hook that polls for up to its
+max wait and exits 2 to wake an idle session. belt keeps no daemon, registers
+no hooks itself, and ships no config of its own; hook registration and the
+config overlay live in the consuming repo's companion recipe (docs/adr/0006).
 
-The two halves are asymmetric by design (docs/adr/0008): a guard can return
-`permissionDecision: deny` and stop a tool call, while the `Hint` interface
-has no denial path at all. A hint returns advice text or nil.
+The three concepts are asymmetric by design (docs/adr/0008,
+docs/adr/0024). A guard can return `permissionDecision: deny` and stop a
+tool call. The `Hint` interface has no denial path at all, and the record
+entrypoint takes no output writer. A hint returns advice text or nil; a
+record posts an entry and prints nothing.
 
 ## Structure
 
 ```
 cmd/belt/           entry point, hands off to internal/cli
-internal/cli/       cobra commands: hook <event>, hint <event>, check,
-                    doctor, config, override, docs, version
+internal/cli/       cobra commands: hook <event>, hint <event>,
+                    record <event>, watch, check, doctor, config, override,
+                    docs, version; Execute maps a watcher's wake to exit 2
 internal/hook/      payload parsing + output emission per event: deny JSON,
-                    additionalContext JSON, or plain stdout for prompt
+                    additionalContext JSON, plain stdout for prompt, nothing
+                    for record; the watch entrypoint
+internal/ledger/    the record events and the pure entry builder: title,
+                    500-byte message, session/agent/repo/worktree tags
+internal/watch/     the inbox poller: one GET client, the to-tag filter,
+                    the per-session cursor and owner files
+internal/cache/     per-session file names under ~/.cache/belt with the
+                    session id reduced to path-safe characters
 internal/guard/     the Guard interface, the ForEvent registry, the built-in
                     guards (git-push-main, git-discard, git-identity, commit-guard,
                     script-deny-list, write-internal-names,
@@ -57,9 +71,10 @@ Write carries `file_path` plus `content`, falling back to Edit's
 guards from `ForEvent`; the first denial wins. On a deny, `notify.EmitEvent`
 POSTs a warn event (synchronous, one-second timeout, dropped if the events
 service is down), then the decision is encoded as
-`hookSpecificOutput.permissionDecision: "deny"` on stdout. belt always exits
-0 (the deny is data, not an exit code), and a malformed payload or an allow
-produces no output at all.
+`hookSpecificOutput.permissionDecision: "deny"` on stdout. The guard path
+always exits 0 (the deny is data, not an exit code), and a malformed payload
+or an allow produces no output at all. Across belt the only non-zero exit on
+purpose is `belt watch`'s exit 2 (see the watch path below).
 
 The hint path mirrors it: `belt hint search|bash|external-text|session-start|
 prompt` maps the payload onto a `hint.Input` (tool name, request, response,
@@ -70,17 +85,42 @@ event's name, except the prompt event, which writes plain stdout text because
 UserPromptSubmit adds stdout to context directly. Every fired hint POSTs an
 info event, so hint volume is measurable from the events timeline.
 
+Both paths carry who made the call: the session id on every real call, and
+the agent id and type inside a subagent. They reach custom guards and custom
+hints on stdin and tag every deny and hint event. The agent fields decode
+leniently, because a guard drops a payload it cannot decode and allows the
+call.
+
+The record path: `belt record <event>` decodes the lifecycle payload. Its
+lifecycle-only fields sit in a separate struct, out of the guard decode's
+reach. It places the working directory in git with `guard.LocationAt` under
+a 1 s budget, builds the entry with `ledger.Build`, and posts it with a
+300 ms budget. A deferred recover keeps a panic from exiting 2. The config decides
+only `ledger.enabled` and `ledger.source`; a broken config records with the
+defaults.
+
+The watch path: `belt watch` reads the session id and, when `watch.enabled`
+is set, `watch.Run` claims the session's owner file. It polls the events
+service until items addressed to the session arrive, the max wait passes,
+or a newer watcher claims the session. On a hit it moves the cursor, then
+the CLI prints the items on stderr and exits 2.
+
 The check path: `belt check <event> [command]` builds the same `guard.Input`
 from argv instead of stdin. It prints one verdict line per guard, so a guard
 decision can be inspected without a live Claude Code session.
 
 ## Storage
 
-belt writes one thing: per-session seen markers under
-`~/.cache/belt/seen-<session-id>`, one hint id per line. That is how the
+belt writes per-session files under `~/.cache/belt`, named through
+`internal/cache` so a malformed session id cannot escape the directory. The
+seen markers, `seen-<session-id>` with one hint id per line, are how the
 once-per-session hints (kof-deposit, humanizer-check) and the per-session
 dedupe (kof-assertions, kof-consult) remember what a session already saw.
-Every failure path around that store degrades to "not seen".
+Every failure path around that store degrades to "not seen". The watcher
+keeps `watch-<session-id>`, the id of the newest item it delivered, and
+`watch-<session-id>.pid`, the owner token of the newest watcher. Both are
+replaced through a rename. A cursor that cannot be written means no
+delivery, never a repeated one.
 
 Everything else is read-only. Config comes from these surfaces. A missing
 file yields zero values. A present file that fails to parse, or a listed
@@ -108,14 +148,17 @@ docs/adr/0012). They also read the local kof serve API on `KOF_PORT` with a
 its `custom_hints` entry names, with the same 400 ms default budget
 (`timeout_ms` overrides it), and relays the command's stdout.
 
-Denials and hints are recorded remotely: a POST to the local events service
-(`http://127.0.0.1:7430/api/events`, overridable via `EVENTS_BASE_URL`).
-Persisting them is that service's job, not belt's.
+Denials, hints and ledger entries are recorded remotely: a POST to the
+local events service (`http://127.0.0.1:7430/api/events`, overridable via
+`EVENTS_BASE_URL`), denials and hints under `belt`, ledger entries under
+`belt-ledger`. The watcher reads the same service with a GET on
+`/api/events`. Persisting them is that service's job, not belt's.
 
 ## Interfaces
 
-CLI commands: `belt hook bash|write` and `belt hint
-search|bash|external-text|session-start|prompt` (the hook entrypoints),
+The hook entrypoints are `belt hook bash|write|external-text`, `belt hint
+search|bash|external-text|session-start|subagent-start|prompt`,
+`belt record <lifecycle event>` and `belt watch`. The other CLI commands are
 `belt check bash "<command>"` and `belt check write --file <path> --content
 <text>` (dry runs), and `belt doctor` (installed build, resolved config,
 guard/hint state, custom guard and custom hint reachability, active
@@ -126,7 +169,9 @@ is in its `--help`). The remaining two are `belt docs` (the embedded operating
 doc) and `belt version [-o json]` (bare version token, or the four-key build
 metadata object shared across the repo's components).
 
-Hook contract: event payload on stdin, decision or advice on stdout, exit 0
-in every case. Config surfaces are read-only, listed above. There is no web
+Hook contract: event payload on stdin, decision or advice on stdout
+(nothing at all for record), exit 0 in every case but one. `belt watch`
+exits 2 with the items on stderr when it wakes a session. Config surfaces are read-only,
+listed above. There is no web
 or MCP surface. The full per-hook behavior reference, including the
 settings.json wiring, is [docs/hooks.md](docs/hooks.md).

@@ -1,12 +1,14 @@
 // Package cli wires the belt commands: `hook <event>` (the Claude Code
 // PreToolUse guard entrypoint), `hint <event>` (the PostToolUse advisory
-// entrypoint), `check` (manual dry-run), `doctor` (resolved-config report),
-// `config` (config locations + annotated setting reference), `docs` (the
-// embedded operating doc), and `version`.
+// entrypoint), `record <event>` (the lifecycle ledger entrypoint), `watch`
+// (the asyncRewake inbox watcher), `check` (manual dry-run), `doctor`
+// (resolved-config report), `config` (config locations + annotated setting
+// reference), `docs` (the embedded operating doc), and `version`.
 package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -21,11 +23,19 @@ import (
 	"github.com/mad01/thismoon/tools/belt/internal/guard"
 	"github.com/mad01/thismoon/tools/belt/internal/hint"
 	"github.com/mad01/thismoon/tools/belt/internal/hook"
+	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
-// Execute runs the root command.
+// Execute runs the root command. A watcher that delivered items exits with
+// the wake code and prints nothing more; any other error prints once and
+// exits 1.
 func Execute() {
-	if err := rootCmd().Execute(); err != nil {
+	err := rootCmd().Execute()
+	switch {
+	case err == nil:
+	case errors.Is(err, errWake):
+		os.Exit(wakeExitCode)
+	default:
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -45,6 +55,8 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(
 		hookCmd(paths),
 		hintCmd(paths),
+		recordCmd(paths),
+		watchCmd(paths),
 		checkCmd(paths),
 		doctorCmd(paths),
 		configDocCmd(paths),
@@ -85,10 +97,12 @@ and advice are the only two outcomes.
 The event argument is belt's hint event, not the Claude Code tool name:
 search hints on the csl search tools, bash hints on Bash commands,
 external-text hints on the MCP tools that publish text off this machine,
-session-start hints once when a session opens (a SessionStart hook), and
-prompt hints on each user prompt (a UserPromptSubmit hook: advice goes to
-stdout as plain text, the form that event adds to context). Wire them in
-~/.claude/settings.json:
+session-start hints once when a session opens (a SessionStart hook),
+subagent-start hints once per subagent before its first prompt (a
+SubagentStart hook: the advice lands in the subagent's context, and only
+custom hints run there), and prompt hints on each user prompt (a
+UserPromptSubmit hook: advice goes to stdout as plain text, the form that
+event adds to context). Wire them in ~/.claude/settings.json:
 
   {
     "hooks": {
@@ -102,12 +116,15 @@ stdout as plain text, the form that event adds to context). Wire them in
       "SessionStart": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint session-start"}]}
       ],
+      "SubagentStart": [
+        {"matcher": "", "hooks": [{"type": "command", "command": "belt hint subagent-start"}]}
+      ],
       "UserPromptSubmit": [
         {"matcher": "", "hooks": [{"type": "command", "command": "belt hint prompt"}]}
       ]
     }
   }`,
-		Args: validHintEventArg,
+		Args: eventArg("hint event", hint.Events),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hook.RunHint(
 				strings.ToLower(args[0]),
@@ -120,21 +137,65 @@ stdout as plain text, the form that event adds to context). Wire them in
 	}
 }
 
-// validHintEventArg rejects unknown hint events at parse time. A miswired
-// entry would run zero hints and silently advise nothing, which looks
-// identical to "there was nothing to say" — so it must fail loud instead.
-func validHintEventArg(cmd *cobra.Command, args []string) error {
-	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
-		return err
+func recordCmd(paths pathsFunc) *cobra.Command {
+	return &cobra.Command{
+		Use:   "record <event>",
+		Short: "Record a Claude Code lifecycle event to the events ledger (payload on stdin, no output)",
+		Long: `Record a Claude Code lifecycle event to the events ledger. Reads the hook
+payload on stdin and posts one entry to the local events service under the
+` + ledger.Source + ` source (ledger.source replaces it), tagged with the
+session, the agent, and the repo, worktree and branch the event happened in.
+
+For a valid event it never writes to stdout or stderr and always exits 0.
+On SubagentStop any output keeps the subagent running, TaskCompleted,
+TeammateIdle and PreCompact treat exit 2 as a block, and PermissionDenied
+reads its output for a retry flag, so a ledger entry must never be able to
+steer the session. The config decides only whether entries post
+(ledger.enabled, default on) and where; a broken config file records with
+the defaults. An unreadable payload is still recorded, at warn level.
+
+The event argument is belt's record event, not the Claude Code hook name.
+An unknown event is a wiring mistake and fails loud like every belt
+entrypoint: an error on stderr and exit 1. Wire them in
+~/.claude/settings.json:
+
+  {
+    "hooks": {
+      "SubagentStart":    [{"matcher": "", "hooks": [{"type": "command", "command": "belt record subagent-start"}]}],
+      "SubagentStop":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record subagent-stop"}]}],
+      "TaskCompleted":    [{"matcher": "", "hooks": [{"type": "command", "command": "belt record task-completed"}]}],
+      "TeammateIdle":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record teammate-idle"}]}],
+      "PermissionDenied": [{"matcher": "", "hooks": [{"type": "command", "command": "belt record permission-denied"}]}],
+      "Notification":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record notification"}]}],
+      "PreCompact":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record pre-compact"}]}],
+      "PostCompact":      [{"matcher": "", "hooks": [{"type": "command", "command": "belt record post-compact"}]}],
+      "SessionEnd":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record session-end"}]}]
+    }
+  }`,
+		Args: eventArg("record event", ledger.Events),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hook.RunRecord(strings.ToLower(args[0]), loader(paths), cmd.InOrStdin())
+			return nil // always exit 0: a non-zero exit would block some of these events
+		},
 	}
-	if slices.Contains(hint.Events(), strings.ToLower(args[0])) {
-		return nil
+}
+
+// eventArg builds the parse-time check every hook entrypoint shares:
+// exactly one event, matched case-insensitively against the entrypoint's
+// list. A miswired settings entry must fail loud. An unmatched event would
+// run nothing: zero guards silently allow everything the hook was wired to
+// deny, zero hints look identical to "nothing to say", and zero records
+// leave a timeline that only looks quiet.
+func eventArg(kind string, events func() []string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := cobra.ExactArgs(1)(cmd, args); err != nil {
+			return err
+		}
+		if slices.Contains(events(), strings.ToLower(args[0])) {
+			return nil
+		}
+		return fmt.Errorf("unknown %s %q (valid: %s)", kind, args[0], strings.Join(events(), ", "))
 	}
-	return fmt.Errorf(
-		"unknown hint event %q (valid: %s)",
-		args[0],
-		strings.Join(hint.Events(), ", "),
-	)
 }
 
 func hookCmd(paths pathsFunc) *cobra.Command {
@@ -164,25 +225,12 @@ only the github.com server belongs there). Wire all three in
       ]
     }
   }`,
-		Args: validEventArg,
+		Args: eventArg("event", guard.Events),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hook.Run(strings.ToLower(args[0]), loader(paths), cmd.InOrStdin(), cmd.OutOrStdout())
 			return nil // always exit 0 for a valid event: the deny travels in the JSON
 		},
 	}
-}
-
-// validEventArg rejects unknown events at parse time, case-insensitively. An
-// unmatched event would run zero guards and silently allow everything the
-// hook was wired to deny, so a miswired settings entry must fail loud.
-func validEventArg(cmd *cobra.Command, args []string) error {
-	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
-		return err
-	}
-	if slices.Contains(guard.Events(), strings.ToLower(args[0])) {
-		return nil
-	}
-	return fmt.Errorf("unknown event %q (valid: %s)", args[0], strings.Join(guard.Events(), ", "))
 }
 
 func checkCmd(paths pathsFunc) *cobra.Command {

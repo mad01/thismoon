@@ -153,14 +153,19 @@ func (c *Custom) excluded(in Input) bool {
 
 // payload is the JSON object the external reads on stdin: the session
 // fields belt extracted from the hook payload, plus the event name so one
-// script can serve several events once more are supported.
+// script can serve several events once more are supported. The agent keys
+// are additive and appear only inside a subagent, so a main-session payload
+// keeps its original four keys (session_id among them, present even when
+// empty, as it always was).
 func (c *Custom) payload(in Input) map[string]string {
-	return map[string]string{
+	p := map[string]string{
 		"event":           in.Event,
 		"cwd":             in.Cwd,
 		"session_id":      in.SessionID,
 		"transcript_path": in.TranscriptPath,
 	}
+	guard.Identity{SessionID: in.SessionID, AgentID: in.AgentID, AgentType: in.AgentType}.AddTo(p)
+	return p
 }
 
 // warn records a silent outcome so a broken external is visible in the

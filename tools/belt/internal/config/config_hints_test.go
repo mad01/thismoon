@@ -65,12 +65,12 @@ func TestValidateRejectsUnusableCustomHints(t *testing.T) {
 		{
 			"unsupported event",
 			"custom_hints:\n  journal:\n    event: prompt\n    command: [journal]\n",
-			`custom_hints.journal.event is "prompt" (supported: session-start)`,
+			`custom_hints.journal.event is "prompt" (supported: session-start, subagent-start)`,
 		},
 		{
 			"missing event",
 			"custom_hints:\n  journal:\n    command: [journal]\n",
-			`custom_hints.journal.event is "" (supported: session-start)`,
+			`custom_hints.journal.event is "" (supported: session-start, subagent-start)`,
 		},
 		{
 			"missing command",

@@ -36,9 +36,11 @@ So identical inputs produce identical lists.
 
 A deny travels as data, never as a failing process. belt exits 0 and puts
 the decision in `hookSpecificOutput.permissionDecision`, because a guard hook
-must not break tool calls on its own bugs. Every deny reason carries a
-`belt[<guard-id>]:` prefix, so a block is always attributable to the guard
-that fired.
+must not break tool calls on its own bugs. The one exception is `belt watch`,
+which exits 2 on purpose: that is how an asyncRewake hook wakes an idle
+session, and on that hook it blocks nothing (docs/adr/0024). Every deny
+reason carries a `belt[<guard-id>]:` prefix, so a block is always
+attributable to the guard that fired.
 
 Config is read live at hook time: belt's own file, rendered per machine class
 by the provisioning layer, plus the Claude settings deny list. That list is
