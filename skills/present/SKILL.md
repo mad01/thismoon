@@ -22,15 +22,16 @@ When the user asks to present, summarize, or brief on a topic (e.g., "present th
 
 ### Worked examples
 
-Three complete pages sit beside this file in `examples/`. Each file is the argument object of one `present_create` call (`title`, `content`, `deck`, `references`): read it, serialise `content` and `deck` as JSON strings, and call the tool. None of the three carries a `graph`; the JSON under **Graph format** is the worked example for that.
+Four complete pages sit beside this file in `examples/`. Each file is the argument object of one `present_create` call (`title`, `content`, `deck`, `references`): read it, serialise `content` and `deck` as JSON strings, and call the tool. None of the four carries a `graph`; the JSON under **Graph format** is the worked example for that.
 
 | File | Title | Shows |
 |------|-------|-------|
 | [stepped-charts.json](examples/stepped-charts.json) | Stepped charts in present | a stacked bar, a line, a sankey, and a ribbon that each build up one step per Next, a stepped diagram, toned sections, a `statement` opener, `transition: "slide"` |
 | [diagram-block.json](examples/diagram-block.json) | Diagram block test: boxes, boundaries, arrows | a system context, two levels of groups, a top-to-bottom pipeline, a request walkthrough with `focus`, a framed chart beside a frameless one, a borderless image, a `section` divider |
 | [slides-without-boxes.json](examples/slides-without-boxes.json) | Slides without boxes | every slide layout, `section` dividers with tones, a row of stats, a lone stat, a lone quote, a chart beside its caption in `columns` |
+| [live-terminal-demo.json](examples/live-terminal-demo.json) | Live terminal demo | a `terminal` session started on slide 2 and shown again on slide 8, Claude started on slide 3 and shown again on slide 7, a `prefill` on each, a `statement` slide, a lone stat, a `reveal` list, and a run sheet as the brief with the switch commands in `code` blocks |
 
-The repo's [sample-deck.json][sample-deck] is a fourth: a deck that sets every layout, tone, notes, reveal, block, and chrome field once. A test keeps it and the three examples compiling.
+The repo's [sample-deck.json][sample-deck] is a fifth: a deck that sets every layout, tone, notes, reveal, block, and chrome field once. A test keeps it and the four examples compiling.
 
 ### Where the decisions are recorded
 
@@ -370,7 +371,7 @@ Skip preamble sections ("about this brief", "overview of overview"). Every secti
 
 A deck is a second Doc under the same page id, shown one section at a time at `deck_url` (`/p/<id>/deck`). It uses the Doc schema above unchanged: `summary`, `meta`, and `chips` make the title slide, every entry in `sections` is one slide, and the page's `references` make the last slide. The page's one `graph` is shared with the brief, so a `{"t": "graph"}` block in a deck section shows the same graph on that slide. Pass `deck` to `present_create` beside `content`, or alone for a deck-only page, and to `present_update` to replace it (`deck: ""` removes it). The deck is never generated from the brief: you write it, and it says less ([ADR-0019][adr-0019], [ADR-0020][adr-0020]).
 
-Worked examples: [slides-without-boxes.json](examples/slides-without-boxes.json) for the layouts and tones, [stepped-charts.json](examples/stepped-charts.json) for data slides that build up.
+Worked examples: [slides-without-boxes.json](examples/slides-without-boxes.json) for the layouts and tones, [stepped-charts.json](examples/stepped-charts.json) for data slides that build up, [live-terminal-demo.json](examples/live-terminal-demo.json) for a demo the deck starts on one slide and comes back to.
 
 ### When to make one
 
@@ -880,7 +881,7 @@ Keep a diagram to about twelve boxes, two levels of groups, and two or three ton
 
 ## Terminal format (the `terminal` block)
 
-A `terminal` block puts a live terminal on the page. The local `present serve` runs the process in a pseudo-terminal, and the browser shows it with xterm.js. The process belongs to the page and the block's `session` name, not to the tab ([ADR-0025][adr-0025]). Every update reloads the open tab, which attaches again and replays the recent output, so a demo survives your edits to the deck. Use it for a demo the talk starts once and comes back to. A command the room only needs to read is a `code` block.
+A `terminal` block puts a live terminal on the page. The local `present serve` runs the process in a pseudo-terminal, and the browser shows it with xterm.js. The process belongs to the page and the block's `session` name, not to the tab ([ADR-0025][adr-0025]). Every update reloads the open tab, which attaches again and replays the recent output, so a demo survives your edits to the deck. Use it for a demo the talk starts once and comes back to. A command the room only needs to read is a `code` block. Worked example: [live-terminal-demo.json](examples/live-terminal-demo.json), a deck that starts a shell on slide 2 and Claude on slide 3 and shows both again after three talk slides. Its brief is the run sheet.
 
 ```json
 {"sections": [

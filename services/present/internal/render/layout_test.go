@@ -899,13 +899,14 @@ func TestSampleDeckRenders(t *testing.T) {
 		`data-steps="3"`, `<ol class="present-steps">`, `<li data-fixation>The pricing service times out first.</li>`,
 		`class="present-chart is-ribbon"`, `data-steps="4"`,
 		`class="present-diagram" data-steps="4"`, `<p class="present-diagram-caption" data-fixation>`,
+		`<div class="present-terminal wk-code-block" data-session="probe"`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("sample deck lacks %q", want)
 		}
 	}
-	if n := len(c.Doc.Sections); n != 17 {
-		t.Errorf("sample deck has %d sections, want 17", n)
+	if n := len(c.Doc.Sections); n != 18 {
+		t.Errorf("sample deck has %d sections, want 18", n)
 	}
 	// The four reveal sections: two lists, the mixed slide, and the stepped
 	// chart that walks its steps after its paragraph (MAD-385).
