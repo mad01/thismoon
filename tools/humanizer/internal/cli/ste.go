@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -24,6 +25,7 @@ const (
 var (
 	steProfile     string
 	steRepo        string
+	stePath        string
 	steJSON        bool
 	steMinSeverity string
 	steGlossaryOut string
@@ -38,13 +40,19 @@ writes for another. --profile picks the rule set: procedure for task briefs
 and steps, description for status reports and summaries. The command is
 experimental: rules, profiles, and output may change.
 
-With --repo, the _Avoid_ lists of every CONTEXT.md under that path become
-STE.Glossary substitutions, reported at suggestion level.
+With --repo, the _Avoid_ lists of the repo's CONTEXT.md files become
+STE.Glossary substitutions, reported at suggestion level. A CONTEXT.md
+applies to its own directory and everything below it, so a file argument
+inside the repo gets only the glossaries on its path. --path names that
+location for text on stdin; text with no location inside the repo gets
+every glossary. Synonyms a glossary bans in a form the rule cannot match
+are skipped with a warning on stderr.
 
 Exit codes: 0 clean, 1 findings, 2 error. Integrations parse the --json
 payload, not the exit code.`,
 	Example: `  humanizer ste --profile procedure brief.md
   printf '%s' "$MSG" | humanizer ste --profile procedure --repo . --json
+  printf '%s' "$MSG" | humanizer ste --profile description --repo . --path services/present
   humanizer ste glossary --repo . -o /tmp/Glossary.yml`,
 	Args: steArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,7 +63,11 @@ payload, not the exit code.`,
 var steGlossaryCmd = &cobra.Command{
 	Use:   "glossary",
 	Short: "Print the STE.Glossary rule generated from a repo's CONTEXT.md files (experimental)",
-	Args:  steNoArgs,
+	Long: `Print the STE.Glossary rule generated from a repo's CONTEXT.md files. With
+--path, the rule holds only the glossaries that apply at that file or
+directory; without it, every glossary in the repo. The command is
+experimental.`,
+	Args: steNoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return withExitCode(steExitError, runSTEGlossary(cmd))
 	},
@@ -64,6 +76,9 @@ var steGlossaryCmd = &cobra.Command{
 func init() {
 	steCmd.PersistentFlags().StringVar(&steRepo, "repo", "",
 		"repo whose CONTEXT.md glossaries become STE.Glossary substitutions")
+	steCmd.PersistentFlags().StringVar(&stePath, "path", "",
+		"file or directory the text belongs to; only the glossaries on its path apply "+
+			"(default: the file argument)")
 	steCmd.Flags().StringVar(&steProfile, "profile", "",
 		"rule set: procedure (briefs, steps) or description (reports, summaries)")
 	steCmd.Flags().BoolVar(&steJSON, "json", false, "emit findings as JSON")
@@ -112,7 +127,7 @@ func runSTE(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	gloss, err := repoGlossary(steRepo)
+	gloss, err := repoGlossary(cmd.ErrOrStderr(), glossaryLocation(args))
 	if err != nil {
 		return err
 	}
@@ -133,13 +148,43 @@ func runSTE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// repoGlossary returns the generated glossary rule for repo, or nil when no
-// repo is given.
-func repoGlossary(repo string) ([]byte, error) {
-	if repo == "" {
+// glossaryLocation is where the checked text lives, for glossary scoping:
+// --path, else the file argument, else nowhere.
+func glossaryLocation(args []string) string {
+	if stePath != "" {
+		return stePath
+	}
+	if len(args) == 1 && args[0] != "-" {
+		return args[0]
+	}
+	return ""
+}
+
+// repoGlossary returns the glossary rule of --repo for text at location, or
+// nil without a repo. It prints the _Avoid_ pieces the glossaries skip to
+// stderr, so a broken line is visible without failing the check.
+func repoGlossary(stderr io.Writer, location string) ([]byte, error) {
+	if steRepo == "" {
+		if stePath != "" {
+			return nil, errors.New("--path needs --repo")
+		}
 		return nil, nil
 	}
-	return glossary.FromRepo(repo)
+	repo, err := glossary.Load(steRepo)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range repo.Warnings() {
+		fmt.Fprintf(stderr, "humanizer: %s\n", w)
+	}
+	if location == "" {
+		return repo.Rule(""), nil
+	}
+	abs, err := filepath.Abs(location)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", location, err)
+	}
+	return repo.Rule(repo.Target(abs)), nil
 }
 
 func printSTE(w io.Writer, profile rules.Profile, findings []rules.Finding) error {
@@ -164,7 +209,7 @@ func runSTEGlossary(cmd *cobra.Command) error {
 	if steRepo == "" {
 		return errors.New("--repo is required")
 	}
-	rule, err := glossary.FromRepo(steRepo)
+	rule, err := repoGlossary(cmd.ErrOrStderr(), stePath)
 	if err != nil {
 		return err
 	}

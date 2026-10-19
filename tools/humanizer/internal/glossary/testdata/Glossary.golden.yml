@@ -3,7 +3,7 @@
 # humanizer-category: ste
 # humanizer-profile: procedure, description
 # humanizer-summary: A synonym that a CONTEXT.md glossary bans, in place of its glossary term.
-# humanizer-rationale: Generated at run time from the _Avoid_ lists of every CONTEXT.md in the repo. A glossary scopes a word to one sense, so a hit is a prompt to check the sense, not an error: "delete" can be the glossary's Retract or a plain file deletion. Use the term when you mean the glossary sense.
+# humanizer-rationale: Generated at run time from the _Avoid_ lists of the CONTEXT.md files that govern the checked file: a CONTEXT.md applies to its own directory and everything below it, and text with no location gets every glossary in the repo. A glossary scopes a word to one sense, so a hit is a prompt to check the sense, not an error: "delete" can be the glossary's Retract or a plain file deletion. Use the term when you mean the glossary sense.
 # humanizer-before: Delete the assertion when its pin goes stale.
 # humanizer-after: Retract the assertion when its pin goes stale.
 # humanizer-reference: CONTEXT.md files in the repo (bold term line, definition, _Avoid_ line)

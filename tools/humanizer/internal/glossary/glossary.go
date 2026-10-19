@@ -1,8 +1,11 @@
-// Package glossary turns the domain glossaries in CONTEXT.md files into one
+// Package glossary turns the domain glossaries in CONTEXT.md files into a
 // vale substitution rule. A glossary entry is a bold **Term**: line, a
 // definition, and an _Avoid_: line listing the banned synonyms; each banned
-// synonym becomes a case-insensitive swap to its term. Parse and Render are
-// pure; FromRepo (repo.go) is the file-system edge.
+// synonym becomes a case-insensitive swap to its term. A CONTEXT.md governs
+// its own directory and everything below it, so the rule for a file holds
+// only the glossaries on that file's path. Parse, InScope, RuleFor, and
+// Render are pure; Load and the Repo methods (repo.go) are the file-system
+// edge.
 package glossary
 
 import (
@@ -10,15 +13,34 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Entry is one glossary term with the synonyms its _Avoid_ line bans.
 type Entry struct {
 	Term  string
 	Avoid []string
+}
+
+// Skip is one piece of an _Avoid_ line that Parse leaves out of the rule.
+type Skip struct {
+	Line    int
+	Synonym string
+	Reason  string
+}
+
+// Context is one parsed CONTEXT.md. Path is the file's slash path relative
+// to the repo root; the context governs path.Dir(Path) and everything below
+// it, so an empty Path (what Parse returns) governs the whole repo.
+type Context struct {
+	Path    string
+	Entries []Entry
+	Skips   []Skip
 }
 
 // Substitution maps one banned synonym to the term to use instead. Use joins
@@ -37,49 +59,120 @@ var (
 // synonymTrim is the markup stripped from both ends of a banned synonym.
 const synonymTrim = " \t`*_\"."
 
+const (
+	// reasonUnclosed explains a skip at an unmatched "(".
+	reasonUnclosed = "unclosed parenthesis, so the rest of the line is read as a note"
+	// reasonEdge explains a skipped synonym with a non-word first or last character.
+	reasonEdge = "starts or ends with a non-word character, so the rule's word boundaries never match it"
+)
+
 // Parse reads one CONTEXT.md and returns its entries in file order. An
 // _Avoid_ line belongs to the closest **Term** line above it; an _Avoid_ line
-// with no term above it is ignored.
-func Parse(r io.Reader) ([]Entry, error) {
+// with no term above it is ignored. Pieces of an _Avoid_ line that cannot
+// become a working swap are returned as skips, not entries.
+func Parse(r io.Reader) (Context, error) {
 	sc := bufio.NewScanner(r)
 	var (
-		entries []Entry
-		term    string
+		ctx  Context
+		term string
+		line int
 	)
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if m := termLine.FindStringSubmatch(line); m != nil {
+		line++
+		text := strings.TrimSpace(sc.Text())
+		if m := termLine.FindStringSubmatch(text); m != nil {
 			term = strings.TrimSpace(m[1])
 			continue
 		}
-		m := avoidLine.FindStringSubmatch(line)
+		m := avoidLine.FindStringSubmatch(text)
 		if m == nil || term == "" {
 			continue
 		}
-		if avoid := splitSynonyms(m[1]); len(avoid) > 0 {
-			entries = append(entries, Entry{Term: term, Avoid: avoid})
+		avoid, skips := splitSynonyms(m[1])
+		for _, s := range skips {
+			s.Line = line
+			ctx.Skips = append(ctx.Skips, s)
+		}
+		if len(avoid) > 0 {
+			ctx.Entries = append(ctx.Entries, Entry{Term: term, Avoid: avoid})
 		}
 		term = ""
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("glossary: read: %w", err)
+		return Context{}, fmt.Errorf("glossary: read: %w", err)
 	}
-	return entries, nil
+	return ctx, nil
 }
 
 // splitSynonyms strips parenthetical notes (they can hold commas) and splits
-// the rest of an _Avoid_ list on commas.
-func splitSynonyms(list string) []string {
+// the rest of an _Avoid_ list on commas. An unmatched "(" starts a note that
+// runs to the end of the line. A synonym whose first or last character is
+// not a word character is skipped: vale wraps every swap key in word
+// boundaries, so such a key never matches. The returned skips carry no line.
+func splitSynonyms(list string) ([]string, []Skip) {
 	for parenthetical.MatchString(list) {
 		list = parenthetical.ReplaceAllString(list, "")
 	}
+	var skips []Skip
+	if open := strings.Index(list, "("); open >= 0 {
+		skips = append(skips, Skip{Synonym: strings.TrimSpace(list[open:]), Reason: reasonUnclosed})
+		list = list[:open]
+	}
 	var out []string
 	for _, part := range strings.Split(list, ",") {
-		if s := strings.Join(strings.Fields(strings.Trim(part, synonymTrim)), " "); s != "" {
+		s := strings.Join(strings.Fields(strings.Trim(part, synonymTrim)), " ")
+		switch {
+		case s == "": // an empty piece, such as a trailing comma
+		case !wordEdged(s):
+			skips = append(skips, Skip{Synonym: s, Reason: reasonEdge})
+		default:
 			out = append(out, s)
 		}
 	}
+	return out, skips
+}
+
+// wordEdged reports whether s starts and ends with a letter, digit, or
+// underscore, the characters a regexp word boundary sits next to.
+func wordEdged(s string) bool {
+	first, _ := utf8.DecodeRuneInString(s)
+	last, _ := utf8.DecodeLastRuneInString(s)
+	return isWordRune(first) && isWordRune(last)
+}
+
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// InScope returns the entries of the contexts that govern target, in context
+// order. target is a slash path relative to the repo root ("." is the root
+// itself); an empty target means the text has no location, so every context
+// applies.
+func InScope(contexts []Context, target string) []Entry {
+	var out []Entry
+	for _, c := range contexts {
+		if target == "" || governs(path.Dir(c.Path), target) {
+			out = append(out, c.Entries...)
+		}
+	}
 	return out
+}
+
+// governs reports whether a CONTEXT.md in dir applies to target: dir is the
+// repo root, target itself, or an ancestor of target.
+func governs(dir, target string) bool {
+	return dir == "." || target == dir || strings.HasPrefix(target, dir+"/")
+}
+
+// RuleFor renders the substitution rule for the entries in scope at target
+// (see InScope), or nil when no swap applies there.
+func RuleFor(contexts []Context, target string) []byte {
+	entries := InScope(contexts, target)
+	subs := Substitutions(entries)
+	if len(subs) == 0 {
+		return nil
+	}
+	return Render(subs, MultiWordTerms(entries))
 }
 
 // Substitutions flattens entries into swaps sorted by banned synonym, case
@@ -152,7 +245,7 @@ const header = `# humanizer-id: STE.Glossary
 # humanizer-category: ste
 # humanizer-profile: procedure, description
 # humanizer-summary: A synonym that a CONTEXT.md glossary bans, in place of its glossary term.
-# humanizer-rationale: Generated at run time from the _Avoid_ lists of every CONTEXT.md in the repo. A glossary scopes a word to one sense, so a hit is a prompt to check the sense, not an error: "delete" can be the glossary's Retract or a plain file deletion. Use the term when you mean the glossary sense.
+# humanizer-rationale: Generated at run time from the _Avoid_ lists of the CONTEXT.md files that govern the checked file: a CONTEXT.md applies to its own directory and everything below it, and text with no location gets every glossary in the repo. A glossary scopes a word to one sense, so a hit is a prompt to check the sense, not an error: "delete" can be the glossary's Retract or a plain file deletion. Use the term when you mean the glossary sense.
 # humanizer-before: Delete the assertion when its pin goes stale.
 # humanizer-after: Retract the assertion when its pin goes stale.
 # humanizer-reference: CONTEXT.md files in the repo (bold term line, definition, _Avoid_ line)

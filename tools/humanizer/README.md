@@ -25,7 +25,7 @@ Rule metadata (ID, category, severity, rationale, before/after examples) comes f
 
 ### Simplified Technical English (STE) style
 
-**Experimental.** The STE style, the `ste` command, the `profile` and `repo` parameters of `humanizer_detect`, and the generated glossary rule are new and may change or go away. The default detect path is not affected.
+**Experimental.** The STE style, the `ste` command, the `profile`, `repo` and `path` parameters of `humanizer_detect`, and the generated glossary rule are new and may change or go away. The default detect path is not affected.
 
 A second style checks messages that one agent writes for another: task briefs, steps, status reports. It follows Simplified Technical English (STE), the controlled language that the AeroSpace and Defence Industries Association of Europe (ASD) publishes as ASD-STE100 for maintenance manuals. Six rules live under `internal/rules/vale/styles/STE/`, and humanizer generates a seventh for each repo:
 
@@ -36,12 +36,16 @@ A second style checks messages that one agent writes for another: task briefs, s
 | ParagraphSentences | both | A paragraph with more than six sentences |
 | OneInstruction | procedure | Two instructions joined with "and then" |
 | IngForm | both | A verb in the -ing form, minus a list of technical nouns |
-| AuxiliaryChain | both | A helping-verb chain: will be, has been, have been, had been, being |
+| AuxiliaryChain | both | A helping-verb chain: will be, has been, have been, had been, being (IngForm leaves "being" to this rule) |
 | Glossary | both | A synonym that a CONTEXT.md glossary bans, at suggestion level |
 
 A profile picks the rule set: `procedure` for instructions, `description` for reports and summaries. Each rule names its profiles in a `# humanizer-profile` header. The default detect path never loads the STE style, so `humanizer detect` and a `humanizer_detect` call without a profile report what they did before.
 
 The Glossary rule is not embedded. Given a repo path, humanizer reads every CONTEXT.md under it and skips dot-directories, `vendor`, `node_modules` and `testdata`. Each synonym on an `_Avoid_:` line becomes a case-insensitive substitution to its bold term. A glossary scopes a word to one sense, so a Glossary hit asks you to check the sense. It isn't an error.
+
+A CONTEXT.md applies to its own directory and everything below it, and the root one applies to the whole repo. The rule for a file holds only the glossaries on that file's path. A word that `services/present/CONTEXT.md` bans isn't flagged in `tools/`. A word that one glossary bans isn't flagged where a glossary on the file's path defines it as a term. Text with no location in the repo, such as stdin without `--path`, gets every glossary, and a synonym that is a term in any of them is dropped.
+
+The generator skips what the rule could never match, with a warning on stderr (the `notes` field over MCP). An unclosed `(` makes the rest of its line a note. A synonym that starts or ends with a non-word character, such as `--force` or `[x]`, is skipped too, because vale wraps every swap key in word boundaries.
 
 Version one has known limits. It has no noun-cluster rule, and the official STE dictionary is not vendored. IngForm is a regex, so an -ing noun outside its exceptions list still fires.
 
@@ -101,19 +105,21 @@ Check an agent brief or report against the STE rules (see the STE style section 
 ```sh
 humanizer ste --profile procedure brief.md
 printf '%s' "$MSG" | humanizer ste --profile procedure --repo . --json
+printf '%s' "$MSG" | humanizer ste --profile description --repo . --path services/present
 humanizer ste glossary --repo . -o /tmp/Glossary.yml
 ```
 
 | Flag | Description |
 |---|---|
 | `--profile` | Required: `procedure` (task briefs, steps) or `description` (status reports, summaries) |
-| `--repo` | Add the STE.Glossary substitutions from every CONTEXT.md under this path |
+| `--repo` | Add the STE.Glossary substitutions from the CONTEXT.md files under this path |
+| `--path` | The file or directory the text belongs to; only the glossaries on its path apply. Defaults to the file argument; stdin without it gets every glossary |
 | `--min-severity` | Filter findings below this level; `warning` drops the Glossary suggestions |
 | `--json` | Emit the `humanizer_detect` payload plus a `profile` field |
 
 Exit codes: 0 clean, 1 findings, 2 error. Integrations parse the `--json` payload, not the exit code.
 
-`ste glossary` prints the generated rule, or writes it to the `-o` file, so you can see what a repo bans. A run with a repo glossary takes tens of milliseconds on this repo, so a hook can call it on every message.
+`ste glossary` prints the generated rule, or writes it to the `-o` file, so you can see what a repo bans. With `--path` it prints the rule for that location. A run with a repo glossary takes tens of milliseconds on this repo, so a hook can call it on every message.
 
 ### judge
 
@@ -312,7 +318,7 @@ The server uses the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 | Tool | Description |
 |---|---|
 | `humanizer_status` | Health check: vale installed, version, cache dir, rule count |
-| `humanizer_detect` | Scan text for AI-writing patterns; `profile` runs the STE rules, `repo` adds the glossary (both experimental) |
+| `humanizer_detect` | Scan text for AI-writing patterns; `profile` runs the STE rules, `repo` adds the glossary, `path` scopes it (all experimental) |
 | `humanizer_detect_file` | Scan a file on disk (sandbox: prose and Go files under the profile's workspace roots only) |
 | `humanizer_scan_go` | Extract prose from Go source and scan it; findings map back to Go source lines |
 | `humanizer_detect_statistical` | Whole-sample statistical checks (sentence uniformity, contraction rate, TTR, anaphora) |
@@ -346,7 +352,7 @@ If you add a runtime file or network need, update the consuming repo's seatbelt 
 
 ## Configuration
 
-The style pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`. An STE run writes its own config, a copy of the STE style, and any repo glossary to `ste/<key>/` inside that directory. The key is `default` without a glossary and a hash of the glossary otherwise. These run dirs accumulate, one per glossary revision, and nothing prunes them; deleting the cache directory is safe.
+The style pack extracts to `~/.cache/humanizer/vale` on first use. To override the cache location, set `HUMANIZER_CACHE_DIR` or `XDG_CACHE_HOME`. An STE run writes its own config, a copy of the STE style, and any repo glossary to `ste/<key>/` inside that directory. The key is `default` without a glossary and a hash of the glossary otherwise. Each run touches its own run dir and removes the run dirs that no run used for seven days. Old glossary revisions go away, and any number of scopes can stay in use. Deleting the cache directory is safe.
 
 ## Where things live
 

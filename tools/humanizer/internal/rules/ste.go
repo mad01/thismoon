@@ -3,11 +3,15 @@ package rules
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Profile selects the STE-lite rule set for one kind of text. The STE style
@@ -42,6 +46,13 @@ const (
 	runKeyHexLen = 16
 	// glossaryFileName makes the generated rule's ID STE.Glossary.
 	glossaryFileName = "Glossary.yml"
+	// glossaryRuleID is the ID of the rule generated from CONTEXT.md files.
+	glossaryRuleID = steStyle + ".Glossary"
+	// runDirMaxAge is how long an STE run directory may go unused before a
+	// later run prunes it. A week keeps the directories of every glossary
+	// scope in recent use, however many there are, while a revision nobody
+	// runs any more goes away.
+	runDirMaxAge = 7 * 24 * time.Hour
 )
 
 // steValeIni is the vale config of an STE run directory. StylesPath resolves
@@ -109,11 +120,19 @@ func ruleFilter(profile Profile, requested []string) ([]string, error) {
 // path of its vale config. The directory holds the config, a copy of the
 // embedded STE style, and the glossary rule when one is given. It is keyed by
 // the glossary's content hash, so the glossary in a directory never changes
-// and repos with the same glossary share one. Run dirs accumulate, one per
-// glossary revision, and nothing prunes them. Every write is atomic and
+// and repos with the same glossary share one. Every write is atomic and
 // skipped when the file is unchanged, so concurrent runs need no lock.
+//
+// Each run marks its directory as used by setting its mtime before it writes
+// anything, then prunes the run directories nobody used for runDirMaxAge, so
+// one directory per glossary revision does not pile up.
 func ensureSTERunDir(cacheDir string, gloss []byte) (string, error) {
-	dir := filepath.Join(cacheDir, steRunRoot, runKey(gloss))
+	runRoot := filepath.Join(cacheDir, steRunRoot)
+	dir := filepath.Join(runRoot, runKey(gloss))
+	now := time.Now()
+	if err := touchDir(dir, now); err != nil {
+		return "", err
+	}
 	styleDir := filepath.Join(dir, "styles", steStyle)
 	if err := extractTree(path.Join(stylesRoot, steStyle), styleDir); err != nil {
 		return "", err
@@ -127,7 +146,52 @@ func ensureSTERunDir(cacheDir string, gloss []byte) (string, error) {
 	if err := writeFileIfChanged(cfg, []byte(steValeIni)); err != nil {
 		return "", err
 	}
+	if err := pruneRunDirs(runRoot, now.Add(-runDirMaxAge)); err != nil {
+		return "", err
+	}
 	return cfg, nil
+}
+
+// touchDir creates dir if needed and sets its mtime to now, the mark
+// pruneRunDirs reads as the directory's last use.
+func touchDir(dir string, now time.Time) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	if err := os.Chtimes(dir, now, now); err != nil {
+		return fmt.Errorf("touch %s: %w", dir, err)
+	}
+	return nil
+}
+
+// pruneRunDirs removes the run directories under runRoot whose last use is
+// before cutoff. A directory that another run removes first is skipped. A
+// run that picks up a directory in the moment it is pruned can fail once; a
+// directory in use is never pruned, because its own run just touched it.
+func pruneRunDirs(runRoot string, cutoff time.Time) error {
+	entries, err := os.ReadDir(runRoot)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", runRoot, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", e.Name(), err)
+		}
+		if !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(runRoot, e.Name())); err != nil {
+			return fmt.Errorf("prune STE run dir %s: %w", e.Name(), err)
+		}
+	}
+	return nil
 }
 
 // runKey names the run directory for a glossary: defaultRunKey without one,

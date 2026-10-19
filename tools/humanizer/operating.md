@@ -25,7 +25,9 @@ The experimental Simplified Technical English (STE) check (`humanizer ste`, or
 `humanizer_detect` with a profile) runs the same vale binary against a
 second embedded style, for messages one agent writes for another. With a
 repo path it first reads every CONTEXT.md under the repo and turns the
-`_Avoid_` lines into one generated substitution rule. Exit codes: 0 clean,
+`_Avoid_` lines that apply to the checked text into one generated
+substitution rule. A CONTEXT.md applies to its own directory and everything
+below it; text with no location in the repo gets all of them. Exit codes: 0 clean,
 1 findings, 2 error. Integrations parse the `--json` payload, not the exit
 code.
 
@@ -36,8 +38,8 @@ store, and writes no log. The one on-disk artifact is the extracted vale
 style pack, default {{.StorePath}} (HUMANIZER_CACHE_DIR or XDG_CACHE_HOME
 override it). An STE run adds `ste/<key>/` inside it: a config, a copy of
 the STE style, and the generated glossary rule, keyed by the glossary's
-hash. These run dirs accumulate, one per glossary revision, and nothing
-prunes them. It is a regenerable cache: a run rewrites any file that
+hash. Each run touches its own run dir and removes the ones no run used
+for seven days. It is a regenerable cache: a run rewrites any file that
 drifted from the embedded copy, so deleting the directory is always safe.
 
 ## failure modes
