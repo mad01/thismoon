@@ -137,9 +137,18 @@ schema. Review the diff before committing it.
   `~/.worktrees`, and the source when it lives outside both. The `go build
   -o` rule is what keeps a run from overwriting a binary in `~/code/bin`.
 - **Worker obedience to the settings lists is unverified.** Claude Code
-  documents settings-file rules as reaching subagents, but no paid run has
-  confirmed it, so check the first paid factory run's `permission_denials`
-  before trusting its result.
+  documents settings-file rules as reaching subagents. The first paid run
+  (2026-10-19) left it open. Every worker command that passed was one
+  claude runs without a rule, such as `pwd` or `git status`. The proof is a
+  worker's `make -C <worktree>/<component> test` passing, which only an
+  allow rule admits. Check that, and `permission_denials` for both arms,
+  before trusting a factory result.
+- **Every path handed to claude is the resolved one.** `checkout.Create`
+  runs `EvalSymlinks` on the temp root, so the clone, the worktrees dir,
+  the settings file, the prompt and `--add-dir` all name
+  `/private/var/folders/...` on macOS. claude records the session cwd in
+  that form, and the first paid run lost every `cd` into the clone or a
+  worktree because factory-eval named them under `/var/folders`.
 - **The fingerprint taints a run on any change to the source checkout**,
   whoever made it. All worktrees share the ref store, so a commit in any
   worktree of the source repo (loom ones included) taints a run, and so

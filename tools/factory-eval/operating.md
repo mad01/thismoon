@@ -10,14 +10,16 @@ writes one results file and exits.
 
 `{{.Bin}} run` reads cases.yaml from the working directory. It works
 through every run index, tier and arm. Each run clones the source repo into
-a fresh temp dir at the pinned commit. The clone keeps no branch, tag,
-reflog or remote, and its local config holds the factory-eval git
-identity. One headless `claude -p` session starts there with a dollar cap,
-the dontAsk permission mode with prompts turned into denials, only the
+a fresh temp dir at the pinned commit, named in resolved form (no symlink
+component), the form claude records the session cwd in. The clone keeps no
+branch, tag, reflog or remote, and its local config holds the factory-eval
+git identity. One headless `claude -p` session starts there with a dollar
+cap, the dontAsk permission mode with prompts turned into denials, only the
 humanizer MCP server, and a settings file. The file repeats the arm's
 allow and deny lists from the command line, since settings-file rules are
-documented to reach subagents. No paid run has yet confirmed that the
-factory's workers obey them. Its own deny rules keep Edit, Write, `git
+documented to reach subagents. No paid run has yet shown that the
+factory's workers obey them; a worker's `make -C ... test` passing would,
+since only an allow rule admits it. Its own deny rules keep Edit, Write, `git
 -C`, `make -C` and `go build -o` out of ~/code, ~/.worktrees and the
 source repo; reads stay allowed. That is not a sandbox. {{.Bin}} fingerprints the source checkout
 before and after the session, and a change taints the run.

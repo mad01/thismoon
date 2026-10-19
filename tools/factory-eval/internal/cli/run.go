@@ -176,7 +176,10 @@ func resolveSource(fileRepo, flagRepo string) (string, error) {
 }
 
 // checkTempDir refuses a temp parent inside a directory the isolation
-// rules deny edits in, where an arm could not edit its own clone.
+// rules deny edits in, where an arm could not edit its own clone. It
+// checks the resolved path, the form the clones get, so a symlink into a
+// denied directory is caught too; a parent that does not exist yet is
+// checked as given.
 func checkTempDir(tempDir string, iso eval.Isolation) error {
 	dir := tempDir
 	if dir == "" {
@@ -185,6 +188,9 @@ func checkTempDir(tempDir string, iso eval.Isolation) error {
 	abs, err := filepath.Abs(expandHome(dir))
 	if err != nil {
 		return fmt.Errorf("temp dir %s: %w", dir, err)
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
 	}
 	if iso.Covers(abs) {
 		return fmt.Errorf("temp dir %s is under a path the arms may not edit "+

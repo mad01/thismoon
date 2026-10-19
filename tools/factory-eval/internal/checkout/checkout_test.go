@@ -72,6 +72,39 @@ func TestCreateDetachesAtCommitWithoutOrigin(t *testing.T) {
 	}
 }
 
+// TestCreateResolvesTheTempRoot hands Create a symlinked parent, the way
+// macOS hands every program its temp dir, and wants the root under the
+// resolved directory: claude records the session cwd resolved, and the
+// paths the prompt and the flags name must match it.
+func TestCreateResolvesTheTempRoot(t *testing.T) {
+	src, sha := sourceRepo(t)
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Create(context.Background(), src, sha, link)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	t.Cleanup(func() { _ = c.Remove() })
+	wantParent, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(c.Root) != wantParent {
+		t.Errorf("Root = %s, want it directly under the resolved parent %s", c.Root, wantParent)
+	}
+	if strings.HasPrefix(c.Root, link) {
+		t.Errorf("Root = %s still names the symlink %s", c.Root, link)
+	}
+	for _, p := range []string{c.Repo, c.Worktrees} {
+		if !strings.HasPrefix(p, c.Root+string(filepath.Separator)) {
+			t.Errorf("%s is not under the resolved Root %s", p, c.Root)
+		}
+	}
+}
+
 // TestCreateKeepsNothingPastThePin gives the source a main that moved on,
 // a side branch and a tag, the way the real repo looks after the pin.
 func TestCreateKeepsNothingPastThePin(t *testing.T) {

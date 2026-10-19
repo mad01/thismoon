@@ -16,8 +16,11 @@ pinned commit. The clone loses its origin remote, every branch, every tag
 and its reflogs, and git prunes the objects that leaves unreachable. So the
 clone holds nothing newer than the pin, and `git fetch` has no remote to
 pull it back from. Its local config carries the `factory-eval` git
-identity, so no commit prompts. The arm session works there under a fixed
-permission profile:
+identity, so no commit prompts. The temp dir is named in resolved form:
+`/private/var/folders/...` on macOS, not the `/var/folders` symlink.
+claude records the session's working directory resolved, so a `cd` to the
+same directory under its other name counts as leaving it. The arm session
+works in the clone under a fixed permission profile:
 
 - `--max-budget-usd` with the tier's cap, and `--output-format json` plus
   `--json-schema` for a structured final report.
@@ -64,10 +67,14 @@ be denied every edit and command. The factory arm would then fail for a
 reason that has nothing to do with the factory. Flags and settings files
 share one rule matcher, so a rule means the same in either place. Each
 arm's file carries that arm's lists: the single arm's denies `Agent` and
-`SendMessage`, and the factory arm's allows them. No paid run has yet
-shown that the workers obey the file's lists, so check the first paid
-factory run's `permission_denials` before trusting its result. The
-factory arm's allow list reaches every subagent type, not only workers.
+`SendMessage`, and the factory arm's allows them. The first paid run
+(2026-10-19) left open whether the workers obey the file's lists. Every
+worker command that passed was one claude runs without a rule, such as
+`pwd` or `git status`. The proof is a worker's `make -C
+<worktree>/<component> test` passing, which only an allow rule admits.
+Check that, and `permission_denials` for both arms, before trusting a
+factory result. The factory arm's allow list reaches every subagent type,
+not only workers.
 A general-purpose subagent the orchestrator spawns could spawn nested
 agents, but the `factory-worker-*` definitions list no `Agent` tool, so
 workers cannot.

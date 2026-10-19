@@ -37,10 +37,22 @@ type Checkout struct {
 // Create clones src under a new temp dir inside parent (the system temp
 // dir when parent is empty) and detaches the clone at commit. On failure
 // the partial dir is removed.
+//
+// Root is the resolved path, symlinks included. claude records a session's
+// working directory in resolved form, and on macOS the system temp dir is
+// a symlink (/var/folders is /private/var/folders), so a path the harness
+// hands to claude under the unresolved name is, to claude, a different
+// directory from the one the session runs in. The first paid run lost
+// every cd into the clone to that difference.
 func Create(ctx context.Context, src, commit, parent string) (*Checkout, error) {
-	root, err := os.MkdirTemp(parent, "factory-eval-")
+	made, err := os.MkdirTemp(parent, "factory-eval-")
 	if err != nil {
 		return nil, fmt.Errorf("checkout: temp dir: %w", err)
+	}
+	root, err := filepath.EvalSymlinks(made)
+	if err != nil {
+		_ = os.RemoveAll(made)
+		return nil, fmt.Errorf("checkout: resolve temp dir: %w", err)
 	}
 	c := &Checkout{
 		Root:      root,
