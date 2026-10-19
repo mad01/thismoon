@@ -247,10 +247,16 @@ event and reads its stdout can run it. What to expect per harness:
   define hooks in `hooks.json` only. A duplicate `[[hooks.PreToolUse]]`
   block in `config.toml` runs belt twice per call. Codex trusts hooks by
   content hash, so a new or changed entry must be re-trusted inside Codex
-  before it fires. A harness that sends another JSON type in a field the
-  guards read gets a `belt[payload]` deny on every such call, not a silent
-  allow. A `command` array instead of a string is one example. Check one
-  real payload before wiring a new harness.
+  before it fires. Codex sends a shell call as `tool_name: "Bash"` with
+  `tool_input.command` as a string. Its `Write|Edit` matchers are aliases
+  for `apply_patch`, which sends `tool_name: "apply_patch"` with the patch
+  text as a string in `tool_input.command` and no `file_path`, `content` or
+  `new_string`. Both shapes pass the payload check, because the command is
+  a string and absent fields are allowed. `belt hook write` has no path to
+  guard on Codex, since the patch carries no `file_path`. That was already
+  so before the payload check. Any harness that sends another JSON type in
+  a field the guards read gets a `belt[payload]` deny on every such call,
+  not a silent allow. Check one real payload before wiring a new harness.
 - **pi** has no hooks schema either, but its permission extension can
   exec `belt check bash <command>`, `belt check write --file … --content …`,
   and `belt check external-text --tool <name> --input <json>` per tool

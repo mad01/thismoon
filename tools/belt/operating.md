@@ -112,11 +112,12 @@ under the `belt` source, tagged with the event and a `decode_error` naming
 the field and the type that arrived. `belt hint` runs no hint on such a
 payload and writes nothing, leaving the same warn event. `belt record`
 still records the event, at warn, naming the decode error (nothing at all
-with ledger.enabled false). The harness builds the payload, not the model,
-so a retry hits the same deny. A `belt[payload]` deny on every call of one
-tool means the harness sends a shape this belt does not read. Install a
-belt that reads it, and until then unwire that `belt hook` entry from the
-harness settings.
+with ledger.enabled false). A mistyped `session_id` or `transcript_path` is
+dropped silently from the ledger entry, which stays at info. The harness
+builds the payload, not the model, so a retry hits the same deny. A
+`belt[payload]` deny on every call of one tool means the harness sends a
+shape this belt does not read. Install a belt that reads it, and until then
+unwire that `belt hook` entry from the harness settings.
 
 Missing config fails in two directions, deliberately. Guards and hints
 default to enabled. `git-push-main` fails closed: with no config it denies

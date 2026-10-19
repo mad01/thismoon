@@ -303,7 +303,10 @@ func (rn runner) hints(event string, r io.Reader, w io.Writer) {
 // unreadable payload is still recorded, at warn level, from whatever
 // fields arrived. That entry is the warn event for the payload: the record
 // path can neither deny nor print, and with ledger.enabled false it posts
-// nothing at all, a payload warning included.
+// nothing at all, a payload warning included. The session and agent fields
+// decode leniently here too (recordPayload embeds payload), so a mistyped
+// session_id or transcript_path is dropped silently and the entry stays at
+// info with no warning.
 func RunRecord(event string, load Load, r io.Reader) {
 	recorder{load: load, build: buildEntry, emit: postEntry}.run(event, r)
 }

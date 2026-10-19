@@ -3,10 +3,14 @@ package hook
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mad01/thismoon/kit/notify"
+	"github.com/mad01/thismoon/tools/belt/internal/config"
+	"github.com/mad01/thismoon/tools/belt/internal/guard"
 	"github.com/mad01/thismoon/tools/belt/internal/ledger"
 )
 
@@ -41,9 +45,15 @@ func wantPayloadDeny(t *testing.T, event, wantErr string, d decision, events []n
 	if out.PermissionDecision != "deny" {
 		t.Errorf("permissionDecision = %q, want deny", out.PermissionDecision)
 	}
-	for _, want := range []string{"belt[payload]:", "could not read the hook payload", wantErr} {
-		if !strings.Contains(out.PermissionDecisionReason, want) {
-			t.Errorf("deny reason %q does not mention %q", out.PermissionDecisionReason, want)
+	reason := out.PermissionDecisionReason
+	if !strings.HasPrefix(reason, "belt[payload]:") {
+		t.Errorf("deny reason %q does not start with belt[payload]:", reason)
+	}
+	for _, want := range []string{
+		"could not read the hook payload", "the harness builds the payload", wantErr,
+	} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("deny reason %q does not mention %q", reason, want)
 		}
 	}
 	if len(events) != 1 {
@@ -144,6 +154,89 @@ func TestRunDeniesAMistypedCoreField(t *testing.T) {
 	}
 }
 
+// TestRunNamesThePayloadWhenTheConfigIsBrokenToo: with both the payload and
+// the config unreadable, the deny is belt[payload]. belt checks the payload
+// first, and only a payload it can read goes on to the config load.
+func TestRunNamesThePayloadWhenTheConfigIsBrokenToo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("guards: [unclosed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	load := func() (config.Config, error) {
+		return config.LoadFrom(config.Paths{BeltYAML: path})
+	}
+	if _, err := load(); err == nil {
+		t.Fatalf("config %s loaded, want a parse error", path)
+	}
+
+	var out bytes.Buffer
+	Run("bash", load, strings.NewReader("not json"), &out)
+
+	var d decision
+	if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+		t.Fatalf("decode decision from %q: %v", out.String(), err)
+	}
+	reason := d.HookSpecificOutput.PermissionDecisionReason
+	if d.HookSpecificOutput.PermissionDecision != "deny" ||
+		!strings.HasPrefix(reason, "belt[payload]:") {
+		t.Errorf("decision = %+v, want a belt[payload] deny", d.HookSpecificOutput)
+	}
+}
+
+// TestRunAllowsExternalTextWithoutAToolInput: external-text reads no
+// tool_input key as a string, so an absent or null tool_input passes the
+// payload check and reaches the guards, which find no text to publish and
+// allow. The load count shows the run got past the payload check. The
+// control case shows the guard is live under this config: the same call
+// with a blocked name in it is denied by publish-internal-names.
+func TestRunAllowsExternalTextWithoutAToolInput(t *testing.T) {
+	cfg := config.Config{Names: config.InternalNames{BlockedWords: []string{"internalco"}}}
+	tests := []struct {
+		name, input, wantGuard string
+	}{
+		{"tool_input absent", "", ""},
+		{"tool_input null", `,"tool_input":null`, ""},
+		{
+			"control: a blocked name in the input",
+			`,"tool_input":{"description":"internalco notes"}`,
+			guard.PublishInternalNamesID,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loads := 0
+			load := func() (config.Config, error) {
+				loads++
+				return cfg, nil
+			}
+			raw := `{"tool_name":"mcp__gh_com__create_gist"` + tt.input + `}`
+			var out bytes.Buffer
+			var a archived
+			runner{load: load, emit: a.emit}.guards("external-text", strings.NewReader(raw), &out)
+
+			if loads != 1 {
+				t.Fatalf("config loaded %d times, want 1: the run never reached the guards", loads)
+			}
+			if tt.wantGuard == "" {
+				if out.Len() != 0 || len(a.events) != 0 {
+					t.Errorf("wrote %q and archived %+v, want a silent allow",
+						out.String(), a.events)
+				}
+				return
+			}
+			var d decision
+			if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+				t.Fatalf("decode decision from %q: %v", out.String(), err)
+			}
+			if reason := d.HookSpecificOutput.PermissionDecisionReason; !strings.HasPrefix(
+				reason, "belt["+tt.wantGuard+"]:",
+			) {
+				t.Errorf("deny reason = %q, want it from %s", reason, tt.wantGuard)
+			}
+		})
+	}
+}
+
 // TestPayloadDenyCarriesTheIdentity: a type error still decodes the fields
 // beside it, so the warning names the session and agent that made the call.
 func TestPayloadDenyCarriesTheIdentity(t *testing.T) {
@@ -233,6 +326,21 @@ func TestRunHintStaysSilentOnAnUnreadablePayload(t *testing.T) {
 	}
 }
 
+// TestRunHintWritesNothingOnAMalformedPayload pins the exported hint
+// entrypoint's wiring: the payload check comes before the config load. With
+// a config belt cannot read, a readable payload gets belt[config] advice, so
+// no output at all means the payload check stopped the run first. The warn
+// event that run leaves is pinned on the runner above
+// (TestRunHintStaysSilentOnAnUnreadablePayload): the exported entrypoint
+// posts through notify, which sends nothing under go test.
+func TestRunHintWritesNothingOnAMalformedPayload(t *testing.T) {
+	var out bytes.Buffer
+	RunHint("search", failing, strings.NewReader("not json"), &out)
+	if out.Len() != 0 {
+		t.Errorf("RunHint wrote %q on a malformed payload, want nothing", out.String())
+	}
+}
+
 // TestRecordLeavesAWarnEntryForAnUnreadablePayload: the record path cannot
 // deny or print, so its trace of a payload it could not read is the ledger
 // entry itself, posted at warn and naming the decode error.
@@ -257,5 +365,39 @@ func TestRecordLeavesAWarnEntryForAnUnreadablePayload(t *testing.T) {
 		!strings.HasPrefix(ev.Message, "hook payload unreadable: ") {
 		t.Errorf("entry = level %q, message %q, want a warn naming the decode error",
 			ev.Level, ev.Message)
+	}
+}
+
+// TestRecordDropsAMistypedSessionIDSilently pins what the lenient session
+// fields cost the ledger: recordPayload embeds payload, so a numeric
+// session_id or an object transcript_path is dropped from the entry, which
+// posts at info with no session and no payload warning.
+func TestRecordDropsAMistypedSessionIDSilently(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var posted []notify.Event
+	rc := recorder{
+		load:  defaults,
+		build: buildEntry,
+		emit:  func(ev notify.Event) { posted = append(posted, ev) },
+	}
+	rc.run(
+		ledger.EventSessionEnd,
+		strings.NewReader(`{"session_id":7,"transcript_path":{"p":"/t"},"reason":"clear"}`),
+	)
+	if len(posted) != 1 {
+		t.Fatalf("posted %d entries, want 1", len(posted))
+	}
+	ev := posted[0]
+	if ev.Level != "info" || strings.HasPrefix(ev.Message, "hook payload unreadable") {
+		t.Errorf("entry = level %q, message %q, want info with no payload warning",
+			ev.Level, ev.Message)
+	}
+	for _, tag := range []string{"session_id", "transcript"} {
+		if v, ok := ev.Tags[tag]; ok {
+			t.Errorf("%s tag = %q, want none for a mistyped field", tag, v)
+		}
+	}
+	if ev.Tags["reason"] != "clear" {
+		t.Errorf("tags = %v, want the fields beside the mistyped ones kept", ev.Tags)
 	}
 }

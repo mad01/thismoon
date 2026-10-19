@@ -116,7 +116,7 @@ func payloadDenial(err error) *guard.Denial {
 	return guard.Reasonf(
 		PayloadDenyID,
 		"belt could not read the hook payload for this tool call (%v), so no guard can check it "+
-			"and the call is blocked. Retrying will not help: Claude Code builds the payload, "+
+			"and the call is blocked. Retrying will not help: the harness builds the payload, "+
 			"not your command. Tell the user; `belt docs` explains this failure.",
 		err,
 	)
