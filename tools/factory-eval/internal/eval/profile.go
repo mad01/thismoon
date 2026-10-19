@@ -31,15 +31,15 @@ var gitSubcommands = []string{
 // config stay denied even where the user's settings allow them. That
 // matters because git may run outside the sandbox (see userExclusions).
 // The list is not a boundary: an allowed git call can run any program
-// through `-c core.fsmonitor=...` or a hook the Write tool put in the
-// clone, and can write to a repo outside the clone, so --allow-unsandboxed
-// accepts arbitrary program execution outside the sandbox for those calls.
+// through `-c core.fsmonitor=...` or `-c core.hooksPath=...`, and can
+// write to a repo outside the clone, so --allow-unsandboxed accepts
+// arbitrary program execution outside the sandbox for those calls.
 //
 // Each -C form is a pair, `git -C * push` and `git -C * push *`, with a
 // space on both sides of the subcommand: a single `git -C * push*` would
 // also match the word inside a commit message, such as "configuration" or
 // "fetches", and deny the worker its commit. A whole word in a message,
-// " push " for one, still matches. `git * --output=*` and
+// " push " for one, or --output in it, still matches (MAD-420). `git * --output=*` and
 // `git * --output *` close the --output flag of diff, log and show, which
 // writes anywhere.
 var denied = []string{

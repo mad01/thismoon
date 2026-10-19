@@ -69,7 +69,9 @@ factory-eval reads that list at batch start. It reads
 settings file, then every `.json` file in the `managed-settings.d` dir
 beside it in name order, the way Claude Code merges them. It does not
 read a mobile device management profile or server-managed settings, so
-an exclusion set there is neither denied nor reported.
+an exclusion set there is neither denied nor reported. When one of
+those delivers a policy, Claude Code ignores the file entries, and the
+run then denies or reports entries that do not apply.
 
 An entry that overlaps none of the arms' Bash allow rules gets a deny rule
 in the run's file, so the command never runs at all. An entry that
@@ -119,7 +121,8 @@ from any source beats an allow rule from any source:
   unsandboxed. Each `git -C` rule comes as a pair, `git -C * push` and
   `git -C * push *`, so a commit message holding "configuration" or
   "fetches" passes. A message holding one of those words whole, such as
-  " push " or " config ", still matches a rule and loses the commit.
+  " push " or " config ", or holding `--output`, still matches a rule
+  and loses the commit (MAD-420).
 - The run's settings file holds Edit deny rules for `~/code` and
   `~/.worktrees`, and for the source repo when it lives elsewhere. Claude
   Code checks the Write tool against Edit rules, so they block Write too;
@@ -133,10 +136,10 @@ from any source beats an allow rule from any source:
 These rules stop the usual forms, but they are not a boundary. An
 unsandboxed call the allow list admits can still run any program.
 `git -C <clone> -c core.fsmonitor=<program> status` does. So does
-`git commit` once the Write tool, which runs outside the sandbox, has
-put a hook in the clone's `.git/hooks`. So does
-`timeout 600 make -C <clone> test` after the arm edited the Makefile or
-a test. A `git -C` call can also write to a repo the isolation rules do
+`git -C <clone> -c core.hooksPath=<dir> commit` over a hook the Write
+tool, which runs outside the sandbox, put under the run's temp dir. So
+does `timeout 600 make -C <clone> test` after the arm edited the
+Makefile or a test. A `git -C` call can also write to a repo the isolation rules do
 not name, and the fingerprint covers the source checkout only. Passing
 `--allow-unsandboxed` accepts arbitrary program execution outside the
 sandbox for those calls.

@@ -228,8 +228,8 @@ func SandboxExclusions(configDir string) ([]string, error) {
 	return all, nil
 }
 
-// jsonFiles is every .json file in dir, in name order. A missing dir holds
-// none.
+// jsonFiles is every .json file in dir, in name order, hidden files
+// skipped the way Claude Code skips them. A missing dir holds none.
 func jsonFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -240,8 +240,9 @@ func jsonFiles(dir string) ([]string, error) {
 	}
 	var files []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			files = append(files, filepath.Join(dir, e.Name()))
+		name := e.Name()
+		if !e.IsDir() && strings.HasSuffix(name, ".json") && !strings.HasPrefix(name, ".") {
+			files = append(files, filepath.Join(dir, name))
 		}
 	}
 	return files, nil

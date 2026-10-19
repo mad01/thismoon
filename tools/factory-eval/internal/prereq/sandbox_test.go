@@ -61,6 +61,7 @@ func TestSandboxExclusionsReadsTheUsersAndTheManagedList(t *testing.T) {
 		`{"sandbox":{"excludedCommands":["timeout:*"]}}`)
 	writeFile(t, filepath.Join(dropIns, "notes.txt"), `{"sandbox":`)
 	writeFile(t, filepath.Join(dropIns, "old.json", "x.json"), `{"sandbox":`)
+	writeFile(t, filepath.Join(dropIns, ".hidden.json"), `{"sandbox":`)
 	got, err = SandboxExclusions(configDir)
 	want := []string{"git:*", "pip3:*", "docker:*", "timeout:*", "kill:*"}
 	if err != nil || !slices.Equal(got, want) {

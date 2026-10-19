@@ -9,9 +9,9 @@ import (
 // ruleMatches reports whether a Bash permission rule matches cmd, following
 // Claude Code's documented glob semantics: a rule with no `*` matches the
 // whole command exactly; otherwise the rule is a whole-command glob where
-// each `*` matches any text, spaces included. A trailing `:*` also matches
-// the bare command, and so does a trailing ` *` when it is the rule's only
-// wildcard. Rules for other tools never match.
+// each `*` matches any text, spaces included. A trailing `:*` means ` *`,
+// and a trailing ` *` also matches the bare command when it is the rule's
+// only wildcard. Rules for other tools never match.
 func ruleMatches(rule, cmd string) bool {
 	body, ok := strings.CutPrefix(rule, "Bash(")
 	if !ok {
@@ -19,7 +19,7 @@ func ruleMatches(rule, cmd string) bool {
 	}
 	body = strings.TrimSuffix(body, ")")
 	if bare, ok := strings.CutSuffix(body, ":*"); ok {
-		return globMatches(bare, cmd) || globMatches(bare+" *", cmd)
+		body = bare + " *"
 	}
 	if bare, ok := strings.CutSuffix(body, " *"); ok && !strings.Contains(bare, "*") &&
 		cmd == bare {
