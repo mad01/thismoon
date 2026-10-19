@@ -201,25 +201,32 @@ func hostEnv(ctx context.Context) (prereq.Env, error) {
 	if err != nil {
 		return prereq.Env{}, fmt.Errorf("home dir: %w", err)
 	}
-	v, raw, err := claude.Exec{}.Version(ctx)
+	excluded, err := prereq.SandboxExclusions(home)
+	if err != nil {
+		return prereq.Env{}, err
+	}
+	v, raw, probeErr := claude.Exec{}.Version(ctx)
+	cache, cacheErr := goCache(ctx)
 	return prereq.Env{
-		Home:        home,
-		GoCache:     goCache(ctx),
-		LookPath:    exec.LookPath,
-		Claude:      prereq.ClaudeProbe{Version: v, Raw: raw, Err: err},
-		BeltVersion: beltVersion,
+		Home:              home,
+		GoCache:           cache,
+		GoCacheErr:        cacheErr,
+		SandboxExclusions: excluded,
+		LookPath:          exec.LookPath,
+		Claude:            prereq.ClaudeProbe{Version: v, Raw: raw, Err: probeErr},
+		BeltVersion:       beltVersion,
 	}, nil
 }
 
-// goCache is the Go build cache the sandbox lets a run write. Without it
-// `go test` cannot compile inside the sandbox; a go that does not answer
-// leaves it empty and the prerequisite check reports go missing.
-func goCache(ctx context.Context) string {
+// goCache is `go env GOCACHE`, the Go build cache the sandbox lets a run
+// write. Without it `go test` cannot compile inside the sandbox, so the
+// prerequisite check fails a batch whose go gave no absolute path.
+func goCache(ctx context.Context) (string, error) {
 	out, err := exec.CommandContext(ctx, "go", "env", "GOCACHE").Output()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(string(out)), nil
 }
 
 func beltVersion(ctx context.Context) (string, error) {
@@ -286,8 +293,8 @@ func gate(b batch) error {
 func config(b batch, o runOptions, w io.Writer, judgeDir string) eval.Config {
 	cfg := eval.Config{
 		Cases: b.file, CasesPath: o.casesPath, Source: b.source, Home: b.env.Home,
-		GoCache: b.env.GoCache,
-		Arms:    b.arms, Tiers: b.tiers, Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun,
+		GoCache: b.env.GoCache, SandboxExclusions: b.env.SandboxExclusions,
+		Arms: b.arms, Tiers: b.tiers, Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun,
 		ClaudeVersion: b.env.Claude.Raw, Prereqs: b.prereqs(), Now: time.Now, Progress: w,
 		Checker: judge.Deterministic{
 			Outline: b.file.Outline, Humanizer: b.file.Humanizer, Cmd: judge.ExecCommander{},

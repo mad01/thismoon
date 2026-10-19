@@ -7,6 +7,7 @@ package prereq
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,13 +40,17 @@ type ClaudeProbe struct {
 }
 
 // Env is the host the checks look at. Tests point Home at a temp dir.
-// GoCache is `go env GOCACHE`, empty when go did not answer.
+// GoCache is `go env GOCACHE`, and GoCacheErr the error when go did not
+// answer. SandboxExclusions is the user's sandbox.excludedCommands list,
+// which every arm session inherits.
 type Env struct {
-	Home        string
-	GoCache     string
-	LookPath    func(file string) (string, error)
-	Claude      ClaudeProbe
-	BeltVersion func(ctx context.Context) (string, error)
+	Home              string
+	GoCache           string
+	GoCacheErr        error
+	SandboxExclusions []string
+	LookPath          func(file string) (string, error)
+	Claude            ClaudeProbe
+	BeltVersion       func(ctx context.Context) (string, error)
 }
 
 // Common checks what every arm needs.
@@ -54,7 +59,7 @@ func Common(env Env) []Result {
 	for _, bin := range []string{"git", "make", "go", "humanizer"} {
 		results = append(results, onPath(env, bin))
 	}
-	return results
+	return append(results, goBuildCache(env))
 }
 
 // Factory checks what the factory arm needs on top of Common.
@@ -128,6 +133,23 @@ func onPath(env Env, bin string) Result {
 	return Result{Name: bin, OK: true, Detail: p}
 }
 
+// goBuildCache checks that go named an absolute build cache, the one path
+// outside the run's temp dir the sandbox lets a run write. A go on PATH
+// whose `go env` fails would pass onPath alone, and `GOCACHE=off` answers
+// "off", which the sandbox would take as a relative path.
+func goBuildCache(env Env) Result {
+	r := Result{Name: "go build cache"}
+	switch {
+	case env.GoCacheErr != nil:
+		r.Detail = "go env GOCACHE: " + env.GoCacheErr.Error()
+	case !filepath.IsAbs(env.GoCache):
+		r.Detail = fmt.Sprintf("go env GOCACHE gave %q, want an absolute path", env.GoCache)
+	default:
+		r.OK, r.Detail = true, env.GoCache
+	}
+	return r
+}
+
 func file(name, p string) Result {
 	if _, err := os.Stat(p); err != nil {
 		return Result{Name: name, Detail: p + " not found"}
@@ -135,26 +157,52 @@ func file(name, p string) Result {
 	return Result{Name: name, OK: true, Detail: p}
 }
 
+// settings is the part of the user's settings file the checks read.
 type settings struct {
 	Hooks map[string][]struct {
 		Hooks []struct {
 			Command string `json:"command"`
 		} `json:"hooks"`
 	} `json:"hooks"`
+	Sandbox struct {
+		ExcludedCommands []string `json:"excludedCommands"`
+	} `json:"sandbox"`
+}
+
+func readSettings(p string) (settings, error) {
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return settings{}, err
+	}
+	var s settings
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return settings{}, fmt.Errorf("%s: %w", p, err)
+	}
+	return s, nil
+}
+
+// SandboxExclusions is the user's sandbox.excludedCommands list from the
+// settings file under home. Exclusion lists combine across the settings
+// files a session loads, so an arm session inherits every entry whatever
+// the run's own file says. No settings file means no exclusions.
+func SandboxExclusions(home string) ([]string, error) {
+	s, err := readSettings(filepath.Join(home, ".claude", "settings.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sandbox exclusions: %w", err)
+	}
+	return s.Sandbox.ExcludedCommands, nil
 }
 
 // beltSubagentHook checks that a SubagentStart hook runs belt, the hint
 // that delivers the worker brief before a worker's first prompt.
 func beltSubagentHook(p string) Result {
 	r := Result{Name: "belt SubagentStart hook"}
-	raw, err := os.ReadFile(p)
+	s, err := readSettings(p)
 	if err != nil {
 		r.Detail = err.Error()
-		return r
-	}
-	var s settings
-	if err := json.Unmarshal(raw, &s); err != nil {
-		r.Detail = fmt.Sprintf("%s: %v", p, err)
 		return r
 	}
 	for _, group := range s.Hooks["SubagentStart"] {

@@ -2,6 +2,7 @@ package eval
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -102,8 +103,13 @@ type Settings struct {
 }
 
 // WriteSettings writes the settings file into dir, read-only, and returns
-// its path.
+// its path. It refuses a file whose sandbox is off: a zero Sandbox would
+// serialize as enabled false, and a false in a --settings file turns the
+// user's own sandbox off for the session.
 func WriteSettings(dir string, s Settings) (string, error) {
+	if !s.Sandbox.Enabled {
+		return "", errors.New("eval: settings without a sandbox refused")
+	}
 	raw, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("eval: encode settings: %w", err)

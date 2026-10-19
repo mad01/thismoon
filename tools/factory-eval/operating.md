@@ -22,11 +22,14 @@ factory's workers obey them.
 The same file keeps Edit, Write, `git -C`, `make -C` and `go build -o`
 out of ~/code, ~/.worktrees and the source repo with deny rules; reads
 stay allowed. Its sandbox block puts Claude Code's OS sandbox around
-every Bash command of the session, workers included. A command may write
-only under the run's temp dir and the Go build cache, reaches no network
-domain, and cannot retry outside the sandbox. {{.Bin}} still
-fingerprints the source checkout before and after the session, and a
-change taints the run.
+every Bash command of the session, workers included. The exception is
+the commands the user's own settings exclude from the sandbox. {{.Bin}}
+denies those when the arms do not need them, and names them in the
+results when they do. A sandboxed command may write only under the run's
+temp dir, the Go build cache and the paths the user's settings open. It
+reaches no network domain and cannot retry outside the sandbox. {{.Bin}}
+still fingerprints the source checkout before and after the session, and
+a change taints the run.
 
 Runs go one at a time. After each session {{.Bin}} checks every case
 branch: branch present, only allowed paths changed, outline order,

@@ -236,6 +236,7 @@ func testConfig(
 	clock := time.Date(2026, 10, 16, 18, 0, 0, 0, time.UTC)
 	return Config{
 		Cases: f, CasesPath: "cases.yaml", Source: src, Home: "/Users/example",
+		GoCache: "/Users/example/Library/Caches/go-build", SandboxExclusions: testExclusions,
 		Arms: []string{ArmSingle, ArmFactory}, Tiers: f.Tiers, Runs: 1, TempParent: t.TempDir(),
 		ClaudeVersion: "2.1.301 (Claude Code)",
 		Prereqs: []prereq.Result{
@@ -343,8 +344,14 @@ func TestResultsFixtureMatchesTheSchemaAndTheCode(t *testing.T) {
 	}
 }
 
+// testExclusions stands in for the user's sandbox.excludedCommands: git,
+// which the arms need, and pip3, which a run denies.
+var testExclusions = []string{"git:*", "pip3:*"}
+
 // normalize replaces what changes from machine to machine, or with every
-// edit to cases.yaml, with fixed values that read like a real batch.
+// edit to cases.yaml, with fixed values that read like a real batch. The
+// sandbox block keeps everything but the temp root, so the fixture shows
+// what the config's GoCache and exclusions produced.
 func normalize(res *Results) {
 	const root = "/tmp/factory-eval-123456789"
 	res.Commit = "45518e8b8461d491dc2a1aafaf1a8aa56702858a"
@@ -354,13 +361,12 @@ func normalize(res *Results) {
 		Home: "/Users/example", Source: "/Users/example/code/src/github.com/mad01/thismoon",
 	}
 	for arm := range res.SettingsPermissions {
-		res.SettingsPermissions[arm] = armPermissions(arm, iso)
+		res.SettingsPermissions[arm] = armPermissions(arm, iso, testExclusions)
 	}
 	for i := range res.Runs {
 		res.Runs[i].SettingsFile = root + "/" + SettingsFileName
-		if res.Runs[i].SettingsSandbox != nil {
-			sb := armSandbox(root, "/Users/example/Library/Caches/go-build")
-			res.Runs[i].SettingsSandbox = &sb
+		if sb := res.Runs[i].SettingsSandbox; sb != nil {
+			sb.Filesystem.AllowWrite[0] = root
 		}
 		if res.Runs[i].KeptDir != "" {
 			res.Runs[i].KeptDir = root

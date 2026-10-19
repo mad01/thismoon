@@ -36,30 +36,54 @@ permission profile:
   Its own deny rules keep Edit, Write, `git -C`, `make -C` and `go build
   -o` out of the user's checkouts, as the next section lists. Its
   `sandbox` block puts Claude Code's OS sandbox around every Bash command
-  of the session, workers included.
+  of the session, workers included, save the commands the user's own
+  settings exclude from it.
 
 ### What the sandbox enforces, what the rules enforce, what is only detected
 
 Every Bash command of an arm session, and of every worker, runs inside
-Claude Code's sandbox (seatbelt on macOS). The settings file turns it on
-with `failIfUnavailable`, so a machine where it cannot start runs no arm.
-No command may retry outside the sandbox.
+Claude Code's sandbox (seatbelt on macOS), with the one exception the
+next paragraph covers. The settings file turns it on with
+`failIfUnavailable`, so a machine where it cannot start runs no arm. No
+command may retry outside the sandbox.
 
-The block is written in full, every boolean included. A `--settings` file
-outranks the user's settings for a boolean, while array keys merge. So a
-`false` left out would let the user's `true` through, and an
-`excludedCommands` left out would let the user's exclusions through.
+Each arm session loads the user's own settings beside the run's file. A
+boolean in a `--settings` file outranks the user's, so every boolean is
+written out; a `false` left out would let the user's `true` through.
+Array keys combine across both files, and that cuts the other way: the
+user's `sandbox.excludedCommands` entries apply in every run, and the
+run's own empty list cannot remove them.
 
-The sandbox allows writes to the run's temp dir and the Go build cache
-that `go env GOCACHE` names, and nowhere else. The source checkout and
-`~/code` are closed at the operating-system level, whatever a command
-line says. No network domain is allowed, and the strict allowlist denies
-the rest without a prompt. Local binding stays on because the components'
-tests start httptest servers on loopback ports, which the sandbox refuses
+factory-eval reads that list at batch start. An entry whose command the
+arms do not need gets a deny rule in the run's file, so the command never
+runs at all. An entry the arms need, `git:*` on a machine that excludes
+git, cannot be denied. Git then runs outside the sandbox, gated by the
+permission rules and the fingerprint only. The batch prints a warning
+naming those entries, and
+the results list them under `unsandboxed_commands`. A few call shapes
+stay sandboxed under any exclusion, a `cd` anywhere in the call or a
+`git worktree add` with an absolute or `~` path among them. The probe
+that saw `git worktree add ~/x` refused hit one of those, and proved
+nothing about git in general.
+
+A sandboxed command may write to the run's temp dir and the Go build
+cache that `go env GOCACHE` names. Claude Code opens more on its own:
+the session's temp dir, the user's `permissions.additionalDirectories`
+and the paths of the user's `Edit` allow rules. `~/code` and
+`~/.worktrees` stay closed because the run's Edit deny rules count as
+`denyWrite` entries, and a deny wins. `settings_sandbox` in the results
+records the run file's block, not that merged outcome.
+
+No network domain is allowed, and the strict allowlist denies the rest
+without a prompt. Local binding stays on because the components' tests
+start httptest servers on loopback ports, which the sandbox refuses
 otherwise. A test binary can therefore reach the machine's own localhost
-services, and that is the one known gap. The file tools, the humanizer
-MCP server and hooks run outside the sandbox by design; the permission
-rules below are what gates them.
+services. Unix sockets stay closed, so a test that dials one fails under
+the sandbox.
+The probe covered belt's tests only; the first sandboxed run of each
+other component shows whether its tests mind. The file tools, the
+humanizer MCP server and hooks run outside the sandbox by design; the
+permission rules below are what gates them.
 
 Each arm session runs as the user, with the user's own settings loaded,
 and those settings may allow commands this profile does not list.
@@ -97,8 +121,12 @@ workers cannot.
 
 The deny rules match command lines, so a Bash command could name a
 checkout another way: `cd` first, `$HOME` in the path, a symlink, or a
-command the user's settings allow. The sandbox stops the write itself:
-nothing outside the run's temp dir and the Go build cache is writable.
+command the user's settings allow. For a sandboxed command the sandbox
+stops the write itself. Nothing outside the run's temp dir, the Go build
+cache and the paths the user's own settings open is writable. The Edit
+deny rules close `~/code` and `~/.worktrees` at that level too. A
+command the user's settings exclude from the sandbox, git on this
+machine, is gated by the rules alone.
 
 The fingerprint stays as the backstop. Before and after each arm session,
 factory-eval fingerprints the source checkout: HEAD, a hash of `git
@@ -174,7 +202,8 @@ make -C tools/factory-eval install    # builds and installs ~/code/bin/factory-e
 Prerequisites for a paid run, all checked before anything is spent:
 
 - claude 2.1.259 or newer (for `--permission-prompts`), plus git, make, go
-  and humanizer on PATH.
+  and humanizer on PATH, and a `go env GOCACHE` that names an absolute
+  path, the one place outside the temp dir the sandbox lets a run write.
 - For the factory arm: the factory and loom skills in `~/.claude/skills`,
   the three worker definitions `factory-worker-low`, `-medium` and `-high`
   in `~/.claude/agents`, and a SubagentStart hook in
@@ -338,10 +367,14 @@ the belt version. Each value is as it was when the run started. A
 `ralph up` in the middle of a batch shows there. `tainted` and `taint` say
 whether the source checkout changed during the run. `settings_file` is the
 run's settings file, and `settings_sandbox` is the sandbox block it held,
-with the run's own temp dir and the Go cache under `allowWrite`.
+with the run's own temp dir and the Go cache under `allowWrite`; the
+user's settings widen that list, as the sandbox section explains.
 `settings_permissions` at the top holds, per arm, the permissions block
 that arm's settings file held. Its `allow` is the arm's allow list, and
-its `deny` is the arm's deny list with the isolation rules at the end.
+its `deny` is the arm's deny list, then a deny rule per user sandbox
+exclusion the arms do not need, then the isolation rules.
+`unsandboxed_commands` at the top lists the exclusions the arms do need,
+which ran outside the sandbox.
 
 ## Develop
 

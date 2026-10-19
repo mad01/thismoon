@@ -66,7 +66,8 @@ func TestCommonChecksClaudeVersionAndTools(t *testing.T) {
 			}
 			return "/bin/" + f, nil
 		},
-		Claude: ClaudeProbe{Version: [3]int{2, 1, 200}, Raw: "2.1.200 (Claude Code)"},
+		Claude:  ClaudeProbe{Version: [3]int{2, 1, 200}, Raw: "2.1.200 (Claude Code)"},
+		GoCache: "/Users/me/Library/Caches/go-build",
 	}
 	failed := Failed(Common(env))
 	if len(failed) != 2 || failed[0].Name != "claude version" || failed[1].Name != "humanizer" {
@@ -118,7 +119,8 @@ func TestSnapshotRecordsWhatIsInstalled(t *testing.T) {
 	for _, key := range []string{
 		"~/.claude/skills/factory/SKILL.md", "~/.claude/skills/factory/worker-brief.md",
 	} {
-		if got := in.Files[key]; !strings.HasPrefix(got, "sha256:") || len(got) != len("sha256:")+64 {
+		if got := in.Files[key]; !strings.HasPrefix(got, "sha256:") ||
+			len(got) != len("sha256:")+64 {
 			t.Errorf("%s = %q, want a sha256", key, got)
 		}
 	}

@@ -3,12 +3,13 @@ package eval
 // Sandbox is the sandbox block of a run's settings file. It puts Claude
 // Code's OS sandbox (seatbelt on macOS) around every Bash command of the
 // arm session, the factory's workers included, since a subagent shares its
-// parent's sandbox. The permission lists stay the first layer and decide
-// which commands run; the sandbox decides what a running command can reach,
-// so it holds when an allowed command does more than its name says, such as
-// a test binary that writes outside the clone. A --settings file outranks
-// the user's settings, so the block applies on a machine whose own settings
-// leave the sandbox off.
+// parent's sandbox; the commands the user's own settings exclude are the
+// exception, see userExclusions. The permission lists stay the first layer
+// and decide which commands run; the sandbox decides what a running command
+// can reach, so it holds when an allowed command does more than its name
+// says, such as a test binary that writes outside the clone. A --settings
+// file outranks the user's settings on a boolean, so the block applies on a
+// machine whose own settings leave the sandbox off.
 type Sandbox struct {
 	Enabled bool `json:"enabled"`
 	// AutoAllowBashIfSandboxed stays false: the lists keep deciding which
@@ -20,10 +21,10 @@ type Sandbox struct {
 	// FailIfUnavailable makes claude exit at startup when the sandbox
 	// cannot start, rather than run the arm unsandboxed.
 	FailIfUnavailable bool `json:"failIfUnavailable"`
-	// ExcludedCommands is empty on purpose. The user's settings may take
-	// commands such as git out of their own sandbox; a run must not
-	// inherit that, and the first probe showed git sandboxed with this
-	// empty list in the file.
+	// ExcludedCommands is empty: the run adds no exclusion of its own. It
+	// cannot take the user's back, since exclusion lists combine across
+	// the settings files a session loads; userExclusions turns those into
+	// deny rules instead, and reports the ones the arms need.
 	ExcludedCommands []string          `json:"excludedCommands"`
 	Network          SandboxNetwork    `json:"network"`
 	Filesystem       SandboxFilesystem `json:"filesystem"`

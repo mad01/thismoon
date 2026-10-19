@@ -130,20 +130,28 @@ schema. Review the diff before committing it.
   settings file only. Those rules match command lines, so a `cd` or a
   `$HOME` in the path slips past them. The sandbox block in the same file
   closes the write itself, and the fingerprint stays as the backstop.
-- **Every Bash command of a run is sandboxed.** `internal/eval/sandbox.go`
-  writes the block: on, `failIfUnavailable`, no unsandboxed retry, no
-  domain, a strict allowlist, writes only under the run's temp dir and
-  `go env GOCACHE`. Three things earned their place by a probe on Claude
-  Code 2.1.303. `allowLocalBinding` stays true: without it the httptest
-  servers in the components' tests fail with `bind: operation not
-  permitted`. Every boolean and `excludedCommands: []` are written out:
-  array keys merge across settings sources, and a `--settings` file beats
-  the user's settings only on a boolean. The user's settings exclude
-  `git:*` from their own sandbox, and with the empty list in the file git
-  stayed sandboxed. socat is not needed on macOS; the sandbox started
-  without it. A write outside the temp dir fails with `operation not
-  permitted`. That is not a permission denial, so it does not show in
-  `permission_denials`.
+- **Every Bash command of a run is sandboxed, unless the user's settings
+  exclude it.** `internal/eval/sandbox.go` writes the block: on,
+  `failIfUnavailable`, no unsandboxed retry, no domain, a strict
+  allowlist, writes only under the run's temp dir and `go env GOCACHE`.
+  `allowLocalBinding` stays true: without it the httptest servers in the
+  components' tests fail with `bind: operation not permitted`. socat is
+  not needed on macOS; the sandbox started without it. A write outside
+  the temp dir fails with `operation not permitted`. That is not a
+  permission denial, so it does not show in `permission_denials`.
+- **The user's settings merge into every arm.** Every boolean is written
+  out, since a `--settings` file beats the user's settings only on a
+  boolean. Array keys combine, so the user's `sandbox.excludedCommands`
+  apply in every run and the file's own empty list cannot remove them.
+  `internal/eval/exclusions.go` turns each entry the arms do not need
+  into a deny rule and reports the rest, `git:*` on this machine, under
+  `unsandboxed_commands` and in a warning at batch start. The probe that
+  saw `git worktree add ~/x` refused proved nothing: that shape stays
+  sandboxed under any exclusion. The user's `additionalDirectories` and
+  `Edit` allow rules widen `allowWrite`; `~/code` and `~/.worktrees` stay
+  closed because the run's Edit deny rules count as `denyWrite`. MAD-418
+  is the real fix: arms under `--setting-sources ""`, with what the
+  factory arm needs carried in explicitly.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
   against Edit rules and never consults a Write path rule, so the isolation
   rules are Edit rules only, and a test keeps Write rules out. Their `git -C`,

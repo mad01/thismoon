@@ -26,6 +26,8 @@
       "type": "object", "propertyNames": {"enum": ["single", "factory"]},
       "additionalProperties": {"$ref": "#/$defs/permissions"},
       "description": "per arm that ran, the permissions block of its runs' settings file: the arm's allow list, and its deny list followed by the isolation rules. The arm's lists also go on the command line; the file carries them because settings-file rules are documented to reach subagents, and whether workers obey them stays unverified until a paid run"},
+    "unsandboxed_commands": {"type": "array", "items": {"type": "string"},
+      "description": "the user's sandbox.excludedCommands entries the arms need, git among them, which therefore ran outside the sandbox: exclusion lists combine across settings files, so the run's file cannot remove them, and a deny rule would stop the arm. Every other entry gets a deny rule in the run's file. Optional; absent in documents from before it"},
     "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}},
     "summary": {"$ref": "#/$defs/summary"}
   },

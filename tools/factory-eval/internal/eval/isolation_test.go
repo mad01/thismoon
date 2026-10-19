@@ -92,7 +92,7 @@ func TestSettingsFileCarriesEachArmsLists(t *testing.T) {
 	for _, arm := range []string{ArmSingle, ArmFactory} {
 		dir := t.TempDir()
 		p, err := WriteSettings(dir, Settings{
-			Permissions: armPermissions(arm, iso),
+			Permissions: armPermissions(arm, iso, nil),
 			Sandbox:     armSandbox(dir, "/Users/me/Library/Caches/go-build"),
 		})
 		if err != nil {

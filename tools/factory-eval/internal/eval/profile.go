@@ -34,18 +34,25 @@ var denied = []string{
 	"Bash(make install*)", "Bash(make * install*)", "Bash(go install *)", "WebFetch", "WebSearch",
 }
 
-// allowedTools is the arm's allow list. Both arms get the same file, git,
-// build and humanizer tools; only the factory arm may spawn workers and
-// message them.
-func allowedTools(arm string) []string {
+// bashTools are the Bash allow rules both arms share: make and go in the
+// clone, humanizer, and git plain and with -C.
+func bashTools() []string {
 	tools := []string{
-		"Read", "Edit", "Write", "Glob", "Grep", "Skill", "mcp__humanizer__*",
 		"Bash(make -C * build*)", "Bash(make -C * test*)", "Bash(make build*)", "Bash(make test*)",
 		"Bash(go build *)", "Bash(go test *)", "Bash(go vet *)", "Bash(humanizer *)",
 	}
 	for _, sub := range gitSubcommands {
 		tools = append(tools, "Bash(git "+sub+" *)", "Bash(git -C * "+sub+" *)")
 	}
+	return tools
+}
+
+// allowedTools is the arm's allow list. Both arms get the same file, git,
+// build and humanizer tools; only the factory arm may spawn workers and
+// message them.
+func allowedTools(arm string) []string {
+	tools := []string{"Read", "Edit", "Write", "Glob", "Grep", "Skill", "mcp__humanizer__*"}
+	tools = append(tools, bashTools()...)
 	if arm == ArmFactory {
 		tools = append(tools, "Agent", "SendMessage")
 	}
@@ -61,26 +68,29 @@ func disallowedTools(arm string) []string {
 }
 
 // armPermissions is the permissions block of an arm's settings file: the
-// arm's allow list, and its deny list followed by the isolation rules.
-// The lists also stay on the command line. The file carries them because
-// Claude Code documents settings-file rules as covering the whole session,
-// subagents included, and never says that of --allowedTools. Under dontAsk
-// a factory worker with no allow rule would be denied every edit and
-// command, and the factory arm would fail for a reason unrelated to the
-// factory.
-func armPermissions(arm string, iso Isolation) Permissions {
+// arm's allow list, and its deny list followed by a deny rule per user
+// sandbox exclusion the arms do not need (see userExclusions) and the
+// isolation rules. The lists also stay on the command line. The file
+// carries them because Claude Code documents settings-file rules as
+// covering the whole session, subagents included, and never says that of
+// --allowedTools. Under dontAsk a factory worker with no allow rule would
+// be denied every edit and command, and the factory arm would fail for a
+// reason unrelated to the factory.
+func armPermissions(arm string, iso Isolation, excluded []string) Permissions {
+	exclusionDenies, _ := userExclusions(excluded, bashTools())
+	deny := append(disallowedTools(arm), exclusionDenies...)
 	return Permissions{
 		Allow: allowedTools(arm),
-		Deny:  append(disallowedTools(arm), iso.DenyRules()...),
+		Deny:  append(deny, iso.DenyRules()...),
 	}
 }
 
 // settingsPermissions maps each arm to the permissions block its runs'
 // settings files hold.
-func settingsPermissions(arms []string, iso Isolation) map[string]Permissions {
+func settingsPermissions(arms []string, iso Isolation, excluded []string) map[string]Permissions {
 	perms := make(map[string]Permissions, len(arms))
 	for _, arm := range arms {
-		perms[arm] = armPermissions(arm, iso)
+		perms[arm] = armPermissions(arm, iso, excluded)
 	}
 	return perms
 }

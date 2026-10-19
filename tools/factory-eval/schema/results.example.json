@@ -85,6 +85,7 @@
         "Bash(go install *)",
         "WebFetch",
         "WebSearch",
+        "Bash(pip3:*)",
         "Edit(//Users/example/code/**)",
         "Edit(//Users/example/.worktrees/**)",
         "Bash(curl *)",
@@ -162,6 +163,7 @@
         "WebSearch",
         "Agent",
         "SendMessage",
+        "Bash(pip3:*)",
         "Edit(//Users/example/code/**)",
         "Edit(//Users/example/.worktrees/**)",
         "Bash(curl *)",
@@ -180,6 +182,9 @@
       ]
     }
   },
+  "unsandboxed_commands": [
+    "git:*"
+  ],
   "runs": [
     {
       "arm": "single",
