@@ -259,9 +259,18 @@ func TestSharedCreateAcceptsTerminalBlock(t *testing.T) {
 		t.Fatalf("local create: %v", err)
 	}
 
-	sp, _ := shared.store.Get(ctx, sharedOut.ID)
-	lp, _ := local.store.Get(ctx, localOut.ID)
+	sp, err := shared.store.Get(ctx, sharedOut.ID)
+	if err != nil {
+		t.Fatalf("shared get: %v", err)
+	}
+	lp, err := local.store.Get(ctx, localOut.ID)
+	if err != nil {
+		t.Fatalf("local get: %v", err)
+	}
 	markup := `<div class="present-terminal wk-code-block" data-session="demo"`
+	if !strings.Contains(sp.Content, markup) {
+		t.Errorf("shared content lacks the terminal markup: %s", sp.Content)
+	}
 	if !strings.Contains(sp.Deck, markup) {
 		t.Errorf("shared deck lacks the terminal markup: %s", sp.Deck)
 	}

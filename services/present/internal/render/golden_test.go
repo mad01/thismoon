@@ -125,7 +125,11 @@ func TestCompileDocGoldenJSON(t *testing.T) {
 // the stage 2 section fields or the transition. Its deck rendition is
 // pinned in testdata/golden-stage1.html, captured before stage 2, so a deck
 // written against stage 1 re-renders to the same bytes too (the brief
-// rendition of the same Doc is the golden above plus the blocks).
+// rendition of the same Doc is the golden above plus the blocks). It holds
+// a table with rows inside a column, so testdata/golden-stage1-doc.json,
+// captured with the HTML before the terminal block shared the rows key,
+// pins the canonical JSON of a container's cols and of a table's cols and
+// rows inside it.
 var goldenStage1Doc = Doc{
 	Summary:      "Stage 1 blocks and chrome.",
 	Meta:         "2026-10-01 · golden",
@@ -141,6 +145,14 @@ var goldenStage1Doc = Doc{
 				{T: "columns", Columns: [][]Block{
 					{{T: "stat", Value: "41 min", Label: "outage", Subtitle: "Tuesday"}},
 					{{T: "p", Text: "beside it"}},
+				}},
+				{T: "columns", Columns: [][]Block{
+					{{
+						T:    "table",
+						Cols: []string{"Host", "TTL"},
+						Rows: [][]string{{"api", "300"}, {"db", "60"}},
+					}},
+					{{T: "p", Text: "cached past expiry"}},
 				}},
 				{T: "quote", Text: "We never saw it.", Cite: "On-call"},
 				{
@@ -178,5 +190,29 @@ func TestRenderDocGoldenStage1(t *testing.T) {
 			out,
 			want,
 		)
+	}
+}
+
+// TestCompileDocGoldenStage1JSON pins the canonical JSON the store keeps
+// for goldenStage1Doc: a columns block's cols and the cols and rows of a
+// table inside it keep their wire keys and positions after the terminal
+// block learned to share rows.
+func TestCompileDocGoldenStage1JSON(t *testing.T) {
+	c, err := CompileDoc(goldenStage1Doc, "Stage 1")
+	if err != nil {
+		t.Fatalf("CompileDoc: %v", err)
+	}
+	path := filepath.Join("testdata", "golden-stage1-doc.json")
+	if os.Getenv("PRESENT_UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile(path, c.JSON, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if string(c.JSON) != string(want) {
+		t.Errorf("canonical JSON differs from %s\n got: %s\nwant: %s", path, c.JSON, want)
 	}
 }
