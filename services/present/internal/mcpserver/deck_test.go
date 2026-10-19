@@ -684,12 +684,12 @@ func terminalDoc(cmd string, rows int) string {
 
 // A brief and a deck share the page's terminal sessions, so create and
 // update refuse the two renditions naming one session with a different
-// cmd, and write nothing; a different height is fine.
+// cmd, cwd, or prefill, and write nothing; a different height is fine.
 func TestRenditionsAgreeOnTerminalSessions(t *testing.T) {
 	h, _ := deckHandlers(t)
 	ctx := context.Background()
 	want := `content and deck: terminal "demo": blocks naming the session give ` +
-		`(cmd "claude", cwd "") and (cmd "htop", cwd "")`
+		`(cmd "claude", cwd "", prefill "") and (cmd "htop", cwd "", prefill "")`
 
 	_, _, err := h.handleCreate(ctx, nil, createInput{
 		Title: "T", Content: terminalDoc("claude", 24), Deck: terminalDoc("htop", 24),

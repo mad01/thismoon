@@ -18,6 +18,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/webkit"
@@ -177,11 +179,14 @@ type Block struct {
 	// session present serve owns under this page and Session, so every
 	// block naming the same session shows the same process. Cmd runs in
 	// place of a plain login shell, Cwd is where it starts (empty = serve's
-	// default), and TerminalRows is the height in rows (wire key rows,
-	// TerminalMinRows to TerminalMaxRows; 0 = the browser's default).
+	// default), Prefill is one line typed into the session's input right
+	// after it starts, with no newline, so it waits for Enter, and
+	// TerminalRows is the height in rows (wire key rows, TerminalMinRows to
+	// TerminalMaxRows; 0 = the browser's default).
 	Session      string `json:"session,omitempty"`
 	Cmd          string `json:"cmd,omitempty"`
 	Cwd          string `json:"cwd,omitempty"`
+	Prefill      string `json:"prefill,omitempty"`
 	TerminalRows int    `json:"-"`
 
 	// t=stat: a large figure (Value, shown verbatim) over a Label, with an
@@ -904,7 +909,7 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{- end}}
 </div>{{end}}
 
-{{define "block-terminal"}}<div class="present-terminal wk-code-block" data-session="{{.Session}}"{{with .Cmd}} data-cmd="{{.}}"{{end}}{{with .Cwd}} data-cwd="{{.}}"{{end}}{{with .TerminalRows}} data-rows="{{.}}"{{end}}>
+{{define "block-terminal"}}<div class="present-terminal wk-code-block" data-session="{{.Session}}"{{with .Cmd}} data-cmd="{{.}}"{{end}}{{with .Cwd}} data-cwd="{{.}}"{{end}}{{with .Prefill}} data-prefill="{{.}}"{{end}}{{with .TerminalRows}} data-rows="{{.}}"{{end}}>
   <div class="wk-code-controls">
     <span class="wk-code-lang">live: {{.Session}}</span>
     <span class="present-terminal-status" aria-live="polite"></span>
@@ -945,8 +950,8 @@ func normalizeBlocks(blocks []Block, depth int) {
 // normalizeBlock normalizes one block's prose fields. A code block's text
 // is verbatim, and a stat's Value is a figure shown verbatim: its symbols
 // are the point ("4×", "≈ 40%"), so neither is normalized like prose. A
-// terminal block's command and directory are verbatim too, only trimmed,
-// so a blank directory means serve's default.
+// terminal block's command, directory, and prefill are verbatim too, only
+// trimmed, so a blank directory means serve's default.
 func normalizeBlock(b *Block) {
 	if b.T == "code" {
 		return
@@ -954,6 +959,7 @@ func normalizeBlock(b *Block) {
 	if b.T == "terminal" {
 		b.Cmd = strings.TrimSpace(b.Cmd)
 		b.Cwd = strings.TrimSpace(b.Cwd)
+		b.Prefill = strings.TrimSpace(b.Prefill)
 		return
 	}
 	b.Text = normalizeNames(b.Text)
@@ -1209,6 +1215,10 @@ const (
 // TerminalSessionMaxLen is the longest terminal session name, in bytes.
 const TerminalSessionMaxLen = 32
 
+// TerminalPrefillMaxLen is the longest prefill a terminal block types into
+// its session, in characters, counted after trimming.
+const TerminalPrefillMaxLen = 512
+
 // terminalSession is the shape of a terminal session name: it is a path
 // segment of the attach route and a key serve holds the session under.
 var terminalSession = regexp.MustCompile(
@@ -1224,9 +1234,9 @@ func isTerminal(b Block) bool { return b.T == "terminal" }
 
 // validateTerminal refuses a terminal block without a valid session name
 // and a rows value outside TerminalMinRows..TerminalMaxRows; 0 leaves the
-// height to the browser. A session is an identifier, so it is never
-// trimmed: a blank one is missing and a padded one is refused. Cmd and Cwd
-// are free text.
+// height to the browser, and a prefill validatePrefill refuses. A session
+// is an identifier, so it is never trimmed: a blank one is missing and a
+// padded one is refused. Cmd and Cwd are free text.
 func validateTerminal(b Block) error {
 	if strings.TrimSpace(b.Session) == "" {
 		return errors.New("terminal block: session is required")
@@ -1243,22 +1253,42 @@ func validateTerminal(b Block) error {
 			b.Session, r, TerminalMinRows, TerminalMaxRows,
 		)
 	}
+	return validatePrefill(b)
+}
+
+// validatePrefill refuses a prefill that is more than one line or longer
+// than TerminalPrefillMaxLen once trimmed. It is typed as keystrokes, so a
+// newline would run it and a control character would act as a key.
+func validatePrefill(b Block) error {
+	prefill := strings.TrimSpace(b.Prefill)
+	if strings.ContainsFunc(prefill, unicode.IsControl) {
+		return fmt.Errorf("terminal %q: prefill must be one line", b.Session)
+	}
+	if n := utf8.RuneCountInString(prefill); n > TerminalPrefillMaxLen {
+		return fmt.Errorf(
+			"terminal %q: prefill is %d characters, at most %d",
+			b.Session, n, TerminalPrefillMaxLen,
+		)
+	}
 	return nil
 }
 
 // validateFieldHomes refuses a field set on a block type that does not
 // read it, so an author learns the field moved nothing: the diagram's
 // nodes, groups, edges, and direction on any other block, the terminal's
-// session, cmd, cwd, and rows height on any other block, the cols and the
-// rows of cells a terminal shares wire keys with on a terminal, where its
-// rows height would shadow the cells, and frame on anything but a chart or
-// an image.
+// session, cmd, cwd, prefill, and rows height on any other block, the cols
+// and the rows of cells a terminal shares wire keys with on a terminal,
+// where its rows height would shadow the cells, and frame on anything but a
+// chart or an image.
 func validateFieldHomes(b Block) error {
 	if b.T != "diagram" && (len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
 		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
 	}
-	if b.T != "terminal" && (b.Session != "" || b.Cmd != "" || b.Cwd != "" || b.TerminalRows != 0) {
-		return fmt.Errorf("%s block: session, cmd, cwd, and a rows height are terminal fields", b.T)
+	if b.T != "terminal" &&
+		(b.Session != "" || b.Cmd != "" || b.Cwd != "" || b.Prefill != "" || b.TerminalRows != 0) {
+		return fmt.Errorf(
+			"%s block: session, cmd, cwd, prefill, and a rows height are terminal fields", b.T,
+		)
 	}
 	if b.T == "terminal" && (len(b.Cols) > 0 || len(b.Columns) > 0 || len(b.Rows) > 0) {
 		return errors.New("terminal block: cols and rows of cells are table and columns fields")
@@ -1829,16 +1859,18 @@ func validateDoc(d Doc) error {
 	return ValidateTerminalSessions(d)
 }
 
-// terminalSpec is what serve starts a terminal session from: the command
-// and the directory, trimmed as normalizeBlock trims them.
-type terminalSpec struct{ cmd, cwd string }
+// terminalSpec is what serve starts a terminal session from: the command,
+// the directory, and the prefill, trimmed as normalizeBlock trims them.
+type terminalSpec struct{ cmd, cwd, prefill string }
 
-func (s terminalSpec) String() string { return fmt.Sprintf("(cmd %q, cwd %q)", s.cmd, s.cwd) }
+func (s terminalSpec) String() string {
+	return fmt.Sprintf("(cmd %q, cwd %q, prefill %q)", s.cmd, s.cwd, s.prefill)
+}
 
 // ValidateTerminalSessions refuses a terminal session that two blocks of
-// docs name with a different cmd or cwd. Serve starts a session once per
-// page, from one cmd and cwd, so the other block's would be dropped without
-// a word. Rows may differ: it is only the height a block shows. validateDoc
+// docs name with a different cmd, cwd, or prefill. Serve starts a session
+// once per page, from one of each, so the other block's would be dropped
+// without a word. Rows may differ: it is only the height a block shows. validateDoc
 // runs it on one Doc; the MCP tools run it on a page's brief and deck
 // together, since both renditions attach to the page's sessions.
 func ValidateTerminalSessions(docs ...Doc) error {
@@ -1848,7 +1880,11 @@ func ValidateTerminalSessions(docs ...Doc) error {
 			if !isTerminal(*b) {
 				return nil
 			}
-			spec := terminalSpec{strings.TrimSpace(b.Cmd), strings.TrimSpace(b.Cwd)}
+			spec := terminalSpec{
+				cmd:     strings.TrimSpace(b.Cmd),
+				cwd:     strings.TrimSpace(b.Cwd),
+				prefill: strings.TrimSpace(b.Prefill),
+			}
 			first, ok := seen[b.Session]
 			if !ok {
 				seen[b.Session] = spec
@@ -1856,7 +1892,7 @@ func ValidateTerminalSessions(docs ...Doc) error {
 			}
 			if spec != first {
 				return fmt.Errorf(
-					"terminal %q: blocks naming the session give %s and %s; it starts once, from one cmd and cwd",
+					"terminal %q: blocks naming the session give %s and %s; it starts once, from one cmd, cwd, and prefill",
 					b.Session, first, spec,
 				)
 			}

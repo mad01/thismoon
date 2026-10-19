@@ -932,16 +932,16 @@ func terminalDoc(blocks ...Block) Doc {
 }
 
 // TestRenderDocTerminalBlock pins the markup the page view upgrades into a
-// live terminal: the session and the optional cmd, cwd, and rows as data
+// live terminal: the session and the optional cmd, cwd, prefill, and rows as data
 // attributes, a header bar with the badge, status, Run, and Kill, and the
 // canvas, in the brief and in the deck alike.
 func TestRenderDocTerminalBlock(t *testing.T) {
 	full := Block{
 		T: "terminal", Session: "demo", Cmd: "claude",
-		Cwd: "~/code/src/github.com/mad01/thismoon", TerminalRows: 24,
+		Cwd: "~/code/src/github.com/mad01/thismoon", Prefill: "explain this repo", TerminalRows: 24,
 	}
 	want := `<div class="present-terminal wk-code-block" data-session="demo" data-cmd="claude" ` +
-		`data-cwd="~/code/src/github.com/mad01/thismoon" data-rows="24">
+		`data-cwd="~/code/src/github.com/mad01/thismoon" data-prefill="explain this repo" data-rows="24">
   <div class="wk-code-controls">
     <span class="wk-code-lang">live: demo</span>
     <span class="present-terminal-status" aria-live="polite"></span>
@@ -972,7 +972,7 @@ func TestRenderDocTerminalBlock(t *testing.T) {
 			"session only omits the optional attributes",
 			Block{T: "terminal", Session: "demo"},
 			`<div class="present-terminal wk-code-block" data-session="demo">`,
-			[]string{"data-cmd", "data-cwd", "data-rows"},
+			[]string{"data-cmd", "data-cwd", "data-prefill", "data-rows"},
 		},
 		{
 			"cmd and cwd are trimmed, a blank cwd is omitted",
@@ -985,6 +985,18 @@ func TestRenderDocTerminalBlock(t *testing.T) {
 			Block{T: "terminal", Session: "s", Cmd: `echo "<x>" && ls`},
 			`data-cmd="echo &#34;&lt;x&gt;&#34; &amp;&amp; ls"`,
 			[]string{`"<x>"`},
+		},
+		{
+			"prefill is trimmed, its inner spaces and quotes kept and escaped",
+			Block{T: "terminal", Session: "s", Prefill: " \t say  \"hi\" & 'bye'\n"},
+			`data-session="s" data-prefill="say  &#34;hi&#34; &amp; &#39;bye&#39;">`,
+			nil,
+		},
+		{
+			"a blank prefill is omitted",
+			Block{T: "terminal", Session: "s", Prefill: "  \n"},
+			`data-session="s">`,
+			[]string{"data-prefill"},
 		},
 	}
 	for _, c := range cases {
@@ -1006,12 +1018,15 @@ func TestRenderDocTerminalBlock(t *testing.T) {
 }
 
 // TestTerminalBlockValidation refuses a terminal block without a valid
-// session, with a height outside the bounds, or inside details, refuses
-// its fields on any other block, and accepts it at the top level and in a
-// column.
+// session, with a height outside the bounds, with a prefill longer than
+// one line or the limit, or inside details, refuses its fields on any
+// other block, and accepts it at the top level and in a column.
 func TestTerminalBlockValidation(t *testing.T) {
 	term := func(session string, rows int) Block {
 		return Block{T: "terminal", Session: session, TerminalRows: rows}
+	}
+	prefill := func(text string) Block {
+		return Block{T: "terminal", Session: "s", Prefill: text}
 	}
 	one := []Block{{T: "p", Text: "x"}}
 	refused := []struct {
@@ -1033,6 +1048,17 @@ func TestTerminalBlockValidation(t *testing.T) {
 		{"cmd on a code block", Block{T: "code", Cmd: "ls"}, "code block: session, cmd, cwd"},
 		{"cwd on a chart", Block{T: "chart", Cwd: "/tmp"}, "chart block: session, cmd, cwd"},
 		{"rows height on a stat", Block{T: "stat", TerminalRows: 24}, "stat block: session"},
+		{"prefill on a paragraph", Block{T: "p", Prefill: "ls"}, "p block: session, cmd, cwd, prefill"},
+		{"prefill with a newline", prefill("ls\nrm -rf x"), `terminal "s": prefill must be one line`},
+		{"prefill with a carriage return", prefill("ls\rrm -rf x"), "prefill must be one line"},
+		{"prefill with a tab", prefill("a\tb"), "prefill must be one line"},
+		{"prefill with an escape", prefill("a\x1b[2Jb"), "prefill must be one line"},
+		{"prefill with a delete", prefill("a\x7fb"), "prefill must be one line"},
+		{
+			"prefill over the limit",
+			prefill(strings.Repeat("a", TerminalPrefillMaxLen+1)),
+			`terminal "s": prefill is 513 characters, at most 512`,
+		},
 		{
 			"cols on a terminal",
 			Block{T: "terminal", Session: "s", Cols: []string{"x"}},
@@ -1074,7 +1100,12 @@ func TestTerminalBlockValidation(t *testing.T) {
 		"dashes, digits": term("demo-2", 0),
 		"minimum rows":   term("s", 8),
 		"maximum rows":   term("s", 60),
-		"in a column":    {T: "columns", Columns: [][]Block{one, {term("demo", 24)}}},
+		"prefill":        prefill(`explain "this" repo`),
+		"longest prefill, counted in characters": prefill(
+			strings.Repeat("é", TerminalPrefillMaxLen),
+		),
+		"prefill padded with a newline": prefill("  explain this repo\n"),
+		"in a column":                   {T: "columns", Columns: [][]Block{one, {term("demo", 24)}}},
 	}
 	for name, b := range accepted {
 		out, err := RenderDoc(terminalDoc(b), "T")
@@ -1096,7 +1127,7 @@ func TestTerminalBlockValidation(t *testing.T) {
 func TestTerminalRowsJSON(t *testing.T) {
 	src := `{"sections":[{"h":"S","blocks":[` +
 		`{"t":"table","cols":["A"],"rows":[["1"]]},` +
-		`{"t":"terminal","session":"demo","cmd":" claude ","rows":24}` +
+		`{"t":"terminal","session":"demo","cmd":" claude ","prefill":" explain this ","rows":24}` +
 		`]}]}`
 	c, err := Compile([]byte(src), "T")
 	if err != nil {
@@ -1111,7 +1142,7 @@ func TestTerminalRowsJSON(t *testing.T) {
 	}
 	for _, want := range []string{
 		`{"t":"table","cols":["A"],"rows":[["1"]]}`,
-		`{"t":"terminal","session":"demo","cmd":"claude","rows":24}`,
+		`{"t":"terminal","session":"demo","cmd":"claude","prefill":"explain this","rows":24}`,
 	} {
 		if !strings.Contains(string(c.JSON), want) {
 			t.Errorf("canonical JSON lacks %s: %s", want, c.JSON)
@@ -1174,12 +1205,15 @@ func TestTerminalRowsJSON(t *testing.T) {
 }
 
 // TestTerminalSessionSpecs refuses one session named with two different
-// commands or directories, in one Doc or across a brief and a deck, since
-// serve starts a session once from one of them. The rows height and
-// surrounding whitespace in cmd and cwd may differ.
+// commands, directories, or prefills, in one Doc or across a brief and a
+// deck, since serve starts a session once from one of them. The rows
+// height and surrounding whitespace in cmd, cwd, and prefill may differ.
 func TestTerminalSessionSpecs(t *testing.T) {
 	term := func(session, cmd, cwd string, rows int) Block {
 		return Block{T: "terminal", Session: session, Cmd: cmd, Cwd: cwd, TerminalRows: rows}
+	}
+	typed := func(prefill string) Block {
+		return Block{T: "terminal", Session: "demo", Cmd: "claude", Prefill: prefill}
 	}
 	column := func(b Block) Block {
 		return Block{T: "columns", Columns: [][]Block{{{T: "p", Text: "x"}}, {b}}}
@@ -1192,13 +1226,26 @@ func TestTerminalSessionSpecs(t *testing.T) {
 		{
 			"different cmd",
 			term("demo", "claude", "", 0), term("demo", "htop", "", 0),
-			`terminal "demo": blocks naming the session give (cmd "claude", cwd "") ` +
-				`and (cmd "htop", cwd ""); it starts once, from one cmd and cwd`,
+			`terminal "demo": blocks naming the session give (cmd "claude", cwd "", prefill "") ` +
+				`and (cmd "htop", cwd "", prefill ""); it starts once, from one cmd, cwd, and prefill`,
 		},
 		{
 			"different cwd",
 			term("demo", "", "/tmp", 0), term("demo", "", "~", 0),
-			`terminal "demo": blocks naming the session give (cmd "", cwd "/tmp") and (cmd "", cwd "~")`,
+			`terminal "demo": blocks naming the session give (cmd "", cwd "/tmp", prefill "") ` +
+				`and (cmd "", cwd "~", prefill "")`,
+		},
+		{
+			"different prefill",
+			typed("explain this repo"), typed("fix the build"),
+			`terminal "demo": blocks naming the session give ` +
+				`(cmd "claude", cwd "", prefill "explain this repo") ` +
+				`and (cmd "claude", cwd "", prefill "fix the build")`,
+		},
+		{
+			"prefill set on one block only",
+			typed("explain this repo"), typed(""),
+			`terminal "demo": blocks naming the session give`,
 		},
 		{
 			"cmd set on one block only",
@@ -1231,6 +1278,7 @@ func TestTerminalSessionSpecs(t *testing.T) {
 		{"same cmd and cwd", term("demo", "claude", "/tmp", 0), term("demo", "claude", "/tmp", 0)},
 		{"rows differ", term("demo", "claude", "", 12), term("demo", "claude", "", 40)},
 		{"whitespace differs", term("demo", " claude\n", "/tmp ", 0), term("demo", "claude", " /tmp", 0)},
+		{"prefill whitespace differs", typed(" explain this repo\n"), typed("explain this repo")},
 		{"different sessions", term("a", "claude", "", 0), term("b", "htop", "/tmp", 0)},
 		{"in a column", term("demo", "claude", "", 0), column(term("demo", "claude", "", 24))},
 	}
