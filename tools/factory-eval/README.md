@@ -16,8 +16,18 @@ pinned commit. The clone loses its origin remote, every branch, every tag
 and its reflogs, and git prunes the objects that leaves unreachable. So the
 clone holds nothing newer than the pin, and `git fetch` has no remote to
 pull it back from. Its local config carries the `factory-eval` git
-identity, so no commit prompts. The arm session works there under a fixed
-permission profile:
+identity, so no commit prompts. The temp dir is named in resolved form:
+`/private/var/folders/...` on macOS, not the `/var/folders` form, so every
+path an arm session sees matches the working directory claude records.
+The first paid run denied every `cd <worktree> && ...` a worker ran. The
+cause is a Claude Code rule, not the path form. In dontAsk mode a cd to a
+directory outside the session's working directory, followed by any
+command that needs an allow rule, is denied. The lists do not matter.
+`git status` needs no rule in the start directory, but every probe denied
+it after such a cd; of the probed commands only `pwd` survived the cd. The
+worker brief therefore runs `git -C <worktree>`, `make -C` and `go
+<subcommand> -C` from the start directory and never cd.
+The arm session works in the clone under a fixed permission profile:
 
 - `--max-budget-usd` with the tier's cap, and `--output-format json` plus
   `--json-schema` for a structured final report.
@@ -33,8 +43,9 @@ permission profile:
 - `--settings` with a settings file written into the run's temp dir. It
   repeats the arm's allow and deny lists, because Claude Code documents
   settings-file rules as reaching subagents such as the factory's workers.
-  Its own deny rules keep Edit, Write, `git -C`, `make -C` and `go build
-  -o` out of the user's checkouts, as the next section lists.
+  Its own deny rules keep Edit, Write, `git -C`, `make -C`, `go build -o`,
+  and `go build`, `go test` or `go vet` with `-C` out of the user's
+  checkouts, as the next section lists.
 
 ### What is enforced and what is only detected
 
@@ -50,8 +61,9 @@ because a deny rule from any source beats an allow rule from any source:
   `~/.worktrees`, and for the source repo when it lives elsewhere. Claude
   Code checks the Write tool against Edit rules, so they block Write too;
   it never consults a Write path rule, and the file holds none.
-- The same file blocks `curl`, and `git -C`, `make -C` and `go build -o`
-  aimed into any of those directories in absolute or `~/` form. So no
+- The same file blocks `curl`, and `git -C`, `make -C`, `go build -o`, and
+  `go build`, `go test` or `go vet` with `-C`, aimed into any of those
+  directories in absolute or `~/` form. So no
   build in a run can overwrite a binary under `~/code/bin`. Reads stay
   allowed.
 
@@ -64,22 +76,30 @@ be denied every edit and command. The factory arm would then fail for a
 reason that has nothing to do with the factory. Flags and settings files
 share one rule matcher, so a rule means the same in either place. Each
 arm's file carries that arm's lists: the single arm's denies `Agent` and
-`SendMessage`, and the factory arm's allows them. No paid run has yet
-shown that the workers obey the file's lists, so check the first paid
-factory run's `permission_denials` before trusting its result. The
-factory arm's allow list reaches every subagent type, not only workers.
+`SendMessage`, and the factory arm's allows them. The first paid run
+(2026-10-19) left open whether the workers obey the file's lists. Every
+worker command that passed was one claude runs without a rule, such as
+`pwd`. `git status` needs no rule in the start directory too, but every
+probe denied it after a cd out of that directory. Arm sessions also load
+the user's own settings, and on this machine those allow plain `git
+commit` and `make`, so a worker passing those shows nothing either. The
+proof is a command only the arm's lists admit, such as `git -C <worktree>
+commit`. The flags and the file carry the same lists, so a pass shows they
+reached the worker, not which of the two did. Read `permission_denials`
+for both arms before trusting a factory result. The factory arm's allow
+list reaches every subagent type, not only workers.
 A general-purpose subagent the orchestrator spawns could spawn nested
 agents, but the `factory-worker-*` definitions list no `Agent` tool, so
 workers cannot.
 
-A Bash command can still reach a checkout another way: `cd` first, `$HOME`
-in the path, a symlink, or a command the user's settings allow. That is
-detected, not prevented. Before and after each arm session, factory-eval
-fingerprints the source checkout: HEAD, a hash of `git status --porcelain`,
-the worktree count and every ref. Any change marks the run tainted, lists
-the change under `taint`, and counts the run as errored. Files outside the
-source checkout, such as other repos under `~/code` reached through Bash,
-are not watched.
+A Bash command can still reach a checkout another way: a relative path
+after `-C`, `$HOME` in the path, a symlink, or a command the user's
+settings allow. That is detected, not prevented. Before and after each
+arm session, factory-eval fingerprints the source checkout: HEAD, a hash
+of `git status --porcelain`, the worktree count and every ref. Any change
+marks the run tainted, lists the change under `taint`, and counts the run
+as errored. Files outside the source checkout, such as other repos under
+`~/code` reached through Bash, are not watched.
 
 The fingerprint cannot tell the arm's change from another session's. All
 worktrees of a repo share one ref store, so a commit in any worktree of

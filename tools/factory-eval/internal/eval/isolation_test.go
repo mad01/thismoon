@@ -31,6 +31,18 @@ func TestDenyRulesCoverTheUsersCheckouts(t *testing.T) {
 		"Bash(go build *-o ~/code*)",
 		"Bash(go build *-o /Users/me/.worktrees*)",
 		"Bash(go build *-o ~/.worktrees*)",
+		"Bash(go build -C /Users/me/code*)",
+		"Bash(go build -C ~/code*)",
+		"Bash(go build -C /Users/me/.worktrees*)",
+		"Bash(go build -C ~/.worktrees*)",
+		"Bash(go test -C /Users/me/code*)",
+		"Bash(go test -C ~/code*)",
+		"Bash(go test -C /Users/me/.worktrees*)",
+		"Bash(go test -C ~/.worktrees*)",
+		"Bash(go vet -C /Users/me/code*)",
+		"Bash(go vet -C ~/code*)",
+		"Bash(go vet -C /Users/me/.worktrees*)",
+		"Bash(go vet -C ~/.worktrees*)",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("DenyRules() =\n%q\nwant\n%q", got, want)
@@ -39,12 +51,15 @@ func TestDenyRulesCoverTheUsersCheckouts(t *testing.T) {
 		"/srv/thismoon": {
 			"Edit(//srv/thismoon/**)", "Bash(git -C /srv/thismoon*)",
 			"Bash(make -C /srv/thismoon*)", "Bash(go build *-o /srv/thismoon*)",
+			"Bash(go build -C /srv/thismoon*)", "Bash(go test -C /srv/thismoon*)",
+			"Bash(go vet -C /srv/thismoon*)",
 		},
 		"/Users/me/eval-source": {
 			"Edit(//Users/me/eval-source/**)",
 			"Bash(git -C /Users/me/eval-source*)", "Bash(git -C ~/eval-source*)",
 			"Bash(make -C /Users/me/eval-source*)", "Bash(make -C ~/eval-source*)",
 			"Bash(go build *-o /Users/me/eval-source*)", "Bash(go build *-o ~/eval-source*)",
+			"Bash(go test -C /Users/me/eval-source*)", "Bash(go test -C ~/eval-source*)",
 		},
 	} {
 		rules := Isolation{Home: "/Users/me", Source: source}.DenyRules()

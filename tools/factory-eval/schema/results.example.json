@@ -99,7 +99,19 @@
         "Bash(go build *-o /Users/example/code*)",
         "Bash(go build *-o ~/code*)",
         "Bash(go build *-o /Users/example/.worktrees*)",
-        "Bash(go build *-o ~/.worktrees*)"
+        "Bash(go build *-o ~/.worktrees*)",
+        "Bash(go build -C /Users/example/code*)",
+        "Bash(go build -C ~/code*)",
+        "Bash(go build -C /Users/example/.worktrees*)",
+        "Bash(go build -C ~/.worktrees*)",
+        "Bash(go test -C /Users/example/code*)",
+        "Bash(go test -C ~/code*)",
+        "Bash(go test -C /Users/example/.worktrees*)",
+        "Bash(go test -C ~/.worktrees*)",
+        "Bash(go vet -C /Users/example/code*)",
+        "Bash(go vet -C ~/code*)",
+        "Bash(go vet -C /Users/example/.worktrees*)",
+        "Bash(go vet -C ~/.worktrees*)"
       ]
     },
     "single": {
@@ -176,7 +188,19 @@
         "Bash(go build *-o /Users/example/code*)",
         "Bash(go build *-o ~/code*)",
         "Bash(go build *-o /Users/example/.worktrees*)",
-        "Bash(go build *-o ~/.worktrees*)"
+        "Bash(go build *-o ~/.worktrees*)",
+        "Bash(go build -C /Users/example/code*)",
+        "Bash(go build -C ~/code*)",
+        "Bash(go build -C /Users/example/.worktrees*)",
+        "Bash(go build -C ~/.worktrees*)",
+        "Bash(go test -C /Users/example/code*)",
+        "Bash(go test -C ~/code*)",
+        "Bash(go test -C /Users/example/.worktrees*)",
+        "Bash(go test -C ~/.worktrees*)",
+        "Bash(go vet -C /Users/example/code*)",
+        "Bash(go vet -C ~/code*)",
+        "Bash(go vet -C /Users/example/.worktrees*)",
+        "Bash(go vet -C ~/.worktrees*)"
       ]
     }
   },

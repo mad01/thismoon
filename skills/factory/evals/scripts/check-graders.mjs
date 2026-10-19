@@ -229,15 +229,19 @@ const toCatalogReady = (t) => t.replaceAll('docs-sweep/events', 'adr-links/catal
   .replace('3f1c2ab..9e04d17', '4b7e0c2..e91d3a5')
   .replace(/^unresolved terms:[\s\S]*$/m, [
     'git commands:',
-    `- \`cd ${PLAIN_GIT_WT} && git add services/catalog/README.md\``,
-    `- \`cd ${PLAIN_GIT_WT} && git commit -m "docs(catalog): fix the ADR link"\``,
+    `- \`git -C ${PLAIN_GIT_WT} add services/catalog/README.md\``,
+    `- \`git -C ${PLAIN_GIT_WT} commit -m "docs(catalog): fix the ADR link"\``,
     '',
   ].join('\n'));
-// The option sits in a constant, so a search for the banned form finds no copy
-// of it under skills/factory.
-const GIT_DIR_OPTION = '-C';
-const optionBeforeSubcommand = (t) => t.replace(`cd ${PLAIN_GIT_WT} && git add`, `git ${GIT_DIR_OPTION} ${PLAIN_GIT_WT} add`);
-const dropCd = (t) => t.replaceAll(`cd ${PLAIN_GIT_WT} && `, '');
+// -C with the worktree path is the required form; any other option before the
+// subcommand, on either side of -C, and a cd in its place, must fail. So must
+// a -C to another dir with the worktree path later on the line.
+const optionBeforeSubcommand = (t) => t.replace(`git -C ${PLAIN_GIT_WT} add`, `git --no-pager -C ${PLAIN_GIT_WT} add`);
+const configAfterDirOption = (t) => t.replace(`git -C ${PLAIN_GIT_WT} commit`, `git -C ${PLAIN_GIT_WT} -c k=v commit`);
+const noPagerAfterDirOption = (t) => t.replace(`git -C ${PLAIN_GIT_WT} add`, `git -C ${PLAIN_GIT_WT} --no-pager add`);
+const worktreeNotTheDirOption = (t) => t.replaceAll(`git -C ${PLAIN_GIT_WT} `, `git -C ~/code --work-tree ${PLAIN_GIT_WT} `);
+const dropDirOption = (t) => t.replaceAll(`git -C ${PLAIN_GIT_WT} `, 'git ');
+const cdInsteadOfDirOption = (t) => t.replaceAll(`git -C ${PLAIN_GIT_WT} `, `cd ${PLAIN_GIT_WT} && git `);
 const dropGitCommands = (t) => t.replace(/^git commands:[\s\S]*$/m, '');
 
 // Each case with a blocker-verbatim grader, and how the blocked sample fits it.
@@ -281,7 +285,11 @@ const SAMPLE_CHECKS = [
   ['report/report-blocked-denial', 'blocked', 'blocker-verbatim', (t) => t.replace('has been denied', 'was refused')],
   ['context/context-plain-git', 'ready', null, toCatalogReady, 'ready sample fitted to context-plain-git'],
   ['context/context-plain-git', 'ready', 'no-git-option-first', (t) => optionBeforeSubcommand(toCatalogReady(t)), 'fitted ready sample with an option before the git subcommand'],
-  ['context/context-plain-git', 'ready', 'runs-in-worktree', (t) => dropCd(toCatalogReady(t)), 'fitted ready sample with no cd to the worktree'],
+  ['context/context-plain-git', 'ready', 'no-git-option-first', (t) => configAfterDirOption(toCatalogReady(t)), 'fitted ready sample with -c after -C'],
+  ['context/context-plain-git', 'ready', 'no-git-option-first', (t) => noPagerAfterDirOption(toCatalogReady(t)), 'fitted ready sample with --no-pager after -C'],
+  ['context/context-plain-git', 'ready', 'runs-in-worktree', (t) => dropDirOption(toCatalogReady(t)), 'fitted ready sample with no -C to the worktree'],
+  ['context/context-plain-git', 'ready', 'runs-in-worktree', (t) => worktreeNotTheDirOption(toCatalogReady(t)), 'fitted ready sample with -C to another dir and the worktree later on the line'],
+  ['context/context-plain-git', 'ready', 'runs-in-worktree', (t) => cdInsteadOfDirOption(toCatalogReady(t)), 'fitted ready sample with cd in place of -C'],
   ['context/context-plain-git', 'ready', 'git-commands-field', (t) => dropGitCommands(toCatalogReady(t)), 'fitted ready sample without the git commands field'],
 ];
 

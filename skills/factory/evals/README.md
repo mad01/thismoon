@@ -14,7 +14,7 @@ every prompt asks for the message as the whole reply.
 | `brief/` | a plan unit and run facts | a task message | Shape: the header in order, the routing result, warnings before step 1, no hedges, no sentence over 20 words, the report-format line last. The rubric checks completeness: what, where, the done criterion, the report format, and nothing outside the unit. |
 | `report/` | a task and the facts of a finished or blocked unit | `ready` or `blocked` | Shape: the header and the ready or blocked fields, the exact commit range, no sentence over 25 words. The rubric checks faithfulness to the fixture. |
 | `round-trip/` | a task and a work log | the worker's message | **Deferred until brief and report pass.** Information: whether the message answers the task's done criterion and every report-format item. It is the only suite that grades information rather than shape. |
-| `context/` | the worker brief as the SubagentStart hook delivers it, a task, and what happened | the worker's next message | The brief alone: contract format, no edits outside the worktree, questions parked, a denial reported as `blocked`, and git commands that run in the worktree with no option before the subcommand. |
+| `context/` | the worker brief as the SubagentStart hook delivers it, a task, and what happened | the worker's next message | The brief alone: contract format, no edits outside the worktree, questions parked, a denial reported as `blocked`, and git commands that run in the worktree, run as `git -C <worktree>`, with no other option before the subcommand. |
 
 The sentence-length graders count the words between a period, a question
 mark, an exclamation mark or a line end. A dot inside a path or a file name

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -112,6 +113,45 @@ func TestTempDirMustSitOutsideTheProtectedPaths(t *testing.T) {
 	}
 	if err := checkTempDir("/tmp/runs", iso); err != nil {
 		t.Errorf("checkTempDir(/tmp/runs) = %v, want nil", err)
+	}
+}
+
+// TestTempDirCheckSeesThroughSymlinksBothWays: the isolation rules name
+// the source as given and the clones get the resolved path, so a temp dir
+// that reaches the source under either name is refused.
+func TestTempDirCheckSeesThroughSymlinksBothWays(t *testing.T) {
+	home := t.TempDir()
+	source, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := filepath.Join(source, "runs")
+	if err := os.Mkdir(runs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkInto := filepath.Join(t.TempDir(), "into-source")
+	if err := os.Symlink(runs, linkInto); err != nil {
+		t.Fatal(err)
+	}
+	iso := eval.Isolation{Home: home, Source: source}
+	if err := checkTempDir(linkInto, iso); err == nil {
+		t.Error("a symlink into the source was accepted; the clones would land inside it")
+	}
+
+	sourceLink := filepath.Join(t.TempDir(), "source-link")
+	if err := os.Symlink(source, sourceLink); err != nil {
+		t.Fatal(err)
+	}
+	iso = eval.Isolation{Home: home, Source: sourceLink}
+	if err := checkTempDir(filepath.Join(sourceLink, "runs"), iso); err == nil {
+		t.Error("a temp dir under the source as given was accepted; resolving must not hide it")
+	}
+	if err := checkTempDir(runs, iso); err == nil {
+		t.Error("a temp dir under the resolved source was accepted while the source " +
+			"was named by a symlink; the clones would land inside it")
+	}
+	if err := checkTempDir(t.TempDir(), iso); err != nil {
+		t.Errorf("an unrelated temp dir = %v, want nil", err)
 	}
 }
 
