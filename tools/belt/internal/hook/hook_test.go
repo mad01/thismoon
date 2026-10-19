@@ -19,8 +19,9 @@ import (
 )
 
 // The config load is injected, so hook-level tests cover the payload
-// plumbing (malformed payloads, field mapping) and the two config outcomes
-// the entrypoint owns: defaults run the guards, an unreadable file denies.
+// plumbing (unreadable payloads deny, field mapping) and the two config
+// outcomes the entrypoint owns: defaults run the guards, an unreadable file
+// denies.
 
 // defaults is the load a machine with no config file gets.
 func defaults() (config.Config, error) { return config.Config{}, nil }
@@ -32,11 +33,19 @@ func failing() (config.Config, error) {
 	)
 }
 
-func TestRunMalformedPayload(t *testing.T) {
+// TestRunDeniesAMalformedPayload pins the exported entrypoint's wiring of
+// the fail-closed payload rule; decode_test.go covers each failure shape.
+func TestRunDeniesAMalformedPayload(t *testing.T) {
 	var out bytes.Buffer
 	Run("bash", defaults, strings.NewReader("not json"), &out)
-	if out.Len() != 0 {
-		t.Errorf("malformed payload must not produce a decision, got %q", out.String())
+
+	var d decision
+	if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+		t.Fatalf("decode decision from %q: %v", out.String(), err)
+	}
+	if d.HookSpecificOutput.PermissionDecision != "deny" ||
+		!strings.HasPrefix(d.HookSpecificOutput.PermissionDecisionReason, "belt[payload]:") {
+		t.Errorf("decision = %+v, want a belt[payload] deny", d.HookSpecificOutput)
 	}
 }
 
@@ -209,12 +218,13 @@ func TestWithSession(t *testing.T) {
 	}
 }
 
-// TestRunDeniesDespiteMistypedOptionalFields pins that no field added for
-// something other than a guard can disarm one. A guard drops a payload it
-// cannot decode and allows the call, so a mistyped key must never fail the
-// guard decode: the lifecycle fields live in recordPayload out of its
-// reach, and the agent fields decode leniently. The push below is denied
-// with no config, and has to stay denied whatever rides along with it.
+// TestRunDeniesDespiteMistypedOptionalFields pins that a field no guard
+// reads never decides the call. A payload that fails the guard decode is
+// denied with belt[payload], so a mistyped identity or lifecycle key must
+// not fail it: the lifecycle fields live in recordPayload out of its reach,
+// and the session and agent fields decode leniently. The push below is
+// denied with no config, and the deny has to come from git-push-main,
+// proving the guard ran, whatever rides along with it.
 func TestRunDeniesDespiteMistypedOptionalFields(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -227,6 +237,9 @@ func TestRunDeniesDespiteMistypedOptionalFields(t *testing.T) {
 		{"numeric agent_id", `"agent_id":7`},
 		{"object agent_type", `"agent_type":{"name":"Explore"}`},
 		{"both agent fields mistyped", `"agent_id":[1,2],"agent_type":false`},
+		{"numeric session_id", `"session_id":7`},
+		{"object transcript_path", `"transcript_path":{"p":"/t.jsonl"}`},
+		{"null cwd", `"cwd":null`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -244,6 +257,10 @@ func TestRunDeniesDespiteMistypedOptionalFields(t *testing.T) {
 					"permissionDecision = %q, want deny",
 					d.HookSpecificOutput.PermissionDecision,
 				)
+			}
+			reason := d.HookSpecificOutput.PermissionDecisionReason
+			if !strings.HasPrefix(reason, "belt[git-push-main]:") {
+				t.Errorf("deny reason = %q, want it from git-push-main", reason)
 			}
 		})
 	}
