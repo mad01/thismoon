@@ -7,6 +7,7 @@
 <script src="/webkit/boot.js"></script>
 <link href="/assets/css/fonts.css" rel="stylesheet">
 <link href="/webkit/webkit.css" rel="stylesheet">
+<link href="/assets/css/xterm-6.0.0.css" rel="stylesheet">
 <script src="/assets/js/cytoscape-3.31.0.min.js"></script>
 <script src="/assets/js/dagre-0.8.5.min.js"></script>
 <script src="/assets/js/cytoscape-dagre-2.5.0.js"></script>
@@ -15,6 +16,8 @@
 <script src="/assets/js/chart-4.4.6.umd.min.js"></script>
 <script src="/assets/js/chartjs-chart-sankey-0.15.3.min.js"></script>
 <script src="/assets/js/d3-7.9.0.min.js"></script>
+<script src="/assets/js/xterm-6.0.0.js"></script>
+<script src="/assets/js/xterm-addon-fit-0.11.0.js"></script>
 <style>
 /* Palette, header chrome, and the font/fixation/size/theme controls come from
    /webkit/webkit.css. Only present-specific content styles live here. The page
@@ -223,6 +226,50 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
 @media (prefers-reduced-motion: reduce) {
   .present-diagram-svg .dgroup, .present-diagram-svg .dnode, .present-diagram-svg .dedge { transition: none; }
 }
+/* Live terminals (xterm.js, MAD-414): the code block's frame, which
+   wk-code-block gives (border, radius, the header bar with its dots and
+   badge), with the terminal under the bar. app.js sets the canvas height
+   from the block's rows; a slide whose only block is the terminal sets
+   --terminal-fill and a height instead, which a block naming no rows
+   fills. --terminal-font-size is the px size xterm draws at, larger while
+   presenting. The padding sits on xterm's element, in whole pixels,
+   because the fit addon subtracts it as integers. It comes from
+   --terminal-pad-y, which app.js adds to the canvas height, so the
+   placeholder set before xterm opens holds the same height. webkit's header bar
+   ignores the pointer, so the buttons take it back. The terminal frame is
+   allowed on a slide, unlike any other box: it is what the slide shows. */
+.present-terminal { --terminal-font-size: 13; margin: 1rem 0 1.5rem; padding-top: 2.125rem; }
+.present-terminal-canvas { position: relative; --terminal-pad-y: 8px; }
+.present-terminal-canvas .xterm { padding: var(--terminal-pad-y) 10px; }
+/* xterm 6 paints the theme background on its scrollable element and leaves
+   its own stylesheet's black on the viewport, which spans the padding; the
+   block's --code-bg is the theme background, so the viewport shows it. */
+.present-terminal-canvas .xterm .xterm-viewport { background-color: transparent; }
+.present-terminal-status { font-family: var(--mono); font-size: 0.68rem; color: var(--code-muted); }
+.present-terminal[data-state="live"] .present-terminal-status { color: var(--code-string); }
+.present-terminal[data-state="disconnected"] .present-terminal-status { color: var(--red); }
+.present-terminal-run, .present-terminal-kill {
+  pointer-events: auto; appearance: none; cursor: pointer;
+  font-family: inherit; font-size: 0.68rem; font-weight: 500; color: var(--text-2);
+  background: var(--code-bg); border: 1px solid var(--border-hover); border-radius: 5px;
+  padding: 0.15rem 0.5rem; transition: border-color 0.15s, color 0.15s;
+}
+.present-terminal-run { margin-left: auto; }
+/* A shared instance hides Run and Kill: it has no sessions. A block showing
+   the off note has nothing to kill either. */
+.present-terminal-run[hidden], .present-terminal-kill[hidden],
+.present-terminal[data-state="off"] .present-terminal-kill { display: none; }
+.present-terminal-run:hover, .present-terminal-kill:hover { border-color: var(--text-3); color: var(--text-1); }
+.present-terminal-run:focus-visible, .present-terminal-kill:focus-visible { outline: 2px solid var(--code-keyword); outline-offset: 1px; }
+.present-terminal-note {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; text-align: center; background: var(--code-bg);
+  font-size: 0.8125rem; color: var(--text-2);
+}
+.slide.solo-terminal .present-terminal-canvas { --terminal-fill: 1; height: 48vh; }
+html.presenting .slide .present-terminal { --terminal-font-size: 16; }
+html.presenting .slide.solo-terminal .present-terminal-canvas { height: 64vh; }
 
 .refs-section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--border); }
 .refs-list { list-style: none; display: flex; flex-direction: column; gap: 0.625rem; }

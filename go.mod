@@ -4,6 +4,8 @@ go 1.26.2
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/coder/websocket v1.8.15
+	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gobwas/glob v0.2.3
 	github.com/google/jsonschema-go v0.4.3

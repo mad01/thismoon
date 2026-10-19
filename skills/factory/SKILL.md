@@ -23,6 +23,8 @@ detail and the reasons:
 - `worker-brief.md`: the text every worker gets before its first prompt, and
   how belt delivers it.
 - `worker-definitions.md`: the three worker agent definitions.
+- `examples.md`: one run end to end, from the plan to the landed branches,
+  with every message and command the procedure produces.
 
 Pick the action from the arguments. `run` takes a plan through the whole
 procedure. `brief` writes the task message for one unit and stops.
@@ -196,8 +198,10 @@ Run all five checks before the first spawn:
    `git var GIT_COMMITTER_IDENT` in the canonical checkout. Each prints
    the name and email the user commits with, then a timestamp. Linked
    worktrees read the same repository config.
-4. Each unit's worktree exists and is clean: `git status --porcelain`
-   inside it prints nothing.
+4. Each unit's worktree exists and is clean: `git -C <worktree> status
+   --porcelain` prints nothing. Run it once per worktree, each as its own
+   command. A shell loop or a variable assignment matches no allow rule,
+   so a dontAsk run denies it.
 5. The agents listing answers: `ListAgents` returns.
 
 ## Rules

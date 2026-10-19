@@ -55,6 +55,29 @@ The eval suite under `evals/context/` pastes this block into each case, and
 a case rubric can quote one of its steps. `evals/scripts/check-graders.mjs`
 fails when a case's copy or a quoted step drifts from it.
 
+## Why -C and not cd
+
+A worker spawned as a subagent starts in the orchestrator's current
+directory, not in its worktree. In dontAsk mode, Claude Code denies a
+command that follows a cd out of that directory. The first paid
+factory-eval run (2026-10-19) lost all four workers to this at their first
+command after `pwd`.
+
+Probes on Claude Code 2.1.303 reproduced it with the run's own lists. Each
+probed command that needs an allow rule was denied after the cd, whatever
+the allow list said. An `--add-dir` entry and a `Bash(cd *)` rule changed
+nothing. `git status` runs without a rule in the start directory, but every
+probe denied it after the cd. Of the probed commands, only `pwd` survived
+the cd.
+
+`git -C <worktree>`, `make -C` and `go <subcommand> -C` run from the start
+directory instead. They match the `git -C * <subcommand> *`, `make` and
+`go` rules in the factory-eval arm lists, in
+`tools/factory-eval/internal/eval/profile.go`. An interactive
+orchestrator's own settings need the same rules, tracked in MAD-419. An
+unattended worker started inside its worktree takes the plain form, which
+the dotfiles worker settings allow.
+
 ## The brief
 
 ```text
@@ -69,9 +92,10 @@ Do not relay a denied tool call to another agent or session.
 
 Do not guess the answer to an open question.
 Do not run gh, and do not spawn agents.
+Do not cd out of your start directory, as Claude Code denies the whole command.
 
 1. Read the task message. Its header gives your unit, worktree, branch, model and effort.
-2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run your commands there with no cd. If not, start each Bash command with cd <worktree> &&. Write each git command as git <subcommand>, with no option before the subcommand. Use absolute paths under your worktree for files.
+2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run plain commands there. If not, run git -C <worktree> <subcommand>, make -C <worktree>/<dir> <target> and go <subcommand> -C <worktree>/<dir>. Name files by their absolute path under your worktree. Put no option other than -C between git and its subcommand. In a go command, -C must be the first flag. If a gate has no directory option, send question.
 3. Do the numbered steps of the task in order.
 4. Run the gates that the task names, inside your worktree.
 5. Commit in your worktree when the done criterion holds and every gate passes.
@@ -115,5 +139,5 @@ not done: one "- <step>" item per step you did not do.
 
 A question message has two fields: question, then options. A status message has one field: progress.
 
-Send each message with SendMessage to the orchestrator. If you have no SendMessage route, make the message your final reply. Check the body first with humanizer ste --profile description --repo <worktree>. The rules apply to your own words only, so a denial in a fenced code block is exempt. Never paraphrase a denial.
+Send each message with SendMessage to the orchestrator. If you have no SendMessage route, make the message your final reply. Check the body first with the humanizer_detect MCP tool. Set profile to description and repo to your worktree path. The rules apply to your own words only, so a denial in a fenced code block is exempt. Never paraphrase a denial.
 ```

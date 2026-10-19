@@ -25,6 +25,7 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/server"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/mad01/thismoon/services/present/internal/store/k8sstore"
+	"github.com/mad01/thismoon/services/present/internal/terminal"
 )
 
 // Timeouts for one served connection and for shutdown. A client that opens
@@ -140,6 +141,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		// Only a local serve pushes pages elsewhere; a shared instance is
 		// where they land.
 		opts.Sharer = sharer()
+		// The live terminal is local only, so a shared instance never
+		// builds the manager and never has a terminal route.
+		terms := startTerminals(ctx, &opts)
+		defer terms.Close()
 	}
 	if flagShared {
 		mode = "shared"
@@ -178,6 +183,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		go srv.SweepImages(ctx)
 	}
 	return serveUntilSignal(ctx, addr, srv.Handler(), srv.CloseStreams)
+}
+
+// startTerminals builds the live terminal manager a local serve owns, points
+// opts at it and at the switch file in the workdir, and watches the switch
+// so turning it off ends running sessions. The caller closes the manager
+// once serving stops, which kills whatever still runs.
+func startTerminals(ctx context.Context, opts *server.Options) *terminal.Manager {
+	mgr := terminal.New(terminal.Config{})
+	opts.Terminals = mgr
+	opts.TerminalSwitch = terminal.SwitchPath(flagWorkdir)
+	go mgr.WatchSwitch(ctx, opts.TerminalSwitch, terminal.SwitchPoll, log.Printf)
+	return mgr
 }
 
 // openStore opens the store --store names and describes it for the log.

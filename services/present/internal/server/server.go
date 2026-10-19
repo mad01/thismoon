@@ -24,6 +24,7 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/mad01/thismoon/services/present/internal/terminal"
 	"github.com/mad01/thismoon/webkit"
 )
 
@@ -37,15 +38,22 @@ var shellHTML []byte
 // pageShell is shellHTML for the mode. A shared instance has no local .this
 // sites for the ⌘K picker to jump between and no index for the back link to
 // return to, so its shell leaves the cmdk control out (webkit turns the
-// shortcut off with it) and points the link at the how-to root. One shell
-// file, two substitutions, both pinned by a test.
+// shortcut off with it) and points the link at the how-to root. It also
+// marks <html> with data-present-mode="shared", so the browser knows where
+// it is without probing a route (a terminal block shows its "not on a
+// shared instance" placeholder from it). One shell file, three
+// substitutions, all pinned by a test.
 func pageShell(mode Mode) []byte {
 	if mode != ModeShared {
 		return shellHTML
 	}
 	out := bytes.Replace(shellHTML, []byte(`controls="cmdk,`), []byte(`controls="`), 1)
-	return bytes.Replace(out, []byte(`back-label="← All"`), []byte(`back-label="← About"`), 1)
+	out = bytes.Replace(out, []byte(`back-label="← All"`), []byte(`back-label="← About"`), 1)
+	return bytes.Replace(out, []byte(`<html lang="en">`), []byte(sharedHTMLTag), 1)
 }
+
+// sharedHTMLTag is the shared shell's <html> tag.
+const sharedHTMLTag = `<html lang="en" data-present-mode="shared">`
 
 //go:embed app.js
 var appJS []byte
@@ -105,6 +113,13 @@ type Server struct {
 	// images is the local image store under the workdir, served at /img/;
 	// nil on a shared instance, whose pages carry image URLs only.
 	images *images.Store
+	// terminals owns the live terminal sessions in local mode; nil leaves
+	// the terminal routes unregistered. terminalSwitch is the switch file
+	// read on every terminal request, terminalOrigins the browser origins
+	// besides loopback a terminal socket accepts.
+	terminals       *terminal.Manager
+	terminalSwitch  string
+	terminalOrigins []string
 
 	watcher      PageWatcher
 	heartbeat    time.Duration
@@ -122,8 +137,12 @@ type Server struct {
 // to open tabs as it changes; without it tabs poll /p/{id}/version. Heartbeat
 // is how often an idle event stream resends the version, DefaultHeartbeat
 // when zero. SpeakURL is the speak service the page view registers a page's
-// text with for read-aloud; empty leaves read-aloud out of the page. Now
-// defaults to time.Now.
+// text with for read-aloud; empty leaves read-aloud out of the page.
+// Terminals, in local mode, owns the live terminal sessions behind the
+// switch file at TerminalSwitch; nil leaves the terminal routes out, and a
+// shared instance never has them. TerminalOrigins adds browser origin
+// patterns (path.Match against the Origin host) to the present.this and
+// loopback origins a terminal socket accepts. Now defaults to time.Now.
 type Options struct {
 	Mode      Mode
 	Workdir   string
@@ -135,6 +154,10 @@ type Options struct {
 	Sharer    *sharedclient.Client
 	Watcher   PageWatcher
 	Heartbeat time.Duration
+
+	Terminals       *terminal.Manager
+	TerminalSwitch  string
+	TerminalOrigins []string
 }
 
 // New returns a Server backed by the given store.
@@ -153,7 +176,7 @@ func New(st store.Store, opts Options) *Server {
 	if opts.Mode != ModeShared && opts.Workdir != "" {
 		imgs = images.New(opts.Workdir)
 	}
-	return &Server{
+	srv := &Server{
 		deckCtl:     deckCtl,
 		history:     history,
 		images:      imgs,
@@ -172,6 +195,15 @@ func New(st store.Store, opts Options) *Server {
 		shell:       pageShell(opts.Mode),
 		deckShell:   deckShell(pageShell(opts.Mode)),
 	}
+	if opts.Mode != ModeShared {
+		// The live terminal is local only: a shared instance keeps no
+		// manager, no switch path, and no origins, and Handler never
+		// registers a terminal route for it.
+		srv.terminals = opts.Terminals
+		srv.terminalSwitch = opts.TerminalSwitch
+		srv.terminalOrigins = append([]string{terminalOrigin}, opts.TerminalOrigins...)
+	}
+	return srv
 }
 
 // Handler builds the HTTP routes for the server's mode, wrapped in
@@ -181,7 +213,8 @@ func New(st store.Store, opts Options) *Server {
 // stream whenever a watcher is configured, the deck command poll whenever
 // the store relays commands, and the history and diff routes whenever the
 // store keeps history (the raw filesystem store alone); local mode adds
-// the index, its listing, the markdown import, and the stored images; shared
+// the index, its listing, the markdown import, the stored images, and the
+// live terminal routes when a terminal manager is configured; shared
 // mode the how-to root, the write API, whoami, and the MCP endpoint. A
 // route the mode does not register is a plain 404.
 func (s *Server) Handler() http.Handler {
@@ -231,6 +264,7 @@ func (s *Server) Handler() http.Handler {
 		if s.sharer != nil {
 			mux.HandleFunc("POST /p/{id}/share", s.handleShare)
 		}
+		s.registerTerminal(mux)
 	}
 	return logRequests(baseurl.Middleware(mux))
 }

@@ -1,0 +1,138 @@
+{
+  "title": "Live terminal demo",
+  "content": {
+    "summary": "Switch the live terminal on before the talk, present the deck, and switch it off after. The deck starts two sessions, a shell on slide 2 and Claude on slide 3, and comes back to both.",
+    "meta": "2026-10-19 · Run sheet · Live terminal demo",
+    "chips": [
+      {"text": "2 sessions", "style": "stat"},
+      {"text": "off by default", "style": "outline"},
+      {"text": "local only", "style": "outline"}
+    ],
+    "sections": [
+      {
+        "h": "Before the talk",
+        "blocks": [
+          {"t": "p", "text": "Turn the live terminal on from any shell. Nothing in the deck runs until it is on, and the status command says which way the switch is."},
+          {"t": "code", "lang": "bash", "text": "present terminal on\npresent terminal status"},
+          {"t": "p", "text": "Both sessions start in the home directory. Point the Claude session at a repo by setting the same directory on both of its blocks, slides 3 and 7, before the talk."},
+          {"t": "p", "text": "Open the deck on localhost in Chrome when you plan to interrupt Claude with Escape. On a plain http host, Escape leaves fullscreen instead."},
+          {"t": "callout", "sev": "warn", "text": "Claude shows its prompt a few seconds after the slide appears, longer when it first reports an MCP server that needs authentication. Give slide 3 that moment before pressing Enter."}
+        ]
+      },
+      {
+        "h": "During the talk",
+        "blocks": [
+          {"t": "list", "ordered": true, "items": [
+            "Slide 2 starts the shell session with a ten minute tick loop typed on the prompt. Press Enter and move on.",
+            "Slide 3 starts Claude with a read-only question typed on the prompt. Press Enter and move on.",
+            "Slides 4 to 6 are talk slides. Both sessions keep running inside present serve.",
+            "Slide 7 shows the Claude session again with its answer, and slide 8 the shell with the ticks it printed meanwhile.",
+            "Run in a block's header starts a session that ended, and Kill ends one early."
+          ]}
+        ]
+      },
+      {
+        "h": "After the talk",
+        "blocks": [
+          {"t": "p", "text": "Switching off ends every session the deck started within two seconds, and the list command shows that none is left."},
+          {"t": "code", "lang": "bash", "text": "present terminal off\npresent terminal list"}
+        ]
+      },
+      {
+        "h": "If a block does not start",
+        "blocks": [
+          {"t": "list", "items": [
+            "The block says the live terminal is off: run the on command. The block starts by itself within a few seconds while its slide is showing.",
+            "The block names a missing directory: the directory on the block must exist on this machine.",
+            "The session ended: press Run in the block's header.",
+            "To end one session from the shell, give the kill command the page id and the session name."
+          ]},
+          {"t": "code", "lang": "bash", "text": "present terminal kill <page-id> shell"}
+        ]
+      }
+    ]
+  },
+  "deck": {
+    "summary": "A slide can start a shell or Claude, leave it running while you talk through the next slides, and show it again later with everything it did meanwhile.",
+    "meta": "2026-10-19 · Demo · Live terminal block in present",
+    "chips": [
+      {"text": "2 sessions", "style": "stat"},
+      {"text": "off by default", "style": "outline"},
+      {"text": "local only", "style": "outline"}
+    ],
+    "footer": "Live terminal demo",
+    "sections": [
+      {
+        "h": "A shell starts on this slide and keeps running",
+        "notes": "Press Enter. The loop prints the time and a tick number once a second. Leave it running and move on; slide 8 comes back to it.",
+        "blocks": [
+          {"t": "terminal", "session": "shell", "cwd": "~", "prefill": "for i in {1..600}; do printf '%s  tick %03d\\n' \"$(date +%T)\" \"$i\"; sleep 1; done"}
+        ]
+      },
+      {
+        "h": "Claude starts here and works while we move on",
+        "notes": "Give Claude a moment to show its prompt, then press Enter and move on within a few seconds. Slide 7 shows what it did.",
+        "blocks": [
+          {"t": "terminal", "session": "claude", "cmd": "claude", "cwd": "~", "prefill": "explain in five lines what this directory holds and what you would read first"}
+        ]
+      },
+      {
+        "h": "The process belongs to the page, not to the tab",
+        "layout": "statement",
+        "notes": "Both sessions are running inside present serve right now. Reload the tab or open the deck in a second window: the same two processes show.",
+        "blocks": [
+          {"t": "p", "text": "Every slide that names the session shows the same process."}
+        ]
+      },
+      {
+        "h": "A block that attaches again replays the recent output",
+        "notes": "The replay is what makes coming back to a slide work: the block shows what happened while it was off screen.",
+        "blocks": [
+          {"t": "stat", "value": "1 MiB", "label": "of output replayed on every reattach", "sub": "about 400 screens of an 80 by 30 terminal"}
+        ]
+      },
+      {
+        "h": "Nothing runs unless you switch it on",
+        "tone": "green",
+        "reveal": true,
+        "notes": "The switch lives in your shell, not on the page. The browser only ever sends keystrokes and the terminal size; what runs is read from the stored page.",
+        "blocks": [
+          {"t": "list", "items": [
+            "Off by default, on only from your shell",
+            "Off ends every session within **two seconds**",
+            "The stored page says what runs, never the browser",
+            "A shared instance shows a placeholder and runs nothing"
+          ]}
+        ]
+      },
+      {
+        "h": "Claude finished while we talked",
+        "notes": "The same session as slide 3. Its answer is on screen and it takes input again.",
+        "blocks": [
+          {"t": "terminal", "session": "claude", "cmd": "claude", "cwd": "~", "prefill": "explain in five lines what this directory holds and what you would read first"}
+        ]
+      },
+      {
+        "h": "The shell kept counting",
+        "notes": "The same session as slide 2. The tick number shows how long we were away.",
+        "blocks": [
+          {"t": "terminal", "session": "shell", "cwd": "~", "prefill": "for i in {1..600}; do printf '%s  tick %03d\\n' \"$(date +%T)\" \"$i\"; sleep 1; done"}
+        ]
+      },
+      {
+        "h": "Next",
+        "blocks": [
+          {"t": "list", "ordered": true, "items": [
+            "Switch the live terminal on before the talk and off after it",
+            "Open the deck on localhost in Chrome when a demo needs Escape",
+            "Put the first command in prefill, so the room watches Enter, not typing"
+          ]}
+        ]
+      }
+    ]
+  },
+  "references": [
+    {"title": "ADR-0025: terminal sessions live in present serve", "url": "https://github.com/mad01/thismoon/blob/main/docs/adr/0025-present-terminal-sessions-in-serve.md"},
+    {"title": "Present skill, terminal format", "url": "https://github.com/mad01/thismoon/blob/main/skills/present/SKILL.md"}
+  ]
+}

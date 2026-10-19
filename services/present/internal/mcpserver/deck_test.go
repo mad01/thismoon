@@ -671,3 +671,51 @@ func TestUpdateOnAPageWithNeitherRenditionStillTakesMetadata(t *testing.T) {
 		t.Errorf("version = %d, want 2", out.Version)
 	}
 }
+
+// terminalDoc is a one-section Doc holding a terminal block for the demo
+// session that runs cmd at the given height.
+func terminalDoc(cmd string, rows int) string {
+	return toJSON(map[string]any{
+		"sections": []map[string]any{{"h": "Live", "blocks": []map[string]any{
+			{"t": "terminal", "session": "demo", "cmd": cmd, "rows": rows},
+		}}},
+	})
+}
+
+// A brief and a deck share the page's terminal sessions, so create and
+// update refuse the two renditions naming one session with a different
+// cmd, cwd, or prefill, and write nothing; a different height is fine.
+func TestRenditionsAgreeOnTerminalSessions(t *testing.T) {
+	h, _ := deckHandlers(t)
+	ctx := context.Background()
+	want := `content and deck: terminal "demo": blocks naming the session give ` +
+		`(cmd "claude", cwd "", prefill "") and (cmd "htop", cwd "", prefill "")`
+
+	_, _, err := h.handleCreate(ctx, nil, createInput{
+		Title: "T", Content: terminalDoc("claude", 24), Deck: terminalDoc("htop", 24),
+	})
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("create: err = %v, want %q", err, want)
+	}
+	if pages, err := h.store.List(ctx); err != nil || len(pages) != 0 {
+		t.Errorf("a refused create stored %d pages (%v)", len(pages), err)
+	}
+
+	_, created, err := h.handleCreate(ctx, nil, createInput{
+		Title: "T", Content: terminalDoc("claude", 40), Deck: terminalDoc(" claude ", 12),
+	})
+	if err != nil {
+		t.Fatalf("create with one cmd at two heights: %v", err)
+	}
+	_, _, err = h.handleUpdate(ctx, nil, updateInput{
+		ID:      created.ID,
+		Content: ptrStr(terminalDoc("claude", 24)),
+		Deck:    ptrStr(terminalDoc("htop", 24)),
+	})
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("update: err = %v, want %q", err, want)
+	}
+	if p, err := h.store.Get(ctx, created.ID); err != nil || p.Version != 1 {
+		t.Errorf("a refused update wrote the page: version %d (%v)", p.Version, err)
+	}
+}

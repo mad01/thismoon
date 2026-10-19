@@ -33,6 +33,30 @@ func TestPageShellPerMode(t *testing.T) {
 	}
 }
 
+// The shared shell tells the browser it is on a shared instance; a local
+// shell says nothing. The deck shell wraps the same shell, so a shared deck
+// carries the mode and the deck's audio default on the one <html> tag.
+func TestSharedShellMarksTheMode(t *testing.T) {
+	const mode = `data-present-mode="shared"`
+	local, shared := string(pageShell(ModeLocal)), string(pageShell(ModeShared))
+	if !strings.Contains(local, `<html lang="en">`) {
+		t.Fatal("shell.html no longer carries the <html> tag the mode rewrite keys on")
+	}
+	if strings.Contains(local, "data-present-mode") ||
+		strings.Contains(string(deckShell(pageShell(ModeLocal))), "data-present-mode") {
+		t.Error("a local shell names a mode")
+	}
+	if !strings.Contains(shared, `<html lang="en" `+mode+`>`) {
+		t.Errorf("shared brief shell lacks %s on <html>", mode)
+	}
+	deck := string(deckShell(pageShell(ModeShared)))
+	want := `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off" ` +
+		mode + `>`
+	if !strings.Contains(deck, want) {
+		t.Errorf("shared deck shell lacks %q", want)
+	}
+}
+
 // Every shell links the themes page webkit serves, so a reader can pick a
 // palette family from any present view, shared instances included.
 func TestShellsLinkThemesPage(t *testing.T) {
@@ -81,7 +105,7 @@ func TestSharedChromeHasNoSitePicker(t *testing.T) {
 // <html>, which webkit's boot.js and the header read, while the brief shell
 // names neither and so gets webkit's defaults.
 func TestDeckShellAudioDefault(t *testing.T) {
-	const marker = `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off">`
+	const marker = `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off"`
 	for name, mode := range map[string]Mode{"local": ModeLocal, "shared": ModeShared} {
 		brief := string(pageShell(mode))
 		deck := string(deckShell(pageShell(mode)))
@@ -139,44 +163,52 @@ func TestShellsDeclareTerracottaAlias(t *testing.T) {
 
 var (
 	versionVar   = regexp.MustCompile(`(?m)^([A-Z0-9_]+_VERSION)="([^"]+)"$`)
-	assetFileVar = regexp.MustCompile(`(?m)^[a-z0-9_]+_file="\$ASSETS/js/([^"]+)"$`)
+	assetFileVar = regexp.MustCompile(`(?m)^[a-z0-9_]+_file="\$ASSETS/((?:js|css)/[^"]+)"$`)
 	varRef       = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
-	shellJSSrc   = regexp.MustCompile(`src="/assets/js/([^"]+)"`)
+	// shellAssets are the two ways the shell loads a cached file: a script
+	// by src, a stylesheet by href.
+	shellAssets = []*regexp.Regexp{
+		regexp.MustCompile(`src="/assets/(js/[^"]+)"`),
+		regexp.MustCompile(`href="/assets/(css/[^"]+)"`),
+	}
 )
 
-// The page shell loads each vendored script by a versioned filename that
-// scripts/cache-assets.sh writes into the workdir (docs/adr/0022). Pin the
-// two to each other, so a version bump in one place cannot leave the shell
-// asking for a file the script never fetches, or the script fetching one no
-// page loads.
-func TestShellLoadsEveryCachedScript(t *testing.T) {
+// The page shell loads each vendored script and stylesheet by a versioned
+// filename that scripts/cache-assets.sh writes into the workdir (docs/adr/0022).
+// Pin the two to each other, so a version bump in one place cannot leave the
+// shell asking for a file the script never fetches, or the script fetching one
+// no page loads. The font stylesheet, fonts.css, has no version in its name
+// but pairs the same way: the script writes it and the shell links it.
+func TestShellLoadsEveryCachedAsset(t *testing.T) {
 	script, err := os.ReadFile("../../scripts/cache-assets.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetched := cachedScripts(t, string(script))
+	fetched := cachedAssets(t, string(script))
 	if len(fetched) == 0 {
-		t.Fatal("cache-assets.sh declares no $ASSETS/js file; the pattern no longer matches")
+		t.Fatal("cache-assets.sh declares no $ASSETS/js or $ASSETS/css file; the pattern no longer matches")
 	}
 	loaded := map[string]bool{}
-	for _, m := range shellJSSrc.FindAllStringSubmatch(string(shellHTML), -1) {
-		loaded[m[1]] = true
+	for _, re := range shellAssets {
+		for _, m := range re.FindAllStringSubmatch(string(shellHTML), -1) {
+			loaded[m[1]] = true
+		}
 	}
 	for name := range fetched {
 		if !loaded[name] {
-			t.Errorf("cache-assets.sh fetches %s but shell.html never loads /assets/js/%s", name, name)
+			t.Errorf("cache-assets.sh fetches %s but shell.html never loads /assets/%s", name, name)
 		}
 	}
 	for name := range loaded {
 		if !fetched[name] {
-			t.Errorf("shell.html loads /assets/js/%s but cache-assets.sh never fetches it", name)
+			t.Errorf("shell.html loads /assets/%s but cache-assets.sh never fetches it", name)
 		}
 	}
 }
 
-// cachedScripts resolves the $ASSETS/js filenames cache-assets.sh declares,
-// expanding the *_VERSION variables they name.
-func cachedScripts(t *testing.T, script string) map[string]bool {
+// cachedAssets resolves the $ASSETS/js and $ASSETS/css paths cache-assets.sh
+// declares, relative to $ASSETS, expanding the *_VERSION variables they name.
+func cachedAssets(t *testing.T, script string) map[string]bool {
 	t.Helper()
 	versions := map[string]string{}
 	for _, m := range versionVar.FindAllStringSubmatch(script, -1) {

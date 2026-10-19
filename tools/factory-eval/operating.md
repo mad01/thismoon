@@ -10,27 +10,29 @@ writes one results file and exits.
 
 `{{.Bin}} run` reads cases.yaml from the working directory. It works
 through every run index, tier and arm. Each run clones the source repo into
-a fresh temp dir at the pinned commit. The clone keeps no branch, tag,
-reflog or remote, and its local config holds the factory-eval git
-identity. One headless `claude -p` session starts there with a dollar cap,
-the dontAsk permission mode with prompts turned into denials, only the
+a fresh temp dir at the pinned commit, named in resolved form (no symlink
+component), the form claude records the session cwd in. The clone keeps no
+branch, tag, reflog or remote, and its local config holds the factory-eval
+git identity. One headless `claude -p` session starts there with a dollar
+cap, the dontAsk permission mode with prompts turned into denials, only the
 humanizer MCP server, and a settings file. The file repeats the arm's
 allow and deny lists from the command line, since settings-file rules are
-documented to reach subagents. No paid run has yet confirmed that the
-factory's workers obey them.
+documented to reach subagents. No paid run has yet shown that the
+factory's workers obey them: a worker passing `git -C <worktree> commit`,
+which only the arm's lists admit, would show it.
 
-The same file keeps Edit, Write, `git -C`, `make -C` and `go build -o`
-out of ~/code, ~/.worktrees and the source repo with deny rules; reads
-stay allowed. Its sandbox block puts Claude Code's OS sandbox around
-every Bash command of the session, workers included. The exception is
-the commands the user's own settings exclude from the sandbox. {{.Bin}}
-denies those that overlap none of the arms' rules, names the rest in the
-results, and refuses a paid run over them without `--allow-unsandboxed`.
-A sandboxed command may write only under the run's
-temp dir, the Go build cache and the paths the user's settings open. It
-reaches no network domain and cannot retry outside the sandbox. {{.Bin}}
-still fingerprints the source checkout before and after the session, and
-a change taints the run.
+The same file keeps Edit, Write, `git -C`, `make -C`, `go build -o`, and
+`go build`, `go test` or `go vet` with `-C` out of ~/code, ~/.worktrees
+and the source repo with deny rules; reads stay allowed. Its sandbox
+block puts Claude Code's OS sandbox around every Bash command of the
+session, workers included. The exception is the commands the user's own
+settings exclude from the sandbox. {{.Bin}} denies those that overlap
+none of the arms' rules, names the rest in the results, and refuses a
+paid run over them without `--allow-unsandboxed`. A sandboxed command may
+write only under the run's temp dir, the Go build cache and the paths
+the user's settings open. It reaches no network domain and cannot retry
+outside the sandbox. {{.Bin}} still fingerprints the source checkout
+before and after the session, and a change taints the run.
 
 Runs go one at a time. After each session {{.Bin}} checks every case
 branch: branch present, only allowed paths changed, outline order,

@@ -287,38 +287,48 @@ func (h *handlers) expiry(ephemeral bool) *time.Time {
 // resolveContent detects whether s is a Doc JSON object or a legacy HTML
 // string and returns rendered HTML either way. When the input is a Doc, it also
 // returns the canonical Doc JSON (re-marshaled from the parsed struct) so the
-// caller can persist it for future re-renders; docJSON is nil for HTML input.
-func resolveContent(s string, title string) (htmlOut string, docJSON []byte, err error) {
+// caller can persist it for future re-renders, and the Doc itself; JSON is nil
+// and the Doc empty for HTML input.
+func resolveContent(s string, title string) (render.Compiled, error) {
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
-		return "", nil, nil
+		return render.Compiled{}, nil
 	}
 	if s[0] == '{' {
-		c, err := render.Compile([]byte(s), title)
-		if err != nil {
-			return "", nil, err
-		}
-		return c.HTML, c.JSON, nil
+		return render.Compile([]byte(s), title)
 	}
-	return s, nil, nil
+	return render.Compiled{HTML: s}, nil
 }
 
 // resolveDeck compiles a deck's Doc JSON to the HTML fragment deck.html holds
-// and returns it with the canonical Doc JSON deck.json holds. Unlike content,
-// a deck has no legacy form: anything but a Doc object is refused.
-func resolveDeck(s string, title string) (htmlOut string, docJSON []byte, err error) {
+// and returns it with the canonical Doc JSON deck.json holds and the Doc.
+// Unlike content, a deck has no legacy form: anything but a Doc object is
+// refused.
+func resolveDeck(s string, title string) (render.Compiled, error) {
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
-		return "", nil, nil
+		return render.Compiled{}, nil
 	}
 	if s[0] != '{' {
-		return "", nil, errors.New("deck: want Doc JSON (an object with sections, one per slide)")
+		return render.Compiled{}, errors.New(
+			"deck: want Doc JSON (an object with sections, one per slide)",
+		)
 	}
 	c, err := render.CompileDeck([]byte(s), title)
 	if err != nil {
-		return "", nil, fmt.Errorf("deck: %w", err)
+		return render.Compiled{}, fmt.Errorf("deck: %w", err)
 	}
-	return c.HTML, c.JSON, nil
+	return c, nil
+}
+
+// checkRenditions refuses a brief and a deck that name one terminal session
+// with a different cmd or cwd: both attach to the page's sessions, and serve
+// starts each once. Each Doc was checked on its own when it compiled.
+func checkRenditions(content, deck render.Doc) error {
+	if err := render.ValidateTerminalSessions(content, deck); err != nil {
+		return fmt.Errorf("content and deck: %w", err)
+	}
+	return nil
 }
 
 // resolveGraph detects whether s is a GraphInput JSON object or a legacy JS
@@ -357,8 +367,8 @@ type refInput struct {
 
 type createInput struct {
 	Title      string     `json:"title"                jsonschema:"presentation title (shown in the browser tab and page header)"`
-	Content    string     `json:"content,omitempty"    jsonschema:"Page content (the brief) as a Doc JSON string, or a legacy HTML string. Omit it for a deck-only page (then deck is required).\nDoc: {summary?, meta?, chips?:[{text, style: stat|a|b|c|outline}], sections:[{h, blocks:[{t, ...}], tone?, layout?, notes?, reveal?}]}. Text fields take inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text).\nBlocks by t: p {text}; h3 {text}; callout {text, sev?: info|warn|ok|error}; table {cols, rows}; kv {kv:[{k,v}]}; list {items, ordered?}; panel {title, sub?, accent?: a palette role}; progress {pct, label?, note?}; graph {} (places the page's one graph, at most once, in a column but never in details); chart {kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey|ribbon, title?, unit?, xunit?, series:[{name?, color?, step?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey, steps?:[{caption}] (one step per Next on a deck slide; a series with step k joins at step k; a ribbon steps by period), order?: rank|given (ribbon only), frame?: true keeps a card (brief only)}; diagram {nodes:[{id, label, text?, kind?, tone?, group?, step?}] with node kind: service|store|queue|person|external and tone: neutral|green|red|blue|amber|purple, groups?:[{id, label, tone?, group?, step?}] (a group may sit in one other group), edges?:[{from, to, label?, flow?, weight?, step?}] between two nodes, direction: LR|TB, caption?, steps?:[{caption, focus?:[ids]}]}; code {text, lang?} (verbatim, no inline markdown); html {text}; columns {cols: 2 or 3 arrays of blocks}; stat {value, label, sub?}; quote {text, cite?}; details {summary, blocks}; image {src, alt, caption?, frame?: false drops the border}.\nSection fields beside h and blocks: tone (a palette role: a band in the brief, the heading rule and accent bar on a slide), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool).\nLimits the renderer enforces: columns and details hold any block but columns and details; a ribbon takes at most 4 named series; a diagram at most 24 nodes and 12 groups, two levels deep, no element stepped before what holds it; an image src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB (copied into the page store and rewritten to the /img/<hash>.<ext> path present_source returns; a shared instance takes URLs only), and alt is required. A refused Doc names the block and the rule.\nThe present skill says which block answers which question and holds the chart kind picker; load it before writing a page."`
-	Deck       string     `json:"deck,omitempty"       jsonschema:"Optional slide deck as a Doc JSON string with the same shape and blocks as content: every section is one slide, summary, meta, and chips fill the title slide, references make the last slide. Authored on its own, never converted from content.\nDeck-level chrome beside summary, meta, and chips, all optional: logo (absent = the embedded repo logo; none hides it; an http(s) URL replaces it), logo_position (bottom-right|bottom-left|top-left|top-right), progress (dots|bar|none; dots give way to a bar above 24 slides), presenter (a byline under the meta line and in the footer), footer (absent = the deck title; none suppresses it; the footer line shows only when presenter or footer is set), transition (fade|slide|none).\nPer section: layout (default|center|statement|section), tone (a palette role for the heading rule and accent bar; a slide never paints a filled box), notes (speaker notes shown in a drawer on the N key, never on the slide), reveal (true: list items and top-level blocks appear one per Next; a chart or diagram with steps walks them right after it appears). A lone stat or quote on a slide is the big-number or quote slide.\nThe rules that keep a deck a deck: the heading is the claim, 3 to 5 short items or two sentences per slide, one highlight per slide, one visual (a chart, a diagram, the graph, an image, or a lone stat or quote) per slide, alone or beside one short paragraph in columns, 5 to 12 slides, no filled boxes on a slide (no panel, details, code, or frame: true), detail stays in content. The present skill has the full list, a building-a-deck recipe, and worked examples.\nServed at deck_url; the page's graph is shared with the content."`
+	Content    string     `json:"content,omitempty"    jsonschema:"Page content (the brief) as a Doc JSON string, or a legacy HTML string. Omit it for a deck-only page (then deck is required).\nDoc: {summary?, meta?, chips?:[{text, style: stat|a|b|c|outline}], sections:[{h, blocks:[{t, ...}], tone?, layout?, notes?, reveal?}]}. Text fields take inline markdown: **bold**, *italic*, backtick-code, [text](url), @chip(style:text).\nBlocks by t: p {text}; h3 {text}; callout {text, sev?: info|warn|ok|error}; table {cols, rows}; kv {kv:[{k,v}]}; list {items, ordered?}; panel {title, sub?, accent?: a palette role}; progress {pct, label?, note?}; graph {} (places the page's one graph, at most once, in a column but never in details); chart {kind: bar|line|area|sparkline|stacked-bar|horizontal-bar|doughnut|scatter|sankey|ribbon, title?, unit?, xunit?, series:[{name?, color?, step?, points:[{x,y}]}] for every kind but sankey, flows:[{from,to,value}] for sankey, steps?:[{caption}] (one step per Next on a deck slide; a series with step k joins at step k; a ribbon steps by period), order?: rank|given (ribbon only), frame?: true keeps a card (brief only)}; diagram {nodes:[{id, label, text?, kind?, tone?, group?, step?}] with node kind: service|store|queue|person|external and tone: neutral|green|red|blue|amber|purple, groups?:[{id, label, tone?, group?, step?}] (a group may sit in one other group), edges?:[{from, to, label?, flow?, weight?, step?}] between two nodes, direction: LR|TB, caption?, steps?:[{caption, focus?:[ids]}]}; code {text, lang?} (verbatim, no inline markdown); html {text}; columns {cols: 2 or 3 arrays of blocks}; stat {value, label, sub?}; quote {text, cite?}; details {summary, blocks}; image {src, alt, caption?, frame?: false drops the border}; terminal {session, cmd?, cwd?, prefill?, rows?} (attaches a live terminal to a terminal session present serve owns, so every block naming the session shows the same process, and is the one card a deck slide may keep; session is 1 to 32 of a-z, 0-9, and -, cmd runs in place of a login shell, cwd is an absolute or ~ path and defaults to the home directory, prefill is typed into the session on start, not run, rows 8 to 60; never in details; a shared instance runs no sessions and shows a placeholder in its place; e.g. {t: terminal, session: demo, cmd: claude, cwd: ~/code/shop, prefill: fix the flaky checkout test} on one slide and the same block on a later slide, so the room sees what Claude did meanwhile).\nSection fields beside h and blocks: tone (a palette role: a band in the brief, the heading rule and accent bar on a slide), and deck-only layout (default|center|statement|section), notes (speaker notes), reveal (bool).\nLimits the renderer enforces: columns and details hold any block but columns and details; a ribbon takes at most 4 named series; a diagram at most 24 nodes and 12 groups, two levels deep, no element stepped before what holds it; an image src is an http(s) URL or, on a local instance, an absolute or ~ path to a png, jpeg, gif, or webp file of at most 2 MiB (copied into the page store and rewritten to the /img/<hash>.<ext> path present_source returns; a shared instance takes URLs only), and alt is required. A refused Doc names the block and the rule.\nThe present skill says which block answers which question and holds the chart kind picker; load it before writing a page."`
+	Deck       string     `json:"deck,omitempty"       jsonschema:"Optional slide deck as a Doc JSON string with the same shape and blocks as content: every section is one slide, summary, meta, and chips fill the title slide, references make the last slide. Authored on its own, never converted from content.\nDeck-level chrome beside summary, meta, and chips, all optional: logo (absent = the embedded repo logo; none hides it; an http(s) URL replaces it), logo_position (bottom-right|bottom-left|top-left|top-right), progress (dots|bar|none; dots give way to a bar above 24 slides), presenter (a byline under the meta line and in the footer), footer (absent = the deck title; none suppresses it; the footer line shows only when presenter or footer is set), transition (fade|slide|none).\nPer section: layout (default|center|statement|section), tone (a palette role for the heading rule and accent bar; a slide never paints a filled box), notes (speaker notes shown in a drawer on the N key, never on the slide), reveal (true: list items and top-level blocks appear one per Next; a chart or diagram with steps walks them right after it appears). A lone stat or quote on a slide is the big-number or quote slide.\nThe rules that keep a deck a deck: the heading is the claim, 3 to 5 short items or two sentences per slide, one highlight per slide, one visual (a chart, a diagram, the graph, an image, a terminal, or a lone stat or quote) per slide, alone or beside one short paragraph in columns, 5 to 12 slides, no filled boxes on a slide (no panel, details, code, or frame: true; a terminal block is the one card a slide may keep, since the live terminal is the point of its slide), detail stays in content. The present skill has the full list, a building-a-deck recipe, and worked examples, among them live-terminal-demo.json: a shell and Claude started on two slides with a prefill each, three talk slides, then both sessions shown again.\nServed at deck_url; the page's graph is shared with the content."`
 	Graph      string     `json:"graph,omitempty"      jsonschema:"Optional Cytoscape graph as a structured JSON string {nodes:[{id,label,type?,color?,tone?}], edges:[{from,to,type?,label?,weight?,flow?}], layout?, direction?} or a legacy JS string. One per page, shared by the content and the deck, placed by a graph block.\nNode types: center, module (color: 0 to 3 picks one of four border slots), leaf (the default), registry. Node tones (box background, border, and text as one family, theme-aware): neutral, green, red, blue, amber, purple. Tone every node or none, two or three tones with fixed meanings; use module slots or tones on a graph, never both.\nEdge types: consumes (solid), publishes (dashed). Edge weight (a number, e.g. requests per second) drives line width and tints the busiest edges; flow: true animates dashes from source to target.\nLayouts: dagre (default, layered, for trees and hierarchies), elk (ELK layered with wrapping; folds a long chain into rows to fit the container, for pipelines), elk-layered | elk-mrtree | elk-stress | elk-radial | elk-force (plain layered, tree, stress, radial, force; no folding), cose (no hierarchy, no vendored library needed). Direction (dagre and the ELK engines): TB or LR; omit for auto (LR when the graph has few nodes). The present skill has the engine picker and the colour rules."`
 	References []refInput `json:"references,omitempty" jsonschema:"source links shown in a References section at the bottom of the page: repos, docs, PRs consulted while writing the brief"`
 }
@@ -444,12 +454,15 @@ func (h *handlers) create(
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("deck: %w", err)
 	}
-	content, docJSON, err := resolveContent(contentSrc, in.Title)
+	content, err := resolveContent(contentSrc, in.Title)
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("content: %w", err)
 	}
-	deck, deckJSON, err := resolveDeck(deckSrc, in.Title)
+	deck, err := resolveDeck(deckSrc, in.Title)
 	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	if err := checkRenditions(content.Doc, deck.Doc); err != nil {
 		return nil, pageOutput{}, err
 	}
 	graph, graphJSON, err := resolveGraph(in.Graph)
@@ -464,12 +477,12 @@ func (h *handlers) create(
 	// present_source can hand the source back for edits.
 	d := store.Draft{
 		Title:       in.Title,
-		Content:     content,
-		Deck:        deck,
+		Content:     content.HTML,
+		Deck:        deck.HTML,
 		Graph:       graph,
 		References:  toStoreRefs(in.References),
-		Doc:         docJSON,
-		DeckSource:  deckJSON,
+		Doc:         content.JSON,
+		DeckSource:  deck.JSON,
 		GraphSource: graphJSON,
 	}
 	if h.mode == ModeShared {
@@ -777,21 +790,25 @@ func resolveUpdate(in updateInput, curTitle string) (compiledUpdate, error) {
 		title = *in.Title
 	}
 	u := compiledUpdate{baseTitle: curTitle, patch: store.Patch{Title: in.Title}}
+	var content, deck render.Compiled
 	if in.Content != nil {
-		content, docJSON, err := resolveContent(*in.Content, title)
-		if err != nil {
+		var err error
+		if content, err = resolveContent(*in.Content, title); err != nil {
 			return compiledUpdate{}, fmt.Errorf("content: %w", err)
 		}
-		u.patch.Content = &content
-		u.plan.setDoc, u.plan.doc = true, docJSON
+		u.patch.Content = &content.HTML
+		u.plan.setDoc, u.plan.doc = true, content.JSON
 	}
 	if in.Deck != nil {
-		deck, deckJSON, err := resolveDeck(*in.Deck, title)
-		if err != nil {
+		var err error
+		if deck, err = resolveDeck(*in.Deck, title); err != nil {
 			return compiledUpdate{}, err
 		}
-		u.patch.Deck = &deck
-		u.plan.setDeck, u.plan.deck = true, deckJSON
+		u.patch.Deck = &deck.HTML
+		u.plan.setDeck, u.plan.deck = true, deck.JSON
+	}
+	if err := checkRenditions(content.Doc, deck.Doc); err != nil {
+		return compiledUpdate{}, err
 	}
 	if in.Graph != nil {
 		graph, graphJSON, err := resolveGraph(*in.Graph)

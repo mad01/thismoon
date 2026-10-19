@@ -21,7 +21,7 @@ func init() {
 // present_doctor MCP tool share this one set, so an agent with no shell gets
 // the same diagnosis a human does.
 func doctorChecks(context.Context) []doctor.Check {
-	baseURL := fmt.Sprintf("http://localhost:%d", flagPort)
+	baseURL := localServeURL()
 	return []doctor.Check{
 		doctor.StoreReadable(flagWorkdir),
 		doctor.ServiceReachable(baseURL),

@@ -37,10 +37,22 @@ type Checkout struct {
 // Create clones src under a new temp dir inside parent (the system temp
 // dir when parent is empty) and detaches the clone at commit. On failure
 // the partial dir is removed.
+//
+// Root is the resolved path, symlinks included: on macOS the system temp
+// dir is a symlink (/var/folders is /private/var/folders). The resolved
+// path is the form claude records the session cwd in, so the prompt, the
+// flags and the cwd share one spelling. The first paid run's cd denials
+// came from a Claude Code rule, not the path form (see worker-brief.md in
+// skills/factory).
 func Create(ctx context.Context, src, commit, parent string) (*Checkout, error) {
-	root, err := os.MkdirTemp(parent, "factory-eval-")
+	made, err := os.MkdirTemp(parent, "factory-eval-")
 	if err != nil {
 		return nil, fmt.Errorf("checkout: temp dir: %w", err)
+	}
+	root, err := filepath.EvalSymlinks(made)
+	if err != nil {
+		_ = os.RemoveAll(made)
+		return nil, fmt.Errorf("checkout: resolve temp dir: %w", err)
 	}
 	c := &Checkout{
 		Root:      root,

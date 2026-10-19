@@ -686,6 +686,19 @@
       ]
     },
     {
+      "h": "The probe, live",
+      "notes": "Press Enter to run the probe once. The session stays up through the slides after this one.",
+      "blocks": [
+        {
+          "t": "terminal",
+          "session": "probe",
+          "cwd": "~",
+          "prefill": "curl -sS -o /dev/null -w '%{http_code}\\n' https://example.com/healthz",
+          "rows": 16
+        }
+      ]
+    },
+    {
       "h": "Next",
       "reveal": true,
       "blocks": [
