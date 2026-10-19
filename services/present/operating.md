@@ -111,6 +111,30 @@ orphaned URL. On the shared side 401 means no author key arrived and 403 that
 the wrong one did. A failed share reads "Share failed: ..." in the modal and
 answers 502 from POST /p/<id>/share; the failure is the instance's.
 
+## live terminal
+
+A terminal block in a brief or deck shows a terminal session: a process
+the local serve runs in a pseudo-terminal (PTY) for that page and session
+name. The session outlives the tab, and a tab that attaches later gets its
+recent output replayed. The live terminal is off by default. The switch is the file terminal.enabled in
+the workdir (~/.config/present/terminal.enabled on a fleet machine).
+`present terminal on` creates it and `off` removes it. Serve checks it
+every 2 seconds, so neither needs a restart, and off ends every session.
+`present terminal status` prints the switch, `present terminal list` the
+sessions serve holds, and `present terminal kill <page> <session>` ends
+one. A shared instance never runs a session; its terminal blocks say so.
+
+A block that says "Live terminal is off" while status says on: serve may
+run an older binary without the terminal routes (see version skew). Or the
+CLI and serve resolved different workdirs. A block that shows a reason and
+stops: the session could not start, most often a cwd that is relative or
+missing. Fix the block with present_update, then press Run. A session that
+sits blank for about 10 seconds before its prompt: a shell startup hook is
+waiting for a terminal reply the browser never sends. Guard that hook on
+PRESENT_TERMINAL, which every session sets to 1. A changed command reaches
+a running session only after Kill and Run. A restart of serve, including a
+ralph up that rebuilds present, ends every session.
+
 ## version skew
 
 `present version -o json` and `GET {{.BaseURL}}/version` return the same four
@@ -128,3 +152,6 @@ values mean an old process is still serving: `t-man restart present`.
    comes back from `present_source` with an earlier `version`
 4. Failed share: retry from the Share button or `present share <id>`;
    the MCP sandbox lets present_share reach only an https:// shared URL
+5. Terminal block off or stuck: `present terminal status`, then
+   `present terminal list`; end a stuck session with
+   `present terminal kill <page> <session>` and press Run

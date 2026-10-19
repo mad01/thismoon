@@ -34,11 +34,12 @@ The repo's [sample-deck.json][sample-deck] is a fourth: a deck that sets every l
 
 ### Where the decisions are recorded
 
-Three architecture decision records (ADRs) explain why the format is shaped the way it is. Each format section below names the ones that apply, and the deeper reasons live there, not here.
+Four architecture decision records (ADRs) explain why the format is shaped the way it is. Each format section below names the ones that apply, and the deeper reasons live there, not here.
 
 - [ADR-0019][adr-0019]: a page carries a deck beside its brief. The deck is a second rendition under the same id, authored on its own and never converted from the brief. The two share the title, the one graph, the references, and the share link.
 - [ADR-0020][adr-0020]: slides carry layout, notes, and reveal; the deck carries its chrome; the Doc gained the blocks both renditions share. Amended for the graph in columns and the image block, for chart steps, and for the diagram block and frameless charts. A later consequence records that a slide paints no filled box of its own.
 - [ADR-0022][adr-0022]: the browser libraries (Cytoscape, dagre, ELK, Chart.js, D3, the fonts) are fetched at install and pinned by version. An install without network leaves them out: a sankey, a ribbon, or a diagram then shows a note in its place, and the other charts and the graph stay empty.
+- [ADR-0025][adr-0025]: a terminal block's process lives in the local serve, behind a switch that is off by default. Serve reads what a session runs from the stored page, never from the browser, and a shared instance shows a placeholder instead.
 - The service's [CLAUDE.md][svc-claude] holds the renderer's gotchas: what each validator refuses, how the deck view splits a page into slides, how charts and diagrams build in the browser. The markdown import mapping is there too. Read it when a call is refused and the message is not enough.
 - The writing rules follow Stanford's communication teaching. The reader-and-ask step and the named orders come from Matt Abrahams ([three guiding principles][gsb-principles], [the Think Faster, Talk Smarter masterclass][gsb-masterclass]). The bottom line up front comes from [Abrahams and Kramon, Writing to Win][gsb-writing]. The number comparison comes from [Heath and Abrahams, Make Numbers Count][gsb-numbers]. The claim heading, the one idea per slide, and the chart cut to its message come from the Stanford Engineering [Technical Communication Program's visual aids notes][stanford-visual-aids].
 
@@ -87,6 +88,7 @@ Block =                                  // discriminated on `t`
   | {t: "columns", cols}                 | {t: "stat", value, label, sub?}
   | {t: "quote", text, cite?}            | {t: "details", summary, blocks}
   | {t: "image", src, alt, caption?, frame?} | {t: "diagram", nodes, edges?, groups?, direction?, caption?, steps?}
+  | {t: "terminal", session, cmd?, cwd?, prefill?, rows?}
 
 Graph = {                                // the `graph` argument, one per page, shared by brief and deck
   nodes: [{id, label, type?: "center" | "module" | "leaf" | "registry", color?: 0..3,
@@ -120,6 +122,7 @@ Pick by the question the facts answer, not by what looks rich. The right column 
 | two things read side by side: a chart and its caption | `columns` | two sections |
 | an exact command or code | `code` with `lang` | backticks in a `p`, `html` with a `<pre>` |
 | a screenshot or a figure | `image` with an `alt` a listener can use | `html` with an `<img>` |
+| a live demo the talk starts once and comes back to | `terminal`, one session name per demo | a `code` block of pasted output, a screenshot of a terminal |
 | a titled card with an accent | `panel`, in a brief | a slide (deck rule 17) |
 | work in flight | `progress` plus `@chip(b:done)` chips | a sentence with a percentage |
 
@@ -265,6 +268,7 @@ Rules:
 | `quote` | `text`, `cite?` | A quotation with a left rule and the attribution under it |
 | `details` | `summary`, `blocks` | A collapsible block, closed by default, with `summary` as the clickable line. Holds any block but `graph`, `columns`, and `details`. Read-aloud reads it and opens it while a part inside plays. The home for a long timeline or raw numbers |
 | `image` | `src`, `alt`, `caption?`, `frame?` (`false` drops the border) | An image with a caption under it. `src` is an `http(s)` URL, or on this machine an absolute or `~` path to a png, jpeg, gif, or webp file of at most 2 MiB. The tool copies the file into the page store and rewrites `src` to the `/img/<hash>.<ext>` path it is served at, which is what `present_source` returns. A relative path is refused. `alt` is required: read-aloud reads it in the image's place, and the caption after it. Goes inside `columns` and `details`. A shared instance takes image URLs only, and a page with stored images can't be shared until they are URLs |
+| `terminal` | `session`, `cmd?`, `cwd?`, `prefill?`, `rows?` | A live terminal running in the local `present serve`. `session` names the process, 1 to 32 of `a-z`, `0-9`, and `-`. Every block on the page that names it shows the same process, in the brief and the deck alike. `cmd` runs in place of a login shell, and `cwd` is where it starts (a `~` path, or the home directory when omitted). `prefill` is one line of at most 512 characters, typed on the prompt and left for Enter. `rows` is the height, 8 to 60. Blocks naming one session give the same `cmd`, `cwd`, and `prefill`, or the call is refused. Goes inside `columns`, never inside `details`. Nothing runs until the live terminal is switched on; see **Terminal format** |
 
 ### Layout blocks
 
@@ -315,7 +319,7 @@ One example of each, as they go in a section's `blocks`:
 - **`data-fixation`** is applied automatically to the title, summary, table of contents, section headings and subheadings, paragraphs, callouts, table bodies, stat labels and sub lines, quote text, details summaries, and image captions. The page shell adds kv values, list items, and panel titles by element. Chips, table headers, the meta line, a stat's value, and an image stay out of the fixation walk.
 - **Unknown block types** produce an HTML comment error; they don't break the page.
 - **Use `code` blocks for multi-line code**, not `p` with backticks (inline `code` is for short identifiers) and not `html` with a hand-written `<pre>`.
-- **Read-aloud skips tables, kv blocks, and code blocks.** A `stat` reads as its value, label, and sub line; a `details` block reads like prose and opens while a part inside it plays. An `image` reads as its `alt` and then its caption, so write the `alt` as the sentence a listener needs in place of the picture. When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.
+- **Read-aloud skips tables, kv blocks, code blocks, and terminals.** A `stat` reads as its value, label, and sub line; a `details` block reads like prose and opens while a part inside it plays. An `image` reads as its `alt` and then its caption, so write the `alt` as the sentence a listener needs in place of the picture. When the reader will listen to the page, put a comparison in a list with one full sentence per item instead of a table. Name a command in words in the prose and put the exact invocation in a code block beside it: an inline code span mid-sentence reads badly aloud.
 - **Inline markup nests.** A code span, a link, or a chip inside `**bold**` renders as expected.
 
 ### Presenting multiple items
@@ -403,7 +407,8 @@ A good deck is not a shorter brief. Apply these when writing `deck`:
 14. **Notes carry the argument, reveal carries the pace.** Put what you would say, and only that, in `notes`. Set `reveal` on a list that is an argument built one line at a time, never on a list the room should read whole.
 15. **A chart that builds up gets steps.** Give a `chart` `steps` when the room should watch the picture form: one caption per step, and `step` on each series for the step it joins at. Next walks the steps before leaving the slide, on a `reveal` slide right after the chart appears. A jump lands on the finished chart, and the brief lists the captions under it. Three to five steps, each caption one short sentence. A `ribbon` steps by period, one caption per column and no series `step`, so keep a stepped ribbon to three to five periods. See **Stepped charts**.
 16. **An architecture gets a diagram, and a diagram alone fills its slide.** Use a `diagram` block, not the graph, when the slide explains how parts fit. That is boxes with a name and a short text, boundaries around the parts that share a host or a trust level, and labelled arrows. Alone on a slide it fills the slide with its caption under it. A request walkthrough gets `steps`: four or five, each caption one sentence, with `focus` on the box the step is about. At most about twelve boxes and two or three tones per slide; split a bigger picture over slides. See **Diagram format**.
-17. **A slide draws no filled boxes.** The slide is already the container, so a box inside it reads as card UI, and two of them nest. `panel`, `details`, `code`, and a chart with `frame: true` draw a card, so keep them in the brief; the one warn callout of rule 9 is the only box a deck keeps. `tone` colours the heading rule and accent bar, a `section` divider is a heading with an accent bar, not a band, and a `stat` sits plain, alone or in a row.
+17. **A slide draws no filled boxes.** The slide is already the container, so a box inside it reads as card UI, and two of them nest. `panel`, `details`, `code`, and a chart with `frame: true` draw a card, so keep them in the brief. A deck keeps two boxes: the one warn callout of rule 9, and a `terminal`, whose frame is the slide's content (rule 18). `tone` colours the heading rule and accent bar, a `section` divider is a heading with an accent bar, not a band, and a `stat` sits plain, alone or in a row.
+18. **A live demo is a terminal, and its session name ties the slides together.** Give the demo's `terminal` block a slide of its own and leave `rows` out, so it fills the slide. Two slides naming the same `session` show one process. Start Claude on slide 3, talk through slides 4 to 7, and slide 8 with the same session shows what happened meanwhile and takes input again. Every block naming the session repeats its `cmd`, `cwd`, and `prefill` exactly. Put the first command you will run in `prefill`, so the room watches you press Enter instead of watching you type. See **Terminal format**.
 
 ### What each setting is for
 
@@ -530,6 +535,8 @@ The brief for the same incident holds the full timeline, the log excerpts, and t
 ### In the room
 
 The reader opens the deck from the brief's Slides link or at `deck_url`, and moves with Right, Space, or PageDown (next), Left, PageUp, or Backspace (previous), Home and End. On a `reveal` slide Next shows the next step and Prev hides the last one; Home, End, a dot, or a link lands with every step shown. N opens the speaker notes drawer. F or P starts presenting (chrome hidden, one slide filling the window, browser fullscreen when allowed). Pressed in fullscreen it ends, pressed while presenting without fullscreen (after a reload) it asks for fullscreen again; Escape always ends it. The URL's `#3` names the slide, so a link can open on one. An update to the deck reloads the open tab on the same slide, still presenting if it was, so you can edit a deck mid-talk. You can drive the open deck too: `present_deck(id, "start")`, then `"next"`, `"prev"`, `"goto"` with a `slide`, and `"stop"`; every open tab of the deck follows within a second. Open the deck first with `present_open(id, deck: true)`. The header's Audio toggle hides the read-aloud bar, play buttons, and badges. A deck opens with them hidden, so the room never sees them unless the reader turns them on; a brief keeps its own choice.
+
+A deck holding a `terminal` needs the live terminal on. Run `present terminal on` before the talk and `present terminal off` after it; off ends every session the deck started. In browser fullscreen the browser takes Escape for itself and presenting ends. A Chromium browser on `localhost` or https lets a focused terminal keep Escape, and holding Escape still leaves fullscreen. So a demo that needs Escape, such as interrupting Claude, opens the deck on `localhost` in Chrome. Safari, Firefox, and a plain http host such as `http://present.this` leave fullscreen on Escape.
 
 ## Graph format (the `graph` argument)
 
@@ -871,6 +878,32 @@ A step's `focus` lights up the named nodes and groups, everything inside a focus
 
 Keep a diagram to about twelve boxes, two levels of groups, and two or three tones. Past that the room reads nothing; split the picture over slides, one zoom level per slide.
 
+## Terminal format (the `terminal` block)
+
+A `terminal` block puts a live terminal on the page. The local `present serve` runs the process in a pseudo-terminal, and the browser shows it with xterm.js. The process belongs to the page and the block's `session` name, not to the tab ([ADR-0025][adr-0025]). Every update reloads the open tab, which attaches again and replays the recent output, so a demo survives your edits to the deck. Use it for a demo the talk starts once and comes back to. A command the room only needs to read is a `code` block.
+
+```json
+{"sections": [
+  {"h": "Claude starts on the flaky checkout test", "blocks": [
+    {"t": "terminal", "session": "demo", "cmd": "claude", "cwd": "~/code/shop", "prefill": "fix the flaky checkout test"}
+  ]},
+  {"h": "Two tests read one fake clock", "blocks": [
+    {"t": "list", "items": ["The order decides who sees the tick", "It fails one run in twenty"]}
+  ]},
+  {"h": "Claude found the same cause", "blocks": [
+    {"t": "terminal", "session": "demo", "cmd": "claude", "cwd": "~/code/shop", "prefill": "fix the flaky checkout test"}
+  ]}
+]}
+```
+
+- **Nothing runs until the live terminal is on.** It is off by default, and the block then says "Live terminal is off. Run `present terminal on`, then press Run." `present terminal status` prints which. `present terminal off` ends every session within two seconds.
+- **The block attaches when it is first seen**: scrolled into view in the brief, on its slide's first showing in the deck, or on Run. The first attach starts the session and types the `prefill`. Every later attach replays the last 1 MiB of output and takes input again.
+- **What a session runs comes from the stored page.** Serve reads `cmd`, `cwd`, and `prefill` from the page's own block with that session name, never from the browser. A running session keeps what it started with, so a changed `cmd` takes effect after Kill and Run.
+- **Run and Kill sit in the block's header.** Kill ends the process, and the block stays killed through that tab's reloads until Run. Run on a session that has ended starts it again.
+- **`cmd` runs in an interactive login shell**, `zsh -l -i -c <cmd>`, so the PATH set in `~/.zshrc` applies. Without `cmd` the session is the login shell. `cwd` is an absolute or `~` path. A missing directory stops the session from starting, and the block shows why.
+- **A session ends by itself** after two hours with no tab attached, and when serve restarts. A `ralph up` that rebuilds present restarts serve, so none runs during a talk.
+- **A shared instance runs nothing.** A page with terminal blocks shares as usual, and on the shared instance each block says "Live terminal is not available on a shared instance."
+
 ## References (the `references` argument)
 
 The `references` parameter takes `[{title, url}]`: source links rendered at the bottom of the page by the server, and the last slide of a deck. Always include references when the page draws on external sources. Inline links point at the line or PR a sentence is about; references list the sources the whole page drew on. The same URL can appear in both.
@@ -897,6 +930,7 @@ Graph and diagram node tones (`neutral`, `green`, `red`, `blue`, `amber`, `purpl
 [adr-0019]: https://github.com/mad01/thismoon/blob/main/docs/adr/0019-present-deck-beside-brief.md
 [adr-0020]: https://github.com/mad01/thismoon/blob/main/docs/adr/0020-present-slide-layouts-and-chrome.md
 [adr-0022]: https://github.com/mad01/thismoon/blob/main/docs/adr/0022-vendored-browser-assets.md
+[adr-0025]: https://github.com/mad01/thismoon/blob/main/docs/adr/0025-present-terminal-sessions-in-serve.md
 [svc-claude]: https://github.com/mad01/thismoon/blob/main/services/present/CLAUDE.md
 [sample-deck]: https://github.com/mad01/thismoon/blob/main/services/present/internal/render/testdata/sample-deck.json
 [gsb-principles]: https://www.gsb.stanford.edu/insights/three-guiding-principles-successful-communication
