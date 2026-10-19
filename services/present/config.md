@@ -24,7 +24,7 @@ to the working directory instead, which quietly served an empty store.
 ## Flags
 
 These are persistent flags, seen by every subcommand (`present serve`,
-`present mcp`, `present share`, `present unshare`):
+`present mcp`, `present share`, `present unshare`, `present terminal`):
 
 - `--workdir` (string; env `PRESENT_WORKDIR`): directory holding `pages/`,
   the page store both processes read and write. The default is
@@ -103,6 +103,22 @@ sets `PRESENT_WORKDIR`, so both processes agree regardless of which branch
 the default would take. To move an existing store, move the directory and
 set `PRESENT_WORKDIR` (or `--workdir`) to the new path on both processes;
 there is no automatic migration to undo.
+
+## The live terminal switch
+
+The live terminal has no flag and no environment variable. Its switch is a
+state file, `terminal.enabled` in the workdir: `present terminal on`
+creates it, `present terminal off` removes it, and `present terminal
+status` reports it. Only a local `present serve` reads it, on every
+terminal request and every 2 seconds, so the switch takes effect without a
+restart, and turning it off ends every running session. `present terminal`
+resolves `--workdir` the way serve does, so the two have to agree here too.
+`present terminal list` and `kill` call the serve on `--port`. A shared
+instance never reads the file.
+
+Every terminal session starts with serve's environment minus its `TERM`,
+plus `TERM=xterm-256color` and `PRESENT_TERMINAL=1`. present itself reads
+neither; they are there for the session's shell startup files.
 
 ## Environment variables
 

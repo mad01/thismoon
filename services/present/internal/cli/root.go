@@ -31,7 +31,10 @@ Subcommands:
   deck    Drive a page's slide deck in the open browser tab (start, stop,
           next, prev, goto).
   share   Push a local page to the shared instance (--shared-url, --author-key).
-  key     Mint an author key for the shared instance.`,
+  key     Mint an author key for the shared instance.
+  terminal
+          Switch the live terminal for deck slides on or off; list or kill
+          its sessions.`,
 	// Let main print the error once; cobra stays quiet on both usage and errors.
 	SilenceUsage:  true,
 	SilenceErrors: true,

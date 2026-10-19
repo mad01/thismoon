@@ -48,3 +48,15 @@ _Avoid_: alluvial, bump chart, stream graph, sankey (a sankey shows volume flowi
 **Diagram**:
 An architecture picture on a page: boxes with a name and a short text, labelled boundaries (groups) around them, and labelled arrows between the boxes. The browser lays it out and draws it as SVG with no card of its own. Many per page. A stepped diagram shows its elements step by step and lights up a step's focus.
 _Avoid_: graph (the page's one network map), flowchart, architecture map
+
+**Terminal block**:
+A block with `t: "terminal"` that shows a terminal session inside a brief section or on a slide. It names the session, and for a session it starts, the command, the directory, and one line typed on the prompt. Every terminal block on a page that names one session shows the same process. On a slide it is the one card a deck keeps, since the live process is the slide's content.
+_Avoid_: shell (in present the shell is the static HTML chrome: shell.html, pageShell, deckShell), console, terminal widget
+
+**Terminal session**:
+The process a local present serve runs in a pseudo-terminal (PTY) for one page under one session name. It starts the first time a terminal block naming it attaches, and it outlives the tab that showed it. A tab that attaches later replays its recent output and takes input again. Killing it ends it, and so does a long spell with no tab watching. Switching the live terminal off or stopping serve ends every session.
+_Avoid_: shell session, console, terminal tab
+
+**Live terminal**:
+The feature that lets terminal blocks run terminal sessions. Off by default and local only: `present terminal on` creates the switch file `terminal.enabled` in the workdir, and `present terminal off` removes it and ends every session. A shared instance has no live terminal and shows a placeholder in each terminal block.
+_Avoid_: remote shell, web console

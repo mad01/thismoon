@@ -8,7 +8,8 @@ their own licences, listed here.
 
 Licences were checked on 2026-10-07 against the `license` field of each
 npm package and the `METADATA.pb` and `OFL.txt` of each family in the
-google/fonts repository.
+google/fonts repository. The two xterm entries were checked the same way
+on 2026-10-19.
 
 ## Browser libraries
 
@@ -22,6 +23,8 @@ Each file comes from `https://cdn.jsdelivr.net/npm/<package>@<version>/`.
 - chart.js 4.4.6, MIT, https://github.com/chartjs/Chart.js
 - chartjs-chart-sankey 0.15.3, MIT, https://github.com/kurkle/chartjs-chart-sankey
 - d3 7.9.0, ISC, https://github.com/d3/d3
+- @xterm/xterm 6.0.0, MIT, https://github.com/xtermjs/xterm.js
+- @xterm/addon-fit 0.11.0, MIT, https://github.com/xtermjs/xterm.js
 
 ## Fonts
 

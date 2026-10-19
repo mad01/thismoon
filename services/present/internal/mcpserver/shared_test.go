@@ -227,3 +227,54 @@ func TestLocalCreateIgnoresBearer(t *testing.T) {
 		)
 	}
 }
+
+// A shared instance takes a terminal block as a local one does: the Doc
+// validates and renders to the same markup in both modes, and the browser
+// shows a placeholder on the shared instance, which runs no sessions.
+func TestSharedCreateAcceptsTerminalBlock(t *testing.T) {
+	ctx := context.Background()
+	doc := `{"sections":[{"h":"Demo","blocks":[` +
+		`{"t":"terminal","session":"demo","cmd":"claude","rows":24}]}]}`
+	in := createInput{Title: "T", Content: doc, Deck: doc}
+
+	shared, _ := sharedHandlers(t)
+	req := request(author.NewKey(), nil)
+	_, sharedOut, err := shared.handleCreateShared(ctx, req, sharedCreateInput{createInput: in})
+	if err != nil {
+		t.Fatalf("shared create: %v", err)
+	}
+	localStore, err := store.NewFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := &handlers{
+		store:   localStore,
+		mode:    ModeLocal,
+		baseURL: "http://localhost:7423",
+		now:     time.Now,
+		open:    func(string) error { return nil },
+	}
+	_, localOut, err := local.handleCreate(ctx, nil, in)
+	if err != nil {
+		t.Fatalf("local create: %v", err)
+	}
+
+	sp, err := shared.store.Get(ctx, sharedOut.ID)
+	if err != nil {
+		t.Fatalf("shared get: %v", err)
+	}
+	lp, err := local.store.Get(ctx, localOut.ID)
+	if err != nil {
+		t.Fatalf("local get: %v", err)
+	}
+	markup := `<div class="present-terminal wk-code-block" data-session="demo"`
+	if !strings.Contains(sp.Content, markup) {
+		t.Errorf("shared content lacks the terminal markup: %s", sp.Content)
+	}
+	if !strings.Contains(sp.Deck, markup) {
+		t.Errorf("shared deck lacks the terminal markup: %s", sp.Deck)
+	}
+	if sp.Content != lp.Content || sp.Deck != lp.Deck {
+		t.Errorf("shared and local renditions differ:\n%s\n%s", sp.Deck, lp.Deck)
+	}
+}

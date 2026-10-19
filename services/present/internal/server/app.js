@@ -1282,6 +1282,534 @@
     });
   }
 
+  // ── Live terminal blocks (xterm.js) ──
+  // A terminal block shows a terminal session serve owns, named by the page
+  // and the block's data-session, over a WebSocket on
+  // /api/p/{id}/terminal/{session}. The session outlives the tab: every page
+  // update reloads it (watchVersion), so the tab attaches again and serve
+  // replays the kept scrollback before the live stream. Two blocks naming
+  // one session show the same process, each over its own socket, and the
+  // last resize wins. A block opens its xterm once its canvas has a width (a
+  // slide not showing has none) and the mono font has loaded, and attaches
+  // the first time it is seen: scrolled into view in the brief, its slide's
+  // first showing in the deck, or Run. The switch lives in serve (present
+  // terminal on); with it off, or on a server without the route (an older
+  // binary, a shared instance), the canvas names the command instead.
+  var TERMINAL_ROWS = 24; // the rows when the block names none
+  var TERMINAL_FONT_PX = 13; // the size when the stylesheet sets no --terminal-font-size
+  var TERMINAL_LINE_GUESS = 1.3; // a cell's height per font px, until xterm has measured one
+  var TERMINAL_SCROLLBACK = 5000;
+  var TERMINAL_RETRY_MS = 500; // the first reconnect delay, doubled per try
+  var TERMINAL_RETRY_MAX_MS = 8000;
+  var TERMINAL_RETRIES = 10;
+  var TERMINAL_OFF_POLL_MS = 3000; // how often a block showing the off note asks the switch again
+  var TERMINAL_FONT_WAIT_MS = 2000; // how long a terminal waits for the mono font
+  var terminals = []; // every upgraded block's controller
+  var terminalLeaving = false; // the tab is unloading, so a closing socket is no drop
+  var terminalFonts = null; // the one wait for the mono font, made on first use
+
+  function terminalVar(el, name) {
+    return getComputedStyle(el).getPropertyValue(name).trim();
+  }
+  function terminalFontSize(ctl) {
+    return parseFloat(terminalVar(ctl.canvas, '--terminal-font-size')) || TERMINAL_FONT_PX;
+  }
+  // terminalFills says the stylesheet gives the canvas its height (a slide
+  // whose only block is the terminal sets --terminal-fill) and the block
+  // names no rows, so the rows follow the height instead of setting it.
+  function terminalFills(ctl) {
+    return !ctl.rowsNamed && terminalVar(ctl.canvas, '--terminal-fill') === '1';
+  }
+  // terminalFontsReady resolves once the page's mono face has loaded, or
+  // after a short wait when it does not (no fonts asset). xterm measures
+  // its cell when it opens, and a fallback face would leave the columns
+  // off until a reload.
+  function terminalFontsReady(family) {
+    if (!terminalFonts) {
+      var load = document.fonts && document.fonts.load
+        ? document.fonts.load(TERMINAL_FONT_PX + 'px ' + family).catch(function () {})
+        : Promise.resolve();
+      terminalFonts = Promise.race([load, new Promise(function (done) { setTimeout(done, TERMINAL_FONT_WAIT_MS); })]);
+    }
+    return terminalFonts;
+  }
+  // hexColor is colorLiteral as #rrggbb, the form xterm's theme parser
+  // always takes.
+  function hexColor(value) {
+    var c = colorLiteral(value).match(/\d+/g);
+    return '#' + c.slice(0, 3).map(function (n) { return ('0' + Number(n).toString(16)).slice(-2); }).join('');
+  }
+  function darkColor(hex) {
+    var n = parseInt(hex.slice(1), 16);
+    return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.5;
+  }
+  // terminalTheme maps the palette onto xterm's colours, read at call time
+  // so a theme change only sets them again. The frame is the code block's
+  // (--code-bg and --code-text, which webkit scopes to the block). The ANSI
+  // colours swap ends with the mode. On a light page the semantic roles
+  // (red, green, ...) read near 3:1, so the normal colours take the tone
+  // text roles (about 8:1) and the bright ones the semantic roles. On a
+  // dark page the tone text is washed out (above 11:1) and the semantic
+  // roles read near 5:1, so the two trade places. Black is the strongest
+  // ink on a light page and a dim one on a dark page. On a light page
+  // white and bright white are the page itself (--bg, the paper the block
+  // sits on), so black text on a white background stays legible, and
+  // bright black is the lightest text grey, which keeps it apart from
+  // bright white. Every colour resolves through a probe in the block,
+  // since a role can be scoped or a color-mix().
+  function terminalTheme(block) {
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;width:0;height:0;transition:none';
+    block.appendChild(probe);
+    function color(expr) {
+      probe.style.color = '';
+      probe.style.color = expr;
+      return hexColor(getComputedStyle(probe).color);
+    }
+    var bg = color('var(--code-bg)'), fg = color('var(--code-text)'), dark = darkColor(bg);
+    function tone(t) { return 'var(--tone-' + t + '-text)'; }
+    function role(r) { return 'var(--' + r + ')'; }
+    // ansi returns the [normal, bright] pair for one hue from its tone and
+    // its semantic role.
+    function ansi(t, r) {
+      return dark ? [color(role(r)), color(tone(t))] : [color(tone(t)), color(role(r))];
+    }
+    function mix(a, b) { return 'color-mix(in srgb, ' + a + ' 50%, ' + b + ')'; }
+    var red = ansi('red', 'red'), green = ansi('green', 'green'), yellow = ansi('amber', dark ? 'yellow' : 'amber');
+    var blue = ansi('blue', 'blue'), magenta = ansi('purple', 'purple');
+    var cyan = dark
+      ? [color(mix(role('blue'), role('green'))), color(mix(tone('blue'), tone('green')))]
+      : [color(mix(tone('blue'), tone('green'))), color(mix(role('blue'), role('green')))];
+    var theme = {
+      background: bg, foreground: fg, cursor: fg, cursorAccent: bg,
+      // xterm draws an opaque selection colour at 30 % over the text.
+      selectionBackground: color(role('primary')),
+      black: color(role(dark ? 'border-hover' : 'text-1')), brightBlack: color(role('text-3')),
+      red: red[0], brightRed: red[1], green: green[0], brightGreen: green[1],
+      yellow: yellow[0], brightYellow: yellow[1], blue: blue[0], brightBlue: blue[1],
+      magenta: magenta[0], brightMagenta: magenta[1], cyan: cyan[0], brightCyan: cyan[1],
+      white: color(role(dark ? 'text-2' : 'bg')), brightWhite: color(role(dark ? 'text-1' : 'bg'))
+    };
+    block.removeChild(probe);
+    return theme;
+  }
+  // terminalStatus shows the block's state in its header (connecting,
+  // live, exited (code N), off, disconnected, killed); data-state carries
+  // it for the stylesheet.
+  function terminalStatus(ctl, state, text) {
+    ctl.state = state;
+    ctl.block.setAttribute('data-state', state);
+    if (ctl.status) ctl.status.textContent = text || state;
+  }
+  // terminalNote lays a message over the canvas (the switch is off, the
+  // asset is missing), or takes it away when given nothing. The message is
+  // one span in the centring box, so its words and code flow as a line.
+  function terminalNote(ctl, parts) {
+    var n = ctl.canvas.querySelector('.present-terminal-note');
+    if (!parts) { if (n) n.remove(); return; }
+    if (!n) { n = Webkit.el('div', { class: 'present-terminal-note' }); ctl.canvas.appendChild(n); }
+    n.textContent = '';
+    n.appendChild(Webkit.el('span', {}, [].concat(parts)));
+  }
+  function terminalOffNote() {
+    return ['Live terminal is off. Run ', Webkit.el('code', {}, 'present terminal on'), ', then press Run.'];
+  }
+  // terminalSwitch asks serve whether the live terminal is on: 'on', 'off'
+  // (switched off, or a 404 from a server without the route), or 'error'
+  // (serve unreachable, which a retry may get past).
+  function terminalSwitch() {
+    return fetch('/api/terminal', { headers: { accept: 'application/json' } })
+      .then(function (r) {
+        if (r.status === 404) return 'off';
+        if (!r.ok) return 'error';
+        return r.json().then(function (d) { return d && d.enabled ? 'on' : 'off'; });
+      })
+      .catch(function () { return 'error'; });
+  }
+  function terminalPath(ctl) {
+    return '/api/p/' + encodeURIComponent(id) + '/terminal/' + encodeURIComponent(ctl.session);
+  }
+  function terminalSend(ctl, data) {
+    if (ctl.ws && ctl.ws.readyState === WebSocket.OPEN) ctl.ws.send(data);
+  }
+  // terminalResize tells serve the terminal's size. A block not showing
+  // sends nothing: its size is not the one on screen.
+  function terminalResize(ctl) {
+    if (!ctl.term || !ctl.shown) return;
+    terminalSend(ctl, JSON.stringify({ t: 'resize', cols: ctl.term.cols, rows: ctl.term.rows }));
+  }
+  // terminalHeight is the canvas height that holds the block's rows: the
+  // cell height xterm measured (the private field the fit addon reads as
+  // well) times the rows, plus the padding above and below the terminal
+  // element (--terminal-pad-y, which the stylesheet sets that padding
+  // from). Before xterm opens it has measured nothing, so the cell is the
+  // guess; the placeholder takes its height from here too, which keeps the
+  // page from jumping when xterm opens.
+  function terminalHeight(ctl) {
+    var core = ctl.term && ctl.term._core, dims = core && core._renderService && core._renderService.dimensions;
+    var cell = dims && dims.css && dims.css.cell && dims.css.cell.height;
+    if (!cell) cell = Math.ceil(terminalFontSize(ctl) * TERMINAL_LINE_GUESS);
+    var pad = parseFloat(terminalVar(ctl.canvas, '--terminal-pad-y')) || 0;
+    return Math.ceil(ctl.rows * cell + 2 * pad);
+  }
+  // terminalFit sizes the canvas and the terminal to the context: the font
+  // size the stylesheet names (larger while presenting), the canvas height
+  // from the rows unless the block fills (terminalFills), and the columns
+  // from the width. Coming back into view it sends its size again, since
+  // another view of the same session may have resized it meanwhile.
+  function terminalFit(ctl) {
+    var term = ctl.term, canvas = ctl.canvas;
+    if (!term) return;
+    if (canvas.clientWidth < 1) { ctl.shown = false; return; }
+    var size = terminalFontSize(ctl);
+    if (term.options.fontSize !== size) term.options.fontSize = size;
+    canvas.style.height = terminalFills(ctl) ? '' : terminalHeight(ctl) + 'px';
+    ctl.fit.fit();
+    if (!ctl.shown) { ctl.shown = true; terminalResize(ctl); }
+  }
+  // terminalMount opens the block's xterm once the canvas has a width and
+  // the font has loaded, then fits it and attaches when that is already
+  // wanted. A later call only refits. The placeholder height is set again
+  // first, since the font size may have changed since the upgrade (a deck
+  // that comes back presenting after a reload).
+  function terminalMount(ctl) {
+    if (ctl.term) { terminalFit(ctl); return; }
+    if (ctl.inert || ctl.opening || ctl.canvas.clientWidth < 1) return;
+    ctl.opening = true;
+    if (!terminalFills(ctl)) ctl.canvas.style.height = terminalHeight(ctl) + 'px';
+    var family = cssVar('--mono', 'monospace');
+    terminalFontsReady(family).then(function () {
+      var term = new Terminal({
+        cursorBlink: true, scrollback: TERMINAL_SCROLLBACK, fontFamily: family,
+        fontSize: terminalFontSize(ctl), theme: terminalTheme(ctl.block)
+      });
+      ctl.fit = new FitAddon.FitAddon();
+      term.loadAddon(ctl.fit);
+      term.open(ctl.canvas);
+      ctl.term = term;
+      term.onData(function (d) { terminalSend(ctl, ctl.encoder.encode(d)); });
+      // Binary input (some mouse reports) is one byte per character.
+      term.onBinary(function (d) {
+        var b = new Uint8Array(d.length);
+        for (var i = 0; i < d.length; i++) b[i] = d.charCodeAt(i) & 255;
+        terminalSend(ctl, b);
+      });
+      term.onResize(function () { terminalResize(ctl); });
+      terminalFit(ctl);
+      if (ctl.wanted) terminalAttach(ctl);
+    });
+  }
+  // terminalAttach connects the block to its session once serve says the
+  // live terminal is on. Off, the canvas says how to turn it on and Run
+  // asks again. A block held by Kill stays down until Run, so a later
+  // showing does not start the session again, and an inert block (a shared
+  // instance, no xterm asset) never asks at all.
+  function terminalAttach(ctl) {
+    if (ctl.held || ctl.inert) return;
+    ctl.wanted = true;
+    if (!ctl.term) { terminalMount(ctl); return; }
+    if (ctl.ws || ctl.checking || ctl.exited || terminalLeaving) return;
+    clearTimeout(ctl.retry);
+    ctl.checking = true;
+    terminalStatus(ctl, 'connecting');
+    terminalSwitch().then(function (sw) {
+      ctl.checking = false;
+      if (ctl.held) return;
+      if (sw === 'off') { terminalStatus(ctl, 'off'); terminalNote(ctl, terminalOffNote()); terminalPollOff(ctl); return; }
+      if (sw === 'error') { terminalRetry(ctl); return; }
+      terminalNote(ctl, null);
+      terminalConnect(ctl);
+    });
+  }
+  // terminalPollOff keeps a block that found the switch off asking, so
+  // `present terminal on` in another window starts it without a reload or
+  // a Run press, the way its first showing would have. The asks are quiet
+  // (no status change) and pause while the tab is hidden or the block is
+  // off screen (a slide not showing has no width), so only the block the
+  // room sees starts its session. A block whose session has ended waits
+  // for Run instead: the switch coming back is no reason to run its
+  // command again.
+  function terminalPollOff(ctl) {
+    clearTimeout(ctl.retry);
+    ctl.retry = setTimeout(function () {
+      if (ctl.state !== 'off' || ctl.exited || ctl.held || ctl.ws) return;
+      if (document.hidden || ctl.canvas.clientWidth < 1 || terminalUnrevealed(ctl)) { terminalPollOff(ctl); return; }
+      terminalSwitch().then(function (sw) {
+        if (ctl.state !== 'off' || ctl.exited || ctl.held || ctl.ws) return;
+        if (sw === 'on') terminalAttach(ctl); else terminalPollOff(ctl);
+      });
+    }, TERMINAL_OFF_POLL_MS);
+  }
+  // terminalConnect opens the socket. The query carries the size only:
+  // serve reads what the session runs (its command, directory and prefill)
+  // from the stored page's block of that name, never from the browser,
+  // since a script injected into the page body could otherwise open the
+  // socket with any command. The block's data-cmd, data-cwd and
+  // data-prefill are there for the reader.
+  function terminalConnect(ctl) {
+    var q = 'cols=' + ctl.term.cols + '&rows=' + ctl.term.rows;
+    var ws;
+    try {
+      ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + terminalPath(ctl) + '?' + q);
+    } catch (e) { terminalRetry(ctl); return; }
+    ws.binaryType = 'arraybuffer';
+    ctl.ws = ws;
+    // Kill pressed while this socket was connecting waits for it
+    // (terminalKill), since serve may be starting the session already.
+    ws.onopen = function () {
+      if (ctl.ws === ws && ctl.held) ws.send(JSON.stringify({ t: 'kill' }));
+    };
+    ws.onmessage = function (e) { terminalMessage(ctl, e.data); };
+    // A socket this block let go of (Run on an exited session, Kill) is no
+    // longer ctl.ws, so its close starts nothing. A held block whose socket
+    // closes before the exit frame (it never opened, or dropped after the
+    // kill went out) ends the session through the DELETE route instead.
+    ws.onclose = function (e) {
+      if (ctl.ws !== ws) return;
+      ctl.ws = null;
+      if (ctl.exited || terminalLeaving) return;
+      if (ctl.held) { terminalDeleteHeld(ctl); return; }
+      terminalClosed(ctl, e.code, e.reason);
+    };
+  }
+  // terminalClosed reads why a socket closed without an exit frame. None
+  // of 1000 (the session ended, its exit frame lost), 1008 (serve refused
+  // the session, a bad cwd in its block say, with a reason meant for the
+  // reader), and 1001 (serve is closing) comes right by retrying, which
+  // would only ask again and again, so the block waits for Run. 1013
+  // (the socket fell behind and serve dropped it) and any other drop
+  // reconnect, and the replay fills in what was missed.
+  function terminalClosed(ctl, code, reason) {
+    if (code === 1000) {
+      terminalExited(ctl, 'ended');
+    } else if (code === 1008) {
+      terminalStatus(ctl, 'disconnected', 'refused');
+      terminalNote(ctl, reason || 'serve refused this terminal.');
+    } else if (code === 1001) {
+      terminalStatus(ctl, 'disconnected', 'server closing');
+    } else {
+      terminalRetry(ctl);
+    }
+  }
+  // terminalMessage takes one frame: PTY bytes in a binary frame, control
+  // JSON in a text frame. hello comes before the replay, which holds the
+  // whole kept scrollback, so the screen starts over rather than repeat
+  // what an earlier socket already showed.
+  function terminalMessage(ctl, data) {
+    if (typeof data !== 'string') { ctl.term.write(new Uint8Array(data)); return; }
+    var msg;
+    try { msg = JSON.parse(data); } catch (e) { return; }
+    // Valid JSON need not be an object (null, a number), and reading .t off
+    // null throws.
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.t === 'hello') {
+      ctl.term.reset();
+      ctl.tries = 0;
+      // A held block is open only to send the kill, so it never says live.
+      if (!ctl.held) terminalStatus(ctl, 'live');
+      terminalResize(ctl);
+    } else if (msg.t === 'exit') {
+      terminalExited(ctl, 'exited (code ' + msg.code + ')');
+    }
+  }
+  // terminalExited marks the session ended. `present terminal off` ends
+  // every session the same way a program exiting does, so the block asks
+  // the switch once and, when it is off, shows the off note in place of
+  // the exit code. A Run pressed meanwhile keeps its own state.
+  function terminalExited(ctl, label) {
+    ctl.exited = true;
+    terminalStatus(ctl, 'exited', label);
+    terminalSwitch().then(function (sw) {
+      if (sw !== 'off' || !ctl.exited || ctl.ws) return;
+      terminalStatus(ctl, 'off');
+      terminalNote(ctl, terminalOffNote());
+    });
+  }
+  // terminalRetry reconnects after a dropped socket or an unreachable
+  // serve: 0.5 s doubling to 8 s, ten tries, then it stays disconnected
+  // until Run. Every try asks the switch again, so turning it off ends the
+  // retries with the off note.
+  function terminalRetry(ctl) {
+    terminalStatus(ctl, 'disconnected');
+    if (ctl.tries >= TERMINAL_RETRIES) return;
+    var delay = Math.min(TERMINAL_RETRY_MS * Math.pow(2, ctl.tries), TERMINAL_RETRY_MAX_MS);
+    ctl.tries++;
+    clearTimeout(ctl.retry);
+    ctl.retry = setTimeout(function () { terminalAttach(ctl); }, delay);
+  }
+  function terminalLetGo(ctl) {
+    var ws = ctl.ws;
+    ctl.ws = null;
+    clearTimeout(ctl.retry);
+    if (ws) { try { ws.close(); } catch (e) {} }
+  }
+  function terminalDelete(ctl) {
+    return fetch(terminalPath(ctl), { method: 'DELETE' }).catch(function () {});
+  }
+  // terminalDeleteHeld ends a held block's session through the DELETE
+  // route and says killed, unless Run has taken the block back meanwhile
+  // or the session has exited (its exit code says more).
+  function terminalDeleteHeld(ctl) {
+    terminalDelete(ctl).then(function () {
+      if (ctl.held && !ctl.exited) terminalStatus(ctl, 'killed');
+    });
+  }
+  // The hold Kill sets outlives the tab's reloads: Kill removes the
+  // session from serve, so the next attach would start the command again
+  // with no click, and every page update reloads the tab (watchVersion).
+  // sessionStorage keeps it per tab, keyed by the page and the session,
+  // until Run; every block naming the session shares it, as they share
+  // the process.
+  function terminalHoldKey(session) {
+    return 'present-terminal-held:' + id + ':' + session;
+  }
+  function terminalHeldBefore(session) {
+    try { return sessionStorage.getItem(terminalHoldKey(session)) === '1'; } catch (e) { return false; }
+  }
+  function terminalHold(ctl, on) {
+    terminals.forEach(function (c) { if (c.session === ctl.session) c.held = on; });
+    try {
+      if (on) sessionStorage.setItem(terminalHoldKey(ctl.session), '1');
+      else sessionStorage.removeItem(terminalHoldKey(ctl.session));
+    } catch (e) {}
+  }
+  // terminalRun is the Run button. A block not connected attaches (asking
+  // the switch again); an exited session starts over, removed first, since
+  // attaching would only replay its end; a live one takes the focus.
+  function terminalRun(ctl) {
+    ctl.tries = 0;
+    terminalHold(ctl, false);
+    if (ctl.exited) {
+      terminalLetGo(ctl);
+      ctl.exited = false;
+      terminalDelete(ctl).then(function () {
+        if (ctl.term) ctl.term.reset();
+        terminalAttach(ctl);
+      });
+    } else {
+      terminalAttach(ctl);
+    }
+    if (ctl.term) ctl.term.focus();
+  }
+  // terminalKill is the Kill button: over the socket while connected
+  // (serve answers with the exit frame), otherwise through the DELETE
+  // route, which also clears an exited session from serve's list. A socket
+  // still connecting is kept: serve may be starting the session, and one
+  // closed now could leave the process running after a DELETE that came
+  // first and found nothing. Its onopen sends the kill, and its onclose
+  // falls back to the DELETE.
+  function terminalKill(ctl) {
+    terminalHold(ctl, true);
+    var ws = ctl.ws;
+    if (ws && !ctl.exited && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ t: 'kill' }));
+      return;
+    }
+    if (ws && !ctl.exited && ws.readyState === WebSocket.CONNECTING) return;
+    terminalLetGo(ctl);
+    terminalDeleteHeld(ctl);
+  }
+  // terminalUnrevealed says the block sits in a deck fragment not shown
+  // yet. visibility:hidden keeps its box, so it reads as on screen, but
+  // nobody can see it, Run and Kill included; the deck's steps call
+  // terminalShow once the fragment shows.
+  function terminalUnrevealed(ctl) {
+    return !!ctl.block.closest('.fragment:not(.shown)');
+  }
+  // terminalShow is what the deck calls when the block's slide shows, and
+  // its fragment: it attaches on the first showing it can be seen in and
+  // refits to the slide's size and font.
+  function terminalShow(ctl) {
+    terminalMount(ctl);
+    if (!ctl.wanted && !terminalUnrevealed(ctl)) terminalAttach(ctl);
+  }
+  // terminalObserve watches a live block: a resize refits the terminal to
+  // its canvas, and the first time the block is seen it attaches. The
+  // observer stays while the block is in an unrevealed fragment; a block
+  // the deck attached meanwhile only ends the watch.
+  function terminalObserve(ctl) {
+    if (typeof ResizeObserver === 'function') {
+      // A frame later, since the fit sets the height of the canvas the
+      // observer watches, which the browser reports as a loop otherwise.
+      new ResizeObserver(function () { requestAnimationFrame(function () { terminalMount(ctl); }); }).observe(ctl.canvas);
+    }
+    if (!('IntersectionObserver' in window)) { if (!terminalUnrevealed(ctl)) terminalAttach(ctl); return; }
+    var io = new IntersectionObserver(function (entries) {
+      if (!entries[entries.length - 1].isIntersecting || terminalUnrevealed(ctl)) return;
+      io.disconnect();
+      if (!ctl.wanted) terminalAttach(ctl);
+    });
+    io.observe(ctl.block);
+  }
+  // upgradeTerminal makes one terminal block live: its controller, Run and
+  // Kill, and the observers. The canvas gets the height its rows need at
+  // once (terminalHeight, with the cell guessed), so the page does not
+  // jump when xterm opens, and a placeholder holds the same frame. A block
+  // whose session this tab killed starts held, saying killed, until Run.
+  // A block that can never run is inert: on a shared instance (the shell
+  // marks its html data-present-mode="shared"), which has no terminal
+  // routes, it says so, hides Run and Kill, and never asks the server
+  // anything; without the xterm asset it says so and only Kill works.
+  function upgradeTerminal(block) {
+    var canvas = block.querySelector('.present-terminal-canvas');
+    if (block._terminal || !canvas) return;
+    var rows = parseInt(block.getAttribute('data-rows'), 10);
+    var shared = document.documentElement.getAttribute('data-present-mode') === 'shared';
+    var missing = typeof Terminal !== 'function' || !window.FitAddon;
+    var session = block.getAttribute('data-session') || '';
+    var ctl = {
+      block: block, canvas: canvas, status: block.querySelector('.present-terminal-status'),
+      session: session, rowsNamed: rows > 0, rows: rows > 0 ? rows : TERMINAL_ROWS,
+      term: null, fit: null, ws: null, encoder: new TextEncoder(), state: '', wanted: false,
+      exited: false, held: !shared && terminalHeldBefore(session),
+      checking: false, opening: false, shown: false, tries: 0, retry: 0, inert: shared || missing
+    };
+    block._terminal = ctl;
+    terminals.push(ctl);
+    if (!terminalFills(ctl)) canvas.style.height = terminalHeight(ctl) + 'px';
+    var run = block.querySelector('.present-terminal-run'), kill = block.querySelector('.present-terminal-kill');
+    if (shared) {
+      [run, kill].forEach(function (b) { if (b) b.hidden = true; });
+      terminalStatus(ctl, 'unavailable');
+      terminalNote(ctl, 'Live terminal is not available on a shared instance.');
+      return;
+    }
+    if (ctl.held) terminalStatus(ctl, 'killed');
+    if (kill) kill.addEventListener('click', function () { terminalKill(ctl); });
+    if (missing) {
+      terminalNote(ctl, 'Live terminal needs the xterm asset: run make cache in services/present.');
+      return;
+    }
+    if (run) run.addEventListener('click', function () { terminalRun(ctl); });
+    terminalObserve(ctl);
+    terminalMount(ctl);
+  }
+  function initPresentTerminals(root) {
+    (root || document).querySelectorAll('.present-terminal').forEach(upgradeTerminal);
+  }
+  // One set of page listeners serves every terminal. A theme change sets
+  // the colours again. A mousedown outside a focused terminal blurs it, so
+  // the keys go back to the page (the deck's keys yield to the textarea
+  // xterm types into). Unloading marks the closing sockets as expected, so
+  // none reconnects, and a page back from the back-forward cache attaches
+  // again.
+  document.addEventListener('wk-themechange', function () {
+    terminals.forEach(function (ctl) { if (ctl.term) ctl.term.options.theme = terminalTheme(ctl.block); });
+  });
+  document.addEventListener('mousedown', function (e) {
+    terminals.forEach(function (ctl) {
+      if (ctl.term && ctl.block.contains(document.activeElement) && !ctl.block.contains(e.target)) ctl.term.blur();
+    });
+  });
+  window.addEventListener('pagehide', function () { terminalLeaving = true; });
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    terminalLeaving = false;
+    terminals.forEach(function (ctl) {
+      if (ctl.wanted && !ctl.exited) { ctl.tries = 0; terminalAttach(ctl); }
+    });
+  });
+
   // ── Graph edge flow ── marches the dash pattern of every edge with data.flow
   // from source to target; speed follows data.weight. presentGraphStyle gives
   // those edges line-dash-pattern [10, 6], so the period here is 16. The
@@ -1485,6 +2013,7 @@
     initGraphAndFlow();
     initPresentCharts();
     initPresentDiagrams();
+    initPresentTerminals(brief);
 
     brief.querySelectorAll('a[href]:not([href^="#"])').forEach(function (a) {
       a.target = '_blank'; a.rel = 'noopener';
@@ -1714,8 +2243,10 @@
     nodes.forEach(function (n) { body.appendChild(n); });
     var slide = Webkit.el('section', { class: 'slide ' + cls }, [body]);
     // A visual (the graph, a chart, an image, a diagram) sizes the slide by the
-    // viewport instead of zooming the body while presenting.
+    // viewport instead of zooming the body while presenting. A terminal does
+    // too: a zoomed xterm would also place its selection off the pointer.
     if (body.querySelector('#cy-graph, .present-chart, wk-figure, .present-diagram')) slide.classList.add('has-viz');
+    if (body.querySelector('.present-terminal')) slide.classList.add('has-viz');
     return slide;
   }
 
@@ -1780,6 +2311,7 @@
       if (tag === 'wk-stat') slide.classList.add('solo', 'solo-stat');
       else if (tag === 'blockquote') slide.classList.add('solo', 'solo-quote');
       else if (blocks[0].classList.contains('present-diagram')) slide.classList.add('solo', 'solo-diagram');
+      else if (blocks[0].classList.contains('present-terminal')) slide.classList.add('solo', 'solo-terminal');
     }
     var notes = null;
     Array.prototype.slice.call(section.children).forEach(function (c) {
@@ -1997,6 +2529,9 @@
       a.target = '_blank'; a.rel = 'noopener';
     });
     if (window.Webkit && typeof Webkit.enhanceProse === 'function') Webkit.enhanceProse(deck);
+    // Terminals get their controller now and open and attach on their
+    // slide's first showing (refreshVisuals), when the canvas has a size.
+    initPresentTerminals(deck);
 
     // Read-aloud sits on the title slide, under the summary when there is
     // one, and registers every slide's section the way the brief does, so
@@ -2061,6 +2596,11 @@
         if (!b._built) buildDiagram(b, { duration: transition === 'none' ? 0 : 400 });
         else if (b._diagramFit) b._diagramFit();
       });
+      // A terminal attaches on its slide's first showing and refits to the
+      // size and font presenting sets.
+      slide.querySelectorAll('.present-terminal').forEach(function (b) {
+        if (b._terminal) terminalShow(b._terminal);
+      });
     }
 
     // Steps: how many of the current slide's steps (reveal fragments and
@@ -2072,7 +2612,9 @@
     function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
     // applySteps lands the slide on step n: the first n fragments shown and
     // every stepped block at the highest step among its entries below n
-    // (step 0 before its first one).
+    // (step 0 before its first one). A terminal in a fragment attaches when
+    // the fragment shows, not when its slide does (terminalShow skips it
+    // while hidden), so it starts where Run and Kill can be seen.
     function applySteps(slide, n) {
       step = n;
       if (!slide || !slide._steps) return;
@@ -2080,6 +2622,9 @@
         if (entry.kind === 'fragment') entry.el.classList.toggle('shown', k < n);
       });
       PresentViz.blockStepsAt(slide._steps, n).forEach(function (r) { setBlockStep(r.el, r.n); });
+      slide.querySelectorAll('.fragment.shown .present-terminal, .present-terminal.fragment.shown').forEach(function (b) {
+        if (b._terminal) terminalShow(b._terminal);
+      });
     }
     // setBlockStep moves a stepped block to step m: the attribute the chart
     // bootstrap reads when the block builds later, the renderer's hook when
@@ -2194,16 +2739,32 @@
     // reader ending the presentation and must not end it here, or the reload
     // an update triggers would come back with the chrome showing.
     var ownFullscreen = false;
+    // In browser fullscreen the browser takes Escape for itself and leaves
+    // fullscreen, which ends presenting, so a deck holding a terminal locks
+    // the key with the Keyboard Lock API: Escape then reaches the page, a
+    // focused terminal keeps it, and the key handler below ends presenting
+    // otherwise. Holding Escape still leaves fullscreen. Only Chromium has
+    // the API (Safari and Firefox have no Keyboard Lock), and only in a
+    // secure context: over https or on localhost. A page on a plain http
+    // host has no navigator.keyboard, so there the guard does nothing and
+    // Escape leaves fullscreen as it would without a terminal. Leaving
+    // fullscreen releases the lock; ending presenting unlocks it as well.
+    var hasTerminal = !!deck.querySelector('.present-terminal');
+    function enteredFullscreen() {
+      ownFullscreen = true;
+      if (hasTerminal && navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(function () {});
+    }
     function setPresenting(on) {
       if (presenting === on) return;
       presenting = on;
       document.documentElement.classList.toggle('presenting', on);
       presentBtn.textContent = on ? 'Exit' : 'Present';
       remember();
+      if (!on && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
       var d = document.documentElement;
       if (on && d.requestFullscreen) {
         try {
-          d.requestFullscreen().then(function () { ownFullscreen = true; }).catch(function () {});
+          d.requestFullscreen().then(enteredFullscreen).catch(function () {});
         } catch (e) {}
       } else if (!on && document.fullscreenElement && document.exitFullscreen) {
         ownFullscreen = false;
@@ -2226,7 +2787,7 @@
       if (presenting && !document.fullscreenElement && d.requestFullscreen) {
         var req;
         try { req = d.requestFullscreen(); } catch (e) { setPresenting(false); return; }
-        if (req && req.then) req.then(function () { ownFullscreen = true; }).catch(function () { setPresenting(false); });
+        if (req && req.then) req.then(enteredFullscreen).catch(function () { setPresenting(false); });
         return;
       }
       setPresenting(!presenting);

@@ -25,6 +25,7 @@ Typically `present serve` runs as a background launchd agent (via t-man); Claude
 present version           # bare git sha the binary was built from
 present version -o json   # build metadata: version, commit, tag, build_time - probed by `ralph outdated`
 present deck <id> next    # drive the deck open in the browser: start, stop, next, prev, goto <n>
+present terminal on       # let terminal blocks run sessions; off, status, list, kill <page> <session>
 ```
 
 | Flag | Env | Default |
@@ -53,7 +54,9 @@ A section can name a `layout` for its slide: `center`, `statement`, or `section`
 
 A chart with `steps` walks its series one per Next with a caption under it, and the brief lists the captions. A `diagram` with `steps` walks its boxes and arrows the same way, lighting up the ones each step is about. A slide holding one stat, one quote, or one diagram alone gives it the whole slide. The deck Doc's `transition` picks how slides change: a crossfade by default, `slide` for a nudge in the direction of travel, `none` for a cut. The browser's Reduce Motion setting makes every change a cut.
 
-A slide or a section can use six more blocks beside the ones a brief has. `columns` holds two or three equal columns of blocks and drops to one column on a narrow window; the page's graph may sit in one of them. `stat` is a large figure over a label. `quote` carries its attribution. `details` is a collapsible block, closed until opened, which read-aloud opens as it reads it. `image` shows a picture with a caption: an image URL, or a file on this machine that the tool copies into the page store and serves at `/img/`. `diagram` draws an architecture picture from boxes, boundaries, and arrows, laid out in the browser, and fills a slide when it stands alone. Callouts come in `info`, `warn`, `ok`, and `error`.
+A slide or a section can use seven more blocks beside the ones a brief has. `columns` holds two or three equal columns of blocks and drops to one column on a narrow window; the page's graph may sit in one of them. `stat` is a large figure over a label. `quote` carries its attribution. `details` is a collapsible block, closed until opened, which read-aloud opens as it reads it. `image` shows a picture with a caption: an image URL, or a file on this machine that the tool copies into the page store and serves at `/img/`. `diagram` draws an architecture picture from boxes, boundaries, and arrows, laid out in the browser, and fills a slide when it stands alone. Callouts come in `info`, `warn`, `ok`, and `error`.
+
+The seventh, `terminal`, shows a live terminal session: a process the local `present serve` runs for the page under a session name. Two slides naming one session show the same process, so a demo started on one slide is still there on a later one. It runs nothing until `present terminal on` has switched the live terminal on, and a shared instance shows a placeholder in its place.
 
 Keys: Right, Space, or PageDown for the next slide; Left, PageUp, or Backspace for the previous one; Home and End for the first and last. F or P starts presenting: the header and the bar go away, one slide fills the window at a larger size, and the browser is asked for fullscreen. Escape ends it, as does leaving fullscreen through the browser, and so does F or P pressed in fullscreen. Pressed while presenting without fullscreen, which is where a reload leaves you, F or P asks for fullscreen again. A reload, the one an update triggers included, comes back on the same slide in the same mode. The tab remembers where it was, and a fresh tab starts at the title slide.
 
@@ -204,6 +207,7 @@ make -C services/present kind-test   # build, load, apply deploy/overlays/kind, 
     graph.json           # canonical graph source (when created from graph JSON)
     history/<version>.json  # the newest 20 versions, what present_source returns for each
   images/<sha256>.<ext>  # image files brought in from this machine, served at /img/<name>
+  terminal.enabled       # the live terminal switch, present only while `present terminal on` holds
 ```
 
 `present rerender [id...]` re-renders pages, decks included, from their stored

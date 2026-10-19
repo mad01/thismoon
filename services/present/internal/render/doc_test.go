@@ -925,3 +925,371 @@ func TestRenderDocDiagramScriptSafe(t *testing.T) {
 		t.Errorf("want exactly one <script tag, got %d in: %s", strings.Count(out, "<script"), out)
 	}
 }
+
+// terminalDoc wraps blocks in a one-section Doc.
+func terminalDoc(blocks ...Block) Doc {
+	return Doc{Sections: []Section{{Heading: "S", Blocks: blocks}}}
+}
+
+// TestRenderDocTerminalBlock pins the markup the page view upgrades into a
+// live terminal: the session and the optional cmd, cwd, prefill, and rows as data
+// attributes, a header bar with the badge, status, Run, and Kill, and the
+// canvas, in the brief and in the deck alike.
+func TestRenderDocTerminalBlock(t *testing.T) {
+	full := Block{
+		T: "terminal", Session: "demo", Cmd: "claude",
+		Cwd: "~/code/src/github.com/mad01/thismoon", Prefill: "explain this repo", TerminalRows: 24,
+	}
+	want := `<div class="present-terminal wk-code-block" data-session="demo" data-cmd="claude" ` +
+		`data-cwd="~/code/src/github.com/mad01/thismoon" data-prefill="explain this repo" data-rows="24">
+  <div class="wk-code-controls">
+    <span class="wk-code-lang">live: demo</span>
+    <span class="present-terminal-status" aria-live="polite"></span>
+    <button type="button" class="present-terminal-run">Run</button>
+    <button type="button" class="present-terminal-kill">Kill</button>
+  </div>
+  <div class="present-terminal-canvas"></div>
+</div>`
+	for name, render := range map[string]func(Doc, string) (string, error){
+		"brief": RenderDoc, "deck": RenderDeck,
+	} {
+		out, err := render(terminalDoc(full), "T")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: terminal markup missing from:\n%s", name, out)
+		}
+	}
+
+	cases := []struct {
+		name    string
+		block   Block
+		want    string
+		missing []string
+	}{
+		{
+			"session only omits the optional attributes",
+			Block{T: "terminal", Session: "demo"},
+			`<div class="present-terminal wk-code-block" data-session="demo">`,
+			[]string{"data-cmd", "data-cwd", "data-prefill", "data-rows"},
+		},
+		{
+			"cmd and cwd are trimmed, a blank cwd is omitted",
+			Block{T: "terminal", Session: "s", Cmd: "  htop \n", Cwd: "   "},
+			`data-session="s" data-cmd="htop">`,
+			[]string{"data-cwd"},
+		},
+		{
+			"attribute values are escaped",
+			Block{T: "terminal", Session: "s", Cmd: `echo "<x>" && ls`},
+			`data-cmd="echo &#34;&lt;x&gt;&#34; &amp;&amp; ls"`,
+			[]string{`"<x>"`},
+		},
+		{
+			"prefill is trimmed, its inner spaces and quotes kept and escaped",
+			Block{T: "terminal", Session: "s", Prefill: " \t say  \"hi\" & 'bye'\n"},
+			`data-session="s" data-prefill="say  &#34;hi&#34; &amp; &#39;bye&#39;">`,
+			nil,
+		},
+		{
+			"a blank prefill is omitted",
+			Block{T: "terminal", Session: "s", Prefill: "  \n"},
+			`data-session="s">`,
+			[]string{"data-prefill"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := RenderDoc(terminalDoc(c.block), "T")
+			if err != nil {
+				t.Fatalf("RenderDoc: %v", err)
+			}
+			if !strings.Contains(out, c.want) {
+				t.Errorf("missing %q in: %s", c.want, out)
+			}
+			for _, m := range c.missing {
+				if strings.Contains(out, m) {
+					t.Errorf("unexpected %q in: %s", m, out)
+				}
+			}
+		})
+	}
+}
+
+// TestTerminalBlockValidation refuses a terminal block without a valid
+// session, with a height outside the bounds, with a prefill longer than
+// one line or the limit, or inside details, refuses its fields on any
+// other block, and accepts it at the top level and in a column.
+func TestTerminalBlockValidation(t *testing.T) {
+	term := func(session string, rows int) Block {
+		return Block{T: "terminal", Session: session, TerminalRows: rows}
+	}
+	prefill := func(text string) Block {
+		return Block{T: "terminal", Session: "s", Prefill: text}
+	}
+	one := []Block{{T: "p", Text: "x"}}
+	refused := []struct {
+		name  string
+		block Block
+		want  string
+	}{
+		{"missing session", term("", 0), "terminal block: session is required"},
+		{"blank session", term("  ", 0), "terminal block: session is required"},
+		{"padded session", term(" demo ", 0), `terminal " demo ": session must be`},
+		{"upper case", term("Demo", 0), `terminal "Demo": session must be 1 to 32 of`},
+		{"slash", term("a/b", 0), "session must be"},
+		{"space", term("a b", 0), "session must be"},
+		{"too long", term(strings.Repeat("a", TerminalSessionMaxLen+1), 0), "session must be"},
+		{"rows below the minimum", term("s", 7), "rows 7 is outside 8 to 60"},
+		{"rows above the maximum", term("s", 61), "rows 61 is outside 8 to 60"},
+		{"negative rows", term("s", -1), "rows -1 is outside"},
+		{"session on a paragraph", Block{T: "p", Session: "s"}, "p block: session, cmd, cwd"},
+		{"cmd on a code block", Block{T: "code", Cmd: "ls"}, "code block: session, cmd, cwd"},
+		{"cwd on a chart", Block{T: "chart", Cwd: "/tmp"}, "chart block: session, cmd, cwd"},
+		{"rows height on a stat", Block{T: "stat", TerminalRows: 24}, "stat block: session"},
+		{"prefill on a paragraph", Block{T: "p", Prefill: "ls"}, "p block: session, cmd, cwd, prefill"},
+		{"prefill with a newline", prefill("ls\nrm -rf x"), `terminal "s": prefill must be one line`},
+		{"prefill with a carriage return", prefill("ls\rrm -rf x"), "prefill must be one line"},
+		{"prefill with a tab", prefill("a\tb"), "prefill must be one line"},
+		{"prefill with an escape", prefill("a\x1b[2Jb"), "prefill must be one line"},
+		{"prefill with a delete", prefill("a\x7fb"), "prefill must be one line"},
+		{
+			"prefill over the limit",
+			prefill(strings.Repeat("a", TerminalPrefillMaxLen+1)),
+			`terminal "s": prefill is 513 characters, at most 512`,
+		},
+		{
+			"cols on a terminal",
+			Block{T: "terminal", Session: "s", Cols: []string{"x"}},
+			"terminal block: cols and rows of cells are table and columns fields",
+		},
+		{
+			"cells on a terminal",
+			Block{T: "terminal", Session: "s", Rows: [][]string{{"a"}}},
+			"terminal block: cols and rows of cells",
+		},
+		{
+			"columns on a terminal",
+			Block{T: "terminal", Session: "s", Columns: [][]Block{{{T: "p", Text: "x"}}}},
+			"terminal block: cols and rows of cells",
+		},
+		{
+			"inside details",
+			Block{T: "details", Summary: "more", Blocks: []Block{term("s", 0)}},
+			`terminal block: not allowed inside a details block ("more")`,
+		},
+		{
+			"bad session inside columns",
+			Block{T: "columns", Columns: [][]Block{one, {term("BAD", 0)}}},
+			"session must be",
+		},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := RenderDoc(terminalDoc(c.block), "T")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+
+	accepted := map[string]Block{
+		"top level":      term("demo", 0),
+		"longest name":   term(strings.Repeat("a", TerminalSessionMaxLen), 0),
+		"dashes, digits": term("demo-2", 0),
+		"minimum rows":   term("s", 8),
+		"maximum rows":   term("s", 60),
+		"prefill":        prefill(`explain "this" repo`),
+		"longest prefill, counted in characters": prefill(
+			strings.Repeat("é", TerminalPrefillMaxLen),
+		),
+		"prefill padded with a newline": prefill("  explain this repo\n"),
+		"in a column":                   {T: "columns", Columns: [][]Block{one, {term("demo", 24)}}},
+	}
+	for name, b := range accepted {
+		out, err := RenderDoc(terminalDoc(b), "T")
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if !strings.Contains(out, `<div class="present-terminal wk-code-block"`) {
+			t.Errorf("%s: rendered no terminal: %s", name, out)
+		}
+	}
+}
+
+// TestTerminalRowsJSON keeps the shared rows key apart by block type: a
+// terminal's rows is a number, a table's rows its cells, and each survives
+// the canonical JSON. A value of the wrong shape is refused at parse with
+// the message of the block that holds it, a block in a column included,
+// and a table's cols or cells on a terminal are refused.
+func TestTerminalRowsJSON(t *testing.T) {
+	src := `{"sections":[{"h":"S","blocks":[` +
+		`{"t":"table","cols":["A"],"rows":[["1"]]},` +
+		`{"t":"terminal","session":"demo","cmd":" claude ","prefill":" explain this ","rows":24}` +
+		`]}]}`
+	c, err := Compile([]byte(src), "T")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	blocks := c.Doc.Sections[0].Blocks
+	if blocks[0].TerminalRows != 0 || len(blocks[0].Rows) != 1 {
+		t.Errorf("table decoded as %+v", blocks[0])
+	}
+	if blocks[1].TerminalRows != 24 || blocks[1].Rows != nil {
+		t.Errorf("terminal decoded as %+v", blocks[1])
+	}
+	for _, want := range []string{
+		`{"t":"table","cols":["A"],"rows":[["1"]]}`,
+		`{"t":"terminal","session":"demo","cmd":"claude","prefill":"explain this","rows":24}`,
+	} {
+		if !strings.Contains(string(c.JSON), want) {
+			t.Errorf("canonical JSON lacks %s: %s", want, c.JSON)
+		}
+	}
+	again, err := Compile(c.JSON, "T")
+	if err != nil || !slices.Equal(again.JSON, c.JSON) {
+		t.Errorf("canonical JSON does not round-trip: %v\n%s\n%s", err, c.JSON, again.JSON)
+	}
+
+	for _, c := range []struct{ name, block, want string }{
+		{
+			"string rows on a terminal",
+			`{"t":"terminal","session":"s","rows":"24"}`,
+			`parse doc: terminal "s": rows must be a whole number`,
+		},
+		{
+			"cells on a terminal",
+			`{"t":"terminal","session":"s","rows":[["a"]]}`,
+			`parse doc: terminal "s": rows must be a whole number`,
+		},
+		{
+			"fractional rows",
+			`{"t":"terminal","session":"s","rows":24.5}`,
+			`parse doc: terminal "s": rows must be a whole number`,
+		},
+		{
+			"bad rows on a terminal in a column",
+			`{"t":"columns","cols":[[{"t":"p","text":"x"}],` +
+				`[{"t":"terminal","session":"s","rows":"24"}]]}`,
+			`parse doc: terminal "s": rows must be a whole number`,
+		},
+		{
+			"bad cols on a table in a column",
+			`{"t":"columns","cols":[[{"t":"p","text":"x"}],[{"t":"table","cols":[1]}]]}`,
+			"parse doc: table block: cols must be strings",
+		},
+		{
+			"a column that is not an array of blocks",
+			`{"t":"columns","cols":["x","y"]}`,
+			"parse doc: columns block: cols must be arrays of blocks",
+		},
+		{
+			"number rows on a table",
+			`{"t":"table","cols":["A"],"rows":24}`,
+			"parse doc: table block: rows must be arrays of strings",
+		},
+		{
+			"cols and text on a terminal",
+			`{"t":"terminal","session":"demo","cols":["x"],"text":"hi"}`,
+			"render doc: terminal block: cols and rows of cells are table and columns fields",
+		},
+	} {
+		src := `{"sections":[{"h":"S","blocks":[` + c.block + `]}]}`
+		_, err := Compile([]byte(src), "T")
+		if err == nil || !strings.HasPrefix(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want the prefix %q", c.name, err, c.want)
+		}
+	}
+}
+
+// TestTerminalSessionSpecs refuses one session named with two different
+// commands, directories, or prefills, in one Doc or across a brief and a
+// deck, since serve starts a session once from one of them. The rows
+// height and surrounding whitespace in cmd, cwd, and prefill may differ.
+func TestTerminalSessionSpecs(t *testing.T) {
+	term := func(session, cmd, cwd string, rows int) Block {
+		return Block{T: "terminal", Session: session, Cmd: cmd, Cwd: cwd, TerminalRows: rows}
+	}
+	typed := func(prefill string) Block {
+		return Block{T: "terminal", Session: "demo", Cmd: "claude", Prefill: prefill}
+	}
+	column := func(b Block) Block {
+		return Block{T: "columns", Columns: [][]Block{{{T: "p", Text: "x"}}, {b}}}
+	}
+	refused := []struct {
+		name string
+		a, b Block
+		want string
+	}{
+		{
+			"different cmd",
+			term("demo", "claude", "", 0), term("demo", "htop", "", 0),
+			`terminal "demo": blocks naming the session give (cmd "claude", cwd "", prefill "") ` +
+				`and (cmd "htop", cwd "", prefill ""); it starts once, from one cmd, cwd, and prefill`,
+		},
+		{
+			"different cwd",
+			term("demo", "", "/tmp", 0), term("demo", "", "~", 0),
+			`terminal "demo": blocks naming the session give (cmd "", cwd "/tmp", prefill "") ` +
+				`and (cmd "", cwd "~", prefill "")`,
+		},
+		{
+			"different prefill",
+			typed("explain this repo"), typed("fix the build"),
+			`terminal "demo": blocks naming the session give ` +
+				`(cmd "claude", cwd "", prefill "explain this repo") ` +
+				`and (cmd "claude", cwd "", prefill "fix the build")`,
+		},
+		{
+			"prefill set on one block only",
+			typed("explain this repo"), typed(""),
+			`terminal "demo": blocks naming the session give`,
+		},
+		{
+			"cmd set on one block only",
+			term("demo", "claude", "", 0), term("demo", "", "", 0),
+			`terminal "demo": blocks naming the session give`,
+		},
+		{
+			"second block in a column",
+			term("demo", "claude", "", 0), column(term("demo", "htop", "", 0)),
+			`terminal "demo": blocks naming the session give`,
+		},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := RenderDoc(terminalDoc(c.a, c.b), "T")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("one Doc: err = %v, want %q", err, c.want)
+			}
+			err = ValidateTerminalSessions(terminalDoc(c.a), terminalDoc(c.b))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("brief and deck: err = %v, want %q", err, c.want)
+			}
+		})
+	}
+
+	accepted := []struct {
+		name string
+		a, b Block
+	}{
+		{"same cmd and cwd", term("demo", "claude", "/tmp", 0), term("demo", "claude", "/tmp", 0)},
+		{"rows differ", term("demo", "claude", "", 12), term("demo", "claude", "", 40)},
+		{"whitespace differs", term("demo", " claude\n", "/tmp ", 0), term("demo", "claude", " /tmp", 0)},
+		{"prefill whitespace differs", typed(" explain this repo\n"), typed("explain this repo")},
+		{"different sessions", term("a", "claude", "", 0), term("b", "htop", "/tmp", 0)},
+		{"in a column", term("demo", "claude", "", 0), column(term("demo", "claude", "", 24))},
+	}
+	for _, c := range accepted {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := RenderDoc(terminalDoc(c.a, c.b), "T"); err != nil {
+				t.Errorf("one Doc: %v", err)
+			}
+			if err := ValidateTerminalSessions(terminalDoc(c.a), terminalDoc(c.b)); err != nil {
+				t.Errorf("brief and deck: %v", err)
+			}
+		})
+	}
+}
