@@ -1885,6 +1885,9 @@ var Webkit = (() => {
   function tagOf(el2) {
     return el2.tagName.toUpperCase();
   }
+  function skipsReading(el2, tag) {
+    return SKIP_TAGS.has(tag) || el2.classList.contains("wk-code-block");
+  }
   function collectRuns(root) {
     const runs = [];
     let current = [];
@@ -1901,7 +1904,7 @@ var Webkit = (() => {
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const tag = tagOf(node);
-      if (SKIP_TAGS.has(tag)) return;
+      if (skipsReading(node, tag)) return;
       const alt = figureAlt(node);
       if (alt) {
         flush();
@@ -2364,7 +2367,7 @@ var Webkit = (() => {
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const el2 = node;
       const tag = tagOf(el2);
-      if (SKIP_TAGS.has(tag)) return;
+      if (skipsReading(el2, tag)) return;
       const alt = figureAlt(el2);
       if (alt) {
         blocks.cut(block);

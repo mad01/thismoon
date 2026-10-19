@@ -26,7 +26,8 @@ const PROBE_TIMEOUT_MS = 1500;
 const ERROR_TOAST_MS = 8000;
 
 // Subtrees that produce no speakable text. Block code and tables read terribly
-// as linear speech, so they are skipped rather than mangled. Inline <code> is
+// as linear speech, so they are skipped rather than mangled; skipsReading adds
+// any element with the wk-code-block class, whatever its tag. Inline <code> is
 // NOT skipped: prose leans on it for identifiers ("the pkg/mixer class"), and
 // dropping it leaves holes in sentences.
 const SKIP_TAGS = new Set([
@@ -69,6 +70,13 @@ function tagOf(el: Element): string {
   return el.tagName.toUpperCase();
 }
 
+/** Whether read-aloud leaves el and its subtree out: a SKIP_TAGS element, or
+ * any element carrying the wk-code-block class, so a code frame that is not
+ * a <pre> (a live terminal block is a div) is skipped the way a <pre> is. */
+function skipsReading(el: Element, tag: string): boolean {
+  return SKIP_TAGS.has(tag) || el.classList.contains('wk-code-block');
+}
+
 /** Text nodes of one section, grouped into runs split at block boundaries. */
 function collectRuns(root: Element): Text[][] {
   const runs: Text[][] = [];
@@ -83,7 +91,7 @@ function collectRuns(root: Element): Text[][] {
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = tagOf(node as Element);
-    if (SKIP_TAGS.has(tag)) return;
+    if (skipsReading(node as Element, tag)) return;
     // A figure's image has no text node, so its alt goes in as a run of
     // its own: a detached node, which wrapSentences skips, so the alt is
     // spoken but nothing on the page is highlighted for it.
@@ -751,7 +759,7 @@ function collectBlocks(section: HTMLElement): Block[] {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
     const tag = tagOf(el);
-    if (SKIP_TAGS.has(tag)) return;
+    if (skipsReading(el, tag)) return;
     // A figure's image is a block of its own whose text is its alt, so the
     // part that reads it is stamped on the image and lights it up.
     const alt = figureAlt(el);
