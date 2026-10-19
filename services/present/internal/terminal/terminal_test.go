@@ -228,12 +228,12 @@ func TestScrubbedEnvFindsPresentThroughTheUsersShell(t *testing.T) {
 	}
 	m := New(Config{Home: home, Env: []string{"HOME=" + home, "TERM=dumb"}})
 	t.Cleanup(m.Close)
-	sub := attach(t, m, "path", Spec{Cmd: "command -v present"})
+	sub := attach(t, m, "path", Spec{Cmd: "command -v present && echo FOUND"})
 
 	out := readAll(t, sub)
 	code, exited := sub.Exit()
-	if !exited || code != 0 || !strings.Contains(out, "/present") {
-		t.Errorf("command -v present = %q, exit %d %v; want a path and exit 0", out, code, exited)
+	if !exited || code != 0 || !strings.Contains(out, "FOUND") {
+		t.Errorf("command -v present = %q, exit %d %v; want FOUND and exit 0", out, code, exited)
 	}
 }
 
