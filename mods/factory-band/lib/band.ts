@@ -1,5 +1,6 @@
-// Pure helpers behind the factory-band mod: no `$`, no I/O, so `node --test`
-// covers them without the engine. register.tsx is the only caller.
+// Pure helpers behind the factory-band mod: no `$`, no I/O of their own, so
+// `node --test` covers them without the engine. The integrated check takes
+// its git runner as an argument. register.tsx is the only caller.
 
 /** What the band shows for a field no source recorded. */
 export const UNKNOWN = '-'
@@ -81,6 +82,28 @@ export function mergeTreeArgs(ref: string): string[] {
   return ['merge-tree', '--write-tree', ref, 'HEAD']
 }
 
+/** The most first-parent commits the integrated walk merges; a longer range reads as unknown. */
+export const WALK_LIMIT = 200
+
+/** Where HEAD forked from `ref`; the walk starts after it. */
+export function mergeBaseArgs(ref: string): string[] {
+  return ['merge-base', ref, 'HEAD']
+}
+
+/**
+ * The first-parent commits of `ref` since `base`, newest first, one
+ * `<commit> <tree>` line each on any git (`rev-list --format` needs
+ * `--no-commit-header`, git 2.33). It asks for one more than WALK_LIMIT, so
+ * a range that is too long shows as one. `--no-show-signature` keeps a
+ * `log.showSignature` config from printing gpg lines between them.
+ */
+export function walkArgs(base: string, ref: string): string[] {
+  return ['log', '--no-show-signature', '--first-parent', `--max-count=${WALK_LIMIT + 1}`, '--format=%H %T', `${base}..${ref}`]
+}
+
+/** A merge of HEAD into each commit named on stdin, all in one call; needs git 2.40. */
+export const WALK_MERGE_ARGS = ['merge-tree', '--write-tree', '--stdin', '--name-only', '--no-messages'] as const
+
 export type Header = Record<(typeof HEADER_KEYS)[number], string>
 
 /** One factory worker as its spawn recorded it. */
@@ -102,12 +125,23 @@ export type Liveness = 'live' | 'idle' | 'gone' | 'unknown'
 
 /**
  * What git says about a worker's worktree. `isIntegrated`: merging HEAD
- * into the default branch would change nothing, as after a squash merge.
+ * into the default branch would change nothing, as after a squash merge;
+ * null when git could not say or was not asked: a walk past its limit, a
+ * check that ran out of time, or a loop not yet at rest.
  */
-export type GitFacts = { isDirty: boolean; ahead: number; isIntegrated: boolean }
+export type GitFacts = { isDirty: boolean; ahead: number; isIntegrated: boolean | null }
 
 /** One git call's result, as `$.process.run` resolves it. */
-export type GitRun = { exitCode: number; stdout: string; stderr: string }
+export type GitRun = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated?: boolean }
+
+/** One git call in a worker's worktree, with stdin when given: its result, or null when git never answered. */
+export type GitRunner = (args: readonly string[], stdin?: string) => Promise<GitRun | null>
+
+/** A first-parent commit of the default branch and its tree. */
+export type MainCommit = { commit: string; tree: string }
+
+/** One merge in merge-tree's `--stdin` output. */
+export type WalkMerge = { isClean: boolean; tree: string }
 
 /** What git said about a worktree: its facts, `removed` once it is gone, null when git could not say. */
 export type WorktreeRead = GitFacts | 'removed' | null
@@ -326,6 +360,15 @@ export function isReadyCandidate(git: GitFacts | null, lastKind: string | null):
 }
 
 /**
+ * True when an agent's loop waits idle or has ended, the only loops whose
+ * ready tree gets the merge-tree check: a live loop reads in flight and an
+ * unknown one reads unknown, whatever the check would find.
+ */
+export function isLoopAtRest(liveness: Liveness): boolean {
+  return liveness === 'idle' || liveness === 'gone'
+}
+
+/**
  * True when the tree a merge of HEAD into the default branch would write
  * is the default branch's own tree: the branch's changes are already there.
  * False when either is unknown (git before 2.38, a conflict, no origin HEAD).
@@ -333,6 +376,88 @@ export function isReadyCandidate(git: GitFacts | null, lastKind: string | null):
 export function isIntegratedTree(mergeTreeOut: string | null, defaultTree: string | null): boolean {
   const merged = mergeTreeOut?.trim().split('\n')[0] ?? ''
   return merged !== '' && defaultTree !== null && merged === defaultTree.trim()
+}
+
+/** True when `git merge-base` found no fork point: the histories share nothing, so there is nothing to walk. */
+export function isUnrelated(run: GitRun | null): boolean {
+  return run !== null && run.exitCode === 1 && run.stdout.trim() === ''
+}
+
+/** The walk's commits from walkArgs' output, newest first; null when git could not say or the range runs past WALK_LIMIT. */
+export function parseWalk(stdout: string | null): MainCommit[] | null {
+  const lines = stdout?.split('\n').filter(line => line.trim() !== '') ?? null
+  if (lines === null || lines.length > WALK_LIMIT) return null
+  const fields = lines.map(line => line.trim().split(' '))
+  if (fields.some(pair => pair.length !== 2)) return null
+  return fields.map(([commit = '', tree = '']) => ({ commit, tree }))
+}
+
+/** merge-tree's stdin for the walk: one `<commit> HEAD` line per commit. */
+export function walkInput(commits: readonly MainCommit[]): string {
+  return commits.map(({ commit }) => `${commit} HEAD\n`).join('')
+}
+
+/**
+ * The merges in WALK_MERGE_ARGS' output, in input order, or null when it
+ * does not parse. Fields are NUL-separated. Each merge is its status (1
+ * clean, 0 conflicted), its tree, the conflicted file names, and an empty
+ * field that closes it.
+ */
+export function parseMerges(stdout: string): WalkMerge[] | null {
+  const fields = stdout.split('\0')
+  const merges: WalkMerge[] = []
+  let i = 0
+  while (i < fields.length - 1) {
+    const [status, tree = ''] = [fields[i], fields[i + 1]]
+    if ((status !== '0' && status !== '1') || tree === '') return null
+    i += 2
+    while (i < fields.length && fields[i] !== '') i += 1
+    merges.push({ isClean: status === '1', tree })
+    i += 1
+  }
+  return merges
+}
+
+/**
+ * True when HEAD landed in one of the commits: a clean merge into that
+ * commit writes the commit's own tree. False when merge-tree refused, as a
+ * git before 2.40 does without `--stdin`: no proof. Null when git never
+ * answered or its output does not line up with the commits.
+ */
+export function landedIn(commits: readonly MainCommit[], run: GitRun | null): boolean | null {
+  if (run === null || run.isStdoutTruncated === true) return null
+  if (run.exitCode !== 0) return false
+  const merges = parseMerges(run.stdout)
+  if (merges === null || merges.length !== commits.length) return null
+  return merges.some((merge, i) => merge.isClean && merge.tree === commits[i]?.tree)
+}
+
+// A git call's whole stdout: exit 0 and nothing cut off, else null.
+function fullStdoutOf(run: GitRun | null): string | null {
+  return run?.isStdoutTruncated === true ? null : stdoutOf(run)
+}
+
+/**
+ * Whether the default branch already holds HEAD's changes: the integrated
+ * check in the loom skill's loom.md. The tip merge comes first. When it
+ * proves nothing (a conflict, or a tree that differs because the default
+ * branch changed or reverted those lines since the squash), the same check
+ * runs against each first-parent commit since the fork point, at most
+ * WALK_LIMIT of them. Null when git could not say, so the worker reads
+ * unknown and stays on the band rather than reading integrated.
+ */
+export async function integratedOf(runGit: GitRunner, branch: DefaultBranch): Promise<boolean | null> {
+  const tip = await runGit(mergeTreeArgs(branch.ref))
+  if (tip === null) return null
+  if (isIntegratedTree(stdoutOf(tip), branch.tree)) return true
+  const base = await runGit(mergeBaseArgs(branch.ref))
+  if (isUnrelated(base)) return false
+  const forkPoint = stdoutOf(base)?.trim() ?? ''
+  if (forkPoint === '') return null
+  const commits = parseWalk(fullStdoutOf(await runGit(walkArgs(forkPoint, branch.ref))))
+  if (commits === null) return null
+  if (commits.length === 0) return false
+  return landedIn(commits, await runGit(WALK_MERGE_ARGS, walkInput(commits)))
 }
 
 /** Where an agent's loop stands for the band; `gone` once it ended or left the list. */
@@ -346,7 +471,8 @@ export function livenessOf(agents: readonly AgentLike[] | null, agentId: string)
 /**
  * A worker's state. A loop at work is in flight. A clean tree whose worker
  * sent ready is ready, or integrated once the default branch holds its
- * changes; a dirty tree after a ready is in flight again. A worker whose
+ * changes, or unknown while git cannot say which; a dirty tree after a
+ * ready is in flight again. A worker whose
  * last message waits for an answer is blocked. An idle worker is in
  * flight; one whose loop ended without a ready is stopped. A worktree
  * that is gone is removed, as loom leaves it after landing or dropping the
@@ -359,7 +485,8 @@ export function workerState(input: { git: WorktreeRead; liveness: Liveness; last
   if (liveness === 'live') return 'in flight'
   if (lastKind === 'ready') {
     if (git.isDirty) return 'in flight'
-    return git.ahead > 0 && !git.isIntegrated ? 'ready' : 'integrated'
+    if (git.ahead === 0 || git.isIntegrated === true) return 'integrated'
+    return git.isIntegrated === null ? UNKNOWN : 'ready'
   }
   if (lastKind !== null && NEEDS_ANSWER.has(lastKind)) return 'blocked'
   return liveness === 'idle' ? 'in flight' : 'stopped'

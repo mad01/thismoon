@@ -16,15 +16,16 @@ import {
   gitFactsFrom,
   guardReason,
   idAt,
+  integratedOf,
   isBeltRefusal,
-  isIntegratedTree,
+  isLoopAtRest,
   isReadyCandidate,
   isRefreshDue,
   isTaskMessage,
   isWorkerType,
   isWorktreeGone,
   kindOf,
-  mergeTreeArgs,
+  livenessOf,
   parseDefaultBranch,
   parseLedger,
   probeFrom,
@@ -36,7 +37,7 @@ import {
   withWorker,
   workerFrom,
 } from '../lib/band'
-import type { AgentLike, GitRun, LedgerRead, Run, Worker, WorktreeRead } from '../lib/band'
+import type { AgentLike, DefaultBranch, GitFacts, GitRun, LedgerRead, Run, Worker, WorktreeRead } from '../lib/band'
 
 // The whole run in one atom: every change below is one update, so a spawn
 // and the refresh that closes the run never see each other half done.
@@ -56,37 +57,69 @@ const skipOnFailure = <E, R>($: Logger, e: E, next: Failed<E, R>): R => {
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-// What `work` answers, or null when it fails or the 400 ms probe budget
-// runs out first.
-async function withinBudget<T>($: EngineInterface, work: Promise<T | null>): Promise<T | null> {
-  const timedOut = $.clock
+// The 400 ms probe budget as one timer: it resolves null once it runs out.
+function budgetOf($: EngineInterface): Promise<null> {
+  return $.clock
     .sleep(PROBE_BUDGET_MS)
     .then(() => null)
     .catch(() => null)
-  return Promise.race([work.catch(() => null), timedOut])
 }
 
-// One git call in a worktree, or null when it outran the budget (the
-// child is killed at the same budget, which rejects the call).
-async function git($: EngineInterface, worktree: string, args: readonly string[]): Promise<GitRun | null> {
-  const ran = $.process.run(['git', '-C', worktree, ...args], { timeoutMs: PROBE_BUDGET_MS, env: GIT_ENV })
+// What `work` answers, or null when it fails or `deadline` comes first.
+function before<T>(deadline: Promise<null>, work: Promise<T | null>): Promise<T | null> {
+  return Promise.race([work.catch(() => null), deadline])
+}
+
+// What `work` answers, or null when it fails or the 400 ms probe budget
+// runs out first.
+async function withinBudget<T>($: EngineInterface, work: Promise<T | null>): Promise<T | null> {
+  return before(budgetOf($), work)
+}
+
+// One git call in a worktree, with stdin when given, or null when it
+// outran the budget (the child is killed at the same budget, which rejects
+// the call).
+async function git($: EngineInterface, worktree: string, args: readonly string[], stdin?: string): Promise<GitRun | null> {
+  const init = stdin === undefined ? { timeoutMs: PROBE_BUDGET_MS, env: GIT_ENV } : { timeoutMs: PROBE_BUDGET_MS, env: GIT_ENV, stdin }
+  const ran = $.process.run(['git', '-C', worktree, ...args], init)
   return withinBudget($, ran)
 }
 
-// Whether the worktree is dirty, how far it is ahead of the default branch
-// and, for a ready worker's clean tree only, whether the default branch
-// already holds its changes (one merge-tree more). `removed` when the first
-// call finds the worktree gone; null when git could not say. A merge-tree
-// that fails (git before 2.38) leaves it not integrated.
-async function gitFactsOf($: EngineInterface, worktree: string, lastKind: string | null): Promise<WorktreeRead> {
+type BaseRead = { branch: DefaultBranch; facts: GitFacts } | 'removed' | null
+
+// The default branch, whether the worktree is dirty and how far it is
+// ahead. `removed` when the first call finds the worktree gone; null when
+// git could not say.
+async function baseFactsOf($: EngineInterface, worktree: string): Promise<BaseRead> {
   const head = await git($, worktree, DEFAULT_BRANCH_ARGS)
   if (isWorktreeGone(head)) return 'removed'
   const branch = parseDefaultBranch(stdoutOf(head))
   const [status, count] = await Promise.all([git($, worktree, STATUS_ARGS), git($, worktree, aheadArgs(branch.ref))])
   const facts = gitFactsFrom(stdoutOf(status), stdoutOf(count))
-  if (facts === null || branch.tree === null || !isReadyCandidate(facts, lastKind)) return facts
-  const merged = await git($, worktree, mergeTreeArgs(branch.ref))
-  return { ...facts, isIntegrated: isIntegratedTree(stdoutOf(merged), branch.tree) }
+  return facts === null ? null : { branch, facts }
+}
+
+// One worker's worktree as git reports it. Every git call for the worker
+// shares one probe budget, the dirty and ahead reads first. For a ready
+// worker's clean tree whose loop is at rest, the integrated check (lib's
+// integratedOf: the tip merge, then the first-parent walk) gets what is
+// left of it. When that runs out, only the check reads unknown and the
+// earlier facts stand. A live worker reads in flight whatever the check
+// would find, so it gets none. A merge-tree that fails (git before 2.38,
+// or 2.40 for the walk) leaves it not integrated.
+async function readWorktree($: EngineInterface, worker: Worker, agents: Promise<AgentLike[] | null>): Promise<WorktreeRead> {
+  const worktree = worker.worktree
+  if (worktree === null) return null
+  const deadline = budgetOf($)
+  const base = await before(deadline, baseFactsOf($, worktree))
+  if (base === null || base === 'removed') return base
+  const { branch, facts } = base
+  if (branch.tree === null || !isReadyCandidate(facts, worker.lastKind)) return facts
+  if (!isLoopAtRest(livenessOf(await before(deadline, agents), worker.agentId))) return { ...facts, isIntegrated: null }
+  const checking = integratedOf((args, stdin) => git($, worktree, args, stdin), branch).then(isIntegrated => ({ isIntegrated }))
+  const checked = await before(deadline, checking)
+  if (checked === null) $.ui.log(`factory-band: integrated check for ${worker.name} ran out of time (clean, ${facts.ahead} commits ahead)`, { to: 'debug' })
+  return { ...facts, isIntegrated: checked === null ? null : checked.isIntegrated }
 }
 
 // One events query, or null when the service is down, answers an error or
@@ -130,22 +163,19 @@ async function readEvents($: EngineInterface, isReading: boolean, current: Run):
   return { ledger: parseLedger(ledgerBody, { sessionId, workerIds }), inbox: countInbox(inboxBody, { sessionId, sinceId }) }
 }
 
-// One worker's worktree as git reports it, within the probe budget.
-function readWorktree($: EngineInterface, worker: Worker): Promise<WorktreeRead> {
-  return worker.worktree === null ? Promise.resolve(null) : withinBudget($, gitFactsOf($, worker.worktree, worker.lastKind))
-}
-
 // Asks every source at once, then stores what they said and drops the
 // workers that are done in one update; the last one dropped closes the
 // run. Every source that fails reads as unknown, so a field turns to a
-// dash and nothing errors.
+// dash and nothing errors. The worktree reads wait on the agent list only
+// to decide the integrated check.
 async function readProbe($: EngineInterface, isReading: boolean): Promise<void> {
   const current = await read($, run)
   if (current.workers.length === 0) return
+  const listed = listAgents($)
   const [agents, events, gits] = await Promise.all([
-    listAgents($),
+    listed,
     readEvents($, isReading, current),
-    Promise.all(current.workers.map(worker => readWorktree($, worker))),
+    Promise.all(current.workers.map(worker => readWorktree($, worker, listed))),
   ])
   const found = probeFrom({ workers: current.workers, agents, gits, ledger: events.ledger, inbox: events.inbox })
   const settled = await update($, run, latest => settleRun(latest, found, agents))

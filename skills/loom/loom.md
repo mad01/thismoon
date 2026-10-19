@@ -97,9 +97,10 @@ rebase merge or a one-commit squash only.
 
 The default branch may have changed the branch's lines again since the
 squash. The merge into its tip then conflicts although the branch landed.
-Only when the tip check conflicts, run the same check against each
-first-parent commit since the fork point; the squash commit answers with
-equal trees:
+When the tip check conflicts, or writes a tree other than the tip's (a
+later revert on the default branch does that), run the same check against
+each first-parent commit since the fork point; the squash commit answers
+with equal trees:
 
 ```
 base=$(git -C <canonical> merge-base origin/main <branch>)
