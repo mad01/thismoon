@@ -92,11 +92,13 @@ export function mergeBaseArgs(ref: string): string[] {
 
 /**
  * The first-parent commits of `ref` since `base`, newest first, one
- * `<commit> <tree>` line each. It asks for one more than WALK_LIMIT, so a
- * range that is too long shows as one.
+ * `<commit> <tree>` line each on any git (`rev-list --format` needs
+ * `--no-commit-header`, git 2.33). It asks for one more than WALK_LIMIT, so
+ * a range that is too long shows as one. `--no-show-signature` keeps a
+ * `log.showSignature` config from printing gpg lines between them.
  */
 export function walkArgs(base: string, ref: string): string[] {
-  return ['rev-list', '--first-parent', `--max-count=${WALK_LIMIT + 1}`, '--no-commit-header', '--format=%H %T', `${base}..${ref}`]
+  return ['log', '--no-show-signature', '--first-parent', `--max-count=${WALK_LIMIT + 1}`, '--format=%H %T', `${base}..${ref}`]
 }
 
 /** A merge of HEAD into each commit named on stdin, all in one call; needs git 2.40. */
@@ -124,7 +126,8 @@ export type Liveness = 'live' | 'idle' | 'gone' | 'unknown'
 /**
  * What git says about a worker's worktree. `isIntegrated`: merging HEAD
  * into the default branch would change nothing, as after a squash merge;
- * null when git could not say, as after a walk past its limit.
+ * null when git could not say or was not asked: a walk past its limit, a
+ * check that ran out of time, or a loop not yet at rest.
  */
 export type GitFacts = { isDirty: boolean; ahead: number; isIntegrated: boolean | null }
 
@@ -354,6 +357,15 @@ export function gitFactsFrom(status: string | null, count: string | null): GitFa
 /** True when a worker's tree is worth the merge-tree check: clean, ahead, and the worker sent ready. */
 export function isReadyCandidate(git: GitFacts | null, lastKind: string | null): boolean {
   return git !== null && !git.isDirty && git.ahead > 0 && lastKind === 'ready'
+}
+
+/**
+ * True when an agent's loop waits idle or has ended, the only loops whose
+ * ready tree gets the merge-tree check: a live loop reads in flight and an
+ * unknown one reads unknown, whatever the check would find.
+ */
+export function isLoopAtRest(liveness: Liveness): boolean {
+  return liveness === 'idle' || liveness === 'gone'
 }
 
 /**

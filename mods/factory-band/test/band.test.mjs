@@ -24,6 +24,7 @@ import {
   integratedOf,
   isBeltRefusal,
   isIntegratedTree,
+  isLoopAtRest,
   isReadyCandidate,
   isRefreshDue,
   isTaskMessage,
@@ -58,6 +59,15 @@ import {
 const HOME = '/home/u'
 const WT = `${HOME}/.worktrees/thismoon/alexander-docs-sweep-events`
 const SESSION = 's-lead'
+
+// git's env for a fixture repo: no global or system config, and none of
+// the variables a git hook exports, which would point `git -C <tmp>` at
+// the outer repo.
+const fixtureEnv = () => {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  for (const key of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE']) delete env[key]
+  return env
+}
 
 // The canonical task from the factory skill's contract.md.
 const TASK = `kind: task
@@ -332,6 +342,10 @@ describe('worker state', () => {
     assert.equal(isReadyCandidate(null, 'ready'), false)
   })
 
+  test('only a loop that waits idle or has ended gets the merge-tree check', () => {
+    assert.deepEqual(['live', 'idle', 'gone', 'unknown'].map(isLoopAtRest), [false, true, true, false])
+  })
+
   test('the default branch and its tree from one rev-parse; main and no tree without origin HEAD', () => {
     assert.deepEqual(parseDefaultBranch('aaff749\nrefs/remotes/origin/main\n'), { ref: 'origin/main', tree: 'aaff749' })
     assert.deepEqual(parseDefaultBranch(null), { ref: 'main', tree: null })
@@ -361,7 +375,7 @@ describe('worker state', () => {
 // A real repo: main squash-merged `feat` and moved on; `open` was never
 // merged. The argv the mod runs, run here by git itself.
 describe('squash merge, against a fixture repo', () => {
-  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const env = fixtureEnv()
   const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'init.defaultBranch=main']
   let dir = ''
   const git = (...args) => execFileSync('git', ['-C', dir, ...id, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -452,19 +466,19 @@ const ORIGIN = { ref: 'origin/main', tree: 'aaff749' }
 const commitLines = n => Array.from({ length: n }, (_, i) => `c${i} t${i}\n`).join('')
 
 describe('first-parent walk', () => {
-  test('the walk lists one commit past its limit, so a range too long shows', () => {
+  test('the walk lists one commit past its limit, so a range too long shows, and no signature lines', () => {
     assert.deepEqual(walkArgs('f0f0', 'origin/main'), [
-      'rev-list',
+      'log',
+      '--no-show-signature',
       '--first-parent',
       `--max-count=${WALK_LIMIT + 1}`,
-      '--no-commit-header',
       '--format=%H %T',
       'f0f0..origin/main',
     ])
     assert.deepEqual(mergeBaseArgs('origin/main'), ['merge-base', 'origin/main', 'HEAD'])
   })
 
-  test('commits and trees from rev-list; a range past the limit, a bad line or no answer is unknown', () => {
+  test('commits and trees from log; a range past the limit, a bad line or no answer is unknown', () => {
     assert.deepEqual(parseWalk('c2 t2\nc1 t1\n'), [
       { commit: 'c2', tree: 't2' },
       { commit: 'c1', tree: 't1' },
@@ -543,7 +557,7 @@ describe('first-parent walk', () => {
 // squash-merged `reverted` and reverted it; then moved on. `open` was never
 // merged. The mod's own integratedOf, with git itself as the runner.
 describe('first-parent walk, against a fixture repo', () => {
-  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const env = fixtureEnv()
   const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'init.defaultBranch=main']
   let dir = ''
   const git = (...args) => execFileSync('git', ['-C', dir, ...id, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })

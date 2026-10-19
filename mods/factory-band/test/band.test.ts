@@ -91,10 +91,19 @@ const WALK: Array<[commit: string, tree: string]> = [
 // One commit past the walk's limit.
 const LONG_WALK = Array.from({ length: WALK_LIMIT + 1 }, (_, i): [string, string] => [`c${i}`, `t${i}`])
 
+// The integrated check's git calls, in order: the tip merge, the fork
+// point, the walk's commits and the walk's merges.
+const TIP = 'merge-tree --write-tree origin/main HEAD'
+const BASE = 'merge-base origin/main HEAD'
+const WALK_LOG = `log --no-show-signature --first-parent --max-count=${WALK_LIMIT + 1} --format=%H %T ${FORK}..origin/main`
+const WALK_MERGE = 'merge-tree --write-tree --stdin --name-only --no-messages'
+const CHECK_CALLS = [TIP, BASE, WALK_LOG, WALK_MERGE]
+
 // The worktree as git reports it. `mergedTree` is what the tip merge-tree
 // writes, conflicted when `isTipConflict`. `walk` is the default branch
 // since the fork point; `landedIn` is the commit whose merge writes its own
-// tree, as the squash commit does.
+// tree, as the squash commit does. The walk's merges outrun any budget
+// when `isWalkHung`.
 type Git = {
   status: string
   ahead: string
@@ -102,6 +111,7 @@ type Git = {
   isTipConflict?: boolean
   walk?: Array<[commit: string, tree: string]>
   landedIn?: string
+  isWalkHung?: boolean
 }
 
 // A worktree: there, slower than any budget, or removed by loom.
@@ -116,6 +126,8 @@ type World = {
   fetches: number
   mergeTrees: number
   walks: number
+  gitCalls: string[]
+  logs: string[]
   clock: MockClock
 }
 
@@ -143,14 +155,14 @@ function gitAnswer(world: World, git: Git, args: readonly string[], stdin = ''):
       return run(0, git.status)
     case 'rev-list --count origin/main..HEAD':
       return run(0, `${git.ahead}\n`)
-    case 'merge-tree --write-tree origin/main HEAD':
+    case TIP:
       world.mergeTrees += 1
       return git.isTipConflict === true ? run(1, `${git.mergedTree}\n100644 abc1234 1\tnotes.md\n`) : run(0, `${git.mergedTree}\n`)
-    case 'merge-base origin/main HEAD':
+    case BASE:
       return run(0, `${FORK}\n`)
-    case `rev-list --first-parent --max-count=${WALK_LIMIT + 1} --no-commit-header --format=%H %T ${FORK}..origin/main`:
+    case WALK_LOG:
       return run(0, walk.map(([commit, tree]) => `${commit} ${tree}\n`).join(''))
-    case 'merge-tree --write-tree --stdin --name-only --no-messages':
+    case WALK_MERGE:
       world.walks += 1
       return run(0, walkAnswer(git, stdin))
   }
@@ -158,17 +170,32 @@ function gitAnswer(world: World, git: Git, args: readonly string[], stdin = ''):
 }
 
 // The engine beneath the plugin. `git` is the first worker's worktree,
-// `others` any more.
-function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}): World {
+// `others` any more. `gitCalls` records every git call in a worktree that
+// is there, before any wait; `logs` every debug line.
+function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands' | 'gitCalls' | 'logs'>> = {}): World {
   const clock = mock.clock(on)
-  const world: World = { agents: [w1], events: 'ok', git: OPEN, others: {}, commands: [], fetches: 0, mergeTrees: 0, walks: 0, clock, ...overrides }
+  const world: World = {
+    agents: [w1],
+    events: 'ok',
+    git: OPEN,
+    others: {},
+    commands: [],
+    fetches: 0,
+    mergeTrees: 0,
+    walks: 0,
+    gitCalls: [],
+    logs: [],
+    clock,
+    ...overrides,
+  }
   mock.env(on, { HOME })
   on('process.run', async (_$, e) => {
     const [command, flag, dir = '', ...args] = e.argv
     const tree = command === 'git' && flag === '-C' ? (dir === WT ? world.git : world.others[dir]) : undefined
     if (tree === undefined) return { value: run(128, '') }
     if (tree === 'removed') return { value: run(128, '', gone(dir, e.init?.env?.LC_ALL === 'C')) }
-    if (tree === 'hung') await clock.sleep(10_000)
+    world.gitCalls.push(args.join(' '))
+    if (tree === 'hung' || (tree.isWalkHung === true && args.join(' ') === WALK_MERGE)) await clock.sleep(10_000)
     return { value: gitAnswer(world, tree === 'hung' ? OPEN : tree, args, e.init?.stdin) }
   })
   on('agent.list', () => ({ value: world.agents }))
@@ -181,7 +208,10 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}
     const answer: HttpResponse = { status: 200, ok: true, headers: {}, text }
     return { value: answer }
   })
-  on('ui.log', () => ({ value: undefined }))
+  on('ui.log', (_$, e) => {
+    world.logs.push(e.text)
+    return { value: undefined }
+  })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('agent.spawn', (_$, e) => ({ model: 'claude-sonnet-5-5', agentId: IDS[e.name ?? ''] ?? 'a1' }))
   on('turn.complete', () => ({ text: '' }))
@@ -298,6 +328,38 @@ test('a walk past its limit reads unknown: the worker keeps its row and is never
   const ui = await mountBand($)
   expect((await band(ui))[1]).toBe('events  -  claude-sonnet-5-5  medium')
   expect(world.walks).toBe(0)
+})
+
+test('a walk that outruns the budget reads unknown for the check alone: the row stays and the ahead count stands', async ($, on) => {
+  const world = seat(on, { git: { status: '', ahead: '2', mergedTree: 'dd0dd0d', isTipConflict: true, landedIn: 'c2', isWalkHung: true } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  world.agents = [{ ...w1, status: 'idle' }]
+  await world.clock.advance(5_000)
+  const turn = $.turn.complete(workerTurn(READY))
+  await world.clock.advance(400)
+  await turn
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toBe('events  -  claude-sonnet-5-5  medium')
+  expect(world.gitCalls.filter(call => CHECK_CALLS.includes(call))).toEqual(CHECK_CALLS)
+  expect(world.logs).toContain('factory-band: integrated check for events ran out of time (clean, 2 commits ahead)')
+})
+
+test('a live worker that sent ready gets no integrated check until its loop rests', async ($, on) => {
+  const world = seat(on, { git: { status: '', ahead: '2', mergedTree: 'dd0dd0d', isTipConflict: true, landedIn: 'c2' } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  await world.clock.advance(5_000)
+  await $.turn.complete(workerTurn(READY))
+  await world.clock.advance(5_000)
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toBe('events  in flight  claude-sonnet-5-5  medium')
+  expect(world.gitCalls.filter(call => CHECK_CALLS.includes(call))).toEqual([])
+  world.agents = [{ ...w1, status: 'idle' }]
+  await $.turn.complete(mainTurn)
+  await world.clock.advance(5_000)
+  expect((await band(ui))[1]).toBe('events  integrated  claude-sonnet-5-5  medium')
+  expect(world.gitCalls.filter(call => CHECK_CALLS.includes(call))).toEqual(CHECK_CALLS)
 })
 
 test('a blocked message reads blocked once the worker stopped', async ($, on) => {
