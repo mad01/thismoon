@@ -124,9 +124,11 @@ every 2 seconds, so neither needs a restart, and off ends every session.
 sessions serve holds, and `present terminal kill <page> <session>` ends
 one. A shared instance never runs a session; its terminal blocks say so.
 
-A block that says "Live terminal is off" while status says on: serve may
-run an older binary without the terminal routes (see version skew). Or the
-CLI and serve resolved different workdirs. A block that shows a reason and
+A block that says "Live terminal is off" while status says on: a block
+whose session ended waits for Run, and one that never started asks again
+within 3 seconds. Past that, serve may run an older binary without the
+terminal routes (see version skew). Or the CLI and serve resolved
+different workdirs. A block that shows a reason and
 stops: the session could not start, most often a cwd that is relative or
 missing. Fix the block with present_update, then press Run. A session that
 sits blank for about 10 seconds before its prompt: a shell startup hook is

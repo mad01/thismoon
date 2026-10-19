@@ -896,7 +896,7 @@ A `terminal` block puts a live terminal on the page. The local `present serve` r
 ]}
 ```
 
-- **Nothing runs until the live terminal is on.** It is off by default, and the block then says "Live terminal is off. Run `present terminal on`, then press Run." `present terminal status` prints which. `present terminal off` ends every session within two seconds.
+- **Nothing runs until the live terminal is on.** It is off by default, and the block then says "Live terminal is off. Run `present terminal on`, then press Run." A block that has not started yet keeps asking every few seconds and starts by itself once the switch is on and its slide is the one showing; a block whose session ended waits for Run. `present terminal status` prints which. `present terminal off` ends every session within two seconds, and each open block shows the off note.
 - **The block attaches when it is first seen**: scrolled into view in the brief, on its slide's first showing in the deck, or on Run. The first attach starts the session and types the `prefill`. Every later attach replays the last 1 MiB of output and takes input again.
 - **What a session runs comes from the stored page.** Serve reads `cmd`, `cwd`, and `prefill` from the page's own block with that session name, never from the browser. A running session keeps what it started with, so a changed `cmd` takes effect after Kill and Run.
 - **Run and Kill sit in the block's header.** Kill ends the process, and the block stays killed through that tab's reloads until Run. Run on a session that has ended starts it again.

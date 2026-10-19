@@ -1302,6 +1302,7 @@
   var TERMINAL_RETRY_MS = 500; // the first reconnect delay, doubled per try
   var TERMINAL_RETRY_MAX_MS = 8000;
   var TERMINAL_RETRIES = 10;
+  var TERMINAL_OFF_POLL_MS = 3000; // how often a block showing the off note asks the switch again
   var TERMINAL_FONT_WAIT_MS = 2000; // how long a terminal waits for the mono font
   var terminals = []; // every upgraded block's controller
   var terminalLeaving = false; // the tab is unloading, so a closing socket is no drop
@@ -1514,11 +1515,30 @@
     terminalSwitch().then(function (sw) {
       ctl.checking = false;
       if (ctl.held) return;
-      if (sw === 'off') { terminalStatus(ctl, 'off'); terminalNote(ctl, terminalOffNote()); return; }
+      if (sw === 'off') { terminalStatus(ctl, 'off'); terminalNote(ctl, terminalOffNote()); terminalPollOff(ctl); return; }
       if (sw === 'error') { terminalRetry(ctl); return; }
       terminalNote(ctl, null);
       terminalConnect(ctl);
     });
+  }
+  // terminalPollOff keeps a block that found the switch off asking, so
+  // `present terminal on` in another window starts it without a reload or
+  // a Run press, the way its first showing would have. The asks are quiet
+  // (no status change) and pause while the tab is hidden or the block is
+  // off screen (a slide not showing has no width), so only the block the
+  // room sees starts its session. A block whose session has ended waits
+  // for Run instead: the switch coming back is no reason to run its
+  // command again.
+  function terminalPollOff(ctl) {
+    clearTimeout(ctl.retry);
+    ctl.retry = setTimeout(function () {
+      if (ctl.state !== 'off' || ctl.exited || ctl.held || ctl.ws) return;
+      if (document.hidden || ctl.canvas.clientWidth < 1 || terminalUnrevealed(ctl)) { terminalPollOff(ctl); return; }
+      terminalSwitch().then(function (sw) {
+        if (ctl.state !== 'off' || ctl.exited || ctl.held || ctl.ws) return;
+        if (sw === 'on') terminalAttach(ctl); else terminalPollOff(ctl);
+      });
+    }, TERMINAL_OFF_POLL_MS);
   }
   // terminalConnect opens the socket. The query carries the size only:
   // serve reads what the session runs (its command, directory and prefill)
@@ -1561,8 +1581,7 @@
   // reconnect, and the replay fills in what was missed.
   function terminalClosed(ctl, code, reason) {
     if (code === 1000) {
-      ctl.exited = true;
-      terminalStatus(ctl, 'exited', 'ended');
+      terminalExited(ctl, 'ended');
     } else if (code === 1008) {
       terminalStatus(ctl, 'disconnected', 'refused');
       terminalNote(ctl, reason || 'serve refused this terminal.');
@@ -1590,9 +1609,21 @@
       if (!ctl.held) terminalStatus(ctl, 'live');
       terminalResize(ctl);
     } else if (msg.t === 'exit') {
-      ctl.exited = true;
-      terminalStatus(ctl, 'exited', 'exited (code ' + msg.code + ')');
+      terminalExited(ctl, 'exited (code ' + msg.code + ')');
     }
+  }
+  // terminalExited marks the session ended. `present terminal off` ends
+  // every session the same way a program exiting does, so the block asks
+  // the switch once and, when it is off, shows the off note in place of
+  // the exit code. A Run pressed meanwhile keeps its own state.
+  function terminalExited(ctl, label) {
+    ctl.exited = true;
+    terminalStatus(ctl, 'exited', label);
+    terminalSwitch().then(function (sw) {
+      if (sw !== 'off' || !ctl.exited || ctl.ws) return;
+      terminalStatus(ctl, 'off');
+      terminalNote(ctl, terminalOffNote());
+    });
   }
   // terminalRetry reconnects after a dropped socket or an unreachable
   // serve: 0.5 s doubling to 8 s, ten tries, then it stays disconnected
