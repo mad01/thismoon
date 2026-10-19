@@ -32,7 +32,8 @@ const (
 	terminalReadLimit = 1 << 20
 	// terminalWriteTimeout drops a browser that stops reading its socket.
 	terminalWriteTimeout = 10 * time.Second
-	// maxTerminalDim bounds the cols and rows a client may ask for.
+	// maxTerminalDim bounds the cols and rows a client may ask for, in the
+	// query and in a resize frame alike.
 	maxTerminalDim = 1000
 )
 
@@ -389,6 +390,11 @@ func (s *Server) applyTerminalControl(
 	}
 	switch c.T {
 	case "resize":
+		if c.Cols > maxTerminalDim || c.Rows > maxTerminalDim {
+			log.Printf("present: terminal %s/%s: resize %dx%d is past %d",
+				page, name, c.Cols, c.Rows, maxTerminalDim)
+			return
+		}
 		if err := sub.Resize(c.Cols, c.Rows); err != nil {
 			log.Printf("present: terminal %s/%s: %v", page, name, err)
 		}

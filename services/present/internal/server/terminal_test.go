@@ -573,3 +573,20 @@ func waitForTerminal(t *testing.T, what string, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A resize frame is held to the same bounds as the query's size: one past
+// them is skipped and the terminal keeps its size.
+func TestTerminalSkipsAnOversizedResize(t *testing.T) {
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf ready; read x; stty size"))
+	r := &terminalReader{conn: f.mustDial(t, "demo", url.Values{"cols": {"100"}, "rows": {"30"}})}
+	r.outputUntil(t, "ready")
+
+	writeText(t, r.conn, map[string]any{"t": "resize", "cols": 65535, "rows": 65535})
+	if err := r.conn.Write(t.Context(), websocket.MessageBinary, []byte("\n")); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	r.until(t, "exit")
+	if !strings.Contains(r.output.String(), "30 100") {
+		t.Errorf("output = %q, want the size kept at 30 100", r.output.String())
+	}
+}
