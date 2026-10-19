@@ -59,12 +59,13 @@ func Disable(path string) error {
 // WatchSwitch checks the switch at path every interval until ctx ends and
 // kills every session while it is off, so turning the terminal off ends
 // running sessions within one interval. A switch it cannot read counts as
-// off; logf reports why.
+// off; logf reports why when that starts, and again once the switch reads.
 func (m *Manager) WatchSwitch(
 	ctx context.Context, path string, every time.Duration, logf func(string, ...any),
 ) {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
+	unreadable := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -72,9 +73,13 @@ func (m *Manager) WatchSwitch(
 		case <-tick.C:
 		}
 		on, err := Enabled(path)
-		if err != nil {
+		switch {
+		case err != nil && !unreadable:
 			logf("present: %v; treating the live terminal as off", err)
+		case err == nil && unreadable:
+			logf("present: live terminal switch %s reads again", path)
 		}
+		unreadable = err != nil
 		if !on {
 			m.KillAll()
 		}
