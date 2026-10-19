@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/mad01/thismoon/compare/belt/v2.9.0...belt/v2.10.0) (2026-10-19)
+
+
+### Features
+
+* **belt:** deny hook calls whose payload does not decode ([#232](https://github.com/mad01/thismoon/issues/232)) ([65c9076](https://github.com/mad01/thismoon/commit/65c9076693ba23da6d8d8083da3e296a182cbdf1))
+
 ## [2.9.0](https://github.com/mad01/thismoon/compare/belt/v2.8.0...belt/v2.9.0) (2026-10-16)
 
 

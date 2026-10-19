@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/mad01/thismoon/compare/present/v1.17.0...present/v1.18.0) (2026-10-19)
+
+
+### Features
+
+* **humanizer:** scope each CONTEXT.md glossary to its own directory ([#234](https://github.com/mad01/thismoon/issues/234)) ([0174cc3](https://github.com/mad01/thismoon/commit/0174cc36faf0f55c30ada419f1b0452936a60c43))
+
 ## [1.17.0](https://github.com/mad01/thismoon/compare/present/v1.16.0...present/v1.17.0) (2026-10-16)
 
 
