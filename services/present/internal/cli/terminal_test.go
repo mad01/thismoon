@@ -60,6 +60,9 @@ func TestTerminalOnOffStatus(t *testing.T) {
 	if !strings.Contains(out, terminal.SwitchPath(dir)) {
 		t.Errorf("on printed %q, want the switch path", out)
 	}
+	if !strings.Contains(out, "local present serve only") {
+		t.Errorf("on printed %q, want the note that only a local serve reads it", out)
+	}
 	if _, err := os.Stat(terminal.SwitchPath(dir)); err != nil {
 		t.Errorf("on left no switch file: %v", err)
 	}

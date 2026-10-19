@@ -20,7 +20,9 @@ import (
 
 const (
 	// terminalOrigin is the d-man route a page opened through the .this
-	// front door arrives on.
+	// front door arrives on. It is load-bearing: d-man rewrites the Host to
+	// 127.0.0.1:7423 on the way in, so websocket.Accept's own rule (an
+	// Origin equal to the Host passes) never covers that path.
 	terminalOrigin = "present.this"
 	// terminalOffBody answers every terminal socket while the switch is off.
 	terminalOffBody = "live terminal is off: run present terminal on"

@@ -33,6 +33,30 @@ func TestPageShellPerMode(t *testing.T) {
 	}
 }
 
+// The shared shell tells the browser it is on a shared instance; a local
+// shell says nothing. The deck shell wraps the same shell, so a shared deck
+// carries the mode and the deck's audio default on the one <html> tag.
+func TestSharedShellMarksTheMode(t *testing.T) {
+	const mode = `data-present-mode="shared"`
+	local, shared := string(pageShell(ModeLocal)), string(pageShell(ModeShared))
+	if !strings.Contains(local, `<html lang="en">`) {
+		t.Fatal("shell.html no longer carries the <html> tag the mode rewrite keys on")
+	}
+	if strings.Contains(local, "data-present-mode") ||
+		strings.Contains(string(deckShell(pageShell(ModeLocal))), "data-present-mode") {
+		t.Error("a local shell names a mode")
+	}
+	if !strings.Contains(shared, `<html lang="en" `+mode+`>`) {
+		t.Errorf("shared brief shell lacks %s on <html>", mode)
+	}
+	deck := string(deckShell(pageShell(ModeShared)))
+	want := `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off" ` +
+		mode + `>`
+	if !strings.Contains(deck, want) {
+		t.Errorf("shared deck shell lacks %q", want)
+	}
+}
+
 // Every shell links the themes page webkit serves, so a reader can pick a
 // palette family from any present view, shared instances included.
 func TestShellsLinkThemesPage(t *testing.T) {
@@ -81,7 +105,7 @@ func TestSharedChromeHasNoSitePicker(t *testing.T) {
 // <html>, which webkit's boot.js and the header read, while the brief shell
 // names neither and so gets webkit's defaults.
 func TestDeckShellAudioDefault(t *testing.T) {
-	const marker = `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off">`
+	const marker = `<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off"`
 	for name, mode := range map[string]Mode{"local": ModeLocal, "shared": ModeShared} {
 		brief := string(pageShell(mode))
 		deck := string(deckShell(pageShell(mode)))

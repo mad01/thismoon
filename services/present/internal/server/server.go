@@ -38,15 +38,22 @@ var shellHTML []byte
 // pageShell is shellHTML for the mode. A shared instance has no local .this
 // sites for the ⌘K picker to jump between and no index for the back link to
 // return to, so its shell leaves the cmdk control out (webkit turns the
-// shortcut off with it) and points the link at the how-to root. One shell
-// file, two substitutions, both pinned by a test.
+// shortcut off with it) and points the link at the how-to root. It also
+// marks <html> with data-present-mode="shared", so the browser knows where
+// it is without probing a route (a terminal block shows its "not on a
+// shared instance" placeholder from it). One shell file, three
+// substitutions, all pinned by a test.
 func pageShell(mode Mode) []byte {
 	if mode != ModeShared {
 		return shellHTML
 	}
 	out := bytes.Replace(shellHTML, []byte(`controls="cmdk,`), []byte(`controls="`), 1)
-	return bytes.Replace(out, []byte(`back-label="← All"`), []byte(`back-label="← About"`), 1)
+	out = bytes.Replace(out, []byte(`back-label="← All"`), []byte(`back-label="← About"`), 1)
+	return bytes.Replace(out, []byte(`<html lang="en">`), []byte(sharedHTMLTag), 1)
 }
+
+// sharedHTMLTag is the shared shell's <html> tag.
+const sharedHTMLTag = `<html lang="en" data-present-mode="shared">`
 
 //go:embed app.js
 var appJS []byte
@@ -169,11 +176,7 @@ func New(st store.Store, opts Options) *Server {
 	if opts.Mode != ModeShared && opts.Workdir != "" {
 		imgs = images.New(opts.Workdir)
 	}
-	var terms *terminal.Manager
-	if opts.Mode != ModeShared {
-		terms = opts.Terminals
-	}
-	return &Server{
+	srv := &Server{
 		deckCtl:     deckCtl,
 		history:     history,
 		images:      imgs,
@@ -191,11 +194,16 @@ func New(st store.Store, opts Options) *Server {
 		sharer:      opts.Sharer,
 		shell:       pageShell(opts.Mode),
 		deckShell:   deckShell(pageShell(opts.Mode)),
-
-		terminals:       terms,
-		terminalSwitch:  opts.TerminalSwitch,
-		terminalOrigins: append([]string{terminalOrigin}, opts.TerminalOrigins...),
 	}
+	if opts.Mode != ModeShared {
+		// The live terminal is local only: a shared instance keeps no
+		// manager, no switch path, and no origins, and Handler never
+		// registers a terminal route for it.
+		srv.terminals = opts.Terminals
+		srv.terminalSwitch = opts.TerminalSwitch
+		srv.terminalOrigins = append([]string{terminalOrigin}, opts.TerminalOrigins...)
+	}
+	return srv
 }
 
 // Handler builds the HTTP routes for the server's mode, wrapped in

@@ -15,13 +15,15 @@ import (
 // read-aloud controls hidden where the brief opens with them shown, and each
 // view remembers its own choice: the shell names the storage key and the
 // default on <html>, where webkit's boot.js reads them before paint and the
-// header reads them when it wires its audio toggle. The marker it keys on is
-// pinned by a test, like pageShell's.
+// header reads them when it wires its audio toggle. It keys on the start of
+// the <html> tag, so it also matches the shared shell's tag, which carries
+// data-present-mode after the language. The marker is pinned by a test,
+// like pageShell's.
 func deckShell(shell []byte) []byte {
 	return bytes.Replace(
 		shell,
-		[]byte(`<html lang="en">`),
-		[]byte(`<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off">`),
+		[]byte(`<html lang="en"`),
+		[]byte(`<html lang="en" data-audio-key="webkit-audio-deck" data-audio-default="off"`),
 		1,
 	)
 }

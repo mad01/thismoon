@@ -35,7 +35,8 @@ a pseudo-terminal: a login shell, or a command under it. It is off by default.
 
 on, off, and status act on the switch file in the workdir, so they work
 with serve running or not and need no restart. list and kill ask the local
-serve on --port.`,
+serve on --port. Only a local serve reads the switch: a shared instance
+(serve --shared) has no live terminal at all.`,
 }
 
 var terminalOnCmd = &cobra.Command{
@@ -85,9 +86,16 @@ func runTerminalOn(cmd *cobra.Command, _ []string) error {
 	if err := terminal.Enable(path); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "live terminal on (%s)\n", path)
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "live terminal on (%s)\n", path)
+	fmt.Fprintln(out, sharedNote)
 	return nil
 }
+
+// sharedNote is the reminder on prints: the switch is read by a local serve
+// alone, and a shared instance has no live terminal to switch.
+const sharedNote = "note: this switches the local present serve only; " +
+	"a shared instance never runs a live terminal"
 
 func runTerminalOff(cmd *cobra.Command, _ []string) error {
 	if err := terminal.Disable(terminal.SwitchPath(flagWorkdir)); err != nil {

@@ -246,11 +246,35 @@ func TestTerminalRefusesForeignOrigins(t *testing.T) {
 	if got := f.mgr.List(); len(got) != 0 {
 		t.Errorf("refused origins spawned %+v", got)
 	}
+}
 
-	ok := &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {"http://present.this"}}}
-	if _, _, err := f.dial(t, "demo", q, ok); err != nil {
-		t.Errorf("present.this origin refused: %v", err)
+// d-man proxies present.this with the Host rewritten to the loopback
+// address serve listens on, so the request Host never equals the Origin
+// there. The present.this pattern is what admits it, and only it.
+func TestTerminalAcceptsTheDManOriginOnALoopbackHost(t *testing.T) {
+	f := setupTerminal(t, ModeLocal, true)
+	loopback := strings.TrimPrefix(f.ts.URL, "http://")
+	if !strings.HasPrefix(loopback, "127.0.0.1:") {
+		t.Fatalf("test server on %s, want a 127.0.0.1 address", loopback)
 	}
+	dialFrom := func(origin string) (*websocket.Conn, *http.Response, error) {
+		return f.dial(t, "demo", url.Values{"cmd": {"printf hi; cat"}}, &websocket.DialOptions{
+			Host:       loopback,
+			HTTPHeader: http.Header{"Origin": {origin}},
+		})
+	}
+
+	_, resp, err := dialFrom("http://evil.example")
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Errorf("evil.example on a loopback Host: err %v, response %v; want 403", err, resp)
+	}
+	conn, _, err := dialFrom("http://present.this")
+	if err != nil {
+		t.Fatalf("present.this on a loopback Host refused: %v", err)
+	}
+	r := &terminalReader{conn: conn}
+	r.until(t, "hello")
+	r.outputUntil(t, "hi")
 }
 
 func TestTerminalSocketSendsHelloOutputThenExit(t *testing.T) {
@@ -332,21 +356,25 @@ func deleteTerminal(t *testing.T, f *terminalFixture, session string) int {
 	return resp.StatusCode
 }
 
+// A shared instance has no terminal surface at all: every route is a plain
+// 404, even with a manager passed in and the switch file on in its workdir.
 func TestTerminalRoutesAbsentInSharedMode(t *testing.T) {
 	f := setupTerminal(t, ModeShared, true)
+	if on, err := terminal.Enabled(f.toggle); err != nil || !on {
+		t.Fatalf("switch file must be on for this test: %v %v", on, err)
+	}
 	for _, p := range []string{"/api/terminal", "/api/p/" + f.page + "/terminal/demo"} {
 		code, body := get(t, f.ts.URL+p)
 		if code != http.StatusNotFound || strings.Contains(body, terminalOffBody) {
 			t.Errorf("shared GET %s = %d %q, want a plain 404", p, code, body)
 		}
 	}
-	if code := deleteTerminal(t, f, "demo"); code != http.StatusNotFound &&
-		code != http.StatusMethodNotAllowed {
-		t.Errorf("shared DELETE = %d, want no terminal route", code)
+	if code := deleteTerminal(t, f, "demo"); code != http.StatusNotFound {
+		t.Errorf("shared DELETE = %d, want 404", code)
 	}
-	_, _, err := f.dial(t, "demo", url.Values{"cmd": {"sleep 60"}}, nil)
-	if err == nil {
-		t.Error("shared mode accepted a terminal socket")
+	_, resp, err := f.dial(t, "demo", url.Values{"cmd": {"sleep 60"}}, nil)
+	if err == nil || resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Errorf("shared socket: err %v, response %v; want 404", err, resp)
 	}
 	if got := f.mgr.List(); len(got) != 0 {
 		t.Errorf("shared mode spawned %+v", got)
