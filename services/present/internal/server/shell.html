@@ -253,6 +253,8 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
   padding: 0.15rem 0.5rem; transition: border-color 0.15s, color 0.15s;
 }
 .present-terminal-run { margin-left: auto; }
+/* A shared instance hides Run and Kill: it has no sessions. */
+.present-terminal-run[hidden], .present-terminal-kill[hidden] { display: none; }
 .present-terminal-run:hover, .present-terminal-kill:hover { border-color: var(--text-3); color: var(--text-1); }
 .present-terminal-run:focus-visible, .present-terminal-kill:focus-visible { outline: 2px solid var(--code-keyword); outline-offset: 1px; }
 .present-terminal-note {

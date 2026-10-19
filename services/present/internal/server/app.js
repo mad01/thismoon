@@ -1464,7 +1464,7 @@
   // wanted. A later call only refits.
   function terminalMount(ctl) {
     if (ctl.term) { terminalFit(ctl); return; }
-    if (ctl.missing || ctl.opening || ctl.canvas.clientWidth < 1) return;
+    if (ctl.inert || ctl.opening || ctl.canvas.clientWidth < 1) return;
     ctl.opening = true;
     var family = cssVar('--mono', 'monospace');
     terminalFontsReady(family).then(function () {
@@ -1491,9 +1491,10 @@
   // terminalAttach connects the block to its session once serve says the
   // live terminal is on. Off, the canvas says how to turn it on and Run
   // asks again. A block held by Kill stays down until Run, so a later
-  // showing does not start the session again.
+  // showing does not start the session again, and an inert block (a shared
+  // instance, no xterm asset) never asks at all.
   function terminalAttach(ctl) {
-    if (ctl.held) return;
+    if (ctl.held || ctl.inert) return;
     ctl.wanted = true;
     if (!ctl.term) { terminalMount(ctl); return; }
     if (ctl.ws || ctl.checking || ctl.exited || terminalLeaving) return;
@@ -1603,48 +1604,61 @@
     terminalMount(ctl);
     if (!ctl.wanted) terminalAttach(ctl);
   }
+  // terminalObserve watches a live block: a resize refits the terminal to
+  // its canvas, and the first time the block is seen it attaches.
+  function terminalObserve(ctl) {
+    if (typeof ResizeObserver === 'function') {
+      // A frame later, since the fit sets the height of the canvas the
+      // observer watches, which the browser reports as a loop otherwise.
+      new ResizeObserver(function () { requestAnimationFrame(function () { terminalMount(ctl); }); }).observe(ctl.canvas);
+    }
+    if (!('IntersectionObserver' in window)) { terminalAttach(ctl); return; }
+    var io = new IntersectionObserver(function (entries) {
+      if (!entries[entries.length - 1].isIntersecting) return;
+      io.disconnect();
+      terminalAttach(ctl);
+    });
+    io.observe(ctl.block);
+  }
   // upgradeTerminal makes one terminal block live: its controller, Run and
-  // Kill, an observer that refits the terminal to its canvas, and one that
-  // attaches it the first time it is seen. The canvas gets a height from
-  // its rows at once, so the page does not jump when xterm opens. Without
-  // the xterm asset the canvas says so and only Kill works.
+  // Kill, and the observers. The canvas gets the height its rows need at
+  // once, so the page does not jump when xterm opens, and a placeholder
+  // holds the same frame. A block that can never run is inert: on a shared
+  // instance (the shell marks its html data-present-mode="shared"), which
+  // has no terminal routes, it says so, hides Run and Kill, and never asks
+  // the server anything; without the xterm asset it says so and only Kill
+  // works.
   function upgradeTerminal(block) {
     var canvas = block.querySelector('.present-terminal-canvas');
     if (block._terminal || !canvas) return;
     var rows = parseInt(block.getAttribute('data-rows'), 10);
+    var shared = document.documentElement.getAttribute('data-present-mode') === 'shared';
+    var missing = typeof Terminal !== 'function' || !window.FitAddon;
     var ctl = {
       block: block, canvas: canvas, status: block.querySelector('.present-terminal-status'),
       session: block.getAttribute('data-session') || '', cmd: block.getAttribute('data-cmd') || '',
       cwd: block.getAttribute('data-cwd') || '', rowsNamed: rows > 0, rows: rows > 0 ? rows : TERMINAL_ROWS,
       term: null, fit: null, ws: null, encoder: new TextEncoder(), state: '', wanted: false,
       exited: false, held: false, checking: false, opening: false, shown: false, tries: 0, retry: 0,
-      missing: typeof Terminal !== 'function' || !window.FitAddon
+      inert: shared || missing
     };
     block._terminal = ctl;
     terminals.push(ctl);
+    if (!terminalFills(ctl)) canvas.style.height = Math.ceil(ctl.rows * terminalFontSize(ctl) * TERMINAL_LINE_GUESS) + 'px';
     var run = block.querySelector('.present-terminal-run'), kill = block.querySelector('.present-terminal-kill');
+    if (shared) {
+      [run, kill].forEach(function (b) { if (b) b.hidden = true; });
+      terminalStatus(ctl, 'unavailable');
+      terminalNote(ctl, 'Live terminal is not available on a shared instance.');
+      return;
+    }
     if (kill) kill.addEventListener('click', function () { terminalKill(ctl); });
-    if (ctl.missing) {
+    if (missing) {
       terminalNote(ctl, 'Live terminal needs the xterm asset: run make cache in services/present.');
       return;
     }
     if (run) run.addEventListener('click', function () { terminalRun(ctl); });
-    if (!terminalFills(ctl)) canvas.style.height = Math.ceil(ctl.rows * terminalFontSize(ctl) * TERMINAL_LINE_GUESS) + 'px';
-    if (typeof ResizeObserver === 'function') {
-      // A frame later, since the fit sets the height of the canvas the
-      // observer watches, which the browser reports as a loop otherwise.
-      new ResizeObserver(function () { requestAnimationFrame(function () { terminalMount(ctl); }); }).observe(canvas);
-    }
-    if ('IntersectionObserver' in window) {
-      var io = new IntersectionObserver(function (entries) {
-        if (!entries[entries.length - 1].isIntersecting) return;
-        io.disconnect();
-        terminalAttach(ctl);
-      });
-      io.observe(block);
-    } else {
-      terminalAttach(ctl);
-    }
+    terminalObserve(ctl);
     terminalMount(ctl);
   }
   function initPresentTerminals(root) {
