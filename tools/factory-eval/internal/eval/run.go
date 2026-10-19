@@ -70,17 +70,17 @@ func (cfg Config) isolation() Isolation { return Isolation{Home: cfg.Home, Sourc
 // cancelled ctx stops the batch after the run in flight.
 func Run(ctx context.Context, cfg Config) Results {
 	res := Results{
-		Schema:        SchemaID,
-		DryRun:        cfg.DryRun,
-		StartedAt:     cfg.Now().UTC(),
-		Commit:        cfg.Cases.Commit,
-		CasesFile:     cfg.CasesPath,
-		CasesDigest:   cfg.Cases.Digest(),
-		SignOff:       cfg.Cases.SignOff,
-		ClaudeVersion: cfg.ClaudeVersion,
-		Prereqs:       nonNil(cfg.Prereqs),
-		SettingsDeny:  cfg.isolation().DenyRules(),
-		Runs:          []RunResult{},
+		Schema:              SchemaID,
+		DryRun:              cfg.DryRun,
+		StartedAt:           cfg.Now().UTC(),
+		Commit:              cfg.Cases.Commit,
+		CasesFile:           cfg.CasesPath,
+		CasesDigest:         cfg.Cases.Digest(),
+		SignOff:             cfg.Cases.SignOff,
+		ClaudeVersion:       cfg.ClaudeVersion,
+		Prereqs:             nonNil(cfg.Prereqs),
+		SettingsPermissions: settingsPermissions(cfg.Arms, cfg.isolation()),
+		Runs:                []RunResult{},
 	}
 	for i := 1; i <= cfg.Runs && ctx.Err() == nil; i++ {
 		for _, t := range cfg.Tiers {
@@ -151,7 +151,8 @@ func runOne(ctx context.Context, cfg Config, arm string, tier cases.Tier, index 
 		rr.Stop, rr.Error = stopError, err.Error()
 		return rr
 	}
-	if rr.SettingsFile, err = cfg.isolation().WriteSettings(co.Root); err != nil {
+	perms := armPermissions(arm, cfg.isolation())
+	if rr.SettingsFile, err = WriteSettings(co.Root, perms); err != nil {
 		rr.Stop, rr.Error = stopError, err.Error()
 		settle(co, &rr)
 		return rr

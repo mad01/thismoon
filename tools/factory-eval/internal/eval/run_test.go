@@ -112,7 +112,7 @@ func (a *scriptedAgent) Run(_ context.Context, inv claude.Invocation) (claude.Ou
 	}
 	key := arm + "/" + inv.Args[slices.Index(inv.Args, "--model")+1]
 	a.called = append(a.called, key)
-	assertCleanStart(a.t, inv)
+	assertCleanStart(a.t, inv, arm)
 	if key == a.escape {
 		git(a.t, a.src, "branch", "escaped")
 	}
@@ -130,9 +130,9 @@ func (a *scriptedAgent) Run(_ context.Context, inv claude.Invocation) (claude.Ou
 }
 
 // assertCleanStart checks what an arm session starts with: a clone with no
-// branch, no tag and no remote, and the harness settings file with its
-// deny rules.
-func assertCleanStart(t *testing.T, inv claude.Invocation) {
+// branch, no tag and no remote, and the harness settings file with this
+// arm's allow and deny lists and the isolation rules.
+func assertCleanStart(t *testing.T, inv claude.Invocation, arm string) {
 	t.Helper()
 	if refs := git(t, inv.Dir, "for-each-ref", "refs/heads", "refs/tags"); refs != "" {
 		t.Errorf("the clone holds refs when the arm starts:\n%s", refs)
@@ -141,9 +141,19 @@ func assertCleanStart(t *testing.T, inv claude.Invocation) {
 		t.Errorf("the clone has remotes when the arm starts: %s", remotes)
 	}
 	settings := inv.Args[slices.Index(inv.Args, "--settings")+1]
-	raw, err := os.ReadFile(settings)
-	if err != nil || !strings.Contains(string(raw), `"Bash(curl *)"`) {
-		t.Errorf("settings file %s = %s, %v; want the deny rules", settings, raw, err)
+	perms := readPermissions(t, settings)
+	allowFlag := strings.Split(inv.Args[slices.Index(inv.Args, "--allowedTools")+1], ",")
+	denyFlag := strings.Split(inv.Args[slices.Index(inv.Args, "--disallowedTools")+1], ",")
+	if !slices.Equal(perms.Allow, allowFlag) ||
+		slices.Contains(perms.Allow, "Agent") != (arm == ArmFactory) {
+		t.Errorf("%s settings file allow = %q, want the arm's --allowedTools list",
+			arm, perms.Allow)
+	}
+	n := len(denyFlag)
+	if len(perms.Deny) <= n || !slices.Equal(perms.Deny[:n], denyFlag) ||
+		!slices.Contains(perms.Deny[n:], "Bash(curl *)") {
+		t.Errorf("%s settings file deny = %q, want the arm's --disallowedTools list, "+
+			"then the isolation rules", arm, perms.Deny)
 	}
 }
 
@@ -340,9 +350,12 @@ func normalize(res *Results) {
 	res.Commit = "45518e8b8461d491dc2a1aafaf1a8aa56702858a"
 	res.CasesDigest = strings.Repeat("5e", 32)
 	res.SignOff = cases.SignOff{}
-	res.SettingsDeny = Isolation{
+	iso := Isolation{
 		Home: "/Users/example", Source: "/Users/example/code/src/github.com/mad01/thismoon",
-	}.DenyRules()
+	}
+	for arm := range res.SettingsPermissions {
+		res.SettingsPermissions[arm] = armPermissions(arm, iso)
+	}
 	for i := range res.Runs {
 		res.Runs[i].SettingsFile = root + "/" + SettingsFileName
 		if res.Runs[i].KeptDir != "" {

@@ -168,7 +168,9 @@ type ArmFlags struct {
 	Allowed      []string
 	Disallowed   []string
 	// Settings is the harness's own settings file, loaded beside the
-	// user's: its deny rules beat any allow rule the user's settings hold.
+	// user's. It repeats Allowed and Disallowed, so the lists reach
+	// subagents too, and its deny rules beat any allow rule the user's
+	// settings hold.
 	Settings string
 }
 

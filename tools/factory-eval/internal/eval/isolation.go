@@ -21,9 +21,10 @@ type Isolation struct {
 	Source string
 }
 
-// DenyRules are the rules the settings file holds. Claude loads the file
-// beside the user's own settings, and a deny rule beats every allow rule,
-// so the user's allow list cannot reopen these paths. The rules cover
+// DenyRules are the isolation rules every run's settings file holds after
+// the arm's own deny list. Claude loads the file beside the user's own
+// settings, and a deny rule beats every allow rule, so neither the user's
+// allow list nor the arm's can reopen these paths. The rules cover
 // ~/code, ~/.worktrees and the source checkout when it lives outside both.
 // An Edit rule covers the Write tool too: Claude checks file writes
 // against Edit rules and never consults a Write path rule. git -C is
@@ -70,12 +71,18 @@ func (iso Isolation) editDirs() []string {
 	return dirs
 }
 
-// WriteSettings writes the settings file into dir, read-only, and returns
-// its path.
-func (iso Isolation) WriteSettings(dir string) (string, error) {
-	raw, err := json.MarshalIndent(map[string]any{
-		"permissions": map[string]any{"deny": iso.DenyRules()},
-	}, "", "  ")
+// Permissions is the permissions block of a run's settings file.
+type Permissions struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny"`
+}
+
+// WriteSettings writes a settings file holding perms into dir, read-only,
+// and returns its path.
+func WriteSettings(dir string, perms Permissions) (string, error) {
+	raw, err := json.MarshalIndent(struct {
+		Permissions Permissions `json:"permissions"`
+	}{perms}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("eval: encode settings: %w", err)
 	}

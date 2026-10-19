@@ -26,21 +26,22 @@ const (
 
 // Results is the one document a batch writes. CasesDigest is the cases
 // file's content digest, which a signed-off file also holds in its
-// sign-off; SettingsDeny is the deny list every run's settings file held.
+// sign-off. SettingsPermissions maps each arm to the permissions block
+// its runs' settings files held.
 type Results struct {
-	Schema        string          `json:"schema"`
-	DryRun        bool            `json:"dry_run"`
-	StartedAt     time.Time       `json:"started_at"`
-	FinishedAt    time.Time       `json:"finished_at"`
-	Commit        string          `json:"commit"`
-	CasesFile     string          `json:"cases_file"`
-	CasesDigest   string          `json:"cases_digest"`
-	SignOff       cases.SignOff   `json:"sign_off"`
-	ClaudeVersion string          `json:"claude_version"`
-	Prereqs       []prereq.Result `json:"prereqs"`
-	SettingsDeny  []string        `json:"settings_deny"`
-	Runs          []RunResult     `json:"runs"`
-	Summary       Summary         `json:"summary"`
+	Schema              string                 `json:"schema"`
+	DryRun              bool                   `json:"dry_run"`
+	StartedAt           time.Time              `json:"started_at"`
+	FinishedAt          time.Time              `json:"finished_at"`
+	Commit              string                 `json:"commit"`
+	CasesFile           string                 `json:"cases_file"`
+	CasesDigest         string                 `json:"cases_digest"`
+	SignOff             cases.SignOff          `json:"sign_off"`
+	ClaudeVersion       string                 `json:"claude_version"`
+	Prereqs             []prereq.Result        `json:"prereqs"`
+	SettingsPermissions map[string]Permissions `json:"settings_permissions"`
+	Runs                []RunResult            `json:"runs"`
+	Summary             Summary                `json:"summary"`
 }
 
 // RunResult is one arm session at one tier, with its cases scored.

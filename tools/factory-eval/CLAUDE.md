@@ -77,6 +77,12 @@ Everything else is the paid path.
 - `cases.ContentDigest` blanks each `sign_off` line to its key and `""`
   before hashing; README documents the rule for people. Changing the rule
   voids every existing sign-off.
+- The arm's allow and deny lists go on the command line and into the
+  run's settings file (`armPermissions`). It looks like duplication, but
+  Claude Code documents settings-file rules as reaching subagents and never
+  says that of `--allowedTools`. Without the settings copy a factory worker
+  under dontAsk could be denied every edit and command, failing the arm for
+  a reason unrelated to the factory.
 
 ## Data model & storage
 
@@ -117,13 +123,14 @@ schema. Review the diff before committing it.
 - **Arm sessions load the user's settings** (hooks, skills, agent
   definitions, permission rules), because the factory arm needs them. A
   deny rule beats every allow rule wherever it comes from: the deny list in
-  `internal/eval/profile.go` and the run's settings file from
-  `internal/eval/isolation.go`. That prevents only the paths those rules
+  `internal/eval/profile.go`, on the command line and in the run's settings
+  file, and the isolation rules from `internal/eval/isolation.go`, in the
+  settings file only. That prevents only the paths those rules
   name. It is not a sandbox: a Bash command can still reach a checkout
   through `cd` or `$HOME`, and only the fingerprint detects that.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
-  against Edit rules and never consults a Write path rule, so the settings
-  file holds Edit rules only, and a test keeps Write rules out. Its `git -C`
+  against Edit rules and never consults a Write path rule, so the isolation
+  rules are Edit rules only, and a test keeps Write rules out. Their `git -C`
   rules deny the same dirs: `~/code`, `~/.worktrees`, and the source when it
   lives outside both.
 - **The fingerprint taints a run on any change to the source checkout**,
