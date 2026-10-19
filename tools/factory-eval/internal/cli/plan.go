@@ -49,6 +49,19 @@ func printPlan(w io.Writer, b batch, dryRun bool) {
 			fmt.Fprintln(w, "(a dry run rehearses the factory arm anyway; a paid run refuses here)")
 		}
 	}
+	if len(b.unsandboxed) > 0 {
+		fmt.Fprintf(w, "unsandboxed: %s, excluded from the sandbox by the user's settings; "+
+			"the run cannot deny them\n", strings.Join(b.unsandboxed, ", "))
+		switch {
+		case b.allowUnsandboxed:
+			fmt.Fprintln(w, "(accepted with --allow-unsandboxed)")
+		case dryRun:
+			fmt.Fprintln(
+				w,
+				"(a dry run goes on; a paid run refuses here without --allow-unsandboxed)",
+			)
+		}
+	}
 	fmt.Fprintln(w)
 }
 

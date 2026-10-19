@@ -109,7 +109,9 @@ func TestProfileKeepsRunsInsideTheClone(t *testing.T) {
 		args := armArgs(arm, tier, co, "/tmp/run/settings.json")
 		joined := strings.Join(args, " ")
 		for _, want := range []string{
-			"Bash(git push *)", "Bash(git -C * push *)", "Bash(make * install*)",
+			"Bash(git push*)", "Bash(git -C * push)", "Bash(git -C * push *)", "Bash(git fetch*)",
+			"Bash(git * --output=*)", "Bash(git * --output *)",
+			"Bash(make * install*)",
 			"Bash(go install *)", "--strict-mcp-config", "--add-dir /tmp/run", "--max-budget-usd 10.00",
 			"--settings /tmp/run/settings.json",
 		} {

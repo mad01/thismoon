@@ -19,12 +19,20 @@ humanizer MCP server, and a settings file. The file repeats the arm's
 allow and deny lists from the command line, since settings-file rules are
 documented to reach subagents. No paid run has yet shown that the
 factory's workers obey them: a worker passing `git -C <worktree> commit`,
-which only the arm's lists admit, would show it. The file also holds
-isolation deny rules that keep Edit, Write, `git -C`, `make -C`, `go build
--o`, and `go build`, `go test` or `go vet` with `-C` out of ~/code,
-~/.worktrees and the source repo; reads stay allowed. That is not a
-sandbox. {{.Bin}} fingerprints the source checkout before and after the
-session, and a change taints the run.
+which only the arm's lists admit, would show it.
+
+The same file keeps Edit, Write, `git -C`, `make -C`, `go build -o`, and
+`go build`, `go test` or `go vet` with `-C` out of ~/code, ~/.worktrees
+and the source repo with deny rules; reads stay allowed. Its sandbox
+block puts Claude Code's OS sandbox around every Bash command of the
+session, workers included. The exception is the commands the user's own
+settings exclude from the sandbox. {{.Bin}} denies those that overlap
+none of the arms' rules, names the rest in the results, and refuses a
+paid run over them without `--allow-unsandboxed`. A sandboxed command may
+write only under the run's temp dir, the Go build cache and the paths
+the user's settings open. It reaches no network domain and cannot retry
+outside the sandbox. {{.Bin}} still fingerprints the source checkout
+before and after the session, and a change taints the run.
 
 Runs go one at a time. After each session {{.Bin}} checks every case
 branch: branch present, only allowed paths changed, outline order,
@@ -86,7 +94,9 @@ into ~/code, ~/.worktrees or the source repo. Pick a dir outside them.
 
 stop=error with "no result message": claude printed no JSON. Usually it is
 a login or flag problem. The error carries the last stderr lines; compare a
-rejected flag with `claude --help`.
+rejected flag with `claude --help`. A stderr line about the sandbox means
+it could not start on this machine and failIfUnavailable stopped the arm;
+`claude --settings <the run's settings file> doctor` shows why.
 
 Every case fails the humanizer check with rule names you did not expect:
 the installed humanizer pack differs from the one the cases were measured

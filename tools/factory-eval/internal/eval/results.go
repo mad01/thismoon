@@ -27,7 +27,9 @@ const (
 // Results is the one document a batch writes. CasesDigest is the cases
 // file's content digest, which a signed-off file also holds in its
 // sign-off. SettingsPermissions maps each arm to the permissions block
-// its runs' settings files held.
+// its runs' settings files held. UnsandboxedCommands lists the user's
+// sandbox exclusions the run could not deny, those overlapping an arm
+// Bash rule and wrapper words; those commands ran outside the sandbox.
 type Results struct {
 	Schema              string                 `json:"schema"`
 	DryRun              bool                   `json:"dry_run"`
@@ -40,14 +42,17 @@ type Results struct {
 	ClaudeVersion       string                 `json:"claude_version"`
 	Prereqs             []prereq.Result        `json:"prereqs"`
 	SettingsPermissions map[string]Permissions `json:"settings_permissions"`
+	UnsandboxedCommands []string               `json:"unsandboxed_commands"`
 	Runs                []RunResult            `json:"runs"`
 	Summary             Summary                `json:"summary"`
 }
 
 // RunResult is one arm session at one tier, with its cases scored.
-// Installed is what the host had installed when the run started. Taint
-// lists how the source checkout changed while the arm ran; a tainted run
-// counts as errored.
+// SettingsSandbox is the sandbox block its settings file held, kept here
+// because a passing run's checkout, file included, is removed. Installed
+// is what the host had installed when the run started. Taint lists how
+// the source checkout changed while the arm ran; a tainted run counts as
+// errored.
 type RunResult struct {
 	Arm               string           `json:"arm"`
 	Tier              string           `json:"tier"`
@@ -69,6 +74,7 @@ type RunResult struct {
 	PermissionDenials int              `json:"permission_denials"`
 	AgentReport       json.RawMessage  `json:"agent_report,omitempty"`
 	SettingsFile      string           `json:"settings_file,omitempty"`
+	SettingsSandbox   *Sandbox         `json:"settings_sandbox,omitempty"`
 	Installed         prereq.Installed `json:"installed"`
 	Tainted           bool             `json:"tainted"`
 	Taint             []string         `json:"taint"`

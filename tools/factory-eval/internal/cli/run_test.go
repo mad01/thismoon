@@ -53,6 +53,10 @@ func TestGateRefusesBeforeAnySpend(t *testing.T) {
 			}
 		}, "the factory arm cannot run"},
 		{"over the ceiling", func(b *batch) { b.runs = 10 }, "exceeds the batch ceiling"},
+		{
+			"unsandboxed git", func(b *batch) { b.unsandboxed = []string{"git:*"} },
+			"exclude git:* from the sandbox",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,6 +67,21 @@ func TestGateRefusesBeforeAnySpend(t *testing.T) {
 				t.Errorf("gate() = %v, want an error containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestGateAcceptsUnsandboxedCommandsOnlyWithTheFlag(t *testing.T) {
+	b := signedBatch(t)
+	b.unsandboxed = []string{"git:*", "timeout:*"}
+	err := gate(b)
+	for _, want := range []string{"--allow-unsandboxed", "arbitrary programs"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("gate() = %v, want a refusal holding %q", err, want)
+		}
+	}
+	b.allowUnsandboxed = true
+	if err := gate(b); err != nil {
+		t.Errorf("gate() with --allow-unsandboxed = %v, want nil", err)
 	}
 }
 
@@ -159,6 +178,7 @@ func TestPrintPlanShowsWhatAPaidRunWouldRefuse(t *testing.T) {
 	b := signedBatch(t)
 	b.file.SignOff = cases.SignOff{}
 	b.factory = []prereq.Result{{Name: "belt SubagentStart hook", Detail: "no hook runs belt"}}
+	b.unsandboxed = []string{"git:*"}
 	var out bytes.Buffer
 	printPlan(&out, b, true)
 	for _, want := range []string{
@@ -166,10 +186,27 @@ func TestPrintPlanShowsWhatAPaidRunWouldRefuse(t *testing.T) {
 		"sign-off digest (sign_off.digest must hold it): " + b.file.Digest(),
 		"FAIL belt SubagentStart hook",
 		"the factory arm cannot run", "a paid run refuses here", "worst case: $234.00",
+		"unsandboxed: git:*", "a paid run refuses here without --allow-unsandboxed",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("plan lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestPrintPlanNotesUnsandboxedCommandsTheFlagAccepted(t *testing.T) {
+	b := signedBatch(t)
+	b.unsandboxed = []string{"git:*", "timeout:*"}
+	b.allowUnsandboxed = true
+	var out bytes.Buffer
+	printPlan(&out, b, false)
+	got := out.String()
+	if !strings.Contains(got, "unsandboxed: git:*, timeout:*") ||
+		!strings.Contains(got, "(accepted with --allow-unsandboxed)") {
+		t.Errorf("plan does not show the accepted exclusions:\n%s", got)
+	}
+	if strings.Contains(got, "a paid run refuses here") {
+		t.Errorf("plan warns of a refusal the flag already lifted:\n%s", got)
 	}
 }
 

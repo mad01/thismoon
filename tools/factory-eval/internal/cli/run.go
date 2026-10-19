@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,15 +26,16 @@ import (
 )
 
 type runOptions struct {
-	casesPath string
-	dryRun    bool
-	arms      []string
-	tiers     []string
-	runs      int
-	runsSet   bool
-	out       string
-	repo      string
-	tempDir   string
+	casesPath        string
+	dryRun           bool
+	arms             []string
+	tiers            []string
+	runs             int
+	runsSet          bool
+	out              string
+	repo             string
+	tempDir          string
+	allowUnsandboxed bool
 }
 
 func runCmd() *cobra.Command {
@@ -66,19 +68,25 @@ same checkouts, same checks, same results file.`,
 	c.Flags().StringVar(&o.repo, "repo", "", "repo to clone (default: the cases file's)")
 	c.Flags().
 		StringVar(&o.tempDir, "temp-dir", "", "parent of the throwaway checkouts (default: system temp)")
+	c.Flags().BoolVar(&o.allowUnsandboxed, "allow-unsandboxed", false,
+		"run a paid batch although the user's sandbox exclusions leave commands unsandboxed")
 	return c
 }
 
 // batch is a run's resolved plan: what runs, at what cost, against what.
+// unsandboxed is the user's sandbox exclusions a run cannot deny, and
+// allowUnsandboxed whether the user accepted them for a paid batch.
 type batch struct {
-	file    *cases.File
-	arms    []string
-	tiers   []cases.Tier
-	runs    int
-	source  string
-	env     prereq.Env
-	common  []prereq.Result
-	factory []prereq.Result
+	file             *cases.File
+	arms             []string
+	tiers            []cases.Tier
+	runs             int
+	source           string
+	env              prereq.Env
+	common           []prereq.Result
+	factory          []prereq.Result
+	unsandboxed      []string
+	allowUnsandboxed bool
 }
 
 func (b batch) prereqs() []prereq.Result { return append(slices.Clone(b.common), b.factory...) }
@@ -130,6 +138,8 @@ func plan(ctx context.Context, o runOptions) (batch, error) {
 	if b.env, err = hostEnv(ctx); err != nil {
 		return batch{}, err
 	}
+	b.unsandboxed = eval.Unsandboxed(b.env.SandboxExclusions)
+	b.allowUnsandboxed = o.allowUnsandboxed
 	if b.source, err = resolveSource(f.Repo, o.repo); err != nil {
 		return batch{}, err
 	}
@@ -207,20 +217,43 @@ func resolvePath(p string) string {
 	return p
 }
 
-// hostEnv probes the host once: the home dir, claude's version, and the
-// seams the prerequisite checks and the install snapshot read through.
+// hostEnv probes the host once: the home dir, Claude Code's config dir,
+// claude's version, and the seams the prerequisite checks and the install
+// snapshot read through. The checks take the config dir from the Env and
+// never read $CLAUDE_CONFIG_DIR themselves.
 func hostEnv(ctx context.Context) (prereq.Env, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return prereq.Env{}, fmt.Errorf("home dir: %w", err)
 	}
-	v, raw, err := claude.Exec{}.Version(ctx)
+	configDir := prereq.ConfigDir(home, os.Getenv("CLAUDE_CONFIG_DIR"))
+	excluded, err := prereq.SandboxExclusions(configDir)
+	if err != nil {
+		return prereq.Env{}, err
+	}
+	v, raw, probeErr := claude.Exec{}.Version(ctx)
+	cache, cacheErr := goCache(ctx)
 	return prereq.Env{
-		Home:        home,
-		LookPath:    exec.LookPath,
-		Claude:      prereq.ClaudeProbe{Version: v, Raw: raw, Err: err},
-		BeltVersion: beltVersion,
+		Home:              home,
+		ConfigDir:         configDir,
+		GoCache:           cache,
+		GoCacheErr:        cacheErr,
+		SandboxExclusions: excluded,
+		LookPath:          exec.LookPath,
+		Claude:            prereq.ClaudeProbe{Version: v, Raw: raw, Err: probeErr},
+		BeltVersion:       beltVersion,
 	}, nil
+}
+
+// goCache is `go env GOCACHE`, the Go build cache the sandbox lets a run
+// write. Without it `go test` cannot compile inside the sandbox, so the
+// prerequisite check fails a batch whose go gave no absolute path.
+func goCache(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "go", "env", "GOCACHE").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func beltVersion(ctx context.Context) (string, error) {
@@ -259,8 +292,9 @@ func selectTiers(f *cases.File, names []string) ([]cases.Tier, error) {
 }
 
 // gate refuses a paid run before it spends anything: no valid sign-off of
-// the file as it is now, a missing prerequisite, or a worst case above the
-// batch ceiling.
+// the file as it is now, a missing prerequisite, commands the user's
+// settings leave unsandboxed without the flag that accepts them, or a worst
+// case above the batch ceiling.
 func gate(b batch) error {
 	if err := b.file.CheckSignOff(); err != nil {
 		return fmt.Errorf("the cases file is not signed off for a paid run:\n%w\n"+
@@ -272,6 +306,14 @@ func gate(b batch) error {
 	}
 	if failed := prereq.Failed(b.factory); len(failed) > 0 {
 		return errors.New(prereq.Explain(eval.ArmFactory, failed))
+	}
+	if len(b.unsandboxed) > 0 && !b.allowUnsandboxed {
+		return fmt.Errorf("the user's settings exclude %s from the sandbox and the run cannot "+
+			"deny them, so those calls would run unsandboxed, gated only by the permission rules "+
+			"and the fingerprint. The rules stop the usual forms but are not a boundary: an "+
+			"unsandboxed call can run arbitrary programs outside the sandbox. "+
+			"Pass --allow-unsandboxed to accept that for this batch",
+			strings.Join(b.unsandboxed, ", "))
 	}
 	worst := eval.WorstCaseUSD(b.file, len(b.arms), b.tiers, b.runs)
 	if worst > b.file.BatchCeilingUSD {
@@ -287,6 +329,7 @@ func gate(b batch) error {
 func config(b batch, o runOptions, w io.Writer, judgeDir string) eval.Config {
 	cfg := eval.Config{
 		Cases: b.file, CasesPath: o.casesPath, Source: b.source, Home: b.env.Home,
+		GoCache: b.env.GoCache, SandboxExclusions: b.env.SandboxExclusions,
 		Arms: b.arms, Tiers: b.tiers, Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun,
 		ClaudeVersion: b.env.Claude.Raw, Prereqs: b.prereqs(), Now: time.Now, Progress: w,
 		Checker: judge.Deterministic{

@@ -109,7 +109,7 @@ schema. Review the diff before committing it.
 
 ## Commands
 
-- `factory-eval run [--dry-run] [--arms single,factory] [--tiers mid,top] [--runs N] [--out results] [--repo PATH] [--temp-dir DIR]`
+- `factory-eval run [--dry-run] [--arms single,factory] [--tiers mid,top] [--runs N] [--out results] [--repo PATH] [--temp-dir DIR] [--allow-unsandboxed]`
 - `factory-eval measure [--repo PATH]`: the deviation table, no model call
 - `factory-eval docs`, `factory-eval version [-o json]`
 
@@ -127,10 +127,52 @@ schema. Review the diff before committing it.
   deny rule beats every allow rule wherever it comes from: the deny list in
   `internal/eval/profile.go`, on the command line and in the run's settings
   file, and the isolation rules from `internal/eval/isolation.go`, in the
-  settings file only. That prevents only the paths those rules
-  name. It is not a sandbox: a Bash command can still reach a checkout
-  through a relative `-C` path or `$HOME`, and only the fingerprint
-  detects that.
+  settings file only. Those rules match command lines, so a relative `-C`
+  path or a `$HOME` in the path slips past them. The sandbox block in the
+  same file closes the write itself, and the fingerprint stays as the
+  backstop.
+- **Every Bash command of a run is sandboxed, unless the user's settings
+  exclude it.** `internal/eval/sandbox.go` writes the block: on,
+  `failIfUnavailable`, no unsandboxed retry, no domain, a strict
+  allowlist, writes only under the run's temp dir and `go env GOCACHE`.
+  `allowLocalBinding` stays true: without it the httptest servers in the
+  components' tests fail with `bind: operation not permitted`. socat is
+  not needed on macOS; the sandbox started without it. A write outside
+  the temp dir fails with `operation not permitted`. That is not a
+  permission denial, so it does not show in `permission_denials`.
+- **The user's settings merge into every arm.** Every boolean is written
+  out, since a `--settings` file beats the user's settings only on a
+  boolean. Array keys combine, so the user's `sandbox.excludedCommands`
+  apply in every run and the file's own empty list cannot remove them.
+  `internal/eval/exclusions.go` turns each entry that overlaps none of
+  the arms' Bash rules into a deny rule. The rest, `git:*` on this
+  machine and any wrapper word such as `timeout`, it reports under
+  `unsandboxed_commands` and in a warning, and a paid run refuses over
+  them without `--allow-unsandboxed`. The probe that
+  saw `git worktree add ~/x` refused proved nothing: that shape stays
+  sandboxed under any exclusion. The user's `additionalDirectories` and
+  `Edit` allow rules widen `allowWrite`; `~/code` and `~/.worktrees` stay
+  closed because the run's Edit deny rules count as `denyWrite`. MAD-418
+  is the real fix: arms under `--setting-sources ""`, with what the
+  factory arm needs carried in explicitly.
+- **The deny list is not a boundary.** It stops the usual push, fetch,
+  pull, clone, ls-remote, submodule, config and `--output` forms, whatever
+  the user's allow rules say. An unsandboxed call the allow list admits
+  can still run any program:
+  `git -C <clone> -c core.fsmonitor=<program> status` does. So does
+  `git -C <clone> -c core.hooksPath=<dir> commit` over a hook the Write
+  tool put under the temp dir. A `git -C` into a repo the isolation
+  rules miss writes there. `timeout 600 make -C <clone> test` runs
+  Makefile and test code the arm can edit. So `--allow-unsandboxed` accepts arbitrary program
+  execution outside the sandbox for those calls.
+- **Each `git -C` deny rule is a pair.** `git -C * push` and
+  `git -C * push *` put a space on both sides of the subcommand. A single
+  `git -C * push*` lets its `*` span the rest of the command, so it also
+  matched inside a commit message ("configuration", "fetches") and denied
+  the worker its commit. A whole word in a message, or `--output` in
+  it, still matches (MAD-420).
+  `internal/eval/profile_test.go` checks both directions with a matcher
+  that follows the documented glob rules.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
   against Edit rules and never consults a Write path rule, so the isolation
   rules are Edit rules only, and a test keeps Write rules out. Their `git -C`,

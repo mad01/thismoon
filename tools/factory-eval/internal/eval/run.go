@@ -41,26 +41,30 @@ type CaseScorer interface {
 }
 
 // Config is one batch: what to run and the seams it runs through. Home is
-// the user's home dir the isolation rules protect. Snapshot records what
-// the host has installed; it runs before every run.
+// the user's home dir the isolation rules protect. GoCache is the Go build
+// cache the sandbox lets a run write. SandboxExclusions is the user's
+// sandbox.excludedCommands list, which every arm session inherits.
+// Snapshot records what the host has installed; it runs before every run.
 type Config struct {
-	Cases         *cases.File
-	CasesPath     string
-	Source        string
-	Home          string
-	Arms          []string
-	Tiers         []cases.Tier
-	Runs          int
-	TempParent    string
-	DryRun        bool
-	ClaudeVersion string
-	Prereqs       []prereq.Result
-	Agent         AgentRunner
-	Checker       CaseChecker
-	Scorer        CaseScorer
-	Snapshot      func(ctx context.Context) prereq.Installed
-	Now           func() time.Time
-	Progress      io.Writer
+	Cases             *cases.File
+	CasesPath         string
+	Source            string
+	Home              string
+	GoCache           string
+	SandboxExclusions []string
+	Arms              []string
+	Tiers             []cases.Tier
+	Runs              int
+	TempParent        string
+	DryRun            bool
+	ClaudeVersion     string
+	Prereqs           []prereq.Result
+	Agent             AgentRunner
+	Checker           CaseChecker
+	Scorer            CaseScorer
+	Snapshot          func(ctx context.Context) prereq.Installed
+	Now               func() time.Time
+	Progress          io.Writer
 }
 
 func (cfg Config) isolation() Isolation { return Isolation{Home: cfg.Home, Source: cfg.Source} }
@@ -69,6 +73,7 @@ func (cfg Config) isolation() Isolation { return Isolation{Home: cfg.Home, Sourc
 // and tiers per run index, so drift over the day hits both arms alike. A
 // cancelled ctx stops the batch after the run in flight.
 func Run(ctx context.Context, cfg Config) Results {
+	_, unsandboxed := userExclusions(cfg.SandboxExclusions, bashTools())
 	res := Results{
 		Schema:              SchemaID,
 		DryRun:              cfg.DryRun,
@@ -79,8 +84,15 @@ func Run(ctx context.Context, cfg Config) Results {
 		SignOff:             cfg.Cases.SignOff,
 		ClaudeVersion:       cfg.ClaudeVersion,
 		Prereqs:             nonNil(cfg.Prereqs),
-		SettingsPermissions: settingsPermissions(cfg.Arms, cfg.isolation()),
+		SettingsPermissions: settingsPermissions(cfg.Arms, cfg.isolation(), cfg.SandboxExclusions),
+		UnsandboxedCommands: nonNil(unsandboxed),
 		Runs:                []RunResult{},
+	}
+	if len(unsandboxed) > 0 {
+		fmt.Fprintf(cfg.Progress, "warning: the user's settings exclude %s from the sandbox and "+
+			"the run cannot deny them; those calls run unsandboxed, gated only by the permission "+
+			"rules (the user's allow rules included) and the fingerprint\n",
+			strings.Join(unsandboxed, ", "))
 	}
 	for i := 1; i <= cfg.Runs && ctx.Err() == nil; i++ {
 		for _, t := range cfg.Tiers {
@@ -107,7 +119,12 @@ func provisional(decision string, runs, want int) string {
 	if runs >= want {
 		return decision
 	}
-	return fmt.Sprintf("provisional, %d of the cases file's %d runs per arm: %s", runs, want, decision)
+	return fmt.Sprintf(
+		"provisional, %d of the cases file's %d runs per arm: %s",
+		runs,
+		want,
+		decision,
+	)
 }
 
 func primaryTier(cfg Config) string {
@@ -151,12 +168,16 @@ func runOne(ctx context.Context, cfg Config, arm string, tier cases.Tier, index 
 		rr.Stop, rr.Error = stopError, err.Error()
 		return rr
 	}
-	perms := armPermissions(arm, cfg.isolation())
-	if rr.SettingsFile, err = WriteSettings(co.Root, perms); err != nil {
+	settings := Settings{
+		Permissions: armPermissions(arm, cfg.isolation(), cfg.SandboxExclusions),
+		Sandbox:     armSandbox(co.Root, cfg.GoCache),
+	}
+	if rr.SettingsFile, err = WriteSettings(co.Root, settings); err != nil {
 		rr.Stop, rr.Error = stopError, err.Error()
 		settle(co, &rr)
 		return rr
 	}
+	rr.SettingsSandbox = &settings.Sandbox
 	before, beforeErr := checkout.Fingerprint(ctx, cfg.Source)
 	invokeArm(ctx, cfg, co, arm, tier, &rr)
 	rr.Taint = taint(ctx, cfg.Source, before, beforeErr)

@@ -72,12 +72,32 @@
         "SendMessage"
       ],
       "deny": [
-        "Bash(git push *)",
+        "Bash(git push*)",
+        "Bash(git -C * push)",
         "Bash(git -C * push *)",
-        "Bash(git remote *)",
+        "Bash(git fetch*)",
+        "Bash(git -C * fetch)",
+        "Bash(git -C * fetch *)",
+        "Bash(git pull*)",
+        "Bash(git -C * pull)",
+        "Bash(git -C * pull *)",
+        "Bash(git clone*)",
+        "Bash(git -C * clone)",
+        "Bash(git -C * clone *)",
+        "Bash(git ls-remote*)",
+        "Bash(git -C * ls-remote)",
+        "Bash(git -C * ls-remote *)",
+        "Bash(git submodule*)",
+        "Bash(git -C * submodule)",
+        "Bash(git -C * submodule *)",
+        "Bash(git remote*)",
+        "Bash(git -C * remote)",
         "Bash(git -C * remote *)",
-        "Bash(git config *)",
+        "Bash(git config*)",
+        "Bash(git -C * config)",
         "Bash(git -C * config *)",
+        "Bash(git * --output=*)",
+        "Bash(git * --output *)",
         "Bash(gh *)",
         "Bash(ralph *)",
         "Bash(make install*)",
@@ -85,6 +105,7 @@
         "Bash(go install *)",
         "WebFetch",
         "WebSearch",
+        "Bash(pip3:*)",
         "Edit(//Users/example/code/**)",
         "Edit(//Users/example/.worktrees/**)",
         "Bash(curl *)",
@@ -159,12 +180,32 @@
         "Bash(git -C * merge-base *)"
       ],
       "deny": [
-        "Bash(git push *)",
+        "Bash(git push*)",
+        "Bash(git -C * push)",
         "Bash(git -C * push *)",
-        "Bash(git remote *)",
+        "Bash(git fetch*)",
+        "Bash(git -C * fetch)",
+        "Bash(git -C * fetch *)",
+        "Bash(git pull*)",
+        "Bash(git -C * pull)",
+        "Bash(git -C * pull *)",
+        "Bash(git clone*)",
+        "Bash(git -C * clone)",
+        "Bash(git -C * clone *)",
+        "Bash(git ls-remote*)",
+        "Bash(git -C * ls-remote)",
+        "Bash(git -C * ls-remote *)",
+        "Bash(git submodule*)",
+        "Bash(git -C * submodule)",
+        "Bash(git -C * submodule *)",
+        "Bash(git remote*)",
+        "Bash(git -C * remote)",
         "Bash(git -C * remote *)",
-        "Bash(git config *)",
+        "Bash(git config*)",
+        "Bash(git -C * config)",
         "Bash(git -C * config *)",
+        "Bash(git * --output=*)",
+        "Bash(git * --output *)",
         "Bash(gh *)",
         "Bash(ralph *)",
         "Bash(make install*)",
@@ -174,6 +215,7 @@
         "WebSearch",
         "Agent",
         "SendMessage",
+        "Bash(pip3:*)",
         "Edit(//Users/example/code/**)",
         "Edit(//Users/example/.worktrees/**)",
         "Bash(curl *)",
@@ -204,6 +246,9 @@
       ]
     }
   },
+  "unsandboxed_commands": [
+    "git:*"
+  ],
   "runs": [
     {
       "arm": "single",
@@ -232,6 +277,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",
@@ -345,6 +408,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",
@@ -458,6 +539,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",
@@ -571,6 +670,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",

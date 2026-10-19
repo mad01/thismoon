@@ -20,7 +20,8 @@ func writeFile(t *testing.T, p, content string) {
 }
 
 func TestFactoryRefusesAnEmptyHome(t *testing.T) {
-	failed := Failed(Factory(Env{Home: t.TempDir()}))
+	home := t.TempDir()
+	failed := Failed(Factory(Env{Home: home, ConfigDir: filepath.Join(home, ".claude")}))
 	if len(failed) != 6 {
 		t.Fatalf("failed = %+v, want all six factory checks to fail", failed)
 	}
@@ -43,8 +44,30 @@ func TestFactoryPassesWhenEverythingIsInstalled(t *testing.T) {
 	writeFile(t, filepath.Join(claudeDir, "settings.json"), `{"hooks":{"SubagentStart":[`+
 		`{"hooks":[{"type":"command","command":"python3 rules.py"}]},`+
 		`{"hooks":[{"type":"command","command":"~/code/bin/belt hint subagent-start"}]}]}}`)
-	if failed := Failed(Factory(Env{Home: home})); len(failed) != 0 {
+	if failed := Failed(Factory(Env{Home: home, ConfigDir: claudeDir})); len(failed) != 0 {
 		t.Errorf("failed = %+v, want none", failed)
+	}
+}
+
+// TestFactoryLooksInTheConfigDir: with the config dir moved away from
+// ~/.claude, the pieces are read there and nowhere else.
+func TestFactoryLooksInTheConfigDir(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".claude", "skills", "factory", "SKILL.md"), "x")
+	configDir := t.TempDir()
+	writeFile(t, filepath.Join(configDir, "skills", "loom", "SKILL.md"), "x")
+	failed := Failed(Factory(Env{Home: home, ConfigDir: configDir}))
+	if len(failed) != 5 || failed[0].Name != "factory skill" {
+		t.Errorf("failed = %+v, want the factory skill under ~/.claude ignored", failed)
+	}
+}
+
+func TestConfigDirPrefersTheOverride(t *testing.T) {
+	if got := ConfigDir("/Users/me", ""); got != "/Users/me/.claude" {
+		t.Errorf("ConfigDir(no override) = %q, want ~/.claude", got)
+	}
+	if got := ConfigDir("/Users/me", "/etc/claude"); got != "/etc/claude" {
+		t.Errorf("ConfigDir(override) = %q, want the override", got)
 	}
 }
 
@@ -66,7 +89,8 @@ func TestCommonChecksClaudeVersionAndTools(t *testing.T) {
 			}
 			return "/bin/" + f, nil
 		},
-		Claude: ClaudeProbe{Version: [3]int{2, 1, 200}, Raw: "2.1.200 (Claude Code)"},
+		Claude:  ClaudeProbe{Version: [3]int{2, 1, 200}, Raw: "2.1.200 (Claude Code)"},
+		GoCache: "/Users/me/Library/Caches/go-build",
 	}
 	failed := Failed(Common(env))
 	if len(failed) != 2 || failed[0].Name != "claude version" || failed[1].Name != "humanizer" {
@@ -118,7 +142,8 @@ func TestSnapshotRecordsWhatIsInstalled(t *testing.T) {
 	for _, key := range []string{
 		"~/.claude/skills/factory/SKILL.md", "~/.claude/skills/factory/worker-brief.md",
 	} {
-		if got := in.Files[key]; !strings.HasPrefix(got, "sha256:") || len(got) != len("sha256:")+64 {
+		if got := in.Files[key]; !strings.HasPrefix(got, "sha256:") ||
+			len(got) != len("sha256:")+64 {
 			t.Errorf("%s = %q, want a sha256", key, got)
 		}
 	}

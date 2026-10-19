@@ -25,11 +25,39 @@
     "settings_permissions": {
       "type": "object", "propertyNames": {"enum": ["single", "factory"]},
       "additionalProperties": {"$ref": "#/$defs/permissions"},
-      "description": "per arm that ran, the permissions block of its runs' settings file: the arm's allow list, and its deny list followed by the isolation rules. The arm's lists also go on the command line; the file carries them because settings-file rules are documented to reach subagents, and whether workers obey them stays unverified until a paid run"},
+      "description": "per arm that ran, the permissions block of its runs' settings file: the arm's allow list, and its deny list followed by a deny rule per user sandbox exclusion the arms do not need, then the isolation rules. The arm's lists also go on the command line; the file carries them because settings-file rules are documented to reach subagents, and whether workers obey them stays unverified until a paid run"},
+    "unsandboxed_commands": {"type": "array", "items": {"type": "string"},
+      "description": "the user's sandbox.excludedCommands entries the run could not deny: those overlapping an arm Bash rule, git among them, and wrapper words such as timeout. Those calls ran outside the sandbox, since exclusion lists combine across settings files and the run's file cannot remove them. Every other entry gets a deny rule in the run's file. Optional; absent in documents from before it"},
     "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}},
     "summary": {"$ref": "#/$defs/summary"}
   },
   "$defs": {
+    "sandbox": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enabled", "autoAllowBashIfSandboxed", "allowUnsandboxedCommands", "failIfUnavailable",
+        "excludedCommands", "network", "filesystem"],
+      "properties": {
+        "enabled": {"const": true},
+        "autoAllowBashIfSandboxed": {"const": false, "description": "the permission lists keep deciding which commands run"},
+        "allowUnsandboxedCommands": {"const": false, "description": "no retry outside the sandbox"},
+        "failIfUnavailable": {"const": true, "description": "claude exits at startup rather than run the arm unsandboxed"},
+        "excludedCommands": {"type": "array", "maxItems": 0, "description": "empty on purpose, so the user's own exclusions are not inherited"},
+        "network": {
+          "type": "object", "additionalProperties": false,
+          "required": ["strictAllowlist", "allowLocalBinding", "allowAllUnixSockets"],
+          "properties": {
+            "strictAllowlist": {"const": true, "description": "no domain is allowed and no prompt opens one"},
+            "allowLocalBinding": {"const": true, "description": "the components' tests bind loopback ports; localhost services stay reachable as a result"},
+            "allowAllUnixSockets": {"const": false}
+          }
+        },
+        "filesystem": {
+          "type": "object", "additionalProperties": false, "required": ["allowWrite"],
+          "properties": {"allowWrite": {"type": "array", "items": {"type": "string"},
+            "description": "the run's temp dir, then the Go build cache when go answered"}}
+        }
+      }
+    },
     "permissions": {
       "type": "object", "additionalProperties": false, "required": ["allow", "deny"],
       "properties": {
@@ -113,6 +141,8 @@
         "permission_denials": {"type": "integer", "minimum": 0},
         "agent_report": {"description": "the session's structured final report, as it returned it"},
         "settings_file": {"type": "string", "description": "the harness settings file passed with --settings"},
+        "settings_sandbox": {"$ref": "#/$defs/sandbox",
+          "description": "the sandbox block of that file: Claude Code's OS sandbox around every Bash command of the session, workers included; kept here because a passing run's checkout and file are removed"},
         "installed": {"$ref": "#/$defs/installed"},
         "tainted": {"type": "boolean", "description": "the source checkout changed during the run; counts as errored"},
         "taint": {"type": "array", "items": {"type": "string"}, "description": "how the source checkout changed"},

@@ -106,14 +106,18 @@ func TestSettingsFileCarriesEachArmsLists(t *testing.T) {
 	tier := cases.Tier{Model: "sonnet", Effort: "medium", BudgetUSD: 10}
 	for _, arm := range []string{ArmSingle, ArmFactory} {
 		dir := t.TempDir()
-		p, err := WriteSettings(dir, armPermissions(arm, iso))
+		p, err := WriteSettings(dir, Settings{
+			Permissions: armPermissions(arm, iso, nil),
+			Sandbox:     armSandbox(dir, "/Users/me/Library/Caches/go-build"),
+		})
 		if err != nil {
 			t.Fatalf("%s: WriteSettings() error = %v", arm, err)
 		}
 		if p != filepath.Join(dir, SettingsFileName) {
 			t.Errorf("%s: path = %s, want it in the run dir", arm, p)
 		}
-		got := readPermissions(t, p)
+		file := readSettings(t, p)
+		got := file.Permissions
 		args := armArgs(arm, tier, &checkout.Checkout{Root: dir}, p)
 		allowFlag := strings.Split(args[slices.Index(args, "--allowedTools")+1], ",")
 		denyFlag := strings.Split(args[slices.Index(args, "--disallowedTools")+1], ",")
@@ -135,21 +139,37 @@ func TestSettingsFileCarriesEachArmsLists(t *testing.T) {
 		if info, err := os.Stat(p); err != nil || info.Mode().Perm()&0o222 != 0 {
 			t.Errorf("%s: settings file mode = %v, %v; want read-only", arm, info.Mode(), err)
 		}
+		sb := file.Sandbox
+		if !sb.Enabled || !sb.FailIfUnavailable || sb.AllowUnsandboxedCommands ||
+			sb.AutoAllowBashIfSandboxed {
+			t.Errorf("%s: sandbox = %+v, want it on, strict, and with no unsandboxed retry",
+				arm, sb)
+		}
+		if want := []string{dir, "/Users/me/Library/Caches/go-build"}; !slices.Equal(
+			sb.Filesystem.AllowWrite, want,
+		) {
+			t.Errorf("%s: sandbox allowWrite = %q, want the run dir and the go cache %q",
+				arm, sb.Filesystem.AllowWrite, want)
+		}
 	}
 }
 
 // readPermissions decodes the permissions block of the settings file at p.
 func readPermissions(t *testing.T, p string) Permissions {
 	t.Helper()
+	return readSettings(t, p).Permissions
+}
+
+// readSettings decodes the settings file at p.
+func readSettings(t *testing.T, p string) Settings {
+	t.Helper()
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var s struct {
-		Permissions Permissions `json:"permissions"`
-	}
+	var s Settings
 	if err := json.Unmarshal(raw, &s); err != nil {
 		t.Fatalf("settings file %s = %s: %v", p, raw, err)
 	}
-	return s.Permissions
+	return s
 }
