@@ -498,3 +498,23 @@ func TestTerminalTypesTheStoredPrefill(t *testing.T) {
 		t.Errorf("output = %q, want only the stored prefill", r.output.String())
 	}
 }
+
+// A program printing a byte at a time must not drop a client that keeps
+// up: the session counts what it is behind in bytes, and each frame
+// carries everything queued since the last.
+func TestTerminalByteAtATimeOutputReachesTheClient(t *testing.T) {
+	const total = 300000
+	cmd := "for i in {1..300000}; do printf x; done; exit 3"
+	f := setupTerminal(t, ModeLocal, true, termBlock("drip", cmd))
+	r := &terminalReader{conn: f.mustDial(t, "drip", nil)}
+
+	if exit := r.until(t, "exit"); exit["code"] != float64(3) {
+		t.Errorf("exit = %v, want code 3", exit)
+	}
+	if got := strings.Count(r.output.String(), "x"); got != total {
+		t.Errorf("client read %d x, want %d", got, total)
+	}
+	if st := r.closeStatus(t); st != websocket.StatusNormalClosure {
+		t.Errorf("close status = %v, want normal closure", st)
+	}
+}

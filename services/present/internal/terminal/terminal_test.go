@@ -3,6 +3,7 @@ package terminal
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,40 +47,42 @@ func attach(t *testing.T, m *Manager, name string, spec Spec) *Subscription {
 	return sub
 }
 
-// readUntil collects output from sub until want appears, Output closes, or
-// the deadline passes, and returns what it read.
+// readUntil takes output from sub until want appears, the output ends, or
+// the deadline passes, and returns what it took.
 func readUntil(t *testing.T, sub *Subscription, want string) string {
 	t.Helper()
 	var got bytes.Buffer
 	timeout := time.After(deadline)
 	for !strings.Contains(got.String(), want) {
 		select {
-		case chunk, ok := <-sub.Output():
-			if !ok {
-				return got.String()
-			}
-			got.Write(chunk)
+		case <-sub.Ready():
 		case <-timeout:
 			t.Fatalf("no %q within %s; got %q", want, deadline, got.String())
+		}
+		p, ended := sub.Take()
+		got.Write(p)
+		if ended {
+			break
 		}
 	}
 	return got.String()
 }
 
-// readAll collects output until Output closes.
+// readAll takes output until it ends.
 func readAll(t *testing.T, sub *Subscription) string {
 	t.Helper()
 	var got bytes.Buffer
 	timeout := time.After(deadline)
 	for {
 		select {
-		case chunk, ok := <-sub.Output():
-			if !ok {
-				return got.String()
-			}
-			got.Write(chunk)
+		case <-sub.Ready():
 		case <-timeout:
 			t.Fatalf("output still open after %s; got %q", deadline, got.String())
+		}
+		p, ended := sub.Take()
+		got.Write(p)
+		if ended {
+			return got.String()
 		}
 	}
 }
@@ -147,8 +150,8 @@ func TestReplayKeepsOnlyTheNewestRingBytes(t *testing.T) {
 
 func TestSlowSubscriberIsDroppedOthersKeepReceiving(t *testing.T) {
 	m, _ := newManager(t, Config{})
-	const total = 4_000_000
-	cmd := "sleep 0.2; head -c 4000000 /dev/zero | tr '\\0' a"
+	const total = 3 * pendingLimit
+	cmd := fmt.Sprintf("sleep 0.2; head -c %d /dev/zero | tr '\\0' a", total)
 	slow := attach(t, m, "flood", Spec{Cmd: cmd})
 	fast := attach(t, m, "flood", Spec{})
 
@@ -159,9 +162,32 @@ func TestSlowSubscriberIsDroppedOthersKeepReceiving(t *testing.T) {
 	if _, exited := fast.Exit(); !exited {
 		t.Error("fast subscriber should see the exit")
 	}
-	readAll(t, slow)
+	if out := readAll(t, slow); len(out) != 0 {
+		t.Errorf("dropped subscriber took %d bytes, want its pending output discarded", len(out))
+	}
 	if _, exited := slow.Exit(); exited {
 		t.Error("slow subscriber was not dropped: it reports the exit")
+	}
+}
+
+// A program printing a byte at a time puts many small reads behind a
+// subscriber; only the bytes count toward dropping it, so one that takes
+// its output late still gets all of it and the exit.
+func TestManySmallWritesDoNotDropASubscriber(t *testing.T) {
+	m, _ := newManager(t, Config{})
+	const total = 20000
+	cmd := fmt.Sprintf("for i in {1..%d}; do printf x; done", total)
+	sub := attach(t, m, "drip", Spec{Cmd: cmd})
+	waitFor(t, "the process to exit", func() bool {
+		list := m.List()
+		return len(list) == 1 && list[0].Exited
+	})
+
+	if got := readAll(t, sub); strings.Count(got, "x") != total {
+		t.Errorf("read %d x, want %d", strings.Count(got, "x"), total)
+	}
+	if _, exited := sub.Exit(); !exited {
+		t.Error("the subscriber was dropped; want it to see the exit")
 	}
 }
 

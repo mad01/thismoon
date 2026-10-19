@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -18,9 +17,10 @@ import (
 const (
 	// readChunk is the most one PTY read takes.
 	readChunk = 32 << 10
-	// outBuffer is how many chunks a subscriber may fall behind by before it
-	// is dropped.
-	outBuffer = 256
+	// pendingLimit is how many bytes of live output a subscriber may fall
+	// behind by before it is dropped. Counted in bytes, not reads, so a
+	// program printing a byte at a time does not drop a reader keeping up.
+	pendingLimit = 4 << 20
 	// drainWait bounds how long an exited process's output may keep
 	// arriving. A background child that inherited the terminal can hold it
 	// open long after the process itself is gone; the exit is reported
@@ -182,21 +182,18 @@ func (s *session) signalOutput() {
 	}
 }
 
-// publish appends p to the ring and hands it to every subscriber. A
-// subscriber whose buffer is full is dropped, so one slow reader never
-// holds up the PTY or the others.
+// publish appends p to the ring and queues it for every subscriber. A
+// subscriber pendingLimit bytes behind is dropped, so one slow reader
+// never holds up the PTY or the others. Both copy p.
 func (s *session) publish(p []byte) {
-	chunk := bytes.Clone(p)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.ring.write(chunk)
+	s.ring.write(p)
 	for sub := range s.subs {
 		if sub.outClosed {
 			continue
 		}
-		select {
-		case sub.out <- chunk:
-		default:
+		if !sub.queue(p, pendingLimit) {
 			delete(s.subs, sub)
 			sub.closeOut(false, 0)
 			s.idleIfAlone()
@@ -255,7 +252,7 @@ func (s *session) finish(code int) {
 func (s *session) subscribe() *Subscription {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sub := &Subscription{s: s, out: make(chan []byte, outBuffer), replay: s.ring.bytes()}
+	sub := newSubscription(s, s.ring.bytes())
 	s.subs[sub] = struct{}{}
 	if s.idle != nil {
 		s.idle.Stop()

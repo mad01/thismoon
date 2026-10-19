@@ -292,9 +292,11 @@ func (s *Server) bridgeTerminal(
 }
 
 // streamTerminal sends the hello, the replay, and the live output, then the
-// exit frame and a normal close once the process ends. A subscriber the
-// session dropped for falling behind is told to reconnect, which replays
-// what it missed.
+// exit frame and a normal close once the process ends. Each frame carries
+// all the output queued since the last, so a program printing a byte at a
+// time costs one frame per socket write rather than one per byte. A
+// subscriber the session dropped for falling behind is told to reconnect,
+// which replays what it missed.
 func streamTerminal(ctx context.Context, conn *websocket.Conn, sub *terminal.Subscription) {
 	replay := sub.Replay()
 	if writeTerminalJSON(ctx, conn, terminalHello{T: "hello", Replayed: len(replay)}) != nil {
@@ -307,14 +309,15 @@ func streamTerminal(ctx context.Context, conn *websocket.Conn, sub *terminal.Sub
 		select {
 		case <-ctx.Done():
 			return
-		case chunk, ok := <-sub.Output():
-			if !ok {
-				endTerminal(ctx, conn, sub)
-				return
-			}
-			if writeTerminalFrame(ctx, conn, websocket.MessageBinary, chunk) != nil {
-				return
-			}
+		case <-sub.Ready():
+		}
+		out, ended := sub.Take()
+		if len(out) > 0 && writeTerminalFrame(ctx, conn, websocket.MessageBinary, out) != nil {
+			return
+		}
+		if ended {
+			endTerminal(ctx, conn, sub)
+			return
 		}
 	}
 }

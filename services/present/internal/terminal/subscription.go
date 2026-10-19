@@ -6,34 +6,50 @@ package terminal
 // timer.
 type Subscription struct {
 	s      *session
-	out    chan []byte
 	replay []byte
+	ready  chan struct{} // see Ready
 
 	// Guarded by s.mu.
+	pending   []byte // live output not yet taken, at most pendingLimit bytes
 	outClosed bool
 	exited    bool
 	code      int
 }
 
+func newSubscription(s *session, replay []byte) *Subscription {
+	return &Subscription{s: s, replay: replay, ready: make(chan struct{}, 1)}
+}
+
 // Replay returns the session's recent output as it stood when the
-// subscription started, up to the ring size. Output carries what comes
-// after it.
+// subscription started, up to the ring size. Take carries what comes after
+// it.
 func (sub *Subscription) Replay() []byte {
 	return sub.replay
 }
 
-// Output delivers the live output in order. Chunks are shared between
-// subscribers and must not be modified. The channel closes when the process
-// has exited and all its output is delivered, when the subscriber fell too
-// far behind and was dropped, or when the subscription closed; Exit tells
-// the first case from the others.
-func (sub *Subscription) Output() <-chan []byte {
-	return sub.out
+// Ready receives a value whenever live output is waiting for Take, and is
+// closed once the output has ended. Signals coalesce: one receive may stand
+// for any number of writes, and Take drains them all.
+func (sub *Subscription) Ready() <-chan struct{} {
+	return sub.ready
 }
 
-// Exit reports the exit code once Output has closed because the process
-// ended. exited is false while the process runs, and for a subscription
-// that was dropped or closed before the exit reached it.
+// Take returns all the live output queued since the last Take, in order,
+// and whether the output has ended. Once it has ended nothing more is
+// queued: the process exited and all its output is in what Take returned,
+// the subscriber fell more than pendingLimit bytes behind and was dropped,
+// or the subscription closed. Exit tells the first case from the others.
+// The returned bytes belong to the caller.
+func (sub *Subscription) Take() (p []byte, ended bool) {
+	sub.s.mu.Lock()
+	defer sub.s.mu.Unlock()
+	p, sub.pending = sub.pending, nil
+	return p, sub.outClosed
+}
+
+// Exit reports the exit code once the output has ended because the process
+// did. exited is false while the process runs, and for a subscription that
+// was dropped or closed before the exit reached it.
 func (sub *Subscription) Exit() (code int, exited bool) {
 	sub.s.mu.Lock()
 	defer sub.s.mu.Unlock()
@@ -52,18 +68,38 @@ func (sub *Subscription) Resize(cols, rows uint16) error {
 	return sub.s.resize(cols, rows)
 }
 
-// Close ends the subscription and closes Output. It is safe to call more
-// than once.
+// Close ends the subscription and its output. It is safe to call more than
+// once.
 func (sub *Subscription) Close() {
 	sub.s.unsubscribe(sub)
 }
 
-// closeOut closes the output channel once, recording whether the exit is
-// why. The caller holds s.mu.
+// queue adds p to the pending output and reports false, queueing nothing,
+// when that would put the subscriber more than limit bytes behind. The
+// caller holds s.mu.
+func (sub *Subscription) queue(p []byte, limit int) bool {
+	if len(sub.pending)+len(p) > limit {
+		return false
+	}
+	sub.pending = append(sub.pending, p...)
+	select {
+	case sub.ready <- struct{}{}:
+	default: // a signal is already waiting
+	}
+	return true
+}
+
+// closeOut ends the output once, recording whether the exit is why. Output
+// still pending stays for Take after an exit, and is discarded otherwise:
+// a subscriber dropped or closed has no one left to read it. The caller
+// holds s.mu.
 func (sub *Subscription) closeOut(exited bool, code int) {
 	if sub.outClosed {
 		return
 	}
 	sub.outClosed, sub.exited, sub.code = true, exited, code
-	close(sub.out)
+	if !exited {
+		sub.pending = nil
+	}
+	close(sub.ready)
 }
