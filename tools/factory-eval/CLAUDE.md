@@ -129,32 +129,38 @@ schema. Review the diff before committing it.
   file, and the isolation rules from `internal/eval/isolation.go`, in the
   settings file only. That prevents only the paths those rules
   name. It is not a sandbox: a Bash command can still reach a checkout
-  through `cd` or `$HOME`, and only the fingerprint detects that.
+  through a relative `-C` path or `$HOME`, and only the fingerprint
+  detects that.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
   against Edit rules and never consults a Write path rule, so the isolation
   rules are Edit rules only, and a test keeps Write rules out. Their `git -C`,
-  `make -C` and `go build -o` rules deny the same dirs: `~/code`,
-  `~/.worktrees`, and the source when it lives outside both. The `go build
-  -o` rule is what keeps a run from overwriting a binary in `~/code/bin`.
+  `make -C`, `go build -o` and `go build|test|vet -C` rules deny the same
+  dirs: `~/code`, `~/.worktrees`, and the source when it lives outside
+  both. The `go build -o` rule is what keeps a run from overwriting a
+  binary in `~/code/bin`.
 - **Worker obedience to the settings lists is unverified.** Claude Code
   documents settings-file rules as reaching subagents. The first paid run
   (2026-10-19) left it open. Every worker command that passed was one
-  claude runs without a rule, such as `pwd` or `git status`. Arm sessions
-  load the user's own settings too, and this machine's allow plain `git
-  commit` and `make`, so those passing shows nothing. The proof is a
-  command only the arm's lists admit, such as `git -C <worktree> commit`.
-  The flags and the file carry the same lists, so a pass does not say
-  which carrier reached the worker. Read `permission_denials` for both
-  arms before trusting a factory result.
+  claude runs without a rule, such as `pwd`. `git status` needs no rule in
+  the start directory too, but every probe denied it after a cd out of
+  that directory. Arm sessions load the user's own settings too, and this
+  machine's allow plain `git commit` and `make`, so those passing shows
+  nothing. The proof is a command only the arm's lists admit, such as
+  `git -C <worktree> commit`. The flags and the file carry the same lists,
+  so a pass does not say which carrier reached the worker. Read
+  `permission_denials` for both arms before trusting a factory result.
 - **Every path an arm session sees is the resolved one.** `checkout.Create`
   runs `EvalSymlinks` on the temp root, so the clone, the worktrees dir,
   the settings file, the prompt and `--add-dir` all name
   `/private/var/folders/...` on macOS, the form claude records the session
   cwd in. The first paid run lost every worker at `cd <worktree> && git
-  status`. That is a Claude Code rule, not the path form. In dontAsk mode
-  a cd outside the session cwd followed by any command that needs an
-  allow rule is denied. The lists do not matter, and `--add-dir` does not
-  widen it. The worker brief runs `git -C <worktree>` instead.
+  status`, the command after `pwd`. That is a Claude Code rule, not the
+  path form. In dontAsk mode a cd outside the session cwd followed by any
+  command that needs an allow rule is denied. The lists do not matter, and
+  `--add-dir` does not widen it. `git status` needs no rule in the start
+  directory, but every probe denied it after such a cd; of the probed
+  commands only `pwd` survived the cd. The worker brief runs `git -C
+  <worktree>` instead.
 - **The fingerprint taints a run on any change to the source checkout**,
   whoever made it. All worktrees share the ref store, so a commit in any
   worktree of the source repo (loom ones included) taints a run, and so

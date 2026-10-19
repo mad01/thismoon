@@ -146,6 +146,10 @@ func TestTempDirCheckSeesThroughSymlinksBothWays(t *testing.T) {
 	if err := checkTempDir(filepath.Join(sourceLink, "runs"), iso); err == nil {
 		t.Error("a temp dir under the source as given was accepted; resolving must not hide it")
 	}
+	if err := checkTempDir(runs, iso); err == nil {
+		t.Error("a temp dir under the resolved source was accepted while the source " +
+			"was named by a symlink; the clones would land inside it")
+	}
 	if err := checkTempDir(t.TempDir(), iso); err != nil {
 		t.Errorf("an unrelated temp dir = %v, want nil", err)
 	}

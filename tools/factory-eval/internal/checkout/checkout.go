@@ -38,12 +38,12 @@ type Checkout struct {
 // dir when parent is empty) and detaches the clone at commit. On failure
 // the partial dir is removed.
 //
-// Root is the resolved path, symlinks included. claude records a session's
-// working directory in resolved form, and on macOS the system temp dir is
-// a symlink (/var/folders is /private/var/folders), so a path the harness
-// hands to claude under the unresolved name is, to claude, a different
-// directory from the one the session runs in. The first paid run lost
-// every cd into the clone to that difference.
+// Root is the resolved path, symlinks included: on macOS the system temp
+// dir is a symlink (/var/folders is /private/var/folders). The resolved
+// path is the form claude records the session cwd in, so the prompt, the
+// flags and the cwd share one spelling. The first paid run's cd denials
+// came from a Claude Code rule, not the path form (see worker-brief.md in
+// skills/factory).
 func Create(ctx context.Context, src, commit, parent string) (*Checkout, error) {
 	made, err := os.MkdirTemp(parent, "factory-eval-")
 	if err != nil {

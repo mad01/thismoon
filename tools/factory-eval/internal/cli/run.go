@@ -177,9 +177,10 @@ func resolveSource(fileRepo, flagRepo string) (string, error) {
 
 // checkTempDir refuses a temp parent inside a directory the isolation
 // rules deny edits in, where an arm could not edit its own clone. It
-// checks the path as given and, when it exists, resolved: the isolation
-// rules name the source as given, and the clones get the resolved form,
-// so a symlink on either side has to be caught.
+// checks the path as given against the dirs as given, and the resolved
+// path against the resolved dirs: the isolation rules name the source as
+// given, and the clones get the resolved form, so a symlink on either
+// side has to be caught.
 func checkTempDir(tempDir string, iso eval.Isolation) error {
 	dir := tempDir
 	if dir == "" {
@@ -189,15 +190,21 @@ func checkTempDir(tempDir string, iso eval.Isolation) error {
 	if err != nil {
 		return fmt.Errorf("temp dir %s: %w", dir, err)
 	}
-	covered := iso.Covers(abs)
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil && iso.Covers(resolved) {
-		covered = true
-	}
-	if covered {
+	resolvedIso := eval.Isolation{Home: resolvePath(iso.Home), Source: resolvePath(iso.Source)}
+	if iso.Covers(abs) || resolvedIso.Covers(resolvePath(abs)) {
 		return fmt.Errorf("temp dir %s is under a path the arms may not edit "+
 			"(~/code, ~/.worktrees or the source repo): pick one outside them", abs)
 	}
 	return nil
+}
+
+// resolvePath is p with its symlinks resolved, or p as given when it does
+// not exist.
+func resolvePath(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
 }
 
 // hostEnv probes the host once: the home dir, claude's version, and the

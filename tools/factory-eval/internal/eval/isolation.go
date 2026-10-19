@@ -48,11 +48,13 @@ func (iso Isolation) DenyRules() []string {
 }
 
 // dirCommands are the Bash command prefixes the isolation rules deny into
-// each protected dir. The allow list permits all three with any dir: git
-// -C branches and commits there, make -C builds there, and go build -o
-// writes its binary there, which under ~/code/bin overwrites an installed
-// tool.
-var dirCommands = []string{"git -C ", "make -C ", "go build *-o "}
+// each protected dir. The allow list permits each of them with any dir:
+// git -C branches and commits there, make -C and go build, test or vet -C
+// run there, and go build -o writes its binary there, which under
+// ~/code/bin overwrites an installed tool.
+var dirCommands = []string{
+	"git -C ", "make -C ", "go build *-o ", "go build -C ", "go test -C ", "go vet -C ",
+}
 
 // spellings are the ways a Bash command names dir: its absolute path, and
 // its ~/ form when it sits under the home dir.

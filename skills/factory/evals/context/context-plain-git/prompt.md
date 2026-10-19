@@ -22,7 +22,7 @@ Do not run gh, and do not spawn agents.
 Do not cd out of your start directory, as Claude Code denies the whole command.
 
 1. Read the task message. Its header gives your unit, worktree, branch, model and effort.
-2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run plain commands there. If not, run git -C <worktree> <subcommand>, make -C <worktree>/<dir> <target> and go test -C <worktree>/<dir> ./..., and name files by their absolute path under your worktree. Put no option other than -C between git and its subcommand.
+2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run plain commands there. If not, run git -C <worktree> <subcommand>, make -C <worktree>/<dir> <target> and go <subcommand> -C <worktree>/<dir>. Name files by their absolute path under your worktree. Put no option other than -C between git and its subcommand. In a go command, -C must be the first flag. If a gate has no directory option, send question.
 3. Do the numbered steps of the task in order.
 4. Run the gates that the task names, inside your worktree.
 5. Commit in your worktree when the done criterion holds and every gate passes.
@@ -66,7 +66,7 @@ not done: one "- <step>" item per step you did not do.
 
 A question message has two fields: question, then options. A status message has one field: progress.
 
-Send each message with SendMessage to the orchestrator. If you have no SendMessage route, make the message your final reply. Check the body first with humanizer ste --profile description --repo <worktree>. The rules apply to your own words only, so a denial in a fenced code block is exempt. Never paraphrase a denial.
+Send each message with SendMessage to the orchestrator. If you have no SendMessage route, make the message your final reply. Check the body first with the humanizer_detect MCP tool. Set profile to description and repo to your worktree path. The rules apply to your own words only, so a denial in a fenced code block is exempt. Never paraphrase a denial.
 </subagent-start>
 
 Your prompt, the task message from the orchestrator:
@@ -94,7 +94,7 @@ What happened so far (a test fixture; your tools here are not real, so these fac
 
 - Your first Bash call ran pwd. It printed the canonical checkout, ~/code/src/github.com/mad01/thismoon, and each Bash call starts there again.
 - You fixed the link in services/catalog/README.md.
-- `humanizer detect services/catalog/README.md` printed: no findings
+- `humanizer detect ~/.worktrees/thismoon/alexander-adr-links-catalog/services/catalog/README.md` printed: no findings
 - You staged that one file and committed it. The range is 4b7e0c2..e91d3a5, and the worktree is clean.
 
 Write the next message you send. SendMessage is not available here, so reply with the message only: no code fence, no text before or after it.

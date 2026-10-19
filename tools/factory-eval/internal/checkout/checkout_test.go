@@ -74,8 +74,8 @@ func TestCreateDetachesAtCommitWithoutOrigin(t *testing.T) {
 
 // TestCreateResolvesTheTempRoot hands Create a symlinked parent, the way
 // macOS hands every program its temp dir, and wants the root under the
-// resolved directory: claude records the session cwd resolved, and the
-// paths the prompt and the flags name must match it.
+// resolved directory: claude records the session cwd resolved, so the
+// paths the prompt and the flags name share its spelling.
 func TestCreateResolvesTheTempRoot(t *testing.T) {
 	src, sha := sourceRepo(t)
 	target := t.TempDir()

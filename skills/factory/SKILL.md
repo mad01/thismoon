@@ -199,7 +199,7 @@ Run all five checks before the first spawn:
 4. Each unit's worktree exists and is clean: `git -C <worktree> status
    --porcelain` prints nothing. Run it once per worktree, each as its own
    command. A shell loop or a variable assignment matches no allow rule,
-   so an unattended run denies it.
+   so a dontAsk run denies it.
 5. The agents listing answers: `ListAgents` returns.
 
 ## Rules
