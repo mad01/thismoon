@@ -24,6 +24,7 @@ import (
 	"github.com/mad01/thismoon/services/present/internal/images"
 	"github.com/mad01/thismoon/services/present/internal/sharedclient"
 	"github.com/mad01/thismoon/services/present/internal/store"
+	"github.com/mad01/thismoon/services/present/internal/terminal"
 	"github.com/mad01/thismoon/webkit"
 )
 
@@ -105,6 +106,13 @@ type Server struct {
 	// images is the local image store under the workdir, served at /img/;
 	// nil on a shared instance, whose pages carry image URLs only.
 	images *images.Store
+	// terminals owns the live terminal sessions in local mode; nil leaves
+	// the terminal routes unregistered. terminalSwitch is the switch file
+	// read on every terminal request, terminalOrigins the browser origins
+	// besides loopback a terminal socket accepts.
+	terminals       *terminal.Manager
+	terminalSwitch  string
+	terminalOrigins []string
 
 	watcher      PageWatcher
 	heartbeat    time.Duration
@@ -122,8 +130,12 @@ type Server struct {
 // to open tabs as it changes; without it tabs poll /p/{id}/version. Heartbeat
 // is how often an idle event stream resends the version, DefaultHeartbeat
 // when zero. SpeakURL is the speak service the page view registers a page's
-// text with for read-aloud; empty leaves read-aloud out of the page. Now
-// defaults to time.Now.
+// text with for read-aloud; empty leaves read-aloud out of the page.
+// Terminals, in local mode, owns the live terminal sessions behind the
+// switch file at TerminalSwitch; nil leaves the terminal routes out, and a
+// shared instance never has them. TerminalOrigins adds browser origin
+// patterns (path.Match against the Origin host) to the present.this and
+// loopback origins a terminal socket accepts. Now defaults to time.Now.
 type Options struct {
 	Mode      Mode
 	Workdir   string
@@ -135,6 +147,10 @@ type Options struct {
 	Sharer    *sharedclient.Client
 	Watcher   PageWatcher
 	Heartbeat time.Duration
+
+	Terminals       *terminal.Manager
+	TerminalSwitch  string
+	TerminalOrigins []string
 }
 
 // New returns a Server backed by the given store.
@@ -152,6 +168,10 @@ func New(st store.Store, opts Options) *Server {
 	var imgs *images.Store
 	if opts.Mode != ModeShared && opts.Workdir != "" {
 		imgs = images.New(opts.Workdir)
+	}
+	var terms *terminal.Manager
+	if opts.Mode != ModeShared {
+		terms = opts.Terminals
 	}
 	return &Server{
 		deckCtl:     deckCtl,
@@ -171,6 +191,10 @@ func New(st store.Store, opts Options) *Server {
 		sharer:      opts.Sharer,
 		shell:       pageShell(opts.Mode),
 		deckShell:   deckShell(pageShell(opts.Mode)),
+
+		terminals:       terms,
+		terminalSwitch:  opts.TerminalSwitch,
+		terminalOrigins: append([]string{terminalOrigin}, opts.TerminalOrigins...),
 	}
 }
 
@@ -181,7 +205,8 @@ func New(st store.Store, opts Options) *Server {
 // stream whenever a watcher is configured, the deck command poll whenever
 // the store relays commands, and the history and diff routes whenever the
 // store keeps history (the raw filesystem store alone); local mode adds
-// the index, its listing, the markdown import, and the stored images; shared
+// the index, its listing, the markdown import, the stored images, and the
+// live terminal routes when a terminal manager is configured; shared
 // mode the how-to root, the write API, whoami, and the MCP endpoint. A
 // route the mode does not register is a plain 404.
 func (s *Server) Handler() http.Handler {
@@ -231,6 +256,7 @@ func (s *Server) Handler() http.Handler {
 		if s.sharer != nil {
 			mux.HandleFunc("POST /p/{id}/share", s.handleShare)
 		}
+		s.registerTerminal(mux)
 	}
 	return logRequests(baseurl.Middleware(mux))
 }
