@@ -194,6 +194,14 @@ The wiring rules that are easy to get wrong:
   config file that is simply absent is fine — that is the defaults, with
   every guard enabled. `belt hint` cannot deny, so it delivers the same
   message as advice instead.
+- **An unreadable payload denies too.** When stdin holds no JSON object, or
+  a field the guards read arrives with another JSON type, `belt hook`
+  returns a `belt[payload]:` deny naming the field. It also leaves a `warn`
+  event tagged `decode_error`. A guard that cannot see the call would
+  otherwise allow it. A mistyped session or agent field never denies.
+  `belt hint` stays silent on such a payload and leaves the same event.
+  The full rule, with every field it covers, is in the operating doc's
+  failure modes (`belt docs`).
 - **The `external-text` matcher is yours to choose.** belt cannot know which
   MCP servers on your machine publish text to places other people read (issue
   trackers, chat, code review). Pick the send/create/comment tools of those
@@ -239,7 +247,16 @@ event and reads its stdout can run it. What to expect per harness:
   define hooks in `hooks.json` only. A duplicate `[[hooks.PreToolUse]]`
   block in `config.toml` runs belt twice per call. Codex trusts hooks by
   content hash, so a new or changed entry must be re-trusted inside Codex
-  before it fires.
+  before it fires. Codex sends a shell call as `tool_name: "Bash"` with
+  `tool_input.command` as a string. Its `Write|Edit` matchers are aliases
+  for `apply_patch`, which sends `tool_name: "apply_patch"` with the patch
+  text as a string in `tool_input.command` and no `file_path`, `content` or
+  `new_string`. Both shapes pass the payload check, because the command is
+  a string and absent fields are allowed. `belt hook write` has no path to
+  guard on Codex, since the patch carries no `file_path`. That was already
+  so before the payload check. Any harness that sends another JSON type in
+  a field the guards read gets a `belt[payload]` deny on every such call,
+  not a silent allow. Check one real payload before wiring a new harness.
 - **pi** has no hooks schema either, but its permission extension can
   exec `belt check bash <command>`, `belt check write --file … --content …`,
   and `belt check external-text --tool <name> --input <json>` per tool
@@ -256,7 +273,10 @@ alike.
 ## Guards
 
 Guards run in fixed order (built-ins first, then custom guards alphabetically)
-and the first denial wins.
+and the first denial wins. Two checks come before every guard below, so no
+guard's "fails open" applies to them. A payload belt cannot read denies
+with `belt[payload]`, and then a config belt cannot read denies with
+`belt[config]` (see Wiring above).
 
 ### git-push-main
 
@@ -656,6 +676,9 @@ each guard section above names its own, and [config.md](../config.md)
 specifies them all. A `custom_hints` entry registers an external command as
 a session-start or subagent-start hint beside the built-ins (see Custom
 hints below).
+
+A payload belt cannot read runs no hint at all: nothing reaches the model,
+and a `warn` event tagged `decode_error` records why (see Wiring above).
 
 ### agent-memory (session-start)
 
@@ -1092,7 +1115,9 @@ In symptom order:
 
 1. **Nothing ever fires, anywhere.** The wiring is missing or points at the
    wrong path. Check the `hooks` block in `~/.claude/settings.json` against
-   the table above; `belt doctor` cannot see this for you.
+   the table above; `belt doctor` cannot see this for you. If belt is wired
+   but every hint on one event stays silent, look for `warn` events tagged
+   `decode_error`: that event's payloads do not decode.
 2. **One guard never denies.** Run the case through `belt check bash "<the
    command>"` or `belt check write --file <path> --content <text>` — one
    verdict line per guard shows whether the guard matched and why it decided

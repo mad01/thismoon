@@ -208,7 +208,12 @@ and writes any deny decision as JSON on stdout; a valid event always exits 0
 
 A config file belt can't parse denies every tool call with that as the
 reason. Belt is a guard: it can't tell "no rules configured" from "the rules
-didn't load", so it blocks instead of guessing the permissive one.
+didn't load", so it blocks instead of guessing the permissive one. A payload
+belt can't read is denied the same way, with a belt[payload] reason: stdin
+that is not a JSON object, or a field the guards read (tool_name,
+tool_input, cwd, and the command, file_path, content or new_string inside
+tool_input) holding another JSON type. The session and agent fields never
+deny. See belt docs.
 
 The event argument is belt's guard event, not the Claude Code tool name:
 bash guards Bash commands, write guards Write and Edit, external-text guards

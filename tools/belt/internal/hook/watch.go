@@ -33,7 +33,7 @@ func RunWatch(ctx context.Context, load Load, r io.Reader, stderr io.Writer) boo
 	items := watch.Run(ctx, watch.Config{
 		BaseURL:      notify.BaseURL(),
 		Source:       cfg.Watch.SourceName(),
-		SessionID:    p.SessionID,
+		SessionID:    string(p.SessionID),
 		PollInterval: cfg.Watch.PollInterval(),
 		MaxWait:      cfg.Watch.MaxWait(),
 		CacheDir:     cache.Dir(),

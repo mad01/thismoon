@@ -96,6 +96,29 @@ misses the match. So a write that is fine in the canonical checkout gets
 denied in the worktree. Make the edit in the canonical checkout, or have the
 worktree path added to the guard's exclude_paths.
 
+A hook payload belt cannot read fails closed, for the same reason as a
+broken config: no guard can check a call it cannot see. `belt hook` denies
+with `belt[payload]:` before any guard runs when stdin holds no JSON object
+(empty, not JSON, or another JSON value). It also denies when a field the
+guards read arrives with another JSON type. Those fields are `tool_name`,
+`tool_input` and `cwd`, plus `command` inside `tool_input` on bash and
+`file_path`, `content` and `new_string` on write. A JSON null counts as
+absent. The session and agent fields (`session_id`, `transcript_path`,
+`agent_id`, `agent_type`) and every key no guard reads decode leniently, so
+a mistyped identity never denies.
+
+Each payload deny leaves a warn event
+under the `belt` source, tagged with the event and a `decode_error` naming
+the field and the type that arrived. `belt hint` runs no hint on such a
+payload and writes nothing, leaving the same warn event. `belt record`
+still records the event, at warn, naming the decode error (nothing at all
+with ledger.enabled false). A mistyped `session_id` or `transcript_path` is
+dropped silently from the ledger entry, which stays at info. The harness
+builds the payload, not the model, so a retry hits the same deny. A
+`belt[payload]` deny on every call of one tool means the harness sends a
+shape this belt does not read. Install a belt that reads it, and until then
+unwire that `belt hook` entry from the harness settings.
+
 Missing config fails in two directions, deliberately. Guards and hints
 default to enabled. `git-push-main` fails closed: with no config it denies
 every push to main or master, and only a rendered config that disables it or
@@ -164,3 +187,6 @@ again.
    time, expired, legacy untimed, or malformed (set/extend/clear to manage)
 5. `belt version -o json`, when a fix does not seem to apply: confirm the
    binary is the build you expect
+6. On a `belt[payload]` deny: query the events service for source `belt`.
+   The deny's `decode_error` tag names the field and the JSON type that
+   arrived, and `belt version -o json` shows which build read it

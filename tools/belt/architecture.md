@@ -65,7 +65,13 @@ first, then the custom guards or custom hints alphabetically by name).
 ## Data flow
 
 The guard path: Claude Code pipes the PreToolUse payload into `belt hook
-bash|write`. `hook.Run` decodes the JSON, and `toInput` maps the
+bash|write`. `hook.Run` decodes the JSON with `decodePayload`, which
+fails on stdin that is not a JSON object and on a field the guards read
+arriving with another JSON type. That failure is a `belt[payload]` deny
+plus a warn event tagged `decode_error`, before the config loads (the rule
+is in operating.md, failure modes).
+
+A payload that decodes goes to `toInput`, which maps the
 tool-specific fields onto a shared `guard.Input` (bash carries `command`;
 Write carries `file_path` plus `content`, falling back to Edit's
 `new_string`). `guard.Run` loads config via `config.Load()` and walks the
@@ -73,8 +79,8 @@ guards from `ForEvent`; the first denial wins. On a deny, `notify.EmitEvent`
 POSTs a warn event (synchronous, one-second timeout, dropped if the events
 service is down), then the decision is encoded as
 `hookSpecificOutput.permissionDecision: "deny"` on stdout. The guard path
-always exits 0 (the deny is data, not an exit code), and a malformed payload
-or an allow produces no output at all. Across belt the only non-zero exit on
+always exits 0 (the deny is data, not an exit code), and an allow produces
+no output at all. Across belt the only non-zero exit on
 purpose is `belt watch`'s exit 2 (see the watch path below).
 
 The hint path mirrors it: `belt hint search|bash|external-text|session-start|
@@ -84,13 +90,15 @@ Hints do not short-circuit, each speaks or stays silent independently. Advice
 is emitted as `hookSpecificOutput.additionalContext` with the invoking
 event's name, except the prompt event, which writes plain stdout text because
 UserPromptSubmit adds stdout to context directly. Every fired hint POSTs an
-info event, so hint volume is measurable from the events timeline.
+info event, so hint volume is measurable from the events timeline. A
+payload that fails the same decode runs no hint, writes nothing, and POSTs
+a warn event tagged `decode_error`.
 
 Both paths carry who made the call: the session id on every real call, and
 the agent id and type inside a subagent. They reach custom guards and custom
-hints on stdin and tag every deny and hint event. The agent fields decode
-leniently, because a guard drops a payload it cannot decode and allows the
-call.
+hints on stdin and tag every deny and hint event. The session and agent
+fields decode leniently, because the guard path denies a payload it cannot
+decode, and a field no guard reads must not decide a call.
 
 The record path: `belt record <event>` decodes the lifecycle payload. Its
 lifecycle-only fields sit in a separate struct, out of the guard decode's

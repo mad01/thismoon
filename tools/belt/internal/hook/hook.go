@@ -4,7 +4,9 @@
 // hint inputs and hint advice becomes added context. Lifecycle payloads
 // (subagents, tasks, compaction, session end) become ledger entries and
 // print nothing at all. Every entrypoint exits 0: a hook must not break
-// tool calls, or steer a session, on its own bugs.
+// tool calls, or steer a session, on its own bugs. A payload belt cannot
+// read is denied on the guard path, like a config belt cannot read: no
+// guard can check a call it cannot see (see decodePayload).
 package hook
 
 import (
@@ -24,28 +26,29 @@ import (
 
 // payload is the subset of the hook payload belt reads. ToolName, ToolInput,
 // and ToolResponse are only populated on PreToolUse/PostToolUse; the session
-// fields ride every hook event.
+// fields ride every hook event. The typed fields are the ones the guards
+// read, and a value of another JSON type fails the decode, which denies the
+// call (see decodePayload).
 type payload struct {
-	ToolName       string          `json:"tool_name"`
-	ToolInput      map[string]any  `json:"tool_input"`
-	ToolResponse   json.RawMessage `json:"tool_response"`
-	Cwd            string          `json:"cwd"`
-	SessionID      string          `json:"session_id"`
-	TranscriptPath string          `json:"transcript_path"`
-	// AgentID and AgentType ride every event that fires inside a subagent
-	// (its tool calls included) and the subagent lifecycle events; both
-	// are empty in the main session. They decode leniently: no guard reads
-	// them, so a value of the wrong type must not fail the decode a guard
-	// depends on (see lenientString).
-	AgentID   lenientString `json:"agent_id"`
-	AgentType lenientString `json:"agent_type"`
+	ToolName     string          `json:"tool_name"`
+	ToolInput    map[string]any  `json:"tool_input"`
+	ToolResponse json.RawMessage `json:"tool_response"`
+	Cwd          string          `json:"cwd"`
+	// The session fields ride every event, and AgentID and AgentType every
+	// event that fires inside a subagent (its tool calls included) and the
+	// subagent lifecycle events; both are empty in the main session. They
+	// decode leniently: no guard reads them, so a value of the wrong type
+	// must not deny a call (see lenientString).
+	SessionID      lenientString `json:"session_id"`
+	TranscriptPath lenientString `json:"transcript_path"`
+	AgentID        lenientString `json:"agent_id"`
+	AgentType      lenientString `json:"agent_type"`
 }
 
 // lenientString is a payload field that keeps a JSON string and ignores any
 // other JSON value, leaving the field empty instead of failing the whole
-// payload decode. A guard drops a payload it cannot decode and allows the
-// call, so every field added for something other than a guard decodes this
-// way.
+// payload decode. A guard entrypoint denies a payload it cannot decode, so
+// every field added for something other than a guard decodes this way.
 type lenientString string
 
 // UnmarshalJSON keeps a string value and drops anything else. It never
@@ -60,9 +63,9 @@ func (s *lenientString) UnmarshalJSON(raw []byte) error {
 
 // recordPayload is what the ledger reads from a lifecycle event: the shared
 // fields plus the ones only lifecycle events carry. They live here rather
-// than in payload because a guard drops a payload it cannot decode and
-// allows the call: a field the guards never read must not be able to fail
-// their decode. Each is set only by the events that carry it: SubagentStop
+// than in payload because a guard entrypoint denies a payload it cannot
+// decode: a field the guards never read must not be able to fail their
+// decode. Each is set only by the events that carry it: SubagentStop
 // the first three, TaskCompleted the task fields, TaskCompleted and
 // TeammateIdle the teammate name, PermissionDenied the tool use id and a
 // reason (beside the shared tool_name), Notification the message, title
@@ -122,24 +125,54 @@ type Load func() (config.Config, error)
 // belt[<id>] form the guards use.
 const ConfigDenyID = "config"
 
+// emitFunc archives one event to the events service.
+type emitFunc func(source, level, title, message string, tags map[string]string)
+
+// runner is the guard and hint entrypoints with their effects injected: the
+// config load and the event emit, so a test can see what a run would
+// archive (notify posts nothing under go test).
+type runner struct {
+	load Load
+	emit emitFunc
+}
+
 // Run reads a payload from r, runs the guards for event, and writes a deny
-// decision to w when one fires. It never returns an error for malformed
-// payloads — a broken hook must not break tool calls.
+// decision to w when one fires. It never returns an error: the deny is the
+// only output, and it travels as data.
 //
-// A config belt cannot read is the one exception: it denies. Every guard's
-// rules live in that file, so continuing would run write-internal-names with
-// no names and the commit guards with no rules while reporting nothing at
-// all. The deny is loud on purpose — a wedged session with a clear reason
+// Two failures deny before any guard runs, because a guard that cannot see
+// its input or its rules would allow while reporting nothing at all. A
+// payload belt cannot read (not a JSON object, or a field the guards read
+// arriving with the wrong JSON type, see decodePayload) denies with
+// belt[payload]. A config belt cannot read denies with belt[config]: every
+// guard's rules live in that file, so continuing would run
+// write-internal-names with no names and the commit guards with no rules.
+// Both denies are loud on purpose: a wedged session with a clear reason
 // beats a session that quietly stopped being guarded.
 func Run(event string, load Load, r io.Reader, w io.Writer) {
-	var p payload
-	if err := json.NewDecoder(r).Decode(&p); err != nil {
+	runner{load: load, emit: notify.EmitEventSync}.guards(event, r, w)
+}
+
+func (rn runner) guards(event string, r io.Reader, w io.Writer) {
+	p, err := decodePayload(r, guardInputFields[event])
+	if err != nil {
+		d := payloadDenial(err)
+		rn.emit(
+			"belt",
+			"warn",
+			"blocked a tool call (unreadable payload)",
+			d.Reason,
+			withSession(map[string]string{
+				"guard": d.Guard, "event": event, decodeErrorTag: err.Error(),
+			}, p),
+		)
+		writeDeny(w, d)
 		return
 	}
-	cfg, err := load()
+	cfg, err := rn.load()
 	if err != nil {
 		d := configDenial(err)
-		notify.EmitEventSync(
+		rn.emit(
 			"belt",
 			"error",
 			"blocked every tool call (unreadable config)",
@@ -154,7 +187,7 @@ func Run(event string, load Load, r io.Reader, w io.Writer) {
 	if d == nil {
 		return
 	}
-	notify.EmitEventSync(
+	rn.emit(
 		"belt",
 		"warn",
 		fmt.Sprintf("blocked %s (%s)", p.ToolName, d.Guard),
@@ -175,7 +208,7 @@ func withSession(tags map[string]string, p payload) map[string]string {
 // identity is who made the call this payload describes.
 func (p payload) identity() guard.Identity {
 	return guard.Identity{
-		SessionID: p.SessionID,
+		SessionID: string(p.SessionID),
 		AgentID:   string(p.AgentID),
 		AgentType: string(p.AgentType),
 	}
@@ -211,12 +244,28 @@ func configDenial(err error) *guard.Denial {
 // hint events ride PostToolUse; the start events ride SessionStart and
 // SubagentStart, and the emitted hookEventName must match the hook that
 // invoked belt or Claude Code drops the output (see hintAdviceByEvent).
+//
+// A payload belt cannot read (see decodePayload) runs no hint and writes
+// nothing: a hint has no denial path, and the tool call it would advise on
+// has already run. It leaves a warn event naming the decode error instead,
+// so the silence is visible on the timeline.
 func RunHint(event string, load Load, r io.Reader, w io.Writer) {
-	var p payload
-	if err := json.NewDecoder(r).Decode(&p); err != nil {
+	runner{load: load, emit: notify.EmitEventSync}.hints(event, r, w)
+}
+
+func (rn runner) hints(event string, r io.Reader, w io.Writer) {
+	p, err := decodePayload(r, hintInputFields[event])
+	if err != nil {
+		rn.emit(
+			"belt",
+			"warn",
+			"skipped the hints (unreadable payload)",
+			"belt could not read the hook payload, so no hint ran: "+err.Error(),
+			withSession(map[string]string{"event": event, decodeErrorTag: err.Error()}, p),
+		)
 		return
 	}
-	cfg, err := load()
+	cfg, err := rn.load()
 	if err != nil {
 		// A hint has no denial path, so a broken config travels as advice:
 		// the guards are already blocking every tool call, and this says why
@@ -230,7 +279,7 @@ func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 		return
 	}
 	for _, a := range advice {
-		notify.EmitEventSync(
+		rn.emit(
 			"belt",
 			"info",
 			fmt.Sprintf("hinted %s (%s)", p.ToolName, a.Hint),
@@ -252,7 +301,12 @@ func RunHint(event string, load Load, r io.Reader, w io.Writer) {
 // (ledger.agent_types); a broken config file records with the defaults,
 // because the ledger is not a guard and an entry is harmless. A missing or
 // unreadable payload is still recorded, at warn level, from whatever
-// fields arrived.
+// fields arrived. That entry is the warn event for the payload: the record
+// path can neither deny nor print, and with ledger.enabled false it posts
+// nothing at all, a payload warning included. The session and agent fields
+// decode leniently here too (recordPayload embeds payload), so a mistyped
+// session_id or transcript_path is dropped silently and the entry stays at
+// info with no warning.
 func RunRecord(event string, load Load, r io.Reader) {
 	recorder{load: load, build: buildEntry, emit: postEntry}.run(event, r)
 }
@@ -345,8 +399,8 @@ func (rc recorder) reportPanic(event, source string, v any) {
 // toLedgerInput maps a lifecycle payload onto the ledger input.
 func toLedgerInput(p recordPayload) ledger.Input {
 	return ledger.Input{
-		SessionID:            p.SessionID,
-		TranscriptPath:       p.TranscriptPath,
+		SessionID:            string(p.SessionID),
+		TranscriptPath:       string(p.TranscriptPath),
 		AgentID:              string(p.AgentID),
 		AgentType:            string(p.AgentType),
 		AgentTranscriptPath:  p.AgentTranscriptPath,
@@ -415,8 +469,8 @@ func toHintInput(event string, p payload) hint.Input {
 	in := hint.Input{
 		Event:          event,
 		Cwd:            p.Cwd,
-		SessionID:      p.SessionID,
-		TranscriptPath: p.TranscriptPath,
+		SessionID:      string(p.SessionID),
+		TranscriptPath: string(p.TranscriptPath),
 		AgentID:        string(p.AgentID),
 		AgentType:      string(p.AgentType),
 	}
@@ -452,7 +506,7 @@ func toInput(event string, p payload) guard.Input {
 	in := guard.Input{
 		Event:     event,
 		Cwd:       p.Cwd,
-		SessionID: p.SessionID,
+		SessionID: string(p.SessionID),
 		AgentID:   string(p.AgentID),
 		AgentType: string(p.AgentType),
 	}
