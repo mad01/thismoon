@@ -142,16 +142,18 @@ schema. Review the diff before committing it.
   claude runs without a rule, such as `pwd` or `git status`. Arm sessions
   load the user's own settings too, and this machine's allow plain `git
   commit` and `make`, so those passing shows nothing. The proof is a
-  command only the arm's lists admit, such as `git -C <worktree> commit`;
-  the flags and the file carry the same lists, so a pass does not say
+  command only the arm's lists admit, such as `git -C <worktree> commit`.
+  The flags and the file carry the same lists, so a pass does not say
   which carrier reached the worker. Read `permission_denials` for both
   arms before trusting a factory result.
 - **Every path an arm session sees is the resolved one.** `checkout.Create`
   runs `EvalSymlinks` on the temp root, so the clone, the worktrees dir,
   the settings file, the prompt and `--add-dir` all name
-  `/private/var/folders/...` on macOS. claude records the session cwd in
-  that form, and the first paid run lost every `cd` into the clone or a
-  worktree because factory-eval named them under `/var/folders`.
+  `/private/var/folders/...` on macOS, the form claude records the session
+  cwd in. The first paid run lost every `cd` into the clone or a worktree
+  named under `/var/folders`. The cause is open: a probe with the same
+  path form and none of the arm lists passed, so the resolved name removes one
+  variable, not a known fault.
 - **The fingerprint taints a run on any change to the source checkout**,
   whoever made it. All worktrees share the ref store, so a commit in any
   worktree of the source repo (loom ones included) taints a run, and so

@@ -17,9 +17,12 @@ and its reflogs, and git prunes the objects that leaves unreachable. So the
 clone holds nothing newer than the pin, and `git fetch` has no remote to
 pull it back from. Its local config carries the `factory-eval` git
 identity, so no commit prompts. The temp dir is named in resolved form:
-`/private/var/folders/...` on macOS, not the `/var/folders` form. claude
-records the session's working directory resolved, and the first paid run
-denied every `cd` that named the clone or a worktree under `/var/folders`.
+`/private/var/folders/...` on macOS, not the `/var/folders` form, so every
+path an arm session sees matches the working directory claude records.
+The first paid run denied every `cd` that named the clone or a worktree
+under `/var/folders`. The cause is not confirmed: a probe with the same
+path form and none of the arm lists passed, so the resolved name removes one
+variable rather than a known fault.
 The arm session works in the clone under a fixed permission profile:
 
 - `--max-budget-usd` with the tier's cap, and `--output-format json` plus
