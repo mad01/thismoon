@@ -23,9 +23,10 @@ import (
 
 // Defaults a zero Config field falls back to.
 const (
-	// DefaultShell is the shell every session runs. It starts as a login
-	// shell, because the launchd agent serve runs under has neither the
-	// mise shims nor ~/code/bin on its PATH.
+	// DefaultShell is the shell every session runs. It starts as an
+	// interactive login shell, because the launchd agent serve runs under
+	// has neither the mise shims nor ~/code/bin on its PATH, and the user's
+	// ~/.zshrc, which sets them up, is read by interactive shells only.
 	DefaultShell = "/bin/zsh"
 	// DefaultIdleTimeout is how long a session may go without a subscriber
 	// before it is killed.
@@ -64,8 +65,8 @@ func ValidName(name string) bool {
 // Spec is how a session is spawned. It is read only on the Attach that
 // spawns the session; an Attach to a running session ignores it.
 type Spec struct {
-	// Cmd runs under the login shell as `zsh -l -c <Cmd>`; empty starts the
-	// login shell itself.
+	// Cmd runs under the shell as `zsh -l -i -c <Cmd>`; empty starts the
+	// interactive login shell itself.
 	Cmd string
 	// Cwd is the working directory; empty means the home directory, and a
 	// leading ~ is expanded.

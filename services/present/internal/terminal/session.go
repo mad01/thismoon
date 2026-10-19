@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -25,6 +26,8 @@ const (
 	// open long after the process itself is gone; the exit is reported
 	// anyway.
 	drainWait = time.Second
+	// killPoll is how often a kill checks whether the job has gone.
+	killPoll = 20 * time.Millisecond
 )
 
 // session is one PTY and the process running in it.
@@ -84,12 +87,14 @@ func (m *Manager) spawn(k key, spec Spec) (*session, error) {
 	return s, nil
 }
 
-// shellArgs runs cmd under a login shell, or the login shell alone.
+// shellArgs runs cmd under an interactive login shell, or that shell
+// alone. Interactive because the user's PATH setup (mise, ~/code/bin) lives
+// in ~/.zshrc, which a non-interactive shell never reads.
 func shellArgs(cmd string) []string {
 	if cmd == "" {
-		return []string{"-l"}
+		return []string{"-l", "-i"}
 	}
-	return []string{"-l", "-c", cmd}
+	return []string{"-l", "-i", "-c", cmd}
 }
 
 // withTerm copies env with TERM set for xterm.js.
@@ -245,36 +250,109 @@ func (s *session) describe() Info {
 	return info
 }
 
-// kill sends SIGHUP to the session's process group, SIGKILL after the grace
-// period, and waits for the exit to be recorded.
+// kill sends SIGHUP to the shell and its foreground job, SIGKILL to both
+// after the grace period unless the shell has exited and the job's group
+// is empty by then, and waits for the exit to be recorded. Watching the job
+// group is what catches a job that ignores the hangup and outlives the
+// shell; the terminal is no help there, since it reads as closed as soon as
+// the shell is gone.
 func (s *session) kill() {
+	job := s.prepareKill()
+	s.signal(syscall.SIGHUP, job)
+	if s.endedWithin(s.grace, job) {
+		return
+	}
+	s.signal(syscall.SIGKILL, job)
+	<-s.done
+}
+
+// prepareKill stops the idle timer and returns the terminal's foreground
+// job group when it is not the shell's own, 0 otherwise. The job is read
+// once, up front: after the shell is gone the terminal no longer reports
+// it.
+func (s *session) prepareKill() int {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.idle != nil {
 		s.idle.Stop()
 		s.idle = nil
 	}
-	s.mu.Unlock()
-	s.signal(syscall.SIGHUP)
-	select {
-	case <-s.done:
-		return
-	case <-time.After(s.grace):
+	fg, err := foregroundGroup(s.pty)
+	if err != nil || fg <= 0 || fg == s.info.PID {
+		// No separate job, or a terminal that cannot say: the shell's
+		// group is all there is to signal.
+		return 0
 	}
-	s.signal(syscall.SIGKILL)
-	<-s.done
+	return fg
 }
 
-// signal sends sig to the session's process group, which the PTY start made
-// the process its leader of. A reaped process is left alone: its pid may
-// already belong to something else.
-func (s *session) signal(sig syscall.Signal) {
+// endedWithin reports whether, within d, the exit was recorded and no
+// process is left in the job group (0 for none).
+func (s *session) endedWithin(d time.Duration, job int) bool {
+	deadline := time.NewTimer(d)
+	defer deadline.Stop()
+	select {
+	case <-s.done:
+	case <-deadline.C:
+		return false
+	}
+	if job == 0 {
+		return true
+	}
+	poll := time.NewTicker(killPoll)
+	defer poll.Stop()
+	for !groupGone(job) {
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			return false
+		}
+	}
+	return true
+}
+
+// groupGone reports whether process group pgid has no process left.
+func groupGone(pgid int) bool {
+	return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH)
+}
+
+// signal sends sig to the job group and, until the shell is reaped, to the
+// shell's own group, which the PTY start made the shell the leader of. A
+// reaped shell's pid may already belong to something else, so it is left
+// alone; pids are handed out in sequence, so the job group read at the
+// start of a kill still names the job a grace period later.
+func (s *session) signal(sig syscall.Signal, job int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.waited {
-		return
+	// ESRCH means a group is already gone, which is what kill wants.
+	if !s.waited {
+		_ = syscall.Kill(-s.info.PID, sig)
 	}
-	// ESRCH means the group is already gone, which is what kill wants.
-	_ = syscall.Kill(-s.info.PID, sig)
+	if job > 0 {
+		_ = syscall.Kill(-job, sig)
+	}
+}
+
+// foregroundGroup asks the terminal behind f for its foreground process
+// group. An interactive shell runs each job in a group of its own, so the
+// shell's group alone misses the command the user is looking at.
+func foregroundGroup(f *os.File) (int, error) {
+	rc, err := f.SyscallConn()
+	if err != nil {
+		return 0, fmt.Errorf("terminal: pty: %w", err)
+	}
+	var pgid int
+	var ioctlErr error
+	err = rc.Control(func(fd uintptr) {
+		pgid, ioctlErr = unix.IoctlGetInt(int(fd), unix.TIOCGPGRP)
+	})
+	if err != nil {
+		return 0, fmt.Errorf("terminal: pty: %w", err)
+	}
+	if ioctlErr != nil {
+		return 0, fmt.Errorf("terminal: foreground group: %w", ioctlErr)
+	}
+	return pgid, nil
 }
 
 // write sends p to the process's input.

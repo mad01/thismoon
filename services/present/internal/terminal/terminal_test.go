@@ -3,7 +3,11 @@ package terminal
 import (
 	"bytes"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -16,9 +20,14 @@ const deadline = 30 * time.Second
 
 // newManager returns a Manager whose sessions start in a temp home with a
 // minimal environment, so no profile of the machine running the test prints
-// into the output.
+// into the output. The kill grace is short unless a test sets it: a hangup
+// sent while the shell is still starting can be lost, and every cleanup
+// would otherwise wait out the full default grace.
 func newManager(t *testing.T, cfg Config) (*Manager, string) {
 	t.Helper()
+	if cfg.KillGrace == 0 {
+		cfg.KillGrace = 200 * time.Millisecond
+	}
 	home := t.TempDir()
 	cfg.Home = home
 	cfg.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
@@ -177,6 +186,54 @@ func TestKillEndsTheSessionAndUnlistsIt(t *testing.T) {
 	}
 	if err := m.Kill("page1", "demo"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second Kill: err = %v, want ErrNotFound", err)
+	}
+}
+
+// An interactive shell runs a command as a job in its own process group, and
+// a job may ignore the hangup the shell passes on as it exits. Kill must
+// still leave nothing running.
+func TestKillReachesAJobThatIgnoresHangup(t *testing.T) {
+	m, _ := newManager(t, Config{KillGrace: 500 * time.Millisecond})
+	// The trailing true keeps zsh from exec'ing the job in its own place.
+	sub := attach(t, m, "demo", Spec{Cmd: `sh -c 'trap "" HUP; echo pid=$$; exec sleep 60'; true`})
+	out := readUntil(t, sub, "\n")
+	match := regexp.MustCompile(`pid=(\d+)`).FindStringSubmatch(out)
+	if match == nil {
+		t.Fatalf("no pid in %q", out)
+	}
+	pid, err := strconv.Atoi(match[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Kill("page1", "demo"); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	waitFor(t, "the job to be gone", func() bool {
+		return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
+	})
+}
+
+// A session must find the user's tools from the bare environment the
+// launchd agent gives serve: the PATH setup lives in ~/.zshrc, which only
+// an interactive shell reads. It runs the real login shell of whoever runs
+// the test, so it skips on a machine without present installed (CI).
+func TestScrubbedEnvFindsPresentThroughTheUsersShell(t *testing.T) {
+	if _, err := exec.LookPath("present"); err != nil {
+		t.Skip("present is not installed on this machine")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(Config{Home: home, Env: []string{"HOME=" + home, "TERM=dumb"}})
+	t.Cleanup(m.Close)
+	sub := attach(t, m, "path", Spec{Cmd: "command -v present"})
+
+	out := readAll(t, sub)
+	code, exited := sub.Exit()
+	if !exited || code != 0 || !strings.Contains(out, "/present") {
+		t.Errorf("command -v present = %q, exit %d %v; want a path and exit 0", out, code, exited)
 	}
 }
 
