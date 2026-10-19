@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: '\bgit[ \t]+-'
+pattern: '\bgit[ \t]+-(?!C[ \t])'
 match: not_contains
 ---

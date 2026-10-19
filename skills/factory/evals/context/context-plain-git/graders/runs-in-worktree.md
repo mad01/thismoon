@@ -1,4 +1,4 @@
 ---
 type: regex
-pattern: '\bcd [^\n]*\.worktrees/thismoon/alexander-adr-links-catalog/?["'']?[ \t]*&&[ \t]*git [a-z]'
+pattern: '\bgit[ \t]+-C[ \t]+[^\n]*\.worktrees/thismoon/alexander-adr-links-catalog/?["'']?[ \t]+[a-z]'
 ---

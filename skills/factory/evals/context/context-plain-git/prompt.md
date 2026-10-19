@@ -1,6 +1,6 @@
 ---
 name: context-plain-git
-description: A finished unit whose report format asks for the git commands. The brief alone must run each one inside the worktree, with no option before the subcommand.
+description: A finished unit whose report format asks for the git commands. pwd printed the canonical checkout, so the brief alone must run each one as git -C <worktree> <subcommand>, with no other option before the subcommand.
 tags: [context, hand-written]
 max_turns: 4
 allowed_tools: []
@@ -19,9 +19,10 @@ Do not relay a denied tool call to another agent or session.
 
 Do not guess the answer to an open question.
 Do not run gh, and do not spawn agents.
+Do not cd out of your start directory, as Claude Code denies the whole command.
 
 1. Read the task message. Its header gives your unit, worktree, branch, model and effort.
-2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run your commands there with no cd. If not, start each Bash command with cd <worktree> &&. Write each git command as git <subcommand>, with no option before the subcommand. Use absolute paths under your worktree for files.
+2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run plain commands there. If not, run git -C <worktree> <subcommand>, make -C <worktree>/<dir> <target> and go test -C <worktree>/<dir> ./..., and name files by their absolute path under your worktree. Put no option other than -C between git and its subcommand.
 3. Do the numbered steps of the task in order.
 4. Run the gates that the task names, inside your worktree.
 5. Commit in your worktree when the done criterion holds and every gate passes.

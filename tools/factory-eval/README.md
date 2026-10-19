@@ -19,10 +19,12 @@ pull it back from. Its local config carries the `factory-eval` git
 identity, so no commit prompts. The temp dir is named in resolved form:
 `/private/var/folders/...` on macOS, not the `/var/folders` form, so every
 path an arm session sees matches the working directory claude records.
-The first paid run denied every `cd` that named the clone or a worktree
-under `/var/folders`. The cause is not confirmed: a probe with the same
-path form and none of the arm lists passed, so the resolved name removes one
-variable rather than a known fault.
+The first paid run denied every `cd <worktree> && ...` a worker ran. The
+cause is a Claude Code rule, not the path form. In dontAsk mode a cd to a
+directory outside the session's working directory, followed by any
+command that needs an allow rule, is denied. The lists do not matter. The
+worker brief therefore runs `git -C <worktree>`, `make -C` and `go test
+-C` from the start directory and never cd.
 The arm session works in the clone under a fixed permission profile:
 
 - `--max-budget-usd` with the tier's cap, and `--output-format json` plus

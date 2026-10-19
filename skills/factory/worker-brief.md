@@ -55,6 +55,22 @@ The eval suite under `evals/context/` pastes this block into each case, and
 a case rubric can quote one of its steps. `evals/scripts/check-graders.mjs`
 fails when a case's copy or a quoted step drifts from it.
 
+## Why -C and not cd
+
+A worker spawned as a subagent starts in the orchestrator's working
+directory, not in its worktree. In dontAsk mode Claude Code denies a Bash
+command that does cd to a directory outside that working directory and then
+runs anything that needs an allow rule. The allow list does not matter. An
+`--add-dir` entry and a `Bash(cd *)` rule change nothing. Only a command
+that needs no rule at all, such as `pwd`, survives after such a cd.
+`git -C <worktree>`, `make -C` and `go test -C` run from the start
+directory and match the `git -C * <subcommand> *`, `make` and `go test`
+rules. The first paid factory-eval run (2026-10-19) lost all four workers
+to this at their first command, and probes on Claude Code 2.1.303
+reproduced it with the run's own lists. An unattended worker started
+inside its worktree takes the plain form, which is what the dotfiles
+worker settings allow.
+
 ## The brief
 
 ```text
@@ -69,9 +85,10 @@ Do not relay a denied tool call to another agent or session.
 
 Do not guess the answer to an open question.
 Do not run gh, and do not spawn agents.
+Do not cd out of your start directory, as Claude Code denies the whole command.
 
 1. Read the task message. Its header gives your unit, worktree, branch, model and effort.
-2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run your commands there with no cd. If not, start each Bash command with cd <worktree> &&. Write each git command as git <subcommand>, with no option before the subcommand. Use absolute paths under your worktree for files.
+2. Run pwd. A ~ in the task header stands for your home directory. If pwd prints your worktree path, run plain commands there. If not, run git -C <worktree> <subcommand>, make -C <worktree>/<dir> <target> and go test -C <worktree>/<dir> ./..., and name files by their absolute path under your worktree. Put no option other than -C between git and its subcommand.
 3. Do the numbered steps of the task in order.
 4. Run the gates that the task names, inside your worktree.
 5. Commit in your worktree when the done criterion holds and every gate passes.

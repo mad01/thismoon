@@ -150,10 +150,11 @@ schema. Review the diff before committing it.
   runs `EvalSymlinks` on the temp root, so the clone, the worktrees dir,
   the settings file, the prompt and `--add-dir` all name
   `/private/var/folders/...` on macOS, the form claude records the session
-  cwd in. The first paid run lost every `cd` into the clone or a worktree
-  named under `/var/folders`. The cause is open: a probe with the same
-  path form and none of the arm lists passed, so the resolved name removes one
-  variable, not a known fault.
+  cwd in. The first paid run lost every worker at `cd <worktree> && git
+  status`. That is a Claude Code rule, not the path form. In dontAsk mode
+  a cd outside the session cwd followed by any command that needs an
+  allow rule is denied. The lists do not matter, and `--add-dir` does not
+  widen it. The worker brief runs `git -C <worktree>` instead.
 - **The fingerprint taints a run on any change to the source checkout**,
   whoever made it. All worktrees share the ref store, so a commit in any
   worktree of the source repo (loom ones included) taints a run, and so
