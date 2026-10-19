@@ -233,7 +233,7 @@ needs_reply: true
 
 blocker: Step 4 was denied, so I stopped before the test run.
 ```
-Permission to use Bash with command cd ~/.worktrees/thismoon/alexander-readme-doctor-deps && make -C services/deps test has been denied.
+Permission to use Bash with command make -C ~/.worktrees/thismoon/alexander-readme-doctor-deps/services/deps test has been denied.
 ```
 
 question: Do you allow make -C services/deps test in this worktree, or do you run it yourself?
@@ -405,8 +405,10 @@ pass.
 ## What runs have shown
 
 - A worker starts in the orchestrator's working directory, not in its
-  worktree. The brief tells it to run `pwd` first and to put `cd
-  <worktree> &&` in front of each command when it has to.
+  worktree. The brief tells it to run `pwd` first and then to use `git -C
+  <worktree>`, `make -C` and `go test -C` from where it is. A `cd` out of
+  the start directory is denied in dontAsk mode together with every
+  command after it, whatever the allow list says.
 - Spawn every worker of a wave in one message, and name each one. An
   unnamed worker cannot message you; its final reply is its message.
 - Messages cross. An answer sent while the worker is mid-turn is read at
