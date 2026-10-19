@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -93,8 +94,10 @@ type Spec struct {
 type Config struct {
 	// Shell is the shell binary, DefaultShell when empty.
 	Shell string
-	// Env is the environment sessions start with, os.Environ() when nil.
-	// TERM is always set to xterm-256color on top of it.
+	// Env is the environment sessions start with; nil takes os.Environ()
+	// without its TERM, which names the terminal serve runs in rather than
+	// xterm.js. TERM is xterm-256color unless Env sets one, and MarkerVar
+	// is always set to 1 on top.
 	Env []string
 	// Home resolves an empty or ~ Cwd, os.UserHomeDir() when empty.
 	Home string
@@ -121,6 +124,12 @@ type Info struct {
 	Attached int       `json:"attached"`
 }
 
+// MarkerVar is set to 1 in every session's environment, so a shell's
+// startup files can tell they run under present and skip setup meant for
+// a terminal app, such as a theme hook that waits on a reply xterm.js
+// never sends.
+const MarkerVar = "PRESENT_TERMINAL"
+
 // key names a session: its page and its name on that page.
 type key struct{ page, name string }
 
@@ -141,7 +150,9 @@ func New(cfg Config) *Manager {
 		cfg.Shell = DefaultShell
 	}
 	if cfg.Env == nil {
-		cfg.Env = os.Environ()
+		cfg.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool {
+			return strings.HasPrefix(kv, "TERM=")
+		})
 	}
 	if cfg.IdleTimeout <= 0 {
 		cfg.IdleTimeout = DefaultIdleTimeout

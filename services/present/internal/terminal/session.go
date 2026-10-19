@@ -84,7 +84,7 @@ func (m *Manager) spawn(k key, spec Spec) (*session, error) {
 	cols, rows := sizeOr(spec.Cols, DefaultCols), sizeOr(spec.Rows, DefaultRows)
 	cmd := exec.Command(m.cfg.Shell, shellArgs(spec.Cmd)...)
 	cmd.Dir = cwd
-	cmd.Env = withTerm(m.cfg.Env)
+	cmd.Env = sessionEnv(m.cfg.Env)
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
 	if err != nil {
 		return nil, fmt.Errorf("terminal: start %s: %w", k, err)
@@ -153,15 +153,23 @@ func shellArgs(cmd string) []string {
 	return []string{"-l", "-i", "-c", cmd}
 }
 
-// withTerm copies env with TERM set for xterm.js.
-func withTerm(env []string) []string {
-	out := make([]string, 0, len(env)+1)
+// sessionEnv copies env with what every session gets: TERM for xterm.js
+// unless env sets one, and MarkerVar set to 1 in place of any value env
+// gives it.
+func sessionEnv(env []string) []string {
+	out := make([]string, 0, len(env)+2)
+	hasTerm := false
 	for _, kv := range env {
-		if !strings.HasPrefix(kv, "TERM=") {
-			out = append(out, kv)
+		if strings.HasPrefix(kv, MarkerVar+"=") {
+			continue
 		}
+		hasTerm = hasTerm || strings.HasPrefix(kv, "TERM=")
+		out = append(out, kv)
 	}
-	return append(out, "TERM=xterm-256color")
+	if !hasTerm {
+		out = append(out, "TERM=xterm-256color")
+	}
+	return append(out, MarkerVar+"=1")
 }
 
 func sizeOr(v, def uint16) uint16 {

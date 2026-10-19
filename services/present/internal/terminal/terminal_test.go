@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -271,11 +272,22 @@ func TestKillReachesAJobThatIgnoresHangup(t *testing.T) {
 	})
 }
 
+// userShellOptIn is the variable that opts in to the test running the
+// user's own login shell.
+const userShellOptIn = "PRESENT_TEST_USER_SHELL"
+
 // A session must find the user's tools from the bare environment the
 // launchd agent gives serve: the PATH setup lives in ~/.zshrc, which only
-// an interactive shell reads. It runs the real login shell of whoever runs
-// the test, so it skips on a machine without present installed (CI).
+// an interactive shell reads. It runs the real login shell and startup
+// files of whoever runs the test, which can take seconds, so it runs only
+// with PRESENT_TEST_USER_SHELL=1, and skips on a machine without present
+// installed (CI):
+//
+//	PRESENT_TEST_USER_SHELL=1 go test -run UsersShell ./internal/terminal/
 func TestScrubbedEnvFindsPresentThroughTheUsersShell(t *testing.T) {
+	if os.Getenv(userShellOptIn) != "1" {
+		t.Skip("runs the user's own login shell; set " + userShellOptIn + "=1 to run it")
+	}
 	if _, err := exec.LookPath("present"); err != nil {
 		t.Skip("present is not installed on this machine")
 	}
@@ -283,7 +295,7 @@ func TestScrubbedEnvFindsPresentThroughTheUsersShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(Config{Home: home, Env: []string{"HOME=" + home, "TERM=dumb"}})
+	m := New(Config{Home: home, Env: []string{"HOME=" + home}})
 	t.Cleanup(m.Close)
 	sub := attach(t, m, "path", Spec{Cmd: "command -v present && echo FOUND"})
 
@@ -345,6 +357,51 @@ func TestPrefillReachesACommandReadingInput(t *testing.T) {
 			}
 			readUntil(t, sub, "got:hello")
 		})
+	}
+}
+
+func TestSessionEnv(t *testing.T) {
+	const term, mark = "TERM=xterm-256color", "PRESENT_TERMINAL=1"
+	cases := []struct {
+		name string
+		env  []string
+		want []string
+	}{
+		{"no TERM", []string{"HOME=/h"}, []string{"HOME=/h", term, mark}},
+		{"TERM set", []string{"TERM=vt100", "HOME=/h"}, []string{"TERM=vt100", "HOME=/h", mark}},
+		{"marker inherited", []string{"PRESENT_TERMINAL=0"}, []string{term, mark}},
+	}
+	for _, c := range cases {
+		if got := sessionEnv(c.env); !slices.Equal(got, c.want) {
+			t.Errorf("%s: sessionEnv(%q) = %q, want %q", c.name, c.env, got, c.want)
+		}
+	}
+}
+
+// A session sees the marker, keeps a TERM the caller set, and gets
+// xterm-256color when it set none, never the TERM of the terminal serve
+// itself runs in.
+func TestSessionSeesTheMarkerAndItsTerm(t *testing.T) {
+	const report = `printf '%s|%s' "$TERM" "$PRESENT_TERMINAL"`
+	home := t.TempDir()
+	t.Setenv("HOME", home) // keep the default env off the user's startup files
+	t.Setenv("ZDOTDIR", home)
+	t.Setenv("TERM", "xterm-kitty")
+	cases := []struct {
+		name string
+		env  []string
+		want string
+	}{
+		{"default env", nil, "xterm-256color|1"},
+		{"caller TERM", []string{"HOME=" + home, "PATH=/usr/bin:/bin", "TERM=vt100"}, "vt100|1"},
+	}
+	for _, c := range cases {
+		m := New(Config{Home: home, Env: c.env, KillGrace: 200 * time.Millisecond})
+		t.Cleanup(m.Close)
+		out := readAll(t, attach(t, m, "env", Spec{Cmd: report}))
+		if !strings.Contains(out, c.want) {
+			t.Errorf("%s: session printed %q, want %q", c.name, out, c.want)
+		}
 	}
 }
 
