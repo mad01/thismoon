@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -64,5 +65,32 @@ func TestDeckFieldsReachTheSchema(t *testing.T) {
 	}
 	if !strings.Contains(update.Tag.Get("jsonschema"), "present_create") {
 		t.Error("update deck schema must point at present_create's deck")
+	}
+}
+
+// TestTerminalBlockReachesTheSchema pins the create tool's descriptions to
+// the terminal block: its fields and the rows bounds the renderer enforces
+// in the content text, and its exemption from the no-cards rule in the
+// deck text.
+func TestTerminalBlockReachesTheSchema(t *testing.T) {
+	content, ok := reflect.TypeOf(createInput{}).FieldByName("Content")
+	if !ok {
+		t.Fatal("createInput has no Content field")
+	}
+	for _, want := range []string{
+		"terminal {session, cmd?, cwd?, rows?}",
+		fmt.Sprintf("rows %d to %d", render.TerminalMinRows, render.TerminalMaxRows),
+	} {
+		if !strings.Contains(content.Tag.Get("jsonschema"), want) {
+			t.Errorf("content schema lacks %q", want)
+		}
+	}
+	deck, ok := reflect.TypeOf(createInput{}).FieldByName("Deck")
+	if !ok {
+		t.Fatal("createInput has no Deck field")
+	}
+	want := "a terminal block is the one card a slide may keep"
+	if !strings.Contains(deck.Tag.Get("jsonschema"), want) {
+		t.Errorf("deck schema lacks %q", want)
 	}
 }
