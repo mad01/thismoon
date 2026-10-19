@@ -1520,10 +1520,14 @@
       terminalConnect(ctl);
     });
   }
+  // terminalConnect opens the socket. The query carries the size only:
+  // serve reads what the session runs (its command, directory and prefill)
+  // from the stored page's block of that name, never from the browser,
+  // since a script injected into the page body could otherwise open the
+  // socket with any command. The block's data-cmd, data-cwd and
+  // data-prefill are there for the reader.
   function terminalConnect(ctl) {
     var q = 'cols=' + ctl.term.cols + '&rows=' + ctl.term.rows;
-    if (ctl.cmd) q += '&cmd=' + encodeURIComponent(ctl.cmd);
-    if (ctl.cwd) q += '&cwd=' + encodeURIComponent(ctl.cwd);
     var ws;
     try {
       ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + terminalPath(ctl) + '?' + q);
@@ -1550,11 +1554,11 @@
   }
   // terminalClosed reads why a socket closed without an exit frame. None
   // of 1000 (the session ended, its exit frame lost), 1008 (serve refused
-  // the spec, a bad cwd, with a reason meant for the reader), and 1001
-  // (serve is closing) comes right by retrying, which would only ask
-  // again and again, so the block waits for Run. 1013 (the socket fell
-  // behind and serve dropped it) and any other drop reconnect, and the
-  // replay fills in what was missed.
+  // the session, a bad cwd in its block say, with a reason meant for the
+  // reader), and 1001 (serve is closing) comes right by retrying, which
+  // would only ask again and again, so the block waits for Run. 1013
+  // (the socket fell behind and serve dropped it) and any other drop
+  // reconnect, and the replay fills in what was missed.
   function terminalClosed(ctl, code, reason) {
     if (code === 1000) {
       ctl.exited = true;
@@ -1724,8 +1728,7 @@
     var session = block.getAttribute('data-session') || '';
     var ctl = {
       block: block, canvas: canvas, status: block.querySelector('.present-terminal-status'),
-      session: session, cmd: block.getAttribute('data-cmd') || '', cwd: block.getAttribute('data-cwd') || '',
-      rowsNamed: rows > 0, rows: rows > 0 ? rows : TERMINAL_ROWS,
+      session: session, rowsNamed: rows > 0, rows: rows > 0 ? rows : TERMINAL_ROWS,
       term: null, fit: null, ws: null, encoder: new TextEncoder(), state: '', wanted: false,
       exited: false, held: !shared && terminalHeldBefore(session),
       checking: false, opening: false, shown: false, tries: 0, retry: 0, inert: shared || missing
