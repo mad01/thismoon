@@ -151,7 +151,7 @@ func (s Section) dataLayout() string {
 
 // Block is a discriminated union on T.
 type Block struct {
-	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, diagram, code, html, columns, stat, quote, details, image
+	T string `json:"t"` // p, h3, callout, table, kv, list, panel, progress, graph, chart, diagram, code, html, columns, stat, quote, details, image, terminal
 
 	// t=p, t=callout, t=h3, t=code, t=html, t=quote
 	Text string `json:"text,omitempty"`
@@ -162,8 +162,9 @@ type Block struct {
 	// t=callout
 	Severity string `json:"sev,omitempty"` // info, warn, ok, error
 
-	// t=table. Cols shares its wire key with a columns block's Columns; the
-	// custom (un)marshal below tells them apart by T.
+	// t=table. Cols shares its wire key with a columns block's Columns and
+	// Rows shares its with a terminal block's TerminalRows; the custom
+	// (un)marshal below tells them apart by T.
 	Cols []string   `json:"cols,omitempty"`
 	Rows [][]string `json:"rows,omitempty"`
 
@@ -171,6 +172,17 @@ type Block struct {
 	// a narrow screen. Wire key cols. A column may hold any block but
 	// columns and details; the page's one graph may sit in a column.
 	Columns [][]Block `json:"-"`
+
+	// t=terminal: a live terminal the browser attaches to the terminal
+	// session present serve owns under this page and Session, so every
+	// block naming the same session shows the same process. Cmd runs in
+	// place of a plain login shell, Cwd is where it starts (empty = serve's
+	// default), and TerminalRows is the height in rows (wire key rows,
+	// TerminalMinRows to TerminalMaxRows; 0 = the browser's default).
+	Session      string `json:"session,omitempty"`
+	Cmd          string `json:"cmd,omitempty"`
+	Cwd          string `json:"cwd,omitempty"`
+	TerminalRows int    `json:"-"`
 
 	// t=stat: a large figure (Value, shown verbatim) over a Label, with an
 	// optional Subtitle line.
@@ -287,44 +299,83 @@ type DiagramEdge struct {
 // hand the plain struct to encoding/json without recursing into themselves.
 type blockFields Block
 
-// UnmarshalJSON reads cols by block type: a table's cols are its header
-// strings, a columns block's cols are its arrays of blocks. Every other
-// field decodes as the struct tags say.
+// UnmarshalJSON reads cols and rows by block type: a table's cols are its
+// header strings and its rows its arrays of cells, a columns block's cols
+// are its arrays of blocks, and a terminal block's rows is its height.
+// Every other field decodes as the struct tags say.
 func (b *Block) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		blockFields
 		Cols json.RawMessage `json:"cols"`
+		Rows json.RawMessage `json:"rows"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	*b = Block(raw.blockFields)
-	if len(raw.Cols) == 0 || string(raw.Cols) == "null" {
+	if err := b.decodeCols(raw.Cols); err != nil {
+		return err
+	}
+	return b.decodeRows(raw.Rows)
+}
+
+// absent reports whether a raw field was missing or null.
+func absent(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == "null" }
+
+// decodeCols reads cols as a columns block's arrays of blocks or as any
+// other block's header strings.
+func (b *Block) decodeCols(raw json.RawMessage) error {
+	if absent(raw) {
 		return nil
 	}
 	if b.T == "columns" {
-		if err := json.Unmarshal(raw.Cols, &b.Columns); err != nil {
+		if err := json.Unmarshal(raw, &b.Columns); err != nil {
 			return fmt.Errorf("columns block: cols must be arrays of blocks: %w", err)
 		}
 		return nil
 	}
-	if err := json.Unmarshal(raw.Cols, &b.Cols); err != nil {
+	if err := json.Unmarshal(raw, &b.Cols); err != nil {
 		return fmt.Errorf("%s block: cols must be strings: %w", b.T, err)
 	}
 	return nil
 }
 
-// MarshalJSON writes a columns block's Columns under cols; every other block
-// marshals exactly as before, so the canonical JSON the store keeps for an
-// existing page does not move.
-func (b Block) MarshalJSON() ([]byte, error) {
-	if b.T != "columns" {
-		return json.Marshal(blockFields(b))
+// decodeRows reads rows as a terminal block's height or as any other
+// block's arrays of cells.
+func (b *Block) decodeRows(raw json.RawMessage) error {
+	if absent(raw) {
+		return nil
 	}
-	return json.Marshal(struct {
-		blockFields
-		Cols [][]Block `json:"cols,omitempty"`
-	}{blockFields(b), b.Columns})
+	if b.T == "terminal" {
+		if err := json.Unmarshal(raw, &b.TerminalRows); err != nil {
+			return fmt.Errorf("terminal block: rows must be a whole number: %w", err)
+		}
+		return nil
+	}
+	if err := json.Unmarshal(raw, &b.Rows); err != nil {
+		return fmt.Errorf("%s block: rows must be arrays of strings: %w", b.T, err)
+	}
+	return nil
+}
+
+// MarshalJSON writes a columns block's Columns under cols and a terminal
+// block's TerminalRows under rows; every other block marshals exactly as
+// before, so the canonical JSON the store keeps for an existing page does
+// not move.
+func (b Block) MarshalJSON() ([]byte, error) {
+	switch b.T {
+	case "columns":
+		return json.Marshal(struct {
+			blockFields
+			Cols [][]Block `json:"cols,omitempty"`
+		}{blockFields(b), b.Columns})
+	case "terminal":
+		return json.Marshal(struct {
+			blockFields
+			Rows int `json:"rows,omitempty"`
+		}{blockFields(b), b.TerminalRows})
+	}
+	return json.Marshal(blockFields(b))
 }
 
 // KVPair is a label-value pair within a kv block.
@@ -834,6 +885,16 @@ const blockTemplatesSrc = `{{define "block-p"}}<p data-fixation>{{inlineMd .Text
 {{- end}}
   </ol>
 {{- end}}
+</div>{{end}}
+
+{{define "block-terminal"}}<div class="present-terminal wk-code-block" data-session="{{.Session}}"{{with .Cmd}} data-cmd="{{.}}"{{end}}{{with .Cwd}} data-cwd="{{.}}"{{end}}{{with .TerminalRows}} data-rows="{{.}}"{{end}}>
+  <div class="wk-code-controls">
+    <span class="wk-code-lang">live: {{.Session}}</span>
+    <span class="present-terminal-status" aria-live="polite"></span>
+    <button type="button" class="present-terminal-run">Run</button>
+    <button type="button" class="present-terminal-kill">Kill</button>
+  </div>
+  <div class="present-terminal-canvas"></div>
 </div>{{end}}`
 
 // normalize applies name normalization to every text field in the Doc so
@@ -866,9 +927,16 @@ func normalizeBlocks(blocks []Block, depth int) {
 
 // normalizeBlock normalizes one block's prose fields. A code block's text
 // is verbatim, and a stat's Value is a figure shown verbatim: its symbols
-// are the point ("4×", "≈ 40%"), so neither is normalized like prose.
+// are the point ("4×", "≈ 40%"), so neither is normalized like prose. A
+// terminal block's command and directory are verbatim too, only trimmed,
+// so a blank directory means serve's default.
 func normalizeBlock(b *Block) {
 	if b.T == "code" {
+		return
+	}
+	if b.T == "terminal" {
+		b.Cmd = strings.TrimSpace(b.Cmd)
+		b.Cwd = strings.TrimSpace(b.Cwd)
 		return
 	}
 	b.Text = normalizeNames(b.Text)
@@ -1036,8 +1104,9 @@ func countGraphs(blocks []Block) int {
 // details block without a summary or without blocks, a container below the
 // top level, since a container holds plain blocks only, a graph inside a
 // details block, where a closed disclosure would hide the page's one graph,
-// a stepped chart inside a details block for the same reason, and a chart
-// validateChart refuses. A graph may sit in a column.
+// a stepped chart or a terminal inside a details block for the same reason,
+// and a chart, diagram, image, or terminal its own validator refuses. A
+// graph and a terminal may sit in a column.
 func validateBlocks(blocks []Block, depth int) error {
 	for _, b := range blocks {
 		if depth > 0 && isContainer(b) {
@@ -1064,19 +1133,7 @@ func validateBlocks(blocks []Block, depth int) error {
 				}
 			}
 		case "details":
-			if strings.TrimSpace(b.Summary) == "" {
-				return errors.New("details block: summary is required")
-			}
-			if len(b.Blocks) == 0 {
-				return fmt.Errorf("details %q: blocks is empty", b.Summary)
-			}
-			if slices.ContainsFunc(b.Blocks, isGraph) {
-				return fmt.Errorf("graph block: not allowed inside a details block (%q)", b.Summary)
-			}
-			if k := slices.IndexFunc(b.Blocks, hasSteps); k >= 0 {
-				return fmt.Errorf("%s steps: not allowed inside a details block (%q)", b.Blocks[k].T, b.Summary)
-			}
-			if err := validateBlocks(b.Blocks, depth+1); err != nil {
+			if err := validateDetails(b, depth); err != nil {
 				return err
 			}
 		case "image":
@@ -1091,18 +1148,88 @@ func validateBlocks(blocks []Block, depth int) error {
 			if err := validateDiagram(b); err != nil {
 				return err
 			}
+		case "terminal":
+			if err := validateTerminal(b); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+// validateDetails refuses a details block without a summary or blocks, and
+// one holding a block a closed disclosure would hide: the page's graph, a
+// stepped chart or diagram, or a live terminal. What it holds is then
+// validated one level down.
+func validateDetails(b Block, depth int) error {
+	if strings.TrimSpace(b.Summary) == "" {
+		return errors.New("details block: summary is required")
+	}
+	if len(b.Blocks) == 0 {
+		return fmt.Errorf("details %q: blocks is empty", b.Summary)
+	}
+	if slices.ContainsFunc(b.Blocks, isGraph) {
+		return fmt.Errorf("graph block: not allowed inside a details block (%q)", b.Summary)
+	}
+	if k := slices.IndexFunc(b.Blocks, hasSteps); k >= 0 {
+		return fmt.Errorf(
+			"%s steps: not allowed inside a details block (%q)", b.Blocks[k].T, b.Summary,
+		)
+	}
+	if slices.ContainsFunc(b.Blocks, isTerminal) {
+		return fmt.Errorf("terminal block: not allowed inside a details block (%q)", b.Summary)
+	}
+	return validateBlocks(b.Blocks, depth+1)
+}
+
+// Bounds of a terminal block's rows: below the minimum a TUI has no room
+// to draw, above the maximum the terminal outgrows a slide.
+const (
+	TerminalMinRows = 8
+	TerminalMaxRows = 60
+)
+
+// terminalSession is the shape of a terminal session name: it is a path
+// segment of the attach route and a key serve holds the session under.
+var terminalSession = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+
+// ValidTerminalSession reports whether name may name a terminal session:
+// 1 to 32 of a-z, 0-9, and -.
+func ValidTerminalSession(name string) bool { return terminalSession.MatchString(name) }
+
+// isTerminal reports whether b is a live terminal block.
+func isTerminal(b Block) bool { return b.T == "terminal" }
+
+// validateTerminal refuses a terminal block without a valid session name
+// and a rows value outside TerminalMinRows..TerminalMaxRows; 0 leaves the
+// height to the browser. Cmd and Cwd are free text.
+func validateTerminal(b Block) error {
+	if b.Session == "" {
+		return errors.New("terminal block: session is required")
+	}
+	if !ValidTerminalSession(b.Session) {
+		return fmt.Errorf("terminal %q: session must be 1 to 32 of a-z, 0-9, and -", b.Session)
+	}
+	if r := b.TerminalRows; r != 0 && (r < TerminalMinRows || r > TerminalMaxRows) {
+		return fmt.Errorf(
+			"terminal %q: rows %d is outside %d to %d",
+			b.Session, r, TerminalMinRows, TerminalMaxRows,
+		)
 	}
 	return nil
 }
 
 // validateFieldHomes refuses a field set on a block type that does not
 // read it, so an author learns the field moved nothing: the diagram's
-// nodes, groups, edges, and direction on any other block, and frame on
+// nodes, groups, edges, and direction on any other block, the terminal's
+// session, cmd, cwd, and rows height on any other block, and frame on
 // anything but a chart or an image.
 func validateFieldHomes(b Block) error {
 	if b.T != "diagram" && (len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
 		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
+	}
+	if b.T != "terminal" && (b.Session != "" || b.Cmd != "" || b.Cwd != "" || b.TerminalRows != 0) {
+		return fmt.Errorf("%s block: session, cmd, cwd, and a rows height are terminal fields", b.T)
 	}
 	if b.Frame != nil && b.T != "chart" && b.T != "image" && b.T != "diagram" {
 		return fmt.Errorf("%s block: frame is a chart or image field", b.T)

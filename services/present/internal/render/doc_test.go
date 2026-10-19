@@ -925,3 +925,192 @@ func TestRenderDocDiagramScriptSafe(t *testing.T) {
 		t.Errorf("want exactly one <script tag, got %d in: %s", strings.Count(out, "<script"), out)
 	}
 }
+
+// terminalDoc wraps blocks in a one-section Doc.
+func terminalDoc(blocks ...Block) Doc {
+	return Doc{Sections: []Section{{Heading: "S", Blocks: blocks}}}
+}
+
+// TestRenderDocTerminalBlock pins the markup the page view upgrades into a
+// live terminal: the session and the optional cmd, cwd, and rows as data
+// attributes, a header bar with the badge, status, Run, and Kill, and the
+// canvas, in the brief and in the deck alike.
+func TestRenderDocTerminalBlock(t *testing.T) {
+	full := Block{
+		T: "terminal", Session: "demo", Cmd: "claude",
+		Cwd: "~/code/src/github.com/mad01/thismoon", TerminalRows: 24,
+	}
+	want := `<div class="present-terminal wk-code-block" data-session="demo" data-cmd="claude" ` +
+		`data-cwd="~/code/src/github.com/mad01/thismoon" data-rows="24">
+  <div class="wk-code-controls">
+    <span class="wk-code-lang">live: demo</span>
+    <span class="present-terminal-status" aria-live="polite"></span>
+    <button type="button" class="present-terminal-run">Run</button>
+    <button type="button" class="present-terminal-kill">Kill</button>
+  </div>
+  <div class="present-terminal-canvas"></div>
+</div>`
+	for name, render := range map[string]func(Doc, string) (string, error){
+		"brief": RenderDoc, "deck": RenderDeck,
+	} {
+		out, err := render(terminalDoc(full), "T")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: terminal markup missing from:\n%s", name, out)
+		}
+	}
+
+	cases := []struct {
+		name    string
+		block   Block
+		want    string
+		missing []string
+	}{
+		{
+			"session only omits the optional attributes",
+			Block{T: "terminal", Session: "demo"},
+			`<div class="present-terminal wk-code-block" data-session="demo">`,
+			[]string{"data-cmd", "data-cwd", "data-rows"},
+		},
+		{
+			"cmd and cwd are trimmed, a blank cwd is omitted",
+			Block{T: "terminal", Session: "s", Cmd: "  htop \n", Cwd: "   "},
+			`data-session="s" data-cmd="htop">`,
+			[]string{"data-cwd"},
+		},
+		{
+			"attribute values are escaped",
+			Block{T: "terminal", Session: "s", Cmd: `echo "<x>" && ls`},
+			`data-cmd="echo &#34;&lt;x&gt;&#34; &amp;&amp; ls"`,
+			[]string{`"<x>"`},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := RenderDoc(terminalDoc(c.block), "T")
+			if err != nil {
+				t.Fatalf("RenderDoc: %v", err)
+			}
+			if !strings.Contains(out, c.want) {
+				t.Errorf("missing %q in: %s", c.want, out)
+			}
+			for _, m := range c.missing {
+				if strings.Contains(out, m) {
+					t.Errorf("unexpected %q in: %s", m, out)
+				}
+			}
+		})
+	}
+}
+
+// TestTerminalBlockValidation refuses a terminal block without a valid
+// session, with a height outside the bounds, or inside details, refuses
+// its fields on any other block, and accepts it at the top level and in a
+// column.
+func TestTerminalBlockValidation(t *testing.T) {
+	term := func(session string, rows int) Block {
+		return Block{T: "terminal", Session: session, TerminalRows: rows}
+	}
+	one := []Block{{T: "p", Text: "x"}}
+	refused := []struct {
+		name  string
+		block Block
+		want  string
+	}{
+		{"missing session", term("", 0), "terminal block: session is required"},
+		{"upper case", term("Demo", 0), `terminal "Demo": session must be`},
+		{"slash", term("a/b", 0), "session must be"},
+		{"space", term("a b", 0), "session must be"},
+		{"too long", term(strings.Repeat("a", 33), 0), "session must be"},
+		{"rows below the minimum", term("s", 7), "rows 7 is outside 8 to 60"},
+		{"rows above the maximum", term("s", 61), "rows 61 is outside 8 to 60"},
+		{"negative rows", term("s", -1), "rows -1 is outside"},
+		{"session on a paragraph", Block{T: "p", Session: "s"}, "p block: session, cmd, cwd"},
+		{"cmd on a code block", Block{T: "code", Cmd: "ls"}, "code block: session, cmd, cwd"},
+		{"cwd on a chart", Block{T: "chart", Cwd: "/tmp"}, "chart block: session, cmd, cwd"},
+		{"rows height on a stat", Block{T: "stat", TerminalRows: 24}, "stat block: session"},
+		{
+			"inside details",
+			Block{T: "details", Summary: "more", Blocks: []Block{term("s", 0)}},
+			`terminal block: not allowed inside a details block ("more")`,
+		},
+		{
+			"bad session inside columns",
+			Block{T: "columns", Columns: [][]Block{one, {term("BAD", 0)}}},
+			"session must be",
+		},
+	}
+	for _, c := range refused {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := RenderDoc(terminalDoc(c.block), "T")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+
+	accepted := map[string]Block{
+		"top level":      term("demo", 0),
+		"longest name":   term(strings.Repeat("a", 32), 0),
+		"dashes, digits": term("demo-2", 0),
+		"minimum rows":   term("s", 8),
+		"maximum rows":   term("s", 60),
+		"in a column":    {T: "columns", Columns: [][]Block{one, {term("demo", 24)}}},
+	}
+	for name, b := range accepted {
+		out, err := RenderDoc(terminalDoc(b), "T")
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if !strings.Contains(out, `<div class="present-terminal wk-code-block"`) {
+			t.Errorf("%s: rendered no terminal: %s", name, out)
+		}
+	}
+}
+
+// TestTerminalRowsJSON keeps the shared rows key apart by block type: a
+// terminal's rows is a number, a table's rows its cells, and each survives
+// the canonical JSON. A number on any other block is refused at parse.
+func TestTerminalRowsJSON(t *testing.T) {
+	src := `{"sections":[{"h":"S","blocks":[` +
+		`{"t":"table","cols":["A"],"rows":[["1"]]},` +
+		`{"t":"terminal","session":"demo","cmd":" claude ","rows":24}` +
+		`]}]}`
+	c, err := Compile([]byte(src), "T")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	blocks := c.Doc.Sections[0].Blocks
+	if blocks[0].TerminalRows != 0 || len(blocks[0].Rows) != 1 {
+		t.Errorf("table decoded as %+v", blocks[0])
+	}
+	if blocks[1].TerminalRows != 24 || blocks[1].Rows != nil {
+		t.Errorf("terminal decoded as %+v", blocks[1])
+	}
+	for _, want := range []string{
+		`{"t":"table","cols":["A"],"rows":[["1"]]}`,
+		`{"t":"terminal","session":"demo","cmd":"claude","rows":24}`,
+	} {
+		if !strings.Contains(string(c.JSON), want) {
+			t.Errorf("canonical JSON lacks %s: %s", want, c.JSON)
+		}
+	}
+	again, err := Compile(c.JSON, "T")
+	if err != nil || !slices.Equal(again.JSON, c.JSON) {
+		t.Errorf("canonical JSON does not round-trip: %v\n%s\n%s", err, c.JSON, again.JSON)
+	}
+
+	for name, block := range map[string]string{
+		"string rows on a terminal": `{"t":"terminal","session":"s","rows":"24"}`,
+		"cells on a terminal":       `{"t":"terminal","session":"s","rows":[["a"]]}`,
+		"fractional rows":           `{"t":"terminal","session":"s","rows":24.5}`,
+		"number rows on a table":    `{"t":"table","cols":["A"],"rows":24}`,
+	} {
+		if _, err := Compile([]byte(`{"sections":[{"h":"S","blocks":[`+block+`]}]}`), "T"); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
