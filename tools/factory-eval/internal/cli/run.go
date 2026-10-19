@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -203,10 +204,22 @@ func hostEnv(ctx context.Context) (prereq.Env, error) {
 	v, raw, err := claude.Exec{}.Version(ctx)
 	return prereq.Env{
 		Home:        home,
+		GoCache:     goCache(ctx),
 		LookPath:    exec.LookPath,
 		Claude:      prereq.ClaudeProbe{Version: v, Raw: raw, Err: err},
 		BeltVersion: beltVersion,
 	}, nil
+}
+
+// goCache is the Go build cache the sandbox lets a run write. Without it
+// `go test` cannot compile inside the sandbox; a go that does not answer
+// leaves it empty and the prerequisite check reports go missing.
+func goCache(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "go", "env", "GOCACHE").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func beltVersion(ctx context.Context) (string, error) {
@@ -273,7 +286,8 @@ func gate(b batch) error {
 func config(b batch, o runOptions, w io.Writer, judgeDir string) eval.Config {
 	cfg := eval.Config{
 		Cases: b.file, CasesPath: o.casesPath, Source: b.source, Home: b.env.Home,
-		Arms: b.arms, Tiers: b.tiers, Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun,
+		GoCache: b.env.GoCache,
+		Arms:    b.arms, Tiers: b.tiers, Runs: b.runs, TempParent: o.tempDir, DryRun: o.dryRun,
 		ClaudeVersion: b.env.Claude.Raw, Prereqs: b.prereqs(), Now: time.Now, Progress: w,
 		Checker: judge.Deterministic{
 			Outline: b.file.Outline, Humanizer: b.file.Humanizer, Cmd: judge.ExecCommander{},

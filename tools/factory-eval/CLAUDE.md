@@ -127,9 +127,23 @@ schema. Review the diff before committing it.
   deny rule beats every allow rule wherever it comes from: the deny list in
   `internal/eval/profile.go`, on the command line and in the run's settings
   file, and the isolation rules from `internal/eval/isolation.go`, in the
-  settings file only. That prevents only the paths those rules
-  name. It is not a sandbox: a Bash command can still reach a checkout
-  through `cd` or `$HOME`, and only the fingerprint detects that.
+  settings file only. Those rules match command lines, so a `cd` or a
+  `$HOME` in the path slips past them. The sandbox block in the same file
+  closes the write itself, and the fingerprint stays as the backstop.
+- **Every Bash command of a run is sandboxed.** `internal/eval/sandbox.go`
+  writes the block: on, `failIfUnavailable`, no unsandboxed retry, no
+  domain, a strict allowlist, writes only under the run's temp dir and
+  `go env GOCACHE`. Three things earned their place by a probe on Claude
+  Code 2.1.303. `allowLocalBinding` stays true: without it the httptest
+  servers in the components' tests fail with `bind: operation not
+  permitted`. Every boolean and `excludedCommands: []` are written out:
+  array keys merge across settings sources, and a `--settings` file beats
+  the user's settings only on a boolean. The user's settings exclude
+  `git:*` from their own sandbox, and with the empty list in the file git
+  stayed sandboxed. socat is not needed on macOS; the sandbox started
+  without it. A write outside the temp dir fails with `operation not
+  permitted`. That is not a permission denial, so it does not show in
+  `permission_denials`.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
   against Edit rules and never consults a Write path rule, so the isolation
   rules are Edit rules only, and a test keeps Write rules out. Their `git -C`,

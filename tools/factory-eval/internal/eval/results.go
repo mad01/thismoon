@@ -45,9 +45,11 @@ type Results struct {
 }
 
 // RunResult is one arm session at one tier, with its cases scored.
-// Installed is what the host had installed when the run started. Taint
-// lists how the source checkout changed while the arm ran; a tainted run
-// counts as errored.
+// SettingsSandbox is the sandbox block its settings file held, kept here
+// because a passing run's checkout, file included, is removed. Installed
+// is what the host had installed when the run started. Taint lists how
+// the source checkout changed while the arm ran; a tainted run counts as
+// errored.
 type RunResult struct {
 	Arm               string           `json:"arm"`
 	Tier              string           `json:"tier"`
@@ -69,6 +71,7 @@ type RunResult struct {
 	PermissionDenials int              `json:"permission_denials"`
 	AgentReport       json.RawMessage  `json:"agent_report,omitempty"`
 	SettingsFile      string           `json:"settings_file,omitempty"`
+	SettingsSandbox   *Sandbox         `json:"settings_sandbox,omitempty"`
 	Installed         prereq.Installed `json:"installed"`
 	Tainted           bool             `json:"tainted"`
 	Taint             []string         `json:"taint"`

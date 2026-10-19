@@ -39,8 +39,10 @@ type ClaudeProbe struct {
 }
 
 // Env is the host the checks look at. Tests point Home at a temp dir.
+// GoCache is `go env GOCACHE`, empty when go did not answer.
 type Env struct {
 	Home        string
+	GoCache     string
 	LookPath    func(file string) (string, error)
 	Claude      ClaudeProbe
 	BeltVersion func(ctx context.Context) (string, error)

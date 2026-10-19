@@ -41,13 +41,15 @@ type CaseScorer interface {
 }
 
 // Config is one batch: what to run and the seams it runs through. Home is
-// the user's home dir the isolation rules protect. Snapshot records what
-// the host has installed; it runs before every run.
+// the user's home dir the isolation rules protect. GoCache is the Go build
+// cache the sandbox lets a run write, empty when unknown. Snapshot records
+// what the host has installed; it runs before every run.
 type Config struct {
 	Cases         *cases.File
 	CasesPath     string
 	Source        string
 	Home          string
+	GoCache       string
 	Arms          []string
 	Tiers         []cases.Tier
 	Runs          int
@@ -107,7 +109,12 @@ func provisional(decision string, runs, want int) string {
 	if runs >= want {
 		return decision
 	}
-	return fmt.Sprintf("provisional, %d of the cases file's %d runs per arm: %s", runs, want, decision)
+	return fmt.Sprintf(
+		"provisional, %d of the cases file's %d runs per arm: %s",
+		runs,
+		want,
+		decision,
+	)
 }
 
 func primaryTier(cfg Config) string {
@@ -151,8 +158,12 @@ func runOne(ctx context.Context, cfg Config, arm string, tier cases.Tier, index 
 		rr.Stop, rr.Error = stopError, err.Error()
 		return rr
 	}
-	perms := armPermissions(arm, cfg.isolation())
-	if rr.SettingsFile, err = WriteSettings(co.Root, perms); err != nil {
+	settings := Settings{
+		Permissions: armPermissions(arm, cfg.isolation()),
+		Sandbox:     armSandbox(co.Root, cfg.GoCache),
+	}
+	rr.SettingsSandbox = &settings.Sandbox
+	if rr.SettingsFile, err = WriteSettings(co.Root, settings); err != nil {
 		rr.Stop, rr.Error = stopError, err.Error()
 		settle(co, &rr)
 		return rr

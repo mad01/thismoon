@@ -208,6 +208,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",
@@ -321,6 +339,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",
@@ -434,6 +470,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",
@@ -547,6 +601,24 @@
         "cases": []
       },
       "settings_file": "/tmp/factory-eval-123456789/settings.json",
+      "settings_sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": false,
+        "allowUnsandboxedCommands": false,
+        "failIfUnavailable": true,
+        "excludedCommands": [],
+        "network": {
+          "strictAllowlist": true,
+          "allowLocalBinding": true,
+          "allowAllUnixSockets": false
+        },
+        "filesystem": {
+          "allowWrite": [
+            "/tmp/factory-eval-123456789",
+            "/Users/example/Library/Caches/go-build"
+          ]
+        }
+      },
       "installed": {
         "files": {
           "~/.claude/agents/factory-worker-high.md": "missing",

@@ -358,6 +358,10 @@ func normalize(res *Results) {
 	}
 	for i := range res.Runs {
 		res.Runs[i].SettingsFile = root + "/" + SettingsFileName
+		if res.Runs[i].SettingsSandbox != nil {
+			sb := armSandbox(root, "/Users/example/Library/Caches/go-build")
+			res.Runs[i].SettingsSandbox = &sb
+		}
 		if res.Runs[i].KeptDir != "" {
 			res.Runs[i].KeptDir = root
 		}

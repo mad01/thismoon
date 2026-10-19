@@ -34,14 +34,37 @@ permission profile:
   repeats the arm's allow and deny lists, because Claude Code documents
   settings-file rules as reaching subagents such as the factory's workers.
   Its own deny rules keep Edit, Write, `git -C`, `make -C` and `go build
-  -o` out of the user's checkouts, as the next section lists.
+  -o` out of the user's checkouts, as the next section lists. Its
+  `sandbox` block puts Claude Code's OS sandbox around every Bash command
+  of the session, workers included.
 
-### What is enforced and what is only detected
+### What the sandbox enforces, what the rules enforce, what is only detected
 
-The arms do not run in a sandbox. Each arm session runs as the user, with
-the user's own settings loaded, and those settings may allow commands this
-profile does not list. Claude's permission rules enforce the following,
-because a deny rule from any source beats an allow rule from any source:
+Every Bash command of an arm session, and of every worker, runs inside
+Claude Code's sandbox (seatbelt on macOS). The settings file turns it on
+with `failIfUnavailable`, so a machine where it cannot start runs no arm.
+No command may retry outside the sandbox.
+
+The block is written in full, every boolean included. A `--settings` file
+outranks the user's settings for a boolean, while array keys merge. So a
+`false` left out would let the user's `true` through, and an
+`excludedCommands` left out would let the user's exclusions through.
+
+The sandbox allows writes to the run's temp dir and the Go build cache
+that `go env GOCACHE` names, and nowhere else. The source checkout and
+`~/code` are closed at the operating-system level, whatever a command
+line says. No network domain is allowed, and the strict allowlist denies
+the rest without a prompt. Local binding stays on because the components'
+tests start httptest servers on loopback ports, which the sandbox refuses
+otherwise. A test binary can therefore reach the machine's own localhost
+services, and that is the one known gap. The file tools, the humanizer
+MCP server and hooks run outside the sandbox by design; the permission
+rules below are what gates them.
+
+Each arm session runs as the user, with the user's own settings loaded,
+and those settings may allow commands this profile does not list.
+Claude's permission rules enforce the following, because a deny rule
+from any source beats an allow rule from any source:
 
 - `--strict-mcp-config`: the humanizer MCP server is the only one.
 - The deny list above blocks push, remote, git config, `gh`, `ralph`,
@@ -72,14 +95,17 @@ A general-purpose subagent the orchestrator spawns could spawn nested
 agents, but the `factory-worker-*` definitions list no `Agent` tool, so
 workers cannot.
 
-A Bash command can still reach a checkout another way: `cd` first, `$HOME`
-in the path, a symlink, or a command the user's settings allow. That is
-detected, not prevented. Before and after each arm session, factory-eval
-fingerprints the source checkout: HEAD, a hash of `git status --porcelain`,
-the worktree count and every ref. Any change marks the run tainted, lists
-the change under `taint`, and counts the run as errored. Files outside the
-source checkout, such as other repos under `~/code` reached through Bash,
-are not watched.
+The deny rules match command lines, so a Bash command could name a
+checkout another way: `cd` first, `$HOME` in the path, a symlink, or a
+command the user's settings allow. The sandbox stops the write itself:
+nothing outside the run's temp dir and the Go build cache is writable.
+
+The fingerprint stays as the backstop. Before and after each arm session,
+factory-eval fingerprints the source checkout: HEAD, a hash of `git
+status --porcelain`, the worktree count and every ref. Any change marks
+the run tainted, lists the change under `taint`, and counts the run as
+errored. Reads outside the temp dir are not watched, and the sandbox
+leaves them open.
 
 The fingerprint cannot tell the arm's change from another session's. All
 worktrees of a repo share one ref store, so a commit in any worktree of
@@ -311,10 +337,11 @@ the sha256 of every file in the factory and loom skill directories, their
 the belt version. Each value is as it was when the run started. A
 `ralph up` in the middle of a batch shows there. `tainted` and `taint` say
 whether the source checkout changed during the run. `settings_file` is the
-run's settings file. `settings_permissions` at the top holds, per arm, the
-permissions block that arm's settings file held. Its `allow` is the arm's
-allow list, and its `deny` is the arm's deny list with the isolation rules
-at the end.
+run's settings file, and `settings_sandbox` is the sandbox block it held,
+with the run's own temp dir and the Go cache under `allowWrite`.
+`settings_permissions` at the top holds, per arm, the permissions block
+that arm's settings file held. Its `allow` is the arm's allow list, and
+its `deny` is the arm's deny list with the isolation rules at the end.
 
 ## Develop
 

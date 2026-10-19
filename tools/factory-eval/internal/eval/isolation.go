@@ -94,12 +94,17 @@ type Permissions struct {
 	Deny  []string `json:"deny"`
 }
 
-// WriteSettings writes a settings file holding perms into dir, read-only,
-// and returns its path.
-func WriteSettings(dir string, perms Permissions) (string, error) {
-	raw, err := json.MarshalIndent(struct {
-		Permissions Permissions `json:"permissions"`
-	}{perms}, "", "  ")
+// Settings is a run's settings file: the arm's permissions, and the
+// sandbox every Bash command of the session runs in.
+type Settings struct {
+	Permissions Permissions `json:"permissions"`
+	Sandbox     Sandbox     `json:"sandbox"`
+}
+
+// WriteSettings writes the settings file into dir, read-only, and returns
+// its path.
+func WriteSettings(dir string, s Settings) (string, error) {
+	raw, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("eval: encode settings: %w", err)
 	}
