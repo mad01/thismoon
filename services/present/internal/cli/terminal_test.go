@@ -81,9 +81,14 @@ func TestTerminalOnOffStatus(t *testing.T) {
 }
 
 // terminalServe runs a local server over the CLI's workdir with one page
-// and one live session on it, and points --port at it.
+// and one live session on it, and points --port at it. It spawns a session,
+// so it skips on a machine without the default shell (the CI runner ships
+// no zsh).
 func terminalServe(t *testing.T) (*terminal.Manager, string) {
 	t.Helper()
+	if _, err := os.Stat(terminal.DefaultShell); err != nil {
+		t.Skipf("no %s on this machine: %v", terminal.DefaultShell, err)
+	}
 	dir := terminalWorkdir(t)
 	st, err := store.NewFS(dir)
 	if err != nil {

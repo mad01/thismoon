@@ -20,6 +20,15 @@ import (
 // launch on a loaded machine can take seconds.
 const deadline = 30 * time.Second
 
+// skipWithoutShell skips a test that spawns a session on a machine without
+// the default shell: the CI runner ships no zsh.
+func skipWithoutShell(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat(DefaultShell); err != nil {
+		t.Skipf("no %s on this machine: %v", DefaultShell, err)
+	}
+}
+
 // newManager returns a Manager whose sessions start in a temp home with a
 // minimal environment, so no profile of the machine running the test prints
 // into the output. The kill grace is short unless a test sets it: a hangup
@@ -27,6 +36,7 @@ const deadline = 30 * time.Second
 // would otherwise wait out the full default grace.
 func newManager(t *testing.T, cfg Config) (*Manager, string) {
 	t.Helper()
+	skipWithoutShell(t)
 	if cfg.KillGrace == 0 {
 		cfg.KillGrace = 200 * time.Millisecond
 	}
@@ -400,6 +410,7 @@ func TestSessionEnv(t *testing.T) {
 // xterm-256color when it set none, never the TERM of the terminal serve
 // itself runs in.
 func TestSessionSeesTheMarkerAndItsTerm(t *testing.T) {
+	skipWithoutShell(t)
 	const report = `printf '%s|%s' "$TERM" "$PRESENT_TERMINAL"`
 	home := t.TempDir()
 	t.Setenv("HOME", home) // keep the default env off the user's startup files

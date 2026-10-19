@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -38,10 +39,23 @@ func termBlock(session, cmd string) render.Block {
 	return render.Block{T: "terminal", Session: session, Cmd: cmd}
 }
 
+// skipWithoutShell skips a test that spawns a session on a machine without
+// the default shell: the CI runner ships no zsh.
+func skipWithoutShell(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat(terminal.DefaultShell); err != nil {
+		t.Skipf("no %s on this machine: %v", terminal.DefaultShell, err)
+	}
+}
+
 // setupTerminal serves one page whose brief holds blocks, with a terminal
 // manager whose sessions start in a temp home and the switch on or off.
+// With the switch on the test may spawn a session, so it needs the shell.
 func setupTerminal(t *testing.T, mode Mode, on bool, blocks ...render.Block) *terminalFixture {
 	t.Helper()
+	if on {
+		skipWithoutShell(t)
+	}
 	dir := t.TempDir()
 	st, err := store.NewFS(dir)
 	if err != nil {
