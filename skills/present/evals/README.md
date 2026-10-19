@@ -1,6 +1,6 @@
 # present skill evals
 
-Cases for `claude plugin eval`. They check that an agent given a work summary writes the right Doc: a chart where there are numbers, the page graph where there is a dependency map, and a deck with one idea per slide. Each case is a `prompt.md` with the fixture and the task, plus `graders/`. The graders are a few regex checks on the reply, a `tool_used` check that the skill fired, and one llm rubric. The rubric repeats the fixture facts, because the judge sees only the reply.
+Cases for `claude plugin eval`. They check that an agent given a work summary writes the right Doc: a chart where there are numbers, the page graph where there is a dependency map, and a deck with one idea per slide. A fourth case gives it a live demo and checks for a terminal session named on two slides. Each case is a `prompt.md` with the fixture and the task, plus `graders/`. The graders are a few regex checks on the reply, a `tool_used` check that the skill fired, and one llm rubric. The rubric repeats the fixture facts, because the judge sees only the reply.
 
 The present MCP is not available inside a run, so every prompt asks for the `present_create` arguments as one JSON object in the reply instead of a tool call.
 

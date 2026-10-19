@@ -527,5 +527,5 @@ confirms which embedded webkit assets the running present server serves.
 ## See also
 
 - Recipe: `recipes/present/recipe.toml` (+ `recipes/present/CLAUDE.md`)
-- Skill: repo-root `skills/present/SKILL.md`, the entry point for authoring (block picker, chart and engine pickers, colour rules, deck rules); `skills/present/examples/` holds three complete pages as `present_create` arguments, and `skills/present/evals/` the `claude plugin eval` cases that check an agent picks the right blocks
+- Skill: repo-root `skills/present/SKILL.md`, the entry point for authoring (block picker, chart and engine pickers, colour rules, deck rules); `skills/present/examples/` holds four complete pages as `present_create` arguments (one of them the live terminal demo), and `skills/present/evals/` the `claude plugin eval` cases that check an agent picks the right blocks
 - MCP registration: the consuming repo's `recipes/claude-mcp/servers.json`
