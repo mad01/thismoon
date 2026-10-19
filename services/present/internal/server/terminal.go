@@ -213,8 +213,8 @@ func (s *Server) terminalOriginAllowed(r *http.Request) bool {
 // Doc sources do not declare.
 var errNoTerminalSession = errors.New("terminal: page declares no terminal session")
 
-// storedTerminalSpec reads what session name on page runs from the page's
-// stored Doc sources, the brief's and the deck's. The socket only names the
+// storedTerminalSpec reads what session name on page runs and types from
+// the page's stored Doc sources, the brief's and the deck's. The socket only names the
 // session: page content reaches the browser as HTML, so a cmd taken from
 // the socket would let anything injected into a page run a command as the
 // user while the switch is on.
@@ -242,7 +242,7 @@ func (s *Server) storedTerminalSpec(
 	if !ok {
 		return terminal.Spec{}, fmt.Errorf("%w %q", errNoTerminalSession, name)
 	}
-	return terminal.Spec{Cmd: found.Cmd, Cwd: found.Cwd}, nil
+	return terminal.Spec{Cmd: found.Cmd, Cwd: found.Cwd, Prefill: found.Prefill}, nil
 }
 
 // parseTerminalSize reads the size a new session starts at from the

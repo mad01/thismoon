@@ -28,6 +28,11 @@ const (
 	drainWait = time.Second
 	// killPoll is how often a kill checks whether the job has gone.
 	killPoll = 20 * time.Millisecond
+	// prefillQuiet is how long the output must have been still before a
+	// prefill is typed: a shell has printed its prompt by then and handed
+	// the terminal to its line editor. Typed earlier, the terminal echoes
+	// the text before the prompt and the line editor draws it again.
+	prefillQuiet = 250 * time.Millisecond
 )
 
 // session is one PTY and the process running in it.
@@ -42,6 +47,9 @@ type session struct {
 
 	readDone chan struct{} // closed when the PTY read loop returns
 	done     chan struct{} // closed once the exit is recorded
+	// output is signalled after each read while a prefill waits; nil
+	// without one.
+	output chan struct{}
 
 	mu     sync.Mutex
 	ring   *ring
@@ -82,9 +90,40 @@ func (m *Manager) spawn(k key, spec Spec) (*session, error) {
 		subs:        map[*Subscription]struct{}{},
 	}
 	s.onIdle = func() { m.expire(s) }
+	if spec.Prefill != "" {
+		s.output = make(chan struct{}, 1)
+		go s.typePrefill(spec.Prefill, m.cfg.PrefillWait)
+	}
 	go s.readLoop()
 	go s.waitLoop()
 	return s, nil
+}
+
+// typePrefill types text once the output has gone quiet for prefillQuiet
+// after the process first printed, or once wait has passed since the
+// start, whichever comes first.
+func (s *session) typePrefill(text string, wait time.Duration) {
+	limit := time.NewTimer(wait)
+	defer limit.Stop()
+	var quiet <-chan time.Time // nil until the first output
+	timer := time.NewTimer(prefillQuiet)
+	defer timer.Stop()
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-s.output:
+			timer.Reset(prefillQuiet)
+			quiet = timer.C
+			continue
+		case <-quiet:
+		case <-limit.C:
+		}
+		// An error means the process has ended, leaving nothing to type
+		// into.
+		_, _ = s.write([]byte(text))
+		return
+	}
 }
 
 // shellArgs runs cmd under an interactive login shell, or that shell
@@ -124,10 +163,22 @@ func (s *session) readLoop() {
 		n, err := s.pty.Read(buf)
 		if n > 0 {
 			s.publish(buf[:n])
+			s.signalOutput()
 		}
 		if err != nil {
 			return
 		}
+	}
+}
+
+// signalOutput tells a waiting prefill that output arrived.
+func (s *session) signalOutput() {
+	if s.output == nil {
+		return
+	}
+	select {
+	case s.output <- struct{}{}:
+	default:
 	}
 }
 

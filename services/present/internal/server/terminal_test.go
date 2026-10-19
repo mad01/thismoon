@@ -481,3 +481,20 @@ func TestTerminalFindsASessionTheDeckDeclares(t *testing.T) {
 		t.Errorf("another page's session = %d, want 404", code)
 	}
 }
+
+// The prefill comes from the stored block too, typed without a newline.
+func TestTerminalTypesTheStoredPrefill(t *testing.T) {
+	block := termBlock("demo", "printf 'name? '; read x; echo got:$x")
+	block.Prefill = "stored"
+	f := setupTerminal(t, ModeLocal, true, block)
+	r := &terminalReader{conn: f.mustDial(t, "demo", url.Values{"prefill": {"injected"}})}
+
+	r.outputUntil(t, "stored")
+	if err := r.conn.Write(t.Context(), websocket.MessageBinary, []byte("\r")); err != nil {
+		t.Fatalf("write Enter: %v", err)
+	}
+	r.outputUntil(t, "got:stored")
+	if strings.Contains(r.output.String(), "injected") {
+		t.Errorf("output = %q, want only the stored prefill", r.output.String())
+	}
+}

@@ -39,6 +39,9 @@ const (
 	// DefaultCols and DefaultRows size a session spawned without a size.
 	DefaultCols = 80
 	DefaultRows = 24
+	// DefaultPrefillWait bounds how long after the start a Spec's Prefill
+	// waits for the output to go quiet.
+	DefaultPrefillWait = 5 * time.Second
 )
 
 var (
@@ -71,6 +74,12 @@ type Spec struct {
 	// Cwd is the working directory; empty means the home directory, and a
 	// leading ~ is expanded.
 	Cwd string
+	// Prefill is typed into the session once, with no newline, so it waits
+	// on the prompt for Enter. It is typed once the process has printed
+	// something and gone quiet, which is when a shell's line editor or a
+	// TUI is ready to read, and at most Config.PrefillWait after the start
+	// for a program that never prints or never stops.
+	Prefill string
 	// Cols and Rows are the initial size; zero falls back to DefaultCols and
 	// DefaultRows.
 	Cols uint16
@@ -86,10 +95,12 @@ type Config struct {
 	Env []string
 	// Home resolves an empty or ~ Cwd, os.UserHomeDir() when empty.
 	Home string
-	// IdleTimeout, KillGrace, and RingBytes default to the constants above.
+	// IdleTimeout, KillGrace, RingBytes, and PrefillWait default to the
+	// constants above.
 	IdleTimeout time.Duration
 	KillGrace   time.Duration
 	RingBytes   int
+	PrefillWait time.Duration
 	// Now stamps a session's start, time.Now when nil.
 	Now func() time.Time
 }
@@ -137,6 +148,9 @@ func New(cfg Config) *Manager {
 	}
 	if cfg.RingBytes <= 0 {
 		cfg.RingBytes = DefaultRingBytes
+	}
+	if cfg.PrefillWait <= 0 {
+		cfg.PrefillWait = DefaultPrefillWait
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now

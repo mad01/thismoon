@@ -237,6 +237,60 @@ func TestScrubbedEnvFindsPresentThroughTheUsersShell(t *testing.T) {
 	}
 }
 
+// finished matches a line holding only FOUND: what echo FOUND prints once it
+// runs, which the typed text itself never contains.
+var finished = regexp.MustCompile(`\nFOUND\r?\n`)
+
+// A prefill waits on the shell's prompt: typed once, not run until Enter.
+func TestPrefillWaitsOnTheShellPromptForEnter(t *testing.T) {
+	m, _ := newManager(t, Config{})
+	first := attach(t, m, "demo", Spec{Prefill: "echo FOUND"})
+	readUntil(t, first, "echo FOUND")
+	time.Sleep(100 * time.Millisecond)
+
+	late := attach(t, m, "demo", Spec{})
+	replay := string(late.Replay())
+	if !strings.Contains(replay, "echo FOUND") || finished.MatchString(replay) {
+		t.Fatalf("replay = %q, want the prefill typed and not run", replay)
+	}
+	if _, err := late.Write([]byte("\r")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if out := readUntil(t, late, "FOUND\r\n"); !finished.MatchString(out) {
+		t.Errorf("output after Enter = %q, want FOUND printed", out)
+	}
+}
+
+// A command reading its input gets the prefill too: after its prompt goes
+// quiet, or after PrefillWait when it prints nothing at all.
+func TestPrefillReachesACommandReadingInput(t *testing.T) {
+	cases := []struct {
+		name  string
+		cmd   string
+		wait  time.Duration
+		quiet bool // typed by the quiet output, before the wait is up
+	}{
+		{"prompting first", "printf 'name? '; read x; echo got:$x", DefaultPrefillWait, true},
+		{"silent", "read x; echo got:$x", 300 * time.Millisecond, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, _ := newManager(t, Config{PrefillWait: c.wait})
+			start := time.Now()
+			sub := attach(t, m, "demo", Spec{Cmd: c.cmd, Prefill: "hello"})
+			readUntil(t, sub, "hello")
+			if waited := time.Since(start); (waited < c.wait) != c.quiet {
+				t.Errorf("prefill typed after %s; want before the %s wait: %v",
+					waited, c.wait, c.quiet)
+			}
+			if _, err := sub.Write([]byte("\r")); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			readUntil(t, sub, "got:hello")
+		})
+	}
+}
+
 func TestIdleTimeoutKillsOnlyUnattendedSessions(t *testing.T) {
 	m, _ := newManager(t, Config{IdleTimeout: 50 * time.Millisecond})
 	watched := attach(t, m, "watched", Spec{Cmd: "sleep 60"})
