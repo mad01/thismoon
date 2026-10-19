@@ -231,8 +231,8 @@ func TestKillEndsTheSessionAndUnlistsIt(t *testing.T) {
 		t.Fatalf("Kill: %v", err)
 	}
 	readAll(t, sub)
-	// SIGHUP normally ends it; a hangup that lands while the shell is still
-	// starting can be lost, and then SIGKILL after the grace does.
+	// SIGHUP ends it, the second one when the shell lost the first to the
+	// exec of sleep; under heavy load SIGKILL after the grace may.
 	code, exited := sub.Exit()
 	hup, kill := 128+int(syscall.SIGHUP), 128+int(syscall.SIGKILL)
 	if !exited || (code != hup && code != kill) {

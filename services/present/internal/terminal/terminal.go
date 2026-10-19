@@ -5,8 +5,8 @@
 // buffer that a new subscriber is replayed from first, so a reloaded tab
 // shows what happened while it was away. A session ends when it is killed,
 // when it has had no subscriber for the idle timeout, or when the manager
-// closes. A process that exits on its own stays listed with its exit code
-// until then.
+// closes, and ending it ends every process left in it. A process that
+// exits on its own stays listed with its exit code until then.
 package terminal
 
 import (
@@ -181,9 +181,12 @@ func (m *Manager) Attach(page, name string, spec Spec) (*Subscription, error) {
 	return s.subscribe(), nil
 }
 
-// Kill ends the session name on page: SIGHUP to its process group, SIGKILL
-// after the grace period. It returns once the process is gone, and the
-// session is no longer listed.
+// Kill ends the session name on page: SIGHUP to every process group in
+// the session its shell leads, SIGKILL after the grace period to whatever
+// is left, background jobs and jobs ignoring the hangup included. It
+// returns once the process is gone, and the session is no longer listed.
+// A process that left the session with setsid, as a daemon does, outlives
+// it; nohup alone does not.
 func (m *Manager) Kill(page, name string) error {
 	k := key{page: page, name: name}
 	m.mu.Lock()

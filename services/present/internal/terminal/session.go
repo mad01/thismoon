@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +33,9 @@ const (
 	drainWait = time.Second
 	// killPoll is how often a kill checks whether the job has gone.
 	killPoll = 20 * time.Millisecond
+	// hupRepeat is how long after the first SIGHUP of a kill the second
+	// follows.
+	hupRepeat = 100 * time.Millisecond
 	// prefillQuiet is how long the output must have been still before a
 	// prefill is typed: a shell has printed its prompt by then and handed
 	// the terminal to its line editor. Typed earlier, the terminal echoes
@@ -312,61 +316,94 @@ func (s *session) describe() Info {
 	return info
 }
 
-// kill sends SIGHUP to the shell and its foreground job, SIGKILL to both
-// after the grace period unless the shell has exited and the job's group
-// is empty by then, and waits for the exit to be recorded. Watching the job
-// group is what catches a job that ignores the hangup and outlives the
-// shell; the terminal is no help there, since it reads as closed as soon as
-// the shell is gone.
+// kill sends SIGHUP to every process group in the session, SIGKILL to
+// what is left after the grace period, and waits for the exit to be
+// recorded. The PTY start made the shell the leader of a session of its
+// own, and every job it starts stays in it, the foreground one, background
+// ones, and ones that ignore the hangup and outlive the shell alike; the
+// terminal is no help there, since the kernel revokes it once the shell is
+// gone. A process that left the session with setsid, as a daemon does, is
+// not reached. The session is listed again before each later signal, for a
+// job started since. A second SIGHUP follows hupRepeat after the first: a
+// shell that takes the first just as it replaces itself with the command
+// handles it and loses it with the exec.
 func (s *session) kill() {
-	job := s.prepareKill()
-	s.signal(syscall.SIGHUP, job)
-	if s.endedWithin(s.grace, job) {
+	s.stopIdle()
+	deadline := time.Now().Add(s.grace)
+	groups := s.jobGroups(nil)
+	s.signal(syscall.SIGHUP, groups)
+	if s.endedBy(time.Now().Add(min(hupRepeat, s.grace)), groups) {
 		return
 	}
-	s.signal(syscall.SIGKILL, job)
+	groups = s.jobGroups(groups)
+	s.signal(syscall.SIGHUP, groups)
+	if s.endedBy(deadline, groups) {
+		return
+	}
+	groups = s.jobGroups(groups)
+	s.signal(syscall.SIGKILL, groups)
 	<-s.done
 }
 
-// prepareKill stops the idle timer and returns the terminal's foreground
-// job group when it is not the shell's own, 0 otherwise. The job is read
-// once, up front: after the shell is gone the terminal no longer reports
-// it.
-func (s *session) prepareKill() int {
+func (s *session) stopIdle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.idle != nil {
 		s.idle.Stop()
 		s.idle = nil
 	}
-	fg, err := foregroundGroup(s.pty)
-	if err != nil || fg <= 0 || fg == s.info.PID {
-		// No separate job, or a terminal that cannot say: the shell's
-		// group is all there is to signal.
-		return 0
-	}
-	return fg
 }
 
-// endedWithin reports whether, within d, the exit was recorded and no
-// process is left in the job group (0 for none).
-func (s *session) endedWithin(d time.Duration, job int) bool {
-	deadline := time.NewTimer(d)
-	defer deadline.Stop()
+// jobGroups adds to known the process groups with a process in the
+// session. Where the processes cannot be listed it adds the terminal's
+// foreground group, which a reaped shell's terminal no longer reports.
+func (s *session) jobGroups(known []int) []int {
+	groups, ok := sessionGroups(s.info.PID)
+	if !ok {
+		if fg, err := foregroundGroup(s.pty); err == nil && fg > 0 {
+			groups = []int{fg}
+		}
+	}
+	for _, g := range groups {
+		if !slices.Contains(known, g) {
+			known = append(known, g)
+		}
+	}
+	return known
+}
+
+// endedBy reports whether, by deadline, the exit was recorded and no
+// process is left in the session, or in groups where the session's
+// processes cannot be listed.
+func (s *session) endedBy(deadline time.Time, groups []int) bool {
+	timeout := time.NewTimer(time.Until(deadline))
+	defer timeout.Stop()
 	select {
 	case <-s.done:
-	case <-deadline.C:
+	case <-timeout.C:
 		return false
-	}
-	if job == 0 {
-		return true
 	}
 	poll := time.NewTicker(killPoll)
 	defer poll.Stop()
-	for !groupGone(job) {
+	for !s.sessionGone(groups) {
 		select {
 		case <-poll.C:
-		case <-deadline.C:
+		case <-timeout.C:
+			return false
+		}
+	}
+	return true
+}
+
+// sessionGone reports whether the session has no live process left, or,
+// where its processes cannot be listed, whether every one of groups is
+// empty.
+func (s *session) sessionGone(groups []int) bool {
+	if left, ok := sessionGroups(s.info.PID); ok {
+		return len(left) == 0
+	}
+	for _, g := range groups {
+		if !groupGone(g) {
 			return false
 		}
 	}
@@ -378,20 +415,22 @@ func groupGone(pgid int) bool {
 	return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH)
 }
 
-// signal sends sig to the job group and, until the shell is reaped, to the
-// shell's own group, which the PTY start made the shell the leader of. A
-// reaped shell's pid may already belong to something else, so it is left
-// alone; pids are handed out in sequence, so the job group read at the
-// start of a kill still names the job a grace period later.
-func (s *session) signal(sig syscall.Signal, job int) {
+// signal sends sig to the shell's own group until the shell is reaped, and
+// to every group in groups. A reaped shell's pid may already belong to
+// something else, so it is left alone unless it was listed: a group that
+// still had a process when it was listed keeps its id, since the kernel
+// hands out no pid in use as a group or session id.
+func (s *session) signal(sig syscall.Signal, groups []int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// ESRCH means a group is already gone, which is what kill wants.
 	if !s.waited {
 		_ = syscall.Kill(-s.info.PID, sig)
 	}
-	if job > 0 {
-		_ = syscall.Kill(-job, sig)
+	for _, g := range groups {
+		if g > 0 && (g != s.info.PID || s.waited) {
+			_ = syscall.Kill(-g, sig)
+		}
 	}
 }
 
