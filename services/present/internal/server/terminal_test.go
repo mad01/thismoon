@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/store"
 	"github.com/mad01/thismoon/services/present/internal/terminal"
 )
@@ -25,23 +26,25 @@ const terminalDeadline = 30 * time.Second
 
 type terminalFixture struct {
 	ts     *httptest.Server
+	st     store.Store
 	mgr    *terminal.Manager
 	page   string
 	toggle string
 }
 
-// setupTerminal serves one page with a terminal manager whose sessions
-// start in a temp home, with the switch on or off.
-func setupTerminal(t *testing.T, mode Mode, on bool) *terminalFixture {
+// termBlock is a terminal block for session that runs cmd.
+func termBlock(session, cmd string) render.Block {
+	return render.Block{T: "terminal", Session: session, Cmd: cmd}
+}
+
+// setupTerminal serves one page whose brief holds blocks, with a terminal
+// manager whose sessions start in a temp home and the switch on or off.
+func setupTerminal(t *testing.T, mode Mode, on bool, blocks ...render.Block) *terminalFixture {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := store.NewFS(dir)
 	if err != nil {
 		t.Fatalf("store.NewFS: %v", err)
-	}
-	p, err := st.Create(t.Context(), store.Draft{Title: "T", Content: "<p>x</p>"})
-	if err != nil {
-		t.Fatalf("create: %v", err)
 	}
 	home := t.TempDir()
 	mgr := terminal.New(terminal.Config{
@@ -61,11 +64,43 @@ func setupTerminal(t *testing.T, mode Mode, on bool) *terminalFixture {
 	})
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return &terminalFixture{ts: ts, mgr: mgr, page: p.ID, toggle: toggle}
+	f := &terminalFixture{ts: ts, st: st, mgr: mgr, toggle: toggle}
+	f.page = f.addPage(t, blocks, nil)
+	return f
 }
 
-func (f *terminalFixture) socketURL(session string, q url.Values) string {
-	u := "ws" + strings.TrimPrefix(f.ts.URL, "http") + "/api/p/" + f.page + "/terminal/" + session
+// addPage stores a page whose brief holds brief and, when deck is not nil,
+// whose deck holds deck, each compiled the way the MCP tools compile them.
+func (f *terminalFixture) addPage(t *testing.T, brief, deck []render.Block) string {
+	t.Helper()
+	if len(brief) == 0 {
+		brief = []render.Block{{T: "p", Text: "x"}}
+	}
+	compiled, err := render.CompileDoc(terminalDoc(brief), "T")
+	if err != nil {
+		t.Fatalf("compile brief: %v", err)
+	}
+	d := store.Draft{Title: "T", Content: compiled.HTML, Doc: compiled.JSON}
+	if deck != nil {
+		c, err := render.CompileDeckDoc(terminalDoc(deck), "T")
+		if err != nil {
+			t.Fatalf("compile deck: %v", err)
+		}
+		d.Deck, d.DeckSource = c.HTML, c.JSON
+	}
+	p, err := f.st.Create(t.Context(), d)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	return p.ID
+}
+
+func terminalDoc(blocks []render.Block) render.Doc {
+	return render.Doc{Sections: []render.Section{{Heading: "S", Blocks: blocks}}}
+}
+
+func (f *terminalFixture) socketURL(page, session string, q url.Values) string {
+	u := "ws" + strings.TrimPrefix(f.ts.URL, "http") + "/api/p/" + page + "/terminal/" + session
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
@@ -76,13 +111,23 @@ func (f *terminalFixture) dial(
 	t *testing.T, session string, q url.Values, opts *websocket.DialOptions,
 ) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
+	return f.dialPage(t, f.page, session, q, opts)
+}
+
+// dialPage opens a terminal socket for session on page. The read limit is
+// lifted, since a frame carries every byte of output queued for the socket.
+func (f *terminalFixture) dialPage(
+	t *testing.T, page, session string, q url.Values, opts *websocket.DialOptions,
+) (*websocket.Conn, *http.Response, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), terminalDeadline)
 	defer cancel()
-	conn, resp, err := websocket.Dial(ctx, f.socketURL(session, q), opts)
+	conn, resp, err := websocket.Dial(ctx, f.socketURL(page, session, q), opts)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
 	if conn != nil {
+		conn.SetReadLimit(64 << 20)
 		t.Cleanup(func() { _ = conn.CloseNow() })
 	}
 	return conn, resp, err
@@ -191,20 +236,26 @@ func TestTerminalOffAnswers404ButListsDisabled(t *testing.T) {
 }
 
 func TestTerminalRefusesBadNamesAndMissingPages(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "sleep 60"))
 	cases := []struct {
 		path string
 		want int
+		body string
 	}{
-		{"/api/p/" + f.page + "/terminal/Bad_Name", http.StatusBadRequest},
-		{"/api/p/" + f.page + "/terminal/" + strings.Repeat("a", 33), http.StatusBadRequest},
-		{"/api/p/missing0000/terminal/demo", http.StatusNotFound},
-		{"/api/p/" + f.page + "/terminal/demo?cols=0", http.StatusBadRequest},
-		{"/api/p/" + f.page + "/terminal/demo?rows=wide", http.StatusBadRequest},
+		{"/api/p/" + f.page + "/terminal/Bad_Name", http.StatusBadRequest, ""},
+		{"/api/p/" + f.page + "/terminal/" + strings.Repeat("a", 33), http.StatusBadRequest, ""},
+		{"/api/p/missing0000/terminal/demo", http.StatusNotFound, ""},
+		{"/api/p/" + f.page + "/terminal/demo?cols=0", http.StatusBadRequest, ""},
+		{"/api/p/" + f.page + "/terminal/demo?rows=wide", http.StatusBadRequest, ""},
+		{
+			"/api/p/" + f.page + "/terminal/undeclared?cmd=sleep+60", http.StatusNotFound,
+			`page declares no terminal session "undeclared"`,
+		},
 	}
 	for _, tc := range cases {
-		if code, body := get(t, f.ts.URL+tc.path); code != tc.want {
-			t.Errorf("GET %s = %d %q, want %d", tc.path, code, body, tc.want)
+		code, body := get(t, f.ts.URL+tc.path)
+		if code != tc.want || !strings.Contains(body, tc.body) {
+			t.Errorf("GET %s = %d %q, want %d %q", tc.path, code, body, tc.want, tc.body)
 		}
 	}
 	if got := f.mgr.List(); len(got) != 0 {
@@ -213,7 +264,7 @@ func TestTerminalRefusesBadNamesAndMissingPages(t *testing.T) {
 }
 
 func TestTerminalRefusesForeignOrigins(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "sleep 60"))
 	host := strings.TrimPrefix(f.ts.URL, "http://")
 	_, port, _ := strings.Cut(host, ":")
 	cases := []struct {
@@ -231,10 +282,9 @@ func TestTerminalRefusesForeignOrigins(t *testing.T) {
 			HTTPHeader: http.Header{"Origin": {"http://evil.example:" + port}},
 		}},
 	}
-	q := url.Values{"cmd": {"sleep 60"}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, resp, err := f.dial(t, "demo", q, tc.opts)
+			_, resp, err := f.dial(t, "demo", nil, tc.opts)
 			if err == nil {
 				t.Fatal("dial succeeded, want it refused")
 			}
@@ -252,13 +302,13 @@ func TestTerminalRefusesForeignOrigins(t *testing.T) {
 // address serve listens on, so the request Host never equals the Origin
 // there. The present.this pattern is what admits it, and only it.
 func TestTerminalAcceptsTheDManOriginOnALoopbackHost(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf hi; cat"))
 	loopback := strings.TrimPrefix(f.ts.URL, "http://")
 	if !strings.HasPrefix(loopback, "127.0.0.1:") {
 		t.Fatalf("test server on %s, want a 127.0.0.1 address", loopback)
 	}
 	dialFrom := func(origin string) (*websocket.Conn, *http.Response, error) {
-		return f.dial(t, "demo", url.Values{"cmd": {"printf hi; cat"}}, &websocket.DialOptions{
+		return f.dial(t, "demo", nil, &websocket.DialOptions{
 			Host:       loopback,
 			HTTPHeader: http.Header{"Origin": {origin}},
 		})
@@ -278,8 +328,8 @@ func TestTerminalAcceptsTheDManOriginOnALoopbackHost(t *testing.T) {
 }
 
 func TestTerminalSocketSendsHelloOutputThenExit(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
-	r := &terminalReader{conn: f.mustDial(t, "demo", url.Values{"cmd": {"printf hi; exit 4"}})}
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf hi; exit 4"))
+	r := &terminalReader{conn: f.mustDial(t, "demo", nil)}
 
 	hello := r.until(t, "hello")
 	if hello["replayed"] != float64(0) {
@@ -298,13 +348,12 @@ func TestTerminalSocketSendsHelloOutputThenExit(t *testing.T) {
 }
 
 func TestTerminalReattachReplaysThenTakesInputAndKill(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
-	q := url.Values{"cmd": {"printf ready; cat"}}
-	first := &terminalReader{conn: f.mustDial(t, "demo", q)}
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf ready; cat"))
+	first := &terminalReader{conn: f.mustDial(t, "demo", nil)}
 	first.outputUntil(t, "ready")
 	_ = first.conn.Close(websocket.StatusNormalClosure, "tab reloaded")
 
-	again := &terminalReader{conn: f.mustDial(t, "demo", url.Values{"cmd": {"ignored"}})}
+	again := &terminalReader{conn: f.mustDial(t, "demo", nil)}
 	hello := again.until(t, "hello")
 	if n, _ := hello["replayed"].(float64); n < float64(len("ready")) {
 		t.Errorf("hello = %v, want the earlier output replayed", hello)
@@ -326,8 +375,8 @@ func TestTerminalReattachReplaysThenTakesInputAndKill(t *testing.T) {
 }
 
 func TestTerminalDeleteKillsTheSession(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
-	r := &terminalReader{conn: f.mustDial(t, "demo", url.Values{"cmd": {"printf up; sleep 60"}})}
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf up; sleep 60"))
+	r := &terminalReader{conn: f.mustDial(t, "demo", nil)}
 	r.outputUntil(t, "up")
 
 	if code := deleteTerminal(t, f, "demo"); code != http.StatusNoContent {
@@ -359,7 +408,7 @@ func deleteTerminal(t *testing.T, f *terminalFixture, session string) int {
 // A shared instance has no terminal surface at all: every route is a plain
 // 404, even with a manager passed in and the switch file on in its workdir.
 func TestTerminalRoutesAbsentInSharedMode(t *testing.T) {
-	f := setupTerminal(t, ModeShared, true)
+	f := setupTerminal(t, ModeShared, true, termBlock("demo", "sleep 60"))
 	if on, err := terminal.Enabled(f.toggle); err != nil || !on {
 		t.Fatalf("switch file must be on for this test: %v %v", on, err)
 	}
@@ -372,7 +421,7 @@ func TestTerminalRoutesAbsentInSharedMode(t *testing.T) {
 	if code := deleteTerminal(t, f, "demo"); code != http.StatusNotFound {
 		t.Errorf("shared DELETE = %d, want 404", code)
 	}
-	_, resp, err := f.dial(t, "demo", url.Values{"cmd": {"sleep 60"}}, nil)
+	_, resp, err := f.dial(t, "demo", nil, nil)
 	if err == nil || resp == nil || resp.StatusCode != http.StatusNotFound {
 		t.Errorf("shared socket: err %v, response %v; want 404", err, resp)
 	}
@@ -382,8 +431,8 @@ func TestTerminalRoutesAbsentInSharedMode(t *testing.T) {
 }
 
 func TestTerminalSwitchOffKillsAtTheNextCheck(t *testing.T) {
-	f := setupTerminal(t, ModeLocal, true)
-	r := &terminalReader{conn: f.mustDial(t, "demo", url.Values{"cmd": {"printf up; sleep 60"}})}
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf up; sleep 60"))
+	r := &terminalReader{conn: f.mustDial(t, "demo", nil)}
 	r.outputUntil(t, "up")
 	go f.mgr.WatchSwitch(t.Context(), f.toggle, 10*time.Millisecond, t.Logf)
 
@@ -394,5 +443,41 @@ func TestTerminalSwitchOffKillsAtTheNextCheck(t *testing.T) {
 	_, _, err := f.dial(t, "demo", nil, nil)
 	if err == nil || errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("dial after off: err = %v, want a refused upgrade", err)
+	}
+}
+
+// What a session runs comes from the stored page alone: a socket that
+// names a cmd and a cwd in its query still gets the block's command.
+func TestTerminalRunsTheStoredSpecNotTheQuery(t *testing.T) {
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "printf stored; exit 0"))
+	q := url.Values{"cmd": {"printf injected; exit 9"}, "cwd": {"/"}}
+	r := &terminalReader{conn: f.mustDial(t, "demo", q)}
+
+	exit := r.until(t, "exit")
+	if exit["code"] != float64(0) || !strings.Contains(r.output.String(), "stored") ||
+		strings.Contains(r.output.String(), "injected") {
+		t.Errorf("exit %v, output %q; want the stored command's", exit, r.output.String())
+	}
+	if got := f.mgr.List(); len(got) != 1 || got[0].Cmd != "printf stored; exit 0" {
+		t.Errorf("List() = %+v, want the stored command", got)
+	}
+}
+
+// A deck is a rendition of the same page, so a session its blocks declare
+// attaches like one the brief declares.
+func TestTerminalFindsASessionTheDeckDeclares(t *testing.T) {
+	f := setupTerminal(t, ModeLocal, true)
+	page := f.addPage(t, nil, []render.Block{termBlock("slides", "printf from-deck; exit 0")})
+	conn, _, err := f.dialPage(t, page, "slides", nil, nil)
+	if err != nil {
+		t.Fatalf("dial the deck's session: %v", err)
+	}
+	r := &terminalReader{conn: conn}
+	r.until(t, "exit")
+	if !strings.Contains(r.output.String(), "from-deck") {
+		t.Errorf("output = %q, want the deck block's command", r.output.String())
+	}
+	if code, _ := get(t, f.ts.URL+"/api/p/"+f.page+"/terminal/slides"); code != http.StatusNotFound {
+		t.Errorf("another page's session = %d, want 404", code)
 	}
 }

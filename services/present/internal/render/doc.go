@@ -1859,12 +1859,49 @@ func validateDoc(d Doc) error {
 	return ValidateTerminalSessions(d)
 }
 
-// terminalSpec is what serve starts a terminal session from: the command,
-// the directory, and the prefill, trimmed as normalizeBlock trims them.
-type terminalSpec struct{ cmd, cwd, prefill string }
+// TerminalSpec is what serve starts a terminal session from: the command,
+// the directory, and the prefill a terminal block gives, trimmed as
+// normalizeBlock trims them.
+type TerminalSpec struct {
+	Cmd     string
+	Cwd     string
+	Prefill string
+}
 
-func (s terminalSpec) String() string {
-	return fmt.Sprintf("(cmd %q, cwd %q, prefill %q)", s.cmd, s.cwd, s.prefill)
+func (s TerminalSpec) String() string {
+	return fmt.Sprintf("(cmd %q, cwd %q, prefill %q)", s.Cmd, s.Cwd, s.Prefill)
+}
+
+// terminalSpecOf reads the spec terminal block b gives.
+func terminalSpecOf(b Block) TerminalSpec {
+	return TerminalSpec{
+		Cmd:     strings.TrimSpace(b.Cmd),
+		Cwd:     strings.TrimSpace(b.Cwd),
+		Prefill: strings.TrimSpace(b.Prefill),
+	}
+}
+
+// FindTerminalSpec returns the spec of the terminal session that docs name
+// session, and false when no terminal block of docs names it. Serve reads a
+// session's spec here, from the page it stored, so nothing a browser sends
+// chooses what runs. ValidateTerminalSessions holds every block naming one
+// session to one spec, so the first block found speaks for all of them.
+func FindTerminalSpec(session string, docs ...Doc) (TerminalSpec, bool) {
+	errFound := errors.New("render: terminal spec found")
+	var spec TerminalSpec
+	for i := range docs {
+		err := docs[i].EachBlock(func(b *Block) error {
+			if isTerminal(*b) && b.Session == session {
+				spec = terminalSpecOf(*b)
+				return errFound
+			}
+			return nil
+		})
+		if err != nil { // errFound is the only error the walk returns
+			return spec, true
+		}
+	}
+	return TerminalSpec{}, false
 }
 
 // ValidateTerminalSessions refuses a terminal session that two blocks of
@@ -1874,17 +1911,13 @@ func (s terminalSpec) String() string {
 // runs it on one Doc; the MCP tools run it on a page's brief and deck
 // together, since both renditions attach to the page's sessions.
 func ValidateTerminalSessions(docs ...Doc) error {
-	seen := map[string]terminalSpec{}
+	seen := map[string]TerminalSpec{}
 	for i := range docs {
 		err := docs[i].EachBlock(func(b *Block) error {
 			if !isTerminal(*b) {
 				return nil
 			}
-			spec := terminalSpec{
-				cmd:     strings.TrimSpace(b.Cmd),
-				cwd:     strings.TrimSpace(b.Cwd),
-				prefill: strings.TrimSpace(b.Prefill),
-			}
+			spec := terminalSpecOf(*b)
 			first, ok := seen[b.Session]
 			if !ok {
 				seen[b.Session] = spec

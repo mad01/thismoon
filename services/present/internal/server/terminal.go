@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/mad01/thismoon/services/present/internal/render"
 	"github.com/mad01/thismoon/services/present/internal/terminal"
 )
 
@@ -88,22 +90,32 @@ func (s *Server) handleTerminalList(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleTerminal upgrades to the WebSocket that carries one session: the
-// switch, the session name, the page, the query, and the origin are all
-// checked before anything spawns.
+// switch, the session name, the page, the origin, the size, and the
+// session's spec in the stored page are all checked before anything spawns.
 func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	page, name, ok := s.terminalTarget(w, r)
 	if !ok {
-		return
-	}
-	spec, err := parseTerminalSpec(r.URL.Query())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if !s.terminalOriginAllowed(r) {
 		http.Error(w, "terminal: origin not allowed", http.StatusForbidden)
 		return
 	}
+	cols, rows, err := parseTerminalSize(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	spec, err := s.storedTerminalSpec(r.Context(), page, name)
+	if errors.Is(err, errNoTerminalSession) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	spec.Cols, spec.Rows = cols, rows
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: s.terminalOrigins,
 	})
@@ -197,18 +209,53 @@ func (s *Server) terminalOriginAllowed(r *http.Request) bool {
 	return false
 }
 
-// parseTerminalSpec reads the spawn parameters from the socket's query.
-// A running session ignores them.
-func parseTerminalSpec(q url.Values) (terminal.Spec, error) {
-	cols, err := terminalDim(q, "cols")
-	if err != nil {
-		return terminal.Spec{}, err
+// errNoTerminalSession answers a socket naming a session the page's stored
+// Doc sources do not declare.
+var errNoTerminalSession = errors.New("terminal: page declares no terminal session")
+
+// storedTerminalSpec reads what session name on page runs from the page's
+// stored Doc sources, the brief's and the deck's. The socket only names the
+// session: page content reaches the browser as HTML, so a cmd taken from
+// the socket would let anything injected into a page run a command as the
+// user while the switch is on.
+func (s *Server) storedTerminalSpec(
+	ctx context.Context, page, name string,
+) (terminal.Spec, error) {
+	var docs []render.Doc
+	for _, load := range []func(context.Context, string) ([]byte, error){
+		s.store.LoadDoc, s.store.LoadDeckSource,
+	} {
+		src, err := optionalSource(load(ctx, page))
+		if err != nil {
+			return terminal.Spec{}, err
+		}
+		if src == nil {
+			continue
+		}
+		var d render.Doc
+		if err := json.Unmarshal(src, &d); err != nil {
+			return terminal.Spec{}, fmt.Errorf("terminal: page %s source: %w", page, err)
+		}
+		docs = append(docs, d)
 	}
-	rows, err := terminalDim(q, "rows")
-	if err != nil {
-		return terminal.Spec{}, err
+	found, ok := render.FindTerminalSpec(name, docs...)
+	if !ok {
+		return terminal.Spec{}, fmt.Errorf("%w %q", errNoTerminalSession, name)
 	}
-	return terminal.Spec{Cmd: q.Get("cmd"), Cwd: q.Get("cwd"), Cols: cols, Rows: rows}, nil
+	return terminal.Spec{Cmd: found.Cmd, Cwd: found.Cwd}, nil
+}
+
+// parseTerminalSize reads the size a new session starts at from the
+// socket's query; zero for an absent parameter. A running session ignores
+// it.
+func parseTerminalSize(q url.Values) (cols, rows uint16, err error) {
+	if cols, err = terminalDim(q, "cols"); err != nil {
+		return 0, 0, err
+	}
+	if rows, err = terminalDim(q, "rows"); err != nil {
+		return 0, 0, err
+	}
+	return cols, rows, nil
 }
 
 // terminalDim parses one size parameter; absent is zero, the default.
