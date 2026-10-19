@@ -87,7 +87,9 @@ Everything else is the paid path.
 ## Data model & storage
 
 No store. Input is cases.yaml. Output is one JSON document per batch under
-`results/`, shaped by `schema/results.schema.json` (`factory-eval/results/v1`).
+`results/`, shaped by `schema/results.schema.json` (`factory-eval/results/v2`).
+v2 replaced v1's `settings_deny` with `settings_permissions`, so a v1 file
+fails the current schema.
 The clones live under the system temp dir, or `--temp-dir`, as
 `factory-eval-*`, each with the run's read-only `settings.json` beside the
 clone. Passing runs delete theirs.
@@ -130,9 +132,14 @@ schema. Review the diff before committing it.
   through `cd` or `$HOME`, and only the fingerprint detects that.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
   against Edit rules and never consults a Write path rule, so the isolation
-  rules are Edit rules only, and a test keeps Write rules out. Their `git -C`
-  rules deny the same dirs: `~/code`, `~/.worktrees`, and the source when it
-  lives outside both.
+  rules are Edit rules only, and a test keeps Write rules out. Their `git -C`,
+  `make -C` and `go build -o` rules deny the same dirs: `~/code`,
+  `~/.worktrees`, and the source when it lives outside both. The `go build
+  -o` rule is what keeps a run from overwriting a binary in `~/code/bin`.
+- **Worker obedience to the settings lists is unverified.** Claude Code
+  documents settings-file rules as reaching subagents, but no paid run has
+  confirmed it, so check the first paid factory run's `permission_denials`
+  before trusting its result.
 - **The fingerprint taints a run on any change to the source checkout**,
   whoever made it. All worktrees share the ref store, so a commit in any
   worktree of the source repo (loom ones included) taints a run, and so

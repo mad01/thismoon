@@ -27,24 +27,41 @@ type Isolation struct {
 // allow list nor the arm's can reopen these paths. The rules cover
 // ~/code, ~/.worktrees and the source checkout when it lives outside both.
 // An Edit rule covers the Write tool too: Claude checks file writes
-// against Edit rules and never consults a Write path rule. git -C is
-// denied into the same dirs, in absolute and ~/ form, since the allow
-// list lets an arm branch and commit with -C. Reads stay allowed.
+// against Edit rules and never consults a Write path rule. Each command
+// in dirCommands is denied into the same dirs, in absolute and ~/ form.
+// Reads stay allowed.
 func (iso Isolation) DenyRules() []string {
 	dirs := iso.editDirs()
-	rules := make([]string, 0, 1+3*len(dirs))
+	rules := make([]string, 0, 1+len(dirs)*(1+2*len(dirCommands)))
 	for _, dir := range dirs {
 		rules = append(rules, "Edit(/"+dir+"/**)")
 	}
 	rules = append(rules, "Bash(curl *)")
-	for _, dir := range dirs {
-		rules = append(rules, "Bash(git -C "+dir+"*)")
-		if within(dir, iso.Home) {
-			rel, _ := filepath.Rel(iso.Home, dir)
-			rules = append(rules, "Bash(git -C ~/"+filepath.ToSlash(rel)+"*)")
+	for _, cmd := range dirCommands {
+		for _, dir := range dirs {
+			for _, spelling := range iso.spellings(dir) {
+				rules = append(rules, "Bash("+cmd+spelling+"*)")
+			}
 		}
 	}
 	return rules
+}
+
+// dirCommands are the Bash command prefixes the isolation rules deny into
+// each protected dir. The allow list permits all three with any dir: git
+// -C branches and commits there, make -C builds there, and go build -o
+// writes its binary there, which under ~/code/bin overwrites an installed
+// tool.
+var dirCommands = []string{"git -C ", "make -C ", "go build *-o "}
+
+// spellings are the ways a Bash command names dir: its absolute path, and
+// its ~/ form when it sits under the home dir.
+func (iso Isolation) spellings(dir string) []string {
+	if !within(dir, iso.Home) {
+		return []string{dir}
+	}
+	rel, _ := filepath.Rel(iso.Home, dir)
+	return []string{dir, "~/" + filepath.ToSlash(rel)}
 }
 
 // Covers reports whether p sits in a directory the rules deny edits in. A

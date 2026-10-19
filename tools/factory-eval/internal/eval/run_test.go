@@ -338,7 +338,7 @@ func TestResultsFixtureMatchesTheSchemaAndTheCode(t *testing.T) {
 	if err := validate(t, want); err != nil {
 		t.Errorf("fixture does not validate against the schema: %v", err)
 	}
-	if err := validate(t, []byte(`{"schema":"factory-eval/results/v1","runs":"none"}`)); err == nil {
+	if err := validate(t, []byte(`{"schema":"`+SchemaID+`","runs":"none"}`)); err == nil {
 		t.Error("a broken document validates, so the schema check proves nothing")
 	}
 }
@@ -486,7 +486,8 @@ func TestASuccessReportWithIsErrorCountsAsErrored(t *testing.T) {
 	}}
 	res := Run(context.Background(), testConfig(t, f, src, agent, fixedScorer{}))
 	broken := res.Runs[0]
-	if broken.Stop != claude.SubtypeSuccess || !broken.Errored() || broken.Pass || broken.KeptDir == "" {
+	if broken.Stop != claude.SubtypeSuccess || !broken.Errored() || broken.Pass ||
+		broken.KeptDir == "" {
 		t.Errorf("run = stop %q errored %v pass %v kept %q, want an errored, kept run",
 			broken.Stop, broken.Errored(), broken.Pass, broken.KeptDir)
 	}

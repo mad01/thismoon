@@ -13,8 +13,8 @@ import (
 )
 
 // SchemaID names the results document's schema; schema/results.schema.json
-// describes it.
-const SchemaID = "factory-eval/results/v1"
+// describes it. v2 replaced v1's settings_deny with settings_permissions.
+const SchemaID = "factory-eval/results/v2"
 
 // Pass-rule thresholds from MAD-402: the factory must reach an equal or
 // better judge score, at most half the wall clock, and at most one and a

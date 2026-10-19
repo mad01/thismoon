@@ -1,5 +1,5 @@
 {
-  "schema": "factory-eval/results/v1",
+  "schema": "factory-eval/results/v2",
   "dry_run": false,
   "started_at": "2026-10-16T19:00:00Z",
   "finished_at": "2026-10-16T20:00:00Z",
@@ -91,7 +91,15 @@
         "Bash(git -C /Users/example/code*)",
         "Bash(git -C ~/code*)",
         "Bash(git -C /Users/example/.worktrees*)",
-        "Bash(git -C ~/.worktrees*)"
+        "Bash(git -C ~/.worktrees*)",
+        "Bash(make -C /Users/example/code*)",
+        "Bash(make -C ~/code*)",
+        "Bash(make -C /Users/example/.worktrees*)",
+        "Bash(make -C ~/.worktrees*)",
+        "Bash(go build *-o /Users/example/code*)",
+        "Bash(go build *-o ~/code*)",
+        "Bash(go build *-o /Users/example/.worktrees*)",
+        "Bash(go build *-o ~/.worktrees*)"
       ]
     },
     "single": {
@@ -160,7 +168,15 @@
         "Bash(git -C /Users/example/code*)",
         "Bash(git -C ~/code*)",
         "Bash(git -C /Users/example/.worktrees*)",
-        "Bash(git -C ~/.worktrees*)"
+        "Bash(git -C ~/.worktrees*)",
+        "Bash(make -C /Users/example/code*)",
+        "Bash(make -C ~/code*)",
+        "Bash(make -C /Users/example/.worktrees*)",
+        "Bash(make -C ~/.worktrees*)",
+        "Bash(go build *-o /Users/example/code*)",
+        "Bash(go build *-o ~/code*)",
+        "Bash(go build *-o /Users/example/.worktrees*)",
+        "Bash(go build *-o ~/.worktrees*)"
       ]
     }
   },
