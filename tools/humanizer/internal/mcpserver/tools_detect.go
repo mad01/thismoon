@@ -21,6 +21,7 @@ type detectInput struct {
 	MinSeverity string   `json:"min_severity,omitempty" jsonschema:"filter findings below this severity: suggestion, warning, or error (default suggestion)"`
 	Profile     string   `json:"profile,omitempty"      jsonschema:"experimental: run the STE-lite rules instead of the Humanizer pack: procedure for task briefs and steps, description for status reports and summaries; empty runs the Humanizer pack"`
 	Repo        string   `json:"repo,omitempty"         jsonschema:"experimental: absolute repo path whose CONTEXT.md glossaries become STE.Glossary substitutions at suggestion level; needs profile"`
+	Path        string   `json:"path,omitempty"         jsonschema:"experimental: file or directory the text belongs to, absolute or relative to repo; only the CONTEXT.md glossaries on its path apply, since a CONTEXT.md governs its own directory and everything below it; empty applies every glossary in the repo; needs repo"`
 }
 
 type detectFileInput struct {
@@ -45,6 +46,7 @@ type detectOutput struct {
 	Findings []detectFinding `json:"findings"`
 	Summary  rules.Summary   `json:"summary"`
 	Engine   string          `json:"engine"`
+	Notes    []string        `json:"notes,omitempty" jsonschema:"warnings about the run, such as glossary synonyms skipped because the rule cannot match them"`
 }
 
 func registerDetectTools(s *mcp.Server) {
@@ -56,7 +58,7 @@ func registerDetectTools(s *mcp.Server) {
 			"Use before rewriting AI-heavy text so the rewrite targets are concrete. " +
 			"Filter with rules=[...] to check specific patterns, or min_severity=error for only the highest-confidence tells. " +
 			"To check a message one agent writes for another (experimental), pass profile=procedure (task briefs, steps) or profile=description (status reports): that runs the STE-lite rules (STE.* IDs, shaped on Simplified Technical English) instead of the Humanizer pack. " +
-			"Add repo=<absolute path> to flag the synonyms the repo's CONTEXT.md glossaries ban.",
+			"Add repo=<absolute path> to flag the synonyms the repo's CONTEXT.md glossaries ban, and path=<file or directory> to apply only the glossaries that govern that location.",
 		Annotations: &mcp.ToolAnnotations{
 			OpenWorldHint: new(false),
 			ReadOnlyHint:  true,
@@ -83,7 +85,7 @@ func handleDetect(
 	if strings.TrimSpace(in.Text) == "" {
 		return nil, detectOutput{}, fmt.Errorf("humanizer_detect: text is required")
 	}
-	opts, err := detectOptions(in)
+	opts, notes, err := detectOptions(in)
 	if err != nil {
 		return nil, detectOutput{}, fmt.Errorf("humanizer_detect: %w", err)
 	}
@@ -91,48 +93,55 @@ func handleDetect(
 	if err != nil {
 		return nil, detectOutput{}, fmt.Errorf("humanizer_detect: %w", err)
 	}
-	return nil, buildDetectOutput(findings), nil
+	out := buildDetectOutput(findings)
+	out.Notes = notes
+	return nil, out, nil
 }
 
 // detectOptions validates the humanizer_detect input and resolves it into
-// detect options, generating the repo glossary when repo is set.
-func detectOptions(in detectInput) (rules.DetectOptions, error) {
+// detect options, generating the repo glossary for path when repo is set.
+// The notes are the glossary's warnings for the caller to see.
+func detectOptions(in detectInput) (rules.DetectOptions, []string, error) {
 	for _, id := range in.Rules {
 		if _, ok := rules.Get(id); !ok {
-			return rules.DetectOptions{}, fmt.Errorf(
+			return rules.DetectOptions{}, nil, fmt.Errorf(
 				"unknown rule %q (use humanizer_rules_list to see valid IDs)",
 				id,
 			)
 		}
 	}
+	if in.Path != "" && in.Repo == "" {
+		return rules.DetectOptions{}, nil, errors.New("path needs repo")
+	}
 	opts := rules.DetectOptions{Rules: in.Rules, MinSeverity: in.MinSeverity}
 	if in.Profile == "" {
 		if in.Repo != "" {
-			return rules.DetectOptions{}, fmt.Errorf(
+			return rules.DetectOptions{}, nil, errors.New(
 				"repo needs profile (procedure or description)",
 			)
 		}
-		return opts, nil
+		return opts, nil, nil
 	}
 	profile, err := rules.ParseProfile(in.Profile)
 	if err != nil {
-		return rules.DetectOptions{}, err
+		return rules.DetectOptions{}, nil, err
 	}
 	opts.Profile = profile
-	if in.Repo != "" {
-		if !filepath.IsAbs(in.Repo) {
-			return rules.DetectOptions{}, fmt.Errorf(
-				"repo must be an absolute path, got %q",
-				in.Repo,
-			)
-		}
-		gloss, err := glossary.FromRepo(in.Repo)
-		if err != nil {
-			return rules.DetectOptions{}, repoGlossaryError(err, in.Repo, profile)
-		}
-		opts.Glossary = gloss
+	if in.Repo == "" {
+		return opts, nil, nil
 	}
-	return opts, nil
+	if !filepath.IsAbs(in.Repo) {
+		return rules.DetectOptions{}, nil, fmt.Errorf(
+			"repo must be an absolute path, got %q",
+			in.Repo,
+		)
+	}
+	repo, err := glossary.Load(in.Repo)
+	if err != nil {
+		return rules.DetectOptions{}, nil, repoGlossaryError(err, in.Repo, steCLIForm(profile, in))
+	}
+	opts.Glossary = repo.Rule(repo.Target(in.Path))
+	return opts, repo.Warnings(), nil
 }
 
 func handleDetectFile(
@@ -185,10 +194,21 @@ func detectFileError(err error, path string) error {
 	return fmt.Errorf("%s — use humanizer_detect instead: %w", redirect, err)
 }
 
+// steCLIForm is the humanizer ste command that runs the same check as in
+// from a shell.
+func steCLIForm(profile rules.Profile, in detectInput) string {
+	form := "humanizer ste --profile " + string(profile) + " --repo " + in.Repo
+	if in.Path != "" {
+		form += " --path " + in.Path
+	}
+	return form
+}
+
 // repoGlossaryError translates a sandbox denial on the repo walk into a
-// structured error whose use_instead field names the unsandboxed CLI form.
-// Which roots the sandbox lets the walk read is the consuming repo's choice.
-func repoGlossaryError(err error, repo string, profile rules.Profile) error {
+// structured error whose use_instead field names cliForm, the unsandboxed
+// CLI command. Which roots the sandbox lets the walk read is the consuming
+// repo's choice.
+func repoGlossaryError(err error, repo, cliForm string) error {
 	if !errors.Is(err, fs.ErrPermission) {
 		return err
 	}
@@ -198,7 +218,7 @@ func repoGlossaryError(err error, repo string, profile rules.Profile) error {
 		Hint       string `json:"hint"`
 	}{
 		Error:      "the CONTEXT.md files under " + repo + " are not readable under the MCP sandbox",
-		UseInstead: "humanizer ste --profile " + string(profile) + " --repo " + repo,
+		UseInstead: cliForm,
 		Hint: "run the CLI from a shell, which is unsandboxed, and pipe the text on stdin. " +
 			"Or call humanizer_detect again without repo to run the STE rules without the glossary.",
 	})

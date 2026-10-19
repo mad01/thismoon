@@ -67,7 +67,7 @@ Use the verdicts as rewrite targets: any section flagged `likely_ai` with high c
 
 This check is experimental: the rules, the profiles, and the glossary generation may change. A task brief, a step list, or a status report that one agent writes for another isn't prose to humanize. Check it against the STE rules instead. They ask for short sentences and one instruction per sentence. They flag -ing verb forms, helping-verb chains, and the synonyms that the repo's glossary bans.
 
-Call `humanizer_detect(text, profile="procedure")` for a brief or steps, or `profile="description"` for a report or summary. Add `repo=<absolute repo path>` to flag the synonyms its CONTEXT.md glossaries ban. Those STE.Glossary findings are suggestions: a glossary scopes a word to one sense, so check the sense before you swap the word. If the repo walk is denied under the MCP sandbox, run the CLI form the error names:
+Call `humanizer_detect(text, profile="procedure")` for a brief or steps, or `profile="description"` for a report or summary. Add `repo=<absolute repo path>` to flag the synonyms its CONTEXT.md glossaries ban. A CONTEXT.md applies to its own directory and below, so add `path=<file or directory>` when the text is about one place in the repo; without `path`, every glossary in the repo applies. Those STE.Glossary findings are suggestions: a glossary scopes a word to one sense, so check the sense before you swap the word. If the repo walk is denied under the MCP sandbox, run the CLI form the error names:
 
 ```bash
 printf '%s\n' "$BRIEF" | humanizer ste --profile procedure --repo /path/to/repo --json -

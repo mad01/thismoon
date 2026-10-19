@@ -6,13 +6,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/humanizer/internal/glossary"
 )
 
 const (
 	steCleanBrief  = "../../testdata/ste/brief-clean.md"
 	steSloppyBrief = "../../testdata/ste/brief-sloppy.md"
+	// steScopedRepo is a two-context fixture tree: a root glossary plus
+	// alpha/ and beta/ glossaries that apply only below their directories.
+	steScopedRepo = "../../testdata/ste/scoped"
+	// steRepoRoot is the thismoon checkout, four levels above this package.
+	steRepoRoot = "../../../.."
 )
 
 // runSTECmd executes `humanizer ste` with args and returns its output, the
@@ -22,7 +30,7 @@ const (
 func runSTECmd(t *testing.T, args ...string) (string, int, error) {
 	t.Helper()
 	t.Setenv("HUMANIZER_CACHE_DIR", t.TempDir())
-	steProfile, steRepo, steJSON, steMinSeverity, steGlossaryOut = "", "", false, "", ""
+	steProfile, steRepo, stePath, steJSON, steMinSeverity, steGlossaryOut = "", "", "", false, "", ""
 	pendingExitCode = 0
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -130,6 +138,10 @@ func TestSTECmdErrorsExitTwo(t *testing.T) {
 			name: "missing repo",
 			args: []string{"--profile", "procedure", "--repo", "/no/such/repo", steCleanBrief},
 		},
+		{
+			name: "path without repo",
+			args: []string{"--profile", "procedure", "--path", "README.md", steCleanBrief},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -167,5 +179,146 @@ func TestSTEGlossaryCmd(t *testing.T) {
 	}
 	if _, code, err := runSTECmd(t, "glossary"); err == nil || code != steExitError {
 		t.Errorf("glossary without --repo: exit %d, err %v; want %d", code, err, steExitError)
+	}
+}
+
+// glossaryMatches runs `humanizer ste --json` with args and returns the
+// matched text of its STE.Glossary findings.
+func glossaryMatches(t *testing.T, args ...string) []string {
+	t.Helper()
+	out, _, err := runSTECmd(t, append([]string{"--profile", "description", "--json"}, args...)...)
+	if err != nil {
+		t.Fatalf("ste %v: %v\n%s", args, err, out)
+	}
+	var payload struct {
+		Findings []struct {
+			RuleID string `json:"rule_id"`
+			Match  string `json:"match"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("decode payload: %v\n%s", err, out)
+	}
+	var matches []string
+	for _, f := range payload.Findings {
+		if f.RuleID == "STE.Glossary" {
+			matches = append(matches, f.Match)
+		}
+	}
+	return matches
+}
+
+// TestSTECmdScopesGlossaryByFile checks that a file argument picks the
+// glossaries on its own path, and that --path overrides it.
+func TestSTECmdScopesGlossaryByFile(t *testing.T) {
+	requireVale(t)
+	readme := filepath.Join(steScopedRepo, "README.md")
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "root file", args: []string{readme}, want: []string{"manifest", "worker"}},
+		{
+			name: "beta file",
+			args: []string{filepath.Join(steScopedRepo, "beta", "notes.md")},
+			want: []string{"manifest", "runner"},
+		},
+		{
+			name: "repo-relative path overrides the file argument",
+			args: []string{"--path", "alpha", readme},
+			want: []string{"manifest", "version", "worker", "slideshow"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := glossaryMatches(t, append([]string{"--repo", steScopedRepo}, tt.args...)...)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("glossary hits = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSTEGlossaryCmdPathIsRepoRelative checks that a relative --path names a
+// location under --repo, not under the working directory: the services/present
+// scope of this repo gives the present and root glossaries from any cwd.
+func TestSTEGlossaryCmdPathIsRepoRelative(t *testing.T) {
+	root, err := filepath.Abs(steRepoRoot)
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	repo, err := glossary.Load(root)
+	if err != nil {
+		t.Fatalf("load repo glossaries: %v", err)
+	}
+	want := repo.Rule("services/present")
+	if bytes.Equal(want, repo.Rule(".")) || bytes.Equal(want, repo.Rule("")) {
+		t.Fatal("services/present rule should differ from the root-only and every-context rules")
+	}
+	tests := []struct {
+		name     string
+		cwd      string
+		repoFlag string
+	}{
+		{name: "cwd outside the repo", cwd: t.TempDir(), repoFlag: root},
+		{
+			name:     "cwd in a repo subdirectory",
+			cwd:      filepath.Join(root, "tools", "humanizer"),
+			repoFlag: filepath.Join("..", ".."),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(tt.cwd)
+			file := filepath.Join(t.TempDir(), "Glossary.yml")
+			out, code, err := runSTECmd(
+				t, "glossary", "--repo", tt.repoFlag, "--path", "services/present", "-o", file,
+			)
+			if err != nil || code != 0 {
+				t.Fatalf("glossary --path: exit %d, err %v\n%s", code, err, out)
+			}
+			got, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatalf("read rule: %v", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("rule from %s is not the services/present rule:\n%s", tt.cwd, got)
+			}
+		})
+	}
+}
+
+// TestSTEGlossaryCmdPathAndWarnings checks that `ste glossary --path` prints
+// the scoped rule and that a synonym the rule cannot match is reported on
+// stderr instead of rendered.
+func TestSTEGlossaryCmdPathAndWarnings(t *testing.T) {
+	repo := t.TempDir()
+	root := "**Tool**:\nA CLI.\n_Avoid_: binary, --bin\n"
+	if err := os.WriteFile(filepath.Join(repo, "CONTEXT.md"), []byte(root), 0o600); err != nil {
+		t.Fatalf("write CONTEXT.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "deck"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	deck := "**Step**:\nOne press.\n_Avoid_: stage\n"
+	if err := os.WriteFile(filepath.Join(repo, "deck", "CONTEXT.md"), []byte(deck), 0o600); err != nil {
+		t.Fatalf("write deck/CONTEXT.md: %v", err)
+	}
+	readme := filepath.Join(repo, "README.md")
+	out, code, err := runSTECmd(t, "glossary", "--repo", repo, "--path", readme)
+	if err != nil || code != 0 {
+		t.Fatalf("glossary --path: exit %d, err %v\n%s", code, err, out)
+	}
+	if !strings.Contains(out, "'binary': 'Tool'") || strings.Contains(out, "'stage'") {
+		t.Errorf("rule at README.md should ban binary only:\n%s", out)
+	}
+	if !strings.Contains(out, `humanizer: CONTEXT.md:3: skipped "--bin"`) ||
+		strings.Contains(out, `'\-\-bin'`) {
+		t.Errorf("want a stderr warning for --bin and no swap key:\n%s", out)
+	}
+	out, _, err = runSTECmd(t, "glossary", "--repo", repo, "--path", filepath.Join(repo, "deck"))
+	if err != nil || !strings.Contains(out, "'stage': 'Step'") {
+		t.Errorf("rule at deck/ should ban stage: err %v\n%s", err, out)
 	}
 }

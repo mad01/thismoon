@@ -125,4 +125,4 @@ report ok while leaving the old binary in place.
 
 ## Domain language
 
-See `CONTEXT.md` for the glossary. Check `docs/adr/` before changing anything structural — the founding decisions are recorded there and are deliberate.
+See `CONTEXT-MAP.md` for the glossaries: the root `CONTEXT.md` holds the repo-wide terms, and a service or skill keeps its own terms in a CONTEXT.md beside it. Check `docs/adr/` before changing anything structural: the founding decisions are recorded there and are deliberate.

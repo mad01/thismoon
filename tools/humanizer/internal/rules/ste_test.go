@@ -2,12 +2,15 @@ package rules
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mad01/thismoon/tools/humanizer/internal/glossary"
 )
@@ -18,6 +21,9 @@ const (
 	// fixtureRepo holds a fixture CONTEXT.md, so glossary tests do not depend
 	// on the live glossaries of this repo.
 	fixtureRepo = "../../testdata/ste/repo"
+	// scopedRepo is a two-context fixture tree: a root glossary plus alpha/
+	// and beta/ glossaries that apply only below their own directories.
+	scopedRepo = "../../testdata/ste/scoped"
 	// repoRoot is the thismoon checkout, four levels above this package.
 	repoRoot = "../../../.."
 )
@@ -203,13 +209,24 @@ func detectText(t *testing.T, text string, opts DetectOptions) []Finding {
 	return findings
 }
 
-func fixtureGlossary(t *testing.T) []byte {
+// repoGlossary loads the glossaries under root and renders the rule for
+// target, failing the test when no rule applies.
+func repoGlossary(t *testing.T, root, target string) []byte {
 	t.Helper()
-	gloss, err := glossary.FromRepo(fixtureRepo)
-	if err != nil || gloss == nil {
-		t.Fatalf("glossary.FromRepo(%s) = %q, %v; want a rule", fixtureRepo, gloss, err)
+	repo, err := glossary.Load(root)
+	if err != nil {
+		t.Fatalf("glossary.Load(%s): %v", root, err)
+	}
+	gloss := repo.Rule(target)
+	if gloss == nil {
+		t.Fatalf("glossary rule for %s at %q is empty", root, target)
 	}
 	return gloss
+}
+
+func fixtureGlossary(t *testing.T) []byte {
+	t.Helper()
+	return repoGlossary(t, fixtureRepo, "")
 }
 
 func ruleIDs(findings []Finding) []string {
@@ -256,10 +273,7 @@ func TestBriefFixtures(t *testing.T) {
 // the finding count depends on what the glossaries ban.
 func TestRealRepoGlossaryLoads(t *testing.T) {
 	requireVale(t)
-	gloss, err := glossary.FromRepo(repoRoot)
-	if err != nil || gloss == nil {
-		t.Fatalf("glossary.FromRepo(repo root) = %q, %v; want a rule", gloss, err)
-	}
+	gloss := repoGlossary(t, repoRoot, "")
 	detectFixture(t, cleanBrief, DetectOptions{Profile: ProfileProcedure, Glossary: gloss})
 }
 
@@ -355,4 +369,195 @@ func TestDetectRejectsGlossaryWithoutProfile(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "only with a profile") {
 		t.Fatalf("Detect error = %v, want a glossary-needs-profile error", err)
 	}
+}
+
+// TestGlossaryScopedByContext runs the fixture tree's scoped rules through
+// vale: the same sentence is checked as a file in each context. A synonym
+// alpha bans is not flagged in beta's files, and "worker", which the root
+// glossary bans but beta defines as a term, is not flagged in beta's files.
+func TestGlossaryScopedByContext(t *testing.T) {
+	requireVale(t)
+	text, err := os.ReadFile(filepath.Join(scopedRepo, "README.md"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	tests := []struct {
+		target string
+		want   []string
+	}{
+		{target: "README.md", want: []string{"manifest", "worker"}},
+		{target: "alpha/notes.md", want: []string{"manifest", "version", "worker", "slideshow"}},
+		{target: "beta/notes.md", want: []string{"manifest", "runner"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			got := detectText(t, string(text), DetectOptions{
+				Profile:  ProfileDescription,
+				Glossary: repoGlossary(t, scopedRepo, tt.target),
+				Rules:    []string{glossaryRuleID},
+			})
+			var matches []string
+			for _, f := range got {
+				matches = append(matches, f.Match)
+			}
+			if !slices.Equal(matches, tt.want) {
+				t.Errorf("glossary hits = %q, want %q", matches, tt.want)
+			}
+		})
+	}
+}
+
+// TestBeingReportedOnce keeps one owner for "being": AuxiliaryChain reports
+// it and IngForm does not.
+func TestBeingReportedOnce(t *testing.T) {
+	requireVale(t)
+	got := detectText(t, "The file is being updated.\n", DetectOptions{Profile: ProfileDescription})
+	if len(got) != 1 || got[0].RuleID != "STE.AuxiliaryChain" || got[0].Match != "being" {
+		t.Errorf("findings = %+v, want one STE.AuxiliaryChain hit on being", got)
+	}
+}
+
+// TestGlossaryRuleNeedsGlossary turns a run that asks for STE.Glossary with
+// no glossary into an error, instead of a run that silently finds nothing.
+func TestGlossaryRuleNeedsGlossary(t *testing.T) {
+	_, err := Detect(context.Background(), "Delete it.\n", DetectOptions{
+		CacheDir: t.TempDir(),
+		Profile:  ProfileDescription,
+		Rules:    []string{glossaryRuleID},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no glossary to check") {
+		t.Fatalf("Detect error = %v, want a no-glossary error", err)
+	}
+}
+
+// makeRunDirs creates one directory under runRoot per name, last used at its
+// time.
+func makeRunDirs(t *testing.T, runRoot string, ages map[string]time.Time) {
+	t.Helper()
+	for name, at := range ages {
+		dir := filepath.Join(runRoot, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.Chtimes(dir, at, at); err != nil {
+			t.Fatalf("chtimes: %v", err)
+		}
+	}
+}
+
+// TestEnsureSTERunDirPrunes checks the run dir housekeeping: a run prunes the
+// directories unused for longer than runDirMaxAge and the tombstones of an
+// earlier prune, and keeps recent ones and its own, even when its own
+// directory is older on disk.
+func TestEnsureSTERunDirPrunes(t *testing.T) {
+	cache := t.TempDir()
+	runRoot := filepath.Join(cache, steRunRoot)
+	gloss := glossary.Render([]glossary.Substitution{{Avoid: "delete", Use: "Retract"}}, nil)
+	old := time.Now().Add(-runDirMaxAge - time.Hour)
+	recent := time.Now().Add(-time.Hour)
+	leftover := "stale" + tombstoneMark + "leftover"
+	makeRunDirs(t, runRoot, map[string]time.Time{
+		"stale": old, "recent": recent, runKey(gloss): old, leftover: recent,
+	})
+	if _, err := ensureSTERunDir(cache, gloss); err != nil {
+		t.Fatalf("ensureSTERunDir: %v", err)
+	}
+	wantKept := map[string]bool{
+		"stale":       false,
+		"recent":      true,
+		runKey(gloss): true,
+		leftover:      false,
+	}
+	for name, want := range wantKept {
+		_, err := os.Stat(filepath.Join(runRoot, name))
+		if kept := err == nil; kept != want {
+			t.Errorf("run dir %s kept = %v (stat err %v), want %v", name, kept, err, want)
+		}
+	}
+	entries, err := os.ReadDir(runRoot)
+	if err != nil || len(entries) != 2 {
+		t.Errorf(
+			"run root holds %d entries (err %v), want recent and the run's own",
+			len(entries),
+			err,
+		)
+	}
+}
+
+// TestEnsureSTERunDirPruneIsBestEffort checks that a prune that cannot do its
+// work never fails the run: a stale directory that cannot be removed, a run
+// root that refuses the rename, and a run root that is gone.
+func TestEnsureSTERunDirPruneIsBestEffort(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permissions this test relies on")
+	}
+	old := time.Now().Add(-runDirMaxAge - time.Hour)
+	t.Run("stale dir that cannot be removed", func(t *testing.T) {
+		cache := t.TempDir()
+		runRoot := filepath.Join(cache, steRunRoot)
+		locked := filepath.Join(runRoot, "stale", "locked")
+		if err := os.MkdirAll(locked, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(locked, "rule.yml"), nil, 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		lockDir(t, locked, cache)
+		makeRunDirs(t, runRoot, map[string]time.Time{"stale": old})
+		for run := range 2 {
+			if _, err := ensureSTERunDir(cache, nil); err != nil {
+				t.Fatalf("run %d: ensureSTERunDir: %v", run, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(runRoot, "stale")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("stale dir under its own name: stat err %v, want not exist", err)
+		}
+		tombstones, err := filepath.Glob(filepath.Join(runRoot, "stale"+tombstoneMark+"*"))
+		if err != nil || len(tombstones) != 1 {
+			t.Errorf(
+				"tombstones = %v (err %v), want the one that could not be removed",
+				tombstones,
+				err,
+			)
+		}
+	})
+	t.Run("run root that refuses the rename", func(t *testing.T) {
+		cache := t.TempDir()
+		runRoot := filepath.Join(cache, steRunRoot)
+		if _, err := ensureSTERunDir(cache, nil); err != nil {
+			t.Fatalf("first ensureSTERunDir: %v", err)
+		}
+		makeRunDirs(t, runRoot, map[string]time.Time{"stale": old})
+		lockDir(t, runRoot, cache)
+		if _, err := ensureSTERunDir(cache, nil); err != nil {
+			t.Fatalf("ensureSTERunDir: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(runRoot, "stale")); err != nil {
+			t.Errorf("stale dir should stay for a later run: stat err %v", err)
+		}
+	})
+	t.Run("run root that is gone", func(t *testing.T) {
+		pruneRunDirs(filepath.Join(t.TempDir(), "gone"), time.Now())
+	})
+}
+
+// lockDir makes dir read-only, so nothing in it can be created, renamed, or
+// removed. At cleanup it makes every directory under root writable again, so
+// t.TempDir can remove root even after a prune moved dir.
+func lockDir(t *testing.T, dir, root string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() {
+		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return err
+			}
+			return os.Chmod(p, 0o755)
+		})
+		if err != nil {
+			t.Errorf("unlock %s: %v", root, err)
+		}
+	})
 }

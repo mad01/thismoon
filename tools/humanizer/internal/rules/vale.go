@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -163,6 +164,12 @@ func runVale(ctx context.Context, filePath string, opts DetectOptions) ([]Findin
 	}
 	if opts.Profile == "" && len(opts.Glossary) > 0 {
 		return nil, errors.New("rules: a glossary runs only with a profile")
+	}
+	if len(opts.Glossary) == 0 && slices.Contains(opts.Rules, glossaryRuleID) {
+		return nil, errors.New(
+			"rules: " + glossaryRuleID + " has no glossary to check: " +
+				"pass a repo whose CONTEXT.md files have _Avoid_ lines that apply to this text",
+		)
 	}
 	cfg, err := prepareConfig(opts)
 	if err != nil {
