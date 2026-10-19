@@ -113,7 +113,7 @@ humanizer ste glossary --repo . -o /tmp/Glossary.yml
 |---|---|
 | `--profile` | Required: `procedure` (task briefs, steps) or `description` (status reports, summaries) |
 | `--repo` | Add the STE.Glossary substitutions from the CONTEXT.md files under this path |
-| `--path` | The file or directory the text belongs to; only the glossaries on its path apply. Defaults to the file argument; stdin without it gets every glossary |
+| `--path` | The file or directory the text belongs to, relative to the repo root or absolute, in the letter case of the checkout; only the glossaries on its path apply. Defaults to the file argument; stdin without it gets every glossary |
 | `--min-severity` | Filter findings below this level; `warning` drops the Glossary suggestions |
 | `--json` | Emit the `humanizer_detect` payload plus a `profile` field |
 

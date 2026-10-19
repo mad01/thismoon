@@ -1,11 +1,10 @@
 package rules
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -53,6 +52,9 @@ const (
 	// scope in recent use, however many there are, while a revision nobody
 	// runs any more goes away.
 	runDirMaxAge = 7 * 24 * time.Hour
+	// tombstoneMark joins a pruned run directory's name and a random suffix
+	// in the name it gets just before its removal. Run keys never contain it.
+	tombstoneMark = ".gone-"
 )
 
 // steValeIni is the vale config of an STE run directory. StylesPath resolves
@@ -125,7 +127,8 @@ func ruleFilter(profile Profile, requested []string) ([]string, error) {
 //
 // Each run marks its directory as used by setting its mtime before it writes
 // anything, then prunes the run directories nobody used for runDirMaxAge, so
-// one directory per glossary revision does not pile up.
+// one directory per glossary revision does not pile up. A failed prune never
+// fails the run.
 func ensureSTERunDir(cacheDir string, gloss []byte) (string, error) {
 	runRoot := filepath.Join(cacheDir, steRunRoot)
 	dir := filepath.Join(runRoot, runKey(gloss))
@@ -146,9 +149,7 @@ func ensureSTERunDir(cacheDir string, gloss []byte) (string, error) {
 	if err := writeFileIfChanged(cfg, []byte(steValeIni)); err != nil {
 		return "", err
 	}
-	if err := pruneRunDirs(runRoot, now.Add(-runDirMaxAge)); err != nil {
-		return "", err
-	}
+	pruneRunDirs(runRoot, now.Add(-runDirMaxAge))
 	return cfg, nil
 }
 
@@ -165,33 +166,43 @@ func touchDir(dir string, now time.Time) error {
 }
 
 // pruneRunDirs removes the run directories under runRoot whose last use is
-// before cutoff. A directory that another run removes first is skipped. A
-// run that picks up a directory in the moment it is pruned can fail once; a
-// directory in use is never pruned, because its own run just touched it.
-func pruneRunDirs(runRoot string, cutoff time.Time) error {
+// before cutoff, and the tombstones an earlier prune left behind. It renames
+// a stale directory to a tombstone name before it removes it, so the run
+// directory goes away in one step, not file by file. A run that uses the
+// directory just after the rename finds no vale config and fails, where a
+// removal in progress could leave it a config with only part of the rules.
+// One narrow window stays: a rename in the middle of a run's own writes
+// leaves that run a new directory with only the files it wrote after the
+// rename. A directory in use is never pruned, because its own run just
+// touched it.
+//
+// Pruning is housekeeping, so it is best effort and reports no errors: a
+// directory that another run pruned first, or that cannot be renamed or
+// removed, stays for a later run and never fails this one.
+func pruneRunDirs(runRoot string, cutoff time.Time) {
 	entries, err := os.ReadDir(runRoot)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", runRoot, err)
+		return
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
+		dir := filepath.Join(runRoot, e.Name())
+		if strings.Contains(e.Name(), tombstoneMark) {
+			_ = os.RemoveAll(dir)
+			continue
+		}
 		info, err := e.Info()
-		if errors.Is(err, fs.ErrNotExist) {
+		if err != nil || !info.ModTime().Before(cutoff) {
 			continue
 		}
-		if err != nil {
-			return fmt.Errorf("stat %s: %w", e.Name(), err)
-		}
-		if !info.ModTime().Before(cutoff) {
+		tombstone := dir + tombstoneMark + rand.Text()
+		if err := os.Rename(dir, tombstone); err != nil {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(runRoot, e.Name())); err != nil {
-			return fmt.Errorf("prune STE run dir %s: %w", e.Name(), err)
-		}
+		_ = os.RemoveAll(tombstone)
 	}
-	return nil
 }
 
 // runKey names the run directory for a glossary: defaultRunKey without one,

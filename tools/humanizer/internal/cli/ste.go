@@ -44,9 +44,9 @@ With --repo, the _Avoid_ lists of the repo's CONTEXT.md files become
 STE.Glossary substitutions, reported at suggestion level. A CONTEXT.md
 applies to its own directory and everything below it, so a file argument
 inside the repo gets only the glossaries on its path. --path names that
-location for text on stdin; text with no location inside the repo gets
-every glossary. Synonyms a glossary bans in a form the rule cannot match
-are skipped with a warning on stderr.
+location for text on stdin, relative to the repo root or absolute; text
+with no location inside the repo gets every glossary. Synonyms a glossary
+bans in a form the rule cannot match are skipped with a warning on stderr.
 
 Exit codes: 0 clean, 1 findings, 2 error. Integrations parse the --json
 payload, not the exit code.`,
@@ -64,9 +64,9 @@ var steGlossaryCmd = &cobra.Command{
 	Use:   "glossary",
 	Short: "Print the STE.Glossary rule generated from a repo's CONTEXT.md files (experimental)",
 	Long: `Print the STE.Glossary rule generated from a repo's CONTEXT.md files. With
---path, the rule holds only the glossaries that apply at that file or
-directory; without it, every glossary in the repo. The command is
-experimental.`,
+--path (relative to the repo root, or absolute), the rule holds only the
+glossaries that apply at that file or directory; without it, every glossary
+in the repo. The command is experimental.`,
 	Args: steNoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return withExitCode(steExitError, runSTEGlossary(cmd))
@@ -77,7 +77,8 @@ func init() {
 	steCmd.PersistentFlags().StringVar(&steRepo, "repo", "",
 		"repo whose CONTEXT.md glossaries become STE.Glossary substitutions")
 	steCmd.PersistentFlags().StringVar(&stePath, "path", "",
-		"file or directory the text belongs to; only the glossaries on its path apply "+
+		"file or directory the text belongs to (repo-relative, or absolute; the letter "+
+			"case must match the checkout); only the glossaries on its path apply "+
 			"(default: the file argument)")
 	steCmd.Flags().StringVar(&steProfile, "profile", "",
 		"rule set: procedure (briefs, steps) or description (reports, summaries)")
@@ -127,7 +128,11 @@ func runSTE(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	gloss, err := repoGlossary(cmd.ErrOrStderr(), glossaryLocation(args))
+	location, err := glossaryLocation(args)
+	if err != nil {
+		return err
+	}
+	gloss, err := repoGlossary(cmd.ErrOrStderr(), location)
 	if err != nil {
 		return err
 	}
@@ -149,20 +154,28 @@ func runSTE(cmd *cobra.Command, args []string) error {
 }
 
 // glossaryLocation is where the checked text lives, for glossary scoping:
-// --path, else the file argument, else nowhere.
-func glossaryLocation(args []string) string {
+// --path as given, else the file argument made absolute, else nowhere. A
+// relative --path is repo-relative, the same as the MCP path field, while a
+// relative file argument is relative to the working directory, like any
+// file a shell names.
+func glossaryLocation(args []string) (string, error) {
 	if stePath != "" {
-		return stePath
+		return stePath, nil
 	}
 	if len(args) == 1 && args[0] != "-" {
-		return args[0]
+		abs, err := filepath.Abs(args[0])
+		if err != nil {
+			return "", fmt.Errorf("resolve %s: %w", args[0], err)
+		}
+		return abs, nil
 	}
-	return ""
+	return "", nil
 }
 
 // repoGlossary returns the glossary rule of --repo for text at location, or
-// nil without a repo. It prints the _Avoid_ pieces the glossaries skip to
-// stderr, so a broken line is visible without failing the check.
+// nil without a repo. location is absolute, relative to the repo root, or
+// empty for every glossary. It prints the _Avoid_ pieces the glossaries skip
+// to stderr, so a broken line is visible without failing the check.
 func repoGlossary(stderr io.Writer, location string) ([]byte, error) {
 	if steRepo == "" {
 		if stePath != "" {
@@ -177,14 +190,7 @@ func repoGlossary(stderr io.Writer, location string) ([]byte, error) {
 	for _, w := range repo.Warnings() {
 		fmt.Fprintf(stderr, "humanizer: %s\n", w)
 	}
-	if location == "" {
-		return repo.Rule(""), nil
-	}
-	abs, err := filepath.Abs(location)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", location, err)
-	}
-	return repo.Rule(repo.Target(abs)), nil
+	return repo.Rule(repo.Target(location)), nil
 }
 
 func printSTE(w io.Writer, profile rules.Profile, findings []rules.Finding) error {

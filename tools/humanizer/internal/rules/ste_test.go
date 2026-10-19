@@ -2,6 +2,8 @@ package rules
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -428,16 +430,10 @@ func TestGlossaryRuleNeedsGlossary(t *testing.T) {
 	}
 }
 
-// TestEnsureSTERunDirPrunes checks the run dir housekeeping: a run prunes the
-// directories unused for longer than runDirMaxAge and keeps recent ones and
-// its own, even when its own directory is older on disk.
-func TestEnsureSTERunDirPrunes(t *testing.T) {
-	cache := t.TempDir()
-	runRoot := filepath.Join(cache, steRunRoot)
-	gloss := glossary.Render([]glossary.Substitution{{Avoid: "delete", Use: "Retract"}}, nil)
-	old := time.Now().Add(-runDirMaxAge - time.Hour)
-	recent := time.Now().Add(-time.Hour)
-	ages := map[string]time.Time{"stale": old, "recent": recent, runKey(gloss): old}
+// makeRunDirs creates one directory under runRoot per name, last used at its
+// time.
+func makeRunDirs(t *testing.T, runRoot string, ages map[string]time.Time) {
+	t.Helper()
 	for name, at := range ages {
 		dir := filepath.Join(runRoot, name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -447,13 +443,121 @@ func TestEnsureSTERunDirPrunes(t *testing.T) {
 			t.Fatalf("chtimes: %v", err)
 		}
 	}
+}
+
+// TestEnsureSTERunDirPrunes checks the run dir housekeeping: a run prunes the
+// directories unused for longer than runDirMaxAge and the tombstones of an
+// earlier prune, and keeps recent ones and its own, even when its own
+// directory is older on disk.
+func TestEnsureSTERunDirPrunes(t *testing.T) {
+	cache := t.TempDir()
+	runRoot := filepath.Join(cache, steRunRoot)
+	gloss := glossary.Render([]glossary.Substitution{{Avoid: "delete", Use: "Retract"}}, nil)
+	old := time.Now().Add(-runDirMaxAge - time.Hour)
+	recent := time.Now().Add(-time.Hour)
+	leftover := "stale" + tombstoneMark + "leftover"
+	makeRunDirs(t, runRoot, map[string]time.Time{
+		"stale": old, "recent": recent, runKey(gloss): old, leftover: recent,
+	})
 	if _, err := ensureSTERunDir(cache, gloss); err != nil {
 		t.Fatalf("ensureSTERunDir: %v", err)
 	}
-	for name, wantKept := range map[string]bool{"stale": false, "recent": true, runKey(gloss): true} {
+	wantKept := map[string]bool{
+		"stale":       false,
+		"recent":      true,
+		runKey(gloss): true,
+		leftover:      false,
+	}
+	for name, want := range wantKept {
 		_, err := os.Stat(filepath.Join(runRoot, name))
-		if kept := err == nil; kept != wantKept {
-			t.Errorf("run dir %s kept = %v (stat err %v), want %v", name, kept, err, wantKept)
+		if kept := err == nil; kept != want {
+			t.Errorf("run dir %s kept = %v (stat err %v), want %v", name, kept, err, want)
 		}
 	}
+	entries, err := os.ReadDir(runRoot)
+	if err != nil || len(entries) != 2 {
+		t.Errorf(
+			"run root holds %d entries (err %v), want recent and the run's own",
+			len(entries),
+			err,
+		)
+	}
+}
+
+// TestEnsureSTERunDirPruneIsBestEffort checks that a prune that cannot do its
+// work never fails the run: a stale directory that cannot be removed, a run
+// root that refuses the rename, and a run root that is gone.
+func TestEnsureSTERunDirPruneIsBestEffort(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permissions this test relies on")
+	}
+	old := time.Now().Add(-runDirMaxAge - time.Hour)
+	t.Run("stale dir that cannot be removed", func(t *testing.T) {
+		cache := t.TempDir()
+		runRoot := filepath.Join(cache, steRunRoot)
+		locked := filepath.Join(runRoot, "stale", "locked")
+		if err := os.MkdirAll(locked, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(locked, "rule.yml"), nil, 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		lockDir(t, locked, cache)
+		makeRunDirs(t, runRoot, map[string]time.Time{"stale": old})
+		for run := range 2 {
+			if _, err := ensureSTERunDir(cache, nil); err != nil {
+				t.Fatalf("run %d: ensureSTERunDir: %v", run, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(runRoot, "stale")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("stale dir under its own name: stat err %v, want not exist", err)
+		}
+		tombstones, err := filepath.Glob(filepath.Join(runRoot, "stale"+tombstoneMark+"*"))
+		if err != nil || len(tombstones) != 1 {
+			t.Errorf(
+				"tombstones = %v (err %v), want the one that could not be removed",
+				tombstones,
+				err,
+			)
+		}
+	})
+	t.Run("run root that refuses the rename", func(t *testing.T) {
+		cache := t.TempDir()
+		runRoot := filepath.Join(cache, steRunRoot)
+		if _, err := ensureSTERunDir(cache, nil); err != nil {
+			t.Fatalf("first ensureSTERunDir: %v", err)
+		}
+		makeRunDirs(t, runRoot, map[string]time.Time{"stale": old})
+		lockDir(t, runRoot, cache)
+		if _, err := ensureSTERunDir(cache, nil); err != nil {
+			t.Fatalf("ensureSTERunDir: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(runRoot, "stale")); err != nil {
+			t.Errorf("stale dir should stay for a later run: stat err %v", err)
+		}
+	})
+	t.Run("run root that is gone", func(t *testing.T) {
+		pruneRunDirs(filepath.Join(t.TempDir(), "gone"), time.Now())
+	})
+}
+
+// lockDir makes dir read-only, so nothing in it can be created, renamed, or
+// removed. At cleanup it makes every directory under root writable again, so
+// t.TempDir can remove root even after a prune moved dir.
+func lockDir(t *testing.T, dir, root string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() {
+		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return err
+			}
+			return os.Chmod(p, 0o755)
+		})
+		if err != nil {
+			t.Errorf("unlock %s: %v", root, err)
+		}
+	})
 }

@@ -1,8 +1,14 @@
 # factory
 
 Running a plan with worker subagents on top of the loom. These terms apply to
-the files under `skills/factory/`; the loom terms are in `skills/loom/CONTEXT.md`
-and the repo-wide terms in the root CONTEXT.md.
+the files under `skills/factory/`; the repo-wide terms are in the root
+CONTEXT.md.
+
+The factory builds on the loom vocabulary, such as the weaver and the claimed
+worktree, but those terms stay in `skills/loom/CONTEXT.md` by design. A
+path-scoped check of a file under `skills/factory/` applies this glossary and
+the root one only. A factory worker message is checked without a path, so it
+gets every glossary, the loom one included.
 
 ## Language
 

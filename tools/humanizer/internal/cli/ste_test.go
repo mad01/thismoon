@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/humanizer/internal/glossary"
 )
 
 const (
@@ -17,6 +19,8 @@ const (
 	// steScopedRepo is a two-context fixture tree: a root glossary plus
 	// alpha/ and beta/ glossaries that apply only below their directories.
 	steScopedRepo = "../../testdata/ste/scoped"
+	// steRepoRoot is the thismoon checkout, four levels above this package.
+	steRepoRoot = "../../../.."
 )
 
 // runSTECmd executes `humanizer ste` with args and returns its output, the
@@ -221,8 +225,8 @@ func TestSTECmdScopesGlossaryByFile(t *testing.T) {
 			want: []string{"manifest", "runner"},
 		},
 		{
-			name: "path overrides the file argument",
-			args: []string{"--path", filepath.Join(steScopedRepo, "alpha"), readme},
+			name: "repo-relative path overrides the file argument",
+			args: []string{"--path", "alpha", readme},
 			want: []string{"manifest", "version", "worker", "slideshow"},
 		},
 	}
@@ -231,6 +235,55 @@ func TestSTECmdScopesGlossaryByFile(t *testing.T) {
 			got := glossaryMatches(t, append([]string{"--repo", steScopedRepo}, tt.args...)...)
 			if !slices.Equal(got, tt.want) {
 				t.Errorf("glossary hits = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSTEGlossaryCmdPathIsRepoRelative checks that a relative --path names a
+// location under --repo, not under the working directory: the services/present
+// scope of this repo gives the present and root glossaries from any cwd.
+func TestSTEGlossaryCmdPathIsRepoRelative(t *testing.T) {
+	root, err := filepath.Abs(steRepoRoot)
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	repo, err := glossary.Load(root)
+	if err != nil {
+		t.Fatalf("load repo glossaries: %v", err)
+	}
+	want := repo.Rule("services/present")
+	if bytes.Equal(want, repo.Rule(".")) || bytes.Equal(want, repo.Rule("")) {
+		t.Fatal("services/present rule should differ from the root-only and every-context rules")
+	}
+	tests := []struct {
+		name     string
+		cwd      string
+		repoFlag string
+	}{
+		{name: "cwd outside the repo", cwd: t.TempDir(), repoFlag: root},
+		{
+			name:     "cwd in a repo subdirectory",
+			cwd:      filepath.Join(root, "tools", "humanizer"),
+			repoFlag: filepath.Join("..", ".."),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(tt.cwd)
+			file := filepath.Join(t.TempDir(), "Glossary.yml")
+			out, code, err := runSTECmd(
+				t, "glossary", "--repo", tt.repoFlag, "--path", "services/present", "-o", file,
+			)
+			if err != nil || code != 0 {
+				t.Fatalf("glossary --path: exit %d, err %v\n%s", code, err, out)
+			}
+			got, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatalf("read rule: %v", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("rule from %s is not the services/present rule:\n%s", tt.cwd, got)
 			}
 		})
 	}
