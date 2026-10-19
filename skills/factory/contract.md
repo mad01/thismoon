@@ -69,15 +69,18 @@ Vocabulary comes from the repo's `CONTEXT.md` glossaries: use the bold term,
 never a synonym its `_Avoid_` line bans. The official STE dictionary is not
 used.
 
-Check a message before you send it:
+Check a message before you send it. Write it to a file first: a shell
+variable set in one Bash call is gone by the next, and an assignment in
+front of a command matches no allow rule.
 
 ```sh
-printf '%s' "$MSG" | humanizer ste --profile procedure --repo <checkout> -
-printf '%s' "$MSG" | humanizer ste --profile description --repo <checkout> -
+humanizer ste --profile procedure --repo <checkout> <file holding the task>
+humanizer ste --profile description --repo <checkout> <file holding the report>
 ```
 
 Exit 0 is clean, 1 means findings, 2 is an error. The `humanizer_detect` MCP
-tool takes the same `profile` and `repo` parameters. A denial or a tool error
+tool takes the same `profile` and `repo` parameters, and a worker, which
+writes no file outside its worktree, checks with it. A denial or a tool error
 goes verbatim into a fenced code block, and the STE rules apply only to the
 words outside it. Never paraphrase a denial to make it pass.
 

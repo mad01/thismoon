@@ -67,7 +67,7 @@ pass looks like this:
 belt doctor                                  # exit 0
 events doctor                                # exit 0, or events_doctor over MCP
 present doctor                               # exit 0, or present_doctor over MCP
-git var GIT_AUTHOR_IDENT                     # Name <email> 1760882400 +0200
+git var GIT_AUTHOR_IDENT                     # Name <email> 1792411200 +0200
 git var GIT_COMMITTER_IDENT                  # the same name and email
 git -C ~/.worktrees/thismoon/alexander-readme-doctor-deps status --porcelain      # prints nothing
 git -C ~/.worktrees/thismoon/alexander-readme-doctor-events status --porcelain    # prints nothing
@@ -127,10 +127,11 @@ Name the two READMEs you used as the form.
 
 The deps task has the same shape with six steps: three edits, `make -C
 services/deps test`, `humanizer detect`, then the commit and `ready`. Check
-a task before it goes out:
+a task before it goes out. Write it to a file with the Write tool. Run the
+check on that file:
 
 ```sh
-printf '%s' "$TASK" | humanizer ste --profile procedure --repo ~/code/src/github.com/mad01/thismoon -
+humanizer ste --profile procedure --repo ~/code/src/github.com/mad01/thismoon /tmp/readme-doctor-events-task.txt
 ```
 
 Then spawn the worker with the definition for the unit's effort, the task
@@ -216,9 +217,11 @@ answer: Put the list in README.md, as a section named "doctor checks". One file 
 
 ### A blocked message and the round trip after it
 
-The deps worker meets a denial at step 4, the test gate. It sends
+The deps worker meets a denial at step 4, the test gate. This run's allow
+list has no make rule, so Claude Code denies the call. The cause is the
+allow list, not the `-C` form from the brief. The worker sends
 `blocked` with the denial copied exactly, lists every step it did not do,
-and does not retry the call. The outer fence has four backticks so the
+and does not retry it. The outer fence has four backticks so the
 inner block shows:
 
 ````
@@ -290,11 +293,11 @@ files changed:
 - services/deps/README.md
 
 gates run:
-- `humanizer detect services/deps/README.md`: no findings
+- `humanizer detect ~/.worktrees/thismoon/alexander-readme-doctor-deps/services/deps/README.md`: no findings
 
 commit range: 3aa0a4e..b17c0d2
 
-gate the user ran: `make -C services/deps test`, passed in my worktree before this commit.
+gate the user ran: `make -C ~/.worktrees/thismoon/alexander-readme-doctor-deps/services/deps test`, passed before this commit.
 ```
 
 The orchestrator checks that the three fields are there and hands the
@@ -378,9 +381,11 @@ case. The other is one session that does the cases in turn. Run it from
 `tools/factory-eval`, so the default `--cases` resolves. The binary comes
 from `make install` there; `go run ./cmd/factory-eval` works without it. A
 dry run costs nothing and rehearses everything but the model calls. A paid
-run is started by hand:
+run is started by hand. Both run against a dedicated clone that no other
+session works in:
 
 ```sh
+git clone ~/code/src/github.com/mad01/thismoon ~/factory-eval-source
 cd tools/factory-eval
 factory-eval run --dry-run --repo ~/factory-eval-source --out ~/factory-eval-results
 factory-eval run --repo ~/factory-eval-source --tiers mid --runs 1 --out ~/factory-eval-results
@@ -392,10 +397,19 @@ factory.
 
 ## Checking a message before it goes out
 
+Write the message to a file with the Write tool, and check the file. A
+shell variable is gone by the next tool call, and an assignment matches no
+allow rule.
+
 ```sh
-printf '%s' "$TASK"  | humanizer ste --profile procedure   --repo ~/code/src/github.com/mad01/thismoon -
-printf '%s' "$READY" | humanizer ste --profile description --repo ~/code/src/github.com/mad01/thismoon -
+humanizer ste --profile procedure   --repo ~/code/src/github.com/mad01/thismoon /tmp/readme-doctor-events-task.txt
+humanizer ste --profile description --repo ~/.worktrees/thismoon/alexander-readme-doctor-deps /tmp/readme-doctor-deps-ready.txt
 ```
+
+The first line checks a task against the canonical checkout. The second
+checks a ready message against the worker's worktree, the form the brief
+gives a worker. Here the orchestrator runs it on the message it got,
+because a worker edits no file outside its worktree.
 
 Exit 0 is clean, 1 means findings, 2 is an error. Over MCP,
 `humanizer_detect` takes the same `profile` and `repo`. A denial inside a
@@ -404,11 +418,12 @@ pass.
 
 ## What runs have shown
 
-- A worker starts in the orchestrator's working directory, not in its
-  worktree. The brief tells it to run `pwd` first and then to use `git -C
-  <worktree>`, `make -C` and `go test -C` from where it is. A `cd` out of
-  the start directory is denied in dontAsk mode together with every
-  command after it, whatever the allow list says.
+- A worker spawned as a subagent starts in the orchestrator's working
+  directory, not in its worktree. The brief tells it to run `pwd` first.
+  If `pwd` prints another path, it uses `git -C <worktree>`, `make -C` and
+  `go test -C` from where it is. In dontAsk mode, a `cd` out of the start
+  directory followed by a command that needs an allow rule is denied. No
+  entry in the allow list changes that.
 - Spawn every worker of a wave in one message, and name each one. An
   unnamed worker cannot message you; its final reply is its message.
 - Messages cross. An answer sent while the worker is mid-turn is read at
