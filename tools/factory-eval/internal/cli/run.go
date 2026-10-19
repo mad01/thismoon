@@ -26,15 +26,16 @@ import (
 )
 
 type runOptions struct {
-	casesPath string
-	dryRun    bool
-	arms      []string
-	tiers     []string
-	runs      int
-	runsSet   bool
-	out       string
-	repo      string
-	tempDir   string
+	casesPath        string
+	dryRun           bool
+	arms             []string
+	tiers            []string
+	runs             int
+	runsSet          bool
+	out              string
+	repo             string
+	tempDir          string
+	allowUnsandboxed bool
 }
 
 func runCmd() *cobra.Command {
@@ -67,19 +68,25 @@ same checkouts, same checks, same results file.`,
 	c.Flags().StringVar(&o.repo, "repo", "", "repo to clone (default: the cases file's)")
 	c.Flags().
 		StringVar(&o.tempDir, "temp-dir", "", "parent of the throwaway checkouts (default: system temp)")
+	c.Flags().BoolVar(&o.allowUnsandboxed, "allow-unsandboxed", false,
+		"run a paid batch although the user's sandbox exclusions leave commands unsandboxed")
 	return c
 }
 
 // batch is a run's resolved plan: what runs, at what cost, against what.
+// unsandboxed is the user's sandbox exclusions a run cannot deny, and
+// allowUnsandboxed whether the user accepted them for a paid batch.
 type batch struct {
-	file    *cases.File
-	arms    []string
-	tiers   []cases.Tier
-	runs    int
-	source  string
-	env     prereq.Env
-	common  []prereq.Result
-	factory []prereq.Result
+	file             *cases.File
+	arms             []string
+	tiers            []cases.Tier
+	runs             int
+	source           string
+	env              prereq.Env
+	common           []prereq.Result
+	factory          []prereq.Result
+	unsandboxed      []string
+	allowUnsandboxed bool
 }
 
 func (b batch) prereqs() []prereq.Result { return append(slices.Clone(b.common), b.factory...) }
@@ -131,6 +138,8 @@ func plan(ctx context.Context, o runOptions) (batch, error) {
 	if b.env, err = hostEnv(ctx); err != nil {
 		return batch{}, err
 	}
+	b.unsandboxed = eval.Unsandboxed(b.env.SandboxExclusions)
+	b.allowUnsandboxed = o.allowUnsandboxed
 	if b.source, err = resolveSource(f.Repo, o.repo); err != nil {
 		return batch{}, err
 	}
@@ -265,8 +274,9 @@ func selectTiers(f *cases.File, names []string) ([]cases.Tier, error) {
 }
 
 // gate refuses a paid run before it spends anything: no valid sign-off of
-// the file as it is now, a missing prerequisite, or a worst case above the
-// batch ceiling.
+// the file as it is now, a missing prerequisite, commands the user's
+// settings leave unsandboxed without the flag that accepts them, or a worst
+// case above the batch ceiling.
 func gate(b batch) error {
 	if err := b.file.CheckSignOff(); err != nil {
 		return fmt.Errorf("the cases file is not signed off for a paid run:\n%w\n"+
@@ -278,6 +288,12 @@ func gate(b batch) error {
 	}
 	if failed := prereq.Failed(b.factory); len(failed) > 0 {
 		return errors.New(prereq.Explain(eval.ArmFactory, failed))
+	}
+	if len(b.unsandboxed) > 0 && !b.allowUnsandboxed {
+		return fmt.Errorf("the user's settings exclude %s from the sandbox and the run cannot "+
+			"deny them, so those calls would run unsandboxed, gated only by the permission rules "+
+			"and the fingerprint. Pass --allow-unsandboxed to accept that for this batch",
+			strings.Join(b.unsandboxed, ", "))
 	}
 	worst := eval.WorstCaseUSD(b.file, len(b.arms), b.tiers, b.runs)
 	if worst > b.file.BatchCeilingUSD {

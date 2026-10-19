@@ -34,8 +34,15 @@ func TestGoBuildCacheWantsAnAbsolutePath(t *testing.T) {
 	}
 }
 
-func TestSandboxExclusionsReadsTheUsersList(t *testing.T) {
+// TestSandboxExclusionsReadsTheUsersAndTheManagedList: no file means no
+// exclusions, the user's list is read from the config dir, the managed
+// file's entries are added, and a broken file fails the batch.
+func TestSandboxExclusionsReadsTheUsersAndTheManagedList(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home := t.TempDir()
+	managed := filepath.Join(t.TempDir(), "managed-settings.json")
+	t.Cleanup(func(old string) func() { return func() { managedSettings = old } }(managedSettings))
+	managedSettings = managed
 	if got, err := SandboxExclusions(home); err != nil || got != nil {
 		t.Errorf("SandboxExclusions(no file) = %q, %v; want nil, nil", got, err)
 	}
@@ -43,9 +50,33 @@ func TestSandboxExclusionsReadsTheUsersList(t *testing.T) {
 	writeFile(t, p, `{"sandbox":{"enabled":false,"excludedCommands":["git:*","pip3:*"]}}`)
 	got, err := SandboxExclusions(home)
 	if err != nil || !slices.Equal(got, []string{"git:*", "pip3:*"}) {
-		t.Errorf("SandboxExclusions() = %q, %v; want the two entries", got, err)
+		t.Errorf("SandboxExclusions() = %q, %v; want the two user entries", got, err)
 	}
-	writeFile(t, p, `{"sandbox":`)
+	writeFile(t, managed, `{"sandbox":{"excludedCommands":["docker:*"]}}`)
+	got, err = SandboxExclusions(home)
+	if err != nil || !slices.Equal(got, []string{"git:*", "pip3:*", "docker:*"}) {
+		t.Errorf(
+			"SandboxExclusions() = %q, %v; want the user entries, then the managed one",
+			got,
+			err,
+		)
+	}
+	other := t.TempDir()
+	writeFile(
+		t,
+		filepath.Join(other, "settings.json"),
+		`{"sandbox":{"excludedCommands":["kubectl:*"]}}`,
+	)
+	t.Setenv("CLAUDE_CONFIG_DIR", other)
+	got, err = SandboxExclusions(home)
+	if err != nil || !slices.Equal(got, []string{"kubectl:*", "docker:*"}) {
+		t.Errorf(
+			"SandboxExclusions() with CLAUDE_CONFIG_DIR = %q, %v; want that dir's list",
+			got,
+			err,
+		)
+	}
+	writeFile(t, filepath.Join(other, "settings.json"), `{"sandbox":`)
 	if _, err := SandboxExclusions(home); err == nil {
 		t.Error("SandboxExclusions(broken file) = nil error, want a parse error")
 	}

@@ -64,7 +64,7 @@ func Common(env Env) []Result {
 
 // Factory checks what the factory arm needs on top of Common.
 func Factory(env Env) []Result {
-	claudeDir := filepath.Join(env.Home, ".claude")
+	claudeDir := configDir(env.Home)
 	results := []Result{
 		file("factory skill", filepath.Join(claudeDir, "skills", "factory", "SKILL.md")),
 		file("loom skill", filepath.Join(claudeDir, "skills", "loom", "SKILL.md")),
@@ -181,19 +181,37 @@ func readSettings(p string) (settings, error) {
 	return s, nil
 }
 
-// SandboxExclusions is the user's sandbox.excludedCommands list from the
-// settings file under home. Exclusion lists combine across the settings
-// files a session loads, so an arm session inherits every entry whatever
-// the run's own file says. No settings file means no exclusions.
+// managedSettings is where macOS keeps the managed settings file, which a
+// session loads whatever its setting sources are. Tests point it elsewhere.
+var managedSettings = "/Library/Application Support/ClaudeCode/managed-settings.json"
+
+// configDir is Claude Code's config dir: $CLAUDE_CONFIG_DIR when set, else
+// ~/.claude.
+func configDir(home string) string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(home, ".claude")
+}
+
+// SandboxExclusions is the sandbox.excludedCommands list an arm session
+// inherits: the user's settings file plus the managed one when it exists.
+// Exclusion lists combine across the settings files a session loads, so
+// the run's own file cannot remove an entry. No settings file means no
+// exclusions.
 func SandboxExclusions(home string) ([]string, error) {
-	s, err := readSettings(filepath.Join(home, ".claude", "settings.json"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+	var all []string
+	for _, p := range []string{filepath.Join(configDir(home), "settings.json"), managedSettings} {
+		s, err := readSettings(p)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("sandbox exclusions: %w", err)
+		}
+		all = append(all, s.Sandbox.ExcludedCommands...)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("sandbox exclusions: %w", err)
-	}
-	return s.Sandbox.ExcludedCommands, nil
+	return all, nil
 }
 
 // beltSubagentHook checks that a SubagentStart hook runs belt, the hint

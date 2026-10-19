@@ -89,9 +89,9 @@ func Run(ctx context.Context, cfg Config) Results {
 		Runs:                []RunResult{},
 	}
 	if len(unsandboxed) > 0 {
-		fmt.Fprintf(cfg.Progress, "warning: %s run outside the sandbox: the user's settings "+
-			"exclude them, exclusion lists combine across settings files, and the arms need them; "+
-			"the permission rules and the fingerprint are their only guards\n",
+		fmt.Fprintf(cfg.Progress, "warning: the user's settings exclude %s from the sandbox and "+
+			"the run cannot deny them; those calls run unsandboxed, gated only by the permission "+
+			"rules (the user's allow rules included) and the fingerprint\n",
 			strings.Join(unsandboxed, ", "))
 	}
 	for i := 1; i <= cfg.Runs && ctx.Err() == nil; i++ {

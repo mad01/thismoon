@@ -54,13 +54,19 @@ Array keys combine across both files, and that cuts the other way: the
 user's `sandbox.excludedCommands` entries apply in every run, and the
 run's own empty list cannot remove them.
 
-factory-eval reads that list at batch start. An entry whose command the
-arms do not need gets a deny rule in the run's file, so the command never
-runs at all. An entry the arms need, `git:*` on a machine that excludes
-git, cannot be denied. Git then runs outside the sandbox, gated by the
-permission rules and the fingerprint only. The batch prints a warning
-naming those entries, and
-the results list them under `unsandboxed_commands`. A few call shapes
+factory-eval reads that list at batch start, from `~/.claude/settings.json`
+(or `$CLAUDE_CONFIG_DIR`) and the managed settings file when one exists.
+An entry that overlaps none of the arms' Bash allow rules gets a deny rule
+in the run's file, so the command never runs at all. An entry that
+overlaps one, `git:*` on a machine that excludes git, cannot be denied.
+Neither can an entry naming a wrapper such as `timeout`, which Claude Code
+strips before it matches rules. Those commands run outside the sandbox,
+gated by the permission rules, the user's allow rules included, and the
+fingerprint. A paid run refuses while that list is non-empty unless
+`--allow-unsandboxed` is passed; a dry run prints a warning and goes on.
+The results list the entries under `unsandboxed_commands`.
+
+A few call shapes
 stay sandboxed under any exclusion, a `cd` anywhere in the call or a
 `git worktree add` with an absolute or `~` path among them. The probe
 that saw `git worktree add ~/x` refused hit one of those, and proved
@@ -91,8 +97,10 @@ Claude's permission rules enforce the following, because a deny rule
 from any source beats an allow rule from any source:
 
 - `--strict-mcp-config`: the humanizer MCP server is the only one.
-- The deny list above blocks push, remote, git config, `gh`, `ralph`,
-  installs and the web tools.
+- The deny list above blocks push, fetch, pull, clone, ls-remote,
+  submodule, remote, git config and git's `--output` flag, plus `gh`,
+  `ralph`, installs and the web tools. It holds where the user's own rules
+  allow a fetch, which matters when git runs unsandboxed.
 - The run's settings file holds Edit deny rules for `~/code` and
   `~/.worktrees`, and for the source repo when it lives elsewhere. Claude
   Code checks the Write tool against Edit rules, so they block Write too;
@@ -272,7 +280,8 @@ go run ./cmd/factory-eval run --repo ~/factory-eval-source
 `--runs` must be at least 1. `--arms single` runs the baseline alone, for
 example while the factory prerequisites are missing. `--repo` clones another checkout instead of the
 one in `cases.yaml`. `--temp-dir` puts the clones somewhere other than the
-system temp dir.
+system temp dir. `--allow-unsandboxed` lets a paid batch run while the
+user's settings leave commands unsandboxed; the dry run names them.
 
 ### Cost ceilings
 

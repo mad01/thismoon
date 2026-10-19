@@ -27,10 +27,18 @@ var gitSubcommands = []string{
 
 // denied is the deny list both arms share. Deny rules beat the allow
 // rules the user's own settings add, so `make install` and `go install`
-// can never overwrite installed binaries from inside a run.
+// can never overwrite installed binaries from inside a run, and no git
+// command reaches a remote even where the user's settings allow fetch or
+// pull: that matters because git may run outside the sandbox (see
+// userExclusions), with the network open. `git * --output*` closes the
+// --output flag of diff, log and show, which writes anywhere.
 var denied = []string{
-	"Bash(git push *)", "Bash(git -C * push *)", "Bash(git remote *)", "Bash(git -C * remote *)",
-	"Bash(git config *)", "Bash(git -C * config *)", "Bash(gh *)", "Bash(ralph *)",
+	"Bash(git push*)", "Bash(git -C * push*)", "Bash(git fetch*)", "Bash(git -C * fetch*)",
+	"Bash(git pull*)", "Bash(git -C * pull*)", "Bash(git clone*)", "Bash(git -C * clone*)",
+	"Bash(git ls-remote*)", "Bash(git -C * ls-remote*)", "Bash(git submodule*)",
+	"Bash(git -C * submodule*)", "Bash(git remote*)", "Bash(git -C * remote*)",
+	"Bash(git config*)", "Bash(git -C * config*)", "Bash(git * --output*)",
+	"Bash(gh *)", "Bash(ralph *)",
 	"Bash(make install*)", "Bash(make * install*)", "Bash(go install *)", "WebFetch", "WebSearch",
 }
 

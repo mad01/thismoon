@@ -109,7 +109,7 @@ schema. Review the diff before committing it.
 
 ## Commands
 
-- `factory-eval run [--dry-run] [--arms single,factory] [--tiers mid,top] [--runs N] [--out results] [--repo PATH] [--temp-dir DIR]`
+- `factory-eval run [--dry-run] [--arms single,factory] [--tiers mid,top] [--runs N] [--out results] [--repo PATH] [--temp-dir DIR] [--allow-unsandboxed]`
 - `factory-eval measure [--repo PATH]`: the deviation table, no model call
 - `factory-eval docs`, `factory-eval version [-o json]`
 
@@ -143,9 +143,14 @@ schema. Review the diff before committing it.
   out, since a `--settings` file beats the user's settings only on a
   boolean. Array keys combine, so the user's `sandbox.excludedCommands`
   apply in every run and the file's own empty list cannot remove them.
-  `internal/eval/exclusions.go` turns each entry the arms do not need
-  into a deny rule and reports the rest, `git:*` on this machine, under
-  `unsandboxed_commands` and in a warning at batch start. The probe that
+  `internal/eval/exclusions.go` turns each entry that overlaps none of
+  the arms' Bash rules into a deny rule. The rest, `git:*` on this
+  machine and any wrapper word such as `timeout`, it reports under
+  `unsandboxed_commands` and in a warning, and a paid run refuses over
+  them without `--allow-unsandboxed`. The deny list closes fetch, pull, clone,
+  ls-remote, submodule and `--output`, so unsandboxed git has no network
+  and no write target outside the clone, whatever the user's allow rules
+  say. The probe that
   saw `git worktree add ~/x` refused proved nothing: that shape stays
   sandboxed under any exclusion. The user's `additionalDirectories` and
   `Edit` allow rules widen `allowWrite`; `~/code` and `~/.worktrees` stay

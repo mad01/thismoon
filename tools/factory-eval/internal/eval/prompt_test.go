@@ -72,7 +72,7 @@ func TestPreamblesMatchWhatTheRunAllows(t *testing.T) {
 	if !strings.Contains(factory, "The harness sets the git identity") {
 		t.Error("factory preamble does not say the harness sets the git identity")
 	}
-	if !slices.Contains(denied, "Bash(git -C * config *)") {
+	if !slices.Contains(denied, "Bash(git -C * config*)") {
 		t.Error("the deny list no longer blocks the -C identity read, so recheck the preamble")
 	}
 }
@@ -109,7 +109,8 @@ func TestProfileKeepsRunsInsideTheClone(t *testing.T) {
 		args := armArgs(arm, tier, co, "/tmp/run/settings.json")
 		joined := strings.Join(args, " ")
 		for _, want := range []string{
-			"Bash(git push *)", "Bash(git -C * push *)", "Bash(make * install*)",
+			"Bash(git push*)", "Bash(git -C * push*)", "Bash(git fetch*)", "Bash(git * --output*)",
+			"Bash(make * install*)",
 			"Bash(go install *)", "--strict-mcp-config", "--add-dir /tmp/run", "--max-budget-usd 10.00",
 			"--settings /tmp/run/settings.json",
 		} {
