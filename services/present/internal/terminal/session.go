@@ -442,6 +442,21 @@ func (s *session) signal(sig syscall.Signal, groups []int) {
 	}
 }
 
+// redraw sends SIGWINCH to the terminal's foreground job, which a TUI
+// answers by drawing its whole screen again. Any output it draws comes
+// after the replay of a subscriber that joined before it. A process that
+// has exited, and so a terminal already released, is left alone.
+func (s *session) redraw() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.exited {
+		return
+	}
+	if fg, err := foregroundGroup(s.pty); err == nil && fg > 0 {
+		_ = syscall.Kill(-fg, syscall.SIGWINCH)
+	}
+}
+
 // foregroundGroup asks the terminal behind f for its foreground process
 // group. An interactive shell runs each job in a group of its own, so the
 // shell's group alone misses the command the user is looking at.

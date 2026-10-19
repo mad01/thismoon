@@ -138,6 +138,24 @@ func TestLateSubscriberIsReplayedThenSharesLiveOutput(t *testing.T) {
 	}
 }
 
+// A subscriber joining a running session gets a redraw after its replay:
+// the foreground job sees SIGWINCH. The first one, which spawns it, does
+// not.
+func TestJoiningARunningSessionRedrawsIt(t *testing.T) {
+	m, _ := newManager(t, Config{})
+	// zsh runs no WINCH trap of a -c script, so a perl handler reports it.
+	cmd := `perl -e '$SIG{WINCH} = sub { print "winch\n" }; $| = 1; print "ready\n"; sleep 1 while 1'`
+	first := attach(t, m, "demo", Spec{Cmd: cmd})
+	readUntil(t, first, "ready")
+	time.Sleep(200 * time.Millisecond)
+	if p, _ := first.Take(); strings.Contains(string(p), "winch") {
+		t.Fatalf("output %q: the spawning Attach must not redraw", p)
+	}
+
+	second := attach(t, m, "demo", Spec{})
+	readUntil(t, second, "winch")
+}
+
 func TestReplayKeepsOnlyTheNewestRingBytes(t *testing.T) {
 	m, _ := newManager(t, Config{RingBytes: 8})
 	first := attach(t, m, "demo", Spec{Cmd: "printf 0123456789abcdef; cat"})

@@ -173,7 +173,10 @@ func New(cfg Config) *Manager {
 }
 
 // Attach subscribes to the session name on page, spawning it from spec
-// when the manager holds none. The caller must Close the subscription.
+// when the manager holds none. Joining a running session makes its
+// foreground job redraw after the replay, as on a resize: the replay may
+// start inside an escape sequence, and a TUI drawn on top of it looks
+// broken until it draws again. The caller must Close the subscription.
 func (m *Manager) Attach(page, name string, spec Spec) (*Subscription, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -181,14 +184,16 @@ func (m *Manager) Attach(page, name string, spec Spec) (*Subscription, error) {
 		return nil, ErrClosed
 	}
 	k := key{page: page, name: name}
-	s, ok := m.sessions[k]
-	if !ok {
-		var err error
-		if s, err = m.spawn(k, spec); err != nil {
-			return nil, err
-		}
-		m.sessions[k] = s
+	if s, ok := m.sessions[k]; ok {
+		sub := s.subscribe()
+		s.redraw()
+		return sub, nil
 	}
+	s, err := m.spawn(k, spec)
+	if err != nil {
+		return nil, err
+	}
+	m.sessions[k] = s
 	return s.subscribe(), nil
 }
 
