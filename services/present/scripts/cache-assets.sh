@@ -16,6 +16,13 @@ CHART_VERSION="4.4.6"
 SANKEY_VERSION="0.15.3"
 D3_VERSION="7.9.0"
 D3_SHA256="f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
+# The xterm files are the npm package's own lib and css files, served by
+# jsdelivr byte for byte, so each has a stable sum.
+XTERM_VERSION="6.0.0"
+XTERM_SHA256="14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972"
+XTERM_CSS_SHA256="854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6"
+XTERM_FIT_VERSION="0.11.0"
+XTERM_FIT_SHA256="ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527"
 FONTS_URL="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=Inter:ital,opsz,wght@0,14..32,300..700;1,14..32,300..700&family=Lexend:wght@300..700&family=Work+Sans:ital,wght@0,300..700;1,300..700&display=swap"
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
@@ -27,11 +34,15 @@ cy_elk_file="$ASSETS/js/cytoscape-elk-${CY_ELK_VERSION}.js"
 chart_file="$ASSETS/js/chart-${CHART_VERSION}.umd.min.js"
 sankey_file="$ASSETS/js/chartjs-chart-sankey-${SANKEY_VERSION}.min.js"
 d3_file="$ASSETS/js/d3-${D3_VERSION}.min.js"
+xterm_file="$ASSETS/js/xterm-${XTERM_VERSION}.js"
+xterm_fit_file="$ASSETS/js/xterm-addon-fit-${XTERM_FIT_VERSION}.js"
+xterm_css_file="$ASSETS/css/xterm-${XTERM_VERSION}.css"
 fonts_file="$ASSETS/css/fonts.css"
 
 if [ -s "$cy_file" ] && [ -s "$dagre_file" ] && [ -s "$cy_dagre_file" ] &&
   [ -s "$elk_file" ] && [ -s "$cy_elk_file" ] && [ -s "$chart_file" ] &&
-  [ -s "$sankey_file" ] && [ -s "$d3_file" ] && [ -s "$fonts_file" ] &&
+  [ -s "$sankey_file" ] && [ -s "$d3_file" ] && [ -s "$xterm_file" ] &&
+  [ -s "$xterm_fit_file" ] && [ -s "$xterm_css_file" ] && [ -s "$fonts_file" ] &&
   compgen -G "$ASSETS/fonts/*.woff2" >/dev/null; then
   echo "present: assets cached, skipping"
   exit 0
@@ -95,6 +106,13 @@ fetch "https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@${SANKEY_VERSION}/dist/
 
 echo "d3@${D3_VERSION}"
 fetch "https://cdn.jsdelivr.net/npm/d3@${D3_VERSION}/dist/d3.min.js" "$d3_file" "$D3_SHA256"
+
+echo "@xterm/xterm@${XTERM_VERSION}"
+fetch "https://cdn.jsdelivr.net/npm/@xterm/xterm@${XTERM_VERSION}/lib/xterm.js" "$xterm_file" "$XTERM_SHA256"
+fetch "https://cdn.jsdelivr.net/npm/@xterm/xterm@${XTERM_VERSION}/css/xterm.css" "$xterm_css_file" "$XTERM_CSS_SHA256"
+
+echo "@xterm/addon-fit@${XTERM_FIT_VERSION}"
+fetch "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@${XTERM_FIT_VERSION}/lib/addon-fit.js" "$xterm_fit_file" "$XTERM_FIT_SHA256"
 
 # The stylesheet takes its final name last, after every woff2 it names, so
 # a half-finished font download never passes the skip check.
