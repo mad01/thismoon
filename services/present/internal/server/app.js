@@ -1350,9 +1350,12 @@
   // text roles (about 8:1) and the bright ones the semantic roles. On a
   // dark page the tone text is washed out (above 11:1) and the semantic
   // roles read near 5:1, so the two trade places. Black is the strongest
-  // ink on a light page and a dim one on a dark page. Every colour
-  // resolves through a probe in the block, since a role can be scoped or
-  // a color-mix().
+  // ink on a light page and a dim one on a dark page. On a light page
+  // white and bright white are the page itself (--bg, the paper the block
+  // sits on), so black text on a white background stays legible, and
+  // bright black is the lightest text grey, which keeps it apart from
+  // bright white. Every colour resolves through a probe in the block,
+  // since a role can be scoped or a color-mix().
   function terminalTheme(block) {
     var probe = document.createElement('span');
     probe.style.cssText = 'position:absolute;width:0;height:0;transition:none';
@@ -1384,7 +1387,7 @@
       red: red[0], brightRed: red[1], green: green[0], brightGreen: green[1],
       yellow: yellow[0], brightYellow: yellow[1], blue: blue[0], brightBlue: blue[1],
       magenta: magenta[0], brightMagenta: magenta[1], cyan: cyan[0], brightCyan: cyan[1],
-      white: color(role('text-2')), brightWhite: color(role(dark ? 'text-1' : 'text-3'))
+      white: color(role(dark ? 'text-2' : 'bg')), brightWhite: color(role(dark ? 'text-1' : 'bg'))
     };
     block.removeChild(probe);
     return theme;
@@ -1436,13 +1439,17 @@
   }
   // terminalHeight is the canvas height that holds the block's rows: the
   // cell height xterm measured (the private field the fit addon reads as
-  // well) times the rows, plus the terminal element's padding.
+  // well) times the rows, plus the padding above and below the terminal
+  // element (--terminal-pad-y, which the stylesheet sets that padding
+  // from). Before xterm opens it has measured nothing, so the cell is the
+  // guess; the placeholder takes its height from here too, which keeps the
+  // page from jumping when xterm opens.
   function terminalHeight(ctl) {
-    var core = ctl.term._core, dims = core && core._renderService && core._renderService.dimensions;
+    var core = ctl.term && ctl.term._core, dims = core && core._renderService && core._renderService.dimensions;
     var cell = dims && dims.css && dims.css.cell && dims.css.cell.height;
     if (!cell) cell = Math.ceil(terminalFontSize(ctl) * TERMINAL_LINE_GUESS);
-    var st = getComputedStyle(ctl.term.element);
-    return Math.ceil(ctl.rows * cell + (parseFloat(st.paddingTop) || 0) + (parseFloat(st.paddingBottom) || 0));
+    var pad = parseFloat(terminalVar(ctl.canvas, '--terminal-pad-y')) || 0;
+    return Math.ceil(ctl.rows * cell + 2 * pad);
   }
   // terminalFit sizes the canvas and the terminal to the context: the font
   // size the stylesheet names (larger while presenting), the canvas height
@@ -1461,11 +1468,14 @@
   }
   // terminalMount opens the block's xterm once the canvas has a width and
   // the font has loaded, then fits it and attaches when that is already
-  // wanted. A later call only refits.
+  // wanted. A later call only refits. The placeholder height is set again
+  // first, since the font size may have changed since the upgrade (a deck
+  // that comes back presenting after a reload).
   function terminalMount(ctl) {
     if (ctl.term) { terminalFit(ctl); return; }
     if (ctl.inert || ctl.opening || ctl.canvas.clientWidth < 1) return;
     ctl.opening = true;
+    if (!terminalFills(ctl)) ctl.canvas.style.height = terminalHeight(ctl) + 'px';
     var family = cssVar('--mono', 'monospace');
     terminalFontsReady(family).then(function () {
       var term = new Terminal({
@@ -1520,14 +1530,43 @@
     } catch (e) { terminalRetry(ctl); return; }
     ws.binaryType = 'arraybuffer';
     ctl.ws = ws;
+    // Kill pressed while this socket was connecting waits for it
+    // (terminalKill), since serve may be starting the session already.
+    ws.onopen = function () {
+      if (ctl.ws === ws && ctl.held) ws.send(JSON.stringify({ t: 'kill' }));
+    };
     ws.onmessage = function (e) { terminalMessage(ctl, e.data); };
     // A socket this block let go of (Run on an exited session, Kill) is no
-    // longer ctl.ws, so its close starts nothing.
-    ws.onclose = function () {
+    // longer ctl.ws, so its close starts nothing. A held block whose socket
+    // closes before the exit frame (it never opened, or dropped after the
+    // kill went out) ends the session through the DELETE route instead.
+    ws.onclose = function (e) {
       if (ctl.ws !== ws) return;
       ctl.ws = null;
-      if (!ctl.exited && !terminalLeaving) terminalRetry(ctl);
+      if (ctl.exited || terminalLeaving) return;
+      if (ctl.held) { terminalDeleteHeld(ctl); return; }
+      terminalClosed(ctl, e.code, e.reason);
     };
+  }
+  // terminalClosed reads why a socket closed without an exit frame. None
+  // of 1000 (the session ended, its exit frame lost), 1008 (serve refused
+  // the spec, a bad cwd, with a reason meant for the reader), and 1001
+  // (serve is closing) comes right by retrying, which would only ask
+  // again and again, so the block waits for Run. 1013 (the socket fell
+  // behind and serve dropped it) and any other drop reconnect, and the
+  // replay fills in what was missed.
+  function terminalClosed(ctl, code, reason) {
+    if (code === 1000) {
+      ctl.exited = true;
+      terminalStatus(ctl, 'exited', 'ended');
+    } else if (code === 1008) {
+      terminalStatus(ctl, 'disconnected', 'refused');
+      terminalNote(ctl, reason || 'serve refused this terminal.');
+    } else if (code === 1001) {
+      terminalStatus(ctl, 'disconnected', 'server closing');
+    } else {
+      terminalRetry(ctl);
+    }
   }
   // terminalMessage takes one frame: PTY bytes in a binary frame, control
   // JSON in a text frame. hello comes before the replay, which holds the
@@ -1537,10 +1576,14 @@
     if (typeof data !== 'string') { ctl.term.write(new Uint8Array(data)); return; }
     var msg;
     try { msg = JSON.parse(data); } catch (e) { return; }
+    // Valid JSON need not be an object (null, a number), and reading .t off
+    // null throws.
+    if (!msg || typeof msg !== 'object') return;
     if (msg.t === 'hello') {
       ctl.term.reset();
       ctl.tries = 0;
-      terminalStatus(ctl, 'live');
+      // A held block is open only to send the kill, so it never says live.
+      if (!ctl.held) terminalStatus(ctl, 'live');
       terminalResize(ctl);
     } else if (msg.t === 'exit') {
       ctl.exited = true;
@@ -1568,12 +1611,39 @@
   function terminalDelete(ctl) {
     return fetch(terminalPath(ctl), { method: 'DELETE' }).catch(function () {});
   }
+  // terminalDeleteHeld ends a held block's session through the DELETE
+  // route and says killed, unless Run has taken the block back meanwhile
+  // or the session has exited (its exit code says more).
+  function terminalDeleteHeld(ctl) {
+    terminalDelete(ctl).then(function () {
+      if (ctl.held && !ctl.exited) terminalStatus(ctl, 'killed');
+    });
+  }
+  // The hold Kill sets outlives the tab's reloads: Kill removes the
+  // session from serve, so the next attach would start the command again
+  // with no click, and every page update reloads the tab (watchVersion).
+  // sessionStorage keeps it per tab, keyed by the page and the session,
+  // until Run; every block naming the session shares it, as they share
+  // the process.
+  function terminalHoldKey(session) {
+    return 'present-terminal-held:' + id + ':' + session;
+  }
+  function terminalHeldBefore(session) {
+    try { return sessionStorage.getItem(terminalHoldKey(session)) === '1'; } catch (e) { return false; }
+  }
+  function terminalHold(ctl, on) {
+    terminals.forEach(function (c) { if (c.session === ctl.session) c.held = on; });
+    try {
+      if (on) sessionStorage.setItem(terminalHoldKey(ctl.session), '1');
+      else sessionStorage.removeItem(terminalHoldKey(ctl.session));
+    } catch (e) {}
+  }
   // terminalRun is the Run button. A block not connected attaches (asking
   // the switch again); an exited session starts over, removed first, since
   // attaching would only replay its end; a live one takes the focus.
   function terminalRun(ctl) {
     ctl.tries = 0;
-    ctl.held = false;
+    terminalHold(ctl, false);
     if (ctl.exited) {
       terminalLetGo(ctl);
       ctl.exited = false;
@@ -1588,63 +1658,81 @@
   }
   // terminalKill is the Kill button: over the socket while connected
   // (serve answers with the exit frame), otherwise through the DELETE
-  // route, which also clears an exited session from serve's list.
+  // route, which also clears an exited session from serve's list. A socket
+  // still connecting is kept: serve may be starting the session, and one
+  // closed now could leave the process running after a DELETE that came
+  // first and found nothing. Its onopen sends the kill, and its onclose
+  // falls back to the DELETE.
   function terminalKill(ctl) {
-    ctl.held = true;
-    if (ctl.ws && ctl.ws.readyState === WebSocket.OPEN && !ctl.exited) {
-      ctl.ws.send(JSON.stringify({ t: 'kill' }));
+    terminalHold(ctl, true);
+    var ws = ctl.ws;
+    if (ws && !ctl.exited && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ t: 'kill' }));
       return;
     }
+    if (ws && !ctl.exited && ws.readyState === WebSocket.CONNECTING) return;
     terminalLetGo(ctl);
-    terminalDelete(ctl).then(function () { if (!ctl.exited) terminalStatus(ctl, 'killed'); });
+    terminalDeleteHeld(ctl);
   }
-  // terminalShow is what the deck calls when the block's slide shows: it
-  // attaches on the first showing and refits to the slide's size and font.
+  // terminalUnrevealed says the block sits in a deck fragment not shown
+  // yet. visibility:hidden keeps its box, so it reads as on screen, but
+  // nobody can see it, Run and Kill included; the deck's steps call
+  // terminalShow once the fragment shows.
+  function terminalUnrevealed(ctl) {
+    return !!ctl.block.closest('.fragment:not(.shown)');
+  }
+  // terminalShow is what the deck calls when the block's slide shows, and
+  // its fragment: it attaches on the first showing it can be seen in and
+  // refits to the slide's size and font.
   function terminalShow(ctl) {
     terminalMount(ctl);
-    if (!ctl.wanted) terminalAttach(ctl);
+    if (!ctl.wanted && !terminalUnrevealed(ctl)) terminalAttach(ctl);
   }
   // terminalObserve watches a live block: a resize refits the terminal to
-  // its canvas, and the first time the block is seen it attaches.
+  // its canvas, and the first time the block is seen it attaches. The
+  // observer stays while the block is in an unrevealed fragment; a block
+  // the deck attached meanwhile only ends the watch.
   function terminalObserve(ctl) {
     if (typeof ResizeObserver === 'function') {
       // A frame later, since the fit sets the height of the canvas the
       // observer watches, which the browser reports as a loop otherwise.
       new ResizeObserver(function () { requestAnimationFrame(function () { terminalMount(ctl); }); }).observe(ctl.canvas);
     }
-    if (!('IntersectionObserver' in window)) { terminalAttach(ctl); return; }
+    if (!('IntersectionObserver' in window)) { if (!terminalUnrevealed(ctl)) terminalAttach(ctl); return; }
     var io = new IntersectionObserver(function (entries) {
-      if (!entries[entries.length - 1].isIntersecting) return;
+      if (!entries[entries.length - 1].isIntersecting || terminalUnrevealed(ctl)) return;
       io.disconnect();
-      terminalAttach(ctl);
+      if (!ctl.wanted) terminalAttach(ctl);
     });
     io.observe(ctl.block);
   }
   // upgradeTerminal makes one terminal block live: its controller, Run and
   // Kill, and the observers. The canvas gets the height its rows need at
-  // once, so the page does not jump when xterm opens, and a placeholder
-  // holds the same frame. A block that can never run is inert: on a shared
-  // instance (the shell marks its html data-present-mode="shared"), which
-  // has no terminal routes, it says so, hides Run and Kill, and never asks
-  // the server anything; without the xterm asset it says so and only Kill
-  // works.
+  // once (terminalHeight, with the cell guessed), so the page does not
+  // jump when xterm opens, and a placeholder holds the same frame. A block
+  // whose session this tab killed starts held, saying killed, until Run.
+  // A block that can never run is inert: on a shared instance (the shell
+  // marks its html data-present-mode="shared"), which has no terminal
+  // routes, it says so, hides Run and Kill, and never asks the server
+  // anything; without the xterm asset it says so and only Kill works.
   function upgradeTerminal(block) {
     var canvas = block.querySelector('.present-terminal-canvas');
     if (block._terminal || !canvas) return;
     var rows = parseInt(block.getAttribute('data-rows'), 10);
     var shared = document.documentElement.getAttribute('data-present-mode') === 'shared';
     var missing = typeof Terminal !== 'function' || !window.FitAddon;
+    var session = block.getAttribute('data-session') || '';
     var ctl = {
       block: block, canvas: canvas, status: block.querySelector('.present-terminal-status'),
-      session: block.getAttribute('data-session') || '', cmd: block.getAttribute('data-cmd') || '',
-      cwd: block.getAttribute('data-cwd') || '', rowsNamed: rows > 0, rows: rows > 0 ? rows : TERMINAL_ROWS,
+      session: session, cmd: block.getAttribute('data-cmd') || '', cwd: block.getAttribute('data-cwd') || '',
+      rowsNamed: rows > 0, rows: rows > 0 ? rows : TERMINAL_ROWS,
       term: null, fit: null, ws: null, encoder: new TextEncoder(), state: '', wanted: false,
-      exited: false, held: false, checking: false, opening: false, shown: false, tries: 0, retry: 0,
-      inert: shared || missing
+      exited: false, held: !shared && terminalHeldBefore(session),
+      checking: false, opening: false, shown: false, tries: 0, retry: 0, inert: shared || missing
     };
     block._terminal = ctl;
     terminals.push(ctl);
-    if (!terminalFills(ctl)) canvas.style.height = Math.ceil(ctl.rows * terminalFontSize(ctl) * TERMINAL_LINE_GUESS) + 'px';
+    if (!terminalFills(ctl)) canvas.style.height = terminalHeight(ctl) + 'px';
     var run = block.querySelector('.present-terminal-run'), kill = block.querySelector('.present-terminal-kill');
     if (shared) {
       [run, kill].forEach(function (b) { if (b) b.hidden = true; });
@@ -1652,6 +1740,7 @@
       terminalNote(ctl, 'Live terminal is not available on a shared instance.');
       return;
     }
+    if (ctl.held) terminalStatus(ctl, 'killed');
     if (kill) kill.addEventListener('click', function () { terminalKill(ctl); });
     if (missing) {
       terminalNote(ctl, 'Live terminal needs the xterm asset: run make cache in services/present.');
@@ -2489,7 +2578,9 @@
     function stepTotal(slide) { return slide && slide._steps ? slide._steps.length : 0; }
     // applySteps lands the slide on step n: the first n fragments shown and
     // every stepped block at the highest step among its entries below n
-    // (step 0 before its first one).
+    // (step 0 before its first one). A terminal in a fragment attaches when
+    // the fragment shows, not when its slide does (terminalShow skips it
+    // while hidden), so it starts where Run and Kill can be seen.
     function applySteps(slide, n) {
       step = n;
       if (!slide || !slide._steps) return;
@@ -2497,6 +2588,9 @@
         if (entry.kind === 'fragment') entry.el.classList.toggle('shown', k < n);
       });
       PresentViz.blockStepsAt(slide._steps, n).forEach(function (r) { setBlockStep(r.el, r.n); });
+      slide.querySelectorAll('.fragment.shown .present-terminal, .present-terminal.fragment.shown').forEach(function (b) {
+        if (b._terminal) terminalShow(b._terminal);
+      });
     }
     // setBlockStep moves a stepped block to step m: the attribute the chart
     // bootstrap reads when the block builds later, the renderer's hook when
@@ -2613,10 +2707,14 @@
     var ownFullscreen = false;
     // In browser fullscreen the browser takes Escape for itself and leaves
     // fullscreen, which ends presenting, so a deck holding a terminal locks
-    // the key where the Keyboard Lock API exists (Chromium): Escape then
-    // reaches the page, a focused terminal keeps it, and the key handler
-    // below ends presenting otherwise. Holding Escape still leaves
-    // fullscreen, and leaving fullscreen releases the lock.
+    // the key with the Keyboard Lock API: Escape then reaches the page, a
+    // focused terminal keeps it, and the key handler below ends presenting
+    // otherwise. Holding Escape still leaves fullscreen. Only Chromium has
+    // the API (Safari and Firefox have no Keyboard Lock), and only in a
+    // secure context: over https or on localhost. A page on a plain http
+    // host has no navigator.keyboard, so there the guard does nothing and
+    // Escape leaves fullscreen as it would without a terminal. Leaving
+    // fullscreen releases the lock; ending presenting unlocks it as well.
     var hasTerminal = !!deck.querySelector('.present-terminal');
     function enteredFullscreen() {
       ownFullscreen = true;
@@ -2628,6 +2726,7 @@
       document.documentElement.classList.toggle('presenting', on);
       presentBtn.textContent = on ? 'Exit' : 'Present';
       remember();
+      if (!on && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
       var d = document.documentElement;
       if (on && d.requestFullscreen) {
         try {

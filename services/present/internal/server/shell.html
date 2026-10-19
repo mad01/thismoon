@@ -233,12 +233,14 @@ wk-panel, wk-section details, .present-chart[data-frame="true"], .cy-wrapper.cy-
    --terminal-fill and a height instead, which a block naming no rows
    fills. --terminal-font-size is the px size xterm draws at, larger while
    presenting. The padding sits on xterm's element, in whole pixels,
-   because the fit addon subtracts it as integers. webkit's header bar
+   because the fit addon subtracts it as integers. It comes from
+   --terminal-pad-y, which app.js adds to the canvas height, so the
+   placeholder set before xterm opens holds the same height. webkit's header bar
    ignores the pointer, so the buttons take it back. The terminal frame is
    allowed on a slide, unlike any other box: it is what the slide shows. */
 .present-terminal { --terminal-font-size: 13; margin: 1rem 0 1.5rem; padding-top: 2.125rem; }
-.present-terminal-canvas { position: relative; }
-.present-terminal-canvas .xterm { padding: 8px 10px; }
+.present-terminal-canvas { position: relative; --terminal-pad-y: 8px; }
+.present-terminal-canvas .xterm { padding: var(--terminal-pad-y) 10px; }
 /* xterm 6 paints the theme background on its scrollable element and leaves
    its own stylesheet's black on the viewport, which spans the padding; the
    block's --code-bg is the theme background, so the viewport shows it. */
