@@ -6,9 +6,9 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "dry_run", "started_at", "finished_at", "commit", "cases_file", "cases_digest",
-    "sign_off", "claude_version", "prereqs", "settings_deny", "runs", "summary"],
+    "sign_off", "claude_version", "prereqs", "settings_permissions", "runs", "summary"],
   "properties": {
-    "schema": {"const": "factory-eval/results/v1"},
+    "schema": {"const": "factory-eval/results/v2"},
     "dry_run": {"type": "boolean", "description": "true when stand-ins replaced every model call"},
     "started_at": {"type": "string", "format": "date-time"},
     "finished_at": {"type": "string", "format": "date-time"},
@@ -22,12 +22,21 @@
     },
     "claude_version": {"type": "string"},
     "prereqs": {"type": "array", "items": {"$ref": "#/$defs/prereq"}},
-    "settings_deny": {"type": "array", "items": {"type": "string"},
-      "description": "the deny rules every run's settings file held"},
+    "settings_permissions": {
+      "type": "object", "propertyNames": {"enum": ["single", "factory"]},
+      "additionalProperties": {"$ref": "#/$defs/permissions"},
+      "description": "per arm that ran, the permissions block of its runs' settings file: the arm's allow list, and its deny list followed by the isolation rules. The arm's lists also go on the command line; the file carries them because settings-file rules are documented to reach subagents, and whether workers obey them stays unverified until a paid run"},
     "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}},
     "summary": {"$ref": "#/$defs/summary"}
   },
   "$defs": {
+    "permissions": {
+      "type": "object", "additionalProperties": false, "required": ["allow", "deny"],
+      "properties": {
+        "allow": {"type": "array", "items": {"type": "string"}},
+        "deny": {"type": "array", "items": {"type": "string"}}
+      }
+    },
     "prereq": {
       "type": "object", "additionalProperties": false, "required": ["name", "ok"],
       "properties": {"name": {"type": "string"}, "ok": {"type": "boolean"}, "detail": {"type": "string"}}

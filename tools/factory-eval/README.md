@@ -29,16 +29,19 @@ permission profile:
   build`/`make test`, `go build/test/vet` and `humanizer`. A deny list for
   `git push`, `git remote`, `git config`, `gh`, `ralph`, `make install` and
   `go install`. Only the factory arm may use `Agent` and `SendMessage`.
-- `--settings` with a settings file written into the run's temp dir. Its
-  deny rules keep Edit, Write and `git -C` out of the user's checkouts, as
-  the next section lists.
+  Both lists go on the command line and into the run's settings file.
+- `--settings` with a settings file written into the run's temp dir. It
+  repeats the arm's allow and deny lists, because Claude Code documents
+  settings-file rules as reaching subagents such as the factory's workers.
+  Its own deny rules keep Edit, Write, `git -C`, `make -C` and `go build
+  -o` out of the user's checkouts, as the next section lists.
 
 ### What is enforced and what is only detected
 
 The arms do not run in a sandbox. Each arm session runs as the user, with
 the user's own settings loaded, and those settings may allow commands this
-profile does not list. Claude's permission rules enforce three things,
-because a deny rule beats every allow rule in any settings file:
+profile does not list. Claude's permission rules enforce the following,
+because a deny rule from any source beats an allow rule from any source:
 
 - `--strict-mcp-config`: the humanizer MCP server is the only one.
 - The deny list above blocks push, remote, git config, `gh`, `ralph`,
@@ -47,8 +50,27 @@ because a deny rule beats every allow rule in any settings file:
   `~/.worktrees`, and for the source repo when it lives elsewhere. Claude
   Code checks the Write tool against Edit rules, so they block Write too;
   it never consults a Write path rule, and the file holds none.
-- The same file blocks `curl`, and `git -C` aimed into any of those
-  directories in absolute or `~/` form. Reads stay allowed.
+- The same file blocks `curl`, and `git -C`, `make -C` and `go build -o`
+  aimed into any of those directories in absolute or `~/` form. So no
+  build in a run can overwrite a binary under `~/code/bin`. Reads stay
+  allowed.
+
+The arm's allow and deny lists live in two places: the `--allowedTools`
+and `--disallowedTools` flags, and the settings file's `permissions.allow`
+and `permissions.deny`. Claude Code's docs say settings-file rules apply
+to the whole session, subagents included. They never say the flags reach
+custom subagents. Under dontAsk, a factory worker with no allow rule would
+be denied every edit and command. The factory arm would then fail for a
+reason that has nothing to do with the factory. Flags and settings files
+share one rule matcher, so a rule means the same in either place. Each
+arm's file carries that arm's lists: the single arm's denies `Agent` and
+`SendMessage`, and the factory arm's allows them. No paid run has yet
+shown that the workers obey the file's lists, so check the first paid
+factory run's `permission_denials` before trusting its result. The
+factory arm's allow list reaches every subagent type, not only workers.
+A general-purpose subagent the orchestrator spawns could spawn nested
+agents, but the `factory-worker-*` definitions list no `Agent` tool, so
+workers cannot.
 
 A Bash command can still reach a checkout another way: `cd` first, `$HOME`
 in the path, a symlink, or a command the user's settings allow. That is
@@ -289,7 +311,10 @@ the sha256 of every file in the factory and loom skill directories, their
 the belt version. Each value is as it was when the run started. A
 `ralph up` in the middle of a batch shows there. `tainted` and `taint` say
 whether the source checkout changed during the run. `settings_file` is the
-run's settings file, and `settings_deny` at the top lists its rules.
+run's settings file. `settings_permissions` at the top holds, per arm, the
+permissions block that arm's settings file held. Its `allow` is the arm's
+allow list, and its `deny` is the arm's deny list with the isolation rules
+at the end.
 
 ## Develop
 

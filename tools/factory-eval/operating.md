@@ -14,9 +14,12 @@ a fresh temp dir at the pinned commit. The clone keeps no branch, tag,
 reflog or remote, and its local config holds the factory-eval git
 identity. One headless `claude -p` session starts there with a dollar cap,
 the dontAsk permission mode with prompts turned into denials, only the
-humanizer MCP server, and a settings file of deny rules. Those rules keep
-Edit, Write and `git -C` out of ~/code, ~/.worktrees and the source repo;
-reads stay allowed. That is not a sandbox. {{.Bin}} fingerprints the source checkout
+humanizer MCP server, and a settings file. The file repeats the arm's
+allow and deny lists from the command line, since settings-file rules are
+documented to reach subagents. No paid run has yet confirmed that the
+factory's workers obey them. Its own deny rules keep Edit, Write, `git
+-C`, `make -C` and `go build -o` out of ~/code, ~/.worktrees and the
+source repo; reads stay allowed. That is not a sandbox. {{.Bin}} fingerprints the source checkout
 before and after the session, and a change taints the run.
 
 Runs go one at a time. After each session {{.Bin}} checks every case

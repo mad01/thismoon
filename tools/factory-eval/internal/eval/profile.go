@@ -60,6 +60,31 @@ func disallowedTools(arm string) []string {
 	return tools
 }
 
+// armPermissions is the permissions block of an arm's settings file: the
+// arm's allow list, and its deny list followed by the isolation rules.
+// The lists also stay on the command line. The file carries them because
+// Claude Code documents settings-file rules as covering the whole session,
+// subagents included, and never says that of --allowedTools. Under dontAsk
+// a factory worker with no allow rule would be denied every edit and
+// command, and the factory arm would fail for a reason unrelated to the
+// factory.
+func armPermissions(arm string, iso Isolation) Permissions {
+	return Permissions{
+		Allow: allowedTools(arm),
+		Deny:  append(disallowedTools(arm), iso.DenyRules()...),
+	}
+}
+
+// settingsPermissions maps each arm to the permissions block its runs'
+// settings files hold.
+func settingsPermissions(arms []string, iso Isolation) map[string]Permissions {
+	perms := make(map[string]Permissions, len(arms))
+	for _, arm := range arms {
+		perms[arm] = armPermissions(arm, iso)
+	}
+	return perms
+}
+
 // armArgs is the full argv for one arm session at one tier, in one
 // checkout, with the harness settings file at settings.
 func armArgs(arm string, tier cases.Tier, co *checkout.Checkout, settings string) []string {
