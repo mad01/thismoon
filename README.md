@@ -118,7 +118,7 @@ ralph, symlink the skill directory there yourself.
 
 | Skill | Use it when | Backed by |
 |-------|-------------|-----------|
-| [factory](skills/factory/SKILL.md) | **experimental**: a plan has several independent units, and one orchestrator session should hand each to a worker subagent in its own loom worktree, with every message in a fixed contract | belt's hooks, the humanizer check for Simplified Technical English, and the events, present and kof services |
+| [factory](skills/factory/SKILL.md) | **experimental**: a plan has several independent units, and one orchestrator session should hand each to a worker subagent in its own loom worktree, with every message in a fixed contract; [examples.md](skills/factory/examples.md) shows one run end to end | belt's hooks, the humanizer check for Simplified Technical English, and the events, present and kof services |
 | [golang-pro](skills/golang-pro/SKILL.md) | Go work needs specialist depth on concurrency, generics, profiling, or gRPC (vendored from [jeffallan/claude-skills](https://github.com/jeffallan/claude-skills), MIT) | nothing — guidance only |
 | [golang-style](skills/golang-style/SKILL.md) | writing or reviewing Go: naming, package layout, error handling, the HTTP/CLI/store patterns this codebase uses | nothing — guidance only |
 | [handoff](skills/handoff/SKILL.md) | a session is ending mid-task and the next one must continue from a cold start | nothing — guidance only |
