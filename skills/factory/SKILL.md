@@ -23,6 +23,8 @@ detail and the reasons:
 - `worker-brief.md`: the text every worker gets before its first prompt, and
   how belt delivers it.
 - `worker-definitions.md`: the three worker agent definitions.
+- `examples.md`: one run end to end, from the plan to the landed branches,
+  with every message and command the procedure produces.
 
 Pick the action from the arguments. `run` takes a plan through the whole
 procedure. `brief` writes the task message for one unit and stops.
