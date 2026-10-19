@@ -177,9 +177,9 @@ func resolveSource(fileRepo, flagRepo string) (string, error) {
 
 // checkTempDir refuses a temp parent inside a directory the isolation
 // rules deny edits in, where an arm could not edit its own clone. It
-// checks the resolved path, the form the clones get, so a symlink into a
-// denied directory is caught too; a parent that does not exist yet is
-// checked as given.
+// checks the path as given and, when it exists, resolved: the isolation
+// rules name the source as given, and the clones get the resolved form,
+// so a symlink on either side has to be caught.
 func checkTempDir(tempDir string, iso eval.Isolation) error {
 	dir := tempDir
 	if dir == "" {
@@ -189,10 +189,11 @@ func checkTempDir(tempDir string, iso eval.Isolation) error {
 	if err != nil {
 		return fmt.Errorf("temp dir %s: %w", dir, err)
 	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = resolved
+	covered := iso.Covers(abs)
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil && iso.Covers(resolved) {
+		covered = true
 	}
-	if iso.Covers(abs) {
+	if covered {
 		return fmt.Errorf("temp dir %s is under a path the arms may not edit "+
 			"(~/code, ~/.worktrees or the source repo): pick one outside them", abs)
 	}

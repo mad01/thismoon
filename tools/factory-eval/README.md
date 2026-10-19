@@ -17,10 +17,10 @@ and its reflogs, and git prunes the objects that leaves unreachable. So the
 clone holds nothing newer than the pin, and `git fetch` has no remote to
 pull it back from. Its local config carries the `factory-eval` git
 identity, so no commit prompts. The temp dir is named in resolved form:
-`/private/var/folders/...` on macOS, not the `/var/folders` symlink.
-claude records the session's working directory resolved, so a `cd` to the
-same directory under its other name counts as leaving it. The arm session
-works in the clone under a fixed permission profile:
+`/private/var/folders/...` on macOS, not the `/var/folders` form. claude
+records the session's working directory resolved, and the first paid run
+denied every `cd` that named the clone or a worktree under `/var/folders`.
+The arm session works in the clone under a fixed permission profile:
 
 - `--max-budget-usd` with the tier's cap, and `--output-format json` plus
   `--json-schema` for a structured final report.
@@ -70,9 +70,12 @@ arm's file carries that arm's lists: the single arm's denies `Agent` and
 `SendMessage`, and the factory arm's allows them. The first paid run
 (2026-10-19) left open whether the workers obey the file's lists. Every
 worker command that passed was one claude runs without a rule, such as
-`pwd` or `git status`. The proof is a worker's `make -C
-<worktree>/<component> test` passing, which only an allow rule admits.
-Check that, and `permission_denials` for both arms, before trusting a
+`pwd` or `git status`. Arm sessions also load the user's own settings,
+and on this machine those allow plain `git commit` and `make`, so a worker
+passing those shows nothing either. The proof is a command only the arm's
+lists admit, such as `git -C <worktree> commit`. The flags and the file
+carry the same lists, so a pass shows they reached the worker, not which
+of the two did. Read `permission_denials` for both arms before trusting a
 factory result. The factory arm's allow list reaches every subagent type,
 not only workers.
 A general-purpose subagent the orchestrator spawns could spawn nested

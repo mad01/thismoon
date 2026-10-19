@@ -78,9 +78,9 @@ func TestCreateDetachesAtCommitWithoutOrigin(t *testing.T) {
 // paths the prompt and the flags name must match it.
 func TestCreateResolvesTheTempRoot(t *testing.T) {
 	src, sha := sourceRepo(t)
-	real := t.TempDir()
+	target := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
 	c, err := Create(context.Background(), src, sha, link)
@@ -88,7 +88,7 @@ func TestCreateResolvesTheTempRoot(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	t.Cleanup(func() { _ = c.Remove() })
-	wantParent, err := filepath.EvalSymlinks(real)
+	wantParent, err := filepath.EvalSymlinks(target)
 	if err != nil {
 		t.Fatal(err)
 	}

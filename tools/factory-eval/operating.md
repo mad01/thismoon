@@ -18,8 +18,8 @@ cap, the dontAsk permission mode with prompts turned into denials, only the
 humanizer MCP server, and a settings file. The file repeats the arm's
 allow and deny lists from the command line, since settings-file rules are
 documented to reach subagents. No paid run has yet shown that the
-factory's workers obey them; a worker's `make -C ... test` passing would,
-since only an allow rule admits it. Its own deny rules keep Edit, Write, `git
+factory's workers obey them; a worker command only the arm's lists admit,
+such as `git -C <worktree> commit`, passing would. Its own deny rules keep Edit, Write, `git
 -C`, `make -C` and `go build -o` out of ~/code, ~/.worktrees and the
 source repo; reads stay allowed. That is not a sandbox. {{.Bin}} fingerprints the source checkout
 before and after the session, and a change taints the run.

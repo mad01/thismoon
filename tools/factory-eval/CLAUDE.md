@@ -139,11 +139,14 @@ schema. Review the diff before committing it.
 - **Worker obedience to the settings lists is unverified.** Claude Code
   documents settings-file rules as reaching subagents. The first paid run
   (2026-10-19) left it open. Every worker command that passed was one
-  claude runs without a rule, such as `pwd` or `git status`. The proof is a
-  worker's `make -C <worktree>/<component> test` passing, which only an
-  allow rule admits. Check that, and `permission_denials` for both arms,
-  before trusting a factory result.
-- **Every path handed to claude is the resolved one.** `checkout.Create`
+  claude runs without a rule, such as `pwd` or `git status`. Arm sessions
+  load the user's own settings too, and this machine's allow plain `git
+  commit` and `make`, so those passing shows nothing. The proof is a
+  command only the arm's lists admit, such as `git -C <worktree> commit`;
+  the flags and the file carry the same lists, so a pass does not say
+  which carrier reached the worker. Read `permission_denials` for both
+  arms before trusting a factory result.
+- **Every path an arm session sees is the resolved one.** `checkout.Create`
   runs `EvalSymlinks` on the temp root, so the clone, the worktrees dir,
   the settings file, the prompt and `--add-dir` all name
   `/private/var/folders/...` on macOS. claude records the session cwd in
