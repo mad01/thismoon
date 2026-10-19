@@ -217,14 +217,17 @@ func resolvePath(p string) string {
 	return p
 }
 
-// hostEnv probes the host once: the home dir, claude's version, and the
-// seams the prerequisite checks and the install snapshot read through.
+// hostEnv probes the host once: the home dir, Claude Code's config dir,
+// claude's version, and the seams the prerequisite checks and the install
+// snapshot read through. The checks take the config dir from the Env and
+// never read $CLAUDE_CONFIG_DIR themselves.
 func hostEnv(ctx context.Context) (prereq.Env, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return prereq.Env{}, fmt.Errorf("home dir: %w", err)
 	}
-	excluded, err := prereq.SandboxExclusions(home)
+	configDir := prereq.ConfigDir(home, os.Getenv("CLAUDE_CONFIG_DIR"))
+	excluded, err := prereq.SandboxExclusions(configDir)
 	if err != nil {
 		return prereq.Env{}, err
 	}
@@ -232,6 +235,7 @@ func hostEnv(ctx context.Context) (prereq.Env, error) {
 	cache, cacheErr := goCache(ctx)
 	return prereq.Env{
 		Home:              home,
+		ConfigDir:         configDir,
 		GoCache:           cache,
 		GoCacheErr:        cacheErr,
 		SandboxExclusions: excluded,
@@ -306,7 +310,9 @@ func gate(b batch) error {
 	if len(b.unsandboxed) > 0 && !b.allowUnsandboxed {
 		return fmt.Errorf("the user's settings exclude %s from the sandbox and the run cannot "+
 			"deny them, so those calls would run unsandboxed, gated only by the permission rules "+
-			"and the fingerprint. Pass --allow-unsandboxed to accept that for this batch",
+			"and the fingerprint. The rules stop the usual forms but are not a boundary: an "+
+			"unsandboxed call can run arbitrary programs outside the sandbox. "+
+			"Pass --allow-unsandboxed to accept that for this batch",
 			strings.Join(b.unsandboxed, ", "))
 	}
 	worst := eval.WorstCaseUSD(b.file, len(b.arms), b.tiers, b.runs)

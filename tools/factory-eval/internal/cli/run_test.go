@@ -73,8 +73,11 @@ func TestGateRefusesBeforeAnySpend(t *testing.T) {
 func TestGateAcceptsUnsandboxedCommandsOnlyWithTheFlag(t *testing.T) {
 	b := signedBatch(t)
 	b.unsandboxed = []string{"git:*", "timeout:*"}
-	if err := gate(b); err == nil || !strings.Contains(err.Error(), "--allow-unsandboxed") {
-		t.Errorf("gate() = %v, want a refusal naming the flag", err)
+	err := gate(b)
+	for _, want := range []string{"--allow-unsandboxed", "arbitrary programs"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("gate() = %v, want a refusal holding %q", err, want)
+		}
 	}
 	b.allowUnsandboxed = true
 	if err := gate(b); err != nil {
@@ -188,6 +191,22 @@ func TestPrintPlanShowsWhatAPaidRunWouldRefuse(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("plan lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestPrintPlanNotesUnsandboxedCommandsTheFlagAccepted(t *testing.T) {
+	b := signedBatch(t)
+	b.unsandboxed = []string{"git:*", "timeout:*"}
+	b.allowUnsandboxed = true
+	var out bytes.Buffer
+	printPlan(&out, b, false)
+	got := out.String()
+	if !strings.Contains(got, "unsandboxed: git:*, timeout:*") ||
+		!strings.Contains(got, "(accepted with --allow-unsandboxed)") {
+		t.Errorf("plan does not show the accepted exclusions:\n%s", got)
+	}
+	if strings.Contains(got, "a paid run refuses here") {
+		t.Errorf("plan warns of a refusal the flag already lifted:\n%s", got)
 	}
 }
 

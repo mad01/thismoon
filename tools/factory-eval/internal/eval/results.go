@@ -28,8 +28,8 @@ const (
 // file's content digest, which a signed-off file also holds in its
 // sign-off. SettingsPermissions maps each arm to the permissions block
 // its runs' settings files held. UnsandboxedCommands lists the user's
-// sandbox exclusions the arms need and so could not deny; those commands
-// ran outside the sandbox.
+// sandbox exclusions the run could not deny, those overlapping an arm
+// Bash rule and wrapper words; those commands ran outside the sandbox.
 type Results struct {
 	Schema              string                 `json:"schema"`
 	DryRun              bool                   `json:"dry_run"`

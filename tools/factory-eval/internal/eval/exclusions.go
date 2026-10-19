@@ -2,14 +2,17 @@ package eval
 
 import "strings"
 
-// wrappers are the command words Claude Code strips before it matches a
-// Bash permission rule, so `timeout 60 go test ./...` matches a go test
-// rule. The exclusion docs do not say the same of exclusion matching, so
-// an entry naming one may take a wrapped call out of the sandbox while a
-// deny rule for the entry never fires. Such an entry counts as unsandboxed.
-var wrappers = map[string]bool{
-	"timeout": true, "time": true, "nice": true, "nohup": true,
-	"stdbuf": true, "command": true, "builtin": true, "noglob": true,
+// wrapperPrefixes are the command words Claude Code strips before it
+// matches a Bash permission rule, each with the space that follows it, so
+// `timeout 60 go test ./...` matches a go test rule; bare xargs is
+// stripped too. The exclusion docs do not say the same of exclusion
+// matching, so an entry that covers a wrapped call, `timeout:*` or a
+// shorter prefix such as `tim*`, may take that call out of the sandbox
+// while a deny rule for the entry never fires. Such an entry counts as
+// unsandboxed.
+var wrapperPrefixes = []string{
+	"timeout ", "time ", "nice ", "nohup ", "stdbuf ", "command ", "builtin ", "noglob ",
+	"xargs ",
 }
 
 // userExclusions sorts the user's sandbox.excludedCommands into the
@@ -20,8 +23,8 @@ var wrappers = map[string]bool{
 // never runs at all. An entry that overlaps an arm allow rule, git here,
 // cannot be denied that way: the command runs outside the sandbox, gated
 // by the permission rules and the fingerprint only, and the results name
-// it under unsandboxed_commands. An entry naming a wrapper word stays
-// unsandboxed for the reason wrappers gives.
+// it under unsandboxed_commands. An entry that overlaps a wrapper word
+// stays unsandboxed for the reason wrapperPrefixes gives.
 func userExclusions(excluded, allow []string) (deny, unsandboxed []string) {
 	var prefixes []string
 	for _, rule := range allow {
@@ -31,7 +34,7 @@ func userExclusions(excluded, allow []string) (deny, unsandboxed []string) {
 	}
 	for _, entry := range excluded {
 		p := literalPrefix(entry)
-		if wrappers[commandWord(p)] || overlapsAny(p, prefixes) {
+		if overlapsAny(p, wrapperPrefixes) || overlapsAny(p, prefixes) {
 			unsandboxed = append(unsandboxed, entry)
 			continue
 		}
@@ -48,14 +51,18 @@ func Unsandboxed(excluded []string) []string {
 }
 
 // literalPrefix is the text of a rule body or an exclusion entry before
-// its first wildcard, with the colon of a `cmd:*` suffix dropped: `git:*`
-// gives git, `git *` gives "git ", `git -C * add *` gives "git -C ", a
-// bare `docker` gives itself and `*` gives the empty string.
+// its first wildcard. A `cmd:*` suffix means the same as `cmd *`, so it
+// gives the command and a space: `git:*` and `git *` both give "git ",
+// `git*` gives git, `git -C * add *` gives "git -C ", a bare `docker`
+// gives itself and `*` gives the empty string.
 func literalPrefix(pattern string) string {
-	if i := strings.Index(pattern, "*"); i >= 0 {
-		pattern = pattern[:i]
+	if cmd, ok := strings.CutSuffix(pattern, ":*"); ok && !strings.Contains(cmd, "*") {
+		return cmd + " "
 	}
-	return strings.TrimSuffix(pattern, ":")
+	if i := strings.Index(pattern, "*"); i >= 0 {
+		return pattern[:i]
+	}
+	return pattern
 }
 
 // overlapsAny reports whether p and one of the prefixes cover a common
@@ -68,12 +75,4 @@ func overlapsAny(p string, prefixes []string) bool {
 		}
 	}
 	return false
-}
-
-// commandWord is the first word of a literal prefix.
-func commandWord(prefix string) string {
-	if end := strings.IndexByte(prefix, ' '); end >= 0 {
-		return prefix[:end]
-	}
-	return prefix
 }

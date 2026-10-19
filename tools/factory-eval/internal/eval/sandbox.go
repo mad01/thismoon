@@ -24,7 +24,7 @@ type Sandbox struct {
 	// ExcludedCommands is empty: the run adds no exclusion of its own. It
 	// cannot take the user's back, since exclusion lists combine across
 	// the settings files a session loads; userExclusions turns those into
-	// deny rules instead, and reports the ones the arms need.
+	// deny rules instead, and reports the ones it cannot deny.
 	ExcludedCommands []string          `json:"excludedCommands"`
 	Network          SandboxNetwork    `json:"network"`
 	Filesystem       SandboxFilesystem `json:"filesystem"`

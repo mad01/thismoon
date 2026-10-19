@@ -39,12 +39,14 @@ type ClaudeProbe struct {
 	Err     error
 }
 
-// Env is the host the checks look at. Tests point Home at a temp dir.
-// GoCache is `go env GOCACHE`, and GoCacheErr the error when go did not
-// answer. SandboxExclusions is the user's sandbox.excludedCommands list,
-// which every arm session inherits.
+// Env is the host the checks look at. Tests point Home and ConfigDir at
+// temp dirs. ConfigDir is Claude Code's config dir, resolved once by the
+// caller (see ConfigDir). GoCache is `go env GOCACHE`, and GoCacheErr the
+// error when go did not answer. SandboxExclusions is the user's
+// sandbox.excludedCommands list, which every arm session inherits.
 type Env struct {
 	Home              string
+	ConfigDir         string
 	GoCache           string
 	GoCacheErr        error
 	SandboxExclusions []string
@@ -64,7 +66,7 @@ func Common(env Env) []Result {
 
 // Factory checks what the factory arm needs on top of Common.
 func Factory(env Env) []Result {
-	claudeDir := configDir(env.Home)
+	claudeDir := env.ConfigDir
 	results := []Result{
 		file("factory skill", filepath.Join(claudeDir, "skills", "factory", "SKILL.md")),
 		file("loom skill", filepath.Join(claudeDir, "skills", "loom", "SKILL.md")),
@@ -181,27 +183,39 @@ func readSettings(p string) (settings, error) {
 	return s, nil
 }
 
-// managedSettings is where macOS keeps the managed settings file, which a
-// session loads whatever its setting sources are. Tests point it elsewhere.
-var managedSettings = "/Library/Application Support/ClaudeCode/managed-settings.json"
+// managedDir is where macOS keeps the managed settings: the
+// managed-settings.json file and the managed-settings.d drop-in dir beside
+// it, which a session loads whatever its setting sources are. Tests point
+// it elsewhere.
+var managedDir = "/Library/Application Support/ClaudeCode"
 
-// configDir is Claude Code's config dir: $CLAUDE_CONFIG_DIR when set, else
-// ~/.claude.
-func configDir(home string) string {
-	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
-		return d
+// ConfigDir is Claude Code's config dir: override, the value of
+// $CLAUDE_CONFIG_DIR, when set, else ~/.claude under home.
+func ConfigDir(home, override string) string {
+	if override != "" {
+		return override
 	}
 	return filepath.Join(home, ".claude")
 }
 
 // SandboxExclusions is the sandbox.excludedCommands list an arm session
-// inherits: the user's settings file plus the managed one when it exists.
-// Exclusion lists combine across the settings files a session loads, so
-// the run's own file cannot remove an entry. No settings file means no
-// exclusions.
-func SandboxExclusions(home string) ([]string, error) {
+// inherits: the user's settings file in configDir, then the managed
+// settings file, then every .json file in managed-settings.d in name
+// order, the way Claude Code merges them. Exclusion lists combine across
+// the settings files a session loads, so the run's own file cannot remove
+// an entry. A missing file adds no exclusions. An MDM profile and
+// server-managed settings are not read.
+func SandboxExclusions(configDir string) ([]string, error) {
+	dropIns, err := jsonFiles(filepath.Join(managedDir, "managed-settings.d"))
+	if err != nil {
+		return nil, fmt.Errorf("sandbox exclusions: %w", err)
+	}
+	paths := append([]string{
+		filepath.Join(configDir, "settings.json"),
+		filepath.Join(managedDir, "managed-settings.json"),
+	}, dropIns...)
 	var all []string
-	for _, p := range []string{filepath.Join(configDir(home), "settings.json"), managedSettings} {
+	for _, p := range paths {
 		s, err := readSettings(p)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -212,6 +226,25 @@ func SandboxExclusions(home string) ([]string, error) {
 		all = append(all, s.Sandbox.ExcludedCommands...)
 	}
 	return all, nil
+}
+
+// jsonFiles is every .json file in dir, in name order. A missing dir holds
+// none.
+func jsonFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	return files, nil
 }
 
 // beltSubagentHook checks that a SubagentStart hook runs belt, the hint

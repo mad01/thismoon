@@ -64,8 +64,13 @@ Array keys combine across both files, and that cuts the other way: the
 user's `sandbox.excludedCommands` entries apply in every run, and the
 run's own empty list cannot remove them.
 
-factory-eval reads that list at batch start, from `~/.claude/settings.json`
-(or `$CLAUDE_CONFIG_DIR`) and the managed settings file when one exists.
+factory-eval reads that list at batch start. It reads
+`~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR`), then the managed
+settings file, then every `.json` file in the `managed-settings.d` dir
+beside it in name order, the way Claude Code merges them. It does not
+read a mobile device management profile or server-managed settings, so
+an exclusion set there is neither denied nor reported.
+
 An entry that overlaps none of the arms' Bash allow rules gets a deny rule
 in the run's file, so the command never runs at all. An entry that
 overlaps one, `git:*` on a machine that excludes git, cannot be denied.
@@ -109,8 +114,12 @@ from any source beats an allow rule from any source:
 - `--strict-mcp-config`: the humanizer MCP server is the only one.
 - The deny list above blocks push, fetch, pull, clone, ls-remote,
   submodule, remote, git config and git's `--output` flag, plus `gh`,
-  `ralph`, installs and the web tools. It holds where the user's own rules
-  allow a fetch, which matters when git runs unsandboxed.
+  `ralph`, installs and the web tools. It stops the usual fetch forms even
+  where the user's own rules allow a fetch, which matters when git runs
+  unsandboxed. Each `git -C` rule comes as a pair, `git -C * push` and
+  `git -C * push *`, so a commit message holding "configuration" or
+  "fetches" passes. A message holding one of those words whole, such as
+  " push " or " config ", still matches a rule and loses the commit.
 - The run's settings file holds Edit deny rules for `~/code` and
   `~/.worktrees`, and for the source repo when it lives elsewhere. Claude
   Code checks the Write tool against Edit rules, so they block Write too;
@@ -118,8 +127,19 @@ from any source beats an allow rule from any source:
 - The same file blocks `curl`, and `git -C`, `make -C`, `go build -o`, and
   `go build`, `go test` or `go vet` with `-C`, aimed into any of those
   directories in absolute or `~/` form. So no
-  build in a run can overwrite a binary under `~/code/bin`. Reads stay
+  build command in a run can name `~/code/bin` as its target. Reads stay
   allowed.
+
+These rules stop the usual forms, but they are not a boundary. An
+unsandboxed call the allow list admits can still run any program.
+`git -C <clone> -c core.fsmonitor=<program> status` does. So does
+`git commit` once the Write tool, which runs outside the sandbox, has
+put a hook in the clone's `.git/hooks`. So does
+`timeout 600 make -C <clone> test` after the arm edited the Makefile or
+a test. A `git -C` call can also write to a repo the isolation rules do
+not name, and the fingerprint covers the source checkout only. Passing
+`--allow-unsandboxed` accepts arbitrary program execution outside the
+sandbox for those calls.
 
 The arm's allow and deny lists live in two places: the `--allowedTools`
 and `--disallowedTools` flags, and the settings file's `permissions.allow`
@@ -401,8 +421,9 @@ user's settings widen that list, as the sandbox section explains.
 that arm's settings file held. Its `allow` is the arm's allow list, and
 its `deny` is the arm's deny list, then a deny rule per user sandbox
 exclusion the arms do not need, then the isolation rules.
-`unsandboxed_commands` at the top lists the exclusions the arms do need,
-which ran outside the sandbox.
+`unsandboxed_commands` at the top lists the exclusions the run could not
+deny, those overlapping an arm Bash rule and wrapper words such as
+`timeout`. Those calls ran outside the sandbox.
 
 ## Develop
 

@@ -148,16 +148,30 @@ schema. Review the diff before committing it.
   the arms' Bash rules into a deny rule. The rest, `git:*` on this
   machine and any wrapper word such as `timeout`, it reports under
   `unsandboxed_commands` and in a warning, and a paid run refuses over
-  them without `--allow-unsandboxed`. The deny list closes fetch, pull, clone,
-  ls-remote, submodule and `--output`, so unsandboxed git has no network
-  and no write target outside the clone, whatever the user's allow rules
-  say. The probe that
+  them without `--allow-unsandboxed`. The probe that
   saw `git worktree add ~/x` refused proved nothing: that shape stays
   sandboxed under any exclusion. The user's `additionalDirectories` and
   `Edit` allow rules widen `allowWrite`; `~/code` and `~/.worktrees` stay
   closed because the run's Edit deny rules count as `denyWrite`. MAD-418
   is the real fix: arms under `--setting-sources ""`, with what the
   factory arm needs carried in explicitly.
+- **The deny list is not a boundary.** It stops the usual push, fetch,
+  pull, clone, ls-remote, submodule, config and `--output` forms, whatever
+  the user's allow rules say. An unsandboxed call the allow list admits
+  can still run any program:
+  `git -C <clone> -c core.fsmonitor=<program> status` does, and so does
+  `git commit` over a hook the Write tool put in the clone. A `git -C`
+  into a repo the isolation rules miss writes there,
+  and `timeout 600 make -C <clone> test` runs Makefile and test code the
+  arm can edit. So `--allow-unsandboxed` accepts arbitrary program
+  execution outside the sandbox for those calls.
+- **Each `git -C` deny rule is a pair.** `git -C * push` and
+  `git -C * push *` put a space on both sides of the subcommand. A single
+  `git -C * push*` lets its `*` span the rest of the command, so it also
+  matched inside a commit message ("configuration", "fetches") and denied
+  the worker its commit. A whole word in a message still matches.
+  `internal/eval/profile_test.go` checks both directions with a matcher
+  that follows the documented glob rules.
 - **Edit rules cover the Write tool.** Claude Code checks file writes
   against Edit rules and never consults a Write path rule, so the isolation
   rules are Edit rules only, and a test keeps Write rules out. Their `git -C`,
