@@ -69,9 +69,9 @@ func TestDeckFieldsReachTheSchema(t *testing.T) {
 }
 
 // TestTerminalBlockReachesTheSchema pins the create tool's descriptions to
-// the terminal block: its fields and the rows bounds the renderer enforces
-// in the content text, and its exemption from the no-cards rule in the
-// deck text.
+// the terminal block: its fields, the session length, and the rows bounds
+// the renderer enforces in the content text, and its exemption from the
+// no-cards rule in the deck text.
 func TestTerminalBlockReachesTheSchema(t *testing.T) {
 	content, ok := reflect.TypeOf(createInput{}).FieldByName("Content")
 	if !ok {
@@ -79,6 +79,7 @@ func TestTerminalBlockReachesTheSchema(t *testing.T) {
 	}
 	for _, want := range []string{
 		"terminal {session, cmd?, cwd?, rows?}",
+		fmt.Sprintf("session is 1 to %d of a-z, 0-9, and -", render.TerminalSessionMaxLen),
 		fmt.Sprintf("rows %d to %d", render.TerminalMinRows, render.TerminalMaxRows),
 	} {
 		if !strings.Contains(content.Tag.Get("jsonschema"), want) {

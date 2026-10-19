@@ -287,38 +287,48 @@ func (h *handlers) expiry(ephemeral bool) *time.Time {
 // resolveContent detects whether s is a Doc JSON object or a legacy HTML
 // string and returns rendered HTML either way. When the input is a Doc, it also
 // returns the canonical Doc JSON (re-marshaled from the parsed struct) so the
-// caller can persist it for future re-renders; docJSON is nil for HTML input.
-func resolveContent(s string, title string) (htmlOut string, docJSON []byte, err error) {
+// caller can persist it for future re-renders, and the Doc itself; JSON is nil
+// and the Doc empty for HTML input.
+func resolveContent(s string, title string) (render.Compiled, error) {
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
-		return "", nil, nil
+		return render.Compiled{}, nil
 	}
 	if s[0] == '{' {
-		c, err := render.Compile([]byte(s), title)
-		if err != nil {
-			return "", nil, err
-		}
-		return c.HTML, c.JSON, nil
+		return render.Compile([]byte(s), title)
 	}
-	return s, nil, nil
+	return render.Compiled{HTML: s}, nil
 }
 
 // resolveDeck compiles a deck's Doc JSON to the HTML fragment deck.html holds
-// and returns it with the canonical Doc JSON deck.json holds. Unlike content,
-// a deck has no legacy form: anything but a Doc object is refused.
-func resolveDeck(s string, title string) (htmlOut string, docJSON []byte, err error) {
+// and returns it with the canonical Doc JSON deck.json holds and the Doc.
+// Unlike content, a deck has no legacy form: anything but a Doc object is
+// refused.
+func resolveDeck(s string, title string) (render.Compiled, error) {
 	s = strings.TrimSpace(s)
 	if len(s) == 0 {
-		return "", nil, nil
+		return render.Compiled{}, nil
 	}
 	if s[0] != '{' {
-		return "", nil, errors.New("deck: want Doc JSON (an object with sections, one per slide)")
+		return render.Compiled{}, errors.New(
+			"deck: want Doc JSON (an object with sections, one per slide)",
+		)
 	}
 	c, err := render.CompileDeck([]byte(s), title)
 	if err != nil {
-		return "", nil, fmt.Errorf("deck: %w", err)
+		return render.Compiled{}, fmt.Errorf("deck: %w", err)
 	}
-	return c.HTML, c.JSON, nil
+	return c, nil
+}
+
+// checkRenditions refuses a brief and a deck that name one terminal session
+// with a different cmd or cwd: both attach to the page's sessions, and serve
+// starts each once. Each Doc was checked on its own when it compiled.
+func checkRenditions(content, deck render.Doc) error {
+	if err := render.ValidateTerminalSessions(content, deck); err != nil {
+		return fmt.Errorf("content and deck: %w", err)
+	}
+	return nil
 }
 
 // resolveGraph detects whether s is a GraphInput JSON object or a legacy JS
@@ -444,12 +454,15 @@ func (h *handlers) create(
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("deck: %w", err)
 	}
-	content, docJSON, err := resolveContent(contentSrc, in.Title)
+	content, err := resolveContent(contentSrc, in.Title)
 	if err != nil {
 		return nil, pageOutput{}, fmt.Errorf("content: %w", err)
 	}
-	deck, deckJSON, err := resolveDeck(deckSrc, in.Title)
+	deck, err := resolveDeck(deckSrc, in.Title)
 	if err != nil {
+		return nil, pageOutput{}, err
+	}
+	if err := checkRenditions(content.Doc, deck.Doc); err != nil {
 		return nil, pageOutput{}, err
 	}
 	graph, graphJSON, err := resolveGraph(in.Graph)
@@ -464,12 +477,12 @@ func (h *handlers) create(
 	// present_source can hand the source back for edits.
 	d := store.Draft{
 		Title:       in.Title,
-		Content:     content,
-		Deck:        deck,
+		Content:     content.HTML,
+		Deck:        deck.HTML,
 		Graph:       graph,
 		References:  toStoreRefs(in.References),
-		Doc:         docJSON,
-		DeckSource:  deckJSON,
+		Doc:         content.JSON,
+		DeckSource:  deck.JSON,
 		GraphSource: graphJSON,
 	}
 	if h.mode == ModeShared {
@@ -777,21 +790,25 @@ func resolveUpdate(in updateInput, curTitle string) (compiledUpdate, error) {
 		title = *in.Title
 	}
 	u := compiledUpdate{baseTitle: curTitle, patch: store.Patch{Title: in.Title}}
+	var content, deck render.Compiled
 	if in.Content != nil {
-		content, docJSON, err := resolveContent(*in.Content, title)
-		if err != nil {
+		var err error
+		if content, err = resolveContent(*in.Content, title); err != nil {
 			return compiledUpdate{}, fmt.Errorf("content: %w", err)
 		}
-		u.patch.Content = &content
-		u.plan.setDoc, u.plan.doc = true, docJSON
+		u.patch.Content = &content.HTML
+		u.plan.setDoc, u.plan.doc = true, content.JSON
 	}
 	if in.Deck != nil {
-		deck, deckJSON, err := resolveDeck(*in.Deck, title)
-		if err != nil {
+		var err error
+		if deck, err = resolveDeck(*in.Deck, title); err != nil {
 			return compiledUpdate{}, err
 		}
-		u.patch.Deck = &deck
-		u.plan.setDeck, u.plan.deck = true, deckJSON
+		u.patch.Deck = &deck.HTML
+		u.plan.setDeck, u.plan.deck = true, deck.JSON
+	}
+	if err := checkRenditions(content.Doc, deck.Doc); err != nil {
+		return compiledUpdate{}, err
 	}
 	if in.Graph != nil {
 		graph, graphJSON, err := resolveGraph(*in.Graph)

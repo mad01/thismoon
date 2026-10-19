@@ -322,6 +322,19 @@ func (b *Block) UnmarshalJSON(data []byte) error {
 // absent reports whether a raw field was missing or null.
 func absent(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == "null" }
 
+// blockDecodeError is a block's own decode error, raised once its type is
+// known and naming the block. A columns block decoding the blocks it holds
+// passes one on as it is, so the inner block's message leads.
+type blockDecodeError struct{ err error }
+
+func (e *blockDecodeError) Error() string { return e.err.Error() }
+func (e *blockDecodeError) Unwrap() error { return e.err }
+
+// blockDecodeErrorf formats a blockDecodeError.
+func blockDecodeErrorf(format string, args ...any) error {
+	return &blockDecodeError{fmt.Errorf(format, args...)}
+}
+
 // decodeCols reads cols as a columns block's arrays of blocks or as any
 // other block's header strings.
 func (b *Block) decodeCols(raw json.RawMessage) error {
@@ -330,30 +343,34 @@ func (b *Block) decodeCols(raw json.RawMessage) error {
 	}
 	if b.T == "columns" {
 		if err := json.Unmarshal(raw, &b.Columns); err != nil {
-			return fmt.Errorf("columns block: cols must be arrays of blocks: %w", err)
+			if inner, ok := errors.AsType[*blockDecodeError](err); ok {
+				return inner
+			}
+			return blockDecodeErrorf("columns block: cols must be arrays of blocks: %w", err)
 		}
 		return nil
 	}
 	if err := json.Unmarshal(raw, &b.Cols); err != nil {
-		return fmt.Errorf("%s block: cols must be strings: %w", b.T, err)
+		return blockDecodeErrorf("%s block: cols must be strings: %w", b.T, err)
 	}
 	return nil
 }
 
 // decodeRows reads rows as a terminal block's height or as any other
-// block's arrays of cells.
+// block's arrays of cells. A terminal's session is decoded by then, so its
+// error names the session.
 func (b *Block) decodeRows(raw json.RawMessage) error {
 	if absent(raw) {
 		return nil
 	}
 	if b.T == "terminal" {
 		if err := json.Unmarshal(raw, &b.TerminalRows); err != nil {
-			return fmt.Errorf("terminal block: rows must be a whole number: %w", err)
+			return blockDecodeErrorf("terminal %q: rows must be a whole number: %w", b.Session, err)
 		}
 		return nil
 	}
 	if err := json.Unmarshal(raw, &b.Rows); err != nil {
-		return fmt.Errorf("%s block: rows must be arrays of strings: %w", b.T, err)
+		return blockDecodeErrorf("%s block: rows must be arrays of strings: %w", b.T, err)
 	}
 	return nil
 }
@@ -1189,12 +1206,17 @@ const (
 	TerminalMaxRows = 60
 )
 
+// TerminalSessionMaxLen is the longest terminal session name, in bytes.
+const TerminalSessionMaxLen = 32
+
 // terminalSession is the shape of a terminal session name: it is a path
 // segment of the attach route and a key serve holds the session under.
-var terminalSession = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+var terminalSession = regexp.MustCompile(
+	fmt.Sprintf(`^[a-z0-9-]{1,%d}$`, TerminalSessionMaxLen),
+)
 
 // ValidTerminalSession reports whether name may name a terminal session:
-// 1 to 32 of a-z, 0-9, and -.
+// 1 to TerminalSessionMaxLen of a-z, 0-9, and -.
 func ValidTerminalSession(name string) bool { return terminalSession.MatchString(name) }
 
 // isTerminal reports whether b is a live terminal block.
@@ -1202,13 +1224,18 @@ func isTerminal(b Block) bool { return b.T == "terminal" }
 
 // validateTerminal refuses a terminal block without a valid session name
 // and a rows value outside TerminalMinRows..TerminalMaxRows; 0 leaves the
-// height to the browser. Cmd and Cwd are free text.
+// height to the browser. A session is an identifier, so it is never
+// trimmed: a blank one is missing and a padded one is refused. Cmd and Cwd
+// are free text.
 func validateTerminal(b Block) error {
-	if b.Session == "" {
+	if strings.TrimSpace(b.Session) == "" {
 		return errors.New("terminal block: session is required")
 	}
 	if !ValidTerminalSession(b.Session) {
-		return fmt.Errorf("terminal %q: session must be 1 to 32 of a-z, 0-9, and -", b.Session)
+		return fmt.Errorf(
+			"terminal %q: session must be 1 to %d of a-z, 0-9, and -",
+			b.Session, TerminalSessionMaxLen,
+		)
 	}
 	if r := b.TerminalRows; r != 0 && (r < TerminalMinRows || r > TerminalMaxRows) {
 		return fmt.Errorf(
@@ -1222,14 +1249,19 @@ func validateTerminal(b Block) error {
 // validateFieldHomes refuses a field set on a block type that does not
 // read it, so an author learns the field moved nothing: the diagram's
 // nodes, groups, edges, and direction on any other block, the terminal's
-// session, cmd, cwd, and rows height on any other block, and frame on
-// anything but a chart or an image.
+// session, cmd, cwd, and rows height on any other block, the cols and the
+// rows of cells a terminal shares wire keys with on a terminal, where its
+// rows height would shadow the cells, and frame on anything but a chart or
+// an image.
 func validateFieldHomes(b Block) error {
 	if b.T != "diagram" && (len(b.Nodes) > 0 || len(b.Groups) > 0 || len(b.Edges) > 0 || b.Direction != "") {
 		return fmt.Errorf("%s block: nodes, groups, edges, and direction are diagram fields", b.T)
 	}
 	if b.T != "terminal" && (b.Session != "" || b.Cmd != "" || b.Cwd != "" || b.TerminalRows != 0) {
 		return fmt.Errorf("%s block: session, cmd, cwd, and a rows height are terminal fields", b.T)
+	}
+	if b.T == "terminal" && (len(b.Cols) > 0 || len(b.Columns) > 0 || len(b.Rows) > 0) {
+		return errors.New("terminal block: cols and rows of cells are table and columns fields")
 	}
 	if b.Frame != nil && b.T != "chart" && b.T != "image" && b.T != "diagram" {
 		return fmt.Errorf("%s block: frame is a chart or image field", b.T)
@@ -1773,9 +1805,10 @@ func validateSection(s Section) error {
 }
 
 // validateDoc refuses a Doc the renderer cannot honour: a chrome field or a
-// section field outside its vocabulary, a block validateBlocks refuses, and
+// section field outside its vocabulary, a block validateBlocks refuses,
 // more than one graph block, since a page has one graph and the page view
-// mounts it in the one container the graph block renders.
+// mounts it in the one container the graph block renders, and a terminal
+// session ValidateTerminalSessions refuses.
 func validateDoc(d Doc) error {
 	if err := validateChrome(d); err != nil {
 		return err
@@ -1792,6 +1825,46 @@ func validateDoc(d Doc) error {
 	}
 	if graphs > 1 {
 		return fmt.Errorf("graph block: a page places its one graph once, found %d", graphs)
+	}
+	return ValidateTerminalSessions(d)
+}
+
+// terminalSpec is what serve starts a terminal session from: the command
+// and the directory, trimmed as normalizeBlock trims them.
+type terminalSpec struct{ cmd, cwd string }
+
+func (s terminalSpec) String() string { return fmt.Sprintf("(cmd %q, cwd %q)", s.cmd, s.cwd) }
+
+// ValidateTerminalSessions refuses a terminal session that two blocks of
+// docs name with a different cmd or cwd. Serve starts a session once per
+// page, from one cmd and cwd, so the other block's would be dropped without
+// a word. Rows may differ: it is only the height a block shows. validateDoc
+// runs it on one Doc; the MCP tools run it on a page's brief and deck
+// together, since both renditions attach to the page's sessions.
+func ValidateTerminalSessions(docs ...Doc) error {
+	seen := map[string]terminalSpec{}
+	for i := range docs {
+		err := docs[i].EachBlock(func(b *Block) error {
+			if !isTerminal(*b) {
+				return nil
+			}
+			spec := terminalSpec{strings.TrimSpace(b.Cmd), strings.TrimSpace(b.Cwd)}
+			first, ok := seen[b.Session]
+			if !ok {
+				seen[b.Session] = spec
+				return nil
+			}
+			if spec != first {
+				return fmt.Errorf(
+					"terminal %q: blocks naming the session give %s and %s; it starts once, from one cmd and cwd",
+					b.Session, first, spec,
+				)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
