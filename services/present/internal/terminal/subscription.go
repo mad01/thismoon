@@ -56,8 +56,10 @@ func (sub *Subscription) Exit() (code int, exited bool) {
 	return sub.code, sub.exited
 }
 
-// Write sends p to the process as typed input. It returns ErrExited once
-// the process has ended.
+// Write queues p as typed input for the process and returns without
+// waiting for the process to read it. It returns ErrExited once the
+// process has ended, ErrInputFull while the session holds as much unread
+// input as it takes, and the write error once the terminal refused input.
 func (sub *Subscription) Write(p []byte) (int, error) {
 	return sub.s.write(p)
 }

@@ -191,6 +191,37 @@ func TestManySmallWritesDoNotDropASubscriber(t *testing.T) {
 	}
 }
 
+// Input to a process that is not reading queues instead of holding up the
+// caller, is refused past inputLimit, and leaves resize and kill working.
+func TestInputToAProcessNotReadingQueuesAndKillStillWorks(t *testing.T) {
+	m, _ := newManager(t, Config{})
+	sub := attach(t, m, "demo", Spec{Cmd: "stty raw -echo; printf up; sleep 60"})
+	readUntil(t, sub, "up")
+
+	chunk := bytes.Repeat([]byte("x"), 64<<10)
+	start := time.Now()
+	var err error
+	for written := 0; err == nil && written <= 2*inputLimit; written += len(chunk) {
+		_, err = sub.Write(chunk)
+	}
+	if !errors.Is(err, ErrInputFull) {
+		t.Fatalf("writing past the limit: err = %v, want ErrInputFull", err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("queueing the input took %s, want no wait on the process", took)
+	}
+	if err := sub.Resize(100, 30); err != nil {
+		t.Errorf("Resize with input stuck: %v", err)
+	}
+	if err := m.Kill("page1", "demo"); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	readAll(t, sub)
+	if _, err := sub.Write([]byte("x")); !errors.Is(err, ErrExited) {
+		t.Errorf("Write after the exit: err = %v, want ErrExited", err)
+	}
+}
+
 func TestKillEndsTheSessionAndUnlistsIt(t *testing.T) {
 	m, _ := newManager(t, Config{KillGrace: 500 * time.Millisecond})
 	sub := attach(t, m, "demo", Spec{Cmd: "printf up; sleep 60"})

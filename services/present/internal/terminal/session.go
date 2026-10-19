@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +18,9 @@ import (
 const (
 	// readChunk is the most one PTY read takes.
 	readChunk = 32 << 10
+	// inputLimit is how many bytes of typed input a session holds for a
+	// process that is not reading; a write past it gets ErrInputFull.
+	inputLimit = 4 << 20
 	// pendingLimit is how many bytes of live output a subscriber may fall
 	// behind by before it is dropped. Counted in bytes, not reads, so a
 	// program printing a byte at a time does not drop a reader keeping up.
@@ -50,6 +54,8 @@ type session struct {
 	// output is signalled after each read while a prefill waits; nil
 	// without one.
 	output chan struct{}
+	// inputReady is signalled when input is queued for writeLoop.
+	inputReady chan struct{}
 
 	mu     sync.Mutex
 	ring   *ring
@@ -58,6 +64,11 @@ type session struct {
 	waited bool // the process has been reaped; its pid may be reused
 	exited bool
 	code   int
+	// input is typed input writeLoop has yet to write, inputBytes its
+	// size and the write in flight, inputErr why writing stopped.
+	input      [][]byte
+	inputBytes int
+	inputErr   error
 }
 
 // spawn starts the session process for k under a fresh PTY.
@@ -86,6 +97,7 @@ func (m *Manager) spawn(k key, spec Spec) (*session, error) {
 		idleTimeout: m.cfg.IdleTimeout,
 		readDone:    make(chan struct{}),
 		done:        make(chan struct{}),
+		inputReady:  make(chan struct{}, 1),
 		ring:        newRing(m.cfg.RingBytes),
 		subs:        map[*Subscription]struct{}{},
 	}
@@ -95,6 +107,7 @@ func (m *Manager) spawn(k key, spec Spec) (*session, error) {
 		go s.typePrefill(spec.Prefill, m.cfg.PrefillWait)
 	}
 	go s.readLoop()
+	go s.writeLoop()
 	go s.waitLoop()
 	return s, nil
 }
@@ -231,11 +244,12 @@ func exitCode(err error) int {
 	return ee.ExitCode()
 }
 
-// finish records the exit, ends every subscriber's output, and releases the
-// PTY.
+// finish records the exit, drops the input not yet written, ends every
+// subscriber's output, and releases the PTY.
 func (s *session) finish(code int) {
 	s.mu.Lock()
 	s.exited, s.code = true, code
+	s.input, s.inputBytes = nil, 0
 	for sub := range s.subs {
 		sub.closeOut(true, code)
 	}
@@ -403,19 +417,78 @@ func foregroundGroup(f *os.File) (int, error) {
 	return pgid, nil
 }
 
-// write sends p to the process's input.
+// write queues a copy of p for the process's input and returns without
+// waiting for it to be written: a process that is not reading must not
+// hold up the caller, which also carries resizes, kills, and the close.
+// It fails with ErrExited once the process has ended, with the error that
+// stopped writeLoop, and with ErrInputFull past inputLimit.
 func (s *session) write(p []byte) (int, error) {
 	s.mu.Lock()
-	exited := s.exited
-	s.mu.Unlock()
-	if exited {
+	defer s.mu.Unlock()
+	switch {
+	case s.exited:
 		return 0, ErrExited
+	case s.inputErr != nil:
+		return 0, s.inputErr
+	case s.inputBytes+len(p) > inputLimit:
+		return 0, fmt.Errorf("%w: %s", ErrInputFull, s.key)
+	case len(p) == 0:
+		return 0, nil
 	}
-	n, err := s.pty.Write(p)
-	if err != nil {
-		return n, fmt.Errorf("terminal: write %s: %w", s.key, err)
+	s.input = append(s.input, bytes.Clone(p))
+	s.inputBytes += len(p)
+	select {
+	case s.inputReady <- struct{}{}:
+	default: // writeLoop already has a signal waiting
 	}
-	return n, nil
+	return len(p), nil
+}
+
+// writeLoop writes queued input to the PTY in order until the exit is
+// recorded or a write fails. A write blocks while the process is not
+// reading, and like the read loop it returns once every holder of the
+// terminal side is gone.
+func (s *session) writeLoop() {
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-s.inputReady:
+		}
+		for p := s.nextInput(); p != nil; p = s.nextInput() {
+			_, err := s.pty.Write(p)
+			if !s.inputWritten(len(p), err) {
+				return
+			}
+		}
+	}
+}
+
+// nextInput takes the oldest queued input, nil when there is none.
+func (s *session) nextInput() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.input) == 0 {
+		return nil
+	}
+	p := s.input[0]
+	s.input[0] = nil
+	s.input = s.input[1:]
+	return p
+}
+
+// inputWritten accounts for n bytes written, or records err and drops the
+// queue. It reports whether writing goes on.
+func (s *session) inputWritten(n int, err error) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inputBytes -= n
+	if err == nil {
+		return true
+	}
+	s.inputErr = fmt.Errorf("terminal: write %s: %w", s.key, err)
+	s.input, s.inputBytes = nil, 0
+	return false
 }
 
 // resize sets the terminal size the process sees.

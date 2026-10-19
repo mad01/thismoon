@@ -53,6 +53,9 @@ var (
 	ErrInvalidSpec = errors.New("terminal: invalid spec")
 	// ErrExited is returned by a write to a session whose process has ended.
 	ErrExited = errors.New("terminal: session has exited")
+	// ErrInputFull is returned by a write while the session holds as much
+	// typed input as it takes and its process is not reading it.
+	ErrInputFull = errors.New("terminal: input backed up")
 )
 
 // namePattern is the rule a session name follows: short, lowercase, and

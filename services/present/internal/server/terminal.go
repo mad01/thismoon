@@ -336,10 +336,16 @@ func endTerminal(ctx context.Context, conn *websocket.Conn, sub *terminal.Subscr
 }
 
 // readTerminalInput forwards typed input to the session and applies
-// control frames until the socket closes.
+// control frames until the socket closes. Writes only queue the input, so
+// a process that is not reading never holds up a resize, a kill, or the
+// close. Input the session refuses for good, once the process has ended or
+// its terminal fails a write, is dropped while reading goes on: returning
+// here would cancel the stream and lose the output still on its way and
+// the exit frame.
 func (s *Server) readTerminalInput(
 	ctx context.Context, conn *websocket.Conn, sub *terminal.Subscription, page, name string,
 ) {
+	forward, backedUp := true, false
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
@@ -349,11 +355,24 @@ func (s *Server) readTerminalInput(
 			s.applyTerminalControl(sub, page, name, data)
 			continue
 		}
-		if _, err := sub.Write(data); err != nil {
+		if !forward {
+			continue
+		}
+		_, err = sub.Write(data)
+		switch {
+		case err == nil:
+			backedUp = false
+		case errors.Is(err, terminal.ErrInputFull):
+			if !backedUp {
+				log.Printf("present: terminal %s/%s: %v; dropping input until it drains",
+					page, name, err)
+			}
+			backedUp = true
+		default:
 			if !errors.Is(err, terminal.ErrExited) {
 				log.Printf("present: terminal %s/%s: %v", page, name, err)
 			}
-			return
+			forward = false
 		}
 	}
 }

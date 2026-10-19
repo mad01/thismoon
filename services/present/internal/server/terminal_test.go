@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -516,5 +517,59 @@ func TestTerminalByteAtATimeOutputReachesTheClient(t *testing.T) {
 	}
 	if st := r.closeStatus(t); st != websocket.StatusNormalClosure {
 		t.Errorf("close status = %v, want normal closure", st)
+	}
+}
+
+// Input the process is not reading must not hold up the socket: a kill
+// sent after it still ends the session.
+func TestTerminalKillGetsPastStuckInput(t *testing.T) {
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", "stty raw -echo; printf up; sleep 60"))
+	r := &terminalReader{conn: f.mustDial(t, "demo", nil)}
+	r.outputUntil(t, "up")
+
+	paste := bytes.Repeat([]byte("x"), 512<<10)
+	for range 2 {
+		if err := r.conn.Write(t.Context(), websocket.MessageBinary, paste); err != nil {
+			t.Fatalf("write input: %v", err)
+		}
+	}
+	writeText(t, r.conn, map[string]string{"t": "kill"})
+	if exit := r.until(t, "exit"); exit["code"] == float64(0) {
+		t.Errorf("exit after kill = %v, want a signal code", exit)
+	}
+}
+
+// Input arriving after the process ended is dropped while the socket goes
+// on, so the output still on its way and the exit frame are delivered.
+func TestTerminalInputAfterTheExitKeepsTheTailAndTheExit(t *testing.T) {
+	const total = 3_000_000
+	cmd := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' a; exit 7", total)
+	f := setupTerminal(t, ModeLocal, true, termBlock("demo", cmd))
+	conn := f.mustDial(t, "demo", nil)
+	waitForTerminal(t, "the process to exit", func() bool {
+		list := f.mgr.List()
+		return len(list) == 1 && list[0].Exited
+	})
+
+	if err := conn.Write(t.Context(), websocket.MessageBinary, []byte("x")); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	r := &terminalReader{conn: conn}
+	if exit := r.until(t, "exit"); exit["code"] != float64(7) {
+		t.Errorf("exit = %v, want code 7", exit)
+	}
+	if got := strings.Count(r.output.String(), "a"); got != total {
+		t.Errorf("read %d bytes of output, want %d", got, total)
+	}
+}
+
+func waitForTerminal(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	end := time.Now().Add(terminalDeadline)
+	for !cond() {
+		if time.Now().After(end) {
+			t.Fatalf("%s: not within %s", what, terminalDeadline)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
