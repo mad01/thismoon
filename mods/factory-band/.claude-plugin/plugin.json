@@ -1,6 +1,6 @@
 {
   "name": "factory-band",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Experimental. A band above the prompt for a factory run: each worker's worktree state, model and effort, the workers' belt denies, belt-inbox items for this session, and a weave now button.",
   "types": "./types/index.d.ts",
   "author": {

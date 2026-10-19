@@ -7,7 +7,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
 import type { AgentInfo, AgentSpawnInput, HttpResponse, On, ProcessRunResult } from 'claude-code'
 
-import { idAt } from '../lib/band'
+import { WALK_LIMIT, idAt } from '../lib/band'
 
 const HOME = '/home/u'
 const WT = '/home/u/.worktrees/thismoon/alexander-docs-sweep-events'
@@ -15,6 +15,7 @@ const WT2 = '/home/u/.worktrees/thismoon/alexander-csl-prune'
 const SESSION = 's-lead'
 const RUN_START_MS = 1_792_000_000_000
 const MAIN_TREE = 'aaff749'
+const FORK = 'f0f0f0f'
 
 const TASK = [
   'kind: task',
@@ -79,8 +80,29 @@ const run = (exitCode: number, stdout: string, stderr = exitCode === 0 ? '' : 'f
 const gone = (dir: string, isUntranslated: boolean): string =>
   isUntranslated ? `fatal: cannot change to '${dir}': No such file or directory` : `fatal: kann nicht in Verzeichnis '${dir}' wechseln`
 
-// The worktree as git reports it; `mergedTree` is what merge-tree writes.
-type Git = { status: string; ahead: string; mergedTree: string }
+// The default branch's first-parent commits since the fork point, newest
+// first, each with its tree.
+const WALK: Array<[commit: string, tree: string]> = [
+  ['c3', MAIN_TREE],
+  ['c2', 'cc22cc2'],
+  ['c1', 'cc11cc1'],
+]
+
+// One commit past the walk's limit.
+const LONG_WALK = Array.from({ length: WALK_LIMIT + 1 }, (_, i): [string, string] => [`c${i}`, `t${i}`])
+
+// The worktree as git reports it. `mergedTree` is what the tip merge-tree
+// writes, conflicted when `isTipConflict`. `walk` is the default branch
+// since the fork point; `landedIn` is the commit whose merge writes its own
+// tree, as the squash commit does.
+type Git = {
+  status: string
+  ahead: string
+  mergedTree: string
+  isTipConflict?: boolean
+  walk?: Array<[commit: string, tree: string]>
+  landedIn?: string
+}
 
 // A worktree: there, slower than any budget, or removed by loom.
 type Tree = Git | 'hung' | 'removed'
@@ -93,13 +115,27 @@ type World = {
   commands: string[]
   fetches: number
   mergeTrees: number
+  walks: number
   clock: MockClock
 }
 
 const OPEN: Git = { status: '', ahead: '0', mergedTree: 'b0b0b0b' }
 
+// merge-tree's --stdin answer: per `<commit> HEAD` line a clean merge,
+// writing the commit's own tree only for the commit HEAD landed in.
+function walkAnswer(git: Git, stdin: string): string {
+  const trees = new Map(git.walk ?? WALK)
+  return stdin
+    .trim()
+    .split('\n')
+    .map(line => line.split(' ')[0] ?? '')
+    .map(commit => `1\0${commit === git.landedIn ? (trees.get(commit) ?? '') : 'b0b0b0b'}\0\0`)
+    .join('')
+}
+
 // git's answer to one call in a worktree that is there.
-function gitAnswer(world: World, git: Git, args: readonly string[]): ProcessRunResult {
+function gitAnswer(world: World, git: Git, args: readonly string[], stdin = ''): ProcessRunResult {
+  const walk = git.walk ?? WALK
   switch (args.join(' ')) {
     case 'rev-parse origin/HEAD^{tree} --symbolic-full-name origin/HEAD':
       return run(0, `${MAIN_TREE}\nrefs/remotes/origin/main\n`)
@@ -109,7 +145,14 @@ function gitAnswer(world: World, git: Git, args: readonly string[]): ProcessRunR
       return run(0, `${git.ahead}\n`)
     case 'merge-tree --write-tree origin/main HEAD':
       world.mergeTrees += 1
-      return run(0, `${git.mergedTree}\n`)
+      return git.isTipConflict === true ? run(1, `${git.mergedTree}\n100644 abc1234 1\tnotes.md\n`) : run(0, `${git.mergedTree}\n`)
+    case 'merge-base origin/main HEAD':
+      return run(0, `${FORK}\n`)
+    case `rev-list --first-parent --max-count=${WALK_LIMIT + 1} --no-commit-header --format=%H %T ${FORK}..origin/main`:
+      return run(0, walk.map(([commit, tree]) => `${commit} ${tree}\n`).join(''))
+    case 'merge-tree --write-tree --stdin --name-only --no-messages':
+      world.walks += 1
+      return run(0, walkAnswer(git, stdin))
   }
   return run(128, '')
 }
@@ -118,7 +161,7 @@ function gitAnswer(world: World, git: Git, args: readonly string[]): ProcessRunR
 // `others` any more.
 function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}): World {
   const clock = mock.clock(on)
-  const world: World = { agents: [w1], events: 'ok', git: OPEN, others: {}, commands: [], fetches: 0, mergeTrees: 0, clock, ...overrides }
+  const world: World = { agents: [w1], events: 'ok', git: OPEN, others: {}, commands: [], fetches: 0, mergeTrees: 0, walks: 0, clock, ...overrides }
   mock.env(on, { HOME })
   on('process.run', async (_$, e) => {
     const [command, flag, dir = '', ...args] = e.argv
@@ -126,7 +169,7 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock' | 'commands'>> = {}
     if (tree === undefined) return { value: run(128, '') }
     if (tree === 'removed') return { value: run(128, '', gone(dir, e.init?.env?.LC_ALL === 'C')) }
     if (tree === 'hung') await clock.sleep(10_000)
-    return { value: gitAnswer(world, tree === 'hung' ? OPEN : tree, args) }
+    return { value: gitAnswer(world, tree === 'hung' ? OPEN : tree, args, e.init?.stdin) }
   })
   on('agent.list', () => ({ value: world.agents }))
   on('session.id', () => ({ value: SESSION }))
@@ -196,6 +239,7 @@ test('a ready message on a clean tree main has not taken reads ready; weave now 
   const ui = await mountBand($)
   expect((await band(ui))[1]).toBe('events  ready  claude-sonnet-5-5  medium')
   expect(world.mergeTrees).toBe(1)
+  expect(world.walks).toBe(1)
   await ui.press({ key: 'weave' })
   expect(world.commands).toEqual(['weave'])
 })
@@ -230,6 +274,32 @@ test('a squash-merged worker reads integrated and drops off once its loop ended;
   expect(await ui.find({ type: 'Button' })).toBeUndefined()
 })
 
+test('a squash-merged worker whose tip merge conflicts reads integrated through the first-parent walk', async ($, on) => {
+  const world = seat(on, { git: { status: '', ahead: '2', mergedTree: 'dd0dd0d', isTipConflict: true, landedIn: 'c2' } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  world.agents = [{ ...w1, status: 'idle' }]
+  await world.clock.advance(5_000)
+  await $.turn.complete(workerTurn(READY))
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toBe('events  integrated  claude-sonnet-5-5  medium')
+  expect(world.walks).toBe(1)
+})
+
+test('a walk past its limit reads unknown: the worker keeps its row and is never integrated', async ($, on) => {
+  const world = seat(on, { git: { status: '', ahead: '2', mergedTree: 'dd0dd0d', isTipConflict: true, walk: LONG_WALK, landedIn: 'c7' } })
+  await $.session.start(start)
+  await $.agent.spawn(spawn)
+  world.agents = []
+  await world.clock.advance(5_000)
+  await $.turn.complete(workerTurn(READY))
+  await world.clock.advance(5_000)
+  await $.turn.complete(mainTurn)
+  const ui = await mountBand($)
+  expect((await band(ui))[1]).toBe('events  -  claude-sonnet-5-5  medium')
+  expect(world.walks).toBe(0)
+})
+
 test('a blocked message reads blocked once the worker stopped', async ($, on) => {
   const world = seat(on, { git: { ...OPEN, status: ' M README.md\n' } })
   await $.session.start(start)
@@ -251,6 +321,7 @@ test('an ended worker that never sent ready reads stopped', async ($, on) => {
   const ui = await mountBand($)
   expect((await band(ui))[1]).toMatch(/^events {2}stopped {2}/)
   expect(world.mergeTrees).toBe(0)
+  expect(world.walks).toBe(0)
 })
 
 test('an events service that is down leaves dashes and the guard count, no error', async ($, on) => {

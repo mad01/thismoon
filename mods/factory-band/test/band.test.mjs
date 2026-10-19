@@ -12,6 +12,8 @@ import {
   REFRESH_GAP_MS,
   STATUS_ARGS,
   UNKNOWN,
+  WALK_LIMIT,
+  WALK_MERGE_ARGS,
   aheadArgs,
   bandView,
   countInbox,
@@ -19,25 +21,33 @@ import {
   expandHome,
   gitFactsFrom,
   idAt,
+  integratedOf,
   isBeltRefusal,
   isIntegratedTree,
   isReadyCandidate,
   isRefreshDue,
   isTaskMessage,
+  isUnrelated,
   isWorkerType,
   isWorktreeGone,
   kindOf,
+  landedIn,
   livenessOf,
+  mergeBaseArgs,
   mergeTreeArgs,
   parseDefaultBranch,
   parseHeader,
   parseLedger,
+  parseMerges,
+  parseWalk,
   probeFrom,
   prunableIds,
   settleRun,
   stdoutOf,
   trailingDelay,
   upsertWorker,
+  walkArgs,
+  walkInput,
   withGuardDeny,
   withKind,
   withWorker,
@@ -280,6 +290,8 @@ describe('worker state', () => {
     ['clean, ahead and ready', { git: clean(), liveness: 'idle', lastKind: 'ready' }, 'ready'],
     ['ready and no longer ahead is integrated', { git: clean(0), liveness: 'gone', lastKind: 'ready' }, 'integrated'],
     ['ready, ahead, but squash-merged is integrated', { git: clean(2, true), liveness: 'gone', lastKind: 'ready' }, 'integrated'],
+    ['ready and ahead, but git could not say whether main holds it', { git: clean(2, null), liveness: 'gone', lastKind: 'ready' }, UNKNOWN],
+    ['a loop at work is in flight even when git could not say that', { git: clean(2, null), liveness: 'live', lastKind: 'ready' }, 'in flight'],
     ['a dirty tree after a ready is in flight, loop ended or not', { git: dirty, liveness: 'gone', lastKind: 'ready' }, 'in flight'],
     ['an ended loop without a ready is stopped', { git: clean(), liveness: 'gone', lastKind: null }, 'stopped'],
     ['an ended loop after a status is stopped', { git: dirty, liveness: 'gone', lastKind: 'status' }, 'stopped'],
@@ -419,6 +431,190 @@ describe('squash merge, against a fixture repo', () => {
     assert.equal(facts?.ahead, 1)
     assert.equal(isIntegrated, false)
     assert.equal(workerState({ git: { ...facts, isIntegrated }, liveness: 'gone', lastKind: 'ready' }), 'ready')
+  })
+})
+
+// A git call's result as $.process.run resolves it.
+const gitRun = (exitCode, stdout = '', extra = {}) => ({ exitCode, stdout, stderr: exitCode === 0 ? '' : 'fatal', ...extra })
+
+// A fake runner: answers each argv from `answers`, keyed by the joined argv,
+// and records the calls; an argv it has no answer for never answers.
+const fakeGit = answers => {
+  const calls = []
+  const runGit = async (args, stdin) => {
+    calls.push(stdin === undefined ? args.join(' ') : `${args.join(' ')} < ${stdin.trim().split('\n').length} lines`)
+    return answers[args.join(' ')] ?? null
+  }
+  return { runGit, calls }
+}
+
+const ORIGIN = { ref: 'origin/main', tree: 'aaff749' }
+const commitLines = n => Array.from({ length: n }, (_, i) => `c${i} t${i}\n`).join('')
+
+describe('first-parent walk', () => {
+  test('the walk lists one commit past its limit, so a range too long shows', () => {
+    assert.deepEqual(walkArgs('f0f0', 'origin/main'), [
+      'rev-list',
+      '--first-parent',
+      `--max-count=${WALK_LIMIT + 1}`,
+      '--no-commit-header',
+      '--format=%H %T',
+      'f0f0..origin/main',
+    ])
+    assert.deepEqual(mergeBaseArgs('origin/main'), ['merge-base', 'origin/main', 'HEAD'])
+  })
+
+  test('commits and trees from rev-list; a range past the limit, a bad line or no answer is unknown', () => {
+    assert.deepEqual(parseWalk('c2 t2\nc1 t1\n'), [
+      { commit: 'c2', tree: 't2' },
+      { commit: 'c1', tree: 't1' },
+    ])
+    assert.deepEqual(parseWalk(''), [])
+    assert.equal(parseWalk(commitLines(WALK_LIMIT)).length, WALK_LIMIT)
+    assert.equal(parseWalk(commitLines(WALK_LIMIT + 1)), null)
+    assert.equal(parseWalk('c2\n'), null)
+    assert.equal(parseWalk(null), null)
+  })
+
+  test('merge-tree reads one `<commit> HEAD` line per commit', () => {
+    assert.equal(walkInput([{ commit: 'c2', tree: 't2' }, { commit: 'c1', tree: 't1' }]), 'c2 HEAD\nc1 HEAD\n')
+    assert.deepEqual(WALK_MERGE_ARGS, ['merge-tree', '--write-tree', '--stdin', '--name-only', '--no-messages'])
+  })
+
+  test('merges from NUL-separated output: a conflict with its file names, then a clean merge', () => {
+    assert.deepEqual(parseMerges('0\0t9\0notes.md\0b.md\0\0' + '1\0t1\0\0'), [
+      { isClean: false, tree: 't9' },
+      { isClean: true, tree: 't1' },
+    ])
+    assert.deepEqual(parseMerges(''), [])
+    assert.equal(parseMerges('fatal: bad\0'), null)
+  })
+
+  test('landed when a clean merge writes its commit\'s own tree; a conflicted one never counts', () => {
+    const commits = [{ commit: 'c2', tree: 't2' }, { commit: 'c1', tree: 't1' }]
+    assert.equal(landedIn(commits, gitRun(0, '1\0x2\0\0' + '1\0t1\0\0')), true)
+    assert.equal(landedIn(commits, gitRun(0, '1\0x2\0\0' + '0\0t1\0notes.md\0\0')), false)
+    assert.equal(landedIn(commits, gitRun(0, '1\0x2\0\0' + '1\0x1\0\0')), false)
+  })
+
+  test('a merge-tree without --stdin is no proof; silence, a cut-off answer or a short one is unknown', () => {
+    const commits = [{ commit: 'c1', tree: 't1' }]
+    assert.equal(landedIn(commits, gitRun(129, '')), false)
+    assert.equal(landedIn(commits, null), null)
+    assert.equal(landedIn(commits, gitRun(0, '1\0t1\0\0', { isStdoutTruncated: true })), null)
+    assert.equal(landedIn(commits, gitRun(0, '')), null)
+  })
+
+  test('no fork point is exit 1 with nothing printed; other failures are not', () => {
+    assert.equal(isUnrelated(gitRun(1, '')), true)
+    assert.equal(isUnrelated(gitRun(0, 'f0f0\n')), false)
+    assert.equal(isUnrelated(gitRun(128, '')), false)
+    assert.equal(isUnrelated(null), false)
+  })
+
+  test('a tip merge that proves it skips the walk', async () => {
+    const { runGit, calls } = fakeGit({ 'merge-tree --write-tree origin/main HEAD': gitRun(0, 'aaff749\n') })
+    assert.equal(await integratedOf(runGit, ORIGIN), true)
+    assert.deepEqual(calls, ['merge-tree --write-tree origin/main HEAD'])
+  })
+
+  test('a walk past the limit gives up as unknown and merges nothing', async () => {
+    const { runGit, calls } = fakeGit({
+      'merge-tree --write-tree origin/main HEAD': gitRun(1, 'dd0dd0d\n100644 abc 1\tnotes.md\n'),
+      'merge-base origin/main HEAD': gitRun(0, 'f0f0\n'),
+      [walkArgs('f0f0', 'origin/main').join(' ')]: gitRun(0, commitLines(WALK_LIMIT + 1)),
+    })
+    assert.equal(await integratedOf(runGit, ORIGIN), null)
+    assert.equal(calls.length, 3)
+  })
+
+  test('a tip that never answered is unknown; unrelated histories are not integrated', async () => {
+    assert.equal(await integratedOf(fakeGit({}).runGit, ORIGIN), null)
+    const unrelated = fakeGit({
+      'merge-tree --write-tree origin/main HEAD': gitRun(128, ''),
+      'merge-base origin/main HEAD': gitRun(1, ''),
+    })
+    assert.equal(await integratedOf(unrelated.runGit, ORIGIN), false)
+  })
+})
+
+// A real repo where every branch forked from `base`. main squash-merged
+// `landed`, then `drifted`, then changed the line next to drifted's;
+// squash-merged `reverted` and reverted it; then moved on. `open` was never
+// merged. The mod's own integratedOf, with git itself as the runner.
+describe('first-parent walk, against a fixture repo', () => {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const id = ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'init.defaultBranch=main']
+  let dir = ''
+  const git = (...args) => execFileSync('git', ['-C', dir, ...id, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const commitFile = (name, text, message) => {
+    writeFileSync(join(dir, name), text)
+    git('add', name)
+    git('commit', '-q', '-m', message)
+  }
+  const squash = branch => {
+    git('merge', '-q', '--squash', branch)
+    git('commit', '-q', '-m', `${branch} (squash)`)
+  }
+  const runGit = async (args, stdin) => {
+    const ran = spawnSync('git', ['-C', dir, ...args], { env: { ...env, ...GIT_ENV }, input: stdin, encoding: 'utf8' })
+    return { exitCode: ran.status ?? 1, stdout: ran.stdout, stderr: ran.stderr }
+  }
+  // The mod's reading of a ready worker's clean tree on the branch checked out now.
+  const readHead = async () => {
+    const branch = parseDefaultBranch(git(...DEFAULT_BRANCH_ARGS))
+    const facts = gitFactsFrom(git(...STATUS_ARGS), git(...aheadArgs(branch.ref)))
+    const tip = await runGit(mergeTreeArgs(branch.ref))
+    const isIntegrated = await integratedOf(runGit, branch)
+    const read = { ...facts, isIntegrated }
+    const tipProves = isIntegratedTree(stdoutOf(tip), branch.tree)
+    return { ahead: facts?.ahead, tipExit: tip.exitCode, tipProves, isIntegrated, state: workerState({ git: read, liveness: 'gone', lastKind: 'ready' }) }
+  }
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'factory-band-walk-'))
+    git('init', '-q', '.')
+    commitFile('notes.md', 'one\ntwo\nthree\nfour\n', 'base')
+    for (const [branch, name, text] of [
+      ['landed', 'landed.md', 'landed\n'],
+      ['drifted', 'notes.md', 'one\nTWO\nthree\nfour\n'],
+      ['reverted', 'reverted.md', 'reverted\n'],
+      ['open', 'open.md', 'open\n'],
+    ]) {
+      git('checkout', '-q', '-b', branch, 'main')
+      commitFile(name, text, branch)
+    }
+    git('checkout', '-q', 'main')
+    squash('landed')
+    squash('drifted')
+    commitFile('notes.md', 'one\nTWO\nTHREE\nfour\n', 'the line next to drifted\'s')
+    squash('reverted')
+    git('revert', '--no-edit', 'HEAD')
+    commitFile('later.md', 'later\n', 'later work on main')
+    git('update-ref', 'refs/remotes/origin/main', 'main')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+  })
+
+  after(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('squash-merged and untouched since: the tip merge proves it', async () => {
+    git('checkout', '-q', 'landed')
+    assert.deepEqual(await readHead(), { ahead: 1, tipExit: 0, tipProves: true, isIntegrated: true, state: 'integrated' })
+  })
+
+  test('squash-merged, then main changed the next line: the tip conflicts and the walk finds the squash', async () => {
+    git('checkout', '-q', 'drifted')
+    assert.deepEqual(await readHead(), { ahead: 1, tipExit: 1, tipProves: false, isIntegrated: true, state: 'integrated' })
+  })
+
+  test('squash-merged, then reverted on main: the tip merges clean to another tree and the walk finds the squash', async () => {
+    git('checkout', '-q', 'reverted')
+    assert.deepEqual(await readHead(), { ahead: 1, tipExit: 0, tipProves: false, isIntegrated: true, state: 'integrated' })
+  })
+
+  test('never merged: the walk finds nothing and the worker stays ready', async () => {
+    git('checkout', '-q', 'open')
+    assert.deepEqual(await readHead(), { ahead: 1, tipExit: 0, tipProves: false, isIntegrated: false, state: 'ready' })
   })
 })
 

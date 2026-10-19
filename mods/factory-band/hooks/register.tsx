@@ -16,15 +16,14 @@ import {
   gitFactsFrom,
   guardReason,
   idAt,
+  integratedOf,
   isBeltRefusal,
-  isIntegratedTree,
   isReadyCandidate,
   isRefreshDue,
   isTaskMessage,
   isWorkerType,
   isWorktreeGone,
   kindOf,
-  mergeTreeArgs,
   parseDefaultBranch,
   parseLedger,
   probeFrom,
@@ -66,18 +65,22 @@ async function withinBudget<T>($: EngineInterface, work: Promise<T | null>): Pro
   return Promise.race([work.catch(() => null), timedOut])
 }
 
-// One git call in a worktree, or null when it outran the budget (the
-// child is killed at the same budget, which rejects the call).
-async function git($: EngineInterface, worktree: string, args: readonly string[]): Promise<GitRun | null> {
-  const ran = $.process.run(['git', '-C', worktree, ...args], { timeoutMs: PROBE_BUDGET_MS, env: GIT_ENV })
+// One git call in a worktree, with stdin when given, or null when it
+// outran the budget (the child is killed at the same budget, which rejects
+// the call).
+async function git($: EngineInterface, worktree: string, args: readonly string[], stdin?: string): Promise<GitRun | null> {
+  const init = stdin === undefined ? { timeoutMs: PROBE_BUDGET_MS, env: GIT_ENV } : { timeoutMs: PROBE_BUDGET_MS, env: GIT_ENV, stdin }
+  const ran = $.process.run(['git', '-C', worktree, ...args], init)
   return withinBudget($, ran)
 }
 
 // Whether the worktree is dirty, how far it is ahead of the default branch
 // and, for a ready worker's clean tree only, whether the default branch
-// already holds its changes (one merge-tree more). `removed` when the first
-// call finds the worktree gone; null when git could not say. A merge-tree
-// that fails (git before 2.38) leaves it not integrated.
+// already holds its changes: lib's integratedOf, the tip merge and then the
+// first-parent walk, unknown when that walk runs past its limit. `removed`
+// when the first call finds the worktree gone; null when git could not
+// say. A merge-tree that fails (git before 2.38, or 2.40 for the walk)
+// leaves it not integrated.
 async function gitFactsOf($: EngineInterface, worktree: string, lastKind: string | null): Promise<WorktreeRead> {
   const head = await git($, worktree, DEFAULT_BRANCH_ARGS)
   if (isWorktreeGone(head)) return 'removed'
@@ -85,8 +88,7 @@ async function gitFactsOf($: EngineInterface, worktree: string, lastKind: string
   const [status, count] = await Promise.all([git($, worktree, STATUS_ARGS), git($, worktree, aheadArgs(branch.ref))])
   const facts = gitFactsFrom(stdoutOf(status), stdoutOf(count))
   if (facts === null || branch.tree === null || !isReadyCandidate(facts, lastKind)) return facts
-  const merged = await git($, worktree, mergeTreeArgs(branch.ref))
-  return { ...facts, isIntegrated: isIntegratedTree(stdoutOf(merged), branch.tree) }
+  return { ...facts, isIntegrated: await integratedOf((args, stdin) => git($, worktree, args, stdin), branch) }
 }
 
 // One events query, or null when the service is down, answers an error or
