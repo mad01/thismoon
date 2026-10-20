@@ -132,6 +132,37 @@ A skill loads fine without its backing component, but its tool-backed steps
 have nothing to call — registration is machine-private wiring (see
 [docs/HOW-IT-FITS-TOGETHER.md](docs/HOW-IT-FITS-TOGETHER.md)).
 
+## Memory and hooks
+
+Every agent session starts with an empty context window. On a fleet machine
+the stores below carry context from one session to the next, and belt's hooks
+inject the memory and kof stores without the agent having to ask:
+
+| Store | Holds | Reaches the session through |
+|-------|-------|-----------------------------|
+| agent-memory | facts about you, for every agent on every machine (a directory of one-fact files, usually a private git clone, set up from [`examples/dotfiles/recipes/agent-memory/`](examples/dotfiles/recipes/agent-memory/)) | belt's `agent-memory` hint at session start |
+| [keeper-of-facts](services/keeper-of-facts/README.md) | claims about code, pinned to the lines that prove them | belt's `kof-consult` hint at session start and `kof-assertions` after csl searches; `kof-deposit` nudges for new ones |
+| [worklog](tools/worklog/README.md) | where a task stands, keyed by ticket or topic | the `/worklog` skill |
+| [handoff](skills/handoff/SKILL.md) | a bridge document for the next session | the `/handoff` skill |
+| [events](services/events/README.md) | what the guards, hints and services did | belt's ledger writes it; you query it |
+
+Claude Code's built-in auto memory sits beside these: per repo, per machine,
+Claude-only, and managed with `/memory` rather than a CLI. None of the stores
+needs a git host: each can stay on the machine or sync through a private
+Google Drive folder.
+[docs/MEMORY-STACK.md](docs/MEMORY-STACK.md) covers which store gets which
+fact, how each one is read and written, how to keep each one private, and
+the hook behind each.
+
+The memory hints are one part of belt. Its guards deny risky tool calls
+before they run: a push to main, a command that discards uncommitted work,
+internal names headed for a public repo. Its other hints advise afterwards,
+such as handing back a `csl_search` in place of a recursive grep, or asking
+for a humanizer pass before text leaves the machine. Its ledger records
+session lifecycle to events. [tools/belt/README.md](tools/belt/README.md)
+lists every guard and hint, and
+[tools/belt/docs/hooks.md](tools/belt/docs/hooks.md) has the wiring.
+
 ## How it fits together
 
 Three layers, two of them public:
@@ -267,6 +298,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `docs/adr/` | Architecture decision records |
 | `docs/GETTING-STARTED.md` | Install guide: one tool vs the fleet |
 | `docs/HOW-IT-FITS-TOGETHER.md` | The fleet pitch, ralph vocabulary, rollout order |
+| `docs/MEMORY-STACK.md` | Which store holds what an agent should remember, and the hooks behind them |
 | `docs/RELEASING.md` | Release process |
 
 Everything is one Go module: `github.com/mad01/thismoon`. Each component

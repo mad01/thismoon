@@ -47,3 +47,11 @@ _Avoid_: version tag, release tag (ambiguous — repo-wide vs per-component)
 **Clean import**:
 Bringing code in from a source repo without its git history; the import commit message records the source repo and SHA.
 _Avoid_: migration (too broad), fork
+
+**agent-memory**:
+The shared memory store: a directory of one-fact markdown files at `~/.config/agent-memory/`, usually a private git clone, whose index belt injects at session start. It follows the user across agents, and across machines when something syncs it. docs/MEMORY-STACK.md covers it beside the other stores.
+_Avoid_: auto memory (Claude Code's own store, a different thing), shared memory on its own
+
+**Auto memory**:
+Claude Code's built-in memory directory, one per git repository under `~/.claude/projects/`. Machine-local and Claude-only; thismoon ships nothing for it.
+_Avoid_: agent-memory (the shared store above)

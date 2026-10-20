@@ -33,6 +33,8 @@ examples/    worked private-config-repo layout (overlay recipes, example
 docs/adr/    architecture decision records
 docs/GETTING-STARTED.md install guide: one tool via brew vs the fleet via ralph
 docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
+docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, kof, worklog,
+             handoff, events) and the belt hooks that surface them
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
 ```
 
@@ -60,7 +62,7 @@ The repo ships eight agent skills under `skills/`, one directory per skill. Each
 | `factory` | Experimental. Runs a plan through worker subagents: one orchestrator, plus one loom worktree and one worker per unit. Every message follows a fixed contract that humanizer checks against Simplified Technical English (STE). Ships its own `claude plugin eval` suites under `skills/factory/evals/`. | the humanizer STE check (`humanizer ste`), belt's `factory-worker` subagent-start hint and ledger, and the events, present and keeper-of-facts (kof) services |
 | `golang-pro` | Go concurrency, channels, generics depth, pprof profiling, and gRPC — the specialist scope `golang-style` defers to. Vendored from [jeffallan/claude-skills](https://github.com/jeffallan/claude-skills) under MIT; `skills/golang-pro/LICENSE` carries the notice. | nothing (guidance only) |
 | `golang-style` | Idiomatic Go review and authoring — naming, package layout, error handling, the HTTP/CLI/store patterns used across this codebase. Covers every Go component here. | nothing (guidance only) |
-| `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.claude/handoffs/` and durable memory) |
+| `handoff` | Writes a cold-start handoff document and persists key learnings to memory so the next agent or session can continue work without re-discovering context. | nothing (guidance only; writes to `~/.handoff/` and durable memory) |
 | `humanizer` | Strips AI-writing tells from prose before it lands in docs, PR descriptions, or commit bodies. | the `humanizer` MCP for detection and voice profiling, plus `humanizer_judge` (LLM backend, Haiku 5.5 via a LiteLLM proxy or OpenRouter) for holistic judgment |
 | `loom` | Coordinates parallel sessions on one repo with git worktrees: each session claims its own worktree under `~/.worktrees/` and commits there. A single weaver session rebases the finished branches and lands them in order. | nothing (guidance only; creates worktrees under `~/.worktrees/`) |
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
