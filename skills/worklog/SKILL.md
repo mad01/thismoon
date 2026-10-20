@@ -13,7 +13,7 @@ id or topic slug) so it's findable again — unlike Claude Code's per-directory
 auto-memory, which orphans anything started in a tmp dir.
 
 This is a different path from `/handoff` (which writes a one-off bridge doc
-under `~/.claude/handoffs/`). worklog is the durable, keyed, searchable store.
+under `~/.handoff/`). worklog is the durable, keyed, searchable store.
 
 ## Tools
 
@@ -93,8 +93,11 @@ auto-memory; worklog triggers only on the verbs above.
 
 ## Notes
 
-- The store is local-only (`~/code/worklog/`, no remote) — resume on the same
-  machine. Don't promise cross-machine sync.
+- Whether the store (`~/code/worklog/`) has a git remote depends on the
+  machine's worklog config (`remote.url`). With one, every write pushes
+  unless `remote.push` is false; without one, the store stays on that machine
+  or in a folder synced outside git. Promise cross-machine sync only when a
+  remote is set.
 - One task spanning N repos is **one item** with N per-repo notes, not N items.
 - **Ticket firewall:** an item keys on the tracker its work actually lives in,
   and only that one. Never reference one tracker world's ticket from an item

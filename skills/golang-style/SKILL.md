@@ -14,11 +14,11 @@ metadata:
 
 # Golang Style
 
-Write Go the way this codebase already writes it: stdlib-first, compact, explicit, anti-magic. This skill carries the house template (the `cmd/` + `internal/` layout, cobra CLIs, `net/http` servers, file-backed stores, `fmt.Errorf("%w")` errors, hermetic table tests) plus the idioms that keep it consistent. It reinforces what the code does well and tightens the few places it drifts.
+Write Go the way the house codebase already writes it: stdlib-first, compact, explicit, anti-magic. The house codebase is thismoon, the repo this skill ships from. "This codebase" and "this repo" in this skill and its references mean thismoon, even when the task is in another Go repo. This skill carries the house template (the `cmd/` + `internal/` layout, cobra CLIs, `net/http` servers, file-backed stores, `fmt.Errorf("%w")` errors, hermetic table tests) plus the idioms that keep it consistent. It reinforces what the code does well and tightens the few places it drifts.
 
 **Split with `golang-pro`:** `golang-pro` owns concurrent systems (goroutine patterns, channel pipelines, deep generics, pprof, gRPC, microservices). This skill owns *how code is structured and written*: naming, formatting, function and package design, error handling, safety, and the repo's HTTP/CLI/store/MCP patterns. When a task is "build a concurrent worker pool", use `golang-pro`. When it is "is this package laid out right, are the errors wrapped, is this function shaped well", use this skill.
 
-**Where the two disagree, this skill wins.** `golang-pro` is vendored beside this skill (`skills/golang-pro`, from jeffallan/claude-skills) and its generic advice conflicts with house style in three places. It teaches functional options (banned here, config structs), `var _ Iface` satisfaction asserts (not house style, see `language.md`), and a `pkg/` public-library layout (house layout is `cmd/` + `internal/` only). Take its concurrency, generics, and profiling content; ignore those three.
+**Where the two disagree, this skill wins.** `golang-pro` is vendored beside this skill (`skills/golang-pro`, from jeffallan/claude-skills) and its generic advice conflicts with house style in several places. It teaches functional options (banned here, config structs), `var _ Iface` satisfaction asserts (not house style, see `language.md`), and a `pkg/` public-library layout (house layout is `cmd/` + `internal/` only). It also puts `context.Context` on every blocking operation, where house style keeps it at process, exec, and HTTP boundaries (see `safety.md`). And it runs every test under `-race`, where house style adds `-race` for concurrent changes and scales testing to the risk (see `testing.md`). Take its concurrency, generics, and profiling content, and follow this skill on everything else.
 
 ## House style in one screen
 
@@ -55,7 +55,7 @@ Load the file that matches the task.
 
 ## Constraints
 
-### MUST DO
+### Do
 - Put `main` in `cmd/<tool>/main.go` as a thin shim over `internal/cli.Execute()`; print the error once and `os.Exit(1)`.
 - Wrap underlying errors with `%w` in `fmt.Errorf` (this is the one place the codebase drifts — `worklog/internal/store/store.go` uses `%v`; new and touched code uses `%w`).
 - Package-prefix sentinel error messages.
@@ -67,7 +67,7 @@ Load the file that matches the task.
 - Run `golangci-lint run ./...` and `goimports`/`golines`/`gofumpt` before calling code done.
 - Give every package a doc comment and every exported name a name-leading doc comment.
 
-### MUST NOT
+### Don't
 - No `util`, `common`, `helpers`, or `base` packages. Keep helpers unexported in the package that uses them.
 - No functional-options (`WithX`) pattern — this codebase uses config structs.
 - No third-party logging (`zap`/`logrus`/`slog` adoption), assertion libraries (`testify`), or error libraries (`pkg/errors`) unless asked. Match the stdlib-first stack.

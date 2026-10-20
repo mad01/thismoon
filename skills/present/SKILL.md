@@ -1,6 +1,6 @@
 ---
 name: present
-description: Build a scrollable briefing page, a slide deck beside it, or both with the present MCP, from structured Doc JSON with fixation reading, one Cytoscape graph, inline charts, and architecture diagrams, for digesting a work summary or research or for talking it through in a room
+description: Build a scrollable briefing page, a slide deck beside it, or both with the present MCP, from structured Doc JSON with fixation reading, one Cytoscape graph, inline charts, and architecture diagrams, for digesting a work summary or research or for talking it through in a room. Use when the user asks to present or brief on a topic ("present the incident summary", "brief me on our infra stack"). Also use when the user asks for slides or a deck ("make a deck of this", "slides for the review").
 ---
 
 # Present: briefing pages and slide decks
@@ -8,10 +8,6 @@ description: Build a scrollable briefing page, a slide deck beside it, or both w
 Generate scrollable HTML briefing pages and slide decks served live over localhost by the **present MCP** (Model Context Protocol server), or on a shared instance others reach by link. You pass structured JSON. The server renders it into the full page under a reader-chosen palette (light and dark mode, several theme families picked on the Themes page). The page carries a fixation-reading toggle and font and size controls. The page draws one Cytoscape graph, Chart.js and D3 charts, and diagrams laid out by the Eclipse Layout Kernel (ELK). Never put a colour literal in a page: name a role (see **Colours available**) and the page follows whatever palette the reader picked.
 
 This file is the entry point. It says which block, chart kind, graph option, and deck setting answers which question, points at the worked examples beside it, and names the decisions behind the design. The service's own docs are for changing present, not for using it.
-
-## Trigger
-
-When the user asks to present, summarize, or brief on a topic (e.g., "present the incident summary", "brief me on our infra stack", "summarize the PR changes"). Or when the user asks for slides or a deck on it ("make a deck of this", "slides for the review").
 
 ## How it works
 
@@ -196,7 +192,7 @@ The brief's first section answers the question. How you found it, the background
         {"t": "table", "cols": ["Name", "Status"], "rows": [["foo", "@chip(b:done)"]]},
         {"t": "kv", "kv": [{"k": "Label", "v": "Value"}]},
         {"t": "list", "items": ["First", "Second"], "ordered": false},
-        {"t": "panel", "title": "Title", "sub": "Subtitle", "accent": "terracotta"},
+        {"t": "panel", "title": "Title", "sub": "Subtitle", "accent": "primary"},
         {"t": "progress", "pct": 75, "label": "75%"},
         {"t": "graph"},
         {"t": "code", "lang": "go", "text": "func main() {\n\tfmt.Println(\"hello\")\n}"},
@@ -490,7 +486,7 @@ An incident review, seven slides plus the references the page already carries, w
       "h": "Errors held near 900 a minute for half an hour",
       "blocks": [
         {"t": "chart", "kind": "area", "title": "Checkout 5xx per minute", "unit": "req",
-         "series": [{"name": "5xx", "color": "terracotta", "points": [
+         "series": [{"name": "5xx", "color": "series-1", "points": [
            {"x": "14:00", "y": 0}, {"x": "14:05", "y": 310}, {"x": "14:15", "y": 940},
            {"x": "14:30", "y": 890}, {"x": "14:45", "y": 12}, {"x": "15:00", "y": 0}
          ]}]}

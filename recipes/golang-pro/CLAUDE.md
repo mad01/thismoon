@@ -10,7 +10,9 @@ The skill is vendored, not written here. It comes from
 the MIT license; `skills/golang-pro/LICENSE` carries the upstream notice and
 the skill's frontmatter names the author. Refresh it by copying the upstream
 `skills/golang-pro/` directory over ours and recording the upstream commit in
-the commit message.
+the commit message. `SKILL.md` carries local edits on top of upstream (its
+constraints and done criteria), so after a refresh, reapply them from this
+directory's git history.
 
 This recipe is consumed remotely: a machine's ralph config declares a
 `[[recipe_sources]]` stanza pointing at this repo (source name `thismoon`), and

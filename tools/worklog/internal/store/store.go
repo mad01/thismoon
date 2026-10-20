@@ -1,10 +1,9 @@
 // Package store manages the on-disk worklog tree: one directory per work item
 // (keyed by ticket id or topic slug), a CONTEXT.md contract per item, lazy
-// per-repo note files, and a git history. The store is local-first; when a
-// Remote is configured it also keeps origin pointed at that URL, clones it on
-// a fresh machine, and pushes after each write. Which machine gets which
-// upstream is the config's problem (profile-keyed), keeping the personal and
-// work worlds in separate private repos.
+// per-repo note files, and a git history. The store is local-first; when the
+// config sets a Remote, it also keeps origin pointed at that URL, clones it on
+// a fresh machine, and pushes after each write unless the remote's push key is
+// false. Without a Remote the store stays on the machine.
 package store
 
 import (
