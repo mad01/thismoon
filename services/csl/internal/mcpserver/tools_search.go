@@ -146,6 +146,7 @@ func registerSearchTools(s *mcp.Server) {
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
 		},
+		Meta: mcp.Meta{alwaysLoadKey: true},
 	}, handleSearch, renderSearchText)
 
 	addFormattedTool(s, &mcp.Tool{

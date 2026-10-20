@@ -53,6 +53,29 @@ func TestNew_SemanticDisabledHidesOnlySemanticTools(t *testing.T) {
 	}
 }
 
+// TestAlwaysLoadMeta pins which tools ask Claude Code to skip tool-search
+// deferral: the four nearly every session calls carry
+// _meta["anthropic/alwaysLoad"] = true in tools/list, and every other tool
+// leaves the key out so it stays deferred.
+func TestAlwaysLoadMeta(t *testing.T) {
+	want := []string{"csl_read", "csl_repo_info", "csl_repo_lookup", "csl_search"}
+	var got []string
+	for _, tool := range mcptest.ListTools(t, New("test", Options{SemanticEnabled: true})) {
+		v, ok := tool.Meta["anthropic/alwaysLoad"]
+		if !ok {
+			continue
+		}
+		if v != true {
+			t.Errorf("%s: _meta[anthropic/alwaysLoad] = %v, want true", tool.Name, v)
+		}
+		got = append(got, tool.Name)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("tools with _meta[anthropic/alwaysLoad] = %v, want %v", got, want)
+	}
+}
+
 // toolNames lists the tools a server built with opts advertises.
 func toolNames(t *testing.T, opts Options) []string {
 	t.Helper()

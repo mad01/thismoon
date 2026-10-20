@@ -18,6 +18,12 @@ import (
 // Name is the MCP server name advertised during the initialize handshake.
 const Name = "csl"
 
+// alwaysLoadKey is the tool _meta key Claude Code reads to load a tool's
+// full schema at session start instead of deferring it behind tool search.
+// Only the tools nearly every session calls set it, since each loaded schema
+// costs context in every session whether or not the tool is used.
+const alwaysLoadKey = "anthropic/alwaysLoad"
+
 // Options carries the parts of csl's config the tool set depends on, so the
 // caller resolves config once and New stays free of file I/O.
 type Options struct {

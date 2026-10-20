@@ -242,6 +242,12 @@ path as the CLI, so zoekt shards stay mmap'd across calls in a session.
 `New` as `mcpserver.Options`, so a machine with semantic off advertises the
 other fourteen and the web UI gates its modes the same way.
 
+`csl_search`, `csl_read`, `csl_repo_lookup`, and `csl_repo_info` set
+`_meta["anthropic/alwaysLoad"]: true`, so Claude Code loads their schemas at
+session start instead of deferring them behind tool search. Every loaded
+schema costs context in every session, so keep the set to the tools nearly
+every session calls; `TestAlwaysLoadMeta` pins it.
+
 Every tool accepts `response_format`: `text` (default) | `json` | `jsonl` |
 `toon` | `csv` | `markdown-kv` | `xml`. Precedence: the tool parameter, then
 `mcp.response_format` in config.yaml, then the built-in default `text`; an
