@@ -36,7 +36,7 @@ func testServer(t *testing.T) *Server {
 			},
 		},
 		{Ecosystem: "npm", Name: "lodash", Version: "4.17.21", Repo: "/home/u/code/widget", Direct: true, Imported: true},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	return New(st, nil, testInfo)
@@ -147,7 +147,7 @@ func TestAPIDepsExcludesNonImportedFromFlagged(t *testing.T) {
 		Ecosystem: "Go", Name: "github.com/graph/only", Version: "1.0.0",
 		Repo: "/home/u/code/widget", Imported: false,
 		Advisories: []store.Advisory{{ID: "GO-2024-9999", FixedVersion: "1.1.0"}},
-	}}); err != nil {
+	}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	h := New(st, nil, testInfo).Handler()
@@ -205,5 +205,45 @@ func TestVersionAndHealthz(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
 	if rec.Code != 204 {
 		t.Errorf("GET /healthz = %d, want 204", rec.Code)
+	}
+}
+
+func TestAPIReportsDiscoveryErrors(t *testing.T) {
+	srv := testServer(t)
+	h := srv.Handler()
+
+	// No errors: the field is an empty list, never null.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/deps", nil))
+	if !strings.Contains(rec.Body.String(), `"discovery_errors":[]`) {
+		t.Errorf("GET /api/deps without errors = %s, want discovery_errors: []", rec.Body.String())
+	}
+
+	failed := store.DiscoveryError{
+		Repo:      "/home/u/code/widget",
+		Ecosystem: "Go",
+		Error:     "go list: exit status 1",
+	}
+	if err := srv.store.SaveRepo("/home/u/code/widget", srv.store.Snapshot().Deps,
+		[]store.DiscoveryError{failed}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/deps", "/api/flagged"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		var body struct {
+			DiscoveryErrors []store.DiscoveryError `json:"discovery_errors"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		if len(body.DiscoveryErrors) != 1 || body.DiscoveryErrors[0] != failed {
+			t.Errorf(
+				"GET %s discovery_errors = %+v, want [%+v]",
+				path,
+				body.DiscoveryErrors,
+				failed,
+			)
+		}
 	}
 }

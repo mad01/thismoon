@@ -8,6 +8,7 @@ import (
 	"github.com/mad01/thismoon/kit/progstatus"
 	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/client"
+	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
 var flagCheckRepo string
@@ -37,6 +38,7 @@ registered repos and persist the result. Prints a per-ecosystem count. Run
 		for eco, n := range res.ByEcosystem {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %-5s %d\n", eco, n)
 		}
+		printDiscoveryErrors(cmd, res.DiscoveryErrors)
 		return nil
 	},
 }
@@ -66,6 +68,7 @@ With --repo, rescan a single repo (by path or basename) and merge the result.`,
 		}
 		status.Done(fmt.Sprintf("checked %d dependencies, %d flagged", res.Total, len(res.Flagged)))
 		printFlagged(cmd, res.Total, res.Flagged)
+		printDiscoveryErrors(cmd, res.DiscoveryErrors)
 		return nil
 	},
 }
@@ -123,6 +126,20 @@ func printFlagged(cmd *cobra.Command, total int, flagged []api.Dependency) {
 			line += "\n      key: " + a.Key
 			fmt.Fprintln(cmd.OutOrStdout(), line)
 		}
+	}
+}
+
+// printDiscoveryErrors lists the repos and ecosystems the scan could not read,
+// so a short or empty flagged list isn't taken for a clean scan.
+func printDiscoveryErrors(cmd *cobra.Command, errs []store.DiscoveryError) {
+	if len(errs) == 0 {
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"Discovery failed for %d repo/ecosystem pair(s); their dependencies were not checked:\n",
+		len(errs))
+	for _, e := range errs {
+		fmt.Fprintf(cmd.OutOrStdout(), "  %s in %s: %s\n", e.Ecosystem, e.Repo, e.Error)
 	}
 }
 

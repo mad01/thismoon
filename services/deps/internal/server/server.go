@@ -81,11 +81,12 @@ func (s *Server) handleDeps(w http.ResponseWriter, _ *http.Request) {
 	sc := s.store.Snapshot()
 	deps := api.Enrich(sc.Deps, s.store.IsResolved)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scanned_at":     sc.ScannedAt,
-		"total":          len(deps),
-		"flagged_count":  api.ActiveCount(api.Flagged(deps)),
-		"deps":           deps,
-		"resolved_fixed": s.store.ResolvedFixed(),
+		"scanned_at":       sc.ScannedAt,
+		"total":            len(deps),
+		"flagged_count":    api.ActiveCount(api.Flagged(deps)),
+		"deps":             deps,
+		"discovery_errors": discoveryErrors(sc.DiscoveryErrors),
+		"resolved_fixed":   s.store.ResolvedFixed(),
 	})
 }
 
@@ -106,9 +107,10 @@ func (s *Server) handleScan(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scanned_at":   s.store.Snapshot().ScannedAt,
-		"total":        len(deps),
-		"by_ecosystem": byEcosystem(deps),
+		"scanned_at":       s.store.Snapshot().ScannedAt,
+		"total":            len(deps),
+		"by_ecosystem":     byEcosystem(deps),
+		"discovery_errors": discoveryErrors(s.store.DiscoveryErrors()),
 	})
 }
 
@@ -174,7 +176,9 @@ func (s *Server) handleNotify(w http.ResponseWriter, _ *http.Request) {
 }
 
 // writeFlagged is the common flagged-list response (used by /api/flagged and
-// /api/check): flagged_count is the *active* (unresolved) count.
+// /api/check): flagged_count is the *active* (unresolved) count, and
+// discovery_errors names what the last scan could not read, so an empty
+// flagged list is never mistaken for a clean scan.
 func (s *Server) writeFlagged(
 	w http.ResponseWriter,
 	scannedAt any,
@@ -182,11 +186,21 @@ func (s *Server) writeFlagged(
 	flagged []api.Dependency,
 ) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scanned_at":    scannedAt,
-		"total":         total,
-		"flagged_count": api.ActiveCount(flagged),
-		"flagged":       flagged,
+		"scanned_at":       scannedAt,
+		"total":            total,
+		"flagged_count":    api.ActiveCount(flagged),
+		"flagged":          flagged,
+		"discovery_errors": discoveryErrors(s.store.DiscoveryErrors()),
 	})
+}
+
+// discoveryErrors encodes no errors as [] rather than null, so the page and
+// every client can read the field without a nil check.
+func discoveryErrors(errs []store.DiscoveryError) []store.DiscoveryError {
+	if errs == nil {
+		return []store.DiscoveryError{}
+	}
+	return errs
 }
 
 func byEcosystem(deps []store.Dependency) map[string]int {

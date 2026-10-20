@@ -2,6 +2,7 @@ package discover
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -49,9 +50,23 @@ func runGoList(dir string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", withStderr(err)
 	}
 	return string(out), nil
+}
+
+// withStderr appends the first line of a failed command's stderr to its error,
+// so a bare "exit status 1" carries the reason go printed.
+func withStderr(err error) error {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return err
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(exitErr.Stderr)), "\n")
+	if line == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, line)
 }
 
 // goListDeps runs `go list -deps -json ./...` in dir and returns the set of

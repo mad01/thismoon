@@ -10,6 +10,7 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/services/deps/internal/api"
 	"github.com/mad01/thismoon/services/deps/internal/client"
+	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
 // handlers carries the dependencies shared by all deps tools.
@@ -23,7 +24,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_scan",
 		Description: "Discover every external dependency across the registered tool repos (Go modules, npm, PyPI, Swift) and persist the inventory, WITHOUT checking advisories. " +
-			"Returns a per-ecosystem count. Use deps_check to also check versions against OSV.",
+			"Returns a per-ecosystem count, plus discovery_errors naming any repo and ecosystem it could not read. Use deps_check to also check versions against OSV.",
 		// Replaces the whole persisted inventory, so a rescan is destructive
 		// but idempotent over an unchanged tree. Go discovery shells out to
 		// `go list -m -json all`, which resolves the module graph against the
@@ -38,7 +39,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_check",
 		Description: "Discover every dependency and check each version against the OSV.dev supply-chain advisory database. " +
-			"Returns the flagged packages with advisory id, severity, and the version that fixes each. This reaches the network and may take a few seconds.",
+			"Returns the flagged packages with advisory id, severity, and the version that fixes each, plus discovery_errors naming any repo and ecosystem whose dependencies went unchecked. This reaches the network and may take a few seconds.",
 		// Same replace-the-store write as deps_scan, plus the OSV.dev query.
 		Annotations: &mcp.ToolAnnotations{
 			DestructiveHint: new(true),
@@ -51,7 +52,7 @@ func registerTools(s *mcp.Server, h *handlers) {
 		Name: "deps_list_flagged",
 		Description: "Return the flagged packages from the most recent check WITHOUT re-scanning (fast, no network). " +
 			"Use after deps_check to re-read the findings. Each advisory carries a `key` and a `resolved` flag. " +
-			"An empty flagged list with total > 0 means the persisted inventory carries no unresolved advisories (run deps_check to re-verify against OSV); with total == 0 the response carries zero_result_hint, because an empty store means nothing was checked, not that anything is clean.",
+			"An empty flagged list with total > 0 and no discovery_errors means the persisted inventory carries no unresolved advisories (run deps_check to re-verify against OSV). A non-empty discovery_errors means those repos and ecosystems were never checked, so the list is not a clean bill. With total == 0 the response carries zero_result_hint, because an empty store means nothing was checked, not that anything is clean.",
 		// Reads the persisted store through the local serve API; no OSV call.
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:  true,
@@ -89,12 +90,13 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "deps_doctor",
-		Description: "Diagnose deps itself: is `deps serve` reachable, is the scan store readable, and was the " +
-			"running service built from the same commit as the installed binary. " +
+		Description: "Diagnose deps itself: is `deps serve` reachable, is the scan store readable, was the " +
+			"running service built from the same commit as the installed binary, and did the last scan read every " +
+			"repo and ecosystem (discovery-clean). " +
 			"Returns one result per check with `ok` false if any failed. " +
 			"Read-only: it probes, it changes nothing. " +
 			"Call this when another deps tool errors or comes back empty: it answers whether the fault is the " +
-			"service, the store, or a genuinely clean scan.",
+			"service, the store, a discovery failure, or a genuinely clean scan.",
 		// Probes localhost serve, the local store file, and the local binary's
 		// version; nothing external, nothing written.
 		Annotations: &mcp.ToolAnnotations{
@@ -106,9 +108,10 @@ func registerTools(s *mcp.Server, h *handlers) {
 
 // scanOut is the deps_scan response.
 type scanOut struct {
-	Total       int            `json:"total"        jsonschema:"total dependencies discovered"`
-	ByEcosystem map[string]int `json:"by_ecosystem" jsonschema:"count per ecosystem (Go, npm, PyPI)"`
-	URL         string         `json:"url"          jsonschema:"web page where the user can view findings"`
+	Total           int                    `json:"total"                      jsonschema:"total dependencies discovered"`
+	ByEcosystem     map[string]int         `json:"by_ecosystem"               jsonschema:"count per ecosystem (Go, npm, PyPI)"`
+	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors,omitempty" jsonschema:"repo and ecosystem pairs the last scan could not read; their dependencies were NOT checked, so an empty flagged list is not clean while this is set"`
+	URL             string                 `json:"url"                        jsonschema:"web page where the user can view findings"`
 }
 
 func (h *handlers) handleScan(
@@ -120,16 +123,22 @@ func (h *handlers) handleScan(
 	if err != nil {
 		return nil, scanOut{}, err
 	}
-	return nil, scanOut{Total: res.Total, ByEcosystem: res.ByEcosystem, URL: h.webURL}, nil
+	return nil, scanOut{
+		Total:           res.Total,
+		ByEcosystem:     res.ByEcosystem,
+		DiscoveryErrors: res.DiscoveryErrors,
+		URL:             h.webURL,
+	}, nil
 }
 
 // flaggedOut is the deps_check / deps_list_flagged / deps_scan_repo response.
 type flaggedOut struct {
-	Total        int              `json:"total"                      jsonschema:"total dependencies checked"`
-	FlaggedCount int              `json:"flagged_count"              jsonschema:"number of dependencies with at least one UNRESOLVED advisory"`
-	Flagged      []api.Dependency `json:"flagged"                    jsonschema:"the flagged dependencies; each advisory has a key and a resolved flag"`
-	URL          string           `json:"url"                        jsonschema:"web page where the user can view findings"`
-	ZeroHint     *flaggedZeroHint `json:"zero_result_hint,omitempty" jsonschema:"set by deps_list_flagged only, when the store holds zero dependencies: an empty flagged list then means nothing was checked, not that the dependencies are clean"`
+	Total           int                    `json:"total"                      jsonschema:"total dependencies checked"`
+	FlaggedCount    int                    `json:"flagged_count"              jsonschema:"number of dependencies with at least one UNRESOLVED advisory"`
+	Flagged         []api.Dependency       `json:"flagged"                    jsonschema:"the flagged dependencies; each advisory has a key and a resolved flag"`
+	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors,omitempty" jsonschema:"repo and ecosystem pairs the last scan could not read; their dependencies were NOT checked, so an empty flagged list is not clean while this is set"`
+	URL             string                 `json:"url"                        jsonschema:"web page where the user can view findings"`
+	ZeroHint        *flaggedZeroHint       `json:"zero_result_hint,omitempty" jsonschema:"set by deps_list_flagged only, when the store holds zero dependencies: an empty flagged list then means nothing was checked, not that the dependencies are clean"`
 }
 
 // flaggedZeroHint explains a deps_list_flagged response whose store holds no
@@ -141,10 +150,11 @@ type flaggedZeroHint struct {
 
 func (h *handlers) flagged(res client.CheckResult) flaggedOut {
 	return flaggedOut{
-		Total:        res.Total,
-		FlaggedCount: res.FlaggedCount,
-		Flagged:      res.Flagged,
-		URL:          h.webURL,
+		Total:           res.Total,
+		FlaggedCount:    res.FlaggedCount,
+		Flagged:         res.Flagged,
+		DiscoveryErrors: res.DiscoveryErrors,
+		URL:             h.webURL,
 	}
 }
 

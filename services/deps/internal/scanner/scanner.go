@@ -25,15 +25,19 @@ type Checker interface {
 }
 
 // Discover enumerates dependencies across repos without checking advisories.
-// Returned dependencies have no Advisories attached. Discovery errors are
-// returned alongside whatever was found, so a single bad repo doesn't lose the
-// rest.
+// Returned dependencies have no Advisories attached. Each repo and ecosystem
+// that failed comes back as a DiscoveryError alongside whatever was found, so a
+// single bad repo doesn't lose the rest. Every failure is also logged.
 func Discover(
 	repos []string,
 	ecosystems []discover.Ecosystem,
 	opts discover.Options,
-) ([]store.Dependency, error) {
-	return discover.Repos(repos, ecosystems, opts)
+) ([]store.Dependency, []store.DiscoveryError) {
+	deps, errs := discover.Repos(repos, ecosystems, opts)
+	for _, e := range errs {
+		log.Printf("deps: discovery: %s in %s: %s", e.Ecosystem, e.Repo, e.Error)
+	}
+	return deps, errs
 }
 
 // Check attaches OSV advisories to each dependency in place and returns the
@@ -76,42 +80,52 @@ type Engine struct {
 	Store      *store.Store
 }
 
-// Scan discovers dependencies (no advisory check) and persists them. Discovery
-// problems are logged, not fatal, so a transient bad repo still yields a scan.
+// Scan discovers dependencies (no advisory check) and persists them with the
+// discovery errors. Discovery problems are saved, not fatal, so a transient bad
+// repo still yields a scan.
 func (e *Engine) Scan() ([]store.Dependency, error) {
 	repos, opts, err := e.Prepare()
 	if err != nil {
 		return nil, err
 	}
-	deps, derr := Discover(repos, e.Ecosystems, opts)
-	if derr != nil {
-		log.Printf("deps: %v", derr)
-	}
-	if err := e.Store.Save(deps); err != nil {
+	deps, discErrs := Discover(repos, e.Ecosystems, opts)
+	if err := e.Store.Save(deps, discErrs); err != nil {
 		return nil, err
 	}
 	return deps, nil
 }
 
-// Check discovers dependencies, checks them against OSV, and persists the
-// annotated set.
+// Check discovers dependencies, checks them against OSV, persists the
+// annotated set with the discovery errors, and emits the scan-complete event.
 func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 	start := time.Now()
 	repos, opts, err := e.Prepare()
 	if err != nil {
 		return nil, err
 	}
-	deps, derr := Discover(repos, e.Ecosystems, opts)
-	if derr != nil {
-		log.Printf("deps: %v", derr)
-	}
+	deps, discErrs := Discover(repos, e.Ecosystems, opts)
 	deps, err = Check(ctx, deps, e.Checker)
 	if err != nil {
 		return nil, err
 	}
-	if err := e.Store.Save(deps); err != nil {
+	if err := e.Store.Save(deps, discErrs); err != nil {
 		return nil, err
 	}
+	ev := scanCompleteEvent(len(repos), deps, discErrs, time.Since(start))
+	notify.EmitEvent(ev.Source, ev.Level, ev.Title, ev.Message, ev.Tags)
+	return deps, nil
+}
+
+// scanCompleteEvent builds the events-archive record for a finished full
+// check. It warns when anything is flagged or any repo and ecosystem failed
+// discovery, and the message names each failure, so an unchecked ecosystem
+// shows up there instead of reading as a clean scan.
+func scanCompleteEvent(
+	repos int,
+	deps []store.Dependency,
+	discErrs []store.DiscoveryError,
+	took time.Duration,
+) notify.Event {
 	flagged := 0
 	for _, d := range deps {
 		if d.Flagged() {
@@ -119,19 +133,30 @@ func (e *Engine) Check(ctx context.Context) ([]store.Dependency, error) {
 		}
 	}
 	level := "info"
-	if flagged > 0 {
+	if flagged > 0 || len(discErrs) > 0 {
 		level = "warn"
 	}
-	notify.EmitEvent("deps", level,
-		fmt.Sprintf("scan complete: %d deps, %d flagged", len(deps), flagged),
-		"",
-		map[string]string{
-			"repos":    fmt.Sprintf("%d", len(repos)),
-			"deps":     fmt.Sprintf("%d", len(deps)),
-			"flagged":  fmt.Sprintf("%d", flagged),
-			"duration": time.Since(start).Round(time.Second).String(),
-		})
-	return deps, nil
+	title := fmt.Sprintf("scan complete: %d deps, %d flagged", len(deps), flagged)
+	lines := make([]string, 0, len(discErrs))
+	if len(discErrs) > 0 {
+		title += fmt.Sprintf(", %d discovery error(s)", len(discErrs))
+		for _, de := range discErrs {
+			lines = append(lines, fmt.Sprintf("%s in %s: %s", de.Ecosystem, de.Repo, de.Error))
+		}
+	}
+	return notify.Event{
+		Source:  "deps",
+		Level:   level,
+		Title:   title,
+		Message: strings.Join(lines, "\n"),
+		Tags: map[string]string{
+			"repos":            fmt.Sprintf("%d", repos),
+			"deps":             fmt.Sprintf("%d", len(deps)),
+			"flagged":          fmt.Sprintf("%d", flagged),
+			"discovery_errors": fmt.Sprintf("%d", len(discErrs)),
+			"duration":         took.Round(time.Second).String(),
+		},
+	}
 }
 
 // CheckRepo rescans a single repo (matched by absolute path or basename),
@@ -146,15 +171,12 @@ func (e *Engine) CheckRepo(ctx context.Context, repoID string) ([]store.Dependen
 	if !ok {
 		return nil, fmt.Errorf("repo %q is not among the scanned repos", repoID)
 	}
-	deps, derr := Discover([]string{repo}, e.Ecosystems, opts)
-	if derr != nil {
-		log.Printf("deps: %v", derr)
-	}
+	deps, discErrs := Discover([]string{repo}, e.Ecosystems, opts)
 	deps, err = Check(ctx, deps, e.Checker)
 	if err != nil {
 		return nil, err
 	}
-	if err := e.Store.SaveRepo(repo, deps); err != nil {
+	if err := e.Store.SaveRepo(repo, deps, discErrs); err != nil {
 		return nil, err
 	}
 	return deps, nil

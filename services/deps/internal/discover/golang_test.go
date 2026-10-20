@@ -1,6 +1,8 @@
 package discover
 
 import (
+	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -145,5 +147,23 @@ func TestParseGoListMarksUnimported(t *testing.T) {
 	}
 	if byName["github.com/segmentio/asm"].Imported {
 		t.Error("asm is graph-only (not imported), want Imported=false")
+	}
+}
+
+func TestWithStderrAppendsTheFirstStderrLine(t *testing.T) {
+	_, err := exec.Command("sh", "-c", "echo 'go: go.mod requires go >= 9.9' >&2; echo more >&2; exit 1").
+		Output()
+	got := withStderr(err)
+	if want := "exit status 1: go: go.mod requires go >= 9.9"; got.Error() != want {
+		t.Errorf("withStderr = %q, want %q", got, want)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(got, &exitErr) {
+		t.Error("withStderr must keep the *exec.ExitError reachable")
+	}
+
+	notFound := exec.ErrNotFound
+	if withStderr(notFound) != notFound {
+		t.Error("an error that is not an exit error must pass through unchanged")
 	}
 }
