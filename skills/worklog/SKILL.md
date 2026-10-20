@@ -94,9 +94,10 @@ auto-memory; worklog triggers only on the verbs above.
 ## Notes
 
 - Whether the store (`~/code/worklog/`) has a git remote depends on the
-  machine's worklog config (`remote.url`). With one, every write pushes;
-  without one, the store stays on that machine or in a folder synced outside
-  git. Promise cross-machine sync only when a remote is set.
+  machine's worklog config (`remote.url`). With one, every write pushes
+  unless `remote.push` is false; without one, the store stays on that machine
+  or in a folder synced outside git. Promise cross-machine sync only when a
+  remote is set.
 - One task spanning N repos is **one item** with N per-repo notes, not N items.
 - **Ticket firewall:** an item keys on the tracker its work actually lives in,
   and only that one. Never reference one tracker world's ticket from an item
