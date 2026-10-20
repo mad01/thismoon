@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/mad01/thismoon/compare/present/v1.18.0...present/v1.19.0) (2026-10-19)
+
+
+### Features
+
+* **present:** live terminal block for deck demos ([#237](https://github.com/mad01/thismoon/issues/237)) ([33ad1c5](https://github.com/mad01/thismoon/commit/33ad1c5547bac5a240188f81ac5ae35de645da25))
+
 ## [1.18.0](https://github.com/mad01/thismoon/compare/present/v1.17.0...present/v1.18.0) (2026-10-19)
 
 
