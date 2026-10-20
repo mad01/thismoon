@@ -22,6 +22,8 @@ declare module 'claude-code' {
       weaveSeen: boolean
       isInteractive: boolean
       members: LoomPaneMember[]
+      /** The session the role was last detected for; null until the first detect. */
+      sessionId: string | null
     }
   }
 }

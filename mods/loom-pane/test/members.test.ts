@@ -1,8 +1,8 @@
-// The member line and the claim against the engine's own test kit:
-// `claude plugin test mods/loom-pane`. The hooks registered here stand
-// beneath the plugin for the engine: git and `claude agents`
-// (process.run), the agent list, the events service (http.fetch), the
-// clock, the tools and the status line.
+// The member line, the claim and the detect after `/clear` against the
+// engine's own test kit: `claude plugin test mods/loom-pane`. The hooks
+// registered here stand beneath the plugin for the engine: git and `claude
+// agents` (process.run), the agent list, the session id, the events service
+// (http.fetch), the clock, the tools and the status line.
 import { expect, mock, test } from 'claude-code/testing'
 import type { MockClock } from 'claude-code/testing'
 import type { AgentInfo, AgentSpawnInput, HttpResponse, On, ProcessRunResult } from 'claude-code'
@@ -47,9 +47,11 @@ type World = {
   claude: 'ok' | 'missing' | 'hung'
   events: 'ok' | 'down' | 'hung'
   deniesBash: (command: string) => boolean
+  sessionId: string
   statuses: Array<string | undefined>
   listings: number
   fetches: number
+  gitCalls: number
   clock: MockClock
 }
 
@@ -62,9 +64,11 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock'>> = {}, cwd = OWN):
     claude: 'ok',
     events: 'ok',
     deniesBash: () => false,
+    sessionId: 's-self',
     statuses: [],
     listings: 0,
     fetches: 0,
+    gitCalls: 0,
     clock,
     ...overrides,
   }
@@ -77,6 +81,7 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock'>> = {}, cwd = OWN):
       if (world.claude === 'hung') await clock.sleep(10_000)
       return { value: run(0, sessionsJson) }
     }
+    if (e.argv[0] === 'git') world.gitCalls += 1
     if (line === 'git rev-parse --show-toplevel') return { value: run(0, cwd) }
     if (line.endsWith('--git-common-dir')) return { value: run(0, `${CANONICAL}/.git`) }
     if (line === 'git worktree list --porcelain') return { value: run(0, porcelain) }
@@ -88,7 +93,7 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock'>> = {}, cwd = OWN):
     if (world.agents === 'slow') await clock.sleep(6_000)
     return { value: world.agents === 'slow' ? [w1] : world.agents }
   })
-  on('session.id', () => ({ value: 's-self' }))
+  on('session.id', () => ({ value: world.sessionId }))
   on('http.fetch', async (_$, e) => {
     world.fetches += 1
     if (world.events === 'down') return { deny: `connect ECONNREFUSED ${e.url}` }
@@ -104,6 +109,7 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock'>> = {}, cwd = OWN):
   on('ui.log', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('tool.call', { tool: 'Write' }, () => ({ result: { type: 'create', filePath: '', content: '', structuredPatch: [] } }))
   // Stands for belt or the person: a command it refuses never runs.
@@ -116,8 +122,9 @@ function seat(on: On, overrides: Partial<Omit<World, 'clock'>> = {}, cwd = OWN):
 const last = (world: World): string | undefined => world.statuses[world.statuses.length - 1]
 
 // A state store beneath the plugin, seeded with values a past refresh left
-// (the kit's `$` has no state noun to seed through).
-function seedState(on: On, seeded: Readonly<Record<string, unknown>>): void {
+// (the kit's `$` has no state noun to seed through). Clearing the returned
+// map does to the state what `/clear` does.
+function seedState(on: On, seeded: Readonly<Record<string, unknown>>): Map<string, unknown> {
   const values = new Map<string, unknown>(Object.entries(seeded))
   const versions = new Map<string, number>()
   on('state.get', (_$, e) => {
@@ -131,6 +138,7 @@ function seedState(on: On, seeded: Readonly<Record<string, unknown>>): void {
     versions.set(key, version)
     return { value: { isSet: true, version } }
   })
+  return values
 }
 
 const refusalOf = (ran: { deny?: string; isError?: true; text?: string }): string | undefined =>
@@ -291,4 +299,69 @@ test('a claim that ran makes the session the owner', async ($, on) => {
   await $.session.start(start(CANONICAL))
   await $.tool.call({ tool: 'Bash', command: `git -C ${CANONICAL} worktree add ~/.worktrees/thismoon/feat-new -b feat/new` })
   expect(last(world)).toMatch(/^owner feat-new/)
+})
+
+// Sources that answer nothing, so the line is the role alone.
+const quiet = (): Partial<Omit<World, 'clock'>> => ({ agents: [], claude: 'missing', events: 'down' })
+
+const turnStart = (turnId: string) => ({ text: '', turnId }) as const
+
+// A real session can't prove this with classic.SessionStart: a plugin seated
+// above loom-pane skips that hook, and the kit has none above it.
+test('after /clear the first main-loop turn detects the role again and the guards are back', async ($, on) => {
+  const state = seedState(on, {})
+  const world = seat(on, quiet())
+  await $.session.start(start())
+  state.clear()
+  const unguarded = await $.tool.call({ tool: 'Write', file_path: `${CANONICAL}/README.md`, content: 'x' })
+  expect(refusalOf(unguarded)).toBeUndefined()
+
+  const shown = world.statuses.length
+  await $.turn.start(turnStart('t1'))
+  expect(world.statuses.slice(shown)).toContain('owner feat-pane')
+  const guarded = await $.tool.call({ tool: 'Write', file_path: `${CANONICAL}/README.md`, content: 'x' })
+  expect(refusalOf(guarded)).toMatch(/belongs to the canonical checkout/)
+})
+
+test('an in-process /resume detects again for the new session, once; the same session never does', async ($, on) => {
+  const world = seat(on, quiet())
+  await $.session.start(start())
+  const afterStart = world.gitCalls
+  await $.turn.start(turnStart('t1'))
+  expect(world.gitCalls).toBe(afterStart)
+
+  world.sessionId = 's-resumed'
+  await $.turn.start(turnStart('t2'))
+  const afterResume = world.gitCalls
+  expect(afterResume).toBeGreaterThan(afterStart)
+  await $.turn.start(turnStart('t3'))
+  expect(world.gitCalls).toBe(afterResume)
+})
+
+test('a subagent turn never detects, even with the state cleared', async ($, on) => {
+  const state = seedState(on, {})
+  const world = seat(on, quiet())
+  await $.session.start(start())
+  state.clear()
+  const before = world.gitCalls
+  await $.turn.start({ ...turnStart('t1'), agentId: 'a1' })
+  expect(world.gitCalls).toBe(before)
+})
+
+// What a session that ran an older version holds once an update reloads the
+// mod: a role and paths, 0.1.0's pane rows, and no session id.
+test('state from a version without the session id detects once, on the first turn', async ($, on) => {
+  seedState(on, {
+    'loom-pane/role': 'owner',
+    'loom-pane/canonical': CANONICAL,
+    'loom-pane/ownWorktree': OWN,
+    'loom-pane/rows': [{ path: OWN, branch: 'feat/pane', head: null, isDirty: null, ahead: null, age: null }],
+  })
+  const world = seat(on, quiet())
+  await $.turn.start(turnStart('t1'))
+  const detected = world.gitCalls
+  expect(detected).toBeGreaterThan(0)
+  expect(last(world)).toBe('owner feat-pane')
+  await $.turn.start(turnStart('t2'))
+  expect(world.gitCalls).toBe(detected)
 })
