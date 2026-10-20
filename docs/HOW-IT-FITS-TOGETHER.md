@@ -193,6 +193,10 @@ on remembering to use them.
 - **events**: what actually *happened*. Every guard deny, every hint, every
   service's audit trail, queryable on one timeline.
 
+Claude Code's own auto memory and the `/handoff` skill's bridge documents sit
+beside these four. [MEMORY-STACK.md](MEMORY-STACK.md) covers all six: which
+store gets which fact, how each is read and written, and the hook behind each.
+
 ## Skills
 
 Eight agent skills ship in `skills/` at the repo root, one directory per
@@ -225,6 +229,8 @@ MCP registration is machine-private wiring (step 6 above).
   every overlay pattern worked, and the example global CLAUDE.md.
 - [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md): every guard and
   hint in depth.
+- [MEMORY-STACK.md](MEMORY-STACK.md): the memory stores, how each reaches a
+  session, and which one a new fact belongs in.
 - [ADR-0006](adr/0006-recipe-layering-and-platform-deps.md): why the
   public/private split is a rule; [ADR-0008](adr/0008-belt-hints-alongside-guards.md):
   why hints advise instead of deny.
