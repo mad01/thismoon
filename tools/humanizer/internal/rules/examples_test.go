@@ -43,6 +43,29 @@ func TestRulesFireOnTheirBeforeExamples(t *testing.T) {
 	}
 }
 
+// TestEmDashIsErrorLevel pins the severity the humanizer-gate mod holds on:
+// one em dash in a PR body has to surface as an error-level finding.
+func TestEmDashIsErrorLevel(t *testing.T) {
+	if _, err := exec.LookPath("vale"); err != nil {
+		t.Skip("vale not installed")
+	}
+	opts := DetectOptions{CacheDir: t.TempDir(), MinSeverity: "error"}
+	findings, err := Detect(
+		context.Background(),
+		"The build is fast — most runs finish in seconds.\n",
+		opts,
+	)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	for _, f := range findings {
+		if f.RuleID == "Humanizer.EmDashOveruse" {
+			return
+		}
+	}
+	t.Fatalf("no error-level Humanizer.EmDashOveruse finding in %+v", findings)
+}
+
 // dedent strips the common leading indentation that multi-line YAML block
 // examples carry after metadata parsing, so markdown constructs like
 // headings sit at column zero the way they would in a real document.
