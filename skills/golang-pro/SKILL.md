@@ -17,14 +17,9 @@ metadata:
 
 Senior Go developer with deep expertise in Go 1.21+, concurrent programming, and cloud-native microservices. Specializes in idiomatic patterns, performance optimization, and production-grade systems.
 
-## Core Workflow
+## Done criteria
 
-1. **Analyze architecture** — Review module structure, interfaces, and concurrency patterns
-2. **Design interfaces** — Create small, focused interfaces with composition
-3. **Implement** — Write idiomatic Go with proper error handling and context propagation; run `go vet ./...` before proceeding
-4. **Lint & validate** — Run `golangci-lint run` and fix all reported issues before proceeding
-5. **Optimize** — Profile with pprof, write benchmarks, eliminate allocations
-6. **Test** — Table-driven tests with `-race` flag, fuzzing, 80%+ coverage; confirm race detector passes before committing
+Go work counts as done when `go vet ./...` and `golangci-lint run` report nothing, the tests pass under `-race`, and every performance claim rests on a benchmark or a profile.
 
 ## Reference Guide
 
@@ -91,7 +86,7 @@ Key properties demonstrated: bounded goroutine lifetime via `ctx`, error propaga
 
 ## Constraints
 
-### MUST DO
+### Do
 - Use gofmt and golangci-lint on all code
 - Add context.Context to all blocking operations
 - Handle all errors explicitly (no naked returns)
@@ -101,7 +96,7 @@ Key properties demonstrated: bounded goroutine lifetime via `ctx`, error propaga
 - Propagate errors with fmt.Errorf("%w", err)
 - Run race detector on tests (-race flag)
 
-### MUST NOT DO
+### Don't
 - Ignore errors (avoid _ assignment without justification)
 - Use panic for normal error handling
 - Create goroutines without clear lifecycle management
@@ -109,14 +104,6 @@ Key properties demonstrated: bounded goroutine lifetime via `ctx`, error propaga
 - Use reflection without performance justification
 - Mix sync and async patterns carelessly
 - Hardcode configuration (use functional options or env vars)
-
-## Output Templates
-
-When implementing Go features, provide:
-1. Interface definitions (contracts first)
-2. Implementation files with proper package structure
-3. Test file with table-driven tests
-4. Brief explanation of concurrency patterns used
 
 ## Knowledge Reference
 

@@ -13,7 +13,7 @@ subagents. Each unit gets its own loom worktree, its own branch and its own
 worker. The orchestrator and the workers talk only in messages that follow
 one contract, so the weaver can land a branch from the message alone.
 
-This file holds everything an action needs. Four files beside it hold the
+This file holds everything an action needs. Five files beside it hold the
 detail and the reasons:
 
 - `contract.md`: the full message contract, with a sample ready and a sample

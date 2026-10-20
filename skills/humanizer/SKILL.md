@@ -105,7 +105,7 @@ When given text to humanize:
 5. **Rewrite problematic sections** - Replace AI-isms with natural alternatives informed by the findings.
 6. **Preserve meaning** - Keep the core message intact
 7. **Maintain voice** - Match the intended tone; when a sample is present, close the biggest voice-diff deltas.
-8. **Add soul** - Don't just remove bad patterns; inject actual personality
+8. **Add soul where the text type wants it** - Don't just remove bad patterns. Use the voice Voice Calibration sets: the sample's, or the text type's register (step 3) when there is no sample.
 9. **Do a final anti-AI pass** — Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run `humanizer_judge` if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
 
 
@@ -123,7 +123,7 @@ If the user provides a writing sample (their own previous writing), analyze it b
 
 2. **Match their voice in the rewrite.** Don't just remove AI patterns - replace them with patterns from the sample. If they write short sentences, don't produce long ones. If they use "stuff" and "things," don't upgrade to "elements" and "components."
 
-3. **When no sample is provided,** fall back to the default behavior (natural, varied, opinionated voice from the PERSONALITY AND SOUL section below).
+3. **When no sample is provided,** match the register of the text type. Technical docs, READMEs, PR descriptions, and commit messages stay plain and specific, with first person only where the original uses it. Essays, posts, and opinion pieces take the natural, varied, opinionated voice from the PERSONALITY AND SOUL section below.
 
 ### How to provide a sample
 - Inline: "Humanize this text. Here's a sample of my writing for voice matching: [sample]"
@@ -542,23 +542,6 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 > When users hit a slow page, they leave.
 
 ---
-
-## Process
-
-1. Read the input text carefully
-2. Identify all instances of the patterns above
-3. Rewrite each problematic section
-4. Ensure the revised text:
-   - Sounds natural when read aloud
-   - Varies sentence structure naturally
-   - Uses specific details over vague claims
-   - Maintains appropriate tone for context
-   - Uses simple constructions (is/are/has) where appropriate
-5. Present a draft humanized version
-6. Prompt: "What makes the below so obviously AI generated?"
-7. Answer briefly with the remaining tells (if any)
-8. Prompt: "Now make it not obviously AI generated."
-9. Present the final version (revised after the audit)
 
 ## Output Format
 

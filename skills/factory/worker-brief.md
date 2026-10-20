@@ -38,15 +38,13 @@ factory-worker-low* | factory-worker-medium* | factory-worker-high*)
 esac
 ```
 
-belt logs a warn event when a hint exits non-zero or prints nothing. The
-`agent_types` gate shipped with belt 2.8.0 (PR #223) and matched the agent
-type exactly. Since belt 2.9.0 (PR #227) a key that ends in `*`, such as
-`factory-worker-low*`, matches by prefix, which is what lets a named worker
-such as `factory-worker-low-docs` reach the brief. A belt 2.8.0 reads a `*`
-key literally and skips every worker, so install belt 2.9.0 before a config
-names one. The script's own case line gates the brief as well, for a belt
-that ignores the key; there every other subagent leaves one warn event
-behind.
+belt logs a warn event when a hint exits non-zero or prints nothing. An
+`agent_types` key that ends in `*`, such as `factory-worker-low*`, matches
+by prefix, which is what lets a named worker such as
+`factory-worker-low-docs` reach the brief. Prefix keys need belt 2.9.0 or
+later; an older belt reads the `*` literally and skips every worker. The
+script's own case line gates the brief as well, for a belt that ignores the
+key; there every other subagent leaves one warn event behind.
 
 When the hint is missing, the worker definitions tell the worker to read
 this file before its first step.

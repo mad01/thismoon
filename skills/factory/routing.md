@@ -12,7 +12,9 @@ change without touching them.
 | mid | Sonnet | `sonnet` |
 | cheap | Haiku | `haiku` |
 
-When a new model generation ships, change this table and nothing else.
+When a new model generation ships, change three places together: this
+table, the Model today column and the cheap-tier line under the routing
+table in `SKILL.md`, and the `model` lines in `worker-definitions.md`.
 
 ## Defaults by work-on tier
 

@@ -2,10 +2,8 @@
 
 Two or more agent sessions editing the same checkout cannot each run git:
 staging interleaves and a stray `git add -A` sweeps another session's
-half-finished work into an unrelated commit. The old answer was a commit
-queue: every session described its commit as a request file and one
-committer session landed them serially. Worktrees remove the shared tree
-instead: each session owns an isolated checkout of its own branch and commits
+half-finished work into an unrelated commit. Worktrees remove the shared
+tree: each session owns an isolated checkout of its own branch and commits
 locally whenever it likes. The only thing left to coordinate is which
 branch lands on the default branch, in what order. That sequencing role is
 the **weaver**.
@@ -168,12 +166,13 @@ Per ready branch, in its own worktree:
 2. Rebase the branch onto the fresh default tip. Rebase, not merge
    commits: linear history keeps each path-scoped conventional commit
    meaningful to release tooling that reads the default branch
-   (release-please here).
+   (release-please in thismoon).
 3. Re-run the repo's gates in the worktree. The rebase may have composed
    this branch with work it never saw.
 4. Land it by repo policy:
-   - **PR-only repos** (this one): push the branch, open a PR, merge it
-     when the user directs. After the merge, pull the canonical checkout.
+   - **PR-only repos** (thismoon is one): push the branch, open a PR,
+     merge it when the user directs. After the merge, pull the canonical
+     checkout.
    - **Direct-main repos**: `git -C <canonical> merge --ff-only <branch>`,
      then push if the repo has a remote.
 
