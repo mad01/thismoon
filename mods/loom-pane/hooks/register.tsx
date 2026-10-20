@@ -45,6 +45,10 @@ const repo = atom({ plugin: 'loom-pane', key: 'repo' } as const, null as string 
 const weaveSeen = atom({ plugin: 'loom-pane', key: 'weaveSeen' } as const, false)
 const isInteractive = atom({ plugin: 'loom-pane', key: 'isInteractive' } as const, false)
 const members = atom({ plugin: 'loom-pane', key: 'members' } as const, [] as LoomPaneMember[])
+// The session the role was last detected for. `/clear` puts it back to null
+// and a state from before the key existed reads null too, so either way the
+// next main-loop turn detects again.
+const detectedSession = atom({ plugin: 'loom-pane', key: 'sessionId' } as const, null as string | null)
 
 type Logger = { ui: { log: (text: string, options: { to: 'debug' }) => void } }
 type Failed<E, R> = ((e: E) => R) & { event: string; error: { kind: string; message?: string } }
@@ -251,6 +255,15 @@ async function detect($: EngineInterface, cwd: string): Promise<void> {
   )
 }
 
+// Detects the role for session `id` in `cwd` and records the id, dropping
+// stored members first when the listing is off.
+async function redetect($: EngineInterface, cwd: string, id: string | null, isListing: boolean): Promise<void> {
+  if (!isListing) await update($, members, () => [])
+  await detect($, cwd)
+  await update($, detectedSession, () => id)
+  if (isListing) await refreshMembers($)
+}
+
 // A Bash command that enters a worktree of the loom layout, by `cd` or by
 // `git worktree add`, makes this session its owner; a weaver stays a weaver.
 async function claimOwner($: EngineInterface, claims: readonly string[]): Promise<void> {
@@ -340,16 +353,20 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     $.ui.log('loom-pane: loaded', { to: 'debug' })
     await update($, isInteractive, () => e.isInteractive)
-    if (!isListing) await update($, members, () => [])
-    await detect($, e.cwd)
-    if (isListing) await refreshMembers($)
+    await redetect($, e.cwd, await sessionId($), isListing)
     return started
   }).catch(skipOnFailure)
 
-  on('classic.SessionStart', { source: ['resume', 'clear'] }, async ($, e, next) => {
-    if (!isListing) await update($, members, () => [])
-    await detect($, e.cwd)
-    if (isListing) await refreshMembers($)
+  // `/clear` puts the state back to its defaults and an in-process `/resume`
+  // switches sessions; neither raises session.start, and a plugin seated
+  // above this one can skip classic.SessionStart. So the first main-loop turn
+  // whose session id the state does not hold detects again, before the
+  // turn's first model call and so before any of its tools run.
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const id = await sessionId($)
+      if (id !== (await read($, detectedSession))) await redetect($, await $.session.cwd(), id, isListing)
+    }
     return next(e)
   }).catch(skipOnFailure)
 
