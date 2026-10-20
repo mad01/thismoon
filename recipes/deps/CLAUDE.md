@@ -27,9 +27,17 @@ recipe's directory inside the cache.
 - **`packages.deps.service`** — restarts the agent only when the installed binary
   changed (ralph hashes `install_paths`); `t-man status` guard skips the restart
   on first install.
-- **`hooks.builds.deps_service`** — `t-man add --name deps -- deps serve --port
-  7429 --workdir ~/.local/share/deps` (with PATH + GOPATH/GOMODCACHE env for the
-  `go list` discovery). Idempotent; `run = "always"` self-heals.
+- **`hooks.builds.deps_chmod_serve_launcher`**: keeps `deps-serve.sh`
+  executable.
+- **`hooks.builds.deps_service`**: `t-man add --name deps -- <sources
+  cache>/recipes/deps/deps-serve.sh --port 7429 --workdir ~/.local/share/deps`
+  (with PATH + GOPATH/GOMODCACHE env for the `go list` discovery). The
+  launcher prepends the mise shims dir
+  (`${MISE_DATA_DIR:-~/.local/share/mise}/shims`, when it exists) to PATH and
+  execs `~/code/bin/deps serve`, since `go` comes from mise and the launchd
+  PATH has no mise. Without it every Go scan fails; serve now saves those
+  failures and `deps doctor` reports them as `discovery-clean`. Idempotent;
+  `run = "always"` self-heals.
 - **`pre_uninstall`** — removes the t-man agent before cleanup deletes the binary.
 
 ## What stays in dotfiles (private overlay)

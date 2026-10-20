@@ -1,6 +1,8 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -19,7 +21,7 @@ func TestSaveAndSnapshotRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps := []Dependency{flaggedDep("a", "GHSA-1"), {Ecosystem: "Go", Name: "b", Version: "2.0.0"}}
-	if err := st.Save(deps); err != nil {
+	if err := st.Save(deps, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,7 +48,7 @@ func TestPendingFlagsAndMarkNotified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Save([]Dependency{flaggedDep("a", "GHSA-1", "GHSA-2")}); err != nil {
+	if err := st.Save([]Dependency{flaggedDep("a", "GHSA-1", "GHSA-2")}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,7 +72,7 @@ func TestPendingFlagsAndMarkNotified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st2.Save([]Dependency{flaggedDep("a", "GHSA-1", "GHSA-2")}); err != nil {
+	if err := st2.Save([]Dependency{flaggedDep("a", "GHSA-1", "GHSA-2")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(st2.PendingFlags()); got != 1 {
@@ -87,7 +89,7 @@ func TestPendingFlagsSkipsNonImported(t *testing.T) {
 	// it isn't a real exposure, so it doesn't notify.
 	graphOnly := flaggedDep("g", "GHSA-9")
 	graphOnly.Imported = false
-	if err := st.Save([]Dependency{graphOnly, flaggedDep("a", "GHSA-1")}); err != nil {
+	if err := st.Save([]Dependency{graphOnly, flaggedDep("a", "GHSA-1")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	pending := st.PendingFlags()
@@ -106,7 +108,7 @@ func TestResolveHidesFromPendingAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	dep := flaggedDep("a", "GHSA-1", "GHSA-2")
-	if err := st.Save([]Dependency{dep}); err != nil {
+	if err := st.Save([]Dependency{dep}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -148,7 +150,7 @@ func TestSaveRepoMergesAndKeepsScanTime(t *testing.T) {
 	if err := st.Save([]Dependency{
 		{Ecosystem: "Go", Name: "a", Version: "1", Repo: "/r1"},
 		{Ecosystem: "Go", Name: "b", Version: "1", Repo: "/r2"},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	fullScanAt := st.Snapshot().ScannedAt
@@ -157,7 +159,7 @@ func TestSaveRepoMergesAndKeepsScanTime(t *testing.T) {
 	if err := st.SaveRepo("/r1", []Dependency{
 		{Ecosystem: "Go", Name: "a", Version: "2", Repo: "/r1"},
 		{Ecosystem: "Go", Name: "c", Version: "1", Repo: "/r1"},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	sc := st.Snapshot()
@@ -182,7 +184,7 @@ func TestResolvedFixedSplitsAckedFromFixed(t *testing.T) {
 		t.Fatal(err)
 	}
 	// One dep still flagged at v1.0.0 (GHSA-1), and we acknowledge it.
-	if err := st.Save([]Dependency{flaggedDep("a", "GHSA-1")}); err != nil {
+	if err := st.Save([]Dependency{flaggedDep("a", "GHSA-1")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	stillThere := FlagKey("Go", "a", "1.0.0", "GHSA-1")
@@ -200,5 +202,63 @@ func TestResolvedFixedSplitsAckedFromFixed(t *testing.T) {
 	got := fixed[0]
 	if got.Name != "b" || got.Version != "0.9.0" || got.ID != "GHSA-2" || got.Ecosystem != "Go" {
 		t.Errorf("parsed item = %+v, want b@0.9.0 GHSA-2 Go", got)
+	}
+}
+
+func TestDiscoveryErrorsPersistAndMergePerRepo(t *testing.T) {
+	dir := t.TempDir()
+	st, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(nil, []DiscoveryError{
+		{Repo: "/r1", Ecosystem: "Go", Error: "go list in /r1: exec: \"go\": executable file not found in $PATH"},
+		{Repo: "/r2", Ecosystem: "npm", Error: "parse package-lock.json: unexpected EOF"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read sees what serve saved, without going through a Store.
+	sc, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.DiscoveryErrors) != 2 {
+		t.Fatalf("Read discovery errors = %+v, want 2", sc.DiscoveryErrors)
+	}
+
+	// A per-repo rescan replaces only that repo's errors.
+	reloaded, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reloaded.SaveRepo("/r1", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := reloaded.DiscoveryErrors()
+	if len(got) != 1 || got[0].Repo != "/r2" {
+		t.Fatalf("after /r1 rescan, discovery errors = %+v, want only /r2's", got)
+	}
+
+	// A full scan replaces the whole set.
+	if err := reloaded.Save(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.DiscoveryErrors(); len(got) != 0 {
+		t.Fatalf("after a clean full scan, discovery errors = %+v, want none", got)
+	}
+}
+
+func TestReadMissingStoreIsEmptyAndWritesNothing(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "absent")
+	sc, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sc.ScannedAt.IsZero() || len(sc.Deps) != 0 {
+		t.Errorf("Read of a missing store = %+v, want the zero Scan", sc)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("Read created %s (stat err %v); it must stay read-only", dir, err)
 	}
 }

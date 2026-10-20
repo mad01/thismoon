@@ -43,11 +43,14 @@ catalog registry, trims it by `exclude_repos`, and walks each repo for
 `requirements.txt` pins, and `Package.resolved`. For Go it also computes
 import-graph reachability with `go list -deps -json ./...`, tagging deps that
 contribute no compiled Go package as graph-only; this fails open so a real
-advisory is never hidden. The check step posts versions to OSV's
+advisory is never hidden. A discoverer that fails for one repo and ecosystem
+(typically `go list` without a `go` on PATH) becomes a `DiscoveryError` and
+the walk goes on with the rest. The check step posts versions to OSV's
 `/v1/querybatch` (up to 1000 per batch) and fetches each unique advisory id
-once. `scanner.Engine` persists the result through the store, then fires one
-coalesced notification covering all newly flagged advisories and emits an
-event to the events service.
+once. `scanner.Engine` persists the result and the discovery errors through the
+store, then fires one coalesced notification covering all newly flagged
+advisories and emits a scan-complete event to the events service, at warn
+level when anything is flagged or discovery failed.
 
 Scheduling checks staleness rather than counting ticks: serve heartbeats every
 15 minutes and runs a full check whenever the last scan is older than
@@ -62,11 +65,12 @@ acknowledged advisory resurfaces when the package is bumped.
 One file: `~/.local/share/deps/scan.json`, a single JSON document written
 atomically (temp file, then rename) and only ever by serve. It holds the last
 scan's dependencies (ecosystem, name, version, repo, manifest path, direct
-flag, advisories) plus two string sets keyed by
+flag, advisories), the `discovery_errors` (repo, ecosystem, error) the scan
+hit, plus two string sets keyed by
 `ecosystem:name@version:advisoryID`: `notified` (already alerted) and
 `resolved` (user-acknowledged). `ScannedAt` records the last full scan; a
-per-repo rescan merges without resetting it, so the daily catch-up still
-fires. Config lives at `~/.config/deps/config.toml`.
+per-repo rescan merges, replacing only that repo's deps and discovery
+errors, without resetting it, so the daily catch-up still fires. Config lives at `~/.config/deps/config.toml`.
 
 ## Interfaces
 
@@ -75,7 +79,8 @@ HTTP: `GET /` (web page), `GET /api/deps`, `GET /api/flagged`,
 `POST /api/resolve`, `POST /api/notify`, `GET /version`, `GET /webkit/`. CLI:
 `deps serve`, `scan`, `check [--repo]`, `resolve <key>...`, `notify`, `mcp`,
 `version`, each a single call to the matching endpoint. MCP tools:
-`deps_scan`, `deps_check`, `deps_list_flagged`, `deps_scan_repo`, and
-`deps_resolve`. Config surfaces: the deps config file above, the catalog
+`deps_scan`, `deps_check`, `deps_list_flagged`, `deps_scan_repo`,
+`deps_resolve`, and `deps_doctor`. The scan and check responses carry
+`discovery_errors` alongside the findings. Config surfaces: the deps config file above, the catalog
 registry as the repo source of truth, and the `DEPS_PORT` / `DEPS_BASE_URL`
 environment variables mirrored by `--port` / `--base-url`.

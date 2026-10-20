@@ -49,15 +49,27 @@ type Dependency struct {
 // Flagged reports whether the dependency has at least one advisory.
 func (d Dependency) Flagged() bool { return len(d.Advisories) > 0 }
 
+// DiscoveryError is one repo and ecosystem whose discovery failed in the last
+// scan, so none of its dependencies were checked. Serve persists these with the
+// scan; the API, MCP tools, doctor, event, and web page read them back, so a
+// failed `go list` can't pass for a clean scan.
+type DiscoveryError struct {
+	Repo      string `json:"repo"`
+	Ecosystem string `json:"ecosystem"`
+	Error     string `json:"error"`
+}
+
 // Scan is the persisted shape: the dependencies from the last run, the notified
 // set, and the user-resolved (acknowledged) set. ScannedAt is the time of the
 // last *full* scan (per-repo rescans don't reset it, so the daily catch-up still
-// fires). It is zero until the first scan completes.
+// fires). It is zero until the first scan completes. DiscoveryErrors lists the
+// repo and ecosystem pairs the last scan could not read.
 type Scan struct {
-	ScannedAt time.Time    `json:"scanned_at"`
-	Deps      []Dependency `json:"deps"`
-	Notified  []string     `json:"notified"`
-	Resolved  []string     `json:"resolved"`
+	ScannedAt       time.Time        `json:"scanned_at"`
+	Deps            []Dependency     `json:"deps"`
+	DiscoveryErrors []DiscoveryError `json:"discovery_errors,omitempty"`
+	Notified        []string         `json:"notified"`
+	Resolved        []string         `json:"resolved"`
 }
 
 // Flag is one advisory against one dependency — the unit the notifier fires on
@@ -87,6 +99,7 @@ type Store struct {
 	path     string
 	now      func() time.Time
 	deps     []Dependency
+	discErrs []DiscoveryError
 	scanned  time.Time
 	notified map[string]struct{}
 	resolved map[string]struct{}
@@ -110,19 +123,35 @@ func New(workdir string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) load() error {
-	raw, err := os.ReadFile(s.path)
+// Read loads the scan persisted under workdir without creating or writing
+// anything, for read-only callers such as doctor. A missing file yields an
+// empty Scan.
+func Read(workdir string) (Scan, error) {
+	return readScan(filepath.Join(workdir, fileName))
+}
+
+func readScan(path string) (Scan, error) {
+	var sc Scan
+	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return sc, nil
 	}
 	if err != nil {
-		return fmt.Errorf("read store: %w", err)
+		return sc, fmt.Errorf("read store: %w", err)
 	}
-	var sc Scan
 	if err := json.Unmarshal(raw, &sc); err != nil {
-		return fmt.Errorf("parse store: %w", err)
+		return sc, fmt.Errorf("parse store: %w", err)
+	}
+	return sc, nil
+}
+
+func (s *Store) load() error {
+	sc, err := readScan(s.path)
+	if err != nil {
+		return err
 	}
 	s.deps = sc.Deps
+	s.discErrs = sc.DiscoveryErrors
 	s.scanned = sc.ScannedAt
 	for _, k := range sc.Notified {
 		s.notified[k] = struct{}{}
@@ -146,10 +175,11 @@ func keys(set map[string]struct{}) []string {
 // save writes the whole store atomically (temp file + rename). Callers hold s.mu.
 func (s *Store) save() error {
 	raw, err := json.MarshalIndent(Scan{
-		ScannedAt: s.scanned,
-		Deps:      s.deps,
-		Notified:  keys(s.notified),
-		Resolved:  keys(s.resolved),
+		ScannedAt:       s.scanned,
+		Deps:            s.deps,
+		DiscoveryErrors: s.discErrs,
+		Notified:        keys(s.notified),
+		Resolved:        keys(s.resolved),
 	}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal store: %w", err)
@@ -164,20 +194,22 @@ func (s *Store) save() error {
 	return nil
 }
 
-// Save replaces the whole dependency set with the result of a full scan, stamps
-// the scan time, and persists. The notified and resolved sets are preserved.
-func (s *Store) Save(deps []Dependency) error {
+// Save replaces the whole dependency set and the discovery errors with the
+// result of a full scan, stamps the scan time, and persists. The notified and
+// resolved sets are preserved.
+func (s *Store) Save(deps []Dependency, discErrs []DiscoveryError) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deps = deps
+	s.discErrs = discErrs
 	s.scanned = s.now()
 	return s.save()
 }
 
-// SaveRepo replaces only the dependencies belonging to repo, keeping every other
-// repo's deps and — deliberately — the last full-scan time, so a per-repo rescan
-// doesn't reset the daily catch-up clock.
-func (s *Store) SaveRepo(repo string, deps []Dependency) error {
+// SaveRepo replaces only the dependencies and discovery errors belonging to
+// repo. It keeps every other repo's, and deliberately keeps the last full-scan
+// time too, so a per-repo rescan doesn't reset the daily catch-up clock.
+func (s *Store) SaveRepo(repo string, deps []Dependency, discErrs []DiscoveryError) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	kept := make([]Dependency, 0, len(s.deps))
@@ -187,7 +219,22 @@ func (s *Store) SaveRepo(repo string, deps []Dependency) error {
 		}
 	}
 	s.deps = append(kept, deps...)
+	keptErrs := make([]DiscoveryError, 0, len(s.discErrs))
+	for _, e := range s.discErrs {
+		if e.Repo != repo {
+			keptErrs = append(keptErrs, e)
+		}
+	}
+	s.discErrs = append(keptErrs, discErrs...)
 	return s.save()
+}
+
+// DiscoveryErrors returns a copy of the repo and ecosystem pairs the last scan
+// could not read.
+func (s *Store) DiscoveryErrors() []DiscoveryError {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]DiscoveryError(nil), s.discErrs...)
 }
 
 // Snapshot returns a copy of the current scan.
@@ -197,10 +244,11 @@ func (s *Store) Snapshot() Scan {
 	deps := make([]Dependency, len(s.deps))
 	copy(deps, s.deps)
 	return Scan{
-		ScannedAt: s.scanned,
-		Deps:      deps,
-		Notified:  keys(s.notified),
-		Resolved:  keys(s.resolved),
+		ScannedAt:       s.scanned,
+		Deps:            deps,
+		DiscoveryErrors: append([]DiscoveryError(nil), s.discErrs...),
+		Notified:        keys(s.notified),
+		Resolved:        keys(s.resolved),
 	}
 }
 

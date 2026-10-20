@@ -17,6 +17,7 @@ import (
 	"github.com/mad01/thismoon/kit/agentdoc"
 	deps "github.com/mad01/thismoon/services/deps"
 	"github.com/mad01/thismoon/services/deps/internal/api"
+	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
 // Client talks to a running `deps serve` over its localhost HTTP API.
@@ -33,17 +34,19 @@ func New(baseURL string) *Client {
 
 // ScanResult summarizes a discovery-only scan.
 type ScanResult struct {
-	ScannedAt   time.Time      `json:"scanned_at"`
-	Total       int            `json:"total"`
-	ByEcosystem map[string]int `json:"by_ecosystem"`
+	ScannedAt       time.Time              `json:"scanned_at"`
+	Total           int                    `json:"total"`
+	ByEcosystem     map[string]int         `json:"by_ecosystem"`
+	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors"`
 }
 
 // CheckResult is the outcome of a discover + OSV check.
 type CheckResult struct {
-	ScannedAt    time.Time        `json:"scanned_at"`
-	Total        int              `json:"total"`
-	FlaggedCount int              `json:"flagged_count"`
-	Flagged      []api.Dependency `json:"flagged"`
+	ScannedAt       time.Time              `json:"scanned_at"`
+	Total           int                    `json:"total"`
+	FlaggedCount    int                    `json:"flagged_count"`
+	Flagged         []api.Dependency       `json:"flagged"`
+	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors"`
 }
 
 // NotifyResult reports how many flags were delivered.
@@ -58,10 +61,11 @@ type ResolveResult struct {
 
 // Snapshot is the current persisted scan (GET /api/deps).
 type Snapshot struct {
-	ScannedAt    time.Time        `json:"scanned_at"`
-	Total        int              `json:"total"`
-	FlaggedCount int              `json:"flagged_count"`
-	Deps         []api.Dependency `json:"deps"`
+	ScannedAt       time.Time              `json:"scanned_at"`
+	Total           int                    `json:"total"`
+	FlaggedCount    int                    `json:"flagged_count"`
+	Deps            []api.Dependency       `json:"deps"`
+	DiscoveryErrors []store.DiscoveryError `json:"discovery_errors"`
 }
 
 func (c *Client) Scan() (ScanResult, error) {

@@ -21,9 +21,10 @@ serve via the local domain front door. If the localhost port answers but the
 ## where state lives
 
 The store is one JSON file, `scan.json`, in the workdir, default {{.StorePath}}
-(override with DEPS_WORKDIR). It holds the last scan's dependencies plus two
-string sets keyed by `ecosystem:name@version:advisoryID`: `notified` (already
-alerted) and `resolved` (acknowledged). serve rewrites the file atomically, so
+(override with DEPS_WORKDIR). It holds the last scan's dependencies, the
+`discovery_errors` it hit, and two string sets keyed by
+`ecosystem:name@version:advisoryID`: `notified` (already alerted) and
+`resolved` (acknowledged). serve rewrites the file atomically, so
 it is always safe to read directly. The discovery config (exclude lists) is a
 separate file, default `~/.config/deps/config.toml` (or under
 $XDG_CONFIG_HOME/deps when that is set), and the repo set comes from the
@@ -31,9 +32,9 @@ catalog registry.
 
 ## failure modes
 
-Start with `deps doctor`: one command runs the reachability, store, and
-version-skew checks below and prints one line per check, FAIL lines naming the
-cause. From an MCP client with no shell, the `deps_doctor` tool runs the same
+Start with `deps doctor`: one command runs the reachability, store,
+version-skew, and discovery-clean checks below and prints one line per check,
+FAIL lines naming the cause. From an MCP client with no shell, the `deps_doctor` tool runs the same
 checks and returns the report as JSON. The paragraphs here cover what each
 failure means and what to do next.
 
@@ -47,6 +48,16 @@ Connection refused, or "deps serve not reachable": serve is not running. t-man
 typically supervises it. Run `t-man list` to see whether the deps agent
 exists, then `t-man restart deps`. For a quick test without t-man, `deps
 serve` in a spare terminal also works.
+
+A discovery-clean FAIL, or far fewer packages than expected: the last scan
+could not read some repo and ecosystem, so none of its dependencies were
+checked. serve saves each failure with the scan; `/api/deps`, the scan and
+check tools (`discovery_errors`), the scan-complete event (warn level), and a
+red callout on the web page all show it. Doctor reads what serve saved, never
+its own shell: serve runs under launchd with a narrower PATH. The usual cause
+is `exec: "go": executable file not found`, meaning the agent was registered
+without the launcher that puts the mise shims on PATH. Re-run `ralph up` to
+re-register it, then `deps check`.
 
 A flagged advisory on a package nothing compiles in: Go scans cover the module
 graph (`go list -m -json all`), which includes modules no binary imports. So
@@ -79,7 +90,8 @@ runs this comparison as its version-skew check.
 
 ## first moves
 
-1. `deps doctor`: serve reachable, store readable, and version skew in one pass
+1. `deps doctor`: serve reachable, store readable, version skew, and discovery
+   errors in one pass
 2. If serve is unreachable: `t-man list`, then `t-man restart deps`
 3. On version skew: `t-man restart deps`, then `deps doctor` again
 4. Before treating a finding as real, check whether it sits in the dimmed

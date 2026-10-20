@@ -5,8 +5,6 @@
 package discover
 
 import (
-	"errors"
-	"fmt"
 	"path/filepath"
 
 	"github.com/mad01/thismoon/services/deps/internal/store"
@@ -63,17 +61,26 @@ func Default() []Ecosystem {
 
 // Repos discovers dependencies across every repo using every ecosystem, tagging
 // each with the repo it came from. A discoverer error on one repo/ecosystem is
-// collected and reported but does not abort the whole scan.
-func Repos(repos []string, ecosystems []Ecosystem, opts Options) ([]store.Dependency, error) {
+// recorded as a store.DiscoveryError and does not abort the rest of the scan, so
+// one bad repo neither loses the others' deps nor passes for a clean read.
+func Repos(
+	repos []string,
+	ecosystems []Ecosystem,
+	opts Options,
+) ([]store.Dependency, []store.DiscoveryError) {
 	var (
 		deps []store.Dependency
-		errs []error
+		errs []store.DiscoveryError
 	)
 	for _, repo := range repos {
 		for _, eco := range ecosystems {
 			pkgs, err := eco.Discover(repo, opts)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("%s in %s: %w", eco.Name(), repo, err))
+				errs = append(errs, store.DiscoveryError{
+					Repo:      repo,
+					Ecosystem: eco.Name(),
+					Error:     err.Error(),
+				})
 				continue
 			}
 			for _, p := range pkgs {
@@ -89,9 +96,5 @@ func Repos(repos []string, ecosystems []Ecosystem, opts Options) ([]store.Depend
 			}
 		}
 	}
-	if len(errs) > 0 {
-		// Surface discovery problems without losing the deps we did find.
-		return deps, fmt.Errorf("discovery: %w", errors.Join(errs...))
-	}
-	return deps, nil
+	return deps, errs
 }

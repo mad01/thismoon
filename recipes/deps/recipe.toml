@@ -40,14 +40,24 @@ action = "symlink"
 # binary it runs is removed (ralph disable thismoon/deps && ralph up --enable-cleanup).
 pre_uninstall = ["if command -v t-man >/dev/null; then t-man remove deps 2>/dev/null; fi || true"]
 
+# Keep the serve launcher executable (git carries the mode bit, this is the
+# belt-and-braces the present recipe uses for its launchers too).
+[hooks.builds.deps_chmod_serve_launcher]
+commands = ["chmod +x deps-serve.sh"]
+working_dir = "~/.config/ralph/sources/thismoon/recipes/deps"
+run = "always"
+idempotent = true
+
 # Register `deps serve` as a long-running launchd user agent via t-man. This
 # process owns the scan store, runs the daily catch-up scan loop, and fires
 # notifications; the MCP server (registered in the consuming repo's
 # recipes/claude-mcp/servers.json) is a thin HTTP client to it. Idempotent;
-# run = "always" keeps it registered and self-heals if removed.
+# run = "always" keeps it registered and self-heals if removed. The agent runs
+# deps-serve.sh rather than the binary: the launcher puts the mise shims on
+# PATH so Go discovery finds `go`, which the launchd PATH below lacks.
 [hooks.builds.deps_service]
 commands = [
-  "if command -v t-man >/dev/null; then t-man add --name deps --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GOPATH=$HOME/code --env GOMODCACHE=$HOME/code/pkg/mod -- $HOME/code/bin/deps serve --port 7429 --workdir $HOME/.local/share/deps; else echo 'deps: skip service (t-man not on PATH; install t-man then run: t-man add --name deps -- deps serve --port 7429)'; fi",
+  "if command -v t-man >/dev/null; then t-man add --name deps --path /opt/homebrew/bin:/usr/bin:/bin:/usr/local/bin --env GOPATH=$HOME/code --env GOMODCACHE=$HOME/code/pkg/mod -- $HOME/.config/ralph/sources/thismoon/recipes/deps/deps-serve.sh --port 7429 --workdir $HOME/.local/share/deps; else echo 'deps: skip service (t-man not on PATH; install t-man then run: t-man add --name deps -- deps serve --port 7429)'; fi",
 ]
 working_dir = "~/.config/ralph/sources/thismoon/recipes/deps"
 run = "always"

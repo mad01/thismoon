@@ -253,6 +253,7 @@
       active: [],
       acknowledged: [],
       notCompiledIn: [],
+      discoveryErrors: data.discovery_errors || [],
       resolved: groupResolved(data.resolved_fixed)
     };
     if (v.hasScan) {
@@ -311,7 +312,8 @@
       ? (v.activeCount + ' active · ' + v.total + ' total'
         + (v.resolved.length ? ' · ' + v.resolved.length + ' resolved' : '')
         + (v.resolvedOnly ? ' · ' + v.resolvedOnly + ' acknowledged' : '')
-        + (v.notCompiledIn.length ? ' · ' + v.notCompiledIn.length + ' not compiled in' : ''))
+        + (v.notCompiledIn.length ? ' · ' + v.notCompiledIn.length + ' not compiled in' : '')
+        + (v.discoveryErrors.length ? ' · ' + v.discoveryErrors.length + ' discovery error' + (v.discoveryErrors.length !== 1 ? 's' : '') : ''))
       : 'no scan yet';
     return Webkit.el('wk-page-header', {}, [
       Webkit.el('wk-title', {}, 'Dependencies'),
@@ -419,6 +421,24 @@
     ].concat(advs));
   }
 
+  // discoveryCallout lists the repo and ecosystem pairs the last scan could not
+  // read. Their dependencies were never checked, so the page must not read as
+  // clean while any exist.
+  function discoveryCallout(errs) {
+    return Webkit.el('wk-callout', { variant: 'error' }, [
+      Webkit.el('div', {}, [
+        Webkit.el('strong', {}, 'Discovery failed for ' + errs.length + ' repo/ecosystem pair' + (errs.length !== 1 ? 's' : '')),
+        ': their dependencies were not checked.'
+      ]),
+      Webkit.el('ul', { class: 'disc-errs' }, errs.map(function (e) {
+        return Webkit.el('li', {}, [
+          Webkit.el('span', { class: 'adv-id' }, e.ecosystem + ' · ' + basename(e.repo)),
+          ' ', e.error
+        ]);
+      }))
+    ]);
+  }
+
   function render(data) {
     lastData = data;
     // Repo basenames from the URL resolve to paths on the first render, once
@@ -441,6 +461,7 @@
         'No scan has run yet. Click ', Webkit.el('strong', {}, 'Rescan all'), ', or wait for the daily background scan.'
       ]));
     } else {
+      if (v.discoveryErrors.length) nodes.push(discoveryCallout(v.discoveryErrors));
       nodes.push(Webkit.el('div', { class: 'counts' }, v.byEcosystem.map(function (e) {
         var attrs = { variant: 'filter', 'data-action': 'filter-eco', 'data-eco': e.ecosystem,
           title: (ecoSel[e.ecosystem] ? 'Remove ' + e.ecosystem + ' from filter' : 'Filter to ' + e.ecosystem) };
@@ -480,6 +501,10 @@
         } else {
           nodes.push(Webkit.el('div', { class: 'note' }, 'No active findings for the selected repos.'));
         }
+      } else if (v.discoveryErrors.length) {
+        // Never the all-clear while part of the inventory went unread.
+        nodes.push(Webkit.el('div', { class: 'note' },
+          'No active findings among the ' + v.total + ' versions read, but the scan is incomplete: see the discovery errors above.'));
       } else {
         nodes.push(Webkit.el('div', { class: 'ok' },
           'No active findings — all ' + v.total + ' checked versions are clear of unresolved OSV advisories.'));

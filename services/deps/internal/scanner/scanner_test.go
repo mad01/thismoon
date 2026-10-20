@@ -2,8 +2,11 @@ package scanner
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/services/deps/internal/discover"
 	"github.com/mad01/thismoon/services/deps/internal/osv"
 	"github.com/mad01/thismoon/services/deps/internal/store"
 )
@@ -70,7 +73,7 @@ func TestNotifyFiresOncePerNewFlag(t *testing.T) {
 	if err := st.Save([]store.Dependency{{
 		Ecosystem: "Go", Name: "bad", Version: "1.0.0", Imported: true,
 		Advisories: []store.Advisory{{ID: "GHSA-1"}, {ID: "GHSA-2"}},
-	}}); err != nil {
+	}}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +106,7 @@ func TestNotifyRetriesOnFailure(t *testing.T) {
 	if err := st.Save([]store.Dependency{{
 		Ecosystem: "Go", Name: "bad", Version: "1.0.0", Imported: true,
 		Advisories: []store.Advisory{{ID: "GHSA-1"}},
-	}}); err != nil {
+	}}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,5 +125,77 @@ func TestNotifyRetriesOnFailure(t *testing.T) {
 	}
 	if len(n.calls) != 1 {
 		t.Fatalf("retry delivered %d, want 1", len(n.calls))
+	}
+}
+
+// stubEco is a discover.Ecosystem returning fixed packages or a fixed error.
+type stubEco struct {
+	name string
+	pkgs []discover.Package
+	err  error
+}
+
+func (s stubEco) Name() string { return s.name }
+
+func (s stubEco) Discover(string, discover.Options) ([]discover.Package, error) {
+	return s.pkgs, s.err
+}
+
+// TestCheckSavesDiscoveryErrors is the failing-ecosystem fixture: Go discovery
+// fails the way it does under a launchd PATH without go, npm works. The scan
+// keeps the npm result and persists the Go failure for the API, doctor and page.
+func TestCheckSavesDiscoveryErrors(t *testing.T) {
+	st := newStore(t)
+	goErr := `go list in /r1: exec: "go": executable file not found in $PATH`
+	e := &Engine{
+		Prepare: func() ([]string, discover.Options, error) {
+			return []string{"/r1"}, discover.Options{}, nil
+		},
+		Ecosystems: []discover.Ecosystem{
+			stubEco{name: "Go", err: errors.New(goErr)},
+			stubEco{name: "npm", pkgs: []discover.Package{
+				{Ecosystem: "npm", Name: "lodash", Version: "4.17.21", Imported: true},
+			}},
+		},
+		Checker: fakeChecker{},
+		Store:   st,
+	}
+
+	deps, err := e.Check(context.Background())
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if len(deps) != 1 || deps[0].Name != "lodash" {
+		t.Errorf("deps = %+v, want the npm package kept", deps)
+	}
+	got := st.DiscoveryErrors()
+	want := store.DiscoveryError{Repo: "/r1", Ecosystem: "Go", Error: goErr}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("saved discovery errors = %+v, want [%+v]", got, want)
+	}
+}
+
+func TestScanCompleteEventWarnsOnDiscoveryErrors(t *testing.T) {
+	clean := []store.Dependency{{Ecosystem: "npm", Name: "lodash", Version: "4.17.21"}}
+
+	ev := scanCompleteEvent(1, clean, nil, 0)
+	if ev.Level != "info" || strings.Contains(ev.Title, "discovery") || ev.Message != "" {
+		t.Errorf("clean scan event = %+v, want info with no discovery note", ev)
+	}
+
+	ev = scanCompleteEvent(1, clean, []store.DiscoveryError{
+		{Repo: "/r1", Ecosystem: "Go", Error: "boom"},
+	}, 0)
+	if ev.Level != "warn" {
+		t.Errorf("level = %q, want warn when discovery failed", ev.Level)
+	}
+	if !strings.HasSuffix(ev.Title, ", 1 discovery error(s)") {
+		t.Errorf("title = %q, want the discovery error count", ev.Title)
+	}
+	if ev.Message != "Go in /r1: boom" {
+		t.Errorf("message = %q, want each failure named", ev.Message)
+	}
+	if ev.Tags["discovery_errors"] != "1" {
+		t.Errorf("discovery_errors tag = %q, want 1", ev.Tags["discovery_errors"])
 	}
 }

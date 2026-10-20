@@ -63,6 +63,21 @@ no file locks.
   checkouts** (a `.git` entry in a subdir), and any `exclude_paths` glob.
 - Transitive deps are scanned and flagged (real supply-chain risk); the web/CLI
   mark direct vs transitive.
+- **Discovery errors are saved, never only logged.** A discoverer that fails
+  for one repo and ecosystem (a `go list` with no `go` on PATH, an unreadable
+  lockfile) becomes a `store.DiscoveryError{Repo, Ecosystem, Error}`; the walk
+  goes on with the rest. Serve persists them with the scan and returns them as
+  `discovery_errors` from `/api/deps`, `/api/flagged`, `/api/scan` and
+  `/api/check`, and the MCP scan/check tools pass them through. The
+  scan-complete event goes to `warn` with the count. The doctor
+  `discovery-clean` check reads them from the store, and the page shows a red
+  callout in place of the all-clear text. A failed `go list` appends its first stderr line to the error.
+- **serve needs `go` on its PATH.** The t-man agent runs
+  `recipes/deps/deps-serve.sh`, which prepends the mise shims
+  (`${MISE_DATA_DIR:-~/.local/share/mise}/shims`) before exec'ing `deps serve`;
+  the launchd PATH alone has no `go`. Doctor deliberately reads the saved
+  errors instead of probing for `go` itself: the CLI runs with the login
+  shell's PATH, so its own lookup would pass while serve fails.
 - **Import-graph reachability (Go).** `go list -m -json all` is the full *module
   graph*, including modules no binary imports, so OSV flags advisories on
   packages that aren't compiled in (false positives). For each Go module dir,
@@ -102,16 +117,18 @@ no file locks.
 ```go
 Dependency{ Ecosystem (Go|npm|PyPI|SwiftURL), Name, Version, Repo, ManifestPath, Direct, Advisories[] }
 Advisory{ ID, Summary, Severity, FixedVersion }   // OSV advisory for that exact version
+DiscoveryError{ Repo, Ecosystem, Error }          // a repo+ecosystem the scan could not read
 ```
 
-- **Scan store** holds the last scan's deps plus two string sets keyed by
+- **Scan store** holds the last scan's deps and discovery errors plus two
+  string sets keyed by
   `FlagKey = ecosystem:name@version:advisoryID`: `notified` (already alerted) and
   `resolved` (user-acknowledged). Because the key includes the version, an
   acknowledged advisory **auto-resurfaces** once the package is bumped (the key
   changes); and a steady-state advisory neither re-notifies nor re-appears.
 - **ScannedAt** is the last *full* scan time. A per-repo rescan
   (`SaveRepo`) deliberately does **not** reset it, so the daily catch-up still
-  fires.
+  fires; it replaces only that repo's deps and discovery errors.
 
 ## Build / install / test
 
@@ -157,7 +174,8 @@ The annotated key reference lives in `deps config --help`.
 - `deps_list_flagged`: flagged from the last check, no re-scan
 - `deps_scan_repo(repo)`: rescan one repo (path or basename) and merge
 - `deps_resolve(keys)`: acknowledge advisories by key
-- `deps_doctor`: run the same checks as `deps doctor` and return the report as
+- `deps_doctor`: run the same checks as `deps doctor` (service-reachable,
+  store-readable, version-skew, discovery-clean) and return the report as
   JSON — for a client that can call a tool but has no shell
 
 ## Shared UI: webkit

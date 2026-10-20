@@ -12,6 +12,7 @@ import (
 	"github.com/mad01/thismoon/kit/doctor"
 	"github.com/mad01/thismoon/kit/mcptest"
 	"github.com/mad01/thismoon/services/deps/internal/client"
+	"github.com/mad01/thismoon/services/deps/internal/store"
 )
 
 // newStubHandlers stands in for `deps serve`, answering GET /api/flagged with
@@ -73,6 +74,22 @@ func TestListFlaggedCleanStoreHasNoZeroHint(t *testing.T) {
 			"zero_result_hint must be absent when total > 0 (genuinely clean), got %v",
 			out.ZeroHint,
 		)
+	}
+}
+
+func TestListFlaggedCarriesDiscoveryErrors(t *testing.T) {
+	failed := store.DiscoveryError{Repo: "/r1", Ecosystem: "Go", Error: "go list: exit status 1"}
+	h := newStubHandlers(
+		t,
+		client.CheckResult{Total: 33, DiscoveryErrors: []store.DiscoveryError{failed}},
+	)
+
+	_, out, err := h.handleListFlagged(context.Background(), nil, struct{}{})
+	if err != nil {
+		t.Fatalf("list flagged: %v", err)
+	}
+	if len(out.DiscoveryErrors) != 1 || out.DiscoveryErrors[0] != failed {
+		t.Errorf("discovery_errors = %+v, want [%+v]", out.DiscoveryErrors, failed)
 	}
 }
 
