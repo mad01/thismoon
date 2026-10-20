@@ -49,7 +49,7 @@ Bringing code in from a source repo without its git history; the import commit m
 _Avoid_: migration (too broad), fork
 
 **agent-memory**:
-The shared memory store: a private git repo of one-fact markdown files, cloned to `~/.config/agent-memory/`, whose index belt injects at session start. It follows the user across agents and machines. docs/MEMORY-STACK.md covers it beside the other stores.
+The shared memory store: a directory of one-fact markdown files at `~/.config/agent-memory/`, usually a private git clone, whose index belt injects at session start. It follows the user across agents, and across machines when something syncs it. docs/MEMORY-STACK.md covers it beside the other stores.
 _Avoid_: auto memory (Claude Code's own store, a different thing), shared memory on its own
 
 **Auto memory**:

@@ -18,7 +18,7 @@ every hook in depth is in [tools/belt/docs/hooks.md](../tools/belt/docs/hooks.md
 | Store | Answers | Lives at | Interfaces | Reaches the session through |
 |---|---|---|---|---|
 | Claude Code auto memory | what this agent learned in this repo | `~/.claude/projects/<project>/memory/` | `/memory` inside Claude Code, plain files | Claude Code loads the index itself |
-| agent-memory | facts about *you*, for every agent on every machine | `~/.config/agent-memory/` (a git clone) | git, plain files | belt's `agent-memory` hint |
+| agent-memory | facts about *you*, for every agent on every machine | `~/.config/agent-memory/` (usually a git clone) | git, plain files | belt's `agent-memory` hint |
 | keeper-of-facts (kof) | how a piece of code behaves, pinned to its lines | `~/.local/share/kof/` | `kof` CLI, MCP, web | belt's `kof-consult` and `kof-assertions` hints |
 | worklog | where a task stands | `~/code/worklog/` | `worklog` CLI, MCP | the `/worklog` skill |
 | handoff | what the next session needs to pick this one up | `~/.handoff/` | the `/handoff` skill | the next session reads the file |
@@ -52,8 +52,8 @@ you know where its edges are.
 The fleet's answer to auto memory's two limits: it follows you across
 machines and across agents.
 
-- The store is a private git repo you create, cloned to
-  `~/.config/agent-memory/`. Its layout matches auto memory: one fact per
+- The store is a directory at `~/.config/agent-memory/`, usually a clone of
+  a private git repo you create. Its layout matches auto memory: one fact per
   file with `name`, `description` and `metadata.type` frontmatter, plus a
   `MEMORY.md` index with one line per fact. A fact can move between the two
   stores unchanged.
@@ -98,6 +98,35 @@ file (`AGENTS.md`) has to tell it to read the index.
   audit trails, on one queryable timeline. Nothing from it is injected; you
   query it with `events_query` or browse `events.this`. See
   [services/events/README.md](../services/events/README.md).
+
+## Keeping the stores private
+
+None of these stores needs a git host. kof and events never leave the
+machine. The other three can stay local too, or sync through a Google Drive
+folder that only your account can see. A git remote is one option among
+these, not a requirement.
+
+- Auto memory is local by default. To carry one project's memory across
+  machines, set `autoMemoryDirectory` in that project's
+  `.claude/settings.local.json` to a folder under Google Drive for desktop,
+  such as `~/Library/CloudStorage/GoogleDrive-<account>/My Drive/claude-memory/<project>`.
+  A value in user settings applies to every project, so set it per project
+  unless you want them all in one place.
+- For agent-memory, belt reads the fixed path
+  `~/.config/agent-memory/MEMORY.md` and doesn't care whether a git repo
+  sits behind it. To keep it local, use a plain directory, or a clone with
+  no remote, and leave out the ralph item that clones it. To sync through
+  Drive, keep the store in a Drive folder and symlink
+  `~/.config/agent-memory` to it; belt follows the link.
+- worklog stays on the machine that created it when its config has no
+  `remote:`. `$WORKLOG_DIR` moves the store, a Drive folder included, but
+  csl only indexes the store while it sits under your code roots.
+
+Two cautions for the Drive route. Drive for desktop streams files on demand
+by default, so mark the folder "Available offline", or a session-start read
+can wait on a download. And Drive syncs files, not git history: two machines
+writing the same store between syncs leave conflicted copies, so keep one
+writer at a time. worklog's own git sync assumes the same.
 
 ## Which store gets a new fact
 
