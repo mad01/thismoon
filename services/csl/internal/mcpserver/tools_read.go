@@ -47,6 +47,7 @@ func registerReadTools(s *mcp.Server) {
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
 		},
+		Meta: mcp.Meta{alwaysLoadKey: true},
 	}, handleRead, renderReadText)
 }
 

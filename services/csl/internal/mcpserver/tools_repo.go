@@ -86,6 +86,7 @@ func registerRepoTools(s *mcp.Server) {
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
 		},
+		Meta: mcp.Meta{alwaysLoadKey: true},
 	}, handleRepoLookup, nil)
 
 	addFormattedTool(s, &mcp.Tool{
@@ -99,6 +100,7 @@ func registerRepoTools(s *mcp.Server) {
 			ReadOnlyHint:  true,
 			OpenWorldHint: new(false),
 		},
+		Meta: mcp.Meta{alwaysLoadKey: true},
 	}, handleRepoInfo, nil)
 
 	addFormattedTool(s, &mcp.Tool{
