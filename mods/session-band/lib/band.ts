@@ -1,44 +1,25 @@
 // Pure helpers behind the session-band mod: no `$`, no I/O, so `node --test`
-// covers them without the engine. register.tsx is the only caller.
+// covers them without the engine. register.tsx and the pi face import them.
 
-// Every belt denial reason carries `belt[<guard>]: `; other settings hooks
-// deny with their own words. The engine may wrap the reason before a mod
-// sees it (`PreToolUse:Bash hook error: belt[git-push-main]: ...`), so the
-// marker is searched for anywhere in the text, never anchored.
+// Every belt denial reason carries `belt[<guard>]: `, possibly behind the
+// engine's own prefix on the same line.
 const BELT_REASON = /belt\[[^\]]+\]:/
 
-/** How many characters of a decision's JSON the debug line keeps. */
-const DECISION_JSON_CAP = 120
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 /**
- * Whether a `classic.PreToolUse` decision is a denial belt wrote. A string
- * `deny` is read as the typed shape; an allow or an ask is never a denial;
- * any other object is searched as JSON, so a shape the types do not name
- * (a nested `permissionDecisionReason`, a `block`) still counts.
+ * True when a tool call's result is a belt denial. A denial from a settings
+ * hook reaches a plugin as an errored result whose text is the reason, so
+ * only the first line counts: a failed command whose output mentions belt
+ * does not.
  */
-export function isBeltDeny(decision: unknown): boolean {
-  if (decision === null || typeof decision !== 'object') return false
-  const { deny, allow, ask } = decision as { deny?: unknown; allow?: unknown; ask?: unknown }
-  if (typeof deny === 'string') return BELT_REASON.test(deny)
-  if (allow === true || typeof ask === 'string') return false
-  return BELT_REASON.test(stringify(decision))
-}
-
-function stringify(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-/** One debug line's worth of a decision: its keys and the head of its JSON. */
-export function decisionSummary(decision: unknown): string {
-  if (decision === null || typeof decision !== 'object') return `${typeof decision} ${String(decision)}`
-  const keys = Object.keys(decision).join(',')
-  const json = stringify(decision)
-  const head = json.length > DECISION_JSON_CAP ? `${json.slice(0, DECISION_JSON_CAP)}...` : json
-  return `keys [${keys}] ${head}`
+export function isBeltRefusal(result: unknown): boolean {
+  if (!isRecord(result)) return false
+  if (typeof result.deny === 'string') return BELT_REASON.test(result.deny)
+  if (result.isError !== true || typeof result.text !== 'string') return false
+  return BELT_REASON.test(result.text.trimStart().split('\n')[0] ?? '')
 }
 
 /**

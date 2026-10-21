@@ -10,7 +10,9 @@ The engine prefixes a plugin's status line with its name; the text the mod compo
 
 ## Where the count comes from
 
-`classic.PreToolUse`: the decision `next(e)` hands back is belt's own, and a `deny` whose reason carries `belt[<guard>]:` anywhere counts as one (the engine may wrap the reason in its own hook-error prefix). The count is per session, since the mod only sees this session's calls. It lives in `$.state`, so it survives a hot reload and a compaction; `/clear` puts it back to zero and the line goes with it on the next tool call.
+A `tool.call` observer. belt runs as a settings `PreToolUse` hook beneath every mod's `tool.call` hook, so a belt deny comes back from `next(e)` as an errored result whose text is belt's reason. A result counts when the first line of that text carries `belt[<guard>]:` (the engine may put its own hook-error prefix in front). A command that fails and quotes belt in a later line does not count, and neither does a successful call. Every caller counts: the main loop and each subagent.
+
+The mod does not hook `classic.PreToolUse`: when the built-in guard mod is seated, it forwards every `classic.*` event past the user tier, and the hook is skipped. The count is per session. It lives in `$.state`, so it survives a hot reload and a compaction; `/clear` puts it back to zero and the line goes with it on the next tool call.
 
 ## pi face
 
@@ -23,14 +25,15 @@ claude --plugin-dir mods/session-band        # from the repo root; a save hot-re
 claude --debug --plugin-dir mods/session-band  # every pin lands in the debug log as `$.ui.status (session-band): <text>`
 claude plugin validate mods/session-band     # what the engine would refuse
 node --test mods/session-band/test/*.test.mjs  # lib and the pi face
+claude plugin test mods/session-band         # the count against the engine's test kit
 npx -p typescript tsc -p mods/session-band   # after one load wrote .claude-plugin/types/
 ```
 
-The engine writes `.claude-plugin/types/` beside the mod on load; those files are the authority on event shapes for the build you run. Every `classic.PreToolUse` decision is described in the debug log (its keys and the head of its JSON), so a deny that failed to count can be read off the log.
+The engine writes `.claude-plugin/types/` beside the mod on load; those files are the authority on event shapes for the build you run. Each counted deny writes `session-band: belt deny <n> counted on <tool>` to the debug log; a belt deny without that line was not counted.
 
 ## What it never does
 
-- never blocks: every hook carries a `.catch` that logs to the debug log and passes the event on, and the `PreToolUse` observer returns belt's decision untouched
+- never blocks: every hook carries a `.catch` that logs to the debug log and passes the event on, and the `tool.call` observer returns the result untouched
 - never edits the transcript or the model's answer
 - never probes a service: the one signal comes from an event the session already raises
 - never required by any skill, hook, or service; belt stays the guard

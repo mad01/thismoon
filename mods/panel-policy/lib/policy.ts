@@ -4,7 +4,7 @@
 export type Role = 'review' | 'other'
 
 export type Member = {
-  /** The subagent's engine id: `agentId` on its `turn.complete`, `agent_id` on `classic.SubagentStop`. */
+  /** The subagent's engine id, `agentId` on its `turn.complete`. */
   id: string
   role: Role
   /** The first characters of the spawn's description. */

@@ -294,6 +294,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `buildinfo/` | Shared build-metadata package behind every `/version` |
 | `recipes/` | ralph recipes, consumed remotely via `[[recipe_sources]]` |
 | `skills/` | Agent skills (Claude Code + Codex), symlinked in by their recipes |
+| `mods/` | Claude Code mods: optional status lines and hooks, installed from the `thismoon` plugin marketplace |
 | `examples/dotfiles/` | Worked private config repo: overlays + example CLAUDE.md |
 | `docs/adr/` | Architecture decision records |
 | `docs/GETTING-STARTED.md` | Install guide: one tool vs the fleet |

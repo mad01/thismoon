@@ -1,6 +1,6 @@
 {
   "name": "panel-policy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runs review and verifier subagents on the review model, counts the agents a turn spawns, and shows the batch's progress in the status line under the prompt.",
   "types": "./types/index.d.ts",
   "author": {
