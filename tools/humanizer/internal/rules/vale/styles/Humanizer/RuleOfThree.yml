@@ -7,7 +7,7 @@
 # humanizer-after: The event includes talks and panels. There's also time for informal networking.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Rule_of_three
 extends: existence
-message: "Three-item list: '%s' — consider whether two or one item would serve."
+message: "Three-item list: '%s'. Consider whether two or one item would serve."
 level: suggestion
 ignorecase: true
 tokens:

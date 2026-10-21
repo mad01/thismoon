@@ -7,7 +7,7 @@
 # humanizer-after: He said "the project is on track."
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Curly_quotation_marks
 extends: existence
-message: "Curly quote — replace with a straight quote."
+message: "Curly quote. Replace with a straight quote."
 level: error
 nonword: true
 tokens:

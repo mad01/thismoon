@@ -7,7 +7,7 @@
 # humanizer-after: The product launches in Q3.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Emojis
 extends: existence
-message: "Decorative emoji — remove."
+message: "Decorative emoji. Remove."
 level: error
 nonword: true
 tokens:

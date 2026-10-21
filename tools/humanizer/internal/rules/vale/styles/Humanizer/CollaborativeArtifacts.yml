@@ -7,7 +7,7 @@
 # humanizer-after: The French Revolution began in 1789 when financial crisis and food shortages led to widespread unrest.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Collaborative_communication_artifacts
 extends: existence
-message: "Chatbot meta-commentary: '%s' — drop."
+message: "Chatbot meta-commentary: '%s'. Drop."
 level: error
 ignorecase: true
 tokens:

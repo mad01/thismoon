@@ -7,7 +7,7 @@
 # humanizer-after: The river supports several endemic fish species, according to a 2019 survey by the Chinese Academy of Sciences.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Vague_attributions_and_weasel_words
 extends: existence
-message: "Vague attribution: '%s' — name the source (who, where, when)."
+message: "Vague attribution: '%s'. Name the source (who, where, when)."
 level: error
 ignorecase: true
 tokens:

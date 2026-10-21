@@ -7,7 +7,7 @@ import (
 )
 
 // StatFinding is a single statistical AI-writing signal. Unlike a Vale
-// Finding it has no line/column — the signal is a property of the whole
+// Finding it has no line/column; the signal is a property of the whole
 // sample, not a span. Fields mirror the detect output shape so MCP
 // clients can fold statistical and Vale findings into one list.
 type StatFinding struct {
@@ -76,7 +76,7 @@ func DetectStatistical(text string) []StatFinding {
 			Value:     round2(p.SentenceLengthStdDev),
 			Threshold: stdDevFloor,
 			Message: fmt.Sprintf(
-				"Sentence length is robotically uniform (stddev %.1f over %d sentences, floor %.1f) — vary sentence length.",
+				"Sentence length is robotically uniform (stddev %.1f over %d sentences, floor %.1f). Vary sentence length.",
 				p.SentenceLengthStdDev,
 				p.SentenceCount,
 				stdDevFloor,
@@ -95,7 +95,7 @@ func DetectStatistical(text string) []StatFinding {
 			Value:     round2(p.ContractionRate),
 			Threshold: contractionFloor,
 			Message: fmt.Sprintf(
-				"Few or no contractions (%.2f per 100 words, floor %.2f) — informal text usually contracts ('it's', 'don't').",
+				"Few or no contractions (%.2f per 100 words, floor %.2f). Informal text usually contracts ('it's', 'don't').",
 				p.ContractionRate,
 				contractionFloor,
 			),
@@ -113,7 +113,7 @@ func DetectStatistical(text string) []StatFinding {
 			Value:     0,
 			Threshold: 0,
 			Message: fmt.Sprintf(
-				"No semicolons across %d words — uniform punctuation can read machine-flattened.",
+				"No semicolons across %d words. Uniform punctuation can read machine-flattened.",
 				p.WordCount,
 			),
 		})
@@ -130,7 +130,7 @@ func DetectStatistical(text string) []StatFinding {
 			Value:     round2(p.TypeTokenRatio),
 			Threshold: ttrFloor,
 			Message: fmt.Sprintf(
-				"Low type-token ratio (%.2f over %d words, floor %.2f) — repetitive vocabulary.",
+				"Low type-token ratio (%.2f over %d words, floor %.2f). Repetitive vocabulary.",
 				p.TypeTokenRatio, p.WordCount, ttrFloor,
 			),
 		})
@@ -151,18 +151,19 @@ func DetectStatistical(text string) []StatFinding {
 
 	// Any em-dash in short text. The Vale EmDashOveruse rule flags each
 	// em-dash span too; this whole-sample check keeps the signal when only
-	// the statistical path runs.
+	// the statistical path runs. Both em-dash checks report at error, the
+	// level the Vale rule uses.
 	if proseWords >= shortTextWordFloor && proseWords < shortTextWordCeil && emDashDensity > 0 {
 		out = append(out, StatFinding{
 			RuleID:    "Humanizer.ShortTextEmDash",
 			Name:      "Em-dash in short text",
 			Category:  "style",
-			Severity:  "warning",
+			Severity:  "error",
 			Metric:    "em_dash_density_per_100_words",
 			Value:     round2(emDashDensity),
 			Threshold: 0,
 			Message: fmt.Sprintf(
-				"Em-dash in a %d-word passage — in short text even one em-dash is a strong AI tell; prefer a comma or period.",
+				"Em-dash in a %d-word passage. In short text even one em-dash is a strong AI tell; prefer a comma or period.",
 				proseWords,
 			),
 		})
@@ -175,12 +176,12 @@ func DetectStatistical(text string) []StatFinding {
 			RuleID:    "Humanizer.EmDashDensity",
 			Name:      "Em-dash density",
 			Category:  "style",
-			Severity:  "warning",
+			Severity:  "error",
 			Metric:    "em_dash_density_per_100_words",
 			Value:     round2(emDashDensity),
 			Threshold: emDashDensityCeil,
 			Message: fmt.Sprintf(
-				"%d em-dashes across %d words (%.2f per 100 words, ceiling %.2f) — human prose runs an order of magnitude lower; swap most for commas or periods.",
+				"%d em-dashes across %d words (%.2f per 100 words, ceiling %.2f). Human prose runs an order of magnitude lower; swap most for commas or periods.",
 				emDashCount,
 				proseWords,
 				emDashDensity,
@@ -201,7 +202,7 @@ func DetectStatistical(text string) []StatFinding {
 			Value:     round2(float64(headings) * 100 / float64(p.WordCount)),
 			Threshold: 1,
 			Message: fmt.Sprintf(
-				"%d headings across %d words — over one heading per 100 words reads as LLM outline scaffolding.",
+				"%d headings across %d words. Over one heading per 100 words reads as LLM outline scaffolding.",
 				headings,
 				p.WordCount,
 			),
@@ -219,7 +220,7 @@ func DetectStatistical(text string) []StatFinding {
 			Value:     float64(run),
 			Threshold: anaphoraRun,
 			Message: fmt.Sprintf(
-				"%d consecutive sentences start with %q — vary sentence openings.",
+				"%d consecutive sentences start with %q. Vary sentence openings.",
 				run, word,
 			),
 		})

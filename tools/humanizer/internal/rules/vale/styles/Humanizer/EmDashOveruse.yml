@@ -7,7 +7,7 @@
 # humanizer-after: The term is primarily promoted by Dutch institutions, not by the people themselves.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Em_dash_overuse
 extends: existence
-message: "Em-dash — prefer a comma, period, or parentheses."
+message: "Em-dash. Prefer a comma, period, or parentheses."
 level: error
 nonword: true
 tokens:

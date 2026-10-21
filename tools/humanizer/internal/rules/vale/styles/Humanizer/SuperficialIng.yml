@@ -7,7 +7,7 @@
 # humanizer-after: The architect said the colors reference local bluebonnets and the Gulf coast.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Superficial_analyses_with_-ing_endings
 extends: existence
-message: "Tacked-on -ing clause: '%s' — either cut it or promote to its own sentence."
+message: "Tacked-on -ing clause: '%s'. Either cut it or promote to its own sentence."
 level: warning
 ignorecase: true
 tokens:

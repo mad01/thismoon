@@ -7,7 +7,7 @@
 # humanizer-after: The project shipped on time and cut onboarding from a week to a day.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Generic_positive_conclusions
 extends: existence
-message: "Closing ritual phrase '%s' — cut the recap and end on a concrete point."
+message: "Closing ritual phrase '%s'. Cut the recap and end on a concrete point."
 level: warning
 ignorecase: true
 tokens:

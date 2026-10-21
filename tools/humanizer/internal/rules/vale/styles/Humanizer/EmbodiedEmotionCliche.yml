@@ -7,7 +7,7 @@
 # humanizer-after: She was relieved, and surprised at how relieved she was.
 # humanizer-reference: https://arxiv.org/abs/2604.03136
 extends: existence
-message: "Embodied-emotion cliché '%s' — name the feeling or show a behavior instead of the stock body response."
+message: "Embodied-emotion cliché '%s'. Name the feeling or show a behavior instead of the stock body response."
 level: warning
 ignorecase: true
 tokens:

@@ -7,7 +7,7 @@
 # humanizer-after: The question is whether teams can adapt. That depends on whether the organization is ready to change its habits.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Persuasive_authority_tropes
 extends: existence
-message: "Persuasive-authority framing: '%s' — drop the throat-clearing; state the point plainly."
+message: "Persuasive-authority framing: '%s'. Drop the throat-clearing; state the point plainly."
 level: warning
 ignorecase: true
 tokens:

@@ -7,7 +7,7 @@
 # humanizer-after: They shipped the API. It now handles 10k requests per second.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Superficial_analyses_with_-ing_endings
 extends: existence
-message: "Tacked-on participial clause '%s' — cut it or make it a fact-bearing sentence."
+message: "Tacked-on participial clause '%s'. Cut it or make it a fact-bearing sentence."
 level: warning
 ignorecase: true
 tokens:

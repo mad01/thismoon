@@ -7,7 +7,7 @@
 # humanizer-after: It runs 40% faster, but only on Linux.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: existence
-message: "Infomercial hook '%s' — fold the answer into a normal sentence."
+message: "Infomercial hook '%s'. Fold the answer into a normal sentence."
 level: warning
 ignorecase: true
 nonword: true

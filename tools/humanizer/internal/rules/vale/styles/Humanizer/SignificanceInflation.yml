@@ -7,7 +7,7 @@
 # humanizer-after: The Institute was established in 1989 to collect regional statistics independently.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Undue_emphasis_on_significance
 extends: existence
-message: "Significance-inflation phrase: '%s' — describe what it does, not why it matters."
+message: "Significance-inflation phrase: '%s'. Describe what it does, not why it matters."
 level: error
 ignorecase: true
 tokens:

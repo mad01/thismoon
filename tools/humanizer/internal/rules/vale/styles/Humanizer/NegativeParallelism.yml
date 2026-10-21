@@ -7,7 +7,7 @@
 # humanizer-after: The heavy beat adds to the aggressive tone.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Negative_parallelisms
 extends: existence
-message: "Negative parallelism: '%s' — collapse to a single positive clause."
+message: "Negative parallelism: '%s'. Collapse to a single positive clause."
 level: warning
 ignorecase: true
 tokens:

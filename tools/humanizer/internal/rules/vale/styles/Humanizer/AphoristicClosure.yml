@@ -7,7 +7,7 @@
 # humanizer-after: The rewrite took three weeks and cut the bug rate in half.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Generic_positive_conclusions
 extends: existence
-message: "Aphoristic closure '%s' — replace the greeting-card line with a concrete point."
+message: "Aphoristic closure '%s'. Replace the greeting-card line with a concrete point."
 level: warning
 ignorecase: true
 tokens:

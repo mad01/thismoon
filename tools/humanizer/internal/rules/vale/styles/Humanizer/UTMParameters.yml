@@ -7,7 +7,7 @@
 # humanizer-after: See the full report at https://example.com/report for details.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing
 extends: existence
-message: "ChatGPT UTM tracking parameter: '%s' — strip it from the URL."
+message: "ChatGPT UTM tracking parameter: '%s'. Strip it from the URL."
 level: error
 # raw scope: the match lives inside a URL, which vale's markdown-aware scope
 # treats as a link and skips. Match against the unprocessed text instead.

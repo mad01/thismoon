@@ -7,7 +7,7 @@
 # humanizer-after: The system generated the report and we reviewed the results.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Tone
 extends: existence
-message: "Passive construction '%s' — prefer active voice that names the actor."
+message: "Passive construction '%s'. Prefer active voice that names the actor."
 level: suggestion
 ignorecase: true
 tokens:

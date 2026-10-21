@@ -7,7 +7,7 @@
 # humanizer-after: The update speeds up load times through optimized algorithms.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Inline-header_lists
 extends: existence
-message: "Inline-header list item: '%s' — rewrite as prose or a plain bullet."
+message: "Inline-header list item: '%s'. Rewrite as prose or a plain bullet."
 level: error
 scope: raw
 nonword: true

@@ -7,7 +7,7 @@
 # humanizer-after: The economic factors you mentioned are relevant here.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Sycophantic_tone
 extends: existence
-message: "Sycophantic phrase: '%s' — cut the compliment; get to the point."
+message: "Sycophantic phrase: '%s'. Cut the compliment; get to the point."
 level: error
 ignorecase: true
 tokens:

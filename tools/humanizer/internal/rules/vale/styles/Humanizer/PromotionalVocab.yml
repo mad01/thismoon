@@ -7,7 +7,7 @@
 # humanizer-after: Alamata is a town in the Gonder region of Ethiopia, known for its weekly market.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Promotional_language
 extends: existence
-message: "Promotional vocabulary: '%s' — replace with neutral, specific language."
+message: "Promotional vocabulary: '%s'. Replace with neutral, specific language."
 level: error
 ignorecase: true
 tokens:

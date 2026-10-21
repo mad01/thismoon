@@ -7,7 +7,7 @@
 # humanizer-after: Set up the repo, add tests, deploy, then watch the dashboards.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: existence
-message: "Ordinal signpost '%s' — formulaic essay scaffolding; prefer prose or a list."
+message: "Ordinal signpost '%s'. Formulaic essay scaffolding; prefer prose or a list."
 level: suggestion
 nonword: true
 tokens:

@@ -188,10 +188,10 @@ func detectFileError(err error, path string) error {
 		Error:      path + " is not readable under the MCP sandbox",
 		UseInstead: "humanizer_detect",
 		Hint: "read the file yourself and pass its content as the text param to humanizer_detect. " +
-			"Do not retry humanizer_detect_file on other paths in the same directory — the whole directory is outside the sandbox. " +
+			"Do not retry humanizer_detect_file on other paths in the same directory; the whole directory is outside the sandbox. " +
 			"Readable here: .md/.markdown/.txt under the sandbox profile's workspace roots, and /tmp paths.",
 	})
-	return fmt.Errorf("%s — use humanizer_detect instead: %w", redirect, err)
+	return fmt.Errorf("%s; use humanizer_detect instead: %w", redirect, err)
 }
 
 // steCLIForm is the humanizer ste command that runs the same check as in

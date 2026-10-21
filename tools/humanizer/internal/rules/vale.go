@@ -91,7 +91,7 @@ func CheckStatus(ctx context.Context, opts DetectOptions) Status {
 	path, err := exec.LookPath(bin)
 	if err != nil {
 		s.Error = err.Error()
-		s.InstallHint = "brew install vale — or: GOBIN=$HOME/code/bin go install github.com/errata-ai/vale/v3/cmd/vale@latest"
+		s.InstallHint = "brew install vale, or GOBIN=$HOME/code/bin go install github.com/errata-ai/vale/v3/cmd/vale@latest"
 		return s
 	}
 	s.Binary = path

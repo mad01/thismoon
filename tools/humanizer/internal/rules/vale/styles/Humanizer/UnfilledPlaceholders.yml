@@ -7,7 +7,7 @@
 # humanizer-after: Hi Dana, thanks for reaching out about the migration.
 # humanizer-reference: https://github.com/conorbronsdon/avoid-ai-writing
 extends: existence
-message: "Unfilled placeholder '%s' — fill it in or remove it before sending."
+message: "Unfilled placeholder '%s'. Fill it in or remove it before sending."
 level: error
 nonword: true
 tokens:

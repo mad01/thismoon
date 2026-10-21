@@ -43,8 +43,8 @@ const (
 		"all facts, numbers, names, and technical identifiers. Do not add or remove " +
 		"claims. Output only the rewritten text.\n\n---\n%s"
 
-	codePrompt = "Rewrite the natural-language parts of this code — comments, docstrings, and " +
-		"string literals — using different wording. Rename local variables, function " +
+	codePrompt = "Rewrite the natural-language parts of this code (comments, docstrings, and " +
+		"string literals) using different wording. Rename local variables, function " +
 		"parameters, and private helper names to semantically equivalent names. Preserve " +
 		"program behavior, public API names, and all values that affect output. Output " +
 		"only the rewritten code.\n\n---\n%s"

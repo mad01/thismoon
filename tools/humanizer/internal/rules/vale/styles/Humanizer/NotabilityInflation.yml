@@ -7,7 +7,7 @@
 # humanizer-after: In a 2024 New York Times interview, she argued that AI regulation should focus on outcomes.
 # humanizer-reference: Wikipedia:Signs_of_AI_writing#Undue_emphasis_on_notability
 extends: existence
-message: "Notability inflation: '%s' — quote or cite specifically."
+message: "Notability inflation: '%s'. Quote or cite specifically."
 level: warning
 ignorecase: true
 tokens:
