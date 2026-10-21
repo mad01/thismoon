@@ -156,9 +156,9 @@ custom_hints:
     agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
 
 # The lifecycle ledger: belt record posts one events-service entry per
-# Claude Code lifecycle event it is wired to (subagent start and stop,
-# task completed, teammate idle, permission denied, notification,
-# compaction, session end). enabled defaults to true: wiring the record
+# Claude Code lifecycle event it is wired to (subagent start and stop, task
+# completed, teammate idle, permission denied, notification, compaction,
+# session end, failed turns). enabled defaults to true: wiring the record
 # hooks is the opt-in. A broken config file still records, with these
 # defaults. The ledger and watch values are clamped, never rejected: a
 # source is rewritten the way the events service stores it (lowercase
@@ -172,9 +172,9 @@ custom_hints:
 # agent type, so keys for factory workers end in * and the factory names
 # workers factory-worker-<tier>-<slug>. model is any non-empty string,
 # effort is low, medium, high, xhigh or max (the values Claude Code agent
-# frontmatter accepts). A malformed entry, key or value, a * before a
-# key's end included, is dropped with a doctor warning, never a config
-# error. A belt older than the key ignores it: ralph up first.
+# frontmatter accepts). A malformed entry, key or value, a * before a key's
+# end included, is dropped with a doctor warning, never a config error. A
+# belt older than the key ignores it: ralph up first.
 ledger:
   enabled: true
   source: belt-ledger

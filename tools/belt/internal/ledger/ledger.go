@@ -2,13 +2,15 @@
 // the local events service, so an orchestrator session and its workers
 // leave one timeline: which subagent started and stopped where, which task
 // completed, which tool call auto mode denied, when a session asked for
-// attention, compacted or ended. It is belt's third concept beside guards
+// attention, compacted or ended, and which turn died on an API error after
+// its retries ran out. It is belt's third concept beside guards
 // (deny) and hints (advise): a ledger entry never reaches the model and
 // never steers the session (docs/adr/0024). Build is pure; the hook
 // entrypoint resolves the git location and posts the entry.
 package ledger
 
 import (
+	"strings"
 	"unicode/utf8"
 
 	"github.com/mad01/thismoon/kit/notify"
@@ -28,6 +30,7 @@ const (
 	EventPreCompact       = "pre-compact"       // hook: PreCompact
 	EventPostCompact      = "post-compact"      // hook: PostCompact
 	EventSessionEnd       = "session-end"       // hook: SessionEnd
+	EventStopFailure      = "stop-failure"      // hook: StopFailure
 )
 
 // Source is the events-service source entries post under unless
@@ -42,13 +45,35 @@ const Source = config.DefaultLedgerSource
 // full text stays in the transcript the entry's transcript tag names.
 const maxMessageBytes = 500
 
-// Entry levels. Every recorded event is info; an entry whose hook payload
-// could not be decoded is warn, so a broken payload shows up in the
+// Entry levels. Every recorded event is info except a failed turn, which is
+// warn or error by its error type (failureLevel). An entry whose hook
+// payload could not be decoded is warn, so a broken payload shows up in the
 // timeline instead of as a sparse entry nobody questions.
 const (
-	levelInfo = "info"
-	levelWarn = "warn"
+	levelInfo  = "info"
+	levelWarn  = "warn"
+	levelError = "error"
 )
+
+// unknownError is the error type a stop-failure entry names when the
+// payload carries none. Claude Code reports an error it cannot classify as
+// "unknown" itself, so a missing type reads the same way.
+const unknownError = "unknown"
+
+// noDetail is a stop-failure message when the payload carries neither the
+// rendered error nor its details.
+const noDetail = "No detail reported."
+
+// transientErrors are the StopFailure error types where the API was
+// reachable but gave up after exhausting its retries. A turn that died on
+// one is a warn entry; every other type needs the user to act (auth,
+// billing, a bad request) and is an error entry.
+var transientErrors = map[string]bool{
+	"rate_limit":             true,
+	"overloaded":             true,
+	"server_error":           true,
+	"cloud_credential_error": true,
+}
 
 // Input is the subset of a lifecycle hook payload an entry records. Each
 // event carries only some of the fields; the rest stay empty.
@@ -57,10 +82,13 @@ type Input struct {
 	TranscriptPath string // the session's transcript
 	// AgentID and AgentType name the subagent the event is about; empty
 	// for the main session.
-	AgentID              string
-	AgentType            string
-	AgentTranscriptPath  string // subagent-stop: the subagent's own transcript
-	LastAssistantMessage string // subagent-stop: the subagent's final text
+	AgentID             string
+	AgentType           string
+	AgentTranscriptPath string // subagent-stop: the subagent's own transcript
+	// LastAssistantMessage is the subagent's final text on subagent-stop
+	// and the rendered API error on stop-failure ("API Error: Rate limit
+	// reached"); the hooks share the key.
+	LastAssistantMessage string
 	// StopHookActive marks a subagent-stop that fires again after a stop
 	// hook already kept the subagent running once.
 	StopHookActive bool
@@ -76,6 +104,8 @@ type Input struct {
 	NotificationTitle   string // notification: optional heading
 	NotificationMessage string // notification: the text
 	Trigger             string // pre-compact, post-compact: manual or auto
+	Error               string // stop-failure: the error type, e.g. rate_limit
+	ErrorDetails        string // stop-failure: e.g. 429 Too Many Requests
 	// PayloadError is the decode error of a hook payload belt could not
 	// read, "" when it decoded. The entry is still built from whatever
 	// arrived.
@@ -83,27 +113,30 @@ type Input struct {
 }
 
 // spec describes one event: the entry title, the payload field that
-// qualifies it (shown in parentheses when set), and the field that becomes
-// the entry message, nil for events that carry no text.
+// qualifies it (shown in parentheses when set), the field that becomes the
+// entry message, nil for events that carry no text, and the entry level,
+// nil for info.
 type spec struct {
 	name      string
 	title     string
 	qualifier func(Input) string
 	message   func(Input) string
+	level     func(Input) string
 }
 
 // catalog lists every recordable event in a fixed order, which Events and
 // the CLI's error text follow.
 var catalog = []spec{
-	{EventSubagentStart, "subagent started", agentType, nil},
-	{EventSubagentStop, "subagent stopped", agentType, lastMessage},
-	{EventTaskCompleted, "task completed", teammate, taskSubject},
-	{EventTeammateIdle, "teammate idle", teammate, nil},
-	{EventPermissionDenied, "permission denied", toolName, reason},
-	{EventNotification, "notification", notificationType, notificationText},
-	{EventPreCompact, "compaction starting", trigger, nil},
-	{EventPostCompact, "compaction finished", trigger, nil},
-	{EventSessionEnd, "session ended", reason, nil},
+	{EventSubagentStart, "subagent started", agentType, nil, nil},
+	{EventSubagentStop, "subagent stopped", agentType, lastMessage, nil},
+	{EventTaskCompleted, "task completed", teammate, taskSubject, nil},
+	{EventTeammateIdle, "teammate idle", teammate, nil, nil},
+	{EventPermissionDenied, "permission denied", toolName, reason, nil},
+	{EventNotification, "notification", notificationType, notificationText, nil},
+	{EventPreCompact, "compaction starting", trigger, nil, nil},
+	{EventPostCompact, "compaction finished", trigger, nil, nil},
+	{EventSessionEnd, "session ended", reason, nil, nil},
+	{EventStopFailure, "turn failed", failureType, failureText, failureLevel},
 }
 
 func agentType(in Input) string        { return in.AgentType }
@@ -122,6 +155,40 @@ func notificationText(in Input) string {
 		return in.NotificationMessage
 	}
 	return in.NotificationTitle + ": " + in.NotificationMessage
+}
+
+// failureType is the error type a failed turn died on, trimmed, and
+// unknownError when the payload names none.
+func failureType(in Input) string {
+	if e := strings.TrimSpace(in.Error); e != "" {
+		return e
+	}
+	return unknownError
+}
+
+// failureText is the rendered API error with its details in parentheses,
+// "API Error: Rate limit reached (429 Too Many Requests)", either one alone
+// when the other is empty, and noDetail when both are.
+func failureText(in Input) string {
+	rendered := strings.TrimSpace(in.LastAssistantMessage)
+	details := strings.TrimSpace(in.ErrorDetails)
+	switch {
+	case rendered != "" && details != "":
+		return rendered + " (" + details + ")"
+	case rendered != "":
+		return rendered
+	case details != "":
+		return details
+	}
+	return noDetail
+}
+
+// failureLevel is warn for a transient error type and error for the rest.
+func failureLevel(in Input) string {
+	if transientErrors[failureType(in)] {
+		return levelWarn
+	}
+	return levelError
 }
 
 // Events lists every valid record event. CLI validation and its error text
@@ -144,7 +211,7 @@ func Build(event string, in Input, loc guard.Location, declared config.AgentType
 	s := lookup(event)
 	ev := notify.Event{
 		Source:  Source,
-		Level:   levelInfo,
+		Level:   level(s, in),
 		Title:   title(s, in),
 		Message: truncate(text(s, in), maxMessageBytes),
 		Tags:    tags(event, in, loc, declared),
@@ -178,6 +245,14 @@ func title(s spec, in Input) string {
 	return s.title
 }
 
+// level is the entry level, info for an event whose spec sets none.
+func level(s spec, in Input) string {
+	if s.level == nil {
+		return levelInfo
+	}
+	return s.level(in)
+}
+
 // text is the entry body, "" for an event that carries none.
 func text(s spec, in Input) string {
 	if s.message == nil {
@@ -189,7 +264,8 @@ func text(s spec, in Input) string {
 // tags carries every identifying field that is set, so the timeline can be
 // filtered by session, agent, repo, worktree or branch. worktree is set
 // only for a linked worktree; canonical names the main checkout either way.
-// model and effort come from declared, on subagent-start only.
+// model and effort come from declared, on subagent-start only; error is
+// set on stop-failure only, and always there.
 func tags(
 	event string, in Input, loc guard.Location, declared config.AgentTypes,
 ) map[string]string {
@@ -212,6 +288,7 @@ func tags(
 		{"notification_type", in.NotificationType},
 		{"trigger", in.Trigger},
 		{"reason", in.Reason},
+		{"error", errorTag(event, in)},
 		{"transcript", transcript(in)},
 		{"stop_hook_active", stopHookActive(in)},
 	}
@@ -233,6 +310,15 @@ func declaredTags(event string, in Input, declared config.AgentTypes) config.Age
 		return config.AgentTypeTags{}
 	}
 	return declared.For(in.AgentType)
+}
+
+// errorTag is the error type of a failed turn, so the timeline can be
+// filtered by it; "" on every other event, which carries no error field.
+func errorTag(event string, in Input) string {
+	if event != EventStopFailure {
+		return ""
+	}
+	return failureType(in)
 }
 
 // linkedWorktree is the working tree's root when it is a linked worktree,

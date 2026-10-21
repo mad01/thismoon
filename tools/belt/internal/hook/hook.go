@@ -2,11 +2,11 @@
 // PreToolUse payloads become guard inputs and guard denials become deny
 // decisions. PostToolUse, SessionStart and UserPromptSubmit payloads become
 // hint inputs and hint advice becomes added context. Lifecycle payloads
-// (subagents, tasks, compaction, session end) become ledger entries and
-// print nothing at all. Every entrypoint exits 0: a hook must not break
-// tool calls, or steer a session, on its own bugs. A payload belt cannot
-// read is denied on the guard path, like a config belt cannot read: no
-// guard can check a call it cannot see (see decodePayload).
+// (subagents, tasks, compaction, session end, failed turns) become ledger
+// entries and print nothing at all. Every entrypoint exits 0: a hook must
+// not break tool calls, or steer a session, on its own bugs. A payload belt
+// cannot read is denied on the guard path, like a config belt cannot read:
+// no guard can check a call it cannot see (see decodePayload).
 package hook
 
 import (
@@ -69,7 +69,8 @@ func (s *lenientString) UnmarshalJSON(raw []byte) error {
 // the first three, TaskCompleted the task fields, TaskCompleted and
 // TeammateIdle the teammate name, PermissionDenied the tool use id and a
 // reason (beside the shared tool_name), Notification the message, title
-// and type, PreCompact and PostCompact the trigger, SessionEnd a reason.
+// and type, PreCompact and PostCompact the trigger, SessionEnd a reason,
+// StopFailure the error type and details beside last_assistant_message.
 type recordPayload struct {
 	payload
 	AgentTranscriptPath  string `json:"agent_transcript_path"`
@@ -84,6 +85,8 @@ type recordPayload struct {
 	NotificationType     string `json:"notification_type"`
 	Trigger              string `json:"trigger"`
 	Reason               string `json:"reason"`
+	Error                string `json:"error"`
+	ErrorDetails         string `json:"error_details"`
 }
 
 // Record budgets. SubagentStart holds the subagent's first turn until its
@@ -416,6 +419,8 @@ func toLedgerInput(p recordPayload) ledger.Input {
 		NotificationTitle:    p.Title,
 		NotificationMessage:  p.Message,
 		Trigger:              p.Trigger,
+		Error:                p.Error,
+		ErrorDetails:         p.ErrorDetails,
 	}
 }
 

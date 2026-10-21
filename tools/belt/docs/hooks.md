@@ -129,6 +129,9 @@ complete hooks block looks like this:
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "~/code/bin/belt record session-end" }] }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record stop-failure" }] }
     ]
   }
 }
@@ -164,6 +167,7 @@ The event-to-subcommand mapping is fixed:
 | `belt record pre-compact` | PreCompact | none |
 | `belt record post-compact` | PostCompact | none |
 | `belt record session-end` | SessionEnd | none |
+| `belt record stop-failure` | StopFailure | none, or an error type |
 | `belt watch` (asyncRewake, timeout 590) | Stop and SessionStart | none |
 
 The wiring rules that are easy to get wrong:
@@ -957,22 +961,35 @@ never reaches the model and never steers the session (`docs/adr/0024`).
 
 - **Events.** `subagent-start`, `subagent-stop`, `task-completed`,
   `teammate-idle`, `permission-denied`, `notification`, `pre-compact`,
-  `post-compact` and `session-end`, one per Claude Code hook of the matching
-  name. An unknown event fails at argument parsing, like every belt
-  entrypoint.
-- **Entry.** Source `belt-ledger` (`ledger.source` replaces it), level
-  `info`, a title naming the event and its qualifier ("subagent stopped
-  (Explore)", "permission denied (Bash)", "notification
-  (permission_prompt)"). The message is the subagent's final message, the
-  completed task's subject, the denial reason, or the notification's title
-  and text, cut to 500 bytes on a character boundary.
+  `post-compact`, `session-end` and `stop-failure`, one per Claude Code hook
+  of the matching name. An unknown event fails at argument parsing, like
+  every belt entrypoint.
+- **Entry.** Source `belt-ledger` (`ledger.source` replaces it) and level
+  `info`, except for a failed turn (see below). The title names the event
+  and its qualifier: "subagent stopped (Explore)", "permission denied
+  (Bash)", "notification (permission_prompt)", "turn failed (rate_limit)".
+  The message is the subagent's final message, the completed task's
+  subject, the denial reason, the notification's title and text, or the
+  failed turn's API error. It is cut to 500 bytes on a character boundary.
 - **Tags.** Every set field, nothing empty: `event`, `session_id`,
   `agent_id`, `agent_type`, `model` and `effort` (subagent-start only, see
   below), `repo`, `worktree` (only for a linked worktree), `canonical` (the
   main checkout), `branch`, `task_id`, `teammate`, `tool`, `tool_use_id`,
-  `notification_type`, `trigger`, `reason`, `transcript` (the subagent's
-  own transcript when there is one) and `stop_hook_active`. Filter the
-  timeline by any of them.
+  `notification_type`, `trigger`, `reason`, `error` (stop-failure only),
+  `transcript` (the subagent's own transcript when there is one) and
+  `stop_hook_active`. Filter the timeline by any of them.
+- **Failed turns.** Claude Code fires StopFailure instead of Stop when a
+  turn ends on an API error after its retries ran out. Only that final
+  error reaches the transcript, so this entry is the record of a turn that
+  died silently. The `error` tag and the title carry the error type, or
+  `unknown` when the payload names none. The type also sets the level:
+  `rate_limit`, `overloaded`, `server_error` and `cloud_credential_error`
+  are `warn` (the API gave up), every other type is `error` (auth,
+  billing, a bad request: the user has to act). The message is the
+  rendered error with its details in parentheses, "API Error: Rate limit
+  reached (429 Too Many Requests)", or `No detail reported.` when the
+  payload has neither. A matcher of error types limits which failures
+  record.
 - **Where `worktree` comes from.** It is git's toplevel for the payload's
   working directory, never the directory itself, so a hook that fires in
   `tools/belt` of a loom worktree still names the worktree root. The main

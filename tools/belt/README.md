@@ -8,7 +8,7 @@ belt has three concepts, and the split is deliberate (see `docs/adr/0008` and `d
 
 - **Guards** run as a PreToolUse hook and can deny. They are reserved for damage that is hard to undo.
 - **Hints** only advise. Most run as a PostToolUse hook after the tool call whose result stands; three ride session lifecycle events instead (SessionStart, SubagentStart and UserPromptSubmit). A hint that misfires costs a few lines of ignored text rather than a stalled session.
-- **Ledger** entries only record. `belt record` posts one entry to the events service per lifecycle event it is wired to: subagents starting and stopping, tasks completing, permission denials, notifications, compaction, session end. It never prints anything, so it cannot steer the session.
+- **Ledger** entries only record. `belt record` posts one entry to the events service per lifecycle event it is wired to: subagents starting and stopping, tasks completing, permission denials, notifications, compaction, session end, and turns that died on an API error. It never prints anything, so it cannot steer the session.
 
 On top of the ledger sits one opt-in helper, `belt watch`, which wakes an idle session when an item addressed to it lands on the events service.
 
@@ -46,7 +46,9 @@ Beyond the built-ins, a `custom_hints` config section registers named hints that
 
 ## Ledger and watcher
 
-`belt record <event>` is the ledger entrypoint. It runs on nine Claude Code lifecycle hooks: SubagentStart, SubagentStop, TaskCompleted, TeammateIdle, PermissionDenied, Notification, PreCompact, PostCompact and SessionEnd. Each run posts one entry to the events service under the `belt-ledger` source. An entry is tagged with the session and agent ids and with the repo, linked worktree, main checkout and branch the event happened in. A subagent-start entry also gets the model and effort its agent type declares, when `ledger.agent_types` in the config lists that type. An orchestrator session and its workers then leave one timeline that can be filtered per worker or per worktree. A subagent's final message, a denial reason or a notification's text becomes the entry message, capped at 500 bytes.
+`belt record <event>` is the ledger entrypoint. It runs on ten Claude Code lifecycle hooks: SubagentStart, SubagentStop, TaskCompleted, TeammateIdle, PermissionDenied, Notification, PreCompact, PostCompact, SessionEnd and StopFailure. Each run posts one entry to the events service under the `belt-ledger` source. An entry is tagged with the session and agent ids and with the repo, linked worktree, main checkout and branch the event happened in. A subagent-start entry also gets the model and effort its agent type declares, when `ledger.agent_types` in the config lists that type. An orchestrator session and its workers then leave one timeline that can be filtered per worker or per worktree. A subagent's final message, a denial reason or a notification's text becomes the entry message, capped at 500 bytes.
+
+StopFailure fires when a turn ends because the API gave up after its retries (rate limit, overload, auth, billing). Only the final error reaches the transcript, so without this entry a dead turn leaves no trace. The entry's title and its `error` tag name the error type, and the rendered API error is its message. Unlike the other events it isn't recorded at `info`: it is `warn` when the API gave up on a transient error and `error` when the user has to act.
 
 `belt record` never writes to stdout or stderr and always exits 0 for a valid event, a broken config and a panic included. On SubagentStop any output keeps the subagent running, and on TaskCompleted, TeammateIdle and PreCompact a non-zero exit blocks. So the ledger is built to be unable to steer a session (docs/adr/0024).
 

@@ -169,7 +169,8 @@ entrypoint: an error on stderr and exit 1. Wire them in
       "Notification":     [{"matcher": "", "hooks": [{"type": "command", "command": "belt record notification"}]}],
       "PreCompact":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record pre-compact"}]}],
       "PostCompact":      [{"matcher": "", "hooks": [{"type": "command", "command": "belt record post-compact"}]}],
-      "SessionEnd":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record session-end"}]}]
+      "SessionEnd":       [{"matcher": "", "hooks": [{"type": "command", "command": "belt record session-end"}]}],
+      "StopFailure":      [{"matcher": "", "hooks": [{"type": "command", "command": "belt record stop-failure"}]}]
     }
   }`,
 		Args: eventArg("record event", ledger.Events),

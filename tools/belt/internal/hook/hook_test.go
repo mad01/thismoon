@@ -505,6 +505,25 @@ func TestToLedgerInput(t *testing.T) {
 				NotificationMessage: "Claude needs your permission",
 			},
 		},
+		{
+			name: "stop failure",
+			raw: `{
+				"session_id": "abc123",
+				"transcript_path": "/t/session.jsonl",
+				"cwd": "/x",
+				"hook_event_name": "StopFailure",
+				"error": "rate_limit",
+				"error_details": "429 Too Many Requests",
+				"last_assistant_message": "API Error: Rate limit reached"
+			}`,
+			want: ledger.Input{
+				SessionID:            "abc123",
+				TranscriptPath:       "/t/session.jsonl",
+				LastAssistantMessage: "API Error: Rate limit reached",
+				Error:                "rate_limit",
+				ErrorDetails:         "429 Too Many Requests",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

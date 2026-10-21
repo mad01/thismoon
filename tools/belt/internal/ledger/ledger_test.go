@@ -181,6 +181,13 @@ func TestBuild(t *testing.T) {
 			},
 		},
 		{
+			name:      "an event other than stop-failure carries no error tag",
+			event:     EventSessionEnd,
+			in:        Input{Reason: "clear", Error: "rate_limit"},
+			wantTitle: "session ended (clear)",
+			wantTags:  map[string]string{"event": "session-end", "reason": "clear"},
+		},
+		{
 			name:      "no qualifier leaves the bare title",
 			event:     EventTeammateIdle,
 			wantTitle: "teammate idle",
@@ -218,23 +225,158 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+// TestBuildStopFailure: a turn that died on an API error is recorded with
+// a level that follows its error type, a title naming that type ("unknown"
+// when the payload has none or a blank one), and the rendered error with
+// its details as the message, with a placeholder when both are empty.
+func TestBuildStopFailure(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          Input
+		loc         guard.Location
+		wantLevel   string
+		wantTitle   string
+		wantMessage string
+		wantTags    map[string]string
+	}{
+		{
+			name: "a transient error is warn",
+			in: Input{
+				SessionID:            "bf16c0dd-5629-4655-a8a0-a3fc5496032b",
+				Error:                "overloaded",
+				ErrorDetails:         "529 Overloaded",
+				LastAssistantMessage: "API Error: Repeated 529 Overloaded errors",
+			},
+			loc:         mainCheckout,
+			wantLevel:   "warn",
+			wantTitle:   "turn failed (overloaded)",
+			wantMessage: "API Error: Repeated 529 Overloaded errors (529 Overloaded)",
+			wantTags: map[string]string{
+				"event":      "stop-failure",
+				"session_id": "bf16c0dd-5629-4655-a8a0-a3fc5496032b",
+				"error":      "overloaded",
+				"repo":       "github.com/mad01/thismoon",
+				"canonical":  "/src/thismoon",
+				"branch":     "main",
+			},
+		},
+		{
+			name:        "an error the user must act on is error",
+			in:          Input{Error: "billing_error", ErrorDetails: "402 Payment Required"},
+			wantLevel:   "error",
+			wantTitle:   "turn failed (billing_error)",
+			wantMessage: "402 Payment Required",
+			wantTags:    map[string]string{"event": "stop-failure", "error": "billing_error"},
+		},
+		{
+			name:        "a missing error type reads as unknown",
+			wantLevel:   "error",
+			wantTitle:   "turn failed (unknown)",
+			wantMessage: "No detail reported.",
+			wantTags:    map[string]string{"event": "stop-failure", "error": "unknown"},
+		},
+		{
+			name: "a blank error type reads as unknown and the text is trimmed",
+			in: Input{
+				Error:                "   ",
+				LastAssistantMessage: "  API Error: Rate limit reached\n",
+				ErrorDetails:         " ",
+			},
+			wantLevel:   "error",
+			wantTitle:   "turn failed (unknown)",
+			wantMessage: "API Error: Rate limit reached",
+			wantTags:    map[string]string{"event": "stop-failure", "error": "unknown"},
+		},
+		{
+			name:        "no detail at all gets the placeholder",
+			in:          Input{Error: " server_error "},
+			wantLevel:   "warn",
+			wantTitle:   "turn failed (server_error)",
+			wantMessage: "No detail reported.",
+			wantTags:    map[string]string{"event": "stop-failure", "error": "server_error"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(EventStopFailure, tt.in, tt.loc, config.AgentTypes{})
+			if got.Source != Source || got.Level != tt.wantLevel {
+				t.Errorf("source, level = %q, %q, want %q, %q",
+					got.Source, got.Level, Source, tt.wantLevel)
+			}
+			if got.Title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", got.Title, tt.wantTitle)
+			}
+			if got.Message != tt.wantMessage {
+				t.Errorf("message = %q, want %q", got.Message, tt.wantMessage)
+			}
+			if !maps.Equal(got.Tags, tt.wantTags) {
+				t.Errorf("tags = %v, want %v", got.Tags, tt.wantTags)
+			}
+		})
+	}
+}
+
+// TestStopFailureLevelFollowsTheErrorType walks every error type Claude
+// Code documents for StopFailure: the API giving up after its retries is
+// warn, anything the user has to fix is error.
+func TestStopFailureLevelFollowsTheErrorType(t *testing.T) {
+	want := map[string]string{
+		"rate_limit":             "warn",
+		"overloaded":             "warn",
+		"server_error":           "warn",
+		"cloud_credential_error": "warn",
+		"authentication_failed":  "error",
+		"oauth_org_not_allowed":  "error",
+		"account_on_hold":        "error",
+		"billing_error":          "error",
+		"invalid_request":        "error",
+		"model_not_found":        "error",
+		"max_output_tokens":      "error",
+		"unknown":                "error",
+		"a_type_added_later":     "error",
+	}
+	for errorType, wantLevel := range want {
+		got := Build(
+			EventStopFailure,
+			Input{Error: errorType},
+			guard.Location{},
+			config.AgentTypes{},
+		)
+		if got.Level != wantLevel {
+			t.Errorf("%s: level = %q, want %q", errorType, got.Level, wantLevel)
+		}
+	}
+}
+
 // TestBuildUnreadablePayload: an entry built from a payload that did not
-// decode is still written, at warn level, naming the decode error.
+// decode is still written, at warn level, naming the decode error. warn
+// holds even for a failed turn whose error type alone would be error.
 func TestBuildUnreadablePayload(t *testing.T) {
-	got := Build(
-		EventSubagentStop,
-		Input{PayloadError: "unexpected EOF"},
-		guard.Location{},
-		config.AgentTypes{},
-	)
-	if got.Level != levelWarn {
-		t.Errorf("level = %q, want %q", got.Level, levelWarn)
+	tests := []struct {
+		name  string
+		event string
+		in    Input
+	}{
+		{"subagent stop", EventSubagentStop, Input{PayloadError: "unexpected EOF"}},
+		{
+			"stop failure with an error type",
+			EventStopFailure,
+			Input{Error: "billing_error", PayloadError: "unexpected EOF"},
+		},
 	}
-	if want := "hook payload unreadable: unexpected EOF"; got.Message != want {
-		t.Errorf("message = %q, want %q", got.Message, want)
-	}
-	if got.Tags["event"] != EventSubagentStop {
-		t.Errorf("tags = %v, want the event tag kept", got.Tags)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Build(tt.event, tt.in, guard.Location{}, config.AgentTypes{})
+			if got.Level != levelWarn {
+				t.Errorf("level = %q, want %q", got.Level, levelWarn)
+			}
+			if want := "hook payload unreadable: unexpected EOF"; got.Message != want {
+				t.Errorf("message = %q, want %q", got.Message, want)
+			}
+			if got.Tags["event"] != tt.event {
+				t.Errorf("tags = %v, want the event tag kept", got.Tags)
+			}
+		})
 	}
 }
 
@@ -284,6 +426,7 @@ func TestEventsFollowTheCatalog(t *testing.T) {
 	want := []string{
 		"subagent-start", "subagent-stop", "task-completed", "teammate-idle",
 		"permission-denied", "notification", "pre-compact", "post-compact", "session-end",
+		"stop-failure",
 	}
 	got := Events()
 	if strings.Join(got, ",") != strings.Join(want, ",") {

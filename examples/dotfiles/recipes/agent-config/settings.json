@@ -106,6 +106,9 @@
     ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "~/code/bin/belt record session-end" }] }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "~/code/bin/belt record stop-failure" }] }
     ]
   }
 }

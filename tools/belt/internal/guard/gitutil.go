@@ -2,11 +2,17 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
+	"time"
 )
+
+// gitPipeGrace bounds how long a git call waits for its stdout pipe to
+// close after git itself has exited or been killed.
+const gitPipeGrace = 100 * time.Millisecond
 
 // gitInvocation is one parsed git invocation from a shell command: the
 // directory it runs in, the subcommand, and the tokens after it. dir is ""
@@ -321,14 +327,21 @@ func gitOutput(dir string, args ...string) string {
 // gitOutputContext is gitOutput bounded by ctx: git is killed when ctx is
 // done, and that ends in "" like any other failure. For a caller with a
 // deadline of its own, where a stalled filesystem must not hold the hook.
+// A child git leaves behind (a wrapper's background job, say) inherits the
+// stdout pipe, so killing git alone does not end the read. WaitDelay closes
+// the pipe gitPipeGrace after git exits or is killed, which keeps ctx's
+// deadline the real bound.
 func gitOutputContext(ctx context.Context, dir string, args ...string) string {
 	if dir == "" {
 		return ""
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.WaitDelay = gitPipeGrace
 	out, err := cmd.Output()
-	if err != nil {
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		// ErrWaitDelay means git exited 0 and only the child held the pipe
+		// past the grace: what git printed before exiting is its answer.
 		return ""
 	}
 	return strings.TrimSpace(string(out))

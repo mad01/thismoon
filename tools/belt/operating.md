@@ -4,10 +4,10 @@ belt is the Claude Code hook binary: guards inspect a tool call before it
 runs and deny risky ones with a reason. Hints inspect a tool call after it
 ran and add advisory context beside the result. Ledger entries record
 session lifecycle events (subagents, tasks, permission denials,
-notifications, compaction, session end) to the events service. The three
-are separate by design. A hint has no denial path in its interface, and the
-record path has no output at all, so neither can block or steer anything,
-even by mistake.
+notifications, compaction, session end, failed turns) to the events
+service. The three are separate by design. A hint has no denial path in its
+interface, and the record path has no output at all, so neither can block
+or steer anything, even by mistake.
 
 ## how it runs
 
@@ -152,17 +152,18 @@ executable at all.
 The ledger and the watcher both need the events service. When it is down,
 ledger entries are dropped without a trace and the watcher wakes nobody;
 the doctor events line says which. Ledger entries live under the
-`belt-ledger` source, not `belt`. A subagent-start entry without `model`
-and `effort` tags means no `ledger.agent_types` key matches its agent type,
-the entry was dropped, or the belt predates the key. A named spawn reports
-its name as its agent type, so keys for factory workers end in `*` and the
-factory names workers `factory-worker-<tier>-<slug>`; a plain key never
-matches a named worker. The doctor ledger block lists the keys in effect
-and the warnings name the drops. A
-watcher that never wakes the session
-usually means the item's `to` tag does not match the session id exactly, or
-the Stop entry lacks `asyncRewake`. Each item is delivered once: the cursor
-in `~/.cache/belt/watch-<session>` names the newest one already delivered.
+`belt-ledger` source, not `belt`. A turn that died on an API error is a
+`stop-failure` entry at warn or error, with an `error` tag naming the type.
+A subagent-start entry without `model` and `effort` tags means no
+`ledger.agent_types` key matches its agent type, the entry was dropped, or
+the belt predates the key. A named spawn reports its name as its agent
+type, so keys for factory workers end in `*` and the factory names workers
+`factory-worker-<tier>-<slug>`; a plain key never matches a named worker.
+The doctor ledger block lists the keys in effect and the warnings name the
+drops. A watcher that never wakes the session usually means the item's `to`
+tag does not match the session id exactly, or the Stop entry lacks
+`asyncRewake`. Each item is delivered once: the cursor in
+`~/.cache/belt/watch-<session>` names the newest one already delivered.
 
 ## version skew
 
