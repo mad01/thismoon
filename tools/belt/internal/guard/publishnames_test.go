@@ -769,6 +769,39 @@ func TestPublishInternalNamesPublicReposList(t *testing.T) {
 		{"private repository", repo, map[string]any{"name": "internalco", "private": true}, false},
 		{"public repository", repo, map[string]any{"name": "internalco", "private": false}, true},
 		{"repository visibility unset", repo, map[string]any{"name": "internalco"}, true},
+		// pi-mcp-adapter puts a display or legacy server prefix in front of
+		// the operation, and the pi gate sends a call it cannot place under
+		// the server mcp.
+		{
+			"legacy prefixed gist",
+			"mcp__gh_com__gh_5f_com_create_gist",
+			map[string]any{"description": "internalco"},
+			true,
+		},
+		{
+			"unplaced prefixed gist update",
+			"mcp__mcp__mcp__gh_com_update_gist",
+			map[string]any{"content": "internalco"},
+			true,
+		},
+		{
+			"prefixed public repository",
+			"mcp__mcp__GH_COM_create_repository",
+			map[string]any{"name": "internalco"},
+			true,
+		},
+		{
+			"prefixed private repository",
+			"mcp__gh_com__gh_com_create_repository",
+			map[string]any{"name": "internalco", "private": true},
+			false,
+		},
+		{
+			"suffix without a separator",
+			"mcp__gh_com__recreate_gist",
+			map[string]any{"description": "internalco"},
+			false,
+		},
 	}
 	for _, tt := range mcp {
 		t.Run("mcp "+tt.name, func(t *testing.T) {

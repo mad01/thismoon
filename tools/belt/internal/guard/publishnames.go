@@ -187,14 +187,24 @@ func (g *PublishInternalNames) unknownToolGuarded(tool string, input map[string]
 		return true
 	}
 	_, op, _ := mcptool.Split(tool)
-	switch op {
-	case "create_gist", "update_gist":
+	switch {
+	case operationIs(op, "create_gist"), operationIs(op, "update_gist"):
 		return true
-	case "create_repository":
+	case operationIs(op, "create_repository"):
 		private, _ := input["private"].(bool)
 		return !private
 	}
 	return false
+}
+
+// operationIs reports whether an MCP operation is want, alone or behind a
+// prefix ending in "_", in any case. pi-mcp-adapter accepts an operation
+// under its display and legacy server prefixes (gh_com_create_gist,
+// gh_5f_com_create_gist), and a caller that cannot strip one must not slip
+// past the public-by-nature floor.
+func operationIs(op, want string) bool {
+	op = strings.ToLower(op)
+	return op == want || strings.HasSuffix(op, "_"+want)
 }
 
 // collectStrings joins every string inside v, nested maps and arrays

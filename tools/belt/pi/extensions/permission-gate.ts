@@ -20,13 +20,14 @@
  */
 
 import { execFileSync, execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { LoadedConfig } from "../lib/config.ts";
+import type { BeltPiConfig, LoadedConfig } from "../lib/config.ts";
 import { directToolServer, envIs, loadConfig } from "../lib/config.ts";
 import {
 	markPermissionApproved,
@@ -136,6 +137,11 @@ function mcpGlob(pattern: string): RegExp {
 function mcpRuleMatches(rule: ClaudeRule, toolName: string): boolean {
 	if (!rule.tool.startsWith("mcp__")) return false;
 	if (mcpGlob(rule.tool).test(toolName)) return true;
+	// A rule that names only a server (mcp__linear) covers every tool on
+	// it, as in Claude.
+	if (!rule.tool.slice(5).includes("__")) {
+		return mcpGlob(`${rule.tool}__*`).test(toolName);
+	}
 	const m = rule.tool.match(/^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/);
 	if (m && m[2].startsWith(`${m[1]}_`)) {
 		const stripped = `mcp__${m[1]}__${m[2].slice(m[1].length + 1)}`;
@@ -199,33 +205,215 @@ function mutationTargets(input: Record<string, unknown>): MutationTarget[] {
 	return [{ path: topPath ?? "", content: mutationContent(input) }];
 }
 
-function permissionToolName(
-	settings: LoadedConfig,
-	toolName: string,
-	input: Record<string, unknown>,
-): string {
-	if (toolName === "mcp" && typeof input.tool === "string") {
-		if (input.tool.startsWith("mcp__")) return input.tool;
-		if (typeof input.server === "string" && input.server) {
-			return `mcp__${input.server}__${input.tool}`;
-		}
-		return toolName;
-	}
-	const server = directToolServer(settings.config, toolName);
-	return server ? `mcp__${server}__${toolName}` : toolName;
+// One way pi-mcp-adapter may run a tool call: the server and operation it
+// reaches, their Claude-style name (mcp__<server>__<op>) and the arguments
+// the MCP server receives. The adapter resolves a tool name loosely (with or
+// without the server, bare or under a display or legacy server prefix), so
+// one call can have several readings, and every check takes the strictest
+// of them. unresolved marks the placeholder reading of a proxy call whose
+// server stays unknown.
+interface McpReading extends McpTarget {
+	name: string;
+	args: Record<string, unknown>;
+	unresolved?: boolean;
 }
 
-function mcpOperation(
+interface McpTarget {
+	server: string;
+	operation: string;
+}
+
+// The readings of a call, none for a tool that is not MCP. A proxy call is
+// read by the tool it names. A namespace proxy name may also be an mcp-mode
+// direct tool (mcp__<server>_<op>), so its direct readings count too.
+function mcpReadings(
+	config: BeltPiConfig,
 	toolName: string,
 	input: Record<string, unknown>,
-): string {
-	if (toolName === "mcp" && typeof input.tool === "string") return input.tool;
+): McpReading[] {
+	const direct = toolTargets(config, toolName).map((target) => reading(target, input));
+	const proxy = proxyTarget(config, toolName, input);
+	if (!proxy) return direct;
+	const args = proxyArgs(input);
+	const targets = proxy.server
+		? serverTargets(config, proxy.server, proxy.tool)
+		: toolTargets(config, proxy.tool);
+	// The adapter's documented proxy call omits the server
+	// (mcp({ tool, args })), and it then finds the tool by name on every
+	// enabled server, so a name that places itself nowhere may still land on
+	// a guarded one.
+	if (targets.length === 0) {
+		const placeholder = reading({ server: "mcp", operation: proxy.tool }, args);
+		return [{ ...placeholder, unresolved: true }, ...direct];
+	}
+	return [...targets.map((target) => reading(target, args)), ...direct];
+}
+
+function reading(target: McpTarget, args: Record<string, unknown>): McpReading {
+	return { ...target, name: `mcp__${target.server}__${target.operation}`, args };
+}
+
+// The server and tool a proxy call names, null for any other call. Two
+// tools proxy: the unified `mcp`, whose server is optional, and the
+// mcp__<namespace> namespace proxy the adapter registers for each
+// proxy-only server by default, which takes the same { tool, args } and is
+// bound to its server.
+function proxyTarget(
+	config: BeltPiConfig,
+	toolName: string,
+	input: Record<string, unknown>,
+): { server: string; tool: string } | null {
+	if (typeof input.tool !== "string") return null;
+	if (toolName === "mcp") {
+		const server = typeof input.server === "string" ? input.server : "";
+		return { server, tool: input.tool };
+	}
+	const server = namespaceServer(config, toolName);
+	return server ? { server, tool: input.tool } : null;
+}
+
+// The server a namespace proxy name is bound to, "" when toolName is none.
+// A server belt.json names matches in the adapter's namespace form; any
+// other mcp__<namespace> with one "__" is taken as that namespace.
+function namespaceServer(config: BeltPiConfig, toolName: string): string {
 	if (!toolName.startsWith("mcp__")) return "";
-	return toolName.slice(toolName.lastIndexOf("__") + 2);
+	const namespace = toolName.slice(5);
+	const known = [
+		...config.externalTextGuardServers,
+		...config.mcpPrefixes.map(([, server]) => server),
+	];
+	const server = known.find((name) => serverNamespace(name) === namespace);
+	if (server) return server;
+	return namespace && !namespace.includes("__") ? namespace : "";
+}
+
+// The adapter's own namespace for a server, ported from formatServerNamespace
+// in its types.ts: "-" folds to "_"; a name with any other character outside
+// letters, digits and "_" is encoded behind _mcpns_ ("_" doubled, the rest as
+// _<hex>_); and one longer than the 59 characters a tool name leaves after
+// mcp__ is cut and hashed.
+function serverNamespace(server: string): string {
+	const marker = "_mcpns_";
+	const limit = 59;
+	const normalized = server.replace(/-/g, "_");
+	if (/^[A-Za-z0-9_]*$/.test(normalized) && !normalized.startsWith(marker)) {
+		return hashedNamespace(normalized, normalized, limit);
+	}
+	const body = Array.from(normalized, (char) => {
+		if (char === "_") return "__";
+		return /^[A-Za-z0-9]$/.test(char) ? char : `_${char.codePointAt(0).toString(16)}_`;
+	}).join("");
+	return hashedNamespace(`${marker}${body}`, body, limit);
+}
+
+function hashedNamespace(namespace: string, body: string, limit: number): string {
+	if (namespace.length <= limit) return namespace;
+	const digest = createHash("sha256").update(namespace, "utf8").digest("hex").slice(0, 16);
+	const prefix = "_mcpns__h_";
+	return `${prefix}${body.slice(0, limit - prefix.length - digest.length - 1)}_${digest}`;
+}
+
+// The servers and operations a tool name that does not name its server may
+// reach: its own when it already has the mcp__<server>__<op> shape, else
+// one set for the server its belt.json prefix maps it to and one for each
+// guarded server whose display or legacy prefix it carries. Empty when it
+// places itself nowhere.
+function toolTargets(config: BeltPiConfig, name: string): McpTarget[] {
+	const claude = claudeTarget(name);
+	if (claude) return [claude];
+	const targets: McpTarget[] = [];
+	const server = directToolServer(config, name);
+	if (server) targets.push(...serverTargets(config, server, name));
+	for (const guarded of config.externalTextGuardServers) {
+		const stripped = strippedOperations(guarded, name);
+		if (stripped.length === 0) continue;
+		for (const operation of [...stripped, name]) {
+			targets.push({ server: guarded, operation });
+		}
+	}
+	return uniqueTargets(targets);
+}
+
+// The operations a call to tool on server may reach: the server's own tool
+// by that name, and the tool it names under a display or legacy server
+// prefix. A belt.json prefix says the whole name is the tool's own
+// (csl_search is csl's), so that reading comes first; otherwise the
+// stripped one does.
+function serverTargets(
+	config: BeltPiConfig,
+	server: string,
+	tool: string,
+): McpTarget[] {
+	const claude = claudeTarget(tool);
+	if (claude) return [claude];
+	const stripped = strippedOperations(server, tool);
+	const operations =
+		directToolServer(config, tool) === server
+			? [tool, ...stripped]
+			: [...stripped, tool];
+	return uniqueTargets(operations.map((operation) => ({ server, operation })));
+}
+
+// The server and operation of a Claude-style MCP name, null for any other.
+// The operation is whatever follows the last "__".
+function claudeTarget(name: string): McpTarget | null {
+	const server = mcpServer(name);
+	if (!server) return null;
+	return { server, operation: name.slice(name.lastIndexOf("__") + 2) };
+}
+
+function uniqueTargets(targets: McpTarget[]): McpTarget[] {
+	const unique = new Map<string, McpTarget>();
+	for (const target of targets) {
+		const key = `${target.server}\0${target.operation}`;
+		if (!unique.has(key)) unique.set(key, target);
+	}
+	return [...unique.values()];
+}
+
+// name without each prefix pi-mcp-adapter may put in front of server's
+// tools, so belt reads the server's own operation: create_gist, not
+// gh_com_create_gist or gh_5f_com_create_gist. Empty when name carries none.
+function strippedOperations(server: string, name: string): string[] {
+	const operations = new Set<string>();
+	for (const prefix of adapterPrefixes(server)) {
+		if (name.startsWith(`${prefix}_`) && name.length > prefix.length + 1) {
+			operations.add(name.slice(prefix.length + 1));
+		}
+	}
+	return [...operations];
+}
+
+// The prefixes pi-mcp-adapter puts in front of a server's tool names,
+// ported from its types.ts (getServerPrefix, getLegacyServerPrefix and
+// getToolNameCandidates): the server, short and mcp modes, each in the
+// current form, with "-" folded to "_", and in the legacy form that encodes
+// "_" and "-" too.
+function adapterPrefixes(server: string): string[] {
+	const short = server.replace(/-?mcp$/i, "");
+	const prefixes = new Set<string>();
+	for (const legacy of [false, true]) {
+		const full = encodeServerPrefix(server, legacy);
+		for (const prefix of [full, encodeServerPrefix(short, legacy) || "mcp", `mcp__${full}`]) {
+			prefixes.add(prefix);
+			prefixes.add(prefix.replace(/-/g, "_"));
+		}
+	}
+	return [...prefixes];
+}
+
+// The adapter's sanitizeServerPrefix: a character outside the allowed set
+// becomes _<hex code point>_. The legacy form allows only letters and
+// digits, so gh_com becomes gh_5f_com.
+function encodeServerPrefix(server: string, legacy: boolean): string {
+	const allowed = legacy ? /^[A-Za-z0-9]$/ : /^[A-Za-z0-9_-]$/;
+	return Array.from(server, (char) =>
+		allowed.test(char) ? char : `_${char.codePointAt(0).toString(16)}_`,
+	).join("");
 }
 
 // Server segment of a Claude-style MCP name (mcp__<server>__<op>), split at
-// the last "__" like mcpOperation so a server name may carry single
+// the last "__" like claudeTarget so a server name may carry single
 // underscores (gh_com). Empty for anything that is not an MCP name.
 function mcpServer(permissionName: string): string {
 	if (!permissionName.startsWith("mcp__")) return "";
@@ -234,13 +422,20 @@ function mcpServer(permissionName: string): string {
 	return split > 0 ? body.slice(0, split) : "";
 }
 
-// The arguments the MCP server receives: pi-mcp-adapter's unified `mcp`
-// proxy nests them under args; direct tools carry them at the top level.
-function mcpToolInput(
-	input: Record<string, unknown>,
-): Record<string, unknown> {
-	if (input.args && typeof input.args === "object") {
-		return input.args as Record<string, unknown>;
+// The arguments the MCP server receives from a proxy call: args, as an
+// object or as a JSON string encoding one. Args the adapter would reject
+// fall back to the whole input, so their text is still scanned.
+function proxyArgs(input: Record<string, unknown>): Record<string, unknown> {
+	let args = input.args;
+	if (typeof args === "string") {
+		try {
+			args = JSON.parse(args);
+		} catch {
+			return input;
+		}
+	}
+	if (args && typeof args === "object" && !Array.isArray(args)) {
+		return args as Record<string, unknown>;
 	}
 	return input;
 }
@@ -340,7 +535,24 @@ function configLine(settings: LoadedConfig): string {
 	return `belt pi config: ${settings.path}`;
 }
 
+// Set on globalThis while a gate runtime is live. pi loads nothing and says
+// nothing for a declared package path that is missing, so the consuming repo
+// ships its own small extension that blocks every tool call while this
+// marker is absent. pi emits session_shutdown on the old runtime before
+// a reload or a session switch starts the next one, so clearing it there and
+// setting it again at load and session start leaves no stale marker behind
+// a package that has since gone. Keep the key: it is that extension's
+// contract.
+const GATE_LOADED = Symbol.for("mad01.pi.belt-gate");
+
+function markGateLoaded(live: boolean) {
+	const root = globalThis as typeof globalThis & { [GATE_LOADED]?: true };
+	if (live) root[GATE_LOADED] = true;
+	else delete root[GATE_LOADED];
+}
+
 export default function (pi: ExtensionAPI) {
+	markGateLoaded(true);
 	let claude: ClaudePermissions = loadClaudePermissions();
 	let settings: LoadedConfig = loadConfig();
 	let rules: PermissionRule[] = [];
@@ -379,6 +591,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
+		markGateLoaded(true);
 		claude = loadClaudePermissions(); // re-read settings each session
 		settings = loadConfig();
 		restoreRules(ctx);
@@ -389,6 +602,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 	pi.on("session_tree", async (_event, ctx) => restoreRules(ctx));
+	pi.on("session_shutdown", async () => markGateLoaded(false));
 
 	function matchesPattern(command: string, pattern: string): boolean {
 		if (pattern.endsWith(":*")) {
@@ -423,12 +637,32 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		const permissionName = permissionToolName(settings, toolName, input);
+		// Every name the call may run as; a tool that is not MCP has only its
+		// own.
+		const readings = mcpReadings(settings.config, toolName, input);
+		const permissionNames =
+			readings.length > 0 ? readings.map((reading) => reading.name) : [toolName];
+		const permissionName = permissionNames[0];
+		// Deny and ask rules also match the tool's own name, so a rule on a
+		// proxy (mcp, mcp__linear) still covers every call through it. Allow
+		// rules do not: an allowed proxy name must not allow every tool behind
+		// it.
+		const restrictedNames = [...new Set([...permissionNames, toolName])];
 		const targets = kind === "mutation" ? mutationTargets(input) : [];
 		const ruleInputs =
 			targets.length > 0
 				? targets.map((target) => ({ ...input, path: target.path }))
 				: [input];
+		// The first of rules that any deny or ask name matches for any input.
+		const matchAny = (rules: ClaudeRule[]): ClaudeRule | null => {
+			for (const name of restrictedNames) {
+				for (const candidate of ruleInputs) {
+					const rule = findMatch(rules, name, candidate);
+					if (rule) return rule;
+				}
+			}
+			return null;
+		};
 
 		// 1. belt guards (same guards as the Claude/Codex PreToolUse hooks).
 		// Pi routes normal work through ctx_shell/ctx_edit/ctx_patch, so those
@@ -451,28 +685,33 @@ export default function (pi: ExtensionAPI) {
 		}
 		// MCP calls that publish text off this machine: belt scans the call's
 		// string fields for internal names (publish-internal-names), whether
-		// the model called mcp__<server>__<op> directly or went through the
-		// unified `mcp` proxy with the server named. belt resolves each call's
-		// owner/repo against its public_repos list, so the default set stays at
-		// github.com and a rendering adds any other server.
-		if (settings.config.externalTextGuardServers.has(mcpServer(permissionName))) {
+		// the model called mcp__<server>__<op> directly or went through a
+		// proxy. belt resolves each call's owner/repo against its public_repos
+		// list, so the default set stays at github.com and a rendering adds any
+		// other server. Every guarded reading is checked. A proxy call whose
+		// server stays unknown may still land on a guarded one, so it is
+		// checked too, under the placeholder server `mcp`; belt keys on the
+		// operation and the input, never the server, and passes reads by their
+		// verb.
+		for (const reading of readings) {
+			const guarded =
+				reading.unresolved ||
+				settings.config.externalTextGuardServers.has(reading.server);
+			if (!guarded) continue;
 			const res = beltCheck([
 				"external-text",
 				"--tool",
-				permissionName,
+				reading.name,
 				"--input",
-				JSON.stringify(mcpToolInput(input)),
+				JSON.stringify(reading.args),
 			]);
-			if (res.denied) return beltDenied("external-text", permissionName, res);
+			if (res.denied) return beltDenied("external-text", reading.name, res);
 		}
 
 		// 2. Claude settings: deny. A multi-file mutation is denied when any
-		// target matches a deny rule.
-		let denied: ClaudeRule | null = null;
-		for (const candidate of ruleInputs) {
-			denied = findMatch(claude.deny, permissionName, candidate);
-			if (denied) break;
-		}
+		// target matches a deny rule, and an MCP call when any reading or its
+		// own tool name does.
+		const denied = matchAny(claude.deny);
 		if (denied) {
 			return {
 				block: true,
@@ -480,7 +719,6 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		const operation = mcpOperation(toolName, input);
 		const confirm = async (label: string, reason = "Requires confirmation") => {
 			const short = label.length > 80 ? label.slice(0, 77) + "..." : label;
 			const decision = await requestPermission(ctx, {
@@ -495,6 +733,18 @@ export default function (pi: ExtensionAPI) {
 				? undefined
 				: { block: true, reason: decision.reason };
 		};
+
+		// pi-mcp-adapter's mcpScript runs the MCP calls in its script inside
+		// the adapter, where no tool_call event fires, so neither belt nor the
+		// Claude lists see them. Every script asks, whatever the allow list
+		// says; headless with no broker that is a block.
+		if (toolName === "mcpScript") {
+			return confirm(
+				`mcpScript: ${typeof input.code === "string" ? input.code : ""}`,
+				"An MCP script runs its calls without belt checks and requires confirmation",
+			);
+		}
+
 		const wantsEscalation = input.sandbox_permissions === "require_escalated";
 		if (
 			kind === "bash" &&
@@ -509,34 +759,23 @@ export default function (pi: ExtensionAPI) {
 
 		// Claude has a dedicated PreToolUse guard for closing PRs through the
 		// broad update_pull_request tool. Keep that protection for both direct
-		// MCP tools and pi-mcp-adapter's unified `mcp` proxy.
-		if (
-			operation.endsWith("update_pull_request") &&
-			input.args &&
-			typeof input.args === "object"
-		) {
-			const args = input.args as Record<string, unknown>;
-			if (args.state === "closed") {
-				return confirm(
-					`${operation}: close pull request`,
-					"Closing a pull request requires confirmation",
-				);
-			}
-		}
-		if (operation.endsWith("update_pull_request") && input.state === "closed") {
+		// MCP tools and pi-mcp-adapter's proxies, whose args may be a JSON
+		// string.
+		const closing = readings.find(
+			(reading) =>
+				reading.operation.endsWith("update_pull_request") &&
+				reading.args.state === "closed",
+		);
+		if (closing) {
 			return confirm(
-				`${operation}: close pull request`,
+				`${closing.operation}: close pull request`,
 				"Closing a pull request requires confirmation",
 			);
 		}
 
 		// 3. Claude settings: ask. Ask must precede allow: the settings contain
 		// broad gh_* wildcards plus specific merge_pull_request ask rules.
-		let asked: ClaudeRule | null = null;
-		for (const candidate of ruleInputs) {
-			asked = findMatch(claude.ask, permissionName, candidate);
-			if (asked) break;
-		}
+		const asked = matchAny(claude.ask);
 		if (asked) {
 			const label =
 				kind === "bash"
@@ -555,10 +794,13 @@ export default function (pi: ExtensionAPI) {
 			return result;
 		}
 
-		// If the unified MCP proxy omitted the server name, a Claude matcher
-		// cannot identify which gh_* merge rule applies. Fail toward a prompt.
-		if (operation.endsWith("merge_pull_request")) {
-			return confirm(operation, "Merging a pull request requires confirmation");
+		// If a proxy call omitted the server name, a Claude matcher cannot
+		// identify which gh_* merge rule applies. Fail toward a prompt.
+		const merge = readings.find((reading) =>
+			reading.operation.endsWith("merge_pull_request"),
+		);
+		if (merge) {
+			return confirm(merge.operation, "Merging a pull request requires confirmation");
 		}
 
 		// Sandboxed Bash is the default. Leaving Seatbelt always requires a
@@ -574,12 +816,14 @@ export default function (pi: ExtensionAPI) {
 			return result;
 		}
 
-		// 4. Claude settings: allow. Every target in a multi-file mutation must
-		// be covered; one allowed temp file must not allow the whole batch.
+		// 4. Claude settings: allow. Every target in a multi-file mutation and
+		// every reading of an MCP call must be covered; one allowed temp file
+		// must not allow the whole batch.
 		if (
-			ruleInputs.every(
-				(candidate) =>
-					findMatch(claude.allow, permissionName, candidate) !== null,
+			permissionNames.every((name) =>
+				ruleInputs.every(
+					(candidate) => findMatch(claude.allow, name, candidate) !== null,
+				),
 			)
 		) {
 			return undefined;

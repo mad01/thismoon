@@ -497,7 +497,8 @@ two events.
   among the arguments, so `gh api -X POST gists` counts), `gh repo create`
   without `--private` or `--internal`, and the MCP equivalents
   (`create_gist`, `update_gist`, `create_repository` unless `private` is
-  true) are public by nature. No `public_repos` entry could name them, so
+  true, each also behind a prefix such as pi-mcp-adapter's `gh_com_`) are
+  public by nature. No `public_repos` entry could name them, so
   they are guarded under both modes, whatever the cwd's origin is. Every
   other unnamed target (a raw `gh api` outside `repos/` and `gists`, an MCP
   call without owner/repo) is guarded under the legacy host rule. It passes
