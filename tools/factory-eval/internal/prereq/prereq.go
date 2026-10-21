@@ -98,8 +98,8 @@ func Explain(arm string, failed []Result) string {
 		lines = append(lines, fmt.Sprintf("  - %s: %s", r.Name, r.Detail))
 	}
 	if arm == "factory" {
-		lines = append(lines, "MAD-398 installs the worker definitions and the belt hook wiring; "+
-			"see the factory-eval README, prerequisites.")
+		lines = append(lines, "the thismoon/factory recipe installs the worker definitions, and the "+
+			"consuming repo's settings wire the belt hook; see the factory-eval README, prerequisites.")
 	}
 	return strings.Join(lines, "\n")
 }

@@ -22,7 +22,8 @@ detail and the reasons:
   rules.
 - `worker-brief.md`: the text every worker gets before its first prompt, and
   how belt delivers it.
-- `worker-definitions.md`: the three worker agent definitions.
+- `worker-definitions.md`: the three worker agent definitions, whose files
+  sit under `agents/`.
 - `examples.md`: one run end to end, from the plan to the landed branches,
   with every message and command the procedure produces.
 
@@ -224,7 +225,9 @@ Run all five checks before the first spawn:
   `docs/adr/0024-belt-ledger-and-watcher.md`:
   - The `factory-worker` custom hint runs on subagent-start and delivers
     `worker-brief.md` into each worker's context before its first prompt.
-    It is machine-private config; `worker-brief.md` shows the script.
+    The script ships beside this file as `factory-worker-hint.sh`; its
+    registration in the belt config is machine-private, and
+    `worker-brief.md` shows its shape.
   - `belt record` posts one ledger entry per lifecycle event to the events
     service under `belt-ledger`: subagent start and stop, denials, idle,
     compaction. Each entry carries the session, agent, worktree and branch,
@@ -240,4 +243,5 @@ Run all five checks before the first spawn:
 - The eval suites for this skill, in `evals/README.md` beside this file.
 
 Every path above is relative to the thismoon repo root, except
-`worker-brief.md` and `evals/README.md`, which sit beside this file.
+`worker-brief.md`, `factory-worker-hint.sh` and `evals/README.md`, which
+sit beside this file.

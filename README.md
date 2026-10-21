@@ -302,6 +302,7 @@ component, is in [docs/RELEASING.md](docs/RELEASING.md).
 | `docs/HOW-IT-FITS-TOGETHER.md` | The fleet pitch, ralph vocabulary, rollout order |
 | `docs/MEMORY-STACK.md` | Which store holds what an agent should remember, and the hooks behind them |
 | `docs/RELEASING.md` | Release process |
+| `docs/SANDBOXING.md` | Seatbelt sandboxing for services and MCP servers: profiles, wrappers, denial triage |
 
 Everything is one Go module: `github.com/mad01/thismoon`. Each component
 under `services/` or `tools/` has its own Makefile with `build`, `test`, and
