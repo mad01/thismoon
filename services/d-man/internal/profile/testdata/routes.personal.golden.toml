@@ -1,0 +1,18 @@
+# Fixture base route set for the profile golden tests. The games_dir ~/ must
+# become the fixture home; the commented games_dir below must stay as it is.
+suffix = "this"
+
+# games_dir = "~/not/this/one"
+games_dir = "/home/fixture/code/games"
+
+[[route]]
+name = "present"   # http://present.this/ -> 127.0.0.1:7423
+port = 7423
+
+[[route]]
+name = "csl"
+port = 7424
+
+[[route]]
+name = "p"         # http://p.this/ -> alias of present.this
+cname = "present"

@@ -17,7 +17,8 @@ d-man/
   cmd/d-man/
     main.go              entrypoint, delegates to internal/cli.Execute
   internal/
-    cli/                 cobra command tree: root, serve, sync, list, config, version, ca, docs
+    cli/                 cobra command tree: root, serve, sync, list, config, profile,
+                         version, ca, docs
       root.go              flags (--config/DMAN_CONFIG, --hosts-file); the routes-file
                            cascade, whose ~/.config leg resolves through kit/confdir
                            (so XDG_CONFIG_HOME relocates it)
@@ -27,11 +28,16 @@ d-man/
       list.go              print resolved host -> backend routes
       config.go            print the resolved routes file + the effective config
                            as TOML; annotated key reference lives in --help
+      profile.go           print or switch the block-list profile (internal/profile)
       version.go           build metadata from the shared buildinfo package;
                            -o json convention shared with sibling tools
       ca.go                install/uninstall/path for the block-page CA (system keychain)
     config/               pure: parse + validate routes.toml (+ config_test.go);
                            Hosts(), RouteMap(), Sites(), BlockedHosts()
+    profile/              pure Render (block list above the base routes, games_dir
+                           ~/ expanded) + the Switch/Current shell that writes the
+                           routes file and the profile record; testdata/ holds the
+                           golden output per profile
     hosts/                pure Validate/Render/Splice + the Sync shell (+ hosts_test.go);
                            the fail-safe hosts-file writer
     proxy/                one httputil.ReverseProxy; Host-header routing + the
@@ -142,6 +148,8 @@ sudo d-man ca install                     # generate the block-page CA (if absen
 d-man list                                # print resolved host -> backend routes
 d-man config                              # print which routes file was loaded (loaded/missing/parse error)
                                            # and the effective config as TOML; --help has the key reference
+d-man profile [name]                      # print the block-list profile, or switch: writes routes.toml
+                                           # from routes.base.toml + blocklist.<name>.toml beside it
 d-man version [-o json]                   # print the build sha; -o json prints the full build metadata
                                            # object (version, commit, tag, build_time)
 d-man docs                                # print the embedded operating doc: failure modes, reload
@@ -164,6 +172,12 @@ d-man docs                                # print the embedded operating doc: fa
   a non-root process cannot read the key. That is the point: the key mints
   system-trusted certs, so only root should hold it. A non-root `serve` for
   testing must therefore use its own `--ca-dir`.
+- **`profile` keeps its record beside the routes file**, not under
+  `XDG_STATE_HOME`. The record picks the inputs the command builds the routes
+  file from, so it sits with them, and `--config <scratch>/routes.toml profile work`
+  touches nothing outside the scratch directory. The golden files in
+  `internal/profile/testdata/` match the shell generator the command replaced,
+  byte for byte; changing them changes what every machine's daemon reads.
 - **`httputil.ReverseProxy` handles WebSocket upgrades natively**, so no
   custom Upgrade handling is needed.
 - **Events go through `kit/notify`** (async emit; the per-tool

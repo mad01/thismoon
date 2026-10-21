@@ -139,6 +139,59 @@ error and prints the defaults d-man falls back to.
 including the ordering rule that `blocklist` must appear before the first
 `[[route]]` table.
 
+## profile
+
+Print the active block-list profile, or switch to another one by generating
+the routes file from inputs beside it.
+
+```bash
+d-man profile                      # print the active profile
+d-man profile work                 # switch to the work profile
+d-man profile personal             # switch to the profile that blocks nothing
+d-man profile "$(d-man profile)"   # re-apply the active profile after editing an input
+```
+
+Switching reads two files from the directory holding the routes file
+(`--config`), writes the routes file, then records the profile name:
+
+| File | Role |
+|------|------|
+| `routes.base.toml` | The routes every profile shares. Required. |
+| `blocklist.<name>.toml` | The profile's top-level `blocklist`. Written above the base, so it comes before the first `[[route]]` table. |
+| `profile` | The active profile's name, written after the routes file. |
+
+`personal` is the default when nothing is recorded, and the one profile that
+needs no block-list file: without `blocklist.personal.toml` it blocks nothing.
+Any other name needs its file, and the error lists the profiles that have one.
+A profile name is lowercase letters, digits and hyphens.
+
+A leading `~/` in `games_dir` becomes the home directory of the user running
+the command: the daemon runs as root, where `~` would mean `/var/root`.
+
+Before replacing the routes file, the command checks that the result
+validates. A missing input or an invalid result writes nothing, so the daemon
+keeps its last good routes. The write is a temp file plus an atomic rename,
+which also replaces a routes file left behind as a symlink. The running daemon
+picks the new file up through its watch, without sudo or a restart. A daemon
+started while the routes file was still a symlink misses the switch: its watch
+resolved the link once at startup and still follows the old target. Send serve
+one SIGHUP to load the new file, as the config and reload section of
+`d-man docs` describes. The signal does not move the watch, so each later
+switch needs one too until serve restarts.
+
+```
+d-man profile: work
+```
+
+Point it at a scratch directory to try a profile without touching the live
+config:
+
+```bash
+d-man --config /tmp/d-man-try/routes.toml profile work
+```
+
+`d-man profile status` prints the active profile too.
+
 ## version
 
 Print the git commit the binary was built from.
@@ -170,5 +223,6 @@ anything the build didn't record.
 
 `d-man` exits non-zero on a config or hosts error. That means an invalid routes
 file (bad hostname, unknown `cname` target, `cname` cycle, port out of range),
-or a hosts write that would corrupt the file or lacks permission. The error
-prints to stderr.
+or a hosts write that would corrupt the file or lacks permission. A profile
+switch that writes nothing (missing input, invalid result, bad profile name)
+exits non-zero too. The error prints to stderr, and the exit code is always 1.

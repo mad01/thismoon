@@ -216,19 +216,20 @@ in [tools/agent-sync/migrating.md](../../tools/agent-sync/migrating.md).
 only, driven by macOS Focus:
 
 - `routes.base.toml` holds the shared routes; `blocklist.work.toml` holds the
-  blocked hosts. The `d-man-profile` script **generates** the active
-  `~/.config/d-man/routes.toml` (nothing symlinks it), prepending the block
-  list for the work profile and omitting it for personal. The script also
-  rewrites a `~` in `games_dir` to an absolute path, because the daemon runs
-  as root.
-- `d-man-profile work` / `personal` rewrites the active file atomically; the
+  blocked hosts. `d-man profile`, a subcommand of the d-man binary,
+  **generates** the active `~/.config/d-man/routes.toml` (nothing symlinks
+  it), prepending the block list for the work profile and omitting it for
+  personal. It also rewrites a `~` in `games_dir` to an absolute path, because
+  the daemon runs as root.
+- `d-man profile work` / `personal` rewrites the active file atomically; the
   running daemon reloads it via fsnotify, so no sudo or restart is needed. State
   lives in `~/.config/d-man/profile`, and a build hook re-applies the current
-  profile on every `ralph up`.
+  profile on every `ralph up`. A switch that would write invalid routes, or a
+  profile with no block-list file, changes nothing.
 - Wire it to macOS **Work Focus** with a Shortcuts automation (run
-  `d-man-profile work` when Work turns on, `personal` when it turns off) so
-  blocking follows work mode. Blocking HTTPS hosts also needs the local CA
-  trusted once: `sudo d-man ca install`.
+  `$HOME/code/bin/d-man profile work` when Work turns on, `personal` when it
+  turns off) so blocking follows work mode. Blocking HTTPS hosts also needs the
+  local CA trusted once: `sudo d-man ca install`.
 
 ## Updating thismoon
 

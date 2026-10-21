@@ -68,6 +68,7 @@ Other subcommands:
 ```bash
 d-man list                 # print resolved host -> backend routes
 d-man config               # print the routes file in use and the effective config
+d-man profile [name]       # print the block-list profile, or switch to another
 sudo d-man sync             # write the /etc/hosts block once (manual fallback)
 sudo d-man ca install       # trust the local block-page CA (one-time, see below)
 d-man version [-o json]    # build sha; -o json adds commit, tag, build time
@@ -150,6 +151,13 @@ tables, like `suffix`). Each listed host is pinned to `127.0.0.1` in
 `/etc/hosts` and served a local "you're blocked" page hosting a small
 dependency-free retro arcade, rather than being proxied. List `www.` and the
 bare domain separately; there is no wildcard matching.
+
+To block a set of hosts only some of the time, keep the routes in
+`routes.base.toml` and each set in its own `blocklist.<name>.toml`, beside the
+routes file. `d-man profile work` then writes the routes file with
+`blocklist.work.toml` on top, and `d-man profile personal` writes it with no
+block list. The daemon reloads either way, so the switch can run from a macOS
+Focus automation. See [`docs/commands.md`](docs/commands.md#profile).
 
 The arcade picks one game at random per visit (`n` switches). More games can be
 added as plugins with the optional top-level `games_dir` key:
