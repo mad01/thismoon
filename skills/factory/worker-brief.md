@@ -9,34 +9,29 @@ two change together.
 
 belt delivers the brief through a custom hint named `factory-worker`, set in
 the `custom_hints` section of its config and run on the `subagent-start`
-event. The hint lives in the consuming machine's belt config, not in this
-repo (see `tools/belt/config.md`). belt prints the hint's output under the
-prefix `belt[factory-worker]:`. The context eval cases quote the brief with
-that prefix, so keep the name.
+event. The registration lives in the consuming machine's belt config, not in
+this repo (see `tools/belt/config.md`). belt prints the hint's output under
+the prefix `belt[factory-worker]:`. The context eval cases quote the brief
+with that prefix, so keep the name.
+
+The script is `factory-worker-hint.sh` beside this file. The
+`thismoon/factory` recipe links it to
+`~/.config/factory/factory-worker-hint.sh`, so the registration names that
+path:
 
 ```yaml
 custom_hints:
   factory-worker:
     event: subagent-start
-    command: ["sh", "<path>/factory-worker-hint.sh"]
+    command: [sh, -c, 'exec sh "$HOME/.config/factory/factory-worker-hint.sh"']
     agent_types: [factory-worker-low*, factory-worker-medium*, factory-worker-high*]
 ```
 
 The SubagentStart hook reports a named spawn's name as `agent_type`, and the
 orchestrator names each worker `factory-worker-<tier>-<slug>`. An unnamed
 worker reports its definition name. The script prints the brief when the
-agent type starts with one of the three definition names. It prints nothing
-for any other subagent:
-
-```sh
-#!/bin/sh
-# belt custom hint factory-worker, run on subagent-start
-case "$(jq -r '.agent_type // ""')" in
-factory-worker-low* | factory-worker-medium* | factory-worker-high*)
-    awk '/^```text$/{f=1;next} /^```$/{f=0} f' ~/.claude/skills/factory/worker-brief.md
-    ;;
-esac
-```
+agent type starts with one of the three definition names, reading it from
+the installed copy of this file. It prints nothing for any other subagent.
 
 belt logs a warn event when a hint exits non-zero or prints nothing. An
 `agent_types` key that ends in `*`, such as `factory-worker-low*`, matches

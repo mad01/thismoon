@@ -363,14 +363,15 @@ A worker can run outside the orchestrator's session, as `claude -p`
 started inside its claimed worktree, with the task as its prompt. It gets
 the consuming repo's worker settings file: the dontAsk mode, an allow list
 scoped to the working directory, and a deny list. It also gets the agents
-file with the three definitions, and the MCP servers of code-search-local
-(csl), humanizer and kof. No SubagentStart event fires for a main session,
+file with the three definitions, which the `thismoon/factory` recipe
+installs, and the MCP servers of code-search-local (csl), humanizer and
+kof. No SubagentStart event fires for a main session,
 so no hint delivers the brief; the definition tells the worker to read
 `~/.claude/skills/factory/worker-brief.md` before its first step. It has
 no SendMessage route back, so its final reply is its message, in the same
-contract. That wiring is machine-private (architecture decision record
-0006, `docs/adr/0006`) and lives in the consuming repo's factory recipe,
-not here.
+contract. The settings and MCP files are machine-private (architecture
+decision record 0006, `docs/adr/0006`) and live in the consuming repo's
+factory recipe, not here.
 
 ## Measuring a run: factory-eval
 

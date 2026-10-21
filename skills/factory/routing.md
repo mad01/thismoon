@@ -14,7 +14,8 @@ change without touching them.
 
 When a new model generation ships, change three places together: this
 table, the Model today column and the cheap-tier line under the routing
-table in `SKILL.md`, and the `model` lines in `worker-definitions.md`.
+table in `SKILL.md`, and the `model` lines of the definitions under
+`agents/` (see `worker-definitions.md`).
 
 ## Defaults by work-on tier
 

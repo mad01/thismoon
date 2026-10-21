@@ -36,6 +36,8 @@ docs/HOW-IT-FITS-TOGETHER.md fleet pitch, ralph vocabulary, rollout order
 docs/MEMORY-STACK.md    memory stores (auto memory, agent-memory, kof, worklog,
              handoff, events) and the belt hooks that surface them
 docs/RELEASING.md       release process (release-please, tags, artifacts, verification)
+docs/SANDBOXING.md      seatbelt profiles, spawn wrappers, and denial triage for
+             sandboxed services and MCP servers
 ```
 
 ## Conventions
@@ -45,7 +47,7 @@ docs/RELEASING.md       release process (release-please, tags, artifacts, verifi
 - Releases are per-component semver with `svc/vX.Y.Z` tags, cut by release-please manifest mode on merge to main. Artifact builds are a plain CI matrix job.
 - Build metadata is shared: a component Makefile sets `COMPONENT := <name>`, does `include ../../buildinfo.mk`, and links with `$(BUILDINFO_LDFLAGS)`. Every component then reports the same four-key object (`version`, `commit`, `tag`, `build_time`) from `GET /version` and `<binary> version -o json`, while plain `<binary> version` stays a bare token that status parses.
 - Build targets: darwin/arm64 only — the platform is macOS-focused (see docs/adr/0007; supersedes the target list in 0004).
-- Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity.
+- Release artifacts ship with checksums.txt and cosign keyless signatures; local installs use the "mad01 Local Signing" codesign identity, which `recipes/codesign` creates.
 - Code imported from another repo comes in clean (no git history); the import commit message records the source repo and SHA it came from.
 - Recipes under `recipes/` must use absolute or `~`-prefixed `working_dir` in builds/packages — ralph resolves remote recipe paths against its sources cache, not the consuming machine's checkout.
 - Recipes are the **public layer** only: portable build/install, t-man-guarded hooks, skills. Machine-private wiring (`[[recipe_sources]]` pins, MCP registration, host enables, env/secrets, config overlays) lives in the consuming repo as companion recipes. Hard `depends_on` on the platform foundations t-man and d-man is allowed; on anything else cross-source deps are banned. See docs/adr/0006.
@@ -68,7 +70,7 @@ The repo ships eight agent skills under `skills/`, one directory per skill. Each
 | `present` | Generates a scrollable briefing page with fixation reading, graphs, and inline charts for digesting a work summary or research. | the `present` service (`services/present`) |
 | `worklog` | Saves and resumes cross-session work state keyed by ticket or topic, not by working directory. | the `worklog` MCP, with the `worklog` CLI as fallback |
 
-Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing beyond the checkout. The other four need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable. `factory` also needs the three worker agent definitions and the belt subagent-start hint installed by the consuming repo; the skill holds the text for both.
+Prerequisites: `golang-pro`, `golang-style`, `handoff`, and `loom` need nothing beyond the checkout. The other four need their backing MCP or service registered: that wiring is machine-private and lives in the consuming repo alongside the recipe (see docs/adr/0006), not here. Without the backing MCP the skill still loads, but its tool-backed steps are unavailable. `factory` also needs belt's subagent-start hint registered in the consuming repo's belt config; its recipe installs the three worker agent definitions and the hint script.
 
 ## Release process
 

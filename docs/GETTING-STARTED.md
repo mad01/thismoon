@@ -225,8 +225,9 @@ What happens on this run:
 1. ralph pulls the source cache under `~/.config/ralph/sources/thismoon`.
 2. Each component builds with its own Makefile out of that cache and
    installs to `~/code/bin` (codesigned with a local identity when one is
-   present). Add `~/code/bin` to your PATH if it isn't there yet; the
-   verify commands below run from it.
+   present; the `codesign` recipe creates it first, which prompts once for
+   your login password). Add `~/code/bin` to your PATH if it isn't there
+   yet; the verify commands below run from it.
 3. Each web service registers as a t-man launchd user agent (`csl-web` on
    port 7424, `present` on 7423, and so on) and starts. Service recipes
    depend on t-man, so it's in place before they need it.
@@ -408,9 +409,10 @@ eight skills under `skills/` load without registration of their own: their
 recipes symlink them into `~/.claude/skills`, and they load when invoked by
 name (`/factory`, `/golang-pro`, `/golang-style`, `/handoff`, `/humanizer`,
 `/loom`, `/present`, `/worklog`) or when a task matches. The MCP-backed ones
-assume their server from this section is registered. `factory` also needs its
-three worker definitions in `~/.claude/agents/` and the `factory-worker`
-custom hint in the belt config; `skills/factory/` holds the text for both.
+assume their server from this section is registered. `factory` also needs
+the `factory-worker` custom hint in the belt config; its recipe installs
+the three worker definitions in `~/.claude/agents/` and the hint script,
+and `skills/factory/worker-brief.md` shows the registration.
 
 ### Claude Code mods
 
