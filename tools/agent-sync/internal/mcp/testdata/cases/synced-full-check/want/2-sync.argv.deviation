@@ -1,0 +1,5 @@
+claude [mcp] [list]
+claude [mcp] [get] [alpha]
+claude [mcp] [get] [bravo]
+claude [mcp] [get] [charlie]
+claude [mcp] [get] [mike]

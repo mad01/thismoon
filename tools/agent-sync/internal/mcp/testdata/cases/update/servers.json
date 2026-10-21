@@ -55,6 +55,12 @@
       "command": "/opt/juliet/bin/juliet",
       "args": [],
       "env": {}
+    },
+    "kilo": {
+      "command": "/opt/kilo/bin/kilo",
+      "env": {
+        "KILO_MODE": "fast"
+      }
     }
   }
 }

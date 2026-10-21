@@ -1,0 +1,10 @@
+{
+  "covers": "prune leaves alone a hand-edited user-scope entry whose name claude mcp add would reject (my.server), and each run names it in a note; it is not drift.",
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "prune": true,
+  "deviation": "list drops a name add would reject, so prune never removes it and names it in a note instead. The script read my.server as a server name and removed it."
+}

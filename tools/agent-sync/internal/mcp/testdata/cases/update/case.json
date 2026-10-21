@@ -1,8 +1,9 @@
 {
-  "covers": "Each way a registered spec can differ (command, args, env, transport, url, get failing, get printing neither command nor url) and two that match. The multi-line Environment block the current claude CLI prints and an argument holding a space never match, as in the script.",
+  "covers": "Each way a registered spec can differ (command, args, env, transport, url, get failing, get printing neither command nor url) and four that match: charlie's env in the one-per-line form the current claude CLI prints, hotel's argument holding a space, india's headers and juliet's empty args and env.",
   "steps": [
     "check",
     "plan",
     "sync"
-  ]
+  ],
+  "deviation": "charlie and hotel match. The script split Args at whitespace and read Environment only from its own line, so it re-added both on every run."
 }

@@ -1,0 +1,12 @@
+alpha:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/alpha/bin/alpha
+  Args: mcp
+  Environment:
+    ALPHA_PORT=7001
+    ALPHA_URL=http://localhost:7001
+    ALPHA_RETRIES=3
+
+To remove this server, run: claude mcp remove alpha -s user

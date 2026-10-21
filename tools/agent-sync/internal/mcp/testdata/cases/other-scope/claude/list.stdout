@@ -1,0 +1,5 @@
+Checking MCP server health…
+
+alpha: /opt/alpha/bin/alpha  - Connected
+corp: /opt/corp/bin/corp  - Connected
+shadow: /bin/echo stale - Connected

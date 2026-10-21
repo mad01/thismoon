@@ -1,0 +1,12 @@
++ alpha
+  $ {CLAUDE} mcp add --scope user alpha -- {HOME}/code/bin/alpha mcp --root {HOME}/data/alpha
++ bravo
+  $ {CLAUDE} mcp add --scope user bravo -e BRAVO_PORT=7001 -e BRAVO_RETRIES=3 -e BRAVO_VERBOSE=True -e BRAVO_RATIO=0.5 -e BRAVO_UNSET=None -- /opt/bravo/bin/bravo
++ charlie
+  $ {CLAUDE} mcp add --scope user --transport http charlie https://mcp.example.com/charlie
++ delta
+  $ {CLAUDE} mcp add --scope user --transport sse delta https://mcp.example.com/delta/sse --header X-Team: blue --header X-Retry: 2
++ echo
+  $ {CLAUDE} mcp add-json --scope user echo <json>
++ foxtrot
+  $ {CLAUDE} mcp add-json --scope user foxtrot <json>

@@ -1,0 +1,3 @@
+sha256 of:
+{"alpha": {"args": ["mcp"], "command": "/opt/alpha/bin/alpha", "env": {"ALPHA_PORT": "7001", "ALPHA_RETRIES": 3, "ALPHA_URL": "http://localhost:7001"}}, "bravo": {"args": ["--name", "two words"], "command": "/opt/bravo/bin/bravo"}, "charlie": {"headers": {"X-Team": "blue"}, "transport": "http", "url": "https://mcp.example.com/charlie"}}
+{HOST}

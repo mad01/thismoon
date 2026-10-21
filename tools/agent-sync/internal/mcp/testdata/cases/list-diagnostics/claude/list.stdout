@@ -1,0 +1,13 @@
+Checking MCP server health…
+
+alpha: /opt/alpha/bin/alpha  - Connected
+shadow: /bin/echo local - Connected
+
+MCP config diagnostics ⚠
+
+For help configuring MCP servers, see: ]8;id=c415zw;https://code.claude.com/docs/en/mcp\https://code.claude.com/docs/en/mcp]8;;\
+
+[Conflicting scopes]
+├ Server "shadow" is defined in multiple scopes with different endpoints: user (/bin/echo user), local (/bin/echo local). OAuth tokens are stored per endpoint, so authenticating in one context will not carry over.
+└ Keep the correct endpoint and remove the others: `claude mcp remove shadow -s user` or `claude mcp remove shadow -s local`
+

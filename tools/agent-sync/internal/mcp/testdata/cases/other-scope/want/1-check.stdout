@@ -1,0 +1,4 @@
+drift: 1 MCP server to add, 1 to update (run 'ralph up' to sync)
++ onlylocal
+~ shadow
+note: spec not compared, get shows another scope for: 'corp'

@@ -1,0 +1,3 @@
+sha256 of:
+{"alpha": {"command": "/opt/alpha/bin/alpha"}, "corp": {"command": "/opt/corp/bin/corp"}, "onlylocal": {"args": ["user"], "command": "/bin/echo"}, "shadow": {"args": ["user"], "command": "/bin/echo"}}
+{HOST}

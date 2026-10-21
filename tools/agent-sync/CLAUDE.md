@@ -179,23 +179,35 @@ come from `profiles_file`). Missing servers are added at user scope. A
 server whose `claude mcp get` spec differs is removed and added again;
 remote (http, sse) servers are compared by url alone.
 
-`prune` removes every name `claude mcp list` shows outside the set, but
-only through `claude mcp remove --scope user`. A name that is not a
-user-scope server fails the run with exit 2. Such names are a server in
-another scope, a `claude.ai X` connector, and `plugin`, which a
-plugin-provided server's `plugin:x:y` list line parses to. That matches
-the script.
+Every claude call of a run happens in one empty directory, made with
+`os.MkdirTemp` and removed when the run ends. list and get merge local
+scope (the working directory's entry in `~/.claude.json`) and project
+scope (its `.mcp.json`) over user scope. From the caller's directory they
+would hide a user-scope copy and show servers no user-scope add or remove
+reaches. A server get still shows at another scope, such as an
+enterprise one, is not compared, since get cannot show its user-scope
+copy. It counts as unchanged, and each full run names it in a `note:`
+line.
+
+`prune` removes the names `claude mcp list` shows outside the set, only
+through `claude mcp remove --scope user`. It skips the names that remove
+cannot reach: a `claude.ai X` connector, a plugin's `plugin:x:y` server,
+and a name whose `claude mcp get` Scope line is not User. It also skips a
+name `claude mcp add` would reject, which list sets apart. Each run prints
+one `note:` line per reason, and the names in them are not drift. Prune
+still removes a name get cannot describe, so a failed remove exits 2.
 
 A stamp (the sha256 of the desired set plus the host name) lets sync and
 check skip the per-server get calls while it matches. Plan always runs
-them, and `--force` or `prune` makes sync and check run them too. So with
-prune on, the env and space-in-argument bugs below re-add those servers on
-every sync, and check exits 1 on every run.
+them, and `--force` or `prune` makes sync and check run them too.
 
 `testdata/reference.py <sync_mcp.py>` (from a checkout before the scripts
 were deleted, see Gotchas) regenerates `want/` with
 `testdata/fake-claude.sh` as claude, and `internal/cli/mcp_test.go` runs
-the cases.
+the cases. Run in the caller's directory (reference.py's, or the test's),
+the fake answers with a case's `project-*` responses, as claude would in
+a project with local scope servers. The case test fails any step that
+runs claude there or leaves its empty directory behind.
 
 Deliberate deviations:
 
@@ -203,7 +215,10 @@ Deliberate deviations:
   `stamp-unwritable`).
 - Every entry field is type-checked up front. The script split a string
   `args` into characters (`args-string`) and crashed on an entry that is
-  not an object (`entry-not-object`).
+  not an object (`entry-not-object`). A server name `claude mcp add` would
+  reject is an error on every machine, gated off or not. The script
+  planned the add, and every sync failed with exit 2
+  (`server-name-invalid`).
 - The `hosts` and `profiles` gates read as the script read them
   (`gate-types`), except where it crashed. A hosts list item that is not a
   string is an error (`gate-host-not-string`; the script called
@@ -212,16 +227,45 @@ Deliberate deviations:
 - A claude found first through a relative PATH entry counts as missing
   (see Claude Code above); the script ran that claude.
 - `check` is a new mode. Its want files are written by hand.
-
-Script bugs still kept for parity, seen with claude 2.1.306. Their fixes are
-tracked in MAD-445:
-
-- `--header` goes before the name and url, which claude rejects, so a
-  server with static headers and no headersHelper cannot be added.
-- `claude mcp get` now prints Environment one variable per line, so a
-  server with env is re-added on every full check.
-- An argument that contains a space is re-added on every full check, for
-  the same reason: Args is split at whitespace.
+- `--header` flags go after the name and url. The script put them first,
+  where the variadic flag swallows the name, so claude rejected the add
+  (`fresh-install`).
+- Environment is read in both forms get prints: on its own line, and one
+  variable per line below a bare `Environment:` (claude 2.1.306). Values
+  compare as add writes them, through `str()`, so the JSON number `3`
+  matches the printed `3`. The script read only the first form, so a
+  server with env was re-added on every full check (`update`,
+  `synced-full-check`).
+- Args compare as get prints them, the arguments joined by spaces. The
+  script split the line at whitespace, so an argument holding a space was
+  re-added on every full check (`update`, `synced-full-check`). Comparing
+  printed text has two known costs. An edit that only moves an argument
+  boundary (`["--name two", "words"]` to `["--name", "two words"]`) reads
+  as in sync and needs a re-add by hand. Get's env lines are stripped on
+  both sides of the `=`, so a value with leading or trailing whitespace
+  (`-e "K= v"`) is re-added on every full check.
+- prune skips names a user-scope remove cannot reach (see above), and
+  list keeps a plugin server's full `plugin:x:y` name. The script tried to
+  remove them, so prune failed every sync with exit 2 and check exited 1
+  for good (`prune`, `prune-remove-fails`, `synced-full-check`). The scope
+  lookup adds a get call per prune candidate (`drift-mixed`).
+- list stops at the first blank line after its entries, or at the
+  diagnostics heading. It sets apart a name `claude mcp add` would reject
+  (anything but letters, digits, `-` and `_`), unless it is a claude.ai
+  connector's or a plugin's. prune leaves such a name alone and names it
+  in a note (`prune-invalid-name`). On a scope conflict claude 2.1.306 prints a
+  diagnostics footer below the entries, and the script read three of its
+  lines as server names. prune then tried to remove `For help configuring
+  MCP servers, see` and sync exited 2 (`list-diagnostics`).
+- claude runs in an empty directory, so list and get show user scope
+  whatever directory agent-sync starts in. The script ran claude in its
+  caller's directory and compared a local or project copy against the
+  user-scope entry. A name defined at both scopes was re-added on every
+  run, and its user-scope copy was never compared. One defined only at
+  the other scope failed the user-scope remove with exit 2. agent-sync
+  re-adds the drifted user-scope copy and adds the other at user scope
+  (`other-scope`). A desired server get shows at another scope, such as
+  an enterprise one, is left uncompared, with a note.
 
 ## Build / install / test
 

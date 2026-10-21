@@ -1,0 +1,2 @@
+~ onlylocal
+  $ {CLAUDE} mcp remove --scope user onlylocal

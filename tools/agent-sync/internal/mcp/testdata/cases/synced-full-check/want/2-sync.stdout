@@ -1,0 +1,12 @@
+~ alpha
+  $ {CLAUDE} mcp remove --scope user alpha
+  $ {CLAUDE} mcp add --scope user alpha -e ALPHA_PORT=7001 -e ALPHA_URL=http://localhost:7001 -e ALPHA_RETRIES=3 -- /opt/alpha/bin/alpha mcp
+~ bravo
+  $ {CLAUDE} mcp remove --scope user bravo
+  $ {CLAUDE} mcp add --scope user bravo -- /opt/bravo/bin/bravo --name two words
+- claude.ai Calendar
+  $ {CLAUDE} mcp remove --scope user claude.ai Calendar
+- mike
+  $ {CLAUDE} mcp remove --scope user mike
+- plugin
+  $ {CLAUDE} mcp remove --scope user plugin

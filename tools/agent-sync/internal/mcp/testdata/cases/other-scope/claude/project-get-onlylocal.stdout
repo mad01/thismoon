@@ -1,0 +1,10 @@
+onlylocal:
+  Scope: Local config (private to you in this project)
+  Status: ✘ Failed to connect
+  Issue: CONNECTION_CLOSED: Connection closed
+  Type: stdio
+  Command: /bin/echo
+  Args: local
+  Environment:
+
+To remove this server, run: claude mcp remove onlylocal -s local

@@ -5,7 +5,10 @@ Usage: python3 reference.py <path to sync_mcp.py> [case ...]
 
 Each case runs in a fresh temporary HOME, laid out where sync_mcp.py looks
 (and where internal/cli/mcp_test.go puts the same files for agent-sync),
-with fake-claude.sh as `claude` on PATH. For every plan or sync step it
+with fake-claude.sh as `claude` on PATH. sync_mcp.py runs claude in the
+directory it is started in, this script's working directory, so the fake
+answers with the case's project-* responses there, as claude would in a
+directory with local or project scope servers. For every plan or sync step it
 writes want/<n>-<step>.{stdout,stderr,result,argv,stamp}; a traceback on
 stderr is written as .traceback instead, and the Go test then needs a
 .stderr.deviation. check steps have no counterpart in the script: their
@@ -83,7 +86,12 @@ def lay_out(case_dir, meta, home, host):
 
 def environment(meta, home):
     path = "/usr/bin:/bin" if meta.get("no_claude") else f"{home / BIN_REL}:/usr/bin:/bin"
-    return {"HOME": str(home), "PATH": path, "FAKE_CLAUDE_DIR": str(home / FAKE_DIR_REL)}
+    return {
+        "HOME": str(home),
+        "PATH": path,
+        "FAKE_CLAUDE_DIR": str(home / FAKE_DIR_REL),
+        "FAKE_CLAUDE_PROJECT": os.path.realpath(os.getcwd()),
+    }
 
 
 def normalize(text, home):

@@ -1,0 +1,10 @@
+{
+  "covers": "With prune on, the diagnostics footer claude 2.1.306 prints below the list entries when a name is defined at two scopes (a blank line, the header, an OSC 8 help link and the conflict lines) is not read as server names. shadow, which get places at enterprise scope, is skipped with a note, and every mode exits 0.",
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "prune": true,
+  "deviation": "agent-sync stops reading list at the blank line after the entries and drops names add would reject. The script read three footer lines as server names and tried to remove them, so sync failed on 'For help configuring MCP servers, see' with exit 2."
+}

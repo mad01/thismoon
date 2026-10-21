@@ -38,7 +38,8 @@ type Config struct {
 	// Stamp is where sync records the desired set's hash.
 	Stamp string
 	// Prune removes registered servers the desired set does not name, at
-	// user scope, and makes sync and check compare every spec.
+	// user scope, and makes sync and check compare every spec. A name no
+	// user-scope remove can reach is skipped with a note.
 	Prune bool
 }
 

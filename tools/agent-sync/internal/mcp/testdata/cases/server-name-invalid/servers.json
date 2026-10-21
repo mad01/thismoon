@@ -1,0 +1,7 @@
+{
+  "servers": {
+    "my.server": {
+      "command": "/opt/my/bin/server"
+    }
+  }
+}

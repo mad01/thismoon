@@ -23,7 +23,8 @@ import (
 // in the script and their want files are written by hand.
 const mcpCasesDir = "../mcp/testdata/cases"
 
-// mcpFakeClaude logs its argv and replays the case's canned responses.
+// mcpFakeClaude logs its argv and working directory and replays the case's
+// canned responses.
 const mcpFakeClaude = "../mcp/testdata/fake-claude.sh"
 
 // Where a case's files go inside its HOME: the paths sync_mcp.py
@@ -55,7 +56,14 @@ type mcpCase struct {
 
 // TestMCPMatchesReference runs every case through the CLI, step by step in
 // one temp HOME, and compares each step's stdout, stderr, exit code, the
-// claude calls it made and the stamp it left with the reference's.
+// claude calls it made and the stamp it left with the reference's. A case
+// has .deviation want files exactly when its case.json says why, and each
+// one must override a want file a step reads.
+//
+// The test's working directory stands in for a project with local scope
+// servers: run there, the fake claude answers with the case's project-*
+// responses, as the reference's claude does. Every step must run claude
+// somewhere else.
 func TestMCPMatchesReference(t *testing.T) {
 	dirs, err := filepath.Glob(filepath.Join(mcpCasesDir, "*"))
 	if err != nil || len(dirs) == 0 {
@@ -67,17 +75,26 @@ func TestMCPMatchesReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	host = strings.ToLower(host)
+	project, err := os.Getwd()
+	if err == nil {
+		project, err = filepath.EvalSymlinks(project)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, dir := range dirs {
-		t.Run(filepath.Base(dir), func(t *testing.T) { runMCPCase(t, dir, bin, host) })
+		t.Run(filepath.Base(dir), func(t *testing.T) { runMCPCase(t, dir, bin, host, project) })
 	}
 }
 
-func runMCPCase(t *testing.T, dir, bin, host string) {
+func runMCPCase(t *testing.T, dir, bin, host, project string) {
 	var c mcpCase
 	if err := json.Unmarshal(readFile(t, filepath.Join(dir, "case.json")), &c); err != nil {
 		t.Fatal(err)
 	}
 	home := mcpSetupHome(t, dir, c, host)
+	t.Setenv("FAKE_CLAUDE_PROJECT", project)
+	wants := mcpWants{dir: dir, read: map[string]bool{}}
 	path := bin + ":/usr/bin:/bin"
 	if c.NoClaude {
 		path = "/usr/bin:/bin"
@@ -95,18 +112,19 @@ func runMCPCase(t *testing.T, dir, bin, host string) {
 		stampBefore, _ := os.ReadFile(filepath.Join(home, mcpStampRel))
 		var stdout, stderr bytes.Buffer
 		code := Main(append([]string{"--config", cfg, "mcp"}, words...), &stdout, &stderr)
-		calls := mcpArgvLines(t, home)
+		calls := mcpLogLines(t, home, "argv.log")
 		got := map[string]string{
 			"stdout": normalize.Replace(stdout.String()),
 			"stderr": normalize.Replace(stderr.String()),
 			"result": fmt.Sprintf("exit: %d\n", code),
 			"argv":   normalize.Replace(strings.Join(calls[seen:], "")),
 		}
+		mcpCheckWorkDir(t, id, mcpLogLines(t, home, "pwd.log")[seen:], project)
 		seen = len(calls)
 		for _, field := range []string{"stdout", "stderr", "result", "argv"} {
-			want, ok := mcpWantFile(t, dir, id, field)
+			want, ok := wants.file(t, id, field)
 			if !ok && field == "stderr" {
-				if _, tb := mcpWantFile(t, dir, id, "traceback"); tb {
+				if _, tb := wants.file(t, id, "traceback"); tb {
 					t.Errorf("step %s: the reference crashed; add want/%s.stderr.deviation", id, id)
 					continue
 				}
@@ -123,7 +141,48 @@ func runMCPCase(t *testing.T, dir, bin, host string) {
 			mcpCheckStampUnchanged(t, home, id, stampBefore)
 			continue
 		}
-		mcpCheckStamp(t, dir, home, host, id)
+		mcpCheckStamp(t, wants, home, host, id)
+	}
+	deviations, err := filepath.Glob(filepath.Join(dir, "want", "*.deviation"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (c.Deviation != "") != (len(deviations) > 0) {
+		t.Errorf(
+			"case.json deviation %q, but %d .deviation want files",
+			c.Deviation,
+			len(deviations),
+		)
+	}
+	for _, path := range deviations {
+		if !wants.read[filepath.Base(path)] {
+			t.Errorf("want/%s overrides no want file a step reads", filepath.Base(path))
+		}
+	}
+}
+
+// mcpCheckWorkDir fails unless a step ran its claude calls, whose working
+// directories are dirs, in one directory other than project and removed it
+// before returning. claude merges a directory's local and project scope
+// servers into list and get.
+func mcpCheckWorkDir(t *testing.T, id string, dirs []string, project string) {
+	t.Helper()
+	if len(dirs) == 0 {
+		return
+	}
+	first := strings.TrimSuffix(dirs[0], "\n")
+	for _, d := range dirs {
+		switch d = strings.TrimSuffix(d, "\n"); {
+		case d == project:
+			t.Errorf("step %s ran claude in the test's working directory %s", id, d)
+			return
+		case d != first:
+			t.Errorf("step %s ran claude in %s and %s, want one directory", id, first, d)
+			return
+		}
+	}
+	if _, err := os.Stat(first); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("step %s left claude's working directory %s (stat: %v)", id, first, err)
 	}
 }
 
@@ -136,13 +195,21 @@ func mcpStepID(n int, words []string) string {
 	return strings.Join(parts, "-")
 }
 
-// mcpWantFile returns want/<id>.<field>, or its .deviation override.
-func mcpWantFile(t *testing.T, dir, id, field string) (string, bool) {
+// mcpWants reads a case's want files and records the name of each one it
+// read, so the case can fail on a .deviation file no step reads.
+type mcpWants struct {
+	dir  string
+	read map[string]bool
+}
+
+// file returns want/<id>.<field>, or its .deviation override.
+func (w mcpWants) file(t *testing.T, id, field string) (string, bool) {
 	t.Helper()
-	base := filepath.Join(dir, "want", id+"."+field)
+	base := filepath.Join(w.dir, "want", id+"."+field)
 	for _, path := range []string{base + ".deviation", base} {
 		data, err := os.ReadFile(path)
 		if err == nil {
+			w.read[filepath.Base(path)] = true
 			return string(data), true
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -154,9 +221,9 @@ func mcpWantFile(t *testing.T, dir, id, field string) (string, bool) {
 
 // mcpCheckStamp compares the stamp with want/<id>.stamp: "absent", "raw:"
 // and the bytes, or "sha256 of:" and the text whose hash it must hold.
-func mcpCheckStamp(t *testing.T, dir, home, host, id string) {
+func mcpCheckStamp(t *testing.T, wants mcpWants, home, host, id string) {
 	t.Helper()
-	want, ok := mcpWantFile(t, dir, id, "stamp")
+	want, ok := wants.file(t, id, "stamp")
 	if !ok {
 		t.Errorf("step %s: no want/%s.stamp; run reference.py", id, id)
 		return
@@ -261,10 +328,10 @@ func mcpFakeBin(t *testing.T) string {
 	return bin
 }
 
-// mcpArgvLines returns the fake claude's call log, one line per call.
-func mcpArgvLines(t *testing.T, home string) []string {
+// mcpLogLines returns one of the fake claude's logs, one line per call.
+func mcpLogLines(t *testing.T, home, name string) []string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(home, mcpFakeDirRel, "argv.log"))
+	data, err := os.ReadFile(filepath.Join(home, mcpFakeDirRel, name))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

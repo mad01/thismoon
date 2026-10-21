@@ -1,0 +1,10 @@
+{
+  "covers": "A synced machine with prune on: env printed one variable per line (a number among the values), an argument holding a space and an http server with headers all match, and a claude.ai connector, a plugin's server and an enterprise-managed server are skipped with a note. Plan, sync and a forced check all exit 0 with no changes.",
+  "steps": [
+    "plan",
+    "sync",
+    "check --force"
+  ],
+  "prune": true,
+  "deviation": "The script re-added alpha (env) and bravo (spaced argument) on every run, and tried to remove the three servers outside user scope."
+}

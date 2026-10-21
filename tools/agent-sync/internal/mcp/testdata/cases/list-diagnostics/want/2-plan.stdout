@@ -1,0 +1,9 @@
+- For help configuring MCP servers, see
+  $ {CLAUDE} mcp remove --scope user For help configuring MCP servers, see
+- shadow
+  $ {CLAUDE} mcp remove --scope user shadow
+- └ Keep the correct endpoint and remove the others
+  $ {CLAUDE} mcp remove --scope user └ Keep the correct endpoint and remove the others
+- ├ Server "shadow" is defined in multiple scopes with different endpoints
+  $ {CLAUDE} mcp remove --scope user ├ Server "shadow" is defined in multiple scopes with different endpoints
+(dry-run — no changes applied)

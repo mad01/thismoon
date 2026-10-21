@@ -1,5 +1,4 @@
-drift: 4 MCP servers to remove (run 'ralph up' to sync)
-- claude.ai Calendar
+drift: 2 MCP servers to remove (run 'ralph up' to sync)
 - kilo
-- plugin
 - zulu
+note: prune skips servers outside user scope: 'claude.ai Calendar', 'mike', 'plugin:tools:lint'

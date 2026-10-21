@@ -1,6 +1,6 @@
 {
   "servers": {
-    "o'brien": {
+    "oscar": {
       "transport": "http"
     },
     "papa": {

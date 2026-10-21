@@ -4,5 +4,6 @@
     "check",
     "plan",
     "sync"
-  ]
+  ],
+  "deviation": "--header flags go after the name and url. The script put them first, where the variadic --header swallows the name, so claude rejected the add (missing required argument 'name')."
 }
