@@ -1,0 +1,7 @@
+{
+  "ports": [],
+  "steps": [
+    "check"
+  ],
+  "deviation": "A gate that is a nonzero number or true crashed the script with a TypeError; agent-sync reports it as an error. Both exit 1."
+}

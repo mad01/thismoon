@@ -1,0 +1,1 @@
+{"name": "thismoon", "plugins": [{"name": "by-number", "source": "./mods/by-number"}, {"name": "by-bool", "source": "./mods/by-bool"}]}

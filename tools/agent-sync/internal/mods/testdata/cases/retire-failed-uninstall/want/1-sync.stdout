@@ -1,0 +1,2 @@
+- uninstall panel-policy@thismoon
+  $ {HOME}/bin/claude plugin uninstall panel-policy@thismoon --scope user

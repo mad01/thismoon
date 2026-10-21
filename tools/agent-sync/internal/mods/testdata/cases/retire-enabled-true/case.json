@@ -1,0 +1,9 @@
+{
+  "ports": [
+    "RetireTest.test_installed_false_beside_enabled_true_is_fatal"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ]
+}

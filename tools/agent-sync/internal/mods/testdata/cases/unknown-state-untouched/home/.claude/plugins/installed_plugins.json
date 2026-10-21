@@ -1,0 +1,1 @@
+{"version": 2, "plugins": {"session-band@thismoon": [{"scope": "user", "version": "0.1.0"}], "other@claude-plugins-official": [{"scope": "user", "version": "0.1.0"}], "stray@thismoon": [{"scope": "user", "version": "0.1.0"}]}}

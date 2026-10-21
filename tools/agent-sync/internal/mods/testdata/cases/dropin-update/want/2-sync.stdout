@@ -1,0 +1,3 @@
+~ update lab-pane@lab (1.0.0 -> 1.1.0)
+  $ {HOME}/bin/claude plugin update lab-pane@lab --scope user
+applied 1 change; new sessions or /reload-plugins pick them up; updated mods load after a restart

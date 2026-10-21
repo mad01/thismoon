@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "profile-gated": {
+      "profiles": [
+        "personal"
+      ],
+      "command": "/opt/a/bin/a"
+    },
+    "open": {
+      "command": "/opt/b/bin/b"
+    }
+  }
+}

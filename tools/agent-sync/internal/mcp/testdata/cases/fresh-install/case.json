@@ -1,0 +1,8 @@
+{
+  "covers": "Every add form from an empty registry: stdio with ~ expansion in command and args, env flags after the name with non-string values, http, sse with static headers, add-json for a headersHelper; _ entries and a profile-gated entry on a machine without a ralph config are skipped.",
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

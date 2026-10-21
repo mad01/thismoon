@@ -1,0 +1,5 @@
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/thismoon --scope user
++ install session-band@thismoon
+  $ {HOME}/bin/claude plugin install session-band@thismoon --scope user
+applied 2 changes; new sessions or /reload-plugins pick them up

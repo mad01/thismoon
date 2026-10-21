@@ -1,0 +1,9 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "no_claude": true
+}

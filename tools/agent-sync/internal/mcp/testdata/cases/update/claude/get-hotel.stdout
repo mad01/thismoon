@@ -1,0 +1,8 @@
+hotel:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/hotel/bin/hotel
+  Args: --name two words
+
+To remove this server, run: claude mcp remove hotel -s user

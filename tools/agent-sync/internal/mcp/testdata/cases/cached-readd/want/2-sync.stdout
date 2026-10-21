@@ -1,0 +1,2 @@
++ bravo
+  $ {CLAUDE} mcp add --scope user bravo -- /opt/bravo/bin/bravo

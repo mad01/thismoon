@@ -1,0 +1,2 @@
++ echo
+  $ {CLAUDE} mcp add-json --scope user echo <json>

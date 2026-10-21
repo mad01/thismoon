@@ -1,0 +1,1 @@
+{"name": "thismoon", "plugins": [{"name": "default-on", "source": "./mods/default-on"}, {"name": "string-yes", "source": "./mods/string-yes"}, {"name": "zero", "source": "./mods/zero"}, {"name": "null", "source": "./mods/null"}, {"name": "empty-list", "source": "./mods/empty-list"}, {"name": "retired-zero", "source": "./mods/retired-zero"}]}

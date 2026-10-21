@@ -1,0 +1,11 @@
+apiVersion: catalog.mad01/v1alpha1
+kind: Component
+metadata:
+  name: agent-sync
+  description: syncs coding agent config (Claude Code settings, mods, MCP servers) from a data repo into the live files (CLI)
+  tags: [go, cli]
+spec:
+  type: cli
+  lifecycle: development
+  owner: mad01
+  system: thismoon

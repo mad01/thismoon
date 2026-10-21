@@ -1,0 +1,9 @@
+{
+  "ports": [],
+  "steps": [
+    "check"
+  ],
+  "symlinks": {
+    "link": "{HOME}/sources/thismoon"
+  }
+}

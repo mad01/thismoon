@@ -1,0 +1,5 @@
+~ update session-band@thismoon (0.1.0 -> 0.2.0)
+  $ {HOME}/bin/claude plugin update session-band@thismoon --scope user
+- uninstall panel-policy@thismoon
+  $ {HOME}/bin/claude plugin uninstall panel-policy@thismoon --scope user
+(dry-run, no changes applied)

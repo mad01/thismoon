@@ -1,0 +1,11 @@
+{
+  "ports": [
+    "RetireTest.test_failed_uninstall_exits_2"
+  ],
+  "steps": [
+    "sync"
+  ],
+  "env": {
+    "FAKE_CLAUDE_EXIT": "1"
+  }
+}

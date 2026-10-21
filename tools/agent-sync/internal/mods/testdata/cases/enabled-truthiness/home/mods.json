@@ -1,0 +1,1 @@
+{"marketplace": {"name": "thismoon", "path": "~/sources/thismoon"}, "mods": {"default-on": {}, "string-yes": {"enabled": "yes"}, "zero": {"enabled": 0}, "null": {"enabled": null}, "empty-list": {"enabled": []}, "retired-zero": {"installed": false, "enabled": 0}}}

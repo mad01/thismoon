@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "CliArgsTest.test_each_verb_maps_to_a_user_scope_plugin_command"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

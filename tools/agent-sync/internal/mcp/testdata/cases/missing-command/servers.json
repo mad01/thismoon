@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "alpha": {
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+error: {HOME}/mods.json: mod 'session-band': 'hosts' must be an array, got a number

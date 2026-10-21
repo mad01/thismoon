@@ -1,0 +1,7 @@
+{
+  "covers": "hosts and profiles gates that are not lists of strings, read as the script read them: a falsy gate (\"\", false, 0) is no gate, a string iterates by character, an object by key, and a profiles item goes through str() before it is lowercased.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

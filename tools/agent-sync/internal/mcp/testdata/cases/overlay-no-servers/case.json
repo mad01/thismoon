@@ -1,0 +1,6 @@
+{
+  "covers": "An overlay without a servers object is an error.",
+  "steps": [
+    "plan"
+  ]
+}

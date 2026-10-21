@@ -1,0 +1,63 @@
+{
+  "servers": {
+    "host-match": {
+      "hosts": [
+        "{HOST_UPPER}"
+      ],
+      "command": "/opt/a/bin/a"
+    },
+    "host-miss": {
+      "hosts": [
+        "some-other-host"
+      ],
+      "command": "/opt/b/bin/b"
+    },
+    "profile-match": {
+      "profiles": [
+        "personal"
+      ],
+      "command": "/opt/c/bin/c"
+    },
+    "profile-miss": {
+      "profiles": [
+        "work"
+      ],
+      "command": "/opt/d/bin/d"
+    },
+    "both-match": {
+      "hosts": [
+        "{HOST}"
+      ],
+      "profiles": [
+        "LAPTOP"
+      ],
+      "command": "/opt/e/bin/e"
+    },
+    "host-ok-profile-miss": {
+      "hosts": [
+        "{HOST}"
+      ],
+      "profiles": [
+        "work"
+      ],
+      "command": "/opt/f/bin/f"
+    },
+    "empty-gates": {
+      "hosts": [],
+      "profiles": [],
+      "command": "/opt/g/bin/g"
+    },
+    "null-gates": {
+      "hosts": null,
+      "profiles": null,
+      "command": "/opt/h/bin/h"
+    },
+    "host-miss-bad-profiles": {
+      "hosts": [
+        "some-other-host"
+      ],
+      "profiles": "work",
+      "command": "/opt/i/bin/i"
+    }
+  }
+}

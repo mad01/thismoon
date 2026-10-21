@@ -1,0 +1,6 @@
+{
+  "covers": "A ralph config that is not valid TOML gives the machine no profiles.",
+  "steps": [
+    "plan"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "covers": "A stdio server without a command that is registered with another spec: sync removes it, then fails on the add, as the script did.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

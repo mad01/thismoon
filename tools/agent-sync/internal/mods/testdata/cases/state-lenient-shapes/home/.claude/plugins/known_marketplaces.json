@@ -1,0 +1,1 @@
+{"thismoon": {"source": {"source": "github", "repo": "example/thismoon"}}, "no-source": {}, "null-source": {"source": null}, "empty-path": {"source": {"source": "directory", "path": ""}}}

@@ -1,0 +1,1 @@
+{"marketplace": {"name": "thismoon", "path": "~/sources/thismoon"}, "mods": {"one-tag-matches": {"enabled": true, "profiles": ["work", "LAB"]}, "no-tag-matches": {"enabled": true, "profiles": ["work"]}, "no-gate": {"enabled": true}, "empty-gate": {"enabled": true, "profiles": []}, "string-gate": {"enabled": true, "profiles": "lab"}}}

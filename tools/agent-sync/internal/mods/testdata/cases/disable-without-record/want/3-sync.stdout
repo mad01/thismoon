@@ -1,0 +1,3 @@
+- disable panel-policy@thismoon
+  $ {HOME}/bin/claude plugin disable panel-policy@thismoon --scope user
+applied 1 change; new sessions or /reload-plugins pick them up

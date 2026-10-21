@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "alpha": {
+      "command": "/opt/alpha/bin/alpha"
+    },
+    "kilo": {
+      "hosts": [
+        "some-other-host"
+      ],
+      "command": "/opt/kilo/bin/kilo"
+    }
+  }
+}

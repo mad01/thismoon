@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "RetireTest.test_gated_off_retired_mod_is_left_alone"
+  ],
+  "steps": [
+    "check"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "alpha": {
+      "hosts": [
+        1
+      ],
+      "command": "/opt/a/bin/a"
+    }
+  }
+}

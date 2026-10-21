@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "DropInTest.test_dropin_never_prunes_unrelated_state"
+  ],
+  "steps": [
+    "check"
+  ]
+}

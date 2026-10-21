@@ -1,0 +1,8 @@
+{
+  "hooks": {
+    "Stop": [
+      "t"
+    ]
+  },
+  "localOnly": 1
+}

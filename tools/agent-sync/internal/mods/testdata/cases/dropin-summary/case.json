@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "DropInTest.test_summary_covers_base_and_dropins"
+  ],
+  "steps": [
+    "check"
+  ]
+}

@@ -1,0 +1,5 @@
+~ enable session-band@thismoon
+  $ {HOME}/bin/claude plugin enable session-band@thismoon --scope user
+~ update session-band@thismoon (0.1.0 -> 0.2.0)
+  $ {HOME}/bin/claude plugin update session-band@thismoon --scope user
+(dry-run, no changes applied)

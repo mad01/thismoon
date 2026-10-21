@@ -1,0 +1,5 @@
++ marketplace 7 -> {HOME}/sources/7
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/7 --scope user
++ install session-band@7
+  $ {HOME}/bin/claude plugin install session-band@7 --scope user
+(dry-run, no changes applied)

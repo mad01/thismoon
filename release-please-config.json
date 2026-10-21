@@ -15,6 +15,7 @@
     "services/present": { "component": "present" },
     "services/speak": { "component": "speak" },
     "services/status": { "component": "status" },
+    "tools/agent-sync": { "component": "agent-sync" },
     "tools/belt": { "component": "belt" },
     "tools/clipboard": { "component": "clipboard" },
     "tools/factory-eval": { "component": "factory-eval" },

@@ -1,0 +1,15 @@
+{
+  "ports": [
+    "UninstallPlanTest.test_retired_mod_with_an_install_record_is_uninstalled_not_disabled",
+    "RetireTest.test_check_reports_a_pending_uninstall_as_drift",
+    "RetireTest.test_dry_run_lists_the_uninstall_command",
+    "RetireTest.test_apply_runs_a_user_scope_uninstall"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "state:after",
+    "check"
+  ]
+}

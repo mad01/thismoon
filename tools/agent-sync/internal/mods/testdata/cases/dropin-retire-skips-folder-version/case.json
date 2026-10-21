@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "DropInTest.test_dropin_retire_plans_the_uninstall_without_reading_its_folder_version"
+  ],
+  "steps": [
+    "check"
+  ]
+}

@@ -1,0 +1,7 @@
+delta:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: stdio
+  Command: /opt/delta/bin/delta
+
+To remove this server, run: claude mcp remove delta -s user

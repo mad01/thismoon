@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "UninstallPlanTest.test_retired_mod_the_marketplace_no_longer_lists_is_still_uninstalled"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

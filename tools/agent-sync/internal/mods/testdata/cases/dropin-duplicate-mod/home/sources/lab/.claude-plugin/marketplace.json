@@ -1,0 +1,1 @@
+{"name": "lab", "plugins": [{"name": "session-band", "source": "./mods/session-band"}]}

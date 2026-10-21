@@ -1,0 +1,7 @@
+{
+  "covers": "A profiles gate that is a nonzero number, which Python cannot iterate. The script crashed.",
+  "steps": [
+    "plan"
+  ],
+  "deviation": "stderr: the script crashed (TypeError); agent-sync names the file, the server and the field."
+}

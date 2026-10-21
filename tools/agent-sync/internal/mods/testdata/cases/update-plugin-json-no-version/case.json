@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "VersionUpdateTest.test_plugin_json_without_version_is_a_note_not_drift"
+  ],
+  "steps": [
+    "check"
+  ]
+}

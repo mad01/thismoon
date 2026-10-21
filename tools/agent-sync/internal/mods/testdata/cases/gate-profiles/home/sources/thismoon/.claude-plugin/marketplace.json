@@ -1,0 +1,1 @@
+{"name": "thismoon", "plugins": [{"name": "one-tag-matches", "source": "./mods/one-tag-matches"}, {"name": "no-tag-matches", "source": "./mods/no-tag-matches"}, {"name": "no-gate", "source": "./mods/no-gate"}, {"name": "empty-gate", "source": "./mods/empty-gate"}, {"name": "string-gate", "source": "./mods/string-gate"}]}

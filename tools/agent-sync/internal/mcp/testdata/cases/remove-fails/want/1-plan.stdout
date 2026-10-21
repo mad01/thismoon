@@ -1,0 +1,4 @@
+~ alpha
+  $ {CLAUDE} mcp remove --scope user alpha
+  $ {CLAUDE} mcp add --scope user alpha -- /opt/alpha/v2/bin/alpha
+(dry-run — no changes applied)

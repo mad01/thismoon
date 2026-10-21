@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "UpdatePlanTest.test_unknown_folder_version_plans_no_update",
+    "VersionUpdateTest.test_missing_plugin_json_is_a_note_not_drift"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ]
+}

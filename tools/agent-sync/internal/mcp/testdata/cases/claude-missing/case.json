@@ -1,0 +1,9 @@
+{
+  "covers": "No claude on PATH: exit 1, checked before servers.json is read.",
+  "steps": [
+    "plan",
+    "sync",
+    "check"
+  ],
+  "no_claude": true
+}

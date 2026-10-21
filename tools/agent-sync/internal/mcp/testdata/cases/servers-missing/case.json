@@ -1,0 +1,8 @@
+{
+  "covers": "No servers.json: an error before any list call.",
+  "steps": [
+    "plan",
+    "sync",
+    "check"
+  ]
+}

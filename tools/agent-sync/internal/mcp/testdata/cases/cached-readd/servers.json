@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "alpha": {
+      "command": "/opt/alpha/bin/alpha"
+    },
+    "bravo": {
+      "command": "/opt/bravo/bin/bravo"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "covers": "hosts and profiles gates, case-insensitive, both applied; profiles is not read when the host gate already failed.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

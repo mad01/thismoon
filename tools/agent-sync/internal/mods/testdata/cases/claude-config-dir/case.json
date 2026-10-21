@@ -1,0 +1,11 @@
+{
+  "ports": [
+    "CheckModeTest.test_claude_config_dir_relocates_the_state_files"
+  ],
+  "steps": [
+    "check"
+  ],
+  "env": {
+    "CLAUDE_CONFIG_DIR": "{HOME}/alt-config"
+  }
+}

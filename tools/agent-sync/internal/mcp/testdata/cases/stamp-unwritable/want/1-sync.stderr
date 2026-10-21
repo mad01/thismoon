@@ -1,0 +1,1 @@
+warn: could not write sync stamp {HOME}/.cache/claude-mcp/sync.hash: [Errno 20] Not a directory: '{HOME}/.cache/claude-mcp'

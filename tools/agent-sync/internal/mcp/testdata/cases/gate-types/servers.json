@@ -1,0 +1,52 @@
+{
+  "servers": {
+    "hosts-empty-string": {
+      "hosts": "",
+      "command": "/opt/a/bin/a"
+    },
+    "hosts-false": {
+      "hosts": false,
+      "command": "/opt/b/bin/b"
+    },
+    "hosts-zero": {
+      "hosts": 0,
+      "command": "/opt/c/bin/c"
+    },
+    "hosts-string": {
+      "hosts": "{HOST}",
+      "command": "/opt/d/bin/d"
+    },
+    "hosts-object": {
+      "hosts": {
+        "{HOST_UPPER}": "any value"
+      },
+      "command": "/opt/e/bin/e"
+    },
+    "profiles-number": {
+      "profiles": [
+        1
+      ],
+      "command": "/opt/f/bin/f"
+    },
+    "profiles-bool": {
+      "profiles": [
+        true
+      ],
+      "command": "/opt/g/bin/g"
+    },
+    "profiles-float": {
+      "profiles": [
+        2.0
+      ],
+      "command": "/opt/h/bin/h"
+    },
+    "profiles-string": {
+      "profiles": "personal",
+      "command": "/opt/i/bin/i"
+    },
+    "profiles-false": {
+      "profiles": false,
+      "command": "/opt/j/bin/j"
+    }
+  }
+}

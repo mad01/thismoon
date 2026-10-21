@@ -1,0 +1,4 @@
+drift: 2 changes pending (run 'ralph up' to apply)
+  + marketplace thismoon -> {HOME}/sources/thismoon
+  + install panel-policy@thismoon
+warn: session-band@thismoon is not in the marketplace listing yet; skipped

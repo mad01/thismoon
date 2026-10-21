@@ -1,0 +1,5 @@
+drift: 4 changes pending (run 'ralph up' to apply)
+  + install default-on@thismoon
+  + install string-yes@thismoon
+  - disable zero@thismoon
+  - uninstall retired-zero@thismoon

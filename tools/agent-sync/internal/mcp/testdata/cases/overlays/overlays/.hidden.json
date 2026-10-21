@@ -1,0 +1,7 @@
+{
+  "servers": {
+    "delta": {
+      "command": "/opt/delta/bin/delta"
+    }
+  }
+}

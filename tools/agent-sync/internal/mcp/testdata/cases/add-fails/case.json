@@ -1,0 +1,7 @@
+{
+  "covers": "The second add failing: exit 2 after the first add ran, no stamp.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

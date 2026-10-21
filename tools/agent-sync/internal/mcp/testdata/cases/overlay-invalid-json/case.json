@@ -1,0 +1,7 @@
+{
+  "covers": "An overlay that is not valid JSON is an error.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

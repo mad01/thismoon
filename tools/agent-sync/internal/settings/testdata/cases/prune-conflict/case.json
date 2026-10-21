@@ -1,0 +1,30 @@
+{
+  "ports": [
+    "PruneEndToEndTest.test_prune_path_in_template_is_an_error"
+  ],
+  "steps": [
+    "sync",
+    "check"
+  ],
+  "prune": [
+    [
+      "hooks",
+      "Retired"
+    ],
+    [
+      "enabledPlugins",
+      "old@x"
+    ],
+    [
+      "hooks",
+      "Stop"
+    ]
+  ],
+  "stderr_contains": [
+    "error:",
+    "hooks.Stop"
+  ],
+  "stderr_excludes": [
+    "hooks.Retired"
+  ]
+}

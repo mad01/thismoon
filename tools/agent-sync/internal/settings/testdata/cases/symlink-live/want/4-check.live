@@ -1,0 +1,9 @@
+{
+  "model": "opus",
+  "localOnly": true,
+  "hooks": {
+    "Stop": [
+      "t"
+    ]
+  }
+}

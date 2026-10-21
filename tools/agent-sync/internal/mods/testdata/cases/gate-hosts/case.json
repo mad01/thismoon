@@ -1,0 +1,9 @@
+{
+  "ports": [
+    "GatingTest.test_host_gate_is_case_insensitive"
+  ],
+  "steps": [
+    "check",
+    "plan"
+  ]
+}

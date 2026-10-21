@@ -1,0 +1,18 @@
+{
+  "ports": [
+    "PruneEndToEndTest.test_absent_prune_path_is_a_no_op"
+  ],
+  "steps": [
+    "check"
+  ],
+  "prune": [
+    [
+      "hooks",
+      "Retired"
+    ],
+    [
+      "enabledPlugins",
+      "old@x"
+    ]
+  ]
+}

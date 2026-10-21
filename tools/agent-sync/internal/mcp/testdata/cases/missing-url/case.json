@@ -1,0 +1,7 @@
+{
+  "covers": "A remote server without a url is an error after its + line, in plan too; the name is repr()'d with double quotes because it holds a single quote.",
+  "steps": [
+    "plan",
+    "sync"
+  ]
+}

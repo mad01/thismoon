@@ -1,0 +1,19 @@
+{
+  "ports": [
+    "PruneEndToEndTest.test_malformed_prune_paths_are_an_error (non-str key)",
+    "PruneTest.test_malformed_entries_are_reported (non-str key)"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ],
+  "prune": [
+    [
+      "hooks",
+      1
+    ]
+  ],
+  "stderr_contains": [
+    "error:"
+  ]
+}

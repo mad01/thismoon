@@ -1,0 +1,5 @@
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ claude plugin marketplace add {HOME}/sources/thismoon --scope user
++ install session-band@thismoon
+  $ claude plugin install session-band@thismoon --scope user
+(dry-run, no changes applied)

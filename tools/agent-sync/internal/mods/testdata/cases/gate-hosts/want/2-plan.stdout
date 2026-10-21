@@ -1,0 +1,11 @@
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/thismoon --scope user
++ install this-host-upper@thismoon
+  $ {HOME}/bin/claude plugin install this-host-upper@thismoon --scope user
++ install both-gates-pass@thismoon
+  $ {HOME}/bin/claude plugin install both-gates-pass@thismoon --scope user
++ install object-gate@thismoon
+  $ {HOME}/bin/claude plugin install object-gate@thismoon --scope user
++ install empty-gate@thismoon
+  $ {HOME}/bin/claude plugin install empty-gate@thismoon --scope user
+(dry-run, no changes applied)

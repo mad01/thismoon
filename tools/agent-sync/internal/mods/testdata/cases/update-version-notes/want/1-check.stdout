@@ -1,0 +1,11 @@
+drift: 1 change pending (run 'ralph up' to apply)
+  ~ update absolute-source@thismoon (0.1.0 -> 0.3.0)
+note: not-json@thismoon: cannot tell its marketplace version (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)); not checked for updates
+note: a-list@thismoon: cannot tell its marketplace version ({HOME}/sources/thismoon/mods/a-list/.claude-plugin/plugin.json has no 'version'); not checked for updates
+note: number-version@thismoon: cannot tell its marketplace version ({HOME}/sources/thismoon/mods/number-version/.claude-plugin/plugin.json has no 'version'); not checked for updates
+note: empty-version@thismoon: cannot tell its marketplace version ({HOME}/sources/thismoon/mods/empty-version/.claude-plugin/plugin.json has no 'version'); not checked for updates
+note: is-a-directory@thismoon: cannot tell its marketplace version ([Errno 21] Is a directory: '{HOME}/sources/thismoon/mods/is-a-directory/.claude-plugin/plugin.json'); not checked for updates
+note: dotdot-missing@thismoon: cannot tell its marketplace version ([Errno 2] No such file or directory: '{HOME}/sources/thismoon/mods/../mods/dotdot-missing/.claude-plugin/plugin.json'); not checked for updates
+note: remote-source@thismoon: cannot tell its marketplace version (manifest source {'source': 'github', 'repo': 'example/remote'} is not a relative path); not checked for updates
+note: no-source@thismoon: cannot tell its marketplace version (manifest source None is not a relative path); not checked for updates
+note: empty-source@thismoon: cannot tell its marketplace version (manifest source '' is not a relative path); not checked for updates

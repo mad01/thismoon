@@ -1,0 +1,1 @@
+{"permissions": {"allow": ["Edit", "mcp__x__*"], "deny": ["Bash(curl:*)", "Bash(sudo:*)"], "additionalDirectories": ["~/Workspaces", "/tmp"]}, "enabledPlugins": {"one@x": true}, "hooks": {"PreToolUse": [{"matcher": "Write"}]}, "env": {"HOST_ONLY": "yes"}}

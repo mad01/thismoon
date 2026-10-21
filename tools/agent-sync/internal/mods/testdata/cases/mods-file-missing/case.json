@@ -1,0 +1,7 @@
+{
+  "ports": [],
+  "steps": [
+    "check"
+  ],
+  "deviation": "A missing mods file is 'mods file not found: <path>'; the script said '<path>: top level must be an object'. Both exit 1."
+}

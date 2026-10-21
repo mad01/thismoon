@@ -1,0 +1,14 @@
+{
+  "ports": [
+    "UpdatePlanTest.test_version_skew_plans_an_update",
+    "VersionUpdateTest.test_check_reports_version_skew_as_drift",
+    "VersionUpdateTest.test_apply_runs_a_user_scope_update"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "state:after",
+    "check"
+  ]
+}

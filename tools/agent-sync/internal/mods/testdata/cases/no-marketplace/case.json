@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "CheckModeTest.test_missing_marketplace_warns_and_exits_zero"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

@@ -1,0 +1,6 @@
+plugin marketplace add {HOME}/sources/thismoon --scope user
+plugin install to-install@thismoon --scope user
+plugin enable to-enable@thismoon --scope user
+plugin update to-update@thismoon --scope user
+plugin disable to-disable@thismoon --scope user
+plugin uninstall to-retire@thismoon --scope user

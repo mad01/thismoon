@@ -1,0 +1,60 @@
+{
+  "servers": {
+    "alpha": {
+      "command": "~/code/bin/alpha",
+      "args": [
+        "mcp"
+      ]
+    },
+    "bravo": {
+      "command": "/opt/bravo/bin/bravo",
+      "args": [
+        "serve",
+        "--port",
+        "7002"
+      ]
+    },
+    "charlie": {
+      "command": "/opt/charlie/bin/charlie",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "CHARLIE_PORT": "7003"
+      }
+    },
+    "delta": {
+      "transport": "http",
+      "url": "https://mcp.example.com/delta"
+    },
+    "echo": {
+      "transport": "http",
+      "url": "https://mcp.example.com/echo/v2"
+    },
+    "foxtrot": {
+      "command": "/opt/foxtrot/bin/foxtrot"
+    },
+    "golf": {
+      "command": "/opt/golf/bin/golf"
+    },
+    "hotel": {
+      "command": "/opt/hotel/bin/hotel",
+      "args": [
+        "--name",
+        "two words"
+      ]
+    },
+    "india": {
+      "transport": "http",
+      "url": "https://mcp.example.com/india",
+      "headers": {
+        "X-Team": "blue"
+      }
+    },
+    "juliet": {
+      "command": "/opt/juliet/bin/juliet",
+      "args": [],
+      "env": {}
+    }
+  }
+}

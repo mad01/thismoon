@@ -1,0 +1,11 @@
+{
+  "ports": [
+    "EndToEndTest.test_in_sync_after_union"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "prune": []
+}

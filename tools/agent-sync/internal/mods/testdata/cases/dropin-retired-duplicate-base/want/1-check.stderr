@@ -1,0 +1,1 @@
+error: {HOME}/mods.d/lab.json: mod 'panel-policy' is already declared by {HOME}/mods.json; mod names must be unique across mods.json and mods.d/

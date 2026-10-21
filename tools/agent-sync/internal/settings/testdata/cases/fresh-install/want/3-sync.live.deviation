@@ -1,0 +1,9 @@
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+merged local overlay: {HOME}/.claude/settings.local.json
+overwritten (template wins):
+  permissions.allow (array)
+    + "Write"
+
+wrote {HOME}/.claude/settings.json

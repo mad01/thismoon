@@ -1,0 +1,9 @@
+charlie:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: http
+  URL: https://mcp.example.com/charlie
+
+To remove this server, run: claude mcp remove charlie -s user
+  Headers:
+    X-Team: blue

@@ -1,0 +1,2 @@
+plugin enable session-band@thismoon --scope user
+plugin update session-band@thismoon --scope user

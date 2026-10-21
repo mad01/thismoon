@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "UninstallPlanTest.test_retired_mod_without_an_install_record_plans_nothing",
+    "RetireTest.test_retired_mod_with_no_install_record_is_in_sync"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ]
+}

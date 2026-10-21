@@ -1,0 +1,8 @@
+{
+  "covers": "A server removed by hand while the stamp matches: the fast path still adds it back, without get calls for the rest.",
+  "steps": [
+    "sync",
+    "sync",
+    "check"
+  ]
+}

@@ -1,0 +1,6 @@
+overwritten (template wins):
+  model
+    - "sonnet"
+    + "opus"
+
+(dry-run — no changes written)

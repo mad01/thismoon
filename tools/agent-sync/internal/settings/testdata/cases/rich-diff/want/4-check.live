@@ -1,0 +1,99 @@
+{
+  "zzLocal": {
+    "keep": [
+      1,
+      2
+    ]
+  },
+  "model": "opus",
+  "env": {
+    "EDITOR": "vim",
+    "LOCAL_ONLY": "1",
+    "LANG": "en_US.UTF-8",
+    "HOST_ONLY": "yes"
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Bash(git status)",
+      "mcp__x__*"
+    ],
+    "deny": [
+      "Bash(curl:*)",
+      "Bash(sudo:*)"
+    ],
+    "additionalDirectories": [
+      "~/code",
+      "/tmp",
+      "~/Workspaces"
+    ],
+    "defaultMode": "acceptEdits",
+    "ask": [
+      "WebFetch"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "belt hook stop"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write"
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh"
+  },
+  "flags": [
+    3,
+    2,
+    1
+  ],
+  "ratio": 1.0,
+  "big": 12345678901234567890123,
+  "tiny": 1e-07,
+  "huge": 1e+16,
+  "on": 1,
+  "text": "caf\u00e9 \ud83d\ude00 \"quoted\" back\\slash tab\t <b>&amp;</b> /path",
+  "nested": {
+    "a": {
+      "b": {
+        "c": [
+          1,
+          {
+            "d": null
+          }
+        ]
+      },
+      "x": 1
+    }
+  },
+  "dotted.key": {
+    "inner.key": true,
+    "local.key": 1
+  },
+  "typeSwap": {
+    "was": "object"
+  },
+  "localScalar": null,
+  "emoji\ud83d\ude00": "\ud83d\ude00",
+  "\u00fcber": {
+    "stra\u00dfe": "\u00e9"
+  },
+  "emptyObj": {},
+  "emptyList": [],
+  "enabledPlugins": {
+    "one@x": true
+  }
+}

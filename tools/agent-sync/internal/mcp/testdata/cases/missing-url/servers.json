@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "o'brien": {
+      "transport": "http"
+    },
+    "papa": {
+      "transport": "sse",
+      "url": ""
+    }
+  }
+}

@@ -1,0 +1,8 @@
+- claude.ai Calendar
+  $ {CLAUDE} mcp remove --scope user claude.ai Calendar
+- kilo
+  $ {CLAUDE} mcp remove --scope user kilo
+- plugin
+  $ {CLAUDE} mcp remove --scope user plugin
+- zulu
+  $ {CLAUDE} mcp remove --scope user zulu

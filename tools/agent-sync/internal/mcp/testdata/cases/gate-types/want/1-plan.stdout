@@ -1,0 +1,15 @@
++ hosts-empty-string
+  $ {CLAUDE} mcp add --scope user hosts-empty-string -- /opt/a/bin/a
++ hosts-false
+  $ {CLAUDE} mcp add --scope user hosts-false -- /opt/b/bin/b
++ hosts-object
+  $ {CLAUDE} mcp add --scope user hosts-object -- /opt/e/bin/e
++ hosts-zero
+  $ {CLAUDE} mcp add --scope user hosts-zero -- /opt/c/bin/c
++ profiles-bool
+  $ {CLAUDE} mcp add --scope user profiles-bool -- /opt/g/bin/g
++ profiles-false
+  $ {CLAUDE} mcp add --scope user profiles-false -- /opt/j/bin/j
++ profiles-number
+  $ {CLAUDE} mcp add --scope user profiles-number -- /opt/f/bin/f
+(dry-run — no changes applied)

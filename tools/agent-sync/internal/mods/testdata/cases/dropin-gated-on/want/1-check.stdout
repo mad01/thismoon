@@ -1,0 +1,3 @@
+drift: 2 changes pending (run 'ralph up' to apply)
+  + marketplace lab -> {HOME}/sources/lab
+  + install lab-pane@lab

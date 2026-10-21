@@ -1,0 +1,24 @@
+{
+  "ports": [
+    "PruneEndToEndTest.test_check_reports_pruned_key_as_drift",
+    "PruneEndToEndTest.test_dry_run_lists_pruned_key_under_its_own_heading",
+    "PruneEndToEndTest.test_real_run_removes_the_key_and_is_then_in_sync",
+    "PruneEndToEndTest.test_local_only_listing_excludes_pruned_keys"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "check"
+  ],
+  "prune": [
+    [
+      "hooks",
+      "Retired"
+    ],
+    [
+      "enabledPlugins",
+      "old@x"
+    ]
+  ]
+}

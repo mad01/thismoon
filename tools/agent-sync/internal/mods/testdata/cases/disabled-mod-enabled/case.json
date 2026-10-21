@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "PlanTest.test_disabled_mod_that_is_enabled_gets_disabled"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

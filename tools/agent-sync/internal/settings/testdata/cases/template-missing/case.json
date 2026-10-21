@@ -1,0 +1,11 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "sync"
+  ],
+  "prune": [],
+  "stderr_contains": [
+    "error: template not found:"
+  ]
+}

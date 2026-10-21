@@ -1,0 +1,6 @@
+{
+  "covers": "A profiles key that is not a list gives the machine no profiles.",
+  "steps": [
+    "plan"
+  ]
+}

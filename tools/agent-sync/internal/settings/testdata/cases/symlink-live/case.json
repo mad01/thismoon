@@ -1,0 +1,11 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "check"
+  ],
+  "prune": [],
+  "live_link": "symlink"
+}

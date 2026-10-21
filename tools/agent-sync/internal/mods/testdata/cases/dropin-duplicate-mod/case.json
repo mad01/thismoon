@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "DropInTest.test_duplicate_mod_name_across_files_is_rejected"
+  ],
+  "steps": [
+    "check"
+  ]
+}

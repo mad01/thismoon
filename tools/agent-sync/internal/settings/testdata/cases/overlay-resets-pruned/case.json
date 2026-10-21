@@ -1,0 +1,19 @@
+{
+  "ports": [
+    "PruneEndToEndTest.test_overlay_can_set_a_pruned_path_again"
+  ],
+  "steps": [
+    "sync",
+    "check"
+  ],
+  "prune": [
+    [
+      "hooks",
+      "Retired"
+    ],
+    [
+      "enabledPlugins",
+      "old@x"
+    ]
+  ]
+}

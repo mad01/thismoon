@@ -1,0 +1,4 @@
+mods already in sync (1 enabled, 1 disabled, 0 retired, 0 gated off; marketplace thismoon -> {HOME}/sources/thismoon)
+claude-mods: drop-in {HOME}/mods.d/a-dir.json points at a missing file ({HOME}/mods.d/a-dir.json); skipped
+claude-mods: drop-in {HOME}/mods.d/gone.json points at a missing file ({HOME}/nowhere/gone.json); skipped
+claude-mods: marketplace 'hidden' is not on disk at {HOME}/sources/hidden (.hidden.json; ralph up pulls the sources); skipped

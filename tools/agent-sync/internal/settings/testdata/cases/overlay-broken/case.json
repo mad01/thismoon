@@ -1,0 +1,13 @@
+{
+  "ports": [],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ],
+  "prune": [],
+  "stderr_contains": [
+    "warning: skipping",
+    "Illegal trailing comma"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "ports": [
+    "EndToEndTest.test_check_reports_drift_on_first_line",
+    "EndToEndTest.test_dry_run_reports_gained_template_entries"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync",
+    "check"
+  ],
+  "prune": []
+}

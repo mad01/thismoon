@@ -1,0 +1,8 @@
+{
+  "ports": [
+    "StateShapeTest.test_non_object_marketplace_entry_is_fatal"
+  ],
+  "steps": [
+    "check"
+  ]
+}

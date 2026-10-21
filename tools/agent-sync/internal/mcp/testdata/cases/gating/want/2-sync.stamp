@@ -1,0 +1,3 @@
+sha256 of:
+{"both-match": {"command": "/opt/e/bin/e"}, "empty-gates": {"command": "/opt/g/bin/g"}, "host-match": {"command": "/opt/a/bin/a"}, "null-gates": {"command": "/opt/h/bin/h"}, "profile-match": {"command": "/opt/c/bin/c"}}
+{HOST}

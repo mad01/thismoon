@@ -1,0 +1,9 @@
+{
+  "ports": [
+    "VersionUpdateTest.test_dropin_mod_is_updated_against_its_own_marketplace"
+  ],
+  "steps": [
+    "check",
+    "sync"
+  ]
+}

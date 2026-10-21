@@ -1,0 +1,6 @@
+drift: 5 changes pending (run 'ralph up' to apply)
+  + marketplace thismoon -> {HOME}/sources/thismoon
+  + install this-host-upper@thismoon
+  + install both-gates-pass@thismoon
+  + install object-gate@thismoon
+  + install empty-gate@thismoon

@@ -1,0 +1,10 @@
+{
+  "ports": [
+    "PlanTest.test_marketplace_at_another_path_is_repointed"
+  ],
+  "steps": [
+    "check",
+    "plan",
+    "sync"
+  ]
+}

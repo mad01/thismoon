@@ -1,0 +1,1 @@
+{"name": "thismoon-mods", "plugins": [{"name": "session-band", "source": "./mods/session-band"}, {"name": "panel-policy", "source": "./mods/panel-policy"}]}

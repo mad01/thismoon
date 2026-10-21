@@ -1,0 +1,6 @@
+claude [mcp] [list]
+claude [mcp] [add] [--scope] [user] [both-match] [--] [/opt/e/bin/e]
+claude [mcp] [add] [--scope] [user] [empty-gates] [--] [/opt/g/bin/g]
+claude [mcp] [add] [--scope] [user] [host-match] [--] [/opt/a/bin/a]
+claude [mcp] [add] [--scope] [user] [null-gates] [--] [/opt/h/bin/h]
+claude [mcp] [add] [--scope] [user] [profile-match] [--] [/opt/c/bin/c]

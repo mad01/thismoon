@@ -1,0 +1,7 @@
+india:
+  Scope: User config (available in all your projects)
+  Status: Connected
+  Type: http
+  URL: https://mcp.example.com/india
+
+To remove this server, run: claude mcp remove india -s user

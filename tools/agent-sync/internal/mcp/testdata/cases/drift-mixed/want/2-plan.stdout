@@ -1,0 +1,11 @@
++ alpha
+  $ {CLAUDE} mcp add --scope user alpha -- /opt/alpha/bin/alpha
+~ bravo
+  $ {CLAUDE} mcp remove --scope user bravo
+  $ {CLAUDE} mcp add --scope user bravo -- /opt/bravo/v2/bin/bravo
+~ charlie
+  $ {CLAUDE} mcp remove --scope user charlie
+  $ {CLAUDE} mcp add --scope user charlie -- /opt/charlie/v2/bin/charlie
+- zulu
+  $ {CLAUDE} mcp remove --scope user zulu
+(dry-run — no changes applied)

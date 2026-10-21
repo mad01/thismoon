@@ -1,0 +1,7 @@
+drift: 6 changes pending (run 'ralph up' to apply)
+  + marketplace thismoon -> {HOME}/sources/thismoon
+  + install session-band@thismoon
+  + marketplace alpha -> {HOME}/sources/alpha
+  + install a-mod@alpha
+  + marketplace beta -> {HOME}/sources/beta
+  + install b-mod@beta

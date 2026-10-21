@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "Stop": [
+      "t"
+    ],
+    "Retired": [
+      "host"
+    ]
+  },
+  "localOnly": 1
+}

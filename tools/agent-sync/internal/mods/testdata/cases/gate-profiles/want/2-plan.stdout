@@ -1,0 +1,9 @@
++ marketplace thismoon -> {HOME}/sources/thismoon
+  $ {HOME}/bin/claude plugin marketplace add {HOME}/sources/thismoon --scope user
++ install one-tag-matches@thismoon
+  $ {HOME}/bin/claude plugin install one-tag-matches@thismoon --scope user
++ install no-gate@thismoon
+  $ {HOME}/bin/claude plugin install no-gate@thismoon --scope user
++ install empty-gate@thismoon
+  $ {HOME}/bin/claude plugin install empty-gate@thismoon --scope user
+(dry-run, no changes applied)

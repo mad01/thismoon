@@ -1,0 +1,8 @@
+{
+  "covers": "claude mcp list failing exits 2 with its stderr.",
+  "steps": [
+    "plan",
+    "sync",
+    "check"
+  ]
+}

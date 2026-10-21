@@ -1,0 +1,3 @@
++ open
+  $ {CLAUDE} mcp add --scope user open -- /opt/b/bin/b
+(dry-run — no changes applied)

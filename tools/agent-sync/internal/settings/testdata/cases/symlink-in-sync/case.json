@@ -1,0 +1,11 @@
+{
+  "ports": [],
+  "steps": [
+    "plan",
+    "sync",
+    "check"
+  ],
+  "prune": [],
+  "live_link": "symlink",
+  "deviation": "sync_settings.py unlinks a linked live file before it merges, so a link already in sync is deleted and never rewritten, and the next check reports a missing file. agent-sync writes the merged regular file instead; the stdout of the sync step is unchanged."
+}
