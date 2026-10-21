@@ -137,8 +137,10 @@ complete hooks block looks like this:
 The `belt watch` entries do nothing until `watch.enabled` is set in the belt
 config; the rest of the lifecycle block is safe to wire everywhere.
 
-A worked version of this block, with the belt config beside it, lives in
-`examples/dotfiles/recipes/claude-hooks/` at the repo root.
+A worked version of this block lives in
+`examples/dotfiles/recipes/agent-config/settings.json` at the repo root, the
+settings template agent-sync applies. The belt config it pairs with is in
+`examples/dotfiles/recipes/claude-hooks/`.
 
 The event-to-subcommand mapping is fixed:
 
@@ -231,9 +233,8 @@ belt is not Claude-Code-exclusive: any harness that execs a command per tool
 event and reads its stdout can run it. What to expect per harness:
 
 - **Claude Code** gets the full set: every guard event, every hint, the
-  ledger and the watcher, wired as shown above. The subagent, task, teammate,
-  permission-denied and asyncRewake hooks are Claude Code features, so the
-  ledger and the watcher are Claude-only.
+  ledger and the watcher, wired as shown above. The watcher rides Claude
+  Code's asyncRewake hooks, so it is Claude-only.
 - **Codex** reads the same hooks schema from `~/.codex/hooks.json`, so the
   entries above work verbatim with the paths adjusted. The reference setup
   wires the six tool-event entries (`hook bash`, `hook write`,
@@ -243,6 +244,11 @@ event and reads its stdout can run it. What to expect per harness:
   and the kof-deposit nudge stay Claude-only. Custom hints ride the same
   `belt hint session-start` entrypoint, so a Codex setup that adds the
   SessionStart entry to its hooks file gets them with no further wiring.
+  The reference setup wires no `belt record` entry either, so a Codex
+  session leaves nothing in the ledger. `belt record` has no Claude-specific
+  code: it decodes the fields it knows, and a payload it can't decode still
+  posts, as a warn entry. Reading the ledger needs no hook: Codex queries
+  the events service like any other client.
   Two Codex-specific rules:
   define hooks in `hooks.json` only. A duplicate `[[hooks.PreToolUse]]`
   block in `config.toml` runs belt twice per call. Codex trusts hooks by
@@ -305,11 +311,12 @@ Blocks `git push` to `main` or `master` before it happens.
   `$HOME`. belt never runs git in its own process directory to fill the gap:
   that once let a push into a non-exempt repo ride an exempt session cwd.
 - **Allows when** the push directory's origin remote resolves to a repo on
-  `guards.git-push-main.allow_repos` — an exact `host/owner/repo` or a
-  trailing `/*` org wildcard, the same patterns `git_identity[].repos` takes.
-  A machine class where direct pushes are fine (a personal machine, say)
-  disables the guard in its rendered config instead — there is no
-  machine-profile check at runtime (docs/adr/0010).
+  the top-level `direct_main_repos` list or on
+  `guards.git-push-main.allow_repos`. Both take an exact `host/owner/repo`
+  or a trailing `/*` org wildcard, the same patterns `git_identity[].repos`
+  takes. A machine class where direct pushes are fine (a personal machine,
+  say) disables the guard in its rendered config instead. belt reads no
+  machine profile, from ralph or anywhere else (docs/adr/0010).
 - **Why it exists**: a session once pushed straight to master and tried to
   self-merge. The permission system sees `git push` as one more shell command;
   this guard reads the target.

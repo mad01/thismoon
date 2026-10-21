@@ -1,11 +1,11 @@
 #!/bin/sh
 # Spawn the present MCP server inside its seatbelt profile.
 #
-# Exists because servers.json can't express this directly:
-#   - sync_mcp.py only expands ~ in `command`, not args, so the profile
-#     path can't be passed portably as an argument
-#   - the MCP client spawns from the session cwd, which may sit inside a
-#     read-denied subtree; getcwd() there is an EPERM, so cd / first
+# Exists because servers.json can't express the whole launch. agent-sync
+# expands a leading ~ in `command` and in each arg, so the profile path alone
+# would fit there. The working directory wouldn't: the MCP client spawns
+# from the session cwd, which may sit inside a read-denied subtree.
+# getcwd() there is an EPERM, so the wrapper does cd / first.
 #
 # Seatbelt can't filter env, so the environment is scrubbed with an env -i
 # allow-list and shell secrets never enter the confined process. present

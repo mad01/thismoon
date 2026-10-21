@@ -249,7 +249,8 @@ launches no csl process. The hint is on by default once belt's hooks are
 registered (`hints.prefer-csl.enabled` in belt's config); the hooks block to
 register is in
 [`tools/belt/docs/hooks.md`](../../../tools/belt/docs/hooks.md#prefer-csl-bash)
-and the worked settings example in `examples/dotfiles/recipes/claude-hooks/`.
+and the worked settings example in
+`examples/dotfiles/recipes/agent-config/settings.json`.
 
 ## 8. Optional: the web UI as a background service
 

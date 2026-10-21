@@ -128,7 +128,7 @@ Deliberate deviations:
   replaced by a regular file; its target is never created. The script
   wrote through it and created the target (`symlink-dangling`).
 - The live path defaults to `$CLAUDE_CONFIG_DIR/settings.json` when that
-  is set, as Claude Code and sync_mods.py do; the script always used
+  is set, as Claude Code and the mods section do; the script always used
   `~/.claude`. The overlay default follows the live file's directory.
 - Two NaNs are equal. The script compared values under an object key with
   `!=`, so a NaN the template sets was drift on every run (`nan-value`).
@@ -150,10 +150,13 @@ The sync diffs them against `known_marketplaces.json`,
   `claude plugin update`, and one run settles it.
 - The retire rule: `"installed": false` uninstalls the mod even when the
   marketplace no longer lists it; `"enabled": true` beside it is an error.
+  It still needs the marketplace on disk: `planAll` skips a file whose
+  `.claude-plugin/marketplace.json` is missing, retirements included.
 - A gate keeps a mod off a machine, and a gated-off mod is left alone.
 
-`testdata/generate.py <dotfiles>/recipes/claude-mods` writes
-`testdata/cases/`, and `internal/cli/mods_test.go` runs the cases with
+`testdata/generate.py <dotfiles>/recipes/claude-mods` (a checkout from
+before the scripts were deleted, see Gotchas) writes `testdata/cases/`,
+and `internal/cli/mods_test.go` runs the cases with
 `testdata/fake-claude.sh` first on PATH. No step may write under HOME.
 
 Deliberate deviations:
@@ -189,7 +192,8 @@ them, and `--force` or `prune` makes sync and check run them too. So with
 prune on, the env and space-in-argument bugs below re-add those servers on
 every sync, and check exits 1 on every run.
 
-`testdata/reference.py <sync_mcp.py>` regenerates `want/` with
+`testdata/reference.py <sync_mcp.py>` (from a checkout before the scripts
+were deleted, see Gotchas) regenerates `want/` with
 `testdata/fake-claude.sh` as claude, and `internal/cli/mcp_test.go` runs
 the cases.
 
@@ -209,8 +213,8 @@ Deliberate deviations:
   (see Claude Code above); the script ran that claude.
 - `check` is a new mode. Its want files are written by hand.
 
-Script bugs kept for parity until the scripts are deleted, seen with claude
-2.1.306:
+Script bugs still kept for parity, seen with claude 2.1.306. Their fixes are
+tracked in MAD-445:
 
 - `--header` goes before the name and url, which claude rejects, so a
   server with static headers and no headersHelper cannot be added.
@@ -259,7 +263,8 @@ Every command takes `--config` (default `$AGENT_SYNC_CONFIG`, then
   - settings: `python3 -I internal/settings/testdata/oracle.py <dotfiles
     checkout> [--out DIR] [CASE ...]` reads the script at the pinned
     commit with git show and rewrites each case's `want/`; `--out DIR`
-    writes `DIR/<case>/want/` instead, for a parity diff.
+    writes `DIR/<case>/want/` instead, for a parity diff. Any dotfiles
+    clone works, since the pinned commit stays in its history.
   - mods: `python3 -I internal/mods/testdata/generate.py <dotfiles>/recipes/claude-mods`
     imports `sync_mods.py` and `test_sync_mods.py` from that directory as
     checked out. The cases are defined in generate.py, which rewrites all
@@ -270,6 +275,17 @@ Every command takes `--config` (default `$AGENT_SYNC_CONFIG`, then
     sync_mcp.py> [CASE ...]` runs the given script. Case inputs and
     case.json are hand-written; it rewrites only `want/` and leaves check
     steps' wants alone. No `--out`: copy `testdata/` and run the copy.
+- The mods and mcp generators read the scripts from a working tree, and
+  dotfiles commit 899927c deleted them. Check out its parent, 05785bf, in a
+  separate worktree and pass that path as the generator's argument. From
+  `tools/agent-sync`:
+
+  ```bash
+  git -C <dotfiles> worktree add /tmp/dotfiles-pre-cutover 05785bf
+  python3 -I internal/mods/testdata/generate.py /tmp/dotfiles-pre-cutover/recipes/claude-mods
+  python3 -I internal/mcp/testdata/reference.py /tmp/dotfiles-pre-cutover/recipes/claude-mcp/sync_mcp.py
+  git -C <dotfiles> worktree remove /tmp/dotfiles-pre-cutover
+  ```
 - The fake claude scripts run as fresh executables; macOS can take seconds
   to launch one the first time, so the case tests launch them once,
   untimed, before the first case.

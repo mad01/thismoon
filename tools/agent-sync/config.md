@@ -37,7 +37,9 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
   root, such as `[hooks, Notification]`, so a key with a dot in it stays
   one key. Give each entry a comment naming what retired it. A path the
   template still sets is an error, because the merge would add it straight
-  back.
+  back. The overlay is not checked: an overlay that sets a pruned path
+  merges it back in after the prune, with no error, so the key stays in
+  the live file.
 
 ### `mods`
 
@@ -68,10 +70,11 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
   the per-server spec check.
 - `mcp.prune` (bool, default `false`): remove registered servers the
   desired set does not name, including servers added by hand. It removes
-  at user scope only. A name it cannot remove there fails the run with
-  exit 2, such as a claude.ai connector, a server a plugin provides, or a
-  server in another scope. It also makes every sync and check compare each
-  server's spec, as `--force` does.
+  at user scope only. Some names it can't remove there: a claude.ai
+  connector, a server a plugin provides, or a server in another scope.
+  Each fails every sync with exit 2 and keeps check at exit 1, until you
+  remove the server where it lives or turn prune off. It also makes every
+  sync and check compare each server's spec, as `--force` does.
 
 ## Environment variables
 

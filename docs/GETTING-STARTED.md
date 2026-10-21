@@ -204,7 +204,9 @@ ralph profile set personal    # or: work, or both
 This writes the git-ignored `~/.config/ralph/config.local.toml` beside your
 config, the per-machine answer to "what kind of machine is this". Your own
 profile-gated recipes and profile-gated `[[recipe_sources]]` key off it, and
-so does belt's `git-push-main` guard, which reads the same file at runtime.
+so do the `profiles` gates in agent-sync's mods and servers files. belt never
+reads it: a machine class that allows direct pushes to main gets a belt config
+with `git-push-main` disabled ([docs/adr/0010](adr/0010-standalone-guard-tool-configs.md)).
 thismoon's recipes carry no profile gate of their own: to keep one off a
 machine class, override it from your config
 (`[recipes_config.overrides."thismoon/<name>"]`) or from a role source's
