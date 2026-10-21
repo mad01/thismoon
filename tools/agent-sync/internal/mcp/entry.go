@@ -28,7 +28,8 @@ const (
 // Entries are checked up front: a field of the wrong type is an error that
 // names the file, the server and the field. sync_mcp.py crashed on most of
 // those at the point of use, and coerced a few (a string args became a list
-// of characters).
+// of characters). The hosts and profiles gates keep its coercions and are
+// errors only where it crashed.
 type entry struct {
 	where string // "<file>: server '<name>'", the prefix of every error
 	obj   *pyjson.Object
@@ -37,15 +38,37 @@ type entry struct {
 // gated reports whether the entry's hosts and profiles gates let it apply
 // to m. Both must pass, and profiles is not read when the host gate fails.
 func (e entry) gated(m gate.Machine) (bool, error) {
-	hosts, err := e.strList(fieldHosts)
+	hosts, err := e.gateValues(fieldHosts)
 	if err != nil || !m.HostAllowed(hosts) {
 		return false, err
 	}
-	profiles, err := e.strList(fieldProfiles)
+	profiles, err := e.gateValues(fieldProfiles)
 	if err != nil {
 		return false, err
 	}
 	return m.ProfileAllowed(profiles), nil
+}
+
+// gateValues returns the values of the hosts or profiles gate as
+// gate.Values reads them. A value Python cannot iterate is an error, and so
+// is a hosts list item that is not a string: sync_mcp.py lowercased hosts
+// with h.lower(), where profiles went through str(), and it crashed on both.
+func (e entry) gateValues(key string) ([]string, error) {
+	raw, _ := e.obj.Get(key)
+	if list, ok := raw.([]any); ok && key == fieldHosts {
+		for i, item := range list {
+			if _, ok := item.(string); !ok {
+				return nil, fmt.Errorf("%s: %s[%d]: want a string, got %s",
+					e.where, key, i, pyjson.Describe(item))
+			}
+		}
+	}
+	values, ok := gate.Values(raw)
+	if !ok {
+		return nil, fmt.Errorf("%s: %s: want a list of strings, got %s",
+			e.where, key, pyjson.Describe(raw))
+	}
+	return values, nil
 }
 
 // parse returns the entry as the hash sees it (hosts and profiles dropped,

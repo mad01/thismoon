@@ -14,9 +14,9 @@ ralph merges the recipe with the identity `thismoon/agent-sync`. So the package
 - `wave = 0`: builds `~/code/bin/agent-sync` before the consuming repo's
   sync hooks (wave 1) call it.
 - Package only, the public layer per docs/adr/0006. It never runs a sync.
-  The consuming repo ships the data and the config, and adds a build hook
-  that runs `agent-sync settings sync` with
-  `verify = "agent-sync settings check"`.
+  The consuming repo ships the data and the config, and adds one build
+  hook per section it uses (`settings`, `mods`, `mcp`) that runs
+  `agent-sync <section> sync` with `verify = "agent-sync <section> check"`.
 
 ## See also
 

@@ -64,9 +64,10 @@ The servers file, with each drop-in merged over it by name, is the desired
 set; `hosts` and `profiles` gate entries to machines. Missing servers are
 added at user scope, and a server whose `claude mcp get` spec differs is
 removed and added again. Remote servers compare by url only. With `prune`,
-registered servers outside the set go, in any scope. A stamp of the
-desired set lets sync and check skip the per-server get calls; plan always
-makes them, and `--force` makes sync and check make them too.
+sync removes registered servers outside the set at user scope; a name it
+cannot remove there fails the run with exit 2. A stamp of the desired set
+lets sync and check skip the per-server get calls; plan always makes them,
+and `--force` or `prune` makes sync and check make them too.
 
 ## failure modes
 
@@ -91,7 +92,8 @@ lists replace live's. Put machine-only permissions in the overlay.
 
 `` `claude` CLI not found on PATH ``: mods needs claude only to sync; plan
 prints the commands anyway. mcp needs it in every mode, to list what is
-registered. Exit 1.
+registered. Exit 1. A claude found first through a relative PATH entry,
+such as `.`, counts as missing too.
 
 mods `... failed: <detail>`, exit 2: a `claude plugin` call failed and sync
 stopped there. The calls before it are applied; run sync again after the
@@ -117,12 +119,21 @@ changed and the stamp is not written. An http or sse server with
 claude rejects them, a script bug kept for parity. Register that one by
 hand.
 
+mcp `remove 'claude.ai X' failed` or `remove 'plugin' failed`, exit 2,
+with `prune: true`: prune removes at user scope only, and a claude.ai
+connector or a plugin's server is not there, nor is a server added at
+another scope. check shows each one as `- <name>` drift. Turn prune off,
+or remove the server where it lives.
+
 `has no 'url'` or `has no 'command'`, exit 1: the entry cannot be added. On
 an update the remove has already run, so the server is gone until the
 entry is fixed.
 
 `<file>: server 'x': <field>: want ...`: a servers.json field has the wrong
-type. Nothing was changed.
+type. Nothing was changed. A `hosts` or `profiles` gate may be a list, an
+object (its keys count) or a string (each character counts), as the script
+read it. A number other than 0, `true`, or a hosts entry that is not a
+string is this error.
 
 `warning: could not write sync stamp`: exit 0, but every run checks every
 spec until the stamp path is writable.
@@ -131,6 +142,12 @@ mcp plan shows `~ <name>` on every run for a server with env, or with an
 argument that holds a space: claude prints those differently from
 servers.json. This matches the script and is harmless; the re-add gives
 the same server.
+
+mcp check exits 1 on every run with `prune: true`, and every sync shows
+`~ <name>` for the same servers. prune makes sync and check compare every
+spec, and a server with env, or with an argument that holds a space, never
+reads as in sync. Run with prune off, and turn it on only to clear out
+stale servers.
 
 ## first moves
 

@@ -174,6 +174,38 @@ func TestReadFile(t *testing.T) {
 			t.Errorf("ReadFile error = %v, want an *EncodingError at byte 2", err)
 		}
 	})
+	// The wants are str() of the UnicodeDecodeError Python 3.13 raised from
+	// json.loads(Path(path).read_text()) for the same bytes.
+	for _, tc := range []struct{ data, want string }{
+		{"\xff", "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"},
+		{"\xc0\x80", "'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"},
+		{"\"a\xe9\"", "'utf-8' codec can't decode byte 0xe9 in position 2: invalid continuation byte"},
+		{
+			"\r\n\r\n\"\xe9\"",
+			"'utf-8' codec can't decode byte 0xe9 in position 5: invalid continuation byte",
+		},
+		{"[\"ab\xe2\x82", "'utf-8' codec can't decode bytes in position 4-5: unexpected end of data"},
+		{"\xe2\x82x", "'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"},
+		{"\xed\xa0\x80", "'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"},
+		{"\xf0\x9fx", "'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"},
+		{
+			"\xf0\x9f\x98x",
+			"'utf-8' codec can't decode bytes in position 0-2: invalid continuation byte",
+		},
+		{
+			"\xf4\x90\x80\x80",
+			"'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte",
+		},
+		{
+			"\"\xf0\x9f\x98\x80\" \xf5",
+			"'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte",
+		},
+	} {
+		path := write("bad.json", []byte(tc.data))
+		if _, err := ReadFile(path); err == nil || err.Error() != tc.want {
+			t.Errorf("ReadFile(%q) error = %v, want %s", tc.data, err, tc.want)
+		}
+	}
 	t.Run("a missing file is fs.ErrNotExist", func(t *testing.T) {
 		_, err := ReadFile(filepath.Join(dir, "absent.json"))
 		if !errors.Is(err, fs.ErrNotExist) {

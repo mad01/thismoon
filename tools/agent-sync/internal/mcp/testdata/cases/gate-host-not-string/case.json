@@ -1,0 +1,7 @@
+{
+  "covers": "A hosts list holding a number. The script lowercased hosts with h.lower() and crashed.",
+  "steps": [
+    "plan"
+  ],
+  "deviation": "stderr: the script crashed (AttributeError); agent-sync names the file, the server and the item."
+}

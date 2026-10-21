@@ -37,7 +37,8 @@ type Config struct {
 	ProfilesFile string
 	// Stamp is where sync records the desired set's hash.
 	Stamp string
-	// Prune removes registered servers the desired set does not name.
+	// Prune removes registered servers the desired set does not name, at
+	// user scope, and makes sync and check compare every spec.
 	Prune bool
 }
 

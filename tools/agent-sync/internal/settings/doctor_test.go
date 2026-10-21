@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/config"
 )
 
@@ -31,7 +32,7 @@ func statusOf(r doctor.Report) map[string]string {
 func TestDoctorChecks(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	t.Setenv(ClaudeConfigDirEnv, "")
+	t.Setenv(claudecode.ConfigDirEnv, "")
 	template := filepath.Join(dir, "template.json")
 	if err := os.WriteFile(template, []byte(`{"hooks": {"Stop": []}}`), 0o600); err != nil {
 		t.Fatal(err)

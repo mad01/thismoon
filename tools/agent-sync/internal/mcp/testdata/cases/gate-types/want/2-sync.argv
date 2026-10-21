@@ -1,0 +1,8 @@
+claude [mcp] [list]
+claude [mcp] [add] [--scope] [user] [hosts-empty-string] [--] [/opt/a/bin/a]
+claude [mcp] [add] [--scope] [user] [hosts-false] [--] [/opt/b/bin/b]
+claude [mcp] [add] [--scope] [user] [hosts-object] [--] [/opt/e/bin/e]
+claude [mcp] [add] [--scope] [user] [hosts-zero] [--] [/opt/c/bin/c]
+claude [mcp] [add] [--scope] [user] [profiles-bool] [--] [/opt/g/bin/g]
+claude [mcp] [add] [--scope] [user] [profiles-false] [--] [/opt/j/bin/j]
+claude [mcp] [add] [--scope] [user] [profiles-number] [--] [/opt/f/bin/f]

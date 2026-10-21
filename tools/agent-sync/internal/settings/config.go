@@ -22,18 +22,14 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mad01/thismoon/kit/confdir"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/config"
 )
 
 // Defaults for the live and overlay paths when the config leaves them out.
 const (
-	// ClaudeConfigDirEnv is the variable Claude Code reads its config
-	// directory from; the live file defaults to settings.json inside it.
-	ClaudeConfigDirEnv = "CLAUDE_CONFIG_DIR"
-	// DefaultClaudeDir is Claude Code's config directory when
-	// ClaudeConfigDirEnv is unset.
-	DefaultClaudeDir = "~/.claude"
-	// LiveFileName is the live settings file inside the config directory.
+	// LiveFileName is the live settings file inside Claude Code's config
+	// directory (claudecode.ConfigDirEnv, or claudecode.DefaultConfigDir).
 	LiveFileName = "settings.json"
 	// OverlayFileName is the overlay's default name, beside the live file.
 	OverlayFileName = "settings.local.json"
@@ -111,9 +107,9 @@ func livePath(s config.Section, node *yaml.Node) (string, error) {
 	if node != nil {
 		return s.Path(node, keyLive)
 	}
-	dir := os.Getenv(ClaudeConfigDirEnv)
+	dir := os.Getenv(claudecode.ConfigDirEnv)
 	if dir == "" {
-		dir = DefaultClaudeDir
+		dir = claudecode.DefaultConfigDir
 	}
 	expanded, err := confdir.Expand(dir)
 	if err != nil {
@@ -121,7 +117,7 @@ func livePath(s config.Section, node *yaml.Node) (string, error) {
 	}
 	if !filepath.IsAbs(expanded) {
 		return "", fmt.Errorf("settings: %s=%q is not an absolute path; set %s.%s instead",
-			ClaudeConfigDirEnv, dir, config.SectionSettings, keyLive)
+			claudecode.ConfigDirEnv, dir, config.SectionSettings, keyLive)
 	}
 	return filepath.Join(expanded, LiveFileName), nil
 }

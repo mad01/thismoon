@@ -2,7 +2,8 @@
 // scripts' output depends on, so the sections that port them print the
 // same paths and the same errors: pathlib's normalizing and joining,
 // Path.expanduser, Path.resolve (os.path.realpath in Python 3.13), a sorted
-// Path.glob, and the text of an OSError.
+// Path.glob, Path.mkdir(parents=True, exist_ok=True), and the text of an
+// OSError.
 //
 // Paths are plain strings with "/" separators, as on macOS and Linux.
 package pypath
@@ -123,4 +124,37 @@ func ErrorText(err error) string {
 		msg = strings.ToUpper(msg[:1]) + msg[1:]
 	}
 	return fmt.Sprintf("[Errno %d] %s: %s", int(errno), msg, pyjson.Repr(pathErr.Path))
+}
+
+// MkdirParents creates dir the way Path.mkdir(parents=True, exist_ok=True)
+// does: parents first when dir's parent is missing, and an existing
+// directory is not an error.
+func MkdirParents(dir string) error {
+	err := os.Mkdir(dir, 0o777)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return existOK(dir, err)
+	}
+	parent := filepath.Dir(dir)
+	if parent == dir {
+		return err
+	}
+	if err := MkdirParents(parent); err != nil {
+		return err
+	}
+	err = os.Mkdir(dir, 0o777)
+	if errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return existOK(dir, err)
+}
+
+// existOK drops a mkdir error when dir is a directory after all.
+func existOK(dir string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+		return nil
+	}
+	return err
 }

@@ -17,8 +17,8 @@
 // compare specs.
 //
 // config.go reads the section, servers.go and entry.go load the desired
-// set, claude.go wraps the CLI, pycompat.go holds the Python string rules
-// for parsing its output, and this file runs a mode.
+// set, claude.go wraps the CLI and parses its output, and this file runs a
+// mode.
 package mcp
 
 import (
@@ -31,6 +31,7 @@ import (
 
 	"github.com/mad01/thismoon/tools/agent-sync/internal/apply"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/gate"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/pyjson"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/pypath"
 )
 
@@ -243,13 +244,13 @@ func readStamp(path string) string {
 	if err != nil {
 		return ""
 	}
-	return pyStrip(string(data))
+	return pyjson.Strip(pyjson.Text(data))
 }
 
 // writeStamp records value. A failure is a warning: the next run compares
 // every spec again, which is slow but right.
 func writeStamp(path, value string, warn io.Writer) {
-	err := mkdirParents(filepath.Dir(path))
+	err := pypath.MkdirParents(filepath.Dir(path))
 	if err == nil {
 		err = os.WriteFile(path, []byte(value+"\n"), 0o666)
 	}

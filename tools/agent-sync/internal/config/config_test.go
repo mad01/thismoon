@@ -181,4 +181,10 @@ func TestSectionPathOr(t *testing.T) {
 	if err != nil || got != want {
 		t.Errorf("PathOr(absent) = %q, %v; want %q", got, err, want)
 	}
+	t.Setenv("HOME", "")
+	_, err = f.Mods.PathOr(nil, "dropins", "~/d")
+	if want := `config c.yaml: mods.dropins: default path: confdir: expand "~/d": `; err == nil ||
+		!strings.HasPrefix(err.Error(), want) || strings.Count(err.Error(), "~/d") != 1 {
+		t.Errorf("PathOr(absent, no home) = %v; want %s<reason>, the default named once", err, want)
+	}
 }

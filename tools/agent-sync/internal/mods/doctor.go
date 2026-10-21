@@ -3,10 +3,10 @@ package mods
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/mad01/thismoon/kit/doctor"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/config"
 )
 
@@ -44,7 +44,7 @@ func DoctorChecks(s config.Section) []doctor.Check {
 			return err
 		}},
 		doctor.Check{Name: "mods-claude", Run: func(context.Context) error {
-			if _, err := exec.LookPath(claudeBin); err != nil {
+			if _, err := claudecode.LookPath(); err != nil {
 				return fmt.Errorf("claude CLI not found on PATH; sync needs it to apply changes")
 			}
 			return nil

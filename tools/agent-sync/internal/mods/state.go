@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/pyjson"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/pypath"
 )
-
-// claudeConfigDirEnv relocates Claude Code's config directory, and with it
-// the three files the claude plugin CLI keeps its state in.
-const claudeConfigDirEnv = "CLAUDE_CONFIG_DIR"
 
 // state is the plugin state Claude Code persists, which the sync reads and
 // never writes:
@@ -29,17 +26,15 @@ type state struct {
 	enabled map[string]bool
 }
 
-// claudeDir is Claude Code's config directory: $CLAUDE_CONFIG_DIR, or
-// ~/.claude when that is unset or empty.
+// claudeDir is Claude Code's config directory, which holds the three files
+// the claude plugin CLI keeps its state in: $CLAUDE_CONFIG_DIR, or
+// ~/.claude when that is unset or empty, with a leading ~ expanded.
 func claudeDir() (string, error) {
-	if dir := os.Getenv(claudeConfigDirEnv); dir != "" {
-		return pypath.ExpandUser(dir)
+	dir := os.Getenv(claudecode.ConfigDirEnv)
+	if dir == "" {
+		dir = claudecode.DefaultConfigDir
 	}
-	home, err := pypath.ExpandUser("~")
-	if err != nil {
-		return "", err
-	}
-	return pypath.Join(home, ".claude"), nil
+	return pypath.ExpandUser(dir)
 }
 
 // readState reads the three state files under dir. A missing file is empty

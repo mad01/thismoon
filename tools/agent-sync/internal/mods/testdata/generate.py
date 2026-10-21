@@ -300,7 +300,7 @@ def _(fh):
 @case(
     "gate-not-a-list",
     steps=["check"],
-    deviation="A gate that is a number or a bool crashed the script with a TypeError; agent-sync reports it as an error. Both exit 1.",
+    deviation="A gate that is a nonzero number or true crashed the script with a TypeError; agent-sync reports it as an error. Both exit 1.",
 )
 def _(fh):
     fh.write_marketplace()

@@ -22,35 +22,15 @@ func allows(m gate.Machine, spec *pyjson.Object, mod, path string) (bool, error)
 	return m.ProfileAllowed(profiles), nil
 }
 
-// gateValues returns the values of spec's gate key, each rendered with
-// Python's str(), or nil when the gate is empty or missing and so lets every
-// machine through. A gate iterates the way Python iterates it: a list by
-// element, an object by key, a string by character. Anything else crashed
-// the script; here it is an error.
+// gateValues returns the values of spec's gate key as gate.Values reads
+// them. A value Python cannot iterate crashed the script; here it is an
+// error.
 func gateValues(spec *pyjson.Object, key, mod, path string) ([]string, error) {
 	raw, _ := spec.Get(key)
-	if !pyjson.Truthy(raw) {
-		return nil, nil
-	}
-	var items []any
-	switch t := raw.(type) {
-	case []any:
-		items = t
-	case *pyjson.Object:
-		for _, k := range t.Keys() {
-			items = append(items, k)
-		}
-	case string:
-		for _, r := range t {
-			items = append(items, string(r))
-		}
-	default:
+	values, ok := gate.Values(raw)
+	if !ok {
 		return nil, fmt.Errorf("%s: mod %s: '%s' must be an array, got %s",
-			path, pyjson.Repr(mod), key, pyjson.Describe(t))
-	}
-	values := make([]string, len(items))
-	for i, item := range items {
-		values[i] = pyjson.Str(item)
+			path, pyjson.Repr(mod), key, pyjson.Describe(raw))
 	}
 	return values, nil
 }

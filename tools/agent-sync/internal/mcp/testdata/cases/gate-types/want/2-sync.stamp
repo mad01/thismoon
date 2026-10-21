@@ -1,0 +1,3 @@
+sha256 of:
+{"hosts-empty-string": {"command": "/opt/a/bin/a"}, "hosts-false": {"command": "/opt/b/bin/b"}, "hosts-object": {"command": "/opt/e/bin/e"}, "hosts-zero": {"command": "/opt/c/bin/c"}, "profiles-bool": {"command": "/opt/g/bin/g"}, "profiles-false": {"command": "/opt/j/bin/j"}, "profiles-number": {"command": "/opt/f/bin/f"}}
+{HOST}

@@ -4,8 +4,11 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mad01/thismoon/tools/agent-sync/internal/pyjson"
 )
 
 func TestGatesPassEmptyAndMatchLowercased(t *testing.T) {
@@ -34,6 +37,39 @@ func TestGatesPassEmptyAndMatchLowercased(t *testing.T) {
 	} {
 		if got := m.ProfileAllowed(c.profiles); got != c.want {
 			t.Errorf("ProfileAllowed(%q) = %t, want %t", c.profiles, got, c.want)
+		}
+	}
+}
+
+// TestValuesIterateLikePython expects [str(v) for v in gate], or no gate for
+// a falsy one; the scripts crashed on a value that does not iterate.
+func TestValuesIterateLikePython(t *testing.T) {
+	obj, err := pyjson.Loads([]byte(`{"a": 1, "b": 2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name string
+		raw  any
+		want []string
+	}{
+		{"missing", nil, nil},
+		{"false", false, nil},
+		{"zero", 0.0, nil},
+		{"empty string", "", nil},
+		{"empty list", []any{}, nil},
+		{"list", []any{"Work", 1.5, true, nil}, []string{"Work", "1.5", "True", "None"}},
+		{"object", obj, []string{"a", "b"}},
+		{"string", "ab", []string{"a", "b"}},
+	} {
+		got, ok := Values(c.raw)
+		if !ok || !slices.Equal(got, c.want) {
+			t.Errorf("%s: Values = %q, %t; want %q, true", c.name, got, ok, c.want)
+		}
+	}
+	for _, raw := range []any{true, 5.0} {
+		if got, ok := Values(raw); ok {
+			t.Errorf("Values(%v) = %q, true; want not ok", raw, got)
 		}
 	}
 }

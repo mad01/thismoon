@@ -227,7 +227,8 @@ func (s Section) PathOr(node *yaml.Node, key, def string) (string, error) {
 	}
 	path, err := confdir.Expand(def)
 	if err != nil {
-		return "", s.Errorf(nil, key, "default %s: %w", def, err)
+		// err already names def: `confdir: expand "~/x": ...`.
+		return "", s.Errorf(nil, key, "default path: %w", err)
 	}
 	return path, nil
 }

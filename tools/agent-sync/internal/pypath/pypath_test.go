@@ -4,8 +4,10 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -48,7 +50,6 @@ func TestExpandUser(t *testing.T) {
 		{"/home/tester/", "~", "/home/tester"},
 		{"/home/tester/", "~/x/", "/home/tester/x"},
 		{"/home/tester/", "./~/x", "/home/tester/x"},
-		{"/home/tester/", "~root/x", "/var/root/x"},
 		{"/home/tester/", "/abs/~/x", "/abs/~/x"},
 		{"/home/tester/", "rel//path/", "rel/path"},
 		{"/h/me", "~/a/./b//c/", "/h/me/a/b/c"},
@@ -61,6 +62,14 @@ func TestExpandUser(t *testing.T) {
 		got, err := ExpandUser(tc.in)
 		if err != nil || got != tc.want {
 			t.Errorf("HOME=%q ExpandUser(%q) = %q, %v; want %q", tc.home, tc.in, got, err, tc.want)
+		}
+	}
+	// root's home differs by OS (/var/root on macOS, /root on Linux), so the
+	// want is Python's formula over the user database: pw_dir.rstrip("/") + rest.
+	if root, err := user.Lookup("root"); err == nil {
+		want := strings.TrimRight(root.HomeDir, "/") + "/x"
+		if got, err := ExpandUser("~root/x"); err != nil || got != want {
+			t.Errorf("ExpandUser(~root/x) = %q, %v; want %q", got, err, want)
 		}
 	}
 	if got, err := ExpandUser("~no-such-user-for-agent-sync/x"); err == nil {
@@ -137,5 +146,29 @@ func TestRealPathMatchesPython(t *testing.T) {
 	}
 	if got := RealPath("/"); got != "/" {
 		t.Errorf("RealPath(/) = %s", got)
+	}
+}
+
+func TestMkdirParentsMatchesPathMkdir(t *testing.T) {
+	dir := t.TempDir()
+	if err := MkdirParents(filepath.Join(dir, "a/b/c")); err != nil {
+		t.Fatal(err)
+	}
+	if err := MkdirParents(filepath.Join(dir, "a/b")); err != nil {
+		t.Errorf("MkdirParents of an existing directory = %v, want nil", err)
+	}
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := MkdirParents(filepath.Join(file, "sub"))
+	want := "[Errno 20] Not a directory: '" + filepath.Join(file, "sub") + "'"
+	if err == nil || ErrorText(err) != want {
+		t.Errorf("MkdirParents under a file = %v (%s), want %s", err, ErrorText(err), want)
+	}
+	err = MkdirParents(file)
+	want = "[Errno 17] File exists: '" + file + "'"
+	if err == nil || ErrorText(err) != want {
+		t.Errorf("MkdirParents of a file = %v, want %s", err, want)
 	}
 }

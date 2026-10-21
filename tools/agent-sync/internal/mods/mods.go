@@ -39,10 +39,9 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/tools/agent-sync/internal/apply"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/pyjson"
 )
-
-// claudeBin is the claude CLI's name on PATH.
-const claudeBin = "claude"
 
 // Report lines that are fixed text.
 const (
@@ -146,20 +145,17 @@ func (r runner) execute(actions []action) error {
 // claudePath finds the claude CLI on PATH. Plan prints the commands without
 // running them, so it falls back to the bare name.
 func (r runner) claudePath() (string, error) {
-	path, err := exec.LookPath(claudeBin)
-	switch {
-	case err == nil, errors.Is(err, exec.ErrDot):
-		return path, nil
-	case !r.mode.Writes():
-		return claudeBin, nil
-	default:
-		return "", errors.New("`claude` CLI not found on PATH")
+	path, err := claudecode.LookPath()
+	if err != nil && !r.mode.Writes() {
+		return claudecode.Bin, nil
 	}
+	return path, err
 }
 
 // runClaude runs one claude command with the caller's stdin, so a prompt
 // still reaches a person, and its output captured. A non-zero exit is
-// apply.CodeExternal with the command's stderr (or stdout) as the detail.
+// apply.CodeExternal with the command's stderr (or stdout) as the detail,
+// decoded and stripped as the script's text=True and .strip() did.
 func runClaude(argv []string) error {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	var stdout, stderr bytes.Buffer
@@ -168,12 +164,12 @@ func runClaude(argv []string) error {
 	var exit *exec.ExitError
 	switch {
 	case errors.As(err, &exit):
-		detail := stderr.String()
+		detail := pyjson.Text(stderr.Bytes())
 		if detail == "" {
-			detail = stdout.String()
+			detail = pyjson.Text(stdout.Bytes())
 		}
 		return apply.Fail(apply.CodeExternal, fmt.Errorf("%s failed: %s",
-			strings.Join(argv, " "), strings.TrimSpace(detail)))
+			strings.Join(argv, " "), pyjson.Strip(detail)))
 	case err != nil:
 		return fmt.Errorf("%s: %w", strings.Join(argv, " "), err)
 	}

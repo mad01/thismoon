@@ -121,3 +121,25 @@ func TestDescribe(t *testing.T) {
 		}
 	}
 }
+
+func TestStrMethodsMatchPython(t *testing.T) {
+	lines := SplitLines("a\nb\vc\x1cd\U00002028e\n")
+	want := []string{"a", "b", "c", "d", "e"}
+	if len(lines) != len(want) {
+		t.Fatalf("SplitLines = %q, want %q", lines, want)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("SplitLines[%d] = %q, want %q", i, lines[i], want[i])
+		}
+	}
+	if got := Strip("\x1f x \U00003000"); got != "x" {
+		t.Errorf("Strip = %q, want %q", got, "x")
+	}
+	if got := Fields(" a\x1fb\tc "); len(got) != 3 || got[0] != "a" || got[2] != "c" {
+		t.Errorf("Fields = %q, want [a b c]", got)
+	}
+	if got := Text([]byte("a\r\nb\rc")); got != "a\nb\nc" {
+		t.Errorf("Text = %q", got)
+	}
+}

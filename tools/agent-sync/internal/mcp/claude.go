@@ -9,24 +9,22 @@ import (
 	"strings"
 
 	"github.com/mad01/thismoon/tools/agent-sync/internal/apply"
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/pyjson"
 )
 
 // scope is the claude mcp scope every server is added to and removed from.
 const scope = "user"
 
-// errNoClaude reports a claude CLI missing from PATH, worded as
-// sync_mcp.py worded it.
-var errNoClaude = errors.New("`claude` CLI not found on PATH")
-
 // claudeCLI runs the claude CLI found on PATH.
 type claudeCLI struct{ path string }
 
-// findClaude looks claude up on PATH.
+// findClaude looks claude up on PATH; a missing one is
+// claudecode.ErrNotFound.
 func findClaude() (claudeCLI, error) {
-	path, err := exec.LookPath("claude")
+	path, err := claudecode.LookPath()
 	if err != nil {
-		return claudeCLI{}, errNoClaude
+		return claudeCLI{}, err
 	}
 	return claudeCLI{path: path}, nil
 }
@@ -49,8 +47,8 @@ func (c claudeCLI) run(args ...string) (output, error) {
 		return output{}, fmt.Errorf("run %s: %w", c.path, err)
 	}
 	return output{
-		stdout: pyText(stdout.Bytes()),
-		stderr: pyText(stderr.Bytes()),
+		stdout: pyjson.Text(stdout.Bytes()),
+		stderr: pyjson.Text(stderr.Bytes()),
 		ok:     err == nil,
 	}, nil
 }
@@ -85,14 +83,14 @@ func (c claudeCLI) get(name string) (registered, bool, error) {
 // and the no-servers line.
 func parseList(stdout string) map[string]bool {
 	names := map[string]bool{}
-	for _, line := range pySplitLines(stdout) {
-		line = pyStrip(line)
+	for _, line := range pyjson.SplitLines(stdout) {
+		line = pyjson.Strip(line)
 		if !strings.Contains(line, ":") ||
 			strings.HasPrefix(line, "Checking") || strings.HasPrefix(line, "No MCP") {
 			continue
 		}
 		name, _, _ := strings.Cut(line, ":")
-		if name = pyStrip(name); name != "" {
+		if name = pyjson.Strip(name); name != "" {
 			names[name] = true
 		}
 	}
@@ -113,10 +111,10 @@ type registered struct {
 // servers.json and so counts as changed, as it did in sync_mcp.py.
 func parseGet(stdout string) (registered, bool) {
 	r := registered{transport: transportStdio, env: map[string]string{}}
-	for _, line := range pySplitLines(stdout) {
-		line = pyStrip(line)
+	for _, line := range pyjson.SplitLines(stdout) {
+		line = pyjson.Strip(line)
 		label, rest, _ := strings.Cut(line, ":")
-		rest = pyStrip(rest)
+		rest = pyjson.Strip(rest)
 		switch label {
 		case "Type":
 			r.transport = rest
@@ -125,11 +123,11 @@ func parseGet(stdout string) (registered, bool) {
 		case "Command":
 			r.command = rest
 		case "Args":
-			r.args = pyFields(rest)
+			r.args = pyjson.Fields(rest)
 		case "Environment":
 			for _, kv := range strings.Split(rest, ",") {
 				if k, v, ok := strings.Cut(kv, "="); ok {
-					r.env[pyStrip(k)] = pyStrip(v)
+					r.env[pyjson.Strip(k)] = pyjson.Strip(v)
 				}
 			}
 		}

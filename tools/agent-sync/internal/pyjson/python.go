@@ -6,11 +6,14 @@ import (
 	"math/big"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // The helpers in this file reproduce the parts of Python's value model the
 // sync scripts' output depends on, for the values Loads produces: bool(v),
-// str(v) and repr(v), plus the type names their error messages used.
+// str(v) and repr(v), plus the type names their error messages used. The
+// last few are the str methods and the text=True decoding the scripts read
+// the claude CLI's output with.
 
 // Truthy reports whether v is true the way Python's bool(v) is: None,
 // False, zero, the empty string and an empty array or object are false,
@@ -154,4 +157,41 @@ func reprString(s string) string {
 	}
 	b.WriteRune(quote)
 	return b.String()
+}
+
+// strSpace reports whether r is whitespace to Python's str.split and
+// str.strip: Go's unicode.IsSpace plus the four ASCII separators.
+func strSpace(r rune) bool {
+	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
+}
+
+// Strip returns s.strip().
+func Strip(s string) string { return strings.TrimFunc(s, strSpace) }
+
+// Fields returns s.split().
+func Fields(s string) []string { return strings.FieldsFunc(s, strSpace) }
+
+// Text decodes a subprocess's output the way text=True does: universal
+// newlines turn \r\n and a lone \r into \n.
+func Text(b []byte) string {
+	s := strings.ReplaceAll(string(b), "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
+}
+
+// SplitLines returns s.splitlines() for text Text decoded, which holds no
+// \r.
+func SplitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i, r := range s {
+		switch r {
+		case '\n', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
+			lines = append(lines, s[start:i])
+			start = i + utf8.RuneLen(r)
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
 }

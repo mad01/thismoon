@@ -15,8 +15,9 @@ The config file names the data, one section per kind:
 
 - `settings`: a template settings.json, merged into Claude Code's live
   settings file, then the local overlay (`settings.local.json`) on top.
-- `mods`: a mods file, plus drop-in files beside it, each naming one
-  directory marketplace and the mods to enable, disable or retire from it.
+- `mods`: a mods file, plus the drop-in files in its `dropins` directory,
+  each naming one directory marketplace and the mods to enable, disable or
+  retire from it.
   agent-sync runs `claude plugin` at user scope to match.
 - `mcp`: a servers.json, plus drop-in files merged over it by name, naming
   the MCP servers to register. agent-sync runs `claude mcp` at user scope
@@ -84,7 +85,7 @@ mods:
   file: ~/code/dotfiles/claude/mods.json
 mcp:
   servers: ~/code/dotfiles/claude/servers.json
-  prune: true
+  prune: false
 ```
 
 Every other key has a default, and each section's drop-in directory need

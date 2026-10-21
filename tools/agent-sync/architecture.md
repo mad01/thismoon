@@ -15,16 +15,17 @@ internal/cli/        cobra tree; one sync|plan|check family per section
 internal/apply/      modes, exit codes, Streams, the error printer
 internal/config/     config file location, top-level parse, Section helpers
 internal/pyjson/     ordered JSON with Python's parse, equality and dumps,
-                     plus bool(), str() and repr() of the values
-internal/pypath/     Python's path handling: pathlib, expanduser, realpath
+                     bool(), str() and repr() of the values, str methods
+internal/pypath/     Python's path handling: pathlib, expanduser, realpath, mkdir
 internal/gate/       this machine's host and profiles, the hosts/profiles gates
+internal/claudecode/ the claude CLI lookup and Claude Code's config directory
 internal/settings/   settings section: config, merge, report, sync, doctor
 internal/mods/       mods section: config, desired, gate, state, plan, doctor
 internal/mcp/        mcp section: config, servers, entry, claude, doctor
 ```
 
-The section packages depend on `apply`, `config`, `pyjson`, `pypath` and
-`gate`, and never on each other. `cli` is the only package that knows
+The section packages depend on `apply`, `config`, `pyjson`, `pypath`,
+`gate` and `claudecode`, and never on each other. `cli` is the only package that knows
 every section.
 
 ## Data flow
@@ -41,10 +42,10 @@ into three sections, and passes the named one to that section's
 - mods reads the mods files, each marketplace's manifest and Claude Code's
   plugin state, plans the `claude plugin` calls that close the gap, and in
   sync runs them in order.
-- mcp merges the servers files into the desired set, asks `claude mcp
-  list` (and `claude mcp get` per server, unless the stamp matches) what is
-  registered, and in sync runs `claude mcp add` and `remove`, then writes
-  the stamp.
+- mcp merges the servers files into the desired set and asks `claude mcp
+  list` what is registered. It also asks `claude mcp get` per server,
+  unless the stamp matches and neither `--force` nor `prune` is set. In
+  sync it runs `claude mcp add` and `remove`, then writes the stamp.
 
 Check prints a summary line and exits 1 on any change. Plan prints the
 change and writes nothing.

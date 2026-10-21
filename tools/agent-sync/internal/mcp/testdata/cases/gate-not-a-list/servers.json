@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "alpha": {
+      "profiles": 5,
+      "command": "/opt/a/bin/a"
+    }
+  }
+}

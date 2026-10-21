@@ -7,9 +7,9 @@
 // caller that reads the profiles gate only after the host gate passed keeps
 // their error behavior too.
 //
-// The sections read the two lists from their own entries, because their
-// type rules differ: mods iterates a gate the way Python does, while mcp
-// accepts only a list of strings.
+// Values reads a gate's JSON value the way both scripts iterated it. The
+// sections word their own errors around it, and mcp adds one rule: a hosts
+// list must hold strings.
 package gate
 
 import (
@@ -72,6 +72,38 @@ func (m Machine) ProfileAllowed(profiles []string) bool {
 		}
 	}
 	return false
+}
+
+// Values returns the values of a gate as the scripts iterated it, each
+// rendered with Python's str(): a list by element, an object by key, a
+// string by character. A falsy gate (null, false, 0, "", [] or {}) is nil,
+// which lets every machine through, and so is a missing one. ok is false for
+// a nonzero number or true, which Python cannot iterate: the scripts crashed
+// on it with a TypeError.
+func Values(raw any) (values []string, ok bool) {
+	if !pyjson.Truthy(raw) {
+		return nil, true
+	}
+	var items []any
+	switch t := raw.(type) {
+	case []any:
+		items = t
+	case *pyjson.Object:
+		for _, k := range t.Keys() {
+			items = append(items, k)
+		}
+	case string:
+		for _, r := range t {
+			items = append(items, string(r))
+		}
+	default:
+		return nil, false
+	}
+	values = make([]string, len(items))
+	for i, item := range items {
+		values[i] = pyjson.Str(item)
+	}
+	return values, true
 }
 
 // readProfiles returns the `profiles = [...]` tags in the TOML file at path,

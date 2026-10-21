@@ -22,13 +22,14 @@ func (a *app) mcpCmd() *cobra.Command {
 A server missing from 'claude mcp list' is added. A server whose 'claude mcp
 get' spec differs is removed and added again; a remote (http or sse) server
 is compared by url alone, so an OAuth login survives. With mcp.prune, a
-registered server the desired set does not name is removed. An entry's hosts
-and profiles lists gate it to matching machines; profiles come from the
-TOML file in mcp.profiles_file.
+registered server the desired set does not name is removed at user scope; a
+name claude cannot remove there, such as a claude.ai connector or a plugin's
+server, fails with exit 2. An entry's hosts and profiles lists gate it to
+matching machines; profiles come from the TOML file in mcp.profiles_file.
 
 The per-server spec check is slow, so sync records a hash of the desired set
 in mcp.stamp. While it matches, sync and check skip the check; plan always
-runs it, and --force makes sync and check run it.
+runs it, and --force or mcp.prune makes sync and check run it.
 
 check is the drift gate for 'ralph doctor': its first line is a one-line
 summary, and it exits 1 when sync would change anything. A failed claude

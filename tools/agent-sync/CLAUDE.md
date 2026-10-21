@@ -19,9 +19,12 @@ agent-sync/
     apply/             shared: the three modes, exit codes, Streams, Main
     config/            shared: config file location, top-level parse, Section helpers
     pyjson/            shared: JSON parse and print that match Python's json module,
-                       plus bool(), str() and repr() of the decoded values
-    pypath/            shared: pathlib normalizing, expanduser, realpath, glob, OSError text
+                       bool(), str() and repr() of the decoded values, and the str
+                       methods the scripts parsed claude's output with
+    pypath/            shared: pathlib normalizing, expanduser, realpath, glob, mkdir,
+                       OSError text
     gate/              shared: the machine (host, profile tags) and the hosts/profiles gates
+    claudecode/        shared: the claude CLI lookup and Claude Code's config directory
     settings/          the settings section (config, merge, report, sync, doctor)
     mods/              the mods section (config, desired, gate, state, plan, doctor)
     mcp/               the mcp section (config, servers, entry, claude, doctor)
@@ -63,15 +66,30 @@ into the exit code and prints any error once as `error: <message>`.
 - Python values: `pyjson.Truthy` is `bool(v)`, `pyjson.Str` is `str(v)`,
   `pyjson.Repr` is `repr(v)`, and `pyjson.Describe` names a value's type
   in an error message.
+- Python strings: `pyjson.Text` decodes subprocess output as `text=True`
+  does (universal newlines), and `pyjson.Strip`, `pyjson.Fields` and
+  `pyjson.SplitLines` are `str.strip()`, `str.split()` and
+  `str.splitlines()`. Never `strings.TrimSpace` or `strings.Fields` where a
+  script used those: Python's whitespace set is wider.
 - Paths: `pypath.Clean` and `pypath.Join` normalize as pathlib does,
   `pypath.ExpandUser` is `Path.expanduser`, `pypath.RealPath` is Python
-  3.13's `os.path.realpath`, `pypath.Glob` is a sorted `Path.glob`, and
+  3.13's `os.path.realpath`, `pypath.Glob` is a sorted `Path.glob`,
+  `pypath.MkdirParents` is `Path.mkdir(parents=True, exist_ok=True)`, and
   `pypath.ErrorText` is `str()` of an OSError (`[Errno 2] ...: '/path'`).
 - Gates: `gate.Current(profilesFile)` reads the lowercased host name and
   the profile tags (`profiles = [...]` in ralph's `config.local.toml`).
-  `Machine.HostAllowed` and `Machine.ProfileAllowed` take the entry's
-  lists; each section parses those lists itself, because mods and mcp
-  type-check them differently.
+  `gate.Values` reads a gate's JSON the way both scripts iterated it. A
+  list counts by element, an object by key and a string by character, each
+  through `str()`; a falsy value is no gate. `Machine.HostAllowed` and
+  `Machine.ProfileAllowed` take the result. Each section words its own
+  errors, and mcp adds one rule (a hosts list must hold strings).
+- Claude Code: `claudecode.LookPath` finds the claude CLI for mods, mcp and
+  both doctors, and `claudecode.ConfigDirEnv` and
+  `claudecode.DefaultConfigDir` name Claude Code's config directory. A
+  claude found first through a relative PATH entry (`.`, or an empty one)
+  counts as missing; the scripts' `shutil.which` returned that relative
+  path. No fixture covers it, because the case tests cannot set the
+  working directory; `claudecode`'s own test does.
 - Doctor: each section exports `DoctorChecks(config.Section)
   []doctor.Check`; `cli/doctor.go` runs the config check, then every
   section's checks in order.
@@ -142,8 +160,12 @@ Deliberate deviations:
 
 - A missing mods file says `mods file not found: <path>`; the script said
   `<path>: top level must be an object` (`mods-file-missing`).
-- A `hosts` or `profiles` gate that is a number or a bool is an error; the
-  script crashed with a TypeError (`gate-not-a-list`).
+- A `hosts` or `profiles` gate that is a nonzero number or `true` is an
+  error; the script crashed with a TypeError (`gate-not-a-list`). `0` and
+  `false` mean no gate, as in the script.
+- A claude found first through a relative PATH entry counts as missing
+  (see Claude Code above), so sync fails and plan prints the bare name; the
+  script ran that claude.
 
 ### mcp
 
@@ -152,13 +174,20 @@ merged over it by name. Names starting with `_` are skipped, and so are
 entries whose `hosts` or `profiles` gate excludes this machine (profiles
 come from `profiles_file`). Missing servers are added at user scope. A
 server whose `claude mcp get` spec differs is removed and added again;
-remote (http, sse) servers are compared by url alone. `prune` removes
-registered names outside the set, in any scope, connectors added by hand
-included.
+remote (http, sse) servers are compared by url alone.
+
+`prune` removes every name `claude mcp list` shows outside the set, but
+only through `claude mcp remove --scope user`. A name that is not a
+user-scope server fails the run with exit 2. Such names are a server in
+another scope, a `claude.ai X` connector, and `plugin`, which a
+plugin-provided server's `plugin:x:y` list line parses to. That matches
+the script.
 
 A stamp (the sha256 of the desired set plus the host name) lets sync and
 check skip the per-server get calls while it matches. Plan always runs
-them, and `--force` makes sync and check run them too.
+them, and `--force` or `prune` makes sync and check run them too. So with
+prune on, the env and space-in-argument bugs below re-add those servers on
+every sync, and check exits 1 on every run.
 
 `testdata/reference.py <sync_mcp.py>` regenerates `want/` with
 `testdata/fake-claude.sh` as claude, and `internal/cli/mcp_test.go` runs
@@ -171,6 +200,13 @@ Deliberate deviations:
 - Every entry field is type-checked up front. The script split a string
   `args` into characters (`args-string`) and crashed on an entry that is
   not an object (`entry-not-object`).
+- The `hosts` and `profiles` gates read as the script read them
+  (`gate-types`), except where it crashed. A hosts list item that is not a
+  string is an error (`gate-host-not-string`; the script called
+  `h.lower()`), and so is a gate that is a nonzero number or `true`
+  (`gate-not-a-list`).
+- A claude found first through a relative PATH entry counts as missing
+  (see Claude Code above); the script ran that claude.
 - `check` is a new mode. Its want files are written by hand.
 
 Script bugs kept for parity until the scripts are deleted, seen with claude
@@ -217,12 +253,23 @@ Every command takes `--config` (default `$AGENT_SYNC_CONFIG`, then
   enters the repo.
 - Tests never touch the real `~/.claude`. They set `HOME` and clear
   `CLAUDE_CONFIG_DIR` and `XDG_CONFIG_HOME` per test. Keep it that way.
-- Goldens come from Python. `internal/pyjson/testdata/golden.py`
-  regenerates `python.json`; edit the script, not the JSON. For settings,
-  `python3 -I internal/settings/testdata/oracle.py <dotfiles checkout>
-  [CASE ...]` rewrites `want/`, and `--out DIR` writes elsewhere for a
-  parity diff. The mods and mcp generators above work the same way and
-  leave `.deviation` files alone.
+- Goldens come from Python, and no generator touches a `.deviation`
+  file. `internal/pyjson/testdata/golden.py` regenerates `python.json`;
+  edit the script, not the JSON. The three case generators differ:
+  - settings: `python3 -I internal/settings/testdata/oracle.py <dotfiles
+    checkout> [--out DIR] [CASE ...]` reads the script at the pinned
+    commit with git show and rewrites each case's `want/`; `--out DIR`
+    writes `DIR/<case>/want/` instead, for a parity diff.
+  - mods: `python3 -I internal/mods/testdata/generate.py <dotfiles>/recipes/claude-mods`
+    imports `sync_mods.py` and `test_sync_mods.py` from that directory as
+    checked out. The cases are defined in generate.py, which rewrites all
+    of `cases/` (homes, case.json, want) and deletes any case it does not
+    define. It takes no case list and no `--out`: copy `testdata/` and run
+    the copy for a parity diff.
+  - mcp: `python3 -I internal/mcp/testdata/reference.py <path to
+    sync_mcp.py> [CASE ...]` runs the given script. Case inputs and
+    case.json are hand-written; it rewrites only `want/` and leaves check
+    steps' wants alone. No `--out`: copy `testdata/` and run the copy.
 - The fake claude scripts run as fresh executables; macOS can take seconds
   to launch one the first time, so the case tests launch them once,
   untimed, before the first case.

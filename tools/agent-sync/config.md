@@ -54,7 +54,9 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
 ### `mcp`
 
 - `mcp.servers` (path, required): the base servers.json,
-  `{"servers": {name: spec}}`.
+  `{"servers": {name: spec}}`. A spec's `hosts` and `profiles` lists gate
+  it to machines, as in the mods file; each `hosts` entry must be a
+  string.
 - `mcp.dropins` (path, default `~/.config/claude-mcp/servers.d`): a
   directory whose `*.json` files have the same shape and are merged over
   `servers` by name, in name order. It need not exist.
@@ -65,8 +67,11 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
   records a hash of the desired set. While it matches, sync and check skip
   the per-server spec check.
 - `mcp.prune` (bool, default `false`): remove registered servers the
-  desired set does not name, in any scope, including servers added by
-  hand.
+  desired set does not name, including servers added by hand. It removes
+  at user scope only. A name it cannot remove there fails the run with
+  exit 2, such as a claude.ai connector, a server a plugin provides, or a
+  server in another scope. It also makes every sync and check compare each
+  server's spec, as `--force` does.
 
 ## Environment variables
 
@@ -78,7 +83,8 @@ that YAML would read as a number or a bool. A bool must be a bare `true` or
   directory. It holds the default live and overlay settings files, which
   need it absolute, and the plugin state mods reads, where a leading `~`
   is expanded.
-- `PATH`: mods and mcp run the `claude` CLI found on it.
+- `PATH`: mods and mcp run the first `claude` CLI found on it. One found
+  through a relative entry (`.`, or an empty entry) counts as missing.
 
 ## Example
 

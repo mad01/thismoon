@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mad01/thismoon/tools/agent-sync/internal/claudecode"
 	"github.com/mad01/thismoon/tools/agent-sync/internal/config"
 )
 
@@ -77,7 +78,7 @@ func TestParseConfigResolvesPaths(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(ClaudeConfigDirEnv, tc.claudeDir)
+			t.Setenv(claudecode.ConfigDirEnv, tc.claudeDir)
 			got, err := parseSettings(t, tc.yaml)
 			if err != nil {
 				t.Fatalf("ParseConfig error: %v", err)
@@ -95,7 +96,7 @@ func TestParseConfigResolvesPaths(t *testing.T) {
 // the config's format.
 func TestParseConfigRejects(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv(ClaudeConfigDirEnv, "")
+	t.Setenv(claudecode.ConfigDirEnv, "")
 	cases := []struct {
 		name, yaml string
 		want       []string // substrings of the error
@@ -175,7 +176,7 @@ func TestParseConfigRejects(t *testing.T) {
 }
 
 func TestParseConfigRejectsRelativeClaudeConfigDir(t *testing.T) {
-	t.Setenv(ClaudeConfigDirEnv, "relative/claude")
+	t.Setenv(claudecode.ConfigDirEnv, "relative/claude")
 	_, err := parseSettings(t, "settings:\n  template: /t.json\n")
 	if err == nil || !strings.Contains(err.Error(), "CLAUDE_CONFIG_DIR") {
 		t.Errorf("ParseConfig error = %v, want one naming CLAUDE_CONFIG_DIR", err)
