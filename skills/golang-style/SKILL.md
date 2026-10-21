@@ -1,6 +1,6 @@
 ---
 name: golang-style
-description: Write and review well-structured, safe, idiomatic Go — naming, formatting, function and package design, error handling, code structure, and the HTTP/CLI/store patterns used across this codebase. Use when writing new Go, reviewing a diff for structure and idioms, or deciding how to lay out a package, name things, handle errors, or shape a function. Complements golang-pro (which owns concurrency, channels, generics depth, pprof, and gRPC). Invoke for Go code structure, idiomatic Go, gofmt/golangci-lint, error wrapping, package layout, function design, or "make this more idiomatic".
+description: Write and review well-structured, safe, idiomatic Go (naming, formatting, function and package design, error handling, code structure, and the HTTP/CLI/store patterns used across this codebase). Use when writing new Go, reviewing a diff for structure and idioms, or deciding how to lay out a package, name things, handle errors, or shape a function. Complements golang-pro (which owns concurrency, channels, generics depth, pprof, and gRPC). Invoke for Go code structure, idiomatic Go, gofmt/golangci-lint, error wrapping, package layout, function design, or "make this more idiomatic".
 license: MIT
 metadata:
   version: "1.1.0"
@@ -26,7 +26,7 @@ Write Go the way the house codebase already writes it: stdlib-first, compact, ex
 - **Constructors:** `New(...)` returns a concrete `*T`, or `(*T, error)` when construction can fail. Never return an interface.
 - **Config in, not options:** pass an `Input`/`Config`/`Patch` struct, not a long parameter list and not functional `WithX` options. Use pointer fields (`*string`) when "omitted" must differ from "cleared".
 - **Interfaces at the consumer:** define small interfaces (1–3 methods) in the package that consumes them, for a test seam. Accept interfaces, return concrete types.
-- **Errors:** wrap with `%w` whenever there is an underlying error. Package-prefix sentinel messages (`present: page not found`). Map sentinels to status/exit at the boundary with `errors.Is`/`errors.As`. Handle an error once — log it or return it, never both.
+- **Errors:** wrap with `%w` whenever there is an underlying error. Package-prefix sentinel messages (`present: page not found`). Map sentinels to status/exit at the boundary with `errors.Is`/`errors.As`. Handle an error once: log it or return it, never both.
 - **Side effects at the edges:** keep pure model and helpers in one file, the I/O shell in another. Push `exec`, file writes, notifications, and time to the edge behind a small interface or an injected `now func() time.Time`.
 - **Boundary parsing:** parse and validate CLI, HTTP, config, and persisted input at the boundary. Pass typed, trusted values into the core and keep each invariant in one place.
 - **Lifetimes:** pair acquired resources with cleanup, pass `context.Context` at real boundaries, and make every goroutine's exit condition visible.
@@ -57,7 +57,7 @@ Load the file that matches the task.
 
 ### Do
 - Put `main` in `cmd/<tool>/main.go` as a thin shim over `internal/cli.Execute()`; print the error once and `os.Exit(1)`.
-- Wrap underlying errors with `%w` in `fmt.Errorf` (this is the one place the codebase drifts — `worklog/internal/store/store.go` uses `%v`; new and touched code uses `%w`).
+- Wrap underlying errors with `%w` in `fmt.Errorf` (this is the one place the codebase drifts: `worklog/internal/store/store.go` uses `%v`; new and touched code uses `%w`).
 - Package-prefix sentinel error messages.
 - Return concrete types from constructors; define interfaces where they are consumed.
 - Pass an `Input`/`Config`/`Patch` struct instead of 4+ positional parameters.
@@ -69,13 +69,13 @@ Load the file that matches the task.
 
 ### Don't
 - No `util`, `common`, `helpers`, or `base` packages. Keep helpers unexported in the package that uses them.
-- No functional-options (`WithX`) pattern — this codebase uses config structs.
+- No functional-options (`WithX`) pattern; this codebase uses config structs.
 - No third-party logging (`zap`/`logrus`/`slog` adoption), assertion libraries (`testify`), or error libraries (`pkg/errors`) unless asked. Match the stdlib-first stack.
 - No `log`-and-`return` of the same error.
 - No interface returned from a constructor; no interface defined next to its single implementation just in case.
-- No `context.Context` threaded through local-I/O store layers — keep it at process/exec/HTTP boundaries.
-- No `panic` for expected errors (input, I/O, network) — panic only on broken invariants (`crypto/rand` failure, missing embedded asset), package-prefixed; no `recover` outside a single top-level boundary.
-- No `init()` beyond cobra command/flag registration in `internal/cli`, and no mutable package-level state business logic writes to — state lives in a struct from `New(...)`.
+- No `context.Context` threaded through local-I/O store layers; keep it at process/exec/HTTP boundaries.
+- No `panic` for expected errors (input, I/O, network). Panic only on broken invariants (`crypto/rand` failure, missing embedded asset), package-prefixed; no `recover` outside a single top-level boundary.
+- No `init()` beyond cobra command/flag registration in `internal/cli`, and no mutable package-level state business logic writes to; state lives in a struct from `New(...)`.
 
 ## Workflow
 
@@ -83,7 +83,7 @@ Load the file that matches the task.
 
 **Reviewing:** read the diff against the checklist below; cite the specific house pattern the code should match, with a file path from this repo as the example.
 
-## Review checklist — definition of done
+## Review checklist: definition of done
 
 - [ ] `cmd/<tool>/main.go` is thin; the root cobra command sets `SilenceUsage`/`SilenceErrors`; errors print once.
 - [ ] Packages are role-named under `internal/`; no `util`/`common`.

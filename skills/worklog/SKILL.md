@@ -1,7 +1,7 @@
 ---
 name: worklog
-description: Save and resume cross-session work state for long, cross-repo tasks — keyed by ticket id or topic, not by working directory. Use when the user says "worklog", "checkpoint", "save my progress", "where was I", "pick up where I left off", or when a session is ending mid-task and progress should survive. Backed by the worklog MCP (worklog_checkpoint/list/search/show/status) with the `worklog` CLI as fallback.
-argument-hint: "[ticket|topic|query]  — omit to list active items"
+description: Save and resume cross-session work state for long, cross-repo tasks, keyed by ticket id or topic, not by working directory. Use when the user says "worklog", "checkpoint", "save my progress", "where was I", "pick up where I left off", or when a session is ending mid-task and progress should survive. Backed by the worklog MCP (worklog_checkpoint/list/search/show/status) with the `worklog` CLI as fallback.
+argument-hint: "[ticket|topic|query] (omit to list active items)"
 ---
 
 # worklog
@@ -9,7 +9,7 @@ argument-hint: "[ticket|topic|query]  — omit to list active items"
 Durable, searchable memory for work that spans sessions and repos. The user
 often starts in a tmp dir and works across several repos on one ticket, then
 stops and resumes days later. worklog keys that state on the **task** (a ticket
-id or topic slug) so it's findable again — unlike Claude Code's per-directory
+id or topic slug) so it's findable again, unlike Claude Code's per-directory
 auto-memory, which orphans anything started in a tmp dir.
 
 This is a different path from `/handoff` (which writes a one-off bridge doc
@@ -22,12 +22,12 @@ Prefer the **MCP tools** (no shell prompt): `worklog_checkpoint`, `worklog_list`
 fallback if the MCP server isn't connected (`worklog checkpoint|list|search|show|status`).
 
 When checkpointing via MCP, **always pass `cwd`** (the user's current working
-directory) so the touched repo is recorded — the MCP server runs from `/` and
+directory) so the touched repo is recorded; the MCP server runs from `/` and
 can't detect it otherwise.
 
 ## Modes
 
-### Read — resume (default)
+### Read: resume (default)
 
 - **No argument** → `worklog_list` with `status: "active"`. Also run it with
   `repo: <current repo>` if the user is inside a git repo, to surface items
@@ -38,14 +38,14 @@ can't detect it otherwise.
   if re-entering a specific repo, `worklog_show` with that `repo` to pull its
   notes. Restore that context into the session before continuing.
 
-### Write — checkpoint
+### Write: checkpoint
 
 Triggered by "checkpoint", "save my progress", "worklog this", or when a
 session is wrapping up mid-task.
 
 **Core principle: the checkpoint is the ONLY context a fresh session gets.**
 Write `where` for a reader with zero prior knowledge of the task. A thin
-checkpoint forces the next session to re-discover everything — wasting time and
+checkpoint forces the next session to re-discover everything, wasting time and
 risking different conclusions. Err on the side of too much detail, not too
 little.
 
@@ -76,14 +76,14 @@ little.
      prerequisites (e.g., "clone repo X before starting step 3")
 3. **Call `worklog_checkpoint`** with:
    - `key`
-   - `where` — the full state snapshot (replaces "Where I am")
-   - `note` — a log entry (what changed this session + remaining work list)
-   - `cwd` — the user's working directory
-   - `ticket` / `topic` — on first creation
+   - `where`: the full state snapshot (replaces "Where I am")
+   - `note`: a log entry (what changed this session + remaining work list)
+   - `cwd`: the user's working directory
+   - `ticket` / `topic`: on first creation
 4. Report the key and how to resume (`/worklog <key>`).
 
 Durable *insights* (preferences, decisions, reusable facts) still go to
-auto-memory — worklog holds resumable *task state*. "remember" stays mapped to
+auto-memory; worklog holds resumable *task state*. "remember" stays mapped to
 auto-memory; worklog triggers only on the verbs above.
 
 ### Manage
@@ -101,5 +101,5 @@ auto-memory; worklog triggers only on the verbs above.
 - One task spanning N repos is **one item** with N per-repo notes, not N items.
 - **Ticket firewall:** an item keys on the tracker its work actually lives in,
   and only that one. Never reference one tracker world's ticket from an item
-  keyed in another — the worlds stay strictly separated. Which trackers are in
+  keyed in another; the worlds stay strictly separated. Which trackers are in
   play, and their key formats, come from the agent's own global config.

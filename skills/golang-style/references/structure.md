@@ -8,12 +8,12 @@ Each tool is its own module: `module github.com/mad01/dotfiles/<tool>`. The entr
 
 ```
 worklog/
-  cmd/worklog/main.go   — entry → cli.Execute()
+  cmd/worklog/main.go   # entry → cli.Execute()
   internal/
-    cli/                — cobra command tree
-    store/              — the on-disk tree: items, per-repo notes, git
-    mcpserver/          — MCP tool wiring
-  go.mod                — module github.com/mad01/thismoon (monorepo root; worklog is tools/worklog)
+    cli/                # cobra command tree
+    store/              # the on-disk tree: items, per-repo notes, git
+    mcpserver/          # MCP tool wiring
+  go.mod                # module github.com/mad01/thismoon (monorepo root; worklog is tools/worklog)
   Makefile
 ```
 
@@ -33,7 +33,7 @@ A tool starts as a few `internal/` packages. Split a package out when it has a d
 
 ## Functional core, imperative shell
 
-Keep pure model + helpers in one file and the I/O shell in another. `events/internal/event/event.go` holds the `Event` model and pure functions (`Validate`, `SanitizeSource`, `NewID`, `TimeFromID`); `events/internal/store/store.go` holds the mutable, file-touching store. thismoon `services/d-man/internal/hosts` is pure `Validate`/`Render`/`Splice` plus a thin `Sync` shell. Side effects (`exec`, file writes, notifications, time) live at the edge — see `safety.md` and `functions.md`.
+Keep pure model + helpers in one file and the I/O shell in another. `events/internal/event/event.go` holds the `Event` model and pure functions (`Validate`, `SanitizeSource`, `NewID`, `TimeFromID`); `events/internal/store/store.go` holds the mutable, file-touching store. thismoon `services/d-man/internal/hosts` is pure `Validate`/`Render`/`Splice` plus a thin `Sync` shell. Side effects (`exec`, file writes, notifications, time) live at the edge (see `safety.md` and `functions.md`).
 
 ## File organization
 
@@ -55,7 +55,7 @@ import (
 ```
 
 - **Moderate file sizes.** Largest non-test files run ~450 lines; most are 200–350. No god-files.
-- **Tests sit beside source** as `*_test.go` in the same package (white-box) or `_test` package (black-box) — see `testing.md`.
+- **Tests sit beside source** as `*_test.go` in the same package (white-box) or `_test` package (black-box). See `testing.md`.
 
 ## Doc comments state the contract
 

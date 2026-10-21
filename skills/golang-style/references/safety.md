@@ -9,11 +9,11 @@ A freshly declared value should be usable. `var b strings.Builder`, `var mu sync
 ## Nil slices and maps
 
 - A `nil` slice is a valid empty slice. Prefer `var t []T` over `[]T{}`, and test emptiness with `len(s) == 0`, not `s == nil`.
-- Reading a `nil` map is fine; writing to one panics. Allocate before writing. When returning a list, returning `nil` for "none" is idiomatic — `worklog`'s `List` returns `nil, nil` when the root doesn't exist.
+- Reading a `nil` map is fine; writing to one panics. Allocate before writing. When returning a list, returning `nil` for "none" is idiomatic: `worklog`'s `List` returns `nil, nil` when the root doesn't exist.
 
 ## Defer for cleanup
 
-Use `defer` to pair acquire/release next to each other: `defer res.Body.Close()`, `defer t.Stop()`, `defer cancel()`. Arguments are evaluated at the `defer` statement, and defers run LIFO. Avoid `defer` inside a hot loop where resources would pile up until return — close per iteration instead.
+Use `defer` to pair acquire/release next to each other: `defer res.Body.Close()`, `defer t.Stop()`, `defer cancel()`. Arguments are evaluated at the `defer` statement, and defers run LIFO. Avoid `defer` inside a hot loop where resources would pile up until return; close per iteration instead.
 
 ## Copy at the boundary; don't copy locks
 
@@ -26,7 +26,7 @@ The house rule: thread `context.Context` where it crosses a real boundary (a pro
 
 - `ticker.Run(ctx, ...)` takes a context for cancellation and selects on `ctx.Done()`.
 - `humanizer`'s vale `exec` calls thread `ctx`.
-- `store` and `render` APIs take **no** context — they do fast local I/O. This is a deliberate decision, not drift; keep it consistent.
+- `store` and `render` APIs take **no** context; they do fast local I/O. This is a deliberate decision, not drift; keep it consistent.
 
 When you do take a context, it is the **first** parameter, named `ctx`, never stored in a struct field. Only call `context.Background()` at an entry point.
 
@@ -40,12 +40,12 @@ These are mostly sequential CLI/HTTP tools. Add goroutines only where they earn 
 
 - **Single-writer:** `events serve` is the *only* writer of the JSONL store; the MCP and CLI are HTTP clients to it, so there are no file-lock races. Design for one owner before reaching for mutexes.
 - **Goroutines where justified:** `d-man` probes backends concurrently with a `sync.WaitGroup` and an indexed result slice (no shared-write race), behind a `sync.Mutex`-guarded TTL cache. Its `serve` runs a watch loop plus signal handling.
-- **Cancellation:** loop on `select { case <-ctx.Done(): return; case <-t.C: ... }` (the `status` monitor loop), and shut an HTTP server down on `signal.NotifyContext` (the `d-man` daemon — see `http.md`).
+- **Cancellation:** loop on `select { case <-ctx.Done(): return; case <-t.C: ... }` (the `status` monitor loop), and shut an HTTP server down on `signal.NotifyContext` (the `d-man` daemon; see `http.md`).
 - **Lifetimes:** when spawning a goroutine, make its owner and exit condition clear at the call site. Do not start background work that has no cancellation, join, or process-lifetime contract.
 - A swappable handler guards its pointer with a `sync.RWMutex` (`d-man`'s `reloadableHandler`) so config reloads don't restart the listener.
 
-Run tests with `-race` when you do add concurrency (the internal tools don't yet pass `-race` by default — adding it is a worthwhile uplift).
+Run tests with `-race` when you do add concurrency (the internal tools don't yet pass `-race` by default; adding it is a worthwhile uplift).
 
 ## Keep the side effect at the edge behind a seam
 
-Push `exec`, file writes, notifications, and randomness to the edge behind a tiny interface so the core stays testable. `deps`' `alert.Notifier` wraps the `osascript` call; the scanner fires through the interface and a test passes a fake. The same edge escapes untrusted input — `alert.appleScriptString` escapes quotes and backslashes so a package name can't break out of the AppleScript literal. Use `crypto/rand` for anything security-sensitive, never `math/rand`.
+Push `exec`, file writes, notifications, and randomness to the edge behind a tiny interface so the core stays testable. `deps`' `alert.Notifier` wraps the `osascript` call; the scanner fires through the interface and a test passes a fake. The same edge escapes untrusted input: `alert.appleScriptString` escapes quotes and backslashes so a package name can't break out of the AppleScript literal. Use `crypto/rand` for anything security-sensitive, never `math/rand`.

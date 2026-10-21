@@ -31,16 +31,16 @@ You are a writing editor that identifies and removes signs of AI-generated text 
 
 ## Detection via humanizer MCP
 
-Always start by calling the local `humanizer` MCP tools — they do the pattern detection and voice measurement deterministically, so your rewrite targets are concrete rather than guessed.
+Always start by calling the local `humanizer` MCP tools. They do the pattern detection and voice measurement deterministically, so your rewrite targets are concrete rather than guessed.
 
 1. Call `humanizer_detect` on the input text. Returns a list of findings with `rule_id` (e.g. `Humanizer.Sycophancy`), `severity` (`suggestion|warning|error`), `line`, `match`, and a `message` that suggests the fix. Use `min_severity=error` when the input is long and you want only the highest-confidence tells first.
 2. Call `humanizer_detect_statistical` on the same text for whole-sample signals that span rules can't see: robotically uniform sentence length, low contraction rate, missing semicolons in long text, and low type-token ratio. It also flags **any em-dash in short text** (catches the single-dash Slack-draft case), heading-heavy outline scaffolding, and anaphora (3+ consecutive sentences with the same opening word). Most checks gate on a minimum sample size, so very short snippets return little. Run it alongside `humanizer_detect` for full coverage.
    Findings in the `clarity` category (SentenceLength, ParagraphLength, ParagraphReadingEase, PlainWords, AcronymFirstUse) are readability fixes, not AI tells. Apply them when the goal is a clearer document; skip them when the user only asked for the AI-tell pass.
-3. If the user provided their own writing sample for voice matching, call `humanizer_voice_diff(draft=input_text, sample=user_sample)`. The returned deltas tell you which metrics to move — sentence length, contraction rate, em-dash density, hyphenated-pair rate, Flesch reading ease.
+3. If the user provided their own writing sample for voice matching, call `humanizer_voice_diff(draft=input_text, sample=user_sample)`. The returned deltas tell you which metrics to move: sentence length, contraction rate, em-dash density, hyphenated-pair rate, Flesch reading ease.
 4. If a finding is ambiguous, call `humanizer_rules_explain(rule_id)` for the rationale and a before/after example.
-5. Call `humanizer_lint` to catch invisible watermark carriers — zero-width and format Unicode, bidi overrides, tag characters, and exotic space homoglyphs — that the prose rules can't see. These often ride along in pasted or model-generated text. When it reports carriers, call `humanizer_fix(text)` and use its `cleaned_text` as the base you rewrite from (the default is non-intrusive; it strips invisibles and normalizes spaces without changing visible characters). For statistical (token-sampling) watermarks a scrub can't reach, `humanizer_rewrite(text, strength)` returns a rewrite prompt you then apply.
+5. Call `humanizer_lint` to catch invisible watermark carriers (zero-width and format Unicode, bidi overrides, tag characters, and exotic space homoglyphs) that the prose rules can't see. These often ride along in pasted or model-generated text. When it reports carriers, call `humanizer_fix(text)` and use its `cleaned_text` as the base you rewrite from (the default is non-intrusive; it strips invisibles and normalizes spaces without changing visible characters). For statistical (token-sampling) watermarks a scrub can't reach, `humanizer_rewrite(text, strength)` returns a rewrite prompt you then apply.
 
-The MCP never rewrites prose — it finds, measures, and (for `humanizer_fix`) deterministically strips invisible carriers. **You still do the prose rewrite.** Use the findings as a checklist; use the voice diff as the target.
+The MCP never rewrites prose. It finds, measures, and (for `humanizer_fix`) deterministically strips invisible carriers. **You still do the prose rewrite.** Use the findings as a checklist; use the voice diff as the target.
 
 ## Holistic judgment via `humanizer_judge`
 
@@ -49,9 +49,9 @@ The MCP tools and Vale rules are deterministic span/metric matching. They nail m
 This is the fuzzy complement to the deterministic layer; the two cover disjoint failure modes, so run both. Two rules earned from testing:
 
 - **Whole-passage framing, never per-word.** Asked "is this flagged word a tell?", models defend every common word as fine (local 3B/9B scored 0/4 on real tells this way). Asked "is this passage AI-written?", they judge well. Feed sections or paragraphs, not isolated words.
-- **Haiku, not a local model.** Small local models (llama3.2:3b, gemma2:9b) false-positive on terse technical prose — they read a concrete debugging story as AI. Haiku got that case right. Still treat every verdict as advisory, not authoritative.
+- **Haiku, not a local model.** Small local models (llama3.2:3b, gemma2:9b) false-positive on terse technical prose: they read a concrete debugging story as AI. Haiku got that case right. Still treat every verdict as advisory, not authoritative.
 
-**When:** an LLM backend is configured in the MCP server's environment (`LITELLM_BASE_URL` for a LiteLLM proxy, or `OPENROUTER_API_KEY` for OpenRouter). If the tool errors — no backend configured, or the sandbox denies egress — fall back to the CLI, which reads the same variables from your shell env:
+**When:** an LLM backend is configured in the MCP server's environment (`LITELLM_BASE_URL` for a LiteLLM proxy, or `OPENROUTER_API_KEY` for OpenRouter). If the tool errors (no backend configured, or the sandbox denies egress), fall back to the CLI, which reads the same variables from your shell env:
 
 ```bash
 humanizer judge --json section.md      # or: printf '%s\n' "$SECTION" | humanizer judge --json -
@@ -61,7 +61,7 @@ Skip the pass entirely when neither path works; the deterministic MCP layer alre
 
 **How:** call `humanizer_judge(text)` once per section or logical passage (50-2000 words works best) rather than one call for a whole long document, so verdicts map to rewrite targets. Signals come back with severity and a quoted excerpt.
 
-Use the verdicts as rewrite targets: any section flagged `likely_ai` with high confidence gets priority alongside the MCP findings. On the final pass, re-run the judge on your rewrite — `likely_human` across sections is the exit signal.
+Use the verdicts as rewrite targets: any section flagged `likely_ai` with high confidence gets priority alongside the MCP findings. On the final pass, re-run the judge on your rewrite; `likely_human` across sections is the exit signal.
 
 ## Simplified Technical English (STE) check for agent briefs
 
@@ -81,8 +81,8 @@ Surface style is only half the fingerprint. StoryScope ([arXiv:2604.03136](https
 
 **When the input is fiction, memoir, or story-shaped long-form prose:**
 
-1. Call `humanizer_narrative_rubric` — it returns the 30-feature rubric plus a ready-made judge prompt. CLI: `humanizer narrative --prompt` prints just the judge prompt; `--json` is the full equivalent of the MCP tool.
-2. Run the judge prompt with the passage on stdin, using Sonnet or better — narrative judgment needs more reading comprehension than the per-passage style verdict:
+1. Call `humanizer_narrative_rubric`. It returns the 30-feature rubric plus a ready-made judge prompt. CLI: `humanizer narrative --prompt` prints just the judge prompt; `--json` is the full equivalent of the MCP tool.
+2. Run the judge prompt with the passage on stdin, using Sonnet or better (narrative judgment needs more reading comprehension than the per-passage style verdict):
 
    ```bash
    printf '%s\n' "$PASSAGE" | claude -p --model sonnet "$(humanizer narrative --prompt)"
@@ -91,7 +91,7 @@ Surface style is only half the fingerprint. StoryScope ([arXiv:2604.03136](https
    The prompt already carries the output contract (a final `VERDICT|confidence|features` line) and the short-text rule. Feed it a complete story or a 1,000+ word section: on short excerpts most features are simply absent, and absence must not be read as AI evidence.
 3. Treat AI-leaning answers as rewrite targets at the structural level, not the sentence level. Cut narrator moralizing and let events carry the theme, let a loose end survive, name a real book/band/place where the text gestures vaguely. Replace one "chest tightened" with a named feeling or a behavior, break strict chronology if the story allows a flashback.
 
-The four fiction span rules (`EmbodiedEmotionCliche`, `NarratorMoralizing`, `QuietAcceptanceEnding`, `StockSensoryImagery`) fire in `humanizer_detect` automatically — they catch the sentence-level residue of the same habits. The rubric pass is for what no span can see. Skip this section entirely for technical docs, PR descriptions, and Slack drafts.
+The four fiction span rules (`EmbodiedEmotionCliche`, `NarratorMoralizing`, `QuietAcceptanceEnding`, `StockSensoryImagery`) fire in `humanizer_detect` automatically. They catch the sentence-level residue of the same habits. The rubric pass is for what no span can see. Skip this section entirely for technical docs, PR descriptions, and Slack drafts.
 
 ## Your Task
 
@@ -106,7 +106,7 @@ When given text to humanize:
 6. **Preserve meaning** - Keep the core message intact
 7. **Maintain voice** - Match the intended tone; when a sample is present, close the biggest voice-diff deltas.
 8. **Add soul where the text type wants it** - Don't just remove bad patterns. Use the voice Voice Calibration sets: the sample's, or the text type's register (step 3) when there is no sample.
-9. **Do a final anti-AI pass** — Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run `humanizer_judge` if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
+9. **Do a final anti-AI pass**: Re-run `humanizer_detect` and `humanizer_detect_statistical` on the rewrite, and re-run `humanizer_judge` if you used it. Any remaining findings or AI verdicts get another pass. Then prompt: "What makes the below so obviously AI generated?" Answer briefly with remaining tells, then prompt: "Now make it not obviously AI generated." and revise.
 
 
 ## Voice Calibration (Optional)

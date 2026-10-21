@@ -4,7 +4,7 @@ Backed by [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comme
 
 ## Input/Config/Patch structs over long parameter lists
 
-When a function needs more than ~3 parameters, or when callers will grow over time, pass a struct. This is the dominant house pattern — and the codebase **does not** use functional `WithX` options.
+When a function needs more than ~3 parameters, or when callers will grow over time, pass a struct. This is the dominant house pattern, and the codebase **does not** use functional `WithX` options.
 
 ```go
 // worklog/internal/store/item.go
@@ -72,7 +72,7 @@ type Checker interface {
 }
 ```
 
-The scanner takes this one-method view, so a fake checker in a test implements one method. The `alert.Notifier` interface (one method) and `proxy.Prober` (a func type) are the same idea: a tiny consumer-side seam for the side effect. Don't define an interface next to its only implementation "just in case" — add it when a second implementation or a test seam actually appears. See `safety.md` for keeping the implementation behind the seam pure.
+The scanner takes this one-method view, so a fake checker in a test implements one method. The `alert.Notifier` interface (one method) and `proxy.Prober` (a func type) are the same idea: a tiny consumer-side seam for the side effect. Don't define an interface next to its only implementation "just in case"; add it when a second implementation or a test seam actually appears. See `safety.md` for keeping the implementation behind the seam pure.
 
 ## Let semantics set function boundaries
 

@@ -4,7 +4,7 @@ description: Write a handoff document and persist key learnings to memory so the
 argument-hint: "What will the next session focus on?"
 ---
 
-Create a handoff so work survives a context reset. The user will open a brand new Claude Code session and feed it the handoff document — that document is the only bridge. Anything not in the handoff or in durable memory is lost.
+Create a handoff so work survives a context reset. The user will open a brand new Claude Code session and feed it the handoff document; that document is the only bridge. Anything not in the handoff or in durable memory is lost.
 
 Save the handoff to a durable, agent-agnostic directory, not the workspace: `~/.handoff/handoff-<project>-<YYYYMMDD-HHMM>.md` (create the directory with `mkdir -p` if needed). `~/.handoff/` is shared across every coding agent, so a handoff written by one agent can be picked up by another (Claude Code, Codex, opencode, pi). Don't use `$TMPDIR` or `/tmp`: macOS prunes them, so a handoff left there is gone by the time the next session needs it. Never write it into the repo, and never write it under a single agent's private state directory (e.g. `~/.claude/`).
 
@@ -13,16 +13,16 @@ Save the handoff to a durable, agent-agnostic directory, not the workspace: `~/.
 ### 1. Gather context
 
 - Read the full conversation: what was the goal, what happened, what's left.
-- If a prior handoff document was fed into this session, carry its still-relevant context forward — don't lose the chain.
+- If a prior handoff document was fed into this session, carry its still-relevant context forward. Don't lose the chain.
 
 ### 2. Persist learnings to memory
 
 Before writing the handoff document, save anything from this session that future conversations should know, even ones that never read the handoff file. When the agent's global config defines memory routing (which store takes a cross-agent preference, a project gotcha, a code-behavior claim, or task progress), follow it. Otherwise use the auto-memory system (`~/.claude/projects/.../memory/`):
 
-- **feedback** — corrections, validated approaches, user preferences discovered this session
-- **project** — decisions made, constraints learned, who owns what, deadlines surfaced
-- **user** — new context about the user's role, expertise, or working style
-- **reference** — external resources, dashboards, docs, or links that proved useful
+- **feedback**: corrections, validated approaches, user preferences discovered this session
+- **project**: decisions made, constraints learned, who owns what, deadlines surfaced
+- **user**: new context about the user's role, expertise, or working style
+- **reference**: external resources, dashboards, docs, or links that proved useful
 
 Skip memory writes when nothing non-obvious was learned. Don't save ephemeral task state (that goes in the handoff doc) or a recap of shipped or resolved work. Don't duplicate what's already in memory; check the store's `MEMORY.md` index first.
 
@@ -34,16 +34,16 @@ Write the handoff file with these sections:
 # Handoff
 
 ## Goal
-What we're trying to accomplish — the top-level objective.
+What we're trying to accomplish: the top-level objective.
 
 ## Current Progress
-What's been done so far. Reference artifacts (PRs, commits, files, issues) by path or URL — don't duplicate their content. Link issues by their tracker key, whichever tracker the project keys on.
+What's been done so far. Reference artifacts (PRs, commits, files, issues) by path or URL; don't duplicate their content. Link issues by their tracker key, whichever tracker the project keys on.
 
 ## What Worked
-Approaches and strategies that succeeded — so the next agent repeats them.
+Approaches and strategies that succeeded, so the next agent repeats them.
 
 ## What Didn't Work
-Approaches that failed and why — so the next agent doesn't retry them.
+Approaches that failed and why, so the next agent doesn't retry them.
 
 ## Key Decisions
 Decisions made during this session and their rationale.

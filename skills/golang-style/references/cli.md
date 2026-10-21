@@ -15,7 +15,7 @@ func main() {
 }
 ```
 
-`internal/cli` builds the command tree. The root sets `SilenceUsage` and `SilenceErrors` so cobra doesn't print usage or the error itself — error printing happens once in `main` (see `errors.md`). From `worklog/internal/cli/cli.go`:
+`internal/cli` builds the command tree. The root sets `SilenceUsage` and `SilenceErrors` so cobra doesn't print usage or the error itself; error printing happens once in `main` (see `errors.md`). From `worklog/internal/cli/cli.go`:
 
 ```go
 // Execute runs the root command.
@@ -69,11 +69,11 @@ Keep the `RunE` body thin: parse flags, call into `internal/` packages, return t
 ## Flags
 
 - Bind to a local with `c.Flags().StringVar(&v, "name", default, "usage")`. Persistent flags (shared by subcommands) go on the root with `PersistentFlags()`.
-- An env fallback is read in code, not via a config framework — e.g. `os.Getenv("WORKLOG_DIR")` inside `store.DefaultRoot()`.
+- An env fallback is read in code, not via a config framework (e.g. `os.Getenv("WORKLOG_DIR")` inside `store.DefaultRoot()`).
 
 ## Build metadata via ldflags, `version -o json`
 
-Build metadata isn't a per-tool `var Version` any more. Tools link a shared `buildinfo` package holding four variables: `Version` (the short sha, or `vX.Y.Z-<sha>` for a release build), `Commit` (the full sha), `Tag` (the last release tag, e.g. `worklog/v0.3.1`), and `BuildTime` (UTC, RFC 3339). All four are injected at link time, and `buildinfo.Get()` fills whatever the ldflags left empty from the toolchain's vcs stamps — so a `go install`ed binary still reports a real commit.
+Build metadata isn't a per-tool `var Version` any more. Tools link a shared `buildinfo` package holding four variables: `Version` (the short sha, or `vX.Y.Z-<sha>` for a release build), `Commit` (the full sha), `Tag` (the last release tag, e.g. `worklog/v0.3.1`), and `BuildTime` (UTC, RFC 3339). All four are injected at link time, and `buildinfo.Get()` fills whatever the ldflags left empty from the toolchain's vcs stamps, so a `go install`ed binary still reports a real commit.
 
 In the thismoon monorepo the ldflags live in one Makefile fragment at the repo root. A component names itself and includes it:
 
@@ -85,7 +85,7 @@ build:
 	go build -ldflags "$(BUILDINFO_LDFLAGS)" -o $(BIN) ./cmd/worklog
 ```
 
-A standalone repo mirrors the shape with its own package rather than importing another repo's — ralph carries `github.com/mad01/ralph/internal/buildinfo`.
+A standalone repo mirrors the shape with its own package rather than importing another repo's: ralph carries `github.com/mad01/ralph/internal/buildinfo`.
 
 The output is the cross-tool convention:
 
@@ -101,7 +101,7 @@ The output is the cross-tool convention:
 }
 ```
 
-`ralph doctor` probes every installed binary with that command and dates it by `commit` (falling back to `version`), which is how it tells a stale binary from a fresh one. Web services serve the identical object from `GET /version` — see `http.md`.
+`ralph doctor` probes every installed binary with that command and dates it by `commit` (falling back to `version`), which is how it tells a stale binary from a fresh one. Web services serve the identical object from `GET /version` (see `http.md`).
 
 ## Output discipline
 

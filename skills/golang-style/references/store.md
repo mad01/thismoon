@@ -36,7 +36,7 @@ func New(dir string) (*Store, error) {
 
 ## Pure model and helpers split from the I/O shell
 
-Keep the data model and pure functions in their own file, the file-touching methods in another (the functional-core/imperative-shell split — see `structure.md` and `safety.md`). `events` separates `internal/event` (the `Event` model plus pure `Validate`, `SanitizeSource`, `NewID`, and `TimeFromID`) from `internal/store` (the mutex-guarded JSONL store). Unexported path helpers stay on the store:
+Keep the data model and pure functions in their own file, the file-touching methods in another (the functional-core/imperative-shell split; see `structure.md` and `safety.md`). `events` separates `internal/event` (the `Event` model plus pure `Validate`, `SanitizeSource`, `NewID`, and `TimeFromID`) from `internal/store` (the mutex-guarded JSONL store). Unexported path helpers stay on the store:
 
 ```go
 func (s *Store) itemDir(key string) string    { return filepath.Join(s.Root, key) }
@@ -92,7 +92,7 @@ type Frontmatter struct {
 
 ## Single writer for shared state
 
-When more than one process touches the same store, make one process the only writer and have the rest go through it (an HTTP client — see `http.md`). `events serve` owns its JSONL store behind a mutex; the MCP and CLI are HTTP clients, so there are no file-lock races. Prefer this to file locking.
+When more than one process touches the same store, make one process the only writer and have the rest go through it (an HTTP client; see `http.md`). `events serve` owns its JSONL store behind a mutex; the MCP and CLI are HTTP clients, so there are no file-lock races. Prefer this to file locking.
 
 ## Updates take a `Patch`
 
