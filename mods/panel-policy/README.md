@@ -37,7 +37,7 @@ The engine adds the name; the text the mod composes starts at the count. The bat
 
 The state keeps the newest 100 members: role, the first 60 characters of the description, start and end times, and the turn. There is no pane; the status line and the debug log are the whole view.
 
-Each member is keyed by the `agentId` the engine returns from the spawn. Two signals mark it returned, whichever arrives first. The subagent's `turn.complete` carries the id as `agentId`; the classic `SubagentStop` settings event carries it as `agent_id`, and a background subagent's end reaches the main session that way. The second signal is a no-op. A spawn that resolves without an id started no agent and is not tracked. The debug log names which signal matched, or which running ids a signal failed to match.
+Each member is keyed by the `agentId` the engine returns from the spawn. The subagent's `turn.complete` carries the same id as `agentId` and marks the member returned, whatever its `reason`. The engine types say every hook hears an agent's end, an aborted run's too. A member whose end never arrives goes stale after `staleMinutes`. A spawn that resolves without an id started no agent and is not tracked. The debug log names each return it matched, or the running ids when an id matched none.
 
 ## Dev loop
 
