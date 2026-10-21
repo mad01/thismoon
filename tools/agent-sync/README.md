@@ -108,3 +108,5 @@ script.
 - [operating](operating.md): runtime behavior, failure modes, first moves
 - [why](why.md): why this component exists
 - [config](config.md): configuration reference
+- [migrating](migrating.md): cut over from sync scripts, then retire a
+  settings key, a mod or an MCP server

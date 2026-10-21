@@ -196,25 +196,18 @@ a warning that the next `ralph up` clears.
 
 ## Migrating from hand-written sync scripts
 
-An earlier version of this example carried a script per kind of data: a
-settings merge in Python, a shell script over a mods list, an MCP registration
-loop. agent-sync replaces the scripts, not the data:
+An earlier version of this example carried two hand-written sync scripts and
+a settings block merged by hand. `recipes/agent-config/` replaces all three:
 
-1. Keep the data files where they are. A template `settings.json` and a
-   `servers.json` of `claude mcp add` entries keep their shape. A mods list
-   becomes `mods.json`: one `marketplace` object and one entry per mod, where
-   `off` is `"enabled": false` and `retired` is `"installed": false`.
-2. Write `config.yaml` pointing at them. Paths the scripts hardcoded (the
-   drop-in dir, the stamp file, the prune list) become the section's keys.
-   Run `agent-sync doctor`, then `agent-sync <section> plan` on a machine the
-   old script left in sync: an empty plan means agent-sync reads the data the
-   same way.
-3. Swap the recipe commands: the script call becomes
-   `agent-sync <section> sync`, and its `--check` or `--dry-run` becomes
-   `agent-sync <section> check` in `verify`.
-4. Keep the `[hooks.builds.<key>]` item keys the scripts used, so ralph's
-   build state and recipe manifest carry over without an orphan entry.
-5. Delete the scripts and their tests.
+| Before | After |
+|--------|-------|
+| `recipes/claude-mods/`: `mods.list`, one `<name> on\|off\|retired` line per mod, applied by `sync-mods.sh` in the `claude_mods_sync` hook, verified by `sh ./sync-mods.sh --check` | `mods.json`, where `on` is `"enabled": true`, `off` is `"enabled": false` and `retired` is `"installed": false`; hook `agent_mods_sync`, verified by `agent-sync mods check` |
+| `recipes/mcp-registration/`: `servers.json` (stdio entries only), applied by `register.py` in the `mcp_register` hook, which removed and re-added every server on each run, with no verify step | `servers.json` in the same shape; hook `agent_mcp_sync`, verified by `agent-sync mcp check`. The sandbox wrapper moved to `recipes/mcp-sandbox/`, which adds its server as a drop-in |
+| `recipes/claude-hooks/settings.hooks.json.example`, the hooks block that registers belt, merged into `~/.claude/settings.json` by hand | `settings.json`, the template; hook `agent_settings_sync`, verified by `agent-sync settings check` |
+
+The example renamed its hooks when it folded the two recipes into one. The
+steps for your own repo, from writing the config through rolling it out, are
+in [tools/agent-sync/migrating.md](../../tools/agent-sync/migrating.md).
 
 ## Runtime profiles: block-list switching (d-man)
 
